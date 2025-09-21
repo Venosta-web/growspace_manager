@@ -1,0 +1,342 @@
+add_growspace:
+  description: Add a new growspace
+  fields:
+    name:
+      description: Name of the growspace
+      required: true
+      selector:
+        text:
+    rows:
+      description: Number of rows in the growspace
+      required: true
+      selector:
+        number:
+          min: 1
+          max: 20
+    plants_per_row:
+      description: Number of plants per row
+      required: true
+      selector:
+        number:
+          min: 1
+          max: 20
+    notification_target:
+      description: Notification service target (e.g., mobile_app_your_phone)
+      required: false
+      selector:
+        text:
+
+remove_growspace:
+  description: Remove a growspace
+  fields:
+    growspace_id:
+      description: ID of the growspace to remove
+      required: true
+      selector:
+        text:
+
+add_plant:
+  description: Add a plant to a growspace
+  fields:
+    growspace_id:
+      description: ID of the growspace
+      required: true
+      selector:
+        text:
+    strain:
+      description: Strain name
+      required: true
+      selector:
+        text:
+    row:
+      description: Row position
+      required: true
+      selector:
+        number:
+          min: 1
+    col:
+      description: Column position
+      required: true
+      selector:
+        number:
+          min: 1
+    phenotype:
+      description: Phenotype
+      required: false
+      selector:
+        text:
+    mother_start:
+      description: Mother start date
+      required: false
+      selector:
+        datetime:
+    clone_start:
+      description: Clone start date
+      required: false
+      selector:
+        datetime:
+    veg_start:
+      description: Vegetative start date
+      required: false
+      selector:
+        datetime:
+    flower_start:
+      description: Flowering start date
+      required: false
+      selector:
+        datetime:
+    dry_start:
+      description: Drying start date
+      required: false
+      selector:
+        datetime:
+    cure_start:
+      description: Curing start date
+      required: false
+      selector:
+        datetime:
+    notes:
+      description: Additional notes
+      required: false
+      selector:
+        text:
+          multiline: true
+
+update_plant:
+  description: Update a plant
+  fields:
+    plant_id:
+      description: ID of the plant to update
+      required: true
+      selector:
+        text:
+    strain:
+      description: Strain name
+      required: false
+      selector:
+        text:
+    phenotype:
+      description: Phenotype
+      required: false
+      selector:
+        text:
+    row:
+      description: Row position
+      required: false
+      selector:
+        number:
+          min: 1
+    col:
+      description: Column position
+      required: false
+      selector:
+        number:
+          min: 1
+    seedling_start:
+      description: Seedling start date
+      required: false
+      selector:
+        datetime:
+    mother_start:
+      description: Mother start date
+      required: false
+      selector:
+        datetime:
+    clone_start:
+      description: Clone start date
+      required: false
+      selector:
+        datetime:
+    veg_start:
+      description: Vegetative start date
+      required: false
+      selector:
+        datetime:
+    flower_start:
+      description: Flowering start date
+      required: false
+      selector:
+        datetime:
+    dry_start:
+      description: Dry start date
+      required: false
+      selector:
+        datetime:
+    cure_start:
+      description: Cure start date
+      required: false
+      selector:
+        datetime:
+    stage:
+      description: Current growth stage
+      required: false
+      selector:
+        select:
+          options:
+            - "seedling"
+            - "mother"
+            - "clone"
+            - "veg"
+            - "flower"
+            - "dry"
+            - "cure"
+    notes:
+      description: Additional notes
+      required: false
+      selector:
+        text:
+          multiline: true
+
+remove_plant:
+  description: Remove a plant
+  fields:
+    plant_id:
+      description: ID of the plant to remove
+      required: true
+      selector:
+        text:
+
+move_plant:
+  description: Move a plant to a new position
+  fields:
+    plant_id:
+      description: ID of the plant to move
+      required: true
+      selector:
+        text:
+    new_row:
+      description: New row position
+      required: true
+      selector:
+        number:
+          min: 1
+          max: 20
+    new_col:
+      description: New column position
+      required: true
+      selector:
+        number:
+          min: 1
+          max: 20
+
+transition_plant_stage:
+  description: Transition a plant to a new growth stage
+  fields:
+    plant_id:
+      description: ID of the plant
+      required: true
+      selector:
+        text:
+    new_stage:
+      description: New growth stage
+      required: true
+      selector:
+        select:
+          options:
+            - "seedling"
+            - "mother"
+            - "clone"
+            - "veg"
+            - "flower"
+            - "dry"
+            - "cure"
+    transition_date:
+      description: Date of stage transition (defaults to now)
+      required: false
+      selector:
+        datetime:
+test_notification:
+  description: Send a test notification for a plant
+  fields:
+    plant_id:
+      description: ID of the plant
+      required: true
+      selector:
+        text:
+    stage:
+      description: Stage to test
+      required: true
+      selector:
+        select:
+          options:
+            - "veg"
+            - "flower"
+    days:
+      description: Days in stage (will be matched against DEFAULT_NOTIFICATION_EVENTS)
+      required: true
+      selector:
+        number:
+          min: 1
+          max: 200
+harvest_plant:
+  description: Harvest a plant and move it to the appropriate growspace
+  fields:
+    plant_id:
+      description: ID of the plant to harvest
+      required: true
+      selector:
+        text:
+    target_growspace_id:
+      description: Optional target growspace ID (if omitted, auto-move flower→dry_overview, dry→cure_overview)
+      required: false
+      selector:
+        text:
+    transition_date:
+      description: Optional transition date (defaults to now)
+      required: false
+      selector:
+        date:
+take_clone:
+  description: Clone a plant and move it to the appropriate clone growspace
+  fields:
+    mother_plant_id:
+      description: ID of the plant to clone
+      required: true
+      selector:
+        text:
+    target_growspace_id:
+      description: Optional target growspace ID (if omitted, auto-move flower→dry_overview, dry→cure_overview)
+      required: false
+      selector:
+        text:
+    transition_date:
+      description: Optional transition date (defaults to now)
+      required: false
+      selector:
+        datetime:
+    num_clones:
+      description: Optional the amount off clones to create
+      required: false
+      selector:
+        number:
+move_clone:
+  description: Move a clone to a different growspace
+  fields:
+    plant_id:
+      description: ID of the clone plant
+      required: true
+      selector:
+        text:
+    target_growspace_id:
+      description: ID of the target growspace
+      required: true
+      selector:
+        text:
+    transition_date:
+      description: Optional transition date (defaults to now)
+      required: false
+      selector:
+        datetime:
+switch_plants:
+  description: Switch positions of two plants
+  fields:
+    plant_id_1:
+      description: ID of the first plant
+      required: true
+      selector:
+        text:
+    plant_id_2:
+      description: ID of the second plant
+      required: true
+      selector:
+        text:
