@@ -32,9 +32,9 @@ if TYPE_CHECKING:
     from homeassistant.helpers.storage import Store
 
 # Type aliases for better readability
-PlantData = dict[str, Any]
-GrowspaceData = dict[str, Any]
-NotificationData = dict[str, Any]
+PlantDict = dict[str, Any]
+GrowspaceDict = dict[str, Any]
+NotificationDict = dict[str, Any]
 DateInput = str | datetime | date | None
 
 
