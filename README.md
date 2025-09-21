@@ -37,6 +37,7 @@ After installation:
 
 * **Plant Stage Tracking**: Monitor and manage the growth stages of your plants.
 * **Growspace Layouts**: Organize plants within your growspaces using a grid system.
+* **Grid Display**: Visualize your growspace layouts in Home Assistant using the `growspace_manager_card`.
 * **Automation Integration**: Utilize Home Assistant's automation capabilities to control and monitor plant environments.
 * **Data Persistence**: Store plant and growspace data for consistent tracking and history.
 * **Strain Library**: Maintain a centralized catalog of plant strains. Easily reference strains when adding new plants, and keep track of your collection over time.
