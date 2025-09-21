@@ -416,10 +416,44 @@ class PlantEntity(SensorEntity):
             "cure_days": cure_days if cure_days else 0,
         }
 
+    def _check_and_send_notifications(
+        self, plant: dict[str, Any], current_stage: str
+    ) -> None:
+        # Check all stages that could have notifications
+        stages_to_check = []
+
+        # Add current stage
+        stages_to_check.append(current_stage)
+
+        # For plants in later stages, also check if we missed earlier notifications
+        stage_order = ["seedling", "clone", "mother", "veg", "flower", "dry", "cure"]
+        current_index = (
+            stage_order.index(current_stage) if current_stage in stage_order else 0
+        )
+
+        # Check previous stages too (in case we missed notifications during stage transitions)
+        for i, stage in enumerate(stage_order):
+            if i <= current_index and plant.get(f"{stage}_start"):
+                stages_to_check.append(stage)
+
+        # Remove duplicates while preserving order
+        stages_to_check = list(dict.fromkeys(stages_to_check))
+
+        for stage in stages_to_check:
+            if stage in [
+                "veg",
+                "flower",
+                "dry",
+                "cure",
+            ]:  # Only stages with notification events
+                days = self._coordinator.calculate_days_in_stage(plant, stage)
+                if days > 0 and self._should_send_notification(plant, stage, days):
+                    self._send_notification(plant, stage, days)
+
     def _should_send_notification(
         self, plant: dict[str, Any], stage: str, days: int
     ) -> bool:
-        """Check if we should send a notification for this plant."""
+        """Check if we should send a notification for this plant/stage/days combination."""
         growspace = self._coordinator.growspaces.get(plant["growspace_id"], {})
         notification_target = growspace.get("notification_target")
 
@@ -432,22 +466,34 @@ class PlantEntity(SensorEntity):
             )
             return False
 
-        # Map stage to notification key
-        stage_key = "veg" if stage == "veg" else "flower"
+        # Check if notification already sent
         should_send = self._coordinator.should_send_notification(
-            plant["plant_id"], stage_key, days
+            plant["plant_id"], stage, days
         )
+
+        has_matching_event = any(
+            event["days"] == days and event["stage"] == stage
+            for event in DEFAULT_NOTIFICATION_EVENTS.values()
+        )
+
+        final_should_send = should_send and has_matching_event
+
         _LOGGER.debug(
-            "Should send notification? Plant=%s Stage=%s Days=%s → %s",
+            "Notification check: Plant=%s Stage=%s Days=%s HasTarget=%s AlreadySent=%s HasEvent=%s → %s",
             plant["plant_id"],
             stage,
             days,
-            should_send,
+            bool(notification_target),
+            not should_send,
+            has_matching_event,
+            final_should_send,
         )
-        return should_send
+
+        return final_should_send
 
     def _send_notification(self, plant: dict[str, Any], stage: str, days: int):
         """Send notification for plant milestone."""
+
         growspace = self._coordinator.growspaces.get(plant["growspace_id"], {})
         notification_target = growspace.get("notification_target")
 
@@ -457,10 +503,10 @@ class PlantEntity(SensorEntity):
             )
             return
 
-        stage_key = "veg" if stage == "vegetative" else "flower"
+        # Find matching notification event
         message = None
         for event_data in DEFAULT_NOTIFICATION_EVENTS.values():
-            if event_data["days"] == days and event_data["stage"] == stage_key:
+            if event_data["days"] == days and event_data["stage"] == stage:
                 message = event_data["message"]
                 break
 
@@ -483,9 +529,9 @@ class PlantEntity(SensorEntity):
             message,
         )
 
-        # Mark notification as sent
+        # Mark notification as sent FIRST to prevent duplicates
         self.hass.async_create_task(
-            self._coordinator.mark_notification_sent(plant["plant_id"], stage_key, days)
+            self._coordinator.mark_notification_sent(plant["plant_id"], stage, days)
         )
 
         # Fire the notify service
