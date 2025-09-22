@@ -16,11 +16,11 @@ class StrainLibrary:
     async def save(self) -> None:
         await self.store.async_save(list(self.strains))
 
-    def add(self, strain: str) -> None:
+    async def add(self, strain: str) -> None:
         clean_strain = strain.strip()
         if clean_strain:
             self.strains.add(clean_strain)
-            self.hass.async_create_task(self.save())
+            await self.save()
 
     def remove(self, strain: str) -> None:
         self.strains.discard(strain)

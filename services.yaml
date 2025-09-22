@@ -69,32 +69,32 @@ add_plant:
       description: Mother start date
       required: false
       selector:
-        datetime:
+        date:
     clone_start:
       description: Clone start date
       required: false
       selector:
-        datetime:
+        date:
     veg_start:
       description: Vegetative start date
       required: false
       selector:
-        datetime:
+        date:
     flower_start:
       description: Flowering start date
       required: false
       selector:
-        datetime:
+        date:
     dry_start:
       description: Drying start date
       required: false
       selector:
-        datetime:
+        date:
     cure_start:
       description: Curing start date
       required: false
       selector:
-        datetime:
+        date:
     notes:
       description: Additional notes
       required: false
@@ -136,37 +136,37 @@ update_plant:
       description: Seedling start date
       required: false
       selector:
-        datetime:
+        date:
     mother_start:
       description: Mother start date
       required: false
       selector:
-        datetime:
+        date:
     clone_start:
       description: Clone start date
       required: false
       selector:
-        datetime:
+        date:
     veg_start:
       description: Vegetative start date
       required: false
       selector:
-        datetime:
+        date:
     flower_start:
       description: Flowering start date
       required: false
       selector:
-        datetime:
+        date:
     dry_start:
       description: Dry start date
       required: false
       selector:
-        datetime:
+        date:
     cure_start:
       description: Cure start date
       required: false
       selector:
-        datetime:
+        date:
     stage:
       description: Current growth stage
       required: false
@@ -244,7 +244,7 @@ transition_plant_stage:
       description: Date of stage transition (defaults to now)
       required: false
       selector:
-        datetime:
+        date:
 test_notification:
   description: Send a test notification for a plant
   fields:
@@ -303,7 +303,7 @@ take_clone:
       description: Optional transition date (defaults to now)
       required: false
       selector:
-        datetime:
+        date:
     num_clones:
       description: Optional the amount off clones to create
       required: false
@@ -326,7 +326,7 @@ move_clone:
       description: Optional transition date (defaults to now)
       required: false
       selector:
-        datetime:
+        date:
 switch_plants:
   description: Switch positions of two plants
   fields:

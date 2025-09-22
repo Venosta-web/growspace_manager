@@ -28,7 +28,7 @@ async def async_setup_entry(
 
     # Create notification switches for each growspace
     for growspace_id, growspace in coordinator.growspaces.items():
-        if growspace.get("notification_target"):
+        if growspace.notification_target:
             entities.append(
                 GrowspaceNotificationSwitch(coordinator, growspace_id, growspace)
             )

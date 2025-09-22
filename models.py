@@ -1,4 +1,4 @@
-from dataclasses import dataclass, field, asdict
+from dataclasses import dataclass, field, asdict, fields
 from typing import Optional
 from datetime import date
 
@@ -26,28 +26,29 @@ class Plant:
     plant_id: str
     growspace_id: str
     strain: str
-    phenotype: str = ""
+    phenotype: str = ""  # default
     row: int = 1
     col: int = 1
     stage: str = "seedling"
     type: str = "normal"
-    created_at: str = field(default_factory=lambda: date.today().isoformat())
-    updated_at: Optional[str] = None
-    # Stage start dates
-    seedling_start: Optional[str] = None
-    clone_start: Optional[str] = None
-    mother_start: Optional[str] = None
-    veg_start: Optional[str] = None
-    flower_start: Optional[str] = None
-    dry_start: Optional[str] = None
-    cure_start: Optional[str] = None
-    # Metadata
-    source_mother: Optional[str] = None
-    device_id: Optional[str] = None
+    device_id: str | None = None
+    seedling_start: str | None = None
+    mother_start: str | None = None
+    clone_start: str | None = None
+    veg_start: str | None = None
+    flower_start: str | None = None
+    dry_start: str | None = None
+    cure_start: str | None = None
+    created_at: str | None = None
+    updated_at: str | None = None
+    source_mother: str | None = None
 
     def to_dict(self) -> dict:
         return asdict(self)
 
     @staticmethod
     def from_dict(data: dict) -> "Plant":
-        return Plant(**data)
+        # Only keep keys that match dataclass fields
+        allowed_keys = {f.name for f in fields(Plant)}
+        filtered_data = {k: v for k, v in data.items() if k in allowed_keys}
+        return Plant(**filtered_data)

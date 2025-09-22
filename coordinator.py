@@ -4,7 +4,7 @@ from dataclasses import asdict
 from .models import Plant, Growspace
 from .utils import (
     calculate_days_since,
-    parse_date_field,
+    format_date,
     find_first_free_position,
     generate_growspace_grid,
 )
@@ -50,41 +50,47 @@ DateInput = str | datetime | date | None
 
 
 class GrowspaceCoordinator(DataUpdateCoordinator):
-    """Coordinator for Growspace Manager with improved organization and error handling."""
+    """Coordinator for Growspace Manager."""
 
-    def __init__(
-        self,
-        hass: HomeAssistant,
-        data: Optional[dict] = None,
-        entry_id: Optional[str] = None,
-    ):
-        """Initialize the GrowspaceCoordinator.
+    def __init__(self, hass, data: Optional[dict] = None):
+        super().__init__(
+            hass,
+            _LOGGER,
+            name="Growspace Manager Coordinator",
+        )
 
-        Args:
-            hass: The Home Assistant instance.
-            store: The storage object for persisting data.
-            data: Initial data dictionary for growspaces and plants.
-            entry_id: The config entry ID for this integration.
-        """
+        self.hass = hass
+        self.growspaces: dict[str, Growspace] = {}
+        self.plants: dict[str, Plant] = {}
+        self.store: Store = Store(hass, STORAGE_VERSION, STORAGE_KEY)
 
-        super().__init__(hass, _LOGGER, name="growspace_manager")
-        # Persistent data
-        self.data: dict[str, Any] = data or {}
-        self.plants: dict[str, Plant] = {
-            pid: Plant(**p) if isinstance(p, dict) else p
-            for pid, p in self.data.get("plants", {}).items()
-        }
-        self.growspaces: dict[str, Growspace] = {
-            gid: Growspace(**g) if isinstance(g, dict) else g
-            for gid, g in self.data.get("growspaces", {}).items()
-        }
-        # Initialize the store properly as an instance attribute
-        self.store = Store(hass, STORAGE_VERSION, STORAGE_KEY)
-        self.notifications: dict[str, Any] = self.data.get("notifications_sent", {})
-        # Strain library management
-        self.strains = StrainLibrary(hass, STORAGE_VERSION, STORAGE_KEY_STRAIN_LIBRARY)
+        data = data or {}
+        self.notifications: dict[str, dict[str, dict[str, bool]]] = data.get(
+            "notifications_sent", {}
+        )
 
-        self.update_data_property()
+        # Load plants safely, ignoring invalid keys
+        raw_plants = data.get("plants", {})
+        for pid, pdata in raw_plants.items():
+            try:
+                if isinstance(pdata, dict):
+                    self.plants[pid] = Plant.from_dict(pdata)
+                elif isinstance(pdata, Plant):
+                    self.plants[pid] = pdata
+            except Exception:
+                _LOGGER.warning("Failed to load plant %s: %s", pid, pdata)
+
+        # Optionally load growspaces if stored
+        raw_growspaces = data.get("growspaces", {})
+        for gid, gdata in raw_growspaces.items():
+            try:
+                self.growspaces[gid] = Growspace.from_dict(gdata)
+            except Exception:
+                _LOGGER.warning("Failed to load growspace %s: %s", gid, gdata)
+
+        _LOGGER.debug(
+            "Loaded %d plants and %d growspaces", len(self.plants), len(self.growspaces)
+        )
 
     # -----------------------------
     # Methods for editor dropdown
@@ -279,7 +285,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
         return find_first_free_position(growspace, occupied)
 
     def _parse_date_field(self, date_value: str | datetime | date | None) -> str | None:
-        return parse_date_field(date_value)
+        return format_date(date_value)
 
     def _parse_date_fields(self, kwargs: dict[str, Any]) -> None:
         """Parse all date fields in kwargs in-place."""
@@ -413,7 +419,30 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
         if not data:
             return
 
-        self.plants = {pid: Plant(**p) for pid, p in data.get("plants", {}).items()}
+        self.plants = {
+            pid: Plant(
+                plant_id=p.get("plant_id", pid),
+                growspace_id=p.get("growspace_id", ""),
+                strain=p.get("strain", ""),
+                phenotype=p.get("phenotype", ""),  # <-- ensure default
+                row=p.get("row", 1),
+                col=p.get("col", 1),
+                stage=p.get("stage", "seedling"),
+                type=p.get("type", "normal"),
+                device_id=p.get("device_id"),
+                seedling_start=p.get("seedling_start"),
+                mother_start=p.get("mother_start"),
+                clone_start=p.get("clone_start"),
+                veg_start=p.get("veg_start"),
+                flower_start=p.get("flower_start"),
+                dry_start=p.get("dry_start"),
+                cure_start=p.get("cure_start"),
+                created_at=p.get("created_at"),
+                updated_at=p.get("updated_at"),
+                source_mother=p.get("source_mother"),
+            )
+            for pid, p in data.get("plants", {}).items()
+        }
         self.growspaces = {
             gid: Growspace(**g) for gid, g in data.get("growspaces", {}).items()
         }
@@ -498,6 +527,14 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
         stage: str = "seedling",
         type: str = "normal",
         device_id: str | None = None,
+        seedling_start: date | None = None,
+        mother_start: date | None = None,
+        clone_start: date | None = None,
+        veg_start: date | None = None,
+        flower_start: date | None = None,
+        dry_start: date | None = None,
+        cure_start: date | None = None,
+        source_mother: str = "",
     ) -> Plant:
         plant_id = str(uuid.uuid4())
         today = date.today().isoformat()
@@ -510,6 +547,16 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
             col=col,
             stage=stage,
             created_at=today,
+            type=type,
+            device_id=device_id,
+            seedling_start=str(seedling_start),
+            mother_start=str(mother_start),
+            clone_start=str(clone_start),
+            veg_start=str(veg_start),
+            flower_start=str(flower_start),
+            dry_start=str(dry_start),
+            cure_start=str(cure_start),
+            source_mother=source_mother,
         )
         self.plants[plant_id] = plant
 

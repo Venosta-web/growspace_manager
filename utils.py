@@ -8,7 +8,7 @@ from .models import Plant, Growspace
 DateInput = str | datetime | date | None
 
 
-def parse_date(date_value: DateInput) -> date | None:
+def parse_date_field(date_value: DateInput) -> date | None:
     """Converts a string, datetime, or date to a date object.
 
     Returns None if input is None or invalid.
@@ -29,17 +29,19 @@ def parse_date(date_value: DateInput) -> date | None:
 
 def format_date(date_value: DateInput) -> str | None:
     """Returns ISO formatted string (YYYY-MM-DD) for a date-like input."""
-    dt = parse_date(date_value)
+    dt = parse_date_field(date_value)
     return dt.isoformat() if dt else None
 
 
-def days_since(start_date: DateInput, end_date: DateInput | None = None) -> int:
+def calculate_days_since(
+    start_date: DateInput, end_date: DateInput | None = None
+) -> int:
     """Returns the number of days from start_date to end_date.
 
     If end_date is None, uses today's date.
     """
-    start = parse_date(start_date)
-    end = parse_date(end_date) if end_date else date.today()
+    start = parse_date_field(start_date)
+    end = parse_date_field(end_date) if end_date else date.today()
     if start is None or end is None:
         return 0
     return (end - start).days

@@ -13,9 +13,18 @@ import homeassistant.helpers.device_registry as dr
 from homeassistant.helpers.storage import Store
 from datetime import date
 from homeassistant.helpers import entity_registry as er
+from dataclasses import replace
 
 
-from .const import DOMAIN, PLATFORMS, STORAGE_KEY, STORAGE_VERSION
+from .const import (
+    DOMAIN,
+    PLATFORMS,
+    STORAGE_KEY,
+    STORAGE_VERSION,
+    STORAGE_KEY_STRAIN_LIBRARY,
+)
+from .strain_library import StrainLibrary
+from .models import Plant
 from .coordinator import GrowspaceCoordinator
 from .services import (
     ADD_GROWSPACE_SCHEMA,
@@ -55,9 +64,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     coordinator = GrowspaceCoordinator(
         hass,
-        store,
         data,
-        entry_id=entry.entry_id,
     )
     # Load data into the coordinator
     await coordinator.async_load()
@@ -67,6 +74,13 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     hass.data.setdefault(DOMAIN, {})[entry.entry_id] = {"coordinator": coordinator}
 
     await coordinator.async_config_entry_first_refresh()
+
+    strain_library = StrainLibrary(
+        hass,
+        storage_version=STORAGE_VERSION,
+        storage_key=STORAGE_KEY_STRAIN_LIBRARY,
+    )
+    await strain_library.load()
 
     _LOGGER.debug("Set up platforms: %s", PLATFORMS)
     # Handle pending growspace
@@ -83,7 +97,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         except Exception:
             _LOGGER.exception("Failed to create pending growspace: %s", Exception)
 
-    await _register_services(hass, coordinator)
+    await _register_services(hass, coordinator, strain_library)
 
     hass.async_create_task(
         hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
@@ -93,7 +107,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
 
 async def _register_services(
-    hass: HomeAssistant, coordinator: GrowspaceCoordinator
+    hass: HomeAssistant,
+    coordinator: GrowspaceCoordinator,
+    strain_library: StrainLibrary,
 ) -> None:
     """Register all Growspace Manager services."""
 
@@ -153,71 +169,79 @@ async def _register_services(
             raise
 
     async def handle_add_plant(call: ServiceCall) -> None:
-        """Handle add plant service call."""
+        """Handle add plant service call with proper date handling."""
         try:
             growspace_id = call.data["growspace_id"]
             if growspace_id not in coordinator.growspaces:
                 _LOGGER.exception("Growspace %s does not exist", growspace_id)
                 return
 
-            # Check position availability
-            growspace = coordinator.growspaces[call.data["growspace_id"]]
-            if (
-                call.data["row"] > growspace["rows"]
-                or call.data["col"] > growspace["plants_per_row"]
-            ):
+            growspace = coordinator.growspaces[growspace_id]
+
+            # Check position bounds
+            row, col = call.data["row"], call.data["col"]
+            if row > growspace.rows or col > growspace.plants_per_row:
                 _LOGGER.exception(
-                    "Position %s is outside growspace bounds",
-                    ({call.data["row"]}, {call.data["col"]}),
+                    "Position (%s,%s) is outside growspace bounds", row, col
                 )
+                return
 
             # Check if position is occupied
-            existing_plants = coordinator.get_growspace_plants(
-                call.data["growspace_id"]
-            )
+            existing_plants = coordinator.get_growspace_plants(growspace_id)
             for plant in existing_plants:
-                if (
-                    plant["row"] == call.data["row"]
-                    and plant["col"] == call.data["col"]
-                ):
-                    _LOGGER.exception(
-                        "Position %s is already occupied",
-                        ({call.data["row"]}, {call.data["col"]}),
-                    )
+                if plant.row == row and plant.col == col:
+                    _LOGGER.exception("Position (%s,%s) is already occupied", row, col)
+                    return
+
+            # Parse and handle optional dates
+            def parse_date_field(field_name: str) -> date | None:
+                val = call.data.get(field_name)
+                if isinstance(val, date):
+                    return val
+                return None  # Leave None if not provided or invalid
+
+            seedling_start = parse_date_field("seedling_start")
+            mother_start = parse_date_field("mother_start")
+            clone_start = parse_date_field("clone_start")
+            veg_start = parse_date_field("veg_start")
+            flower_start = parse_date_field("flower_start")
+            dry_start = parse_date_field("dry_start")
+            cure_start = parse_date_field("cure_start")
+
             # Auto-set mother_start if stage is mother and not provided
-            mother_start = call.data.get("mother_start")
             if growspace_id == "mother" and not mother_start:
-                mother_start = date.today().isoformat()
+                mother_start = date.today()
+
             plant_id = await coordinator.async_add_plant(
-                growspace_id=call.data["growspace_id"],
+                growspace_id=growspace_id,
                 strain=call.data["strain"],
-                row=call.data["row"],
-                col=call.data["col"],
+                row=row,
+                col=col,
                 phenotype=call.data.get("phenotype", ""),
-                seedling_start=call.data.get("seedling_start"),
-                mother_start=call.data.get("mother_start"),
-                clone_start=call.data.get("clone_start"),
-                veg_start=call.data.get("veg_start"),
-                flower_start=call.data.get("flower_start"),
-                dry_start=call.data.get("dry_start"),
-                cure_start=call.data.get("cure_start"),
+                seedling_start=seedling_start,
+                mother_start=mother_start,
+                clone_start=clone_start,
+                veg_start=veg_start,
+                flower_start=flower_start,
+                dry_start=dry_start,
+                cure_start=cure_start,
             )
 
             _LOGGER.info("Plant %s added successfully via service call", plant_id)
-            hass.bus.async_fire(
+            call.hass.bus.async_fire(
                 f"{DOMAIN}_plant_added",
                 {
                     "plant_id": plant_id,
-                    "growspace_id": call.data["growspace_id"],
+                    "growspace_id": growspace_id,
                     "strain": call.data["strain"],
-                    "position": f"({call.data['row']},{call.data['col']})",
+                    "position": f"({row},{col})",
                 },
             )
 
         except Exception as err:
             _LOGGER.error("Failed to add plant: %s", err)
             create_notification(
-                hass,
+                call.hass,
                 f"Failed to add plant: {str(err)}",
                 title="Growspace Manager Error",
             )
@@ -262,22 +286,22 @@ async def _register_services(
             # Add the clone with stage set to "clone"
             await coordinator.async_add_plant(
                 growspace_id=growspace_id,
-                phenotype=mother.get("phenotype") or "",
-                strain=mother.get("strain", "Unknown"),
+                phenotype=mother.phenotype or "",
+                strain=mother.strain or "",
                 row=row,
                 col=col,
                 stage="clone",
-                mother_plant_id=mother_plant_id,  # optional, track lineage
+                source_mother=mother_plant_id,  # optional, track lineage
                 clone_start=transition_date,  # optional
             )
 
         await coordinator.async_save()
         await coordinator.async_request_refresh()
 
-    async def handle_move_clone(call: ServiceCall) -> None:
+    async def handle_move_clone(service_call: ServiceCall) -> None:
         """Move an existing clone using coordinator methods."""
-        plant_id = call.data.get("plant_id")
-        target_growspace_id = call.data.get("target_growspace_id")
+        plant_id = service_call.data.get("plant_id")
+        target_growspace_id = service_call.data.get("target_growspace_id")
         transition_date = date.today().isoformat()
 
         if not plant_id or not target_growspace_id:
@@ -294,7 +318,7 @@ async def _register_services(
 
         plant = coordinator.plants[plant_id]
         # Get all the original plant data
-        original_data = plant.copy()
+        original_data = replace(plant)
         # Find first available position in target growspace
         row, col = coordinator._find_first_available_position(target_growspace_id)
         if row is None or col is None:
@@ -304,13 +328,13 @@ async def _register_services(
         # Add the plant to the new growspace
         new_plant_id = await coordinator.async_add_plant(
             growspace_id=target_growspace_id,
-            strain=original_data.get("strain", "Unknown"),
-            phenotype=original_data.get("phenotype"),
+            strain=original_data.strain,
+            phenotype=original_data.phenotype,
             row=row,
             col=col,
             stage="veg",
-            clone_start=original_data.get("clone_start"),
-            mother_plant_id=original_data.get("mother_plant_id"),
+            clone_start=original_data.clone_start,
+            source_mother=original_data.source_mother,
             veg_start=transition_date,
         )
 
@@ -369,7 +393,7 @@ async def _register_services(
             _LOGGER.info("Plant %s removed successfully", plant_id)
             hass.bus.async_fire(
                 f"{DOMAIN}_plant_removed",
-                {"plant_id": plant_id, "growspace_id": plant["growspace_id"]},
+                {"plant_id": plant_id, "growspace_id": plant.growspace_id},
             )
 
         except Exception as err:
@@ -417,15 +441,15 @@ async def _register_services(
                 _LOGGER.exception("Plant %s does not exist", {plant_id})
 
             plant = coordinator.plants[plant_id]
-            growspace = coordinator.growspaces[plant["growspace_id"]]
+            growspace = coordinator.growspaces[plant.growspace_id]
 
             # Validate new position is within bounds
             new_row, new_col = call.data["new_row"], call.data["new_col"]
             if (
                 new_row < 1
-                or new_row > growspace["rows"]
+                or new_row > growspace.rows
                 or new_col < 1
-                or new_col > growspace["plants_per_row"]
+                or new_col > growspace.plants_per_row
             ):
                 _LOGGER.exception(
                     "Position %s is outside growspace bounds",
@@ -433,30 +457,30 @@ async def _register_services(
                 )
 
             # Store original position
-            old_row, old_col = plant["row"], plant["col"]
+            old_row, old_col = plant.row, plant.col
 
             # Check if new position is occupied by another plant
-            existing_plants = coordinator.get_growspace_plants(plant["growspace_id"])
+            existing_plants = coordinator.get_growspace_plants(plant.growspace_id)
             occupying_plant = None
             for other_plant in existing_plants:
                 if (
-                    other_plant["plant_id"] != plant_id
-                    and other_plant["row"] == new_row
-                    and other_plant["col"] == new_col
+                    other_plant.plant_id != plant_id
+                    and other_plant.row == new_row
+                    and other_plant.col == new_col
                 ):
                     occupying_plant = other_plant
                     break
 
             if occupying_plant:
                 # Switch positions: move the occupying plant to the original position
-                occupying_plant_id = occupying_plant["plant_id"]
+                occupying_plant_id = occupying_plant.plant_id
 
                 _LOGGER.info(
                     "Switching positions: %s (%d,%d) ↔ %s (%d,%d)",
-                    plant["strain"],
+                    plant.strain,
                     old_row,
                     old_col,
-                    occupying_plant["strain"],
+                    occupying_plant.strain,
                     new_row,
                     new_col,
                 )
@@ -469,11 +493,11 @@ async def _register_services(
                     f"{DOMAIN}_plants_switched",
                     {
                         "plant1_id": plant_id,
-                        "plant1_strain": plant["strain"],
+                        "plant1_strain": plant.strain,
                         "plant1_old_position": f"({old_row},{old_col})",
                         "plant1_new_position": f"({new_row},{new_col})",
                         "plant2_id": occupying_plant_id,
-                        "plant2_strain": occupying_plant["strain"],
+                        "plant2_strain": occupying_plant.strain,
                         "plant2_old_position": f"({new_row},{new_col})",
                         "plant2_new_position": f"({old_row},{old_col})",
                     },
@@ -481,10 +505,10 @@ async def _register_services(
 
                 _LOGGER.info(
                     "Successfully switched positions: %s moved to (%d,%d), %s moved to (%d,%d)",
-                    plant["strain"],
+                    plant.strain,
                     new_row,
                     new_col,
-                    occupying_plant["strain"],
+                    occupying_plant.strain,
                     old_row,
                     old_col,
                 )
@@ -493,13 +517,13 @@ async def _register_services(
                 await coordinator.async_move_plant(plant_id, new_row, new_col)
 
                 _LOGGER.info(
-                    "Plant %s moved to (%d,%d)", plant["strain"], new_row, new_col
+                    "Plant %s moved to (%d,%d)", plant.strain, new_row, new_col
                 )
                 hass.bus.async_fire(
                     f"{DOMAIN}_plant_moved",
                     {
                         "plant_id": plant_id,
-                        "strain": plant["strain"],
+                        "strain": plant.strain,
                         "old_position": f"({old_row},{old_col})",
                         "new_position": f"({new_row},{new_col})",
                     },
@@ -597,8 +621,9 @@ async def _register_services(
             )
             raise
 
-    async def handle_export_strain_library(call: ServiceCall) -> None:
+    async def handle_export_strain_library(service_call: ServiceCall) -> None:
         """Handle export strain library service call."""
+        strains = service_call.data.get("strain_library", [])
         try:
             strains = coordinator.get_strain_options()
             _LOGGER.info("Exported strain library: %s strains", len(strains))
@@ -609,12 +634,13 @@ async def _register_services(
             _LOGGER.error("Failed to export strain library: %s", err)
             raise
 
-    async def handle_import_strain_library(call: ServiceCall) -> None:
+    async def handle_import_strain_library(service_call: ServiceCall) -> None:
         """Handle import strain library service call."""
+        strains = service_call.data.get("strains", [])
         try:
-            added_count = await coordinator.import_strain_library(
-                strains=call.data["strains"],
-                replace=call.data.get("replace", False),
+            added_count = await strain_library.import_strains(
+                strains=strains,
+                replace=service_call.data.get("replace", False),
             )
             _LOGGER.info("Imported %s strains to library", added_count)
             hass.bus.async_fire(
@@ -624,10 +650,14 @@ async def _register_services(
             _LOGGER.error("Failed to import strain library: %s", err)
             raise
 
-    async def handle_clear_strain_library(call: ServiceCall) -> None:
+    hass.services.async_register(
+        DOMAIN, "import_strain_library", handle_import_strain_library
+    )
+
+    async def handle_clear_strain_library(self, call: ServiceCall) -> None:
         """Handle clear strain library service call."""
         try:
-            count = await coordinator.clear_strain_library()
+            count = StrainLibrary.clear(self)
             _LOGGER.info("Cleared %s strains from library", count)
             hass.bus.async_fire(
                 f"{DOMAIN}_strain_library_cleared", {"cleared_count": count}
@@ -689,7 +719,7 @@ async def _register_services(
                     # Migrate plants
                     plants_to_migrate = coordinator.get_growspace_plants(legacy_id)
                     for plant in plants_to_migrate:
-                        plant_id = plant["plant_id"]
+                        plant_id = plant.plant_id
                         coordinator.plants[plant_id]["growspace_id"] = canonical_dry
                         # Find available position
                         try:
@@ -726,7 +756,7 @@ async def _register_services(
                     # Migrate plants
                     plants_to_migrate = coordinator.get_growspace_plants(legacy_id)
                     for plant in plants_to_migrate:
-                        plant_id = plant["plant_id"]
+                        plant_id = plant.plant_id
                         coordinator.plants[plant_id]["growspace_id"] = canonical_cure
                         # Find available position
                         try:
@@ -797,10 +827,10 @@ async def _register_services(
                 for plant in plants:
                     _LOGGER.info(
                         "DEBUG:   - %s (%s) at (%s,%s)",
-                        plant["strain"],
-                        plant["plant_id"],
-                        plant["row"],
-                        plant["col"],
+                        plant.strain,
+                        plant.plant_id,
+                        plant.row,
+                        plant.col,
                     )
 
     async def debug_reset_special_growspaces(call):
@@ -846,19 +876,19 @@ async def _register_services(
                 # Restore plants if preserving
                 if preserve_plants and dry_plants:
                     for plant in dry_plants:
-                        coordinator.plants[plant["plant_id"]]["growspace_id"] = (
+                        coordinator.plants[plant.plant_id]["growspace_id"] = (
                             canonical_dry
                         )
                         try:
                             new_row, new_col = (
                                 coordinator.find_first_available_position(canonical_dry)
                             )
-                            coordinator.plants[plant["plant_id"]]["row"] = new_row
-                            coordinator.plants[plant["plant_id"]]["col"] = new_col
+                            coordinator.plants[plant.plant_id]["row"] = new_row
+                            coordinator.plants[plant.plant_id]["col"] = new_col
                         except Exception as e:
                             _LOGGER.warning(
                                 "Failed to assign position to preserved plant %s: %s",
-                                plant["plant_id"],
+                                plant.plant_id,
                                 e,
                             )
                     _LOGGER.info(
@@ -890,7 +920,7 @@ async def _register_services(
                 # Restore plants if preserving
                 if preserve_plants and cure_plants:
                     for plant in cure_plants:
-                        coordinator.plants[plant["plant_id"]]["growspace_id"] = (
+                        coordinator.plants[plant.plant_id]["growspace_id"] = (
                             canonical_cure
                         )
                         try:
@@ -899,12 +929,12 @@ async def _register_services(
                                     canonical_cure
                                 )
                             )
-                            coordinator.plants[plant["plant_id"]]["row"] = new_row
-                            coordinator.plants[plant["plant_id"]]["col"] = new_col
+                            coordinator.plants[plant.plant_id]["row"] = new_row
+                            coordinator.plants[plant.plant_id]["col"] = new_col
                         except Exception as e:
                             _LOGGER.warning(
                                 "Failed to assign position to preserved plant %s: %s",
-                                plant["plant_id"],
+                                plant.plant_id,
                                 e,
                             )
                     _LOGGER.info(
@@ -978,7 +1008,7 @@ async def _register_services(
                     )
 
                     for plant in plants:
-                        plant_id = plant["plant_id"]
+                        plant_id = plant.plant_id
                         coordinator.plants[plant_id]["growspace_id"] = canonical_dry
                         try:
                             new_row, new_col = (
@@ -989,7 +1019,7 @@ async def _register_services(
                             total_migrated += 1
                             _LOGGER.info(
                                 "DEBUG: Migrated plant %s (%s) to position (%d,%d)",
-                                plant["strain"],
+                                plant.strain,
                                 plant_id,
                                 new_row,
                                 new_col,
@@ -1039,7 +1069,7 @@ async def _register_services(
                     )
 
                     for plant in plants:
-                        plant_id = plant["plant_id"]
+                        plant_id = plant.plant_id
                         coordinator.plants[plant_id]["growspace_id"] = canonical_cure
                         try:
                             new_row, new_col = (
@@ -1052,7 +1082,7 @@ async def _register_services(
                             total_migrated += 1
                             _LOGGER.info(
                                 "DEBUG: Migrated plant %s (%s) to position (%d,%d)",
-                                plant["strain"],
+                                plant.strain,
                                 plant_id,
                                 new_row,
                                 new_col,

@@ -29,12 +29,12 @@ ADD_PLANT_SCHEMA = vol.Schema(
         vol.Required("row"): cv.positive_int,
         vol.Required("col"): cv.positive_int,
         vol.Optional("phenotype"): cv.string,
-        vol.Optional("veg_start"): cv.datetime,
-        vol.Optional("flower_start"): cv.datetime,
-        vol.Optional("dry_start"): cv.datetime,
-        vol.Optional("cure_start"): cv.datetime,
-        vol.Optional("mother_start"): cv.datetime,
-        vol.Optional("clone_start"): cv.datetime,
+        vol.Optional("veg_start"): cv.date,
+        vol.Optional("flower_start"): cv.date,
+        vol.Optional("dry_start"): cv.date,
+        vol.Optional("cure_start"): cv.date,
+        vol.Optional("mother_start"): cv.date,
+        vol.Optional("clone_start"): cv.date,
     }
 )
 
@@ -45,12 +45,12 @@ UPDATE_PLANT_SCHEMA = vol.Schema(
         vol.Optional("row"): cv.positive_int,
         vol.Optional("col"): cv.positive_int,
         vol.Optional("phenotype"): cv.string,
-        vol.Optional("veg_start"): cv.datetime,
-        vol.Optional("flower_start"): cv.datetime,
-        vol.Optional("dry_start"): cv.datetime,
-        vol.Optional("cure_start"): cv.datetime,
-        vol.Optional("mother_start"): cv.datetime,
-        vol.Optional("clone_start"): cv.datetime,
+        vol.Optional("veg_start"): cv.date,
+        vol.Optional("flower_start"): cv.date,
+        vol.Optional("dry_start"): cv.date,
+        vol.Optional("cure_start"): cv.date,
+        vol.Optional("mother_start"): cv.date,
+        vol.Optional("clone_start"): cv.date,
     }
 )
 
@@ -77,14 +77,14 @@ TRANSITION_PLANT_SCHEMA = vol.Schema(
     {
         vol.Required("plant_id"): cv.string,
         vol.Required("new_stage"): cv.string,
-        vol.Optional("transition_date"): cv.datetime,
+        vol.Optional("transition_date"): cv.date,
     }
 )
 MOVE_CLONE_SCHEMA = vol.Schema(
     {
         vol.Required("plant_id"): cv.string,
         vol.Required("target_growspace_id"): cv.string,
-        vol.Optional("transition_date"): cv.datetime,
+        vol.Optional("transition_date"): cv.date,
     }
 )
 EXPORT_STRAIN_LIBRARY_SCHEMA = vol.Schema({})
@@ -103,7 +103,7 @@ HARVEST_PLANT_SCHEMA = vol.Schema(
         vol.Required("plant_id"): cv.string,
         vol.Optional("target_growspace_id"): cv.string,
         vol.Optional("target_growspace_name"): cv.string,
-        vol.Optional("transition_date"): cv.datetime,
+        vol.Optional("transition_date"): cv.date,
     }
 )
 TAKE_CLONE_SCHEMA = vol.Schema(
@@ -111,7 +111,7 @@ TAKE_CLONE_SCHEMA = vol.Schema(
         vol.Required("mother_plant_id"): cv.string,
         vol.Optional("target_growspace_id"): cv.string,
         vol.Optional("target_growspace_name"): cv.string,
-        vol.Optional("transition_date"): cv.datetime,
+        vol.Optional("transition_date"): cv.date,
         vol.Optional("num_clones"): cv.positive_int,
     },
 )
