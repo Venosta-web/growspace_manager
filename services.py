@@ -29,6 +29,7 @@ ADD_PLANT_SCHEMA = vol.Schema(
         vol.Required("row"): cv.positive_int,
         vol.Required("col"): cv.positive_int,
         vol.Optional("phenotype"): cv.string,
+        vol.Optional("seedling_start"): cv.date,
         vol.Optional("veg_start"): cv.date,
         vol.Optional("flower_start"): cv.date,
         vol.Optional("dry_start"): cv.date,
@@ -45,13 +46,23 @@ UPDATE_PLANT_SCHEMA = vol.Schema(
         vol.Optional("row"): cv.positive_int,
         vol.Optional("col"): cv.positive_int,
         vol.Optional("phenotype"): cv.string,
+        vol.Optional("seedling_start"): cv.date,
         vol.Optional("veg_start"): cv.date,
         vol.Optional("flower_start"): cv.date,
         vol.Optional("dry_start"): cv.date,
         vol.Optional("cure_start"): cv.date,
         vol.Optional("mother_start"): cv.date,
         vol.Optional("clone_start"): cv.date,
-    }
+        # Extra fields you might want
+        vol.Optional("stage"): cv.string,
+        vol.Optional("position"): cv.string,
+        vol.Optional("seedling_days"): vol.All(vol.Coerce(int)),
+        vol.Optional("veg_days"): vol.All(vol.Coerce(int)),
+        vol.Optional("flower_days"): vol.All(vol.Coerce(int)),
+        vol.Optional("dry_days"): vol.All(vol.Coerce(int)),
+        vol.Optional("cure_days"): vol.All(vol.Coerce(int)),
+    },
+    extra=vol.ALLOW_EXTRA,  # <-- allows any other keys from frontend
 )
 
 REMOVE_PLANT_SCHEMA = vol.Schema(

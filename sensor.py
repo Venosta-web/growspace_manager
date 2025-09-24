@@ -240,7 +240,7 @@ class GrowspaceOverviewSensor(SensorEntity):
         pass
 
 
-class GrowspaceMaxStageSensor(CoordinatorEntity[GrowspaceCoordinator], SensorEntity):
+class GrowspaceMaxStageSensor(CoordinatorEntity[GrowspaceCoordinator]):
     """Sensor showing the max days in veg/flower for a growspace."""
 
     _attr_icon = "mdi:calendar-clock"
@@ -340,7 +340,31 @@ class PlantEntity(SensorEntity):
             return None
 
     def _determine_stage(self, plant: Plant) -> str:
-        # If explicit stage is set (dry, cure, etc.), use it directly
+        now = date.today()
+
+        # 1. Special growspaces override everything
+        if plant.growspace_id == "mother":
+            return "mother"
+        if plant.growspace_id == "clone":
+            return "clone"
+        if plant.growspace_id == "dry":
+            return "dry"
+        if plant.growspace_id == "cure":
+            return "cure"
+
+        # 2. Date-based progression (most advanced stage wins)
+        flower_start = parse_date_field(plant.flower_start)
+        veg_start = parse_date_field(plant.veg_start)
+        seedling_start = parse_date_field(plant.seedling_start)
+
+        if flower_start and flower_start <= now:
+            return "flower"
+        if veg_start and veg_start <= now:
+            return "veg"
+        if seedling_start and seedling_start <= now:
+            return "seedling"
+
+        # 3. Fallback to explicitly set stage if none of the above applies
         if plant.stage in [
             "seedling",
             "mother",
@@ -352,16 +376,7 @@ class PlantEntity(SensorEntity):
         ]:
             return plant.stage
 
-        # Fallback: infer from start dates
-        now = date.today()
-        flower_start = parse_date_field(plant.flower_start)
-        veg_start = parse_date_field(plant.veg_start)
-
-        if flower_start and flower_start <= now:
-            return "flower"
-        if veg_start and veg_start <= now and (not flower_start or flower_start > now):
-            return "veg"
-
+        # Default
         return "seedling"
 
     @property

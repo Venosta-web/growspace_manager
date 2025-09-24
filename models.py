@@ -29,7 +29,7 @@ class Plant:
     phenotype: str = ""  # default
     row: int = 1
     col: int = 1
-    stage: str = "seedling"
+    stage: str = ""
     type: str = "normal"
     device_id: str | None = None
     seedling_start: str | None = None

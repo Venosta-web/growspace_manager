@@ -11,7 +11,7 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, ServiceCall
 import homeassistant.helpers.device_registry as dr
 from homeassistant.helpers.storage import Store
-from datetime import date
+from datetime import date, datetime
 from homeassistant.helpers import entity_registry as er
 from dataclasses import replace
 
@@ -19,6 +19,7 @@ from dataclasses import replace
 from .const import (
     DOMAIN,
     PLATFORMS,
+    DATE_FIELDS,
     STORAGE_KEY,
     STORAGE_VERSION,
     STORAGE_KEY_STRAIN_LIBRARY,
@@ -69,21 +70,38 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # Load data into the coordinator
     await coordinator.async_load()
 
-    # Ensure DOMAIN exists in hass.data
-    hass.data.setdefault(DOMAIN, {})  # <--- Important
-    hass.data.setdefault(DOMAIN, {})[entry.entry_id] = {"coordinator": coordinator}
+    # Ensure DOMAIN exists
+    hass.data.setdefault(DOMAIN, {})
+    hass.data[DOMAIN][entry.entry_id] = {"coordinator": coordinator}
 
     await coordinator.async_config_entry_first_refresh()
-
+    # Load strain library and save reference globally
     strain_library = StrainLibrary(
         hass,
         storage_version=STORAGE_VERSION,
         storage_key=STORAGE_KEY_STRAIN_LIBRARY,
     )
     await strain_library.load()
+    hass.data[DOMAIN]["strain_library"] = strain_library
 
+    # Register services
     _LOGGER.debug("Set up platforms: %s", PLATFORMS)
+
     # Handle pending growspace
+    async def handle_get_strain_library(call: ServiceCall) -> list[str]:
+        """Return the list of strains."""
+        strain_library: StrainLibrary = hass.data[DOMAIN]["strain_library"]
+        await strain_library.load()
+        strains = list(strain_library.strains)
+
+        # Fire an event with the result
+        hass.bus.async_fire(f"{DOMAIN}_strain_library_fetched", {"strains": strains})
+        return strains  # return a list of strains to match the type hint
+
+    hass.services.async_register(
+        DOMAIN, "get_strain_library", handle_get_strain_library
+    )
+    _LOGGER.debug("Registered service: get_strain_library")
     if "pending_growspace" in hass.data.get(DOMAIN, {}):
         pending = hass.data[DOMAIN].pop("pending_growspace")
         try:
@@ -169,7 +187,7 @@ async def _register_services(
             raise
 
     async def handle_add_plant(call: ServiceCall) -> None:
-        """Handle add plant service call with proper date handling."""
+        _LOGGER.warning(">>> add_plant fired with data: %s", call.data)
         try:
             growspace_id = call.data["growspace_id"]
             if growspace_id not in coordinator.growspaces:
@@ -226,10 +244,11 @@ async def _register_services(
                 dry_start=dry_start,
                 cure_start=cure_start,
             )
-
+            await coordinator.async_save()
+            await coordinator.async_request_refresh()
             _LOGGER.info("Plant %s added successfully via service call", plant_id)
             call.hass.bus.async_fire(
-                f"{DOMAIN}_plant_added",
+                "growspace_manager_plant_added",
                 {
                     "plant_id": plant_id,
                     "growspace_id": growspace_id,
@@ -340,7 +359,8 @@ async def _register_services(
 
         # Remove the old plant
         await coordinator.async_remove_plant(plant_id)
-
+        await coordinator.async_save()
+        await coordinator.async_request_refresh()
         _LOGGER.info(
             "Moved clone %s -> %s to growspace %s at (%s,%s)",
             plant_id,
@@ -359,18 +379,57 @@ async def _register_services(
             plant_id = call.data["plant_id"]
             if plant_id not in coordinator.plants:
                 _LOGGER.error("Plant %s does not exist", plant_id)
+                return
 
-            # Extract update data, excluding plant_id
-            update_data = {
-                k: v for k, v in call.data.items() if k != "plant_id" and v is not None
-            }
+            def parse_date_field(val) -> date | None:
+                if not val or val in ("None", ""):
+                    return None
+                if isinstance(val, date):
+                    return val
+                if isinstance(val, str):
+                    try:
+                        return datetime.fromisoformat(val).date()
+                    except Exception:
+                        return None
+                return None
+
+            # Log incoming data for debugging
+            _LOGGER.debug("UPDATE_PLANT: Incoming call.data: %s", call.data)
+
+            # Process updates with explicit field handling
+            update_data = {}
+            for k, v in call.data.items():
+                if k == "plant_id":
+                    continue
+                if v is None:
+                    continue
+
+                # Only parse specific date fields
+                if k in DATE_FIELDS:
+                    parsed_value = parse_date_field(v)
+                    update_data[k] = parsed_value
+                    _LOGGER.debug(
+                        "UPDATE_PLANT: Parsed date field %s: %s -> %s",
+                        k,
+                        v,
+                        parsed_value,
+                    )
+                else:
+                    update_data[k] = v
+                    _LOGGER.debug("UPDATE_PLANT: Non-date field %s: %s", k, v)
+
+            # Log final update data
+            _LOGGER.debug("UPDATE_PLANT: Final update_data: %s", update_data)
 
             await coordinator.async_update_plant(plant_id, **update_data)
             _LOGGER.info("Plant %s updated successfully", plant_id)
+
             hass.bus.async_fire(
                 f"{DOMAIN}_plant_updated",
                 {"plant_id": plant_id, "updated_fields": list(update_data.keys())},
             )
+            await coordinator.async_save()
+            await coordinator.async_request_refresh()
 
         except Exception as err:
             _LOGGER.error("Failed to update plant: %s", err)
@@ -385,12 +444,21 @@ async def _register_services(
         """Handle remove plant service call."""
         try:
             plant_id = call.data["plant_id"]
+
             if plant_id not in coordinator.plants:
-                _LOGGER.exception("Plant %s does not exist", {plant_id})
+                _LOGGER.error("Plant %s does not exist", plant_id)
+                create_notification(
+                    hass,
+                    f"Plant {plant_id} does not exist",
+                    title="Growspace Manager Error",
+                )
+                return  # don’t continue
 
             plant = coordinator.plants[plant_id]
             await coordinator.async_remove_plant(plant_id)
             _LOGGER.info("Plant %s removed successfully", plant_id)
+            await coordinator.async_save()
+            await coordinator.async_request_refresh()
             hass.bus.async_fire(
                 f"{DOMAIN}_plant_removed",
                 {"plant_id": plant_id, "growspace_id": plant.growspace_id},
@@ -419,6 +487,8 @@ async def _register_services(
             _LOGGER.info(
                 "Plants %s and %s switched successfully", plant_id_1, plant_id_2
             )
+            await coordinator.async_save()
+            await coordinator.async_request_refresh()
             hass.bus.async_fire(
                 f"{DOMAIN}_plants_switched",
                 {"plant1_id": plant_id_1, "plant2_id": plant_id_2},
@@ -502,7 +572,8 @@ async def _register_services(
                         "plant2_new_position": f"({old_row},{old_col})",
                     },
                 )
-
+                await coordinator.async_save()
+                await coordinator.async_request_refresh()
                 _LOGGER.info(
                     "Successfully switched positions: %s moved to (%d,%d), %s moved to (%d,%d)",
                     plant.strain,
@@ -515,7 +586,8 @@ async def _register_services(
             else:
                 # Position is empty, just move normally
                 await coordinator.async_move_plant(plant_id, new_row, new_col)
-
+                await coordinator.async_save()
+                await coordinator.async_request_refresh()
                 _LOGGER.info(
                     "Plant %s moved to (%d,%d)", plant.strain, new_row, new_col
                 )
@@ -550,6 +622,8 @@ async def _register_services(
                 new_stage=call.data["new_stage"],
                 transition_date=call.data.get("transition_date"),
             )
+            await coordinator.async_save()
+            await coordinator.async_request_refresh()
             _LOGGER.info(
                 "Plant %s transitioned to %s stage", plant_id, call.data["new_stage"]
             )
@@ -604,6 +678,8 @@ async def _register_services(
                 transition_date=call.data.get("transition_date"),
             )
             _LOGGER.info("Plant %s harvested successfully", plant_id)
+            await coordinator.async_save()
+            await coordinator.async_request_refresh()
             hass.bus.async_fire(
                 f"{DOMAIN}_plant_harvested",
                 {
@@ -627,6 +703,8 @@ async def _register_services(
         try:
             strains = coordinator.get_strain_options()
             _LOGGER.info("Exported strain library: %s strains", len(strains))
+            await coordinator.async_save()
+            await coordinator.async_request_refresh()
             hass.bus.async_fire(
                 f"{DOMAIN}_strain_library_exported", {"strains": strains}
             )
@@ -636,13 +714,18 @@ async def _register_services(
 
     async def handle_import_strain_library(service_call: ServiceCall) -> None:
         """Handle import strain library service call."""
+        strain_library: StrainLibrary = hass.data[DOMAIN]["strain_library"]
+
         strains = service_call.data.get("strains", [])
+        await strain_library.import_strains(strains=strains, replace=False)
         try:
             added_count = await strain_library.import_strains(
                 strains=strains,
                 replace=service_call.data.get("replace", False),
             )
             _LOGGER.info("Imported %s strains to library", added_count)
+            await coordinator.async_save()
+            await coordinator.async_request_refresh()
             hass.bus.async_fire(
                 f"{DOMAIN}_strain_library_imported", {"added_count": added_count}
             )

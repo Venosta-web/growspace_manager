@@ -1,4 +1,3 @@
-# strain_library.py
 from homeassistant.helpers.storage import Store
 from typing import Iterable
 
@@ -22,9 +21,9 @@ class StrainLibrary:
             self.strains.add(clean_strain)
             await self.save()
 
-    def remove(self, strain: str) -> None:
+    async def remove(self, strain: str) -> None:
         self.strains.discard(strain)
-        self.hass.async_create_task(self.save())
+        await self.save()
 
     def get_all(self) -> list[str]:
         return sorted(self.strains)

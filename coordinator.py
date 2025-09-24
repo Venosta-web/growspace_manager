@@ -19,7 +19,7 @@ from .const import (
     DEFAULT_NOTIFICATION_EVENTS,
     SPECIAL_GROWSPACES,
 )
-
+from copy import deepcopy
 import logging
 import uuid
 from datetime import datetime, date
@@ -39,7 +39,6 @@ from homeassistant.util import dt as dt_util
 
 _LOGGER = logging.getLogger(__name__)
 if TYPE_CHECKING:
-    from homeassistant.core import HomeAssistant
     from homeassistant.helpers.storage import Store
 
 # Type aliases for better readability
@@ -295,7 +294,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
 
     def _calculate_days(self, start_date: str | date | datetime | None) -> int:
         """Calculate days since a given date."""
-        if not start_date:
+        if not start_date or start_date == "None":  # extra guard
             return 0
 
         try:
@@ -427,7 +426,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
                 phenotype=p.get("phenotype", ""),  # <-- ensure default
                 row=p.get("row", 1),
                 col=p.get("col", 1),
-                stage=p.get("stage", "seedling"),
+                stage=p.get("stage", ""),
                 type=p.get("type", "normal"),
                 device_id=p.get("device_id"),
                 seedling_start=p.get("seedling_start"),
@@ -524,7 +523,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
         phenotype: str = "",
         row: int = 1,
         col: int = 1,
-        stage: str = "seedling",
+        stage: str = "",
         type: str = "normal",
         device_id: str | None = None,
         seedling_start: date | None = None,
@@ -741,12 +740,27 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
         plant = self.plants.get(plant_id)
         if not plant:
             raise ValueError(f"Plant {plant_id} does not exist")
-
+        # Debug: Log the incoming updates with their object IDs
+        _LOGGER.debug("COORDINATOR: Updating plant %s", plant_id)
+        for key, value in updates.items():
+            _LOGGER.warning(
+                "COORDINATOR: Field %s = %s (type: %s, id: %s)",
+                key,
+                value,
+                type(value),
+                id(value),
+            )
         for key, value in updates.items():
             if hasattr(plant, key):
+                old_value = getattr(plant, key)
                 setattr(plant, key, value)
-        plant.updated_at = date.today().isoformat()
+                _LOGGER.warning(
+                    "COORDINATOR: Updated %s: %s -> %s", key, old_value, value
+                )
+            else:
+                _LOGGER.warning("COORDINATOR: Invalid field %s", key)
 
+        plant.updated_at = date.today().isoformat()
         await self.async_save()
         return plant
 
@@ -1160,11 +1174,11 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
     # STRAIN LIBRARY MANAGEMENT
     # =============================================================================
 
-    def add_strain(self, strain: str) -> None:
-        self.strains.add(strain)
+    async def add_strain(self, strain: str) -> None:
+        await self.strains.add(strain)
 
-    def remove_strain(self, strain: str) -> None:
-        self.strains.remove(strain)
+    async def remove_strain(self, strain: str) -> None:
+        await self.strains.remove(strain)
 
     def get_strain_options(self) -> list[str]:
         return self.strains.get_all()
