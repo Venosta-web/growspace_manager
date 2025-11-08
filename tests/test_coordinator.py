@@ -576,7 +576,6 @@ async def test_async_load(coordinator):
 
     # Mock Plant.from_dict and Growspace.from_dict
 
-
     Plant.from_dict = staticmethod(lambda p: MagicMock(**p))
     Growspace.from_dict = staticmethod(lambda g: MagicMock(**g))
 
@@ -644,7 +643,7 @@ async def test_async_update_growspace(coordinator):
         growspace_id=gs.id,
         name="New Name",
         rows=3,
-        plants_per_per_row=4,
+        plants_per_row=4,
         notification_target="notify@example.com",
     )
 

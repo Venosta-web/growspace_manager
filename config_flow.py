@@ -202,13 +202,13 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         config_entry: ConfigEntry,
     ) -> OptionsFlowHandler:
         """Create the options flow."""
-        return OptionsFlowHandler(config_entry)
+        return OptionsFlowHandler()
 
 
 class OptionsFlowHandler(OptionsFlow):
     """Growspace Manager options flow."""
 
-    def __init__(self, config_entry) -> None:
+    def __init__(self) -> None:
         """Initialize options flow."""
         self._conf_app_id: str | None = None
         self._selected_growspace_id: str | None = None
