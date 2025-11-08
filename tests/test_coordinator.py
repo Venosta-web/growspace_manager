@@ -2,7 +2,7 @@ import pytest
 from freezegun import freeze_time
 from datetime import date, datetime, timedelta
 from dateutil import parser
-from unittest.mock import patch, AsyncMock, MagicMock
+from unittest.mock import patch, AsyncMock, MagicMock, Mock
 from ..const import DOMAIN
 from ..config_flow import OptionsFlowHandler
 from ..coordinator import Growspace
@@ -243,8 +243,8 @@ async def test_create_canonical_from_alias(coordinator):
     }
 
     # Patch _migrate_plants_to_growspace and update_data_property
-    coordinator._migrate_plants_to_growspace = AsyncMock()
-    coordinator.update_data_property = AsyncMock()
+    coordinator._migrate_plants_to_growspace = Mock()
+    coordinator.update_data_property = Mock()
 
     # Call the internal method
     coordinator._create_canonical_from_alias(alias_id, canonical_id, canonical_name)
@@ -280,8 +280,8 @@ async def test_consolidate_alias_into_canonical(coordinator):
     coordinator.growspaces[canonical_id] = {"name": "Canonical GS"}
 
     # Patch helpers
-    coordinator._migrate_plants_to_growspace = AsyncMock()
-    coordinator.update_data_property = AsyncMock()
+    coordinator._migrate_plants_to_growspace = Mock()
+    coordinator.update_data_property = Mock()
 
     # Call the method
     coordinator._consolidate_alias_into_canonical(alias_id, canonical_id)
