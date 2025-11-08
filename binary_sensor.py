@@ -54,7 +54,7 @@ async def async_setup_entry(
 
 def _validate_env_config(config: dict) -> bool:
     """Validate that required environment sensors are configured."""
-    required = ["temperature_sensor", "humidity_sensor", "vpd_sensor", "co2_sensor"]
+    required = ["temperature_sensor", "humidity_sensor", "vpd_sensor"]
     return all(config.get(key) for key in required)
 
 
