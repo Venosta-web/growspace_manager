@@ -9,28 +9,25 @@ DateInput = str | datetime | date | None
 
 
 def parse_date_field(date_value: DateInput) -> date | None:
-    """Converts a string, datetime, or date to a date object.
-
-    Returns None if input is None or invalid.
-    """
     if date_value is None:
         return None
+    if isinstance(date_value, datetime):
+        return date_value.date()  # <-- convert datetime to date
     if isinstance(date_value, date):
         return date_value
-    if isinstance(date_value, datetime):
-        return date_value.date()
     if isinstance(date_value, str):
         try:
-            return parser.isoparse(date_value).date()
+            return parser.isoparse(date_value).date()  # <-- always return date
         except (ValueError, TypeError):
             return None
     return None
 
 
 def format_date(date_value: DateInput) -> str | None:
-    """Returns ISO formatted string (YYYY-MM-DD) for a date-like input."""
     dt = parse_date_field(date_value)
-    return dt.isoformat() if dt else None
+    if dt is None:
+        return None
+    return dt.isoformat()  # will now always be "YYYY-MM-DD"
 
 
 def calculate_days_since(

@@ -42,9 +42,11 @@ ADD_PLANT_SCHEMA = vol.Schema(
 UPDATE_PLANT_SCHEMA = vol.Schema(
     {
         vol.Required("plant_id"): cv.string,
+        vol.Optional("growspace_id"): cv.string,
         vol.Optional("strain"): cv.string,
         vol.Optional("row"): cv.positive_int,
         vol.Optional("col"): cv.positive_int,
+        vol.Optional("position"): cv.string,
         vol.Optional("phenotype"): cv.string,
         vol.Optional("seedling_start"): cv.date,
         vol.Optional("veg_start"): cv.date,
