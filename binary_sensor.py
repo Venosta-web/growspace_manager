@@ -219,28 +219,70 @@ class BayesianStressSensor(BayesianEnvironmentSensor):
 
         # Temperature observations
         if temp is not None:
-            if temp > 30:
-                observations.append((0.95, 0.10))  # Too hot
-            elif temp < 18:
-                observations.append((0.85, 0.15))  # Too cold
+            if temp is not None:
+                # Extreme heat (severe stress)
+                if temp > 32:
+                    observations.append((0.98, 0.05))
+                # High heat (moderate stress)
+                elif temp > 30:
+                    observations.append((0.85, 0.15))
+                # Slightly warm (minor stress)
+                elif temp > 28:
+                    observations.append((0.65, 0.30))
 
+                # Extreme cold (severe stress)
+                elif temp < 15:
+                    observations.append((0.95, 0.08))
+                # Cold (moderate stress)
+                elif temp < 18:
+                    observations.append((0.80, 0.20))
         # VPD observations (stage-aware)
         if vpd is not None:
             veg_days = stage_info["veg_days"]
             flower_days = stage_info["flower_days"]
 
-            if flower_days == 0 and veg_days < 14:  # Seedling/Early Veg
-                if not (0.3 <= vpd <= 0.9):
-                    observations.append((0.90, 0.10))
-            elif flower_days == 0 and veg_days >= 14:  # Late Veg
-                if not (0.6 <= vpd <= 1.4):
-                    observations.append((0.90, 0.10))
-            elif flower_days > 0 and flower_days < 42:  # Early-Mid Flower
-                if not (0.8 <= vpd <= 1.6):
-                    observations.append((0.90, 0.10))
-            elif flower_days >= 42:  # Late Flower
-                if not (1.0 <= vpd <= 1.6):
-                    observations.append((0.95, 0.08))
+            if flower_days == 0 and veg_days < 14:
+                if vpd < 0.3:  # Too humid
+                    observations.append((0.85, 0.15))
+                elif vpd < 0.4:  # Slightly low
+                    observations.append((0.60, 0.30))
+                elif vpd > 1.0:  # Too dry
+                    observations.append((0.85, 0.15))
+                elif vpd > 0.8:  # Slightly high
+                    observations.append((0.60, 0.30))
+
+            # Late Veg (14+ days) - Target: 0.8-1.2 kPa
+            elif flower_days == 0 and veg_days >= 14:
+                if vpd < 0.6:
+                    observations.append((0.80, 0.18))
+                elif vpd < 0.8:
+                    observations.append((0.55, 0.35))
+                elif vpd > 1.4:
+                    observations.append((0.80, 0.18))
+                elif vpd > 1.2:
+                    observations.append((0.55, 0.35))
+
+            # Early-Mid Flower (1-42 days) - Target: 1.0-1.5 kPa
+            elif 0 < flower_days < 42:
+                if vpd < 0.8:
+                    observations.append((0.85, 0.15))
+                elif vpd < 1.0:
+                    observations.append((0.60, 0.30))
+                elif vpd > 1.6:
+                    observations.append((0.80, 0.20))
+                elif vpd > 1.5:
+                    observations.append((0.55, 0.35))
+
+            # Late Flower (42+ days) - Target: 1.2-1.5 kPa (slightly drier)
+            elif flower_days >= 42:
+                if vpd < 1.0:
+                    observations.append((0.90, 0.12))
+                elif vpd < 1.2:
+                    observations.append((0.65, 0.28))
+                elif vpd > 1.6:
+                    observations.append((0.75, 0.22))
+                elif vpd > 1.5:
+                    observations.append((0.50, 0.38))
 
         # Humidity observations
         if humidity is not None:
@@ -386,8 +428,20 @@ class BayesianOptimalConditionsSensor(BayesianEnvironmentSensor):
         observations = []
 
         # Good temperature range
-        if temp is not None and 22 <= temp <= 28:
-            observations.append((0.95, 0.30))
+        # === OPTIMAL TEMPERATURE ===
+        if temp is not None:
+            # Perfect range
+            if 24 <= temp <= 26:
+                observations.append((0.95, 0.20))
+            # Good range
+            elif 22 <= temp <= 28:
+                observations.append((0.85, 0.30))
+            # Acceptable range
+            elif 20 <= temp <= 29:
+                observations.append((0.65, 0.45))
+            # Outside optimal
+            else:
+                observations.append((0.20, 0.75))
 
         # VPD in optimal range for stage
         if vpd is not None:
@@ -395,21 +449,57 @@ class BayesianOptimalConditionsSensor(BayesianEnvironmentSensor):
             flower_days = stage_info["flower_days"]
 
             vpd_optimal = False
-            if flower_days == 0 and veg_days < 14 and 0.4 <= vpd <= 0.8:
-                vpd_optimal = True
-            elif flower_days == 0 and veg_days >= 14 and 0.8 <= vpd <= 1.2:
-                vpd_optimal = True
-            elif 0 < flower_days < 42 and 1.0 <= vpd <= 1.4:
-                vpd_optimal = True
-            elif flower_days >= 42 and 1.2 <= vpd <= 1.4:
-                vpd_optimal = True
 
-            if vpd_optimal:
-                observations.append((0.95, 0.20))
+            # Seedling/Clone/Early Veg: 0.4-0.8 kPa
+            if flower_days == 0 and veg_days < 14:
+                if 0.5 <= vpd <= 0.7:  # Perfect
+                    vpd_optimal = True
+                    observations.append((0.95, 0.18))
+                elif 0.4 <= vpd <= 0.8:  # Good
+                    observations.append((0.80, 0.28))
+
+            # Late Veg: 0.8-1.2 kPa
+            elif flower_days == 0 and veg_days >= 14:
+                if 0.9 <= vpd <= 1.1:  # Perfect
+                    vpd_optimal = True
+                    observations.append((0.95, 0.18))
+                elif 0.8 <= vpd <= 1.2:  # Good
+                    observations.append((0.85, 0.25))
+
+            # Early-Mid Flower: 1.0-1.5 kPa
+            elif 0 < flower_days < 42:
+                if 1.1 <= vpd <= 1.4:  # Perfect
+                    vpd_optimal = True
+                    observations.append((0.95, 0.18))
+                elif 1.0 <= vpd <= 1.5:  # Good
+                    observations.append((0.85, 0.25))
+
+            # Late Flower: 1.2-1.5 kPa (drier to prevent mold)
+            elif flower_days >= 42:
+                if 1.3 <= vpd <= 1.5:  # Perfect
+                    vpd_optimal = True
+                    observations.append((0.95, 0.15))
+                elif 1.2 <= vpd <= 1.6:  # Good
+                    observations.append((0.85, 0.22))
+
+            # If not optimal, reduce probability
+            if not vpd_optimal:
+                observations.append((0.25, 0.70))
 
         # Good CO2 levels
-        if co2 is not None and 800 <= co2 <= 1500:
-            observations.append((0.90, 0.35))
+        if co2 is not None:
+            # Enhanced CO2 (optimal for fast growth)
+            if 1000 <= co2 <= 1400:
+                observations.append((0.95, 0.20))
+            # Good elevated CO2
+            elif 800 <= co2 <= 1500:
+                observations.append((0.85, 0.30))
+            # Adequate ambient CO2
+            elif 400 <= co2 <= 600:
+                observations.append((0.60, 0.45))
+            # Outside optimal range
+            else:
+                observations.append((0.25, 0.70))
 
         self._probability = BayesianStressSensor._calculate_bayesian_probability(
             self.prior, observations
