@@ -163,7 +163,7 @@ async def async_setup_entry(
 class GrowspaceOverviewSensor(SensorEntity):
     def __init__(
         self, coordinator: GrowspaceCoordinator, growspace_id: str, growspace: Growspace
-    ):
+    ) -> None:
         self.coordinator = coordinator
         self.growspace_id = growspace_id
         self.growspace = growspace
@@ -297,7 +297,7 @@ class GrowspaceOverviewSensor(SensorEntity):
 class PlantEntity(SensorEntity):
     """Single entity per plant with stage as state and all variables as attributes."""
 
-    def __init__(self, coordinator, plant: Plant):
+    def __init__(self, coordinator, plant: Plant) -> None:
         self.coordinator = coordinator
         self._plant = plant
         self._attr_unique_id = f"{DOMAIN}_{plant.plant_id}"
@@ -596,9 +596,7 @@ class PlantEntity(SensorEntity):
 
 
 class StrainLibrarySensor(SensorEntity):
-    """Exposes the strain library to Home Assistant."""
-
-    def __init__(self, coordinator: GrowspaceCoordinator):
+    def __init__(self, coordinator: GrowspaceCoordinator) -> None:
         self.coordinator = coordinator
         self._attr_name = "Growspace Strain Library"
         self._attr_unique_id = f"{DOMAIN}_strain_library"
@@ -619,7 +617,7 @@ class StrainLibrarySensor(SensorEntity):
 class GrowspaceListSensor(SensorEntity):
     """Exposes the list of growspaces as a sensor."""
 
-    def __init__(self, coordinator: GrowspaceCoordinator):
+    def __init__(self, coordinator: GrowspaceCoordinator) -> None:
         self.coordinator = coordinator
         self._attr_name = "Growspaces List"
         self._attr_unique_id = f"{DOMAIN}_growspaces_list"

@@ -210,7 +210,6 @@ class OptionsFlowHandler(OptionsFlow):
 
     def __init__(self, config_entry) -> None:
         """Initialize options flow."""
-        self.config_entry = config_entry
         self._conf_app_id: str | None = None
         self._selected_growspace_id: str | None = None
         self._selected_plant_id: str | None = None

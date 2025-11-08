@@ -38,7 +38,7 @@ async def async_setup_entry(
 class GrowspaceNotificationSwitch(SwitchEntity):
     """Switch to enable/disable notifications for a growspace."""
 
-    def __init__(self, coordinator, growspace_id: str, growspace: Growspace):
+    def __init__(self, coordinator, growspace_id: str, growspace: Growspace) -> None:
         self._coordinator = coordinator
         self._growspace_id = growspace_id
         self._growspace = growspace

@@ -31,8 +31,7 @@ from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 
 
 _LOGGER = logging.getLogger(__name__)
-if TYPE_CHECKING:
-    from homeassistant.helpers.storage import Store
+
 
 # Type aliases for better readability
 PlantDict = dict[str, Any]
@@ -44,7 +43,7 @@ DateInput = str | datetime | date | None
 class GrowspaceCoordinator(DataUpdateCoordinator):
     """Coordinator for Growspace Manager."""
 
-    def __init__(self, hass, data: dict | None = None, options: dict | None = None):
+    def __init__(self, hass, data: dict | None = None, options: dict | None = None) -> None:
         super().__init__(
             hass,
             _LOGGER,

@@ -66,7 +66,7 @@ class BayesianEnvironmentSensor(BinarySensorEntity):
         coordinator: GrowspaceCoordinator,
         growspace_id: str,
         env_config: dict,
-    ):
+    ) -> None:
         self.coordinator = coordinator
         self.growspace_id = growspace_id
         self.env_config = env_config
@@ -230,16 +230,16 @@ class BayesianStressSensor(BayesianEnvironmentSensor):
             flower_days = stage_info["flower_days"]
 
             if flower_days == 0 and veg_days < 14:  # Seedling/Early Veg
-                if vpd < 0.3 or vpd > 0.9:
+                if not (0.3 <= vpd <= 0.9):
                     observations.append((0.90, 0.10))
             elif flower_days == 0 and veg_days >= 14:  # Late Veg
-                if vpd < 0.6 or vpd > 1.4:
+                if not (0.6 <= vpd <= 1.4):
                     observations.append((0.90, 0.10))
             elif flower_days > 0 and flower_days < 42:  # Early-Mid Flower
-                if vpd < 0.8 or vpd > 1.6:
+                if not (0.8 <= vpd <= 1.6):
                     observations.append((0.90, 0.10))
             elif flower_days >= 42:  # Late Flower
-                if vpd < 1.0 or vpd > 1.6:
+                if not (1.0 <= vpd <= 1.6):
                     observations.append((0.95, 0.08))
 
         # Humidity observations

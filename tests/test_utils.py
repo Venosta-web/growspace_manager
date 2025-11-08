@@ -1,13 +1,14 @@
+"""Tests for growspace_manager utils."""
 from datetime import date, datetime
 import pytest
-from custom_components.growspace_manager.utils import (
+from ..utils import (
     parse_date_field,
     format_date,
     calculate_days_since,
     find_first_free_position,
     generate_growspace_grid,
 )
-from custom_components.growspace_manager.models import Plant, Growspace
+from ..models import Plant, Growspace
 
 
 # ----------------------------
@@ -25,6 +26,7 @@ from custom_components.growspace_manager.models import Plant, Growspace
     ],
 )
 def test_parse_date_field(input_value, expected):
+    """Test parse_date_field function."""
     assert parse_date_field(input_value) == expected
 
 
@@ -43,6 +45,7 @@ def test_parse_date_field(input_value, expected):
     ],
 )
 def test_format_date(input_value, expected):
+    """Test format_date function."""
     assert format_date(input_value) == expected
 
 
@@ -50,6 +53,7 @@ def test_format_date(input_value, expected):
 # calculate_days_since tests
 # ----------------------------
 def test_calculate_days_since():
+    """Test calculate_days_since function."""
     start = date(2025, 11, 1)
     end = date(2025, 11, 3)
     assert calculate_days_since(start, end) == 2
@@ -63,6 +67,7 @@ def test_calculate_days_since():
 # find_first_free_position tests
 # ----------------------------
 def test_find_first_free_position():
+    """Test find_first_free_position function."""
     growspace = Growspace(
         id="test",
         name="Test Growspace",
@@ -84,6 +89,7 @@ def test_find_first_free_position():
 # generate_growspace_grid tests
 # ----------------------------
 def test_generate_growspace_grid_basic():
+    """Test generate_growspace_grid with basic plant placement."""
     plants = [
         Plant(plant_id="p1", row=1, col=1, strain="A", growspace_id="g1"),
         Plant(plant_id="p2", row=2, col=2, strain="B", growspace_id="g1"),
@@ -96,6 +102,7 @@ def test_generate_growspace_grid_basic():
 
 
 def test_generate_growspace_grid_empty():
+    """Test generate_growspace_grid with no plants."""
     grid = generate_growspace_grid(2, 2, [])
     assert grid == [
         [None, None],

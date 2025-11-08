@@ -2,15 +2,13 @@
 
 import pytest
 from unittest.mock import AsyncMock, MagicMock, Mock
-from datetime import datetime
 
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.storage import Store
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
-from custom_components.growspace_manager.const import DOMAIN
-from custom_components.growspace_manager.coordinator import GrowspaceCoordinator
-from custom_components.growspace_manager import manager, models
+from ..const import DOMAIN
+from ..coordinator import GrowspaceCoordinator
 
 
 @pytest.fixture
@@ -50,7 +48,7 @@ async def coordinator(hass: HomeAssistant, config_entry, mock_store):
     hass.data.setdefault(DOMAIN, {})
 
     # Create the coordinator with empty data dict
-    coordinator = GrowspaceCoordinator(hass, data=None)
+    coordinator = GrowspaceCoordinator(hass, data={})
 
     # Replace the store with our mock
     coordinator._store = mock_store
@@ -116,32 +114,7 @@ def mock_coordinator():
     return coordinator
 
 
-@pytest.fixture
-def mock_manager(hass):
-    """Create a simple manager for basic tests."""
-    from custom_components.growspace_manager.manager import GrowspaceManager
-
-    initial_data = {
-        "plants": {},
-        "growspaces": {},
-        "notifications_sent": {},
-        "notifications_enabled": {},
-    }
-    return GrowspaceManager(hass, initial_data)
-
-
-@pytest.fixture
-def empty_manager(hass):
-    """Provides an empty GrowspaceManager instance."""
-    from custom_components.growspace_manager.manager import GrowspaceManager
-
-    initial_data = {
-        "plants": {},
-        "growspaces": {},
-        "notifications_sent": {},
-        "notifications_enabled": {},
-    }
-    return GrowspaceManager(hass, initial_data)
+# er(hass, initial_data)
 
 
 @pytest.fixture

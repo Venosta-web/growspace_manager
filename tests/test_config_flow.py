@@ -1,13 +1,12 @@
 """Test the Growspace Manager config and options flow."""
 
 import pytest
-from pytest_homeassistant_custom_component.common import MockConfigEntry
 import voluptuous as vol
-from unittest.mock import Mock, AsyncMock, patch, MagicMock
+from unittest.mock import Mock, AsyncMock, patch
 from homeassistant.core import HomeAssistant
 from homeassistant.data_entry_flow import FlowResultType
 from pytest_homeassistant_custom_component.common import MockConfigEntry
-from custom_components.growspace_manager.const import DOMAIN, DEFAULT_NAME
+from ..const import DOMAIN, DEFAULT_NAME
 from custom_components.growspace_manager.config_flow import (
     ConfigFlow,
     OptionsFlowHandler,
@@ -200,7 +199,7 @@ async def test_options_flow_init_show_menu(hass: HomeAssistant):
     config_entry = MockConfigEntry(domain=DOMAIN, data={"name": "Test"})
     config_entry.add_to_hass(hass)
 
-    flow = OptionsFlowHandler()
+    flow = OptionsFlowHandler(config_entry)
     flow.hass = hass
     flow.config_entry = config_entry
 
@@ -219,7 +218,7 @@ async def test_options_flow_init_manage_growspaces(
     config_entry.add_to_hass(hass)
     hass.data[DOMAIN] = {config_entry.entry_id: {"coordinator": mock_coordinator}}
 
-    flow = OptionsFlowHandler()
+    flow = OptionsFlowHandler(config_entry)
     flow.hass = hass
     flow.config_entry = config_entry
 
@@ -236,7 +235,7 @@ async def test_options_flow_init_manage_plants(hass: HomeAssistant, mock_coordin
     config_entry.add_to_hass(hass)
     hass.data[DOMAIN] = {config_entry.entry_id: {"coordinator": mock_coordinator}}
 
-    flow = OptionsFlowHandler()
+    flow = OptionsFlowHandler(config_entry)
     flow.hass = hass
     flow.config_entry = config_entry
 
@@ -260,7 +259,7 @@ async def test_options_flow_manage_growspaces_show_form(
     config_entry.add_to_hass(hass)
     hass.data[DOMAIN] = {config_entry.entry_id: {"coordinator": mock_coordinator}}
 
-    flow = OptionsFlowHandler()
+    flow = OptionsFlowHandler(config_entry)
     flow.hass = hass
     flow.config_entry = config_entry
 
@@ -279,7 +278,7 @@ async def test_options_flow_manage_growspaces_add(
     config_entry.add_to_hass(hass)
     hass.data[DOMAIN] = {config_entry.entry_id: {"coordinator": mock_coordinator}}
 
-    flow = OptionsFlowHandler()
+    flow = OptionsFlowHandler(config_entry)
     flow.hass = hass
     flow.config_entry = config_entry
 
@@ -299,7 +298,7 @@ async def test_options_flow_manage_growspaces_update(
     mock_coordinator.growspaces = {"gs1": Mock(name="Growspace 1")}
     hass.data[DOMAIN] = {config_entry.entry_id: {"coordinator": mock_coordinator}}
 
-    flow = OptionsFlowHandler()
+    flow = OptionsFlowHandler(config_entry)
     flow.hass = hass
     flow.config_entry = config_entry
 
@@ -314,14 +313,14 @@ async def test_options_flow_manage_growspaces_update(
 
 @pytest.mark.asyncio
 async def test_options_flow_manage_growspaces_remove(
-    hass: HomeAssistant, mock_coordinator
+    hass: HomeAssistant, mock_coordinator, config_entry
 ):
     """Test remove growspace action."""
     config_entry = MockConfigEntry(domain=DOMAIN, data={"name": "Test"})
     config_entry.add_to_hass(hass)
     hass.data[DOMAIN] = {config_entry.entry_id: {"coordinator": mock_coordinator}}
 
-    flow = OptionsFlowHandler()
+    flow = OptionsFlowHandler(config_entry)
     flow.hass = hass
     flow.config_entry = config_entry
 
@@ -340,10 +339,9 @@ async def test_options_flow_manage_growspaces_remove_error(
     """Test error handling when removing growspace."""
     config_entry = MockConfigEntry(domain=DOMAIN, data={"name": "Test"})
     config_entry.add_to_hass(hass)
-    mock_coordinator.async_remove_growspace.side_effect = Exception("Test error")
     hass.data[DOMAIN] = {config_entry.entry_id: {"coordinator": mock_coordinator}}
 
-    flow = OptionsFlowHandler()
+    flow = OptionsFlowHandler(config_entry)
     flow.hass = hass
     flow.config_entry = config_entry
 
@@ -367,7 +365,7 @@ async def test_options_flow_manage_growspaces_back(hass, mock_coordinator):
     hass.data[DOMAIN] = {config_entry.entry_id: {"coordinator": mock_coordinator}}
 
     # Initialize the options flow handler
-    flow = OptionsFlowHandler()
+    flow = OptionsFlowHandler(config_entry)
     flow.hass = hass
     flow.config_entry = config_entry
 
@@ -387,7 +385,7 @@ async def test_options_flow_manage_growspaces_no_coordinator(hass: HomeAssistant
     config_entry = MockConfigEntry(domain=DOMAIN, data={"name": "Test"})
     config_entry.add_to_hass(hass)
 
-    flow = OptionsFlowHandler()
+    flow = OptionsFlowHandler(config_entry)
     flow.hass = hass
     flow.config_entry = config_entry
 
@@ -413,7 +411,7 @@ async def test_options_flow_add_growspace_show_form(
     hass.services = Mock()
     hass.services.async_services = Mock(return_value={"notify": {}})
 
-    flow = OptionsFlowHandler()
+    flow = OptionsFlowHandler(config_entry)
     flow.hass = hass
     flow.config_entry = config_entry
 
@@ -432,7 +430,7 @@ async def test_options_flow_add_growspace_success(
     config_entry.add_to_hass(hass)
     hass.data[DOMAIN] = {config_entry.entry_id: {"coordinator": mock_coordinator}}
 
-    flow = OptionsFlowHandler()
+    flow = OptionsFlowHandler(config_entry)
     flow.hass = hass
     flow.config_entry = config_entry
 
@@ -464,7 +462,7 @@ async def test_options_flow_add_growspace_error(hass: HomeAssistant, mock_coordi
     hass.services = Mock()
     hass.services.async_services = Mock(return_value={"notify": {}})
 
-    flow = OptionsFlowHandler()
+    flow = OptionsFlowHandler(config_entry)
     flow.hass = hass
     flow.config_entry = config_entry
 
@@ -499,7 +497,7 @@ async def test_options_flow_update_growspace_show_form(
     hass.services = Mock()
     hass.services.async_services = Mock(return_value={"notify": {}})
 
-    flow = OptionsFlowHandler()
+    flow = OptionsFlowHandler(config_entry)
     flow.hass = hass
     flow.config_entry = config_entry
     flow._selected_growspace_id = "gs1"
@@ -527,7 +525,7 @@ async def test_options_flow_update_growspace_success(
 
     hass.data[DOMAIN] = {config_entry.entry_id: {"coordinator": mock_coordinator}}
 
-    flow = OptionsFlowHandler()
+    flow = OptionsFlowHandler(config_entry)
     flow.hass = hass
     flow.config_entry = config_entry
     flow._selected_growspace_id = "gs1"
@@ -549,7 +547,7 @@ async def test_options_flow_update_growspace_not_found(
     mock_coordinator.growspaces = {}
     hass.data[DOMAIN] = {config_entry.entry_id: {"coordinator": mock_coordinator}}
 
-    flow = OptionsFlowHandler()
+    flow = OptionsFlowHandler(config_entry)
     flow.hass = hass
     flow.config_entry = config_entry
     flow._selected_growspace_id = "nonexistent"
@@ -580,7 +578,7 @@ async def test_options_flow_update_growspace_error(
     hass.services = Mock()
     hass.services.async_services = Mock(return_value={"notify": {}})
 
-    flow = OptionsFlowHandler()
+    flow = OptionsFlowHandler(config_entry)
     flow.hass = hass
     flow.config_entry = config_entry
     flow._selected_growspace_id = "gs1"
@@ -606,7 +604,7 @@ async def test_options_flow_manage_plants_show_form(
     config_entry.add_to_hass(hass)
     hass.data[DOMAIN] = {config_entry.entry_id: {"coordinator": mock_coordinator}}
 
-    flow = OptionsFlowHandler()
+    flow = OptionsFlowHandler(config_entry)
     flow.hass = hass
     flow.config_entry = config_entry
 
@@ -647,7 +645,7 @@ async def test_options_flow_manage_plants_add(hass):
     }
 
     # Create the flow
-    flow = OptionsFlowHandler()
+    flow = OptionsFlowHandler(config_entry)
     flow.hass = hass
     flow.config_entry = config_entry
 
@@ -694,7 +692,7 @@ async def test_options_flow_manage_plants_update(hass: HomeAssistant, mock_coord
     }
 
     # Create the flow
-    flow = OptionsFlowHandler()
+    flow = OptionsFlowHandler(config_entry)
     flow.hass = hass
     flow.config_entry = config_entry
 
@@ -718,7 +716,7 @@ async def test_options_flow_manage_plants_remove(hass: HomeAssistant, mock_coord
     config_entry.add_to_hass(hass)
     hass.data[DOMAIN] = {config_entry.entry_id: {"coordinator": mock_coordinator}}
 
-    flow = OptionsFlowHandler()
+    flow = OptionsFlowHandler(config_entry)
     flow.hass = hass
     flow.config_entry = config_entry
 
@@ -737,10 +735,9 @@ async def test_options_flow_manage_plants_remove_error(
     """Test error when removing plant."""
     config_entry = MockConfigEntry(domain=DOMAIN, data={"name": "Test"})
     config_entry.add_to_hass(hass)
-    mock_coordinator.async_remove_plant.side_effect = Exception("Test error")
     hass.data[DOMAIN] = {config_entry.entry_id: {"coordinator": mock_coordinator}}
 
-    flow = OptionsFlowHandler()
+    flow = OptionsFlowHandler(config_entry)
     flow.hass = hass
     flow.config_entry = config_entry
 
@@ -792,7 +789,7 @@ async def test_options_flow_select_growspace_for_plant(
         mock_growspace.plants_per_row = 4
         mock_coordinator.growspaces = {"gs1": mock_growspace}
 
-        flow = OptionsFlowHandler()
+        flow = OptionsFlowHandler(config_entry)
         flow.hass = hass
         flow.config_entry = config_entry
 
@@ -836,7 +833,7 @@ async def test_options_flow_select_growspace_for_plant_submit(
         mock_growspace.plants_per_row = 4
         mock_coordinator.growspaces = {"gs1": mock_growspace}
 
-        flow = OptionsFlowHandler()
+        flow = OptionsFlowHandler(config_entry)
         flow.hass = hass
         flow.config_entry = config_entry
 
@@ -873,7 +870,7 @@ async def test_options_flow_select_growspace_no_growspaces(
         )
         mock_dr.return_value = mock_device_registry
 
-        flow = OptionsFlowHandler()
+        flow = OptionsFlowHandler(config_entry)
         flow.hass = hass
         flow.config_entry = config_entry
 
@@ -901,7 +898,7 @@ async def test_options_flow_add_plant_show_form(hass: HomeAssistant, mock_coordi
 
     hass.data[DOMAIN] = {config_entry.entry_id: {"coordinator": mock_coordinator}}
 
-    flow = OptionsFlowHandler()
+    flow = OptionsFlowHandler(config_entry)
     flow.hass = hass
     flow.config_entry = config_entry
     flow._selected_growspace_id = "gs1"
@@ -925,7 +922,7 @@ async def test_options_flow_add_plant_success(hass: HomeAssistant, mock_coordina
 
     hass.data[DOMAIN] = {config_entry.entry_id: {"coordinator": mock_coordinator}}
 
-    flow = OptionsFlowHandler()
+    flow = OptionsFlowHandler(config_entry)
     flow.hass = hass
     flow.config_entry = config_entry
     flow._selected_growspace_id = "gs1"
@@ -967,7 +964,7 @@ async def test_options_flow_add_plant_error(hass: HomeAssistant, mock_coordinato
 
     hass.data[DOMAIN] = {config_entry.entry_id: {"coordinator": mock_coordinator}}
 
-    flow = OptionsFlowHandler()
+    flow = OptionsFlowHandler(config_entry)
     flow.hass = hass
     flow.config_entry = config_entry
     flow._selected_growspace_id = "gs1"
@@ -1021,7 +1018,7 @@ async def test_options_flow_update_plant_show_form(
     hass.data[DOMAIN] = {config_entry.entry_id: {"coordinator": mock_coordinator}}
 
     # Create flow
-    flow = OptionsFlowHandler()
+    flow = OptionsFlowHandler(config_entry)
     flow.hass = hass
     flow.config_entry = config_entry
     flow._selected_plant_id = "p1"
@@ -1054,7 +1051,7 @@ async def test_options_flow_update_plant_success(hass: HomeAssistant, mock_coord
 
     hass.data[DOMAIN] = {config_entry.entry_id: {"coordinator": mock_coordinator}}
 
-    flow = OptionsFlowHandler()
+    flow = OptionsFlowHandler(config_entry)
     flow.hass = hass
     flow.config_entry = config_entry
     flow._selected_plant_id = "p1"
@@ -1076,7 +1073,7 @@ async def test_options_flow_update_plant_not_found(
     mock_coordinator.plants = {}
     hass.data[DOMAIN] = {config_entry.entry_id: {"coordinator": mock_coordinator}}
 
-    flow = OptionsFlowHandler()
+    flow = OptionsFlowHandler(config_entry)
     flow.hass = hass
     flow.config_entry = config_entry
     flow._selected_plant_id = "nonexistent"
@@ -1106,7 +1103,7 @@ async def test_options_flow_update_plant_error(hass: HomeAssistant, mock_coordin
 
     hass.data[DOMAIN] = {config_entry.entry_id: {"coordinator": mock_coordinator}}
 
-    flow = OptionsFlowHandler()
+    flow = OptionsFlowHandler(config_entry)
     flow.hass = hass
     flow.config_entry = config_entry
     flow._selected_plant_id = "p1"
@@ -1133,7 +1130,7 @@ async def test_get_growspace_management_schema(hass: HomeAssistant, mock_coordin
     mock_growspace.name = "Test Growspace"
     mock_coordinator.growspaces = {"gs1": mock_growspace}
 
-    flow = OptionsFlowHandler()
+    flow = OptionsFlowHandler(config_entry)
     flow.hass = hass
     flow.config_entry = config_entry
 
@@ -1153,7 +1150,7 @@ async def test_get_growspace_management_schema_no_growspaces(
 
     mock_coordinator.growspaces = {}
 
-    flow = OptionsFlowHandler()
+    flow = OptionsFlowHandler(config_entry)
     flow.hass = hass
     flow.config_entry = config_entry
 
@@ -1178,7 +1175,7 @@ async def test_get_add_growspace_schema_with_notifications(hass: HomeAssistant):
         }
     )
 
-    flow = OptionsFlowHandler()
+    flow = OptionsFlowHandler(config_entry)
     flow.hass = hass
     flow.config_entry = config_entry
 
@@ -1199,7 +1196,7 @@ async def test_get_add_growspace_schema_no_notifications(hass: HomeAssistant):
     hass.services = Mock()
     hass.services.async_services = Mock(return_value={"notify": {}})
 
-    flow = OptionsFlowHandler()
+    flow = OptionsFlowHandler(config_entry)
     flow.hass = hass
     flow.config_entry = config_entry
 
@@ -1225,7 +1222,7 @@ async def test_get_update_growspace_schema(hass: HomeAssistant):
         return_value={"notify": {"mobile_app_test": {}}}
     )
 
-    flow = OptionsFlowHandler()
+    flow = OptionsFlowHandler(config_entry)
     flow.hass = hass
     flow.config_entry = config_entry
 
@@ -1243,7 +1240,7 @@ async def test_get_update_growspace_schema_none(hass: HomeAssistant):
     config_entry = MockConfigEntry(domain=DOMAIN, data={"name": "Test"})
     config_entry.add_to_hass(hass)
 
-    flow = OptionsFlowHandler()
+    flow = OptionsFlowHandler(config_entry)
     flow.hass = hass
     flow.config_entry = config_entry
 
@@ -1258,7 +1255,7 @@ async def test_get_main_menu_schema(hass: HomeAssistant):
     config_entry = MockConfigEntry(domain=DOMAIN, data={"name": "Test"})
     config_entry.add_to_hass(hass)
 
-    flow = OptionsFlowHandler()
+    flow = OptionsFlowHandler(config_entry)
     flow.hass = hass
     flow.config_entry = config_entry
 
@@ -1285,7 +1282,7 @@ async def test_get_plant_management_schema(hass: HomeAssistant, mock_coordinator
     mock_coordinator.plants = {"p1": mock_plant}
     mock_coordinator.growspaces = {"gs1": mock_growspace}
 
-    flow = OptionsFlowHandler()
+    flow = OptionsFlowHandler(config_entry)
     flow.hass = hass
     flow.config_entry = config_entry
 
@@ -1305,7 +1302,7 @@ async def test_get_plant_management_schema_no_plants(
 
     mock_coordinator.plants = {}
 
-    flow = OptionsFlowHandler()
+    flow = OptionsFlowHandler(config_entry)
     flow.hass = hass
     flow.config_entry = config_entry
 
@@ -1331,7 +1328,7 @@ async def test_get_growspace_selection_schema_from_devices(
     mock_growspace.plants_per_row = 4
     mock_coordinator.growspaces = {"gs1": mock_growspace}
 
-    flow = OptionsFlowHandler()
+    flow = OptionsFlowHandler(config_entry)
     flow.hass = hass
     flow.config_entry = config_entry
 
@@ -1352,7 +1349,7 @@ async def test_get_add_plant_schema(hass: HomeAssistant, mock_coordinator):
     mock_growspace.rows = 5
     mock_growspace.plants_per_row = 6
 
-    flow = OptionsFlowHandler()
+    flow = OptionsFlowHandler(config_entry)
     flow.hass = hass
     flow.config_entry = config_entry
 
@@ -1372,7 +1369,7 @@ async def test_get_add_plant_schema_none(hass: HomeAssistant):
     config_entry = MockConfigEntry(domain=DOMAIN, data={"name": "Test"})
     config_entry.add_to_hass(hass)
 
-    flow = OptionsFlowHandler()
+    flow = OptionsFlowHandler(config_entry)
     flow.hass = hass
     flow.config_entry = config_entry
 
@@ -1394,7 +1391,7 @@ async def test_get_add_plant_schema_no_strains(hass: HomeAssistant):
     mock_coordinator = Mock()
     mock_coordinator.get_strain_options = Mock(return_value=[])
 
-    flow = OptionsFlowHandler()
+    flow = OptionsFlowHandler(config_entry)
     flow.hass = hass
     flow.config_entry = config_entry
 
@@ -1421,7 +1418,7 @@ async def test_get_update_plant_schema(hass: HomeAssistant, mock_coordinator):
     mock_growspace = {"rows": 5, "plants_per_row": 6}
     mock_coordinator.growspaces = {"gs1": mock_growspace}
 
-    flow = OptionsFlowHandler()
+    flow = OptionsFlowHandler(config_entry)
     flow.hass = hass
     flow.config_entry = config_entry
 
@@ -1473,7 +1470,7 @@ async def test_options_flow_coordinator_missing(hass: HomeAssistant):
     config_entry.add_to_hass(hass)
     hass.data[DOMAIN] = {}
 
-    flow = OptionsFlowHandler()
+    flow = OptionsFlowHandler(config_entry)
     flow.hass = hass
     flow.config_entry = config_entry
 
@@ -1502,7 +1499,7 @@ async def test_options_flow_empty_update_data(hass: HomeAssistant, mock_coordina
 
     hass.data[DOMAIN] = {config_entry.entry_id: {"coordinator": mock_coordinator}}
 
-    flow = OptionsFlowHandler()
+    flow = OptionsFlowHandler(config_entry)
     flow.hass = hass
     flow.config_entry = config_entry
     flow._selected_growspace_id = "gs1"

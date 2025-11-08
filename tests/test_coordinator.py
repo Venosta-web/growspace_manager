@@ -3,20 +3,20 @@ from freezegun import freeze_time
 from datetime import date, datetime, timedelta
 from dateutil import parser
 from unittest.mock import patch, AsyncMock, MagicMock
-from custom_components.growspace_manager.const import DOMAIN
-from custom_components.growspace_manager.config_flow import OptionsFlowHandler
-from custom_components.growspace_manager.coordinator import Growspace
-from custom_components.growspace_manager.coordinator import GrowspaceCoordinator
-from custom_components.growspace_manager.coordinator import Plant
-from custom_components.growspace_manager.const import PLANT_STAGES
+from ..const import DOMAIN
+from ..config_flow import OptionsFlowHandler
+from ..coordinator import Growspace
+from ..coordinator import GrowspaceCoordinator
+from ..coordinator import Plant
+from ..const import PLANT_STAGES
 
 
 @pytest.fixture
 def coordinator(hass):
     """Return a fresh coordinator for each test."""
-    from custom_components.growspace_manager.coordinator import GrowspaceCoordinator
-
-    return GrowspaceCoordinator(hass)
+    coordinator = GrowspaceCoordinator(hass, data={})
+    coordinator.async_set_updated_data = AsyncMock()
+    return coordinator
 
 
 @pytest.mark.asyncio
@@ -211,7 +211,7 @@ async def test_migrate_legacy_growspaces(coordinator):
         coordinator._migrate_legacy_growspaces()
 
         # Ensure it was called for each alias in SPECIAL_GROWSPACES
-        from custom_components.growspace_manager.const import SPECIAL_GROWSPACES
+        from ..const import SPECIAL_GROWSPACES
 
         total_aliases = sum(
             len(config["aliases"]) for config in SPECIAL_GROWSPACES.values()
@@ -575,7 +575,7 @@ async def test_async_load(coordinator):
     coordinator.strains.import_strains = AsyncMock()
 
     # Mock Plant.from_dict and Growspace.from_dict
-    from custom_components.growspace_manager.coordinator import Plant, Growspace
+
 
     Plant.from_dict = staticmethod(lambda p: MagicMock(**p))
     Growspace.from_dict = staticmethod(lambda g: MagicMock(**g))
@@ -611,7 +611,7 @@ async def test_async_remove_growspace(coordinator):
 
     # Mock async_save and async_set_updated_data
     coordinator.async_save = AsyncMock()
-    coordinator.async_set_updated_data = MagicMock()
+    coordinator.async_set_updated_data = AsyncMock()
 
     # Call async_remove_growspace
     await coordinator.async_remove_growspace(gs.id)
@@ -634,32 +634,31 @@ async def test_async_remove_growspace(coordinator):
 @pytest.mark.asyncio
 async def test_async_update_growspace(coordinator):
     # Setup: create a growspace
-    gs = await coordinator.async_add_growspace("Old Name", 2, 2)
-
-    # Mock async_save and async_set_updated_data
-    coordinator.async_save = AsyncMock()
-    coordinator.async_set_updated_data = MagicMock()
-
-    # Update name, rows, plants_per_row, notification_target
-    await coordinator.async_update_growspace(
-        growspace_id=gs.id,
-        name="New Name",
-        rows=3,
-        plants_per_row=4,
-        notification_target="notify@example.com",
+            gs = await coordinator.async_add_growspace("Old Name", 2, 2)
+    
+            # Mock async_save and async_set_updated_data
+            coordinator.async_save = AsyncMock()
+            coordinator.async_set_updated_data = AsyncMock()
+            # Update name, rows, plants_per_row, notification_target
+            await coordinator.async_update_growspace(
+                growspace_id=gs.id,
+                name="New Name",
+                rows=3,
+                plants_per_row=4,
+                notification_target="notify@example.com",
     )
 
-    updated_gs = coordinator.growspaces[gs.id]
+            updated_gs = coordinator.growspaces[gs.id]
 
-    # Assertions
-    assert updated_gs.name == "New Name"
-    assert updated_gs.rows == 3
-    assert updated_gs.plants_per_row == 4
-    assert updated_gs.notification_target == "notify@example.com"
+            # Assertions
+            assert updated_gs.name == "New Name"
+            assert updated_gs.rows == 3
+            assert updated_gs.plants_per_row == 4
+            assert updated_gs.notification_target == "notify@example.com"
 
-    # Ensure async_save and async_set_updated_data were called
-    coordinator.async_save.assert_called_once()
-    coordinator.async_set_updated_data.assert_called_once()
+            # Ensure async_save and async_set_updated_data were called
+            coordinator.async_save.assert_called_once()
+            coordinator.async_set_updated_data.assert_called_once()
 
 
 @pytest.mark.asyncio
@@ -671,7 +670,7 @@ async def test_async_update_growspace_no_changes(coordinator):
 
     # Mock async_save and async_set_updated_data
     coordinator.async_save = AsyncMock()
-    coordinator.async_set_updated_data = MagicMock()
+    coordinator.async_set_updated_data = AsyncMock()
 
     # Call update with the same values
     await coordinator.async_update_growspace(
@@ -739,7 +738,7 @@ async def test_set_notifications_enabled(coordinator):
 
     # Mock async_save and async_set_updated_data
     coordinator.async_save = AsyncMock()
-    coordinator.async_set_updated_data = MagicMock()
+    coordinator.async_set_updated_data = AsyncMock()
 
     # Initialize self.data so set_notifications_enabled doesn't fail
     coordinator.update_data_property()
@@ -776,7 +775,7 @@ async def test_handle_clone_creation(coordinator):
 
     # Mock async_save and async_set_updated_data
     coordinator.async_save = AsyncMock()
-    coordinator.async_set_updated_data = MagicMock()
+    coordinator.async_set_updated_data = AsyncMock()
     coordinator.update_data_property()  # ensure self.data is initialized
 
     clone_id = "clone123"
@@ -830,7 +829,7 @@ async def test_async_transition_clone_to_veg(coordinator):
     fixed_time = "2025-11-03 16:44:40"
 
     coordinator.async_save = AsyncMock()
-    coordinator.async_set_updated_data = MagicMock()
+    coordinator.async_set_updated_data = AsyncMock()
     coordinator.update_data_property()
 
     with freeze_time(fixed_time):

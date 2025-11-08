@@ -30,13 +30,13 @@ from .coordinator import GrowspaceCoordinator
 from .services import growspace
 from .services import plant
 from .services import strain_library
-from .services import debug
+import custom_components.growspace_manager.services.debug as debug
 from .services import environment
 
 
 _LOGGER = logging.getLogger(__name__)
 
-PLATFORMS = ["sensor", "switch", "binary_sensor"]
+PLATFORMS = ["binary_sensor", "sensor", "switch"]
 
 
 async def async_setup(hass: HomeAssistant, config: dict):

@@ -2,11 +2,11 @@ import pytest
 from unittest.mock import AsyncMock, Mock, patch
 from types import SimpleNamespace
 
-from custom_components.growspace_manager.switch import GrowspaceNotificationSwitch
-from custom_components.growspace_manager.switch import async_setup_entry
+from ..switch import GrowspaceNotificationSwitch
+from ..switch import async_setup_entry
 
-from custom_components.growspace_manager.const import DOMAIN
-from custom_components.growspace_manager.coordinator import GrowspaceCoordinator
+from ..const import DOMAIN
+from ..coordinator import GrowspaceCoordinator
 
 
 # --------------------

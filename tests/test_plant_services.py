@@ -7,7 +7,7 @@ from homeassistant.core import HomeAssistant, ServiceCall
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers import event as event_helper
 
-from custom_components.growspace_manager.services.plant import (
+from ..services.plant import (
     handle_add_plant,
     handle_take_clone,
     handle_move_clone,
@@ -18,7 +18,7 @@ from custom_components.growspace_manager.services.plant import (
     handle_transition_plant_stage,
     handle_harvest_plant,
 )
-from custom_components.growspace_manager.const import DOMAIN
+from ..const import DOMAIN
 
 
 @pytest.fixture
@@ -1386,7 +1386,7 @@ async def test_transition_plant_stage_success(
     )
 
     events = []
-    hass.bus.async_listen(f"{DOMAIN}_plant_transitioned", lambda e: events.append(e))
+    hass.bus.async_listen(f"{DOMAIN}_plant_transitioned", events.append)
 
     # Act
     await handle_transition_plant_stage(
@@ -1568,7 +1568,7 @@ async def test_harvest_plant_success(
     )
 
     events = []
-    hass.bus.async_listen(f"{DOMAIN}_plant_harvested", lambda e: events.append(e))
+    hass.bus.async_listen(f"{DOMAIN}_plant_harvested", events.append)
 
     await handle_harvest_plant(hass, mock_coordinator, mock_strain_library, call)
 
