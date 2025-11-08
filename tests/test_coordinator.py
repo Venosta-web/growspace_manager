@@ -634,31 +634,31 @@ async def test_async_remove_growspace(coordinator):
 @pytest.mark.asyncio
 async def test_async_update_growspace(coordinator):
     # Setup: create a growspace
-            gs = await coordinator.async_add_growspace("Old Name", 2, 2)
-    
-            # Mock async_save and async_set_updated_data
-            coordinator.async_save = AsyncMock()
-            coordinator.async_set_updated_data = AsyncMock()
-            # Update name, rows, plants_per_row, notification_target
-            await coordinator.async_update_growspace(
-                growspace_id=gs.id,
-                name="New Name",
-                rows=3,
-                plants_per_row=4,
-                notification_target="notify@example.com",
+    gs = await coordinator.async_add_growspace("Old Name", 2, 2)
+
+    # Mock async_save and async_set_updated_data
+    coordinator.async_save = AsyncMock()
+    coordinator.async_set_updated_data = AsyncMock()
+    # Update name, rows, plants_per_row, notification_target
+    await coordinator.async_update_growspace(
+        growspace_id=gs.id,
+        name="New Name",
+        rows=3,
+        plants_per_per_row=4,
+        notification_target="notify@example.com",
     )
 
-            updated_gs = coordinator.growspaces[gs.id]
+    updated_gs = coordinator.growspaces[gs.id]
 
-            # Assertions
-            assert updated_gs.name == "New Name"
-            assert updated_gs.rows == 3
-            assert updated_gs.plants_per_row == 4
-            assert updated_gs.notification_target == "notify@example.com"
+    # Assertions
+    assert updated_gs.name == "New Name"
+    assert updated_gs.rows == 3
+    assert updated_gs.plants_per_row == 4
+    assert updated_gs.notification_target == "notify@example.com"
 
-            # Ensure async_save and async_set_updated_data were called
-            coordinator.async_save.assert_called_once()
-            coordinator.async_set_updated_data.assert_called_once()
+    # Ensure async_save and async_set_updated_data were called
+    coordinator.async_save.assert_called_once()
+    coordinator.async_set_updated_data.assert_called_once()
 
 
 @pytest.mark.asyncio
