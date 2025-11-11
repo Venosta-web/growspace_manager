@@ -3,7 +3,7 @@ from collections.abc import Iterable
 
 
 class StrainLibrary:
-    def __init__(self, hass: HomeAssistant, storage_version: int, storage_key: str) -> None:
+    def __init__(self, hass, storage_version: int, storage_key: str) -> None:
         self.hass = hass
         self.store = Store(hass, storage_version, storage_key)
         self.strains: set[str] = set()

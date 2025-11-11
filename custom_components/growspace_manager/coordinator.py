@@ -43,7 +43,7 @@ DateInput = str | datetime | date | None
 class GrowspaceCoordinator(DataUpdateCoordinator):
     """Coordinator for Growspace Manager."""
 
-    def __init__(self, hass: HomeAssistant, config_entry: ConfigEntry) -> None:
+    def __init__(self, hass, data: dict | None = None, options: dict | None = None) -> None:
         super().__init__(
             hass,
             _LOGGER,

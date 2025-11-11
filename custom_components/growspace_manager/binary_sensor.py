@@ -188,7 +188,7 @@ class BayesianEnvironmentSensor(BinarySensorEntity):
 class BayesianStressSensor(BayesianEnvironmentSensor):
     """Bayesian sensor for detecting plant stress conditions."""
 
-    def __init__(self, coordinator, growspace_id, env_config) -> None:
+    def __init__(self, coordinator, growspace_id, env_config):
         super().__init__(coordinator, growspace_id, env_config)
         growspace = coordinator.growspaces[growspace_id]
         self._attr_name = f"{growspace.name} Plants Under Stress"
@@ -340,7 +340,7 @@ class BayesianStressSensor(BayesianEnvironmentSensor):
 class BayesianMoldRiskSensor(BayesianEnvironmentSensor):
     """Bayesian sensor for detecting mold risk in late flower."""
 
-    def __init__(self, coordinator, growspace_id, env_config) -> None:
+    def __init__(self, coordinator, growspace_id, env_config):
         super().__init__(coordinator, growspace_id, env_config)
         growspace = coordinator.growspaces[growspace_id]
         self._attr_name = f"{growspace.name} High Mold Risk"
@@ -402,7 +402,7 @@ class BayesianMoldRiskSensor(BayesianEnvironmentSensor):
 class BayesianOptimalConditionsSensor(BayesianEnvironmentSensor):
     """Bayesian sensor for detecting optimal growing conditions."""
 
-    def __init__(self, coordinator, growspace_id, env_config) -> None:
+    def __init__(self, coordinator, growspace_id, env_config):
         super().__init__(coordinator, growspace_id, env_config)
         growspace = coordinator.growspaces[growspace_id]
         self._attr_name = f"{growspace.name} Optimal Conditions"

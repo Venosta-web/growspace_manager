@@ -254,7 +254,7 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             hass.data[DOMAIN].pop("strain_library", None)
             hass.data.pop(DOMAIN)
             _LOGGER.debug(
-                "Removed global strain_library and domain data as no entries remain"
+                "Removed global strain_library and domain data as no entries remain."
             )
 
         # Remove all registered services
@@ -305,5 +305,5 @@ async def async_reload_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
 
 async def _async_update_listener(hass: HomeAssistant, entry: ConfigEntry) -> None:
     """Handle options update by reloading entry."""
-    _LOGGER.debug("Options updated for entry %s, reloading", entry.entry_id)
+    _LOGGER.debug("Options updated for entry %s, reloading.", entry.entry_id)
     await hass.config_entries.async_reload(entry.entry_id)
