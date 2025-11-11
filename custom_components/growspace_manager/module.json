@@ -1,0 +1,9 @@
+{
+  "type": "module",
+  "name": "Growspace Manager Card",
+  "description": "A Home Assistant card to manage growspaces",
+  "js": [
+    "growspace-manager-card-editor.js",
+    "growspace-manager-card.js"
+  ]
+}
