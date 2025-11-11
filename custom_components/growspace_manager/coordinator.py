@@ -1,34 +1,33 @@
 from __future__ import annotations
 
-from dataclasses import asdict
-from .models import Plant, Growspace
-from .utils import (
-    format_date,
-    find_first_free_position,
-    generate_growspace_grid,
-)
-from .strain_library import StrainLibrary
-from .const import (
-    STORAGE_KEY,
-    PLANT_STAGES,
-    DATE_FIELDS,
-    STORAGE_VERSION,
-    STORAGE_KEY_STRAIN_LIBRARY,
-    SPECIAL_GROWSPACES,
-)
 import logging
 import uuid
-from datetime import datetime, date
-from typing import TYPE_CHECKING, Any, Optional
+from dataclasses import asdict
+from datetime import date, datetime
+from typing import Any
 
 from dateutil import parser
 from homeassistant.helpers import (
-    device_registry as dr,
     entity_registry as er,
 )
 from homeassistant.helpers.storage import Store
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 
+from .const import (
+    DATE_FIELDS,
+    PLANT_STAGES,
+    SPECIAL_GROWSPACES,
+    STORAGE_KEY,
+    STORAGE_KEY_STRAIN_LIBRARY,
+    STORAGE_VERSION,
+)
+from .models import Growspace, Plant
+from .strain_library import StrainLibrary
+from .utils import (
+    find_first_free_position,
+    format_date,
+    generate_growspace_grid,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -43,7 +42,12 @@ DateInput = str | datetime | date | None
 class GrowspaceCoordinator(DataUpdateCoordinator):
     """Coordinator for Growspace Manager."""
 
-    def __init__(self, hass, data: dict | None = None, options: dict | None = None) -> None:
+    def __init__(
+        self,
+        hass,
+        data: dict | None = None,
+        options: dict | None = None,
+    ) -> None:
         super().__init__(
             hass,
             _LOGGER,
@@ -57,7 +61,8 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
 
         self.options = options or {}
         _LOGGER.critical(
-            "--- COORDINATOR INITIALIZED WITH OPTIONS: %s ---", self.options
+            "--- COORDINATOR INITIALIZED WITH OPTIONS: %s ---",
+            self.options,
         )
 
         # Initialize strain library immediately
@@ -65,7 +70,8 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
 
         self._notifications_sent: dict[str, dict[str, bool]] = {}
         self._notifications_enabled: dict[
-            str, bool
+            str,
+            bool,
         ] = {}  # ✅ Notification switch states
         # Initialize Env options
         self.options = options or {}
@@ -90,7 +96,9 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
                 _LOGGER.warning("Failed to load growspace %s: %s", gid, gdata)
 
         _LOGGER.debug(
-            "Loaded %d plants and %d growspaces", len(self.plants), len(self.growspaces)
+            "Loaded %d plants and %d growspaces",
+            len(self.plants),
+            len(self.growspaces),
         )
 
     # -----------------------------
@@ -102,6 +110,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
 
         Returns:
             dict: {growspace_id: growspace_name}
+
         """
         return {
             gs_id: getattr(gs, "name", gs_id) for gs_id, gs in self.growspaces.items()
@@ -131,13 +140,18 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
 
                 for alias in aliases:
                     self._migrate_special_alias_if_needed(
-                        alias, canonical_id, canonical_name
+                        alias,
+                        canonical_id,
+                        canonical_name,
                     )
         except ValueError as e:
             _LOGGER.debug("Special growspace migration skipped: %s", e)
 
     def _migrate_special_alias_if_needed(
-        self, alias_id: str, canonical_id: str, canonical_name: str
+        self,
+        alias_id: str,
+        canonical_id: str,
+        canonical_name: str,
     ) -> None:
         """Migrate alias growspace to canonical id and update plants."""
         if alias_id == canonical_id:
@@ -152,7 +166,10 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
             self._consolidate_alias_into_canonical(alias_id, canonical_id)
 
     def _create_canonical_from_alias(
-        self, alias_id: str, canonical_id: str, canonical_name: str
+        self,
+        alias_id: str,
+        canonical_id: str,
+        canonical_name: str,
     ) -> None:
         """Create canonical growspace from alias."""
         src = self.growspaces[alias_id]
@@ -162,12 +179,12 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
             rows=int(
                 getattr(src, "rows", 3)
                 if isinstance(src, Growspace)
-                else src.get("rows", 3)
+                else src.get("rows", 3),
             ),
             plants_per_row=int(
                 getattr(src, "plants_per_row", 3)
                 if isinstance(src, Growspace)
-                else src.get("plants_per_row", 3)
+                else src.get("plants_per_row", 3),
             ),
             notification_target=getattr(src, "notification_target", None)
             if isinstance(src, Growspace)
@@ -184,7 +201,9 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
         _LOGGER.info("Migrated growspace alias '%s' → '%s'", alias_id, canonical_id)
 
     def _consolidate_alias_into_canonical(
-        self, alias_id: str, canonical_id: str
+        self,
+        alias_id: str,
+        canonical_id: str,
     ) -> None:
         """Consolidate alias growspace into existing canonical."""
         self._migrate_plants_to_growspace(alias_id, canonical_id)
@@ -192,7 +211,9 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
         self.update_data_property()
 
         _LOGGER.info(
-            "Consolidated growspace alias '%s' into '%s'", alias_id, canonical_id
+            "Consolidated growspace alias '%s' into '%s'",
+            alias_id,
+            canonical_id,
         )
 
     def _migrate_plants_to_growspace(self, from_id: str, to_id: str) -> None:
@@ -232,7 +253,9 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
 
             for alias in aliases:
                 self._migrate_special_alias_if_needed(
-                    alias, canonical_id, canonical_name
+                    alias,
+                    canonical_id,
+                    canonical_name,
                 )
 
         growspace = self.growspaces.get(gs_id)
@@ -277,7 +300,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
                 and existing_plant.col == col
             ):
                 raise ValueError(
-                    f"Position ({row},{col}) is already occupied by {existing_plant.strain}"
+                    f"Position ({row},{col}) is already occupied by {existing_plant.strain}",
                 )
 
     def _find_first_available_position(self, growspace_id: str) -> tuple[int, int]:
@@ -331,7 +354,11 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
     # =============================================================================
 
     def _ensure_special_growspace(
-        self, growspace_id: str, name: str, rows: int = 3, plants_per_row: int = 3
+        self,
+        growspace_id: str,
+        name: str,
+        rows: int = 3,
+        plants_per_row: int = 3,
     ) -> str:
         """Ensure a special growspace exists with a stable id and return its id."""
         # Get canonical form
@@ -343,7 +370,10 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
         # Create or update the canonical growspace
         if canonical_id not in self.growspaces:
             self._create_special_growspace(
-                canonical_id, canonical_name, rows, plants_per_row
+                canonical_id,
+                canonical_name,
+                rows,
+                plants_per_row,
             )
             # ✅ Enable notifications by default for new special growspace
             self._notifications_enabled[canonical_id] = True
@@ -367,7 +397,11 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
                     _LOGGER.info("Removed legacy growspace: %s", legacy_id)
 
     def _create_special_growspace(
-        self, canonical_id: str, canonical_name: str, rows: int, plants_per_row: int
+        self,
+        canonical_id: str,
+        canonical_name: str,
+        rows: int,
+        plants_per_row: int,
     ) -> None:
         """Create a new special growspace."""
         self.growspaces[canonical_id] = Growspace(
@@ -383,20 +417,27 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
         )
 
     def _update_special_growspace_name(
-        self, canonical_id: str, canonical_name: str
+        self,
+        canonical_id: str,
+        canonical_name: str,
     ) -> None:
         """Update the name of an existing special growspace if needed."""
         existing = self.growspaces[canonical_id]
         if existing.name != canonical_name:
             existing.name = canonical_name
             _LOGGER.info(
-                "Updated growspace name: %s -> '%s'", canonical_id, canonical_name
+                "Updated growspace name: %s -> '%s'",
+                canonical_id,
+                canonical_name,
             )
 
     def _ensure_mother_growspace(self) -> str:
         """Ensure the 'mother' growspace exists."""
         return self._ensure_special_growspace(
-            "mother", "mother", rows=3, plants_per_row=3
+            "mother",
+            "mother",
+            rows=3,
+            plants_per_row=3,
         )
 
     # =============================================================================
@@ -418,7 +459,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
                 "strain_library": list(self.strains.get_all()),
                 "notifications_sent": self._notifications_sent,  # ✅ Save notification tracking
                 "notifications_enabled": self._notifications_enabled,  # ✅ Save switch states
-            }
+            },
         )
 
     async def async_load(self) -> None:
@@ -456,7 +497,8 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
                 _LOGGER.critical("--- COORDINATOR HAS NO OPTIONS TO APPLY ---")
             else:
                 _LOGGER.critical(
-                    "--- APPLYING OPTIONS TO GROWSPACES: %s ---", self.options
+                    "--- APPLYING OPTIONS TO GROWSPACES: %s ---",
+                    self.options,
                 )
                 for growspace_id, growspace in self.growspaces.items():
                     if growspace_id in self.options:
@@ -594,10 +636,12 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
 
         Raises:
             ValueError: If growspace_id not found
+
         """
         if growspace_id not in self.growspaces:
             _LOGGER.error(
-                "Attempted to update non-existent growspace: %s", growspace_id
+                "Attempted to update non-existent growspace: %s",
+                growspace_id,
             )
             raise ValueError(f"Growspace {growspace_id} not found")
 
@@ -635,7 +679,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
                 growspace.notification_target = new_target
 
                 changes.append(
-                    f"notification_target: {current_target or 'None'} -> {new_target or 'None'}"
+                    f"notification_target: {current_target or 'None'} -> {new_target or 'None'}",
                 )
                 updated = True
 
@@ -666,7 +710,10 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
             _LOGGER.debug("No changes detected for growspace %s", growspace_id)
 
     async def _validate_plants_after_growspace_resize(
-        self, growspace_id: str, new_rows: int, new_plants_per_row: int
+        self,
+        growspace_id: str,
+        new_rows: int,
+        new_plants_per_row: int,
     ) -> None:
         """Validate and handle plants that are now outside the grid after resize.
 
@@ -674,6 +721,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
             growspace_id: The growspace that was resized
             new_rows: New number of rows
             new_plants_per_row: New number of plants per row
+
         """
         plants_to_check = self.get_growspace_plants(growspace_id)
         invalid_plants = []
@@ -701,7 +749,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
                 )
 
             _LOGGER.warning(
-                "Please update these plants' positions manually or they may not display correctly"
+                "Please update these plants' positions manually or they may not display correctly",
             )
 
     # =============================================================================
@@ -716,6 +764,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
 
         Returns:
             bool: True if notifications are enabled (default), False if disabled
+
         """
         # Default to True if not found (notifications on by default)
         return self._notifications_enabled.get(growspace_id, True)
@@ -726,6 +775,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
         Args:
             growspace_id: The growspace ID
             enabled: True to enable, False to disable
+
         """
         if growspace_id not in self.growspaces:
             _LOGGER.warning(
@@ -816,7 +866,6 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
         **kwargs: Any,
     ) -> str:
         """Handle clone creation by copying from mother plant."""
-
         # Check if source_mother is provided
         source_mother_id = kwargs.get("source_mother")
 
@@ -837,7 +886,9 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
             if mother_plant:
                 source_mother_id = mother_plant.plant_id
                 _LOGGER.info(
-                    "Found mother plant %s for strain %s", source_mother_id, strain
+                    "Found mother plant %s for strain %s",
+                    source_mother_id,
+                    strain,
                 )
             else:
                 _LOGGER.warning(
@@ -867,12 +918,12 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
                 {
                     "phenotype": mother_plant.phenotype,
                     "source_mother": source_mother_id,
-                }
+                },
             )
 
         # Override with any explicitly provided kwargs
         clone_data.update(
-            {k: v for k, v in kwargs.items() if k not in ["stage", "clone_start"]}
+            {k: v for k, v in kwargs.items() if k not in ["stage", "clone_start"]},
         )
 
         # Parse dates
@@ -926,7 +977,12 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
         kwargs["mother_start"] = mother_start
 
         plant: Plant = await self.async_add_plant(
-            mother_id, strain, phenotype, row, col, **kwargs
+            mother_id,
+            strain,
+            phenotype,
+            row,
+            col,
+            **kwargs,
         )
         return plant
 
@@ -956,7 +1012,10 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
                 "clone_start": date.today(),
             }
             clone_id = await self.async_add_plant(
-                clone_gs_id, **clone_data, row=row, col=col
+                clone_gs_id,
+                **clone_data,
+                row=row,
+                col=col,
             )
             clone_ids.append(clone_id)
 
@@ -1002,7 +1061,10 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
                 old_value = getattr(plant, key)
                 setattr(plant, key, value)
                 _LOGGER.warning(
-                    "COORDINATOR: Updated %s: %s -> %s", key, old_value, value
+                    "COORDINATOR: Updated %s: %s -> %s",
+                    key,
+                    old_value,
+                    value,
                 )
             else:
                 _LOGGER.warning("COORDINATOR: Invalid field %s", key)
@@ -1030,7 +1092,10 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
         # Check for conflicts unless force_position is True
         if not force_position and (new_row != plant.row or new_col != plant.col):
             self._validate_position_not_occupied(
-                growspace_id, new_row, new_col, plant_id
+                growspace_id,
+                new_row,
+                new_col,
+                plant_id,
             )
 
     async def async_move_plant(self, plant_id: str, new_row: int, new_col: int) -> None:
@@ -1086,14 +1151,17 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
         await self.async_switch_plants(plant1_id, plant2_id)
 
     async def async_transition_plant_stage(
-        self, plant_id: str, new_stage: str, transition_date: str | None
+        self,
+        plant_id: str,
+        new_stage: str,
+        transition_date: str | None,
     ) -> None:
         """Transition a plant to a new growth stage."""
         self._validate_plant_exists(plant_id)
 
         if new_stage not in PLANT_STAGES:
             raise ValueError(
-                f"Invalid stage {new_stage}. Must be one of: {PLANT_STAGES}"
+                f"Invalid stage {new_stage}. Must be one of: {PLANT_STAGES}",
             )
 
         # Parse transition date
@@ -1184,7 +1252,11 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
 
         # Handle harvest logic
         moved = await self._handle_harvest_logic(
-            plant_id, plant, target_growspace_id, target_growspace_name, transition_date
+            plant_id,
+            plant,
+            target_growspace_id,
+            target_growspace_name,
+            transition_date,
         )
 
         self.update_data_property()
@@ -1224,7 +1296,10 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
 
         # Auto-flow based on hints or current stage
         return await self._harvest_auto_flow(
-            plant_id, plant, target_growspace_name, transition_date
+            plant_id,
+            plant,
+            target_growspace_name,
+            transition_date,
         )
 
     async def _harvest_to_explicit_target(
@@ -1253,25 +1328,33 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
             target_growspace_name and "dry" in target_growspace_name.lower()
         ):
             await self.async_update_plant(
-                plant_id, stage="dry", dry_start=transition_date
+                plant_id,
+                stage="dry",
+                dry_start=transition_date,
             )
         elif target_growspace_id == "cure" or (
             target_growspace_name and "cure" in target_growspace_name.lower()
         ):
             await self.async_update_plant(
-                plant_id, stage="cure", cure_start=transition_date
+                plant_id,
+                stage="cure",
+                cure_start=transition_date,
             )
         elif target_growspace_id == "clone" or (
             target_growspace_name and "clone" in target_growspace_name.lower()
         ):
             await self.async_update_plant(
-                plant_id, stage="clone", clone_start=transition_date
+                plant_id,
+                stage="clone",
+                clone_start=transition_date,
             )
         elif target_growspace_id == "mother" or (
             target_growspace_name and "mother" in target_growspace_name.lower()
         ):
             await self.async_update_plant(
-                plant_id, stage="mother", clone_start=transition_date
+                plant_id,
+                stage="mother",
+                clone_start=transition_date,
             )
 
         _LOGGER.info("Moved plant %s to growspace %s", plant_id, target_growspace_id)
@@ -1291,19 +1374,27 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
         if target_growspace_name:
             if "dry" in target_growspace_name.lower():
                 return await self._move_to_dry_growspace(
-                    plant_id, plant, transition_date
+                    plant_id,
+                    plant,
+                    transition_date,
                 )
             if "cure" in target_growspace_name.lower():
                 return await self._move_to_cure_growspace(
-                    plant_id, plant, transition_date
+                    plant_id,
+                    plant,
+                    transition_date,
                 )
             if "clone" in target_growspace_name.lower():
                 return await self._move_to_clone_growspace(
-                    plant_id, plant, transition_date
+                    plant_id,
+                    plant,
+                    transition_date,
                 )
             if "mother" in target_growspace_name.lower():
                 return await self._move_to_clone_growspace(
-                    plant_id, plant, transition_date
+                    plant_id,
+                    plant,
+                    transition_date,
                 )
 
         # Handle stage transitions
@@ -1317,7 +1408,10 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
         return await self._move_to_dry_growspace(plant_id, plant, transition_date)
 
     async def _move_to_clone_growspace(
-        self, plant_id: str, plant: Plant, transition_date: str
+        self,
+        plant_id: str,
+        plant: Plant,
+        transition_date: str,
     ) -> bool:
         """Move plant to clone growspace."""
         clone_id = self._ensure_special_growspace("clone", "clone", 5, 5)
@@ -1343,7 +1437,10 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
         return True
 
     async def _move_to_dry_growspace(
-        self, plant_id: str, plant: Plant, transition_date: str
+        self,
+        plant_id: str,
+        plant: Plant,
+        transition_date: str,
     ) -> bool:
         """Move plant to dry growspace."""
         dry_id = self._ensure_special_growspace("dry", "dry")
@@ -1373,7 +1470,10 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
         return True
 
     async def _move_to_cure_growspace(
-        self, plant_id: str, plant: Plant, transition_date: str
+        self,
+        plant_id: str,
+        plant: Plant,
+        transition_date: str,
     ) -> bool:
         """Move plant to cure growspace."""
         cure_id = self._ensure_special_growspace("cure", "cure")
@@ -1460,7 +1560,9 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
         growspace = self.growspaces[growspace_id]
         plants = self.get_growspace_plants(growspace_id)
         return generate_growspace_grid(
-            int(growspace.rows), int(growspace.plants_per_row), plants
+            int(growspace.rows),
+            int(growspace.plants_per_row),
+            plants,
         )
 
     def _guess_overview_entity_id(self, growspace_id: str) -> str:
@@ -1503,7 +1605,10 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
         )
 
     async def mark_notification_sent(
-        self, plant_id: str, stage: str, days: int
+        self,
+        plant_id: str,
+        stage: str,
+        days: int,
     ) -> None:
         """Mark a notification as sent to prevent duplicates."""
         if plant_id not in self._notifications_sent:

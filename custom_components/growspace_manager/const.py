@@ -1,7 +1,8 @@
 """Constants for the Growspace Manager integration."""
 
-import voluptuous as vol
 from datetime import date
+
+import voluptuous as vol
 
 DOMAIN = "growspace_manager"
 STORAGE_VERSION = 1
@@ -98,7 +99,7 @@ def valid_date_or_none(value):
         return date.fromisoformat(str(value).replace("Z", "+00:00"))
     except ValueError:
         raise vol.Invalid(
-            f"'{value}' is not a valid date or ISO format string"
+            f"'{value}' is not a valid date or ISO format string",
         ) from None
 
 
@@ -116,14 +117,14 @@ ADD_GROWSPACE_SCHEMA = vol.Schema(
         vol.Required("rows"): vol.All(int, vol.Range(min=1)),
         vol.Required("plants_per_row"): vol.All(int, vol.Range(min=1)),
         vol.Optional("notification_target"): str,
-    }
+    },
 )
 
 # Remove Growspace
 REMOVE_GROWSPACE_SCHEMA = vol.Schema(
     {
         vol.Required("growspace_id"): vol.All(str, valid_growspace_id),
-    }
+    },
 )
 
 # Add Plant
@@ -141,7 +142,7 @@ ADD_PLANT_SCHEMA = vol.Schema(
         vol.Optional("flower_start"): valid_date_or_none,
         vol.Optional("dry_start"): valid_date_or_none,
         vol.Optional("cure_start"): valid_date_or_none,
-    }
+    },
 )
 
 # Update Plant
@@ -180,7 +181,7 @@ UPDATE_PLANT_SCHEMA = vol.Schema(
 REMOVE_PLANT_SCHEMA = vol.Schema(
     {
         vol.Required("plant_id"): str,
-    }
+    },
 )
 
 # Move Plant
@@ -189,7 +190,7 @@ MOVE_PLANT_SCHEMA = vol.Schema(
         vol.Required("plant_id"): str,
         vol.Required("new_row"): vol.All(int, vol.Range(min=1)),
         vol.Required("new_col"): vol.All(int, vol.Range(min=1)),
-    }
+    },
 )
 
 # Switch Plants
@@ -197,7 +198,7 @@ SWITCH_PLANT_SCHEMA = vol.Schema(
     {
         vol.Required("plant_id_1"): str,
         vol.Required("plant_id_2"): str,
-    }
+    },
 )
 
 # Transition Plant Stage
@@ -206,7 +207,7 @@ TRANSITION_PLANT_SCHEMA = vol.Schema(
         vol.Required("plant_id"): str,
         vol.Required("new_stage"): str,
         vol.Optional("transition_date"): valid_date_or_none,
-    }
+    },
 )
 
 # Take Clone
@@ -215,12 +216,12 @@ TAKE_CLONE_SCHEMA = vol.Schema(
         vol.Required("mother_plant_id"): str,
         vol.Optional("num_clones"): vol.All(int, vol.Range(min=1)),
         vol.Optional(
-            "target_growspace_id"
+            "target_growspace_id",
         ): str,  # If you want to specify where clones go
         vol.Optional(
-            "transition_date"
+            "transition_date",
         ): valid_date_or_none,  # Date for when clone starts
-    }
+    },
 )
 
 # Move Clone (typically from clone stage to veg)
@@ -228,12 +229,12 @@ MOVE_CLONE_SCHEMA = vol.Schema(
     {
         vol.Required("plant_id"): str,  # The ID of the clone to move
         vol.Required(
-            "target_growspace_id"
+            "target_growspace_id",
         ): str,  # Where to move it (e.g., 'veg_stage_growspace')
         vol.Optional(
-            "transition_date"
+            "transition_date",
         ): valid_date_or_none,  # Date to transition to next stage (e.g., veg_start)
-    }
+    },
 )
 
 # Harvest Plant
@@ -241,10 +242,10 @@ HARVEST_PLANT_SCHEMA = vol.Schema(
     {
         vol.Required("plant_id"): str,
         vol.Optional(
-            "target_growspace_id"
+            "target_growspace_id",
         ): str,  # Optional: where to move harvested material (e.g., 'dry_stage_growspace')
         vol.Optional("transition_date"): valid_date_or_none,  # Date of harvest
-    }
+    },
 )
 
 # Strain Library Schemas
@@ -252,20 +253,20 @@ EXPORT_STRAIN_LIBRARY_SCHEMA = vol.Schema(
     {
         # No required parameters for export, usually just triggers action
         # Optionally, could specify which strains to export, but current logic exports all
-    }
+    },
 )
 
 IMPORT_STRAIN_LIBRARY_SCHEMA = vol.Schema(
     {
         vol.Required("strains"): list,  # Expecting a list of strain data dictionaries
         vol.Optional("replace", default=False): bool,
-    }
+    },
 )
 
 CLEAR_STRAIN_LIBRARY_SCHEMA = vol.Schema(
     {
         # No parameters needed to clear all strains
-    }
+    },
 )
 
 # Debug Schemas
@@ -273,7 +274,7 @@ DEBUG_CLEANUP_LEGACY_SCHEMA = vol.Schema(
     {
         vol.Optional("dry_only", default=False): bool,
         vol.Optional("cure_only", default=False): bool,
-    }
+    },
 )
 
 DEBUG_LIST_GROWSPACES_SCHEMA = vol.Schema({})  # No parameters
@@ -283,7 +284,7 @@ DEBUG_RESET_SPECIAL_GROWSPACES_SCHEMA = vol.Schema(
         vol.Optional("reset_dry", default=True): bool,
         vol.Optional("reset_cure", default=True): bool,
         vol.Optional("preserve_plants", default=True): bool,
-    }
+    },
 )
 
 DEBUG_CONSOLIDATE_DUPLICATE_SPECIAL_SCHEMA = vol.Schema({})  # No parameters
@@ -301,17 +302,19 @@ CONFIGURE_ENVIRONMENT_SCHEMA = vol.Schema(
         vol.Optional("circulation_fan"): str,
         # Optionale Schwellenwerte mit Standardwerten und Bereichsvalidierung.
         vol.Optional("stress_threshold", default=0.70): vol.All(
-            vol.Coerce(float), vol.Range(min=0.0, max=1.0)
+            vol.Coerce(float),
+            vol.Range(min=0.0, max=1.0),
         ),
         vol.Optional("mold_threshold", default=0.75): vol.All(
-            vol.Coerce(float), vol.Range(min=0.0, max=1.0)
+            vol.Coerce(float),
+            vol.Range(min=0.0, max=1.0),
         ),
-    }
+    },
 )
 
 REMOVE_ENVIRONMENT_SCHEMA = vol.Schema(
     {
         # Erfordert nur die ID des Growspace, um die Konfiguration zu entfernen.
-        vol.Required("growspace_id"): str
-    }
+        vol.Required("growspace_id"): str,
+    },
 )

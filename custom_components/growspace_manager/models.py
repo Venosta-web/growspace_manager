@@ -1,7 +1,8 @@
 from __future__ import annotations
-from dataclasses import dataclass, field, asdict, fields
-from typing import Any, Optional
+
+from dataclasses import asdict, dataclass, field, fields
 from datetime import date
+from typing import Any
 
 
 @dataclass

@@ -1,8 +1,8 @@
 """Fixtures for Growspace Manager tests."""
 
-import pytest
 from unittest.mock import AsyncMock, MagicMock, Mock
 
+import pytest
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.storage import Store
 from pytest_homeassistant_custom_component.common import MockConfigEntry
@@ -22,7 +22,7 @@ async def mock_store(hass: HomeAssistant):
             "notifications_sent": {},
             "strain_library": [],
             "notifications_enabled": {},
-        }
+        },
     )
     store.async_save = AsyncMock()
     return store
@@ -102,7 +102,7 @@ def mock_coordinator():
 
     # Mock ensure_special_growspace to return the growspace_id
     coordinator.ensure_special_growspace = MagicMock(
-        side_effect=lambda gs_id, name, rows, ppr: gs_id
+        side_effect=lambda gs_id, name, rows, ppr: gs_id,
     )
 
     # Additional mocks for config flow tests
@@ -145,7 +145,7 @@ def plant_data():
             "created_at": "2024-01-01",
             "updated_at": None,
             "source_mother": "",
-        }
+        },
     }
 
 
@@ -161,14 +161,13 @@ def growspace_data():
             "notification_target": None,
             "created_at": "2024-01-01",
             "device_id": None,
-        }
+        },
     }
 
 
 @pytest.fixture
 def initial_manager_data(plant_data, growspace_data):
-    """
-    Provides a complete initial data dictionary for the GrowspaceManager,
+    """Provides a complete initial data dictionary for the GrowspaceManager,
     combining plant and growspace fixtures.
     """
     return {

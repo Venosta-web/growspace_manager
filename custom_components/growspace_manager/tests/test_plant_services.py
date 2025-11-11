@@ -1,24 +1,35 @@
 """Test plant services."""
 
-import pytest
-from datetime import date, datetime
-from unittest.mock import Mock, AsyncMock, patch, MagicMock
-from homeassistant.core import HomeAssistant, ServiceCall
-from homeassistant.helpers import entity_registry as er
-from homeassistant.helpers import event as event_helper
+from datetime import date
+from unittest.mock import AsyncMock, Mock, patch
 
+import pytest
+from homeassistant.core import HomeAssistant, ServiceCall
+
+from ..const import DOMAIN
 from ..services.plant import (
     handle_add_plant,
-    handle_take_clone,
+    handle_harvest_plant,
     handle_move_clone,
-    handle_update_plant,
+    handle_move_plant,
     handle_remove_plant,
     handle_switch_plants,
-    handle_move_plant,
+    handle_take_clone,
     handle_transition_plant_stage,
-    handle_harvest_plant,
+    handle_update_plant,
 )
-from ..const import DOMAIN
+from ..services.plant import (
+    handle_add_plant,
+    handle_harvest_plant,
+    handle_move_clone,
+    handle_move_plant,
+    handle_remove_plant,
+    handle_switch_plants,
+    handle_take_clone,
+    handle_transition_plant_stage,
+    handle_update_plant,
+)
+
 
 
 @pytest.fixture
@@ -83,7 +94,10 @@ def mock_plant():
 
 @pytest.mark.asyncio
 async def test_add_plant_success(
-    hass: HomeAssistant, mock_coordinator, mock_strain_library, mock_growspace
+    hass: HomeAssistant,
+    mock_coordinator,
+    mock_strain_library,
+    mock_growspace,
 ):
     mock_coordinator.growspaces = {"gs1": mock_growspace}
 
@@ -118,7 +132,9 @@ async def test_add_plant_success(
 
 @pytest.mark.asyncio
 async def test_add_plant_growspace_not_found(
-    hass: HomeAssistant, mock_coordinator, mock_strain_library
+    hass: HomeAssistant,
+    mock_coordinator,
+    mock_strain_library,
 ):
     """Test adding plant to non-existent growspace."""
     mock_coordinator.growspaces = {}  # No growspaces
@@ -137,7 +153,7 @@ async def test_add_plant_growspace_not_found(
 
     # Patch the notification function
     with patch(
-        "custom_components.growspace_manager.services.plant.create_notification"
+        "custom_components.growspace_manager.services.plant.create_notification",
     ) as mock_notify:
         await handle_add_plant(hass, mock_coordinator, mock_strain_library, call)
 
@@ -154,7 +170,10 @@ async def test_add_plant_growspace_not_found(
 
 @pytest.mark.asyncio
 async def test_add_plant_position_out_of_bounds(
-    hass: HomeAssistant, mock_coordinator, mock_strain_library, mock_growspace
+    hass: HomeAssistant,
+    mock_coordinator,
+    mock_strain_library,
+    mock_growspace,
 ):
     """Test adding plant at out-of-bounds position."""
     mock_coordinator.growspaces = {"gs1": mock_growspace}
@@ -172,7 +191,7 @@ async def test_add_plant_position_out_of_bounds(
     )
 
     with patch(
-        "custom_components.growspace_manager.services.plant.create_notification"
+        "custom_components.growspace_manager.services.plant.create_notification",
     ) as mock_notify:
         await handle_add_plant(hass, mock_coordinator, mock_strain_library, call)
         mock_notify.assert_called_once()
@@ -206,7 +225,7 @@ async def test_add_plant_position_occupied(
     )
 
     with patch(
-        "custom_components.growspace_manager.services.plant.create_notification"
+        "custom_components.growspace_manager.services.plant.create_notification",
     ) as mock_notify:
         await handle_add_plant(hass, mock_coordinator, mock_strain_library, call)
         mock_notify.assert_called_once()
@@ -215,7 +234,10 @@ async def test_add_plant_position_occupied(
 
 @pytest.mark.asyncio
 async def test_add_plant_with_dates(
-    hass: HomeAssistant, mock_coordinator, mock_strain_library, mock_growspace
+    hass: HomeAssistant,
+    mock_coordinator,
+    mock_strain_library,
+    mock_growspace,
 ):
     """Test adding plant with date fields."""
     mock_coordinator.growspaces = {"gs1": mock_growspace}
@@ -244,7 +266,10 @@ async def test_add_plant_with_dates(
 
 @pytest.mark.asyncio
 async def test_add_plant_mother_growspace_auto_date(
-    hass: HomeAssistant, mock_coordinator, mock_strain_library, mock_growspace
+    hass: HomeAssistant,
+    mock_coordinator,
+    mock_strain_library,
+    mock_growspace,
 ):
     """Test auto-setting mother_start date for mother growspace."""
     mock_coordinator.growspaces = {"mother": mock_growspace}
@@ -269,7 +294,10 @@ async def test_add_plant_mother_growspace_auto_date(
 
 @pytest.mark.asyncio
 async def test_add_plant_exception(
-    hass: HomeAssistant, mock_coordinator, mock_strain_library, mock_growspace
+    hass: HomeAssistant,
+    mock_coordinator,
+    mock_strain_library,
+    mock_growspace,
 ):
     """Test exception handling in add_plant."""
     mock_coordinator.growspaces = {"gs1": mock_growspace}
@@ -288,7 +316,7 @@ async def test_add_plant_exception(
     )
 
     with patch(
-        "custom_components.growspace_manager.services.plant.create_notification"
+        "custom_components.growspace_manager.services.plant.create_notification",
     ) as mock_notify:
         with pytest.raises(Exception):
             await handle_add_plant(hass, mock_coordinator, mock_strain_library, call)
@@ -344,7 +372,9 @@ async def test_take_clone_success(
 
 @pytest.mark.asyncio
 async def test_take_clone_mother_not_found(
-    hass: HomeAssistant, mock_coordinator, mock_strain_library
+    hass: HomeAssistant,
+    mock_coordinator,
+    mock_strain_library,
 ):
     """Test taking clone from non-existent mother."""
     mock_coordinator.plants = {}
@@ -359,7 +389,7 @@ async def test_take_clone_mother_not_found(
     )
 
     with patch(
-        "custom_components.growspace_manager.services.plant.create_notification"
+        "custom_components.growspace_manager.services.plant.create_notification",
     ) as mock_notify:
         await handle_take_clone(hass, mock_coordinator, mock_strain_library, call)
         mock_notify.assert_called_once()
@@ -390,7 +420,7 @@ async def test_take_clone_no_space(
     )
 
     with patch(
-        "custom_components.growspace_manager.services.plant.create_notification"
+        "custom_components.growspace_manager.services.plant.create_notification",
     ) as mock_notify:
         await handle_take_clone(hass, mock_coordinator, mock_strain_library, call)
         mock_notify.assert_called_once()
@@ -468,7 +498,7 @@ async def test_take_clone_partial_failure(
 
     # First clone succeeds, second one raises an error
     mock_coordinator.async_add_plant = AsyncMock(
-        side_effect=[AsyncMock(return_value="clone_1"), Exception("Test error")]
+        side_effect=[AsyncMock(return_value="clone_1"), Exception("Test error")],
     )
 
     call = ServiceCall(
@@ -553,7 +583,9 @@ async def test_move_clone_success(
 
 @pytest.mark.asyncio
 async def test_move_clone_missing_params(
-    hass: HomeAssistant, mock_coordinator, mock_strain_library
+    hass: HomeAssistant,
+    mock_coordinator,
+    mock_strain_library,
 ):
     """Test move clone with missing parameters."""
     call = ServiceCall(
@@ -564,7 +596,7 @@ async def test_move_clone_missing_params(
     )
 
     with patch(
-        "custom_components.growspace_manager.services.plant.create_notification"
+        "custom_components.growspace_manager.services.plant.create_notification",
     ) as mock_notify:
         await handle_move_clone(hass, mock_coordinator, mock_strain_library, call)
         mock_notify.assert_called_once()
@@ -572,7 +604,9 @@ async def test_move_clone_missing_params(
 
 @pytest.mark.asyncio
 async def test_move_clone_plant_not_found(
-    hass: HomeAssistant, mock_coordinator, mock_strain_library
+    hass: HomeAssistant,
+    mock_coordinator,
+    mock_strain_library,
 ):
     """Test moving non-existent clone."""
     mock_coordinator.plants = {}
@@ -588,7 +622,7 @@ async def test_move_clone_plant_not_found(
     )
 
     with patch(
-        "custom_components.growspace_manager.services.plant.create_notification"
+        "custom_components.growspace_manager.services.plant.create_notification",
     ) as mock_notify:
         await handle_move_clone(hass, mock_coordinator, mock_strain_library, call)
         mock_notify.assert_called_once()
@@ -618,7 +652,7 @@ async def test_move_clone_no_space(
     )
 
     with patch(
-        "custom_components.growspace_manager.services.plant.create_notification"
+        "custom_components.growspace_manager.services.plant.create_notification",
     ) as mock_notify:
         await handle_move_clone(hass, mock_coordinator, mock_strain_library, call)
         mock_notify.assert_called_once()
@@ -666,7 +700,7 @@ async def test_move_clone_exception_finding_position(
     mock_coordinator.plants = {"clone_1": mock_plant}
     mock_coordinator.growspaces = {"veg": mock_growspace}
     mock_coordinator._find_first_available_position = Mock(
-        side_effect=Exception("Test error")
+        side_effect=Exception("Test error"),
     )
 
     call = ServiceCall(
@@ -680,7 +714,7 @@ async def test_move_clone_exception_finding_position(
     )
 
     with patch(
-        "custom_components.growspace_manager.services.plant.create_notification"
+        "custom_components.growspace_manager.services.plant.create_notification",
     ) as mock_notify:
         await handle_move_clone(hass, mock_coordinator, mock_strain_library, call)
         mock_notify.assert_called_once()
@@ -710,7 +744,7 @@ async def test_move_clone_exception_during_move(
     )
 
     with patch(
-        "custom_components.growspace_manager.services.plant.create_notification"
+        "custom_components.growspace_manager.services.plant.create_notification",
     ) as mock_notify:
         with pytest.raises(Exception):
             await handle_move_clone(hass, mock_coordinator, mock_strain_library, call)
@@ -724,7 +758,10 @@ async def test_move_clone_exception_during_move(
 
 @pytest.mark.asyncio
 async def test_update_plant_success(
-    hass: HomeAssistant, mock_coordinator, mock_strain_library, mock_plant
+    hass: HomeAssistant,
+    mock_coordinator,
+    mock_strain_library,
+    mock_plant,
 ):
     """Test successfully updating a plant."""
     # Arrange
@@ -763,7 +800,9 @@ async def test_update_plant_success(
 
 @pytest.mark.asyncio
 async def test_update_plant_not_found(
-    hass: HomeAssistant, mock_coordinator, mock_strain_library
+    hass: HomeAssistant,
+    mock_coordinator,
+    mock_strain_library,
 ):
     """Test updating non-existent plant."""
     mock_coordinator.plants = {}
@@ -779,7 +818,7 @@ async def test_update_plant_not_found(
     )
 
     with patch(
-        "custom_components.growspace_manager.services.plant.create_notification"
+        "custom_components.growspace_manager.services.plant.create_notification",
     ) as mock_notify:
         await handle_update_plant(hass, mock_coordinator, mock_strain_library, call)
         mock_notify.assert_called_once()
@@ -788,7 +827,10 @@ async def test_update_plant_not_found(
 
 @pytest.mark.asyncio
 async def test_update_plant_with_dates(
-    hass: HomeAssistant, mock_coordinator, mock_strain_library, mock_plant
+    hass: HomeAssistant,
+    mock_coordinator,
+    mock_strain_library,
+    mock_plant,
 ):
     """Test updating plant with date fields."""
     mock_coordinator.plants = {"plant_1": mock_plant}
@@ -814,7 +856,10 @@ async def test_update_plant_with_dates(
 
 @pytest.mark.asyncio
 async def test_update_plant_with_date_strings(
-    hass: HomeAssistant, mock_coordinator, mock_strain_library, mock_plant
+    hass: HomeAssistant,
+    mock_coordinator,
+    mock_strain_library,
+    mock_plant,
 ):
     """Test updating plant with date strings."""
     mock_coordinator.plants = {"plant_1": mock_plant}
@@ -839,7 +884,10 @@ async def test_update_plant_with_date_strings(
 
 @pytest.mark.asyncio
 async def test_update_plant_invalid_date(
-    hass: HomeAssistant, mock_coordinator, mock_strain_library, mock_plant
+    hass: HomeAssistant,
+    mock_coordinator,
+    mock_strain_library,
+    mock_plant,
 ):
     """Test updating plant with invalid date."""
     mock_coordinator.plants = {"plant_1": mock_plant}
@@ -862,7 +910,10 @@ async def test_update_plant_invalid_date(
 
 @pytest.mark.asyncio
 async def test_update_plant_none_values(
-    hass: HomeAssistant, mock_coordinator, mock_strain_library, mock_plant
+    hass: HomeAssistant,
+    mock_coordinator,
+    mock_strain_library,
+    mock_plant,
 ):
     """Test updating plant with None values."""
     mock_coordinator.plants = {"plant_1": mock_plant}
@@ -887,7 +938,10 @@ async def test_update_plant_none_values(
 
 @pytest.mark.asyncio
 async def test_update_plant_no_update_fields(
-    hass: HomeAssistant, mock_coordinator, mock_strain_library, mock_plant
+    hass: HomeAssistant,
+    mock_coordinator,
+    mock_strain_library,
+    mock_plant,
 ):
     """Test updating plant with no valid update fields."""
     mock_coordinator.plants = {"plant_1": mock_plant}
@@ -908,7 +962,10 @@ async def test_update_plant_no_update_fields(
 
 @pytest.mark.asyncio
 async def test_update_plant_exception(
-    hass: HomeAssistant, mock_coordinator, mock_strain_library, mock_plant
+    hass: HomeAssistant,
+    mock_coordinator,
+    mock_strain_library,
+    mock_plant,
 ):
     """Test exception handling in update_plant."""
     mock_coordinator.plants = {"plant_1": mock_plant}
@@ -925,7 +982,7 @@ async def test_update_plant_exception(
     )
 
     with patch(
-        "custom_components.growspace_manager.services.plant.create_notification"
+        "custom_components.growspace_manager.services.plant.create_notification",
     ) as mock_notify:
         with pytest.raises(Exception):
             await handle_update_plant(hass, mock_coordinator, mock_strain_library, call)
@@ -939,7 +996,10 @@ async def test_update_plant_exception(
 
 @pytest.mark.asyncio
 async def test_remove_plant_success(
-    hass: HomeAssistant, mock_coordinator, mock_strain_library, mock_plant
+    hass: HomeAssistant,
+    mock_coordinator,
+    mock_strain_library,
+    mock_plant,
 ):
     """Test successfully removing a plant."""
     # Arrange
@@ -976,7 +1036,9 @@ async def test_remove_plant_success(
 
 @pytest.mark.asyncio
 async def test_remove_plant_not_found(
-    hass: HomeAssistant, mock_coordinator, mock_strain_library
+    hass: HomeAssistant,
+    mock_coordinator,
+    mock_strain_library,
 ):
     """Test removing non-existent plant."""
     mock_coordinator.plants = {}
@@ -991,7 +1053,7 @@ async def test_remove_plant_not_found(
     )
 
     with patch(
-        "custom_components.growspace_manager.services.plant.create_notification"
+        "custom_components.growspace_manager.services.plant.create_notification",
     ) as mock_notify:
         await handle_remove_plant(hass, mock_coordinator, mock_strain_library, call)
         mock_notify.assert_called_once()
@@ -1000,7 +1062,10 @@ async def test_remove_plant_not_found(
 
 @pytest.mark.asyncio
 async def test_remove_plant_exception(
-    hass: HomeAssistant, mock_coordinator, mock_strain_library, mock_plant
+    hass: HomeAssistant,
+    mock_coordinator,
+    mock_strain_library,
+    mock_plant,
 ):
     """Test exception handling in remove_plant."""
     mock_coordinator.plants = {"plant_1": mock_plant}
@@ -1016,7 +1081,7 @@ async def test_remove_plant_exception(
     )
 
     with patch(
-        "custom_components.growspace_manager.services.plant.create_notification"
+        "custom_components.growspace_manager.services.plant.create_notification",
     ) as mock_notify:
         with pytest.raises(Exception):
             await handle_remove_plant(hass, mock_coordinator, mock_strain_library, call)
@@ -1030,7 +1095,9 @@ async def test_remove_plant_exception(
 
 @pytest.mark.asyncio
 async def test_switch_plants_success(
-    hass: HomeAssistant, mock_coordinator, mock_strain_library
+    hass: HomeAssistant,
+    mock_coordinator,
+    mock_strain_library,
 ):
     """Test successfully switching two plants."""
     # Arrange
@@ -1078,7 +1145,9 @@ async def test_switch_plants_success(
 
 @pytest.mark.asyncio
 async def test_switch_plants_first_not_found(
-    hass: HomeAssistant, mock_coordinator, mock_strain_library
+    hass: HomeAssistant,
+    mock_coordinator,
+    mock_strain_library,
 ):
     """Test switching when first plant doesn't exist."""
     mock_coordinator.plants = {}
@@ -1094,7 +1163,7 @@ async def test_switch_plants_first_not_found(
     )
 
     with patch(
-        "custom_components.growspace_manager.services.plant.create_notification"
+        "custom_components.growspace_manager.services.plant.create_notification",
     ) as mock_notify:
         await handle_switch_plants(hass, mock_coordinator, mock_strain_library, call)
         mock_notify.assert_called_once()
@@ -1103,7 +1172,9 @@ async def test_switch_plants_first_not_found(
 
 @pytest.mark.asyncio
 async def test_switch_plants_second_not_found(
-    hass: HomeAssistant, mock_coordinator, mock_strain_library
+    hass: HomeAssistant,
+    mock_coordinator,
+    mock_strain_library,
 ):
     """Test switching when second plant doesn't exist."""
     plant1 = Mock()
@@ -1120,7 +1191,7 @@ async def test_switch_plants_second_not_found(
     )
 
     with patch(
-        "custom_components.growspace_manager.services.plant.create_notification"
+        "custom_components.growspace_manager.services.plant.create_notification",
     ) as mock_notify:
         await handle_switch_plants(hass, mock_coordinator, mock_strain_library, call)
         mock_notify.assert_called_once()
@@ -1129,7 +1200,9 @@ async def test_switch_plants_second_not_found(
 
 @pytest.mark.asyncio
 async def test_switch_plants_exception(
-    hass: HomeAssistant, mock_coordinator, mock_strain_library
+    hass: HomeAssistant,
+    mock_coordinator,
+    mock_strain_library,
 ):
     """Test exception handling in switch_plants."""
     plant1 = Mock()
@@ -1151,11 +1224,14 @@ async def test_switch_plants_exception(
     )
 
     with patch(
-        "custom_components.growspace_manager.services.plant.create_notification"
+        "custom_components.growspace_manager.services.plant.create_notification",
     ) as mock_notify:
         with pytest.raises(Exception):
             await handle_switch_plants(
-                hass, mock_coordinator, mock_strain_library, call
+                hass,
+                mock_coordinator,
+                mock_strain_library,
+                call,
             )
         mock_notify.assert_called()
 
@@ -1214,7 +1290,10 @@ async def test_move_plant_to_empty_position(
 
 @pytest.mark.asyncio
 async def test_move_plant_switch_with_occupant(
-    hass: HomeAssistant, mock_coordinator, mock_strain_library, mock_growspace
+    hass: HomeAssistant,
+    mock_coordinator,
+    mock_strain_library,
+    mock_growspace,
 ):
     """Test moving plant to occupied position (switch)."""
     # Arrange
@@ -1269,7 +1348,9 @@ async def test_move_plant_switch_with_occupant(
 
 @pytest.mark.asyncio
 async def test_move_plant_not_found(
-    hass: HomeAssistant, mock_coordinator, mock_strain_library
+    hass: HomeAssistant,
+    mock_coordinator,
+    mock_strain_library,
 ):
     """Test moving non-existent plant."""
     mock_coordinator.plants = {}
@@ -1286,7 +1367,7 @@ async def test_move_plant_not_found(
     )
 
     with patch(
-        "custom_components.growspace_manager.services.plant.create_notification"
+        "custom_components.growspace_manager.services.plant.create_notification",
     ) as mock_notify:
         await handle_move_plant(hass, mock_coordinator, mock_strain_library, call)
         mock_notify.assert_called_once()
@@ -1316,7 +1397,7 @@ async def test_move_plant_out_of_bounds(
     )
 
     with patch(
-        "custom_components.growspace_manager.services.plant.create_notification"
+        "custom_components.growspace_manager.services.plant.create_notification",
     ) as mock_notify:
         await handle_move_plant(hass, mock_coordinator, mock_strain_library, call)
         mock_notify.assert_called_once()
@@ -1349,7 +1430,7 @@ async def test_move_plant_exception(
     )
 
     with patch(
-        "custom_components.growspace_manager.services.plant.create_notification"
+        "custom_components.growspace_manager.services.plant.create_notification",
     ) as mock_notify:
         with pytest.raises(Exception):
             await handle_move_plant(hass, mock_coordinator, mock_strain_library, call)
@@ -1363,7 +1444,10 @@ async def test_move_plant_exception(
 
 @pytest.mark.asyncio
 async def test_transition_plant_stage_success(
-    hass: HomeAssistant, mock_coordinator, mock_strain_library, mock_plant
+    hass: HomeAssistant,
+    mock_coordinator,
+    mock_strain_library,
+    mock_plant,
 ):
     """Test successfully transitioning plant stage."""
     # Arrange
@@ -1390,12 +1474,17 @@ async def test_transition_plant_stage_success(
 
     # Act
     await handle_transition_plant_stage(
-        hass, mock_coordinator, mock_strain_library, call
+        hass,
+        mock_coordinator,
+        mock_strain_library,
+        call,
     )
 
     # Assert
     mock_coordinator.async_transition_plant_stage.assert_called_once_with(
-        plant_id="plant_1", new_stage="flower", transition_date=date(2024, 1, 15)
+        plant_id="plant_1",
+        new_stage="flower",
+        transition_date=date(2024, 1, 15),
     )
     mock_coordinator.async_save.assert_called_once()
     mock_coordinator.async_request_refresh.assert_called_once()
@@ -1406,7 +1495,10 @@ async def test_transition_plant_stage_success(
 
 @pytest.mark.asyncio
 async def test_transition_plant_stage_without_date(
-    hass: HomeAssistant, mock_coordinator, mock_strain_library, mock_plant
+    hass: HomeAssistant,
+    mock_coordinator,
+    mock_strain_library,
+    mock_plant,
 ):
     """Test transitioning plant stage without date."""
     mock_coordinator.plants = {"plant_1": mock_plant}
@@ -1422,7 +1514,10 @@ async def test_transition_plant_stage_without_date(
     )
 
     await handle_transition_plant_stage(
-        hass, mock_coordinator, mock_strain_library, call
+        hass,
+        mock_coordinator,
+        mock_strain_library,
+        call,
     )
 
     call_kwargs = mock_coordinator.async_transition_plant_stage.call_args[1]
@@ -1431,7 +1526,9 @@ async def test_transition_plant_stage_without_date(
 
 @pytest.mark.asyncio
 async def test_transition_plant_stage_not_found(
-    hass: HomeAssistant, mock_coordinator, mock_strain_library
+    hass: HomeAssistant,
+    mock_coordinator,
+    mock_strain_library,
 ):
     """Test transitioning non-existent plant."""
     mock_coordinator.plants = {}
@@ -1447,10 +1544,13 @@ async def test_transition_plant_stage_not_found(
     )
 
     with patch(
-        "custom_components.growspace_manager.services.plant.create_notification"
+        "custom_components.growspace_manager.services.plant.create_notification",
     ) as mock_notify:
         await handle_transition_plant_stage(
-            hass, mock_coordinator, mock_strain_library, call
+            hass,
+            mock_coordinator,
+            mock_strain_library,
+            call,
         )
         mock_notify.assert_called_once()
         mock_coordinator.async_transition_plant_stage.assert_not_called()
@@ -1458,7 +1558,10 @@ async def test_transition_plant_stage_not_found(
 
 @pytest.mark.asyncio
 async def test_transition_plant_stage_invalid_date(
-    hass: HomeAssistant, mock_coordinator, mock_strain_library, mock_plant
+    hass: HomeAssistant,
+    mock_coordinator,
+    mock_strain_library,
+    mock_plant,
 ):
     """Test transitioning with invalid date format."""
     mock_coordinator.plants = {"plant_1": mock_plant}
@@ -1475,10 +1578,13 @@ async def test_transition_plant_stage_invalid_date(
     )
 
     with patch(
-        "custom_components.growspace_manager.services.plant.create_notification"
+        "custom_components.growspace_manager.services.plant.create_notification",
     ) as mock_notify:
         await handle_transition_plant_stage(
-            hass, mock_coordinator, mock_strain_library, call
+            hass,
+            mock_coordinator,
+            mock_strain_library,
+            call,
         )
         mock_notify.assert_called_once()
         mock_coordinator.async_transition_plant_stage.assert_not_called()
@@ -1486,7 +1592,10 @@ async def test_transition_plant_stage_invalid_date(
 
 @pytest.mark.asyncio
 async def test_transition_plant_stage_with_timezone(
-    hass: HomeAssistant, mock_coordinator, mock_strain_library, mock_plant
+    hass: HomeAssistant,
+    mock_coordinator,
+    mock_strain_library,
+    mock_plant,
 ):
     """Test transitioning with timezone in date."""
     mock_coordinator.plants = {"plant_1": mock_plant}
@@ -1503,7 +1612,10 @@ async def test_transition_plant_stage_with_timezone(
     )
 
     await handle_transition_plant_stage(
-        hass, mock_coordinator, mock_strain_library, call
+        hass,
+        mock_coordinator,
+        mock_strain_library,
+        call,
     )
 
     call_kwargs = mock_coordinator.async_transition_plant_stage.call_args[1]
@@ -1512,7 +1624,10 @@ async def test_transition_plant_stage_with_timezone(
 
 @pytest.mark.asyncio
 async def test_transition_plant_stage_exception(
-    hass: HomeAssistant, mock_coordinator, mock_strain_library, mock_plant
+    hass: HomeAssistant,
+    mock_coordinator,
+    mock_strain_library,
+    mock_plant,
 ):
     """Test exception handling in transition_plant_stage."""
     mock_coordinator.plants = {"plant_1": mock_plant}
@@ -1529,11 +1644,14 @@ async def test_transition_plant_stage_exception(
     )
 
     with patch(
-        "custom_components.growspace_manager.services.plant.create_notification"
+        "custom_components.growspace_manager.services.plant.create_notification",
     ) as mock_notify:
         with pytest.raises(Exception):
             await handle_transition_plant_stage(
-                hass, mock_coordinator, mock_strain_library, call
+                hass,
+                mock_coordinator,
+                mock_strain_library,
+                call,
             )
         mock_notify.assert_called()
 
@@ -1545,10 +1663,12 @@ async def test_transition_plant_stage_exception(
 
 @pytest.mark.asyncio
 async def test_harvest_plant_success(
-    hass: HomeAssistant, mock_coordinator, mock_strain_library, mock_plant
+    hass: HomeAssistant,
+    mock_coordinator,
+    mock_strain_library,
+    mock_plant,
 ):
     """Test successfully harvesting a plant."""
-
     mock_coordinator.plants = {"plant_1": mock_plant}
 
     # Make async methods AsyncMock
@@ -1574,7 +1694,9 @@ async def test_harvest_plant_success(
 
     # Assert
     mock_coordinator.async_harvest_plant.assert_called_once_with(
-        plant_id="plant_1", target_growspace_id="dry", transition_date=date(2024, 1, 15)
+        plant_id="plant_1",
+        target_growspace_id="dry",
+        transition_date=date(2024, 1, 15),
     )
     mock_coordinator.async_save.assert_called_once()
     mock_coordinator.async_request_refresh.assert_called_once()
@@ -1584,7 +1706,9 @@ async def test_harvest_plant_success(
 
 @pytest.mark.asyncio
 async def test_harvest_plant_missing_plant_id(
-    hass: HomeAssistant, mock_coordinator, mock_strain_library
+    hass: HomeAssistant,
+    mock_coordinator,
+    mock_strain_library,
 ):
     """Test harvest with missing plant_id."""
     call = ServiceCall(
@@ -1597,7 +1721,7 @@ async def test_harvest_plant_missing_plant_id(
     )
 
     with patch(
-        "custom_components.growspace_manager.services.plant.create_notification"
+        "custom_components.growspace_manager.services.plant.create_notification",
     ) as mock_notify:
         await handle_harvest_plant(hass, mock_coordinator, mock_strain_library, call)
         mock_notify.assert_called_once()
@@ -1605,10 +1729,12 @@ async def test_harvest_plant_missing_plant_id(
 
 @pytest.mark.asyncio
 async def test_harvest_plant_entity_id_resolution(
-    hass: HomeAssistant, mock_coordinator, mock_strain_library, mock_plant
+    hass: HomeAssistant,
+    mock_coordinator,
+    mock_strain_library,
+    mock_plant,
 ):
     """Test harvest with entity ID resolution."""
-
     # Arrange
     mock_coordinator.plants = {"plant_1": mock_plant}
 
@@ -1638,7 +1764,9 @@ async def test_harvest_plant_entity_id_resolution(
 
     # Assert
     mock_coordinator.async_harvest_plant.assert_called_once_with(
-        plant_id="plant_1", target_growspace_id="dry", transition_date=None
+        plant_id="plant_1",
+        target_growspace_id="dry",
+        transition_date=None,
     )
     mock_coordinator.async_save.assert_called_once()
     mock_coordinator.async_request_refresh.assert_called_once()
@@ -1649,7 +1777,9 @@ async def test_harvest_plant_entity_id_resolution(
 
 @pytest.mark.asyncio
 async def test_harvest_plant_entity_id_no_attribute(
-    hass: HomeAssistant, mock_coordinator, mock_strain_library
+    hass: HomeAssistant,
+    mock_coordinator,
+    mock_strain_library,
 ):
     """Test harvest with entity ID but no plant_id attribute."""
     mock_coordinator.plants = {}
@@ -1671,7 +1801,7 @@ async def test_harvest_plant_entity_id_no_attribute(
     )
 
     with patch(
-        "custom_components.growspace_manager.services.plant.create_notification"
+        "custom_components.growspace_manager.services.plant.create_notification",
     ) as mock_notify:
         await handle_harvest_plant(hass, mock_coordinator, mock_strain_library, call)
         mock_notify.assert_called()
@@ -1679,7 +1809,10 @@ async def test_harvest_plant_entity_id_no_attribute(
 
 @pytest.mark.asyncio
 async def test_harvest_plant_not_found_reload_attempt(
-    hass: HomeAssistant, mock_coordinator, mock_strain_library, mock_plant
+    hass: HomeAssistant,
+    mock_coordinator,
+    mock_strain_library,
+    mock_plant,
 ):
     """Test harvest when plant not found, triggers reload."""
     # Initially empty, then populated after reload
@@ -1707,7 +1840,9 @@ async def test_harvest_plant_not_found_reload_attempt(
 
 @pytest.mark.asyncio
 async def test_harvest_plant_not_found_after_reload(
-    hass: HomeAssistant, mock_coordinator, mock_strain_library
+    hass: HomeAssistant,
+    mock_coordinator,
+    mock_strain_library,
 ):
     """Test harvest when plant still not found after reload."""
     mock_coordinator.plants = {}
@@ -1723,7 +1858,7 @@ async def test_harvest_plant_not_found_after_reload(
     )
 
     with patch(
-        "custom_components.growspace_manager.services.plant.create_notification"
+        "custom_components.growspace_manager.services.plant.create_notification",
     ) as mock_notify:
         await handle_harvest_plant(hass, mock_coordinator, mock_strain_library, call)
         mock_notify.assert_called()
@@ -1732,7 +1867,9 @@ async def test_harvest_plant_not_found_after_reload(
 
 @pytest.mark.asyncio
 async def test_harvest_plant_reload_error(
-    hass: HomeAssistant, mock_coordinator, mock_strain_library
+    hass: HomeAssistant,
+    mock_coordinator,
+    mock_strain_library,
 ):
     """Test harvest when reload fails."""
     mock_coordinator.plants = {}
@@ -1749,7 +1886,7 @@ async def test_harvest_plant_reload_error(
     )
 
     with patch(
-        "custom_components.growspace_manager.services.plant.create_notification"
+        "custom_components.growspace_manager.services.plant.create_notification",
     ) as mock_notify:
         await handle_harvest_plant(hass, mock_coordinator, mock_strain_library, call)
         mock_notify.assert_called()
@@ -1757,7 +1894,10 @@ async def test_harvest_plant_reload_error(
 
 @pytest.mark.asyncio
 async def test_harvest_plant_invalid_date(
-    hass: HomeAssistant, mock_coordinator, mock_strain_library, mock_plant
+    hass: HomeAssistant,
+    mock_coordinator,
+    mock_strain_library,
+    mock_plant,
 ):
     """Test harvest with invalid transition date."""
     mock_coordinator.plants = {"plant_1": mock_plant}
@@ -1774,7 +1914,7 @@ async def test_harvest_plant_invalid_date(
     )
 
     with patch(
-        "custom_components.growspace_manager.services.plant.create_notification"
+        "custom_components.growspace_manager.services.plant.create_notification",
     ) as mock_notify:
         await handle_harvest_plant(hass, mock_coordinator, mock_strain_library, call)
         mock_notify.assert_called_once()
@@ -1783,7 +1923,10 @@ async def test_harvest_plant_invalid_date(
 
 @pytest.mark.asyncio
 async def test_harvest_plant_with_timezone(
-    hass: HomeAssistant, mock_coordinator, mock_strain_library, mock_plant
+    hass: HomeAssistant,
+    mock_coordinator,
+    mock_strain_library,
+    mock_plant,
 ):
     """Test harvest with timezone in date."""
     mock_coordinator.plants = {"plant_1": mock_plant}
@@ -1807,7 +1950,10 @@ async def test_harvest_plant_with_timezone(
 
 @pytest.mark.asyncio
 async def test_harvest_plant_without_date(
-    hass: HomeAssistant, mock_coordinator, mock_strain_library, mock_plant
+    hass: HomeAssistant,
+    mock_coordinator,
+    mock_strain_library,
+    mock_plant,
 ):
     """Test harvest without transition date."""
     mock_coordinator.plants = {"plant_1": mock_plant}
@@ -1830,7 +1976,10 @@ async def test_harvest_plant_without_date(
 
 @pytest.mark.asyncio
 async def test_harvest_plant_exception(
-    hass: HomeAssistant, mock_coordinator, mock_strain_library, mock_plant
+    hass: HomeAssistant,
+    mock_coordinator,
+    mock_strain_library,
+    mock_plant,
 ):
     """Test exception handling in harvest_plant."""
     mock_coordinator.plants = {"plant_1": mock_plant}
@@ -1847,18 +1996,23 @@ async def test_harvest_plant_exception(
     )
 
     with patch(
-        "custom_components.growspace_manager.services.plant.create_notification"
+        "custom_components.growspace_manager.services.plant.create_notification",
     ) as mock_notify:
         with pytest.raises(Exception):
             await handle_harvest_plant(
-                hass, mock_coordinator, mock_strain_library, call
+                hass,
+                mock_coordinator,
+                mock_strain_library,
+                call,
             )
         mock_notify.assert_called()
 
 
 @pytest.mark.asyncio
 async def test_harvest_plant_entity_id_resolution_error(
-    hass: HomeAssistant, mock_coordinator, mock_strain_library
+    hass: HomeAssistant,
+    mock_coordinator,
+    mock_strain_library,
 ):
     """Test harvest when entity ID resolution fails."""
     mock_coordinator.plants = {}
@@ -1878,7 +2032,7 @@ async def test_harvest_plant_entity_id_resolution_error(
     )
 
     with patch(
-        "custom_components.growspace_manager.services.plant.create_notification"
+        "custom_components.growspace_manager.services.plant.create_notification",
     ) as mock_notify:
         await handle_harvest_plant(hass, mock_coordinator, mock_strain_library, call)
         # Should still attempt to find plant and eventually fail
@@ -1887,7 +2041,9 @@ async def test_harvest_plant_entity_id_resolution_error(
 
 @pytest.mark.asyncio
 async def test_harvest_plant_no_entity_registry(
-    hass: HomeAssistant, mock_coordinator, mock_strain_library
+    hass: HomeAssistant,
+    mock_coordinator,
+    mock_strain_library,
 ):
     """Test harvest when entity registry is not available."""
     mock_coordinator.plants = {}
@@ -1906,7 +2062,7 @@ async def test_harvest_plant_no_entity_registry(
     )
 
     with patch(
-        "custom_components.growspace_manager.services.plant.create_notification"
+        "custom_components.growspace_manager.services.plant.create_notification",
     ) as mock_notify:
         await handle_harvest_plant(hass, mock_coordinator, mock_strain_library, call)
         mock_notify.assert_called()
@@ -1919,7 +2075,10 @@ async def test_harvest_plant_no_entity_registry(
 
 @pytest.mark.asyncio
 async def test_add_plant_with_empty_date_strings(
-    hass: HomeAssistant, mock_coordinator, mock_strain_library, mock_growspace
+    hass: HomeAssistant,
+    mock_coordinator,
+    mock_strain_library,
+    mock_growspace,
 ):
     """Test adding plant with empty date strings."""
     mock_coordinator.growspaces = {"gs1": mock_growspace}
@@ -1947,7 +2106,10 @@ async def test_add_plant_with_empty_date_strings(
 
 @pytest.mark.asyncio
 async def test_update_plant_with_empty_string_dates(
-    hass: HomeAssistant, mock_coordinator, mock_strain_library, mock_plant
+    hass: HomeAssistant,
+    mock_coordinator,
+    mock_strain_library,
+    mock_plant,
 ):
     """Test updating plant with empty string dates."""
     mock_coordinator.plants = {"plant_1": mock_plant}

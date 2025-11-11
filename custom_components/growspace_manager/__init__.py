@@ -3,60 +3,45 @@
 from __future__ import annotations
 
 import logging
-import functools
-from datetime import date, datetime
 
 from homeassistant.components.persistent_notification import (
     async_create as create_notification,
 )
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, ServiceCall
-import homeassistant.helpers.device_registry as dr
 from homeassistant.helpers.storage import Store
-from homeassistant.helpers import entity_registry as er
 
-
-from .const import (
-    DOMAIN,
-    DATE_FIELDS,
-    STORAGE_KEY,
-    STORAGE_VERSION,
-    STORAGE_KEY_STRAIN_LIBRARY,
-)
-from .strain_library import StrainLibrary
-from .coordinator import GrowspaceCoordinator
-
-# Import all schemas from const.py
 from .const import (
     ADD_GROWSPACE_SCHEMA,
     ADD_PLANT_SCHEMA,
     CLEAR_STRAIN_LIBRARY_SCHEMA,
+    CONFIGURE_ENVIRONMENT_SCHEMA,
     DEBUG_CLEANUP_LEGACY_SCHEMA,
     DEBUG_CONSOLIDATE_DUPLICATE_SPECIAL_SCHEMA,
     DEBUG_LIST_GROWSPACES_SCHEMA,
     DEBUG_RESET_SPECIAL_GROWSPACES_SCHEMA,
+    DOMAIN,
     EXPORT_STRAIN_LIBRARY_SCHEMA,
-    TAKE_CLONE_SCHEMA,
-    MOVE_CLONE_SCHEMA,
     HARVEST_PLANT_SCHEMA,
     IMPORT_STRAIN_LIBRARY_SCHEMA,
+    MOVE_CLONE_SCHEMA,
     MOVE_PLANT_SCHEMA,
     REMOVE_GROWSPACE_SCHEMA,
     REMOVE_PLANT_SCHEMA,
+    REMOVE_ENVIRONMENT_SCHEMA,
     SWITCH_PLANT_SCHEMA,
+    TAKE_CLONE_SCHEMA,
     TRANSITION_PLANT_SCHEMA,
     UPDATE_PLANT_SCHEMA,
-    CONFIGURE_ENVIRONMENT_SCHEMA,
-    REMOVE_ENVIRONMENT_SCHEMA,
+    STORAGE_KEY,
+    STORAGE_VERSION,
+    STORAGE_KEY_STRAIN_LIBRARY,
 )
+from .coordinator import GrowspaceCoordinator
 
 # Import the refactored service handler modules directly by their filenames
-from .services import growspace
-from .services import plant
-from .services import strain_library
-from .services import debug
-from .services import environment
-
+from .services import debug, environment, growspace, plant, strain_library
+from .strain_library import StrainLibrary
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -72,7 +57,8 @@ async def async_setup(hass: HomeAssistant, config: dict):
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up Growspace Manager from a config entry."""
     _LOGGER.debug(
-        "Setting up Growspace Manager integration for entry %s", entry.entry_id
+        "Setting up Growspace Manager integration for entry %s",
+        entry.entry_id,
     )
 
     # Initialize Storage and Coordinator
@@ -113,10 +99,14 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 notification_target=pending.get("notification_target"),
             )
             _LOGGER.info(
-                "Created pending growspace: %s", pending.get("name", "unknown")
+                "Created pending growspace: %s",
+                pending.get("name", "unknown"),
             )
         except Exception:
-            _LOGGER.exception("Failed to create pending growspace: %s", pending.get("name", "unknown"))
+            _LOGGER.exception(
+                "Failed to create pending growspace: %s",
+                pending.get("name", "unknown"),
+            )
             create_notification(
                 hass,
                 (
@@ -128,7 +118,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # Forward entry setup to platforms (e.g., sensors, switches)
     _LOGGER.debug("Setting up platforms: %s", PLATFORMS)
     hass.async_create_task(
-        hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+        hass.config_entries.async_forward_entry_setups(entry, PLATFORMS),
     )
 
     # Perform the first refresh to populate data
@@ -143,9 +133,6 @@ async def _register_services(
     strain_library_instance: StrainLibrary,
 ) -> None:
     """Register all Growspace Manager services."""
-
-
-
     # Define all services with their handler functions and schemas
     services_to_register = [
         ("add_growspace", growspace.handle_add_growspace, ADD_GROWSPACE_SCHEMA),
@@ -222,18 +209,24 @@ async def _register_services(
             await _handler(hass, coordinator, strain_library_instance, call)
 
         hass.services.async_register(
-            DOMAIN, service_name, service_wrapper, schema=schema
+            DOMAIN,
+            service_name,
+            service_wrapper,
+            schema=schema,
         )
         _LOGGER.debug("Registered service: %s", service_name)
 
     # Register the standalone 'get_strain_library' service
     async def get_strain_library_wrapper(
-        call: ServiceCall, _handler=strain_library.handle_get_strain_library
+        call: ServiceCall,
+        _handler=strain_library.handle_get_strain_library,
     ):
         await _handler(hass, coordinator, strain_library_instance, call)
 
     hass.services.async_register(
-        DOMAIN, "get_strain_library", get_strain_library_wrapper
+        DOMAIN,
+        "get_strain_library",
+        get_strain_library_wrapper,
     )
     _LOGGER.debug("Registered service: get_strain_library")
 
@@ -254,7 +247,7 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             hass.data[DOMAIN].pop("strain_library", None)
             hass.data.pop(DOMAIN)
             _LOGGER.debug(
-                "Removed global strain_library and domain data as no entries remain."
+                "Removed global strain_library and domain data as no entries remain.",
             )
 
         # Remove all registered services
@@ -290,15 +283,15 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
         _LOGGER.info("Unloaded Growspace Manager for entry %s", entry.entry_id)
         return True
-    else:
-        _LOGGER.error("Failed to unload platforms for entry %s", entry.entry_id)
-        return False
+    _LOGGER.error("Failed to unload platforms for entry %s", entry.entry_id)
+    return False
 
 
 async def async_reload_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
     """Reload a config entry."""
     _LOGGER.debug(
-        "Reloading Growspace Manager integration for entry %s", entry.entry_id
+        "Reloading Growspace Manager integration for entry %s",
+        entry.entry_id,
     )
     await hass.config_entries.async_reload(entry.entry_id)
 

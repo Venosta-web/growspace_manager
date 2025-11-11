@@ -3,19 +3,19 @@
 from __future__ import annotations
 
 import logging
-from typing import Any
 from datetime import date, datetime
+from typing import Any
 
 from homeassistant.components.binary_sensor import BinarySensorEntity
 from homeassistant.config_entries import ConfigEntry
+from homeassistant.const import STATE_UNAVAILABLE, STATE_UNKNOWN
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.event import async_track_state_change_event
-from homeassistant.const import STATE_UNAVAILABLE, STATE_UNKNOWN
 
-from .coordinator import GrowspaceCoordinator
 from .const import DOMAIN
+from .coordinator import GrowspaceCoordinator
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -40,12 +40,15 @@ async def async_setup_entry(
                     BayesianStressSensor(coordinator, growspace_id, env_config),
                     BayesianMoldRiskSensor(coordinator, growspace_id, env_config),
                     BayesianOptimalConditionsSensor(
-                        coordinator, growspace_id, env_config
+                        coordinator,
+                        growspace_id,
+                        env_config,
                     ),
-                ]
+                ],
             )
             _LOGGER.info(
-                "Created Bayesian environment sensors for growspace: %s", growspace.name
+                "Created Bayesian environment sensors for growspace: %s",
+                growspace.name,
             )
 
     if entities:
@@ -71,6 +74,7 @@ class BayesianEnvironmentSensor(BinarySensorEntity):
         self.growspace_id = growspace_id
         self.env_config = env_config
         self._attr_should_poll = False
+        self._attr_has_entity_name = True
 
         growspace = coordinator.growspaces[growspace_id]
         self._attr_device_info = DeviceInfo(
@@ -107,7 +111,7 @@ class BayesianEnvironmentSensor(BinarySensorEntity):
                 self.hass,
                 sensors,
                 self._async_sensor_changed,
-            )
+            ),
         )
 
         # Initial update
@@ -154,7 +158,8 @@ class BayesianEnvironmentSensor(BinarySensorEntity):
             return {"veg_days": 0, "flower_days": 0}
 
         max_veg = max(
-            (self._days_since(p.veg_start) for p in plants if p.veg_start), default=0
+            (self._days_since(p.veg_start) for p in plants if p.veg_start),
+            default=0,
         )
         max_flower = max(
             (self._days_since(p.flower_start) for p in plants if p.flower_start),
@@ -190,8 +195,7 @@ class BayesianStressSensor(BayesianEnvironmentSensor):
 
     def __init__(self, coordinator, growspace_id, env_config):
         super().__init__(coordinator, growspace_id, env_config)
-        growspace = coordinator.growspaces[growspace_id]
-        self._attr_name = f"{growspace.name} Plants Under Stress"
+        self._attr_name = "Plants Under Stress"
         self._attr_unique_id = f"{DOMAIN}_{growspace_id}_stress"
         self.prior = 0.15
         self.threshold = env_config.get("stress_threshold", 0.70)
@@ -299,13 +303,15 @@ class BayesianStressSensor(BayesianEnvironmentSensor):
                 observations.append((0.75, 0.20))  # Too high
 
         self._probability = self._calculate_bayesian_probability(
-            self.prior, observations
+            self.prior,
+            observations,
         )
         self.async_write_ha_state()
 
     @staticmethod
     def _calculate_bayesian_probability(
-        prior: float, observations: list[tuple[float, float]]
+        prior: float,
+        observations: list[tuple[float, float]],
     ) -> float:
         """Calculate Bayesian probability from observations.
 
@@ -315,6 +321,7 @@ class BayesianStressSensor(BayesianEnvironmentSensor):
 
         Returns:
             Posterior probability (0-1)
+
         """
         if not observations:
             return prior
@@ -342,8 +349,7 @@ class BayesianMoldRiskSensor(BayesianEnvironmentSensor):
 
     def __init__(self, coordinator, growspace_id, env_config):
         super().__init__(coordinator, growspace_id, env_config)
-        growspace = coordinator.growspaces[growspace_id]
-        self._attr_name = f"{growspace.name} High Mold Risk"
+        self._attr_name = "High Mold Risk"
         self._attr_unique_id = f"{DOMAIN}_{growspace_id}_mold_risk"
         self.prior = 0.10
         self.threshold = env_config.get("mold_threshold", 0.75)
@@ -394,7 +400,8 @@ class BayesianMoldRiskSensor(BayesianEnvironmentSensor):
                 observations.append((0.80, 0.15))
 
         self._probability = BayesianStressSensor._calculate_bayesian_probability(
-            self.prior, observations
+            self.prior,
+            observations,
         )
         self.async_write_ha_state()
 
@@ -404,8 +411,7 @@ class BayesianOptimalConditionsSensor(BayesianEnvironmentSensor):
 
     def __init__(self, coordinator, growspace_id, env_config):
         super().__init__(coordinator, growspace_id, env_config)
-        growspace = coordinator.growspaces[growspace_id]
-        self._attr_name = f"{growspace.name} Optimal Conditions"
+        self._attr_name = "Optimal Conditions"
         self._attr_unique_id = f"{DOMAIN}_{growspace_id}_optimal"
         self.prior = 0.40
         self.threshold = 0.80
@@ -502,6 +508,7 @@ class BayesianOptimalConditionsSensor(BayesianEnvironmentSensor):
                 observations.append((0.25, 0.70))
 
         self._probability = BayesianStressSensor._calculate_bayesian_probability(
-            self.prior, observations
+            self.prior,
+            observations,
         )
         self.async_write_ha_state()

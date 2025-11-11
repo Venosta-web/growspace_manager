@@ -1,9 +1,14 @@
-"""Utility functions for date parsing, formatting, and calculations in growspace_manager."""
+"""Utility functions for date parsing, formatting, and calculations in Growspace Manager."""
 
 from __future__ import annotations
-from datetime import date, datetime
+
+from datetime import date, datetime, timezone
+from typing import TYPE_CHECKING
+
 from dateutil import parser
-from .models import Plant, Growspace
+
+if TYPE_CHECKING:
+    from .models import Growspace, Plant
 
 DateInput = str | datetime | date | None
 
@@ -33,32 +38,35 @@ def format_date(date_value: DateInput) -> str | None:
 
 
 def calculate_days_since(
-    start_date: DateInput, end_date: DateInput | None = None
+    start_date: DateInput,
+    end_date: DateInput | None = None,
 ) -> int:
-    """Returns the number of days from start_date to end_date.
+    """Calculate the number of days from start_date to end_date.
 
     If end_date is None, uses today's date.
     """
     start = parse_date_field(start_date)
-    end = parse_date_field(end_date) if end_date else date.today()
+    end = parse_date_field(end_date) if end_date else datetime.now(timezone.utc).date()
     if start is None or end is None:
         return 0
     return (end - start).days
 
 
 def find_first_free_position(
-    growspace: Growspace, occupied_positions: set[tuple[int, int]]
+    growspace: Growspace,
+    occupied_positions: set[tuple[int, int]],
 ) -> tuple[int, int]:
-    """_Returns the first col/row thats free in growspace.
+    """Find the first free position (row, column) in a growspace.
 
     Args:
-        growspace (dict): _description_
-        occupied_positions (set[tuple[int, int]]): _description_
+        growspace (Growspace): The growspace object.
+        occupied_positions (set[tuple[int, int]]): A set of (row, col) tuples
+            representing occupied positions.
 
     Returns:
-        tuple[int, int]: _description_
+        tuple[int, int]: The first free (row, col) tuple, or the bottom-right
+            position if all are occupied.
     """
-
     total_rows = int(growspace.rows)
     total_cols = int(growspace.plants_per_row)
     for r in range(1, total_rows + 1):
@@ -69,7 +77,9 @@ def find_first_free_position(
 
 
 def generate_growspace_grid(
-    rows: int, cols: int, plant_positions: list[Plant]
+    rows: int,
+    cols: int,
+    plant_positions: list[Plant],
 ) -> list[list[str | None]]:
     """Generate a grid representing the growspace with plant IDs."""
     grid: list[list[str | None]] = [[None for _ in range(cols)] for _ in range(rows)]

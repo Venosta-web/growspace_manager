@@ -1,5 +1,6 @@
-from homeassistant.helpers.storage import Store
 from collections.abc import Iterable
+
+from homeassistant.helpers.storage import Store
 
 
 class StrainLibrary:
@@ -29,7 +30,9 @@ class StrainLibrary:
         return sorted(self.strains)
 
     async def import_strains(
-        self, strains: Iterable[str], replace: bool = False
+        self,
+        strains: Iterable[str],
+        replace: bool = False,
     ) -> int:
         clean_strains = {s.strip() for s in strains if s.strip()}
         if replace:

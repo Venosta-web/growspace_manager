@@ -1,31 +1,35 @@
 """Tests for growspace_manager utils."""
-from datetime import date, datetime
+
+from datetime import date, datetime, timezone
+from typing import Any
+
 import pytest
-from ..utils import (
-    parse_date_field,
-    format_date,
+
+from custom_components.growspace_manager.models import Growspace, Plant
+from custom_components.growspace_manager.utils import (
     calculate_days_since,
     find_first_free_position,
+    format_date,
     generate_growspace_grid,
+    parse_date_field,
 )
-from ..models import Plant, Growspace
 
 
 # ----------------------------
 # parse_date_field tests
 # ----------------------------
 @pytest.mark.parametrize(
-    "input_value,expected",
+    ("input_value", "expected"),
     [
         (None, None),
         (date(2025, 11, 3), date(2025, 11, 3)),
-        (datetime(2025, 11, 3, 15, 30), date(2025, 11, 3)),
+        (datetime(2025, 11, 3, 15, 30, tzinfo=timezone.utc), date(2025, 11, 3)),
         ("2025-11-03", date(2025, 11, 3)),
         ("invalid-date", None),
         (12345, None),
     ],
 )
-def test_parse_date_field(input_value, expected):
+def test_parse_date_field(input_value: Any, expected: date | None) -> None:
     """Test parse_date_field function."""
     assert parse_date_field(input_value) == expected
 
@@ -34,17 +38,17 @@ def test_parse_date_field(input_value, expected):
 # format_date tests
 # ----------------------------
 @pytest.mark.parametrize(
-    "input_value,expected",
+    ("input_value", "expected"),
     [
         (None, None),
         (date(2025, 11, 3), "2025-11-03"),
-        (datetime(2025, 11, 3, 15, 30), "2025-11-03"),
+        (datetime(2025, 11, 3, 15, 30, tzinfo=timezone.utc), "2025-11-03"),
         ("2025-11-03", "2025-11-03"),
         ("invalid-date", None),
         (12345, None),
     ],
 )
-def test_format_date(input_value, expected):
+def test_format_date(input_value: Any, expected: str | None) -> None:
     """Test format_date function."""
     assert format_date(input_value) == expected
 
@@ -52,11 +56,11 @@ def test_format_date(input_value, expected):
 # ----------------------------
 # calculate_days_since tests
 # ----------------------------
-def test_calculate_days_since():
+def test_calculate_days_since() -> None:
     """Test calculate_days_since function."""
     start = date(2025, 11, 1)
     end = date(2025, 11, 3)
-    assert calculate_days_since(start, end) == 2
+    assert calculate_days_since(start, end) == 2  # 2 days difference
 
     # default end_date = today (we can't mock here, just check type)
     result = calculate_days_since(date(2025, 11, 1))
@@ -66,7 +70,7 @@ def test_calculate_days_since():
 # ----------------------------
 # find_first_free_position tests
 # ----------------------------
-def test_find_first_free_position():
+def test_find_first_free_position() -> None:
     """Test find_first_free_position function."""
     growspace = Growspace(
         id="test",
@@ -88,7 +92,7 @@ def test_find_first_free_position():
 # ----------------------------
 # generate_growspace_grid tests
 # ----------------------------
-def test_generate_growspace_grid_basic():
+def test_generate_growspace_grid_basic() -> None:
     """Test generate_growspace_grid with basic plant placement."""
     plants = [
         Plant(plant_id="p1", row=1, col=1, strain="A", growspace_id="g1"),
@@ -101,7 +105,7 @@ def test_generate_growspace_grid_basic():
     ]
 
 
-def test_generate_growspace_grid_empty():
+def test_generate_growspace_grid_empty() -> None:
     """Test generate_growspace_grid with no plants."""
     grid = generate_growspace_grid(2, 2, [])
     assert grid == [
