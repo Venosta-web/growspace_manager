@@ -1,11 +1,11 @@
 """Plant services."""
+
 import logging
 from datetime import date
+from typing import Any, Optional
 
-from homeassistant.components.persistent_notification import (
-    async_create as create_notification,
-)
 from homeassistant.core import HomeAssistant, ServiceCall
+from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
 from homeassistant.helpers.entity_registry import async_get as async_get_entity_registry
 
 from ..const import DOMAIN
@@ -27,20 +27,19 @@ async def handle_add_plant(
     growspace = coordinator.growspaces.get(growspace_id)
 
     if not growspace:
-        create_notification(hass, f"Growspace '{growspace_id}' not found.", title="Growspace Manager")
-        return
+        raise ServiceValidationError(f"Growspace '{growspace_id}' not found.")
 
     row = call.data.get("row")
     col = call.data.get("col")
 
     if not (1 <= row <= growspace.rows and 1 <= col <= growspace.plants_per_row):
-        create_notification(hass, "Position is out of bounds for the selected growspace.", title="Growspace Manager")
-        return
+        raise ServiceValidationError(
+            "Position is out of bounds for the selected growspace.",
+        )
 
     for plant in coordinator.get_growspace_plants(growspace_id):
         if plant.row == row and plant.col == col:
-            create_notification(hass, "Position is already occupied.", title="Growspace Manager")
-            return
+            raise ServiceValidationError("Position is already occupied.")
 
     try:
         plant_id = await coordinator.async_add_plant(
@@ -60,8 +59,8 @@ async def handle_add_plant(
         await coordinator.async_request_refresh()
         hass.bus.async_fire(f"{DOMAIN}_plant_added", {"plant_id": plant_id})
     except Exception as e:
-        create_notification(hass, f"Failed to add plant: {e}", title="Growspace Manager")
-        raise
+        _LOGGER.error("Failed to add plant: %s", e)
+        raise HomeAssistantError(f"Failed to add plant: {e}") from e
 
 
 async def handle_take_clone(
@@ -75,8 +74,7 @@ async def handle_take_clone(
     mother_plant = coordinator.plants.get(mother_plant_id)
 
     if not mother_plant:
-        create_notification(hass, f"Mother plant '{mother_plant_id}' not found.", title="Growspace Manager")
-        return
+        raise ServiceValidationError(f"Mother plant '{mother_plant_id}' not found.")
 
     num_clones = call.data.get("num_clones", 1)
     if not isinstance(num_clones, int) or num_clones < 1:
@@ -84,31 +82,37 @@ async def handle_take_clone(
 
     clone_growspace = coordinator.growspaces.get("clone")
     if not clone_growspace:
-        create_notification(hass, "Clone growspace not found.", title="Growspace Manager")
-        return
+        raise ServiceValidationError("Clone growspace not found.")
 
     clones_taken = 0
-    for _ in range(num_clones):
-        row, col = coordinator.find_first_available_position("clone")
-        if row is None:
-            create_notification(hass, "No available space in clone growspace.", title="Growspace Manager")
-            break
+    try:
+        for _ in range(num_clones):
+            row, col = coordinator.find_first_available_position("clone")
+            if row is None:
+                raise ServiceValidationError("No available space in clone growspace.")
 
-        await coordinator.async_add_plant(
-            growspace_id="clone",
-            strain=mother_plant.strain,
-            phenotype=mother_plant.phenotype,
-            row=row,
-            col=col,
-            clone_start=parse_date_field(call.data.get("transition_date")) or date.today(),
-            source_mother=mother_plant_id,
-        )
-        clones_taken += 1
+            await coordinator.async_add_plant(
+                growspace_id="clone",
+                strain=mother_plant.strain,
+                phenotype=mother_plant.phenotype,
+                row=row,
+                col=col,
+                clone_start=parse_date_field(call.data.get("transition_date"))
+                or date.today(),
+                source_mother=mother_plant_id,
+            )
+            clones_taken += 1
 
-    if clones_taken > 0:
-        await coordinator.async_save()
-        await coordinator.async_request_refresh()
-        hass.bus.async_fire(f"{DOMAIN}_clones_taken", {"mother_plant_id": mother_plant_id, "num_clones": clones_taken})
+        if clones_taken > 0:
+            await coordinator.async_save()
+            await coordinator.async_request_refresh()
+            hass.bus.async_fire(
+                f"{DOMAIN}_clones_taken",
+                {"mother_plant_id": mother_plant_id, "num_clones": clones_taken},
+            )
+    except Exception as e:
+        _LOGGER.error("Failed to take clone(s): %s", e)
+        raise HomeAssistantError(f"Failed to take clone(s): {e}") from e
 
 
 async def handle_move_clone(
@@ -122,19 +126,20 @@ async def handle_move_clone(
     target_growspace_id = call.data.get("target_growspace_id")
 
     if not all([plant_id, target_growspace_id]):
-        create_notification(hass, "Missing required parameters.", title="Growspace Manager")
-        return
+        raise ServiceValidationError(
+            "Missing required parameters (plant_id, target_growspace_id)."
+        )
 
     plant = coordinator.plants.get(plant_id)
     if not plant:
-        create_notification(hass, f"Plant '{plant_id}' not found.", title="Growspace Manager")
-        return
+        raise ServiceValidationError(f"Plant '{plant_id}' not found.")
 
     try:
         row, col = coordinator.find_first_available_position(target_growspace_id)
         if row is None:
-            create_notification(hass, f"No available space in '{target_growspace_id}'.", title="Growspace Manager")
-            return
+            raise ServiceValidationError(
+                f"No available space in '{target_growspace_id}'."
+            )
 
         new_plant_id = await coordinator.async_add_plant(
             growspace_id=target_growspace_id,
@@ -142,15 +147,19 @@ async def handle_move_clone(
             phenotype=plant.phenotype,
             row=row,
             col=col,
-            veg_start=parse_date_field(call.data.get("transition_date")) or date.today(),
+            veg_start=parse_date_field(call.data.get("transition_date"))
+            or date.today(),
         )
         await coordinator.async_remove_plant(plant_id)
         await coordinator.async_save()
         await coordinator.async_request_refresh()
-        hass.bus.async_fire(f"{DOMAIN}_plant_moved", {"plant_id": new_plant_id, "growspace_id": target_growspace_id})
+        hass.bus.async_fire(
+            f"{DOMAIN}_plant_moved",
+            {"plant_id": new_plant_id, "growspace_id": target_growspace_id},
+        )
     except Exception as e:
-        create_notification(hass, f"Failed to move clone: {e}", title="Growspace Manager")
-        raise
+        _LOGGER.error("Failed to move clone: %s", e)
+        raise HomeAssistantError(f"Failed to move clone: {e}") from e
 
 
 async def handle_update_plant(
@@ -162,8 +171,7 @@ async def handle_update_plant(
     """Handle updating a plant's details."""
     plant_id = call.data.get("plant_id")
     if not coordinator.plants.get(plant_id):
-        create_notification(hass, f"Plant '{plant_id}' not found.", title="Growspace Manager")
-        return
+        raise ServiceValidationError(f"Plant '{plant_id}' not found.")
 
     update_data = {
         key: value
@@ -176,6 +184,9 @@ async def handle_update_plant(
             update_data[key] = parse_date_field(update_data[key])
 
     if not update_data:
+        _LOGGER.warning(
+            "Update plant service called for %s with no data to update.", plant_id
+        )
         return
 
     try:
@@ -184,8 +195,8 @@ async def handle_update_plant(
         await coordinator.async_request_refresh()
         hass.bus.async_fire(f"{DOMAIN}_plant_updated", {"plant_id": plant_id})
     except Exception as e:
-        create_notification(hass, f"Failed to update plant: {e}", title="Growspace Manager")
-        raise
+        _LOGGER.error("Failed to update plant: %s", e)
+        raise HomeAssistantError(f"Failed to update plant: {e}") from e
 
 
 async def handle_remove_plant(
@@ -197,8 +208,7 @@ async def handle_remove_plant(
     """Handle removing a plant."""
     plant_id = call.data.get("plant_id")
     if not coordinator.plants.get(plant_id):
-        create_notification(hass, f"Plant '{plant_id}' not found.", title="Growspace Manager")
-        return
+        raise ServiceValidationError(f"Plant '{plant_id}' not found.")
 
     try:
         await coordinator.async_remove_plant(plant_id)
@@ -206,8 +216,8 @@ async def handle_remove_plant(
         await coordinator.async_request_refresh()
         hass.bus.async_fire(f"{DOMAIN}_plant_removed", {"plant_id": plant_id})
     except Exception as e:
-        create_notification(hass, f"Failed to remove plant: {e}", title="Growspace Manager")
-        raise
+        _LOGGER.error("Failed to remove plant: %s", e)
+        raise HomeAssistantError(f"Failed to remove plant: {e}") from e
 
 
 async def handle_switch_plants(
@@ -220,18 +230,22 @@ async def handle_switch_plants(
     plant_id_1 = call.data.get("plant_id_1")
     plant_id_2 = call.data.get("plant_id_2")
 
-    if not all([coordinator.plants.get(plant_id_1), coordinator.plants.get(plant_id_2)]):
-        create_notification(hass, "One or both plants not found.", title="Growspace Manager")
-        return
+    if not all(
+        [coordinator.plants.get(plant_id_1), coordinator.plants.get(plant_id_2)]
+    ):
+        raise ServiceValidationError("One or both plants not found.")
 
     try:
         await coordinator.async_switch_plants(plant_id_1, plant_id_2)
         await coordinator.async_save()
         await coordinator.async_request_refresh()
-        hass.bus.async_fire(f"{DOMAIN}_plants_switched", {"plant_ids": [plant_id_1, plant_id_2]})
+        hass.bus.async_fire(
+            f"{DOMAIN}_plants_switched",
+            {"plant_ids": [plant_id_1, plant_id_2]},
+        )
     except Exception as e:
-        create_notification(hass, f"Failed to switch plants: {e}", title="Growspace Manager")
-        raise
+        _LOGGER.error("Failed to switch plants: %s", e)
+        raise HomeAssistantError(f"Failed to switch plants: {e}") from e
 
 
 async def handle_move_plant(
@@ -247,23 +261,30 @@ async def handle_move_plant(
     plant = coordinator.plants.get(plant_id)
 
     if not plant:
-        create_notification(hass, f"Plant '{plant_id}' not found.", title="Growspace Manager")
-        return
+        raise ServiceValidationError(f"Plant '{plant_id}' not found.")
 
     growspace = coordinator.growspaces.get(plant.growspace_id)
-    if not (1 <= new_row <= growspace.rows and 1 <= new_col <= growspace.plants_per_row):
-        create_notification(hass, "Position is out of bounds.", title="Growspace Manager")
-        return
+    if not (
+        1 <= new_row <= growspace.rows and 1 <= new_col <= growspace.plants_per_row
+    ):
+        raise ServiceValidationError("Position is out of bounds.")
 
     occupant = next(
-        (p for p in coordinator.get_growspace_plants(plant.growspace_id) if p.row == new_row and p.col == new_col),
+        (
+            p
+            for p in coordinator.get_growspace_plants(plant.growspace_id)
+            if p.row == new_row and p.col == new_col
+        ),
         None,
     )
 
     try:
         if occupant:
             await coordinator.async_switch_plants(plant_id, occupant.plant_id)
-            hass.bus.async_fire(f"{DOMAIN}_plants_switched", {"plant_ids": [plant_id, occupant.plant_id]})
+            hass.bus.async_fire(
+                f"{DOMAIN}_plants_switched",
+                {"plant_ids": [plant_id, occupant.plant_id]},
+            )
         else:
             await coordinator.async_move_plant(plant_id, new_row, new_col)
             hass.bus.async_fire(f"{DOMAIN}_plant_moved", {"plant_id": plant_id})
@@ -271,8 +292,8 @@ async def handle_move_plant(
         await coordinator.async_save()
         await coordinator.async_request_refresh()
     except Exception as e:
-        create_notification(hass, f"Failed to move plant: {e}", title="Growspace Manager")
-        raise
+        _LOGGER.error("Failed to move plant: %s", e)
+        raise HomeAssistantError(f"Failed to move plant: {e}") from e
 
 
 async def handle_transition_plant_stage(
@@ -284,24 +305,30 @@ async def handle_transition_plant_stage(
     """Handle transitioning a plant to a new stage."""
     plant_id = call.data.get("plant_id")
     new_stage = call.data.get("new_stage")
-    transition_date = parse_date_field(call.data.get("transition_date"))
+    transition_date_str = call.data.get("transition_date")
+    transition_date = parse_date_field(transition_date_str)
 
     if not coordinator.plants.get(plant_id):
-        create_notification(hass, f"Plant '{plant_id}' not found.", title="Growspace Manager")
-        return
+        raise ServiceValidationError(f"Plant '{plant_id}' not found.")
 
-    if transition_date is None and call.data.get("transition_date") is not None:
-        create_notification(hass, "Invalid date format for transition.", title="Growspace Manager")
-        return
+    if transition_date is None and transition_date_str is not None:
+        raise ServiceValidationError("Invalid date format for transition.")
 
     try:
-        await coordinator.async_transition_plant_stage(plant_id, new_stage, transition_date)
+        await coordinator.async_transition_plant_stage(
+            plant_id,
+            new_stage,
+            transition_date,
+        )
         await coordinator.async_save()
         await coordinator.async_request_refresh()
-        hass.bus.async_fire(f"{DOMAIN}_plant_transitioned", {"plant_id": plant_id, "new_stage": new_stage})
+        hass.bus.async_fire(
+            f"{DOMAIN}_plant_transitioned",
+            {"plant_id": plant_id, "new_stage": new_stage},
+        )
     except Exception as e:
-        create_notification(hass, f"Failed to transition plant: {e}", title="Growspace Manager")
-        raise
+        _LOGGER.error("Failed to transition plant: %s", e)
+        raise HomeAssistantError(f"Failed to transition plant: {e}") from e
 
 
 async def handle_harvest_plant(
@@ -313,11 +340,11 @@ async def handle_harvest_plant(
     """Handle harvesting a plant."""
     plant_id = call.data.get("plant_id")
     target_growspace_id = call.data.get("target_growspace_id", "dry")
-    transition_date = parse_date_field(call.data.get("transition_date"))
+    transition_date_str = call.data.get("transition_date")
+    transition_date = parse_date_field(transition_date_str)
 
     if not plant_id:
-        create_notification(hass, "Plant ID is required.", title="Growspace Manager")
-        return
+        raise ServiceValidationError("Plant ID is required.")
 
     # Resolve plant_id from entity_id if needed
     if "." in plant_id:
@@ -326,27 +353,30 @@ async def handle_harvest_plant(
             entity = entity_registry.async_get(plant_id)
             if entity:
                 state = hass.states.get(plant_id)
-                plant_id = state.attributes.get("plant_id")
+                if state:
+                    plant_id = state.attributes.get("plant_id")
         except Exception:
-            pass  # Ignore if resolution fails
+            _LOGGER.warning("Could not resolve entity_id %s to plant_id", plant_id)
 
     plant = coordinator.plants.get(plant_id)
     if not plant:
         await coordinator.async_load()
         plant = coordinator.plants.get(plant_id)
         if not plant:
-            create_notification(hass, f"Plant '{plant_id}' not found.", title="Growspace Manager")
-            return
+            raise ServiceValidationError(f"Plant '{plant_id}' not found after reload.")
 
-    if transition_date is None and call.data.get("transition_date") is not None:
-        create_notification(hass, "Invalid date format for transition.", title="Growspace Manager")
-        return
+    if transition_date is None and transition_date_str is not None:
+        raise ServiceValidationError("Invalid date format for transition.")
 
     try:
-        await coordinator.async_harvest_plant(plant_id, target_growspace_id, transition_date)
+        await coordinator.async_harvest_plant(
+            plant_id,
+            target_growspace_id,
+            transition_date,
+        )
         await coordinator.async_save()
         await coordinator.async_request_refresh()
         hass.bus.async_fire(f"{DOMAIN}_plant_harvested", {"plant_id": plant_id})
     except Exception as e:
-        create_notification(hass, f"Failed to harvest plant: {e}", title="Growspace Manager")
-        raise
+        _LOGGER.error("Failed to harvest plant: %s", e)
+        raise HomeAssistantError(f"Failed to harvest plant: {e}") from e

@@ -18,6 +18,7 @@ from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import selector
 
 from .const import DEFAULT_NAME, DOMAIN
+from .models import Growspace, Plant
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -616,8 +617,15 @@ class OptionsFlowHandler(OptionsFlow):
             # Reload coordinator data from storage to ensure we have latest growspaces
             store = self.hass.data[DOMAIN][self.config_entry.entry_id]["store"]
             fresh_data = await store.async_load() or {}
-            coordinator.growspaces = fresh_data.get("growspaces", {})
-            coordinator.plants = fresh_data.get("plants", {})
+            # We must parse the raw data back into objects
+            coordinator.growspaces = {
+                gid: Growspace.from_dict(gdata)
+                for gid, gdata in fresh_data.get("growspaces", {}).items()
+            }
+            coordinator.plants = {
+                pid: Plant.from_dict(pdata)
+                for pid, pdata in fresh_data.get("plants", {}).items()
+            }
             coordinator._notifications_sent = fresh_data.get("notifications_sent", {})
             # Update the data property
             coordinator.data = {

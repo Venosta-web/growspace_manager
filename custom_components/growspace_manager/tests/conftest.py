@@ -94,7 +94,7 @@ def mock_coordinator():
     coordinator.async_save = AsyncMock()
 
     # ✅ Use regular MagicMock for sync methods (don't await this!)
-    coordinator.async_set_updated_data = MagicMock()
+    coordinator.async_set_updated_data = AsyncMock()
 
     # Mock internal non-async methods that are called in the migration logic
     coordinator._migrate_plants_to_growspace = Mock()
