@@ -51,7 +51,7 @@ async def _migrate_plants_from_legacy_growspace(
                 migrated_plants_info.append(
                     f"{plant.strain} ({plant_id}) to {canonical_id} at ({new_row},{new_col})",
                 )
-            except Exception as e:
+            except (ValueError, KeyError) as e:
                 _LOGGER.warning(
                     "Failed to find position for migrated plant %s: %s",
                     plant_id,
@@ -179,7 +179,7 @@ async def debug_cleanup_legacy(
             migrated_plants_info if migrated_plants_info else "None",
         )
 
-    except Exception as e:
+    except (ValueError, KeyError) as e:
         _LOGGER.exception("DEBUG: Legacy cleanup failed: %s", e)
         raise
 
@@ -250,7 +250,7 @@ async def _restore_plants_to_canonical_growspace(
                     new_col,
                     plant_data["old_pos"],
                 )
-            except Exception as e:
+            except (ValueError, KeyError) as e:
                 _LOGGER.warning(
                     "Failed to assign position to preserved plant %s: %s",
                     plant_id,
@@ -378,7 +378,7 @@ async def debug_reset_special_growspaces(
 
         _LOGGER.info("DEBUG: Special growspace reset complete")
 
-    except Exception as e:
+    except (ValueError, KeyError) as e:
         _LOGGER.exception("DEBUG: Special growspace reset failed: %s", e)
         raise
 
@@ -411,7 +411,7 @@ async def _consolidate_plants_to_canonical_growspace(
                     coordinator.plants[plant_id]["row"] = new_row
                     coordinator.plants[plant_id]["col"] = new_col
                     consolidated_count += 1
-                except Exception as e:
+                except (ValueError, KeyError) as e:
                     _LOGGER.warning(
                         "Failed to find position for consolidated plant %s: %s",
                         plant_id,
@@ -507,6 +507,6 @@ async def debug_consolidate_duplicate_special(
 
         _LOGGER.info("DEBUG: Duplicate consolidation complete")
 
-    except Exception as e:
+    except (ValueError, KeyError) as e:
         _LOGGER.exception("DEBUG: Duplicate consolidation failed: %s", e)
         raise

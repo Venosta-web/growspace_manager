@@ -68,8 +68,8 @@ async def ensure_default_growspaces(hass: HomeAssistant, coordinator):
         else:
             _LOGGER.info("All default growspaces already exist")
 
-    except Exception:
-        _LOGGER.error("Error creating default growspaces: %s")
+    except (ValueError, TypeError, IOError) as e:
+        _LOGGER.error("Error creating default growspaces: %s", e)
 
 
 class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
@@ -244,7 +244,7 @@ class OptionsFlowHandler(OptionsFlow):
             if action == "remove" and user_input.get("growspace_id"):
                 try:
                     await coordinator.async_remove_growspace(user_input["growspace_id"])
-                except Exception as err:
+                except (ValueError, KeyError) as err:
                     _LOGGER.error("Error removing growspace: %s", err, exc_info=True)
                     return self.async_show_form(
                         step_id="manage_growspaces",
@@ -525,7 +525,7 @@ class OptionsFlowHandler(OptionsFlow):
                 )
                 return self.async_create_entry(title="", data={})
 
-            except Exception as err:
+            except ValueError as err:
                 _LOGGER.error("Error updating growspace: %s", err, exc_info=True)
                 return self.async_show_form(
                     step_id="update_growspace",
@@ -556,10 +556,25 @@ class OptionsFlowHandler(OptionsFlow):
             if action == "remove" and user_input.get("plant_id"):
                 try:
                     await coordinator.async_remove_plant(user_input["plant_id"])
-                except Exception:
+                except (ValueError, KeyError) as e:
                     return self.async_show_form(
                         step_id="manage_plants",
                         data_schema=self._get_plant_management_schema(coordinator),
+                        errors={"base": str(e)},
+                    )
+            if action == "back":
+                return self.async_show_form(
+                    step_id="init",
+                    data_schema=self.add_suggested_values_to_schema(
+                        coordinator,
+                        self.config_entry.options,
+                    ),
+                )
+
+        return self.async_show_form(
+            step_id="manage_plants",
+            data_schema=self._get_plant_management_schema(coordinator),
+        )
                         errors={"base": str(Exception)},
                     )
             if action == "back":
@@ -748,7 +763,7 @@ class OptionsFlowHandler(OptionsFlow):
                 # The coordinator's async_add_plant method handles saving and refreshing
                 return self.async_create_entry(title="", data={})
 
-            except Exception as err:
+            except (ValueError, TypeError) as err:
                 _LOGGER.exception("Error adding plant from config flow: %s", err)
                 return self.async_show_form(
                     step_id="add_plant",
@@ -782,7 +797,7 @@ class OptionsFlowHandler(OptionsFlow):
                     **update_data,
                 )
                 return self.async_create_entry(title="", data={})
-            except Exception as err:
+            except ValueError as err:
                 return self.async_show_form(
                     step_id="update_plant",
                     data_schema=self._get_update_plant_schema(plant, coordinator),

@@ -51,6 +51,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
     def __init__(
         self, hass, data: dict | None = None, options: dict | None = None
     ) -> None:
+        """Initialize the Growspace Coordinator."""
         super().__init__(
             hass,
             _LOGGER,

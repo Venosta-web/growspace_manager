@@ -105,9 +105,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 "Created pending growspace: %s",
                 pending.get("name", "unknown"),
             )
-        except Exception:
+        except (ValueError, TypeError) as e:
             _LOGGER.exception(
-                "Failed to create pending growspace: %s", pending.get("name", "unknown")
+                "Failed to create pending growspace %s: %s",
+                pending.get("name", "unknown"),
+                e,
             )
             create_notification(
                 hass,

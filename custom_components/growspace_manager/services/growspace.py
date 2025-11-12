@@ -46,7 +46,7 @@ async def handle_add_growspace(
             {"growspace_id": growspace_id, "name": call.data["name"]},
         )
 
-    except Exception as err:
+    except (ValueError, TypeError, KeyError) as err:
         _LOGGER.error("Failed to add growspace: %s", err)
         create_notification(
             hass,
@@ -70,7 +70,7 @@ async def handle_remove_growspace(
             f"{DOMAIN}_growspace_removed",
             {"growspace_id": call.data["growspace_id"]},
         )
-    except Exception as err:
+    except (ValueError, KeyError) as err:
         _LOGGER.error("Failed to remove growspace: %s", err)
         create_notification(
             hass,

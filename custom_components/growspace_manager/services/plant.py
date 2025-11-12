@@ -80,7 +80,7 @@ async def handle_add_plant(
         await coordinator.async_save()
         await coordinator.async_request_refresh()
         hass.bus.async_fire(f"{DOMAIN}_plant_added", {"plant_id": plant_id})
-    except Exception as e:
+    except (ValueError, TypeError, HomeAssistantError) as e:
         _LOGGER.error("Failed to add plant: %s", e)
         raise HomeAssistantError(f"Failed to add plant: {e}") from e
 
@@ -132,7 +132,7 @@ async def handle_take_clone(
                 f"{DOMAIN}_clones_taken",
                 {"mother_plant_id": mother_plant_id, "num_clones": clones_taken},
             )
-    except Exception as e:
+    except (ServiceValidationError, HomeAssistantError) as e:
         _LOGGER.error("Failed to take clone(s): %s", e)
         raise HomeAssistantError(f"Failed to take clone(s): {e}") from e
 
@@ -179,7 +179,7 @@ async def handle_move_clone(
             f"{DOMAIN}_plant_moved",
             {"plant_id": new_plant_id, "growspace_id": target_growspace_id},
         )
-    except Exception as e:
+    except (ServiceValidationError, HomeAssistantError) as e:
         _LOGGER.error("Failed to move clone: %s", e)
         raise HomeAssistantError(f"Failed to move clone: {e}") from e
 
@@ -216,7 +216,7 @@ async def handle_update_plant(
         await coordinator.async_save()
         await coordinator.async_request_refresh()
         hass.bus.async_fire(f"{DOMAIN}_plant_updated", {"plant_id": plant_id})
-    except Exception as e:
+    except (ValueError, HomeAssistantError) as e:
         _LOGGER.error("Failed to update plant: %s", e)
         raise HomeAssistantError(f"Failed to update plant: {e}") from e
 
@@ -237,7 +237,7 @@ async def handle_remove_plant(
         await coordinator.async_save()
         await coordinator.async_request_refresh()
         hass.bus.async_fire(f"{DOMAIN}_plant_removed", {"plant_id": plant_id})
-    except Exception as e:
+    except HomeAssistantError as e:
         _LOGGER.error("Failed to remove plant: %s", e)
         raise HomeAssistantError(f"Failed to remove plant: {e}") from e
 
@@ -265,7 +265,7 @@ async def handle_switch_plants(
             f"{DOMAIN}_plants_switched",
             {"plant_ids": [plant_id_1, plant_id_2]},
         )
-    except Exception as e:
+    except HomeAssistantError as e:
         _LOGGER.error("Failed to switch plants: %s", e)
         raise HomeAssistantError(f"Failed to switch plants: {e}") from e
 
@@ -313,7 +313,7 @@ async def handle_move_plant(
 
         await coordinator.async_save()
         await coordinator.async_request_refresh()
-    except Exception as e:
+    except HomeAssistantError as e:
         _LOGGER.error("Failed to move plant: %s", e)
         raise HomeAssistantError(f"Failed to move plant: {e}") from e
 
@@ -348,7 +348,7 @@ async def handle_transition_plant_stage(
             f"{DOMAIN}_plant_transitioned",
             {"plant_id": plant_id, "new_stage": new_stage},
         )
-    except Exception as e:
+    except (ValueError, HomeAssistantError) as e:
         _LOGGER.error("Failed to transition plant: %s", e)
         raise HomeAssistantError(f"Failed to transition plant: {e}") from e
 
@@ -399,6 +399,6 @@ async def handle_harvest_plant(
         await coordinator.async_save()
         await coordinator.async_request_refresh()
         hass.bus.async_fire(f"{DOMAIN}_plant_harvested", {"plant_id": plant_id})
-    except Exception as e:
+    except HomeAssistantError as e:
         _LOGGER.error("Failed to harvest plant: %s", e)
         raise HomeAssistantError(f"Failed to harvest plant: {e}") from e

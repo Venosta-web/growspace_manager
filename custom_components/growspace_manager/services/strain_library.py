@@ -88,7 +88,7 @@ async def handle_import_strain_library(
             f"{DOMAIN}_strain_library_imported",
             {"added_count": added_count, "replace": replace_existing},
         )
-    except Exception as err:
+    except (ValueError, TypeError) as err:
         _LOGGER.exception("Failed to import strain library: %s", err)
         create_notification(
             hass,
@@ -131,7 +131,7 @@ async def handle_clear_strain_library(
             title="Growspace Manager Error",
         )
         raise
-    except Exception as err:
+    except (ValueError, TypeError) as err:
         _LOGGER.exception("Failed to clear strain library: %s", err)
         create_notification(
             hass,

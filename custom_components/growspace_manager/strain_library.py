@@ -5,6 +5,7 @@ from homeassistant.helpers.storage import Store
 
 class StrainLibrary:
     def __init__(self, hass, storage_version: int, storage_key: str) -> None:
+        """Initialize the Strain Library."""
         self.hass = hass
         self.store = Store(hass, storage_version, storage_key)
         self.strains: set[str] = set()

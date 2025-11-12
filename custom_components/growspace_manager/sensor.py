@@ -176,6 +176,7 @@ class GrowspaceOverviewSensor(SensorEntity):
         growspace_id: str,
         growspace: Growspace,
     ) -> None:
+        """Initialize the Growspace Overview Sensor."""
         self.coordinator = coordinator
         self.growspace_id = growspace_id
         self.growspace = growspace
@@ -308,6 +309,7 @@ class PlantEntity(SensorEntity):
     """Single entity per plant with stage as state and all variables as attributes."""
 
     def __init__(self, coordinator, plant: Plant) -> None:
+        """Initialize the Plant Entity."""
         self.coordinator = coordinator
         self._plant = plant
         self._attr_has_entity_name = True
@@ -623,6 +625,7 @@ class PlantEntity(SensorEntity):
 
 class StrainLibrarySensor(SensorEntity):
     def __init__(self, coordinator: GrowspaceCoordinator) -> None:
+        """Initialize the Strain Library Sensor."""
         self.coordinator = coordinator
         self._attr_name = "Growspace Strain Library"
         self._attr_unique_id = f"{DOMAIN}_strain_library"
@@ -644,6 +647,7 @@ class GrowspaceListSensor(SensorEntity):
     """Exposes the list of growspaces as a sensor."""
 
     def __init__(self, coordinator: GrowspaceCoordinator) -> None:
+        """Initialize the Growspace List Sensor."""
         self.coordinator = coordinator
         self._attr_name = "Growspaces List"
         self._attr_unique_id = f"{DOMAIN}_growspaces_list"
