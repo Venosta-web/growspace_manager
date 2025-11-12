@@ -141,6 +141,15 @@ class BayesianEnvironmentSensor(BinarySensorEntity):
         except (ValueError, TypeError):
             return None
 
+    @staticmethod
+    def _days_since(date_str: str) -> int:
+        """Calculate days since date string (YYYY-MM-DD)."""
+        try:
+            dt = datetime.strptime(date_str, "%Y-%m-%d").date()
+        except (ValueError, TypeError):
+            return 0
+        return (date.today() - dt).days
+
     def _get_growth_stage_info(self) -> dict[str, int]:
         """Get veg_days and flower_days from coordinator."""
         # Rufe die neue zentralisierte Methode auf

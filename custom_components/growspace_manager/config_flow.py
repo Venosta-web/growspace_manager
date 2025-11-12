@@ -87,37 +87,19 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         if self._async_current_entries():
             return self.async_abort(reason="single_instance_allowed")
 
-        try:
-            _LOGGER.info("DEBUG - async_step_user called with input: %s", user_input)
-
-            if user_input is not None:
-                name = user_input.get("name", DEFAULT_NAME)
-                _LOGGER.info(
-                    "DEBUG - Processing user input, storing integration name: %s",
-                    name,
-                )
-                return self.async_create_entry(
-                    title=name,
-                    data={"name": name},
-                )
-
-            _LOGGER.info("DEBUG - Showing initial user form")
-            return self.async_show_form(
-                step_id="user",
-                data_schema=STEP_USER_DATA_SCHEMA,
+        if user_input is not None:
+            name = user_input.get("name", DEFAULT_NAME)
+            _LOGGER.debug("Creating entry for Growspace Manager with name: %s", name)
+            return self.async_create_entry(
+                title=name,
+                data={"name": name},
             )
 
-        except Exception:
-            _LOGGER.exception(
-                "Error in async_step_user: %s ,{type(err).__name__}: {err}",
-            )
-            return self.async_show_form(
-                step_id="user",
-                data_schema=vol.Schema(
-                    {vol.Optional("name", default=DEFAULT_NAME): cv.string},
-                ),
-                errors={"base": "Error: %s ,{str(err)}"},
-            )
+        _LOGGER.debug("Showing initial user form for Growspace Manager")
+        return self.async_show_form(
+            step_id="user",
+            data_schema=STEP_USER_DATA_SCHEMA,
+        )
 
     async def async_step_add_growspace(
         self,
@@ -125,38 +107,20 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     ) -> ConfigFlowResult:
         """Add a growspace during initial setup."""
         if user_input is not None:
-            try:
-                _LOGGER.info(
-                    "DEBUG - ConfigFlow received growspace data: %s",
-                    user_input,
-                )
+            _LOGGER.debug("Storing pending growspace data: %s", user_input)
+            self.hass.data.setdefault(DOMAIN, {})
+            self.hass.data[DOMAIN]["pending_growspace"] = {
+                "name": user_input["name"],
+                "rows": user_input["rows"],
+                "plants_per_row": user_input["plants_per_row"],
+                "notification_target": user_input.get("notification_target"),
+            }
+            return self.async_create_entry(
+                title=getattr(self, "_integration_name", DEFAULT_NAME),
+                data={"name": getattr(self, "_integration_name", DEFAULT_NAME)},
+            )
 
-                entry = self.async_create_entry(
-                    title=getattr(self, "_integration_name", DEFAULT_NAME),
-                    data={"name": getattr(self, "_integration_name", DEFAULT_NAME)},
-                )
-
-                self.hass.data.setdefault(DOMAIN, {})
-                self.hass.data[DOMAIN]["pending_growspace"] = {
-                    "name": user_input["name"],
-                    "rows": user_input["rows"],
-                    "plants_per_row": user_input["plants_per_row"],
-                    "notification_target": user_input.get("notification_target"),
-                }
-
-                _LOGGER.info(
-                    "DEBUG - Stored pending growspace data: %s %s ,{self.hass.data[DOMAIN],['pending_growspace']}",
-                )
-                return entry
-
-            except Exception:
-                _LOGGER.exception("Error in async_step_user: %s", self)
-                return self.async_show_form(
-                    step_id="add_growspace",
-                    data_schema=self._get_add_growspace_schema(),
-                )
-
-        _LOGGER.info("DEBUG - Showing add_growspace form")
+        _LOGGER.debug("Showing add_growspace form")
         return self.async_show_form(
             step_id="add_growspace",
             data_schema=self._get_add_growspace_schema(),
@@ -207,6 +171,21 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
         return vol.Schema(base)
 
+    async def async_step_reauth(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        """Handle re-authentication."""
+        if user_input is not None:
+            # Here you would typically validate the new credentials
+            # and update the config entry
+            _LOGGER.debug("Re-authentication successful")
+            await self.hass.config_entries.async_reload(self.context["entry_id"])
+            return self.async_abort(reason="reauth_successful")
+
+        return self.async_show_form(
+            step_id="reauth",
+            data_schema=vol.Schema({}), # Add your re-auth schema here
+            description_placeholders={"name": self.context["title_placeholders"]["name"]},
+        )
+
     @staticmethod
     @callback
     def async_get_options_flow(config_entry: ConfigEntry) -> OptionsFlowHandler:
@@ -230,6 +209,8 @@ class OptionsFlowHandler(OptionsFlow):
                 return await self.async_step_manage_plants()
             if action == "configure_environment":
                 return await self.async_step_select_growspace_for_env()
+            if action == "reauth":
+                return await self.async_step_reauth()
             return self.async_create_entry(title="", data=user_input)
 
         return self.async_show_form(
@@ -484,33 +465,23 @@ class OptionsFlowHandler(OptionsFlow):
 
         if user_input is not None:
             try:
-                _LOGGER.info(
-                    "DEBUG - Config flow received growspace data: %s, {user_input}",
-                )
-                _LOGGER.info(
-                    "DEBUG - About to call %s, coordinator.async_add_growspace",
-                )
+                _LOGGER.debug("Adding growspace: %s", user_input)
                 await coordinator.async_add_growspace(
                     name=user_input["name"],
                     rows=user_input["rows"],
                     plants_per_row=user_input["plants_per_row"],
                     notification_target=user_input.get("notification_target"),
                 )
-                _LOGGER.info(
-                    "DEBUG - Successfully added growspace: %s %s,{user_input['name']} with ID: {growspace_id}",
-                )
                 return self.async_create_entry(title="", data={})
-            except Exception:
-                _LOGGER.exception("Error adding growspace: %s", Exception)
+            except (ValueError, TypeError) as e:
+                _LOGGER.error("Error adding growspace: %s", e)
                 return self.async_show_form(
                     step_id="add_growspace",
                     data_schema=self._get_add_growspace_schema(),
                     errors={"base": "add_failed"},
                 )
 
-        _LOGGER.info(
-            "DEBUG - Showing add_growspace form with schema fields: %s ,{list(self._get_add_growspace_schema().schema.keys())}",
-        )
+        _LOGGER.debug("Showing add_growspace form")
         return self.async_show_form(
             step_id="add_growspace",
             data_schema=self._get_add_growspace_schema(),
@@ -823,6 +794,15 @@ class OptionsFlowHandler(OptionsFlow):
             data_schema=self._get_update_plant_schema(plant, coordinator),
         )
 
+    async def async_step_reauth(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        """Handle re-authentication."""
+        _LOGGER.debug("Initiating re-authentication flow")
+        return await self.hass.config_entries.flow.async_init(
+            self.config_entry.domain,
+            context={"source": config_entries.SOURCE_REAUTH, "entry_id": self.config_entry.entry_id},
+            data=self.config_entry.data,
+        )
+
     def _get_growspace_management_schema(self, coordinator) -> vol.Schema:
         """Get schema for growspace management using object attributes."""
         growspace_options = [
@@ -1004,6 +984,10 @@ class OptionsFlowHandler(OptionsFlow):
                             selector.SelectOptionDict(
                                 value="configure_environment",
                                 label="Configure Environment Sensors",
+                            ),
+                            selector.SelectOptionDict(
+                                value="reauth",
+                                label="Re-authenticate",
                             ),
                         ],
                         mode=selector.SelectSelectorMode.DROPDOWN,

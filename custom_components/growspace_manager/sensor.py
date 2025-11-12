@@ -58,18 +58,18 @@ async def async_setup_entry(
     # Add your GrowspaceListSensor
     initial_entities.append(GrowspaceListSensor(coordinator))
 
-    _LOGGER.warning(
+    _LOGGER.debug(
         "DEBUG: coordinator.growspaces = %s",
         {gid: gs.name for gid, gs in coordinator.growspaces.items()},
     )
-    _LOGGER.warning(
+    _LOGGER.debug(
         "DEBUG: Created growspace_entities = %s",
         list(growspace_entities.keys()),
     )
-    _LOGGER.warning("DEBUG: Total initial_entities = %d", len(initial_entities))
+    _LOGGER.debug("DEBUG: Total initial_entities = %d", len(initial_entities))
     for entity in initial_entities:
         if isinstance(entity, GrowspaceOverviewSensor):
-            _LOGGER.warning(
+            _LOGGER.debug(
                 "DEBUG: Growspace entity - unique_id=%s, name=%s",
                 entity.unique_id,
                 entity.name,
@@ -220,6 +220,14 @@ class GrowspaceOverviewSensor(SensorEntity):
         plants = self.coordinator.get_growspace_plants(self.growspace_id)
         return len(plants)
 
+    @staticmethod
+    def _days_since(date_str: str) -> int:
+        """Calculate days since date string (YYYY-MM-DD)."""
+        try:
+            dt = datetime.strptime(date_str, "%Y-%m-%d").date()
+        except (ValueError, TypeError):
+            return 0
+        return (date.today() - dt).days
 
     @staticmethod
     def _days_to_week(days: int) -> int:
@@ -325,7 +333,7 @@ class PlantEntity(SensorEntity):
             return value
         try:
             return parser.isoparse(value).date()
-        except Exception:
+        except (ValueError, TypeError):
             return None
 
     def _determine_stage(self, plant: Plant) -> str:

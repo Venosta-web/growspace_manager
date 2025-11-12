@@ -66,7 +66,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
         self.store: Store = Store(hass, STORAGE_VERSION, STORAGE_KEY)
 
         self.options = options or {}
-        _LOGGER.critical(
+        _LOGGER.debug(
             "--- COORDINATOR INITIALIZED WITH OPTIONS: %s ---",
             self.options,
         )
@@ -106,7 +106,6 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
             len(self.plants),
             len(self.growspaces),
         )
-        
 
     # -----------------------------
     # Methods for editor dropdown
@@ -342,7 +341,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
                 return 0
 
             return (date.today() - dt).days
-        except Exception as e:
+        except (ValueError, TypeError) as e:
             _LOGGER.warning("Failed to calculate days for date %s: %s", start_date, e)
             return 0
 
@@ -478,8 +477,8 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
             _LOGGER.info("No stored data found, starting fresh")
             return
 
-        _LOGGER.warning("DEBUG: Raw storage data keys = %s", list(data.keys()))
-        _LOGGER.warning(
+        _LOGGER.debug("DEBUG: Raw storage data keys = %s", list(data.keys()))
+        _LOGGER.debug(
             "DEBUG: Raw growspaces in storage = %s",
             list(data.get("growspaces", {}).keys()),
         )
@@ -491,7 +490,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
                 pid: Plant.from_dict(p) for pid, p in data.get("plants", {}).items()
             }
             _LOGGER.info("Loaded %d plants", len(self.plants))
-        except Exception as e:
+        except (TypeError, ValueError) as e:
             _LOGGER.error("Error loading plants: %s", e, exc_info=True)
             self.plants = {}
 
@@ -503,26 +502,26 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
             }
             _LOGGER.info("Loaded %d growspaces", len(self.growspaces))
             if not self.options:
-                _LOGGER.critical("--- COORDINATOR HAS NO OPTIONS TO APPLY ---")
+                _LOGGER.debug("--- COORDINATOR HAS NO OPTIONS TO APPLY ---")
             else:
-                _LOGGER.critical(
+                _LOGGER.debug(
                     "--- APPLYING OPTIONS TO GROWSPACES: %s ---",
                     self.options,
                 )
                 for growspace_id, growspace in self.growspaces.items():
                     if growspace_id in self.options:
                         growspace.environment_config = self.options[growspace_id]
-                        _LOGGER.critical(
+                        _LOGGER.info(
                             "--- SUCCESS: Applied env_config to '%s': %s ---",
                             growspace.name,
                             growspace.environment_config,
                         )
                     else:
-                        _LOGGER.warning(
+                        _LOGGER.debug(
                             "--- INFO: No options found for growspace '%s' ---",
                             growspace.name,
                         )
-        except Exception as e:
+        except (TypeError, ValueError) as e:
             _LOGGER.exception("Error loading growspaces: %s", e, exc_info=True)
             self.growspaces = {}
 
@@ -1064,7 +1063,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
 
         _LOGGER.debug("COORDINATOR: Updating plant %s", plant_id)
         for key, value in updates.items():
-            _LOGGER.warning(
+            _LOGGER.debug(
                 "COORDINATOR: Field %s = %s (type: %s, id: %s)",
                 key,
                 value,
@@ -1075,7 +1074,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
             if hasattr(plant, key):
                 old_value = getattr(plant, key)
                 setattr(plant, key, value)
-                _LOGGER.warning(
+                _LOGGER.debug(
                     "COORDINATOR: Updated %s: %s -> %s",
                     key,
                     old_value,
@@ -1532,22 +1531,6 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
             for plant in self.plants.values()
             if plant.growspace_id == growspace_id
         ]
-    def get_growspace_max_stage_days(self, growspace_id: str) -> dict[str, int]:
-        """Get max veg_days and flower_days for a growspace."""
-        plants = self.get_growspace_plants(growspace_id)
-        if not plants:
-            return {"veg": 0, "flower": 0}
-
-        max_veg = max(
-            (self._calculate_days(p.veg_start) for p in plants if p.veg_start),
-            default=0,
-        )
-        max_flower = max(
-            (self._calculate_days(p.flower_start) for p in plants if p.flower_start),
-            default=0,
-        )
-
-        return {"veg": max_veg, "flower": max_flower}
 
     def calculate_days_in_stage(self, plant: Plant, stage: str) -> int:
         """Calculate days a plant has been in a specific stage."""
