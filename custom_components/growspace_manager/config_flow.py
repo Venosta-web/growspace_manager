@@ -243,8 +243,8 @@ class OptionsFlowHandler(OptionsFlow):
             if action == "remove" and user_input.get("growspace_id"):
                 try:
                     await coordinator.async_remove_growspace(user_input["growspace_id"])
-                except (ValueError, KeyError) as err:
-                    _LOGGER.exception("Error removing growspace: %s", err)
+                except (ValueError, KeyError):
+                    _LOGGER.exception("Error removing growspace")
                     return self.async_show_form(
                         step_id="manage_growspaces",
                         data_schema=self._get_growspace_management_schema(coordinator),
@@ -524,8 +524,8 @@ class OptionsFlowHandler(OptionsFlow):
                 )
                 return self.async_create_entry(title="", data={})
 
-            except ValueError as err:
-                _LOGGER.exception("Error updating growspace: %s", err)
+            except ValueError:
+                _LOGGER.exception("Error updating growspace")
                 return self.async_show_form(
                     step_id="update_growspace",
                     data_schema=self._get_update_growspace_schema(growspace),
@@ -733,12 +733,12 @@ class OptionsFlowHandler(OptionsFlow):
                 # The coordinator's async_add_plant method handles saving and refreshing
                 return self.async_create_entry(title="", data={})
 
-            except (ValueError, TypeError) as err:
-                _LOGGER.exception("Error adding plant from config flow: %s", err)
+            except (ValueError, TypeError):
+                _LOGGER.exception("Error adding plant from config flow")
                 return self.async_show_form(
                     step_id="add_plant",
                     data_schema=self._get_add_plant_schema(growspace, coordinator),
-                    errors={"base": str(err)},
+                    errors={"base": "add_plant_failed"},
                 )
 
         # Show the form on initial access
