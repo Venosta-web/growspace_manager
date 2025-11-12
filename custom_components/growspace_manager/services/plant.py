@@ -47,7 +47,7 @@ async def handle_add_plant(
 
     if occupant:
         _LOGGER.info(
-            "Position (%d, %d) in %s is occupied by %s. Finding next available.",
+            "Position (%d, %d) in %s is occupied by %s. Finding next available",
             row,
             col,
             growspace_id,
@@ -207,7 +207,7 @@ async def handle_update_plant(
 
     if not update_data:
         _LOGGER.warning(
-            "Update plant service called for %s with no data to update.", plant_id
+            "Update plant service called for %s with no data to update", plant_id
         )
         return
 
