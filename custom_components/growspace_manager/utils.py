@@ -56,7 +56,7 @@ def find_first_free_position(
     growspace: Growspace,
     occupied_positions: set[tuple[int, int]],
 ) -> tuple[int | None, int | None]:
-    """_Returns the first col/row thats free in growspace.
+    """_Returns the first col/row that's free in growspace.
 
     Args:
         growspace (Growspace): The growspace object.

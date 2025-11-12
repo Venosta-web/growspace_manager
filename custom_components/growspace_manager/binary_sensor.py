@@ -153,10 +153,10 @@ class BayesianEnvironmentSensor(BinarySensorEntity):
 
     def _get_growth_stage_info(self) -> dict[str, int]:
         """Get veg_days and flower_days from coordinator."""
-        # Rufe die neue zentralisierte Methode auf
+        # Call the new centralized method
         stage_days = self.coordinator.get_growspace_max_stage_days(self.growspace_id)
 
-        # Gib im Format zurück, das diese Klasse erwartet
+        # Return in the format this class expects
         return {
             "veg_days": stage_days.get("veg", 0),
             "flower_days": stage_days.get("flower", 0),
