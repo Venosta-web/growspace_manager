@@ -234,7 +234,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
     # =============================================================================
 
     def _get_plant_stage(self, plant: Plant) -> str:
-        """Return the current stage of a plant based on its start dates."""
+        """Get the current stage of a plant."""
         if getattr(plant, "cure_start", None):
             return "cure"
         if getattr(plant, "dry_start", None):
