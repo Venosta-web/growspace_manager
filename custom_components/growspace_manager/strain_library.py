@@ -4,6 +4,8 @@ from homeassistant.helpers.storage import Store
 
 
 class StrainLibrary:
+    """Manages the strain library."""
+
     def __init__(self, hass, storage_version: int, storage_key: str) -> None:
         """Initialize the Strain Library."""
         self.hass = hass

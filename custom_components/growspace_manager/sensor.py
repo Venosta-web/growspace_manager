@@ -170,6 +170,8 @@ async def async_setup_entry(
 
 
 class GrowspaceOverviewSensor(SensorEntity):
+    """Represents a growspace overview sensor."""
+
     def __init__(
         self,
         coordinator: GrowspaceCoordinator,
@@ -624,6 +626,8 @@ class PlantEntity(SensorEntity):
 
 
 class StrainLibrarySensor(SensorEntity):
+    """Represents the Strain Library sensor."""
+
     def __init__(self, coordinator: GrowspaceCoordinator) -> None:
         """Initialize the Strain Library Sensor."""
         self.coordinator = coordinator
