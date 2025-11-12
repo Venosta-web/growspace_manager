@@ -492,7 +492,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
             }
             _LOGGER.info("Loaded %d plants", len(self.plants))
         except (TypeError, ValueError) as e:
-            _LOGGER.error("Error loading plants: %s", e, exc_info=True)
+            _LOGGER.exception("Error loading plants: %s", e)
             self.plants = {}
 
         # Load growspaces using from_dict (handles migration)
@@ -523,7 +523,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
                             growspace.name,
                         )
         except (TypeError, ValueError) as e:
-            _LOGGER.exception("Error loading growspaces: %s", e, exc_info=True)
+            _LOGGER.exception("Error loading growspaces: %s", e)
             self.growspaces = {}
 
         # ✅ Load notification tracking
