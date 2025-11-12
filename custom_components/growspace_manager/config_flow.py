@@ -601,24 +601,8 @@ class OptionsFlowHandler(OptionsFlow):
                 "coordinator"
             ]
             # Reload coordinator data from storage to ensure we have latest growspaces
-            store = self.hass.data[DOMAIN][self.config_entry.entry_id]["store"]
-            fresh_data = await store.async_load() or {}
-            # We must parse the raw data back into objects
-            coordinator.growspaces = {
-                gid: Growspace.from_dict(gdata)
-                for gid, gdata in fresh_data.get("growspaces", {}).items()
-            }
-            coordinator.plants = {
-                pid: Plant.from_dict(pdata)
-                for pid, pdata in fresh_data.get("plants", {}).items()
-            }
-            coordinator._notifications_sent = fresh_data.get("notifications_sent", {})
-            # Update the data property
-            coordinator.data = {
-                "growspaces": coordinator.growspaces,
-                "plants": coordinator.plants,
-                "notifications_sent": coordinator._notifications_sent,
-            }
+            await coordinator.async_load()
+            coordinator.update_data_property()
         except KeyError:
             _LOGGER.error(
                 "Coordinator not found - integration may not be properly set up",

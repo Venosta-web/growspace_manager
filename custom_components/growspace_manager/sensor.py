@@ -82,25 +82,25 @@ async def async_setup_entry(
             len(initial_entities),
         )
     # Ensure dry and cure growspaces exist after coordinator setup
-    dry_id = coordinator._ensure_special_growspace(
+    dry_id = coordinator.ensure_special_growspace(
         "dry",
         "dry",
         rows=3,
         plants_per_row=3,
     )
-    cure_id = coordinator._ensure_special_growspace(
+    cure_id = coordinator.ensure_special_growspace(
         "cure",
         "cure",
         rows=3,
         plants_per_row=3,
     )
-    clone_id = coordinator._ensure_special_growspace(
+    clone_id = coordinator.ensure_special_growspace(
         "clone",
         "clone",
         rows=3,
         plants_per_row=3,
     )
-    mother_id = coordinator._ensure_special_growspace(
+    mother_id = coordinator.ensure_special_growspace(
         "mother",
         "mother",
         rows=3,
