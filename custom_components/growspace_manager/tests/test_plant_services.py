@@ -307,7 +307,7 @@ async def test_add_plant_exception(
     with patch(
         "custom_components.growspace_manager.services.plant.create_notification",
     ) as mock_notify:
-        with pytest.raises(Exception):
+        with pytest.raises(ServiceValidationError):
             await handle_add_plant(hass, mock_coordinator, mock_strain_library, call)
         mock_notify.assert_called()
 
@@ -735,7 +735,7 @@ async def test_move_clone_exception_during_move(
     with patch(
         "custom_components.growspace_manager.services.plant.create_notification",
     ) as mock_notify:
-        with pytest.raises(Exception):
+        with pytest.raises(ServiceValidationError):
             await handle_move_clone(hass, mock_coordinator, mock_strain_library, call)
         mock_notify.assert_called()
 
@@ -973,7 +973,7 @@ async def test_update_plant_exception(
     with patch(
         "custom_components.growspace_manager.services.plant.create_notification",
     ) as mock_notify:
-        with pytest.raises(Exception):
+        with pytest.raises(ServiceValidationError):
             await handle_update_plant(hass, mock_coordinator, mock_strain_library, call)
         mock_notify.assert_called()
 
@@ -1072,7 +1072,7 @@ async def test_remove_plant_exception(
     with patch(
         "custom_components.growspace_manager.services.plant.create_notification",
     ) as mock_notify:
-        with pytest.raises(Exception):
+        with pytest.raises(ServiceValidationError):
             await handle_remove_plant(hass, mock_coordinator, mock_strain_library, call)
         mock_notify.assert_called()
 
@@ -1215,7 +1215,7 @@ async def test_switch_plants_exception(
     with patch(
         "custom_components.growspace_manager.services.plant.create_notification",
     ) as mock_notify:
-        with pytest.raises(Exception):
+        with pytest.raises(ServiceValidationError):
             await handle_switch_plants(
                 hass,
                 mock_coordinator,
@@ -1421,7 +1421,7 @@ async def test_move_plant_exception(
     with patch(
         "custom_components.growspace_manager.services.plant.create_notification",
     ) as mock_notify:
-        with pytest.raises(Exception):
+        with pytest.raises(ServiceValidationError):
             await handle_move_plant(hass, mock_coordinator, mock_strain_library, call)
         mock_notify.assert_called()
 
@@ -1635,7 +1635,7 @@ async def test_transition_plant_stage_exception(
     with patch(
         "custom_components.growspace_manager.services.plant.create_notification",
     ) as mock_notify:
-        with pytest.raises(Exception):
+        with pytest.raises(ServiceValidationError):
             await handle_transition_plant_stage(
                 hass,
                 mock_coordinator,
@@ -1987,7 +1987,7 @@ async def test_harvest_plant_exception(
     with patch(
         "custom_components.growspace_manager.services.plant.create_notification",
     ) as mock_notify:
-        with pytest.raises(Exception):
+        with pytest.raises(ServiceValidationError):
             await handle_harvest_plant(
                 hass,
                 mock_coordinator,

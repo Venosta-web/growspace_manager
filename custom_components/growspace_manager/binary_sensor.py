@@ -247,6 +247,10 @@ class BayesianStressSensor(BayesianEnvironmentSensor):
 
         # Calculate probability using Bayes theorem
         observations = []
+        observations.extend(self._get_temp_observation(temp))
+        observations.extend(self._get_vpd_observation(vpd, stage_info))
+        observations.extend(self._get_humidity_observation(humidity))
+        observations.extend(self._get_co2_observation(co2))
 
         # Temperature observations
         if temp is not None:

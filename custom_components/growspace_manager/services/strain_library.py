@@ -92,7 +92,7 @@ async def handle_import_strain_library(
         _LOGGER.exception("Failed to import strain library: %s", err)
         create_notification(
             hass,
-            f"Failed to import strain library: {err!s}",
+            f"Failed to import strain library: {err}",
             title="Growspace Manager Error",
         )
         raise
@@ -135,7 +135,7 @@ async def handle_clear_strain_library(
         _LOGGER.exception("Failed to clear strain library: %s", err)
         create_notification(
             hass,
-            f"Failed to clear strain library: {err!s}",
+            f"Failed to clear strain library: {err}",
             title="Growspace Manager Error",
         )
         raise
