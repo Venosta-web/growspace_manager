@@ -8,8 +8,8 @@ jobs:
 
     strategy:
       matrix:
-        # Verwende die Python-Versionen, die für HA relevant sind (z.B. 3.12)
-        # 3.13 ist noch sehr neu, 3.12 ist eine stabilere Wahl für CI.
+        # Use the Python versions that are relevant for HA (e.g. 3.12)
+        # 3.13 is still very new, 3.12 is a more stable choice for CI.
         python-version: ["3.12"]
 
     steps:
@@ -24,12 +24,12 @@ jobs:
       - name: "Install dependencies"
         run: |
           python -m pip install --upgrade pip
-          # Installiere die Linting-Tools
+          # Install the linting tools
           pip install ruff pylint mypy
 
-          # Installiere die Abhängigkeiten deines Projekts,
-          # damit Pylint/MyPy sie finden können
-          # (Basierend auf deinen Test-Dateien)
+          # Install your project's dependencies,
+          # so that Pylint/MyPy can find them
+          # (Based on your test files)
           pip install voluptuous freezegun python-dateutil
 
       - name: "1. Check Formatting (Ruff)"
@@ -46,5 +46,5 @@ jobs:
 
       - name: "4. Check Type Hints (MyPy)"
         run: |
-          # --ignore-missing-imports wird oft für HA-Komponenten benötigt
+          # --ignore-missing-imports is often required for HA components
           mypy custom_components/growspace_manager --ignore-missing-imports
