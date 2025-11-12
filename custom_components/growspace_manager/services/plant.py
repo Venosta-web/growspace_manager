@@ -134,7 +134,7 @@ async def handle_take_clone(
             )
     except (ServiceValidationError, HomeAssistantError) as e:
         _LOGGER.error("Failed to take clone(s): %s", e)
-        raise HomeAssistantError(f"Failed to take clone(s): {e}") from e
+        raise
 
 
 async def handle_move_clone(
@@ -181,7 +181,7 @@ async def handle_move_clone(
         )
     except (ServiceValidationError, HomeAssistantError) as e:
         _LOGGER.error("Failed to move clone: %s", e)
-        raise HomeAssistantError(f"Failed to move clone: {e}") from e
+        raise
 
 
 async def handle_update_plant(
