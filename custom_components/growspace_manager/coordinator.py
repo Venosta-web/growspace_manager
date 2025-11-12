@@ -362,6 +362,16 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
     # SPECIAL GROWSPACE MANAGEMENT
     # =============================================================================
 
+    def ensure_special_growspace(
+        self,
+        growspace_id: str,
+        name: str,
+        rows: int = 3,
+        plants_per_row: int = 3,
+    ) -> str:
+        """Ensure a special growspace exists with a stable id and return its id."""
+        return self._ensure_special_growspace(growspace_id, name, rows, plants_per_row)
+
     def _ensure_special_growspace(
         self,
         growspace_id: str,

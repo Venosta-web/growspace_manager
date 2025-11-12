@@ -166,6 +166,41 @@ class BayesianEnvironmentSensor(BinarySensorEntity):
         """Calculate Bayesian probability - implemented by subclasses."""
         raise NotImplementedError
 
+    @staticmethod
+    def calculate_bayesian_probability(
+        prior: float,
+        observations: list[tuple[float, float]],
+    ) -> float:
+        """Calculate Bayesian probability from observations.
+
+        Args:
+            prior: Prior probability (0-1)
+            observations: List of (prob_given_true, prob_given_false) tuples
+
+        Returns:
+            Posterior probability (0-1)
+
+        """
+        if not observations:
+            return prior
+
+        # Start with prior odds
+        prob_true = prior
+        prob_false = 1 - prior
+
+        # Apply each observation using Bayes theorem
+        for p_obs_given_true, p_obs_given_false in observations:
+            # Update using likelihood ratio
+            prob_true *= p_obs_given_true
+            prob_false *= p_obs_given_false
+
+        # Normalize to get probability
+        total = prob_true + prob_false
+        if total == 0:
+            return prior
+
+        return prob_true / total
+
     @property
     def is_on(self) -> bool:
         """Return true if probability exceeds threshold."""
@@ -294,46 +329,11 @@ class BayesianStressSensor(BayesianEnvironmentSensor):
             elif co2 > 1800:
                 observations.append((0.75, 0.20))  # Too high
 
-        self._probability = self._calculate_bayesian_probability(
+        self._probability = self.calculate_bayesian_probability(
             self.prior,
             observations,
         )
         self.async_write_ha_state()
-
-    @staticmethod
-    def _calculate_bayesian_probability(
-        prior: float,
-        observations: list[tuple[float, float]],
-    ) -> float:
-        """Calculate Bayesian probability from observations.
-
-        Args:
-            prior: Prior probability (0-1)
-            observations: List of (prob_given_true, prob_given_false) tuples
-
-        Returns:
-            Posterior probability (0-1)
-
-        """
-        if not observations:
-            return prior
-
-        # Start with prior odds
-        prob_true = prior
-        prob_false = 1 - prior
-
-        # Apply each observation using Bayes theorem
-        for p_obs_given_true, p_obs_given_false in observations:
-            # Update using likelihood ratio
-            prob_true *= p_obs_given_true
-            prob_false *= p_obs_given_false
-
-        # Normalize to get probability
-        total = prob_true + prob_false
-        if total == 0:
-            return prior
-
-        return prob_true / total
 
 
 class BayesianMoldRiskSensor(BayesianEnvironmentSensor):
@@ -392,7 +392,7 @@ class BayesianMoldRiskSensor(BayesianEnvironmentSensor):
             if fan_off:
                 observations.append((0.80, 0.15))
 
-        self._probability = BayesianStressSensor._calculate_bayesian_probability(
+        self._probability = self.calculate_bayesian_probability(
             self.prior,
             observations,
         )
