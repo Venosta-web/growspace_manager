@@ -1,16 +1,15 @@
-import pytest
-from unittest.mock import Mock, AsyncMock, MagicMock, patch
 from datetime import date, timedelta
+from unittest.mock import AsyncMock, Mock
+
+import pytest
+
 from ..sensor import (
+    GrowspaceListSensor,
     GrowspaceOverviewSensor,
     PlantEntity,
     StrainLibrarySensor,
-    GrowspaceListSensor,
     async_setup_entry,
 )
-from .. import sensor as sensor_module
-from ..coordinator import GrowspaceCoordinator
-from ..const import DOMAIN
 
 
 # --------------------
@@ -27,7 +26,7 @@ def mock_coordinator():
             rows=2,
             plants_per_row=2,
             notification_target="notify_me",
-        )
+        ),
     }
     coordinator.plants = {
         "p1": Mock(
@@ -45,7 +44,7 @@ def mock_coordinator():
             clone_start=None,
             dry_start=None,
             cure_start=None,
-        )
+        ),
     }
     coordinator.get_growspace_plants.return_value = list(coordinator.plants.values())
     coordinator.calculate_days_in_stage.side_effect = lambda plant, stage: 1
@@ -67,12 +66,12 @@ async def test_async_setup_entry_adds_entities():
     # Coordinator mock
     mock_coordinator = Mock()
     mock_coordinator.growspaces = {
-        "gs1": Mock(id="gs1", name="Growspace 1", rows=2, plants_per_row=2)
+        "gs1": Mock(id="gs1", name="Growspace 1", rows=2, plants_per_row=2),
     }
     mock_coordinator.get_growspace_plants = Mock(return_value=[])
     mock_coordinator.async_save = AsyncMock()
     mock_coordinator._ensure_special_growspace = Mock(
-        side_effect=lambda x, y, rows, plants_per_row: x
+        side_effect=lambda x, y, rows, plants_per_row: x,
     )
     mock_coordinator.async_set_updated_data = AsyncMock()
 

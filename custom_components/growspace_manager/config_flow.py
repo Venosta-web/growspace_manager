@@ -3,24 +3,22 @@
 from __future__ import annotations
 
 import logging
-from typing import Any, Dict, Optional
+from typing import Any, Optional
 
+import homeassistant.helpers.config_validation as cv
 import voluptuous as vol
-
 from homeassistant import config_entries
 from homeassistant.config_entries import (
+    ConfigEntry,
     ConfigFlowResult,
     OptionsFlow,
-    ConfigEntry,
 )
 from homeassistant.core import HomeAssistant, callback
-from homeassistant.data_entry_flow import FlowResult
-import homeassistant.helpers.config_validation as cv
-from homeassistant.helpers import selector
 from homeassistant.helpers import device_registry as dr
+from homeassistant.helpers import selector
 
-
-from .const import DOMAIN, DEFAULT_NAME
+from .const import DEFAULT_NAME, DOMAIN
+from .models import Growspace, Plant
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -33,7 +31,7 @@ STEP_INIT = {
 STEP_USER_DATA_SCHEMA = vol.Schema(
     {
         vol.Optional("name", default=DEFAULT_NAME): cv.string,
-    }
+    },
 )
 
 
@@ -53,7 +51,10 @@ async def ensure_default_growspaces(hass: HomeAssistant, coordinator):
         for growspace_id, name, rows, plants_per_row in default_growspaces:
             # Use the coordinator's method to ensure special growspaces
             canonical_id = coordinator.ensure_special_growspace(
-                growspace_id, name, rows, plants_per_row
+                growspace_id,
+                name,
+                rows,
+                plants_per_row,
             )
             if canonical_id not in coordinator.growspaces:
                 created_count += 1
@@ -67,7 +68,7 @@ async def ensure_default_growspaces(hass: HomeAssistant, coordinator):
         else:
             _LOGGER.info("All default growspaces already exist")
 
-    except Exception as err:
+    except Exception:
         _LOGGER.error("Error creating default growspaces: %s")
 
 
@@ -79,9 +80,13 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     integration_name = "Growspace Manager"
 
     async def async_step_user(
-        self, user_input: dict[str, Any] | None = None
+        self,
+        user_input: dict[str, Any] | None = None,
     ) -> ConfigFlowResult:
         """Handle the initial step."""
+        if self._async_current_entries():
+            return self.async_abort(reason="single_instance_allowed")
+
         try:
             _LOGGER.info("DEBUG - async_step_user called with input: %s", user_input)
 
@@ -104,24 +109,26 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
         except Exception:
             _LOGGER.exception(
-                "Error in async_step_user: %s ,{type(err).__name__}: {err}"
+                "Error in async_step_user: %s ,{type(err).__name__}: {err}",
             )
             return self.async_show_form(
                 step_id="user",
                 data_schema=vol.Schema(
-                    {vol.Optional("name", default=DEFAULT_NAME): cv.string}
+                    {vol.Optional("name", default=DEFAULT_NAME): cv.string},
                 ),
                 errors={"base": "Error: %s ,{str(err)}"},
             )
 
     async def async_step_add_growspace(
-        self, user_input: dict[str, Any] | None = None
+        self,
+        user_input: dict[str, Any] | None = None,
     ) -> ConfigFlowResult:
         """Add a growspace during initial setup."""
         if user_input is not None:
             try:
                 _LOGGER.info(
-                    "DEBUG - ConfigFlow received growspace data: %s", user_input
+                    "DEBUG - ConfigFlow received growspace data: %s",
+                    user_input,
                 )
 
                 entry = self.async_create_entry(
@@ -138,7 +145,7 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 }
 
                 _LOGGER.info(
-                    "DEBUG - Stored pending growspace data: %s %s ,{self.hass.data[DOMAIN],['pending_growspace']}"
+                    "DEBUG - Stored pending growspace data: %s %s ,{self.hass.data[DOMAIN],['pending_growspace']}",
                 )
                 return entry
 
@@ -161,13 +168,17 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             vol.Required("name"): selector.TextSelector(),
             vol.Required("rows", default=4): selector.NumberSelector(
                 selector.NumberSelectorConfig(
-                    min=1, max=20, mode=selector.NumberSelectorMode.BOX
-                )
+                    min=1,
+                    max=20,
+                    mode=selector.NumberSelectorMode.BOX,
+                ),
             ),
             vol.Required("plants_per_row", default=4): selector.NumberSelector(
                 selector.NumberSelectorConfig(
-                    min=1, max=20, mode=selector.NumberSelectorMode.BOX
-                )
+                    min=1,
+                    max=20,
+                    mode=selector.NumberSelectorMode.BOX,
+                ),
             ),
             vol.Optional("notification_target"): selector.TextSelector(),
         }
@@ -189,7 +200,7 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     options=notification_options,
                     custom_value=False,
                     mode=selector.SelectSelectorMode.DROPDOWN,
-                )
+                ),
             )
         else:
             base[vol.Optional("notification_target")] = selector.TextSelector()
@@ -207,7 +218,8 @@ class OptionsFlowHandler(OptionsFlow):
     """Growspace Manager options flow."""
 
     async def async_step_init(
-        self, user_input: dict[str, Any] | None = None
+        self,
+        user_input: dict[str, Any] | None = None,
     ) -> ConfigFlowResult:
         """Initial options menu."""
         if user_input is not None:
@@ -226,7 +238,8 @@ class OptionsFlowHandler(OptionsFlow):
         )
 
     async def async_step_manage_growspaces(
-        self, user_input: Optional[dict[str, Any]] | None
+        self,
+        user_input: Optional[dict[str, Any]] | None,
     ) -> ConfigFlowResult:
         """Manage growspaces."""
         try:
@@ -235,7 +248,7 @@ class OptionsFlowHandler(OptionsFlow):
             ]
         except KeyError:
             _LOGGER.error(
-                "Coordinator not found - integration may not be properly set up"
+                "Coordinator not found - integration may not be properly set up",
             )
             return self.async_abort(reason="setup_error")
 
@@ -244,10 +257,10 @@ class OptionsFlowHandler(OptionsFlow):
 
             if action == "add":
                 return await self.async_step_add_growspace()
-            elif action == "update" and user_input.get("growspace_id"):
+            if action == "update" and user_input.get("growspace_id"):
                 self._selected_growspace_id = user_input["growspace_id"]
                 return await self.async_step_update_growspace()
-            elif action == "remove" and user_input.get("growspace_id"):
+            if action == "remove" and user_input.get("growspace_id"):
                 try:
                     await coordinator.async_remove_growspace(user_input["growspace_id"])
                 except Exception as err:
@@ -261,7 +274,8 @@ class OptionsFlowHandler(OptionsFlow):
                 return self.async_show_form(
                     step_id="init",
                     data_schema=self.add_suggested_values_to_schema(
-                        self._get_main_menu_schema(), self.config_entry.options
+                        self._get_main_menu_schema(),
+                        self.config_entry.options,
                     ),
                 )
 
@@ -271,7 +285,8 @@ class OptionsFlowHandler(OptionsFlow):
         )
 
     async def async_step_select_growspace_for_env(
-        self, user_input: dict[str, Any] | None = None
+        self,
+        user_input: dict[str, Any] | None = None,
     ) -> ConfigFlowResult:
         """Let the user select which growspace to configure."""
         coordinator = self.hass.data[DOMAIN][self.config_entry.entry_id]["coordinator"]
@@ -293,16 +308,18 @@ class OptionsFlowHandler(OptionsFlow):
                             for gs_id, name in growspace_options
                         ],
                         mode=selector.SelectSelectorMode.DROPDOWN,
-                    )
-                )
-            }
+                    ),
+                ),
+            },
         )
         return self.async_show_form(
-            step_id="select_growspace_for_env", data_schema=schema
+            step_id="select_growspace_for_env",
+            data_schema=schema,
         )
 
     async def async_step_configure_environment(
-        self, user_input: dict[str, Any] | None = None
+        self,
+        user_input: dict[str, Any] | None = None,
     ) -> ConfigFlowResult:
         """Handle the configuration of environment sensors."""
         coordinator = self.hass.data[DOMAIN][self.config_entry.entry_id]["coordinator"]
@@ -362,25 +379,28 @@ class OptionsFlowHandler(OptionsFlow):
         # Required sensors
         schema_dict[
             vol.Required(
-                "temperature_sensor", default=options.get("temperature_sensor")
+                "temperature_sensor",
+                default=options.get("temperature_sensor"),
             )
         ] = selector.EntitySelector(
             selector.EntitySelectorConfig(
-                domain=["sensor", "input_number"], device_class=["temperature"]
-            )
+                domain=["sensor", "input_number"],
+                device_class=["temperature"],
+            ),
         )
 
         schema_dict[
             vol.Required("humidity_sensor", default=options.get("humidity_sensor"))
         ] = selector.EntitySelector(
             selector.EntitySelectorConfig(
-                domain=["sensor", "input_number"], device_class=["humidity"]
-            )
+                domain=["sensor", "input_number"],
+                device_class=["humidity"],
+            ),
         )
 
         schema_dict[vol.Required("vpd_sensor", default=options.get("vpd_sensor"))] = (
             selector.EntitySelector(
-                selector.EntitySelectorConfig(domain=["sensor", "input_number"])
+                selector.EntitySelectorConfig(domain=["sensor", "input_number"]),
             )
         )
 
@@ -390,13 +410,14 @@ class OptionsFlowHandler(OptionsFlow):
             selector.BooleanSelector()
         )
 
-        if co2_enabled or user_input and user_input.get("configure_co2"):
+        if co2_enabled or (user_input and user_input.get("configure_co2")):
             schema_dict[
                 vol.Optional("co2_sensor", default=options.get("co2_sensor"))
             ] = selector.EntitySelector(
                 selector.EntitySelectorConfig(
-                    domain=["sensor", "input_number"], device_class=["carbon_dioxide"]
-                )
+                    domain=["sensor", "input_number"],
+                    device_class=["carbon_dioxide"],
+                ),
             )
 
         # Circulation fan (optional)
@@ -405,30 +426,39 @@ class OptionsFlowHandler(OptionsFlow):
             selector.BooleanSelector()
         )
 
-        if fan_enabled or user_input and user_input.get("configure_fan"):
+        if fan_enabled or (user_input and user_input.get("configure_fan")):
             schema_dict[
                 vol.Optional("circulation_fan", default=options.get("circulation_fan"))
             ] = selector.EntitySelector(
-                selector.EntitySelectorConfig(domain=["fan", "switch", "input_boolean"])
+                selector.EntitySelectorConfig(
+                    domain=["fan", "switch", "input_boolean"]
+                ),
             )
 
         # Thresholds
         schema_dict[
             vol.Optional(
-                "stress_threshold", default=options.get("stress_threshold", 0.70)
+                "stress_threshold",
+                default=options.get("stress_threshold", 0.70),
             )
         ] = selector.NumberSelector(
             selector.NumberSelectorConfig(
-                min=0.5, max=0.95, step=0.05, mode=selector.NumberSelectorMode.SLIDER
-            )
+                min=0.5,
+                max=0.95,
+                step=0.05,
+                mode=selector.NumberSelectorMode.SLIDER,
+            ),
         )
 
         schema_dict[
             vol.Optional("mold_threshold", default=options.get("mold_threshold", 0.75))
         ] = selector.NumberSelector(
             selector.NumberSelectorConfig(
-                min=0.5, max=0.95, step=0.05, mode=selector.NumberSelectorMode.SLIDER
-            )
+                min=0.5,
+                max=0.95,
+                step=0.05,
+                mode=selector.NumberSelectorMode.SLIDER,
+            ),
         )
 
         return self.async_show_form(
@@ -438,7 +468,8 @@ class OptionsFlowHandler(OptionsFlow):
         )
 
     async def async_step_add_growspace(
-        self, user_input: dict[str, Any] | None = None
+        self,
+        user_input: dict[str, Any] | None = None,
     ) -> ConfigFlowResult:
         """Add a new growspace."""
         try:
@@ -447,26 +478,26 @@ class OptionsFlowHandler(OptionsFlow):
             ]
         except KeyError:
             _LOGGER.error(
-                "Coordinator not found - integration may not be properly set up"
+                "Coordinator not found - integration may not be properly set up",
             )
             return self.async_abort(reason="setup_error")
 
         if user_input is not None:
             try:
                 _LOGGER.info(
-                    "DEBUG - Config flow received growspace data: %s, {user_input}"
+                    "DEBUG - Config flow received growspace data: %s, {user_input}",
                 )
                 _LOGGER.info(
-                    "DEBUG - About to call %s, coordinator.async_add_growspace"
+                    "DEBUG - About to call %s, coordinator.async_add_growspace",
                 )
-                growspace_id = await coordinator.async_add_growspace(
+                await coordinator.async_add_growspace(
                     name=user_input["name"],
                     rows=user_input["rows"],
                     plants_per_row=user_input["plants_per_row"],
                     notification_target=user_input.get("notification_target"),
                 )
                 _LOGGER.info(
-                    "DEBUG - Successfully added growspace: %s %s,{user_input['name']} with ID: {growspace_id}"
+                    "DEBUG - Successfully added growspace: %s %s,{user_input['name']} with ID: {growspace_id}",
                 )
                 return self.async_create_entry(title="", data={})
             except Exception:
@@ -478,7 +509,7 @@ class OptionsFlowHandler(OptionsFlow):
                 )
 
         _LOGGER.info(
-            "DEBUG - Showing add_growspace form with schema fields: %s ,{list(self._get_add_growspace_schema().schema.keys())}"
+            "DEBUG - Showing add_growspace form with schema fields: %s ,{list(self._get_add_growspace_schema().schema.keys())}",
         )
         return self.async_show_form(
             step_id="add_growspace",
@@ -486,7 +517,8 @@ class OptionsFlowHandler(OptionsFlow):
         )
 
     async def async_step_update_growspace(
-        self, user_input: dict[str, Any] | None = None
+        self,
+        user_input: dict[str, Any] | None = None,
     ) -> ConfigFlowResult:
         """Update an existing growspace."""
         try:
@@ -495,7 +527,7 @@ class OptionsFlowHandler(OptionsFlow):
             ]
         except KeyError:
             _LOGGER.error(
-                "Coordinator not found - integration may not be properly set up"
+                "Coordinator not found - integration may not be properly set up",
             )
             return self.async_abort(reason="setup_error")
 
@@ -512,11 +544,13 @@ class OptionsFlowHandler(OptionsFlow):
 
                 # Call coordinator's update method (you'll need to implement this)
                 await coordinator.async_update_growspace(
-                    self._selected_growspace_id, **update_data
+                    self._selected_growspace_id,
+                    **update_data,
                 )
 
                 _LOGGER.info(
-                    "Successfully updated growspace: %s", self._selected_growspace_id
+                    "Successfully updated growspace: %s",
+                    self._selected_growspace_id,
                 )
                 return self.async_create_entry(title="", data={})
 
@@ -534,7 +568,8 @@ class OptionsFlowHandler(OptionsFlow):
         )
 
     async def async_step_manage_plants(
-        self, user_input: dict[str, Any] | None = None
+        self,
+        user_input: dict[str, Any] | None = None,
     ) -> ConfigFlowResult:
         """Manage plants."""
         coordinator = self.hass.data[DOMAIN][self.config_entry.entry_id]["coordinator"]
@@ -560,7 +595,8 @@ class OptionsFlowHandler(OptionsFlow):
                 return self.async_show_form(
                     step_id="init",
                     data_schema=self.add_suggested_values_to_schema(
-                        coordinator, self.config_entry.options
+                        coordinator,
+                        self.config_entry.options,
                     ),
                 )
 
@@ -570,7 +606,8 @@ class OptionsFlowHandler(OptionsFlow):
         )
 
     async def async_step_select_growspace_for_plant(
-        self, user_input: dict[str, Any] | None = None
+        self,
+        user_input: dict[str, Any] | None = None,
     ) -> ConfigFlowResult:
         """Select growspace for new plant."""
         try:
@@ -580,8 +617,15 @@ class OptionsFlowHandler(OptionsFlow):
             # Reload coordinator data from storage to ensure we have latest growspaces
             store = self.hass.data[DOMAIN][self.config_entry.entry_id]["store"]
             fresh_data = await store.async_load() or {}
-            coordinator.growspaces = fresh_data.get("growspaces", {})
-            coordinator.plants = fresh_data.get("plants", {})
+            # We must parse the raw data back into objects
+            coordinator.growspaces = {
+                gid: Growspace.from_dict(gdata)
+                for gid, gdata in fresh_data.get("growspaces", {}).items()
+            }
+            coordinator.plants = {
+                pid: Plant.from_dict(pdata)
+                for pid, pdata in fresh_data.get("plants", {}).items()
+            }
             coordinator._notifications_sent = fresh_data.get("notifications_sent", {})
             # Update the data property
             coordinator.data = {
@@ -591,24 +635,24 @@ class OptionsFlowHandler(OptionsFlow):
             }
         except KeyError:
             _LOGGER.error(
-                "Coordinator not found - integration may not be properly set up"
+                "Coordinator not found - integration may not be properly set up",
             )
             return self.async_abort(reason="setup_error")
 
         _LOGGER.info(f"Config entry ID: {self.config_entry.entry_id}")
         _LOGGER.info(
-            f"Available growspaces in coordinator: {list(coordinator.growspaces.keys())}"
+            f"Available growspaces in coordinator: {list(coordinator.growspaces.keys())}",
         )
 
         # Get growspaces from device registry
         device_registry = dr.async_get(self.hass)
         devices = device_registry.devices.get_devices_for_config_entry_id(
-            self.config_entry.entry_id
+            self.config_entry.entry_id,
         )
 
         _LOGGER.info(f"Total devices for config entry: {len(devices)}")
         _LOGGER.info(
-            f"All devices: {[(d.name, d.model, d.identifiers) for d in devices]}"
+            f"All devices: {[(d.name, d.model, d.identifiers) for d in devices]}",
         )
 
         # Filter for growspace devices
@@ -629,7 +673,7 @@ class OptionsFlowHandler(OptionsFlow):
                 step_id="select_growspace_for_plant",
                 data_schema=vol.Schema({}),
                 errors={
-                    "base": "No growspaces available. Please create a growspace first."
+                    "base": "No growspaces available. Please create a growspace first.",
                 },
             )
 
@@ -640,12 +684,14 @@ class OptionsFlowHandler(OptionsFlow):
         return self.async_show_form(
             step_id="select_growspace_for_plant",
             data_schema=self._get_growspace_selection_schema_from_devices(
-                growspace_devices, coordinator
+                growspace_devices,
+                coordinator,
             ),
         )
 
     async def async_step_add_plant(
-        self, user_input: dict[str, Any] | None = None
+        self,
+        user_input: dict[str, Any] | None = None,
     ) -> ConfigFlowResult:
         """Add a new plant."""
         coordinator = self.hass.data[DOMAIN][self.config_entry.entry_id]["coordinator"]
@@ -653,30 +699,101 @@ class OptionsFlowHandler(OptionsFlow):
 
         if user_input is not None:
             try:
-                await coordinator.async_add_plant(
+                # Get user-requested position
+                row = user_input["row"]
+                col = user_input["col"]
+
+                # Check for an occupant at that position
+                occupant = None
+                for plant in coordinator.get_growspace_plants(
+                    self._selected_growspace_id
+                ):
+                    if plant.row == row and plant.col == col:
+                        occupant = plant
+                        break
+
+                final_row, final_col = row, col
+
+                if occupant:
+                    _LOGGER.info(
+                        "Position (%d, %d) in %s is occupied by %s. Finding next available",
+                        row,
+                        col,
+                        self._selected_growspace_id,
+                        occupant.strain,
+                    )
+                    # Position is occupied, find the next available slot
+                    new_row, new_col = coordinator.find_first_available_position(
+                        self._selected_growspace_id
+                    )
+
+                    if new_row is None:
+                        # Growspace is full
+                        return self.async_show_form(
+                            step_id="add_plant",
+                            data_schema=self._get_add_plant_schema(
+                                growspace, coordinator
+                            ),
+                            errors={
+                                "base": f"Growspace '{growspace.name}' is already full."
+                            },
+                        )
+
+                    # A new, free slot was found
+                    final_row, final_col = new_row, new_col
+                    _LOGGER.info(
+                        "Assigned plant to next available position: (%d, %d)",
+                        final_row,
+                        final_col,
+                    )
+
+                # Determine stage from dates
+                stage = "seedling"  # default
+                if user_input.get("flower_start"):
+                    stage = "flower"
+                elif user_input.get("veg_start"):
+                    stage = "veg"
+
+                # Create the plant at the (potentially new) final position
+                plant = await coordinator.async_add_plant(
                     growspace_id=self._selected_growspace_id,
                     strain=user_input["strain"],
-                    row=user_input["row"],
-                    col=user_input["col"],
-                    phenotype=user_input.get("phenotype"),
+                    row=final_row,  # <-- Use the final (corrected) row
+                    col=final_col,  # <-- Use the final (corrected) col
+                    phenotype=user_input.get("phenotype", ""),
+                    stage=stage,  # <-- Explicitly set the stage
                     veg_start=user_input.get("veg_start"),
                     flower_start=user_input.get("flower_start"),
                 )
+
+                _LOGGER.info(
+                    "Successfully created plant %s at position (%d, %d) in growspace %s",
+                    plant.plant_id,
+                    plant.row,
+                    plant.col,
+                    plant.growspace_id,
+                )
+
+                # The coordinator's async_add_plant method handles saving and refreshing
                 return self.async_create_entry(title="", data={})
+
             except Exception as err:
+                _LOGGER.exception("Error adding plant from config flow: %s", err)
                 return self.async_show_form(
                     step_id="add_plant",
                     data_schema=self._get_add_plant_schema(growspace, coordinator),
                     errors={"base": str(err)},
                 )
 
+        # Show the form on initial access
         return self.async_show_form(
             step_id="add_plant",
             data_schema=self._get_add_plant_schema(growspace, coordinator),
         )
 
     async def async_step_update_plant(
-        self, user_input: dict[str, Any] | None = None
+        self,
+        user_input: dict[str, Any] | None = None,
     ) -> ConfigFlowResult:
         """Update an existing plant."""
         coordinator = self.hass.data[DOMAIN][self.config_entry.entry_id]["coordinator"]
@@ -690,7 +807,8 @@ class OptionsFlowHandler(OptionsFlow):
                 # Filter out empty values
                 update_data = {k: v for k, v in user_input.items() if v}
                 await coordinator.async_update_plant(
-                    self._selected_plant_id, **update_data
+                    self._selected_plant_id,
+                    **update_data,
                 )
                 return self.async_create_entry(title="", data={})
             except Exception as err:
@@ -721,18 +839,21 @@ class OptionsFlowHandler(OptionsFlow):
                     options=[
                         selector.SelectOptionDict(value="add", label="Add Growspace"),
                         selector.SelectOptionDict(
-                            value="update", label="Update Growspace"
+                            value="update",
+                            label="Update Growspace",
                         ),
                         selector.SelectOptionDict(
-                            value="remove", label="Remove Growspace"
+                            value="remove",
+                            label="Remove Growspace",
                         ),
                         selector.SelectOptionDict(
-                            value="back", label="← Back to Main Menu"
+                            value="back",
+                            label="← Back to Main Menu",
                         ),
                     ],
                     mode=selector.SelectSelectorMode.DROPDOWN,
-                )
-            )
+                ),
+            ),
         }
 
         if growspace_options:
@@ -741,7 +862,7 @@ class OptionsFlowHandler(OptionsFlow):
                     options=growspace_options,
                     mode=selector.SelectSelectorMode.DROPDOWN,
                     custom_value=True,  # ✅ allow typing a new growspace
-                )
+                ),
             )
         else:
             # If no growspaces exist yet, allow text input only
@@ -755,13 +876,17 @@ class OptionsFlowHandler(OptionsFlow):
             vol.Required("name"): selector.TextSelector(),
             vol.Required("rows", default=4): selector.NumberSelector(
                 selector.NumberSelectorConfig(
-                    min=1, max=20, mode=selector.NumberSelectorMode.BOX
-                )
+                    min=1,
+                    max=20,
+                    mode=selector.NumberSelectorMode.BOX,
+                ),
             ),
             vol.Required("plants_per_row", default=4): selector.NumberSelector(
                 selector.NumberSelectorConfig(
-                    min=1, max=20, mode=selector.NumberSelectorMode.BOX
-                )
+                    min=1,
+                    max=20,
+                    mode=selector.NumberSelectorMode.BOX,
+                ),
             ),
         }
 
@@ -782,12 +907,12 @@ class OptionsFlowHandler(OptionsFlow):
                     options=notification_options,
                     custom_value=False,
                     mode=selector.SelectSelectorMode.DROPDOWN,
-                )
+                ),
             )
         else:
             # No notify services available, allow leaving it empty
             _LOGGER.info(
-                "No notify services found – notification_target will be optional."
+                "No notify services found – notification_target will be optional.",
             )
             base[vol.Required("notification_target")] = selector.TextSelector()
 
@@ -811,28 +936,36 @@ class OptionsFlowHandler(OptionsFlow):
 
         # Add "None" option to allow clearing notification target
         notification_options.insert(
-            0, selector.SelectOptionDict(value="", label="None (No notifications)")
+            0,
+            selector.SelectOptionDict(value="", label="None (No notifications)"),
         )
 
         current_notification = getattr(growspace, "notification_target", None) or ""
 
         base = {
             vol.Optional(
-                "name", default=getattr(growspace, "name", "")
+                "name",
+                default=getattr(growspace, "name", ""),
             ): selector.TextSelector(),
             vol.Optional(
-                "rows", default=getattr(growspace, "rows", 4)
+                "rows",
+                default=getattr(growspace, "rows", 4),
             ): selector.NumberSelector(
                 selector.NumberSelectorConfig(
-                    min=1, max=20, mode=selector.NumberSelectorMode.BOX
-                )
+                    min=1,
+                    max=20,
+                    mode=selector.NumberSelectorMode.BOX,
+                ),
             ),
             vol.Optional(
-                "plants_per_row", default=getattr(growspace, "plants_per_row", 4)
+                "plants_per_row",
+                default=getattr(growspace, "plants_per_row", 4),
             ): selector.NumberSelector(
                 selector.NumberSelectorConfig(
-                    min=1, max=20, mode=selector.NumberSelectorMode.BOX
-                )
+                    min=1,
+                    max=20,
+                    mode=selector.NumberSelectorMode.BOX,
+                ),
             ),
         }
 
@@ -843,7 +976,7 @@ class OptionsFlowHandler(OptionsFlow):
                         options=notification_options,
                         custom_value=False,
                         mode=selector.SelectSelectorMode.DROPDOWN,
-                    )
+                    ),
                 )
             )
         else:
@@ -861,10 +994,12 @@ class OptionsFlowHandler(OptionsFlow):
                     selector.SelectSelectorConfig(
                         options=[
                             selector.SelectOptionDict(
-                                value="manage_growspaces", label="Manage Growspaces"
+                                value="manage_growspaces",
+                                label="Manage Growspaces",
                             ),
                             selector.SelectOptionDict(
-                                value="manage_plants", label="Manage Plants"
+                                value="manage_plants",
+                                label="Manage Plants",
                             ),
                             selector.SelectOptionDict(
                                 value="configure_environment",
@@ -872,9 +1007,9 @@ class OptionsFlowHandler(OptionsFlow):
                             ),
                         ],
                         mode=selector.SelectSelectorMode.DROPDOWN,
-                    )
-                )
-            }
+                    ),
+                ),
+            },
         )
 
     def _get_plant_management_schema(self, coordinator) -> vol.Schema:
@@ -898,11 +1033,12 @@ class OptionsFlowHandler(OptionsFlow):
                         selector.SelectOptionDict(value="update", label="Update Plant"),
                         selector.SelectOptionDict(value="remove", label="Remove Plant"),
                         selector.SelectOptionDict(
-                            value="back", label="← Back to Main Menu"
+                            value="back",
+                            label="← Back to Main Menu",
                         ),
-                    ]
-                )
-            )
+                    ],
+                ),
+            ),
         }
 
         if plant_options:
@@ -910,13 +1046,15 @@ class OptionsFlowHandler(OptionsFlow):
                 selector.SelectSelectorConfig(
                     options=plant_options,
                     mode=selector.SelectSelectorMode.DROPDOWN,
-                )
+                ),
             )
 
         return vol.Schema(schema)
 
     def _get_growspace_selection_schema_from_devices(
-        self, growspace_devices, coordinator
+        self,
+        growspace_devices,
+        coordinator,
     ) -> vol.Schema:
         """Get schema for selecting a growspace from device registry using object attributes."""
         growspace_options = []
@@ -938,15 +1076,15 @@ class OptionsFlowHandler(OptionsFlow):
                     selector.SelectOptionDict(
                         value=growspace_id,
                         label=f"{device.name} ({rows}x{plants_per_row})",
-                    )
+                    ),
                 )
 
         return vol.Schema(
             {
                 vol.Required("growspace_id"): selector.SelectSelector(
-                    selector.SelectSelectorConfig(options=growspace_options)
+                    selector.SelectSelectorConfig(options=growspace_options),
                 ),
-            }
+            },
         )
 
     def _get_add_plant_schema(self, growspace, coordinator=None) -> vol.Schema:
@@ -972,7 +1110,7 @@ class OptionsFlowHandler(OptionsFlow):
                     options=strain_options,
                     custom_value=True,
                     mode=selector.SelectSelectorMode.DROPDOWN,
-                )
+                ),
             )
             if strain_options
             else selector.TextSelector()
@@ -984,27 +1122,35 @@ class OptionsFlowHandler(OptionsFlow):
                 vol.Optional("phenotype"): selector.TextSelector(),
                 vol.Required("row", default=1): selector.NumberSelector(
                     selector.NumberSelectorConfig(
-                        min=1, max=rows, mode=selector.NumberSelectorMode.BOX
-                    )
+                        min=1,
+                        max=rows,
+                        mode=selector.NumberSelectorMode.BOX,
+                    ),
                 ),
                 vol.Required("col", default=1): selector.NumberSelector(
                     selector.NumberSelectorConfig(
-                        min=1, max=plants_per_row, mode=selector.NumberSelectorMode.BOX
-                    )
+                        min=1,
+                        max=plants_per_row,
+                        mode=selector.NumberSelectorMode.BOX,
+                    ),
                 ),
                 vol.Optional("veg_start"): selector.DateSelector(),
                 vol.Optional("flower_start"): selector.DateSelector(),
-            }
+            },
         )
 
     def _get_update_plant_schema(self, plant, coordinator) -> vol.Schema:
         """Get schema for updating a plant."""
-
         growspace = coordinator.growspaces.get(plant.growspace_id)
 
-        # Ensure rows and plants_per_row are integers
-        rows = int(growspace.get("rows", 10))
-        plants_per_row = int(growspace.get("plants_per_row", 10))
+        if not growspace:
+            # Fallback if growspace is somehow missing
+            rows = 10
+            plants_per_row = 10
+        else:
+            # Ensure rows and plants_per_row are integers
+            rows = int(growspace.rows)
+            plants_per_row = int(growspace.plants_per_row)
 
         # Get strain options for autocomplete
         strain_options = []
@@ -1021,7 +1167,7 @@ class OptionsFlowHandler(OptionsFlow):
                     options=strain_options,
                     custom_value=True,  # Allow custom entries
                     mode=selector.SelectSelectorMode.DROPDOWN,
-                )
+                ),
             )
         else:
             strain_selector = selector.TextSelector()
@@ -1029,26 +1175,34 @@ class OptionsFlowHandler(OptionsFlow):
         return vol.Schema(
             {
                 vol.Optional(
-                    "strain", default=plant.get("strain", "")
+                    "strain",
+                    default=plant.strain,
                 ): strain_selector,
                 vol.Optional(
-                    "phenotype", default=plant.get("phenotype", "")
+                    "phenotype",
+                    default=plant.phenotype,
                 ): selector.TextSelector(),
                 vol.Optional(
-                    "row", default=plant.get("row", 1)
+                    "row",
+                    default=plant.row,
                 ): selector.NumberSelector(
                     selector.NumberSelectorConfig(
-                        min=1, max=rows, mode=selector.NumberSelectorMode.BOX
-                    )
+                        min=1,
+                        max=rows,
+                        mode=selector.NumberSelectorMode.BOX,
+                    ),
                 ),
                 vol.Optional(
-                    "col", default=plant.get("col", 1)
+                    "col",
+                    default=plant.col,
                 ): selector.NumberSelector(
                     selector.NumberSelectorConfig(
-                        min=1, max=plants_per_row, mode=selector.NumberSelectorMode.BOX
-                    )
+                        min=1,
+                        max=plants_per_row,
+                        mode=selector.NumberSelectorMode.BOX,
+                    ),
                 ),
                 vol.Optional("veg_start"): selector.DateSelector(),
                 vol.Optional("flower_start"): selector.DateSelector(),
-            }
+            },
         )

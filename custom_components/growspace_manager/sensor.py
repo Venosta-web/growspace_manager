@@ -11,24 +11,20 @@ from typing import Any
 from dateutil import parser
 
 # Home Assistant
-from homeassistant.components.sensor import SensorEntity, SensorStateClass
+from homeassistant.components.sensor import SensorEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity import DeviceInfo, Entity
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
-from homeassistant.helpers.update_coordinator import CoordinatorEntity
+
+from .const import DEFAULT_NOTIFICATION_EVENTS, DOMAIN
 
 # Local / relative imports
 from .coordinator import GrowspaceCoordinator
-from .models import Plant, Growspace
+from .models import Growspace, Plant
 from .utils import (
     parse_date_field,
-    format_date,
-    calculate_days_since,
-    find_first_free_position,
-    generate_growspace_grid,
 )
-from .const import DOMAIN, DEFAULT_NOTIFICATION_EVENTS
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -67,7 +63,8 @@ async def async_setup_entry(
         {gid: gs.name for gid, gs in coordinator.growspaces.items()},
     )
     _LOGGER.warning(
-        "DEBUG: Created growspace_entities = %s", list(growspace_entities.keys())
+        "DEBUG: Created growspace_entities = %s",
+        list(growspace_entities.keys()),
     )
     _LOGGER.warning("DEBUG: Total initial_entities = %d", len(initial_entities))
     for entity in initial_entities:
@@ -86,16 +83,28 @@ async def async_setup_entry(
         )
     # Ensure dry and cure growspaces exist after coordinator setup
     dry_id = coordinator._ensure_special_growspace(
-        "dry", "dry", rows=3, plants_per_row=3
+        "dry",
+        "dry",
+        rows=3,
+        plants_per_row=3,
     )
     cure_id = coordinator._ensure_special_growspace(
-        "cure", "cure", rows=3, plants_per_row=3
+        "cure",
+        "cure",
+        rows=3,
+        plants_per_row=3,
     )
     clone_id = coordinator._ensure_special_growspace(
-        "clone", "clone", rows=3, plants_per_row=3
+        "clone",
+        "clone",
+        rows=3,
+        plants_per_row=3,
     )
     mother_id = coordinator._ensure_special_growspace(
-        "mother", "mother", rows=3, plants_per_row=3
+        "mother",
+        "mother",
+        rows=3,
+        plants_per_row=3,
     )
 
     # Save the changes to storage
@@ -162,35 +171,40 @@ async def async_setup_entry(
 
 class GrowspaceOverviewSensor(SensorEntity):
     def __init__(
-        self, coordinator: GrowspaceCoordinator, growspace_id: str, growspace: Growspace
+        self,
+        coordinator: GrowspaceCoordinator,
+        growspace_id: str,
+        growspace: Growspace,
     ) -> None:
         self.coordinator = coordinator
         self.growspace_id = growspace_id
         self.growspace = growspace
-        self._attr_name = f"{growspace.name}"
+        self._attr_has_entity_name = True
+        self._attr_name = "Plant Count"
 
         # Use stable unique_id matching canonical growspace_id to avoid duplicates
         self._attr_unique_id = f"{DOMAIN}_{growspace_id}"
         # Force fixed entity IDs for special growspaces
         if growspace.id == "dry":
             self._attr_unique_id = f"{DOMAIN}_growspace_dry"
-            self._attr_name = "dry"
+            self._attr_name = "Dry"
+            self._attr_entity_id = "sensor.growspace_dry"
         elif growspace.id == "cure":
-            self._attr_unique_id = "growspace_cure"
-            self._attr_name = "cure"
-            self._attr_entity_id = "sensor.cure"
+            self._attr_unique_id = f"{DOMAIN}_growspace_cure"
+            self._attr_name = "Cure"
+            self._attr_entity_id = "sensor.growspace_cure"
         elif growspace.id == "mother":
-            self._attr_unique_id = "growspace_mother"
-            self._attr_name = "mother"
-            self._attr_entity_id = "sensor.mother"
+            self._attr_unique_id = f"{DOMAIN}_growspace_mother"
+            self._attr_name = "Mother"
+            self._attr_entity_id = "sensor.growspace_mother"
         elif growspace.id == "clone":
-            self._attr_unique_id = "growspace_clone"
-            self._attr_name = "clone"
-            self._attr_entity_id = "sensor.clone"
+            self._attr_unique_id = f"{DOMAIN}_growspace_clone"
+            self._attr_name = "Clone"
+            self._attr_entity_id = "sensor.growspace_clone"
         else:
-            self._attr_unique_id = f"growspace_{growspace.id}"
-            self._attr_name = f"{growspace.name}"
-            self._attr_entity_id = f"sensor.{growspace.id}"
+            self._attr_unique_id = f"{DOMAIN}_growspace_{growspace.id}"
+            self._attr_name = "Plant Count"
+            self._attr_entity_id = f"sensor.{growspace.id}_plant_count"
 
         # Set up device info
         self._attr_device_info = DeviceInfo(
@@ -229,7 +243,8 @@ class GrowspaceOverviewSensor(SensorEntity):
 
         # Calculate max stage days
         max_veg = max(
-            (self._days_since(p.veg_start) for p in plants if p.veg_start), default=0
+            (self._days_since(p.veg_start) for p in plants if p.veg_start),
+            default=0,
         )
         max_flower = max(
             (self._days_since(p.flower_start) for p in plants if p.flower_start),
@@ -263,7 +278,8 @@ class GrowspaceOverviewSensor(SensorEntity):
                 "phenotype": plant.phenotype,
                 "veg_days": self.coordinator.calculate_days_in_stage(plant, "veg"),
                 "flower_days": self.coordinator.calculate_days_in_stage(
-                    plant, "flower"
+                    plant,
+                    "flower",
                 ),
                 "row": row_i,
                 "col": col_i,
@@ -291,7 +307,6 @@ class GrowspaceOverviewSensor(SensorEntity):
     async def async_will_remove_from_hass(self) -> None:
         """When entity will be removed from hass."""
         # Note: In a real implementation, you'd remove the listener here
-        pass
 
 
 class PlantEntity(SensorEntity):
@@ -300,6 +315,7 @@ class PlantEntity(SensorEntity):
     def __init__(self, coordinator, plant: Plant) -> None:
         self.coordinator = coordinator
         self._plant = plant
+        self._attr_has_entity_name = True
         self._attr_unique_id = f"{DOMAIN}_{plant.plant_id}"
         self._attr_name = f"{plant.strain} ({plant.row},{plant.col})"
         self._attr_icon = "mdi:cannabis"
@@ -441,7 +457,10 @@ class PlantEntity(SensorEntity):
         }
 
     def _check_and_send_notifications(
-        self, plant: Plant, current_stage: str, growspace: Growspace
+        self,
+        plant: Plant,
+        current_stage: str,
+        growspace: Growspace,
     ) -> None:
         # Check all stages that could have notifications
         stages_to_check = []
@@ -472,15 +491,21 @@ class PlantEntity(SensorEntity):
             ]:  # Only stages with notification events
                 days = self.coordinator.calculate_days_in_stage(plant, stage)
                 if days > 0 and self._should_send_notification(
-                    plant, stage, days, growspace
+                    plant,
+                    stage,
+                    days,
+                    growspace,
                 ):
                     self._send_notification(plant, stage, days, growspace)
 
     def _should_send_notification(
-        self, plant: Plant, stage: str, days: int, growspace: Growspace
+        self,
+        plant: Plant,
+        stage: str,
+        days: int,
+        growspace: Growspace,
     ) -> bool:
         """Check if we should send a notification for this plant/stage/days combination."""
-
         notification_target = growspace.notification_target
 
         if not notification_target:
@@ -504,7 +529,9 @@ class PlantEntity(SensorEntity):
 
         # Check if notification already sent
         should_send = self.coordinator.should_send_notification(
-            plant.plant_id, stage, days
+            plant.plant_id,
+            stage,
+            days,
         )
 
         has_matching_event = any(
@@ -529,15 +556,19 @@ class PlantEntity(SensorEntity):
         return final_should_send
 
     def _send_notification(
-        self, plant: Plant, stage: str, days: int, growspace: Growspace
+        self,
+        plant: Plant,
+        stage: str,
+        days: int,
+        growspace: Growspace,
     ):
         """Send notification for plant milestone."""
-
         notification_target = growspace.notification_target
 
         if not notification_target:
             _LOGGER.debug(
-                "No notification target found for growspace %s", plant.growspace_id
+                "No notification target found for growspace %s",
+                plant.growspace_id,
             )
             return
 
@@ -569,7 +600,7 @@ class PlantEntity(SensorEntity):
 
         # Mark notification as sent FIRST to prevent duplicates
         self.hass.async_create_task(
-            self.coordinator.mark_notification_sent(plant.plant_id, stage, days)
+            self.coordinator.mark_notification_sent(plant.plant_id, stage, days),
         )
 
         # Fire the notify service
@@ -587,7 +618,7 @@ class PlantEntity(SensorEntity):
                         "days": days,
                     },
                 },
-            )
+            ),
         )
 
     async def async_added_to_hass(self) -> None:

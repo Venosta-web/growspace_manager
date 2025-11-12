@@ -1,13 +1,16 @@
 """Switch platform for Growspace Manager."""
 
 from __future__ import annotations
+
 import logging
 from typing import Any
+
 from homeassistant.components.switch import SwitchEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.entity import DeviceInfo
+from homeassistant.helpers.entity_platform import AddEntitiesCallback
+
 from .const import DOMAIN
 from .models import Growspace
 
@@ -27,7 +30,7 @@ async def async_setup_entry(
     for growspace_id, growspace in coordinator.growspaces.items():
         if growspace.notification_target:
             entities.append(
-                GrowspaceNotificationSwitch(coordinator, growspace_id, growspace)
+                GrowspaceNotificationSwitch(coordinator, growspace_id, growspace),
             )
 
     if entities:
@@ -42,8 +45,9 @@ class GrowspaceNotificationSwitch(SwitchEntity):
         self._coordinator = coordinator
         self._growspace_id = growspace_id
         self._growspace = growspace
+        self._attr_has_entity_name = True
         self._attr_unique_id = f"{DOMAIN}_{growspace_id}_notifications"
-        self._attr_name = f"{growspace.name} Notifications"
+        self._attr_name = "Notifications"
         self._attr_icon = "mdi:bell"
 
         # Set up device info

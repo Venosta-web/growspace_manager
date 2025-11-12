@@ -1,11 +1,15 @@
 """Services related to Strain Library."""
 
 import logging
+
+from homeassistant.components.persistent_notification import (
+    async_create as create_notification,
+)
 from homeassistant.core import HomeAssistant, ServiceCall
 
-from ..const import DOMAIN
 from ..coordinator import GrowspaceCoordinator
 from ..strain_library import StrainLibrary
+from ..const import DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -45,7 +49,8 @@ async def handle_export_strain_library(
     await coordinator.async_request_refresh()
 
     hass.bus.async_fire(
-        f"{DOMAIN}_strain_library_exported", {"strains": strains_to_export}
+        f"{DOMAIN}_strain_library_exported",
+        {"strains": strains_to_export},
     )
 
 
@@ -69,7 +74,9 @@ async def handle_import_strain_library(
             replace=replace_existing,
         )
         _LOGGER.info(
-            "Imported %s strains to library (replace=%s)", added_count, replace_existing
+            "Imported %s strains to library (replace=%s)",
+            added_count,
+            replace_existing,
         )
 
         await coordinator.async_save()  # Save coordinator data
@@ -85,7 +92,7 @@ async def handle_import_strain_library(
         _LOGGER.exception("Failed to import strain library: %s", err)
         create_notification(
             hass,
-            f"Failed to import strain library: {str(err)}",
+            f"Failed to import strain library: {err!s}",
             title="Growspace Manager Error",
         )
         raise
@@ -111,11 +118,12 @@ async def handle_clear_strain_library(
         await coordinator.async_request_refresh()
 
         hass.bus.async_fire(
-            f"{DOMAIN}_strain_library_cleared", {"cleared_count": cleared_count}
+            f"{DOMAIN}_strain_library_cleared",
+            {"cleared_count": cleared_count},
         )
     except AttributeError:
         _LOGGER.error(
-            "StrainLibrary instance does not have a 'clear_strains' method. Please verify the method name"
+            "StrainLibrary instance does not have a 'clear_strains' method. Please verify the method name",
         )
         create_notification(
             hass,
@@ -127,7 +135,7 @@ async def handle_clear_strain_library(
         _LOGGER.exception("Failed to clear strain library: %s", err)
         create_notification(
             hass,
-            f"Failed to clear strain library: {str(err)}",
+            f"Failed to clear strain library: {err!s}",
             title="Growspace Manager Error",
         )
         raise
