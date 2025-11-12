@@ -54,20 +54,21 @@ async def handle_add_plant(
             occupant.strain,
         )
         # Find the next available slot
-        new_row = coordinator.find_first_available_position(plant.growspace_id)
+        new_row, new_col = coordinator.find_first_available_position(growspace_id)
 
         if new_row is None:
             # Growspace is full
             raise ServiceValidationError(
                 f"Growspace '{growspace.name}' is already full occupied.",
             )
+        final_row, final_col = new_row, new_col
 
     try:
         plant_id = await coordinator.async_add_plant(
             growspace_id=growspace_id,
             strain=call.data.get("strain"),
-            row=row,
-            col=col,
+            row=final_row,
+            col=final_col,
             phenotype=call.data.get("phenotype"),
             clone_start=parse_date_field(call.data.get("clone_start")),
             veg_start=parse_date_field(call.data.get("veg_start")),
