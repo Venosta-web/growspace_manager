@@ -546,7 +546,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
         self._notifications_enabled = data.get("notifications_enabled", {})
 
         # ✅ Ensure all growspaces have a notification enabled state (default True)
-        for growspace_id in self.growspaces.keys():
+        for growspace_id in self.growspaces:
             if growspace_id not in self._notifications_enabled:
                 self._notifications_enabled[growspace_id] = True
 
