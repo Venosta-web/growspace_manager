@@ -1,4 +1,4 @@
-"""Growspace Manager integration."""
+"""The Growspace Manager integration."""
 
 from __future__ import annotations
 
@@ -10,6 +10,7 @@ from homeassistant.components.persistent_notification import (
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, ServiceCall
 from homeassistant.helpers.storage import Store
+from homeassistant.helpers.typing import ConfigType
 
 from .const import (
     ADD_GROWSPACE_SCHEMA,
@@ -26,16 +27,16 @@ from .const import (
     IMPORT_STRAIN_LIBRARY_SCHEMA,
     MOVE_CLONE_SCHEMA,
     MOVE_PLANT_SCHEMA,
+    REMOVE_ENVIRONMENT_SCHEMA,
     REMOVE_GROWSPACE_SCHEMA,
     REMOVE_PLANT_SCHEMA,
-    REMOVE_ENVIRONMENT_SCHEMA,
+    STORAGE_KEY,
+    STORAGE_KEY_STRAIN_LIBRARY,
+    STORAGE_VERSION,
     SWITCH_PLANT_SCHEMA,
     TAKE_CLONE_SCHEMA,
     TRANSITION_PLANT_SCHEMA,
     UPDATE_PLANT_SCHEMA,
-    STORAGE_KEY,
-    STORAGE_VERSION,
-    STORAGE_KEY_STRAIN_LIBRARY,
 )
 from .coordinator import GrowspaceCoordinator
 
@@ -48,7 +49,7 @@ _LOGGER = logging.getLogger(__name__)
 PLATFORMS = ["binary_sensor", "sensor", "switch"]
 
 
-async def async_setup(hass: HomeAssistant, config: dict):
+async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
     """Set up the integration via YAML (optional)."""
     _LOGGER.debug("Running async_setup for %s", DOMAIN)
     return True
@@ -105,9 +106,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 "Created pending growspace: %s",
                 pending.get("name", "unknown"),
             )
-        except Exception:
+        except (ValueError, TypeError) as e:
             _LOGGER.exception(
-                "Failed to create pending growspace: %s", pending.get("name", "unknown")
+                "Failed to create pending growspace %s: %s",
+                pending.get("name", "unknown"),
+                e,
             )
             create_notification(
                 hass,
@@ -139,44 +142,26 @@ async def _register_services(
     # Define all services with their handler functions and schemas
     services_to_register = [
         ("add_growspace", growspace.handle_add_growspace, ADD_GROWSPACE_SCHEMA),
-        (
-            "remove_growspace",
-            growspace.handle_remove_growspace,
-            REMOVE_GROWSPACE_SCHEMA,
-        ),
         ("add_plant", plant.handle_add_plant, ADD_PLANT_SCHEMA),
-        ("update_plant", plant.handle_update_plant, UPDATE_PLANT_SCHEMA),
-        ("remove_plant", plant.handle_remove_plant, REMOVE_PLANT_SCHEMA),
-        ("move_plant", plant.handle_move_plant, MOVE_PLANT_SCHEMA),
-        ("switch_plants", plant.handle_switch_plants, SWITCH_PLANT_SCHEMA),
-        (
-            "transition_plant_stage",
-            plant.handle_transition_plant_stage,
-            TRANSITION_PLANT_SCHEMA,
-        ),
-        ("take_clone", plant.handle_take_clone, TAKE_CLONE_SCHEMA),
-        ("move_clone", plant.handle_move_clone, MOVE_CLONE_SCHEMA),
-        ("harvest_plant", plant.handle_harvest_plant, HARVEST_PLANT_SCHEMA),
-        (
-            "export_strain_library",
-            strain_library.handle_export_strain_library,
-            EXPORT_STRAIN_LIBRARY_SCHEMA,
-        ),
-        (
-            "import_strain_library",
-            strain_library.handle_import_strain_library,
-            IMPORT_STRAIN_LIBRARY_SCHEMA,
-        ),
         (
             "clear_strain_library",
             strain_library.handle_clear_strain_library,
             CLEAR_STRAIN_LIBRARY_SCHEMA,
         ),
-        ("test_notification", debug.handle_test_notification, None),
+        (
+            "configure_environment",
+            environment.handle_configure_environment,
+            CONFIGURE_ENVIRONMENT_SCHEMA,
+        ),
         (
             "debug_cleanup_legacy",
             debug.debug_cleanup_legacy,
             DEBUG_CLEANUP_LEGACY_SCHEMA,
+        ),
+        (
+            "debug_consolidate_growspaces",
+            debug.debug_consolidate_duplicate_special,
+            DEBUG_CONSOLIDATE_DUPLICATE_SPECIAL_SCHEMA,
         ),
         (
             "debug_list_growspaces",
@@ -189,20 +174,38 @@ async def _register_services(
             DEBUG_RESET_SPECIAL_GROWSPACES_SCHEMA,
         ),
         (
-            "debug_consolidate_growspaces",
-            debug.debug_consolidate_duplicate_special,
-            DEBUG_CONSOLIDATE_DUPLICATE_SPECIAL_SCHEMA,
+            "export_strain_library",
+            strain_library.handle_export_strain_library,
+            EXPORT_STRAIN_LIBRARY_SCHEMA,
         ),
+        ("harvest_plant", plant.handle_harvest_plant, HARVEST_PLANT_SCHEMA),
         (
-            "configure_environment",
-            environment.handle_configure_environment,
-            CONFIGURE_ENVIRONMENT_SCHEMA,
+            "import_strain_library",
+            strain_library.handle_import_strain_library,
+            IMPORT_STRAIN_LIBRARY_SCHEMA,
         ),
+        ("move_clone", plant.handle_move_clone, MOVE_CLONE_SCHEMA),
+        ("move_plant", plant.handle_move_plant, MOVE_PLANT_SCHEMA),
         (
             "remove_environment",
             environment.handle_remove_environment,
             REMOVE_ENVIRONMENT_SCHEMA,
         ),
+        (
+            "remove_growspace",
+            growspace.handle_remove_growspace,
+            REMOVE_GROWSPACE_SCHEMA,
+        ),
+        ("remove_plant", plant.handle_remove_plant, REMOVE_PLANT_SCHEMA),
+        ("switch_plants", plant.handle_switch_plants, SWITCH_PLANT_SCHEMA),
+        ("take_clone", plant.handle_take_clone, TAKE_CLONE_SCHEMA),
+        ("test_notification", debug.handle_test_notification, None),
+        (
+            "transition_plant_stage",
+            plant.handle_transition_plant_stage,
+            TRANSITION_PLANT_SCHEMA,
+        ),
+        ("update_plant", plant.handle_update_plant, UPDATE_PLANT_SCHEMA),
     ]
 
     # Register services using a wrapper to pass necessary context
@@ -256,27 +259,27 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         # Remove all registered services
         service_names_to_remove = [
             "add_growspace",
-            "remove_growspace",
             "add_plant",
-            "update_plant",
-            "remove_plant",
-            "move_plant",
-            "switch_plants",
-            "transition_plant_stage",
-            "take_clone",
-            "move_clone",
-            "harvest_plant",
-            "export_strain_library",
-            "import_strain_library",
             "clear_strain_library",
-            "test_notification",
+            "configure_environment",
             "debug_cleanup_legacy",
+            "debug_consolidate_growspaces",
             "debug_list_growspaces",
             "debug_reset_special_growspaces",
-            "debug_con",
+            "export_strain_library",
             "get_strain_library",
-            "configure_environment",
+            "harvest_plant",
+            "import_strain_library",
+            "move_clone",
+            "move_plant",
             "remove_environment",
+            "remove_growspace",
+            "remove_plant",
+            "switch_plants",
+            "take_clone",
+            "test_notification",
+            "transition_plant_stage",
+            "update_plant",
         ]
 
         for service_name in service_names_to_remove:

@@ -5,7 +5,7 @@ from datetime import date
 
 from homeassistant.core import HomeAssistant, ServiceCall
 from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
-from homeassistant.helpers.entity_registry import async_get as async_get_entity_registry
+import homeassistant.helpers.entity_registry as er
 
 from ..const import DOMAIN
 from ..coordinator import GrowspaceCoordinator
@@ -47,7 +47,7 @@ async def handle_add_plant(
 
     if occupant:
         _LOGGER.info(
-            "Position (%d, %d) in %s is occupied by %s. Finding next available.",
+            "Position (%d, %d) in %s is occupied by %s. Finding next available",
             row,
             col,
             growspace_id,
@@ -80,7 +80,7 @@ async def handle_add_plant(
         await coordinator.async_save()
         await coordinator.async_request_refresh()
         hass.bus.async_fire(f"{DOMAIN}_plant_added", {"plant_id": plant_id})
-    except Exception as e:
+    except (ValueError, TypeError, HomeAssistantError) as e:
         _LOGGER.error("Failed to add plant: %s", e)
         raise HomeAssistantError(f"Failed to add plant: {e}") from e
 
@@ -132,9 +132,9 @@ async def handle_take_clone(
                 f"{DOMAIN}_clones_taken",
                 {"mother_plant_id": mother_plant_id, "num_clones": clones_taken},
             )
-    except Exception as e:
+    except (ServiceValidationError, HomeAssistantError) as e:
         _LOGGER.error("Failed to take clone(s): %s", e)
-        raise HomeAssistantError(f"Failed to take clone(s): {e}") from e
+        raise
 
 
 async def handle_move_clone(
@@ -179,9 +179,9 @@ async def handle_move_clone(
             f"{DOMAIN}_plant_moved",
             {"plant_id": new_plant_id, "growspace_id": target_growspace_id},
         )
-    except Exception as e:
+    except (ServiceValidationError, HomeAssistantError) as e:
         _LOGGER.error("Failed to move clone: %s", e)
-        raise HomeAssistantError(f"Failed to move clone: {e}") from e
+        raise
 
 
 async def handle_update_plant(
@@ -201,13 +201,13 @@ async def handle_update_plant(
         if key != "plant_id" and value is not None
     }
 
-    for key in ["clone_start", "veg_start", "flower_start", "mother_start"]:
+    for key in ("clone_start", "veg_start", "flower_start", "mother_start"):
         if key in update_data:
             update_data[key] = parse_date_field(update_data[key])
 
     if not update_data:
         _LOGGER.warning(
-            "Update plant service called for %s with no data to update.", plant_id
+            "Update plant service called for %s with no data to update", plant_id
         )
         return
 
@@ -216,7 +216,7 @@ async def handle_update_plant(
         await coordinator.async_save()
         await coordinator.async_request_refresh()
         hass.bus.async_fire(f"{DOMAIN}_plant_updated", {"plant_id": plant_id})
-    except Exception as e:
+    except (ValueError, HomeAssistantError) as e:
         _LOGGER.error("Failed to update plant: %s", e)
         raise HomeAssistantError(f"Failed to update plant: {e}") from e
 
@@ -237,7 +237,7 @@ async def handle_remove_plant(
         await coordinator.async_save()
         await coordinator.async_request_refresh()
         hass.bus.async_fire(f"{DOMAIN}_plant_removed", {"plant_id": plant_id})
-    except Exception as e:
+    except HomeAssistantError as e:
         _LOGGER.error("Failed to remove plant: %s", e)
         raise HomeAssistantError(f"Failed to remove plant: {e}") from e
 
@@ -265,7 +265,7 @@ async def handle_switch_plants(
             f"{DOMAIN}_plants_switched",
             {"plant_ids": [plant_id_1, plant_id_2]},
         )
-    except Exception as e:
+    except HomeAssistantError as e:
         _LOGGER.error("Failed to switch plants: %s", e)
         raise HomeAssistantError(f"Failed to switch plants: {e}") from e
 
@@ -313,7 +313,7 @@ async def handle_move_plant(
 
         await coordinator.async_save()
         await coordinator.async_request_refresh()
-    except Exception as e:
+    except HomeAssistantError as e:
         _LOGGER.error("Failed to move plant: %s", e)
         raise HomeAssistantError(f"Failed to move plant: {e}") from e
 
@@ -348,7 +348,7 @@ async def handle_transition_plant_stage(
             f"{DOMAIN}_plant_transitioned",
             {"plant_id": plant_id, "new_stage": new_stage},
         )
-    except Exception as e:
+    except (ValueError, HomeAssistantError) as e:
         _LOGGER.error("Failed to transition plant: %s", e)
         raise HomeAssistantError(f"Failed to transition plant: {e}") from e
 
@@ -371,7 +371,7 @@ async def handle_harvest_plant(
     # Resolve plant_id from entity_id if needed
     if "." in plant_id:
         try:
-            entity_registry = async_get_entity_registry(hass)
+            entity_registry = er.async_get(hass)
             entity = entity_registry.async_get(plant_id)
             if entity:
                 state = hass.states.get(plant_id)
@@ -399,6 +399,6 @@ async def handle_harvest_plant(
         await coordinator.async_save()
         await coordinator.async_request_refresh()
         hass.bus.async_fire(f"{DOMAIN}_plant_harvested", {"plant_id": plant_id})
-    except Exception as e:
+    except HomeAssistantError as e:
         _LOGGER.error("Failed to harvest plant: %s", e)
         raise HomeAssistantError(f"Failed to harvest plant: {e}") from e

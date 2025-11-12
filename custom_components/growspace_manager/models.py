@@ -1,3 +1,4 @@
+"""Models for the Growspace Manager component."""
 from __future__ import annotations
 
 import logging
@@ -10,6 +11,8 @@ _LOGGER = logging.getLogger(__name__)
 
 @dataclass
 class Growspace:
+    """Represents a growspace."""
+
     id: str
     name: str
     rows: int = 3
@@ -20,6 +23,7 @@ class Growspace:
     environment_config: dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict:
+        """Return a dictionary representation of the growspace."""
         return asdict(self)
 
     @staticmethod
@@ -43,7 +47,7 @@ class Growspace:
                         filtered_data[key] = int(value)
                     except (ValueError, TypeError):
                         _LOGGER.warning(
-                            "Invalid type for Growspace %s: %s. Using default.",
+                            "Invalid type for Growspace %s: %s. Using default",
                             data.get("id", "Unknown"),
                             key,
                         )
@@ -65,6 +69,8 @@ class Growspace:
 
 @dataclass
 class Plant:
+    """Represents a plant."""
+
     plant_id: str
     growspace_id: str
     strain: str
@@ -87,6 +93,7 @@ class Plant:
     source_mother: str | None = None
 
     def to_dict(self) -> dict:
+        """Return a dictionary representation of the plant."""
         return asdict(self)
 
     @staticmethod

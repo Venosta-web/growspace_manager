@@ -70,6 +70,7 @@ class BayesianEnvironmentSensor(BinarySensorEntity):
         growspace_id: str,
         env_config: dict,
     ) -> None:
+        """Initialize the Bayesian environment sensor."""
         self.coordinator = coordinator
         self.growspace_id = growspace_id
         self.env_config = env_config
@@ -146,34 +147,59 @@ class BayesianEnvironmentSensor(BinarySensorEntity):
         """Calculate days since date string (YYYY-MM-DD)."""
         try:
             dt = datetime.strptime(date_str, "%Y-%m-%d").date()
-        except Exception:
+        except (ValueError, TypeError):
             return 0
         return (date.today() - dt).days
 
     def _get_growth_stage_info(self) -> dict[str, int]:
         """Get veg_days and flower_days from coordinator."""
-        plants = self.coordinator.get_growspace_plants(self.growspace_id)
+        # Rufe die neue zentralisierte Methode auf
+        stage_days = self.coordinator.get_growspace_max_stage_days(self.growspace_id)
 
-        if not plants:
-            return {"veg_days": 0, "flower_days": 0}
-
-        max_veg = max(
-            (self._days_since(p.veg_start) for p in plants if p.veg_start),
-            default=0,
-        )
-        max_flower = max(
-            (self._days_since(p.flower_start) for p in plants if p.flower_start),
-            default=0,
-        )
-
+        # Gib im Format zurück, das diese Klasse erwartet
         return {
-            "veg_days": max_veg,
-            "flower_days": max_flower,
+            "veg_days": stage_days.get("veg", 0),
+            "flower_days": stage_days.get("flower", 0),
         }
 
     async def _async_update_probability(self) -> None:
         """Calculate Bayesian probability - implemented by subclasses."""
         raise NotImplementedError
+
+    @staticmethod
+    def calculate_bayesian_probability(
+        prior: float,
+        observations: list[tuple[float, float]],
+    ) -> float:
+        """Calculate Bayesian probability from observations.
+
+        Args:
+            prior: Prior probability (0-1)
+            observations: List of (prob_given_true, prob_given_false) tuples
+
+        Returns:
+            Posterior probability (0-1)
+
+        """
+        if not observations:
+            return prior
+
+        # Start with prior odds
+        prob_true = prior
+        prob_false = 1 - prior
+
+        # Apply each observation using Bayes theorem
+        for p_obs_given_true, p_obs_given_false in observations:
+            # Update using likelihood ratio
+            prob_true *= p_obs_given_true
+            prob_false *= p_obs_given_false
+
+        # Normalize to get probability
+        total = prob_true + prob_false
+        if total == 0:
+            return prior
+
+        return prob_true / total
 
     @property
     def is_on(self) -> bool:
@@ -194,6 +220,7 @@ class BayesianStressSensor(BayesianEnvironmentSensor):
     """Bayesian sensor for detecting plant stress conditions."""
 
     def __init__(self, coordinator, growspace_id, env_config):
+        """Initialize the Bayesian Stress Sensor."""
         super().__init__(coordinator, growspace_id, env_config)
         self._attr_name = "Plants Under Stress"
         self._attr_unique_id = f"{DOMAIN}_{growspace_id}_stress"
@@ -302,52 +329,18 @@ class BayesianStressSensor(BayesianEnvironmentSensor):
             elif co2 > 1800:
                 observations.append((0.75, 0.20))  # Too high
 
-        self._probability = self._calculate_bayesian_probability(
+        self._probability = self.calculate_bayesian_probability(
             self.prior,
             observations,
         )
         self.async_write_ha_state()
-
-    @staticmethod
-    def _calculate_bayesian_probability(
-        prior: float,
-        observations: list[tuple[float, float]],
-    ) -> float:
-        """Calculate Bayesian probability from observations.
-
-        Args:
-            prior: Prior probability (0-1)
-            observations: List of (prob_given_true, prob_given_false) tuples
-
-        Returns:
-            Posterior probability (0-1)
-
-        """
-        if not observations:
-            return prior
-
-        # Start with prior odds
-        prob_true = prior
-        prob_false = 1 - prior
-
-        # Apply each observation using Bayes theorem
-        for p_obs_given_true, p_obs_given_false in observations:
-            # Update using likelihood ratio
-            prob_true *= p_obs_given_true
-            prob_false *= p_obs_given_false
-
-        # Normalize to get probability
-        total = prob_true + prob_false
-        if total == 0:
-            return prior
-
-        return prob_true / total
 
 
 class BayesianMoldRiskSensor(BayesianEnvironmentSensor):
     """Bayesian sensor for detecting mold risk in late flower."""
 
     def __init__(self, coordinator, growspace_id, env_config):
+        """Initialize the Bayesian Mold Risk Sensor."""
         super().__init__(coordinator, growspace_id, env_config)
         self._attr_name = "High Mold Risk"
         self._attr_unique_id = f"{DOMAIN}_{growspace_id}_mold_risk"
@@ -399,7 +392,7 @@ class BayesianMoldRiskSensor(BayesianEnvironmentSensor):
             if fan_off:
                 observations.append((0.80, 0.15))
 
-        self._probability = BayesianStressSensor._calculate_bayesian_probability(
+        self._probability = self.calculate_bayesian_probability(
             self.prior,
             observations,
         )
@@ -410,6 +403,7 @@ class BayesianOptimalConditionsSensor(BayesianEnvironmentSensor):
     """Bayesian sensor for detecting optimal growing conditions."""
 
     def __init__(self, coordinator, growspace_id, env_config):
+        """Initialize the Bayesian Optimal Conditions Sensor."""
         super().__init__(coordinator, growspace_id, env_config)
         self._attr_name = "Optimal Conditions"
         self._attr_unique_id = f"{DOMAIN}_{growspace_id}_optimal"

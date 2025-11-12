@@ -3,7 +3,7 @@ from unittest.mock import AsyncMock, Mock
 
 import pytest
 
-from ..sensor import (
+from custom_components.growspace_manager.sensor import (
     GrowspaceListSensor,
     GrowspaceOverviewSensor,
     PlantEntity,
@@ -60,7 +60,7 @@ def mock_coordinator():
 # async_setup_entry
 # --------------------
 @pytest.mark.asyncio
-async def test_async_setup_entry_adds_entities():
+async def test_async_setup_entry_adds_entities() -> None:
     hass = Mock()
 
     # Coordinator mock

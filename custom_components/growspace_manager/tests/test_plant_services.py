@@ -6,8 +6,8 @@ from unittest.mock import AsyncMock, Mock, patch
 import pytest
 from homeassistant.core import HomeAssistant, ServiceCall
 
-from ..const import DOMAIN
-from ..services.plant import (
+from custom_components.growspace_manager.const import DOMAIN
+from custom_components.growspace_manager.services.plant import (
     handle_add_plant,
     handle_harvest_plant,
     handle_move_clone,
@@ -87,7 +87,7 @@ async def test_add_plant_success(
     mock_coordinator,
     mock_strain_library,
     mock_growspace,
-):
+) -> None:
     mock_coordinator.growspaces = {"gs1": mock_growspace}
 
     call = ServiceCall(

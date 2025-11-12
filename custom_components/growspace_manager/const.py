@@ -88,7 +88,7 @@ STORAGE_KEY_STRAIN_LIBRARY = "strain_library"
 
 # Helper for common date/datetime parsing
 def valid_date_or_none(value):
-    """Validate date or return None."""
+    """Validate that a value is a date or can be parsed into one."""
     if value is None or value == "":
         return None
     if isinstance(value, date):
@@ -97,14 +97,14 @@ def valid_date_or_none(value):
         # Attempt to parse ISO format, handling potential timezone 'Z'
         # Ensure value is converted to string to handle potential datetime objects directly
         return date.fromisoformat(str(value).replace("Z", "+00:00"))
-    except ValueError:
+    except (ValueError, TypeError):
         raise vol.Invalid(
             f"'{value}' is not a valid date or ISO format string",
         ) from None
 
 
 def valid_growspace_id(value):
-    """Validate growspace ID format (basic)."""
+    """Validate that a growspace ID is a non-empty string."""
     if not isinstance(value, str) or not value:
         raise vol.Invalid("Growspace ID cannot be empty")
     return value
@@ -291,16 +291,12 @@ DEBUG_CONSOLIDATE_DUPLICATE_SPECIAL_SCHEMA = vol.Schema({})  # No parameters
 
 CONFIGURE_ENVIRONMENT_SCHEMA = vol.Schema(
     {
-        # Der Growspace, der konfiguriert werden soll.
         vol.Required("growspace_id"): str,
-        # Die drei erforderlichen Sensoren.
         vol.Required("temperature_sensor"): str,
         vol.Required("humidity_sensor"): str,
         vol.Required("vpd_sensor"): str,
-        # Optionale Sensoren.
         vol.Optional("co2_sensor"): str,
         vol.Optional("circulation_fan"): str,
-        # Optionale Schwellenwerte mit Standardwerten und Bereichsvalidierung.
         vol.Optional("stress_threshold", default=0.70): vol.All(
             vol.Coerce(float),
             vol.Range(min=0.0, max=1.0),
@@ -311,10 +307,11 @@ CONFIGURE_ENVIRONMENT_SCHEMA = vol.Schema(
         ),
     },
 )
+"""Schema for the `configure_environment` service."""
 
 REMOVE_ENVIRONMENT_SCHEMA = vol.Schema(
     {
-        # Erfordert nur die ID des Growspace, um die Konfiguration zu entfernen.
         vol.Required("growspace_id"): str,
     },
 )
+"""Schema for the `remove_environment` service."""

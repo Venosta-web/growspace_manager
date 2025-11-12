@@ -51,6 +51,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
     def __init__(
         self, hass, data: dict | None = None, options: dict | None = None
     ) -> None:
+        """Initialize the Growspace Coordinator."""
         super().__init__(
             hass,
             _LOGGER,
@@ -66,7 +67,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
         self.store: Store = Store(hass, STORAGE_VERSION, STORAGE_KEY)
 
         self.options = options or {}
-        _LOGGER.critical(
+        _LOGGER.debug(
             "--- COORDINATOR INITIALIZED WITH OPTIONS: %s ---",
             self.options,
         )
@@ -233,6 +234,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
     # =============================================================================
 
     def _get_plant_stage(self, plant: Plant) -> str:
+        """Get the current stage of a plant."""
         if getattr(plant, "cure_start", None):
             return "cure"
         if getattr(plant, "dry_start", None):
@@ -312,11 +314,13 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
     def find_first_available_position(
         self, growspace_id: str
     ) -> tuple[int | None, int | None]:
+        """Find the first available position in a growspace."""
         growspace = self.growspaces[growspace_id]
         occupied = {(p.row, p.col) for p in self.get_growspace_plants(growspace_id)}
         return find_first_free_position(growspace, occupied)
 
     def _parse_date_field(self, date_value: str | datetime | date | None) -> str | None:
+        """Parse a date field into a string."""
         return format_date(date_value)
 
     def _parse_date_fields(self, kwargs: dict[str, Any]) -> None:
@@ -341,7 +345,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
                 return 0
 
             return (date.today() - dt).days
-        except Exception as e:
+        except (ValueError, TypeError) as e:
             _LOGGER.warning("Failed to calculate days for date %s: %s", start_date, e)
             return 0
 
@@ -360,6 +364,16 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
     # =============================================================================
     # SPECIAL GROWSPACE MANAGEMENT
     # =============================================================================
+
+    def ensure_special_growspace(
+        self,
+        growspace_id: str,
+        name: str,
+        rows: int = 3,
+        plants_per_row: int = 3,
+    ) -> str:
+        """Ensure a special growspace exists with a stable id and return its id."""
+        return self._ensure_special_growspace(growspace_id, name, rows, plants_per_row)
 
     def _ensure_special_growspace(
         self,
@@ -477,8 +491,8 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
             _LOGGER.info("No stored data found, starting fresh")
             return
 
-        _LOGGER.warning("DEBUG: Raw storage data keys = %s", list(data.keys()))
-        _LOGGER.warning(
+        _LOGGER.debug("DEBUG: Raw storage data keys = %s", list(data.keys()))
+        _LOGGER.debug(
             "DEBUG: Raw growspaces in storage = %s",
             list(data.get("growspaces", {}).keys()),
         )
@@ -490,8 +504,8 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
                 pid: Plant.from_dict(p) for pid, p in data.get("plants", {}).items()
             }
             _LOGGER.info("Loaded %d plants", len(self.plants))
-        except Exception as e:
-            _LOGGER.error("Error loading plants: %s", e, exc_info=True)
+        except (TypeError, ValueError) as e:
+            _LOGGER.exception("Error loading plants: %s", e)
             self.plants = {}
 
         # Load growspaces using from_dict (handles migration)
@@ -502,27 +516,27 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
             }
             _LOGGER.info("Loaded %d growspaces", len(self.growspaces))
             if not self.options:
-                _LOGGER.critical("--- COORDINATOR HAS NO OPTIONS TO APPLY ---")
+                _LOGGER.debug("--- COORDINATOR HAS NO OPTIONS TO APPLY ---")
             else:
-                _LOGGER.critical(
+                _LOGGER.debug(
                     "--- APPLYING OPTIONS TO GROWSPACES: %s ---",
                     self.options,
                 )
                 for growspace_id, growspace in self.growspaces.items():
                     if growspace_id in self.options:
                         growspace.environment_config = self.options[growspace_id]
-                        _LOGGER.critical(
+                        _LOGGER.info(
                             "--- SUCCESS: Applied env_config to '%s': %s ---",
                             growspace.name,
                             growspace.environment_config,
                         )
                     else:
-                        _LOGGER.warning(
+                        _LOGGER.debug(
                             "--- INFO: No options found for growspace '%s' ---",
                             growspace.name,
                         )
-        except Exception as e:
-            _LOGGER.exception("Error loading growspaces: %s", e, exc_info=True)
+        except (TypeError, ValueError) as e:
+            _LOGGER.exception("Error loading growspaces: %s", e)
             self.growspaces = {}
 
         # ✅ Load notification tracking
@@ -532,7 +546,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
         self._notifications_enabled = data.get("notifications_enabled", {})
 
         # ✅ Ensure all growspaces have a notification enabled state (default True)
-        for growspace_id in self.growspaces.keys():
+        for growspace_id in self.growspaces:
             if growspace_id not in self._notifications_enabled:
                 self._notifications_enabled[growspace_id] = True
 
@@ -1063,7 +1077,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
 
         _LOGGER.debug("COORDINATOR: Updating plant %s", plant_id)
         for key, value in updates.items():
-            _LOGGER.warning(
+            _LOGGER.debug(
                 "COORDINATOR: Field %s = %s (type: %s, id: %s)",
                 key,
                 value,
@@ -1074,7 +1088,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
             if hasattr(plant, key):
                 old_value = getattr(plant, key)
                 setattr(plant, key, value)
-                _LOGGER.warning(
+                _LOGGER.debug(
                     "COORDINATOR: Updated %s: %s -> %s",
                     key,
                     old_value,
@@ -1502,12 +1516,15 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
     # =============================================================================
 
     async def add_strain(self, strain: str) -> None:
+        """Add a strain to the strain library."""
         await self.strains.add(strain)
 
     async def remove_strain(self, strain: str) -> None:
+        """Remove a strain from the strain library."""
         await self.strains.remove(strain)
 
     def get_strain_options(self) -> list[str]:
+        """Get a list of all strains in the library."""
         return self.strains.get_all()
 
     def export_strain_library(self) -> list[str]:
@@ -1515,9 +1532,11 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
         return self.get_strain_options()
 
     async def import_strains(self, strains: list[str], replace: bool = False) -> int:
+        """Import a list of strains into the library."""
         return await self.strains.import_strains(strains, replace)
 
     async def clear_strains(self) -> int:
+        """Clear all strains from the library."""
         return await self.strains.clear()
 
     # =============================================================================

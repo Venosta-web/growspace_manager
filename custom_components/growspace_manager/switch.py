@@ -42,6 +42,7 @@ class GrowspaceNotificationSwitch(SwitchEntity):
     """Switch to enable/disable notifications for a growspace."""
 
     def __init__(self, coordinator, growspace_id: str, growspace: Growspace) -> None:
+        """Initialize the notification switch."""
         self._coordinator = coordinator
         self._growspace_id = growspace_id
         self._growspace = growspace

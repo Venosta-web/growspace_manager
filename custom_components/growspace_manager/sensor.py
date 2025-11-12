@@ -14,6 +14,7 @@ from dateutil import parser
 from homeassistant.components.sensor import SensorEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.entity import DeviceInfo, Entity
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
@@ -34,6 +35,7 @@ async def async_setup_entry(
     config_entry: ConfigEntry,
     async_add_entities: AddEntitiesCallback,
 ) -> None:
+    """Set up the sensor platform."""
     coordinator = hass.data[DOMAIN][config_entry.entry_id]["coordinator"]
 
     # Track created entities so we can add/remove dynamically
@@ -58,18 +60,18 @@ async def async_setup_entry(
     # Add your GrowspaceListSensor
     initial_entities.append(GrowspaceListSensor(coordinator))
 
-    _LOGGER.warning(
+    _LOGGER.debug(
         "DEBUG: coordinator.growspaces = %s",
         {gid: gs.name for gid, gs in coordinator.growspaces.items()},
     )
-    _LOGGER.warning(
+    _LOGGER.debug(
         "DEBUG: Created growspace_entities = %s",
         list(growspace_entities.keys()),
     )
-    _LOGGER.warning("DEBUG: Total initial_entities = %d", len(initial_entities))
+    _LOGGER.debug("DEBUG: Total initial_entities = %d", len(initial_entities))
     for entity in initial_entities:
         if isinstance(entity, GrowspaceOverviewSensor):
-            _LOGGER.warning(
+            _LOGGER.debug(
                 "DEBUG: Growspace entity - unique_id=%s, name=%s",
                 entity.unique_id,
                 entity.name,
@@ -82,25 +84,25 @@ async def async_setup_entry(
             len(initial_entities),
         )
     # Ensure dry and cure growspaces exist after coordinator setup
-    dry_id = coordinator._ensure_special_growspace(
+    dry_id = coordinator.ensure_special_growspace(
         "dry",
         "dry",
         rows=3,
         plants_per_row=3,
     )
-    cure_id = coordinator._ensure_special_growspace(
+    cure_id = coordinator.ensure_special_growspace(
         "cure",
         "cure",
         rows=3,
         plants_per_row=3,
     )
-    clone_id = coordinator._ensure_special_growspace(
+    clone_id = coordinator.ensure_special_growspace(
         "clone",
         "clone",
         rows=3,
         plants_per_row=3,
     )
-    mother_id = coordinator._ensure_special_growspace(
+    mother_id = coordinator.ensure_special_growspace(
         "mother",
         "mother",
         rows=3,
@@ -143,8 +145,6 @@ async def async_setup_entry(
                 async_add_entities([entity])
 
         # Plants: remove deleted
-        from homeassistant.helpers import entity_registry as er
-
         entity_registry = er.async_get(coordinator.hass)
 
         for existing_id in list(plant_entities.keys()):
@@ -170,12 +170,15 @@ async def async_setup_entry(
 
 
 class GrowspaceOverviewSensor(SensorEntity):
+    """Represents a growspace overview sensor."""
+
     def __init__(
         self,
         coordinator: GrowspaceCoordinator,
         growspace_id: str,
         growspace: Growspace,
     ) -> None:
+        """Initialize the Growspace Overview Sensor."""
         self.coordinator = coordinator
         self.growspace_id = growspace_id
         self.growspace = growspace
@@ -225,7 +228,7 @@ class GrowspaceOverviewSensor(SensorEntity):
         """Calculate days since date string (YYYY-MM-DD)."""
         try:
             dt = datetime.strptime(date_str, "%Y-%m-%d").date()
-        except Exception:
+        except (ValueError, TypeError):
             return 0
         return (date.today() - dt).days
 
@@ -241,15 +244,10 @@ class GrowspaceOverviewSensor(SensorEntity):
         """Return additional state attributes."""
         plants = self.coordinator.get_growspace_plants(self.growspace_id)
 
-        # Calculate max stage days
-        max_veg = max(
-            (self._days_since(p.veg_start) for p in plants if p.veg_start),
-            default=0,
-        )
-        max_flower = max(
-            (self._days_since(p.flower_start) for p in plants if p.flower_start),
-            default=0,
-        )
+        # Calculate max stage days via coordinator
+        stage_days = self.coordinator.get_growspace_max_stage_days(self.growspace_id)
+        max_veg = stage_days.get("veg", 0)
+        max_flower = stage_days.get("flower", 0)
 
         # Calculate weeks from days
         veg_week = self._days_to_week(max_veg)
@@ -313,6 +311,7 @@ class PlantEntity(SensorEntity):
     """Single entity per plant with stage as state and all variables as attributes."""
 
     def __init__(self, coordinator, plant: Plant) -> None:
+        """Initialize the Plant Entity."""
         self.coordinator = coordinator
         self._plant = plant
         self._attr_has_entity_name = True
@@ -338,10 +337,11 @@ class PlantEntity(SensorEntity):
             return value
         try:
             return parser.isoparse(value).date()
-        except Exception:
+        except (ValueError, TypeError):
             return None
 
     def _determine_stage(self, plant: Plant) -> str:
+        """Determine the current stage of a plant based on its start dates."""
         now = date.today()
 
         # 1. Special growspaces override everything
@@ -462,6 +462,7 @@ class PlantEntity(SensorEntity):
         current_stage: str,
         growspace: Growspace,
     ) -> None:
+        """Check for and send notifications for all relevant stages."""
         # Check all stages that could have notifications
         stages_to_check = []
 
@@ -627,7 +628,10 @@ class PlantEntity(SensorEntity):
 
 
 class StrainLibrarySensor(SensorEntity):
+    """Represents the Strain Library sensor."""
+
     def __init__(self, coordinator: GrowspaceCoordinator) -> None:
+        """Initialize the Strain Library Sensor."""
         self.coordinator = coordinator
         self._attr_name = "Growspace Strain Library"
         self._attr_unique_id = f"{DOMAIN}_strain_library"
@@ -635,13 +639,16 @@ class StrainLibrarySensor(SensorEntity):
 
     @property
     def state(self) -> str:
+        """Return the state of the sensor."""
         return "ok"
 
     @property
-    def extra_state_attributes(self) -> dict:
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Return the state attributes of the sensor."""
         return {"strains": self.coordinator.get_strain_options()}
 
-    async def async_added_to_hass(self):
+    async def async_added_to_hass(self) -> None:
+        """When entity is added to hass."""
         self.coordinator.async_add_listener(self.async_write_ha_state)
 
 
@@ -649,20 +656,23 @@ class GrowspaceListSensor(SensorEntity):
     """Exposes the list of growspaces as a sensor."""
 
     def __init__(self, coordinator: GrowspaceCoordinator) -> None:
+        """Initialize the Growspace List Sensor."""
         self.coordinator = coordinator
         self._attr_name = "Growspaces List"
         self._attr_unique_id = f"{DOMAIN}_growspaces_list"
         self._attr_icon = "mdi:home-group"
         self._update_growspaces()
 
-    def _update_growspaces(self):
+    def _update_growspaces(self) -> None:
         self._growspaces = self.coordinator.get_growspace_options()
 
     @property
-    def state(self):
+    def state(self) -> int:
+        """Return the number of growspaces."""
         self._update_growspaces()
         return len(self._growspaces)
 
     @property
-    def extra_state_attributes(self):
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Return the list of growspaces."""
         return {"growspaces": self._growspaces}
