@@ -891,7 +891,7 @@ class OptionsFlowHandler(OptionsFlow):
         else:
             # No notify services available, allow leaving it empty
             _LOGGER.info(
-                "No notify services found – notification_target will be optional.",
+                "No notify services found – notification_target will be optional",
             )
             base[vol.Required("notification_target")] = selector.TextSelector()
 

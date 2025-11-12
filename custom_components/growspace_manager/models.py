@@ -47,7 +47,7 @@ class Growspace:
                         filtered_data[key] = int(value)
                     except (ValueError, TypeError):
                         _LOGGER.warning(
-                            "Invalid type for Growspace %s: %s. Using default.",
+                            "Invalid type for Growspace %s: %s. Using default",
                             data.get("id", "Unknown"),
                             key,
                         )
