@@ -89,7 +89,7 @@ async def handle_import_strain_library(
             {"added_count": added_count, "replace": replace_existing},
         )
     except (ValueError, TypeError) as err:
-        _LOGGER.exception("Failed to import strain library")
+        _LOGGER.exception("Failed to import strain library: %s", err)
         create_notification(
             hass,
             f"Failed to import strain library: {err}",
@@ -132,7 +132,7 @@ async def handle_clear_strain_library(
         )
         raise
     except (ValueError, TypeError) as err:
-        _LOGGER.exception("Failed to clear strain library")
+        _LOGGER.exception("Failed to clear strain library: %s", err)
         create_notification(
             hass,
             f"Failed to clear strain library: {err}",

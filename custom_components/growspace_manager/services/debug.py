@@ -179,8 +179,8 @@ async def debug_cleanup_legacy(
             migrated_plants_info if migrated_plants_info else "None",
         )
 
-    except (ValueError, KeyError):
-        _LOGGER.exception("DEBUG: Legacy cleanup failed")
+    except (ValueError, KeyError) as e:
+        _LOGGER.exception("DEBUG: Legacy cleanup failed: %s", e)
         raise
 
 
@@ -378,8 +378,8 @@ async def debug_reset_special_growspaces(
 
         _LOGGER.info("DEBUG: Special growspace reset complete")
 
-    except (ValueError, KeyError):
-        _LOGGER.exception("DEBUG: Special growspace reset failed")
+    except (ValueError, KeyError) as e:
+        _LOGGER.exception("DEBUG: Special growspace reset failed: %s", e)
         raise
 
 
@@ -507,6 +507,6 @@ async def debug_consolidate_duplicate_special(
 
         _LOGGER.info("DEBUG: Duplicate consolidation complete")
 
-    except (ValueError, KeyError):
-        _LOGGER.exception("DEBUG: Duplicate consolidation failed")
+    except (ValueError, KeyError) as e:
+        _LOGGER.exception("DEBUG: Duplicate consolidation failed: %s", e)
         raise

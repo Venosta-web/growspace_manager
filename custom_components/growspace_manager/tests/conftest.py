@@ -7,8 +7,8 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.storage import Store
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
-from ..const import DOMAIN
-from ..coordinator import GrowspaceCoordinator
+from custom_components.growspace_manager.const import DOMAIN
+from custom_components.growspace_manager.coordinator import GrowspaceCoordinator
 
 
 @pytest.fixture
@@ -118,12 +118,9 @@ def mock_coordinator():
     return coordinator
 
 
-# er(hass, initial_data)
-
-
 @pytest.fixture
 def plant_data():
-    """Provides a dictionary with a single test plant."""
+    """Provide a dictionary with a single test plant."""
     return {
         "p1": {
             "plant_id": "p1",
@@ -151,7 +148,7 @@ def plant_data():
 
 @pytest.fixture
 def growspace_data():
-    """Provides a dictionary with a single test growspace."""
+    """Provide a dictionary with a single test growspace."""
     return {
         "gs1": {
             "id": "gs1",
@@ -167,9 +164,7 @@ def growspace_data():
 
 @pytest.fixture
 def initial_manager_data(plant_data, growspace_data):
-    """Provides a complete initial data dictionary for the GrowspaceManager,
-    combining plant and growspace fixtures.
-    """
+    """Provide a complete initial data dictionary for the GrowspaceManager."""
     return {
         "plants": plant_data,
         "growspaces": growspace_data,

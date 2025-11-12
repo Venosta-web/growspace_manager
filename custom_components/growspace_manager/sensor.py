@@ -14,6 +14,7 @@ from dateutil import parser
 from homeassistant.components.sensor import SensorEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.entity import DeviceInfo, Entity
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
@@ -34,6 +35,7 @@ async def async_setup_entry(
     config_entry: ConfigEntry,
     async_add_entities: AddEntitiesCallback,
 ) -> None:
+    """Set up the sensor platform."""
     coordinator = hass.data[DOMAIN][config_entry.entry_id]["coordinator"]
 
     # Track created entities so we can add/remove dynamically
@@ -143,8 +145,6 @@ async def async_setup_entry(
                 async_add_entities([entity])
 
         # Plants: remove deleted
-        from homeassistant.helpers import entity_registry as er
-
         entity_registry = er.async_get(coordinator.hass)
 
         for existing_id in list(plant_entities.keys()):
@@ -341,6 +341,7 @@ class PlantEntity(SensorEntity):
             return None
 
     def _determine_stage(self, plant: Plant) -> str:
+        """Determine the current stage of a plant based on its start dates."""
         now = date.today()
 
         # 1. Special growspaces override everything
@@ -461,6 +462,7 @@ class PlantEntity(SensorEntity):
         current_stage: str,
         growspace: Growspace,
     ) -> None:
+        """Check for and send notifications for all relevant stages."""
         # Check all stages that could have notifications
         stages_to_check = []
 
