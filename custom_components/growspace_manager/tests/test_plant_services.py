@@ -87,7 +87,7 @@ async def test_add_plant_success(
     mock_coordinator,
     mock_strain_library,
     mock_growspace,
-):
+) -> None:
     mock_coordinator.growspaces = {"gs1": mock_growspace}
 
     call = ServiceCall(
