@@ -201,7 +201,7 @@ async def handle_update_plant(
         if key != "plant_id" and value is not None
     }
 
-    for key in ["clone_start", "veg_start", "flower_start", "mother_start"]:
+    for key in ("clone_start", "veg_start", "flower_start", "mother_start"):
         if key in update_data:
             update_data[key] = parse_date_field(update_data[key])
 
