@@ -85,6 +85,16 @@ async def handle_add_plant(
         raise HomeAssistantError(f"Failed to add plant: {e}") from e
 
 
+def _validate_plant_exists(
+    coordinator: GrowspaceCoordinator,
+    plant_id: str,
+    plant_type: str = "Plant",
+) -> None:
+    """Raise ServiceValidationError if a plant does not exist."""
+    if not coordinator.plants.get(plant_id):
+        raise ServiceValidationError(f"{plant_type} '{plant_id}' not found.")
+
+
 async def handle_take_clone(
     hass: HomeAssistant,
     coordinator: GrowspaceCoordinator,
@@ -93,10 +103,7 @@ async def handle_take_clone(
 ) -> None:
     """Handle taking a clone from a mother plant."""
     mother_plant_id = call.data.get("mother_plant_id")
-    mother_plant = coordinator.plants.get(mother_plant_id)
-
-    if not mother_plant:
-        raise ServiceValidationError(f"Mother plant '{mother_plant_id}' not found.")
+    _validate_plant_exists(coordinator, mother_plant_id, "Mother plant")
 
     num_clones = call.data.get("num_clones", 1)
     if not isinstance(num_clones, int) or num_clones < 1:
@@ -152,9 +159,7 @@ async def handle_move_clone(
             "Missing required parameters (plant_id, target_growspace_id)."
         )
 
-    plant = coordinator.plants.get(plant_id)
-    if not plant:
-        raise ServiceValidationError(f"Plant '{plant_id}' not found.")
+    _validate_plant_exists(coordinator, plant_id)
 
     try:
         row, col = coordinator.find_first_available_position(target_growspace_id)
@@ -377,7 +382,7 @@ async def handle_harvest_plant(
                 state = hass.states.get(plant_id)
                 if state:
                     plant_id = state.attributes.get("plant_id")
-        except Exception:
+        except (AttributeError, TypeError):
             _LOGGER.warning("Could not resolve entity_id %s to plant_id", plant_id)
 
     plant = coordinator.plants.get(plant_id)

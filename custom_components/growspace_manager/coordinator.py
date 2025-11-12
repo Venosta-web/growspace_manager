@@ -504,8 +504,8 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
                 pid: Plant.from_dict(p) for pid, p in data.get("plants", {}).items()
             }
             _LOGGER.info("Loaded %d plants", len(self.plants))
-        except (TypeError, ValueError) as e:
-            _LOGGER.exception("Error loading plants: %s", e)
+        except (TypeError, ValueError):
+            _LOGGER.exception("Error loading plants")
             self.plants = {}
 
         # Load growspaces using from_dict (handles migration)
@@ -535,8 +535,8 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
                             "--- INFO: No options found for growspace '%s' ---",
                             growspace.name,
                         )
-        except (TypeError, ValueError) as e:
-            _LOGGER.exception("Error loading growspaces: %s", e)
+        except (TypeError, ValueError):
+            _LOGGER.exception("Error loading growspaces")
             self.growspaces = {}
 
         # ✅ Load notification tracking
@@ -751,11 +751,11 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
 
         """
         plants_to_check = self.get_growspace_plants(growspace_id)
-        invalid_plants = []
-
-        for plant in plants_to_check:
-            if int(plant.row) > new_rows or int(plant.col) > new_plants_per_row:
-                invalid_plants.append(plant)
+        invalid_plants = [
+            plant
+            for plant in plants_to_check
+            if int(plant.row) > new_rows or int(plant.col) > new_plants_per_row
+        ]
 
         if invalid_plants:
             _LOGGER.warning(
