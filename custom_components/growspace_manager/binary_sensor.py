@@ -141,34 +141,15 @@ class BayesianEnvironmentSensor(BinarySensorEntity):
         except (ValueError, TypeError):
             return None
 
-    @staticmethod
-    def _days_since(date_str: str) -> int:
-        """Calculate days since date string (YYYY-MM-DD)."""
-        try:
-            dt = datetime.strptime(date_str, "%Y-%m-%d").date()
-        except Exception:
-            return 0
-        return (date.today() - dt).days
-
     def _get_growth_stage_info(self) -> dict[str, int]:
         """Get veg_days and flower_days from coordinator."""
-        plants = self.coordinator.get_growspace_plants(self.growspace_id)
+        # Rufe die neue zentralisierte Methode auf
+        stage_days = self.coordinator.get_growspace_max_stage_days(self.growspace_id)
 
-        if not plants:
-            return {"veg_days": 0, "flower_days": 0}
-
-        max_veg = max(
-            (self._days_since(p.veg_start) for p in plants if p.veg_start),
-            default=0,
-        )
-        max_flower = max(
-            (self._days_since(p.flower_start) for p in plants if p.flower_start),
-            default=0,
-        )
-
+        # Gib im Format zurück, das diese Klasse erwartet
         return {
-            "veg_days": max_veg,
-            "flower_days": max_flower,
+            "veg_days": stage_days.get("veg", 0),
+            "flower_days": stage_days.get("flower", 0),
         }
 
     async def _async_update_probability(self) -> None:

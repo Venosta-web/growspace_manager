@@ -106,6 +106,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
             len(self.plants),
             len(self.growspaces),
         )
+        
 
     # -----------------------------
     # Methods for editor dropdown
@@ -1531,6 +1532,22 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
             for plant in self.plants.values()
             if plant.growspace_id == growspace_id
         ]
+    def get_growspace_max_stage_days(self, growspace_id: str) -> dict[str, int]:
+        """Get max veg_days and flower_days for a growspace."""
+        plants = self.get_growspace_plants(growspace_id)
+        if not plants:
+            return {"veg": 0, "flower": 0}
+
+        max_veg = max(
+            (self._calculate_days(p.veg_start) for p in plants if p.veg_start),
+            default=0,
+        )
+        max_flower = max(
+            (self._calculate_days(p.flower_start) for p in plants if p.flower_start),
+            default=0,
+        )
+
+        return {"veg": max_veg, "flower": max_flower}
 
     def calculate_days_in_stage(self, plant: Plant, stage: str) -> int:
         """Calculate days a plant has been in a specific stage."""

@@ -220,14 +220,6 @@ class GrowspaceOverviewSensor(SensorEntity):
         plants = self.coordinator.get_growspace_plants(self.growspace_id)
         return len(plants)
 
-    @staticmethod
-    def _days_since(date_str: str) -> int:
-        """Calculate days since date string (YYYY-MM-DD)."""
-        try:
-            dt = datetime.strptime(date_str, "%Y-%m-%d").date()
-        except Exception:
-            return 0
-        return (date.today() - dt).days
 
     @staticmethod
     def _days_to_week(days: int) -> int:
@@ -241,15 +233,10 @@ class GrowspaceOverviewSensor(SensorEntity):
         """Return additional state attributes."""
         plants = self.coordinator.get_growspace_plants(self.growspace_id)
 
-        # Calculate max stage days
-        max_veg = max(
-            (self._days_since(p.veg_start) for p in plants if p.veg_start),
-            default=0,
-        )
-        max_flower = max(
-            (self._days_since(p.flower_start) for p in plants if p.flower_start),
-            default=0,
-        )
+        # Calculate max stage days via coordinator
+        stage_days = self.coordinator.get_growspace_max_stage_days(self.growspace_id)
+        max_veg = stage_days.get("veg", 0)
+        max_flower = stage_days.get("flower", 0)
 
         # Calculate weeks from days
         veg_week = self._days_to_week(max_veg)
