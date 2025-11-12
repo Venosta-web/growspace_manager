@@ -93,7 +93,7 @@ async def test_async_setup_entry_adds_entities() -> None:
 # --------------------
 # GrowspaceOverviewSensor
 # --------------------
-def test_growspace_overview_sensor_state_and_attributes(mock_coordinator):
+def test_growspace_overview_sensor_state_and_attributes(mock_coordinator) -> None:
     gs = GrowspaceOverviewSensor(
         coordinator=mock_coordinator,
         growspace_id="gs1",
@@ -110,7 +110,7 @@ def test_growspace_overview_sensor_state_and_attributes(mock_coordinator):
     assert attrs["grid"]["position_1_1"]["plant_id"] == "p1"
 
 
-def test_growspace_overview_sensor_max_stage_attributes(mock_coordinator):
+def test_growspace_overview_sensor_max_stage_attributes(mock_coordinator) -> None:
     """Test max stage attributes are included in GrowspaceOverviewSensor."""
     coordinator = mock_coordinator
     # Add two plants with veg and flower stages
@@ -167,7 +167,7 @@ def test_growspace_overview_sensor_max_stage_attributes(mock_coordinator):
     assert "Flower: 15d" in attrs["max_stage_summary"]
 
 
-def test_growspace_overview_sensor_max_stage_no_plants(mock_coordinator):
+def test_growspace_overview_sensor_max_stage_no_plants(mock_coordinator) -> None:
     coordinator = mock_coordinator
     coordinator.plants = {}
     coordinator.get_growspace_plants.return_value = []
@@ -187,7 +187,7 @@ def test_growspace_overview_sensor_max_stage_no_plants(mock_coordinator):
 # --------------------
 # PlantEntity
 # --------------------
-def test_plant_entity_state_and_attributes(mock_coordinator):
+def test_plant_entity_state_and_attributes(mock_coordinator) -> None:
     plant = list(mock_coordinator.plants.values())[0]
     entity = PlantEntity(mock_coordinator, plant)
     state = entity.state
@@ -211,7 +211,7 @@ def test_plant_entity_state_and_attributes(mock_coordinator):
 # --------------------
 # StrainLibrarySensor
 # --------------------
-def test_strain_library_sensor_state_and_attributes(mock_coordinator):
+def test_strain_library_sensor_state_and_attributes(mock_coordinator) -> None:
     sensor = StrainLibrarySensor(mock_coordinator)
     assert sensor.state == "ok"
     attrs = sensor.extra_state_attributes
@@ -222,7 +222,7 @@ def test_strain_library_sensor_state_and_attributes(mock_coordinator):
 # --------------------
 # GrowspaceListSensor
 # --------------------
-def test_growspace_list_sensor_state_and_attributes(mock_coordinator):
+def test_growspace_list_sensor_state_and_attributes(mock_coordinator) -> None:
     sensor = GrowspaceListSensor(mock_coordinator)
     assert sensor.state == 1
     attrs = sensor.extra_state_attributes

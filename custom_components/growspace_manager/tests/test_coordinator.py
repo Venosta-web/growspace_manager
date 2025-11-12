@@ -34,7 +34,7 @@ async def test_add_and_remove_plant(coordinator) -> None:
 
 
 @pytest.mark.asyncio
-async def test_transition_plant_stage(coordinator):
+async def test_transition_plant_stage(coordinator) -> None:
     """Test transitioning a plant through various stages."""
     gs = await coordinator.async_add_growspace("Stage GS")
     plant = await coordinator.async_add_plant(gs.id, "Strain B")
@@ -66,7 +66,7 @@ async def test_transition_plant_stage(coordinator):
 
 
 @pytest.mark.asyncio
-async def test_async_create_mum(coordinator):
+async def test_async_create_mum(coordinator) -> None:
     """Test creating a mother plant."""
     start_time = date(2025, 3, 1)
     start_time = start_time.isoformat()
@@ -87,7 +87,7 @@ async def test_async_create_mum(coordinator):
 
 
 @pytest.mark.asyncio
-async def test_async_take_clones(coordinator):
+async def test_async_take_clones(coordinator) -> None:
     """Test taking clones from a mother plant."""
     mother_time = date(2025, 4, 1)
     mother_time = mother_time.isoformat()
@@ -116,7 +116,7 @@ async def test_async_take_clones(coordinator):
 
 
 @pytest.mark.asyncio
-async def test_ensure_special_growspace(coordinator):
+async def test_ensure_special_growspace(coordinator) -> None:
     """Test ensuring a special growspace exists."""
     gs_id = coordinator._ensure_special_growspace("mother", "Mother GS", 3, 3)
     assert gs_id in coordinator.growspaces
@@ -127,7 +127,7 @@ async def test_ensure_special_growspace(coordinator):
 
 
 @pytest.mark.asyncio
-async def test_update_plant_position(coordinator):
+async def test_update_plant_position(coordinator) -> None:
     """Test updating a plant's position."""
     gs = await coordinator.async_add_growspace("Position GS", 3, 3)
     plant = await coordinator.async_add_plant(gs.id, "Strain D", row=1, col=1)
@@ -139,7 +139,7 @@ async def test_update_plant_position(coordinator):
 
 
 @pytest.mark.asyncio
-async def test_switch_plants(coordinator):
+async def test_switch_plants(coordinator) -> None:
     """Test switching the positions of two plants."""
     gs = await coordinator.async_add_growspace("Switch GS", 2, 2)
     plant1 = await coordinator.async_add_plant(gs.id, "Strain1", row=1, col=1)
@@ -153,14 +153,14 @@ async def test_switch_plants(coordinator):
 
 
 @pytest.mark.asyncio
-async def test_remove_nonexistent_plant_returns_false(coordinator):
+async def test_remove_nonexistent_plant_returns_false(coordinator) -> None:
     """Test that removing a nonexistent plant returns False."""
     result = await coordinator.async_remove_plant("nonexistent")
     assert result is False
 
 
 @pytest.mark.asyncio
-async def test_get_growspace_options(coordinator):
+async def test_get_growspace_options(coordinator) -> None:
     """Test that get_growspace_options returns correct dict of growspace IDs to names."""
     # Add some growspaces
     gs1 = await coordinator.async_add_growspace("Veg GS", rows=2, plants_per_row=2)
@@ -187,7 +187,7 @@ async def test_get_growspace_options(coordinator):
 
 
 @pytest.mark.asyncio
-async def test_get_sorted_growspace_options(coordinator):
+async def test_get_sorted_growspace_options(coordinator) -> None:
     """Test that get_sorted_growspace_options returns growspaces sorted by name."""
     # Add growspaces with names in unsorted order
     gs1 = await coordinator.async_add_growspace("C-GS", rows=2, plants_per_row=2)
@@ -211,7 +211,7 @@ async def test_get_sorted_growspace_options(coordinator):
 
 
 @pytest.mark.asyncio
-async def test_migrate_legacy_growspaces(coordinator):
+async def test_migrate_legacy_growspaces(coordinator) -> None:
     """Test that legacy growspace aliases are migrated correctly."""
     # Patch the _migrate_special_alias_if_needed method to track calls
     with patch.object(
@@ -239,7 +239,7 @@ async def test_migrate_legacy_growspaces(coordinator):
 
 
 @pytest.mark.asyncio
-async def test_create_canonical_from_alias(coordinator):
+async def test_create_canonical_from_alias(coordinator) -> None:
     """Test migrating a growspace from an alias to canonical."""
     alias_id = "alias_gs"
     canonical_id = "canonical_gs"
@@ -281,7 +281,7 @@ async def test_create_canonical_from_alias(coordinator):
 
 
 @pytest.mark.asyncio
-async def test_consolidate_alias_into_canonical(coordinator):
+async def test_consolidate_alias_into_canonical(coordinator) -> None:
     """Test consolidating an alias growspace into a canonical one."""
     alias_id = "alias_gs"
     canonical_id = "canonical_gs"
@@ -312,7 +312,7 @@ async def test_consolidate_alias_into_canonical(coordinator):
 
 
 @pytest.mark.asyncio
-async def test_migrate_plants_to_growspace(coordinator):
+async def test_migrate_plants_to_growspace(coordinator) -> None:
     """Test that plants are moved from one growspace to another."""
     # Use actual Growspace instances
     coordinator.growspaces["gs1"] = Growspace(
@@ -344,7 +344,7 @@ async def test_migrate_plants_to_growspace(coordinator):
 
 
 @pytest.mark.asyncio
-async def test_get_plant_stage(coordinator: GrowspaceCoordinator):
+async def test_get_plant_stage(coordinator: GrowspaceCoordinator) -> None:
     """Test _get_plant_stage returns correct stage based on start attributes."""
 
     # Helper to create a plant with only one stage set
@@ -370,7 +370,7 @@ async def test_get_plant_stage(coordinator: GrowspaceCoordinator):
 
 
 @pytest.mark.asyncio
-async def test_get_plant(coordinator: GrowspaceCoordinator):
+async def test_get_plant(coordinator: GrowspaceCoordinator) -> None:
     """Test retrieving a plant by its ID."""
     # Add a plant
     plant = await coordinator.async_add_plant("gs1", "StrainX", row=1, col=1)
@@ -386,7 +386,7 @@ async def test_get_plant(coordinator: GrowspaceCoordinator):
 
 
 @pytest.mark.asyncio
-async def test_validate_growspace_exists(coordinator: GrowspaceCoordinator):
+async def test_validate_growspace_exists(coordinator: GrowspaceCoordinator) -> None:
     """Test that validating an existing growspace passes, and nonexistent raises."""
     # Add a growspace
     gs = await coordinator.async_add_growspace("Test GS")
@@ -400,7 +400,7 @@ async def test_validate_growspace_exists(coordinator: GrowspaceCoordinator):
 
 
 @pytest.mark.asyncio
-async def test_validate_plant_exists(coordinator: GrowspaceCoordinator):
+async def test_validate_plant_exists(coordinator: GrowspaceCoordinator) -> None:
     """Test that validating an existing plant passes, and nonexistent raises."""
     # Add a growspace and plant
     gs = await coordinator.async_add_growspace("Test GS")
@@ -415,7 +415,7 @@ async def test_validate_plant_exists(coordinator: GrowspaceCoordinator):
 
 
 @pytest.mark.asyncio
-async def test_validate_position_bounds(coordinator: GrowspaceCoordinator):
+async def test_validate_position_bounds(coordinator: GrowspaceCoordinator) -> None:
     """Test that valid positions pass and out-of-bounds raise ValueError."""
     # Add a growspace
     gs = await coordinator.async_add_growspace("Bounds GS", rows=3, plants_per_row=3)
@@ -438,7 +438,7 @@ async def test_validate_position_bounds(coordinator: GrowspaceCoordinator):
 
 
 @pytest.mark.asyncio
-async def test_validate_position_not_occupied(coordinator: GrowspaceCoordinator):
+async def test_validate_position_not_occupied(coordinator: GrowspaceCoordinator) -> None:
     """Test that occupied positions raise and empty positions pass."""
     # Add a growspace
     gs = await coordinator.async_add_growspace("Occupy GS", rows=2, plants_per_row=2)
@@ -466,7 +466,7 @@ async def test_validate_position_not_occupied(coordinator: GrowspaceCoordinator)
 
 
 @pytest.mark.asyncio
-async def test_parse_date_fields(coordinator: GrowspaceCoordinator):
+async def test_parse_date_fields(coordinator: GrowspaceCoordinator) -> None:
     """Test that date fields in kwargs are parsed correctly."""
     kwargs = {
         "veg_start": "2025-01-01",
@@ -485,7 +485,7 @@ async def test_parse_date_fields(coordinator: GrowspaceCoordinator):
 
 
 @pytest.mark.asyncio
-async def test_calculate_days(coordinator):
+async def test_calculate_days(coordinator) -> None:
     """Test the _calculate_days helper function."""
     today = date.today()
 
@@ -515,7 +515,7 @@ async def test_calculate_days(coordinator):
 
 
 @pytest.mark.asyncio
-async def test_generate_unique_name(coordinator):
+async def test_generate_unique_name(coordinator) -> None:
     """Test the _generate_unique_name helper function."""
     # Setup: add a growspace with the base name
     await coordinator.async_add_growspace("MyGrowspace")
@@ -537,7 +537,7 @@ async def test_generate_unique_name(coordinator):
 
 
 @pytest.mark.asyncio
-async def test_update_special_growspace_name(coordinator):
+async def test_update_special_growspace_name(coordinator) -> None:
     """Test the _update_special_growspace_name helper function."""
     # Setup: add a growspace with a different name
     gs = await coordinator.async_add_growspace("OldName")
@@ -553,7 +553,7 @@ async def test_update_special_growspace_name(coordinator):
 
 
 @pytest.mark.asyncio
-async def test_async_update_data(coordinator):
+async def test_async_update_data(coordinator) -> None:
     """Test the _async_update_data method."""
     # Setup: manually set some data
     coordinator.data = {"example": 123}
@@ -578,7 +578,7 @@ async def test_async_update_data(coordinator):
 
 
 @pytest.mark.asyncio
-async def test_async_load(coordinator):
+async def test_async_load(coordinator) -> None:
     """Test the async_load method."""
     # Prepare fake stored data
     fake_data = {
@@ -622,7 +622,7 @@ async def test_async_load(coordinator):
 
 
 @pytest.mark.asyncio
-async def test_async_remove_growspace(coordinator):
+async def test_async_remove_growspace(coordinator) -> None:
     """Test the async_remove_growspace method."""
     # Setup: add a growspace with plants
     gs = await coordinator.async_add_growspace("Test GS", 2, 2)
@@ -657,7 +657,7 @@ async def test_async_remove_growspace(coordinator):
 
 
 @pytest.mark.asyncio
-async def test_async_update_growspace(coordinator):
+async def test_async_update_growspace(coordinator) -> None:
     """Test the async_update_growspace method."""
     # Setup: create a growspace
     gs = await coordinator.async_add_growspace("Old Name", 2, 2)
@@ -688,7 +688,7 @@ async def test_async_update_growspace(coordinator):
 
 
 @pytest.mark.asyncio
-async def test_async_update_growspace_no_changes(coordinator):
+async def test_async_update_growspace_no_changes(coordinator) -> None:
     """Test that async_update_growspace does not save if there are no changes."""
     # Setup: create a growspace
     gs = await coordinator.async_add_growspace(
@@ -717,7 +717,7 @@ async def test_async_update_growspace_no_changes(coordinator):
 
 
 @pytest.mark.asyncio
-async def test_async_update_growspace_invalid_id(coordinator):
+async def test_async_update_growspace_invalid_id(coordinator) -> None:
     """Test that async_update_growspace raises ValueError for an invalid ID."""
     with pytest.raises(ValueError, match="Growspace invalid_id not found"):
         await coordinator.async_update_growspace("invalid_id", name="Test")
@@ -726,8 +726,8 @@ async def test_async_update_growspace_invalid_id(coordinator):
 @pytest.mark.asyncio
 async def test_validate_plants_after_growspace_resize_logs_warnings(
     coordinator,
-    caplog,
-):
+    caplog: pytest.LogCaptureFixture,
+) -> None:
     """Test that resizing a growspace logs warnings for out-of-bounds plants."""
     # Setup: create growspace 2x2
     gs = await coordinator.async_add_growspace("Resize GS", 2, 2)
@@ -751,7 +751,7 @@ async def test_validate_plants_after_growspace_resize_logs_warnings(
 
 
 @pytest.mark.asyncio
-async def test_is_notifications_enabled(coordinator):
+async def test_is_notifications_enabled(coordinator) -> None:
     """Test the is_notifications_enabled method."""
     # Create a growspace
     gs = await coordinator.async_add_growspace("Notify GS", 2, 2)
@@ -768,7 +768,7 @@ async def test_is_notifications_enabled(coordinator):
 
 
 @pytest.mark.asyncio
-async def test_set_notifications_enabled(coordinator):
+async def test_set_notifications_enabled(coordinator) -> None:
     """Test the set_notifications_enabled method."""
     # Create a growspace
     gs = await coordinator.async_add_growspace("Notify GS", 2, 2)
@@ -803,7 +803,7 @@ async def test_set_notifications_enabled(coordinator):
 
 
 @pytest.mark.asyncio
-async def test_handle_clone_creation(coordinator):
+async def test_handle_clone_creation(coordinator) -> None:
     """Test the _handle_clone_creation method."""
     # Setup: create a mother plant
     mother = await coordinator.async_add_mother_plant("PhenoA", "StrainX", 1, 1)
@@ -858,7 +858,7 @@ async def test_handle_clone_creation(coordinator):
 
 
 @pytest.mark.asyncio
-async def test_async_transition_clone_to_veg(coordinator):
+async def test_async_transition_clone_to_veg(coordinator) -> None:
     """Test the async_transition_clone_to_veg method."""
     # Step 1: create a mother plant
     mother = await coordinator.async_add_mother_plant("PhenoA", "StrainX", 1, 1)
