@@ -18,7 +18,6 @@ from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import selector
 
 from .const import DEFAULT_NAME, DOMAIN
-from .models import Growspace, Plant
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -245,7 +244,7 @@ class OptionsFlowHandler(OptionsFlow):
                 try:
                     await coordinator.async_remove_growspace(user_input["growspace_id"])
                 except (ValueError, KeyError) as err:
-                    _LOGGER.error("Error removing growspace: %s", err, exc_info=True)
+                    _LOGGER.exception("Error removing growspace: %s", err)
                     return self.async_show_form(
                         step_id="manage_growspaces",
                         data_schema=self._get_growspace_management_schema(coordinator),
@@ -526,7 +525,7 @@ class OptionsFlowHandler(OptionsFlow):
                 return self.async_create_entry(title="", data={})
 
             except ValueError as err:
-                _LOGGER.error("Error updating growspace: %s", err, exc_info=True)
+                _LOGGER.exception("Error updating growspace: %s", err)
                 return self.async_show_form(
                     step_id="update_growspace",
                     data_schema=self._get_update_growspace_schema(growspace),
@@ -594,9 +593,10 @@ class OptionsFlowHandler(OptionsFlow):
             )
             return self.async_abort(reason="setup_error")
 
-        _LOGGER.info(f"Config entry ID: {self.config_entry.entry_id}")
+        _LOGGER.info("Config entry ID: %s", self.config_entry.entry_id)
         _LOGGER.info(
-            f"Available growspaces in coordinator: {list(coordinator.growspaces.keys())}",
+            "Available growspaces in coordinator: %s",
+            list(coordinator.growspaces.keys()),
         )
 
         # Get growspaces from device registry
@@ -605,9 +605,10 @@ class OptionsFlowHandler(OptionsFlow):
             self.config_entry.entry_id,
         )
 
-        _LOGGER.info(f"Total devices for config entry: {len(devices)}")
+        _LOGGER.info("Total devices for config entry: %s", len(devices))
         _LOGGER.info(
-            f"All devices: {[(d.name, d.model, d.identifiers) for d in devices]}",
+            "All devices: %s",
+            [(d.name, d.model, d.identifiers) for d in devices],
         )
 
         # Filter for growspace devices
@@ -618,9 +619,9 @@ class OptionsFlowHandler(OptionsFlow):
             and any(identifier[0] == DOMAIN for identifier in device.identifiers)
         ]
 
-        _LOGGER.info(f"Found {len(growspace_devices)} growspace devices")
+        _LOGGER.info("Found %s growspace devices", len(growspace_devices))
         for device in growspace_devices:
-            _LOGGER.info(f"Growspace device: {device.name} - {device.identifiers}")
+            _LOGGER.info("Growspace device: %s - %s", device.name, device.identifiers)
 
         if not growspace_devices:
             _LOGGER.warning("No growspace devices found in device registry")

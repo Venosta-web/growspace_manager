@@ -104,6 +104,7 @@ async def handle_take_clone(
     """Handle taking a clone from a mother plant."""
     mother_plant_id = call.data.get("mother_plant_id")
     _validate_plant_exists(coordinator, mother_plant_id, "Mother plant")
+    mother_plant = coordinator.plants.get(mother_plant_id)
 
     num_clones = call.data.get("num_clones", 1)
     if not isinstance(num_clones, int) or num_clones < 1:
@@ -160,6 +161,7 @@ async def handle_move_clone(
         )
 
     _validate_plant_exists(coordinator, plant_id)
+    plant = coordinator.plants.get(plant_id)
 
     try:
         row, col = coordinator.find_first_available_position(target_growspace_id)

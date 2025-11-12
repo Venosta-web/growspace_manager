@@ -250,6 +250,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
         return "seedling"
 
     def get_plant(self, plant_id: str) -> Plant | None:
+        """Get a plant by its ID."""
         return self.plants.get(plant_id)
 
     def _canonical_special(self, gs_id: str) -> tuple[str, str]:
@@ -504,8 +505,8 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
                 pid: Plant.from_dict(p) for pid, p in data.get("plants", {}).items()
             }
             _LOGGER.info("Loaded %d plants", len(self.plants))
-        except (TypeError, ValueError) as e:
-            _LOGGER.exception("Error loading plants: %s", e)
+        except (TypeError, ValueError):
+            _LOGGER.exception("Error loading plants")
             self.plants = {}
 
         # Load growspaces using from_dict (handles migration)
@@ -535,8 +536,8 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
                             "--- INFO: No options found for growspace '%s' ---",
                             growspace.name,
                         )
-        except (TypeError, ValueError) as e:
-            _LOGGER.exception("Error loading growspaces: %s", e)
+        except (TypeError, ValueError):
+            _LOGGER.exception("Error loading growspaces")
             self.growspaces = {}
 
         # ✅ Load notification tracking
@@ -675,24 +676,25 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
         updated = False
 
         # Track what changed for logging
-        changes = []
-
+        changes = [
+            f"name: {growspace.name} -> {name}"
+            for name in [name]
+            if name is not None and name != growspace.name
+        ]
         if name is not None and name != growspace.name:
-            old_name = growspace.name
             growspace.name = name
-            changes.append(f"name: {old_name} -> {name}")
             updated = True
 
         if rows is not None and rows != growspace.rows:
-            old_rows = growspace.rows
+            changes.append(f"rows: {growspace.rows} -> {rows}")
             growspace.rows = rows
-            changes.append(f"rows: {old_rows} -> {rows}")
             updated = True
 
         if plants_per_row is not None and plants_per_row != growspace.plants_per_row:
-            old_ppr = growspace.plants_per_row
+            changes.append(
+                f"plants_per_row: {growspace.plants_per_row} -> {plants_per_row}",
+            )
             growspace.plants_per_row = plants_per_row
-            changes.append(f"plants_per_row: {old_ppr} -> {plants_per_row}")
             updated = True
 
         # Handle notification_target - convert empty string to None
@@ -855,6 +857,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
         cure_start: date | None = None,
         source_mother: str = "",
     ) -> Plant:
+        """Add a new plant to a growspace."""
         plant_id = str(uuid.uuid4())
         today = date.today().isoformat()
         plant = Plant(
@@ -1557,6 +1560,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
         return self._calculate_days(start_date)
 
     def get_growspace_grid(self, growspace_id: str) -> list[list[str | None]]:
+        """Generate a grid representation of a growspace."""
         growspace = self.growspaces[growspace_id]
         plants = self.get_growspace_plants(growspace_id)
         return generate_growspace_grid(

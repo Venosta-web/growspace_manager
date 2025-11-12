@@ -227,12 +227,98 @@ class BayesianStressSensor(BayesianEnvironmentSensor):
         self.prior = 0.15
         self.threshold = env_config.get("stress_threshold", 0.70)
 
+    def _get_temp_observation(self, temp: float | None) -> list[tuple[float, float]]:
+        """Get Bayesian observations for temperature."""
+        if temp is None:
+            return []
+        # Extreme heat (severe stress)
+        if temp > 32:
+            return [(0.98, 0.05)]
+        # High heat (moderate stress)
+        if temp > 30:
+            return [(0.85, 0.15)]
+        # Slightly warm (minor stress)
+        if temp > 28:
+            return [(0.65, 0.30)]
+        # Extreme cold (severe stress)
+        if temp < 15:
+            return [(0.95, 0.08)]
+        # Cold (moderate stress)
+        if temp < 18:
+            return [(0.80, 0.20)]
+        return []
+
+    def _get_vpd_observation(
+        self,
+        vpd: float | None,
+        stage_info: dict,
+    ) -> list[tuple[float, float]]:
+        """Get Bayesian observations for VPD based on growth stage."""
+        if vpd is None:
+            return []
+
+        veg_days = stage_info["veg_days"]
+        flower_days = stage_info["flower_days"]
+
+        # Seedling/Clone/Early Veg (up to 14 days) - Target: 0.4-0.8 kPa
+        if flower_days == 0 and veg_days < 14:
+            if vpd < 0.3 or vpd > 1.0:
+                return [(0.85, 0.15)]  # High stress
+            if vpd < 0.4 or vpd > 0.8:
+                return [(0.60, 0.30)]  # Minor stress
+
+        # Late Veg (14+ days) - Target: 0.8-1.2 kPa
+        elif flower_days == 0 and veg_days >= 14:
+            if vpd < 0.6 or vpd > 1.4:
+                return [(0.80, 0.18)]
+            if vpd < 0.8 or vpd > 1.2:
+                return [(0.55, 0.35)]
+
+        # Early-Mid Flower (1-42 days) - Target: 1.0-1.5 kPa
+        elif 0 < flower_days < 42:
+            if vpd < 0.8 or vpd > 1.6:
+                return [(0.85, 0.15)]
+            if vpd < 1.0 or vpd > 1.5:
+                return [(0.60, 0.30)]
+
+        # Late Flower (42+ days) - Target: 1.2-1.5 kPa
+        elif flower_days >= 42:
+            if vpd < 1.0 or vpd > 1.6:
+                return [(0.90, 0.12)]
+            if vpd < 1.2 or vpd > 1.5:
+                return [(0.65, 0.28)]
+
+        return []
+
+    def _get_humidity_observation(
+        self,
+        humidity: float | None,
+    ) -> list[tuple[float, float]]:
+        """Get Bayesian observations for humidity."""
+        if humidity is None:
+            return []
+        if humidity < 35:
+            return [(0.85, 0.20)]  # Too dry
+        if humidity > 70:
+            return [(0.90, 0.15)]  # Too humid
+        return []
+
+    def _get_co2_observation(self, co2: float | None) -> list[tuple[float, float]]:
+        """Get Bayesian observations for CO2."""
+        if co2 is None:
+            return []
+        if co2 < 400:
+            return [(0.80, 0.25)]  # Too low
+        if co2 > 1800:
+            return [(0.75, 0.20)]  # Too high
+        return []
+
     async def _async_update_probability(self) -> None:
         """Calculate stress probability using Bayesian inference."""
         temp = self._get_sensor_value(self.env_config["temperature_sensor"])
         humidity = self._get_sensor_value(self.env_config["humidity_sensor"])
         vpd = self._get_sensor_value(self.env_config["vpd_sensor"])
-        co2 = self._get_sensor_value(self.env_config["co2_sensor"])
+        co2 = self._get_sensor_value(self.env_config.get("co2_sensor"))
         stage_info = self._get_growth_stage_info()
 
         # Store current observations
@@ -241,8 +327,8 @@ class BayesianStressSensor(BayesianEnvironmentSensor):
             "humidity": humidity,
             "vpd": vpd,
             "co2": co2,
-            "veg_days": stage_info["veg_days"],
-            "flower_days": stage_info["flower_days"],
+            "veg_days": stage_info.get("veg_days", 0),
+            "flower_days": stage_info.get("flower_days", 0),
         }
 
         # Calculate probability using Bayes theorem
@@ -251,87 +337,6 @@ class BayesianStressSensor(BayesianEnvironmentSensor):
         observations.extend(self._get_vpd_observation(vpd, stage_info))
         observations.extend(self._get_humidity_observation(humidity))
         observations.extend(self._get_co2_observation(co2))
-
-        # Temperature observations
-        if temp is not None:
-            if temp is not None:
-                # Extreme heat (severe stress)
-                if temp > 32:
-                    observations.append((0.98, 0.05))
-                # High heat (moderate stress)
-                elif temp > 30:
-                    observations.append((0.85, 0.15))
-                # Slightly warm (minor stress)
-                elif temp > 28:
-                    observations.append((0.65, 0.30))
-
-                # Extreme cold (severe stress)
-                elif temp < 15:
-                    observations.append((0.95, 0.08))
-                # Cold (moderate stress)
-                elif temp < 18:
-                    observations.append((0.80, 0.20))
-        # VPD observations (stage-aware)
-        if vpd is not None:
-            veg_days = stage_info["veg_days"]
-            flower_days = stage_info["flower_days"]
-
-            if flower_days == 0 and veg_days < 14:
-                if vpd < 0.3:  # Too humid
-                    observations.append((0.85, 0.15))
-                elif vpd < 0.4:  # Slightly low
-                    observations.append((0.60, 0.30))
-                elif vpd > 1.0:  # Too dry
-                    observations.append((0.85, 0.15))
-                elif vpd > 0.8:  # Slightly high
-                    observations.append((0.60, 0.30))
-
-            # Late Veg (14+ days) - Target: 0.8-1.2 kPa
-            elif flower_days == 0 and veg_days >= 14:
-                if vpd < 0.6:
-                    observations.append((0.80, 0.18))
-                elif vpd < 0.8:
-                    observations.append((0.55, 0.35))
-                elif vpd > 1.4:
-                    observations.append((0.80, 0.18))
-                elif vpd > 1.2:
-                    observations.append((0.55, 0.35))
-
-            # Early-Mid Flower (1-42 days) - Target: 1.0-1.5 kPa
-            elif 0 < flower_days < 42:
-                if vpd < 0.8:
-                    observations.append((0.85, 0.15))
-                elif vpd < 1.0:
-                    observations.append((0.60, 0.30))
-                elif vpd > 1.6:
-                    observations.append((0.80, 0.20))
-                elif vpd > 1.5:
-                    observations.append((0.55, 0.35))
-
-            # Late Flower (42+ days) - Target: 1.2-1.5 kPa (slightly drier)
-            elif flower_days >= 42:
-                if vpd < 1.0:
-                    observations.append((0.90, 0.12))
-                elif vpd < 1.2:
-                    observations.append((0.65, 0.28))
-                elif vpd > 1.6:
-                    observations.append((0.75, 0.22))
-                elif vpd > 1.5:
-                    observations.append((0.50, 0.38))
-
-        # Humidity observations
-        if humidity is not None:
-            if humidity < 35:
-                observations.append((0.85, 0.20))  # Too dry
-            elif humidity > 70:
-                observations.append((0.90, 0.15))  # Too humid
-
-        # CO2 observations
-        if co2 is not None:
-            if co2 < 400:
-                observations.append((0.80, 0.25))  # Too low
-            elif co2 > 1800:
-                observations.append((0.75, 0.20))  # Too high
 
         self._probability = self.calculate_bayesian_probability(
             self.prior,
@@ -505,7 +510,7 @@ class BayesianOptimalConditionsSensor(BayesianEnvironmentSensor):
             else:
                 observations.append((0.25, 0.70))
 
-        self._probability = BayesianStressSensor._calculate_bayesian_probability(
+        self._probability = self.calculate_bayesian_probability(
             self.prior,
             observations,
         )
