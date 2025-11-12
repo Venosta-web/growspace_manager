@@ -10,6 +10,8 @@ _LOGGER = logging.getLogger(__name__)
 
 @dataclass
 class Growspace:
+    """Represents a growspace."""
+
     id: str
     name: str
     rows: int = 3
@@ -65,6 +67,8 @@ class Growspace:
 
 @dataclass
 class Plant:
+    """Represents a plant."""
+
     plant_id: str
     growspace_id: str
     strain: str
