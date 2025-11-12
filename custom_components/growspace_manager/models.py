@@ -1,3 +1,4 @@
+"""Models for the Growspace Manager component."""
 from __future__ import annotations
 
 import logging
