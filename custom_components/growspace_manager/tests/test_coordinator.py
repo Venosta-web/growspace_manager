@@ -19,7 +19,7 @@ def coordinator(hass: HomeAssistant):
 
 
 @pytest.mark.asyncio
-async def test_add_and_remove_plant(coordinator):
+async def test_add_and_remove_plant(coordinator) -> None:
     gs = await coordinator.async_add_growspace("Plant GS")
     plant = await coordinator.async_add_plant(gs.id, "Strain A", row=1, col=1)
     assert plant.plant_id in coordinator.plants

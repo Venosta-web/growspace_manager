@@ -641,11 +641,11 @@ class StrainLibrarySensor(SensorEntity):
         return "ok"
 
     @property
-    def extra_state_attributes(self) -> dict:
+    def extra_state_attributes(self) -> dict[str, Any]:
         """Return the state attributes of the sensor."""
         return {"strains": self.coordinator.get_strain_options()}
 
-    async def async_added_to_hass(self):
+    async def async_added_to_hass(self) -> None:
         """When entity is added to hass."""
         self.coordinator.async_add_listener(self.async_write_ha_state)
 
@@ -661,16 +661,16 @@ class GrowspaceListSensor(SensorEntity):
         self._attr_icon = "mdi:home-group"
         self._update_growspaces()
 
-    def _update_growspaces(self):
+    def _update_growspaces(self) -> None:
         self._growspaces = self.coordinator.get_growspace_options()
 
     @property
-    def state(self):
+    def state(self) -> int:
         """Return the number of growspaces."""
         self._update_growspaces()
         return len(self._growspaces)
 
     @property
-    def extra_state_attributes(self):
+    def extra_state_attributes(self) -> dict[str, Any]:
         """Return the list of growspaces."""
         return {"growspaces": self._growspaces}

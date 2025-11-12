@@ -10,6 +10,7 @@ from homeassistant.components.persistent_notification import (
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, ServiceCall
 from homeassistant.helpers.storage import Store
+from homeassistant.helpers.typing import ConfigType
 
 from .const import (
     ADD_GROWSPACE_SCHEMA,
@@ -48,7 +49,7 @@ _LOGGER = logging.getLogger(__name__)
 PLATFORMS = ["binary_sensor", "sensor", "switch"]
 
 
-async def async_setup(hass: HomeAssistant, config: dict):
+async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
     """Set up the integration via YAML (optional)."""
     _LOGGER.debug("Running async_setup for %s", DOMAIN)
     return True
