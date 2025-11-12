@@ -3,7 +3,7 @@ from unittest.mock import AsyncMock, Mock
 
 import pytest
 
-from ..sensor import (
+from custom_components.growspace_manager.sensor import (
     GrowspaceListSensor,
     GrowspaceOverviewSensor,
     PlantEntity,

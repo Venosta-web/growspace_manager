@@ -5,7 +5,7 @@ from datetime import date
 
 from homeassistant.core import HomeAssistant, ServiceCall
 from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
-from homeassistant.helpers.entity_registry import async_get as async_get_entity_registry
+import homeassistant.helpers.entity_registry as er
 
 from ..const import DOMAIN
 from ..coordinator import GrowspaceCoordinator
@@ -371,7 +371,7 @@ async def handle_harvest_plant(
     # Resolve plant_id from entity_id if needed
     if "." in plant_id:
         try:
-            entity_registry = async_get_entity_registry(hass)
+            entity_registry = er.async_get(hass)
             entity = entity_registry.async_get(plant_id)
             if entity:
                 state = hass.states.get(plant_id)

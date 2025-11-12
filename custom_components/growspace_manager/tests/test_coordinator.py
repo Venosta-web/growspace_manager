@@ -5,10 +5,10 @@ from freezegun import freeze_time
 import pytest
 
 from homeassistant.core import HomeAssistant
-from ..models import Growspace, Plant
+from custom_components.growspace_manager.models import Growspace, Plant
 
-from ..const import PLANT_STAGES
-from ..coordinator import GrowspaceCoordinator
+from custom_components.growspace_manager.const import PLANT_STAGES
+from custom_components.growspace_manager.coordinator import GrowspaceCoordinator
 
 @pytest.fixture
 def coordinator(hass: HomeAssistant):
