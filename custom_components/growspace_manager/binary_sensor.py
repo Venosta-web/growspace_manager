@@ -146,7 +146,7 @@ class BayesianEnvironmentSensor(BinarySensorEntity):
         """Calculate days since date string (YYYY-MM-DD)."""
         try:
             dt = datetime.strptime(date_str, "%Y-%m-%d").date()
-        except Exception:
+        except (ValueError, TypeError):
             return 0
         return (date.today() - dt).days
 
