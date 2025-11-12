@@ -69,7 +69,7 @@ async def ensure_default_growspaces(hass: HomeAssistant, coordinator):
             _LOGGER.info("All default growspaces already exist")
 
     except (ValueError, TypeError, IOError) as e:
-        _LOGGER.error("Error creating default growspaces: %s", e)
+        _LOGGER.exception("Error creating default growspaces: %s", e)
 
 
 class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
@@ -228,7 +228,7 @@ class OptionsFlowHandler(OptionsFlow):
                 "coordinator"
             ]
         except KeyError:
-            _LOGGER.error(
+            _LOGGER.exception(
                 "Coordinator not found - integration may not be properly set up",
             )
             return self.async_abort(reason="setup_error")
@@ -458,7 +458,7 @@ class OptionsFlowHandler(OptionsFlow):
                 "coordinator"
             ]
         except KeyError:
-            _LOGGER.error(
+            _LOGGER.exception(
                 "Coordinator not found - integration may not be properly set up",
             )
             return self.async_abort(reason="setup_error")
@@ -497,7 +497,7 @@ class OptionsFlowHandler(OptionsFlow):
                 "coordinator"
             ]
         except KeyError:
-            _LOGGER.error(
+            _LOGGER.exception(
                 "Coordinator not found - integration may not be properly set up",
             )
             return self.async_abort(reason="setup_error")
