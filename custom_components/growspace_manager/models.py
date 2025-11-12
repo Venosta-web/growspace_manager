@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+import logging
 from dataclasses import asdict, dataclass, field, fields
 from datetime import date
 from typing import Any
+
+_LOGGER = logging.getLogger(__name__)
 
 
 @dataclass
@@ -21,19 +24,41 @@ class Growspace:
 
     @staticmethod
     def from_dict(data: dict) -> Growspace:
-        """Create Growspace from dict, handling legacy field names."""
+        """Create Growspace from dict, handling legacy fields and casting types."""
         data = data.copy()  # Don't modify original
 
         # Migrate old field names
         if "created" in data and "created_at" not in data:
             data["created_at"] = data.pop("created")
 
-        if "updated" in data and "updated_at" not in data:
-            data["updated_at"] = data.pop("updated")
+        # Get all defined field names from the dataclass
+        known_keys = {f.name for f in fields(Growspace)}
+        filtered_data = {}
 
-        # Only keep keys that match dataclass fields
-        allowed_keys = {f.name for f in fields(Growspace)}
-        filtered_data = {k: v for k, v in data.items() if k in allowed_keys}
+        for key, value in data.items():
+            if key in known_keys:
+                # Cast types
+                if key in ("rows", "plants_per_row"):
+                    try:
+                        filtered_data[key] = int(value)
+                    except (ValueError, TypeError):
+                        _LOGGER.warning(
+                            "Invalid type for Growspace %s: %s. Using default.",
+                            data.get("id", "Unknown"),
+                            key,
+                        )
+                        filtered_data[key] = 3  # Default fallback
+                else:
+                    filtered_data[key] = value
+
+        # Ensure required fields are present
+        if "id" not in filtered_data:
+            # This case should ideally not happen if data is managed by the integration
+            _LOGGER.error("Growspace data missing 'id': %s", data)
+            raise ValueError("Growspace data missing 'id'")
+        if "name" not in filtered_data:
+            _LOGGER.error("Growspace data missing 'name': %s", data)
+            raise ValueError("Growspace data missing 'name'")
 
         return Growspace(**filtered_data)
 
@@ -66,7 +91,7 @@ class Plant:
 
     @staticmethod
     def from_dict(data: dict) -> Plant:
-        """Create Plant from dict, handling legacy field names."""
+        """Create Plant from dict, handling legacy fields and casting types."""
         data = data.copy()  # Don't modify original
 
         # Migrate old field names
@@ -76,8 +101,35 @@ class Plant:
         if "updated" in data and "updated_at" not in data:
             data["updated_at"] = data.pop("updated")
 
-        # Only keep keys that match dataclass fields
-        allowed_keys = {f.name for f in fields(Plant)}
-        filtered_data = {k: v for k, v in data.items() if k in allowed_keys}
+        # Get all defined field names from the dataclass
+        known_keys = {f.name for f in fields(Plant)}
+        filtered_data = {}
+
+        for key, value in data.items():
+            if key in known_keys:
+                # Cast types
+                if key in ("row", "col"):
+                    try:
+                        filtered_data[key] = int(value)
+                    except (ValueError, TypeError):
+                        _LOGGER.warning(
+                            "Invalid type for Plant %s: %s. Using 1.",
+                            data.get("plant_id", "Unknown"),
+                            key,
+                        )
+                        filtered_data[key] = 1  # Default fallback
+                else:
+                    filtered_data[key] = value
+
+        # Ensure required fields are present
+        if "plant_id" not in filtered_data:
+            _LOGGER.error("Plant data missing 'plant_id': %s", data)
+            raise ValueError("Plant data missing 'plant_id'")
+        if "growspace_id" not in filtered_data:
+            _LOGGER.error("Plant data missing 'growspace_id': %s", data)
+            raise ValueError("Plant data missing 'growspace_id'")
+        if "strain" not in filtered_data:
+            _LOGGER.error("Plant data missing 'strain': %s", data)
+            raise ValueError("Plant data missing 'strain'")
 
         return Plant(**filtered_data)

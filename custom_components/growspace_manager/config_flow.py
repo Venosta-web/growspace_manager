@@ -699,23 +699,93 @@ class OptionsFlowHandler(OptionsFlow):
 
         if user_input is not None:
             try:
-                await coordinator.async_add_plant(
+                # Get user-requested position
+                row = user_input["row"]
+                col = user_input["col"]
+
+                # Check for an occupant at that position
+                occupant = None
+                for plant in coordinator.get_growspace_plants(
+                    self._selected_growspace_id
+                ):
+                    if plant.row == row and plant.col == col:
+                        occupant = plant
+                        break
+
+                final_row, final_col = row, col
+
+                if occupant:
+                    _LOGGER.info(
+                        "Position (%d, %d) in %s is occupied by %s. Finding next available",
+                        row,
+                        col,
+                        self._selected_growspace_id,
+                        occupant.strain,
+                    )
+                    # Position is occupied, find the next available slot
+                    new_row, new_col = coordinator.find_first_available_position(
+                        self._selected_growspace_id
+                    )
+
+                    if new_row is None:
+                        # Growspace is full
+                        return self.async_show_form(
+                            step_id="add_plant",
+                            data_schema=self._get_add_plant_schema(
+                                growspace, coordinator
+                            ),
+                            errors={
+                                "base": f"Growspace '{growspace.name}' is already full."
+                            },
+                        )
+
+                    # A new, free slot was found
+                    final_row, final_col = new_row, new_col
+                    _LOGGER.info(
+                        "Assigned plant to next available position: (%d, %d)",
+                        final_row,
+                        final_col,
+                    )
+
+                # Determine stage from dates
+                stage = "seedling"  # default
+                if user_input.get("flower_start"):
+                    stage = "flower"
+                elif user_input.get("veg_start"):
+                    stage = "veg"
+
+                # Create the plant at the (potentially new) final position
+                plant = await coordinator.async_add_plant(
                     growspace_id=self._selected_growspace_id,
                     strain=user_input["strain"],
-                    row=user_input["row"],
-                    col=user_input["col"],
-                    phenotype=user_input.get("phenotype"),
+                    row=final_row,  # <-- Use the final (corrected) row
+                    col=final_col,  # <-- Use the final (corrected) col
+                    phenotype=user_input.get("phenotype", ""),
+                    stage=stage,  # <-- Explicitly set the stage
                     veg_start=user_input.get("veg_start"),
                     flower_start=user_input.get("flower_start"),
                 )
+
+                _LOGGER.info(
+                    "Successfully created plant %s at position (%d, %d) in growspace %s",
+                    plant.plant_id,
+                    plant.row,
+                    plant.col,
+                    plant.growspace_id,
+                )
+
+                # The coordinator's async_add_plant method handles saving and refreshing
                 return self.async_create_entry(title="", data={})
+
             except Exception as err:
+                _LOGGER.exception("Error adding plant from config flow: %s", err)
                 return self.async_show_form(
                     step_id="add_plant",
                     data_schema=self._get_add_plant_schema(growspace, coordinator),
                     errors={"base": str(err)},
                 )
 
+        # Show the form on initial access
         return self.async_show_form(
             step_id="add_plant",
             data_schema=self._get_add_plant_schema(growspace, coordinator),
@@ -1073,9 +1143,14 @@ class OptionsFlowHandler(OptionsFlow):
         """Get schema for updating a plant."""
         growspace = coordinator.growspaces.get(plant.growspace_id)
 
-        # Ensure rows and plants_per_row are integers
-        rows = int(growspace.get("rows", 10))
-        plants_per_row = int(growspace.get("plants_per_row", 10))
+        if not growspace:
+            # Fallback if growspace is somehow missing
+            rows = 10
+            plants_per_row = 10
+        else:
+            # Ensure rows and plants_per_row are integers
+            rows = int(growspace.rows)
+            plants_per_row = int(growspace.plants_per_row)
 
         # Get strain options for autocomplete
         strain_options = []
@@ -1101,15 +1176,15 @@ class OptionsFlowHandler(OptionsFlow):
             {
                 vol.Optional(
                     "strain",
-                    default=plant.get("strain", ""),
+                    default=plant.strain,
                 ): strain_selector,
                 vol.Optional(
                     "phenotype",
-                    default=plant.get("phenotype", ""),
+                    default=plant.phenotype,
                 ): selector.TextSelector(),
                 vol.Optional(
                     "row",
-                    default=plant.get("row", 1),
+                    default=plant.row,
                 ): selector.NumberSelector(
                     selector.NumberSelectorConfig(
                         min=1,
@@ -1119,7 +1194,7 @@ class OptionsFlowHandler(OptionsFlow):
                 ),
                 vol.Optional(
                     "col",
-                    default=plant.get("col", 1),
+                    default=plant.col,
                 ): selector.NumberSelector(
                     selector.NumberSelectorConfig(
                         min=1,

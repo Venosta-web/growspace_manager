@@ -55,8 +55,8 @@ def calculate_days_since(
 def find_first_free_position(
     growspace: Growspace,
     occupied_positions: set[tuple[int, int]],
-) -> tuple[int, int]:
-    """Find the first free position (row, column) in a growspace.
+) -> tuple[int | None, int | None]:
+    """_Returns the first col/row thats free in growspace.
 
     Args:
         growspace (Growspace): The growspace object.
@@ -73,7 +73,8 @@ def find_first_free_position(
         for c in range(1, total_cols + 1):
             if (r, c) not in occupied_positions:
                 return r, c
-    return total_rows, total_cols
+    # If no position is found, return None, None
+    return None, None
 
 
 def generate_growspace_grid(

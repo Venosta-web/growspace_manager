@@ -2,7 +2,6 @@
 
 import logging
 from datetime import date
-from typing import Any, Optional
 
 from homeassistant.core import HomeAssistant, ServiceCall
 from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
@@ -37,9 +36,31 @@ async def handle_add_plant(
             "Position is out of bounds for the selected growspace.",
         )
 
+    # Check for occupant
+    occupant = None
     for plant in coordinator.get_growspace_plants(growspace_id):
         if plant.row == row and plant.col == col:
-            raise ServiceValidationError("Position is already occupied.")
+            occupant = plant
+            break
+
+    final_row, final_col = row, col
+
+    if occupant:
+        _LOGGER.info(
+            "Position (%d, %d) in %s is occupied by %s. Finding next available.",
+            row,
+            col,
+            growspace_id,
+            occupant.strain,
+        )
+        # Find the next available slot
+        new_row = coordinator.find_first_available_position(plant.growspace_id)
+
+        if new_row is None:
+            # Growspace is full
+            raise ServiceValidationError(
+                f"Growspace '{growspace.name}' is already full occupied.",
+            )
 
     try:
         plant_id = await coordinator.async_add_plant(

@@ -73,7 +73,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     # Ensure DOMAIN exists in hass.data
     hass.data.setdefault(DOMAIN, {})
-    hass.data[DOMAIN][entry.entry_id] = {"coordinator": coordinator}
+    hass.data[DOMAIN][entry.entry_id] = {
+        "coordinator": coordinator,
+        "store": store,
+    }
 
     # Initialize and load Strain Library (global instance)
     strain_library_instance = StrainLibrary(
@@ -104,8 +107,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             )
         except Exception:
             _LOGGER.exception(
-                "Failed to create pending growspace: %s",
-                pending.get("name", "unknown"),
+                "Failed to create pending growspace: %s", pending.get("name", "unknown")
             )
             create_notification(
                 hass,
@@ -133,6 +135,7 @@ async def _register_services(
     strain_library_instance: StrainLibrary,
 ) -> None:
     """Register all Growspace Manager services."""
+
     # Define all services with their handler functions and schemas
     services_to_register = [
         ("add_growspace", growspace.handle_add_growspace, ADD_GROWSPACE_SCHEMA),
