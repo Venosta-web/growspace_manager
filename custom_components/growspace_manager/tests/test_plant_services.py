@@ -8,6 +8,7 @@ from homeassistant.core import HomeAssistant, ServiceCall
 
 from custom_components.growspace_manager.const import DOMAIN
 from custom_components.growspace_manager.services.plant import (
+    ServiceValidationError,
     handle_add_plant,
     handle_harvest_plant,
     handle_move_clone,
@@ -18,7 +19,6 @@ from custom_components.growspace_manager.services.plant import (
     handle_transition_plant_stage,
     handle_update_plant,
 )
-
 
 
 @pytest.fixture
@@ -124,7 +124,7 @@ async def test_add_plant_growspace_not_found(
     hass: HomeAssistant,
     mock_coordinator,
     mock_strain_library,
-):
+) -> None:
     """Test adding plant to non-existent growspace."""
     mock_coordinator.growspaces = {}  # No growspaces
 
@@ -163,7 +163,7 @@ async def test_add_plant_position_out_of_bounds(
     mock_coordinator,
     mock_strain_library,
     mock_growspace,
-):
+) -> None:
     """Test adding plant at out-of-bounds position."""
     mock_coordinator.growspaces = {"gs1": mock_growspace}
 
@@ -194,7 +194,7 @@ async def test_add_plant_position_occupied(
     mock_strain_library,
     mock_growspace,
     mock_plant,
-):
+) -> None:
     """Test adding plant at occupied position."""
     mock_coordinator.growspaces = {"gs1": mock_growspace}
     mock_plant.row = 2
@@ -227,7 +227,7 @@ async def test_add_plant_with_dates(
     mock_coordinator,
     mock_strain_library,
     mock_growspace,
-):
+) -> None:
     """Test adding plant with date fields."""
     mock_coordinator.growspaces = {"gs1": mock_growspace}
 
@@ -259,7 +259,7 @@ async def test_add_plant_mother_growspace_auto_date(
     mock_coordinator,
     mock_strain_library,
     mock_growspace,
-):
+) -> None:
     """Test auto-setting mother_start date for mother growspace."""
     mock_coordinator.growspaces = {"mother": mock_growspace}
 
@@ -287,7 +287,7 @@ async def test_add_plant_exception(
     mock_coordinator,
     mock_strain_library,
     mock_growspace,
-):
+) -> None:
     """Test exception handling in add_plant."""
     mock_coordinator.growspaces = {"gs1": mock_growspace}
     mock_coordinator.async_add_plant.side_effect = Exception("Test error")
@@ -324,7 +324,7 @@ async def test_take_clone_success(
     mock_strain_library,
     mock_plant,
     mock_growspace,
-):
+) -> None:
     """Test successfully taking clones."""
     # Setup mocks
     mock_coordinator.plants = {"mother_1": mock_plant}
@@ -364,7 +364,7 @@ async def test_take_clone_mother_not_found(
     hass: HomeAssistant,
     mock_coordinator,
     mock_strain_library,
-):
+) -> None:
     """Test taking clone from non-existent mother."""
     mock_coordinator.plants = {}
 
@@ -392,7 +392,7 @@ async def test_take_clone_no_space(
     mock_strain_library,
     mock_plant,
     mock_growspace,
-):
+) -> None:
     """Test taking clone when no space available."""
     mock_coordinator.plants = {"mother_1": mock_plant}
     mock_coordinator.growspaces = {"clone": mock_growspace}
@@ -423,7 +423,7 @@ async def test_take_clone_with_transition_date(
     mock_strain_library,
     mock_plant,
     mock_growspace,
-):
+) -> None:
     """Test taking clone with transition date."""
     mock_coordinator.plants = {"mother_1": mock_plant}
     mock_coordinator.growspaces = {"clone": mock_growspace}
@@ -452,7 +452,7 @@ async def test_take_clone_invalid_num_clones(
     mock_strain_library,
     mock_plant,
     mock_growspace,
-):
+) -> None:
     """Test taking clone with invalid num_clones."""
     mock_coordinator.plants = {"mother_1": mock_plant}
     mock_coordinator.growspaces = {"clone": mock_growspace}
@@ -480,7 +480,7 @@ async def test_take_clone_partial_failure(
     mock_strain_library,
     mock_plant,
     mock_growspace,
-):
+) -> None:
     """Test taking clones with partial failure."""
     mock_coordinator.plants = {"mother_1": mock_plant}
     mock_coordinator.growspaces = {"clone": mock_growspace}
@@ -531,7 +531,7 @@ async def test_move_clone_success(
     mock_strain_library,
     mock_plant,
     mock_growspace,
-):
+) -> None:
     """Test successfully moving a clone."""
     # Setup
     mock_coordinator.plants = {"clone_1": mock_plant}
@@ -575,7 +575,7 @@ async def test_move_clone_missing_params(
     hass: HomeAssistant,
     mock_coordinator,
     mock_strain_library,
-):
+) -> None:
     """Test move clone with missing parameters."""
     call = ServiceCall(
         hass,
@@ -596,7 +596,7 @@ async def test_move_clone_plant_not_found(
     hass: HomeAssistant,
     mock_coordinator,
     mock_strain_library,
-):
+) -> None:
     """Test moving non-existent clone."""
     mock_coordinator.plants = {}
 
@@ -624,7 +624,7 @@ async def test_move_clone_no_space(
     mock_strain_library,
     mock_plant,
     mock_growspace,
-):
+) -> None:
     """Test moving clone when no space available."""
     mock_coordinator.plants = {"clone_1": mock_plant}
     mock_coordinator.growspaces = {"veg": mock_growspace}
@@ -655,7 +655,7 @@ async def test_move_clone_invalid_date(
     mock_strain_library,
     mock_plant,
     mock_growspace,
-):
+) -> None:
     """Test moving clone with invalid transition date."""
     mock_coordinator.plants = {"clone_1": mock_plant}
     mock_coordinator.growspaces = {"veg": mock_growspace}
@@ -684,7 +684,7 @@ async def test_move_clone_exception_finding_position(
     mock_strain_library,
     mock_plant,
     mock_growspace,
-):
+) -> None:
     """Test exception when finding position for clone."""
     mock_coordinator.plants = {"clone_1": mock_plant}
     mock_coordinator.growspaces = {"veg": mock_growspace}
@@ -716,7 +716,7 @@ async def test_move_clone_exception_during_move(
     mock_strain_library,
     mock_plant,
     mock_growspace,
-):
+) -> None:
     """Test exception during clone move."""
     mock_coordinator.plants = {"clone_1": mock_plant}
     mock_coordinator.growspaces = {"veg": mock_growspace}
@@ -751,7 +751,7 @@ async def test_update_plant_success(
     mock_coordinator,
     mock_strain_library,
     mock_plant,
-):
+) -> None:
     """Test successfully updating a plant."""
     # Arrange
     mock_coordinator.plants = {"plant_1": mock_plant}
@@ -792,7 +792,7 @@ async def test_update_plant_not_found(
     hass: HomeAssistant,
     mock_coordinator,
     mock_strain_library,
-):
+) -> None:
     """Test updating non-existent plant."""
     mock_coordinator.plants = {}
 
@@ -820,7 +820,7 @@ async def test_update_plant_with_dates(
     mock_coordinator,
     mock_strain_library,
     mock_plant,
-):
+) -> None:
     """Test updating plant with date fields."""
     mock_coordinator.plants = {"plant_1": mock_plant}
 
@@ -849,7 +849,7 @@ async def test_update_plant_with_date_strings(
     mock_coordinator,
     mock_strain_library,
     mock_plant,
-):
+) -> None:
     """Test updating plant with date strings."""
     mock_coordinator.plants = {"plant_1": mock_plant}
 
@@ -877,7 +877,7 @@ async def test_update_plant_invalid_date(
     mock_coordinator,
     mock_strain_library,
     mock_plant,
-):
+) -> None:
     """Test updating plant with invalid date."""
     mock_coordinator.plants = {"plant_1": mock_plant}
 
@@ -903,7 +903,7 @@ async def test_update_plant_none_values(
     mock_coordinator,
     mock_strain_library,
     mock_plant,
-):
+) -> None:
     """Test updating plant with None values."""
     mock_coordinator.plants = {"plant_1": mock_plant}
 
@@ -931,7 +931,7 @@ async def test_update_plant_no_update_fields(
     mock_coordinator,
     mock_strain_library,
     mock_plant,
-):
+) -> None:
     """Test updating plant with no valid update fields."""
     mock_coordinator.plants = {"plant_1": mock_plant}
 
@@ -955,7 +955,7 @@ async def test_update_plant_exception(
     mock_coordinator,
     mock_strain_library,
     mock_plant,
-):
+) -> None:
     """Test exception handling in update_plant."""
     mock_coordinator.plants = {"plant_1": mock_plant}
     mock_coordinator.async_update_plant.side_effect = Exception("Test error")
@@ -989,7 +989,7 @@ async def test_remove_plant_success(
     mock_coordinator,
     mock_strain_library,
     mock_plant,
-):
+) -> None:
     """Test successfully removing a plant."""
     # Arrange
     mock_coordinator.plants = {"plant_1": mock_plant}
@@ -1028,7 +1028,7 @@ async def test_remove_plant_not_found(
     hass: HomeAssistant,
     mock_coordinator,
     mock_strain_library,
-):
+) -> None:
     """Test removing non-existent plant."""
     mock_coordinator.plants = {}
 
@@ -1055,7 +1055,7 @@ async def test_remove_plant_exception(
     mock_coordinator,
     mock_strain_library,
     mock_plant,
-):
+) -> None:
     """Test exception handling in remove_plant."""
     mock_coordinator.plants = {"plant_1": mock_plant}
     mock_coordinator.async_remove_plant.side_effect = Exception("Test error")
@@ -1087,7 +1087,7 @@ async def test_switch_plants_success(
     hass: HomeAssistant,
     mock_coordinator,
     mock_strain_library,
-):
+) -> None:
     """Test successfully switching two plants."""
     # Arrange
     plant1 = Mock()
@@ -1137,7 +1137,7 @@ async def test_switch_plants_first_not_found(
     hass: HomeAssistant,
     mock_coordinator,
     mock_strain_library,
-):
+) -> None:
     """Test switching when first plant doesn't exist."""
     mock_coordinator.plants = {}
 
@@ -1164,7 +1164,7 @@ async def test_switch_plants_second_not_found(
     hass: HomeAssistant,
     mock_coordinator,
     mock_strain_library,
-):
+) -> None:
     """Test switching when second plant doesn't exist."""
     plant1 = Mock()
     mock_coordinator.plants = {"plant_1": plant1}
@@ -1192,7 +1192,7 @@ async def test_switch_plants_exception(
     hass: HomeAssistant,
     mock_coordinator,
     mock_strain_library,
-):
+) -> None:
     """Test exception handling in switch_plants."""
     plant1 = Mock()
     plant1.strain = "Strain 1"
@@ -1237,7 +1237,7 @@ async def test_move_plant_to_empty_position(
     mock_strain_library,
     mock_plant,
     mock_growspace,
-):
+) -> None:
     """Test moving plant to an empty position."""
     # Arrange
     mock_plant.row = 1
@@ -1283,7 +1283,7 @@ async def test_move_plant_switch_with_occupant(
     mock_coordinator,
     mock_strain_library,
     mock_growspace,
-):
+) -> None:
     """Test moving plant to occupied position (switch)."""
     # Arrange
     plant1 = Mock()
@@ -1340,7 +1340,7 @@ async def test_move_plant_not_found(
     hass: HomeAssistant,
     mock_coordinator,
     mock_strain_library,
-):
+) -> None:
     """Test moving non-existent plant."""
     mock_coordinator.plants = {}
 
@@ -1369,7 +1369,7 @@ async def test_move_plant_out_of_bounds(
     mock_strain_library,
     mock_plant,
     mock_growspace,
-):
+) -> None:
     """Test moving plant to out-of-bounds position."""
     mock_coordinator.plants = {"plant_1": mock_plant}
     mock_coordinator.growspaces = {"gs1": mock_growspace}
@@ -1400,7 +1400,7 @@ async def test_move_plant_exception(
     mock_strain_library,
     mock_plant,
     mock_growspace,
-):
+) -> None:
     """Test exception handling in move_plant."""
     mock_coordinator.plants = {"plant_1": mock_plant}
     mock_coordinator.growspaces = {"gs1": mock_growspace}
@@ -1437,7 +1437,7 @@ async def test_transition_plant_stage_success(
     mock_coordinator,
     mock_strain_library,
     mock_plant,
-):
+) -> None:
     """Test successfully transitioning plant stage."""
     # Arrange
     mock_coordinator.plants = {"plant_1": mock_plant}
@@ -1488,7 +1488,7 @@ async def test_transition_plant_stage_without_date(
     mock_coordinator,
     mock_strain_library,
     mock_plant,
-):
+) -> None:
     """Test transitioning plant stage without date."""
     mock_coordinator.plants = {"plant_1": mock_plant}
 
@@ -1518,7 +1518,7 @@ async def test_transition_plant_stage_not_found(
     hass: HomeAssistant,
     mock_coordinator,
     mock_strain_library,
-):
+) -> None:
     """Test transitioning non-existent plant."""
     mock_coordinator.plants = {}
 
@@ -1551,7 +1551,7 @@ async def test_transition_plant_stage_invalid_date(
     mock_coordinator,
     mock_strain_library,
     mock_plant,
-):
+) -> None:
     """Test transitioning with invalid date format."""
     mock_coordinator.plants = {"plant_1": mock_plant}
 
@@ -1585,7 +1585,7 @@ async def test_transition_plant_stage_with_timezone(
     mock_coordinator,
     mock_strain_library,
     mock_plant,
-):
+) -> None:
     """Test transitioning with timezone in date."""
     mock_coordinator.plants = {"plant_1": mock_plant}
 
@@ -1617,7 +1617,7 @@ async def test_transition_plant_stage_exception(
     mock_coordinator,
     mock_strain_library,
     mock_plant,
-):
+) -> None:
     """Test exception handling in transition_plant_stage."""
     mock_coordinator.plants = {"plant_1": mock_plant}
     mock_coordinator.async_transition_plant_stage.side_effect = Exception("Test error")
@@ -1656,7 +1656,7 @@ async def test_harvest_plant_success(
     mock_coordinator,
     mock_strain_library,
     mock_plant,
-):
+) -> None:
     """Test successfully harvesting a plant."""
     mock_coordinator.plants = {"plant_1": mock_plant}
 
@@ -1698,7 +1698,7 @@ async def test_harvest_plant_missing_plant_id(
     hass: HomeAssistant,
     mock_coordinator,
     mock_strain_library,
-):
+) -> None:
     """Test harvest with missing plant_id."""
     call = ServiceCall(
         hass,
@@ -1722,7 +1722,7 @@ async def test_harvest_plant_entity_id_resolution(
     mock_coordinator,
     mock_strain_library,
     mock_plant,
-):
+) -> None:
     """Test harvest with entity ID resolution."""
     # Arrange
     mock_coordinator.plants = {"plant_1": mock_plant}
@@ -1769,7 +1769,7 @@ async def test_harvest_plant_entity_id_no_attribute(
     hass: HomeAssistant,
     mock_coordinator,
     mock_strain_library,
-):
+) -> None:
     """Test harvest with entity ID but no plant_id attribute."""
     mock_coordinator.plants = {}
 
@@ -1802,7 +1802,7 @@ async def test_harvest_plant_not_found_reload_attempt(
     mock_coordinator,
     mock_strain_library,
     mock_plant,
-):
+) -> None:
     """Test harvest when plant not found, triggers reload."""
     # Initially empty, then populated after reload
     mock_coordinator.plants = {}
@@ -1832,7 +1832,7 @@ async def test_harvest_plant_not_found_after_reload(
     hass: HomeAssistant,
     mock_coordinator,
     mock_strain_library,
-):
+) -> None:
     """Test harvest when plant still not found after reload."""
     mock_coordinator.plants = {}
 
@@ -1859,7 +1859,7 @@ async def test_harvest_plant_reload_error(
     hass: HomeAssistant,
     mock_coordinator,
     mock_strain_library,
-):
+) -> None:
     """Test harvest when reload fails."""
     mock_coordinator.plants = {}
     mock_coordinator.store.async_load.side_effect = Exception("Load error")
@@ -1887,7 +1887,7 @@ async def test_harvest_plant_invalid_date(
     mock_coordinator,
     mock_strain_library,
     mock_plant,
-):
+) -> None:
     """Test harvest with invalid transition date."""
     mock_coordinator.plants = {"plant_1": mock_plant}
 
@@ -1916,7 +1916,7 @@ async def test_harvest_plant_with_timezone(
     mock_coordinator,
     mock_strain_library,
     mock_plant,
-):
+) -> None:
     """Test harvest with timezone in date."""
     mock_coordinator.plants = {"plant_1": mock_plant}
 
@@ -1943,7 +1943,7 @@ async def test_harvest_plant_without_date(
     mock_coordinator,
     mock_strain_library,
     mock_plant,
-):
+) -> None:
     """Test harvest without transition date."""
     mock_coordinator.plants = {"plant_1": mock_plant}
 
@@ -1969,7 +1969,7 @@ async def test_harvest_plant_exception(
     mock_coordinator,
     mock_strain_library,
     mock_plant,
-):
+) -> None:
     """Test exception handling in harvest_plant."""
     mock_coordinator.plants = {"plant_1": mock_plant}
     mock_coordinator.async_harvest_plant.side_effect = Exception("Test error")
@@ -2002,7 +2002,7 @@ async def test_harvest_plant_entity_id_resolution_error(
     hass: HomeAssistant,
     mock_coordinator,
     mock_strain_library,
-):
+) -> None:
     """Test harvest when entity ID resolution fails."""
     mock_coordinator.plants = {}
 
@@ -2033,7 +2033,7 @@ async def test_harvest_plant_no_entity_registry(
     hass: HomeAssistant,
     mock_coordinator,
     mock_strain_library,
-):
+) -> None:
     """Test harvest when entity registry is not available."""
     mock_coordinator.plants = {}
     hass.data = {}
@@ -2068,7 +2068,7 @@ async def test_add_plant_with_empty_date_strings(
     mock_coordinator,
     mock_strain_library,
     mock_growspace,
-):
+) -> None:
     """Test adding plant with empty date strings."""
     mock_coordinator.growspaces = {"gs1": mock_growspace}
 
@@ -2099,7 +2099,7 @@ async def test_update_plant_with_empty_string_dates(
     mock_coordinator,
     mock_strain_library,
     mock_plant,
-):
+) -> None:
     """Test updating plant with empty string dates."""
     mock_coordinator.plants = {"plant_1": mock_plant}
 
@@ -2128,7 +2128,7 @@ async def test_take_clone_zero_clones(
     mock_strain_library,
     mock_plant,
     mock_growspace,
-):
+) -> None:
     """Test taking zero clones (should default to 1)."""
     mock_coordinator.plants = {"mother_1": mock_plant}
     mock_coordinator.growspaces = {"clone": mock_growspace}
@@ -2156,7 +2156,7 @@ async def test_take_clone_negative_clones(
     mock_strain_library,
     mock_plant,
     mock_growspace,
-):
+) -> None:
     """Test taking negative number of clones (should default to 1)."""
     mock_coordinator.plants = {"mother_1": mock_plant}
     mock_coordinator.growspaces = {"clone": mock_growspace}
@@ -2184,7 +2184,7 @@ async def test_move_clone_default_transition_date(
     mock_strain_library,
     mock_plant,
     mock_growspace,
-):
+) -> None:
     """Test move clone with no transition date (should use today)."""
     mock_coordinator.plants = {"clone_1": mock_plant}
     mock_coordinator.growspaces = {"veg": mock_growspace}
