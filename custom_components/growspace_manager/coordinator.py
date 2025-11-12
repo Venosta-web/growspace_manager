@@ -234,6 +234,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
     # =============================================================================
 
     def _get_plant_stage(self, plant: Plant) -> str:
+        """Return the current stage of a plant based on its start dates."""
         if getattr(plant, "cure_start", None):
             return "cure"
         if getattr(plant, "dry_start", None):
@@ -313,11 +314,13 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
     def find_first_available_position(
         self, growspace_id: str
     ) -> tuple[int | None, int | None]:
+        """Find the first available position in a growspace."""
         growspace = self.growspaces[growspace_id]
         occupied = {(p.row, p.col) for p in self.get_growspace_plants(growspace_id)}
         return find_first_free_position(growspace, occupied)
 
     def _parse_date_field(self, date_value: str | datetime | date | None) -> str | None:
+        """Parse a date field into a string."""
         return format_date(date_value)
 
     def _parse_date_fields(self, kwargs: dict[str, Any]) -> None:
@@ -492,7 +495,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
             }
             _LOGGER.info("Loaded %d plants", len(self.plants))
         except (TypeError, ValueError) as e:
-            _LOGGER.exception("Error loading plants: %s", e)
+            _LOGGER.error("Error loading plants: %s", e, exc_info=True)
             self.plants = {}
 
         # Load growspaces using from_dict (handles migration)
@@ -523,7 +526,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
                             growspace.name,
                         )
         except (TypeError, ValueError) as e:
-            _LOGGER.exception("Error loading growspaces: %s", e)
+            _LOGGER.exception("Error loading growspaces: %s", e, exc_info=True)
             self.growspaces = {}
 
         # ✅ Load notification tracking
@@ -1503,12 +1506,15 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
     # =============================================================================
 
     async def add_strain(self, strain: str) -> None:
+        """Add a strain to the strain library."""
         await self.strains.add(strain)
 
     async def remove_strain(self, strain: str) -> None:
+        """Remove a strain from the strain library."""
         await self.strains.remove(strain)
 
     def get_strain_options(self) -> list[str]:
+        """Get a list of all strains in the library."""
         return self.strains.get_all()
 
     def export_strain_library(self) -> list[str]:
@@ -1516,9 +1522,11 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
         return self.get_strain_options()
 
     async def import_strains(self, strains: list[str], replace: bool = False) -> int:
+        """Import a list of strains into the library."""
         return await self.strains.import_strains(strains, replace)
 
     async def clear_strains(self) -> int:
+        """Clear all strains from the library."""
         return await self.strains.clear()
 
     # =============================================================================

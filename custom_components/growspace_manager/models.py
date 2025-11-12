@@ -20,6 +20,7 @@ class Growspace:
     environment_config: dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict:
+        """Return a dictionary representation of the growspace."""
         return asdict(self)
 
     @staticmethod
@@ -87,6 +88,7 @@ class Plant:
     source_mother: str | None = None
 
     def to_dict(self) -> dict:
+        """Return a dictionary representation of the plant."""
         return asdict(self)
 
     @staticmethod
