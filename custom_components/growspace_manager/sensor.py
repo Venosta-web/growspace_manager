@@ -30,6 +30,14 @@ from .utils import (
 _LOGGER = logging.getLogger(__name__)
 
 
+def slugify(text: str) -> str:
+    """Convert a string to a slug."""
+    return "".join(
+        char if char.isalnum() or char == "_" else "_"
+        for char in text.lower().replace(" ", "_")
+    )
+
+
 async def async_setup_entry(
     hass: HomeAssistant,
     config_entry: ConfigEntry,
@@ -183,31 +191,32 @@ class GrowspaceOverviewSensor(SensorEntity):
         self.growspace_id = growspace_id
         self.growspace = growspace
         self._attr_has_entity_name = True
-        self._attr_name = "Plant Count"
+        self._attr_name = growspace.name
 
         # Use stable unique_id matching canonical growspace_id to avoid duplicates
         self._attr_unique_id = f"{DOMAIN}_{growspace_id}"
+
         # Force fixed entity IDs for special growspaces
         if growspace.id == "dry":
-            self._attr_unique_id = f"{DOMAIN}_growspace_dry"
+            self._attr_unique_id = f"{DOMAIN}_dry"
             self._attr_name = "Dry"
-            self._attr_entity_id = "sensor.growspace_dry"
+            self._attr_entity_id = "sensor.dry"
         elif growspace.id == "cure":
-            self._attr_unique_id = f"{DOMAIN}_growspace_cure"
+            self._attr_unique_id = f"{DOMAIN}_cure"
             self._attr_name = "Cure"
-            self._attr_entity_id = "sensor.growspace_cure"
+            self._attr_entity_id = "sensor.cure"
         elif growspace.id == "mother":
-            self._attr_unique_id = f"{DOMAIN}_growspace_mother"
+            self._attr_unique_id = f"{DOMAIN}_mother"
             self._attr_name = "Mother"
-            self._attr_entity_id = "sensor.growspace_mother"
+            self._attr_entity_id = "sensor.mother"
         elif growspace.id == "clone":
-            self._attr_unique_id = f"{DOMAIN}_growspace_clone"
+            self._attr_unique_id = f"{DOMAIN}_clone"
             self._attr_name = "Clone"
-            self._attr_entity_id = "sensor.growspace_clone"
+            self._attr_entity_id = "sensor.clone"
         else:
-            self._attr_unique_id = f"{DOMAIN}_growspace_{growspace.id}"
-            self._attr_name = "Plant Count"
-            self._attr_entity_id = f"sensor.{growspace.id}_plant_count"
+            self._attr_unique_id = f"{DOMAIN}_{growspace.id}"
+            self._attr_name = growspace.name
+            self._attr_entity_id = f"sensor.{slugify(growspace.name)}"
 
         # Set up device info
         self._attr_device_info = DeviceInfo(
