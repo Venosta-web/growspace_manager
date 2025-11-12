@@ -13,7 +13,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.data_entry_flow import FlowResultType
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
-from ..const import DEFAULT_NAME, DOMAIN
+from custom_components.growspace_manager.const import DEFAULT_NAME, DOMAIN
 
 # ============================================================================
 # Test ensure_default_growspaces
