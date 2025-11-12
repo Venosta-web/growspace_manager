@@ -575,21 +575,6 @@ class OptionsFlowHandler(OptionsFlow):
             step_id="manage_plants",
             data_schema=self._get_plant_management_schema(coordinator),
         )
-                        errors={"base": str(Exception)},
-                    )
-            if action == "back":
-                return self.async_show_form(
-                    step_id="init",
-                    data_schema=self.add_suggested_values_to_schema(
-                        coordinator,
-                        self.config_entry.options,
-                    ),
-                )
-
-        return self.async_show_form(
-            step_id="manage_plants",
-            data_schema=self._get_plant_management_schema(coordinator),
-        )
 
     async def async_step_select_growspace_for_plant(
         self,
