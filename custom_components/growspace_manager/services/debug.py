@@ -179,8 +179,8 @@ async def debug_cleanup_legacy(
             migrated_plants_info if migrated_plants_info else "None",
         )
 
-    except (ValueError, KeyError) as e:
-        _LOGGER.exception("DEBUG: Legacy cleanup failed: %s", e)
+    except (ValueError, KeyError):
+        _LOGGER.exception("DEBUG: Legacy cleanup failed")
         raise
 
 
@@ -283,15 +283,15 @@ async def _handle_reset_dry_growspace(
     if preserve_plants:
         for dry_id in dry_ids_to_remove:
             plants = coordinator.get_growspace_plants(dry_id)
-            for plant in plants:
-                if plant.plant_id in coordinator.plants:
-                    dry_plants_data_to_restore.append(
-                        {
-                            "plant_id": plant.plant_id,
-                            "strain": plant.strain,
-                            "old_pos": f"({plant.row},{plant.col})",
-                        },
-                    )
+            dry_plants_data_to_restore.extend(
+                {
+                    "plant_id": plant.plant_id,
+                    "strain": plant.strain,
+                    "old_pos": f"({plant.row},{plant.col})",
+                }
+                for plant in plants
+                if plant.plant_id in coordinator.plants
+            )
 
     for dry_id in dry_ids_to_remove:
         coordinator.growspaces.pop(dry_id, None)
@@ -323,13 +323,13 @@ async def _handle_reset_cure_growspace(
     if preserve_plants:
         for cure_id in cure_ids_to_remove:
             plants = coordinator.get_growspace_plants(cure_id)
-            for plant in plants:
-                cure_plants_data_to_restore.append(
+            cure_plants_data_to_restore.extend(
                 {
                     "plant_id": plant.plant_id,
                     "strain": plant.strain,
                     "old_pos": f"({plant.row},{plant.col})",
-                },
+                }
+                for plant in plants
             )
 
     for cure_id in cure_ids_to_remove:
@@ -378,8 +378,8 @@ async def debug_reset_special_growspaces(
 
         _LOGGER.info("DEBUG: Special growspace reset complete")
 
-    except (ValueError, KeyError) as e:
-        _LOGGER.exception("DEBUG: Special growspace reset failed: %s", e)
+    except (ValueError, KeyError):
+        _LOGGER.exception("DEBUG: Special growspace reset failed")
         raise
 
 
@@ -507,6 +507,6 @@ async def debug_consolidate_duplicate_special(
 
         _LOGGER.info("DEBUG: Duplicate consolidation complete")
 
-    except (ValueError, KeyError) as e:
-        _LOGGER.exception("DEBUG: Duplicate consolidation failed: %s", e)
+    except (ValueError, KeyError):
+        _LOGGER.exception("DEBUG: Duplicate consolidation failed")
         raise

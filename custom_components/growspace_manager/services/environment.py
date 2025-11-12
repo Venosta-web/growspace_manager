@@ -64,7 +64,7 @@ async def handle_configure_environment(
     await coordinator.async_refresh()
 
     success_msg = f"Environment monitoring configured for '{growspace.name}'"
-    _LOGGER.info(f"{success_msg}: {env_config}")
+    _LOGGER.info("%s: %s", success_msg, env_config)
 
     create_notification(
         hass,
