@@ -1,0 +1,435 @@
+add_growspace:
+  description: Add a new growspace
+  fields:
+    name:
+      description: Name of the growspace
+      required: true
+      selector:
+        text:
+    rows:
+      description: Number of rows in the growspace
+      required: true
+      selector:
+        number:
+          min: 1
+          max: 20
+    plants_per_row:
+      description: Number of plants per row
+      required: true
+      selector:
+        number:
+          min: 1
+          max: 20
+    notification_target:
+      description: Notification service target (e.g., mobile_app_your_phone)
+      required: false
+      selector:
+        text:
+
+remove_growspace:
+  description: Remove a growspace
+  fields:
+    growspace_id:
+      description: ID of the growspace to remove
+      required: true
+      selector:
+        text:
+
+add_plant:
+  description: Add a plant to a growspace
+  fields:
+    growspace_id:
+      description: ID of the growspace
+      required: true
+      selector:
+        text:
+    strain:
+      description: Strain name
+      required: true
+      selector:
+        text:
+    row:
+      description: Row position
+      required: true
+      selector:
+        number:
+          min: 1
+    col:
+      description: Column position
+      required: true
+      selector:
+        number:
+          min: 1
+    phenotype:
+      description: Phenotype
+      required: false
+      selector:
+        text:
+    mother_start:
+      description: Mother start date
+      required: false
+      selector:
+        date:
+    clone_start:
+      description: Clone start date
+      required: false
+      selector:
+        date:
+    veg_start:
+      description: Vegetative start date
+      required: false
+      selector:
+        date:
+    flower_start:
+      description: Flowering start date
+      required: false
+      selector:
+        date:
+    dry_start:
+      description: Drying start date
+      required: false
+      selector:
+        date:
+    cure_start:
+      description: Curing start date
+      required: false
+      selector:
+        date:
+    notes:
+      description: Additional notes
+      required: false
+      selector:
+        text:
+          multiline: true
+
+update_plant:
+  description: Update a plant
+  fields:
+    plant_id:
+      description: ID of the plant to update
+      required: true
+      selector:
+        text:
+    growspace_id:
+      description: ID of the growspace
+      required: false
+      selector:
+        text:
+    strain:
+      description: Strain name
+      required: false
+      selector:
+        text:
+    phenotype:
+      description: Phenotype
+      required: false
+      selector:
+        text:
+    position:
+      description: Position (e.g., "A1", "B2")
+      required: false
+      selector:
+        text:
+    row:
+      description: Row position
+      required: false
+      selector:
+        number:
+          min: 1
+    col:
+      description: Column position
+      required: false
+      selector:
+        number:
+          min: 1
+    seedling_start:
+      description: Seedling start date
+      required: false
+      selector:
+        date:
+    mother_start:
+      description: Mother start date
+      required: false
+      selector:
+        date:
+    clone_start:
+      description: Clone start date
+      required: false
+      selector:
+        date:
+    veg_start:
+      description: Vegetative start date
+      required: false
+      selector:
+        date:
+    flower_start:
+      description: Flowering start date
+      required: false
+      selector:
+        date:
+    dry_start:
+      description: Dry start date
+      required: false
+      selector:
+        date:
+    cure_start:
+      description: Cure start date
+      required: false
+      selector:
+        date:
+    stage:
+      description: Current growth stage
+      required: false
+      selector:
+        select:
+          options:
+            - "seedling"
+            - "mother"
+            - "clone"
+            - "veg"
+            - "flower"
+            - "dry"
+            - "cure"
+    notes:
+      description: Additional notes
+      required: false
+      selector:
+        text:
+          multiline: true
+
+remove_plant:
+  description: Remove a plant
+  fields:
+    plant_id:
+      description: ID of the plant to remove
+      required: true
+      selector:
+        text:
+
+move_plant:
+  description: Move a plant to a new position
+  fields:
+    plant_id:
+      description: ID of the plant to move
+      required: true
+      selector:
+        text:
+    new_row:
+      description: New row position
+      required: true
+      selector:
+        number:
+          min: 1
+          max: 20
+    new_col:
+      description: New column position
+      required: true
+      selector:
+        number:
+          min: 1
+          max: 20
+
+transition_plant_stage:
+  description: Transition a plant to a new growth stage
+  fields:
+    plant_id:
+      description: ID of the plant
+      required: true
+      selector:
+        text:
+    new_stage:
+      description: New growth stage
+      required: true
+      selector:
+        select:
+          options:
+            - "seedling"
+            - "mother"
+            - "clone"
+            - "veg"
+            - "flower"
+            - "dry"
+            - "cure"
+    transition_date:
+      description: Date of stage transition (defaults to now)
+      required: false
+      selector:
+        date:
+test_notification:
+  description: Send a test notification for a plant
+  fields:
+    plant_id:
+      description: ID of the plant
+      required: true
+      selector:
+        text:
+    stage:
+      description: Stage to test
+      required: true
+      selector:
+        select:
+          options:
+            - "veg"
+            - "flower"
+    days:
+      description: Days in stage (will be matched against DEFAULT_NOTIFICATION_EVENTS)
+      required: true
+      selector:
+        number:
+          min: 1
+          max: 200
+harvest_plant:
+  description: Harvest a plant and move it to the appropriate growspace
+  fields:
+    plant_id:
+      description: ID of the plant to harvest
+      required: true
+      selector:
+        text:
+    target_growspace_id:
+      description: Optional target growspace ID (if omitted, auto-move flower→dry_overview, dry→cure_overview)
+      required: false
+      selector:
+        text:
+    transition_date:
+      description: Optional transition date (defaults to now)
+      required: false
+      selector:
+        date:
+take_clone:
+  description: Clone a plant and move it to the appropriate clone growspace
+  fields:
+    mother_plant_id:
+      description: ID of the plant to clone
+      required: true
+      selector:
+        text:
+    target_growspace_id:
+      description: Optional target growspace ID (if omitted, auto-move flower→dry_overview, dry→cure_overview)
+      required: false
+      selector:
+        text:
+    transition_date:
+      description: Optional transition date (defaults to now)
+      required: false
+      selector:
+        date:
+    num_clones:
+      description: Optional the amount off clones to create
+      required: false
+      selector:
+        number:
+move_clone:
+  description: Move a clone to a different growspace
+  fields:
+    plant_id:
+      description: ID of the clone plant
+      required: true
+      selector:
+        text:
+    target_growspace_id:
+      description: ID of the target growspace
+      required: true
+      selector:
+        text:
+    transition_date:
+      description: Optional transition date (defaults to now)
+      required: false
+      selector:
+        date:
+switch_plants:
+  description: Switch positions of two plants
+  fields:
+    plant_id_1:
+      description: ID of the first plant
+      required: true
+      selector:
+        text:
+    plant_id_2:
+      description: ID of the second plant
+      required: true
+      selector:
+        text:
+configure_environment:
+  name: Configure Environment Monitoring
+  description: Set up environment sensors for Bayesian monitoring on a growspace
+  fields:
+    growspace_id:
+      name: Growspace ID
+      description: The ID of the growspace to configure
+      required: true
+      example: "4x4_tent"
+      selector:
+        text:
+
+    temperature_sensor:
+      name: Temperature Sensor
+      description: Temperature sensor entity (°C)
+      required: true
+      example: "sensor.4x4_tent_temperature"
+      selector:
+        entity:
+          domain: sensor
+          device_class: temperature
+
+    humidity_sensor:
+      name: Humidity Sensor
+      description: Humidity sensor entity (%)
+      required: true
+      example: "sensor.4x4_tent_humidity"
+      selector:
+        entity:
+          domain: sensor
+          device_class: humidity
+
+    vpd_sensor:
+      name: VPD Sensor
+      description: VPD sensor entity (kPa)
+      required: true
+      example: "sensor.4x4_tent_vpd"
+      selector:
+        entity:
+          domain: sensor
+
+    co2_sensor:
+      name: CO2 Sensor (Optional)
+      description: CO2 sensor entity (ppm)
+      required: false
+      example: "sensor.4x4_tent_co2"
+      selector:
+        entity:
+          domain: sensor
+          device_class: carbon_dioxide
+
+    circulation_fan:
+      name: Circulation Fan (Optional)
+      description: Fan entity for mold risk detection
+      required: false
+      example: "fan.4x4_tent_circulation"
+      selector:
+        entity:
+          domain: fan
+
+    stress_threshold:
+      name: Stress Detection Threshold
+      description: Probability threshold for stress detection (0-1)
+      required: false
+      default: 0.70
+      example: 0.70
+      selector:
+        number:
+          min: 0.5
+          max: 0.95
+          step: 0.05
+
+    mold_threshold:
+      name: Mold Risk Threshold
+      description: Probability threshold for mold risk detection (0-1)
+      required: false
+      default: 0.75
+      example: 0.75
+      selector:
+        number:
+          min: 0.5
+          max: 0.95
+          step: 0.05

@@ -1,0 +1,217 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Set up Growspace Manager",
+        "description": "Configure your Growspace Manager integration",
+        "data": {
+          "name": "Integration Name"
+        }
+      }
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Growspace Manager Options",
+        "description": "Manage your growspaces and plants"
+      },
+      "main_menu": {
+        "title": "Growspace Manager",
+        "description": "Choose what you would like to manage",
+        "menu_options": {
+          "manage_growspaces": "Manage Growspaces",
+          "manage_plants": "Manage Plants"
+        }
+      },
+      "manage_growspaces": {
+        "title": "Manage Growspaces",
+        "description": "Add, remove, or view your growspaces",
+        "data": {
+          "action": "Action",
+          "growspace_id": "Select Growspace"
+        }
+      },
+      "add_growspace": {
+        "title": "Add New Growspace",
+        "description": "Create a new growspace for your plants",
+        "data": {
+          "name": "Growspace Name",
+          "rows": "Number of Rows",
+          "plants_per_row": "Plants per Row",
+          "notification_target": "Notification Target"
+        },
+        "data_description": {
+          "notification_target": "Optional: notification service (e.g., mobile_app_your_phone)"
+        }
+      },
+      "manage_plants": {
+        "title": "Manage Plants",
+        "description": "Add, update, or remove plants from your growspaces",
+        "data": {
+          "action": "Action",
+          "plant_id": "Select Plant"
+        }
+      },
+      "select_growspace_for_plant": {
+        "title": "Select Growspace",
+        "description": "Choose which growspace to add the plant to",
+        "data": {
+          "growspace_id": "Growspace"
+        }
+      },
+      "add_plant": {
+        "title": "Add New Plant",
+        "description": "Add a plant to the selected growspace",
+        "data": {
+          "strain": "Strain Name",
+          "phenotype": "Phenotype",
+          "row": "Row Position",
+          "col": "Column Position",
+          "veg_start": "Vegetative Start Date",
+          "flower_start": "Flowering Start Date"
+        },
+        "data_description": {
+          "phenotype": "Optional: specific phenotype identifier",
+          "veg_start": "Optional: when vegetative stage started",
+          "flower_start": "Optional: when flowering stage started"
+        }
+      },
+      "update_plant": {
+        "title": "Update Plant",
+        "description": "Modify plant information",
+        "data": {
+          "strain": "Strain Name",
+          "phenotype": "Phenotype",
+          "row": "Row Position",
+          "col": "Column Position",
+          "veg_start": "Vegetative Start Date",
+          "flower_start": "Flowering Start Date"
+        },
+        "data_description": {
+          "phenotype": "Optional: specific phenotype identifier",
+          "veg_start": "Optional: when vegetative stage started",
+          "flower_start": "Optional: when flowering stage started"
+        }
+      }
+    },
+    "error": {
+      "plant_not_found": "The selected plant could not be found",
+      "growspace_not_found": "The selected growspace could not be found",
+      "position_occupied": "The selected position is already occupied by another plant",
+      "invalid_position": "The selected position is outside the growspace boundaries"
+    }
+  },
+  "services": {
+    "add_growspace": {
+      "name": "Add Growspace",
+      "description": "Create a new growspace for managing plants",
+      "fields": {
+        "name": {
+          "name": "Name",
+          "description": "Name of the growspace"
+        },
+        "rows": {
+          "name": "Rows",
+          "description": "Number of rows in the growspace"
+        },
+        "plants_per_row": {
+          "name": "Plants per Row",
+          "description": "Number of plants per row"
+        },
+        "notification_target": {
+          "name": "Notification Target",
+          "description": "Notification service target (e.g., mobile_app_your_phone)"
+        }
+      }
+    },
+    "remove_growspace": {
+      "name": "Remove Growspace",
+      "description": "Remove a growspace and all its plants",
+      "fields": {
+        "growspace_id": {
+          "name": "Growspace ID",
+          "description": "ID of the growspace to remove"
+        }
+      }
+    },
+    "add_plant": {
+      "name": "Add Plant",
+      "description": "Add a plant to a growspace",
+      "fields": {
+        "growspace_id": {
+          "name": "Growspace ID",
+          "description": "ID of the target growspace"
+        },
+        "strain": {
+          "name": "Strain",
+          "description": "Plant strain name"
+        },
+        "row": {
+          "name": "Row",
+          "description": "Row position in the growspace"
+        },
+        "col": {
+          "name": "Column",
+          "description": "Column position in the growspace"
+        },
+        "phenotype": {
+          "name": "Phenotype",
+          "description": "Plant phenotype (optional)"
+        },
+        "veg_start": {
+          "name": "Vegetative Start",
+          "description": "When vegetative stage started"
+        },
+        "flower_start": {
+          "name": "Flowering Start",
+          "description": "When flowering stage started"
+        }
+      }
+    },
+    "update_plant": {
+      "name": "Update Plant",
+      "description": "Update plant information",
+      "fields": {
+        "plant_id": {
+          "name": "Plant ID",
+          "description": "ID of the plant to update"
+        },
+        "strain": {
+          "name": "Strain",
+          "description": "Plant strain name"
+        },
+        "phenotype": {
+          "name": "Phenotype",
+          "description": "Plant phenotype"
+        },
+        "row": {
+          "name": "Row",
+          "description": "Row position in the growspace"
+        },
+        "col": {
+          "name": "Column",
+          "description": "Column position in the growspace"
+        },
+        "veg_start": {
+          "name": "Vegetative Start",
+          "description": "When vegetative stage started"
+        },
+        "flower_start": {
+          "name": "Flowering Start",
+          "description": "When flowering stage started"
+        }
+      }
+    },
+    "remove_plant": {
+      "name": "Remove Plant",
+      "description": "Remove a plant from the growspace",
+      "fields": {
+        "plant_id": {
+          "name": "Plant ID",
+          "description": "ID of the plant to remove"
+        }
+      }
+    }
+  }
+}
