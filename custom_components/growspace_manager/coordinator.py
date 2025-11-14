@@ -57,9 +57,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
         self.store: Store = Store(hass, STORAGE_VERSION, STORAGE_KEY)
 
         self.options = options or {}
-        _LOGGER.critical(
-            "--- COORDINATOR INITIALIZED WITH OPTIONS: %s ---", self.options
-        )
+        _LOGGER.info("--- COORDINATOR INITIALIZED WITH OPTIONS: %s ---", self.options)
 
         # Initialize strain library immediately
         self.strains = StrainLibrary(hass, STORAGE_VERSION, STORAGE_KEY_STRAIN_LIBRARY)
@@ -430,8 +428,8 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
             _LOGGER.info("No stored data found, starting fresh")
             return
 
-        _LOGGER.warning("DEBUG: Raw storage data keys = %s", list(data.keys()))
-        _LOGGER.warning(
+        _LOGGER.debug("DEBUG: Raw storage data keys = %s", list(data.keys()))
+        _LOGGER.debug(
             "DEBUG: Raw growspaces in storage = %s",
             list(data.get("growspaces", {}).keys()),
         )
@@ -455,21 +453,21 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
             }
             _LOGGER.info("Loaded %d growspaces", len(self.growspaces))
             if not self.options:
-                _LOGGER.critical("--- COORDINATOR HAS NO OPTIONS TO APPLY ---")
+                 _LOGGER.debug("--- COORDINATOR HAS NO OPTIONS TO APPLY ---")
             else:
-                _LOGGER.critical(
+                 _LOGGER.debug(
                     "--- APPLYING OPTIONS TO GROWSPACES: %s ---", self.options
                 )
                 for growspace_id, growspace in self.growspaces.items():
                     if growspace_id in self.options:
                         growspace.environment_config = self.options[growspace_id]
-                        _LOGGER.critical(
+                         _LOGGER.debug(
                             "--- SUCCESS: Applied env_config to '%s': %s ---",
                             growspace.name,
                             growspace.environment_config,
                         )
                     else:
-                        _LOGGER.warning(
+                         _LOGGER.info(
                             "--- INFO: No options found for growspace '%s' ---",
                             growspace.name,
                         )
@@ -992,7 +990,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
 
         _LOGGER.debug("COORDINATOR: Updating plant %s", plant_id)
         for key, value in updates.items():
-            _LOGGER.warning(
+            _LOGGER.debug(
                 "COORDINATOR: Field %s = %s (type: %s, id: %s)",
                 key,
                 value,
@@ -1003,7 +1001,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
             if hasattr(plant, key):
                 old_value = getattr(plant, key)
                 setattr(plant, key, value)
-                _LOGGER.warning(
+                _LOGGER.debug(
                     "COORDINATOR: Updated %s: %s -> %s", key, old_value, value
                 )
             else:

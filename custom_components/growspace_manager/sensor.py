@@ -85,18 +85,16 @@ async def async_setup_entry(
     # Add your GrowspaceListSensor
     initial_entities.append(GrowspaceListSensor(coordinator))
 
-    _LOGGER.warning(
-        "DEBUG: coordinator.growspaces = %s",
+    _LOGGER.debug(
+        "coordinator.growspaces = %s",
         {gid: gs.name for gid, gs in coordinator.growspaces.items()},
     )
-    _LOGGER.warning(
-        "DEBUG: Created growspace_entities = %s", list(growspace_entities.keys())
-    )
-    _LOGGER.warning("DEBUG: Total initial_entities = %d", len(initial_entities))
+    _LOGGER.debug("Created growspace_entities = %s", list(growspace_entities.keys()))
+    _LOGGER.debug("Total initial_entities = %d", len(initial_entities))
     for entity in initial_entities:
         if isinstance(entity, GrowspaceOverviewSensor):
-            _LOGGER.warning(
-                "DEBUG: Growspace entity - unique_id=%s, name=%s",
+            _LOGGER.debug(
+                "Growspace entity - unique_id=%s, name=%s",
                 entity.unique_id,
                 entity.name,
             )
@@ -170,7 +168,7 @@ async def async_setup_entry(
                 # Try to find and remove from registry
                 ent_reg_entry = entity_registry.async_get(entity.entity_id)
                 if ent_reg_entry:
-                    _LOGGER.warning(
+                    _LOGGER.info(
                         "Removing orphaned plant entity from registry: %s",
                         entity.entity_id,
                     )
