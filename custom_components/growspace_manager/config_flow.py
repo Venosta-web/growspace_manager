@@ -335,7 +335,6 @@ class OptionsFlowHandler(OptionsFlow):
 
             # Add proactive trend analysis settings for mold risk (VPD)
             env_config["vpd_trend_duration"] = user_input.get("vpd_trend_duration", 30)
-            env_config["vpd_trend_threshold"] = user_input.get("vpd_trend_threshold", 1.2)
             env_config["vpd_trend_sensitivity"] = user_input.get("vpd_trend_sensitivity", 0.5)
 
             # Add proactive trend analysis settings for stress (Temperature)
@@ -446,11 +445,6 @@ class OptionsFlowHandler(OptionsFlow):
             vol.Optional("vpd_trend_duration", default=options.get("vpd_trend_duration", 30))
         ] = selector.NumberSelector(
             selector.NumberSelectorConfig(min=5, max=120, step=5, mode=selector.NumberSelectorMode.BOX, unit_of_measurement="minutes")
-        )
-        schema_dict[
-            vol.Optional("vpd_trend_threshold", default=options.get("vpd_trend_threshold", 1.2))
-        ] = selector.NumberSelector(
-            selector.NumberSelectorConfig(min=0.5, max=2.0, step=0.1, mode=selector.NumberSelectorMode.BOX)
         )
         schema_dict[
             vol.Optional("vpd_trend_sensitivity", default=options.get("vpd_trend_sensitivity", 0.5))
