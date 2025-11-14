@@ -30,7 +30,7 @@ from .utils import (
     generate_growspace_grid,
     VPDCalculator,
 )
-from .const import DOMAIN, DEFAULT_NOTIFICATION_EVENTS
+from .const import DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -533,12 +533,6 @@ class PlantEntity(SensorEntity):
         # Get growspace if needed
         growspace = self.coordinator.growspaces.get(plant.growspace_id)
 
-        # Check for notifications for current stage
-        if stage in ["veg", "flower"] and growspace:
-            days = self.coordinator.calculate_days_in_stage(plant, stage)
-            if days and self._should_send_notification(plant, stage, days, growspace):
-                self._send_notification(plant, stage, days, growspace)
-
         return stage
 
     @property
@@ -587,156 +581,6 @@ class PlantEntity(SensorEntity):
             "veg_week": veg_week,
             "flower_week": flower_week,
         }
-
-    def _check_and_send_notifications(
-        self, plant: Plant, current_stage: str, growspace: Growspace
-    ) -> None:
-        # Check all stages that could have notifications
-        stages_to_check = []
-
-        # Add current stage
-        stages_to_check.append(current_stage)
-
-        # For plants in later stages, also check if we missed earlier notifications
-        stage_order = ["seedling", "clone", "mother", "veg", "flower", "dry", "cure"]
-        current_index = (
-            stage_order.index(current_stage) if current_stage in stage_order else 0
-        )
-
-        # Check previous stages too (in case we missed notifications during stage transitions)
-        for i, stage in enumerate(stage_order):
-            if i <= current_index and (f"{plant.stage}_start"):
-                stages_to_check.append(stage)
-
-        # Remove duplicates while preserving order
-        stages_to_check = list(dict.fromkeys(stages_to_check))
-
-        for stage in stages_to_check:
-            if stage in [
-                "veg",
-                "flower",
-                "dry",
-                "cure",
-            ]:  # Only stages with notification events
-                days = self.coordinator.calculate_days_in_stage(plant, stage)
-                if days > 0 and self._should_send_notification(
-                    plant, stage, days, growspace
-                ):
-                    self._send_notification(plant, stage, days, growspace)
-
-    def _should_send_notification(
-        self, plant: Plant, stage: str, days: int, growspace: Growspace
-    ) -> bool:
-        """Check if we should send a notification for this plant/stage/days combination."""
-
-        notification_target = growspace.notification_target
-
-        if not notification_target:
-            _LOGGER.debug(
-                "Skipping notification for plant %s (no target set). Stage=%s Days=%s",
-                plant.plant_id,
-                stage,
-                days,
-            )
-            return False
-
-        # ✅ NEW: Check if notifications are enabled for this growspace
-        if not self.coordinator.is_notifications_enabled(plant.growspace_id):
-            _LOGGER.debug(
-                "Skipping notification for plant %s (notifications disabled via switch). Stage=%s Days=%s",
-                plant.plant_id,
-                stage,
-                days,
-            )
-            return False
-
-        # Check if notification already sent
-        should_send = self.coordinator.should_send_notification(
-            plant.plant_id, stage, days
-        )
-
-        has_matching_event = any(
-            event["days"] == days and event["stage"] == stage
-            for event in DEFAULT_NOTIFICATION_EVENTS.values()
-        )
-
-        final_should_send = should_send and has_matching_event
-
-        _LOGGER.debug(
-            "Notification check: Plant=%s Stage=%s Days=%s HasTarget=%s NotificationsEnabled=%s AlreadySent=%s HasEvent=%s → %s",
-            plant.plant_id,
-            stage,
-            days,
-            bool(notification_target),
-            self.coordinator.is_notifications_enabled(plant.growspace_id),
-            not should_send,
-            has_matching_event,
-            final_should_send,
-        )
-
-        return final_should_send
-
-    def _send_notification(
-        self, plant: Plant, stage: str, days: int, growspace: Growspace
-    ):
-        """Send notification for plant milestone."""
-
-        notification_target = growspace.notification_target
-
-        if not notification_target:
-            _LOGGER.debug(
-                "No notification target found for growspace %s", plant.growspace_id
-            )
-            return
-
-        # Find matching notification event
-        message = None
-        for event_data in DEFAULT_NOTIFICATION_EVENTS.values():
-            if event_data["days"] == days and event_data["stage"] == stage:
-                message = event_data["message"]
-                break
-
-        if not message:
-            _LOGGER.debug(
-                "No matching notification event for Plant=%s Stage=%s Days=%s",
-                plant.plant_id,
-                stage,
-                days,
-            )
-            return
-
-        _LOGGER.info(
-            "Sending notification → Growspace=%s Plant=%s Target=%s Stage=%s Days=%s Message='%s'",
-            growspace.name,
-            plant.plant_id,
-            notification_target,
-            stage,
-            days,
-            message,
-        )
-
-        # Mark notification as sent FIRST to prevent duplicates
-        self.hass.async_create_task(
-            self.coordinator.mark_notification_sent(plant.plant_id, stage, days)
-        )
-
-        # Fire the notify service
-        self.hass.async_create_task(
-            self.hass.services.async_call(
-                "notify",
-                notification_target,
-                {
-                    "title": f"Growspace: {growspace.name}",
-                    "message": f"{plant.strain} ({plant.row},{plant.col}) - {message}",
-                    "data": {
-                        "plant_id": plant.plant_id,
-                        "growspace_id": plant.growspace_id,
-                        "stage": stage,
-                        "days": days,
-                    },
-                },
-            )
-        )
 
     async def async_added_to_hass(self) -> None:
         """When entity is added to hass."""
