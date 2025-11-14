@@ -311,169 +311,240 @@ class OptionsFlowHandler(OptionsFlow):
         if not growspace:
             return self.async_abort(reason="growspace_not_found")
 
-        # Get existing options for this growspace
         options = self.config_entry.options.get(self._selected_growspace_id, {})
 
         if user_input is not None:
-            # Build environment config from user input
-            env_config = {
-                "temperature_sensor": user_input.get("temperature_sensor"),
-                "humidity_sensor": user_input.get("humidity_sensor"),
-                "vpd_sensor": user_input.get("vpd_sensor"),
-            }
+            self._env_config_step1 = options.copy()
+            self._env_config_step1.update(user_input)
 
-            # Add optional sensors if configured
-            if user_input.get("configure_co2") and user_input.get("co2_sensor"):
-                env_config["co2_sensor"] = user_input.get("co2_sensor")
+            if user_input.get("configure_advanced"):
+                return await self.async_step_configure_advanced_bayesian()
 
-            if user_input.get("configure_fan") and user_input.get("circulation_fan"):
-                env_config["circulation_fan"] = user_input.get("circulation_fan")
+            # Not configuring advanced, so we save and finish
+            env_config = self._env_config_step1
+            env_config.pop("configure_advanced", None)  # Remove flow control key
 
-            # Add thresholds
-            env_config["stress_threshold"] = user_input.get("stress_threshold", 0.70)
-            env_config["mold_threshold"] = user_input.get("mold_threshold", 0.75)
-
-            # Add proactive trend analysis settings for mold risk (VPD)
-            env_config["vpd_trend_duration"] = user_input.get("vpd_trend_duration", 30)
-            env_config["vpd_trend_sensitivity"] = user_input.get("vpd_trend_sensitivity", 0.5)
-
-            # Add proactive trend analysis settings for stress (Temperature)
-            env_config["temp_trend_duration"] = user_input.get("temp_trend_duration", 30)
-            env_config["temp_trend_threshold"] = user_input.get("temp_trend_threshold", 26.0)
-            env_config["temp_trend_sensitivity"] = user_input.get("temp_trend_sensitivity", 0.5)
-
-            # Also store the checkbox states for UI persistence
-            env_config["configure_co2"] = user_input.get("configure_co2", False)
-            env_config["configure_fan"] = user_input.get("configure_fan", False)
-
-            # Apply to growspace immediately
             growspace.environment_config = env_config
             await coordinator.async_save()
-
-            # Trigger coordinator refresh to create binary sensors
             await coordinator.async_refresh()
 
-            # Save to config entry options
             final_options = self.config_entry.options.copy()
             final_options[self._selected_growspace_id] = env_config
-
             _LOGGER.info(
                 "Environment configuration saved for growspace %s: %s",
                 growspace.name,
                 env_config,
             )
-
             return self.async_create_entry(title="", data=final_options)
 
-        # Build dynamic schema based on current options
         schema_dict = {}
 
-        # Required sensors
-        schema_dict[
-            vol.Required(
-                "temperature_sensor", default=options.get("temperature_sensor")
-            )
-        ] = selector.EntitySelector(
-            selector.EntitySelectorConfig(
-                domain=["sensor", "input_number"], device_class=["temperature"]
-            )
-        )
-
-        schema_dict[
-            vol.Required("humidity_sensor", default=options.get("humidity_sensor"))
-        ] = selector.EntitySelector(
-            selector.EntitySelectorConfig(
-                domain=["sensor", "input_number"], device_class=["humidity"]
-            )
-        )
-
-        schema_dict[vol.Required("vpd_sensor", default=options.get("vpd_sensor"))] = (
-            selector.EntitySelector(
-                selector.EntitySelectorConfig(domain=["sensor", "input_number"])
-            )
-        )
-
-        # CO2 sensor (optional)
-        co2_enabled = options.get("configure_co2", bool(options.get("co2_sensor")))
-        schema_dict[vol.Optional("configure_co2", default=co2_enabled)] = (
-            selector.BooleanSelector()
-        )
-
-        if co2_enabled or user_input and user_input.get("configure_co2"):
-            schema_dict[
-                vol.Optional("co2_sensor", default=options.get("co2_sensor"))
-            ] = selector.EntitySelector(
-                selector.EntitySelectorConfig(
-                    domain=["sensor", "input_number"], device_class=["carbon_dioxide"]
+        # Basic sensors
+        for key, device_class in [
+            ("temperature_sensor", "temperature"),
+            ("humidity_sensor", "humidity"),
+            ("vpd_sensor", None),
+        ]:
+            schema_dict[vol.Required(key, default=options.get(key))] = (
+                selector.EntitySelector(
+                    selector.EntitySelectorConfig(
+                        domain=["sensor", "input_number"], device_class=device_class
+                    )
                 )
             )
 
-        # Circulation fan (optional)
-        fan_enabled = options.get("configure_fan", bool(options.get("circulation_fan")))
-        schema_dict[vol.Optional("configure_fan", default=fan_enabled)] = (
-            selector.BooleanSelector()
+        # Light sensor
+        schema_dict[vol.Optional("light_sensor", default=options.get("light_sensor"))] = (
+            selector.EntitySelector(
+                selector.EntitySelectorConfig(
+                    domain=["switch", "light", "input_boolean", "sensor"]
+                )
+            )
         )
 
-        if fan_enabled or user_input and user_input.get("configure_fan"):
-            schema_dict[
-                vol.Optional("circulation_fan", default=options.get("circulation_fan"))
-            ] = selector.EntitySelector(
-                selector.EntitySelectorConfig(domain=["fan", "switch", "input_boolean"])
+        # Optional features with toggles
+        for feature in ["co2", "fan"]:
+            enabled = options.get(
+                f"configure_{feature}", bool(options.get(f"{feature}_sensor"))
             )
+            schema_dict[vol.Optional(f"configure_{feature}", default=enabled)] = (
+                selector.BooleanSelector()
+            )
+            if enabled:
+                entity_key = (
+                    "circulation_fan" if feature == "fan" else f"{feature}_sensor"
+                )
+                domain = (
+                    ["fan", "switch", "input_boolean"]
+                    if feature == "fan"
+                    else ["sensor", "input_number"]
+                )
+                device_class = "carbon_dioxide" if feature == "co2" else None
+                schema_dict[
+                    vol.Optional(entity_key, default=options.get(entity_key))
+                ] = selector.EntitySelector(
+                    selector.EntitySelectorConfig(domain=domain, device_class=device_class)
+                )
+
+        # Trend and Statistics sensors
+        for sensor in ["temperature", "humidity", "vpd"]:
+            schema_dict[
+                vol.Optional(
+                    f"{sensor}_trend_sensor",
+                    default=options.get(f"{sensor}_trend_sensor"),
+                )
+            ] = selector.EntitySelector(
+                selector.EntitySelectorConfig(domain="binary_sensor", device_class="moving")
+            )
+            schema_dict[
+                vol.Optional(
+                    f"{sensor}_stats_sensor",
+                    default=options.get(f"{sensor}_stats_sensor"),
+                )
+            ] = selector.EntitySelector(selector.EntitySelectorConfig(domain="sensor"))
 
         # Thresholds
-        schema_dict[
-            vol.Optional(
-                "stress_threshold", default=options.get("stress_threshold", 0.70)
+        for key, default in [("stress_threshold", 0.70), ("mold_threshold", 0.75)]:
+            schema_dict[
+                vol.Optional(key, default=options.get(key, default))
+            ] = selector.NumberSelector(
+                selector.NumberSelectorConfig(
+                    min=0.5, max=0.95, step=0.05, mode=selector.NumberSelectorMode.SLIDER
+                )
             )
-        ] = selector.NumberSelector(
-            selector.NumberSelectorConfig(
-                min=0.5, max=0.95, step=0.05, mode=selector.NumberSelectorMode.SLIDER
+
+        # Trend analysis settings (fallback)
+        for trend_type, default_threshold in [("vpd", 1.2), ("temp", 26.0)]:
+            schema_dict[
+                vol.Optional(
+                    f"{trend_type}_trend_duration",
+                    default=options.get(f"{trend_type}_trend_duration", 30),
+                )
+            ] = selector.NumberSelector(
+                selector.NumberSelectorConfig(
+                    min=5,
+                    max=120,
+                    step=5,
+                    mode=selector.NumberSelectorMode.BOX,
+                    unit_of_measurement="minutes",
+                )
             )
-        )
-
-        schema_dict[
-            vol.Optional("mold_threshold", default=options.get("mold_threshold", 0.75))
-        ] = selector.NumberSelector(
-            selector.NumberSelectorConfig(
-                min=0.5, max=0.95, step=0.05, mode=selector.NumberSelectorMode.SLIDER
+            if trend_type == "temp":
+                 schema_dict[
+                    vol.Optional(
+                        f"{trend_type}_trend_threshold",
+                        default=options.get(f"{trend_type}_trend_threshold", default_threshold),
+                    )
+                ] = selector.NumberSelector(
+                    selector.NumberSelectorConfig(
+                        min=20, max=35, step=0.5, mode=selector.NumberSelectorMode.BOX, unit_of_measurement="°C"
+                    )
+                )
+            schema_dict[
+                vol.Optional(
+                    f"{trend_type}_trend_sensitivity",
+                    default=options.get(f"{trend_type}_trend_sensitivity", 0.5),
+                )
+            ] = selector.NumberSelector(
+                selector.NumberSelectorConfig(
+                    min=0.1, max=1.0, step=0.1, mode=selector.NumberSelectorMode.SLIDER
+                )
             )
-        )
 
-        # VPD Trend Analysis for Mold Risk
+        # Advanced settings toggle
         schema_dict[
-            vol.Optional("vpd_trend_duration", default=options.get("vpd_trend_duration", 30))
-        ] = selector.NumberSelector(
-            selector.NumberSelectorConfig(min=5, max=120, step=5, mode=selector.NumberSelectorMode.BOX, unit_of_measurement="minutes")
-        )
-        schema_dict[
-            vol.Optional("vpd_trend_sensitivity", default=options.get("vpd_trend_sensitivity", 0.5))
-        ] = selector.NumberSelector(
-            selector.NumberSelectorConfig(min=0.1, max=1.0, step=0.1, mode=selector.NumberSelectorMode.SLIDER)
-        )
-
-        # Temperature Trend Analysis for Stress
-        schema_dict[
-            vol.Optional("temp_trend_duration", default=options.get("temp_trend_duration", 30))
-        ] = selector.NumberSelector(
-            selector.NumberSelectorConfig(min=5, max=120, step=5, mode=selector.NumberSelectorMode.BOX, unit_of_measurement="minutes")
-        )
-        schema_dict[
-            vol.Optional("temp_trend_threshold", default=options.get("temp_trend_threshold", 26.0))
-        ] = selector.NumberSelector(
-            selector.NumberSelectorConfig(min=20, max=35, step=0.5, mode=selector.NumberSelectorMode.BOX, unit_of_measurement="°C")
-        )
-        schema_dict[
-            vol.Optional("temp_trend_sensitivity", default=options.get("temp_trend_sensitivity", 0.5))
-        ] = selector.NumberSelector(
-            selector.NumberSelectorConfig(min=0.1, max=1.0, step=0.1, mode=selector.NumberSelectorMode.SLIDER)
-        )
+            vol.Optional("configure_advanced", default=False)
+        ] = selector.BooleanSelector()
 
         return self.async_show_form(
             step_id="configure_environment",
             data_schema=vol.Schema(schema_dict),
             description_placeholders={"growspace_name": growspace.name},
         )
+
+    async def async_step_configure_advanced_bayesian(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Handle advanced configuration of Bayesian probabilities."""
+        coordinator = self.hass.data[DOMAIN][self.config_entry.entry_id]["coordinator"]
+        growspace = coordinator.growspaces.get(self._selected_growspace_id)
+
+        if user_input is not None:
+            import ast
+
+            env_config = self._env_config_step1.copy()
+            env_config.pop("configure_advanced", None)
+
+            try:
+                for key, value in user_input.items():
+                    if isinstance(value, str) and value.startswith("("):
+                        env_config[key] = ast.literal_eval(value)
+            except (ValueError, SyntaxError):
+                return self.async_show_form(
+                    step_id="configure_advanced_bayesian",
+                    data_schema=self._get_advanced_bayesian_schema(
+                        self._env_config_step1
+                    ),
+                    errors={"base": "invalid_tuple_format"},
+                )
+
+            growspace.environment_config = env_config
+            await coordinator.async_save()
+            await coordinator.async_refresh()
+
+            final_options = self.config_entry.options.copy()
+            final_options[self._selected_growspace_id] = env_config
+
+            _LOGGER.info(
+                "Advanced Bayesian configuration saved for %s: %s",
+                growspace.name,
+                env_config,
+            )
+            return self.async_create_entry(title="", data=final_options)
+
+        return self.async_show_form(
+            step_id="configure_advanced_bayesian",
+            data_schema=self._get_advanced_bayesian_schema(self._env_config_step1),
+            description_placeholders={"growspace_name": growspace.name},
+        )
+
+    def _get_advanced_bayesian_schema(self, options: dict) -> vol.Schema:
+        """Build the schema for advanced Bayesian settings."""
+        defaults = {
+            "prob_temp_extreme_heat": (0.98, 0.05),
+            "prob_temp_high_heat": (0.85, 0.15),
+            "prob_temp_warm": (0.65, 0.30),
+            "prob_temp_extreme_cold": (0.95, 0.08),
+            "prob_temp_cold": (0.80, 0.20),
+            "prob_humidity_too_dry": (0.85, 0.20),
+            "prob_humidity_high_veg_early": (0.80, 0.20),
+            "prob_humidity_high_veg_late": (0.85, 0.15),
+            "prob_humidity_too_humid_flower": (0.95, 0.10),
+            "prob_humidity_high_flower": (0.75, 0.25),
+            "prob_vpd_stress_veg_early": (0.85, 0.15),
+            "prob_vpd_mild_stress_veg_early": (0.60, 0.30),
+            "prob_vpd_stress_veg_late": (0.80, 0.18),
+            "prob_vpd_mild_stress_veg_late": (0.55, 0.35),
+            "prob_vpd_stress_flower_early": (0.85, 0.15),
+            "prob_vpd_mild_stress_flower_early": (0.60, 0.30),
+            "prob_vpd_stress_flower_late": (0.90, 0.12),
+            "prob_vpd_mild_stress_flower_late": (0.65, 0.28),
+            "prob_night_temp_high": (0.80, 0.20),
+            "prob_mold_temp_danger_zone": (0.85, 0.30),
+            "prob_mold_humidity_high_night": (0.99, 0.10),
+            "prob_mold_vpd_low_night": (0.95, 0.20),
+            "prob_mold_lights_off": (0.75, 0.30),
+            "prob_mold_humidity_high_day": (0.95, 0.20),
+            "prob_mold_vpd_low_day": (0.90, 0.25),
+            "prob_mold_fan_off": (0.80, 0.15),
+        }
+        schema_dict = {
+            vol.Optional(
+                key, default=str(options.get(key, default))
+            ): selector.TextSelector()
+            for key, default in defaults.items()
+        }
+        return vol.Schema(schema_dict)
 
     async def async_step_add_growspace(
         self, user_input: dict[str, Any] | None = None
