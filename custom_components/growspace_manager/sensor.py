@@ -20,6 +20,7 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 # Local / relative imports
 from .coordinator import GrowspaceCoordinator
+from .helpers import async_setup_trend_sensor, async_setup_statistics_sensor
 from .models import Plant, Growspace
 from .utils import (
     parse_date_field,
@@ -31,6 +32,25 @@ from .utils import (
 from .const import DOMAIN, DEFAULT_NOTIFICATION_EVENTS
 
 _LOGGER = logging.getLogger(__name__)
+
+
+async def _async_create_derivative_sensors(
+    hass: HomeAssistant,
+    config_entry: ConfigEntry,
+    growspace: Growspace,
+):
+    """Create trend and statistics sensors for a growspace."""
+    if growspace.environment_config:
+        created_entities = hass.data[DOMAIN][config_entry.entry_id]["created_entities"]
+        for sensor_type in ["temperature", "humidity", "vpd"]:
+            source_sensor = growspace.environment_config.get(f"{sensor_type}_sensor")
+            if source_sensor:
+                trend_unique_id = await async_setup_trend_sensor(hass, source_sensor, growspace.id, growspace.name, sensor_type)
+                if trend_unique_id and trend_unique_id not in created_entities:
+                    created_entities.append(trend_unique_id)
+                stats_unique_id = await async_setup_statistics_sensor(hass, source_sensor, growspace.id, growspace.name, sensor_type)
+                if stats_unique_id and stats_unique_id not in created_entities:
+                    created_entities.append(stats_unique_id)
 
 
 async def async_setup_entry(
@@ -53,6 +73,8 @@ async def async_setup_entry(
         gs_entity = GrowspaceOverviewSensor(coordinator, growspace_id, growspace)
         growspace_entities[growspace_id] = gs_entity
         initial_entities.append(gs_entity)
+
+        await _async_create_derivative_sensors(hass, config_entry, growspace)
 
         for plant in coordinator.get_growspace_plants(growspace_id):
             pe = PlantEntity(coordinator, plant)
@@ -118,6 +140,8 @@ async def async_setup_entry(
                 entity = GrowspaceOverviewSensor(coordinator, growspace_id, growspace)
                 growspace_entities[growspace_id] = entity
                 async_add_entities([entity])
+
+                await _async_create_derivative_sensors(hass, config_entry, growspace)
 
         # Growspaces: remove deleted
         for removed_gs_id in list(growspace_entities.keys()):

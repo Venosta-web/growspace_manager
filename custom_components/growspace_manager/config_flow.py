@@ -386,23 +386,6 @@ class OptionsFlowHandler(OptionsFlow):
                     selector.EntitySelectorConfig(domain=domain, device_class=device_class)
                 )
 
-        # Trend and Statistics sensors
-        for sensor in ["temperature", "humidity", "vpd"]:
-            schema_dict[
-                vol.Optional(
-                    f"{sensor}_trend_sensor",
-                    default=options.get(f"{sensor}_trend_sensor"),
-                )
-            ] = selector.EntitySelector(
-                selector.EntitySelectorConfig(domain="binary_sensor", device_class="moving")
-            )
-            schema_dict[
-                vol.Optional(
-                    f"{sensor}_stats_sensor",
-                    default=options.get(f"{sensor}_stats_sensor"),
-                )
-            ] = selector.EntitySelector(selector.EntitySelectorConfig(domain="sensor"))
-
         # Thresholds
         for key, default in [("stress_threshold", 0.70), ("mold_threshold", 0.75)]:
             schema_dict[
