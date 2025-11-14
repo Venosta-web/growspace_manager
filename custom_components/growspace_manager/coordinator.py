@@ -6,6 +6,7 @@ from .utils import (
     format_date,
     find_first_free_position,
     generate_growspace_grid,
+    VPDCalculator,
 )
 from .strain_library import StrainLibrary
 from .const import (
@@ -405,6 +406,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
 
     async def _async_update_data(self) -> dict[str, Any]:
         """Refresh data. Called by the DataUpdateCoordinator."""
+        await self._async_update_air_exchange_recommendations()
         self.update_data_property()
 
         return self.data
@@ -1513,3 +1515,109 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
 
         self._notifications_sent[plant_id][stage][str(days)] = True
         await self.async_save()
+
+    def _get_sensor_value(self, entity_id: str | None) -> float | None:
+        """Safely get the numeric state of a sensor entity."""
+        if not entity_id:
+            return None
+        state = self.hass.states.get(entity_id)
+        if state and state.state not in ["unknown", "unavailable"]:
+            try:
+                return float(state.state)
+            except (ValueError, TypeError):
+                return None
+        return None
+
+    async def _async_update_air_exchange_recommendations(self) -> None:
+        """Calculate and store air exchange recommendations for each growspace."""
+        recommendations = {}
+        global_settings = self.options.get("global_settings", {})
+
+        # Get outside conditions
+        outside_temp = self._get_sensor_value(
+            global_settings.get("outside_temp_sensor")
+        )
+        outside_humidity = self._get_sensor_value(
+            global_settings.get("outside_humidity_sensor")
+        )
+        if global_settings.get("outside_weather"):
+            weather_state = self.hass.states.get(global_settings["outside_weather"])
+            if weather_state:
+                outside_temp = weather_state.attributes.get(
+                    "temperature", outside_temp
+                )
+                outside_humidity = weather_state.attributes.get(
+                    "humidity", outside_humidity
+                )
+        outside_vpd = (
+            VPDCalculator.calculate_vpd(outside_temp, outside_humidity)
+            if outside_temp is not None and outside_humidity is not None
+            else None
+        )
+
+        # Get lung room conditions
+        lung_room_temp = self._get_sensor_value(
+            global_settings.get("lung_room_temp_sensor")
+        )
+        lung_room_humidity = self._get_sensor_value(
+            global_settings.get("lung_room_humidity_sensor")
+        )
+        lung_room_vpd = (
+            VPDCalculator.calculate_vpd(lung_room_temp, lung_room_humidity)
+            if lung_room_temp is not None and lung_room_humidity is not None
+            else None
+        )
+
+        for growspace_id, growspace in self.growspaces.items():
+            stress_sensor_id = f"binary_sensor.{growspace_id}_stress"
+            stress_state = self.hass.states.get(stress_sensor_id)
+
+            if not stress_state or stress_state.state != "on":
+                recommendations[growspace_id] = "Idle"
+                continue
+
+            current_vpd = self._get_sensor_value(
+                growspace.environment_config.get("vpd_sensor")
+            )
+            target_vpd = self.data.get("bayesian_sensors_reason", {}).get(
+                growspace_id, {}
+            ).get("target_vpd")
+
+            if current_vpd is None or target_vpd is None:
+                recommendations[growspace_id] = "Idle"
+                continue
+
+            min_temp = growspace.environment_config.get(
+                "minimum_source_air_temperature", 18
+            )
+            current_diff = abs(current_vpd - target_vpd)
+            best_option = "Idle"
+            best_diff = current_diff
+
+            # Evaluate outside air
+            if (
+                outside_vpd is not None
+                and outside_temp is not None
+                and outside_temp >= min_temp
+            ):
+                outside_diff = abs(outside_vpd - target_vpd)
+                if outside_diff < best_diff:
+                    best_diff = outside_diff
+                    best_option = "Open Window"
+
+            # Evaluate lung room air
+            if (
+                lung_room_vpd is not None
+                and lung_room_temp is not None
+                and lung_room_temp >= min_temp
+            ):
+                lung_room_diff = abs(lung_room_vpd - target_vpd)
+                if lung_room_diff < best_diff:
+                    best_diff = lung_room_diff
+                    best_option = "Ventilate Lung Room"
+
+            recommendations[growspace_id] = best_option
+
+        if "air_exchange_recommendations" not in self.data:
+            self.data["air_exchange_recommendations"] = {}
+        self.data["air_exchange_recommendations"].update(recommendations)
