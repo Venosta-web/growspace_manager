@@ -406,8 +406,8 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
 
     async def _async_update_data(self) -> dict[str, Any]:
         """Refresh data. Called by the DataUpdateCoordinator."""
-        await self._async_update_air_exchange_recommendations()
         self.update_data_property()
+        await self._async_update_air_exchange_recommendations()
 
         return self.data
 
