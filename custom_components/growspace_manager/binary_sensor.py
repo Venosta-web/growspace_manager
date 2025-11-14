@@ -14,6 +14,7 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.event import async_track_state_change_event
 from homeassistant.const import STATE_UNAVAILABLE, STATE_UNKNOWN
 from homeassistant.components.recorder import history
+from homeassistant.util import utcnow
 
 
 from .coordinator import GrowspaceCoordinator
@@ -85,6 +86,8 @@ class BayesianEnvironmentSensor(BinarySensorEntity):
         # Track state of all relevant sensors
         self._sensor_states = {}
         self._probability = 0.0
+        self._last_notification_sent: datetime | None = None
+        self._notification_cooldown = timedelta(minutes=5)  # Anti-spam cooldown
 
     async def async_added_to_hass(self) -> None:
         """When entity is added to hass."""
@@ -113,17 +116,17 @@ class BayesianEnvironmentSensor(BinarySensorEntity):
         )
 
         # Initial update
-        await self._async_update_probability()
+        await self.async_update_and_notify()
 
     @callback
     def _handle_coordinator_update(self) -> None:
         """Handle coordinator update."""
-        self.hass.async_create_task(self._async_update_probability())
+        self.hass.async_create_task(self.async_update_and_notify())
 
     @callback
     def _async_sensor_changed(self, event) -> None:
         """Handle sensor state changes."""
-        self.hass.async_create_task(self._async_update_probability())
+        self.hass.async_create_task(self.async_update_and_notify())
 
     def _get_sensor_value(self, sensor_id: str) -> float | None:
         """Get numeric value from sensor state."""
@@ -172,8 +175,8 @@ class BayesianEnvironmentSensor(BinarySensorEntity):
         self, sensor_id: str, duration_minutes: int, threshold: float
     ) -> dict[str, Any]:
         """Analyze the trend of a sensor over a given duration."""
-        start_time = datetime.now() - timedelta(minutes=duration_minutes)
-        end_time = datetime.now()
+        start_time = utcnow() - timedelta(minutes=duration_minutes)
+        end_time = utcnow()
 
         try:
             history_list = await self.hass.async_add_executor_job(
@@ -216,6 +219,43 @@ class BayesianEnvironmentSensor(BinarySensorEntity):
             _LOGGER.error("Error analyzing sensor history for %s: %s", sensor_id, e)
             return {"trend": "unknown", "crossed_threshold": False}
 
+    async def _send_notification(self, title: str, message: str) -> None:
+        """Send a notification if the target is configured and cooldown has passed."""
+        now = utcnow()
+        if self._last_notification_sent and (now - self._last_notification_sent) < self._notification_cooldown:
+            return  # Anti-spam: cooldown active
+
+        growspace = self.coordinator.growspaces.get(self.growspace_id)
+        if not growspace or not growspace.notification_target:
+            return  # No target configured
+
+        self._last_notification_sent = now
+        await self.hass.services.async_call(
+            "notify",
+            "send_message",
+            {
+                "message": message,
+                "title": title,
+                "target": growspace.notification_target,
+            },
+        )
+
+    def get_notification_title_message(self, new_state_on: bool) -> tuple[str, str] | None:
+        """Return the notification title and message, if any."""
+        return None
+
+    async def async_update_and_notify(self) -> None:
+        """Update the sensor state and send a notification if the state changes."""
+        old_state_on = self.is_on
+        await self._async_update_probability()
+        new_state_on = self.is_on
+
+        if new_state_on != old_state_on:
+            notification = self.get_notification_title_message(new_state_on)
+            if notification:
+                title, message = notification
+                await self._send_notification(title, message)
+
     async def _async_update_probability(self) -> None:
         """Calculate Bayesian probability - implemented by subclasses."""
         raise NotImplementedError
@@ -245,6 +285,14 @@ class BayesianStressSensor(BayesianEnvironmentSensor):
         self._attr_unique_id = f"{DOMAIN}_{growspace_id}_stress"
         self.prior = 0.15
         self.threshold = env_config.get("stress_threshold", 0.70)
+
+    def get_notification_title_message(self, new_state_on: bool) -> tuple[str, str] | None:
+        """Return the notification title and message, if any."""
+        if new_state_on:
+            growspace = self.coordinator.growspaces.get(self.growspace_id)
+            if growspace:
+                return "Plants Under Stress", f"High stress detected in {growspace.name}"
+        return None
 
     async def _async_update_probability(self) -> None:
         """Calculate stress probability using Bayesian inference."""
@@ -369,6 +417,7 @@ class BayesianStressSensor(BayesianEnvironmentSensor):
         self._probability = self._calculate_bayesian_probability(
             self.prior, observations
         )
+
         self.async_write_ha_state()
 
     @staticmethod
@@ -415,6 +464,14 @@ class BayesianMoldRiskSensor(BayesianEnvironmentSensor):
         self._attr_unique_id = f"{DOMAIN}_{growspace_id}_mold_risk"
         self.prior = 0.10
         self.threshold = env_config.get("mold_threshold", 0.75)
+
+    def get_notification_title_message(self, new_state_on: bool) -> tuple[str, str] | None:
+        """Return the notification title and message, if any."""
+        if new_state_on:
+            growspace = self.coordinator.growspaces.get(self.growspace_id)
+            if growspace:
+                return "High Mold Risk", f"High mold risk detected in {growspace.name}"
+        return None
 
     async def _async_update_probability(self) -> None:
         """Calculate mold risk probability."""
@@ -510,6 +567,14 @@ class BayesianOptimalConditionsSensor(BayesianEnvironmentSensor):
         self._attr_unique_id = f"{DOMAIN}_{growspace_id}_optimal"
         self.prior = 0.40
         self.threshold = 0.80
+
+    def get_notification_title_message(self, new_state_on: bool) -> tuple[str, str] | None:
+        """Return the notification title and message, if any."""
+        if not new_state_on:
+            growspace = self.coordinator.growspaces.get(self.growspace_id)
+            if growspace:
+                return "Optimal Conditions Lost", f"Optimal conditions lost in {growspace.name}"
+        return None
 
     async def _async_update_probability(self) -> None:
         """Calculate optimal conditions probability."""
