@@ -87,7 +87,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     # Ensure DOMAIN exists in hass.data
     hass.data.setdefault(DOMAIN, {})
-    hass.data[DOMAIN][entry.entry_id] = {"coordinator": coordinator}
+    hass.data[DOMAIN][entry.entry_id] = {
+        "coordinator": coordinator,
+        "created_entities": [],
+    }
 
     # Initialize and load Strain Library (global instance)
     strain_library_instance = StrainLibrary(
@@ -241,6 +244,28 @@ async def _register_services(
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Unload a config entry."""
     _LOGGER.debug("Unloading config entry %s for Growspace Manager", entry.entry_id)
+
+    # Clean up dynamically created entities before unloading platforms
+    entry_data = hass.data[DOMAIN].get(entry.entry_id, {})
+    created_unique_ids = entry_data.get("created_entities", [])
+    entity_registry = er.async_get(hass)
+
+    for unique_id in created_unique_ids:
+        # Determine the domain and platform from the unique_id
+        if "trend" in unique_id:
+            domain = "binary_sensor"
+            platform = "trend"
+        elif "stats" in unique_id:
+            domain = "sensor"
+            platform = "statistics"
+        else:
+            _LOGGER.warning(f"Unknown platform for unique_id: {unique_id}")
+            continue
+
+        entity_id = entity_registry.async_get_entity_id(domain, platform, unique_id)
+        if entity_id and entity_registry.async_get(entity_id):
+            entity_registry.async_remove(entity_id)
+            _LOGGER.info(f"Removed dynamically created entity: {entity_id} (unique_id: {unique_id})")
 
     unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
 
