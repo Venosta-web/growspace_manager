@@ -45,8 +45,8 @@ async def async_setup_trend_sensor(
         hass,
         "binary_sensor",
         "trend",
-        config,
-        {DOMAIN: config}
+        {},
+        {"binary_sensor": [config]},
     )
     _LOGGER.info(f"Setting up trend sensor: {name}")
     return unique_id
