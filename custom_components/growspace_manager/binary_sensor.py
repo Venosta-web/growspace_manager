@@ -444,8 +444,22 @@ class BayesianMoldRiskSensor(BayesianEnvironmentSensor):
 
         # Proactive VPD trend analysis
         vpd_trend_duration = self.env_config.get("vpd_trend_duration", 30)
-        vpd_trend_threshold = self.env_config.get("vpd_trend_threshold", 1.2)
         vpd_trend_sensitivity = self.env_config.get("vpd_trend_sensitivity", 0.5)
+
+        # Determine the VPD threshold based on the growth stage
+        veg_days = stage_info["veg_days"]
+        flower_days = stage_info["flower_days"]
+
+        if flower_days == 0 and veg_days < 14: # Early Veg
+            vpd_trend_threshold = 0.8
+        elif flower_days == 0 and veg_days >= 14: # Late Veg
+            vpd_trend_threshold = 1.2
+        elif 0 < flower_days < 42: # Early-Mid Flower
+            vpd_trend_threshold = 1.5
+        elif flower_days >= 42: # Late Flower
+            vpd_trend_threshold = 1.5
+        else: # Default/safe threshold
+            vpd_trend_threshold = 1.2
 
         if vpd is not None:
             trend_analysis = await self._async_analyze_sensor_trend(
