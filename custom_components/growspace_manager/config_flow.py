@@ -218,6 +218,8 @@ class OptionsFlowHandler(OptionsFlow):
                 return await self.async_step_manage_plants()
             if action == "configure_environment":
                 return await self.async_step_select_growspace_for_env()
+            if action == "configure_global":
+                return await self.async_step_configure_global()
             return self.async_create_entry(title="", data=user_input)
 
         return self.async_show_form(
@@ -395,6 +397,18 @@ class OptionsFlowHandler(OptionsFlow):
                     min=0.5, max=0.95, step=0.05, mode=selector.NumberSelectorMode.SLIDER
                 )
             )
+
+        # Thresholds
+        schema_dict[
+            vol.Optional(
+                "minimum_source_air_temperature",
+                default=options.get("minimum_source_air_temperature", 18),
+            )
+        ] = selector.NumberSelector(
+            selector.NumberSelectorConfig(
+                min=10, max=25, step=1, mode=selector.NumberSelectorMode.SLIDER
+            )
+        )
 
         # Trend analysis settings (fallback)
         for trend_type, default_threshold in [("vpd", 1.2), ("temp", 26.0)]:
@@ -945,6 +959,63 @@ class OptionsFlowHandler(OptionsFlow):
 
         return vol.Schema(base)
 
+    async def async_step_configure_global(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Configure global settings for outside and lung room sensors."""
+        if user_input is not None:
+            # Save the global settings into the main config_entry's options
+            new_options = self.config_entry.options.copy()
+            new_options["global_settings"] = user_input
+            return self.async_create_entry(title="", data=new_options)
+
+        # Get current global settings to prepopulate the form
+        global_settings = self.config_entry.options.get("global_settings", {})
+
+        schema_dict = {
+            vol.Optional(
+                "outside_weather", default=global_settings.get("outside_weather")
+            ): selector.EntitySelector(
+                selector.EntitySelectorConfig(domain="weather")
+            ),
+            vol.Optional(
+                "outside_temp_sensor",
+                default=global_settings.get("outside_temp_sensor"),
+            ): selector.EntitySelector(
+                selector.EntitySelectorConfig(
+                    domain=["sensor", "input_number"], device_class="temperature"
+                )
+            ),
+            vol.Optional(
+                "outside_humidity_sensor",
+                default=global_settings.get("outside_humidity_sensor"),
+            ): selector.EntitySelector(
+                selector.EntitySelectorConfig(
+                    domain=["sensor", "input_number"], device_class="humidity"
+                )
+            ),
+            vol.Optional(
+                "lung_room_temp_sensor",
+                default=global_settings.get("lung_room_temp_sensor"),
+            ): selector.EntitySelector(
+                selector.EntitySelectorConfig(
+                    domain=["sensor", "input_number"], device_class="temperature"
+                )
+            ),
+            vol.Optional(
+                "lung_room_humidity_sensor",
+                default=global_settings.get("lung_room_humidity_sensor"),
+            ): selector.EntitySelector(
+                selector.EntitySelectorConfig(
+                    domain=["sensor", "input_number"], device_class="humidity"
+                )
+            ),
+        }
+
+        return self.async_show_form(
+            step_id="configure_global", data_schema=vol.Schema(schema_dict)
+        )
+
     def _get_main_menu_schema(self) -> vol.Schema:
         """Get schema for main menu."""
         return vol.Schema(
@@ -960,7 +1031,11 @@ class OptionsFlowHandler(OptionsFlow):
                             ),
                             selector.SelectOptionDict(
                                 value="configure_environment",
-                                label="Configure Environment Sensors",
+                                label="Configure Growspace Environment",
+                            ),
+                            selector.SelectOptionDict(
+                                value="configure_global",
+                                label="Configure Global Sensors",
                             ),
                         ],
                         mode=selector.SelectSelectorMode.DROPDOWN,

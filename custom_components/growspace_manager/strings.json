@@ -21,7 +21,27 @@
         "description": "Choose what you would like to manage",
         "menu_options": {
           "manage_growspaces": "Manage Growspaces",
-          "manage_plants": "Manage Plants"
+          "manage_plants": "Manage Plants",
+          "configure_environment": "Configure Growspace Environment",
+          "configure_global": "Configure Global Sensors"
+        }
+      },
+      "configure_global": {
+        "title": "Configure Global Sensors",
+        "description": "Set up optional sensors for outside and lung room environments.",
+        "data": {
+          "outside_weather": "Outside Weather Entity",
+          "outside_temp_sensor": "Outside Temperature Sensor",
+          "outside_humidity_sensor": "Outside Humidity Sensor",
+          "lung_room_temp_sensor": "Lung Room Temperature Sensor",
+          "lung_room_humidity_sensor": "Lung Room Humidity Sensor"
+        }
+      },
+      "configure_environment": {
+        "title": "Configure Environment for {growspace_name}",
+        "description": "Set up and fine-tune the environmental sensors and thresholds for this growspace.",
+        "data": {
+          "minimum_source_air_temperature": "Minimum Source Air Temperature (°C)"
         }
       },
       "manage_growspaces": {

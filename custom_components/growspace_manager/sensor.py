@@ -28,6 +28,7 @@ from .utils import (
     calculate_days_since,
     find_first_free_position,
     generate_growspace_grid,
+    VPDCalculator,
 )
 from .const import DOMAIN, DEFAULT_NOTIFICATION_EVENTS
 
@@ -182,6 +183,134 @@ async def async_setup_entry(
         coordinator.hass.async_create_task(_handlecoordinator_update_async())
 
     coordinator.async_add_listener(_listener_callback)
+
+    # Create global VPD sensors
+    global_entities = []
+    global_settings = config_entry.options.get("global_settings", {})
+    if global_settings:
+        if (
+            global_settings.get("outside_weather")
+            or global_settings.get("outside_temp_sensor")
+        ) and global_settings.get("outside_humidity_sensor"):
+            global_entities.append(
+                VpdSensor(
+                    coordinator,
+                    "outside",
+                    "Outside VPD",
+                    global_settings.get("outside_weather"),
+                    global_settings.get("outside_temp_sensor"),
+                    global_settings.get("outside_humidity_sensor"),
+                )
+            )
+        if global_settings.get(
+            "lung_room_temp_sensor"
+        ) and global_settings.get("lung_room_humidity_sensor"):
+            global_entities.append(
+                VpdSensor(
+                    coordinator,
+                    "lung_room",
+                    "Lung Room VPD",
+                    None,
+                    global_settings.get("lung_room_temp_sensor"),
+                    global_settings.get("lung_room_humidity_sensor"),
+                )
+            )
+    if global_entities:
+        async_add_entities(global_entities)
+
+    # Add AirExchange recommendation sensors for each growspace
+    air_exchange_sensors = [
+        AirExchangeSensor(coordinator, growspace_id)
+        for growspace_id in coordinator.growspaces
+    ]
+    async_add_entities(air_exchange_sensors)
+
+
+class VpdSensor(CoordinatorEntity[GrowspaceCoordinator], SensorEntity):
+    """Global sensor to calculate VPD for a given location (outside/lung room)."""
+
+    def __init__(
+        self,
+        coordinator: GrowspaceCoordinator,
+        location_id: str,
+        name: str,
+        weather_entity: str | None,
+        temp_sensor: str | None,
+        humidity_sensor: str | None,
+    ) -> None:
+        """Initialize the sensor."""
+        super().__init__(coordinator)
+        self._location_id = location_id
+        self._attr_name = name
+        self._attr_unique_id = f"{DOMAIN}_{location_id}_vpd"
+        self._weather_entity = weather_entity
+        self._temp_sensor = temp_sensor
+        self._humidity_sensor = humidity_sensor
+        self._attr_state_class = SensorStateClass.MEASUREMENT
+        self._attr_native_unit_of_measurement = "kPa"
+        self._attr_icon = "mdi:cloud-check-variant"
+
+    @property
+    def native_value(self) -> float | None:
+        """Return the state of the sensor."""
+        hass = self.coordinator.hass
+        temp = None
+        humidity = None
+
+        if self._weather_entity:
+            weather_state = hass.states.get(self._weather_entity)
+            if weather_state:
+                temp = weather_state.attributes.get("temperature")
+                humidity = weather_state.attributes.get("humidity")
+        elif self._temp_sensor and self._humidity_sensor:
+            temp_state = hass.states.get(self._temp_sensor)
+            if temp_state:
+                try:
+                    temp = float(temp_state.state)
+                except (ValueError, TypeError):
+                    temp = None
+            humidity_state = hass.states.get(self._humidity_sensor)
+            if humidity_state:
+                try:
+                    humidity = float(humidity_state.state)
+                except (ValueError, TypeError):
+                    humidity = None
+
+        if temp is not None and humidity is not None:
+            return VPDCalculator.calculate_vpd(temp, humidity)
+        return None
+
+
+class AirExchangeSensor(CoordinatorEntity[GrowspaceCoordinator], SensorEntity):
+    """Sensor to recommend air exchange action for a growspace."""
+
+    def __init__(
+        self, coordinator: GrowspaceCoordinator, growspace_id: str
+    ) -> None:
+        """Initialize the sensor."""
+        super().__init__(coordinator)
+        self.growspace_id = growspace_id
+        self.growspace = coordinator.growspaces[growspace_id]
+        self._attr_name = f"{self.growspace.name} Air Exchange"
+        self._attr_unique_id = f"{DOMAIN}_{self.growspace_id}_air_exchange"
+        self._attr_icon = "mdi:air-filter"
+
+        self._attr_device_info = DeviceInfo(
+            identifiers={(DOMAIN, self.growspace_id)},
+            name=self.growspace.name,
+            model="Growspace",
+            manufacturer="Growspace Manager",
+        )
+
+    @property
+    def state(self) -> str:
+        """Return the recommended action."""
+        # The actual state is calculated in the coordinator and stored.
+        # This sensor just retrieves it.
+        recommendation = self.coordinator.data.get("air_exchange_recommendations", {}).get(
+            self.growspace_id, "Idle"
+        )
+        return recommendation
 
 
 class GrowspaceOverviewSensor(SensorEntity):
