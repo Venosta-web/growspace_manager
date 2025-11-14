@@ -43,8 +43,8 @@ async def async_setup_trend_sensor(
 
     await async_load_platform(
         hass,
-        "binary_sensor",
         "trend",
+        "binary_sensor",
         {},
         {"binary_sensor": [config]},
     )
@@ -79,8 +79,8 @@ async def async_setup_statistics_sensor(
 
     await async_load_platform(
         hass,
-        "sensor",
-        "statistics",
+        "statistics",  # <-- Platform name
+        "sensor",      # <-- Entity domain
         config,
         {DOMAIN: config}
     )

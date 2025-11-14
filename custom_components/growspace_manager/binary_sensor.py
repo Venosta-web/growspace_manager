@@ -9,12 +9,14 @@ from datetime import date, datetime, timedelta
 from homeassistant.components.binary_sensor import BinarySensorEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
+from homeassistant.components.recorder import get_instance as get_recorder_instance
 from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.event import async_track_state_change_event
 from homeassistant.const import STATE_UNAVAILABLE, STATE_UNKNOWN
 from homeassistant.components.recorder import history
 from homeassistant.util import utcnow
+
 
 
 from .coordinator import GrowspaceCoordinator
@@ -179,7 +181,7 @@ class BayesianEnvironmentSensor(BinarySensorEntity):
         end_time = utcnow()
 
         try:
-            history_list = await self.hass.async_add_executor_job(
+            history_list = await get_recorder_instance(self.hass).async_add_executor_job(
                 lambda: history.get_significant_states(
                     self.hass,
                     start_time,
@@ -231,13 +233,16 @@ class BayesianEnvironmentSensor(BinarySensorEntity):
             return  # No target configured
 
         self._last_notification_sent = now
+        # Get the service name (e.g., "mobile_app_my_phone")
+        notification_service = growspace.notification_target.replace("notify.", "")
+        
         await self.hass.services.async_call(
             "notify",
-            "send_message",
+            notification_service, # Call the specific service
             {
                 "message": message,
                 "title": title,
-                "target": growspace.notification_target,
+                # No 'target' key needed here
             },
         )
 
