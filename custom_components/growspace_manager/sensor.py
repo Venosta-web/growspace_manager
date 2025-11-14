@@ -188,18 +188,15 @@ async def async_setup_entry(
     global_entities = []
     global_settings = config_entry.options.get("global_settings", {})
     if global_settings:
-        if (
-            global_settings.get("outside_weather")
-            or global_settings.get("outside_temp_sensor")
-        ) and global_settings.get("outside_humidity_sensor"):
+        if global_settings.get("weather_entity"):
             global_entities.append(
                 VpdSensor(
                     coordinator,
                     "outside",
                     "Outside VPD",
-                    global_settings.get("outside_weather"),
-                    global_settings.get("outside_temp_sensor"),
-                    global_settings.get("outside_humidity_sensor"),
+                    global_settings.get("weather_entity"),
+                    None,
+                    None,
                 )
             )
         if global_settings.get(
@@ -259,18 +256,18 @@ class VpdSensor(CoordinatorEntity[GrowspaceCoordinator], SensorEntity):
 
         if self._weather_entity:
             weather_state = hass.states.get(self._weather_entity)
-            if weather_state:
+            if weather_state and weather_state.attributes:
                 temp = weather_state.attributes.get("temperature")
                 humidity = weather_state.attributes.get("humidity")
         elif self._temp_sensor and self._humidity_sensor:
             temp_state = hass.states.get(self._temp_sensor)
-            if temp_state:
+            if temp_state and temp_state.state not in ["unknown", "unavailable"]:
                 try:
                     temp = float(temp_state.state)
                 except (ValueError, TypeError):
                     temp = None
             humidity_state = hass.states.get(self._humidity_sensor)
-            if humidity_state:
+            if humidity_state and humidity_state.state not in ["unknown", "unavailable"]:
                 try:
                     humidity = float(humidity_state.state)
                 except (ValueError, TypeError):

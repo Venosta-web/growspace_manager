@@ -30,9 +30,7 @@
         "title": "Configure Global Sensors",
         "description": "Set up optional sensors for outside and lung room environments.",
         "data": {
-          "outside_weather": "Outside Weather Entity",
-          "outside_temp_sensor": "Outside Temperature Sensor",
-          "outside_humidity_sensor": "Outside Humidity Sensor",
+          "weather_entity": "Outside Weather Entity",
           "lung_room_temp_sensor": "Lung Room Temperature Sensor",
           "lung_room_humidity_sensor": "Lung Room Humidity Sensor"
         }

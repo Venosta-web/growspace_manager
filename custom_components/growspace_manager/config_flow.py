@@ -974,25 +974,9 @@ class OptionsFlowHandler(OptionsFlow):
 
         schema_dict = {
             vol.Optional(
-                "outside_weather", default=global_settings.get("outside_weather")
+                "weather_entity", default=global_settings.get("weather_entity")
             ): selector.EntitySelector(
                 selector.EntitySelectorConfig(domain="weather")
-            ),
-            vol.Optional(
-                "outside_temp_sensor",
-                default=global_settings.get("outside_temp_sensor"),
-            ): selector.EntitySelector(
-                selector.EntitySelectorConfig(
-                    domain=["sensor", "input_number"], device_class="temperature"
-                )
-            ),
-            vol.Optional(
-                "outside_humidity_sensor",
-                default=global_settings.get("outside_humidity_sensor"),
-            ): selector.EntitySelector(
-                selector.EntitySelectorConfig(
-                    domain=["sensor", "input_number"], device_class="humidity"
-                )
             ),
             vol.Optional(
                 "lung_room_temp_sensor",
