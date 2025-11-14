@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import functools
+from datetime import date, datetime
 
 from homeassistant.components.persistent_notification import (
     async_create as create_notification,
@@ -12,7 +13,6 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, ServiceCall
 import homeassistant.helpers.device_registry as dr
 from homeassistant.helpers.storage import Store
-from datetime import date, datetime
 from homeassistant.helpers import entity_registry as er
 
 
@@ -26,6 +26,30 @@ from .const import (
 from .strain_library import StrainLibrary
 from .coordinator import GrowspaceCoordinator
 
+# Import all schemas from const.py
+from .const import (
+    ADD_GROWSPACE_SCHEMA,
+    ADD_PLANT_SCHEMA,
+    CLEAR_STRAIN_LIBRARY_SCHEMA,
+    DEBUG_CLEANUP_LEGACY_SCHEMA,
+    DEBUG_CONSOLIDATE_DUPLICATE_SPECIAL_SCHEMA,
+    DEBUG_LIST_GROWSPACES_SCHEMA,
+    DEBUG_RESET_SPECIAL_GROWSPACES_SCHEMA,
+    EXPORT_STRAIN_LIBRARY_SCHEMA,
+    TAKE_CLONE_SCHEMA,
+    MOVE_CLONE_SCHEMA,
+    HARVEST_PLANT_SCHEMA,
+    IMPORT_STRAIN_LIBRARY_SCHEMA,
+    MOVE_PLANT_SCHEMA,
+    REMOVE_GROWSPACE_SCHEMA,
+    REMOVE_PLANT_SCHEMA,
+    SWITCH_PLANT_SCHEMA,
+    TRANSITION_PLANT_SCHEMA,
+    UPDATE_PLANT_SCHEMA,
+    CONFIGURE_ENVIRONMENT_SCHEMA,
+    REMOVE_ENVIRONMENT_SCHEMA,
+)
+
 # Import the refactored service handler modules directly by their filenames
 from .services import growspace
 from .services import plant
@@ -36,7 +60,7 @@ from .services import environment
 
 _LOGGER = logging.getLogger(__name__)
 
-PLATFORMS = ["sensor", "switch", "binary_sensor"]
+PLATFORMS = ["binary_sensor", "sensor", "switch"]
 
 
 async def async_setup(hass: HomeAssistant, config: dict):
@@ -92,12 +116,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 "Created pending growspace: %s", pending.get("name", "unknown")
             )
         except Exception:
-            _LOGGER.exception(
-                "Failed to create pending growspace: %s", pending.get("name", "unknown")
-            )
+            _LOGGER.exception("Failed to create pending growspace: %s", pending.get("name", "unknown"))
             create_notification(
                 hass,
-                f"Failed to create pending growspace '{pending.get('name', 'unknown')}': {Exception}",
+                (
+                    f"Failed to create pending growspace '{pending.get('name', 'unknown')}'"
+                ),
                 title="Growspace Manager Error",
             )
 
@@ -120,29 +144,7 @@ async def _register_services(
 ) -> None:
     """Register all Growspace Manager services."""
 
-    # Import all schemas from const.py
-    from .const import (
-        ADD_GROWSPACE_SCHEMA,
-        ADD_PLANT_SCHEMA,
-        CLEAR_STRAIN_LIBRARY_SCHEMA,
-        DEBUG_CLEANUP_LEGACY_SCHEMA,
-        DEBUG_CONSOLIDATE_DUPLICATE_SPECIAL_SCHEMA,
-        DEBUG_LIST_GROWSPACES_SCHEMA,
-        DEBUG_RESET_SPECIAL_GROWSPACES_SCHEMA,
-        EXPORT_STRAIN_LIBRARY_SCHEMA,
-        TAKE_CLONE_SCHEMA,
-        MOVE_CLONE_SCHEMA,
-        HARVEST_PLANT_SCHEMA,
-        IMPORT_STRAIN_LIBRARY_SCHEMA,
-        MOVE_PLANT_SCHEMA,
-        REMOVE_GROWSPACE_SCHEMA,
-        REMOVE_PLANT_SCHEMA,
-        SWITCH_PLANT_SCHEMA,
-        TRANSITION_PLANT_SCHEMA,
-        UPDATE_PLANT_SCHEMA,
-        CONFIGURE_ENVIRONMENT_SCHEMA,
-        REMOVE_ENVIRONMENT_SCHEMA,
-    )
+
 
     # Define all services with their handler functions and schemas
     services_to_register = [
@@ -275,10 +277,10 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             "debug_cleanup_legacy",
             "debug_list_growspaces",
             "debug_reset_special_growspaces",
-            "debug_consolidate_growspaces",
+            "debug_con",
             "get_strain_library",
-            "configure_environment",  # ← NEW
-            "remove_environment",  # ← NEW
+            "configure_environment",
+            "remove_environment",
         ]
 
         for service_name in service_names_to_remove:

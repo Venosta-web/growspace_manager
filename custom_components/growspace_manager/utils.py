@@ -9,6 +9,7 @@ DateInput = str | datetime | date | None
 
 
 def parse_date_field(date_value: DateInput) -> date | None:
+    """Parse various date inputs into a date object."""
     if date_value is None:
         return None
     if isinstance(date_value, datetime):
@@ -24,6 +25,7 @@ def parse_date_field(date_value: DateInput) -> date | None:
 
 
 def format_date(date_value: DateInput) -> str | None:
+    """Format a date input into a 'YYYY-MM-DD' string."""
     dt = parse_date_field(date_value)
     if dt is None:
         return None
@@ -69,6 +71,7 @@ def find_first_free_position(
 def generate_growspace_grid(
     rows: int, cols: int, plant_positions: list[Plant]
 ) -> list[list[str | None]]:
+    """Generate a grid representing the growspace with plant IDs."""
     grid: list[list[str | None]] = [[None for _ in range(cols)] for _ in range(rows)]
     for plant in plant_positions:
         r, c = plant.row - 1, plant.col - 1
