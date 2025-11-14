@@ -453,21 +453,21 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
             }
             _LOGGER.info("Loaded %d growspaces", len(self.growspaces))
             if not self.options:
-                 _LOGGER.debug("--- COORDINATOR HAS NO OPTIONS TO APPLY ---")
+                _LOGGER.debug("--- COORDINATOR HAS NO OPTIONS TO APPLY ---")
             else:
-                 _LOGGER.debug(
+                _LOGGER.debug(
                     "--- APPLYING OPTIONS TO GROWSPACES: %s ---", self.options
                 )
                 for growspace_id, growspace in self.growspaces.items():
                     if growspace_id in self.options:
                         growspace.environment_config = self.options[growspace_id]
-                         _LOGGER.debug(
+                        _LOGGER.debug(
                             "--- SUCCESS: Applied env_config to '%s': %s ---",
                             growspace.name,
                             growspace.environment_config,
                         )
                     else:
-                         _LOGGER.info(
+                        _LOGGER.info(
                             "--- INFO: No options found for growspace '%s' ---",
                             growspace.name,
                         )
