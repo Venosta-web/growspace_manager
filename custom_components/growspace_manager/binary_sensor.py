@@ -180,12 +180,13 @@ class BayesianEnvironmentSensor(BinarySensorEntity):
 
         try:
             history_list = await self.hass.async_add_executor_job(
-                history.get_significant_states,
-                self.hass,
-                start_time,
-                end_time,
-                [sensor_id],
-                include_start_time_state=True,
+                lambda: history.get_significant_states(
+                    self.hass,
+                    start_time,
+                    end_time,
+                    [sensor_id],
+                    include_start_time_state=True,
+                )
             )
 
             states = history_list.get(sensor_id, [])
