@@ -83,12 +83,12 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     ) -> ConfigFlowResult:
         """Handle the initial step."""
         try:
-            _LOGGER.info("DEBUG - async_step_user called with input: %s", user_input)
+            _LOGGER.debug("async_step_user called with input: %s", user_input)
 
             if user_input is not None:
                 name = user_input.get("name", DEFAULT_NAME)
-                _LOGGER.info(
-                    "DEBUG - Processing user input, storing integration name: %s",
+                _LOGGER.debug(
+                    "Processing user input, storing integration name: %s",
                     name,
                 )
                 return self.async_create_entry(
@@ -96,22 +96,20 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     data={"name": name},
                 )
 
-            _LOGGER.info("DEBUG - Showing initial user form")
+            _LOGGER.debug("Showing initial user form")
             return self.async_show_form(
                 step_id="user",
                 data_schema=STEP_USER_DATA_SCHEMA,
             )
 
-        except Exception:
-            _LOGGER.exception(
-                "Error in async_step_user: %s ,{type(err).__name__}: {err}"
-            )
+        except Exception as err:
+            _LOGGER.exception("Error in async_step_user: %s", err)
             return self.async_show_form(
                 step_id="user",
                 data_schema=vol.Schema(
                     {vol.Optional("name", default=DEFAULT_NAME): cv.string}
                 ),
-                errors={"base": "Error: %s ,{str(err)}"},
+                errors={"base": f"Error: {err}"},
             )
 
     async def async_step_add_growspace(
@@ -120,9 +118,7 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         """Add a growspace during initial setup."""
         if user_input is not None:
             try:
-                _LOGGER.info(
-                    "DEBUG - ConfigFlow received growspace data: %s", user_input
-                )
+                _LOGGER.debug("ConfigFlow received growspace data: %s", user_input)
 
                 entry = self.async_create_entry(
                     title=getattr(self, "_integration_name", DEFAULT_NAME),
@@ -137,19 +133,21 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     "notification_target": user_input.get("notification_target"),
                 }
 
-                _LOGGER.info(
-                    "DEBUG - Stored pending growspace data: %s %s ,{self.hass.data[DOMAIN],['pending_growspace']}"
+                _LOGGER.debug(
+                    "Stored pending growspace data: %s",
+                    self.hass.data[DOMAIN]["pending_growspace"],
                 )
                 return entry
 
-            except Exception:
-                _LOGGER.exception("Error in async_step_user: %s", self)
+            except Exception as err:
+                _LOGGER.exception("Error in async_step_add_growspace: %s", err)
                 return self.async_show_form(
                     step_id="add_growspace",
                     data_schema=self._get_add_growspace_schema(),
+                    errors={"base": f"Error: {err}"},
                 )
 
-        _LOGGER.info("DEBUG - Showing add_growspace form")
+        _LOGGER.debug("Showing add_growspace form")
         return self.async_show_form(
             step_id="add_growspace",
             data_schema=self._get_add_growspace_schema(),
@@ -559,32 +557,31 @@ class OptionsFlowHandler(OptionsFlow):
 
         if user_input is not None:
             try:
-                _LOGGER.info(
-                    "DEBUG - Config flow received growspace data: %s, {user_input}"
-                )
-                _LOGGER.info(
-                    "DEBUG - About to call %s, coordinator.async_add_growspace"
-                )
-                growspace_id = await coordinator.async_add_growspace(
+                _LOGGER.debug("Config flow received growspace data: %s", user_input)
+                _LOGGER.debug("About to call coordinator.async_add_growspace")
+                growspace = await coordinator.async_add_growspace(
                     name=user_input["name"],
                     rows=user_input["rows"],
                     plants_per_row=user_input["plants_per_row"],
                     notification_target=user_input.get("notification_target"),
                 )
-                _LOGGER.info(
-                    "DEBUG - Successfully added growspace: %s %s,{user_input['name']} with ID: {growspace_id}"
+                _LOGGER.debug(
+                    "Successfully added growspace: %s with ID: %s",
+                    user_input["name"],
+                    growspace.id,
                 )
                 return self.async_create_entry(title="", data={})
-            except Exception:
-                _LOGGER.exception("Error adding growspace: %s", Exception)
+            except Exception as err:
+                _LOGGER.exception("Error adding growspace: %s", err)
                 return self.async_show_form(
                     step_id="add_growspace",
                     data_schema=self._get_add_growspace_schema(),
                     errors={"base": "add_failed"},
                 )
 
-        _LOGGER.info(
-            "DEBUG - Showing add_growspace form with schema fields: %s ,{list(self._get_add_growspace_schema().schema.keys())}"
+        _LOGGER.debug(
+            "Showing add_growspace form with schema fields: %s",
+            list(self._get_add_growspace_schema().schema.keys()),
         )
         return self.async_show_form(
             step_id="add_growspace",
