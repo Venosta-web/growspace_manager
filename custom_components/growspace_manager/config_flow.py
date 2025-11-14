@@ -218,12 +218,146 @@ class OptionsFlowHandler(OptionsFlow):
                 return await self.async_step_select_growspace_for_env()
             if action == "configure_global":
                 return await self.async_step_configure_global()
+            if action == "manage_timed_notifications":
+                return await self.async_step_manage_timed_notifications()
             return self.async_create_entry(title="", data=user_input)
 
         return self.async_show_form(
             step_id="init",
             data_schema=self._get_main_menu_schema(),
         )
+
+    async def async_step_manage_timed_notifications(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Manage timed notifications."""
+        coordinator = self.hass.data[DOMAIN][self.config_entry.entry_id]["coordinator"]
+
+        if user_input is not None:
+            action = user_input.get("action")
+
+            if action == "add":
+                return await self.async_step_add_timed_notification()
+            elif action == "edit":
+                notification_id = user_input.get("notification_id")
+                if notification_id:
+                    self._selected_notification_id = notification_id
+                    return await self.async_step_edit_timed_notification()
+            elif action == "delete":
+                notification_id = user_input.get("notification_id")
+                if notification_id:
+                    await coordinator.async_delete_timed_notification(notification_id)
+                    return self.async_show_form(
+                        step_id="manage_timed_notifications",
+                        data_schema=self._get_timed_notification_schema(coordinator),
+                    )
+
+        return self.async_show_form(
+            step_id="manage_timed_notifications",
+            data_schema=self._get_timed_notification_schema(coordinator),
+        )
+
+    def _get_timed_notification_schema(self, coordinator) -> vol.Schema:
+        """Get schema for managing timed notifications."""
+        notifications = self.config_entry.options.get("timed_notifications", [])
+
+        notification_options = [
+            selector.SelectOptionDict(value=n["id"], label=f'{n["message"]} ({n["trigger_type"]} day {n["day"]})')
+            for n in notifications
+        ]
+
+        schema = {
+            vol.Required("action", default="add"): selector.SelectSelector(
+                selector.SelectSelectorConfig(
+                    options=[
+                        selector.SelectOptionDict(value="add", label="Add Notification"),
+                        selector.SelectOptionDict(value="edit", label="Edit Notification"),
+                        selector.SelectOptionDict(value="delete", label="Delete Notification"),
+                    ]
+                )
+            ),
+        }
+
+        if notification_options:
+            schema[vol.Optional("notification_id")] = selector.SelectSelector(
+                selector.SelectSelectorConfig(options=notification_options)
+            )
+
+        return vol.Schema(schema)
+
+    async def async_step_add_timed_notification(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Add a new timed notification."""
+        coordinator = self.hass.data[DOMAIN][self.config_entry.entry_id]["coordinator"]
+
+        if user_input is not None:
+            await coordinator.async_add_timed_notification(user_input)
+            return self.async_show_form(
+                step_id="manage_timed_notifications",
+                data_schema=self._get_timed_notification_schema(coordinator),
+            )
+
+        return self.async_show_form(
+            step_id="add_timed_notification",
+            data_schema=self._get_add_edit_timed_notification_schema(coordinator),
+        )
+
+    async def async_step_edit_timed_notification(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Edit an existing timed notification."""
+        coordinator = self.hass.data[DOMAIN][self.config_entry.entry_id]["coordinator"]
+
+        if user_input is not None:
+            await coordinator.async_edit_timed_notification(self._selected_notification_id, user_input)
+            return self.async_show_form(
+                step_id="manage_timed_notifications",
+                data_schema=self._get_timed_notification_schema(coordinator),
+            )
+
+        notification = await coordinator.async_get_timed_notification(self._selected_notification_id)
+        return self.async_show_form(
+            step_id="edit_timed_notification",
+            data_schema=self._get_add_edit_timed_notification_schema(coordinator, notification),
+        )
+
+    def _get_add_edit_timed_notification_schema(self, coordinator, notification=None) -> vol.Schema:
+        """Get schema for adding or editing a timed notification."""
+        if notification is None:
+            notification = {}
+
+        growspace_options = [
+            selector.SelectOptionDict(value=gs_id, label=gs.name)
+            for gs_id, gs in coordinator.growspaces.items()
+        ]
+
+        return vol.Schema({
+            vol.Required("growspace_ids", default=notification.get("growspace_ids", [])): selector.SelectSelector(
+                selector.SelectSelectorConfig(
+                    options=growspace_options,
+                    multiple=True,
+                    mode=selector.SelectSelectorMode.LIST,
+                )
+            ),
+            vol.Required("trigger_type", default=notification.get("trigger_type", "flower")): selector.SelectSelector(
+                selector.SelectSelectorConfig(
+                    options=[
+                        selector.SelectOptionDict(value="flower", label="Flower Day"),
+                        selector.SelectOptionDict(value="veg", label="Veg Day"),
+                    ]
+                )
+            ),
+            vol.Required("day", default=notification.get("day", 1)): selector.NumberSelector(
+                selector.NumberSelectorConfig(min=1, mode=selector.NumberSelectorMode.BOX)
+            ),
+            vol.Required("message", default=notification.get("message", "")): selector.TextSelector(
+                selector.TextSelectorConfig(
+                    type=selector.TextSelectorType.TEXT,
+                    max=65,
+                )
+            ),
+        })
 
     async def async_step_manage_growspaces(
         self, user_input: Optional[dict[str, Any]] | None
@@ -1017,6 +1151,10 @@ class OptionsFlowHandler(OptionsFlow):
                             selector.SelectOptionDict(
                                 value="configure_global",
                                 label="Configure Global Sensors",
+                            ),
+                            selector.SelectOptionDict(
+                                value="manage_timed_notifications",
+                                label="Timed Notifications",
                             ),
                         ],
                         mode=selector.SelectSelectorMode.DROPDOWN,
