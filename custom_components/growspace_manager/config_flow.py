@@ -333,6 +333,16 @@ class OptionsFlowHandler(OptionsFlow):
             env_config["stress_threshold"] = user_input.get("stress_threshold", 0.70)
             env_config["mold_threshold"] = user_input.get("mold_threshold", 0.75)
 
+            # Add proactive trend analysis settings for mold risk (VPD)
+            env_config["vpd_trend_duration"] = user_input.get("vpd_trend_duration", 30)
+            env_config["vpd_trend_threshold"] = user_input.get("vpd_trend_threshold", 1.2)
+            env_config["vpd_trend_sensitivity"] = user_input.get("vpd_trend_sensitivity", 0.5)
+
+            # Add proactive trend analysis settings for stress (Temperature)
+            env_config["temp_trend_duration"] = user_input.get("temp_trend_duration", 30)
+            env_config["temp_trend_threshold"] = user_input.get("temp_trend_threshold", 26.0)
+            env_config["temp_trend_sensitivity"] = user_input.get("temp_trend_sensitivity", 0.5)
+
             # Also store the checkbox states for UI persistence
             env_config["configure_co2"] = user_input.get("configure_co2", False)
             env_config["configure_fan"] = user_input.get("configure_fan", False)
@@ -429,6 +439,40 @@ class OptionsFlowHandler(OptionsFlow):
             selector.NumberSelectorConfig(
                 min=0.5, max=0.95, step=0.05, mode=selector.NumberSelectorMode.SLIDER
             )
+        )
+
+        # VPD Trend Analysis for Mold Risk
+        schema_dict[
+            vol.Optional("vpd_trend_duration", default=options.get("vpd_trend_duration", 30))
+        ] = selector.NumberSelector(
+            selector.NumberSelectorConfig(min=5, max=120, step=5, mode=selector.NumberSelectorMode.BOX, unit_of_measurement="minutes")
+        )
+        schema_dict[
+            vol.Optional("vpd_trend_threshold", default=options.get("vpd_trend_threshold", 1.2))
+        ] = selector.NumberSelector(
+            selector.NumberSelectorConfig(min=0.5, max=2.0, step=0.1, mode=selector.NumberSelectorMode.BOX)
+        )
+        schema_dict[
+            vol.Optional("vpd_trend_sensitivity", default=options.get("vpd_trend_sensitivity", 0.5))
+        ] = selector.NumberSelector(
+            selector.NumberSelectorConfig(min=0.1, max=1.0, step=0.1, mode=selector.NumberSelectorMode.SLIDER)
+        )
+
+        # Temperature Trend Analysis for Stress
+        schema_dict[
+            vol.Optional("temp_trend_duration", default=options.get("temp_trend_duration", 30))
+        ] = selector.NumberSelector(
+            selector.NumberSelectorConfig(min=5, max=120, step=5, mode=selector.NumberSelectorMode.BOX, unit_of_measurement="minutes")
+        )
+        schema_dict[
+            vol.Optional("temp_trend_threshold", default=options.get("temp_trend_threshold", 26.0))
+        ] = selector.NumberSelector(
+            selector.NumberSelectorConfig(min=20, max=35, step=0.5, mode=selector.NumberSelectorMode.BOX, unit_of_measurement="°C")
+        )
+        schema_dict[
+            vol.Optional("temp_trend_sensitivity", default=options.get("temp_trend_sensitivity", 0.5))
+        ] = selector.NumberSelector(
+            selector.NumberSelectorConfig(min=0.1, max=1.0, step=0.1, mode=selector.NumberSelectorMode.SLIDER)
         )
 
         return self.async_show_form(

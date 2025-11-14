@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 from typing import Any
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 
 from homeassistant.components.binary_sensor import BinarySensorEntity
 from homeassistant.config_entries import ConfigEntry
@@ -13,6 +13,8 @@ from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.event import async_track_state_change_event
 from homeassistant.const import STATE_UNAVAILABLE, STATE_UNKNOWN
+from homeassistant.components.recorder import history
+
 
 from .coordinator import GrowspaceCoordinator
 from .const import DOMAIN
@@ -166,6 +168,54 @@ class BayesianEnvironmentSensor(BinarySensorEntity):
             "flower_days": max_flower,
         }
 
+    async def _async_analyze_sensor_trend(
+        self, sensor_id: str, duration_minutes: int, threshold: float
+    ) -> dict[str, Any]:
+        """Analyze the trend of a sensor over a given duration."""
+        start_time = datetime.now() - timedelta(minutes=duration_minutes)
+        end_time = datetime.now()
+
+        try:
+            history_list = await self.hass.async_add_executor_job(
+                history.get_significant_states,
+                self.hass,
+                start_time,
+                end_time,
+                [sensor_id],
+                include_start_time_state=True,
+            )
+
+            states = history_list.get(sensor_id, [])
+            numeric_states = [
+                (s.last_updated, float(s.state))
+                for s in states
+                if s.state not in [STATE_UNKNOWN, STATE_UNAVAILABLE]
+                and s.state is not None
+            ]
+
+            if len(numeric_states) < 2:
+                return {"trend": "stable", "crossed_threshold": False}
+
+            # Trend calculation (simplified: change between first and last value)
+            start_value = numeric_states[0][1]
+            end_value = numeric_states[-1][1]
+            change = end_value - start_value
+
+            trend = "stable"
+            if change > 0.01:  # Add a small tolerance
+                trend = "rising"
+            elif change < -0.01:
+                trend = "falling"
+
+            # Check if value was consistently above threshold
+            crossed_threshold = all(value > threshold for _, value in numeric_states)
+
+            return {"trend": trend, "crossed_threshold": crossed_threshold}
+
+        except Exception as e:
+            _LOGGER.error("Error analyzing sensor history for %s: %s", sensor_id, e)
+            return {"trend": "unknown", "crossed_threshold": False}
+
     async def _async_update_probability(self) -> None:
         """Calculate Bayesian probability - implemented by subclasses."""
         raise NotImplementedError
@@ -212,10 +262,28 @@ class BayesianStressSensor(BayesianEnvironmentSensor):
             "co2": co2,
             "veg_days": stage_info["veg_days"],
             "flower_days": stage_info["flower_days"],
+            "temperature_trend": "stable",
         }
 
         # Calculate probability using Bayes theorem
         observations = []
+
+        # Proactive Temperature trend analysis
+        temp_trend_duration = self.env_config.get("temp_trend_duration", 30)
+        temp_trend_threshold = self.env_config.get("temp_trend_threshold", 26.0)
+        temp_trend_sensitivity = self.env_config.get("temp_trend_sensitivity", 0.5)
+
+        if temp is not None:
+            trend_analysis = await self._async_analyze_sensor_trend(
+                self.env_config["temperature_sensor"], temp_trend_duration, temp_trend_threshold
+            )
+            self._sensor_states["temperature_trend"] = trend_analysis["trend"]
+
+            if trend_analysis["trend"] == "rising" and trend_analysis["crossed_threshold"]:
+                # The trend is risky, add an observation
+                prob_given_true = 0.5 + (temp_trend_sensitivity * 0.45)
+                prob_given_false = 0.5 - (temp_trend_sensitivity * 0.4)
+                observations.append((prob_given_true, prob_given_false))
 
         # Temperature observations
         if temp is not None:
@@ -369,9 +437,28 @@ class BayesianMoldRiskSensor(BayesianEnvironmentSensor):
             "vpd": vpd,
             "flower_days": flower_days,
             "fan_off": fan_off,
+            "vpd_trend": "stable",
         }
 
         observations = []
+
+        # Proactive VPD trend analysis
+        vpd_trend_duration = self.env_config.get("vpd_trend_duration", 30)
+        vpd_trend_threshold = self.env_config.get("vpd_trend_threshold", 1.2)
+        vpd_trend_sensitivity = self.env_config.get("vpd_trend_sensitivity", 0.5)
+
+        if vpd is not None:
+            trend_analysis = await self._async_analyze_sensor_trend(
+                self.env_config["vpd_sensor"], vpd_trend_duration, vpd_trend_threshold
+            )
+            self._sensor_states["vpd_trend"] = trend_analysis["trend"]
+
+            if trend_analysis["trend"] == "rising" and trend_analysis["crossed_threshold"]:
+                # The trend is risky, add an observation
+                # The strength of this observation is determined by sensitivity
+                prob_given_true = 0.5 + (vpd_trend_sensitivity * 0.45)  # Ranges from 0.545 to 0.95
+                prob_given_false = 0.5 - (vpd_trend_sensitivity * 0.4)   # Ranges from 0.46 to 0.1
+                observations.append((prob_given_true, prob_given_false))
 
         # Only relevant in late flower
         if flower_days >= 35:
