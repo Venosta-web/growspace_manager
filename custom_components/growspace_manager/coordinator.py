@@ -1514,6 +1514,115 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
         self._notifications_sent[plant_id][stage][str(days)] = True
         await self.async_save()
 
+    # =============================================================================
+    # TIMED NOTIFICATION MANAGEMENT
+    # =============================================================================
+    async def async_add_timed_notification(self, notification_data: dict) -> None:
+        """Add a new timed notification rule."""
+        notifications = self.options.get("timed_notifications", [])
+        notification_data["id"] = str(uuid.uuid4())
+        notifications.append(notification_data)
+
+        new_options = self.hass.config_entries.async_get_entry(self.config_entry.entry_id).options.copy()
+        new_options["timed_notifications"] = notifications
+        self.hass.config_entries.async_update_entry(self.config_entry, options=new_options)
+        self.options = new_options
+        _LOGGER.info("Added new timed notification: %s", notification_data["id"])
+
+    async def async_edit_timed_notification(self, notification_id: str, notification_data: dict) -> None:
+        """Edit an existing timed notification rule."""
+        notifications = self.options.get("timed_notifications", [])
+        for i, n in enumerate(notifications):
+            if n["id"] == notification_id:
+                notification_data["id"] = notification_id
+                notifications[i] = notification_data
+                break
+
+        new_options = self.hass.config_entries.async_get_entry(self.config_entry.entry_id).options.copy()
+        new_options["timed_notifications"] = notifications
+        self.hass.config_entries.async_update_entry(self.config_entry, options=new_options)
+        self.options = new_options
+        _LOGGER.info("Edited timed notification: %s", notification_id)
+
+    async def async_delete_timed_notification(self, notification_id: str) -> None:
+        """Delete a timed notification rule."""
+        notifications = self.options.get("timed_notifications", [])
+        notifications = [n for n in notifications if n["id"] != notification_id]
+
+        new_options = self.hass.config_entries.async_get_entry(self.config_entry.entry_id).options.copy()
+        new_options["timed_notifications"] = notifications
+        self.hass.config_entries.async_update_entry(self.config_entry, options=new_options)
+        self.options = new_options
+        _LOGGER.info("Deleted timed notification: %s", notification_id)
+
+    async def async_get_timed_notification(self, notification_id: str) -> dict | None:
+        """Get a specific timed notification rule."""
+        notifications = self.options.get("timed_notifications", [])
+        for n in notifications:
+            if n["id"] == notification_id:
+                return n
+        return None
+
+    async def _async_check_timed_notifications(self) -> None:
+        """Check and send timed notifications."""
+        notifications = self.options.get("timed_notifications", [])
+        if not notifications:
+            return
+
+        for notification in notifications:
+            trigger_type = notification["trigger_type"] # 'veg' or 'flower'
+            day_to_trigger = int(notification["day"])
+            message = notification["message"]
+            growspace_ids = notification["growspace_ids"]
+            notification_id = notification["id"]
+
+            for gs_id in growspace_ids:
+                growspace = self.growspaces.get(gs_id)
+                if not growspace:
+                    continue
+
+                plants = self.get_growspace_plants(gs_id)
+                for plant in plants:
+                    days_in_stage = self.calculate_days_in_stage(plant, trigger_type)
+
+                    if days_in_stage >= day_to_trigger:
+                        notification_key = f"timed_{notification_id}"
+                        if not self._notifications_sent.get(plant.plant_id, {}).get(notification_key, False):
+                            _LOGGER.info(
+                                f"Triggering timed notification for plant {plant.plant_id} in {growspace.name}"
+                            )
+                            title = f"{growspace.name} - {trigger_type.capitalize()} Day {day_to_trigger}"
+
+                            await self._send_notification(gs_id, title, message)
+
+                            if plant.plant_id not in self._notifications_sent:
+                                self._notifications_sent[plant.plant_id] = {}
+                            self._notifications_sent[plant.plant_id][notification_key] = True
+                            await self.async_save()
+
+    async def _send_notification(self, growspace_id: str, title: str, message: str) -> None:
+        """Send a notification for a specific growspace."""
+        growspace = self.growspaces.get(growspace_id)
+        if not growspace or not growspace.notification_target:
+            _LOGGER.debug(
+                "Notification not sent for growspace %s: No target configured",
+                growspace_id,
+            )
+            return
+
+        notification_service = growspace.notification_target.replace("notify.", "")
+
+        await self.hass.services.async_call(
+            "notify",
+            notification_service,
+            {
+                "message": message,
+                "title": title,
+            },
+            blocking=False,
+        )
+        _LOGGER.info(f"Sent notification to {notification_service}: {title}")
+
     def _get_sensor_value(self, entity_id: str | None) -> float | None:
         """Safely get the numeric state of a sensor entity."""
         if not entity_id:
@@ -1528,6 +1637,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
 
     async def _async_update_air_exchange_recommendations(self) -> None:
         """Calculate and store air exchange recommendations for each growspace."""
+        await self._async_check_timed_notifications()
         recommendations = {}
         global_settings = self.options.get("global_settings", {})
 
