@@ -1534,21 +1534,14 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
         global_settings = self.options.get("global_settings", {})
 
         # Get outside conditions
-        outside_temp = self._get_sensor_value(
-            global_settings.get("outside_temp_sensor")
-        )
-        outside_humidity = self._get_sensor_value(
-            global_settings.get("outside_humidity_sensor")
-        )
-        if global_settings.get("outside_weather"):
-            weather_state = self.hass.states.get(global_settings["outside_weather"])
-            if weather_state:
-                outside_temp = weather_state.attributes.get(
-                    "temperature", outside_temp
-                )
-                outside_humidity = weather_state.attributes.get(
-                    "humidity", outside_humidity
-                )
+        outside_temp = None
+        outside_humidity = None
+        weather_entity_id = global_settings.get("weather_entity")
+        if weather_entity_id:
+            weather_state = self.hass.states.get(weather_entity_id)
+            if weather_state and weather_state.attributes:
+                outside_temp = weather_state.attributes.get("temperature")
+                outside_humidity = weather_state.attributes.get("humidity")
         outside_vpd = (
             VPDCalculator.calculate_vpd(outside_temp, outside_humidity)
             if outside_temp is not None and outside_humidity is not None
