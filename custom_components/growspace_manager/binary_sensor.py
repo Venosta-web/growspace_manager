@@ -508,40 +508,52 @@ class BayesianStressSensor(BayesianEnvironmentSensor):
                     self._reasons.append((prob[0], f"Humidity out of range ({humidity})"))
 
         if vpd is not None:
+            # Define VPD thresholds for each stage, day and night
+            vpd_thresholds = {
+                "veg_early": {
+                    "day": {"stress": (0.3, 1.0), "mild": (0.4, 0.8), "prob_keys": ("prob_vpd_stress_veg_early", "prob_vpd_mild_stress_veg_early"), "prob_defaults": ((0.85, 0.15), (0.60, 0.30))},
+                    "night": {"stress": (0.3, 1.0), "mild": (0.4, 0.8), "prob_keys": ("prob_vpd_stress_veg_early", "prob_vpd_mild_stress_veg_early"), "prob_defaults": ((0.85, 0.15), (0.60, 0.30))},
+                },
+                "veg_late": {
+                    "day": {"stress": (0.6, 1.4), "mild": (0.8, 1.2), "prob_keys": ("prob_vpd_stress_veg_late", "prob_vpd_mild_stress_veg_late"), "prob_defaults": ((0.80, 0.18), (0.55, 0.35))},
+                    "night": {"stress": (0.3, 1.0), "mild": (0.5, 0.8), "prob_keys": ("prob_vpd_stress_veg_late", "prob_vpd_mild_stress_veg_late"), "prob_defaults": ((0.80, 0.18), (0.55, 0.35))},
+                },
+                "flower_early": {
+                    "day": {"stress": (0.8, 1.6), "mild": (1.0, 1.5), "prob_keys": ("prob_vpd_stress_flower_early", "prob_vpd_mild_stress_flower_early"), "prob_defaults": ((0.85, 0.15), (0.60, 0.30))},
+                    "night": {"stress": (0.5, 1.1), "mild": (0.7, 1.0), "prob_keys": ("prob_vpd_stress_flower_early", "prob_vpd_mild_stress_flower_early"), "prob_defaults": ((0.85, 0.15), (0.60, 0.30))},
+                },
+                "flower_late": {
+                    "day": {"stress": (1.0, 1.6), "mild": (1.2, 1.5), "prob_keys": ("prob_vpd_stress_flower_late", "prob_vpd_mild_stress_flower_late"), "prob_defaults": ((0.90, 0.12), (0.65, 0.28))},
+                    "night": {"stress": (0.6, 1.2), "mild": (0.8, 1.1), "prob_keys": ("prob_vpd_stress_flower_late", "prob_vpd_mild_stress_flower_late"), "prob_defaults": ((0.90, 0.12), (0.65, 0.28))},
+                },
+            }
+
+            # Determine current growth stage
+            stage = None
             if flower_days == 0 and veg_days < 14:
-                if vpd < 0.3 or vpd > 1.0:
-                    prob = self.env_config.get("prob_vpd_stress_veg_early", (0.85, 0.15))
-                    observations.append(prob)
-                    self._reasons.append((prob[0], f"VPD out of range ({vpd})"))
-                elif vpd < 0.4 or vpd > 0.8:
-                    prob = self.env_config.get("prob_vpd_mild_stress_veg_early", (0.60, 0.30))
-                    observations.append(prob)
-                    self._reasons.append((prob[0], f"VPD out of range ({vpd})"))
+                stage = "veg_early"
             elif flower_days == 0 and veg_days >= 14:
-                if vpd < 0.6 or vpd > 1.4:
-                    prob = self.env_config.get("prob_vpd_stress_veg_late", (0.80, 0.18))
-                    observations.append(prob)
-                    self._reasons.append((prob[0], f"VPD out of range ({vpd})"))
-                elif vpd < 0.8 or vpd > 1.2:
-                    prob = self.env_config.get("prob_vpd_mild_stress_veg_late", (0.55, 0.35))
-                    observations.append(prob)
-                    self._reasons.append((prob[0], f"VPD out of range ({vpd})"))
+                stage = "veg_late"
             elif 0 < flower_days < 42:
-                if vpd < 0.8 or vpd > 1.6:
-                    prob = self.env_config.get("prob_vpd_stress_flower_early", (0.85, 0.15))
-                    observations.append(prob)
-                    self._reasons.append((prob[0], f"VPD out of range ({vpd})"))
-                elif vpd < 1.0 or vpd > 1.5:
-                    prob = self.env_config.get("prob_vpd_mild_stress_flower_early", (0.60, 0.30))
-                    observations.append(prob)
-                    self._reasons.append((prob[0], f"VPD out of range ({vpd})"))
+                stage = "flower_early"
             elif flower_days >= 42:
-                if vpd < 1.0 or vpd > 1.6:
-                    prob = self.env_config.get("prob_vpd_stress_flower_late", (0.90, 0.12))
+                stage = "flower_late"
+
+            if stage:
+                time_of_day = "day" if is_lights_on else "night"
+                thresholds = vpd_thresholds[stage][time_of_day]
+
+                stress_low, stress_high = thresholds["stress"]
+                mild_low, mild_high = thresholds["mild"]
+                prob_stress_key, prob_mild_key = thresholds["prob_keys"]
+                prob_stress_default, prob_mild_default = thresholds["prob_defaults"]
+
+                if vpd < stress_low or vpd > stress_high:
+                    prob = self.env_config.get(prob_stress_key, prob_stress_default)
                     observations.append(prob)
                     self._reasons.append((prob[0], f"VPD out of range ({vpd})"))
-                elif vpd < 1.2 or vpd > 1.5:
-                    prob = self.env_config.get("prob_vpd_mild_stress_flower_late", (0.65, 0.28))
+                elif vpd < mild_low or vpd > mild_high:
+                    prob = self.env_config.get(prob_mild_key, prob_mild_default)
                     observations.append(prob)
                     self._reasons.append((prob[0], f"VPD out of range ({vpd})"))
 
