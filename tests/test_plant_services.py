@@ -330,7 +330,7 @@ async def test_take_clone_success(
     def listener(event):
         events.append(event)
 
-    await hass.bus.async_listen(f"{DOMAIN}_clone_taken", listener)
+    hass.bus.async_listen(f"{DOMAIN}_clones_taken", listener)
 
     # Call the service handler
     await handle_take_clone(hass, mock_coordinator, mock_strain_library, call)
@@ -488,7 +488,7 @@ async def test_take_clone_partial_failure(
     def listener(event):
         events.append(event)
 
-    await hass.bus.async_listen(f"{DOMAIN}_clone_taken", listener)
+    hass.bus.async_listen(f"{DOMAIN}_clones_taken", listener)
 
     # Run the handler
     await handle_take_clone(hass, mock_coordinator, mock_strain_library, call)
