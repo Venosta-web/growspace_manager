@@ -587,23 +587,53 @@ class PlantEntity(SensorEntity):
         self.coordinator.async_add_listener(self.async_write_ha_state)
 
 
-class StrainLibrarySensor(SensorEntity):
+class StrainLibrarySensor(CoordinatorEntity[GrowspaceCoordinator], SensorEntity):
+    """Sensor to expose strain library analytics."""
+
     def __init__(self, coordinator: GrowspaceCoordinator) -> None:
-        self.coordinator = coordinator
+        """Initialize the StrainLibrarySensor."""
+        super().__init__(coordinator)
         self._attr_name = "Growspace Strain Library"
         self._attr_unique_id = f"{DOMAIN}_strain_library"
         self._attr_icon = "mdi:leaf"
 
     @property
-    def state(self) -> str:
-        return "ok"
+    def state(self) -> int:
+        """Return the number of unique strains in the library."""
+        return len(self.coordinator.strains.get_all())
 
     @property
-    def extra_state_attributes(self) -> dict:
-        return {"strains": self.coordinator.get_strain_options()}
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Return analytics for each strain as attributes."""
+        analytics = {}
+        all_strains = self.coordinator.strains.get_all()
 
-    async def async_added_to_hass(self):
-        self.coordinator.async_add_listener(self.async_write_ha_state)
+        for key, data in all_strains.items():
+            strain, phenotype = key.split("|")
+            harvests = data.get("harvests", [])
+            num_harvests = len(harvests)
+
+            if num_harvests == 0:
+                continue
+
+            # Calculate average veg and flower times
+            total_veg_days = sum(h.get("veg_days", 0) for h in harvests)
+            total_flower_days = sum(h.get("flower_days", 0) for h in harvests)
+            avg_veg_days = round(total_veg_days / num_harvests)
+            avg_flower_days = round(total_flower_days / num_harvests)
+
+            # Sanitize for attribute names (lowercase, spaces to _)
+            attr_base = f"{strain.lower().replace(' ', '_')}"
+            if phenotype != "default":
+                attr_base += f"_{phenotype.lower().replace(' ', '_')}"
+
+            analytics[f"{attr_base}_avg_veg_time"] = avg_veg_days
+            analytics[f"{attr_base}_avg_flower_time"] = avg_flower_days
+            analytics[f"{attr_base}_harvests"] = num_harvests
+
+        # Add the raw data for advanced users if needed
+        analytics["raw_data"] = all_strains
+        return analytics
 
 
 class GrowspaceListSensor(SensorEntity):

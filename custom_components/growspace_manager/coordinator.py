@@ -1345,7 +1345,17 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
     async def _move_to_dry_growspace(
         self, plant_id: str, plant: Plant, transition_date: str
     ) -> bool:
-        """Move plant to dry growspace."""
+        """Move plant to dry growspace and record harvest."""
+        # Record analytics before moving
+        veg_days = self.calculate_days_in_stage(plant, "veg")
+        flower_days = self.calculate_days_in_stage(plant, "flower")
+
+        if veg_days > 0 or flower_days > 0:
+            await self.strains.record_harvest(
+                plant.strain, plant.phenotype, veg_days, flower_days
+            )
+
+        # Now, proceed with moving the plant
         dry_id = self._ensure_special_growspace("dry", "dry")
         plant.growspace_id = dry_id
 
