@@ -865,12 +865,27 @@ class BayesianOptimalConditionsSensor(BayesianEnvironmentSensor):
         co2 = self._get_sensor_value(self.env_config["co2_sensor"])
         stage_info = self._get_growth_stage_info()
 
+        # Lights-Aware Logic
+        light_sensor = self.env_config.get("light_sensor")
+        is_lights_on = False
+        if light_sensor:
+            light_state = self.hass.states.get(light_sensor)
+            if light_state:
+                if light_state.domain == "sensor":
+                    is_lights_on = bool(
+                        self._get_sensor_value(light_sensor)
+                        and self._get_sensor_value(light_sensor) > 0
+                    )
+                else:
+                    is_lights_on = light_state.state == "on"
+
         self._sensor_states = {
             "temperature": temp,
             "vpd": vpd,
             "co2": co2,
             "veg_days": stage_info["veg_days"],
             "flower_days": stage_info["flower_days"],
+            "is_lights_on": is_lights_on,
         }
 
         observations = []
@@ -878,27 +893,35 @@ class BayesianOptimalConditionsSensor(BayesianEnvironmentSensor):
         # Good temperature range
         # === OPTIMAL TEMPERATURE ===
         if temp is not None:
-            flower_days = stage_info["flower_days"]
-            # Late flower has different optimal temps
-            if flower_days >= 42:
-                if 18 <= temp <= 24:  # Perfect range for late flower
+            if is_lights_on:
+                flower_days = stage_info["flower_days"]
+                # Late flower has different optimal temps
+                if flower_days >= 42:
+                    if 18 <= temp <= 24:  # Perfect range for late flower
+                        observations.append((0.95, 0.20))
+                    # Other temps in this stage are not considered optimal, so no obs.
+                else:  # Normal logic for other stages
+                    # Perfect range
+                    if 24 <= temp <= 26:
+                        observations.append((0.95, 0.20))
+                    # Good range
+                    elif 22 <= temp <= 28:
+                        observations.append((0.85, 0.30))
+                    # Acceptable range
+                    elif 20 <= temp <= 29:
+                        observations.append((0.65, 0.45))
+                    # Outside optimal
+                    else:
+                        prob = (0.20, 0.75)
+                        observations.append(prob)
+                        self._reasons.append((prob[1], f"Temp out of range ({temp})"))
+            else:  # Nighttime logic
+                if 20 <= temp <= 23:
                     observations.append((0.95, 0.20))
-                # Other temps in this stage are not considered optimal, so no obs.
-            else:  # Normal logic for other stages
-                # Perfect range
-                if 24 <= temp <= 26:
-                    observations.append((0.95, 0.20))
-                # Good range
-                elif 22 <= temp <= 28:
-                    observations.append((0.85, 0.30))
-                # Acceptable range
-                elif 20 <= temp <= 29:
-                    observations.append((0.65, 0.45))
-                # Outside optimal
                 else:
                     prob = (0.20, 0.75)
                     observations.append(prob)
-                    self._reasons.append((prob[1], f"Temp out of range ({temp})"))
+                    self._reasons.append((prob[1], f"Night temp out of range ({temp})"))
 
         # VPD in optimal range for stage
         if vpd is not None:
@@ -907,37 +930,60 @@ class BayesianOptimalConditionsSensor(BayesianEnvironmentSensor):
 
             vpd_optimal = False
 
-            # Seedling/Clone/Early Veg: 0.4-0.8 kPa
-            if flower_days == 0 and veg_days < 14:
-                if 0.5 <= vpd <= 0.7:  # Perfect
-                    vpd_optimal = True
-                    observations.append((0.95, 0.18))
-                elif 0.4 <= vpd <= 0.8:  # Good
-                    observations.append((0.80, 0.28))
+            if is_lights_on:
+                # Seedling/Clone/Early Veg: 0.4-0.8 kPa
+                if flower_days == 0 and veg_days < 14:
+                    if 0.5 <= vpd <= 0.7:  # Perfect
+                        vpd_optimal = True
+                        observations.append((0.95, 0.18))
+                    elif 0.4 <= vpd <= 0.8:  # Good
+                        observations.append((0.80, 0.28))
 
-            # Late Veg: 0.8-1.2 kPa
-            elif flower_days == 0 and veg_days >= 14:
-                if 0.9 <= vpd <= 1.1:  # Perfect
-                    vpd_optimal = True
-                    observations.append((0.95, 0.18))
-                elif 0.8 <= vpd <= 1.2:  # Good
-                    observations.append((0.85, 0.25))
+                # Late Veg: 0.8-1.2 kPa
+                elif flower_days == 0 and veg_days >= 14:
+                    if 0.9 <= vpd <= 1.1:  # Perfect
+                        vpd_optimal = True
+                        observations.append((0.95, 0.18))
+                    elif 0.8 <= vpd <= 1.2:  # Good
+                        observations.append((0.85, 0.25))
 
-            # Early-Mid Flower: 1.0-1.5 kPa
-            elif 0 < flower_days < 42:
-                if 1.1 <= vpd <= 1.4:  # Perfect
-                    vpd_optimal = True
-                    observations.append((0.95, 0.18))
-                elif 1.0 <= vpd <= 1.5:  # Good
-                    observations.append((0.85, 0.25))
+                # Early-Mid Flower: 1.0-1.5 kPa
+                elif 0 < flower_days < 42:
+                    if 1.1 <= vpd <= 1.4:  # Perfect
+                        vpd_optimal = True
+                        observations.append((0.95, 0.18))
+                    elif 1.0 <= vpd <= 1.5:  # Good
+                        observations.append((0.85, 0.25))
 
-            # Late Flower: 1.2-1.5 kPa (drier to prevent mold)
-            elif flower_days >= 42:
-                if 1.3 <= vpd <= 1.5:  # Perfect
-                    vpd_optimal = True
-                    observations.append((0.95, 0.15))
-                elif 1.2 <= vpd <= 1.6:  # Good
-                    observations.append((0.85, 0.22))
+                # Late Flower: 1.2-1.5 kPa (drier to prevent mold)
+                elif flower_days >= 42:
+                    if 1.3 <= vpd <= 1.5:  # Perfect
+                        vpd_optimal = True
+                        observations.append((0.95, 0.15))
+                    elif 1.2 <= vpd <= 1.6:  # Good
+                        observations.append((0.85, 0.22))
+            else:  # Nighttime logic
+                # Seedling/Clone/Early Veg: 0.4-0.8 kPa
+                if flower_days == 0 and veg_days < 14:
+                    if 0.4 <= vpd <= 0.8:
+                        vpd_optimal = True
+                        observations.append((0.90, 0.20))
+                # Late Veg: 0.6-1.1 kPa
+                elif flower_days == 0 and veg_days >= 14:
+                    if 0.6 <= vpd <= 1.1:
+                        vpd_optimal = True
+                        observations.append((0.90, 0.20))
+                # Early-Mid Flower: 0.8 - 1.2 kPa
+                elif 0 < flower_days < 42:
+                    if 0.8 <= vpd <= 1.2:
+                        vpd_optimal = True
+                        observations.append((0.90, 0.20))
+                # Late Flower: 0.9-1.2 kPa
+                elif flower_days >= 42:
+                    if 0.9 <= vpd <= 1.2:
+                        vpd_optimal = True
+                        observations.append((0.90, 0.20))
+
 
             # If not optimal, reduce probability
             if not vpd_optimal:
