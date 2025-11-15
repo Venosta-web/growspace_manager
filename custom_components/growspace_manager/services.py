@@ -163,7 +163,7 @@ configure_environment:
 
     temperature_sensor:
       name: Temperature Sensor
-      description: Temperature sensor entity (°C)
+      description: Temperature sensor entity (degrees C)
       required: true
       example: "sensor.4x4_tent_temperature"
       selector:
