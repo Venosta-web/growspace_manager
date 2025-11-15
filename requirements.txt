@@ -3,6 +3,7 @@ homeassistant
 voluptuous
 
 # Test Dependencies
+aiodhcpwatcher
 ruff
 coverage
 pre-commit
