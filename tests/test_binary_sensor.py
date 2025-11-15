@@ -69,7 +69,8 @@ def mock_hass(mock_coordinator):
             }
         }
     }
-    hass.services.async_call = AsyncMock() # Mock the service call
+    hass.services = MagicMock()
+    hass.services.async_call = AsyncMock()  # Mock the service call
     return hass
 
 
