@@ -1,48 +1,20 @@
 # Home Assistant Core (Minimal)
 homeassistant
-aiodns
-aiohttp
-aiozoneinfo
-annotatedyaml
-astral
-async-interrupt
-attrs
-awesomeversion
-httpx
-requests
-typing-extensions
-ulid-transform
-
 voluptuous
 
-
-# Test Dependencies (Merged from requirements_test.txt)
-codespell
+# Test Dependencies
 ruff
-yamllint
-astroid
 coverage
-freezegun
-librt
-license-expression
-mock-open
-mypy-dev
 pre-commit
 pydantic
 pylint
-pylint-per-file-ignores
 pipdeptree
 pytest-asyncio
 pytest-homeassistant-custom-component
-pytest-aiohttp
 pytest-cov
-pytest-freezer
-pytest-github-actions-annotate-failures
-pytest-socket
-pytest-sugar
-pytest-timeout
-pytest-unordered
-pytest-picked
-pytest-xdist
 pytest
+yamllint
+codespell
+pytest-xdist
+freezegun
 requests-mock
