@@ -20,7 +20,8 @@ from homeassistant.util import utcnow
 
 
 from .coordinator import GrowspaceCoordinator
-from .const import DOMAIN
+from .const import DOMAIN, DEFAULT_BAYESIAN_PRIORS, DEFAULT_BAYESIAN_THRESHOLDS
+from .models import EnvironmentState
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -79,13 +80,28 @@ class BayesianEnvironmentSensor(BinarySensorEntity):
         coordinator: GrowspaceCoordinator,
         growspace_id: str,
         env_config: dict,
+        sensor_type: str,
+        name_suffix: str,
+        prior_key: str,
+        threshold_key: str,
     ) -> None:
+        """Initialize the Bayesian sensor."""
         self.coordinator = coordinator
         self.growspace_id = growspace_id
         self.env_config = env_config
         self._attr_should_poll = False
 
         growspace = coordinator.growspaces[growspace_id]
+        self._attr_name = f"{growspace.name} {name_suffix}"
+        self._attr_unique_id = f"{DOMAIN}_{growspace_id}_{sensor_type}"
+
+        self.prior = env_config.get(
+            prior_key, DEFAULT_BAYESIAN_PRIORS.get(sensor_type)
+        )
+        self.threshold = env_config.get(
+            threshold_key, DEFAULT_BAYESIAN_THRESHOLDS.get(sensor_type)
+        )
+
         self._attr_device_info = DeviceInfo(
             identifiers={(DOMAIN, growspace_id)},
             name=growspace.name,
@@ -99,6 +115,59 @@ class BayesianEnvironmentSensor(BinarySensorEntity):
         self._probability = 0.0
         self._last_notification_sent: datetime | None = None
         self._notification_cooldown = timedelta(minutes=5)  # Anti-spam cooldown
+
+    def _get_base_environment_state(self) -> EnvironmentState:
+        """Fetch and return the base environment state."""
+        temp = self._get_sensor_value(self.env_config.get("temperature_sensor"))
+        humidity = self._get_sensor_value(self.env_config.get("humidity_sensor"))
+        vpd = self._get_sensor_value(self.env_config.get("vpd_sensor"))
+        co2 = self._get_sensor_value(self.env_config.get("co2_sensor"))
+        stage_info = self._get_growth_stage_info()
+        veg_days = stage_info["veg_days"]
+        flower_days = stage_info["flower_days"]
+
+        # Lights-Aware Logic
+        light_sensor = self.env_config.get("light_sensor")
+        is_lights_on = False
+        if light_sensor:
+            light_state = self.hass.states.get(light_sensor)
+            if light_state:
+                if light_state.domain == "sensor":
+                    is_lights_on = bool(
+                        self._get_sensor_value(light_sensor)
+                        and self._get_sensor_value(light_sensor) > 0
+                    )
+                else:
+                    is_lights_on = light_state.state == "on"
+
+        fan_entity = self.env_config.get("circulation_fan")
+        fan_off = bool(
+            fan_entity
+            and (fan_state := self.hass.states.get(fan_entity))
+            and fan_state.state == "off"
+        )
+
+        self._sensor_states = {
+            "temperature": temp,
+            "humidity": humidity,
+            "vpd": vpd,
+            "co2": co2,
+            "veg_days": veg_days,
+            "flower_days": flower_days,
+            "is_lights_on": is_lights_on,
+            "fan_off": fan_off,
+        }
+
+        return EnvironmentState(
+            temp=temp,
+            humidity=humidity,
+            vpd=vpd,
+            co2=co2,
+            veg_days=veg_days,
+            flower_days=flower_days,
+            is_lights_on=is_lights_on,
+            fan_off=fan_off,
+        )
 
     async def async_added_to_hass(self) -> None:
         """When entity is added to hass."""
@@ -340,12 +409,15 @@ class BayesianStressSensor(BayesianEnvironmentSensor):
     """Bayesian sensor for detecting plant stress conditions."""
 
     def __init__(self, coordinator, growspace_id, env_config):
-        super().__init__(coordinator, growspace_id, env_config)
-        growspace = coordinator.growspaces[growspace_id]
-        self._attr_name = f"{growspace.name} Plants Under Stress"
-        self._attr_unique_id = f"{DOMAIN}_{growspace_id}_stress"
-        self.prior = 0.15
-        self.threshold = env_config.get("stress_threshold", 0.70)
+        super().__init__(
+            coordinator,
+            growspace_id,
+            env_config,
+            sensor_type="stress",
+            name_suffix="Plants Under Stress",
+            prior_key="prior_stress",
+            threshold_key="stress_threshold",
+        )
 
     def get_notification_title_message(self, new_state_on: bool) -> tuple[str, str] | None:
         """Return the notification title and message, if any."""
@@ -360,42 +432,12 @@ class BayesianStressSensor(BayesianEnvironmentSensor):
     async def _async_update_probability(self) -> None:
         """Calculate stress probability using Bayesian inference."""
         self._reasons = []
-        temp = self._get_sensor_value(self.env_config["temperature_sensor"])
-        humidity = self._get_sensor_value(self.env_config["humidity_sensor"])
-        vpd = self._get_sensor_value(self.env_config["vpd_sensor"])
-        co2 = self._get_sensor_value(self.env_config.get("co2_sensor"))
-        stage_info = self._get_growth_stage_info()
-        veg_days = stage_info["veg_days"]
-        flower_days = stage_info["flower_days"]
-
-        # Lights-Aware Logic
-        light_sensor = self.env_config.get("light_sensor")
-        is_lights_on = False
-        if light_sensor:
-            light_state = self.hass.states.get(light_sensor)
-            if light_state:
-                if light_state.domain == "sensor":
-                    is_lights_on = bool(
-                        self._get_sensor_value(light_sensor)
-                        and self._get_sensor_value(light_sensor) > 0
-                    )
-                else:
-                    is_lights_on = light_state.state == "on"
-
-        self._sensor_states = {
-            "temperature": temp,
-            "humidity": humidity,
-            "vpd": vpd,
-            "co2": co2,
-            "veg_days": veg_days,
-            "flower_days": flower_days,
-            "is_lights_on": is_lights_on,
-            "temperature_trend": "stable",
-            "humidity_trend": "stable",
-            "vpd_trend": "stable",
-        }
-
+        state = self._get_base_environment_state()
         observations = []
+
+        self._sensor_states["temperature_trend"] = "stable"
+        self._sensor_states["humidity_trend"] = "stable"
+        self._sensor_states["vpd_trend"] = "stable"
 
         # --- Trend Analysis for Stress ---
         for sensor_key, trend_key in [
@@ -450,64 +492,64 @@ class BayesianStressSensor(BayesianEnvironmentSensor):
 
 
         # --- Direct Observations ---
-        if temp is not None:
-            if not is_lights_on and temp > 24:
+        if state.temp is not None:
+            if not state.is_lights_on and state.temp > 24:
                 prob = self.env_config.get("prob_night_temp_high", (0.80, 0.20))
                 observations.append(prob)
-                self._reasons.append((prob[0], f"Night Temp High ({temp})"))
+                self._reasons.append((prob[0], f"Night Temp High ({state.temp})"))
 
-            if temp > 32:
+            if state.temp > 32:
                 prob = self.env_config.get("prob_temp_extreme_heat", (0.98, 0.05))
                 observations.append(prob)
-                self._reasons.append((prob[0], f"Extreme Heat ({temp})"))
-            elif temp > 30:
+                self._reasons.append((prob[0], f"Extreme Heat ({state.temp})"))
+            elif state.temp > 30:
                 prob = self.env_config.get("prob_temp_high_heat", (0.85, 0.15))
                 observations.append(prob)
-                self._reasons.append((prob[0], f"High Heat ({temp})"))
-            elif flower_days >= 42 and temp > 24:
+                self._reasons.append((prob[0], f"High Heat ({state.temp})"))
+            elif state.flower_days >= 42 and state.temp > 24:
                 prob = (0.70, 0.30)
                 observations.append(prob)
-                self._reasons.append((prob[0], f"Temp Warm ({temp})"))
-            elif temp > 28:
+                self._reasons.append((prob[0], f"Temp Warm ({state.temp})"))
+            elif state.temp > 28:
                 prob = self.env_config.get("prob_temp_warm", (0.65, 0.30))
                 observations.append(prob)
-                self._reasons.append((prob[0], f"Temp Warm ({temp})"))
-            elif temp < 15:
+                self._reasons.append((prob[0], f"Temp Warm ({state.temp})"))
+            elif state.temp < 15:
                 prob = self.env_config.get("prob_temp_extreme_cold", (0.95, 0.08))
                 observations.append(prob)
-                self._reasons.append((prob[0], f"Extreme Cold ({temp})"))
-            elif temp < 18:
+                self._reasons.append((prob[0], f"Extreme Cold ({state.temp})"))
+            elif state.temp < 18:
                 prob = self.env_config.get("prob_temp_cold", (0.80, 0.20))
                 observations.append(prob)
-                self._reasons.append((prob[0], f"Temp Cold ({temp})"))
+                self._reasons.append((prob[0], f"Temp Cold ({state.temp})"))
 
-        if humidity is not None:
-            if humidity < 35:
+        if state.humidity is not None:
+            if state.humidity < 35:
                 prob = self.env_config.get("prob_humidity_too_dry", (0.85, 0.20))
                 observations.append(prob)
-                self._reasons.append((prob[0], f"Humidity Dry ({humidity})"))
-            if flower_days == 0 and veg_days < 14:
-                if humidity > 80:
+                self._reasons.append((prob[0], f"Humidity Dry ({state.humidity})"))
+            if state.flower_days == 0 and state.veg_days < 14:
+                if state.humidity > 80:
                     prob = self.env_config.get("prob_humidity_high_veg_early", (0.80, 0.20))
                     observations.append(prob)
-                    self._reasons.append((prob[0], f"Humidity High ({humidity})"))
-            elif flower_days == 0 and veg_days >= 14:
-                if humidity > 70:
+                    self._reasons.append((prob[0], f"Humidity High ({state.humidity})"))
+            elif state.flower_days == 0 and state.veg_days >= 14:
+                if state.humidity > 70:
                     prob = self.env_config.get("prob_humidity_high_veg_late", (0.85, 0.15))
                     observations.append(prob)
-                    self._reasons.append((prob[0], f"Humidity High ({humidity})"))
-            elif 0 < flower_days < 42:  # Early Flower
-                if humidity > 55 or humidity < 45:
+                    self._reasons.append((prob[0], f"Humidity High ({state.humidity})"))
+            elif 0 < state.flower_days < 42:  # Early Flower
+                if state.humidity > 55 or state.humidity < 45:
                     prob = (0.75, 0.25)
                     observations.append(prob)
-                    self._reasons.append((prob[0], f"Humidity out of range ({humidity})"))
-            elif flower_days >= 42:  # Late Flower
-                if humidity > 50 or humidity < 40:
+                    self._reasons.append((prob[0], f"Humidity out of range ({state.humidity})"))
+            elif state.flower_days >= 42:  # Late Flower
+                if state.humidity > 50 or state.humidity < 40:
                     prob = (0.85, 0.15)
                     observations.append(prob)
-                    self._reasons.append((prob[0], f"Humidity out of range ({humidity})"))
+                    self._reasons.append((prob[0], f"Humidity out of range ({state.humidity})"))
 
-        if vpd is not None:
+        if state.vpd is not None:
             # Define VPD thresholds for each stage, day and night
             vpd_thresholds = {
                 "veg_early": {
@@ -530,17 +572,17 @@ class BayesianStressSensor(BayesianEnvironmentSensor):
 
             # Determine current growth stage
             stage = None
-            if flower_days == 0 and veg_days < 14:
+            if state.flower_days == 0 and state.veg_days < 14:
                 stage = "veg_early"
-            elif flower_days == 0 and veg_days >= 14:
+            elif state.flower_days == 0 and state.veg_days >= 14:
                 stage = "veg_late"
-            elif 0 < flower_days < 42:
+            elif 0 < state.flower_days < 42:
                 stage = "flower_early"
-            elif flower_days >= 42:
+            elif state.flower_days >= 42:
                 stage = "flower_late"
 
             if stage:
-                time_of_day = "day" if is_lights_on else "night"
+                time_of_day = "day" if state.is_lights_on else "night"
                 thresholds = vpd_thresholds[stage][time_of_day]
 
                 stress_low, stress_high = thresholds["stress"]
@@ -548,24 +590,24 @@ class BayesianStressSensor(BayesianEnvironmentSensor):
                 prob_stress_key, prob_mild_key = thresholds["prob_keys"]
                 prob_stress_default, prob_mild_default = thresholds["prob_defaults"]
 
-                if vpd < stress_low or vpd > stress_high:
+                if state.vpd < stress_low or state.vpd > stress_high:
                     prob = self.env_config.get(prob_stress_key, prob_stress_default)
                     observations.append(prob)
-                    self._reasons.append((prob[0], f"VPD out of range ({vpd})"))
-                elif vpd < mild_low or vpd > mild_high:
+                    self._reasons.append((prob[0], f"VPD out of range ({state.vpd})"))
+                elif state.vpd < mild_low or state.vpd > mild_high:
                     prob = self.env_config.get(prob_mild_key, prob_mild_default)
                     observations.append(prob)
-                    self._reasons.append((prob[0], f"VPD out of range ({vpd})"))
+                    self._reasons.append((prob[0], f"VPD out of range ({state.vpd})"))
 
-        if co2 is not None:
-            if co2 < 400:
+        if state.co2 is not None:
+            if state.co2 < 400:
                 prob = (0.80, 0.25)
                 observations.append(prob)
-                self._reasons.append((prob[0], f"CO2 Low ({co2})"))
-            elif co2 > 1800:
+                self._reasons.append((prob[0], f"CO2 Low ({state.co2})"))
+            elif state.co2 > 1800:
                 prob = (0.75, 0.20)
                 observations.append(prob)
-                self._reasons.append((prob[0], f"CO2 High ({co2})"))
+                self._reasons.append((prob[0], f"CO2 High ({state.co2})"))
 
         self._probability = self._calculate_bayesian_probability(
             self.prior, observations
@@ -577,12 +619,15 @@ class BayesianDryingSensor(BayesianEnvironmentSensor):
     """Bayesian sensor for detecting optimal drying conditions."""
 
     def __init__(self, coordinator, growspace_id, env_config):
-        super().__init__(coordinator, growspace_id, env_config)
-        growspace = coordinator.growspaces[growspace_id]
-        self._attr_name = f"{growspace.name} Optimal Drying"
-        self._attr_unique_id = f"{DOMAIN}_{growspace_id}_optimal_drying"
-        self.prior = 0.50
-        self.threshold = 0.80
+        super().__init__(
+            coordinator,
+            growspace_id,
+            env_config,
+            sensor_type="drying",
+            name_suffix="Optimal Drying",
+            prior_key="prior_drying",
+            threshold_key="drying_threshold",
+        )
 
     async def _async_update_probability(self) -> None:
         """Calculate optimal drying probability."""
@@ -592,25 +637,22 @@ class BayesianDryingSensor(BayesianEnvironmentSensor):
             return
 
         self._reasons = []
-        temp = self._get_sensor_value(self.env_config["temperature_sensor"])
-        humidity = self._get_sensor_value(self.env_config["humidity_sensor"])
-
-        self._sensor_states = {"temperature": temp, "humidity": humidity}
+        state = self._get_base_environment_state()
         observations = []
 
-        if temp is not None:
-            if 15 <= temp <= 21:
+        if state.temp is not None:
+            if 15 <= state.temp <= 21:
                 observations.append((0.95, 0.10))
             else:
                 observations.append((0.10, 0.90))
-                self._reasons.append((0.90, f"Temp out of range ({temp})"))
+                self._reasons.append((0.90, f"Temp out of range ({state.temp})"))
 
-        if humidity is not None:
-            if 45 <= humidity <= 55:
+        if state.humidity is not None:
+            if 45 <= state.humidity <= 55:
                 observations.append((0.95, 0.10))
             else:
                 observations.append((0.10, 0.90))
-                self._reasons.append((0.90, f"Humidity out of range ({humidity})"))
+                self._reasons.append((0.90, f"Humidity out of range ({state.humidity})"))
 
         self._probability = self._calculate_bayesian_probability(
             self.prior, observations
@@ -622,12 +664,15 @@ class BayesianCuringSensor(BayesianEnvironmentSensor):
     """Bayesian sensor for detecting optimal curing conditions."""
 
     def __init__(self, coordinator, growspace_id, env_config):
-        super().__init__(coordinator, growspace_id, env_config)
-        growspace = coordinator.growspaces[growspace_id]
-        self._attr_name = f"{growspace.name} Optimal Curing"
-        self._attr_unique_id = f"{DOMAIN}_{growspace_id}_optimal_curing"
-        self.prior = 0.50
-        self.threshold = 0.80
+        super().__init__(
+            coordinator,
+            growspace_id,
+            env_config,
+            sensor_type="curing",
+            name_suffix="Optimal Curing",
+            prior_key="prior_curing",
+            threshold_key="curing_threshold",
+        )
 
     async def _async_update_probability(self) -> None:
         """Calculate optimal curing probability."""
@@ -637,25 +682,22 @@ class BayesianCuringSensor(BayesianEnvironmentSensor):
             return
 
         self._reasons = []
-        temp = self._get_sensor_value(self.env_config["temperature_sensor"])
-        humidity = self._get_sensor_value(self.env_config["humidity_sensor"])
-
-        self._sensor_states = {"temperature": temp, "humidity": humidity}
+        state = self._get_base_environment_state()
         observations = []
 
-        if temp is not None:
-            if 18 <= temp <= 21:
+        if state.temp is not None:
+            if 18 <= state.temp <= 21:
                 observations.append((0.95, 0.10))
             else:
                 observations.append((0.10, 0.90))
-                self._reasons.append((0.90, f"Temp out of range ({temp})"))
+                self._reasons.append((0.90, f"Temp out of range ({state.temp})"))
 
-        if humidity is not None:
-            if 55 <= humidity <= 60:
+        if state.humidity is not None:
+            if 55 <= state.humidity <= 60:
                 observations.append((0.95, 0.10))
             else:
                 observations.append((0.10, 0.90))
-                self._reasons.append((0.90, f"Humidity out of range ({humidity})"))
+                self._reasons.append((0.90, f"Humidity out of range ({state.humidity})"))
 
         self._probability = self._calculate_bayesian_probability(
             self.prior, observations
@@ -667,12 +709,15 @@ class BayesianMoldRiskSensor(BayesianEnvironmentSensor):
     """Bayesian sensor for detecting mold risk in late flower."""
 
     def __init__(self, coordinator, growspace_id, env_config):
-        super().__init__(coordinator, growspace_id, env_config)
-        growspace = coordinator.growspaces[growspace_id]
-        self._attr_name = f"{growspace.name} High Mold Risk"
-        self._attr_unique_id = f"{DOMAIN}_{growspace_id}_mold_risk"
-        self.prior = 0.10
-        self.threshold = env_config.get("mold_threshold", 0.75)
+        super().__init__(
+            coordinator,
+            growspace_id,
+            env_config,
+            sensor_type="mold_risk",
+            name_suffix="High Mold Risk",
+            prior_key="prior_mold_risk",
+            threshold_key="mold_threshold",
+        )
 
     def get_notification_title_message(self, new_state_on: bool) -> tuple[str, str] | None:
         """Return the notification title and message, if any."""
@@ -687,44 +732,11 @@ class BayesianMoldRiskSensor(BayesianEnvironmentSensor):
     async def _async_update_probability(self) -> None:
         """Calculate mold risk probability."""
         self._reasons = []
-        temp = self._get_sensor_value(self.env_config["temperature_sensor"])
-        humidity = self._get_sensor_value(self.env_config["humidity_sensor"])
-        vpd = self._get_sensor_value(self.env_config["vpd_sensor"])
-        stage_info = self._get_growth_stage_info()
-        flower_days = stage_info["flower_days"]
-
-        light_sensor = self.env_config.get("light_sensor")
-        is_lights_on = False
-        if light_sensor:
-            light_state = self.hass.states.get(light_sensor)
-            if light_state:
-                if light_state.domain == "sensor":
-                    is_lights_on = bool(
-                        self._get_sensor_value(light_sensor)
-                        and self._get_sensor_value(light_sensor) > 0
-                    )
-                else:
-                    is_lights_on = light_state.state == "on"
-
-        fan_entity = self.env_config.get("circulation_fan")
-        fan_off = bool(
-            fan_entity
-            and (fan_state := self.hass.states.get(fan_entity))
-            and fan_state.state == "off"
-        )
-
-        self._sensor_states = {
-            "temperature": temp,
-            "humidity": humidity,
-            "vpd": vpd,
-            "flower_days": flower_days,
-            "is_lights_on": is_lights_on,
-            "fan_off": fan_off,
-            "humidity_trend": "stable",
-            "vpd_trend": "stable",
-        }
-
+        state = self._get_base_environment_state()
         observations = []
+
+        self._sensor_states["humidity_trend"] = "stable"
+        self._sensor_states["vpd_trend"] = "stable"
 
         # --- Trend Analysis for Mold Risk ---
         # Rising humidity trend is a risk
@@ -792,40 +804,40 @@ class BayesianMoldRiskSensor(BayesianEnvironmentSensor):
                         observations.append(prob)
                         self._reasons.append((prob[0], f"{sensor_key.capitalize()} trend"))
 
-        if flower_days >= 35:
+        if state.flower_days >= 35:
             prob = (0.99, 0.01)
             observations.append(prob)
             self._reasons.append((prob[0], "Late Flower"))
 
-            if temp is not None and 16 < temp < 23:
+            if state.temp is not None and 16 < state.temp < 23:
                 prob = self.env_config.get("prob_mold_temp_danger_zone", (0.85, 0.30))
                 observations.append(prob)
-                self._reasons.append((prob[0], f"Temp in danger zone ({temp})"))
+                self._reasons.append((prob[0], f"Temp in danger zone ({state.temp})"))
 
-            if not is_lights_on:
+            if not state.is_lights_on:
                 prob = self.env_config.get("prob_mold_lights_off", (0.75, 0.30))
                 observations.append(prob)
                 self._reasons.append((prob[0], "Lights Off"))
-                if humidity is not None and humidity > 50:
+                if state.humidity is not None and state.humidity > 50:
                     prob = self.env_config.get(
                         "prob_mold_humidity_high_night", (0.99, 0.10)
                     )
                     observations.append(prob)
-                    self._reasons.append((prob[0], f"Night Humidity High ({humidity})"))
-                if vpd is not None and vpd < 1.3:
+                    self._reasons.append((prob[0], f"Night Humidity High ({state.humidity})"))
+                if state.vpd is not None and state.vpd < 1.3:
                     prob = self.env_config.get("prob_mold_vpd_low_night", (0.95, 0.20))
                     observations.append(prob)
-                    self._reasons.append((prob[0], f"Night VPD Low ({vpd})"))
+                    self._reasons.append((prob[0], f"Night VPD Low ({state.vpd})"))
             else:  # Daytime checks
-                if humidity is not None and humidity > 55:
+                if state.humidity is not None and state.humidity > 55:
                     prob = self.env_config.get("prob_mold_humidity_high_day", (0.95, 0.20))
                     observations.append(prob)
-                    self._reasons.append((prob[0], f"Day Humidity High ({humidity})"))
-                if vpd is not None and vpd < 1.2:
+                    self._reasons.append((prob[0], f"Day Humidity High ({state.humidity})"))
+                if state.vpd is not None and state.vpd < 1.2:
                     prob = self.env_config.get("prob_mold_vpd_low_day", (0.90, 0.25))
                     observations.append(prob)
-                    self._reasons.append((prob[0], f"Day VPD Low ({vpd})"))
-            if fan_off:
+                    self._reasons.append((prob[0], f"Day VPD Low ({state.vpd})"))
+            if state.fan_off:
                 prob = self.env_config.get("prob_mold_fan_off", (0.80, 0.15))
                 observations.append(prob)
                 self._reasons.append((prob[0], "Circulation Fan Off"))
@@ -840,12 +852,15 @@ class BayesianOptimalConditionsSensor(BayesianEnvironmentSensor):
     """Bayesian sensor for detecting optimal growing conditions."""
 
     def __init__(self, coordinator, growspace_id, env_config):
-        super().__init__(coordinator, growspace_id, env_config)
-        growspace = coordinator.growspaces[growspace_id]
-        self._attr_name = f"{growspace.name} Optimal Conditions"
-        self._attr_unique_id = f"{DOMAIN}_{growspace_id}_optimal"
-        self.prior = 0.40
-        self.threshold = 0.80
+        super().__init__(
+            coordinator,
+            growspace_id,
+            env_config,
+            sensor_type="optimal",
+            name_suffix="Optimal Conditions",
+            prior_key="prior_optimal",
+            threshold_key="optimal_threshold",
+        )
 
     def get_notification_title_message(self, new_state_on: bool) -> tuple[str, str] | None:
         """Return the notification title and message, if any."""
@@ -860,127 +875,96 @@ class BayesianOptimalConditionsSensor(BayesianEnvironmentSensor):
     async def _async_update_probability(self) -> None:
         """Calculate optimal conditions probability."""
         self._reasons = []
-        temp = self._get_sensor_value(self.env_config["temperature_sensor"])
-        vpd = self._get_sensor_value(self.env_config["vpd_sensor"])
-        co2 = self._get_sensor_value(self.env_config["co2_sensor"])
-        stage_info = self._get_growth_stage_info()
-
-        # Lights-Aware Logic
-        light_sensor = self.env_config.get("light_sensor")
-        is_lights_on = False
-        if light_sensor:
-            light_state = self.hass.states.get(light_sensor)
-            if light_state:
-                if light_state.domain == "sensor":
-                    is_lights_on = bool(
-                        self._get_sensor_value(light_sensor)
-                        and self._get_sensor_value(light_sensor) > 0
-                    )
-                else:
-                    is_lights_on = light_state.state == "on"
-
-        self._sensor_states = {
-            "temperature": temp,
-            "vpd": vpd,
-            "co2": co2,
-            "veg_days": stage_info["veg_days"],
-            "flower_days": stage_info["flower_days"],
-            "is_lights_on": is_lights_on,
-        }
-
+        state = self._get_base_environment_state()
         observations = []
 
         # Good temperature range
         # === OPTIMAL TEMPERATURE ===
-        if temp is not None:
-            if is_lights_on:
-                flower_days = stage_info["flower_days"]
+        if state.temp is not None:
+            if state.is_lights_on:
                 # Late flower has different optimal temps
-                if flower_days >= 42:
-                    if 18 <= temp <= 24:  # Perfect range for late flower
+                if state.flower_days >= 42:
+                    if 18 <= state.temp <= 24:  # Perfect range for late flower
                         observations.append((0.95, 0.20))
                     # Other temps in this stage are not considered optimal, so no obs.
                 else:  # Normal logic for other stages
                     # Perfect range
-                    if 24 <= temp <= 26:
+                    if 24 <= state.temp <= 26:
                         observations.append((0.95, 0.20))
                     # Good range
-                    elif 22 <= temp <= 28:
+                    elif 22 <= state.temp <= 28:
                         observations.append((0.85, 0.30))
                     # Acceptable range
-                    elif 20 <= temp <= 29:
+                    elif 20 <= state.temp <= 29:
                         observations.append((0.65, 0.45))
                     # Outside optimal
                     else:
                         prob = (0.20, 0.75)
                         observations.append(prob)
-                        self._reasons.append((prob[1], f"Temp out of range ({temp})"))
+                        self._reasons.append((prob[1], f"Temp out of range ({state.temp})"))
             else:  # Nighttime logic
-                if 20 <= temp <= 23:
+                if 20 <= state.temp <= 23:
                     observations.append((0.95, 0.20))
                 else:
                     prob = (0.20, 0.75)
                     observations.append(prob)
-                    self._reasons.append((prob[1], f"Night temp out of range ({temp})"))
+                    self._reasons.append((prob[1], f"Night temp out of range ({state.temp})"))
 
         # VPD in optimal range for stage
-        if vpd is not None:
-            veg_days = stage_info["veg_days"]
-            flower_days = stage_info["flower_days"]
-
+        if state.vpd is not None:
             vpd_optimal = False
 
-            if is_lights_on:
+            if state.is_lights_on:
                 # Seedling/Clone/Early Veg: 0.4-0.8 kPa
-                if flower_days == 0 and veg_days < 14:
-                    if 0.5 <= vpd <= 0.7:  # Perfect
+                if state.flower_days == 0 and state.veg_days < 14:
+                    if 0.5 <= state.vpd <= 0.7:  # Perfect
                         vpd_optimal = True
                         observations.append((0.95, 0.18))
-                    elif 0.4 <= vpd <= 0.8:  # Good
+                    elif 0.4 <= state.vpd <= 0.8:  # Good
                         observations.append((0.80, 0.28))
 
                 # Late Veg: 0.8-1.2 kPa
-                elif flower_days == 0 and veg_days >= 14:
-                    if 0.9 <= vpd <= 1.1:  # Perfect
+                elif state.flower_days == 0 and state.veg_days >= 14:
+                    if 0.9 <= state.vpd <= 1.1:  # Perfect
                         vpd_optimal = True
                         observations.append((0.95, 0.18))
-                    elif 0.8 <= vpd <= 1.2:  # Good
+                    elif 0.8 <= state.vpd <= 1.2:  # Good
                         observations.append((0.85, 0.25))
 
                 # Early-Mid Flower: 1.0-1.5 kPa
-                elif 0 < flower_days < 42:
-                    if 1.1 <= vpd <= 1.4:  # Perfect
+                elif 0 < state.flower_days < 42:
+                    if 1.1 <= state.vpd <= 1.4:  # Perfect
                         vpd_optimal = True
                         observations.append((0.95, 0.18))
-                    elif 1.0 <= vpd <= 1.5:  # Good
+                    elif 1.0 <= state.vpd <= 1.5:  # Good
                         observations.append((0.85, 0.25))
 
                 # Late Flower: 1.2-1.5 kPa (drier to prevent mold)
-                elif flower_days >= 42:
-                    if 1.3 <= vpd <= 1.5:  # Perfect
+                elif state.flower_days >= 42:
+                    if 1.3 <= state.vpd <= 1.5:  # Perfect
                         vpd_optimal = True
                         observations.append((0.95, 0.15))
-                    elif 1.2 <= vpd <= 1.6:  # Good
+                    elif 1.2 <= state.vpd <= 1.6:  # Good
                         observations.append((0.85, 0.22))
             else:  # Nighttime logic
                 # Seedling/Clone/Early Veg: 0.4-0.8 kPa
-                if flower_days == 0 and veg_days < 14:
-                    if 0.4 <= vpd <= 0.8:
+                if state.flower_days == 0 and state.veg_days < 14:
+                    if 0.4 <= state.vpd <= 0.8:
                         vpd_optimal = True
                         observations.append((0.90, 0.20))
                 # Late Veg: 0.6-1.1 kPa
-                elif flower_days == 0 and veg_days >= 14:
-                    if 0.6 <= vpd <= 1.1:
+                elif state.flower_days == 0 and state.veg_days >= 14:
+                    if 0.6 <= state.vpd <= 1.1:
                         vpd_optimal = True
                         observations.append((0.90, 0.20))
                 # Early-Mid Flower: 0.8 - 1.2 kPa
-                elif 0 < flower_days < 42:
-                    if 0.8 <= vpd <= 1.2:
+                elif 0 < state.flower_days < 42:
+                    if 0.8 <= state.vpd <= 1.2:
                         vpd_optimal = True
                         observations.append((0.90, 0.20))
                 # Late Flower: 0.9-1.2 kPa
-                elif flower_days >= 42:
-                    if 0.9 <= vpd <= 1.2:
+                elif state.flower_days >= 42:
+                    if 0.9 <= state.vpd <= 1.2:
                         vpd_optimal = True
                         observations.append((0.90, 0.20))
 
@@ -989,37 +973,36 @@ class BayesianOptimalConditionsSensor(BayesianEnvironmentSensor):
             if not vpd_optimal:
                 prob = (0.25, 0.70)
                 observations.append(prob)
-                self._reasons.append((prob[1], f"VPD out of range ({vpd})"))
+                self._reasons.append((prob[1], f"VPD out of range ({state.vpd})"))
 
         # Good CO2 levels
-        if co2 is not None:
-            flower_days = stage_info["flower_days"]
-            if flower_days >= 42:
+        if state.co2 is not None:
+            if state.flower_days >= 42:
                 # Late flower prefers lower CO2
-                if 400 <= co2 <= 800:
+                if 400 <= state.co2 <= 800:
                     observations.append((0.90, 0.25))
-                elif 800 < co2 <= 1200:
+                elif 800 < state.co2 <= 1200:
                     observations.append((0.4, 0.6))  # Slightly negative
                 # Other ranges are not optimal, so no positive obs.
                 # Let stress sensor handle out-of-bounds.
             else:
                 # Enhanced CO2 (optimal for fast growth)
-                if 1000 <= co2 <= 1400:
+                if 1000 <= state.co2 <= 1400:
                     observations.append((0.95, 0.20))
                 # Good elevated CO2
-                elif 800 <= co2 <= 1500:
+                elif 800 <= state.co2 <= 1500:
                     observations.append((0.85, 0.30))
                 # Adequate ambient CO2
-                elif 400 <= co2 <= 600:
+                elif 400 <= state.co2 <= 600:
                     observations.append((0.60, 0.45))
                 # Outside optimal range
                 else:
                     prob = (0.25, 0.70)
                     observations.append(prob)
-                    if co2 < 400:
-                        self._reasons.append((prob[1], f"CO2 Low ({co2})"))
+                    if state.co2 < 400:
+                        self._reasons.append((prob[1], f"CO2 Low ({state.co2})"))
                     else:
-                        self._reasons.append((prob[1], f"CO2 High ({co2})"))
+                        self._reasons.append((prob[1], f"CO2 High ({state.co2})"))
 
         self._probability = self._calculate_bayesian_probability(
             self.prior, observations
