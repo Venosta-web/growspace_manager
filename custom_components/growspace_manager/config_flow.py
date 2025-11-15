@@ -398,7 +398,7 @@ class OptionsFlowHandler(OptionsFlow):
             vol.Required("message", default=notification.get("message", "")): selector.TextSelector(
                 selector.TextSelectorConfig(
                     type=selector.TextSelectorType.TEXT,
-                    max=65,
+                    max_length=65,
                 )
             ),
         })
