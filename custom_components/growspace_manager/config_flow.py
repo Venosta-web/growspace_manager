@@ -20,7 +20,7 @@ import homeassistant.helpers.config_validation as cv
 from homeassistant.helpers import selector
 from homeassistant.helpers import device_registry as dr
 
-
+from .models import Growspace, Plant
 from .const import DOMAIN, DEFAULT_NAME
 
 _LOGGER = logging.getLogger(__name__)
@@ -861,8 +861,17 @@ class OptionsFlowHandler(OptionsFlow):
             # Reload coordinator data from storage to ensure we have latest growspaces
             store = self.hass.data[DOMAIN][self.config_entry.entry_id]["store"]
             fresh_data = await store.async_load() or {}
-            coordinator.growspaces = fresh_data.get("growspaces", {})
-            coordinator.plants = fresh_data.get("plants", {})
+
+            # Correctly deserialize data into objects
+            coordinator.growspaces = {
+                gid: Growspace.from_dict(g)
+                for gid, g in fresh_data.get("growspaces", {}).items()
+            }
+            coordinator.plants = {
+                pid: Plant.from_dict(p)
+                for pid, p in fresh_data.get("plants", {}).items()
+            }
+
             coordinator._notifications_sent = fresh_data.get("notifications_sent", {})
             # Update the data property
             coordinator.data = {
@@ -1333,8 +1342,8 @@ class OptionsFlowHandler(OptionsFlow):
         growspace = coordinator.growspaces.get(plant.growspace_id)
 
         # Ensure rows and plants_per_row are integers
-        rows = int(growspace.get("rows", 10))
-        plants_per_row = int(growspace.get("plants_per_row", 10))
+        rows = int(growspace.rows) if growspace else 10
+        plants_per_row = int(growspace.plants_per_row) if growspace else 10
 
         # Get strain options for autocomplete
         strain_options = []
