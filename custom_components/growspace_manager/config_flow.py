@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import uuid
 from typing import Any, Dict, Optional
 
 import voluptuous as vol
@@ -246,7 +247,16 @@ class OptionsFlowHandler(OptionsFlow):
             elif action == "delete":
                 notification_id = user_input.get("notification_id")
                 if notification_id:
-                    await coordinator.async_delete_timed_notification(notification_id)
+                    new_options = self.config_entry.options.copy()
+                    notifications = new_options.get("timed_notifications", [])
+                    notifications = [n for n in notifications if n.get("id") != notification_id]
+                    new_options["timed_notifications"] = notifications
+
+                    self.hass.config_entries.async_update_entry(
+                        self.config_entry, options=new_options
+                    )
+                    coordinator.options = new_options
+
                     return self.async_show_form(
                         step_id="manage_timed_notifications",
                         data_schema=self._get_timed_notification_schema(coordinator),
@@ -292,7 +302,21 @@ class OptionsFlowHandler(OptionsFlow):
         coordinator = self.hass.data[DOMAIN][self.config_entry.entry_id]["coordinator"]
 
         if user_input is not None:
-            await coordinator.async_add_timed_notification(user_input)
+            new_options = self.config_entry.options.copy()
+            notifications = new_options.get("timed_notifications", [])
+
+            # Add a unique ID to the new notification
+            new_notification = user_input.copy()
+            new_notification["id"] = str(uuid.uuid4())
+            notifications.append(new_notification)
+            new_options["timed_notifications"] = notifications
+
+            # Update the config entry and the coordinator's in-memory options
+            self.hass.config_entries.async_update_entry(
+                self.config_entry, options=new_options
+            )
+            coordinator.options = new_options
+
             return self.async_show_form(
                 step_id="manage_timed_notifications",
                 data_schema=self._get_timed_notification_schema(coordinator),
@@ -308,15 +332,35 @@ class OptionsFlowHandler(OptionsFlow):
     ) -> ConfigFlowResult:
         """Edit an existing timed notification."""
         coordinator = self.hass.data[DOMAIN][self.config_entry.entry_id]["coordinator"]
+        notification_id = self._selected_notification_id
+        notifications = self.config_entry.options.get("timed_notifications", [])
+        notification = next((n for n in notifications if n.get("id") == notification_id), None)
 
         if user_input is not None:
-            await coordinator.async_edit_timed_notification(self._selected_notification_id, user_input)
+            new_options = self.config_entry.options.copy()
+            notifications = new_options.get("timed_notifications", [])
+
+            # Find and update the existing notification
+            for i, n in enumerate(notifications):
+                if n.get("id") == notification_id:
+                    updated_notification = user_input.copy()
+                    updated_notification["id"] = notification_id  # Preserve the ID
+                    notifications[i] = updated_notification
+                    break
+
+            new_options["timed_notifications"] = notifications
+
+            # Update the config entry and the coordinator's in-memory options
+            self.hass.config_entries.async_update_entry(
+                self.config_entry, options=new_options
+            )
+            coordinator.options = new_options
+
             return self.async_show_form(
                 step_id="manage_timed_notifications",
                 data_schema=self._get_timed_notification_schema(coordinator),
             )
 
-        notification = await coordinator.async_get_timed_notification(self._selected_notification_id)
         return self.async_show_form(
             step_id="edit_timed_notification",
             data_schema=self._get_add_edit_timed_notification_schema(coordinator, notification),
