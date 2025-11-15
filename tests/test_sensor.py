@@ -61,9 +61,14 @@ def mock_coordinator():
 # --------------------
 # async_setup_entry
 # --------------------
+from homeassistant.helpers import entity_registry as er
+
 @pytest.mark.asyncio
 async def test_async_setup_entry_adds_entities():
-    hass = Mock()
+    hass = MagicMock()
+    hass.config.config_dir = "/config"
+    entity_registry = er.async_get(hass)
+
 
     # Coordinator mock
     mock_coordinator = Mock()
@@ -77,7 +82,11 @@ async def test_async_setup_entry_adds_entities():
     )
     mock_coordinator.async_set_updated_data = AsyncMock()
 
-    hass.data = {"growspace_manager": {"entry_1": {"coordinator": mock_coordinator}}}
+    hass.data = {
+        "growspace_manager": {
+            "entry_1": {"coordinator": mock_coordinator, "created_entities": []}
+        }
+    }
 
     added_entities = []
 
