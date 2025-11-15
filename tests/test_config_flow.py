@@ -6,7 +6,8 @@ from unittest.mock import Mock, AsyncMock, patch
 from homeassistant.core import HomeAssistant
 from homeassistant.data_entry_flow import FlowResultType
 from pytest_homeassistant_custom_component.common import MockConfigEntry
-from ..const import DOMAIN, DEFAULT_NAME
+
+from custom_components.growspace_manager.const import DOMAIN, DEFAULT_NAME
 from custom_components.growspace_manager.config_flow import (
     ConfigFlow,
     OptionsFlowHandler,

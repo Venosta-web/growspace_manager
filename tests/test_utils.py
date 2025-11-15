@@ -1,14 +1,15 @@
 """Tests for growspace_manager utils."""
 from datetime import date, datetime
 import pytest
-from ..utils import (
+
+from custom_components.growspace_manager.utils import (
     parse_date_field,
     format_date,
     calculate_days_since,
     find_first_free_position,
     generate_growspace_grid,
 )
-from ..models import Plant, Growspace
+from custom_components.growspace_manager.models import Plant, Growspace
 
 
 # ----------------------------
