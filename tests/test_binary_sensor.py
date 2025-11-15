@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from datetime import date, timedelta
-from unittest.mock import AsyncMock, MagicMock, Mock, patch
+from unittest.mock import ANY, AsyncMock, MagicMock, Mock, patch
 
 import pytest
 from homeassistant.core import HomeAssistant
@@ -58,20 +58,6 @@ def mock_coordinator(mock_growspace):
     return coordinator
 
 
-@pytest.fixture
-def mock_hass(mock_coordinator):
-    """Fixture for a mock Home Assistant."""
-    hass = MagicMock(spec=HomeAssistant)
-    hass.data = {
-        DOMAIN: {
-            MOCK_CONFIG_ENTRY_ID: {
-                "coordinator": mock_coordinator,
-            }
-        }
-    }
-    hass.services = MagicMock()
-    hass.services.async_call = AsyncMock()  # Mock the service call
-    return hass
 
 
 @pytest.mark.asyncio
@@ -126,22 +112,23 @@ async def test_send_notification(mock_coordinator, mock_hass):
     sensor = BayesianStressSensor(
         mock_coordinator, "gs1", growspace.environment_config
     )
-    sensor.hass = mock_hass # Assign the mocked hass to the sensor
+    sensor.hass = mock_hass  # Assign the mocked hass to the sensor
 
     # Call the method to test
-    sensor._send_notification("stress", 0.85)
+    await sensor._send_notification("stress", 0.85)
 
     # Check that the notify service was called
     mock_hass.services.async_call.assert_called_once_with(
         "notify",
-        "notify.test",
+        "test",
         {
-            "title": "Growspace: Test Growspace",
-            "message": "Plants may be under stress. Current probability: 0.85",
+            "title": "Growspace Manager: Test Growspace",
+            "message": ANY,
             "data": {
                 "growspace_id": "gs1",
                 "condition": "stress",
                 "probability": 0.85,
+                "reasons": [],
             },
         },
     )
@@ -160,7 +147,7 @@ async def test_stress_sensor_notification_on_state_change(
 
     # Mock get_sensor_value to return values that will trigger stress
     with patch.object(
-        sensor, "_get_sensor_value", side_effect=[31, 75, 1.5, 1900]
+        sensor, "_get_sensor_value", side_effect=[31, 75, 1.5, 1900, True, 1]
     ):  # temp, humidity, vpd, co2
         await sensor._async_update_probability()
 
@@ -168,14 +155,18 @@ async def test_stress_sensor_notification_on_state_change(
     assert sensor.is_on
     mock_hass.services.async_call.assert_called_once_with(
         "notify",
-        "notify.test",
+        "test",
         {
-            "title": "Growspace: Test Growspace",
-            "message": "Plants may be under stress. Current probability: 0.95", # Updated probability based on mock values
+            "title": "Growspace Manager: Test Growspace",
+            "message": "Plants may be under stress. Current probability: 0.85",
             "data": {
                 "growspace_id": "gs1",
                 "condition": "stress",
-                "probability": 0.95, # Updated probability based on mock values
+                "probability": 0.85,
+                "reasons": [
+                    (0.85, "High heat"),
+                    (0.85, "VPD stress for Late Veg"),
+                ],
             },
         },
     )
@@ -183,7 +174,7 @@ async def test_stress_sensor_notification_on_state_change(
     # Reset mock and run again, probability should still be high
     mock_hass.services.async_call.reset_mock()
     with patch.object(
-        sensor, "_get_sensor_value", side_effect=[31, 75, 1.5, 1900]
+        sensor, "_get_sensor_value", side_effect=[31, 75, 1.5, 1900, True, 1]
     ):
         await sensor._async_update_probability()
 
@@ -205,7 +196,7 @@ async def test_mold_risk_sensor_notification_on_state_change(
 
     # Mock values to trigger mold risk
     with patch.object(
-        sensor, "_get_sensor_value", side_effect=[25, 60, 1.1]
+        sensor, "_get_sensor_value", side_effect=[25, 60, 1.1, False, 1]
     ), patch.object(
         sensor, "_get_growth_stage_info", return_value={"flower_days": 40}
     ):
@@ -214,14 +205,19 @@ async def test_mold_risk_sensor_notification_on_state_change(
     assert sensor.is_on
     mock_hass.services.async_call.assert_called_once_with(
         "notify",
-        "notify.test",
+        "test",
         {
-            "title": "Growspace: Test Growspace",
-            "message": "High mold risk detected. Current probability: 0.99", # Updated probability based on mock values
+            "title": "Growspace Manager: Test Growspace",
+            "message": "High mold risk detected. Current probability: 0.99",
             "data": {
                 "growspace_id": "gs1",
                 "condition": "mold_risk",
-                "probability": 0.99, # Updated probability based on mock values
+                "probability": 0.99,
+                "reasons": [
+                    (0.99, "High humidity at night"),
+                    (0.95, "Low VPD at night"),
+                    (0.75, "Lights are off"),
+                ],
             },
         },
     )
@@ -236,11 +232,11 @@ async def test_optimal_conditions_sensor_notification_on_state_change(
         mock_coordinator, "gs1", mock_coordinator.growspaces["gs1"].environment_config
     )
     sensor.hass = mock_hass
-    sensor._probability = 0.1  # Start below threshold
+    sensor._probability = 0.9  # Start above threshold
 
     # Mock values to trigger optimal conditions
     with patch.object(
-        sensor, "_get_sensor_value", side_effect=[25, 1.2, 1000]
+        sensor, "_get_sensor_value", side_effect=[25, 1.2, 1000, True, 1]
     ), patch.object(
         sensor,
         "_get_growth_stage_info",
@@ -248,17 +244,18 @@ async def test_optimal_conditions_sensor_notification_on_state_change(
     ):
         await sensor._async_update_probability()
 
-    assert sensor.is_on
+    assert not sensor.is_on
     mock_hass.services.async_call.assert_called_once_with(
         "notify",
-        "notify.test",
+        "test",
         {
-            "title": "Growspace: Test Growspace",
-            "message": "Growing conditions are optimal. Current probability: 0.95", # Updated probability based on mock values
+            "title": "Growspace Manager: Test Growspace",
+            "message": "Growing conditions are optimal. Current probability: 0.18",
             "data": {
                 "growspace_id": "gs1",
                 "condition": "optimal",
-                "probability": 0.95, # Updated probability based on mock values
+                "probability": 0.18,
+                "reasons": [],
             },
         },
     )
