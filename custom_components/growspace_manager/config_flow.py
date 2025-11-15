@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import uuid
 from typing import Any, Dict, Optional
 
 import voluptuous as vol
@@ -19,7 +20,7 @@ import homeassistant.helpers.config_validation as cv
 from homeassistant.helpers import selector
 from homeassistant.helpers import device_registry as dr
 
-
+from .models import Growspace, Plant
 from .const import DOMAIN, DEFAULT_NAME
 
 _LOGGER = logging.getLogger(__name__)
@@ -246,7 +247,16 @@ class OptionsFlowHandler(OptionsFlow):
             elif action == "delete":
                 notification_id = user_input.get("notification_id")
                 if notification_id:
-                    await coordinator.async_delete_timed_notification(notification_id)
+                    new_options = self.config_entry.options.copy()
+                    notifications = new_options.get("timed_notifications", [])
+                    notifications = [n for n in notifications if n.get("id") != notification_id]
+                    new_options["timed_notifications"] = notifications
+
+                    self.hass.config_entries.async_update_entry(
+                        self.config_entry, options=new_options
+                    )
+                    coordinator.options = new_options
+
                     return self.async_show_form(
                         step_id="manage_timed_notifications",
                         data_schema=self._get_timed_notification_schema(coordinator),
@@ -292,7 +302,21 @@ class OptionsFlowHandler(OptionsFlow):
         coordinator = self.hass.data[DOMAIN][self.config_entry.entry_id]["coordinator"]
 
         if user_input is not None:
-            await coordinator.async_add_timed_notification(user_input)
+            new_options = self.config_entry.options.copy()
+            notifications = new_options.get("timed_notifications", [])
+
+            # Add a unique ID to the new notification
+            new_notification = user_input.copy()
+            new_notification["id"] = str(uuid.uuid4())
+            notifications.append(new_notification)
+            new_options["timed_notifications"] = notifications
+
+            # Update the config entry and the coordinator's in-memory options
+            self.hass.config_entries.async_update_entry(
+                self.config_entry, options=new_options
+            )
+            coordinator.options = new_options
+
             return self.async_show_form(
                 step_id="manage_timed_notifications",
                 data_schema=self._get_timed_notification_schema(coordinator),
@@ -308,15 +332,35 @@ class OptionsFlowHandler(OptionsFlow):
     ) -> ConfigFlowResult:
         """Edit an existing timed notification."""
         coordinator = self.hass.data[DOMAIN][self.config_entry.entry_id]["coordinator"]
+        notification_id = self._selected_notification_id
+        notifications = self.config_entry.options.get("timed_notifications", [])
+        notification = next((n for n in notifications if n.get("id") == notification_id), None)
 
         if user_input is not None:
-            await coordinator.async_edit_timed_notification(self._selected_notification_id, user_input)
+            new_options = self.config_entry.options.copy()
+            notifications = new_options.get("timed_notifications", [])
+
+            # Find and update the existing notification
+            for i, n in enumerate(notifications):
+                if n.get("id") == notification_id:
+                    updated_notification = user_input.copy()
+                    updated_notification["id"] = notification_id  # Preserve the ID
+                    notifications[i] = updated_notification
+                    break
+
+            new_options["timed_notifications"] = notifications
+
+            # Update the config entry and the coordinator's in-memory options
+            self.hass.config_entries.async_update_entry(
+                self.config_entry, options=new_options
+            )
+            coordinator.options = new_options
+
             return self.async_show_form(
                 step_id="manage_timed_notifications",
                 data_schema=self._get_timed_notification_schema(coordinator),
             )
 
-        notification = await coordinator.async_get_timed_notification(self._selected_notification_id)
         return self.async_show_form(
             step_id="edit_timed_notification",
             data_schema=self._get_add_edit_timed_notification_schema(coordinator, notification),
@@ -817,8 +861,17 @@ class OptionsFlowHandler(OptionsFlow):
             # Reload coordinator data from storage to ensure we have latest growspaces
             store = self.hass.data[DOMAIN][self.config_entry.entry_id]["store"]
             fresh_data = await store.async_load() or {}
-            coordinator.growspaces = fresh_data.get("growspaces", {})
-            coordinator.plants = fresh_data.get("plants", {})
+
+            # Correctly deserialize data into objects
+            coordinator.growspaces = {
+                gid: Growspace.from_dict(g)
+                for gid, g in fresh_data.get("growspaces", {}).items()
+            }
+            coordinator.plants = {
+                pid: Plant.from_dict(p)
+                for pid, p in fresh_data.get("plants", {}).items()
+            }
+
             coordinator._notifications_sent = fresh_data.get("notifications_sent", {})
             # Update the data property
             coordinator.data = {
@@ -1289,8 +1342,8 @@ class OptionsFlowHandler(OptionsFlow):
         growspace = coordinator.growspaces.get(plant.growspace_id)
 
         # Ensure rows and plants_per_row are integers
-        rows = int(growspace.get("rows", 10))
-        plants_per_row = int(growspace.get("plants_per_row", 10))
+        rows = int(growspace.rows) if growspace else 10
+        plants_per_row = int(growspace.plants_per_row) if growspace else 10
 
         # Get strain options for autocomplete
         strain_options = []
