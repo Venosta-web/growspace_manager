@@ -80,3 +80,17 @@ class Plant:
         filtered_data = {k: v for k, v in data.items() if k in allowed_keys}
 
         return Plant(**filtered_data)
+
+
+@dataclass
+class EnvironmentState:
+    """A snapshot of the current environment state."""
+
+    temp: float | None
+    humidity: float | None
+    vpd: float | None
+    co2: float | None
+    veg_days: int
+    flower_days: int
+    is_lights_on: bool
+    fan_off: bool

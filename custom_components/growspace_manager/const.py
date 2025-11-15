@@ -81,6 +81,22 @@ MAX_PLANTS_PER_ROW = 20
 # Strain Library defaults
 STORAGE_KEY_STRAIN_LIBRARY = "strain_library"
 
+DEFAULT_BAYESIAN_PRIORS = {
+    "stress": 0.15,
+    "mold_risk": 0.10,
+    "optimal": 0.40,
+    "drying": 0.50,
+    "curing": 0.50,
+}
+
+DEFAULT_BAYESIAN_THRESHOLDS = {
+    "stress": 0.70,
+    "mold_risk": 0.75,
+    "optimal": 0.80,
+    "drying": 0.80,
+    "curing": 0.80,
+}
+
 
 # --- Service Schemas ---
 
