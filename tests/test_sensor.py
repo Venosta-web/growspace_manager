@@ -1,16 +1,17 @@
 import pytest
 from unittest.mock import Mock, AsyncMock, MagicMock, patch
 from datetime import date, timedelta
-from ..sensor import (
+
+from custom_components.growspace_manager.sensor import (
     GrowspaceOverviewSensor,
     PlantEntity,
     StrainLibrarySensor,
     GrowspaceListSensor,
     async_setup_entry,
 )
-from .. import sensor as sensor_module
-from ..coordinator import GrowspaceCoordinator
-from ..const import DOMAIN
+from custom_components.growspace_manager import sensor as sensor_module
+from custom_components.growspace_manager.coordinator import GrowspaceCoordinator
+from custom_components.growspace_manager.const import DOMAIN
 
 
 # --------------------

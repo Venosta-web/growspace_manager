@@ -3,12 +3,13 @@ from freezegun import freeze_time
 from datetime import date, datetime, timedelta
 from dateutil import parser
 from unittest.mock import patch, AsyncMock, MagicMock, Mock
-from ..const import DOMAIN
-from ..config_flow import OptionsFlowHandler
-from ..coordinator import Growspace
-from ..coordinator import GrowspaceCoordinator
-from ..coordinator import Plant
-from ..const import PLANT_STAGES
+
+from custom_components.growspace_manager.const import DOMAIN
+from custom_components.growspace_manager.config_flow import OptionsFlowHandler
+from custom_components.growspace_manager.coordinator import Growspace
+from custom_components.growspace_manager.coordinator import GrowspaceCoordinator
+from custom_components.growspace_manager.coordinator import Plant
+from custom_components.growspace_manager.const import PLANT_STAGES
 
 
 @pytest.fixture
