@@ -1517,52 +1517,6 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
     # =============================================================================
     # TIMED NOTIFICATION MANAGEMENT
     # =============================================================================
-    async def async_add_timed_notification(self, notification_data: dict) -> None:
-        """Add a new timed notification rule."""
-        notifications = self.options.get("timed_notifications", [])
-        notification_data["id"] = str(uuid.uuid4())
-        notifications.append(notification_data)
-
-        new_options = self.hass.config_entries.async_get_entry(self.config_entry.entry_id).options.copy()
-        new_options["timed_notifications"] = notifications
-        self.hass.config_entries.async_update_entry(self.config_entry, options=new_options)
-        self.options = new_options
-        _LOGGER.info("Added new timed notification: %s", notification_data["id"])
-
-    async def async_edit_timed_notification(self, notification_id: str, notification_data: dict) -> None:
-        """Edit an existing timed notification rule."""
-        notifications = self.options.get("timed_notifications", [])
-        for i, n in enumerate(notifications):
-            if n["id"] == notification_id:
-                notification_data["id"] = notification_id
-                notifications[i] = notification_data
-                break
-
-        new_options = self.hass.config_entries.async_get_entry(self.config_entry.entry_id).options.copy()
-        new_options["timed_notifications"] = notifications
-        self.hass.config_entries.async_update_entry(self.config_entry, options=new_options)
-        self.options = new_options
-        _LOGGER.info("Edited timed notification: %s", notification_id)
-
-    async def async_delete_timed_notification(self, notification_id: str) -> None:
-        """Delete a timed notification rule."""
-        notifications = self.options.get("timed_notifications", [])
-        notifications = [n for n in notifications if n["id"] != notification_id]
-
-        new_options = self.hass.config_entries.async_get_entry(self.config_entry.entry_id).options.copy()
-        new_options["timed_notifications"] = notifications
-        self.hass.config_entries.async_update_entry(self.config_entry, options=new_options)
-        self.options = new_options
-        _LOGGER.info("Deleted timed notification: %s", notification_id)
-
-    async def async_get_timed_notification(self, notification_id: str) -> dict | None:
-        """Get a specific timed notification rule."""
-        notifications = self.options.get("timed_notifications", [])
-        for n in notifications:
-            if n["id"] == notification_id:
-                return n
-        return None
-
     async def _async_check_timed_notifications(self) -> None:
         """Check and send timed notifications."""
         notifications = self.options.get("timed_notifications", [])
