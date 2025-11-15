@@ -223,11 +223,32 @@ def test_plant_entity_state_and_attributes(mock_coordinator):
 # StrainLibrarySensor
 # --------------------
 def test_strain_library_sensor_state_and_attributes(mock_coordinator):
+    # Mock the new data structure
+    mock_coordinator.strains.get_all.return_value = {
+        "Strain A|A": {
+            "harvests": [
+                {"veg_days": 30, "flower_days": 60},
+                {"veg_days": 35, "flower_days": 65},
+            ]
+        },
+        "Strain B|default": {"harvests": [{"veg_days": 40, "flower_days": 70}]},
+    }
+
     sensor = StrainLibrarySensor(mock_coordinator)
-    assert sensor.state == "ok"
+
+    # State should be the number of unique strains
+    assert sensor.state == 2
+
     attrs = sensor.extra_state_attributes
-    assert "strains" in attrs
-    assert attrs["strains"] == ["Strain A", "Strain B"]
+    assert "raw_data" in attrs
+    assert "strain_a_a_avg_veg_time" in attrs
+    assert attrs["strain_a_a_avg_veg_time"] == 32
+    assert attrs["strain_a_a_avg_flower_time"] == 62
+    assert attrs["strain_a_a_harvests"] == 2
+    assert "strain_b_avg_veg_time" in attrs
+    assert attrs["strain_b_avg_veg_time"] == 40
+    assert attrs["strain_b_avg_flower_time"] == 70
+    assert attrs["strain_b_harvests"] == 1
 
 
 # --------------------

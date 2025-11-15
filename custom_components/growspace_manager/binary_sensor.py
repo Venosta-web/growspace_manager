@@ -58,6 +58,10 @@ async def async_setup_entry(
                 entities.append(
                     BayesianCuringSensor(coordinator, growspace_id, env_config)
                 )
+            if env_config.get("light_sensor"):
+                entities.append(
+                    LightCycleVerificationSensor(coordinator, growspace_id, env_config)
+                )
             _LOGGER.info(
                 "Created Bayesian environment sensors for growspace: %s", growspace.name
             )
@@ -613,6 +617,135 @@ class BayesianStressSensor(BayesianEnvironmentSensor):
             self.prior, observations
         )
         self.async_write_ha_state()
+
+
+class LightCycleVerificationSensor(BinarySensorEntity):
+    """Verifies the light cycle matches the growspace stage."""
+
+    def __init__(
+        self,
+        coordinator: GrowspaceCoordinator,
+        growspace_id: str,
+        env_config: dict,
+    ) -> None:
+        """Initialize the light cycle verification sensor."""
+        self.coordinator = coordinator
+        self.growspace_id = growspace_id
+        self.env_config = env_config
+        self._attr_should_poll = False
+
+        growspace = coordinator.growspaces[growspace_id]
+        self._attr_name = f"{growspace.name} Light Schedule Correct"
+        self._attr_unique_id = f"{DOMAIN}_{growspace_id}_light_schedule"
+
+        self._attr_device_info = DeviceInfo(
+            identifiers={(DOMAIN, growspace_id)},
+            name=growspace.name,
+            model="Growspace",
+            manufacturer="Growspace Manager",
+        )
+
+        self.light_entity_id = self.env_config.get("light_sensor")
+        self._is_correct = False
+        self._last_checked: datetime | None = None
+        self._time_in_current_state: timedelta = timedelta(0)
+
+    async def async_added_to_hass(self) -> None:
+        """When entity is added to hass."""
+        self.coordinator.async_add_listener(self._handle_coordinator_update)
+        if self.light_entity_id:
+            self.async_on_remove(
+                async_track_state_change_event(
+                    self.hass,
+                    [self.light_entity_id],
+                    self._async_light_sensor_changed,
+                )
+            )
+        await self.async_update()
+
+    @callback
+    def _handle_coordinator_update(self) -> None:
+        """Handle coordinator update."""
+        self.hass.async_create_task(self.async_update())
+
+    @callback
+    def _async_light_sensor_changed(self, event) -> None:
+        """Handle light sensor state changes."""
+        self.hass.async_create_task(self.async_update())
+
+    def _get_growth_stage_info(self) -> dict[str, int]:
+        """Get veg_days and flower_days from coordinator."""
+        plants = self.coordinator.get_growspace_plants(self.growspace_id)
+        if not plants:
+            return {"veg_days": 0, "flower_days": 0}
+
+        max_veg = max(
+            (self.coordinator._calculate_days(p.veg_start) for p in plants if p.veg_start),
+            default=0,
+        )
+        max_flower = max(
+            (self.coordinator._calculate_days(p.flower_start) for p in plants if p.flower_start),
+            default=0,
+        )
+        return {"veg_days": max_veg, "flower_days": max_flower}
+
+    async def async_update(self) -> None:
+        """Update the sensor's state."""
+        if not self.light_entity_id:
+            self._is_correct = False
+            self.async_write_ha_state()
+            return
+
+        light_state = self.hass.states.get(self.light_entity_id)
+        if not light_state or light_state.state in [STATE_UNAVAILABLE, STATE_UNKNOWN]:
+            self._is_correct = False
+            self.async_write_ha_state()
+            return
+
+        is_light_on = light_state.state == "on"
+        now = utcnow()
+
+        # Calculate time since last change
+        time_since_last_changed = now - light_state.last_changed
+
+        stage_info = self._get_growth_stage_info()
+        is_flower_stage = stage_info["flower_days"] > 0
+
+        expected_on_hours = 12 if is_flower_stage else 18
+        expected_off_hours = 24 - expected_on_hours
+
+        # Check correctness
+        if is_light_on:
+            if time_since_last_changed > timedelta(hours=expected_on_hours):
+                self._is_correct = False # Light has been on for too long
+            else:
+                self._is_correct = True
+        else: # Light is off
+            if time_since_last_changed > timedelta(hours=expected_off_hours):
+                self._is_correct = False # Light has been off for too long
+            else:
+                self._is_correct = True
+
+        self._time_in_current_state = time_since_last_changed
+        self.async_write_ha_state()
+
+    @property
+    def is_on(self) -> bool:
+        """Return true if the light schedule is correct."""
+        return self._is_correct
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Return state attributes."""
+        stage_info = self._get_growth_stage_info()
+        is_flower_stage = stage_info["flower_days"] > 0
+        expected_schedule = "12/12" if is_flower_stage else "18/6"
+
+        return {
+            "expected_schedule": expected_schedule,
+            "light_entity_id": self.light_entity_id,
+            "time_in_current_state": str(self._time_in_current_state),
+        }
 
 
 class BayesianDryingSensor(BayesianEnvironmentSensor):

@@ -61,7 +61,7 @@ from .services import environment
 
 _LOGGER = logging.getLogger(__name__)
 
-PLATFORMS = ["binary_sensor", "sensor", "switch"]
+PLATFORMS = ["binary_sensor", "sensor", "switch", "calendar"]
 
 CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 
