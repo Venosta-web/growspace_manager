@@ -6,6 +6,7 @@ from .utils import (
     format_date,
     find_first_free_position,
     generate_growspace_grid,
+    VPDCalculator,
 )
 from .strain_library import StrainLibrary
 from .const import (
@@ -56,9 +57,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
         self.store: Store = Store(hass, STORAGE_VERSION, STORAGE_KEY)
 
         self.options = options or {}
-        _LOGGER.critical(
-            "--- COORDINATOR INITIALIZED WITH OPTIONS: %s ---", self.options
-        )
+        _LOGGER.info("--- COORDINATOR INITIALIZED WITH OPTIONS: %s ---", self.options)
 
         # Initialize strain library immediately
         self.strains = StrainLibrary(hass, STORAGE_VERSION, STORAGE_KEY_STRAIN_LIBRARY)
@@ -406,6 +405,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
     async def _async_update_data(self) -> dict[str, Any]:
         """Refresh data. Called by the DataUpdateCoordinator."""
         self.update_data_property()
+        await self._async_update_air_exchange_recommendations()
 
         return self.data
 
@@ -428,8 +428,8 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
             _LOGGER.info("No stored data found, starting fresh")
             return
 
-        _LOGGER.warning("DEBUG: Raw storage data keys = %s", list(data.keys()))
-        _LOGGER.warning(
+        _LOGGER.debug("DEBUG: Raw storage data keys = %s", list(data.keys()))
+        _LOGGER.debug(
             "DEBUG: Raw growspaces in storage = %s",
             list(data.get("growspaces", {}).keys()),
         )
@@ -453,21 +453,21 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
             }
             _LOGGER.info("Loaded %d growspaces", len(self.growspaces))
             if not self.options:
-                _LOGGER.critical("--- COORDINATOR HAS NO OPTIONS TO APPLY ---")
+                _LOGGER.debug("--- COORDINATOR HAS NO OPTIONS TO APPLY ---")
             else:
-                _LOGGER.critical(
+                _LOGGER.debug(
                     "--- APPLYING OPTIONS TO GROWSPACES: %s ---", self.options
                 )
                 for growspace_id, growspace in self.growspaces.items():
                     if growspace_id in self.options:
                         growspace.environment_config = self.options[growspace_id]
-                        _LOGGER.critical(
+                        _LOGGER.debug(
                             "--- SUCCESS: Applied env_config to '%s': %s ---",
                             growspace.name,
                             growspace.environment_config,
                         )
                     else:
-                        _LOGGER.warning(
+                        _LOGGER.info(
                             "--- INFO: No options found for growspace '%s' ---",
                             growspace.name,
                         )
@@ -990,7 +990,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
 
         _LOGGER.debug("COORDINATOR: Updating plant %s", plant_id)
         for key, value in updates.items():
-            _LOGGER.warning(
+            _LOGGER.debug(
                 "COORDINATOR: Field %s = %s (type: %s, id: %s)",
                 key,
                 value,
@@ -1001,7 +1001,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
             if hasattr(plant, key):
                 old_value = getattr(plant, key)
                 setattr(plant, key, value)
-                _LOGGER.warning(
+                _LOGGER.debug(
                     "COORDINATOR: Updated %s: %s -> %s", key, old_value, value
                 )
             else:
@@ -1513,3 +1513,166 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
 
         self._notifications_sent[plant_id][stage][str(days)] = True
         await self.async_save()
+
+    # =============================================================================
+    # TIMED NOTIFICATION MANAGEMENT
+    # =============================================================================
+    async def _async_check_timed_notifications(self) -> None:
+        """Check and send timed notifications."""
+        notifications = self.options.get("timed_notifications", [])
+        if not notifications:
+            return
+
+        for notification in notifications:
+            trigger_type = notification["trigger_type"] # 'veg' or 'flower'
+            day_to_trigger = int(notification["day"])
+            message = notification["message"]
+            growspace_ids = notification["growspace_ids"]
+            notification_id = notification["id"]
+
+            for gs_id in growspace_ids:
+                growspace = self.growspaces.get(gs_id)
+                if not growspace:
+                    continue
+
+                plants = self.get_growspace_plants(gs_id)
+                for plant in plants:
+                    days_in_stage = self.calculate_days_in_stage(plant, trigger_type)
+
+                    if days_in_stage >= day_to_trigger:
+                        notification_key = f"timed_{notification_id}"
+                        if not self._notifications_sent.get(plant.plant_id, {}).get(notification_key, False):
+                            _LOGGER.info(
+                                f"Triggering timed notification for plant {plant.plant_id} in {growspace.name}"
+                            )
+                            title = f"{growspace.name} - {trigger_type.capitalize()} Day {day_to_trigger}"
+
+                            await self._send_notification(gs_id, title, message)
+
+                            if plant.plant_id not in self._notifications_sent:
+                                self._notifications_sent[plant.plant_id] = {}
+                            self._notifications_sent[plant.plant_id][notification_key] = True
+                            await self.async_save()
+
+    async def _send_notification(self, growspace_id: str, title: str, message: str) -> None:
+        """Send a notification for a specific growspace."""
+        growspace = self.growspaces.get(growspace_id)
+        if not growspace or not growspace.notification_target:
+            _LOGGER.debug(
+                "Notification not sent for growspace %s: No target configured",
+                growspace_id,
+            )
+            return
+
+        notification_service = growspace.notification_target.replace("notify.", "")
+
+        await self.hass.services.async_call(
+            "notify",
+            notification_service,
+            {
+                "message": message,
+                "title": title,
+            },
+            blocking=False,
+        )
+        _LOGGER.info(f"Sent notification to {notification_service}: {title}")
+
+    def _get_sensor_value(self, entity_id: str | None) -> float | None:
+        """Safely get the numeric state of a sensor entity."""
+        if not entity_id:
+            return None
+        state = self.hass.states.get(entity_id)
+        if state and state.state not in ["unknown", "unavailable"]:
+            try:
+                return float(state.state)
+            except (ValueError, TypeError):
+                return None
+        return None
+
+    async def _async_update_air_exchange_recommendations(self) -> None:
+        """Calculate and store air exchange recommendations for each growspace."""
+        await self._async_check_timed_notifications()
+        recommendations = {}
+        global_settings = self.options.get("global_settings", {})
+
+        # Get outside conditions
+        outside_temp = None
+        outside_humidity = None
+        weather_entity_id = global_settings.get("weather_entity")
+        if weather_entity_id:
+            weather_state = self.hass.states.get(weather_entity_id)
+            if weather_state and weather_state.attributes:
+                outside_temp = weather_state.attributes.get("temperature")
+                outside_humidity = weather_state.attributes.get("humidity")
+        outside_vpd = (
+            VPDCalculator.calculate_vpd(outside_temp, outside_humidity)
+            if outside_temp is not None and outside_humidity is not None
+            else None
+        )
+
+        # Get lung room conditions
+        lung_room_temp = self._get_sensor_value(
+            global_settings.get("lung_room_temp_sensor")
+        )
+        lung_room_humidity = self._get_sensor_value(
+            global_settings.get("lung_room_humidity_sensor")
+        )
+        lung_room_vpd = (
+            VPDCalculator.calculate_vpd(lung_room_temp, lung_room_humidity)
+            if lung_room_temp is not None and lung_room_humidity is not None
+            else None
+        )
+
+        for growspace_id, growspace in self.growspaces.items():
+            stress_sensor_id = f"binary_sensor.{growspace_id}_stress"
+            stress_state = self.hass.states.get(stress_sensor_id)
+
+            if not stress_state or stress_state.state != "on":
+                recommendations[growspace_id] = "Idle"
+                continue
+
+            current_vpd = self._get_sensor_value(
+                growspace.environment_config.get("vpd_sensor")
+            )
+            target_vpd = self.data.get("bayesian_sensors_reason", {}).get(
+                growspace_id, {}
+            ).get("target_vpd")
+
+            if current_vpd is None or target_vpd is None:
+                recommendations[growspace_id] = "Idle"
+                continue
+
+            min_temp = growspace.environment_config.get(
+                "minimum_source_air_temperature", 18
+            )
+            current_diff = abs(current_vpd - target_vpd)
+            best_option = "Idle"
+            best_diff = current_diff
+
+            # Evaluate outside air
+            if (
+                outside_vpd is not None
+                and outside_temp is not None
+                and outside_temp >= min_temp
+            ):
+                outside_diff = abs(outside_vpd - target_vpd)
+                if outside_diff < best_diff:
+                    best_diff = outside_diff
+                    best_option = "Open Window"
+
+            # Evaluate lung room air
+            if (
+                lung_room_vpd is not None
+                and lung_room_temp is not None
+                and lung_room_temp >= min_temp
+            ):
+                lung_room_diff = abs(lung_room_vpd - target_vpd)
+                if lung_room_diff < best_diff:
+                    best_diff = lung_room_diff
+                    best_option = "Ventilate Lung Room"
+
+            recommendations[growspace_id] = best_option
+
+        if "air_exchange_recommendations" not in self.data:
+            self.data["air_exchange_recommendations"] = {}
+        self.data["air_exchange_recommendations"].update(recommendations)
