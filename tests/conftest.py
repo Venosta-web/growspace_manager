@@ -1,4 +1,6 @@
 """Fixtures for Growspace Manager tests."""
+import asyncio
+from unittest.mock import AsyncMock, MagicMock, Mock, patch
 
 import pytest
 
@@ -7,7 +9,23 @@ import pytest
 def auto_enable_custom_integrations(enable_custom_integrations):
     """Enable custom integrations defined in the test environment."""
     yield
-from unittest.mock import AsyncMock, MagicMock, Mock
+
+
+@pytest.fixture(autouse=True)
+def mock_recorder_component(hass):
+    """Mock the recorder component to prevent setup errors."""
+
+    # Mock the data structure the Recorder core expects
+    hass.data["recorder"] = MagicMock()
+    hass.data["recorder"].db_connected = asyncio.Future()
+    hass.data["recorder"].db_connected.set_result(True)
+    hass.data["recorder"].async_add_executor_job = Mock()
+
+    # Patch the main setup function to just return True
+    with patch(
+        "homeassistant.components.recorder.async_setup", return_value=True
+    ) as mock_async_setup:
+        yield mock_async_setup
 
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.storage import Store
