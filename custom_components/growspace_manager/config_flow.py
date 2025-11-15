@@ -456,7 +456,7 @@ class OptionsFlowHandler(OptionsFlow):
     ) -> ConfigFlowResult:
         """Let the user select which growspace to configure."""
         coordinator = self.hass.data[DOMAIN][self.config_entry.entry_id]["coordinator"]
-        growspace_options = coordinator.get_sorted_growspace_options()
+        growspace_options = await coordinator.get_sorted_growspace_options()
 
         if not growspace_options:
             return self.async_abort(reason="no_growspaces")
@@ -657,7 +657,10 @@ class OptionsFlowHandler(OptionsFlow):
             try:
                 for key, value in user_input.items():
                     if isinstance(value, str) and value.startswith("("):
-                        env_config[key] = ast.literal_eval(value)
+                        parsed_value = ast.literal_eval(value)
+                        if not isinstance(parsed_value, tuple):
+                            raise ValueError("Parsed value is not a tuple")
+                        env_config[key] = parsed_value
             except (ValueError, SyntaxError):
                 return self.async_show_form(
                     step_id="configure_advanced_bayesian",
