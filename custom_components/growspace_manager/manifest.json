@@ -3,6 +3,7 @@
   "name": "Growspace Manager",
   "version": "0.1.0",
   "documentation": "https://github.com/Venosta-web/growspace_manager",
+  "issue_tracker": "https://github.com/Venosta-web/growspace_manager/issues",
   "requirements": [],
   "codeowners": ["@Venosta-web"],
   "iot_class": "local_push",
