@@ -1,5 +1,4 @@
 # Home Assistant Core (Minimal)
-homeassistant
 voluptuous
 
 # Test Dependencies
