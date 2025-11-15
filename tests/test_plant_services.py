@@ -7,7 +7,7 @@ from homeassistant.core import HomeAssistant, ServiceCall
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers import event as event_helper
 
-from ..services.plant import (
+from custom_components.growspace_manager.services.plant import (
     handle_add_plant,
     handle_take_clone,
     handle_move_clone,
@@ -18,7 +18,8 @@ from ..services.plant import (
     handle_transition_plant_stage,
     handle_harvest_plant,
 )
-from ..const import DOMAIN
+
+from custom_components.growspace_manager.const import DOMAIN
 
 
 @pytest.fixture

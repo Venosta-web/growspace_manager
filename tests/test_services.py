@@ -2,7 +2,7 @@ import pytest
 from datetime import date
 from homeassistant.exceptions import HomeAssistantError
 
-from ..services import (
+from custom_components.growspace_manager.services import (
     ADD_GROWSPACE_SCHEMA,
     REMOVE_GROWSPACE_SCHEMA,
     ADD_PLANT_SCHEMA,
