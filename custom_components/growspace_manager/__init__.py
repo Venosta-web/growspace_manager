@@ -11,6 +11,7 @@ from homeassistant.components.persistent_notification import (
 )
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, ServiceCall
+import homeassistant.helpers.config_validation as cv
 import homeassistant.helpers.device_registry as dr
 from homeassistant.helpers.storage import Store
 from homeassistant.helpers import entity_registry as er
@@ -61,6 +62,8 @@ from .services import environment
 _LOGGER = logging.getLogger(__name__)
 
 PLATFORMS = ["binary_sensor", "sensor", "switch"]
+
+CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 
 
 async def async_setup(hass: HomeAssistant, config: dict):
