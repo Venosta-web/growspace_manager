@@ -9,7 +9,10 @@ from custom_components.growspace_manager.config_flow import OptionsFlowHandler
 from custom_components.growspace_manager.coordinator import Growspace
 from custom_components.growspace_manager.coordinator import GrowspaceCoordinator
 from custom_components.growspace_manager.coordinator import Plant
-from custom_components.growspace_manager.const import PLANT_STAGES
+from custom_components.growspace_manager.const import (
+    PLANT_STAGES,
+    SPECIAL_GROWSPACES,
+)
 
 
 @pytest.fixture
@@ -212,8 +215,6 @@ async def test_migrate_legacy_growspaces(coordinator):
         coordinator._migrate_legacy_growspaces()
 
         # Ensure it was called for each alias in SPECIAL_GROWSPACES
-        from ..const import SPECIAL_GROWSPACES
-
         total_aliases = sum(
             len(config["aliases"]) for config in SPECIAL_GROWSPACES.values()
         )
