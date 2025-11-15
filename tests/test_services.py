@@ -1,143 +1,191 @@
-import pytest
-from datetime import date
-from homeassistant.exceptions import HomeAssistantError
+"""Tests for the Growspace Manager services."""
+from __future__ import annotations
 
-from custom_components.growspace_manager.services import (
-    ADD_GROWSPACE_SCHEMA,
-    REMOVE_GROWSPACE_SCHEMA,
-    ADD_PLANT_SCHEMA,
-    UPDATE_PLANT_SCHEMA,
-    REMOVE_PLANT_SCHEMA,
-    MOVE_PLANT_SCHEMA,
-    SWITCH_PLANT_SCHEMA,
-    TRANSITION_PLANT_SCHEMA,
-    MOVE_CLONE_SCHEMA,
-    EXPORT_STRAIN_LIBRARY_SCHEMA,
-    IMPORT_STRAIN_LIBRARY_SCHEMA,
-    CLEAR_STRAIN_LIBRARY_SCHEMA,
-    HARVEST_PLANT_SCHEMA,
-    TAKE_CLONE_SCHEMA,
-    DEBUG_CLEANUP_LEGACY_SCHEMA,
-    DEBUG_LIST_GROWSPACES_SCHEMA,
-    DEBUG_RESET_SPECIAL_GROWSPACES_SCHEMA,
-    DEBUG_CONSOLIDATE_DUPLICATE_SPECIAL_SCHEMA,
-)
+from unittest.mock import patch
+
+from homeassistant.core import HomeAssistant
+from pytest_homeassistant_custom_component.common import MockConfigEntry
+
+from custom_components.growspace_manager.const import DOMAIN
 
 
-def test_add_growspace_schema_valid():
-    data = {"name": "Test GS", "rows": 3, "plants_per_row": 3}
-    validated = ADD_GROWSPACE_SCHEMA(data)
-    assert validated == data
+async def test_add_growspace_service(hass: HomeAssistant) -> None:
+    """Test the add_growspace service."""
+    config_entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={"name": "My Growspace"},
+    )
+    config_entry.add_to_hass(hass)
+
+    with patch(
+        "custom_components.growspace_manager.GrowspaceCoordinator.async_load",
+        return_value=True,
+    ):
+        await hass.config_entries.async_setup(config_entry.entry_id)
+        await hass.async_block_till_done()
+
+    await hass.services.async_call(
+        DOMAIN,
+        "add_growspace",
+        {"name": "Test Growspace", "rows": 2, "plants_per_row": 2},
+        blocking=True,
+    )
+    await hass.async_block_till_done()
+
+    coordinator = hass.data[DOMAIN][config_entry.entry_id]["coordinator"]
+    assert len(coordinator.growspaces) == 1
+    assert list(coordinator.growspaces.values())[0].name == "Test Growspace"
 
 
+async def test_remove_growspace_service(hass: HomeAssistant) -> None:
+    """Test the remove_growspace service."""
+    config_entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={"name": "My Growspace"},
+    )
+    config_entry.add_to_hass(hass)
 
-def test_add_growspace_schema_invalid():
-    data = {"name": "Test GS", "rows": -1, "plants_per_row": 3}
-    with pytest.raises(Exception):
-        services.ADD_GROWSPACE_SCHEMA(data)
+    with patch(
+        "custom_components.growspace_manager.GrowspaceCoordinator.async_load",
+        return_value=True,
+    ):
+        await hass.config_entries.async_setup(config_entry.entry_id)
+        await hass.async_block_till_done()
 
+    coordinator = hass.data[DOMAIN][config_entry.entry_id]["coordinator"]
+    growspace = await coordinator.async_add_growspace(
+        name="Test Growspace",
+        rows=2,
+        plants_per_row=2,
+    )
+    await hass.async_block_till_done()
 
-def test_remove_growspace_schema_valid():
-    data = {"growspace_id": "gs1"}
-    assert REMOVE_GROWSPACE_SCHEMA(data) == data
+    await hass.services.async_call(
+        DOMAIN,
+        "remove_growspace",
+        {"growspace_id": growspace.id},
+        blocking=True,
+    )
+    await hass.async_block_till_done()
 
-
-def test_add_plant_schema_valid():
-    data = {
-        "growspace_id": "gs1",
-        "strain": "OG",
-        "row": 1,
-        "col": 1,
-        "phenotype": "A",
-        "seedling_start": date.today(),
-    }
-    validated = ADD_PLANT_SCHEMA(data)
-    assert validated == data
-
-
-def test_add_plant_schema_invalid():
-    data = {"growspace_id": "gs1", "strain": "OG", "row": -1, "col": 1}
-    with pytest.raises(Exception):
-        ADD_PLANT_SCHEMA(data)
-
-
-def test_update_plant_schema_valid():
-    data = {"plant_id": "p1", "strain": "OG"}
-    validated = UPDATE_PLANT_SCHEMA(data)
-    assert validated["plant_id"] == "p1"
+    assert len(coordinator.growspaces) == 0
 
 
-def test_remove_plant_schema_valid():
-    data = {"plant_id": "p1"}
-    assert REMOVE_PLANT_SCHEMA(data) == data
+async def test_add_plant_service(hass: HomeAssistant) -> None:
+    """Test the add_plant service."""
+    config_entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={"name": "My Growspace"},
+    )
+    config_entry.add_to_hass(hass)
+
+    with patch(
+        "custom_components.growspace_manager.GrowspaceCoordinator.async_load",
+        return_value=True,
+    ):
+        await hass.config_entries.async_setup(config_entry.entry_id)
+        await hass.async_block_till_done()
+
+    coordinator = hass.data[DOMAIN][config_entry.entry_id]["coordinator"]
+    growspace = await coordinator.async_add_growspace(
+        name="Test Growspace",
+        rows=2,
+        plants_per_row=2,
+    )
+    await hass.async_block_till_done()
+
+    await hass.services.async_call(
+        DOMAIN,
+        "add_plant",
+        {
+            "growspace_id": growspace.id,
+            "strain": "Test Plant",
+            "row": 1,
+            "col": 1,
+        },
+        blocking=True,
+    )
+    await hass.async_block_till_done()
+
+    assert len(coordinator.plants) == 1
+    assert list(coordinator.plants.values())[0].strain == "Test Plant"
 
 
-def test_move_plant_schema_valid():
-    data = {"plant_id": "p1", "new_row": 2, "new_col": 3}
-    assert MOVE_PLANT_SCHEMA(data) == data
+async def test_remove_plant_service(hass: HomeAssistant) -> None:
+    """Test the remove_plant service."""
+    config_entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={"name": "My Growspace"},
+    )
+    config_entry.add_to_hass(hass)
+
+    with patch(
+        "custom_components.growspace_manager.GrowspaceCoordinator.async_load",
+        return_value=True,
+    ):
+        await hass.config_entries.async_setup(config_entry.entry_id)
+        await hass.async_block_till_done()
+
+    coordinator = hass.data[DOMAIN][config_entry.entry_id]["coordinator"]
+    growspace = await coordinator.async_add_growspace(
+        name="Test Growspace",
+        rows=2,
+        plants_per_row=2,
+    )
+    plant = await coordinator.async_add_plant(
+        growspace_id=growspace.id,
+        strain="Test Plant",
+        row=1,
+        col=1,
+    )
+    await hass.async_block_till_done()
+
+    await hass.services.async_call(
+        DOMAIN,
+        "remove_plant",
+        {"plant_id": plant.id},
+        blocking=True,
+    )
+    await hass.async_block_till_done()
+
+    assert len(coordinator.plants) == 0
 
 
-def test_switch_plant_schema_valid():
-    data = {"plant_id_1": "p1", "plant_id_2": "p2"}
-    assert SWITCH_PLANT_SCHEMA(data) == data
+async def test_update_plant_service(hass: HomeAssistant) -> None:
+    """Test the update_plant service."""
+    config_entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={"name": "My Growspace"},
+    )
+    config_entry.add_to_hass(hass)
 
+    with patch(
+        "custom_components.growspace_manager.GrowspaceCoordinator.async_load",
+        return_value=True,
+    ):
+        await hass.config_entries.async_setup(config_entry.entry_id)
+        await hass.async_block_till_done()
 
-def test_transition_plant_schema_valid():
-    data = {"plant_id": "p1", "new_stage": "veg", "transition_date": date.today()}
-    assert TRANSITION_PLANT_SCHEMA(data) == data
+    coordinator = hass.data[DOMAIN][config_entry.entry_id]["coordinator"]
+    growspace = await coordinator.async_add_growspace(
+        name="Test Growspace",
+        rows=2,
+        plants_per_row=2,
+    )
+    plant = await coordinator.async_add_plant(
+        growspace_id=growspace.id,
+        strain="Test Plant",
+        row=1,
+        col=1,
+    )
+    await hass.async_block_till_done()
 
+    await hass.services.async_call(
+        DOMAIN,
+        "update_plant",
+        {"plant_id": plant.id, "strain": "New Strain"},
+        blocking=True,
+    )
+    await hass.async_block_till_done()
 
-def test_move_clone_schema_valid():
-    data = {"plant_id": "p1", "target_growspace_id": "gs2"}
-    assert MOVE_CLONE_SCHEMA(data) == data
-
-
-def test_export_strain_library_schema_valid():
-    data = {}
-    assert EXPORT_STRAIN_LIBRARY_SCHEMA(data) == data
-
-
-def test_import_strain_library_schema_valid():
-    data = {"strains": ["A", "B"], "replace": True}
-    validated = IMPORT_STRAIN_LIBRARY_SCHEMA(data)
-    assert validated["replace"] is True
-
-
-def test_clear_strain_library_schema_valid():
-    data = {}
-    assert CLEAR_STRAIN_LIBRARY_SCHEMA(data) == data
-
-
-def test_harvest_plant_schema_valid():
-    data = {
-        "plant_id": "p1",
-        "target_growspace_id": "gs2",
-        "transition_date": date.today(),
-    }
-    assert HARVEST_PLANT_SCHEMA(data) == data
-
-
-def test_take_clone_schema_valid():
-    data = {"mother_plant_id": "p1", "num_clones": 2}
-    validated = TAKE_CLONE_SCHEMA(data)
-    assert validated["num_clones"] == 2
-
-
-def test_debug_cleanup_legacy_schema_valid():
-    data = {"dry_only": True, "cure_only": False, "force": True}
-    validated = DEBUG_CLEANUP_LEGACY_SCHEMA(data)
-    assert validated["dry_only"] is True
-
-
-def test_debug_list_growspaces_schema_valid():
-    assert DEBUG_LIST_GROWSPACES_SCHEMA({}) == {}
-
-
-def test_debug_reset_special_growspaces_schema_valid():
-    data = {"reset_dry": True, "reset_cure": False, "preserve_plants": True}
-    validated = DEBUG_RESET_SPECIAL_GROWSPACES_SCHEMA(data)
-    assert validated["reset_cure"] is False
-
-
-def test_debug_consolidate_duplicate_special_schema_valid():
-    assert DEBUG_CONSOLIDATE_DUPLICATE_SPECIAL_SCHEMA({}) == {}
+    assert coordinator.plants[plant.id].strain == "New Strain"

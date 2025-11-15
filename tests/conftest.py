@@ -3,12 +3,9 @@
 import pytest
 
 
-@pytest.fixture(autouse=True)
-def auto_enable_custom_integrations(enable_custom_integrations):
-    """Enable custom integrations defined in the test environment."""
-    yield
 from unittest.mock import AsyncMock, MagicMock, Mock
 
+import pytest
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.storage import Store
 from pytest_homeassistant_custom_component.common import MockConfigEntry

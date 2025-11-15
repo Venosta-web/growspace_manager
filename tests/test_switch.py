@@ -1,125 +1,99 @@
-import pytest
-from unittest.mock import AsyncMock, Mock, patch
-from types import SimpleNamespace
+"""Tests for the Growspace Manager switch platform."""
+from __future__ import annotations
 
-from custom_components.growspace_manager.switch import GrowspaceNotificationSwitch
-from custom_components.growspace_manager.switch import async_setup_entry
+from unittest.mock import patch
+
+from homeassistant.core import HomeAssistant
+from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.growspace_manager.const import DOMAIN
-from custom_components.growspace_manager.coordinator import GrowspaceCoordinator
 
 
-# --------------------
-# Fixtures
-# --------------------
-@pytest.fixture
-def mock_coordinator() -> GrowspaceCoordinator:
-    """Return a mock coordinator with sample growspaces."""
-    coordinator = Mock(spec=GrowspaceCoordinator)
-    coordinator.hass = Mock()
-    coordinator.growspaces = {
-        "gs1": {
-            "id": "gs1",
-            "name": "Growspace 1",
-            "notification_target": "notify_me",
-        },
-        "gs2": {
-            "id": "gs2",
-            "name": "Growspace 2",
-            "notification_target": None,  # Should not create a switch
-        },
-    }
-    coordinator.async_add_listener = Mock()
-    return coordinator
+async def test_switch_creation(hass: HomeAssistant) -> None:
+    """Test that all switches are created."""
+    config_entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={"name": "My Growspace"},
+    )
+    config_entry.add_to_hass(hass)
 
+    with patch(
+        "custom_components.growspace_manager.GrowspaceCoordinator.async_load",
+        return_value=True,
+    ):
+        await hass.config_entries.async_setup(config_entry.entry_id)
+        await hass.async_block_till_done()
 
-@pytest.fixture
-def mock_hass(mock_coordinator: GrowspaceCoordinator):
-    """Return a mock Home Assistant object."""
-    hass = Mock()
-    hass.data = {DOMAIN: {"entry1": {"coordinator": mock_coordinator}}}
-    return hass
+    coordinator = hass.data[DOMAIN][config_entry.entry_id]["coordinator"]
+    await coordinator.async_add_growspace(
+        name="Test Growspace",
+        rows=2,
+        plants_per_row=2,
+        notification_target="notify.test",
+    )
+    await hass.async_block_till_done()
 
+    await hass.config_entries.async_unload(config_entry.entry_id)
+    await hass.config_entries.async_setup(config_entry.entry_id)
+    await hass.async_block_till_done()
 
-# --------------------
-# Tests
-# --------------------
-@pytest.mark.asyncio
-async def test_async_setup_entry_creates_entities(mock_hass, mock_coordinator):
-    added_entities = []
-
-    # synchronous callback as Home Assistant expects
-    def fake_add_entities(new_entities, update_before_add=False):
-        added_entities.extend(new_entities)
-
-    # Mock coordinator growspaces
-    gs1 = Mock()
-    gs1.name = "Growspace 1"
-    gs1.notification_target = "notify_target_1"
-
-    gs2 = Mock()
-    gs2.name = "Growspace 2"
-    gs2.notification_target = None
-
-    mock_coordinator.growspaces = {"gs1": gs1, "gs2": gs2}
-    mock_coordinator.get_growspace_plants = Mock(return_value=[])
-    mock_coordinator._ensure_special_growspace = AsyncMock(return_value="special_gs")
-    mock_coordinator.async_save = AsyncMock()
-    mock_coordinator.async_set_updated_data = Mock()
-
-    mock_coordinator.is_notifications_enabled = Mock(return_value=True)
-
-    mock_hass.data = {DOMAIN: {"entry1": {"coordinator": mock_coordinator}}}
-
-    await async_setup_entry(mock_hass, Mock(entry_id="entry1"), fake_add_entities)
-
-    assert len(added_entities) == 1
-    switch = added_entities[0]
-    assert isinstance(switch, GrowspaceNotificationSwitch)
-    assert switch._growspace_id == "gs1"
-    assert switch.is_on is True
-    assert switch._attr_name == "Growspace 1 Notifications"
-
-
-@pytest.mark.asyncio
-async def test_growspace_notification_switch_on_off(mock_coordinator):
-    # Growspace object
-    growspace = SimpleNamespace(
-        id="gs1", name="Growspace 1", notification_target="notify_me"
+    assert (
+        hass.states.get("switch.test_growspace_notifications") is not None
     )
 
-    # Mock coordinator methods
-    mock_coordinator.async_set_growspace_notification = AsyncMock()
-    mock_coordinator.is_notifications_enabled = Mock(return_value=True)
 
-    switch = GrowspaceNotificationSwitch(mock_coordinator, "gs1", growspace)
-
-    # Patch async_write_ha_state so HA internals are not invoked
-    switch.hass = Mock()
-    with patch.object(switch, "async_write_ha_state", return_value=None):
-        # Default state should be on
-        assert switch.is_on is True
-
-        # Turn off
-        mock_coordinator.is_notifications_enabled.return_value = False
-        await switch.async_turn_off()
-        assert switch.is_on is False
-
-        # Turn on
-        mock_coordinator.is_notifications_enabled.return_value = True
-        await switch.async_turn_on()
-        assert switch.is_on is True
-
-
-@pytest.mark.asyncio
-async def test_async_added_to_hass_calls_add_listener(mock_coordinator):
-    growspace = SimpleNamespace(
-        id="gs1", name="Growspace 1", notification_target="notify_me"
+async def test_switch_on_off(hass: HomeAssistant) -> None:
+    """Test the on/off state of the switch."""
+    config_entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={"name": "My Growspace"},
     )
-    switch = GrowspaceNotificationSwitch(mock_coordinator, "gs1", growspace)
+    config_entry.add_to_hass(hass)
 
-    await switch.async_added_to_hass()
-    # async_add_listener should be called once with async_write_ha_state
-    mock_coordinator.async_add_listener.assert_called_once_with(
-        switch.async_write_ha_state
+    with patch(
+        "custom_components.growspace_manager.GrowspaceCoordinator.async_load",
+        return_value=True,
+    ):
+        await hass.config_entries.async_setup(config_entry.entry_id)
+        await hass.async_block_till_done()
+
+    coordinator = hass.data[DOMAIN][config_entry.entry_id]["coordinator"]
+    await coordinator.async_add_growspace(
+        name="Test Growspace",
+        rows=2,
+        plants_per_row=2,
+        notification_target="notify.test",
     )
+    await hass.async_block_till_done()
+
+    await hass.config_entries.async_unload(config_entry.entry_id)
+    await hass.config_entries.async_setup(config_entry.entry_id)
+    await hass.async_block_till_done()
+
+    state = hass.states.get("switch.test_growspace_notifications")
+    assert state is not None
+    assert state.state == "on"
+
+    await hass.services.async_call(
+        "switch",
+        "turn_off",
+        {"entity_id": "switch.test_growspace_notifications"},
+        blocking=True,
+    )
+    await hass.async_block_till_done()
+
+    state = hass.states.get("switch.test_growspace_notifications")
+    assert state is not None
+    assert state.state == "off"
+
+    await hass.services.async_call(
+        "switch",
+        "turn_on",
+        {"entity_id": "switch.test_growspace_notifications"},
+        blocking=True,
+    )
+    await hass.async_block_till_done()
+
+    state = hass.states.get("switch.test_growspace_notifications")
+    assert state is not None
+    assert state.state == "on"

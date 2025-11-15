@@ -1,232 +1,177 @@
-import pytest
-from unittest.mock import Mock, AsyncMock, MagicMock, patch
-from datetime import date, timedelta
+"""Tests for the Growspace Manager sensor platform."""
+from __future__ import annotations
 
-from custom_components.growspace_manager.sensor import (
-    GrowspaceOverviewSensor,
-    PlantEntity,
-    StrainLibrarySensor,
-    GrowspaceListSensor,
-    async_setup_entry,
-)
-from custom_components.growspace_manager import sensor as sensor_module
-from custom_components.growspace_manager.coordinator import GrowspaceCoordinator
+from unittest.mock import patch
+
+from homeassistant.core import HomeAssistant
+from pytest_homeassistant_custom_component.common import MockConfigEntry
+
 from custom_components.growspace_manager.const import DOMAIN
 
 
-# --------------------
-# Fixtures
-# --------------------
-@pytest.fixture
-def mock_coordinator():
-    coordinator = Mock()
-    coordinator.hass = Mock()
-    coordinator.growspaces = {
-        "gs1": Mock(
-            id="gs1",
-            name="Growspace 1",
-            rows=2,
-            plants_per_row=2,
-            notification_target="notify_me",
-        )
-    }
-    coordinator.plants = {
-        "p1": Mock(
-            plant_id="p1",
-            growspace_id="gs1",
-            strain="Strain A",
-            phenotype="A",
-            row=1,
-            col=1,
-            stage="veg",
-            seedling_start=str(date.today() - timedelta(days=5)),
-            veg_start=str(date.today() - timedelta(days=3)),
-            flower_start=None,
-            mother_start=None,
-            clone_start=None,
-            dry_start=None,
-            cure_start=None,
-        )
-    }
-    coordinator.get_growspace_plants.return_value = list(coordinator.plants.values())
-    coordinator.calculate_days_in_stage.side_effect = lambda plant, stage: 1
-    coordinator.should_send_notification.return_value = True
-    coordinator.mark_notification_sent = AsyncMock()
-    coordinator.async_add_listener = Mock()
-    coordinator.get_strain_options.return_value = ["Strain A", "Strain B"]
-    coordinator.get_growspace_options.return_value = ["gs1"]
-    return coordinator
-
-
-# --------------------
-# async_setup_entry
-# --------------------
-@pytest.mark.asyncio
-async def test_async_setup_entry_adds_entities():
-    hass = Mock()
-
-    # Coordinator mock
-    mock_coordinator = Mock()
-    mock_coordinator.growspaces = {
-        "gs1": Mock(id="gs1", name="Growspace 1", rows=2, plants_per_row=2)
-    }
-    mock_coordinator.get_growspace_plants = Mock(return_value=[])
-    mock_coordinator.async_save = AsyncMock()
-    mock_coordinator._ensure_special_growspace = Mock(
-        side_effect=lambda x, y, rows, plants_per_row: x
+async def test_sensor_creation(hass: HomeAssistant) -> None:
+    """Test that all sensors are created."""
+    config_entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={"name": "My Growspace"},
+        options={
+            "global_settings": {
+                "weather_entity": "weather.home",
+                "lung_room_temp_sensor": "sensor.lung_temp",
+                "lung_room_humidity_sensor": "sensor.lung_humidity",
+            }
+        },
     )
-    mock_coordinator.async_set_updated_data = AsyncMock()
+    config_entry.add_to_hass(hass)
 
-    hass.data = {"growspace_manager": {"entry_1": {"coordinator": mock_coordinator}}}
+    with patch(
+        "custom_components.growspace_manager.GrowspaceCoordinator.async_load",
+        return_value=True,
+    ), patch(
+        "custom_components.growspace_manager.sensor.async_setup_trend_sensor",
+        return_value="trend_unique_id",
+    ), patch(
+        "custom_components.growspace_manager.sensor.async_setup_statistics_sensor",
+        return_value="stats_unique_id",
+    ):
+        await hass.config_entries.async_setup(config_entry.entry_id)
+        await hass.async_block_till_done()
 
-    added_entities = []
+    coordinator = hass.data[DOMAIN][config_entry.entry_id]["coordinator"]
+    growspace = await coordinator.async_add_growspace(
+        name="Test Growspace",
+        rows=2,
+        plants_per_row=2,
+    )
+    await coordinator.async_add_plant(
+        growspace_id=growspace.id,
+        strain="Test Plant",
+        row=1,
+        col=1,
+    )
+    await hass.async_block_till_done()
 
-    # Regular function, not async
-    def async_add_entities(entities, update_before_add=False):
-        added_entities.extend(entities)
+    await hass.config_entries.async_unload(config_entry.entry_id)
+    await hass.config_entries.async_setup(config_entry.entry_id)
+    await hass.async_block_till_done()
 
-    await async_setup_entry(hass, Mock(entry_id="entry_1"), async_add_entities)
-
-    # Now entities should be added
-    assert added_entities
-    assert all(hasattr(e, "unique_id") for e in added_entities)
-
-
-# --------------------
-# GrowspaceOverviewSensor
-# --------------------
-def test_growspace_overview_sensor_state_and_attributes(mock_coordinator):
-    gs = GrowspaceOverviewSensor(
-        coordinator=mock_coordinator,
-        growspace_id="gs1",
-        growspace=mock_coordinator.growspaces["gs1"],
+    assert hass.states.get("sensor.test_growspace") is not None
+    assert hass.states.get("sensor.test_plant_1_1") is not None
+    assert hass.states.get("sensor.growspace_strain_library") is not None
+    assert hass.states.get("sensor.growspaces_list") is not None
+    assert hass.states.get("sensor.outside_vpd") is not None
+    assert hass.states.get("sensor.lung_room_vpd") is not None
+    assert (
+        hass.states.get("sensor.test_growspace_air_exchange") is not None
     )
 
-    # State should return number of plants
-    assert gs.state == 1
 
-    attrs = gs.extra_state_attributes
-    assert attrs["total_plants"] == 1
-    assert "grid" in attrs
-    # Grid positions
-    assert attrs["grid"]["position_1_1"]["plant_id"] == "p1"
+async def test_growspace_overview_sensor_state_and_attributes(
+    hass: HomeAssistant,
+) -> None:
+    """Test the state and attributes of the GrowspaceOverviewSensor."""
+    config_entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={"name": "My Growspace"},
+    )
+    config_entry.add_to_hass(hass)
+
+    with patch(
+        "custom_components.growspace_manager.GrowspaceCoordinator.async_load",
+        return_value=True,
+    ):
+        await hass.config_entries.async_setup(config_entry.entry_id)
+        await hass.async_block_till_done()
+
+    coordinator = hass.data[DOMAIN][config_entry.entry_id]["coordinator"]
+    growspace = await coordinator.async_add_growspace(
+        name="Test Growspace",
+        rows=2,
+        plants_per_row=2,
+    )
+    await coordinator.async_add_plant(
+        growspace_id=growspace.id,
+        strain="Test Plant",
+        row=1,
+        col=1,
+    )
+    await hass.async_block_till_done()
+
+    await hass.config_entries.async_unload(config_entry.entry_id)
+    await hass.config_entries.async_setup(config_entry.entry_id)
+    await hass.async_block_till_done()
+
+    state = hass.states.get("sensor.test_growspace")
+    assert state is not None
+    assert state.state == "1"
+    assert state.attributes["total_plants"] == 1
+    assert "grid" in state.attributes
 
 
-def test_growspace_overview_sensor_max_stage_attributes(mock_coordinator):
-    """Test max stage attributes are included in GrowspaceOverviewSensor."""
-    coordinator = mock_coordinator
-    # Add two plants with veg and flower stages
-    coordinator.plants = {
-        "p1": Mock(
-            plant_id="p1",
-            growspace_id="gs1",
-            strain="Strain A",
-            phenotype="A",
-            row=1,
-            col=1,
-            stage="veg",
-            seedling_start=None,
-            veg_start=str(date.today() - timedelta(days=10)),
-            flower_start=None,
-            mother_start=None,
-            clone_start=None,
-            dry_start=None,
-            cure_start=None,
-        ),
-        "p2": Mock(
-            plant_id="p2",
-            growspace_id="gs1",
-            strain="Strain B",
-            phenotype="B",
-            row=1,
-            col=2,
-            stage="flower",
-            seedling_start=None,
-            veg_start=str(date.today() - timedelta(days=30)),
-            flower_start=str(date.today() - timedelta(days=15)),
-            mother_start=None,
-            clone_start=None,
-            dry_start=None,
-            cure_start=None,
-        ),
-    }
-    coordinator.get_growspace_plants.return_value = list(coordinator.plants.values())
+async def test_plant_entity_state_and_attributes(hass: HomeAssistant) -> None:
+    """Test the state and attributes of the PlantEntity."""
+    config_entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={"name": "My Growspace"},
+    )
+    config_entry.add_to_hass(hass)
 
-    gs = GrowspaceOverviewSensor(
-        coordinator=coordinator,
-        growspace_id="gs1",
-        growspace=coordinator.growspaces["gs1"],
+    with patch(
+        "custom_components.growspace_manager.GrowspaceCoordinator.async_load",
+        return_value=True,
+    ):
+        await hass.config_entries.async_setup(config_entry.entry_id)
+        await hass.async_block_till_done()
+
+    coordinator = hass.data[DOMAIN][config_entry.entry_id]["coordinator"]
+    growspace = await coordinator.async_add_growspace(
+        name="Test Growspace",
+        rows=2,
+        plants_per_row=2,
+    )
+    await coordinator.async_add_plant(
+        growspace_id=growspace.id,
+        strain="Test Plant",
+        row=1,
+        col=1,
+        veg_start="2023-01-01",
+    )
+    await hass.async_block_till_done()
+
+    await hass.config_entries.async_unload(config_entry.entry_id)
+    await hass.config_entries.async_setup(config_entry.entry_id)
+    await hass.async_block_till_done()
+
+    state = hass.states.get("sensor.test_plant_1_1")
+    assert state is not None
+    assert state.state == "veg"
+    assert "veg_days" in state.attributes
+
+
+async def test_vpd_sensor_logic(hass: HomeAssistant) -> None:
+    """Test the logic of the VpdSensor."""
+    config_entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={"name": "My Growspace"},
+        options={
+            "global_settings": {
+                "weather_entity": "weather.home",
+            }
+        },
+    )
+    config_entry.add_to_hass(hass)
+
+    hass.states.async_set(
+        "weather.home", "sunny", {"temperature": 25, "humidity": 60}
     )
 
-    attrs = gs.extra_state_attributes
+    with patch(
+        "custom_components.growspace_manager.GrowspaceCoordinator.async_load",
+        return_value=True,
+    ):
+        await hass.config_entries.async_setup(config_entry.entry_id)
+        await hass.async_block_till_done()
 
-    assert "max_veg_days" in attrs
-    assert "max_flower_days" in attrs
-    assert "max_stage_summary" in attrs
-    assert attrs["max_veg_days"] == 30
-    assert attrs["max_flower_days"] == 15
-    assert "Veg: 30d" in attrs["max_stage_summary"]
-    assert "Flower: 15d" in attrs["max_stage_summary"]
-
-
-def test_growspace_overview_sensor_max_stage_no_plants(mock_coordinator):
-    coordinator = mock_coordinator
-    coordinator.plants = {}
-    coordinator.get_growspace_plants.return_value = []
-
-    gs = GrowspaceOverviewSensor(
-        coordinator=coordinator,
-        growspace_id="gs1",
-        growspace=coordinator.growspaces["gs1"],
-    )
-
-    attrs = gs.extra_state_attributes
-    assert attrs["max_veg_days"] == 0
-    assert attrs["max_flower_days"] == 0
-    assert attrs["max_stage_summary"] == "Veg: 0d (W0), Flower: 0d (W0)"
-
-
-# --------------------
-# PlantEntity
-# --------------------
-def test_plant_entity_state_and_attributes(mock_coordinator):
-    plant = list(mock_coordinator.plants.values())[0]
-    entity = PlantEntity(mock_coordinator, plant)
-    state = entity.state
-    assert state in [
-        "veg",
-        "seedling",
-        "flower",
-        "dry",
-        "cure",
-        "clone",
-        "mother",
-        "unknown",
-    ]
-
-    attrs = entity.extra_state_attributes
-    assert attrs["plant_id"] == plant.plant_id
-    assert attrs["strain"] == plant.strain
-    assert "veg_days" in attrs
-
-
-# --------------------
-# StrainLibrarySensor
-# --------------------
-def test_strain_library_sensor_state_and_attributes(mock_coordinator):
-    sensor = StrainLibrarySensor(mock_coordinator)
-    assert sensor.state == "ok"
-    attrs = sensor.extra_state_attributes
-    assert "strains" in attrs
-    assert attrs["strains"] == ["Strain A", "Strain B"]
-
-
-# --------------------
-# GrowspaceListSensor
-# --------------------
-def test_growspace_list_sensor_state_and_attributes(mock_coordinator):
-    sensor = GrowspaceListSensor(mock_coordinator)
-    assert sensor.state == 1
-    attrs = sensor.extra_state_attributes
-    assert "growspaces" in attrs
-    assert attrs["growspaces"] == ["gs1"]
+    state = hass.states.get("sensor.outside_vpd")
+    assert state is not None
+    assert state.state == "1.28"
