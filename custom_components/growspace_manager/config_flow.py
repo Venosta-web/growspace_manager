@@ -511,12 +511,15 @@ class OptionsFlowHandler(OptionsFlow):
 
             final_options = self.config_entry.options.copy()
             final_options[self._selected_growspace_id] = env_config
+            self.hass.config_entries.async_update_entry(
+                self.config_entry, options=final_options
+            )
             _LOGGER.info(
                 "Environment configuration saved for growspace %s: %s",
                 growspace.name,
                 env_config,
             )
-            return self.async_create_entry(title="", data=final_options)
+            return self.async_create_entry(title="", data={})
 
         schema_dict = {}
 
@@ -670,13 +673,16 @@ class OptionsFlowHandler(OptionsFlow):
 
             final_options = self.config_entry.options.copy()
             final_options[self._selected_growspace_id] = env_config
+            self.hass.config_entries.async_update_entry(
+                self.config_entry, options=final_options
+            )
 
             _LOGGER.info(
                 "Advanced Bayesian configuration saved for %s: %s",
                 growspace.name,
                 env_config,
             )
-            return self.async_create_entry(title="", data=final_options)
+            return self.async_create_entry(title="", data={})
 
         return self.async_show_form(
             step_id="configure_advanced_bayesian",
@@ -1154,7 +1160,10 @@ class OptionsFlowHandler(OptionsFlow):
             # Save the global settings into the main config_entry's options
             new_options = self.config_entry.options.copy()
             new_options["global_settings"] = user_input
-            return self.async_create_entry(title="", data=new_options)
+            self.hass.config_entries.async_update_entry(
+                self.config_entry, options=new_options
+            )
+            return self.async_create_entry(title="", data={})
 
         # Get current global settings to prepopulate the form
         global_settings = self.config_entry.options.get("global_settings", {})
