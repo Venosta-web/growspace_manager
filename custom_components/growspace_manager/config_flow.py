@@ -71,12 +71,18 @@ async def ensure_default_growspaces(coordinator):
         _LOGGER.error("Error creating default growspaces: %s", err)
 
 
-class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
+class ConfigFlow(config_entries.ConfigFlow):
     """Handle a config flow for Growspace Manager."""
 
     VERSION = 1
     MINOR_VERSION = 1
+    DOMAIN = DOMAIN
     integration_name = "Growspace Manager"
+
+    @staticmethod
+    def is_matching(config_entry: ConfigEntry) -> bool:
+        """Return True if the config entry matches this flow."""
+        return config_entry.domain == DOMAIN
 
     async def async_step_user(
         self, user_input: dict[str, Any] | None = None

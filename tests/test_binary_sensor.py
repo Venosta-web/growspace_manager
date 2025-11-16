@@ -123,7 +123,7 @@ async def test_async_setup_entry(mock_hass: HomeAssistant):
     entities = async_add_entities.call_args.args[0]
 
     # Expecting 3 base sensors for each of the 3 growspaces, plus the 3 specific ones(11 cause len starts at 0)
-    assert len(entities) == 11
+    assert len(entities) == 12
 
     assert any(
         isinstance(e, BayesianStressSensor) and e.growspace_id == "gs1"
