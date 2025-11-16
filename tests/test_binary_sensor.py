@@ -21,6 +21,7 @@ from custom_components.growspace_manager.binary_sensor import (
     async_setup_entry,
 )
 from custom_components.growspace_manager.const import DOMAIN
+from collections.abc import Iterator
 
 MOCK_CONFIG_ENTRY_ID = "test_entry"
 
@@ -98,15 +99,18 @@ def mock_coordinator(mock_growspace):
 
 
 @pytest.fixture
-def mock_hass(mock_coordinator):
-    """Fixture for a mock Home Assistant."""
-    hass = MagicMock(spec=HomeAssistant)
-    hass.data = {DOMAIN: {MOCK_CONFIG_ENTRY_ID: {"coordinator": mock_coordinator}}}
+def mock_hass(
+    hass: HomeAssistant, mock_coordinator: MagicMock
+) -> Iterator[HomeAssistant]:
+    """Fixture for a mock Home Assistant instance that uses the real hass fixture."""
+    # Use the real hass fixture, which has .data['integrations']
+    hass.data[DOMAIN] = {MOCK_CONFIG_ENTRY_ID: {"coordinator": mock_coordinator}}
     hass.services = MagicMock()
     hass.services.async_call = AsyncMock()
-    hass.states = MagicMock()
-    # This is needed to satisfy the thread safety check in async_write_ha_state
+
+    # This is needed to satisfy the thread safety check
     hass.loop_thread_id = threading.get_ident()
+
     return hass
 
 
@@ -379,35 +383,51 @@ async def test_light_cycle_verification_sensor(mock_coordinator, mock_hass):
 
     # Test case 1: Veg stage, light on for 10 hours (correct)
     set_stage(veg=10, flower=0)
-    mock_hass.states.get.return_value = MagicMock(
-        state="on", last_changed=utcnow() - timedelta(hours=10)
+    # Use the existing set_sensor_state helper, which correctly patches hass.states.get
+    set_sensor_state(
+        mock_hass,
+        sensor.light_entity_id,
+        "on",
+        attributes={"last_changed": utcnow() - timedelta(hours=10)},
     )
     await sensor.async_update()
     assert sensor.is_on
 
     # Test case 2: Veg stage, light on for 20 hours (incorrect)
     set_stage(veg=10, flower=0)
-    mock_hass.states.get.return_value = MagicMock(
-        state="on", last_changed=utcnow() - timedelta(hours=20)
+    set_sensor_state(
+        mock_hass,
+        sensor.light_entity_id,
+        "on",
+        attributes={"last_changed": utcnow() - timedelta(hours=20)},
     )
     await sensor.async_update()
     assert not sensor.is_on
 
     # Test case 3: Flower stage, light off for 5 hours (correct)
     set_stage(veg=30, flower=20)
-    mock_hass.states.get.return_value = MagicMock(
-        state="off", last_changed=utcnow() - timedelta(hours=5)
+    set_sensor_state(
+        mock_hass,
+        sensor.light_entity_id,
+        "off",
+        attributes={"last_changed": utcnow() - timedelta(hours=5)},
     )
     await sensor.async_update()
     assert sensor.is_on
 
     # Test case 4: Flower stage, light off for 14 hours (incorrect)
     set_stage(veg=30, flower=20)
-    mock_hass.states.get.return_value = MagicMock(
-        state="off", last_changed=utcnow() - timedelta(hours=14)
+    set_sensor_state(
+        mock_hass,
+        sensor.light_entity_id,
+        "off",
+        attributes={"last_changed": utcnow() - timedelta(hours=14)},
     )
     await sensor.async_update()
     assert not sensor.is_on
+
+    # Clean up the mock
+    mock_hass.states.get.side_effect = None
 
 
 @pytest.mark.parametrize(
@@ -513,7 +533,9 @@ async def test_async_analyze_sensor_trend(
     """Test the _async_analyze_sensor_trend helper."""
     # Mock the recorder history call
     mock_history = create_mock_history(history_data)
-    mock_recorder.return_value.async_add_executor_job.return_value = mock_history
+    mock_recorder.return_value.async_add_executor_job = AsyncMock(
+        return_value=mock_history
+    )
 
     sensor = BayesianStressSensor(mock_coordinator, "gs1", env_config)
     sensor.hass = mock_hass
