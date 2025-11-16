@@ -11,7 +11,6 @@ from homeassistant.const import STATE_UNAVAILABLE, STATE_UNKNOWN
 from homeassistant.core import HomeAssistant
 from homeassistant.util.dt import utcnow
 
-
 from custom_components.growspace_manager.binary_sensor import (
     BayesianCuringSensor,
     BayesianDryingSensor,
@@ -111,15 +110,62 @@ def mock_hass(mock_coordinator):
     return hass
 
 
+@pytest.fixture
+def env_config():
+    """Fixture for a sample environment configuration."""
+    return {
+        "temperature_sensor": "sensor.temp",
+        "humidity_sensor": "sensor.humidity",
+        "vpd_sensor": "sensor.vpd",
+        "light_sensor": "light.grow_light",
+        "co2_sensor": "sensor.co2",
+        "circulation_fan": "switch.fan",
+    }
+
+
+def set_sensor_state(hass, entity_id, state, attributes=None):
+    """Helper to set a sensor's state in the mock hass."""
+    state_obj = MagicMock()
+    state_obj.state = str(state)
+    state_obj.attributes = attributes or {}
+    state_obj.last_changed = utcnow()
+
+    original_side_effect = getattr(hass.states.get, "side_effect", None)
+
+    def side_effect(eid):
+        if eid == entity_id:
+            return state_obj
+        if original_side_effect and callable(original_side_effect):
+            return original_side_effect(eid)
+        return None
+
+    hass.states.get.side_effect = side_effect
+
+
+def create_mock_history(
+    states: list[tuple[datetime, float | str]],
+) -> dict[str, list[MagicMock]]:
+    """Create a mock history list for get_significant_states."""
+    mock_states = []
+    for dt, state_val in states:
+        mock_state = MagicMock()
+        mock_state.last_updated = dt
+        mock_state.state = str(state_val)
+        mock_states.append(mock_state)
+    return {"sensor.temp": mock_states}
+
+
 @pytest.mark.asyncio
-async def test_async_setup_entry(mock_hass: HomeAssistant):
+async def test_async_setup_entry(hass: HomeAssistant, mock_coordinator: MagicMock):
     """Test the binary sensor platform setup."""
-    # Use MagicMock here to avoid RuntimeWarning about unawaited coroutine
+    # Manually set up hass.data for this test
+    hass.data[DOMAIN] = {MOCK_CONFIG_ENTRY_ID: {"coordinator": mock_coordinator}}
+
     async_add_entities = MagicMock()
     config_entry = MagicMock()
     config_entry.entry_id = MOCK_CONFIG_ENTRY_ID
 
-    await async_setup_entry(mock_hass, config_entry, async_add_entities)
+    await async_setup_entry(hass, config_entry, async_add_entities)
 
     async_add_entities.assert_called_once()
     entities = async_add_entities.call_args.args[0]
@@ -391,20 +437,6 @@ async def test_get_sensor_value_edge_cases(
     assert sensor._get_sensor_value("sensor.temp") == expected
 
 
-# Helper to create mock history states
-def create_mock_history(
-    states: list[tuple[datetime, float | str]],
-) -> dict[str, list[MagicMock]]:
-    """Create a mock history list for get_significant_states."""
-    mock_states = []
-    for dt, state_val in states:
-        mock_state = MagicMock()
-        mock_state.last_updated = dt
-        mock_state.state = str(state_val)
-        mock_states.append(mock_state)
-    return {"sensor.temp": mock_states}
-
-
 @patch("custom_components.growspace_manager.binary_sensor.get_recorder_instance")
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
@@ -587,7 +619,7 @@ async def test_stress_sensor_stage_and_time_logic(
 )
 async def test_mold_risk_sensor_triggers(
     mock_recorder,
-    mock_hass,
+    hass: HomeAssistant,
     mock_coordinator,
     env_config,
     sensor_readings,
@@ -595,9 +627,12 @@ async def test_mold_risk_sensor_triggers(
     expected_reason,
 ):
     """Test BayesianMoldRiskSensor with specific triggers."""
+    # Manually set up hass.data for this test
+    hass.data[DOMAIN] = {MOCK_CONFIG_ENTRY_ID: {"coordinator": mock_coordinator}}
+
     mock_recorder.return_value.async_add_executor_job = AsyncMock(return_value={})
     sensor = BayesianMoldRiskSensor(mock_coordinator, "gs1", env_config)
-    sensor.hass = mock_hass
+    sensor.hass = hass
     sensor.entity_id = "binary_sensor.test_mold_complex"
 
     # Mock sensor states

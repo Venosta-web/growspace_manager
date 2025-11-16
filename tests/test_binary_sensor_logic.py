@@ -5,8 +5,10 @@ import threading
 from unittest.mock import AsyncMock, MagicMock, patch, PropertyMock
 from datetime import datetime, timedelta
 
+from homeassistant.const import STATE_UNAVAILABLE, STATE_UNKNOWN
 from homeassistant.core import HomeAssistant
-from homeassistant.util import utcnow
+from homeassistant.util.dt import utcnow
+
 
 from custom_components.growspace_manager.binary_sensor import (
     BayesianStressSensor,
@@ -16,18 +18,8 @@ from custom_components.growspace_manager.binary_sensor import (
 )
 from custom_components.growspace_manager.coordinator import GrowspaceCoordinator
 
-
-@pytest.fixture
-def mock_hass():
-    """Fixture for a mock HomeAssistant instance."""
-    hass = MagicMock(spec=HomeAssistant)
-    hass.states = MagicMock()
-    hass.states.get = MagicMock(return_value=None)
-    hass.services = MagicMock()
-    hass.services.async_call = AsyncMock()
-    hass.loop_thread_id = threading.get_ident()
-    hass.data = {"customize": {}, "integrations": {}}
-    return hass
+MOCK_CONFIG_ENTRY_ID = "test_entry"
+DOMAIN = "growspace_manager"
 
 
 @pytest.fixture
@@ -53,6 +45,8 @@ def env_config():
         "humidity_sensor": "sensor.humidity",
         "vpd_sensor": "sensor.vpd",
         "light_sensor": "light.grow_light",
+        "co2_sensor": "sensor.co2",
+        "circulation_fan": "switch.fan",
     }
 
 
