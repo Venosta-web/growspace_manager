@@ -33,7 +33,7 @@ def mock_hass(
     hass.services.async_call = AsyncMock()
     hass.loop_thread_id = threading.get_ident()
 
-    with patch.object(hass.states, "get", MagicMock(return_value=None)) as mock_get:
+    with patch.object(hass.states, "get", MagicMock(return_value=None)):
         yield hass
 
 
@@ -93,23 +93,32 @@ def set_sensor_state(hass, entity_id, state, attributes=None):
 @patch("custom_components.growspace_manager.binary_sensor.get_recorder_instance")
 @pytest.mark.asyncio
 async def test_stress_sensor_high_heat(
-    mock_recorder, mock_hass, mock_coordinator, env_config
+    mock_recorder, hass: HomeAssistant, mock_coordinator, env_config # Use hass
 ):
     """Test BayesianStressSensor for high heat."""
+    # Manually set up hass.data
+    hass.data[DOMAIN] = {MOCK_CONFIG_ENTRY_ID: {"coordinator": mock_coordinator}}
+
     mock_recorder.return_value.async_add_executor_job = AsyncMock(return_value={})
     sensor = BayesianStressSensor(mock_coordinator, "gs1", env_config)
-    sensor.hass = mock_hass
+    sensor.hass = hass
     sensor.entity_id = "binary_sensor.test_stress"
-    set_sensor_state(mock_hass, "sensor.temp", 31)
-    set_sensor_state(mock_hass, "sensor.humidity", 60)
-    set_sensor_state(mock_hass, "sensor.vpd", 1.0)
+
+    # Start patches for all sensors
+    patch1, _ = set_sensor_state(hass, "sensor.temp", 31)
+    patch2, _ = set_sensor_state(hass, "sensor.humidity", 60)
+    patch3, _ = set_sensor_state(hass, "sensor.vpd", 1.0)
 
     await sensor._async_update_probability()
 
+    # Stop patches
+    patch1.stop()
+    patch2.stop()
+    patch3.stop()
+
     assert sensor._probability > sensor.prior
     assert any("High Heat" in reason for _, reason in sensor._reasons)
-
-
+    ]
 @patch("custom_components.growspace_manager.binary_sensor.get_recorder_instance")
 @pytest.mark.asyncio
 async def test_mold_risk_sensor_late_flower(

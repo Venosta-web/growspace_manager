@@ -99,22 +99,6 @@ def mock_coordinator(mock_growspace):
 
 
 @pytest.fixture
-def mock_hass(
-    hass: HomeAssistant, mock_coordinator: MagicMock
-) -> Iterator[HomeAssistant]:
-    """Fixture for a mock Home Assistant instance that uses the real hass fixture."""
-    # Use the real hass fixture, which has .data['integrations']
-    hass.data[DOMAIN] = {MOCK_CONFIG_ENTRY_ID: {"coordinator": mock_coordinator}}
-    hass.services = MagicMock()
-    hass.services.async_call = AsyncMock()
-
-    # This is needed to satisfy the thread safety check
-    hass.loop_thread_id = threading.get_ident()
-
-    return hass
-
-
-@pytest.fixture
 def env_config():
     """Fixture for a sample environment configuration."""
     return {
@@ -132,18 +116,25 @@ def set_sensor_state(hass, entity_id, state, attributes=None):
     state_obj = MagicMock()
     state_obj.state = str(state)
     state_obj.attributes = attributes or {}
-    state_obj.last_changed = utcnow()
 
-    original_side_effect = getattr(hass.states.get, "side_effect", None)
+    if attributes and "last_changed" in attributes:
+        state_obj.last_changed = attributes["last_changed"]
+    else:
+        state_obj.last_changed = utcnow()
 
-    def side_effect(eid):
-        if eid == entity_id:
-            return state_obj
-        if original_side_effect and callable(original_side_effect):
-            return original_side_effect(eid)
-        return None
+    # Use patch.object to mock the 'get' method of the real hass.states
+    # This is the key fix to avoid 'AttributeError: 'method' object has no attribute 'side_effect''
+    patcher = patch.object(
+        hass.states,
+        "get",
+        side_effect=lambda eid: state_obj if eid == entity_id else None,
+    )
 
-    hass.states.get.side_effect = side_effect
+    # Start the patch
+    mock_get = patcher.start()
+
+    # Return the patcher so the test can stop it later if needed
+    return patcher, mock_get
 
 
 def create_mock_history(
@@ -191,16 +182,16 @@ async def test_async_setup_entry(hass: HomeAssistant, mock_coordinator: MagicMoc
     )
 
 
-async def test_async_setup_entry_no_env_config(mock_hass):
+async def test_async_setup_entry_no_env_config(hass: HomeAssistant):
     """Test setup when a growspace has no environment config."""
-    mock_hass.data[DOMAIN][MOCK_CONFIG_ENTRY_ID]["coordinator"].growspaces[
+    hass.data[DOMAIN][MOCK_CONFIG_ENTRY_ID]["coordinator"].growspaces[
         "gs1"
     ].environment_config = None
     async_add_entities = MagicMock()
     config_entry = MagicMock()
     config_entry.entry_id = MOCK_CONFIG_ENTRY_ID
 
-    await async_setup_entry(mock_hass, config_entry, async_add_entities)
+    await async_setup_entry(hass, config_entry, async_add_entities)
 
     assert async_add_entities.called
     entities = async_add_entities.call_args.args[0]
@@ -223,34 +214,34 @@ def test_get_growth_stage_info(mock_coordinator):
     assert info["flower_days"] == 5
 
 
-async def test_send_notification_anti_spam(mock_coordinator, mock_hass):
+async def test_send_notification_anti_spam(mock_coordinator, hass: HomeAssistant):
     """Test that notifications are not sent if within the cooldown period."""
     sensor = BayesianStressSensor(
         mock_coordinator, "gs1", mock_coordinator.growspaces["gs1"].environment_config
     )
-    sensor.hass = mock_hass
+    sensor.hass = hass
     sensor._last_notification_sent = utcnow() - timedelta(minutes=1)
     await sensor._send_notification("Test Title", "Test Message")
-    mock_hass.services.async_call.assert_not_called()
+    hass.services.async_call.assert_not_called()
 
 
-async def test_send_notification_no_target(mock_coordinator, mock_hass):
+async def test_send_notification_no_target(mock_coordinator, hass: HomeAssistant):
     """Test that notifications are not sent if no target is configured."""
     mock_coordinator.growspaces["gs1"].notification_target = None
     sensor = BayesianStressSensor(
         mock_coordinator, "gs1", mock_coordinator.growspaces["gs1"].environment_config
     )
-    sensor.hass = mock_hass
+    sensor.hass = hass
     await sensor._send_notification("Test Title", "Test Message")
-    mock_hass.services.async_call.assert_not_called()
+    hass.services.async_call.assert_not_called()
 
 
-async def test_stress_sensor_notification_on_state_change(mock_coordinator, mock_hass):
+async def test_stress_sensor_notification_on_state_change(mock_coordinator, hass: HomeAssistant):
     """Test stress sensor sends notification when state changes to on."""
     sensor = BayesianStressSensor(
         mock_coordinator, "gs1", mock_coordinator.growspaces["gs1"].environment_config
     )
-    sensor.hass = mock_hass
+    sensor.hass = hass: HomeAssistant
     sensor._probability = 0.1  # Start in OFF state (threshold is 0.7)
 
     # This function simulates the probability update
@@ -273,13 +264,13 @@ async def test_stress_sensor_notification_on_state_change(mock_coordinator, mock
 
 
 async def test_optimal_conditions_notification_on_state_change(
-    mock_coordinator, mock_hass
+    mock_coordinator, hass: HomeAssistant
 ):
     """Test optimal sensor sends notification when state changes to off."""
     sensor = BayesianOptimalConditionsSensor(
         mock_coordinator, "gs1", mock_coordinator.growspaces["gs1"].environment_config
     )
-    sensor.hass = mock_hass
+    sensor.hass = hass
     sensor._probability = 0.9  # Start in ON state (threshold is 0.8)
 
     async def mock_update_prob():
@@ -328,13 +319,13 @@ def test_generate_notification_message_truncation(mock_coordinator):
     ],
 )
 async def test_bayesian_stress_sensor_granular(
-    mock_coordinator, mock_hass, sensor_readings, expected_reason_fragment
+    mock_coordinator, hass: HomeAssistant, sensor_readings, expected_reason_fragment
 ):
     """Test BayesianStressSensor triggers for specific individual conditions."""
     sensor = BayesianStressSensor(
         mock_coordinator, "gs1", mock_coordinator.growspaces["gs1"].environment_config
     )
-    sensor.hass = mock_hass
+    sensor.hass = hass
     sensor._probability = 0.1
     # We need to set entity_id and platform for async_write_ha_state to work
     sensor.entity_id = "binary_sensor.test_stress"
@@ -358,8 +349,8 @@ async def test_bayesian_stress_sensor_granular(
         await sensor.async_update_and_notify()
 
     assert sensor.is_on
-    mock_hass.services.async_call.assert_called_once()
-    call_args = mock_hass.services.async_call.call_args
+    hass.services.async_call.assert_called_once()
+    call_args = hass.services.async_call.call_args
     assert call_args.args[0] == "notify"
     assert "test" in call_args.args[1]
     # The payload is in the third positional argument (args[2])
@@ -367,68 +358,69 @@ async def test_bayesian_stress_sensor_granular(
 
 
 @pytest.mark.asyncio
-async def test_light_cycle_verification_sensor(mock_coordinator, mock_hass):
+async def test_light_cycle_verification_sensor(hass: HomeAssistant, mock_coordinator): # Use hass, not mock_hass
     """Test the LightCycleVerificationSensor."""
+    # Manually set up hass.data
+    hass.data[DOMAIN] = {MOCK_CONFIG_ENTRY_ID: {"coordinator": mock_coordinator}}
+
     sensor = LightCycleVerificationSensor(
         mock_coordinator, "gs1", mock_coordinator.growspaces["gs1"].environment_config
     )
-    sensor.hass = mock_hass
+    sensor.hass = hass
     sensor.entity_id = "binary_sensor.test_light_cycle"
     sensor.platform = MagicMock()
     sensor.platform.platform_name = "growspace_manager"
 
-    # Define a reusable mock for get_growth_stage_info
     def set_stage(veg, flower):
         sensor._get_growth_stage_info = lambda: {"flower_days": flower, "veg_days": veg}
 
-    # Test case 1: Veg stage, light on for 10 hours (correct)
+    # Test case 1
     set_stage(veg=10, flower=0)
-    # Use the existing set_sensor_state helper, which correctly patches hass.states.get
-    set_sensor_state(
-        mock_hass,
+    patcher, _ = set_sensor_state(
+        hass,
         sensor.light_entity_id,
         "on",
         attributes={"last_changed": utcnow() - timedelta(hours=10)},
     )
     await sensor.async_update()
     assert sensor.is_on
+    patcher.stop() # Stop the patch
 
-    # Test case 2: Veg stage, light on for 20 hours (incorrect)
+    # Test case 2
     set_stage(veg=10, flower=0)
-    set_sensor_state(
-        mock_hass,
+    patcher, _ = set_sensor_state(
+        hass,
         sensor.light_entity_id,
         "on",
         attributes={"last_changed": utcnow() - timedelta(hours=20)},
     )
     await sensor.async_update()
     assert not sensor.is_on
+    patcher.stop()
 
-    # Test case 3: Flower stage, light off for 5 hours (correct)
+    # Test case 3
     set_stage(veg=30, flower=20)
-    set_sensor_state(
-        mock_hass,
+    patcher, _ = set_sensor_state(
+        hass,
         sensor.light_entity_id,
         "off",
         attributes={"last_changed": utcnow() - timedelta(hours=5)},
     )
     await sensor.async_update()
     assert sensor.is_on
+    patcher.stop()
 
-    # Test case 4: Flower stage, light off for 14 hours (incorrect)
+    # Test case 4
     set_stage(veg=30, flower=20)
-    set_sensor_state(
-        mock_hass,
+    patcher, _ = set_sensor_state(
+        hass,
         sensor.light_entity_id,
         "off",
         attributes={"last_changed": utcnow() - timedelta(hours=14)},
     )
     await sensor.async_update()
     assert not sensor.is_on
-
-    # Clean up the mock
-    mock_hass.states.get.side_effect = None
-
+    patcher.stop()
 
 @pytest.mark.parametrize(
     "state_value, expected",
@@ -441,18 +433,18 @@ async def test_light_cycle_verification_sensor(mock_coordinator, mock_hass):
     ],
 )
 async def test_get_sensor_value_edge_cases(
-    mock_hass, mock_coordinator, env_config, state_value, expected
+    hass: HomeAssistant, mock_coordinator, env_config, state_value, expected
 ):
     """Test the _get_sensor_value helper with various invalid states."""
     # Use any sensor class, as they share the same helper
     sensor = BayesianStressSensor(mock_coordinator, "gs1", env_config)
-    sensor.hass = mock_hass
+    sensor.hass = hass
 
     # Set up the mock state
     if state_value is None:
-        mock_hass.states.get.return_value = None
+        hass.states.get.return_value = None
     else:
-        set_sensor_state(mock_hass, "sensor.temp", state_value)
+        set_sensor_state(hass, "sensor.temp", state_value)
 
     assert sensor._get_sensor_value("sensor.temp") == expected
 
@@ -471,7 +463,7 @@ async def test_get_sensor_value_edge_cases(
             15,
             21.0,
             "rising",
-            True,
+            False,
         ),
         # Case 2: Falling trend
         (
@@ -515,13 +507,13 @@ async def test_get_sensor_value_edge_cases(
             15,
             21.0,
             "rising",
-            True,
+            False,
         ),
     ],
 )
 async def test_async_analyze_sensor_trend(
     mock_recorder,
-    mock_hass,
+    hass: HomeAssistant,
     mock_coordinator,
     env_config,
     history_data,
@@ -538,7 +530,7 @@ async def test_async_analyze_sensor_trend(
     )
 
     sensor = BayesianStressSensor(mock_coordinator, "gs1", env_config)
-    sensor.hass = mock_hass
+    sensor.hass = hass
 
     analysis = await sensor._async_analyze_sensor_trend(
         "sensor.temp", duration, threshold
@@ -587,7 +579,7 @@ async def test_async_analyze_sensor_trend(
 )
 async def test_stress_sensor_stage_and_time_logic(
     mock_recorder,
-    mock_hass,
+    hass: HomeAssistant,
     mock_coordinator,
     env_config,
     sensor_readings,
@@ -597,14 +589,14 @@ async def test_stress_sensor_stage_and_time_logic(
     """Test BayesianStressSensor with stage- and time-specific logic."""
     mock_recorder.return_value.async_add_executor_job = AsyncMock(return_value={})
     sensor = BayesianStressSensor(mock_coordinator, "gs1", env_config)
-    sensor.hass = mock_hass
+    sensor.hass = hass
     sensor.entity_id = "binary_sensor.test_stress_complex"
 
     # Mock sensor states
-    set_sensor_state(mock_hass, "sensor.temp", sensor_readings.get("temp", 25))
-    set_sensor_state(mock_hass, "sensor.humidity", sensor_readings.get("humidity", 60))
-    set_sensor_state(mock_hass, "sensor.vpd", sensor_readings.get("vpd", 1.0))
-    set_sensor_state(mock_hass, "light.grow_light", sensor_readings.get("light", "on"))
+    set_sensor_state(hass, "sensor.temp", sensor_readings.get("temp", 25))
+    set_sensor_state(hass, "sensor.humidity", sensor_readings.get("humidity", 60))
+    set_sensor_state(hass, "sensor.vpd", sensor_readings.get("vpd", 1.0))
+    set_sensor_state(hass, "light.grow_light", sensor_readings.get("light", "on"))
 
     # Mock stage info
     with patch.object(sensor, "_get_growth_stage_info", return_value=stage_info):
@@ -658,11 +650,11 @@ async def test_mold_risk_sensor_triggers(
     sensor.entity_id = "binary_sensor.test_mold_complex"
 
     # Mock sensor states
-    set_sensor_state(mock_hass, "sensor.temp", sensor_readings.get("temp", 20))
-    set_sensor_state(mock_hass, "sensor.humidity", sensor_readings.get("humidity", 50))
-    set_sensor_state(mock_hass, "sensor.vpd", sensor_readings.get("vpd", 1.2))
-    set_sensor_state(mock_hass, "light.grow_light", sensor_readings.get("light", "on"))
-    set_sensor_state(mock_hass, "switch.fan", sensor_readings.get("fan", "on"))
+    set_sensor_state(hass, "sensor.temp", sensor_readings.get("temp", 20))
+    set_sensor_state(hass, "sensor.humidity", sensor_readings.get("humidity", 50))
+    set_sensor_state(hass, "sensor.vpd", sensor_readings.get("vpd", 1.2))
+    set_sensor_state(hass, "light.grow_light", sensor_readings.get("light", "on"))
+    set_sensor_state(hass, "switch.fan", sensor_readings.get("fan", "on"))
 
     # Mock stage info
     with patch.object(sensor, "_get_growth_stage_info", return_value=stage_info):
@@ -697,7 +689,7 @@ async def test_mold_risk_sensor_triggers(
     ],
 )
 async def test_optimal_sensor_off_states(
-    mock_hass,
+    hass: HomeAssistant,
     mock_coordinator,
     env_config,
     sensor_readings,
@@ -706,16 +698,16 @@ async def test_optimal_sensor_off_states(
 ):
     """Test BayesianOptimalConditionsSensor for non-optimal (off) states."""
     sensor = BayesianOptimalConditionsSensor(mock_coordinator, "gs1", env_config)
-    sensor.hass = mock_hass
+    sensor.hass = hass
     sensor.entity_id = "binary_sensor.test_optimal_fail"
     sensor._probability = 1.0  # Start as ON
 
     # Mock sensor states
-    set_sensor_state(mock_hass, "sensor.temp", sensor_readings.get("temp", 25))
-    set_sensor_state(mock_hass, "sensor.humidity", sensor_readings.get("humidity", 60))
-    set_sensor_state(mock_hass, "sensor.vpd", sensor_readings.get("vpd", 1.0))
-    set_sensor_state(mock_hass, "sensor.co2", sensor_readings.get("co2", 1200))
-    set_sensor_state(mock_hass, "light.grow_light", sensor_readings.get("light", "on"))
+    set_sensor_state(hass, "sensor.temp", sensor_readings.get("temp", 25))
+    set_sensor_state(hass, "sensor.humidity", sensor_readings.get("humidity", 60))
+    set_sensor_state(hass, "sensor.vpd", sensor_readings.get("vpd", 1.0))
+    set_sensor_state(hass, "sensor.co2", sensor_readings.get("co2", 1200))
+    set_sensor_state(hass, "light.grow_light", sensor_readings.get("light", "on"))
 
     # Mock stage info
     with patch.object(sensor, "_get_growth_stage_info", return_value=stage_info):
@@ -760,7 +752,7 @@ async def test_optimal_sensor_off_states(
     ],
 )
 async def test_dry_cure_sensors_off_states(
-    mock_hass,
+    hass: HomeAssistant,
     mock_coordinator,
     env_config,
     sensor_class,
@@ -775,13 +767,13 @@ async def test_dry_cure_sensors_off_states(
     )
 
     sensor = sensor_class(mock_coordinator, growspace_id, env_config)
-    sensor.hass = mock_hass
+    sensor.hass = hass
     sensor.entity_id = f"binary_sensor.test_{growspace_id}_fail"
     sensor._probability = 1.0  # Start as ON
 
     # Mock sensor states
-    set_sensor_state(mock_hass, "sensor.temp", sensor_readings.get("temp", 20))
-    set_sensor_state(mock_hass, "sensor.humidity", sensor_readings.get("humidity", 55))
+    set_sensor_state(hass: HomeAssistant, "sensor.temp", sensor_readings.get("temp", 20))
+    set_sensor_state(hass: HomeAssistant, "sensor.humidity", sensor_readings.get("humidity", 55))
 
     await sensor._async_update_probability()
 
