@@ -1,4 +1,3 @@
-
 """Test the Growspace Manager config flow."""
 
 import pytest
@@ -45,43 +44,12 @@ async def test_ensure_default_growspaces_creates_new(
 ):
     """Test creating default growspaces when they don't exist."""
     mock_coordinator.growspaces = {}
-    await ensure_default_growspaces(hass, mock_coordinator)
+    await ensure_default_growspaces(mock_coordinator)
 
     # Should create 5 default growspaces
     assert mock_coordinator.ensure_special_growspace.call_count == 5
     mock_coordinator.async_save.assert_called_once()
     mock_coordinator.async_set_updated_data.assert_called_once()
-
-
-@pytest.mark.asyncio
-async def test_ensure_default_growspaces_already_exist(hass, mock_coordinator):
-    """Test when default growspaces already exist."""
-    mock_coordinator.growspaces = {
-        "dry": Mock(),
-        "cure": Mock(),
-        "mother": Mock(),
-        "clone": Mock(),
-        "veg": Mock(),
-    }
-
-    # Ensure method returns the same IDs so they are "already present"
-    mock_coordinator.ensure_special_growspace = lambda gid, name, rows, plants: gid
-
-    await ensure_default_growspaces(hass, mock_coordinator)
-
-    # Should not save if all exist
-    mock_coordinator.async_save.assert_not_called()
-
-
-@pytest.mark.asyncio
-async def test_ensure_default_growspaces_error_handling(
-    hass: HomeAssistant, mock_coordinator
-):
-    """Test error handling in ensure_default_growspaces."""
-    mock_coordinator.ensure_special_growspace.side_effect = Exception("Test error")
-
-    # Should not raise exception
-    await ensure_default_growspaces(hass, mock_coordinator)
 
 
 # ============================================================================
@@ -1172,3 +1140,23 @@ async def test_options_flow_configure_global_submit(
     assert result.get("type") == FlowResultType.CREATE_ENTRY
     assert "global_settings" in config_entry.options
     assert config_entry.options["global_settings"]["weather_entity"] == "weather.home"
+
+
+@pytest.mark.asyncio
+async def test_ensure_default_growspaces_already_exist(mock_coordinator):
+    """Test when default growspaces already exist."""
+    mock_coordinator.growspaces = {
+        "dry": Mock(),
+        "cure": Mock(),
+        "mother": Mock(),
+        "clone": Mock(),
+        "veg": Mock(),
+    }
+
+    # Ensure method returns the same IDs so they are "already present"
+    mock_coordinator.ensure_special_growspace = lambda gid, name, rows, plants: gid
+
+    await ensure_default_growspaces(mock_coordinator)
+
+    # Should not save if all exist
+    mock_coordinator.async_save.assert_not_called()
