@@ -1,4 +1,3 @@
-
 """Test the Growspace Manager options flow."""
 
 import pytest
@@ -31,10 +30,7 @@ def basic_mock_coordinator(hass: HomeAssistant):
     coordinator.growspaces = {}
     coordinator.plants = {}
     coordinator.get_growspace_plants.return_value = []
-
-    # This was the critical error: it's awaited, so it must be AsyncMock
     coordinator.get_sorted_growspace_options = AsyncMock(return_value=[])
-
     coordinator.async_add_growspace = AsyncMock()
     coordinator.async_remove_growspace = AsyncMock()
     coordinator.async_update_growspace = AsyncMock()
@@ -94,7 +90,9 @@ async def test_options_flow_init_manage_growspaces(
 
 
 @pytest.mark.asyncio
-async def test_options_flow_init_manage_plants(hass: HomeAssistant, basic_mock_coordinator):
+async def test_options_flow_init_manage_plants(
+    hass: HomeAssistant, basic_mock_coordinator
+):
     """Test selecting manage plants from menu."""
     # Given
     config_entry = await setup_test_environment(hass, basic_mock_coordinator)
@@ -301,7 +299,9 @@ async def test_options_flow_add_growspace_success(
 
 
 @pytest.mark.asyncio
-async def test_options_flow_add_growspace_error(hass: HomeAssistant, basic_mock_coordinator):
+async def test_options_flow_add_growspace_error(
+    hass: HomeAssistant, basic_mock_coordinator
+):
     """Test error handling when adding growspace."""
     # Given
     basic_mock_coordinator.async_add_growspace.side_effect = Exception("Test error")
@@ -472,7 +472,9 @@ async def test_options_flow_manage_plants_add(hass, basic_mock_coordinator, mock
 
 
 @pytest.mark.asyncio
-async def test_options_flow_manage_plants_update(hass: HomeAssistant, basic_mock_coordinator, mock_store):
+async def test_options_flow_manage_plants_update(
+    hass: HomeAssistant, basic_mock_coordinator, mock_store
+):
     """Test update plant action."""
     # Given
     basic_mock_coordinator.growspaces = {"test_grow": Mock(name="Test Growspace")}
@@ -494,7 +496,9 @@ async def test_options_flow_manage_plants_update(hass: HomeAssistant, basic_mock
 
 
 @pytest.mark.asyncio
-async def test_options_flow_manage_plants_remove(hass: HomeAssistant, basic_mock_coordinator):
+async def test_options_flow_manage_plants_remove(
+    hass: HomeAssistant, basic_mock_coordinator
+):
     """Test remove plant action."""
     # Given
     config_entry = await setup_test_environment(hass, basic_mock_coordinator)

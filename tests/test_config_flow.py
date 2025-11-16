@@ -282,6 +282,7 @@ async def test_options_flow_manage_growspaces_add(
     flow.hass = hass
 
     result = await flow.async_step_manage_growspaces(user_input={"action": "add"})
+    await hass.async_block_till_done()
 
     assert result.get("type") == FlowResultType.FORM
     assert result.get("step_id") == "add_growspace"
