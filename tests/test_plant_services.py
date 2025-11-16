@@ -1,8 +1,11 @@
 """Test plant services."""
 
+from datetime import date
+from unittest.mock import Mock, AsyncMock, patch
+
 import pytest
-from datetime import date, datetime
-from unittest.mock import Mock, AsyncMock, patch, MagicMock
+
+
 from homeassistant.core import HomeAssistant, ServiceCall
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers import event as event_helper
@@ -86,6 +89,7 @@ def mock_plant():
 async def test_add_plant_success(
     hass, mock_coordinator, mock_strain_library, mock_growspace
 ):
+    """Test adding plant."""
     mock_coordinator.growspaces = {"gs1": mock_growspace}
 
     call = ServiceCall(
