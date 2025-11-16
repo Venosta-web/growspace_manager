@@ -25,7 +25,7 @@ async def test_async_unload_entry(hass: HomeAssistant, enable_custom_integration
     from custom_components.growspace_manager import async_unload_entry
     from homeassistant.setup import async_setup_component
 
-    entry = MockConfigEntry(domain=DOMAIN, data={}, options={})
+    entry = MockConfigEntry(domain=DOMAIN, data={}, options={}, entry_id="test")
     entry.add_to_hass(hass)
     assert await async_setup_component(hass, DOMAIN, {})
     await hass.async_block_till_done()

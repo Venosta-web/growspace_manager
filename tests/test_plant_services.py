@@ -1647,6 +1647,7 @@ async def test_harvest_plant_entity_id_resolution(
 
     # Act
     await handle_harvest_plant(hass, mock_coordinator, mock_strain_library, call)
+    await hass.async_block_till_done()
 
     # Assert
     mock_coordinator.async_harvest_plant.assert_called_once_with(
