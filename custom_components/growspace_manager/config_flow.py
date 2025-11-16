@@ -52,7 +52,7 @@ async def ensure_default_growspaces(coordinator):
         created_count = 0
         for growspace_id, name, rows, plants_per_row in default_growspaces:
             # Use the coordinator's method to ensure special growspaces
-            canonical_id = coordinator.ensure_special_growspace(
+            canonical_id = coordinator._ensure_special_growspace(
                 growspace_id, name, rows, plants_per_row
             )
             if canonical_id not in coordinator.growspaces:

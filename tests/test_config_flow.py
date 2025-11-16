@@ -67,7 +67,7 @@ async def test_ensure_default_growspaces_creates_new(
     await ensure_default_growspaces(mock_coordinator)
 
     # Should create 5 default growspaces
-    assert mock_coordinator.ensure_special_growspace.call_count == 5
+    assert mock_coordinator._ensure_special_growspace.call_count == 5
     mock_coordinator.async_save.assert_called_once()
     mock_coordinator.async_set_updated_data.assert_called_once()
 
