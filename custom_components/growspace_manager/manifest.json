@@ -1,10 +1,10 @@
 {
   "domain": "growspace_manager",
   "name": "Growspace Manager",
-  "codeowners": [],
-  "documentation": "https://github.com/your-github-username/growspace-manager",
+  "codeowners": ["@Venosta-web"],
+  "documentation": "https://github.com/Venosta-web/growspace_manager",
   "iot_class": "local_polling",
-  "issue_tracker": "https://github.com/your-github-username/growspace-manager/issues",
+  "issue_tracker": "https://github.com/Venosta-web/growspace-manager/issues",
   "version": "0.1.0",
   "config_flow": true,
   "dependencies": [],
