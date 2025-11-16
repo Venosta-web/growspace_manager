@@ -7,8 +7,10 @@ from datetime import date, timedelta, datetime
 from unittest.mock import AsyncMock, MagicMock, Mock, patch
 
 import pytest
+from homeassistant.const import STATE_UNAVAILABLE, STATE_UNKNOWN
 from homeassistant.core import HomeAssistant
-from homeassistant.util import utcnow
+from homeassistant.util.dt import utcnow
+
 
 from custom_components.growspace_manager.binary_sensor import (
     BayesianCuringSensor,
