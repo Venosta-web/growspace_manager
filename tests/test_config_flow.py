@@ -1,6 +1,7 @@
 """Test the Growspace Manager config flow."""
 
 import pytest
+import voluptuous as vol
 from unittest.mock import Mock, AsyncMock, patch, MagicMock
 from homeassistant.core import HomeAssistant
 from homeassistant.data_entry_flow import FlowResultType
@@ -27,6 +28,7 @@ def mock_coordinator(hass: HomeAssistant):
     coordinator.async_set_updated_data = AsyncMock()
 
     # Add mocks for all async methods called by the config/options flow
+    coordinator._ensure_special_growspace = AsyncMock(return_value="mock_id")
     coordinator.async_add_growspace = AsyncMock(return_value=Mock(id="gs1"))
     coordinator.async_remove_growspace = AsyncMock()
     coordinator.async_update_growspace = AsyncMock()
@@ -184,9 +186,10 @@ async def test_config_flow_get_add_growspace_schema_no_notify(hass: HomeAssistan
 
 
 @pytest.mark.asyncio
-async def test_config_flow_async_get_options_flow():
+async def test_config_flow_async_get_options_flow(hass: HomeAssistant):
     """Test getting options flow handler."""
     config_entry = MockConfigEntry(domain=DOMAIN, data={"name": "Test"})
+    config_entry.add_to_hass(hass)
 
     options_flow = ConfigFlow.async_get_options_flow(config_entry)
 

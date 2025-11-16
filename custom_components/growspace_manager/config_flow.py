@@ -703,13 +703,30 @@ class OptionsFlowHandler(OptionsFlow):
             env_config.pop("configure_advanced", None)
 
             try:
+                parsed_user_input = {}
                 for key, value in user_input.items():
-                    if isinstance(value, str) and value.startswith("("):
+                    if isinstance(value, str):
+                        # Check if it's a valid tuple string
+                        if not value.startswith("(") or not value.endswith(")"):
+                            _LOGGER.warning(
+                                "Invalid tuple format for %s: %s", key, value
+                            )
+                            raise ValueError("Invalid tuple string format")
+
                         parsed_value = ast.literal_eval(value)
+
                         if not isinstance(parsed_value, tuple):
-                            raise ValueError("Parsed value is not a tuple")
-                        env_config[key] = parsed_value
+                            raise TypeError("Parsed value is not a tuple")
+
+                        parsed_user_input[key] = parsed_value
+                    else:
+                        parsed_user_input[key] = value
+
+                # Update env_config *after* all parsing is successful
+                env_config.update(parsed_user_input)
+
             except (ValueError, SyntaxError):
+                _LOGGER.warning("Invalid tuple format submitted", exc_info=True)
                 return self.async_show_form(
                     step_id="configure_advanced_bayesian",
                     data_schema=self._get_advanced_bayesian_schema(
