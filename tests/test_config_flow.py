@@ -19,7 +19,7 @@ from custom_components.growspace_manager.config_flow import (
 def mock_coordinator(hass: HomeAssistant):
     """Fixture for a mock coordinator."""
     # Use MagicMock with a spec for better type checking
-    coordinator = MagicMock(spec=GrowspaceCoordinator)
+    coordinator = AsyncMock(spec=GrowspaceCoordinator)
     coordinator.hass = hass
     coordinator.growspaces = {}
     coordinator.plants = {}  # Added for completeness
@@ -614,7 +614,9 @@ async def test_config_flow_add_growspace_exception(hass: HomeAssistant):
 @pytest.mark.asyncio
 async def test_options_flow_coordinator_missing(hass: HomeAssistant):
     """Test handling of missing coordinator in various steps."""
-    config_entry = MockConfigEntry(domain=DOMAIN, data={"name": "Test"})
+    config_entry = MockConfigEntry(
+        domain=DOMAIN, data={"name": "Test"}, entry_id="test-entry-id"
+    )
     config_entry.add_to_hass(hass)
     hass.data[DOMAIN] = {}
 
@@ -873,7 +875,9 @@ async def test_options_flow_init_configure_environment(
     hass: HomeAssistant, enable_custom_integrations
 ):
     """Test selecting configure environment from menu."""
-    config_entry = MockConfigEntry(domain=DOMAIN, data={"name": "Test"}, options={})
+    config_entry = MockConfigEntry(
+        domain=DOMAIN, data={"name": "Test"}, options={}, entry_id="test-entry-id"
+    )
     config_entry.add_to_hass(hass)
     mock_coordinator = MagicMock()
     mock_coordinator.get_sorted_growspace_options = AsyncMock(
@@ -895,7 +899,9 @@ async def test_options_flow_select_growspace_for_env_show_form(
     hass: HomeAssistant, enable_custom_integrations
 ):
     """Test showing select growspace for environment form."""
-    config_entry = MockConfigEntry(domain=DOMAIN, data={"name": "Test"}, options={})
+    config_entry = MockConfigEntry(
+        domain=DOMAIN, data={"name": "Test"}, options={}, entry_id="test-entry-id"
+    )
     config_entry.add_to_hass(hass)
     mock_coordinator = MagicMock()
     mock_coordinator.get_sorted_growspace_options = AsyncMock(

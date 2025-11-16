@@ -26,7 +26,7 @@ async def setup_test_environment(hass: HomeAssistant, coordinator):
 @pytest.fixture
 def basic_mock_coordinator(hass: HomeAssistant):
     """Fixture for a basic mock coordinator."""
-    coordinator = MagicMock(spec=GrowspaceCoordinator)  # <-- Added spec
+    coordinator = AsyncMock(spec=GrowspaceCoordinator)  # <-- Added spec
     coordinator.hass = hass
     coordinator.growspaces = {}
     coordinator.plants = {}
