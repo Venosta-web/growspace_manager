@@ -17,9 +17,24 @@ from custom_components.growspace_manager.binary_sensor import (
     LightCycleVerificationSensor,
 )
 from custom_components.growspace_manager.coordinator import GrowspaceCoordinator
+from collections.abc import Iterator
 
 MOCK_CONFIG_ENTRY_ID = "test_entry"
 DOMAIN = "growspace_manager"
+
+
+@pytest.fixture
+def mock_hass(
+    hass: HomeAssistant, mock_coordinator: MagicMock
+) -> Iterator[HomeAssistant]:
+    """Fixture for a mock Home Assistant instance that uses the real hass fixture."""
+    hass.data[DOMAIN] = {MOCK_CONFIG_ENTRY_ID: {"coordinator": mock_coordinator}}
+    hass.services = MagicMock()
+    hass.services.async_call = AsyncMock()
+    hass.loop_thread_id = threading.get_ident()
+
+    with patch.object(hass.states, "get", MagicMock(return_value=None)) as mock_get:
+        yield hass
 
 
 @pytest.fixture
@@ -55,7 +70,11 @@ def set_sensor_state(hass, entity_id, state, attributes=None):
     state_obj = MagicMock()
     state_obj.state = str(state)
     state_obj.attributes = attributes or {}
-    state_obj.last_changed = utcnow()
+
+    if attributes and "last_changed" in attributes:
+        state_obj.last_changed = attributes["last_changed"]
+    else:
+        state_obj.last_changed = utcnow()
 
     original_side_effect = getattr(hass.states.get, "side_effect", None)
 
@@ -63,7 +82,9 @@ def set_sensor_state(hass, entity_id, state, attributes=None):
         if eid == entity_id:
             return state_obj
         if original_side_effect and callable(original_side_effect):
-            return original_side_effect(eid)
+            original_return = original_side_effect(eid)
+            if original_return:
+                return original_return
         return None
 
     hass.states.get.side_effect = side_effect
