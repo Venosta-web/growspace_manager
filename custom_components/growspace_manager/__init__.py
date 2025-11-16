@@ -122,7 +122,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 "Created pending growspace: %s", pending.get("name", "unknown")
             )
         except Exception:
-            _LOGGER.exception("Failed to create pending growspace: %s", pending.get("name", "unknown"))
+            _LOGGER.exception(
+                "Failed to create pending growspace: %s", pending.get("name", "unknown")
+            )
             create_notification(
                 hass,
                 (
@@ -149,8 +151,6 @@ async def _register_services(
     strain_library_instance: StrainLibrary,
 ) -> None:
     """Register all Growspace Manager services."""
-
-
 
     # Define all services with their handler functions and schemas
     services_to_register = [
@@ -249,7 +249,7 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     _LOGGER.debug("Unloading config entry %s for Growspace Manager", entry.entry_id)
 
     # Clean up dynamically created entities before unloading platforms
-    entry_data = hass.data[DOMAIN].get(entry.entry_id, {})
+    entry_data = hass.data.get(DOMAIN, {}).get(entry.entry_id, {})
     created_unique_ids = entry_data.get("created_entities", [])
     entity_registry = er.async_get(hass)
 
@@ -268,7 +268,9 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         entity_id = entity_registry.async_get_entity_id(domain, platform, unique_id)
         if entity_id and entity_registry.async_get(entity_id):
             entity_registry.async_remove(entity_id)
-            _LOGGER.info(f"Removed dynamically created entity: {entity_id} (unique_id: {unique_id})")
+            _LOGGER.info(
+                f"Removed dynamically created entity: {entity_id} (unique_id: {unique_id})"
+            )
 
     unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
 
