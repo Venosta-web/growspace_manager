@@ -7,6 +7,6 @@
   "issue_tracker": "https://github.com/your-github-username/growspace-manager/issues",
   "version": "0.1.0",
   "config_flow": true,
-  "dependencies": [],
+  "dependencies": ["recorder"],
   "requirements": []
 }

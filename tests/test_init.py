@@ -13,6 +13,9 @@ async def test_async_setup_entry(hass: HomeAssistant, enable_custom_integrations
     """Test a successful setup entry."""
     from homeassistant.setup import async_setup_component
 
+    assert await async_setup_component(hass, "recorder", {"recorder": {}})
+    await hass.async_block_till_done()
+
     entry = MockConfigEntry(domain=DOMAIN, data={}, options={})
     entry.add_to_hass(hass)
     assert await async_setup_component(hass, DOMAIN, {})
@@ -24,6 +27,9 @@ async def test_async_unload_entry(hass: HomeAssistant, enable_custom_integration
     """Test a successful unload entry."""
     from custom_components.growspace_manager import async_unload_entry
     from homeassistant.setup import async_setup_component
+
+    assert await async_setup_component(hass, "recorder", {"recorder": {}})
+    await hass.async_block_till_done()
 
     entry = MockConfigEntry(domain=DOMAIN, data={}, options={})
     entry.add_to_hass(hass)

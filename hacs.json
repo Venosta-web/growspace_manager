@@ -3,6 +3,5 @@
   "filename": "growspace-manager.js",
   "hacs": "1.6.0",
   "homeassistant": "2025.8.0",
-  "render_readme": true,
-  "ignorable_checks": ["brand"]
+  "render_readme": true
 }

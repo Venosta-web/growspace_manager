@@ -160,21 +160,19 @@ async def test_notification_sending(
     sensor = BayesianStressSensor(mock_coordinator, "gs1", env_config)
     sensor.hass = mock_hass
     sensor.entity_id = "binary_sensor.test_notification"
+    sensor.threshold = env_config.get("stress_threshold", 0.7)
 
     with patch.object(
         sensor, "get_notification_title_message", return_value=("Title", "Message")
     ) as mock_get_notification, patch.object(
         sensor, "_send_notification", new_callable=AsyncMock
     ) as mock_send:
-        # First update, no state change
-        sensor.is_on = False
+        sensor._probability = 0.1
         await sensor.async_update_and_notify()
         mock_get_notification.assert_not_called()
 
-        # Second update, state changes to ON
-        sensor.is_on = True
-        with patch.object(sensor, "is_on", new_callable=PropertyMock(return_value=True)):
-            await sensor.async_update_and_notify()
+        sensor._probability = 0.9
+        await sensor.async_update_and_notify()
 
         mock_get_notification.assert_called_with(True)
         mock_send.assert_awaited_once_with("Title", "Message")

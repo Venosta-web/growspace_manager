@@ -656,11 +656,16 @@ class OptionsFlowHandler(OptionsFlow):
 
             try:
                 for key, value in user_input.items():
-                    if isinstance(value, str) and value.startswith("("):
-                        parsed_value = ast.literal_eval(value)
-                        if not isinstance(parsed_value, tuple):
-                            raise ValueError("Parsed value is not a tuple")
-                        env_config[key] = parsed_value
+                    if key.startswith("prob_"):
+                        if isinstance(value, str):
+                            parsed_value = ast.literal_eval(value)
+                            if not isinstance(parsed_value, tuple):
+                                raise ValueError("Parsed value is not a tuple")
+                            env_config[key] = parsed_value
+                        else:
+                            env_config[key] = value
+                    else:
+                        env_config[key] = value
             except (ValueError, SyntaxError):
                 return self.async_show_form(
                     step_id="configure_advanced_bayesian",
@@ -1091,7 +1096,7 @@ class OptionsFlowHandler(OptionsFlow):
             _LOGGER.info(
                 "No notify services found – notification_target will be optional."
             )
-            base[vol.Required("notification_target")] = selector.TextSelector()
+            base[vol.Optional("notification_target")] = selector.TextSelector()
 
         return vol.Schema(base)
 
