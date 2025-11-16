@@ -26,12 +26,15 @@ async def setup_test_environment(hass: HomeAssistant, coordinator):
 @pytest.fixture
 def basic_mock_coordinator(hass: HomeAssistant):
     """Fixture for a basic mock coordinator."""
-    coordinator = MagicMock()
+    coordinator = MagicMock(spec=GrowspaceCoordinator)  # <-- Added spec
     coordinator.hass = hass
     coordinator.growspaces = {}
     coordinator.plants = {}
     coordinator.get_growspace_plants.return_value = []
-    coordinator.get_sorted_growspace_options.return_value = []
+
+    # This was the critical error: it's awaited, so it must be AsyncMock
+    coordinator.get_sorted_growspace_options = AsyncMock(return_value=[])
+
     coordinator.async_add_growspace = AsyncMock()
     coordinator.async_remove_growspace = AsyncMock()
     coordinator.async_update_growspace = AsyncMock()

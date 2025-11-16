@@ -17,11 +17,28 @@ from custom_components.growspace_manager.config_flow import (
 @pytest.fixture
 def mock_coordinator(hass: HomeAssistant):
     """Fixture for a mock coordinator."""
-    coordinator = MagicMock()
+    # Use MagicMock with a spec for better type checking
+    coordinator = MagicMock(spec=GrowspaceCoordinator)
     coordinator.hass = hass
     coordinator.growspaces = {}
+    coordinator.plants = {}  # Added for completeness
     coordinator.async_save = AsyncMock()
     coordinator.async_set_updated_data = AsyncMock()
+
+    # Add mocks for all async methods called by the config/options flow
+    coordinator.async_add_growspace = AsyncMock(return_value=Mock(id="gs1"))
+    coordinator.async_remove_growspace = AsyncMock()
+    coordinator.async_update_growspace = AsyncMock()
+    coordinator.async_add_plant = AsyncMock()
+    coordinator.async_remove_plant = AsyncMock()
+    coordinator.async_update_plant = AsyncMock()
+    coordinator.get_growspace_plants = Mock(return_value=[])
+
+    # This method IS awaited in the config flow, so it MUST be an AsyncMock
+    coordinator.get_sorted_growspace_options = AsyncMock(
+        return_value=[("gs1", "Growspace 1")]
+    )
+
     return coordinator
 
 
