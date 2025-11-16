@@ -298,10 +298,13 @@ async def _handle_reset_cure_growspace(
 
     cure_plants_data_to_restore = []
     if preserve_plants:
-        for plant in plants:
-            cure_plants_data_to_restore.append(
-                {
-                    "plant_id": plant.plant_id,
+        for cure_id in cure_ids_to_remove:
+            plants = coordinator.get_growspace_plants(cure_id)
+            for plant in plants:
+                if plant.plant_id in coordinator.plants:
+                    cure_plants_data_to_restore.append(
+                        {
+                            "plant_id": plant.plant_id,
                     "strain": plant.strain,
                     "old_pos": f"({plant.row},{plant.col})",
                 }
@@ -425,3 +428,42 @@ async def debug_consolidate_duplicate_special(
     except Exception as e:
         _LOGGER.exception("Duplicate consolidation failed: %s", e)
         raise
+
+
+async def _consolidate_plants_to_canonical_growspace(
+    coordinator: GrowspaceCoordinator,
+    duplicate_ids: list[str],
+    canonical_id: str,
+    log_prefix: str,
+) -> None:
+    """Move plants from duplicate growspaces to the canonical one."""
+    for dup_id in duplicate_ids:
+        plants_to_move = coordinator.get_growspace_plants(dup_id)
+        for plant in plants_to_move:
+            plant_id = plant.plant_id
+            if plant_id in coordinator.plants:
+                try:
+                    new_row, new_col = coordinator.find_first_available_position(
+                        canonical_id
+                    )
+                    coordinator.plants[plant_id]["growspace_id"] = canonical_id
+                    coordinator.plants[plant_id]["row"] = new_row
+                    coordinator.plants[plant_id]["col"] = new_col
+                    _LOGGER.debug(
+                        "Moved plant %s from duplicate %s %s to %s at (%d,%d)",
+                        plant_id,
+                        log_prefix,
+                        dup_id,
+                        canonical_id,
+                        new_row,
+                        new_col,
+                    )
+                except Exception as e:
+                    _LOGGER.warning(
+                        "Failed to find position for plant %s from duplicate %s: %s",
+                        plant_id,
+                        dup_id,
+                        e,
+                    )
+        coordinator.growspaces.pop(dup_id, None)
+        _LOGGER.debug("Removed duplicate %s growspace %s", log_prefix, dup_id)
