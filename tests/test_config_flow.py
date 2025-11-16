@@ -18,7 +18,7 @@ from custom_components.growspace_manager.config_flow import (
 def mock_coordinator(hass: HomeAssistant):
     """Fixture for a mock coordinator."""
     # Use MagicMock with a spec for better type checking
-    coordinator = MagicMock()
+    coordinator = MagicMock(spec=GrowspaceCoordinator)
     coordinator.hass = hass
     coordinator.growspaces = {}
     coordinator.plants = {}  # Added for completeness
