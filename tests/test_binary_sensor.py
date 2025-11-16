@@ -1,4 +1,5 @@
 """Tests for the Growspace Manager binary_sensor platform."""
+
 from __future__ import annotations
 
 import threading
@@ -121,17 +122,20 @@ async def test_async_setup_entry(mock_hass: HomeAssistant):
     async_add_entities.assert_called_once()
     entities = async_add_entities.call_args.args[0]
 
-    # Expecting 3 base sensors for each of the 3 growspaces, plus the 2 specific ones
-    assert len(entities) == 3 + 3 + 1 + 3 + 1
+    # Expecting 3 base sensors for each of the 3 growspaces, plus the 3 specific ones(11 cause len starts at 0)
+    assert len(entities) == 11
 
     assert any(
-        isinstance(e, BayesianStressSensor) and e.growspace_id == "gs1" for e in entities
+        isinstance(e, BayesianStressSensor) and e.growspace_id == "gs1"
+        for e in entities
     )
     assert any(
-        isinstance(e, BayesianDryingSensor) and e.growspace_id == "dry" for e in entities
+        isinstance(e, BayesianDryingSensor) and e.growspace_id == "dry"
+        for e in entities
     )
     assert any(
-        isinstance(e, BayesianCuringSensor) and e.growspace_id == "cure" for e in entities
+        isinstance(e, BayesianCuringSensor) and e.growspace_id == "cure"
+        for e in entities
     )
 
 
@@ -159,7 +163,9 @@ def test_get_growth_stage_info(mock_coordinator):
         mock_coordinator, "gs1", mock_coordinator.growspaces["gs1"].environment_config
     )
     # Mock _days_since to avoid issues with isoformat strings
-    sensor._days_since = lambda d: (date.today() - date.fromisoformat(d.split("T")[0])).days if d else 0
+    sensor._days_since = (
+        lambda d: (date.today() - date.fromisoformat(d.split("T")[0])).days if d else 0
+    )
     info = sensor._get_growth_stage_info()
     assert info["veg_days"] == 30
     assert info["flower_days"] == 5
@@ -199,11 +205,10 @@ async def test_stress_sensor_notification_on_state_change(mock_coordinator, mock
     async def mock_update_prob():
         sensor._probability = 0.9
 
-    with patch.object(
-        sensor, "_async_update_probability", side_effect=mock_update_prob
-    ), patch.object(
-        sensor, "_send_notification", new_callable=AsyncMock
-    ) as mock_send:
+    with (
+        patch.object(sensor, "_async_update_probability", side_effect=mock_update_prob),
+        patch.object(sensor, "_send_notification", new_callable=AsyncMock) as mock_send,
+    ):
         await sensor.async_update_and_notify()
         assert sensor.is_on
         mock_send.assert_called_once()
@@ -228,11 +233,10 @@ async def test_optimal_conditions_notification_on_state_change(
     async def mock_update_prob():
         sensor._probability = 0.5
 
-    with patch.object(
-        sensor, "_async_update_probability", side_effect=mock_update_prob
-    ), patch.object(
-        sensor, "_send_notification", new_callable=AsyncMock
-    ) as mock_send:
+    with (
+        patch.object(sensor, "_async_update_probability", side_effect=mock_update_prob),
+        patch.object(sensor, "_send_notification", new_callable=AsyncMock) as mock_send,
+    ):
         await sensor.async_update_and_notify()
         assert not sensor.is_on
         mock_send.assert_called_once()
@@ -244,9 +248,9 @@ def test_generate_notification_message_truncation(mock_coordinator):
         mock_coordinator, "gs1", mock_coordinator.growspaces["gs1"].environment_config
     )
     sensor._reasons = [
-        (0.9, "VPD out of range"), # This will be added
-        (0.8, "Temp is much too high for the current growth stage"), # This is too long
-        (0.7, "Humidity is low"), # This will not be added because the loop breaks
+        (0.9, "VPD out of range"),  # This will be added
+        (0.8, "Temp is much too high for the current growth stage"),  # This is too long
+        (0.7, "Humidity is low"),  # This will not be added because the loop breaks
     ]
     message = sensor._generate_notification_message("Alert")
     assert len(message) < 65
@@ -285,13 +289,20 @@ async def test_bayesian_stress_sensor_granular(
     sensor.platform = MagicMock()
     sensor.platform.platform_name = "growspace_manager"
 
-
     # Provide enough side effect values for all calls to _get_sensor_value
-    with patch.object(
-        sensor, "_get_sensor_value", side_effect=[31, 75, 1.5, 300, None]
-    ), patch.object(
-        sensor, "_get_growth_stage_info", return_value={"flower_days": 10, "veg_days": 20}
-    ), patch.object(sensor, "_async_analyze_sensor_trend", return_value={"trend": "stable", "crossed_threshold": False}):
+    with (
+        patch.object(sensor, "_get_sensor_value", side_effect=[31, 75, 1.5, 300, None]),
+        patch.object(
+            sensor,
+            "_get_growth_stage_info",
+            return_value={"flower_days": 10, "veg_days": 20},
+        ),
+        patch.object(
+            sensor,
+            "_async_analyze_sensor_trend",
+            return_value={"trend": "stable", "crossed_threshold": False},
+        ),
+    ):
         await sensor.async_update_and_notify()
 
     assert sensor.is_on
@@ -313,7 +324,6 @@ async def test_light_cycle_verification_sensor(mock_coordinator, mock_hass):
     sensor.entity_id = "binary_sensor.test_light_cycle"
     sensor.platform = MagicMock()
     sensor.platform.platform_name = "growspace_manager"
-
 
     # Define a reusable mock for get_growth_stage_info
     def set_stage(veg, flower):

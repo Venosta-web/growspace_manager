@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 import uuid
-from typing import Any, Dict, Optional
+from typing import Any, Optional
 
 import voluptuous as vol
 
@@ -15,7 +15,6 @@ from homeassistant.config_entries import (
     ConfigEntry,
 )
 from homeassistant.core import HomeAssistant, callback
-from homeassistant.data_entry_flow import FlowResult
 import homeassistant.helpers.config_validation as cv
 from homeassistant.helpers import selector
 from homeassistant.helpers import device_registry as dr
@@ -38,7 +37,7 @@ STEP_USER_DATA_SCHEMA = vol.Schema(
 )
 
 
-async def ensure_default_growspaces(hass: HomeAssistant, coordinator):
+async def ensure_default_growspaces(coordinator):
     """Ensure default growspaces (dry, cure, mother, clone, veg) exist."""
     try:
         # Create special growspaces with their canonical IDs
@@ -68,8 +67,8 @@ async def ensure_default_growspaces(hass: HomeAssistant, coordinator):
         else:
             _LOGGER.info("All default growspaces already exist")
 
-    except Exception as err:
-        _LOGGER.error("Error creating default growspaces: %s")
+    except (ValueError, KeyError, AttributeError) as err:
+        _LOGGER.error("Error creating default growspaces: %s", err)
 
 
 class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
@@ -253,7 +252,9 @@ class OptionsFlowHandler(OptionsFlow):
                 if notification_id:
                     new_options = self.config_entry.options.copy()
                     notifications = new_options.get("timed_notifications", [])
-                    notifications = [n for n in notifications if n.get("id") != notification_id]
+                    notifications = [
+                        n for n in notifications if n.get("id") != notification_id
+                    ]
                     new_options["timed_notifications"] = notifications
 
                     self.hass.config_entries.async_update_entry(
@@ -276,7 +277,10 @@ class OptionsFlowHandler(OptionsFlow):
         notifications = self.config_entry.options.get("timed_notifications", [])
 
         notification_options = [
-            selector.SelectOptionDict(value=n["id"], label=f'{n["message"]} ({n["trigger_type"]} day {n["day"]})')
+            selector.SelectOptionDict(
+                value=n["id"],
+                label=f"{n['message']} ({n['trigger_type']} day {n['day']})",
+            )
             for n in notifications
         ]
 
@@ -284,16 +288,22 @@ class OptionsFlowHandler(OptionsFlow):
             vol.Required("action", default="add"): selector.SelectSelector(
                 selector.SelectSelectorConfig(
                     options=[
-                        selector.SelectOptionDict(value="add", label="Add Notification"),
-                        selector.SelectOptionDict(value="edit", label="Edit Notification"),
-                        selector.SelectOptionDict(value="delete", label="Delete Notification"),
+                        selector.SelectOptionDict(
+                            value="add", label="Add Notification"
+                        ),
+                        selector.SelectOptionDict(
+                            value="edit", label="Edit Notification"
+                        ),
+                        selector.SelectOptionDict(
+                            value="delete", label="Delete Notification"
+                        ),
                     ]
                 )
             ),
         }
 
         if notification_options:
-            schema[vol.Optional("notification_id")] = selector.SelectSelector(
+            schema[vol.Required("notification_id")] = selector.SelectSelector(
                 selector.SelectSelectorConfig(options=notification_options)
             )
 
@@ -338,7 +348,9 @@ class OptionsFlowHandler(OptionsFlow):
         coordinator = self.hass.data[DOMAIN][self.config_entry.entry_id]["coordinator"]
         notification_id = self._selected_notification_id
         notifications = self.config_entry.options.get("timed_notifications", [])
-        notification = next((n for n in notifications if n.get("id") == notification_id), None)
+        notification = next(
+            (n for n in notifications if n.get("id") == notification_id), None
+        )
 
         if user_input is not None:
             new_options = self.config_entry.options.copy()
@@ -367,10 +379,14 @@ class OptionsFlowHandler(OptionsFlow):
 
         return self.async_show_form(
             step_id="edit_timed_notification",
-            data_schema=self._get_add_edit_timed_notification_schema(coordinator, notification),
+            data_schema=self._get_add_edit_timed_notification_schema(
+                coordinator, notification
+            ),
         )
 
-    def _get_add_edit_timed_notification_schema(self, coordinator, notification=None) -> vol.Schema:
+    def _get_add_edit_timed_notification_schema(
+        self, coordinator, notification=None
+    ) -> vol.Schema:
         """Get schema for adding or editing a timed notification."""
         if notification is None:
             notification = {}
@@ -380,31 +396,45 @@ class OptionsFlowHandler(OptionsFlow):
             for gs_id, gs in coordinator.growspaces.items()
         ]
 
-        return vol.Schema({
-            vol.Required("growspace_ids", default=notification.get("growspace_ids", [])): selector.SelectSelector(
-                selector.SelectSelectorConfig(
-                    options=growspace_options,
-                    multiple=True,
-                    mode=selector.SelectSelectorMode.LIST,
-                )
-            ),
-            vol.Required("trigger_type", default=notification.get("trigger_type", "flower")): selector.SelectSelector(
-                selector.SelectSelectorConfig(
-                    options=[
-                        selector.SelectOptionDict(value="flower", label="Flower Day"),
-                        selector.SelectOptionDict(value="veg", label="Veg Day"),
-                    ]
-                )
-            ),
-            vol.Required("day", default=notification.get("day", 1)): selector.NumberSelector(
-                selector.NumberSelectorConfig(min=1, mode=selector.NumberSelectorMode.BOX)
-            ),
-            vol.Required("message", default=notification.get("message", "")): selector.TextSelector(
-                selector.TextSelectorConfig(
-                    type=selector.TextSelectorType.TEXT,
-                )
-            ),
-        })
+        return vol.Schema(
+            {
+                vol.Required(
+                    "growspace_ids", default=notification.get("growspace_ids", [])
+                ): selector.SelectSelector(
+                    selector.SelectSelectorConfig(
+                        options=growspace_options,
+                        multiple=True,
+                        mode=selector.SelectSelectorMode.LIST,
+                    )
+                ),
+                vol.Required(
+                    "trigger_type", default=notification.get("trigger_type", "flower")
+                ): selector.SelectSelector(
+                    selector.SelectSelectorConfig(
+                        options=[
+                            selector.SelectOptionDict(
+                                value="flower", label="Flower Day"
+                            ),
+                            selector.SelectOptionDict(value="veg", label="Veg Day"),
+                        ]
+                    )
+                ),
+                vol.Required(
+                    "day", default=notification.get("day", 1)
+                ): selector.NumberSelector(
+                    selector.NumberSelectorConfig(
+                        min=1, mode=selector.NumberSelectorMode.BOX
+                    )
+                ),
+                vol.Required(
+                    "message", default=notification.get("message", "")
+                ): selector.TextSelector(
+                    selector.TextSelectorConfig(
+                        type=selector.TextSelectorType.TEXT,
+                    )
+                ),
+            }
+        )
 
     async def async_step_manage_growspaces(
         self, user_input: Optional[dict[str, Any]] | None
@@ -538,11 +568,11 @@ class OptionsFlowHandler(OptionsFlow):
             )
 
         # Light sensor
-        schema_dict[vol.Optional("light_sensor", default=options.get("light_sensor"))] = (
-            selector.EntitySelector(
-                selector.EntitySelectorConfig(
-                    domain=["switch", "light", "input_boolean", "sensor"]
-                )
+        schema_dict[
+            vol.Optional("light_sensor", default=options.get("light_sensor"))
+        ] = selector.EntitySelector(
+            selector.EntitySelectorConfig(
+                domain=["switch", "light", "input_boolean", "sensor"]
             )
         )
 
@@ -567,16 +597,21 @@ class OptionsFlowHandler(OptionsFlow):
                 schema_dict[
                     vol.Optional(entity_key, default=options.get(entity_key))
                 ] = selector.EntitySelector(
-                    selector.EntitySelectorConfig(domain=domain, device_class=device_class)
+                    selector.EntitySelectorConfig(
+                        domain=domain, device_class=device_class
+                    )
                 )
 
         # Thresholds
         for key, default in [("stress_threshold", 0.70), ("mold_threshold", 0.75)]:
-            schema_dict[
-                vol.Optional(key, default=options.get(key, default))
-            ] = selector.NumberSelector(
-                selector.NumberSelectorConfig(
-                    min=0.5, max=0.95, step=0.05, mode=selector.NumberSelectorMode.SLIDER
+            schema_dict[vol.Optional(key, default=options.get(key, default))] = (
+                selector.NumberSelector(
+                    selector.NumberSelectorConfig(
+                        min=0.5,
+                        max=0.95,
+                        step=0.05,
+                        mode=selector.NumberSelectorMode.SLIDER,
+                    )
                 )
             )
 
@@ -609,14 +644,20 @@ class OptionsFlowHandler(OptionsFlow):
                 )
             )
             if trend_type == "temp":
-                 schema_dict[
+                schema_dict[
                     vol.Optional(
                         f"{trend_type}_trend_threshold",
-                        default=options.get(f"{trend_type}_trend_threshold", default_threshold),
+                        default=options.get(
+                            f"{trend_type}_trend_threshold", default_threshold
+                        ),
                     )
                 ] = selector.NumberSelector(
                     selector.NumberSelectorConfig(
-                        min=20, max=35, step=0.5, mode=selector.NumberSelectorMode.BOX, unit_of_measurement="°C"
+                        min=20,
+                        max=35,
+                        step=0.5,
+                        mode=selector.NumberSelectorMode.BOX,
+                        unit_of_measurement="°C",
                     )
                 )
             schema_dict[
@@ -631,9 +672,9 @@ class OptionsFlowHandler(OptionsFlow):
             )
 
         # Advanced settings toggle
-        schema_dict[
-            vol.Optional("configure_advanced", default=False)
-        ] = selector.BooleanSelector()
+        schema_dict[vol.Optional("configure_advanced", default=False)] = (
+            selector.BooleanSelector()
+        )
 
         return self.async_show_form(
             step_id="configure_environment",
@@ -1174,9 +1215,7 @@ class OptionsFlowHandler(OptionsFlow):
         schema_dict = {
             vol.Optional(
                 "weather_entity", default=global_settings.get("weather_entity")
-            ): selector.EntitySelector(
-                selector.EntitySelectorConfig(domain="weather")
-            ),
+            ): selector.EntitySelector(selector.EntitySelectorConfig(domain="weather")),
             vol.Optional(
                 "lung_room_temp_sensor",
                 default=global_settings.get("lung_room_temp_sensor"),
