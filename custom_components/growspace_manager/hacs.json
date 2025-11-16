@@ -1,6 +1,0 @@
-{
-  "name": "Growspace Manager",
-  "hacs": "1.6.0",
-  "homeassistant": "2025.8.0",
-  "render_readme": true
-}

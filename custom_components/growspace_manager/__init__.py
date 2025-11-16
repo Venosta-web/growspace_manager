@@ -3,70 +3,60 @@
 from __future__ import annotations
 
 import logging
-import functools
-from datetime import date, datetime
 
+import homeassistant.helpers.config_validation as cv
 from homeassistant.components.persistent_notification import (
     async_create as create_notification,
 )
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, ServiceCall
-import homeassistant.helpers.config_validation as cv
-import homeassistant.helpers.device_registry as dr
-from homeassistant.helpers.storage import Store
 from homeassistant.helpers import entity_registry as er
+from homeassistant.helpers.storage import Store
 
-
-from .const import (
-    DOMAIN,
-    DATE_FIELDS,
-    STORAGE_KEY,
-    STORAGE_VERSION,
-    STORAGE_KEY_STRAIN_LIBRARY,
-)
-from .strain_library import StrainLibrary
-from .coordinator import GrowspaceCoordinator
-
-# Import all schemas from const.py
 from .const import (
     ADD_GROWSPACE_SCHEMA,
     ADD_PLANT_SCHEMA,
     CLEAR_STRAIN_LIBRARY_SCHEMA,
+    CONFIGURE_ENVIRONMENT_SCHEMA,
     DEBUG_CLEANUP_LEGACY_SCHEMA,
     DEBUG_CONSOLIDATE_DUPLICATE_SPECIAL_SCHEMA,
     DEBUG_LIST_GROWSPACES_SCHEMA,
     DEBUG_RESET_SPECIAL_GROWSPACES_SCHEMA,
+    DOMAIN,
     EXPORT_STRAIN_LIBRARY_SCHEMA,
-    TAKE_CLONE_SCHEMA,
-    MOVE_CLONE_SCHEMA,
     HARVEST_PLANT_SCHEMA,
     IMPORT_STRAIN_LIBRARY_SCHEMA,
+    MOVE_CLONE_SCHEMA,
     MOVE_PLANT_SCHEMA,
+    REMOVE_ENVIRONMENT_SCHEMA,
     REMOVE_GROWSPACE_SCHEMA,
     REMOVE_PLANT_SCHEMA,
+    STORAGE_KEY,
+    STORAGE_KEY_STRAIN_LIBRARY,
+    STORAGE_VERSION,
     SWITCH_PLANT_SCHEMA,
+    TAKE_CLONE_SCHEMA,
     TRANSITION_PLANT_SCHEMA,
     UPDATE_PLANT_SCHEMA,
-    CONFIGURE_ENVIRONMENT_SCHEMA,
-    REMOVE_ENVIRONMENT_SCHEMA,
 )
-
-# Import the refactored service handler modules directly by their filenames
-from .services import growspace
-from .services import plant
-from .services import strain_library
-from .services import debug
-from .services import environment
-
+from .coordinator import GrowspaceCoordinator
+from .services import (
+    debug,
+    environment,
+    growspace,
+    plant,
+    strain_library as strain_library_services,
+)
+from .strain_library import StrainLibrary
 
 _LOGGER = logging.getLogger(__name__)
 
 PLATFORMS = ["binary_sensor", "sensor", "switch", "calendar"]
 
-CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
+CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)  # pylint: disable=invalid-name
 
 
-async def async_setup(hass: HomeAssistant, config: dict):
+async def async_setup(_hass: HomeAssistant, _config: dict):
     """Set up the integration via YAML (optional)."""
     _LOGGER.debug("Running async_setup for %s", DOMAIN)
     return True
@@ -121,9 +111,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             _LOGGER.info(
                 "Created pending growspace: %s", pending.get("name", "unknown")
             )
-        except Exception:
+        except (KeyError, RuntimeError) as err:
             _LOGGER.exception(
-                "Failed to create pending growspace: %s", pending.get("name", "unknown")
+                "Failed to create pending growspace %s: %s",
+                pending.get("name", "unknown"),
+                err,
             )
             create_notification(
                 hass,
@@ -175,17 +167,17 @@ async def _register_services(
         ("harvest_plant", plant.handle_harvest_plant, HARVEST_PLANT_SCHEMA),
         (
             "export_strain_library",
-            strain_library.handle_export_strain_library,
+            strain_library_services.handle_export_strain_library,
             EXPORT_STRAIN_LIBRARY_SCHEMA,
         ),
         (
             "import_strain_library",
-            strain_library.handle_import_strain_library,
+            strain_library_services.handle_import_strain_library,
             IMPORT_STRAIN_LIBRARY_SCHEMA,
         ),
         (
             "clear_strain_library",
-            strain_library.handle_clear_strain_library,
+            strain_library_services.handle_clear_strain_library,
             CLEAR_STRAIN_LIBRARY_SCHEMA,
         ),
         ("test_notification", debug.handle_test_notification, None),
@@ -234,7 +226,7 @@ async def _register_services(
 
     # Register the standalone 'get_strain_library' service
     async def get_strain_library_wrapper(
-        call: ServiceCall, _handler=strain_library.handle_get_strain_library
+        call: ServiceCall, _handler=strain_library_services.handle_get_strain_library
     ):
         await _handler(hass, coordinator, strain_library_instance, call)
 
@@ -262,14 +254,16 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             domain = "sensor"
             platform = "statistics"
         else:
-            _LOGGER.warning(f"Unknown platform for unique_id: {unique_id}")
+            _LOGGER.warning("Unknown platform for unique_id: %s", unique_id)
             continue
 
         entity_id = entity_registry.async_get_entity_id(domain, platform, unique_id)
         if entity_id and entity_registry.async_get(entity_id):
             entity_registry.async_remove(entity_id)
             _LOGGER.info(
-                f"Removed dynamically created entity: {entity_id} (unique_id: {unique_id})"
+                "Removed dynamically created entity: %s (unique_id: %s)",
+                entity_id,
+                unique_id,
             )
 
     unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)

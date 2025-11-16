@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import ast
 import logging
 import uuid
 from typing import Any, Optional
@@ -697,8 +698,6 @@ class OptionsFlowHandler(OptionsFlow):
         growspace = coordinator.growspaces.get(self._selected_growspace_id)
 
         if user_input is not None:
-            import ast
-
             env_config = self._env_config_step1.copy()
             env_config.pop("configure_advanced", None)
 
