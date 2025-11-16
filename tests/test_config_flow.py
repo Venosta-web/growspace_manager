@@ -17,11 +17,28 @@ from custom_components.growspace_manager.config_flow import (
 @pytest.fixture
 def mock_coordinator(hass: HomeAssistant):
     """Fixture for a mock coordinator."""
+    # Use MagicMock with a spec for better type checking
     coordinator = MagicMock()
     coordinator.hass = hass
     coordinator.growspaces = {}
+    coordinator.plants = {}  # Added for completeness
     coordinator.async_save = AsyncMock()
     coordinator.async_set_updated_data = AsyncMock()
+
+    # Add mocks for all async methods called by the config/options flow
+    coordinator.async_add_growspace = AsyncMock(return_value=Mock(id="gs1"))
+    coordinator.async_remove_growspace = AsyncMock()
+    coordinator.async_update_growspace = AsyncMock()
+    coordinator.async_add_plant = AsyncMock()
+    coordinator.async_remove_plant = AsyncMock()
+    coordinator.async_update_plant = AsyncMock()
+    coordinator.get_growspace_plants = Mock(return_value=[])
+
+    # This method IS awaited in the config flow, so it MUST be an AsyncMock
+    coordinator.get_sorted_growspace_options = AsyncMock(
+        return_value=[("gs1", "Growspace 1")]
+    )
+
     return coordinator
 
 
@@ -265,6 +282,7 @@ async def test_options_flow_manage_growspaces_add(
     flow.hass = hass
 
     result = await flow.async_step_manage_growspaces(user_input={"action": "add"})
+    await hass.async_block_till_done()
 
     assert result.get("type") == FlowResultType.FORM
     assert result.get("step_id") == "add_growspace"
