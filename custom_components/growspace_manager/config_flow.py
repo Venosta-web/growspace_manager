@@ -847,7 +847,7 @@ class OptionsFlowHandler(OptionsFlow):
                     return self.async_show_form(
                         step_id="manage_plants",
                         data_schema=self._get_plant_management_schema(coordinator),
-                        errors={"base": str(Exception)},
+                        errors={"base": "remove_failed"},
                     )
             if action == "back":
                 return self.async_show_form(
