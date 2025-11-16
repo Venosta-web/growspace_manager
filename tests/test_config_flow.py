@@ -20,15 +20,16 @@ from custom_components.growspace_manager.config_flow import (
 def mock_coordinator(hass: HomeAssistant):
     """Fixture for a mock coordinator."""
     # Use MagicMock with a spec for better type checking
-    coordinator = AsyncMock(spec=GrowspaceCoordinator)
+    coordinator = MagicMock(spec=GrowspaceCoordinator)
     coordinator.hass = hass
     coordinator.growspaces = {}
-    coordinator.plants = {}  # Added for completeness
+    coordinator.plants = {}
+    coordinator.data = {}
     coordinator.async_save = AsyncMock()
     coordinator.async_set_updated_data = AsyncMock()
 
+    coordinator._ensure_special_growspace = Mock(return_value="mock_id")
     # Add mocks for all async methods called by the config/options flow
-    coordinator._ensure_special_growspace = AsyncMock(return_value="mock_id")
     coordinator.async_add_growspace = AsyncMock(return_value=Mock(id="gs1"))
     coordinator.async_remove_growspace = AsyncMock()
     coordinator.async_update_growspace = AsyncMock()
@@ -37,7 +38,6 @@ def mock_coordinator(hass: HomeAssistant):
     coordinator.async_update_plant = AsyncMock()
     coordinator.get_growspace_plants = Mock(return_value=[])
 
-    # This method IS awaited in the config flow, so it MUST be an AsyncMock
     coordinator.get_sorted_growspace_options = AsyncMock(
         return_value=[("gs1", "Growspace 1")]
     )
@@ -1182,7 +1182,7 @@ async def test_ensure_default_growspaces_already_exist(mock_coordinator):
     }
 
     # Ensure method returns the same IDs so they are "already present"
-    mock_coordinator.ensure_special_growspace = lambda gid, name, rows, plants: gid
+    mock_coordinator._ensure_special_growspace = lambda gid, name, rows, plants: gid
 
     await ensure_default_growspaces(mock_coordinator)
 
