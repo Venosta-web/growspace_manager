@@ -99,3 +99,7 @@ dmypy.json
 
 # Pyre type checker
 .pyre/
+
+# === ADD THIS SECTION ===
+# IDE / Editor
+.vscode/
