@@ -10,10 +10,26 @@
     *   **Plant Stress**: Detects when conditions like temperature, humidity, or VPD are likely causing stress to your plants.
     *   **Mold Risk**: Proactively warns you of conditions favorable to mold growth, especially during the critical late-flowering stage.
     *   **Optimal Conditions**: Confirms when your environmental parameters are within the ideal range for the current growth stage.
+    *   **Light-Aware Logic**: Uses an optional light sensor to apply more accurate day/night thresholds and verifies your light schedule is correct for the plant's growth stage.
+*   **Strain Analytics**: Automatically tracks harvest data to provide average veg and flower times for each strain.
+*   **Task Calendar**: Generates a dedicated calendar for each growspace with scheduled tasks based on your timed notifications.
 *   **Dynamic Entity Creation**: Automatically generates a rich set of sensors and controls for each growspace and plant.
 *   **Notification Control**: Easily toggle notifications for each growspace with a dedicated switch.
 *   **Strain Library**: Automatically catalogs all your unique strains for easy reference.
 *   **Specialized Growspaces**: Comes with pre-configured logical spaces for managing clones, mothers, drying, and curing.
+
+## Advanced Features
+
+### Strain Analytics
+The `StrainLibrarySensor` does more than just list your strains; it automatically compiles harvest data to provide valuable insights. When a plant is moved to the "dry" growspace, its veg and flower durations are recorded. The sensor then calculates and exposes the average veg and flower times for each strain and phenotype, allowing you to refine your cultivation cycles and compare results over time.
+
+### Task Calendar
+For each growspace, the integration now creates a dedicated Home Assistant calendar entity. This calendar is automatically populated with tasks and reminders based on the timed notifications you configure. For example, if you set a reminder to "Check trichomes" on day 60 of flower, a corresponding all-day event will appear on the calendar, ensuring you never miss a critical task.
+
+### Light-Aware Monitoring
+By configuring an optional light sensor for your growspace, you unlock more intelligent environmental monitoring:
+*   **Day/Night Logic**: The Bayesian sensors will automatically switch between day and night thresholds for temperature and VPD, leading to more accurate stress and mold risk detection.
+*   **Schedule Verification**: A `LightCycleVerificationSensor` is created to monitor your light's on/off cycles. It verifies that the light is running for the correct duration for the current growth stage (e.g., 18/6 for veg, 12/12 for flower) and will turn off if the schedule is incorrect, alerting you to potential timer malfunctions.
 
 ## Installation
 
@@ -71,7 +87,7 @@ This is where the magic happens. By linking your existing sensors, you enable th
 3.  Select the growspace you want to configure and click **Submit**.
 4.  Link your sensor entities:
     *   **Required**: Temperature, Humidity, and VPD sensors.
-    *   **Optional**: A light or switch to determine if the lights are on/off, a CO2 sensor, and a circulation fan switch.
+*   **Optional**: A light or switch to determine if the lights are on/off, a CO2 sensor, and a circulation fan switch. Linking a light sensor enables more accurate day/night logic and activates the `LightCycleVerificationSensor`.
 5.  Click **Submit** to save. The Bayesian binary sensors will be created automatically.
 
 ### Step 5: Add the Card to Your Dashboard
@@ -92,12 +108,14 @@ This integration will create the following entities for you:
 *   **Growspace Overview Sensor**: (`sensor.<growspace_name>`) The primary sensor for a growspace. Its state is the number of plants, and its attributes contain the grid layout and stage information. This is the entity you use with the Lovelace card.
 *   **Plant Sensor**: (`sensor.<plant_strain>_<row>_<col>`) A detailed sensor for each individual plant. Its state is the current growth stage (e.g., "veg", "flower").
 *   **Notification Switch**: (`switch.<growspace_name>_notifications`) Allows you to enable or disable notifications for a specific growspace.
-*   **Strain Library Sensor**: (`sensor.growspace_strain_library`) A sensor whose attributes contain a list of all unique strains you have added.
+*   **Strain Library Sensor**: (`sensor.growspace_strain_library`) A sensor whose state is the number of unique strains and whose attributes contain detailed harvest analytics, including average veg/flower times.
 *   **Growspaces List Sensor**: (`sensor.growspaces_list`) A sensor whose attributes contain a list of all your configured growspaces.
+*   **Task Calendar**: (`calendar.<growspace_name>_tasks`) A calendar entity for each growspace that displays scheduled tasks based on timed notifications.
 
 ### Environmental Monitoring Sensors
-When you configure environmental sensors for a growspace, three powerful binary sensors are created:
+When you configure environmental sensors for a growspace, the following powerful binary sensors are created:
 
 *   **Plants Under Stress**: (`binary_sensor.<growspace_name>_plants_under_stress`) This sensor turns **ON** when the combination of temperature, humidity, VPD, and other factors indicates a high probability of plant stress. This is your primary indicator that something in the environment needs attention.
 *   **High Mold Risk**: (`binary_sensor.<growspace_name>_high_mold_risk`) This sensor turns **ON** when conditions are favorable for mold and bud rot, particularly during the lights-off period in late flower. It monitors for high humidity, low VPD, and poor air circulation.
 *   **Optimal Conditions**: (`binary_sensor.<growspace_name>_optimal_conditions`) This sensor turns **ON** when your environment is perfectly dialed in for the current growth stage. When this sensor is on, you know your plants are happy. It turns **OFF** as a warning that conditions have drifted out of the ideal range.
+*   **Light Schedule Correct**: (`binary_sensor.<growspace_name>_light_schedule_correct`) An optional sensor (created when a light entity is configured) that turns **ON** if the light's on/off cycle duration is correct for the current growth stage.
