@@ -11,9 +11,9 @@ from custom_components.growspace_manager.const import DOMAIN
 
 
 @pytest.mark.asyncio
-async def test_async_setup_entry(recorder_mock: HomeAssistant):
+async def test_async_setup_entry(hass: HomeAssistant, recorder_mock):
     """Test a successful setup entry."""
-    hass = recorder_mock  # Use the hass object provided by recorder_mock
+
     entry = MockConfigEntry(domain=DOMAIN, data={}, options={})
     entry.add_to_hass(hass)
     assert await async_setup_component(hass, DOMAIN, {})
@@ -21,9 +21,11 @@ async def test_async_setup_entry(recorder_mock: HomeAssistant):
 
 
 @pytest.mark.asyncio
-async def test_async_unload_entry(recorder_mock: HomeAssistant):
+async def test_async_unload_entry(
+    hass: HomeAssistant, enable_custom_integrations, recorder_mock
+):
     """Test a successful unload entry."""
-    hass = recorder_mock  # Use the hass object provided by recorder_mock
+
     entry = MockConfigEntry(domain=DOMAIN, data={}, options={})
     entry.add_to_hass(hass)
     assert await async_setup_component(hass, DOMAIN, {})
