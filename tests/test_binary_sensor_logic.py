@@ -26,7 +26,7 @@ def mock_hass():
     hass.services = MagicMock()
     hass.services.async_call = AsyncMock()
     hass.loop_thread_id = threading.get_ident()
-    hass.data = {"customize": {}}
+    hass.data = {"customize": {}, "integrations": {}}
     return hass
 
 
@@ -86,6 +86,8 @@ async def test_stress_sensor_high_heat(
     sensor.hass = mock_hass
     sensor.entity_id = "binary_sensor.test_stress"
     set_sensor_state(mock_hass, "sensor.temp", 31)
+    set_sensor_state(mock_hass, "sensor.humidity", 60)
+    set_sensor_state(mock_hass, "sensor.vpd", 1.0)
 
     await sensor._async_update_probability()
 
@@ -109,9 +111,9 @@ async def test_mold_risk_sensor_late_flower(
     )
     mock_coordinator.get_growspace_plants.return_value = [plant]
     set_sensor_state(mock_hass, "sensor.humidity", 60)
-    sensor._days_since = (
-        lambda start_date: (utcnow().date() - datetime.fromisoformat(start_date).date()).days
-    )
+    sensor._days_since = lambda start_date: (
+        utcnow().date() - datetime.fromisoformat(start_date).date()
+    ).days
 
     await sensor._async_update_probability()
 
@@ -129,7 +131,6 @@ async def test_optimal_conditions_sensor(mock_hass, mock_coordinator, env_config
     set_sensor_state(mock_hass, "sensor.vpd", 1.0)
     set_sensor_state(mock_hass, "light.grow_light", "on")
     sensor._days_since = MagicMock(return_value=1)
-
 
     await sensor._async_update_probability()
 
@@ -161,20 +162,27 @@ async def test_notification_sending(
     sensor.hass = mock_hass
     sensor.entity_id = "binary_sensor.test_notification"
 
-    with patch.object(
-        sensor, "get_notification_title_message", return_value=("Title", "Message")
-    ) as mock_get_notification, patch.object(
-        sensor, "_send_notification", new_callable=AsyncMock
-    ) as mock_send:
-        # First update, no state change
-        sensor.is_on = False
+    mock_coordinator.growspaces["gs1"].notifications_enabled = True
+
+    # Set initial state to "off" (no stress)
+    set_sensor_state(mock_hass, "sensor.temp", 25)  # Optimal temp
+    await sensor.async_update_and_notify()
+    assert not sensor.is_on
+
+    with (
+        patch.object(
+            sensor, "get_notification_title_message", return_value=("Title", "Message")
+        ) as mock_get_notification,
+        patch.object(sensor, "_send_notification", new_callable=AsyncMock) as mock_send,
+    ):
+        # First update, no state change, so no notification
         await sensor.async_update_and_notify()
         mock_get_notification.assert_not_called()
+        mock_send.assert_not_called()
 
-        # Second update, state changes to ON
-        sensor.is_on = True
-        with patch.object(sensor, "is_on", new_callable=PropertyMock(return_value=True)):
-            await sensor.async_update_and_notify()
+        # Second update, state changes to ON, triggering notification
+        set_sensor_state(mock_hass, "sensor.temp", 31)  # High heat stress
+        await sensor.async_update_and_notify()
 
         mock_get_notification.assert_called_with(True)
         mock_send.assert_awaited_once_with("Title", "Message")

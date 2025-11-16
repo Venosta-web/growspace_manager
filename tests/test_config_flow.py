@@ -36,6 +36,7 @@ def mock_coordinator(hass: HomeAssistant):
     coordinator.async_refresh = AsyncMock()
     return coordinator
 
+
 @pytest.fixture
 def mock_store():
     """Fixture for a mock store."""
@@ -396,7 +397,7 @@ async def test_options_flow_manage_growspaces_back(hass, mock_coordinator):
     # Now call the step
     result = await flow.async_step_manage_growspaces(user_input={"action": "back"})
 
-    assert result.get("type") == "form"
+    assert result.get("type") == FlowResultType.FORM
     assert result.get("step_id") == "init"
 
 
@@ -1706,14 +1707,16 @@ async def test_options_flow_manage_timed_notifications_delete(
 
 
 @pytest.mark.asyncio
-async def test_options_flow_init_configure_environment(hass: HomeAssistant, enable_custom_integrations):
+async def test_options_flow_init_configure_environment(
+    hass: HomeAssistant, enable_custom_integrations
+):
     """Test selecting configure environment from menu."""
     config_entry = MockConfigEntry(domain=DOMAIN, data={"name": "Test"}, options={})
     config_entry.add_to_hass(hass)
     mock_coordinator = MagicMock()
-    mock_coordinator.get_sorted_growspace_options = AsyncMock(return_value=[
-        ("gs1", "Growspace 1")
-    ])
+    mock_coordinator.get_sorted_growspace_options = AsyncMock(
+        return_value=[("gs1", "Growspace 1")]
+    )
     hass.data[DOMAIN] = {config_entry.entry_id: {"coordinator": mock_coordinator}}
 
     flow = OptionsFlowHandler(config_entry)
@@ -1733,9 +1736,9 @@ async def test_options_flow_select_growspace_for_env_show_form(
     config_entry = MockConfigEntry(domain=DOMAIN, data={"name": "Test"}, options={})
     config_entry.add_to_hass(hass)
     mock_coordinator = MagicMock()
-    mock_coordinator.get_sorted_growspace_options = AsyncMock(return_value=[
-        ("gs1", "Growspace 1")
-    ])
+    mock_coordinator.get_sorted_growspace_options = AsyncMock(
+        return_value=[("gs1", "Growspace 1")]
+    )
     hass.data[DOMAIN] = {config_entry.entry_id: {"coordinator": mock_coordinator}}
 
     flow = OptionsFlowHandler(config_entry)
@@ -1774,9 +1777,9 @@ async def test_options_flow_select_growspace_for_env_submit(
     config_entry = MockConfigEntry(domain=DOMAIN, data={"name": "Test"}, options={})
     config_entry.add_to_hass(hass)
     mock_coordinator.growspaces = {"gs1": Mock(name="Growspace 1")}
-    mock_coordinator.get_sorted_growspace_options = AsyncMock(return_value=[
-        ("gs1", "Growspace 1")
-    ])
+    mock_coordinator.get_sorted_growspace_options = AsyncMock(
+        return_value=[("gs1", "Growspace 1")]
+    )
     hass.data[DOMAIN] = {config_entry.entry_id: {"coordinator": mock_coordinator}}
 
     flow = OptionsFlowHandler(config_entry)
@@ -1993,6 +1996,4 @@ async def test_options_flow_configure_global_submit(
 
     assert result.get("type") == FlowResultType.CREATE_ENTRY
     assert "global_settings" in config_entry.options
-    assert (
-        config_entry.options["global_settings"]["weather_entity"] == "weather.home"
-    )
+    assert config_entry.options["global_settings"]["weather_entity"] == "weather.home"
