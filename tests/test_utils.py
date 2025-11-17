@@ -1,4 +1,9 @@
-"""Tests for growspace_manager utils."""
+"""Tests for the utility functions in the Growspace Manager integration.
+
+This file contains a suite of tests for the various helper and utility functions
+defined in `custom_components/growspace_manager/utils.py`. It covers date
+parsing, formatting, calculations, and grid generation logic.
+"""
 from datetime import date, datetime
 import pytest
 
@@ -27,7 +32,12 @@ from custom_components.growspace_manager.models import Plant, Growspace
     ],
 )
 def test_parse_date_field(input_value, expected):
-    """Test parse_date_field function."""
+    """Test the `parse_date_field` function with various input types.
+
+    Args:
+        input_value: The value to be parsed.
+        expected: The expected `date` object or None.
+    """
     assert parse_date_field(input_value) == expected
 
 
@@ -46,7 +56,12 @@ def test_parse_date_field(input_value, expected):
     ],
 )
 def test_format_date(input_value, expected):
-    """Test format_date function."""
+    """Test the `format_date` function to ensure correct string formatting.
+
+    Args:
+        input_value: The value to be formatted.
+        expected: The expected ISO-formatted date string or None.
+    """
     assert format_date(input_value) == expected
 
 
@@ -54,7 +69,7 @@ def test_format_date(input_value, expected):
 # calculate_days_since tests
 # ----------------------------
 def test_calculate_days_since():
-    """Test calculate_days_since function."""
+    """Test the `calculate_days_since` function."""
     start = date(2025, 11, 1)
     end = date(2025, 11, 3)
     assert calculate_days_since(start, end) == 2
@@ -68,7 +83,7 @@ def test_calculate_days_since():
 # find_first_free_position tests
 # ----------------------------
 def test_find_first_free_position():
-    """Test find_first_free_position function."""
+    """Test the `find_first_free_position` function in various scenarios."""
     growspace = Growspace(
         id="test",
         name="Test Growspace",
@@ -90,7 +105,7 @@ def test_find_first_free_position():
 # generate_growspace_grid tests
 # ----------------------------
 def test_generate_growspace_grid_basic():
-    """Test generate_growspace_grid with basic plant placement."""
+    """Test the basic functionality of `generate_growspace_grid`."""
     plants = [
         Plant(plant_id="p1", row=1, col=1, strain="A", growspace_id="g1"),
         Plant(plant_id="p2", row=2, col=2, strain="B", growspace_id="g1"),
@@ -103,7 +118,7 @@ def test_generate_growspace_grid_basic():
 
 
 def test_generate_growspace_grid_empty():
-    """Test generate_growspace_grid with no plants."""
+    """Test that `generate_growspace_grid` creates an empty grid correctly."""
     grid = generate_growspace_grid(2, 2, [])
     assert grid == [
         [None, None],

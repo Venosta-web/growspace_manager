@@ -1,3 +1,11 @@
+"""Manages the strain library for the Growspace Manager integration.
+
+This file defines the `StrainLibrary` class, which is responsible for storing,
+retrieving, and analyzing data about different cannabis strains. It tracks harvest
+analytics, such as vegetative and flowering durations, to provide insights
+into strain performance.
+"""
+
 from __future__ import annotations
 import logging
 from typing import Any
@@ -8,20 +16,43 @@ _LOGGER = logging.getLogger(__name__)
 
 
 class StrainLibrary:
-    """Manages the strain library with harvest analytics."""
+    """A class to manage the strain library with harvest analytics.
+
+    This class handles the loading, saving, and manipulation of strain data,
+    including recording harvest details to calculate average cycle times.
+    """
 
     def __init__(self, hass, storage_version: int, storage_key: str) -> None:
-        """Initialize the StrainLibrary."""
+        """Initialize the StrainLibrary.
+
+        Args:
+            hass: The Home Assistant instance.
+            storage_version: The version of the storage schema.
+            storage_key: The key under which to store the data in Home Assistant's
+                         storage.
+        """
         self.hass = hass
         self.store = Store(hass, storage_version, storage_key)
         self.strains: dict[str, dict[str, Any]] = {}
 
     def _get_key(self, strain: str, phenotype: str) -> str:
-        """Generate a unique key for a strain and phenotype."""
+        """Generate a unique key for a strain and phenotype combination.
+
+        Args:
+            strain: The name of the strain.
+            phenotype: The phenotype of the strain.
+
+        Returns:
+            A unique string key for storage.
+        """
         return f"{strain.strip()}|{phenotype.strip() or 'default'}"
 
     async def load(self) -> None:
-        """Load data from storage and handle migration from old format."""
+        """Load the strain library from persistent storage.
+
+        This method also handles the migration from an old list-based format to the
+        current dictionary-based format.
+        """
         data = await self.store.async_load()
         if isinstance(data, list):  # Old format: list of strings
             _LOGGER.info("Migrating old strain library format.")
@@ -35,13 +66,23 @@ class StrainLibrary:
             self.strains = {}
 
     async def save(self) -> None:
-        """Save the current strain library to storage."""
+        """Save the current strain library to persistent storage."""
         await self.store.async_save(self.strains)
 
     async def record_harvest(
         self, strain: str, phenotype: str, veg_days: int, flower_days: int
     ) -> None:
-        """Record a harvest event for a specific strain and phenotype."""
+        """Record a harvest event for a specific strain and phenotype.
+
+        This method adds the vegetative and flowering day counts to the strain's
+        harvest history, which is used to calculate analytics.
+
+        Args:
+            strain: The name of the harvested strain.
+            phenotype: The phenotype of the harvested strain.
+            veg_days: The number of days spent in the vegetative stage.
+            flower_days: The number of days spent in the flowering stage.
+        """
         key = self._get_key(strain, phenotype)
 
         if key not in self.strains:
@@ -61,7 +102,12 @@ class StrainLibrary:
         await self.save()
 
     async def remove_strain_phenotype(self, strain: str, phenotype: str) -> None:
-        """Remove a specific strain/phenotype combination from the library."""
+        """Remove a specific strain/phenotype combination from the library.
+
+        Args:
+            strain: The name of the strain to remove.
+            phenotype: The phenotype of the strain to remove.
+        """
         key = self._get_key(strain, phenotype)
         if key in self.strains:
             self.strains.pop(key)
@@ -69,13 +115,25 @@ class StrainLibrary:
             _LOGGER.info("Removed strain %s from library", key)
 
     def get_all(self) -> dict[str, dict[str, Any]]:
-        """Return the entire strain data dictionary."""
+        """Return the entire raw dictionary of strain data.
+
+        Returns:
+            A dictionary containing all stored strain and harvest data.
+        """
         return self.strains
 
     async def import_library(
         self, library_data: dict[str, Any], replace: bool = False
     ) -> int:
-        """Import a strain library from a dictionary."""
+        """Import a strain library from a dictionary.
+
+        Args:
+            library_data: The dictionary of strain data to import.
+            replace: If True, the existing library will be cleared before import.
+
+        Returns:
+            The total number of strains in the library after the import.
+        """
         if not isinstance(library_data, dict):
             _LOGGER.warning("Import failed: data must be a dictionary.")
             return len(self.strains)
@@ -88,7 +146,11 @@ class StrainLibrary:
         return len(self.strains)
 
     async def clear(self) -> int:
-        """Clear all entries from the strain library."""
+        """Clear all entries from the strain library.
+
+        Returns:
+            The number of strains that were cleared.
+        """
         count = len(self.strains)
         self.strains.clear()
         await self.save()

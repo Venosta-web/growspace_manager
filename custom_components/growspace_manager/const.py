@@ -1,7 +1,9 @@
 """Constants for the Growspace Manager integration."""
 
-import voluptuous as vol
 from datetime import date
+
+import voluptuous as vol
+
 
 DOMAIN = "growspace_manager"
 STORAGE_VERSION = 1
@@ -103,7 +105,17 @@ DEFAULT_BAYESIAN_THRESHOLDS = {
 
 # Helper for common date/datetime parsing
 def valid_date_or_none(value):
-    """Validate date or return None."""
+    """Validate that a value is a valid date or None for voluptuous schemas.
+
+    Args:
+        value: The value to validate.
+
+    Returns:
+        The parsed date object or None.
+
+    Raises:
+        vol.Invalid: If the value is not a valid date format.
+    """
     if value is None or value == "":
         return None
     if isinstance(value, date):
@@ -119,7 +131,17 @@ def valid_date_or_none(value):
 
 
 def valid_growspace_id(value):
-    """Validate growspace ID format (basic)."""
+    """Validate that a value is a non-empty string for a growspace ID.
+
+    Args:
+        value: The value to validate.
+
+    Returns:
+        The validated string.
+
+    Raises:
+        vol.Invalid: If the value is not a valid growspace ID.
+    """
     if not isinstance(value, str) or not value:
         raise vol.Invalid("Growspace ID cannot be empty")
     return value
@@ -306,16 +328,13 @@ DEBUG_CONSOLIDATE_DUPLICATE_SPECIAL_SCHEMA = vol.Schema({})  # No parameters
 
 CONFIGURE_ENVIRONMENT_SCHEMA = vol.Schema(
     {
-        # Der Growspace, der konfiguriert werden soll.
         vol.Required("growspace_id"): str,
-        # Die drei erforderlichen Sensoren.
         vol.Required("temperature_sensor"): str,
         vol.Required("humidity_sensor"): str,
         vol.Required("vpd_sensor"): str,
-        # Optionale Sensoren.
         vol.Optional("co2_sensor"): str,
         vol.Optional("circulation_fan"): str,
-        # Optionale Schwellenwerte mit Standardwerten und Bereichsvalidierung.
+        vol.Optional("light_sensor"): str,
         vol.Optional("stress_threshold", default=0.70): vol.All(
             vol.Coerce(float), vol.Range(min=0.0, max=1.0)
         ),

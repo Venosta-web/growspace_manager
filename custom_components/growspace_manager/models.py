@@ -1,3 +1,10 @@
+"""Data models for the Growspace Manager integration.
+
+This file defines the dataclasses that represent the core objects used throughout
+the integration, such as Growspace, Plant, and EnvironmentState. These models
+provide a structured way to handle and pass around data.
+"""
+
 from __future__ import annotations
 from dataclasses import dataclass, field, asdict, fields
 from typing import Any, Optional
@@ -6,6 +13,18 @@ from datetime import date
 
 @dataclass
 class Growspace:
+    """Represents a single growspace area.
+
+    Attributes:
+        id: A unique identifier for the growspace.
+        name: The display name of the growspace.
+        rows: The number of rows in the growspace grid.
+        plants_per_row: The number of plants per row in the grid.
+        notification_target: The notification service to use for this growspace.
+        created_at: The ISO-formatted date when the growspace was created.
+        device_id: The Home Assistant device ID associated with this growspace.
+        environment_config: A dictionary of environment sensor configurations.
+    """
     id: str
     name: str
     rows: int = 3
@@ -16,11 +35,27 @@ class Growspace:
     environment_config: dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict:
+        """Convert the dataclass instance to a dictionary.
+
+        Returns:
+            A dictionary representation of the Growspace.
+        """
         return asdict(self)
 
     @staticmethod
     def from_dict(data: dict) -> Growspace:
-        """Create Growspace from dict, handling legacy field names."""
+        """Create a Growspace instance from a dictionary.
+
+        This factory method handles the migration of legacy field names
+        and filters out any keys that do not correspond to dataclass fields,
+        making it robust against data from older versions.
+
+        Args:
+            data: A dictionary containing the growspace data.
+
+        Returns:
+            A new instance of the Growspace class.
+        """
         data = data.copy()  # Don't modify original
 
         # Migrate old field names
@@ -39,6 +74,30 @@ class Growspace:
 
 @dataclass
 class Plant:
+    """Represents a single plant.
+
+    Attributes:
+        plant_id: A unique identifier for the plant.
+        growspace_id: The ID of the growspace this plant belongs to.
+        strain: The strain name of the plant.
+        phenotype: The phenotype of the strain.
+        row: The row position of the plant in the growspace grid.
+        col: The column position of the plant in the growspace grid.
+        stage: The current growth stage of the plant.
+        type: The type of plant (e.g., 'normal', 'clone', 'mother').
+        device_id: The Home Assistant device ID associated with the plant.
+        seedling_start: The ISO-formatted date the seedling stage started.
+        mother_start: The ISO-formatted date the mother stage started.
+        clone_start: The ISO-formatted date the clone stage started.
+        veg_start: The ISO-formatted date the vegetative stage started.
+        flower_start: The ISO-formatted date the flowering stage started.
+        dry_start: The ISO-formatted date the drying stage started.
+        cure_start: The ISO-formatted date the curing stage started.
+        created_at: The ISO-formatted date the plant was created.
+        updated_at: The ISO-formatted date the plant was last updated.
+        transition_date: The date of the last stage transition.
+        source_mother: The ID of the mother plant this plant was cloned from.
+    """
     plant_id: str
     growspace_id: str
     strain: str
@@ -61,11 +120,27 @@ class Plant:
     source_mother: str | None = None
 
     def to_dict(self) -> dict:
+        """Convert the dataclass instance to a dictionary.
+
+        Returns:
+            A dictionary representation of the Plant.
+        """
         return asdict(self)
 
     @staticmethod
     def from_dict(data: dict) -> Plant:
-        """Create Plant from dict, handling legacy field names."""
+        """Create a Plant instance from a dictionary.
+
+        This factory method handles the migration of legacy field names
+        and filters out any keys that do not correspond to dataclass fields,
+        making it robust against data from older versions.
+
+        Args:
+            data: A dictionary containing the plant data.
+
+        Returns:
+            A new instance of the Plant class.
+        """
         data = data.copy()  # Don't modify original
 
         # Migrate old field names
@@ -84,8 +159,21 @@ class Plant:
 
 @dataclass
 class EnvironmentState:
-    """A snapshot of the current environment state."""
+    """Represents a snapshot of the current environment state in a growspace.
 
+    This dataclass is used to pass around a consistent set of environmental
+    readings for use in calculations, particularly for the Bayesian sensors.
+
+    Attributes:
+        temp: The current temperature.
+        humidity: The current relative humidity.
+        vpd: The current Vapor Pressure Deficit.
+        co2: The current CO2 level.
+        veg_days: The number of days the growspace has been in the vegetative stage.
+        flower_days: The number of days the growspace has been in the flowering stage.
+        is_lights_on: A boolean indicating if the lights are currently on.
+        fan_off: A boolean indicating if the circulation fan is currently off.
+    """
     temp: float | None
     humidity: float | None
     vpd: float | None

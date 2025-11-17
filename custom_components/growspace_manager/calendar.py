@@ -1,4 +1,9 @@
-"""Calendar platform for Growspace Manager."""
+"""Calendar platform for Growspace Manager.
+
+This file defines the calendar entities for the Growspace Manager integration.
+Each growspace gets its own calendar, which displays scheduled tasks and reminders
+based on the timed notifications configured by the user.
+"""
 from __future__ import annotations
 
 import logging
@@ -21,7 +26,17 @@ async def async_setup_entry(
     config_entry: ConfigEntry,
     async_add_entities: AddEntitiesCallback,
 ) -> None:
-    """Set up the calendar platform for Growspace Manager."""
+    """Set up the calendar platform for Growspace Manager from a config entry.
+
+    This function is called by Home Assistant to set up the calendar platform. It
+    creates a `GrowspaceCalendar` entity for each growspace managed by the
+    coordinator.
+
+    Args:
+        hass: The Home Assistant instance.
+        config_entry: The configuration entry.
+        async_add_entities: A callback function for adding new entities.
+    """
     coordinator = hass.data[DOMAIN][config_entry.entry_id]["coordinator"]
     calendars = [
         GrowspaceCalendar(coordinator, growspace_id)
@@ -31,10 +46,20 @@ async def async_setup_entry(
 
 
 class GrowspaceCalendar(CalendarEntity):
-    """A calendar for a growspace, showing tasks based on timed notifications."""
+    """A calendar entity for a growspace.
+
+    This calendar displays events that are generated from the user-configured
+    timed notifications, providing a schedule of upcoming tasks and reminders
+    for the plants within the growspace.
+    """
 
     def __init__(self, coordinator: GrowspaceCoordinator, growspace_id: str) -> None:
-        """Initialize the GrowspaceCalendar."""
+        """Initialize the GrowspaceCalendar.
+
+        Args:
+            coordinator: The data update coordinator.
+            growspace_id: The ID of the growspace this calendar belongs to.
+        """
         self.coordinator = coordinator
         self.growspace_id = growspace_id
         self.growspace = coordinator.growspaces[growspace_id]
@@ -44,7 +69,7 @@ class GrowspaceCalendar(CalendarEntity):
 
     @property
     def event(self) -> CalendarEvent | None:
-        """Return the next upcoming event."""
+        """Return the next upcoming event on the calendar."""
         return next(
             (
                 event
@@ -57,7 +82,16 @@ class GrowspaceCalendar(CalendarEntity):
     async def async_get_events(
         self, hass: HomeAssistant, start_date: datetime, end_date: datetime
     ) -> list[CalendarEvent]:
-        """Return calendar events within a specific time range."""
+        """Return a list of calendar events within a specific time range.
+
+        Args:
+            hass: The Home Assistant instance.
+            start_date: The start of the date range.
+            end_date: The end of the date range.
+
+        Returns:
+            A list of `CalendarEvent` objects.
+        """
         return [
             event
             for event in self._events
@@ -66,7 +100,7 @@ class GrowspaceCalendar(CalendarEntity):
         ]
 
     def _generate_events(self) -> None:
-        """Generate all calendar events for the growspace."""
+        """Generate all calendar events for the growspace based on timed notifications."""
         events = []
         notifications = self.coordinator.options.get("timed_notifications", [])
         plants = self.coordinator.get_growspace_plants(self.growspace_id)
@@ -112,5 +146,5 @@ class GrowspaceCalendar(CalendarEntity):
 
 
     async def async_update(self) -> None:
-        """Update the calendar's events."""
+        """Update the calendar's list of events."""
         self._generate_events()

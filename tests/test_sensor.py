@@ -1,3 +1,12 @@
+"""Tests for the sensor platform of the Growspace Manager integration.
+
+This file contains tests for the various sensor entities created by the
+integration, including `GrowspaceOverviewSensor`, `PlantEntity`,
+`StrainLibrarySensor`, and `GrowspaceListSensor`. It ensures that these sensors
+correctly report their state and attributes based on the data provided by the
+coordinator.
+"""
+
 import pytest
 from unittest.mock import Mock, AsyncMock, MagicMock, patch
 from datetime import date, timedelta
@@ -19,6 +28,11 @@ from custom_components.growspace_manager.const import DOMAIN
 # --------------------
 @pytest.fixture
 def mock_coordinator():
+    """Create a mock GrowspaceCoordinator for sensor testing.
+
+    Returns:
+        A mock coordinator object with pre-populated growspace and plant data.
+    """
     coordinator = Mock()
     coordinator.hass = Mock()
     coordinator.growspaces = {
@@ -65,6 +79,7 @@ from homeassistant.helpers import entity_registry as er
 
 @pytest.mark.asyncio
 async def test_async_setup_entry_adds_entities():
+    """Test that `async_setup_entry` correctly adds all expected sensor entities."""
     hass = MagicMock()
     hass.config.config_dir = "/config"
     entity_registry = er.async_get(hass)
@@ -105,6 +120,11 @@ async def test_async_setup_entry_adds_entities():
 # GrowspaceOverviewSensor
 # --------------------
 def test_growspace_overview_sensor_state_and_attributes(mock_coordinator):
+    """Test the state and basic attributes of the `GrowspaceOverviewSensor`.
+
+    Args:
+        mock_coordinator: The mock coordinator fixture.
+    """
     gs = GrowspaceOverviewSensor(
         coordinator=mock_coordinator,
         growspace_id="gs1",
@@ -122,7 +142,11 @@ def test_growspace_overview_sensor_state_and_attributes(mock_coordinator):
 
 
 def test_growspace_overview_sensor_max_stage_attributes(mock_coordinator):
-    """Test max stage attributes are included in GrowspaceOverviewSensor."""
+    """Test that `GrowspaceOverviewSensor` correctly calculates max stage days.
+
+    Args:
+        mock_coordinator: The mock coordinator fixture.
+    """
     coordinator = mock_coordinator
     # Add two plants with veg and flower stages
     coordinator.plants = {
@@ -179,6 +203,11 @@ def test_growspace_overview_sensor_max_stage_attributes(mock_coordinator):
 
 
 def test_growspace_overview_sensor_max_stage_no_plants(mock_coordinator):
+    """Test `GrowspaceOverviewSensor` attributes when the growspace is empty.
+
+    Args:
+        mock_coordinator: The mock coordinator fixture.
+    """
     coordinator = mock_coordinator
     coordinator.plants = {}
     coordinator.get_growspace_plants.return_value = []
@@ -199,6 +228,11 @@ def test_growspace_overview_sensor_max_stage_no_plants(mock_coordinator):
 # PlantEntity
 # --------------------
 def test_plant_entity_state_and_attributes(mock_coordinator):
+    """Test the state and attributes of the `PlantEntity` sensor.
+
+    Args:
+        mock_coordinator: The mock coordinator fixture.
+    """
     plant = list(mock_coordinator.plants.values())[0]
     entity = PlantEntity(mock_coordinator, plant)
     state = entity.state
@@ -223,6 +257,11 @@ def test_plant_entity_state_and_attributes(mock_coordinator):
 # StrainLibrarySensor
 # --------------------
 def test_strain_library_sensor_state_and_attributes(mock_coordinator):
+    """Test the state and attributes of the `StrainLibrarySensor`.
+
+    Args:
+        mock_coordinator: The mock coordinator fixture.
+    """
     # Mock the new data structure
     mock_coordinator.strains.get_all.return_value = {
         "Strain A|A": {
@@ -255,6 +294,11 @@ def test_strain_library_sensor_state_and_attributes(mock_coordinator):
 # GrowspaceListSensor
 # --------------------
 def test_growspace_list_sensor_state_and_attributes(mock_coordinator):
+    """Test the state and attributes of the `GrowspaceListSensor`.
+
+    Args:
+        mock_coordinator: The mock coordinator fixture.
+    """
     sensor = GrowspaceListSensor(mock_coordinator)
     assert sensor.state == 1
     attrs = sensor.extra_state_attributes
