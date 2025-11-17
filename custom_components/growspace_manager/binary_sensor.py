@@ -1216,8 +1216,7 @@ class BayesianMoldRiskSensor(BayesianEnvironmentSensor):
             ) and not self.env_config.get(f"{sensor_key}_stats_sensor"):
                 duration = self.env_config.get(f"{sensor_key}_trend_duration", 30)
                 # For mold, a simple threshold isn't as useful as just detecting the trend direction
-                # We pass a high threshold for humidity (rising) and low for VPD (falling)
-                # to effectively just check direction
+                # We pass a high threshold for humidity (rising) and low for VPD (falling) to effectively just check direction
                 threshold = 101 if sensor_key == "humidity" else -1
                 sensitivity = self.env_config.get(
                     f"{sensor_key}_trend_sensitivity", 0.5
