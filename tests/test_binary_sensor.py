@@ -734,7 +734,7 @@ async def test_stress_sensor_stage_and_time_logic(
         ),
         # Case 3: Low VPD (day) in late flower
         (
-            {"temp": 22, "humidity": 50, "vpd": 1.1, "light": "on"},
+            {"temp": 22, "humidity": 50, "vpd": 0.8, "light": "on"},
             {"veg_days": 30, "flower_days": 40},
             "Day VPD Low",
         ),

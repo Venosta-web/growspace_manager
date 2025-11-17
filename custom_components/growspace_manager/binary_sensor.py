@@ -879,7 +879,7 @@ class BayesianMoldRiskSensor(BayesianEnvironmentSensor):
                     self._reasons.append(
                         (prob[0], f"Day Humidity High ({state.humidity})")
                     )
-                if state.vpd is not None and state.vpd < 1.2:
+                if state.vpd is not None and state.vpd < 0.9:
                     prob = self.env_config.get("prob_mold_vpd_low_day", (0.90, 0.25))
                     observations.append(prob)
                     self._reasons.append((prob[0], f"Day VPD Low ({state.vpd})"))
