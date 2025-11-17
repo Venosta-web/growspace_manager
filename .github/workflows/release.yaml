@@ -9,22 +9,26 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4 # @v4 ist die aktuelle Version
+        uses: actions/checkout@v4
 
-      - name: Archive Release
-        uses: thedoctor0/zip-release@0.7.1
+      # 2. Creates the ZIP file
+      - name: ZIP Release
+        run: |
+          cd custom_components
+          zip -r ../growspace_manager.zip ./growspace_manager \
+            -x "growspace_manager/.github/*" \
+            -x "growspace_manager/.coverage" \
+            -x "growspace_manager/.gitignore" \
+            -x "growspace_manager/pytest.ini" \
+            -x "growspace_manager/module.json"
+
+      # 3. Attaches the new zip file to your GitHub Release
+      - name: Upload Release Asset
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          type: "zip"
-
-          directory: "custom_components/growspace_manager"
-          filename: "growspace_manager.zip"
-          exclusions: "*.git* .editorconfig *.vscode* *.github* .coverage pytest.ini module.json"
-
-      - name: Upload zip to release
-        uses: svenstaro/upload-release-action@v2
-        with:
-          repo_token: ${{ secrets.GITHUB_TOKEN }}
-          file: "growspace_manager.zip"
-          asset_name: "growspace_manager.zip"
-          tag: ${{ github.ref }}
-          overwrite: true
+          upload_url: ${{ github.event.release.upload_url }}
+          asset_path: ./growspace_manager.zip
+          asset_name: growspace_manager.zip
+          asset_content_type: application/zip
