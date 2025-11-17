@@ -1,4 +1,11 @@
-"""Test the Growspace Manager config flow."""
+"""Tests for the Growspace Manager configuration and options flows.
+
+This file contains a suite of tests to ensure that the config flow (for initial
+setup) and the options flow (for post-setup configuration) of the Growspace
+Manager integration work as expected. It covers various user interaction
+scenarios, including adding/updating/removing growspaces and plants, configuring
+environmental sensors, and managing timed notifications.
+"""
 
 import pytest
 import voluptuous as vol
@@ -18,7 +25,14 @@ from custom_components.growspace_manager.config_flow import (
 
 @pytest.fixture
 def mock_coordinator(hass: HomeAssistant):
-    """Fixture for a mock coordinator."""
+    """Create a mock GrowspaceCoordinator for testing.
+
+    Args:
+        hass: The Home Assistant instance.
+
+    Returns:
+        A MagicMock object that mimics the GrowspaceCoordinator.
+    """
     # Use MagicMock with a spec for better type checking
     coordinator = MagicMock(spec=GrowspaceCoordinator)
     coordinator.hass = hass
@@ -47,7 +61,11 @@ def mock_coordinator(hass: HomeAssistant):
 
 @pytest.fixture
 def mock_store():
-    """Fixture for a mock store."""
+    """Create a mock Store for testing.
+
+    Returns:
+        An AsyncMock object that mimics the Home Assistant Store.
+    """
     store = AsyncMock()
     store.async_load = AsyncMock(return_value={"growspaces": {}, "plants": {}})
     return store
@@ -62,7 +80,12 @@ def mock_store():
 async def test_ensure_default_growspaces_creates_new(
     hass: HomeAssistant, mock_coordinator
 ):
-    """Test creating default growspaces when they don't exist."""
+    """Test that `ensure_default_growspaces` creates growspaces when none exist.
+
+    Args:
+        hass: The Home Assistant instance.
+        mock_coordinator: The mock GrowspaceCoordinator.
+    """
     mock_coordinator.growspaces = {}
     await ensure_default_growspaces(mock_coordinator)
 
@@ -79,7 +102,11 @@ async def test_ensure_default_growspaces_creates_new(
 
 @pytest.mark.asyncio
 async def test_config_flow_user_step_show_form(hass: HomeAssistant):
-    """Test showing the user config form."""
+    """Test that the user step of the config flow shows the initial form.
+
+    Args:
+        hass: The Home Assistant instance.
+    """
     flow = ConfigFlow()
     flow.hass = hass
 
@@ -91,7 +118,11 @@ async def test_config_flow_user_step_show_form(hass: HomeAssistant):
 
 @pytest.mark.asyncio
 async def test_config_flow_user_step_create_entry(hass: HomeAssistant):
-    """Test creating entry from user input."""
+    """Test that the user step creates a config entry with the provided name.
+
+    Args:
+        hass: The Home Assistant instance.
+    """
     flow = ConfigFlow()
     flow.hass = hass
 
@@ -104,7 +135,11 @@ async def test_config_flow_user_step_create_entry(hass: HomeAssistant):
 
 @pytest.mark.asyncio
 async def test_config_flow_user_step_default_name(hass: HomeAssistant):
-    """Test using default name."""
+    """Test that the user step creates a config entry with the default name.
+
+    Args:
+        hass: The Home Assistant instance.
+    """
     flow = ConfigFlow()
     flow.hass = hass
 
@@ -116,7 +151,11 @@ async def test_config_flow_user_step_default_name(hass: HomeAssistant):
 
 @pytest.mark.asyncio
 async def test_config_flow_add_growspace_show_form(hass: HomeAssistant):
-    """Test showing add growspace form."""
+    """Test that the `add_growspace` step shows the correct form.
+
+    Args:
+        hass: The Home Assistant instance.
+    """
     flow = ConfigFlow()
     flow.hass = hass
     flow.hass.services = Mock()
@@ -130,7 +169,11 @@ async def test_config_flow_add_growspace_show_form(hass: HomeAssistant):
 
 @pytest.mark.asyncio
 async def test_config_flow_add_growspace_with_data(hass: HomeAssistant):
-    """Test adding growspace with data."""
+    """Test that the `add_growspace` step stores pending data correctly.
+
+    Args:
+        hass: The Home Assistant instance.
+    """
     flow = ConfigFlow()
     flow.hass = hass
     hass.data[DOMAIN] = {}
@@ -151,7 +194,11 @@ async def test_config_flow_add_growspace_with_data(hass: HomeAssistant):
 
 @pytest.mark.asyncio
 async def test_config_flow_get_add_growspace_schema_with_notify(hass: HomeAssistant):
-    """Test schema generation with notify services."""
+    """Test that the growspace schema includes notify services when available.
+
+    Args:
+        hass: The Home Assistant instance.
+    """
     flow = ConfigFlow()
     flow.hass = hass
     flow.hass.services = Mock()
@@ -174,7 +221,11 @@ async def test_config_flow_get_add_growspace_schema_with_notify(hass: HomeAssist
 
 @pytest.mark.asyncio
 async def test_config_flow_get_add_growspace_schema_no_notify(hass: HomeAssistant):
-    """Test schema generation without notify services."""
+    """Test that the growspace schema is correct when no notify services are found.
+
+    Args:
+        hass: The Home Assistant instance.
+    """
     flow = ConfigFlow()
     flow.hass = hass
     flow.hass.services = Mock()
@@ -187,7 +238,11 @@ async def test_config_flow_get_add_growspace_schema_no_notify(hass: HomeAssistan
 
 @pytest.mark.asyncio
 async def test_config_flow_async_get_options_flow(hass: HomeAssistant):
-    """Test getting options flow handler."""
+    """Test that `async_get_options_flow` returns an `OptionsFlowHandler`.
+
+    Args:
+        hass: The Home Assistant instance.
+    """
     config_entry = MockConfigEntry(domain=DOMAIN, data={"name": "Test"})
     config_entry.add_to_hass(hass)
 
@@ -203,7 +258,11 @@ async def test_config_flow_async_get_options_flow(hass: HomeAssistant):
 
 @pytest.mark.asyncio
 async def test_options_flow_init_show_menu(hass: HomeAssistant):
-    """Test showing the main options menu."""
+    """Test that the initial step of the options flow shows the main menu.
+
+    Args:
+        hass: The Home Assistant instance.
+    """
     config_entry = MockConfigEntry(domain=DOMAIN, data={"name": "Test"})
     config_entry.add_to_hass(hass)
 
@@ -220,7 +279,12 @@ async def test_options_flow_init_show_menu(hass: HomeAssistant):
 async def test_options_flow_init_manage_growspaces(
     hass: HomeAssistant, mock_coordinator
 ):
-    """Test selecting manage growspaces from menu."""
+    """Test navigating to 'Manage Growspaces' from the main menu.
+
+    Args:
+        hass: The Home Assistant instance.
+        mock_coordinator: The mock GrowspaceCoordinator.
+    """
     config_entry = MockConfigEntry(domain=DOMAIN, data={"name": "Test"})
     config_entry.add_to_hass(hass)
     hass.data[DOMAIN] = {config_entry.entry_id: {"coordinator": mock_coordinator}}
@@ -236,7 +300,12 @@ async def test_options_flow_init_manage_growspaces(
 
 @pytest.mark.asyncio
 async def test_options_flow_init_manage_plants(hass: HomeAssistant, mock_coordinator):
-    """Test selecting manage plants from menu."""
+    """Test navigating to 'Manage Plants' from the main menu.
+
+    Args:
+        hass: The Home Assistant instance.
+        mock_coordinator: The mock GrowspaceCoordinator.
+    """
     config_entry = MockConfigEntry(domain=DOMAIN, data={"name": "Test"})
     config_entry.add_to_hass(hass)
     hass.data[DOMAIN] = {config_entry.entry_id: {"coordinator": mock_coordinator}}
@@ -259,7 +328,12 @@ async def test_options_flow_init_manage_plants(hass: HomeAssistant, mock_coordin
 async def test_options_flow_manage_growspaces_show_form(
     hass: HomeAssistant, mock_coordinator
 ):
-    """Test showing manage growspaces form."""
+    """Test that the 'Manage Growspaces' step shows the correct form.
+
+    Args:
+        hass: The Home Assistant instance.
+        mock_coordinator: The mock GrowspaceCoordinator.
+    """
     config_entry = MockConfigEntry(domain=DOMAIN, data={"name": "Test"})
     config_entry.add_to_hass(hass)
     hass.data[DOMAIN] = {config_entry.entry_id: {"coordinator": mock_coordinator}}
@@ -277,7 +351,12 @@ async def test_options_flow_manage_growspaces_show_form(
 async def test_options_flow_manage_growspaces_add(
     hass: HomeAssistant, mock_coordinator
 ):
-    """Test adding growspace action."""
+    """Test the 'add' action in the 'Manage Growspaces' step.
+
+    Args:
+        hass: The Home Assistant instance.
+        mock_coordinator: The mock GrowspaceCoordinator.
+    """
     config_entry = MockConfigEntry(domain=DOMAIN, data={"name": "Test"})
     config_entry.add_to_hass(hass)
     hass.data[DOMAIN] = {config_entry.entry_id: {"coordinator": mock_coordinator}}
@@ -296,7 +375,12 @@ async def test_options_flow_manage_growspaces_add(
 async def test_options_flow_manage_growspaces_update(
     hass: HomeAssistant, mock_coordinator
 ):
-    """Test update growspace action."""
+    """Test the 'update' action in the 'Manage Growspaces' step.
+
+    Args:
+        hass: The Home Assistant instance.
+        mock_coordinator: The mock GrowspaceCoordinator.
+    """
     config_entry = MockConfigEntry(domain=DOMAIN, data={"name": "Test"})
     config_entry.add_to_hass(hass)
     mock_coordinator.growspaces = {"gs1": Mock(name="Growspace 1")}
@@ -318,7 +402,13 @@ async def test_options_flow_manage_growspaces_update(
 async def test_options_flow_manage_growspaces_remove(
     hass: HomeAssistant, mock_coordinator, enable_custom_integrations
 ):
-    """Test remove growspace action."""
+    """Test the 'remove' action in the 'Manage Growspaces' step.
+
+    Args:
+        hass: The Home Assistant instance.
+        mock_coordinator: The mock GrowspaceCoordinator.
+        enable_custom_integrations: Fixture to enable custom integrations.
+    """
     config_entry = MockConfigEntry(domain=DOMAIN, data={"name": "Test"})
     config_entry.add_to_hass(hass)
     hass.data[DOMAIN] = {config_entry.entry_id: {"coordinator": mock_coordinator}}
@@ -338,7 +428,12 @@ async def test_options_flow_manage_growspaces_remove(
 async def test_options_flow_manage_growspaces_remove_error(
     hass: HomeAssistant, mock_coordinator
 ):
-    """Test error handling when removing growspace."""
+    """Test error handling for the 'remove' action.
+
+    Args:
+        hass: The Home Assistant instance.
+        mock_coordinator: The mock GrowspaceCoordinator.
+    """
     config_entry = MockConfigEntry(domain=DOMAIN, data={"name": "Test"})
     config_entry.add_to_hass(hass)
     hass.data[DOMAIN] = {config_entry.entry_id: {"coordinator": mock_coordinator}}
@@ -356,7 +451,12 @@ async def test_options_flow_manage_growspaces_remove_error(
 
 @pytest.mark.asyncio
 async def test_options_flow_manage_growspaces_back(hass, mock_coordinator):
-    """Test going back to main menu in manage growspaces step."""
+    """Test the 'back' action in the 'Manage Growspaces' step.
+
+    Args:
+        hass: The Home Assistant instance.
+        mock_coordinator: The mock GrowspaceCoordinator.
+    """
 
     # Create a mock config entry
     config_entry = MockConfigEntry(domain=DOMAIN, data={"name": "Test"})
@@ -381,7 +481,11 @@ async def test_options_flow_manage_growspaces_back(hass, mock_coordinator):
 
 @pytest.mark.asyncio
 async def test_options_flow_manage_growspaces_no_coordinator(hass: HomeAssistant):
-    """Test error when coordinator not found."""
+    """Test that an abort is triggered if the coordinator is not found.
+
+    Args:
+        hass: The Home Assistant instance.
+    """
     config_entry = MockConfigEntry(domain=DOMAIN, data={"name": "Test"})
     config_entry.add_to_hass(hass)
 
@@ -403,7 +507,12 @@ async def test_options_flow_manage_growspaces_no_coordinator(hass: HomeAssistant
 async def test_options_flow_add_growspace_show_form(
     hass: HomeAssistant, mock_coordinator
 ):
-    """Test showing add growspace form."""
+    """Test that the 'add_growspace' step shows the correct form.
+
+    Args:
+        hass: The Home Assistant instance.
+        mock_coordinator: The mock GrowspaceCoordinator.
+    """
     config_entry = MockConfigEntry(domain=DOMAIN, data={"name": "Test"})
     config_entry.add_to_hass(hass)
     hass.data[DOMAIN] = {config_entry.entry_id: {"coordinator": mock_coordinator}}
@@ -423,7 +532,12 @@ async def test_options_flow_add_growspace_show_form(
 async def test_options_flow_add_growspace_success(
     hass: HomeAssistant, mock_coordinator
 ):
-    """Test successfully adding a growspace."""
+    """Test the successful addition of a growspace via the options flow.
+
+    Args:
+        hass: The Home Assistant instance.
+        mock_coordinator: The mock GrowspaceCoordinator.
+    """
     config_entry = MockConfigEntry(domain=DOMAIN, data={"name": "Test"})
     config_entry.add_to_hass(hass)
     hass.data[DOMAIN] = {config_entry.entry_id: {"coordinator": mock_coordinator}}
@@ -451,7 +565,12 @@ async def test_options_flow_add_growspace_success(
 
 @pytest.mark.asyncio
 async def test_options_flow_add_growspace_error(hass: HomeAssistant, mock_coordinator):
-    """Test error handling when adding growspace."""
+    """Test error handling when adding a growspace fails.
+
+    Args:
+        hass: The Home Assistant instance.
+        mock_coordinator: The mock GrowspaceCoordinator.
+    """
     config_entry = MockConfigEntry(domain=DOMAIN, data={"name": "Test"})
     config_entry.add_to_hass(hass)
     mock_coordinator.async_add_growspace.side_effect = Exception("Test error")
@@ -478,7 +597,12 @@ async def test_options_flow_add_growspace_error(hass: HomeAssistant, mock_coordi
 async def test_options_flow_update_growspace_show_form(
     hass: HomeAssistant, mock_coordinator
 ):
-    """Test showing update growspace form."""
+    """Test that the 'update_growspace' step shows the correct pre-filled form.
+
+    Args:
+        hass: The Home Assistant instance.
+        mock_coordinator: The mock GrowspaceCoordinator.
+    """
     config_entry = MockConfigEntry(domain=DOMAIN, data={"name": "Test"})
     config_entry.add_to_hass(hass)
 
@@ -507,7 +631,12 @@ async def test_options_flow_update_growspace_show_form(
 async def test_options_flow_update_growspace_success(
     hass: HomeAssistant, mock_coordinator
 ):
-    """Test successfully updating a growspace."""
+    """Test the successful update of a growspace via the options flow.
+
+    Args:
+        hass: The Home Assistant instance.
+        mock_coordinator: The mock GrowspaceCoordinator.
+    """
     config_entry = MockConfigEntry(domain=DOMAIN, data={"name": "Test"})
     config_entry.add_to_hass(hass)
 
@@ -535,7 +664,12 @@ async def test_options_flow_update_growspace_success(
 async def test_options_flow_update_growspace_not_found(
     hass: HomeAssistant, mock_coordinator
 ):
-    """Test updating non-existent growspace."""
+    """Test that an abort is triggered if the growspace to update is not found.
+
+    Args:
+        hass: The Home Assistant instance.
+        mock_coordinator: The mock GrowspaceCoordinator.
+    """
     config_entry = MockConfigEntry(domain=DOMAIN, data={"name": "Test"})
     config_entry.add_to_hass(hass)
     mock_coordinator.growspaces = {}
@@ -555,7 +689,12 @@ async def test_options_flow_update_growspace_not_found(
 async def test_options_flow_update_growspace_error(
     hass: HomeAssistant, mock_coordinator
 ):
-    """Test error handling when updating growspace."""
+    """Test error handling when updating a growspace fails.
+
+    Args:
+        hass: The Home Assistant instance.
+        mock_coordinator: The mock GrowspaceCoordinator.
+    """
     config_entry = MockConfigEntry(domain=DOMAIN, data={"name": "Test"})
     config_entry.add_to_hass(hass)
 
@@ -589,7 +728,11 @@ async def test_options_flow_update_growspace_error(
 
 @pytest.mark.asyncio
 async def test_config_flow_user_step_exception(hass: HomeAssistant):
-    """Test exception handling in user step."""
+    """Test that exceptions during the user step are caught and handled.
+
+    Args:
+        hass: The Home Assistant instance.
+    """
     flow = ConfigFlow()
     flow.hass = hass
 
@@ -601,7 +744,11 @@ async def test_config_flow_user_step_exception(hass: HomeAssistant):
 
 @pytest.mark.asyncio
 async def test_config_flow_add_growspace_exception(hass: HomeAssistant):
-    """Test exception handling in add_growspace."""
+    """Test that exceptions during the `add_growspace` step are caught.
+
+    Args:
+        hass: The Home Assistant instance.
+    """
     flow = ConfigFlow()
     flow.hass = hass
     flow.hass.services = Mock()
@@ -616,7 +763,11 @@ async def test_config_flow_add_growspace_exception(hass: HomeAssistant):
 
 @pytest.mark.asyncio
 async def test_options_flow_coordinator_missing(hass: HomeAssistant):
-    """Test handling of missing coordinator in various steps."""
+    """Test that various option flow steps abort if the coordinator is missing.
+
+    Args:
+        hass: The Home Assistant instance.
+    """
     config_entry = MockConfigEntry(
         domain=DOMAIN, data={"name": "Test"}, entry_id="test-entry-id"
     )
@@ -638,7 +789,12 @@ async def test_options_flow_coordinator_missing(hass: HomeAssistant):
 
 @pytest.mark.asyncio
 async def test_options_flow_empty_update_data(hass: HomeAssistant, mock_coordinator):
-    """Test updating with empty data (all filtered out)."""
+    """Test that updating a growspace with empty/filtered data still succeeds.
+
+    Args:
+        hass: The Home Assistant instance.
+        mock_coordinator: The mock GrowspaceCoordinator.
+    """
     config_entry = MockConfigEntry(domain=DOMAIN, data={"name": "Test"})
     config_entry.add_to_hass(hass)
 
@@ -672,7 +828,12 @@ async def test_options_flow_empty_update_data(hass: HomeAssistant, mock_coordina
 async def test_options_flow_init_manage_timed_notifications(
     hass: HomeAssistant, mock_coordinator
 ):
-    """Test selecting manage timed notifications from menu."""
+    """Test navigating to 'Timed Notifications' from the main menu.
+
+    Args:
+        hass: The Home Assistant instance.
+        mock_coordinator: The mock GrowspaceCoordinator.
+    """
     config_entry = MockConfigEntry(domain=DOMAIN, data={"name": "Test"}, options={})
     config_entry.add_to_hass(hass)
     hass.data[DOMAIN] = {config_entry.entry_id: {"coordinator": mock_coordinator}}
@@ -692,7 +853,12 @@ async def test_options_flow_init_manage_timed_notifications(
 async def test_options_flow_manage_timed_notifications_show_form(
     hass: HomeAssistant, mock_coordinator
 ):
-    """Test showing manage timed notifications form."""
+    """Test that the 'Manage Timed Notifications' step shows the correct form.
+
+    Args:
+        hass: The Home Assistant instance.
+        mock_coordinator: The mock GrowspaceCoordinator.
+    """
     config_entry = MockConfigEntry(domain=DOMAIN, data={"name": "Test"}, options={})
     config_entry.add_to_hass(hass)
     hass.data[DOMAIN] = {config_entry.entry_id: {"coordinator": mock_coordinator}}
@@ -710,7 +876,13 @@ async def test_options_flow_manage_timed_notifications_show_form(
 async def test_options_flow_manage_timed_notifications_add(
     hass: HomeAssistant, mock_coordinator, enable_custom_integrations
 ):
-    """Test adding a timed notification."""
+    """Test the 'add' action for timed notifications.
+
+    Args:
+        hass: The Home Assistant instance.
+        mock_coordinator: The mock GrowspaceCoordinator.
+        enable_custom_integrations: Fixture to enable custom integrations.
+    """
     config_entry = MockConfigEntry(domain=DOMAIN, data={"name": "Test"}, options={})
     config_entry.add_to_hass(hass)
     hass.data[DOMAIN] = {config_entry.entry_id: {"coordinator": mock_coordinator}}
@@ -730,7 +902,12 @@ async def test_options_flow_manage_timed_notifications_add(
 async def test_options_flow_add_timed_notification_success(
     hass: HomeAssistant, mock_coordinator
 ):
-    """Test successfully adding a timed notification."""
+    """Test the successful addition of a timed notification.
+
+    Args:
+        hass: The Home Assistant instance.
+        mock_coordinator: The mock GrowspaceCoordinator.
+    """
     config_entry = MockConfigEntry(domain=DOMAIN, data={"name": "Test"}, options={})
     config_entry.add_to_hass(hass)
     hass.data[DOMAIN] = {config_entry.entry_id: {"coordinator": mock_coordinator}}
@@ -760,7 +937,13 @@ async def test_options_flow_add_timed_notification_success(
 async def test_options_flow_manage_timed_notifications_edit(
     hass: HomeAssistant, mock_coordinator, enable_custom_integrations
 ):
-    """Test editing a timed notification."""
+    """Test the 'edit' action for timed notifications.
+
+    Args:
+        hass: The Home Assistant instance.
+        mock_coordinator: The mock GrowspaceCoordinator.
+        enable_custom_integrations: Fixture to enable custom integrations.
+    """
     notifications = [
         {
             "id": "123",
@@ -794,7 +977,12 @@ async def test_options_flow_manage_timed_notifications_edit(
 async def test_options_flow_edit_timed_notification_success(
     hass: HomeAssistant, mock_coordinator
 ):
-    """Test successfully editing a timed notification."""
+    """Test the successful update of a timed notification.
+
+    Args:
+        hass: The Home Assistant instance.
+        mock_coordinator: The mock GrowspaceCoordinator.
+    """
     notifications = [
         {
             "id": "123",
@@ -837,7 +1025,12 @@ async def test_options_flow_edit_timed_notification_success(
 async def test_options_flow_manage_timed_notifications_delete(
     hass: HomeAssistant, mock_coordinator
 ):
-    """Test deleting a timed notification."""
+    """Test the 'delete' action for timed notifications.
+
+    Args:
+        hass: The Home Assistant instance.
+        mock_coordinator: The mock GrowspaceCoordinator.
+    """
     notifications = [
         {
             "id": "123",
@@ -877,7 +1070,12 @@ async def test_options_flow_manage_timed_notifications_delete(
 async def test_options_flow_init_configure_environment(
     hass: HomeAssistant, enable_custom_integrations
 ):
-    """Test selecting configure environment from menu."""
+    """Test navigating to 'Configure Environment' from the main menu.
+
+    Args:
+        hass: The Home Assistant instance.
+        enable_custom_integrations: Fixture to enable custom integrations.
+    """
     config_entry = MockConfigEntry(
         domain=DOMAIN, data={"name": "Test"}, options={}, entry_id="test-entry-id"
     )
@@ -901,7 +1099,12 @@ async def test_options_flow_init_configure_environment(
 async def test_options_flow_select_growspace_for_env_show_form(
     hass: HomeAssistant, enable_custom_integrations
 ):
-    """Test showing select growspace for environment form."""
+    """Test that the 'select_growspace_for_env' step shows the correct form.
+
+    Args:
+        hass: The Home Assistant instance.
+        enable_custom_integrations: Fixture to enable custom integrations.
+    """
     config_entry = MockConfigEntry(
         domain=DOMAIN, data={"name": "Test"}, options={}, entry_id="test-entry-id"
     )
@@ -925,7 +1128,13 @@ async def test_options_flow_select_growspace_for_env_show_form(
 async def test_options_flow_select_growspace_for_env_no_growspaces(
     hass: HomeAssistant, mock_coordinator, enable_custom_integrations
 ):
-    """Test select growspace for env when no growspaces exist."""
+    """Test that an abort is triggered if no growspaces exist to configure.
+
+    Args:
+        hass: The Home Assistant instance.
+        mock_coordinator: The mock GrowspaceCoordinator.
+        enable_custom_integrations: Fixture to enable custom integrations.
+    """
     config_entry = MockConfigEntry(domain=DOMAIN, data={"name": "Test"}, options={})
     config_entry.add_to_hass(hass)
     mock_coordinator.get_sorted_growspace_options = MagicMock(return_value=[])
@@ -944,7 +1153,13 @@ async def test_options_flow_select_growspace_for_env_no_growspaces(
 async def test_options_flow_select_growspace_for_env_submit(
     hass: HomeAssistant, mock_coordinator, enable_custom_integrations
 ):
-    """Test submitting select growspace for environment form."""
+    """Test submitting the 'select_growspace_for_env' form.
+
+    Args:
+        hass: The Home Assistant instance.
+        mock_coordinator: The mock GrowspaceCoordinator.
+        enable_custom_integrations: Fixture to enable custom integrations.
+    """
     config_entry = MockConfigEntry(domain=DOMAIN, data={"name": "Test"}, options={})
     config_entry.add_to_hass(hass)
     mock_coordinator.growspaces = {"gs1": Mock(name="Growspace 1")}
@@ -970,7 +1185,12 @@ async def test_options_flow_select_growspace_for_env_submit(
 async def test_options_flow_configure_environment_show_form(
     hass: HomeAssistant, mock_coordinator
 ):
-    """Test showing configure environment form."""
+    """Test that the 'configure_environment' step shows the correct form.
+
+    Args:
+        hass: The Home Assistant instance.
+        mock_coordinator: The mock GrowspaceCoordinator.
+    """
     config_entry = MockConfigEntry(domain=DOMAIN, data={"name": "Test"}, options={})
     config_entry.add_to_hass(hass)
     mock_coordinator.growspaces = {"gs1": Mock(name="Growspace 1")}
@@ -990,7 +1210,12 @@ async def test_options_flow_configure_environment_show_form(
 async def test_options_flow_configure_environment_submit(
     hass: HomeAssistant, mock_coordinator
 ):
-    """Test submitting configure environment form."""
+    """Test the successful submission of the environment configuration form.
+
+    Args:
+        hass: The Home Assistant instance.
+        mock_coordinator: The mock GrowspaceCoordinator.
+    """
     config_entry = MockConfigEntry(domain=DOMAIN, data={"name": "Test"}, options={})
     config_entry.add_to_hass(hass)
     mock_growspace = Mock(name="Growspace 1", environment_config={})
@@ -1017,7 +1242,12 @@ async def test_options_flow_configure_environment_submit(
 async def test_options_flow_configure_environment_advanced(
     hass: HomeAssistant, mock_coordinator
 ):
-    """Test submitting configure environment form with advanced option."""
+    """Test navigating to the advanced Bayesian configuration step.
+
+    Args:
+        hass: The Home Assistant instance.
+        mock_coordinator: The mock GrowspaceCoordinator.
+    """
     config_entry = MockConfigEntry(domain=DOMAIN, data={"name": "Test"}, options={})
     config_entry.add_to_hass(hass)
     mock_growspace = Mock(name="Growspace 1", environment_config={})
@@ -1044,7 +1274,12 @@ async def test_options_flow_configure_environment_advanced(
 async def test_options_flow_configure_advanced_bayesian_show_form(
     hass: HomeAssistant, mock_coordinator
 ):
-    """Test showing configure advanced bayesian form."""
+    """Test that the advanced Bayesian configuration step shows the correct form.
+
+    Args:
+        hass: The Home Assistant instance.
+        mock_coordinator: The mock GrowspaceCoordinator.
+    """
     config_entry = MockConfigEntry(domain=DOMAIN, data={"name": "Test"}, options={})
     config_entry.add_to_hass(hass)
     mock_coordinator.growspaces = {"gs1": Mock(name="Growspace 1")}
@@ -1065,7 +1300,12 @@ async def test_options_flow_configure_advanced_bayesian_show_form(
 async def test_options_flow_configure_advanced_bayesian_submit(
     hass: HomeAssistant, mock_coordinator
 ):
-    """Test submitting configure advanced bayesian form."""
+    """Test the successful submission of the advanced Bayesian configuration.
+
+    Args:
+        hass: The Home Assistant instance.
+        mock_coordinator: The mock GrowspaceCoordinator.
+    """
     config_entry = MockConfigEntry(domain=DOMAIN, data={"name": "Test"}, options={})
     config_entry.add_to_hass(hass)
     mock_growspace = Mock(name="Growspace 1", environment_config={})
@@ -1089,7 +1329,13 @@ async def test_options_flow_configure_advanced_bayesian_submit(
 async def test_options_flow_configure_advanced_bayesian_invalid_tuple(
     hass: HomeAssistant, mock_coordinator, enable_custom_integrations
 ):
-    """Test submitting configure advanced bayesian form with invalid tuple."""
+    """Test error handling for invalid tuple format in advanced Bayesian config.
+
+    Args:
+        hass: The Home Assistant instance.
+        mock_coordinator: The mock GrowspaceCoordinator.
+        enable_custom_integrations: Fixture to enable custom integrations.
+    """
     config_entry = MockConfigEntry(domain=DOMAIN, data={"name": "Test"}, options={})
     config_entry.add_to_hass(hass)
     mock_growspace = Mock(name="Growspace 1", environment_config={})
@@ -1118,7 +1364,12 @@ async def test_options_flow_configure_advanced_bayesian_invalid_tuple(
 async def test_options_flow_init_configure_global(
     hass: HomeAssistant, mock_coordinator
 ):
-    """Test selecting configure global from menu."""
+    """Test navigating to 'Configure Global' from the main menu.
+
+    Args:
+        hass: The Home Assistant instance.
+        mock_coordinator: The mock GrowspaceCoordinator.
+    """
     config_entry = MockConfigEntry(domain=DOMAIN, data={"name": "Test"}, options={})
     config_entry.add_to_hass(hass)
     hass.data[DOMAIN] = {config_entry.entry_id: {"coordinator": mock_coordinator}}
@@ -1136,7 +1387,12 @@ async def test_options_flow_init_configure_global(
 async def test_options_flow_configure_global_show_form(
     hass: HomeAssistant, mock_coordinator
 ):
-    """Test showing configure global form."""
+    """Test that the 'Configure Global' step shows the correct form.
+
+    Args:
+        hass: The Home Assistant instance.
+        mock_coordinator: The mock GrowspaceCoordinator.
+    """
     config_entry = MockConfigEntry(domain=DOMAIN, data={"name": "Test"}, options={})
     config_entry.add_to_hass(hass)
     hass.data[DOMAIN] = {config_entry.entry_id: {"coordinator": mock_coordinator}}
@@ -1154,7 +1410,12 @@ async def test_options_flow_configure_global_show_form(
 async def test_options_flow_configure_global_submit(
     hass: HomeAssistant, mock_coordinator
 ):
-    """Test submitting configure global form."""
+    """Test the successful submission of the global configuration form.
+
+    Args:
+        hass: The Home Assistant instance.
+        mock_coordinator: The mock GrowspaceCoordinator.
+    """
     config_entry = MockConfigEntry(domain=DOMAIN, data={"name": "Test"}, options={})
     config_entry.add_to_hass(hass)
     hass.data[DOMAIN] = {config_entry.entry_id: {"coordinator": mock_coordinator}}
@@ -1172,7 +1433,11 @@ async def test_options_flow_configure_global_submit(
 
 @pytest.mark.asyncio
 async def test_ensure_default_growspaces_already_exist(mock_coordinator):
-    """Test when default growspaces already exist."""
+    """Test that no changes are made if default growspaces already exist.
+
+    Args:
+        mock_coordinator: The mock GrowspaceCoordinator.
+    """
     mock_coordinator.growspaces = {
         "dry": Mock(),
         "cure": Mock(),

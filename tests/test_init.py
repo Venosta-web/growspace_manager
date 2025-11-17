@@ -1,4 +1,8 @@
-"""Test the Growspace Manager integration."""
+"""Tests for the initialization and unloading of the Growspace Manager integration.
+
+This file contains tests to ensure that the integration can be successfully set up
+and unloaded within Home Assistant.
+"""
 
 import pytest
 
@@ -12,7 +16,15 @@ from custom_components.growspace_manager.const import DOMAIN
 
 @pytest.mark.asyncio
 async def test_async_setup_entry(recorder_mock, enable_custom_integrations):
-    """Test a successful setup entry."""
+    """Test a successful setup of the integration entry.
+
+    This test simulates the process of Home Assistant setting up the integration
+    from a config entry and asserts that the setup is successful.
+
+    Args:
+        recorder_mock: A mock of the Home Assistant recorder component.
+        enable_custom_integrations: A fixture to enable custom integrations.
+    """
     # Get the hass object from the recorder_mock fixture
     hass: HomeAssistant = recorder_mock.hass
 
@@ -24,7 +36,15 @@ async def test_async_setup_entry(recorder_mock, enable_custom_integrations):
 
 @pytest.mark.asyncio
 async def test_async_unload_entry(recorder_mock, enable_custom_integrations):
-    """Test a successful unload entry."""
+    """Test a successful unload of the integration entry.
+
+    This test ensures that the integration can be gracefully unloaded, cleaning
+    up its components and resources from Home Assistant.
+
+    Args:
+        recorder_mock: A mock of the Home Assistant recorder component.
+        enable_custom_integrations: A fixture to enable custom integrations.
+    """
     # Get the hass object from the recorder_mock fixture
     hass: HomeAssistant = recorder_mock.hass
 

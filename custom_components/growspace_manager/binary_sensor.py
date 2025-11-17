@@ -1,4 +1,10 @@
-"""Environment monitoring with Bayesian sensors for Growspace Manager."""
+"""Bayesian binary sensors for environmental monitoring in Growspace Manager.
+
+This file defines a set of binary sensors that use Bayesian inference to assess
+various environmental conditions within a growspace, such as plant stress, mold
+risk, and optimal conditions. It also includes a sensor to verify the light
+cycle schedule.
+"""
 
 from __future__ import annotations
 
@@ -30,7 +36,18 @@ async def async_setup_entry(
     config_entry: ConfigEntry,
     async_add_entities: AddEntitiesCallback,
 ) -> None:
-    """Set up Bayesian environment monitoring sensors."""
+    """Set up the Growspace Manager Bayesian binary sensors from a config entry.
+
+    This function is called by Home Assistant to set up the platform. It
+    iterates through the growspaces defined in the coordinator and creates the
+    appropriate set of binary sensors for each one that has a valid environment
+    configuration.
+
+    Args:
+        hass: The Home Assistant instance.
+        config_entry: The configuration entry.
+        async_add_entities: A callback function for adding new entities.
+    """
     coordinator = hass.data[DOMAIN][config_entry.entry_id]["coordinator"]
 
     entities = []
@@ -70,13 +87,25 @@ async def async_setup_entry(
 
 
 def _validate_env_config(config: dict) -> bool:
-    """Validate that required environment sensors are configured."""
+    """Validate that the required environment sensor entities are configured.
+
+    Args:
+        config: The environment configuration dictionary for a growspace.
+
+    Returns:
+        True if all required sensor keys are present, False otherwise.
+    """
     required = ["temperature_sensor", "humidity_sensor", "vpd_sensor"]
     return all(config.get(key) for key in required)
 
 
 class BayesianEnvironmentSensor(BinarySensorEntity):
-    """Base class for Bayesian environment sensors."""
+    """Base class for Bayesian environment monitoring binary sensors.
+
+    This class provides the core functionality for calculating a Bayesian
+    probability based on various environmental inputs. Subclasses implement the
+    specific logic for different conditions (e.g., stress, mold risk).
+    """
 
     def __init__(
         self,
@@ -88,7 +117,17 @@ class BayesianEnvironmentSensor(BinarySensorEntity):
         prior_key: str,
         threshold_key: str,
     ) -> None:
-        """Initialize the Bayesian sensor."""
+        """Initialize the Bayesian environment sensor.
+
+        Args:
+            coordinator: The data update coordinator.
+            growspace_id: The ID of the growspace being monitored.
+            env_config: The environment sensor configuration for the growspace.
+            sensor_type: The type of sensor (e.g., 'stress', 'mold_risk').
+            name_suffix: The suffix to append to the growspace name for the entity name.
+            prior_key: The key to look up the prior probability in the config.
+            threshold_key: The key to look up the probability threshold in the config.
+        """
         self.coordinator = coordinator
         self.growspace_id = growspace_id
         self.env_config = env_config
@@ -118,7 +157,15 @@ class BayesianEnvironmentSensor(BinarySensorEntity):
         self._notification_cooldown = timedelta(minutes=5)  # Anti-spam cooldown
 
     def _get_base_environment_state(self) -> EnvironmentState:
-        """Fetch and return the base environment state."""
+        """Fetch sensor values and return a structured EnvironmentState object.
+
+        This method gathers the current state of all relevant environmental sensors
+        (temperature, humidity, VPD, etc.) and packages them into a dataclass
+        for easier use in probability calculations.
+
+        Returns:
+            An EnvironmentState object populated with the latest sensor data.
+        """
         temp = self._get_sensor_value(self.env_config.get("temperature_sensor"))
         humidity = self._get_sensor_value(self.env_config.get("humidity_sensor"))
         vpd = self._get_sensor_value(self.env_config.get("vpd_sensor"))
@@ -169,7 +216,7 @@ class BayesianEnvironmentSensor(BinarySensorEntity):
         )
 
     async def async_added_to_hass(self) -> None:
-        """When entity is added to hass."""
+        """Register callbacks when the entity is added to Home Assistant."""
         # Listen to coordinator updates
         self.coordinator.async_add_listener(self._handle_coordinator_update)
 
@@ -199,16 +246,31 @@ class BayesianEnvironmentSensor(BinarySensorEntity):
 
     @callback
     def _handle_coordinator_update(self) -> None:
-        """Handle coordinator update."""
+        """Handle updates from the data coordinator.
+
+        This is triggered when plants or growspaces are added, removed, or updated,
+        ensuring the sensor's calculations are based on the latest data.
+        """
         self.hass.async_create_task(self.async_update_and_notify())
 
     @callback
     def _async_sensor_changed(self, event) -> None:
-        """Handle sensor state changes."""
+        """Handle state changes of the monitored environment sensors.
+
+        Args:
+            event: The state change event.
+        """
         self.hass.async_create_task(self.async_update_and_notify())
 
     def _get_sensor_value(self, sensor_id: str | None) -> float | None:
-        """Get numeric value from sensor state."""
+        """Safely get the numeric value from a sensor's state.
+
+        Args:
+            sensor_id: The entity ID of the sensor.
+
+        Returns:
+            The sensor's state as a float, or None if it's unavailable or not numeric.
+        """
         if not sensor_id:
             return None
 
@@ -223,7 +285,14 @@ class BayesianEnvironmentSensor(BinarySensorEntity):
 
     @staticmethod
     def _days_since(date_str: str) -> int:
-        """Calculate days since date string (YYYY-MM-DD)."""
+        """Calculate the number of days since a given date string.
+
+        Args:
+            date_str: The date in 'YYYY-MM-DD' format.
+
+        Returns:
+            The number of days that have passed.
+        """
         try:
             dt = datetime.strptime(date_str, "%Y-%m-%d").date()
         except (AttributeError, TypeError, ValueError):
@@ -231,7 +300,14 @@ class BayesianEnvironmentSensor(BinarySensorEntity):
         return (date.today() - dt).days
 
     def _get_growth_stage_info(self) -> dict[str, int]:
-        """Get veg_days and flower_days from coordinator."""
+        """Get the current growth stage duration (veg and flower days) for the growspace.
+
+        It takes the maximum day count among all plants in the growspace to represent
+        the overall stage.
+
+        Returns:
+            A dictionary containing 'veg_days' and 'flower_days'.
+        """
         plants = self.coordinator.get_growspace_plants(self.growspace_id)
 
         if not plants:
@@ -253,7 +329,20 @@ class BayesianEnvironmentSensor(BinarySensorEntity):
     async def _async_analyze_sensor_trend(
         self, sensor_id: str, duration_minutes: int, threshold: float
     ) -> dict[str, Any]:
-        """Analyze the trend of a sensor over a given duration."""
+        """Analyze the trend of a sensor's history to detect rising or falling patterns.
+
+        This method queries the Home Assistant recorder history for a sensor's
+        recent states to determine its behavior over time.
+
+        Args:
+            sensor_id: The entity ID of the sensor to analyze.
+            duration_minutes: The time window in minutes to look back.
+            threshold: A value to check if the sensor has consistently crossed.
+
+        Returns:
+            A dictionary containing the 'trend' ('rising', 'falling', 'stable')
+            and a boolean 'crossed_threshold'.
+        """
         start_time = utcnow() - timedelta(minutes=duration_minutes)
         end_time = utcnow()
 
@@ -302,7 +391,17 @@ class BayesianEnvironmentSensor(BinarySensorEntity):
             return {"trend": "unknown", "crossed_threshold": False}
 
     def _generate_notification_message(self, base_message: str) -> str:
-        """Generate a notification message with reasons, respecting character limits."""
+        """Construct a detailed notification message from the list of reasons.
+
+        The message is built by appending the most significant reasons until
+        a character limit is reached, ensuring concise and informative alerts.
+
+        Args:
+            base_message: The initial part of the notification message.
+
+        Returns:
+            The formatted notification message string.
+        """
         sorted_reasons = sorted(self._reasons, reverse=True)
         message = base_message
 
@@ -314,7 +413,16 @@ class BayesianEnvironmentSensor(BinarySensorEntity):
         return message
 
     async def _send_notification(self, title: str, message: str) -> None:
-        """Send a notification if the target is configured and cooldown has passed."""
+        """Send a notification to the configured target for the growspace.
+
+        This method includes an anti-spam cooldown to prevent flooding the user
+        with notifications for flapping states. It also checks if notifications
+        are globally enabled for the growspace.
+
+        Args:
+            title: The title of the notification.
+            message: The body of the notification.
+        """
         now = utcnow()
         if (
             self._last_notification_sent
@@ -367,11 +475,21 @@ class BayesianEnvironmentSensor(BinarySensorEntity):
     def get_notification_title_message(
         self, new_state_on: bool
     ) -> tuple[str, str] | None:
-        """Return the notification title and message, if any."""
+        """Return the title and message for a notification based on state change.
+
+        This method is intended to be overridden by subclasses to provide custom
+        notification content.
+
+        Args:
+            new_state_on: True if the sensor just turned on, False if it turned off.
+
+        Returns:
+            A tuple of (title, message), or None if no notification should be sent.
+        """
         return None
 
     async def async_update_and_notify(self) -> None:
-        """Update the sensor state and send a notification if the state changes."""
+        """Update the sensor's probability and send a notification if the state changes."""
         old_state_on = self.is_on
         await self._async_update_probability()
         new_state_on = self.is_on
@@ -383,21 +501,27 @@ class BayesianEnvironmentSensor(BinarySensorEntity):
                 await self._send_notification(title, message)
 
     async def _async_update_probability(self) -> None:
-        """Calculate Bayesian probability - implemented by subclasses."""
+        """Calculate the Bayesian probability based on environmental observations.
+
+        This is the core method that needs to be implemented by each subclass
+        to define its specific logic.
+        """
         raise NotImplementedError
 
     @staticmethod
     def _calculate_bayesian_probability(
         prior: float, observations: list[tuple[float, float]]
     ) -> float:
-        """Calculate Bayesian probability from observations.
+        """Perform the Bayesian calculation.
 
         Args:
-            prior: Prior probability (0-1)
-            observations: List of (prob_given_true, prob_given_false) tuples
+            prior: The prior probability of the condition being true (from 0.0 to 1.0).
+            observations: A list of tuples, where each tuple contains
+                          (probability_of_observation_if_true,
+                           probability_of_observation_if_false).
 
         Returns:
-            Posterior probability (0-1)
+            The posterior probability after considering all observations.
         """
         if not observations:
             return prior
@@ -421,12 +545,16 @@ class BayesianEnvironmentSensor(BinarySensorEntity):
 
     @property
     def is_on(self) -> bool:
-        """Return true if probability exceeds threshold."""
+        """Return true if the calculated probability exceeds the configured threshold."""
         return self._probability >= self.threshold
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
-        """Return probability and observation details."""
+        """Return the state attributes for the entity.
+
+        This includes the calculated probability, the threshold, the raw sensor
+        observations, and a list of human-readable reasons for the current state.
+        """
         return {
             "probability": round(self._probability, 3),
             "threshold": self.threshold,
@@ -436,9 +564,10 @@ class BayesianEnvironmentSensor(BinarySensorEntity):
 
 
 class BayesianStressSensor(BayesianEnvironmentSensor):
-    """Bayesian sensor for detecting plant stress conditions."""
+    """A Bayesian binary sensor for detecting plant stress conditions."""
 
     def __init__(self, coordinator, growspace_id, env_config):
+        """Initialize the plant stress sensor."""
         super().__init__(
             coordinator,
             growspace_id,
@@ -452,7 +581,14 @@ class BayesianStressSensor(BayesianEnvironmentSensor):
     def get_notification_title_message(
         self, new_state_on: bool
     ) -> tuple[str, str] | None:
-        """Return the notification title and message, if any."""
+        """Generate a notification when the sensor turns on.
+
+        Args:
+            new_state_on: True if the sensor just turned on.
+
+        Returns:
+            A tuple of (title, message) if a notification should be sent.
+        """
         if new_state_on:
             growspace = self.coordinator.growspaces.get(self.growspace_id)
             if growspace:
@@ -462,7 +598,12 @@ class BayesianStressSensor(BayesianEnvironmentSensor):
         return None
 
     async def _async_update_probability(self) -> None:
-        """Calculate stress probability using Bayesian inference."""
+        """Calculate the probability of plant stress based on environmental factors.
+
+        This method gathers evidence from temperature, humidity, VPD, and CO2
+        sensors, as well as their trends, to determine the likelihood that
+        plants are currently under stress.
+        """
         self._reasons = []
         state = self._get_base_environment_state()
         observations = []
@@ -731,7 +872,13 @@ class BayesianStressSensor(BayesianEnvironmentSensor):
 
 
 class LightCycleVerificationSensor(BinarySensorEntity):
-    """Verifies the light cycle matches the growspace stage."""
+    """A binary sensor to verify if the light cycle matches the growspace stage.
+
+    This sensor monitors the on/off duration of a light entity and compares it
+    to the expected schedule (e.g., 18/6 for veg, 12/12 for flower). It will turn
+    off if the light has been on or off for too long, indicating a potential
+    timer malfunction.
+    """
 
     def __init__(
         self,
@@ -762,7 +909,7 @@ class LightCycleVerificationSensor(BinarySensorEntity):
         self._time_in_current_state: timedelta = timedelta(0)
 
     async def async_added_to_hass(self) -> None:
-        """When entity is added to hass."""
+        """Register callbacks when the entity is added to Home Assistant."""
         self.coordinator.async_add_listener(self._handle_coordinator_update)
         if self.light_entity_id:
             self.async_on_remove(
@@ -776,16 +923,20 @@ class LightCycleVerificationSensor(BinarySensorEntity):
 
     @callback
     def _handle_coordinator_update(self) -> None:
-        """Handle coordinator update."""
+        """Handle updates from the data coordinator."""
         self.hass.async_create_task(self.async_update())
 
     @callback
     def _async_light_sensor_changed(self, event) -> None:
-        """Handle light sensor state changes."""
+        """Handle state changes of the monitored light sensor.
+
+        Args:
+            event: The state change event.
+        """
         self.hass.async_create_task(self.async_update())
 
     def _get_growth_stage_info(self) -> dict[str, int]:
-        """Get veg_days and flower_days from coordinator."""
+        """Get the current growth stage duration for the growspace."""
         plants = self.coordinator.get_growspace_plants(self.growspace_id)
         if not plants:
             return {"veg_days": 0, "flower_days": 0}
@@ -809,7 +960,7 @@ class LightCycleVerificationSensor(BinarySensorEntity):
         return {"veg_days": max_veg, "flower_days": max_flower}
 
     async def async_update(self) -> None:
-        """Update the sensor's state."""
+        """Update the sensor's state based on the light's on/off duration."""
         if not self.light_entity_id:
             self._is_correct = False
             self.async_write_ha_state()
@@ -851,12 +1002,12 @@ class LightCycleVerificationSensor(BinarySensorEntity):
 
     @property
     def is_on(self) -> bool:
-        """Return true if the light schedule is correct."""
+        """Return true if the light schedule appears to be correct."""
         return self._is_correct
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
-        """Return state attributes."""
+        """Return the state attributes for the entity."""
         stage_info = self._get_growth_stage_info()
         is_flower_stage = stage_info["flower_days"] > 0
         expected_schedule = "12/12" if is_flower_stage else "18/6"
@@ -869,9 +1020,10 @@ class LightCycleVerificationSensor(BinarySensorEntity):
 
 
 class BayesianDryingSensor(BayesianEnvironmentSensor):
-    """Bayesian sensor for detecting optimal drying conditions."""
+    """A Bayesian binary sensor for detecting optimal drying conditions."""
 
     def __init__(self, coordinator, growspace_id, env_config):
+        """Initialize the optimal drying sensor."""
         super().__init__(
             coordinator,
             growspace_id,
@@ -883,7 +1035,7 @@ class BayesianDryingSensor(BayesianEnvironmentSensor):
         )
 
     async def _async_update_probability(self) -> None:
-        """Calculate optimal drying probability."""
+        """Calculate the probability of optimal drying conditions."""
         if self.growspace_id != "dry":
             self._probability = 0
             self.async_write_ha_state()
@@ -916,9 +1068,10 @@ class BayesianDryingSensor(BayesianEnvironmentSensor):
 
 
 class BayesianCuringSensor(BayesianEnvironmentSensor):
-    """Bayesian sensor for detecting optimal curing conditions."""
+    """A Bayesian binary sensor for detecting optimal curing conditions."""
 
     def __init__(self, coordinator, growspace_id, env_config):
+        """Initialize the optimal curing sensor."""
         super().__init__(
             coordinator,
             growspace_id,
@@ -930,7 +1083,7 @@ class BayesianCuringSensor(BayesianEnvironmentSensor):
         )
 
     async def _async_update_probability(self) -> None:
-        """Calculate optimal curing probability."""
+        """Calculate the probability of optimal curing conditions."""
         if self.growspace_id != "cure":
             self._probability = 0
             self.async_write_ha_state()
@@ -963,9 +1116,10 @@ class BayesianCuringSensor(BayesianEnvironmentSensor):
 
 
 class BayesianMoldRiskSensor(BayesianEnvironmentSensor):
-    """Bayesian sensor for detecting mold risk in late flower."""
+    """A Bayesian binary sensor for detecting high mold risk conditions."""
 
     def __init__(self, coordinator, growspace_id, env_config):
+        """Initialize the mold risk sensor."""
         super().__init__(
             coordinator,
             growspace_id,
@@ -979,7 +1133,14 @@ class BayesianMoldRiskSensor(BayesianEnvironmentSensor):
     def get_notification_title_message(
         self, new_state_on: bool
     ) -> tuple[str, str] | None:
-        """Return the notification title and message, if any."""
+        """Generate a notification when the sensor turns on.
+
+        Args:
+            new_state_on: True if the sensor just turned on.
+
+        Returns:
+            A tuple of (title, message) if a notification should be sent.
+        """
         if new_state_on:
             growspace = self.coordinator.growspaces.get(self.growspace_id)
             if growspace:
@@ -989,7 +1150,12 @@ class BayesianMoldRiskSensor(BayesianEnvironmentSensor):
         return None
 
     async def _async_update_probability(self) -> None:
-        """Calculate mold risk probability."""
+        """Calculate the probability of mold risk, focusing on late flower conditions.
+
+        This method gathers evidence from humidity, VPD, temperature, and fan
+        status, particularly during the lights-off period in late flower, to
+        assess the risk of mold or bud rot.
+        """
         self._reasons = []
         state = self._get_base_environment_state()
         observations = []
@@ -1123,9 +1289,10 @@ class BayesianMoldRiskSensor(BayesianEnvironmentSensor):
 
 
 class BayesianOptimalConditionsSensor(BayesianEnvironmentSensor):
-    """Bayesian sensor for detecting optimal growing conditions."""
+    """A Bayesian binary sensor for detecting optimal growing conditions."""
 
     def __init__(self, coordinator, growspace_id, env_config):
+        """Initialize the optimal conditions sensor."""
         super().__init__(
             coordinator,
             growspace_id,
@@ -1139,7 +1306,14 @@ class BayesianOptimalConditionsSensor(BayesianEnvironmentSensor):
     def get_notification_title_message(
         self, new_state_on: bool
     ) -> tuple[str, str] | None:
-        """Return the notification title and message, if any."""
+        """Generate a notification when the sensor turns off.
+
+        Args:
+            new_state_on: False if the sensor just turned off.
+
+        Returns:
+            A tuple of (title, message) if a notification should be sent.
+        """
         if not new_state_on:
             growspace = self.coordinator.growspaces.get(self.growspace_id)
             if growspace:
@@ -1149,7 +1323,11 @@ class BayesianOptimalConditionsSensor(BayesianEnvironmentSensor):
         return None
 
     async def _async_update_probability(self) -> None:
-        """Calculate optimal conditions probability."""
+        """Calculate the probability that the environment is in an optimal state.
+
+        This method checks if temperature, humidity, VPD, and CO2 are all within
+        their ideal ranges for the current growth stage and time of day (lights on/off).
+        """
         self._reasons = []
         state = self._get_base_environment_state()
         observations = []

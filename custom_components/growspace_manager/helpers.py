@@ -1,5 +1,9 @@
-"""Helper functions for the Growspace Manager integration."""
+"""Helper functions for the Growspace Manager integration.
 
+This file contains utility functions for creating and managing Home Assistant
+entities, such as trend and statistics sensors, that are used by the main
+integration components.
+"""
 from __future__ import annotations
 
 import logging
@@ -18,7 +22,21 @@ _LOGGER = logging.getLogger(__name__)
 async def async_setup_trend_sensor(
     hass: HomeAssistant, source_sensor_entity_id: str, growspace_id: str, growspace_name: str, sensor_type: str
 ) -> Optional[str]:
-    """Set up a trend sensor for a given source sensor and return its unique_id."""
+    """Set up a trend binary sensor to monitor the gradient of a source sensor.
+
+    This function dynamically creates a `trend` binary sensor that will turn 'on'
+    if the value of the `source_sensor_entity_id` is increasing.
+
+    Args:
+        hass: The Home Assistant instance.
+        source_sensor_entity_id: The entity ID of the sensor to monitor.
+        growspace_id: The unique ID of the growspace.
+        growspace_name: The display name of the growspace.
+        sensor_type: The type of sensor being monitored (e.g., 'temperature').
+
+    Returns:
+        The unique ID of the created trend sensor, or None if setup failed.
+    """
     entity_registry = er.async_get(hass)
     if not entity_registry.async_get(source_sensor_entity_id):
         _LOGGER.warning(f"Source sensor {source_sensor_entity_id} not found in entity registry for trend sensor setup")
@@ -55,7 +73,22 @@ async def async_setup_trend_sensor(
 async def async_setup_statistics_sensor(
     hass: HomeAssistant, source_sensor_entity_id: str, growspace_id: str, growspace_name: str, sensor_type: str
 ) -> Optional[str]:
-    """Set up a statistics sensor for a given source sensor and return its unique_id."""
+    """Set up a statistics sensor to calculate metrics for a source sensor.
+
+    This function dynamically creates a `statistics` sensor that provides
+    various statistical measures (e.g., mean, change) for the
+    `source_sensor_entity_id`.
+
+    Args:
+        hass: The Home Assistant instance.
+        source_sensor_entity_id: The entity ID of the sensor to gather statistics for.
+        growspace_id: The unique ID of the growspace.
+        growspace_name: The display name of the growspace.
+        sensor_type: The type of sensor being monitored (e.g., 'humidity').
+
+    Returns:
+        The unique ID of the created statistics sensor, or None if setup failed.
+    """
     entity_registry = er.async_get(hass)
     if not entity_registry.async_get(source_sensor_entity_id):
         _LOGGER.warning(f"Source sensor {source_sensor_entity_id} not found for statistics sensor setup")

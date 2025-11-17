@@ -1,4 +1,9 @@
-"""Switch platform for Growspace Manager."""
+"""Switch platform for Growspace Manager.
+
+This file defines the switch entities for the Growspace Manager integration.
+It includes a switch for each growspace to allow the user to enable or disable
+notifications for that specific area.
+"""
 
 from __future__ import annotations
 import logging
@@ -19,7 +24,17 @@ async def async_setup_entry(
     config_entry: ConfigEntry,
     async_add_entities: AddEntitiesCallback,
 ) -> None:
-    """Set up the switch platform."""
+    """Set up the switch platform for Growspace Manager from a config entry.
+
+    This function is called by Home Assistant to set up the switch platform. It
+    creates a `GrowspaceNotificationSwitch` for each growspace that has a
+    notification target configured.
+
+    Args:
+        hass: The Home Assistant instance.
+        config_entry: The configuration entry.
+        async_add_entities: A callback function for adding new entities.
+    """
     coordinator = hass.data[DOMAIN][config_entry.entry_id]["coordinator"]
     entities = []
 
@@ -36,9 +51,20 @@ async def async_setup_entry(
 
 
 class GrowspaceNotificationSwitch(SwitchEntity):
-    """Switch to enable/disable notifications for a growspace."""
+    """A switch entity to control notifications for a specific growspace.
+
+    This switch allows the user to easily enable or disable all notifications
+    originating from a particular growspace.
+    """
 
     def __init__(self, coordinator, growspace_id: str, growspace: Growspace) -> None:
+        """Initialize the GrowspaceNotificationSwitch.
+
+        Args:
+            coordinator: The data update coordinator.
+            growspace_id: The ID of the growspace this switch controls.
+            growspace: The Growspace data object.
+        """
         self._coordinator = coordinator
         self._growspace_id = growspace_id
         self._growspace = growspace
@@ -56,11 +82,11 @@ class GrowspaceNotificationSwitch(SwitchEntity):
 
     @property
     def is_on(self) -> bool:
-        """Return true if the switch is on."""
+        """Return true if notifications are enabled for the growspace."""
         return self._coordinator.is_notifications_enabled(self._growspace_id)
 
     async def async_turn_on(self, **kwargs: Any) -> None:
-        """Turn the switch on."""
+        """Enable notifications for the growspace."""
         await self._coordinator.set_notifications_enabled(self._growspace_id, True)
         self.async_write_ha_state()
         _LOGGER.info(
@@ -70,7 +96,7 @@ class GrowspaceNotificationSwitch(SwitchEntity):
         )
 
     async def async_turn_off(self, **kwargs: Any) -> None:
-        """Turn the switch off."""
+        """Disable notifications for the growspace."""
         await self._coordinator.set_notifications_enabled(self._growspace_id, False)
         self.async_write_ha_state()
         _LOGGER.info(
@@ -80,5 +106,5 @@ class GrowspaceNotificationSwitch(SwitchEntity):
         )
 
     async def async_added_to_hass(self) -> None:
-        """When entity is added to hass."""
+        """Register a listener when the entity is added to Home Assistant."""
         self._coordinator.async_add_listener(self.async_write_ha_state)
