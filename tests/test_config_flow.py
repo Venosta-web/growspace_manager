@@ -530,7 +530,7 @@ async def test_options_flow_add_growspace_show_form(
 
 @pytest.mark.asyncio
 async def test_options_flow_add_growspace_success(
-    hass: Home Assistant, mock_coordinator
+    hass: HomeAssistant, mock_coordinator
 ):
     """Test the successful addition of a growspace via the options flow.
 
