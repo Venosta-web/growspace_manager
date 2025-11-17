@@ -771,7 +771,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
 
         self.update_data_property()
         await self.async_save()
-        await self.async_set_updated_data(self.data)
+        self.async_set_updated_data(self.data)
 
         _LOGGER.info(
             "Removed growspace %s (%s) and %d plants",
@@ -864,7 +864,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
             await self.async_save()
 
             # Notify all listeners (entities) about the update
-            await self.async_set_updated_data(self.data)
+            self.async_set_updated_data(self.data)
 
             _LOGGER.debug("Growspace update completed and saved")
         else:
@@ -950,7 +950,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
         await self.async_save()
 
         # Notify listeners (updates switch state)
-        await self.async_set_updated_data(self.data)  # Jetzt mit await
+        self.async_set_updated_data(self.data)
 
         _LOGGER.info(
             "Notifications for growspace %s (%s): %s -> %s",
@@ -1126,7 +1126,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
         self.plants[plant_id] = Plant(**clone_data)
         self.update_data_property()
         await self.async_save()
-        await self.async_set_updated_data(self.data)
+        self.async_set_updated_data(self.data)
 
         _LOGGER.info(
             "Created clone %s: %s at (%d,%d) from mother %s",
@@ -1384,7 +1384,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
 
         self.update_data_property()
         await self.async_save()
-        await self.async_set_updated_data(self.data)
+        self.async_set_updated_data(self.data)
 
         _LOGGER.info(
             "Switched positions: %s (%s) moved from (%d,%d) to (%d,%d), %s (%s) moved from (%d,%d) to (%d,%d)",
@@ -1564,7 +1564,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
 
         self.update_data_property()
         await self.async_save()
-        await self.async_set_updated_data(self.data)
+        self.async_set_updated_data(self.data)
 
         _LOGGER.info(
             "Harvest end: plant_id=%s moved=%s target_growspace_id=%s row=%s col=%s stage=%s dry_start=%s cure_start=%s",
@@ -2063,7 +2063,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
             return
 
         for notification in notifications:
-            trigger_type = notification["trigger_type"] # 'veg' or 'flower'
+            trigger_type = notification["trigger_type"]  # 'veg' or 'flower'
             day_to_trigger = int(notification["day"])
             message = notification["message"]
             growspace_ids = notification["growspace_ids"]
@@ -2080,7 +2080,9 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
 
                     if days_in_stage >= day_to_trigger:
                         notification_key = f"timed_{notification_id}"
-                        if not self._notifications_sent.get(plant.plant_id, {}).get(notification_key, False):
+                        if not self._notifications_sent.get(plant.plant_id, {}).get(
+                            notification_key, False
+                        ):
                             _LOGGER.info(
                                 f"Triggering timed notification for plant {plant.plant_id} in {growspace.name}"
                             )
@@ -2090,7 +2092,9 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
 
                             if plant.plant_id not in self._notifications_sent:
                                 self._notifications_sent[plant.plant_id] = {}
-                            self._notifications_sent[plant.plant_id][notification_key] = True
+                            self._notifications_sent[plant.plant_id][
+                                notification_key
+                            ] = True
                             await self.async_save()
 
     async def _send_notification(self, growspace_id: str, title: str, message: str) -> None:
@@ -2191,9 +2195,11 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
             current_vpd = self._get_sensor_value(
                 growspace.environment_config.get("vpd_sensor")
             )
-            target_vpd = self.data.get("bayesian_sensors_reason", {}).get(
-                growspace_id, {}
-            ).get("target_vpd")
+            target_vpd = (
+                self.data.get("bayesian_sensors_reason", {})
+                .get(growspace_id, {})
+                .get("target_vpd")
+            )
 
             if current_vpd is None or target_vpd is None:
                 recommendations[growspace_id] = "Idle"

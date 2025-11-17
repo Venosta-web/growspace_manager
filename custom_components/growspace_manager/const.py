@@ -326,16 +326,13 @@ DEBUG_CONSOLIDATE_DUPLICATE_SPECIAL_SCHEMA = vol.Schema({})  # No parameters
 
 CONFIGURE_ENVIRONMENT_SCHEMA = vol.Schema(
     {
-        # Der Growspace, der konfiguriert werden soll.
         vol.Required("growspace_id"): str,
-        # Die drei erforderlichen Sensoren.
         vol.Required("temperature_sensor"): str,
         vol.Required("humidity_sensor"): str,
         vol.Required("vpd_sensor"): str,
-        # Optionale Sensoren.
         vol.Optional("co2_sensor"): str,
         vol.Optional("circulation_fan"): str,
-        # Optionale Schwellenwerte mit Standardwerten und Bereichsvalidierung.
+        vol.Optional("light_sensor"): str,
         vol.Optional("stress_threshold", default=0.70): vol.All(
             vol.Coerce(float), vol.Range(min=0.0, max=1.0)
         ),

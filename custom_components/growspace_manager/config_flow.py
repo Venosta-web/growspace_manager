@@ -265,6 +265,7 @@ class OptionsFlowHandler(OptionsFlow):
         """
         # ADD THIS LINE:
         self.config_entry = config_entry
+        self._current_options: dict[str, Any] = self.config_entry.options.copy()
 
     async def async_step_init(
         self, user_input: dict[str, Any] | None = None
@@ -601,7 +602,7 @@ class OptionsFlowHandler(OptionsFlow):
             A ConfigFlowResult.
         """
         coordinator = self.hass.data[DOMAIN][self.config_entry.entry_id]["coordinator"]
-        growspace_options = await coordinator.get_sorted_growspace_options()
+        growspace_options = coordinator.get_sorted_growspace_options()
 
         if not growspace_options:
             return self.async_abort(reason="no_growspaces")
@@ -644,28 +645,50 @@ class OptionsFlowHandler(OptionsFlow):
         if not growspace:
             return self.async_abort(reason="growspace_not_found")
 
-        options = self.config_entry.options.get(self._selected_growspace_id, {})
+        growspace_options = growspace.environment_config or {}
+
+        _LOGGER.debug(
+            "Loading environment config for growspace %s: %s",
+            growspace.name,
+            growspace_options,
+        )
 
         if user_input is not None:
-            self._env_config_step1 = options.copy()
-            self._env_config_step1.update(user_input)
+            # FIX: Filter out None and empty string values BEFORE processing
+            user_input = {
+                k: v for k, v in user_input.items() if v is not None and v != ""
+            }
+
+            self._env_config_step1 = (
+                growspace_options.copy()
+            )  # Start with existing config
+            self._env_config_step1.update(user_input)  # Update with new values
 
             if user_input.get("configure_advanced"):
                 return await self.async_step_configure_advanced_bayesian()
 
             # Not configuring advanced, so we save and finish
-            env_config = self._env_config_step1
-            env_config.pop("configure_advanced", None)  # Remove flow control key
+            env_config = self._env_config_step1.copy()
+            env_config.pop("configure_advanced", None)
+
+            # Already filtered above, but keep this as a safety check
+            env_config = {
+                k: v for k, v in env_config.items() if v is not None and v != ""
+            }
 
             growspace.environment_config = env_config
             await coordinator.async_save()
             await coordinator.async_refresh()
 
-            final_options = self.config_entry.options.copy()
-            final_options[self._selected_growspace_id] = env_config
+            # OPTIONAL: Sync to config_entry.options
+            # but it's not necessary if you're storing in the growspace object
+            new_options = self._current_options.copy()
+            new_options[self._selected_growspace_id] = env_config
             self.hass.config_entries.async_update_entry(
-                self.config_entry, options=final_options
+                self.config_entry, options=new_options
             )
+            coordinator.options = new_options
+
             _LOGGER.info(
                 "Environment configuration saved for growspace %s: %s",
                 growspace.name,
@@ -675,65 +698,61 @@ class OptionsFlowHandler(OptionsFlow):
 
         schema_dict = {}
 
-        # Basic sensors
+        # Basic sensors - Use growspace_options for defaults
         for key, device_class in [
             ("temperature_sensor", "temperature"),
             ("humidity_sensor", "humidity"),
-            ("vpd_sensor", None),
+            ("vpd_sensor", "pressure"),
         ]:
-            schema_dict[vol.Required(key, default=options.get(key))] = (
+            schema_dict[vol.Optional(key, default=growspace_options.get(key))] = (
                 selector.EntitySelector(
                     selector.EntitySelectorConfig(
-                        domain=["sensor", "input_number"], device_class=device_class
+                        domain=["sensor", "input_number"],
+                        device_class=device_class,
                     )
                 )
             )
 
-        # Light sensor
-        schema_dict[
-            vol.Optional("light_sensor", default=options.get("light_sensor"))
-        ] = selector.EntitySelector(
-            selector.EntitySelectorConfig(
-                domain=["switch", "light", "input_boolean", "sensor"]
-            )
-        )
-
         # Optional features with toggles
-        for feature in ["co2", "fan"]:
-            enabled = options.get(
-                f"configure_{feature}", bool(options.get(f"{feature}_sensor"))
+        for feature in ["light", "co2", "fan"]:
+            # Use growspace_options for defaults
+            enabled = growspace_options.get(
+                f"configure_{feature}", bool(growspace_options.get(f"{feature}_sensor"))
             )
             schema_dict[vol.Optional(f"configure_{feature}", default=enabled)] = (
                 selector.BooleanSelector()
             )
             if enabled:
-                entity_key = (
-                    "circulation_fan" if feature == "fan" else f"{feature}_sensor"
-                )
-                domain = (
-                    ["fan", "switch", "input_boolean"]
-                    if feature == "fan"
-                    else ["sensor", "input_number"]
-                )
-                device_class = "carbon_dioxide" if feature == "co2" else None
+                if feature == "light":
+                    entity_key = "light_sensor"
+                    domain = ["switch", "light", "input_boolean", "sensor"]
+                    device_class = None
+                elif feature == "fan":
+                    entity_key = "circulation_fan"
+                    domain = ["fan", "switch", "input_boolean"]
+                    device_class = None
+                else:  # co2
+                    entity_key = f"{feature}_sensor"
+                    domain = ["sensor", "input_number"]
+                    device_class = "carbon_dioxide"
+
                 schema_dict[
-                    vol.Optional(entity_key, default=options.get(entity_key))
+                    vol.Optional(entity_key, default=growspace_options.get(entity_key))
                 ] = selector.EntitySelector(
                     selector.EntitySelectorConfig(
                         domain=domain, device_class=device_class
                     )
                 )
-
         # Thresholds
         for key, default in [("stress_threshold", 0.70), ("mold_threshold", 0.75)]:
-            schema_dict[vol.Optional(key, default=options.get(key, default))] = (
-                selector.NumberSelector(
-                    selector.NumberSelectorConfig(
-                        min=0.5,
-                        max=0.95,
-                        step=0.05,
-                        mode=selector.NumberSelectorMode.SLIDER,
-                    )
+            schema_dict[
+                vol.Optional(key, default=growspace_options.get(key, default))
+            ] = selector.NumberSelector(
+                selector.NumberSelectorConfig(
+                    min=0.5,
+                    max=0.95,
+                    step=0.05,
+                    mode=selector.NumberSelectorMode.SLIDER,
                 )
             )
 
@@ -741,7 +760,7 @@ class OptionsFlowHandler(OptionsFlow):
         schema_dict[
             vol.Optional(
                 "minimum_source_air_temperature",
-                default=options.get("minimum_source_air_temperature", 18),
+                default=growspace_options.get("minimum_source_air_temperature", 18),
             )
         ] = selector.NumberSelector(
             selector.NumberSelectorConfig(
@@ -754,7 +773,7 @@ class OptionsFlowHandler(OptionsFlow):
             schema_dict[
                 vol.Optional(
                     f"{trend_type}_trend_duration",
-                    default=options.get(f"{trend_type}_trend_duration", 30),
+                    default=growspace_options.get(f"{trend_type}_trend_duration", 30),
                 )
             ] = selector.NumberSelector(
                 selector.NumberSelectorConfig(
@@ -769,7 +788,7 @@ class OptionsFlowHandler(OptionsFlow):
                 schema_dict[
                     vol.Optional(
                         f"{trend_type}_trend_threshold",
-                        default=options.get(
+                        default=growspace_options.get(
                             f"{trend_type}_trend_threshold", default_threshold
                         ),
                     )
@@ -785,7 +804,9 @@ class OptionsFlowHandler(OptionsFlow):
             schema_dict[
                 vol.Optional(
                     f"{trend_type}_trend_sensitivity",
-                    default=options.get(f"{trend_type}_trend_sensitivity", 0.5),
+                    default=growspace_options.get(
+                        f"{trend_type}_trend_sensitivity", 0.5
+                    ),
                 )
             ] = selector.NumberSelector(
                 selector.NumberSelectorConfig(
