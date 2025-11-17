@@ -36,7 +36,7 @@ def mock_growspace():
         "vpd_sensor": "sensor.vpd",
         "co2_sensor": "sensor.co2",
         "circulation_fan": "switch.fan",
-        "light_sensor": "light.test_light",
+        "light_sensor": "light.grow_light",
         "stress_threshold": 0.7,
         "mold_threshold": 0.75,
         "optimal_threshold": 0.8,
@@ -239,7 +239,8 @@ async def test_notification_sending(
     set_sensor_state(hass, "light.grow_light", "on")
     await hass.async_block_till_done()
 
-    await sensor.async_update_and_notify()
+    with patch.object(sensor, "async_write_ha_state", new_callable=AsyncMock):
+        await sensor.async_update_and_notify()
     assert not sensor.is_on
 
     # Use patch.object on hass.services to mock async_call
@@ -256,6 +257,7 @@ async def test_notification_sending(
             new_callable=AsyncMock,
             wraps=sensor._send_notification,
         ) as mock_send,
+        patch.object(sensor, "async_write_ha_state", new_callable=AsyncMock),
     ):
         # First update, no state change, so no notification
         await sensor.async_update_and_notify()
@@ -340,6 +342,8 @@ async def test_stress_sensor_notification_on_state_change(
     with (
         patch.object(sensor, "_async_update_probability", side_effect=mock_update_prob),
         patch.object(sensor, "_send_notification", new_callable=AsyncMock) as mock_send,
+        # FIX: Add patch
+        patch.object(sensor, "async_write_ha_state", new_callable=AsyncMock),
     ):
         await sensor.async_update_and_notify()
         assert sensor.is_on
@@ -375,6 +379,7 @@ async def test_optimal_conditions_notification_on_state_change(
     with (
         patch.object(sensor, "_async_update_probability", side_effect=mock_update_prob),
         patch.object(sensor, "_send_notification", new_callable=AsyncMock) as mock_send,
+        patch.object(sensor, "async_write_ha_state", new_callable=AsyncMock),
     ):
         await sensor.async_update_and_notify()
         assert not sensor.is_on
@@ -452,7 +457,7 @@ async def test_bayesian_stress_sensor_granular(
     set_sensor_state(hass, "sensor.co2", sensor_readings.get("co2", 800))
     set_sensor_state(
         hass,
-        "light.test_light",
+        "light.grow_light",
         "on" if sensor_readings.get("is_lights_on", True) else "off",
     )
     await hass.async_block_till_done()
@@ -469,6 +474,7 @@ async def test_bayesian_stress_sensor_granular(
         patch(
             "homeassistant.core.ServiceRegistry.async_call", new_callable=AsyncMock
         ) as mock_service_call,
+        patch.object(sensor, "async_write_ha_state", new_callable=AsyncMock),
     ):
         await sensor.async_update_and_notify()
 
@@ -696,7 +702,10 @@ async def test_stress_sensor_stage_and_time_logic(
     await hass.async_block_till_done()
 
     # Mock stage info
-    with patch.object(sensor, "_get_growth_stage_info", return_value=stage_info):
+    with (
+        patch.object(sensor, "_get_growth_stage_info", return_value=stage_info),
+        patch.object(sensor, "async_write_ha_state", new_callable=AsyncMock),
+    ):
         await sensor._async_update_probability()
 
     assert sensor.is_on
@@ -763,8 +772,10 @@ async def test_mold_risk_sensor_triggers(
     set_sensor_state(hass, "switch.fan", sensor_readings.get("fan", "on"))
     await hass.async_block_till_done()
 
-    # Mock stage info
-    with patch.object(sensor, "_get_growth_stage_info", return_value=stage_info):
+    with (
+        patch.object(sensor, "_get_growth_stage_info", return_value=stage_info),
+        patch.object(sensor, "async_write_ha_state", new_callable=AsyncMock),
+    ):
         await sensor._async_update_probability()
 
     assert sensor.is_on
@@ -824,7 +835,6 @@ async def test_optimal_sensor_off_states(
     sensor.platform = MagicMock()
 
     # Mock sensor states
-    # Only set the values provided in the 'sensor_readings' for this test case
     set_sensor_state(hass, "sensor.temp", sensor_readings.get("temp"))
     set_sensor_state(hass, "sensor.humidity", sensor_readings.get("humidity"))
     set_sensor_state(hass, "sensor.vpd", sensor_readings.get("vpd"))
@@ -833,7 +843,10 @@ async def test_optimal_sensor_off_states(
     await hass.async_block_till_done()
 
     # Mock stage info
-    with patch.object(sensor, "_get_growth_stage_info", return_value=stage_info):
+    with (
+        patch.object(sensor, "_get_growth_stage_info", return_value=stage_info),
+        patch.object(sensor, "async_write_ha_state", new_callable=AsyncMock),
+    ):
         await sensor._async_update_probability()
 
     assert not sensor.is_on
@@ -911,7 +924,8 @@ async def test_dry_cure_sensors_off_states(
     set_sensor_state(hass, "sensor.humidity", sensor_readings.get("humidity", 55))
     await hass.async_block_till_done()
 
-    await sensor._async_update_probability()
+    with patch.object(sensor, "async_write_ha_state", new_callable=AsyncMock):
+        await sensor._async_update_probability()
 
     assert not sensor.is_on
     assert any(expected_reason in reason for _, reason in sensor._reasons)

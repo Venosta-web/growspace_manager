@@ -1,3 +1,11 @@
+"""Bayesian binary sensors for environmental monitoring in Growspace Manager.
+
+This file defines a set of binary sensors that use Bayesian inference to assess
+various environmental conditions within a growspace, such as plant stress, mold
+risk, and optimal conditions. It also includes a sensor to verify the light
+cycle schedule.
+"""
+
 from __future__ import annotations
 
 import logging
@@ -485,7 +493,7 @@ class BayesianStressSensor(BayesianEnvironmentSensor):
         self._probability = self._calculate_bayesian_probability(
             self.prior, observations
         )
-        self.async_write_ha_state()
+        await self.async_write_ha_state()
 
 
 class LightCycleVerificationSensor(BinarySensorEntity):
@@ -645,10 +653,10 @@ class BayesianDryingSensor(BayesianEnvironmentSensor):
         observations = []
 
         # Use extracted data constant
-        THRESHOLDS = DRYING_THRESHOLDS
+        thresholds = DRYING_THRESHOLDS
 
         if state.temp is not None:
-            low, high, prob_obs, prob_err = THRESHOLDS["temp"]
+            low, high, prob_obs, prob_err = thresholds["temp"]
             if low <= state.temp <= high:
                 observations.append(prob_obs)
             else:
@@ -656,7 +664,7 @@ class BayesianDryingSensor(BayesianEnvironmentSensor):
                 self._reasons.append((prob_err[1], f"Temp out of range ({state.temp})"))
 
         if state.humidity is not None:
-            low, high, prob_obs, prob_err = THRESHOLDS["humidity"]
+            low, high, prob_obs, prob_err = thresholds["humidity"]
             if low <= state.humidity <= high:
                 observations.append(prob_obs)
             else:
@@ -668,7 +676,7 @@ class BayesianDryingSensor(BayesianEnvironmentSensor):
         self._probability = self._calculate_bayesian_probability(
             self.prior, observations
         )
-        self.async_write_ha_state()
+        await self.async_write_ha_state()
 
 
 class BayesianCuringSensor(BayesianEnvironmentSensor):
@@ -698,10 +706,10 @@ class BayesianCuringSensor(BayesianEnvironmentSensor):
         observations = []
 
         # Use extracted data constant
-        THRESHOLDS = CURING_THRESHOLDS
+        thresholds = CURING_THRESHOLDS
 
         if state.temp is not None:
-            low, high, prob_obs, prob_err = THRESHOLDS["temp"]
+            low, high, prob_obs, prob_err = thresholds["temp"]
             if low <= state.temp <= high:
                 observations.append(prob_obs)
             else:
@@ -709,7 +717,7 @@ class BayesianCuringSensor(BayesianEnvironmentSensor):
                 self._reasons.append((prob_err[1], f"Temp out of range ({state.temp})"))
 
         if state.humidity is not None:
-            low, high, prob_obs, prob_err = THRESHOLDS["humidity"]
+            low, high, prob_obs, prob_err = thresholds["humidity"]
             if low <= state.humidity <= high:
                 observations.append(prob_obs)
             else:
@@ -721,7 +729,7 @@ class BayesianCuringSensor(BayesianEnvironmentSensor):
         self._probability = self._calculate_bayesian_probability(
             self.prior, observations
         )
-        self.async_write_ha_state()
+        await self.async_write_ha_state()
 
 
 class BayesianMoldRiskSensor(BayesianEnvironmentSensor):
@@ -883,7 +891,7 @@ class BayesianMoldRiskSensor(BayesianEnvironmentSensor):
         self._probability = self._calculate_bayesian_probability(
             self.prior, observations
         )
-        self.async_write_ha_state()
+        await self.async_write_ha_state()
 
 
 class BayesianOptimalConditionsSensor(BayesianEnvironmentSensor):
@@ -937,4 +945,4 @@ class BayesianOptimalConditionsSensor(BayesianEnvironmentSensor):
         self._probability = self._calculate_bayesian_probability(
             self.prior, observations
         )
-        self.async_write_ha_state()
+        await self.async_write_ha_state()

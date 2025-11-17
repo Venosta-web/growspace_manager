@@ -98,6 +98,7 @@ async def test_stress_sensor_high_heat(
             "_get_growth_stage_info",
             return_value={"veg_days": 1, "flower_days": 0},
         ),
+        patch.object(sensor, "async_write_ha_state", new_callable=AsyncMock),
     ):
         await sensor._async_update_probability()
 
@@ -141,9 +142,13 @@ async def test_mold_risk_sensor_late_flower(
         utcnow().date() - datetime.fromisoformat(date_str).date()
     ).days
 
-    with patch(
-        "custom_components.growspace_manager.bayesian_evaluator.async_evaluate_stress_trend",
-        return_value=([], []),
+    with (
+        patch(
+            "custom_components.growspace_manager.binary_sensor.BayesianEnvironmentSensor._async_analyze_sensor_trend",
+            new_callable=AsyncMock,
+            return_value={"trend": "stable", "crossed_threshold": False},
+        ),
+        patch.object(sensor, "async_write_ha_state", new_callable=AsyncMock),
     ):
         await sensor._async_update_probability()
 
@@ -176,15 +181,12 @@ async def test_optimal_conditions_sensor(
 
     # Mock stage info to be in veg
     with (
-        patch(
-            "custom_components.growspace_manager.bayesian_evaluator.async_evaluate_stress_trend",
-            return_value=([], []),
-        ),
         patch.object(
             sensor,
             "_get_growth_stage_info",
             return_value={"veg_days": 20, "flower_days": 0},
         ),
+        patch.object(sensor, "async_write_ha_state", new_callable=AsyncMock),
     ):
         await sensor._async_update_probability()
 
