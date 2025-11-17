@@ -207,11 +207,11 @@ def evaluate_direct_humidity_stress(
     elif flower_early and (hum > 60 or hum < 45):
         prob = (0.75, 0.25)
         observations.append(prob)
-        reasons.append((prob[0], f"Humidity out of range (45-60) ({hum})"))
-    elif flower_late and (hum > 55 or hum < 40):
+        reasons.append((prob[0], f"Humidity out of range (<45 or >60) ({hum})"))
+    elif flower_late and (hum > 60 or hum < 40):
         prob = (0.85, 0.15)
         observations.append(prob)
-        reasons.append((prob[0], f"Humidity out of range (40-55) ({hum})"))
+        reasons.append((prob[0], f"Humidity out of range (<40 or >60) ({hum})"))
 
     return observations, reasons
 

@@ -518,7 +518,7 @@ class BayesianStressSensor(BayesianEnvironmentSensor):
         self._probability = self._calculate_bayesian_probability(
             self.prior, observations
         )
-        await self.async_write_ha_state()
+        self.async_write_ha_state()
 
 
 class LightCycleVerificationSensor(BinarySensorEntity):
@@ -701,7 +701,7 @@ class BayesianDryingSensor(BayesianEnvironmentSensor):
         self._probability = self._calculate_bayesian_probability(
             self.prior, observations
         )
-        await self.async_write_ha_state()
+        self.async_write_ha_state()
 
 
 class BayesianCuringSensor(BayesianEnvironmentSensor):
@@ -754,7 +754,7 @@ class BayesianCuringSensor(BayesianEnvironmentSensor):
         self._probability = self._calculate_bayesian_probability(
             self.prior, observations
         )
-        await self.async_write_ha_state()
+        self.async_write_ha_state()
 
 
 class BayesianMoldRiskSensor(BayesianEnvironmentSensor):
@@ -870,7 +870,7 @@ class BayesianMoldRiskSensor(BayesianEnvironmentSensor):
                         )
 
         if state.flower_days >= 35:
-            prob = (0.99, 0.01)
+            prob = (0.80, 0.20)
             observations.append(prob)
             self._reasons.append((prob[0], "Late Flower"))
 
@@ -916,7 +916,7 @@ class BayesianMoldRiskSensor(BayesianEnvironmentSensor):
         self._probability = self._calculate_bayesian_probability(
             self.prior, observations
         )
-        await self.async_write_ha_state()
+        self.async_write_ha_state()
 
 
 class BayesianOptimalConditionsSensor(BayesianEnvironmentSensor):
@@ -970,4 +970,4 @@ class BayesianOptimalConditionsSensor(BayesianEnvironmentSensor):
         self._probability = self._calculate_bayesian_probability(
             self.prior, observations
         )
-        await self.async_write_ha_state()
+        self.async_write_ha_state()
