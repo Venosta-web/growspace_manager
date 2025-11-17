@@ -42,6 +42,11 @@ def mock_growspace():
         "optimal_threshold": 0.8,
         "drying_threshold": 0.8,
         "curing_threshold": 0.8,
+        "prior_stress": 0.15,
+        "prior_mold_risk": 0.10,
+        "prior_optimal": 0.40,
+        "prior_drying": 0.50,
+        "prior_curing": 0.50,
     }
     return growspace
 
@@ -56,21 +61,27 @@ def mock_coordinator(mock_growspace):
     drying_growspace = MagicMock()
     drying_growspace.name = "Drying Tent"
     drying_growspace.notification_target = None
-    drying_growspace.environment_config = {
-        "temperature_sensor": "sensor.drying_temp",
-        "humidity_sensor": "sensor.drying_humidity",
-        "vpd_sensor": "sensor.drying_vpd",
-    }
+    drying_growspace.environment_config = mock_growspace.environment_config.copy()
+    drying_growspace.environment_config.update(
+        {
+            "temperature_sensor": "sensor.drying_temp",
+            "humidity_sensor": "sensor.drying_humidity",
+            "vpd_sensor": "sensor.drying_vpd",
+        }
+    )
     coordinator.growspaces["dry"] = drying_growspace
 
     curing_growspace = MagicMock()
     curing_growspace.name = "Curing Jars"
     curing_growspace.notification_target = None
-    curing_growspace.environment_config = {
-        "temperature_sensor": "sensor.curing_temp",
-        "humidity_sensor": "sensor.curing_humidity",
-        "vpd_sensor": "sensor.curing_vpd",
-    }
+    curing_growspace.environment_config = mock_growspace.environment_config.copy()
+    curing_growspace.environment_config.update(
+        {
+            "temperature_sensor": "sensor.curing_temp",
+            "humidity_sensor": "sensor.curing_humidity",
+            "vpd_sensor": "sensor.curing_vpd",
+        }
+    )
     coordinator.growspaces["cure"] = curing_growspace
 
     coordinator.plants = {
@@ -97,16 +108,9 @@ def mock_coordinator(mock_growspace):
 
 
 @pytest.fixture
-def env_config():
+def env_config(mock_growspace):
     """Fixture for a sample environment configuration."""
-    return {
-        "temperature_sensor": "sensor.temp",
-        "humidity_sensor": "sensor.humidity",
-        "vpd_sensor": "sensor.vpd",
-        "light_sensor": "light.grow_light",
-        "co2_sensor": "sensor.co2",
-        "circulation_fan": "switch.fan",
-    }
+    return mock_growspace.environment_config
 
 
 def set_sensor_state(hass: HomeAssistant, entity_id, state, attributes=None):
@@ -148,7 +152,7 @@ async def test_async_setup_entry(hass: HomeAssistant, mock_coordinator: MagicMoc
     async_add_entities.assert_called_once()
     entities = async_add_entities.call_args.args[0]
 
-    assert len(entities) == 12
+    assert len(entities) == 14  # 10 sensors for gs1 + 2 drying + 2 curing
     assert any(
         isinstance(e, BayesianStressSensor) and e.growspace_id == "gs1"
         for e in entities
@@ -187,8 +191,11 @@ async def test_async_setup_entry_no_env_config(hass: HomeAssistant, mock_coordin
 
 def test_get_growth_stage_info(mock_coordinator):
     """Test _get_growth_stage_info calculates days correctly."""
+    # Instantiation now only passes the three required arguments
     sensor = BayesianStressSensor(
-        mock_coordinator, "gs1", mock_coordinator.growspaces["gs1"].environment_config
+        mock_coordinator,
+        "gs1",
+        mock_coordinator.growspaces["gs1"].environment_config,
     )
     sensor._days_since = (
         lambda date_str: (
@@ -211,13 +218,18 @@ async def test_notification_sending(
     hass.data[DOMAIN] = {MOCK_CONFIG_ENTRY_ID: {"coordinator": mock_coordinator}}
 
     mock_recorder.return_value.async_add_executor_job = AsyncMock(return_value={})
-    sensor = BayesianStressSensor(mock_coordinator, "gs1", env_config)
+    # Corrected instantiation
+    sensor = BayesianStressSensor(
+        mock_coordinator,
+        "gs1",
+        env_config,
+    )
     sensor.hass = hass
     sensor.entity_id = "binary_sensor.test_notification"
     sensor.platform = MagicMock()
 
     # Mock growspace object for notification target
-    mock_coordinator.growspaces["gs1"] = MagicMock(notification_target="notify.test")
+    mock_coordinator.growspaces["gs1"].notification_target = "notify.test"
     mock_coordinator.is_notifications_enabled.return_value = True
 
     # Set initial state to "off" (no stress)
@@ -266,8 +278,11 @@ async def test_send_notification_anti_spam(mock_coordinator, hass: HomeAssistant
     """Test that notifications are not sent if within the cooldown period."""
     hass.data[DOMAIN] = {MOCK_CONFIG_ENTRY_ID: {"coordinator": mock_coordinator}}
 
+    # Corrected instantiation
     sensor = BayesianStressSensor(
-        mock_coordinator, "gs1", mock_coordinator.growspaces["gs1"].environment_config
+        mock_coordinator,
+        "gs1",
+        mock_coordinator.growspaces["gs1"].environment_config,
     )
     sensor.hass = hass
     sensor._last_notification_sent = utcnow() - timedelta(minutes=1)
@@ -286,8 +301,11 @@ async def test_send_notification_no_target(mock_coordinator, hass: HomeAssistant
     hass.data[DOMAIN] = {MOCK_CONFIG_ENTRY_ID: {"coordinator": mock_coordinator}}
 
     mock_coordinator.growspaces["gs1"].notification_target = None
+    # Corrected instantiation
     sensor = BayesianStressSensor(
-        mock_coordinator, "gs1", mock_coordinator.growspaces["gs1"].environment_config
+        mock_coordinator,
+        "gs1",
+        mock_coordinator.growspaces["gs1"].environment_config,
     )
     sensor.hass = hass
 
@@ -305,8 +323,11 @@ async def test_stress_sensor_notification_on_state_change(
     """Test stress sensor sends notification when state changes to on."""
     hass.data[DOMAIN] = {MOCK_CONFIG_ENTRY_ID: {"coordinator": mock_coordinator}}
 
+    # Corrected instantiation
     sensor = BayesianStressSensor(
-        mock_coordinator, "gs1", mock_coordinator.growspaces["gs1"].environment_config
+        mock_coordinator,
+        "gs1",
+        mock_coordinator.growspaces["gs1"].environment_config,
     )
     sensor.hass = hass
     sensor._probability = 0.1  # Start in OFF state (threshold is 0.7)
@@ -337,8 +358,11 @@ async def test_optimal_conditions_notification_on_state_change(
     """Test optimal sensor sends notification when state changes to off."""
     hass.data[DOMAIN] = {MOCK_CONFIG_ENTRY_ID: {"coordinator": mock_coordinator}}
 
+    # Corrected instantiation
     sensor = BayesianOptimalConditionsSensor(
-        mock_coordinator, "gs1", mock_coordinator.growspaces["gs1"].environment_config
+        mock_coordinator,
+        "gs1",
+        mock_coordinator.growspaces["gs1"].environment_config,
     )
     sensor.hass = hass
     sensor._probability = 0.9  # Start in ON state (threshold is 0.8)
@@ -359,8 +383,11 @@ async def test_optimal_conditions_notification_on_state_change(
 
 def test_generate_notification_message_truncation(mock_coordinator):
     """Test that the notification message is correctly truncated."""
+    # Corrected instantiation
     sensor = BayesianStressSensor(
-        mock_coordinator, "gs1", mock_coordinator.growspaces["gs1"].environment_config
+        mock_coordinator,
+        "gs1",
+        mock_coordinator.growspaces["gs1"].environment_config,
     )
     sensor._reasons = [
         (0.9, "VPD out of range"),
@@ -375,6 +402,11 @@ def test_generate_notification_message_truncation(mock_coordinator):
     assert message == "Alert, VPD out of range"
 
 
+@patch(
+    "custom_components.growspace_manager.binary_sensor.BayesianEnvironmentSensor._async_analyze_sensor_trend",
+    new_callable=AsyncMock,
+    return_value={"trend": "stable", "crossed_threshold": False},
+)
 @pytest.mark.parametrize(
     "sensor_readings, expected_reason_fragment",
     [
@@ -391,13 +423,20 @@ def test_generate_notification_message_truncation(mock_coordinator):
 )
 @pytest.mark.asyncio
 async def test_bayesian_stress_sensor_granular(
-    mock_coordinator, hass: HomeAssistant, sensor_readings, expected_reason_fragment
+    mock_analyze_trend,
+    mock_coordinator,
+    hass: HomeAssistant,
+    sensor_readings,
+    expected_reason_fragment,
 ):
     """Test BayesianStressSensor triggers for specific individual conditions."""
     hass.data[DOMAIN] = {MOCK_CONFIG_ENTRY_ID: {"coordinator": mock_coordinator}}
 
+    # Corrected instantiation
     sensor = BayesianStressSensor(
-        mock_coordinator, "gs1", mock_coordinator.growspaces["gs1"].environment_config
+        mock_coordinator,
+        "gs1",
+        mock_coordinator.growspaces["gs1"].environment_config,
     )
     sensor.hass = hass
     sensor._probability = 0.1
@@ -427,11 +466,6 @@ async def test_bayesian_stress_sensor_granular(
                 "veg_days": sensor_readings.get("veg_days", 20),
             },
         ),
-        patch.object(
-            sensor,
-            "_async_analyze_sensor_trend",
-            return_value={"trend": "stable", "crossed_threshold": False},
-        ),
         patch(
             "homeassistant.core.ServiceRegistry.async_call", new_callable=AsyncMock
         ) as mock_service_call,
@@ -439,7 +473,9 @@ async def test_bayesian_stress_sensor_granular(
         await sensor.async_update_and_notify()
 
         # 1. Assert the sensor turned ON
-        assert sensor.is_on, "Sensor did not turn ON for stress condition"
+        assert sensor.is_on, (
+            f"Sensor did not turn ON for stress condition: {expected_reason_fragment}. Reasons: {sensor._reasons}"
+        )
 
         # 2. Assert the notification was called
         mock_service_call.assert_called_once()
@@ -455,95 +491,6 @@ async def test_bayesian_stress_sensor_granular(
         assert expected_reason_fragment in message, (
             f"Expected '{expected_reason_fragment}' not in notification: '{message}'"
         )
-
-
-@pytest.mark.asyncio
-async def test_light_cycle_verification_sensor(mock_coordinator, hass: HomeAssistant):
-    """Test the LightCycleVerificationSensor."""
-    hass.data[DOMAIN] = {MOCK_CONFIG_ENTRY_ID: {"coordinator": mock_coordinator}}
-
-    original_states = hass.states
-    hass.states = MagicMock()
-
-    sensor = LightCycleVerificationSensor(
-        mock_coordinator, "gs1", mock_coordinator.growspaces["gs1"].environment_config
-    )
-    sensor.hass = hass
-    sensor.entity_id = "binary_sensor.test_light_cycle"
-    sensor.platform = MagicMock()
-    sensor.platform.platform_name = "growspace_manager"
-
-    def set_stage(veg, flower):
-        sensor._get_growth_stage_info = lambda: {"flower_days": flower, "veg_days": veg}  # pylint: disable=protected-access
-
-    try:
-        # Test case 1: Veg stage (18/6), light on for 10 hours (correct)
-        set_stage(veg=10, flower=0)
-        hass.states.get.return_value = MagicMock(
-            state="on", last_changed=utcnow() - timedelta(hours=10)
-        )
-        await sensor.async_update()
-        assert sensor.is_on, "Light on for 10 hours in veg should be correct"
-
-        # Test case 2: Veg stage (18/6), light on for 20 hours (incorrect)
-        set_stage(veg=10, flower=0)
-        hass.states.get.return_value = MagicMock(
-            state="on", last_changed=utcnow() - timedelta(hours=20)
-        )
-        await sensor.async_update()
-        assert not sensor.is_on, "Light on for 20 hours in veg should be incorrect"
-
-        # Test case 3: Veg stage (18/6), light off for 4 hours (correct)
-        set_stage(veg=10, flower=0)
-        hass.states.get.return_value = MagicMock(
-            state="off", last_changed=utcnow() - timedelta(hours=4)
-        )
-        await sensor.async_update()
-        assert sensor.is_on, "Light off for 4 hours in veg should be correct"
-
-        # Test case 4: Veg stage (18/6), light off for 8 hours (incorrect)
-        set_stage(veg=10, flower=0)
-        hass.states.get.return_value = MagicMock(
-            state="off", last_changed=utcnow() - timedelta(hours=8)
-        )
-        await sensor.async_update()
-        assert not sensor.is_on, "Light off for 8 hours in veg should be incorrect"
-
-        # Test case 5: Flower stage (12/12), light on for 10 hours (correct)
-        set_stage(veg=30, flower=20)
-        hass.states.get.return_value = MagicMock(
-            state="on", last_changed=utcnow() - timedelta(hours=10)
-        )
-        await sensor.async_update()
-        assert sensor.is_on, "Light on for 10 hours in flower should be correct"
-
-        # Test case 6: Flower stage (12/12), light on for 14 hours (incorrect)
-        set_stage(veg=30, flower=20)
-        hass.states.get.return_value = MagicMock(
-            state="on", last_changed=utcnow() - timedelta(hours=14)
-        )
-        await sensor.async_update()
-        assert not sensor.is_on, "Light on for 14 hours in flower should be incorrect"
-
-        # Test case 7: Flower stage (12/12), light off for 10 hours (correct)
-        set_stage(veg=30, flower=20)
-        hass.states.get.return_value = MagicMock(
-            state="off", last_changed=utcnow() - timedelta(hours=10)
-        )
-        await sensor.async_update()
-        assert sensor.is_on, "Light off for 10 hours in flower should be correct"
-
-        # Test case 8: Flower stage (12/12), light off for 14 hours (incorrect)
-        set_stage(veg=30, flower=20)
-        hass.states.get.return_value = MagicMock(
-            state="off", last_changed=utcnow() - timedelta(hours=14)
-        )
-        await sensor.async_update()
-        assert not sensor.is_on, "Light off for 14 hours in flower should be incorrect"
-
-    finally:
-        # Restore the real states object
-        hass.states = original_states
 
 
 @pytest.mark.parametrize(
@@ -563,7 +510,12 @@ async def test_get_sensor_value_edge_cases(
     """Test the _get_sensor_value helper with various invalid states."""
     hass.data[DOMAIN] = {MOCK_CONFIG_ENTRY_ID: {"coordinator": mock_coordinator}}
 
-    sensor = BayesianStressSensor(mock_coordinator, "gs1", env_config)
+    # Corrected instantiation
+    sensor = BayesianStressSensor(
+        mock_coordinator,
+        "gs1",
+        env_config,
+    )
     sensor.hass = hass
 
     if state_value is not None:
@@ -587,7 +539,7 @@ async def test_get_sensor_value_edge_cases(
             15,
             21.0,
             "rising",
-            False,  # Corrected
+            False,
         ),
         # Case 2: Falling trend
         (
@@ -631,7 +583,7 @@ async def test_get_sensor_value_edge_cases(
             15,
             21.0,
             "rising",
-            False,  # Corrected
+            False,
         ),
     ],
 )
@@ -654,7 +606,12 @@ async def test_async_analyze_sensor_trend(
         return_value=mock_history
     )
 
-    sensor = BayesianStressSensor(mock_coordinator, "gs1", env_config)
+    # Corrected instantiation
+    sensor = BayesianStressSensor(
+        mock_coordinator,
+        "gs1",
+        env_config,
+    )
     sensor.hass = hass
     sensor.platform = MagicMock()
     sensor.entity_id = "binary_sensor.test_trend"
@@ -667,8 +624,11 @@ async def test_async_analyze_sensor_trend(
     assert analysis["crossed_threshold"] == expected_crossed
 
 
-@patch("custom_components.growspace_manager.binary_sensor.get_recorder_instance")
-@pytest.mark.asyncio
+@patch(
+    "custom_components.growspace_manager.binary_sensor.BayesianEnvironmentSensor._async_analyze_sensor_trend",
+    new_callable=AsyncMock,
+    return_value={"trend": "stable", "crossed_threshold": False},
+)
 @pytest.mark.parametrize(
     "sensor_readings, stage_info, expected_reason",
     [
@@ -704,8 +664,9 @@ async def test_async_analyze_sensor_trend(
         ),
     ],
 )
+@pytest.mark.asyncio
 async def test_stress_sensor_stage_and_time_logic(
-    mock_recorder,
+    mock_analyze_trend,
     hass: HomeAssistant,
     mock_coordinator,
     env_config,
@@ -716,8 +677,12 @@ async def test_stress_sensor_stage_and_time_logic(
     """Test BayesianStressSensor with stage- and time-specific logic."""
     hass.data[DOMAIN] = {MOCK_CONFIG_ENTRY_ID: {"coordinator": mock_coordinator}}
 
-    mock_recorder.return_value.async_add_executor_job = AsyncMock(return_value={})
-    sensor = BayesianStressSensor(mock_coordinator, "gs1", env_config)
+    # Corrected instantiation
+    sensor = BayesianStressSensor(
+        mock_coordinator,
+        "gs1",
+        env_config,
+    )
     sensor.hass = hass
     sensor.entity_id = "binary_sensor.test_stress_complex"
     sensor.platform = MagicMock()
@@ -738,8 +703,11 @@ async def test_stress_sensor_stage_and_time_logic(
     assert any(expected_reason in reason for _, reason in sensor._reasons)
 
 
-@patch("custom_components.growspace_manager.binary_sensor.get_recorder_instance")
-@pytest.mark.asyncio
+@patch(
+    "custom_components.growspace_manager.binary_sensor.BayesianEnvironmentSensor._async_analyze_sensor_trend",
+    new_callable=AsyncMock,
+    return_value={"trend": "stable", "crossed_threshold": False},
+)
 @pytest.mark.parametrize(
     "sensor_readings, stage_info, expected_reason",
     [
@@ -763,8 +731,9 @@ async def test_stress_sensor_stage_and_time_logic(
         ),
     ],
 )
+@pytest.mark.asyncio
 async def test_mold_risk_sensor_triggers(
-    mock_recorder,
+    mock_analyze_trend,
     hass: HomeAssistant,
     mock_coordinator,
     env_config,
@@ -775,8 +744,12 @@ async def test_mold_risk_sensor_triggers(
     """Test BayesianMoldRiskSensor with specific triggers."""
     hass.data[DOMAIN] = {MOCK_CONFIG_ENTRY_ID: {"coordinator": mock_coordinator}}
 
-    mock_recorder.return_value.async_add_executor_job = AsyncMock(return_value={})
-    sensor = BayesianMoldRiskSensor(mock_coordinator, "gs1", env_config)
+    # Corrected instantiation
+    sensor = BayesianMoldRiskSensor(
+        mock_coordinator,
+        "gs1",
+        env_config,
+    )
     sensor.hass = hass
     sensor.entity_id = "binary_sensor.test_mold_complex"
     sensor.platform = MagicMock()
@@ -798,7 +771,11 @@ async def test_mold_risk_sensor_triggers(
     assert any(expected_reason in reason for _, reason in sensor._reasons)
 
 
-@pytest.mark.asyncio
+@patch(
+    "custom_components.growspace_manager.binary_sensor.BayesianEnvironmentSensor._async_analyze_sensor_trend",
+    new_callable=AsyncMock,
+    return_value={"trend": "stable", "crossed_threshold": False},
+)
 @pytest.mark.parametrize(
     "sensor_readings, stage_info, expected_reason",
     [
@@ -822,7 +799,9 @@ async def test_mold_risk_sensor_triggers(
         ),
     ],
 )
+@pytest.mark.asyncio
 async def test_optimal_sensor_off_states(
+    mock_analyze_trend,
     hass: HomeAssistant,
     mock_coordinator,
     env_config,
@@ -833,7 +812,12 @@ async def test_optimal_sensor_off_states(
     """Test BayesianOptimalConditionsSensor for non-optimal (off) states."""
     hass.data[DOMAIN] = {MOCK_CONFIG_ENTRY_ID: {"coordinator": mock_coordinator}}
 
-    sensor = BayesianOptimalConditionsSensor(mock_coordinator, "gs1", env_config)
+    # Corrected instantiation
+    sensor = BayesianOptimalConditionsSensor(
+        mock_coordinator,
+        "gs1",
+        env_config,
+    )
     sensor.hass = hass
     sensor.entity_id = "binary_sensor.test_optimal_fail"
     sensor._probability = 1.0  # Start as ON
@@ -856,7 +840,11 @@ async def test_optimal_sensor_off_states(
     assert any(expected_reason in reason for _, reason in sensor._reasons)
 
 
-@pytest.mark.asyncio
+@patch(
+    "custom_components.growspace_manager.binary_sensor.BayesianEnvironmentSensor._async_analyze_sensor_trend",
+    new_callable=AsyncMock,
+    return_value={"trend": "stable", "crossed_threshold": False},
+)
 @pytest.mark.parametrize(
     "sensor_class, growspace_id, sensor_readings, expected_reason",
     [
@@ -890,7 +878,9 @@ async def test_optimal_sensor_off_states(
         ),
     ],
 )
+@pytest.mark.asyncio
 async def test_dry_cure_sensors_off_states(
+    mock_analyze_trend,
     hass: HomeAssistant,
     mock_coordinator,
     env_config,
@@ -903,11 +893,14 @@ async def test_dry_cure_sensors_off_states(
     hass.data[DOMAIN] = {MOCK_CONFIG_ENTRY_ID: {"coordinator": mock_coordinator}}
 
     # Set up a specific growspace for this test
-    mock_coordinator.growspaces[growspace_id] = MagicMock(
-        name=growspace_id.capitalize()
-    )
+    mock_coordinator.growspaces[growspace_id].name = growspace_id.capitalize()
 
-    sensor = sensor_class(mock_coordinator, growspace_id, env_config)
+    # Corrected instantiation
+    sensor = sensor_class(
+        mock_coordinator,
+        growspace_id,
+        env_config,
+    )
     sensor.hass = hass
     sensor.entity_id = f"binary_sensor.test_{growspace_id}_fail"
     sensor._probability = 1.0  # Start as ON
