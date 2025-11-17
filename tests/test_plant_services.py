@@ -1990,31 +1990,154 @@ async def test_update_plant_with_empty_string_dates(
 
 
 @pytest.mark.asyncio
-async def test_take_clone_zero_clones(
+
+
+@pytest.mark.asyncio
+async def test_move_plant_to_empty_position(
     hass: HomeAssistant,
     mock_coordinator,
     mock_strain_library,
     mock_plant,
     mock_growspace,
 ):
-    """Test taking zero clones (should default to 1)."""
-    mock_coordinator.plants = {"mother_1": mock_plant}
-    mock_coordinator.growspaces = {"clone": mock_growspace}
+    """Test moving plant to an empty position."""
+    # Arrange
+    mock_plant.row = 1
+    mock_plant.col = 1
+    mock_coordinator.plants = {"plant_1": mock_plant}
+    mock_coordinator.growspaces = {"gs1": mock_growspace}
+    mock_coordinator.get_growspace_plants = Mock(return_value=[mock_plant])
 
     call = ServiceCall(
         hass,
         domain=DOMAIN,
-        service="take_clone",
+        service="move_plant",
         data={
-            "mother_plant_id": "mother_1",
-            "num_clones": 0,
+            "plant_id": "plant_1",
+            "new_row": 3,
+            "new_col": 3,
         },
     )
 
-    await handle_take_clone(hass, mock_coordinator, mock_strain_library, call)
+    # Capture events via async_listen
+    events = []
 
-    # Should default to 1
-    mock_coordinator.async_add_plant.assert_called_once()
+    def listener(event):
+        events.append(event)
+
+    hass.bus.async_listen(f"{DOMAIN}_plant_moved", listener)
+
+    # Act
+    await handle_move_plant(hass, mock_coordinator, mock_strain_library, call)
+    await hass.async_block_till_done()
+
+    # Assert
+    mock_coordinator.async_move_plant.assert_called_once_with("plant_1", 3, 3)
+    mock_coordinator.async_save.assert_called_once()
+    mock_coordinator.async_request_refresh.assert_called_once()
+
+    assert len(events) == 1
+    assert events[0].event_type == f"{DOMAIN}_plant_moved"
+
+
+@pytest.mark.asyncio
+async def test_move_plant_switch_with_occupant(
+    hass: HomeAssistant, mock_coordinator, mock_strain_library, mock_growspace
+):
+    """Test moving plant to occupied position (switch)."""
+    # Arrange
+    plant1 = Mock()
+    plant1.plant_id = "plant_1"
+    plant1.strain = "Strain 1"
+    plant1.row = 1
+    plant1.col = 1
+    plant1.growspace_id = "gs1"
+
+    plant2 = Mock()
+    plant2.plant_id = "plant_2"
+    plant2.strain = "Strain 2"
+    plant2.row = 3
+    plant2.col = 3
+    plant2.growspace_id = "gs1"
+
+    mock_coordinator.plants = {"plant_1": plant1, "plant_2": plant2}
+    mock_coordinator.growspaces = {"gs1": mock_growspace}
+    mock_coordinator.get_growspace_plants = Mock(return_value=[plant1, plant2])
+
+    call = ServiceCall(
+        hass,
+        domain=DOMAIN,
+        service="move_plant",
+        data={
+            "plant_id": "plant_1",
+            "new_row": 3,
+            "new_col": 3,
+        },
+    )
+
+    # Capture events using listener
+    events = []
+
+    def listener(event):
+        events.append(event)
+
+    hass.bus.async_listen(f"{DOMAIN}_plants_switched", listener)
+
+    # Act
+    await handle_move_plant(hass, mock_coordinator, mock_strain_library, call)
+    await hass.async_block_till_done()
+
+    # Assert
+    mock_coordinator.async_switch_plants.assert_called_once_with("plant_1", "plant_2")
+    mock_coordinator.async_save.assert_called_once()
+    mock_coordinator.async_request_refresh.assert_called_once()
+
+    assert len(events) == 1
+    assert events[0].event_type == f"{DOMAIN}_plants_switched"
+
+
+@pytest.mark.asyncio
+async def test_transition_plant_stage_success(
+    hass, mock_coordinator, mock_strain_library, mock_plant
+):
+    """Test successfully transitioning plant stage."""
+    # Arrange
+    mock_coordinator.plants = {"plant_1": mock_plant}
+
+    # Make async methods AsyncMock
+    mock_coordinator.async_transition_plant_stage = AsyncMock()
+    mock_coordinator.async_save = AsyncMock()
+    mock_coordinator.async_request_refresh = AsyncMock()
+
+    call = ServiceCall(
+        hass,
+        domain=DOMAIN,
+        service="transition_plant_stage",
+        data={
+            "plant_id": "plant_1",
+            "new_stage": "flower",
+            "transition_date": "2024-01-15",
+        },
+    )
+
+    events = []
+    hass.bus.async_listen(f"{DOMAIN}_plant_transitioned", events.append)
+
+    # Act
+    await handle_transition_plant_stage(
+        hass, mock_coordinator, mock_strain_library, call
+    )
+    await hass.async_block_till_done()
+
+    # Assert
+    mock_coordinator.async_transition_plant_stage.assert_called_once_with(
+        plant_id="plant_1", new_stage="flower", transition_date=date(2024, 1, 15)
+    )
+    mock_coordinator.async_save.assert_called_once()
+    mock_coordinator.async_request_refresh.assert_called_once()
+
+    assert len(events) == 1
+    assert events[0].event_type == f"{DOMAIN}_plant_transitioned"
 
 
 @pytest.mark.asyncio
@@ -2072,3 +2195,84 @@ async def test_move_clone_default_transition_date(
 
     call_kwargs = mock_coordinator.async_add_plant.call_args[1]
     assert call_kwargs["veg_start"] == date.today()
+
+
+@pytest.mark.asyncio
+async def test_add_plant_with_empty_date_strings(
+    hass: HomeAssistant, mock_coordinator, mock_strain_library, mock_growspace
+):
+    """Test adding plant with empty date strings."""
+    mock_coordinator.growspaces = {"gs1": mock_growspace}
+
+    call = ServiceCall(
+        hass,
+        domain=DOMAIN,
+        service="add_plant",
+        data={
+            "growspace_id": "gs1",
+            "strain": "Test",
+            "row": 1,
+            "col": 1,
+            "veg_start": "",
+            "flower_start": None,
+        },
+    )
+
+    await handle_add_plant(hass, mock_coordinator, mock_strain_library, call)
+
+    call_kwargs = mock_coordinator.async_add_plant.call_args[1]
+    assert call_kwargs["veg_start"] is None
+    assert call_kwargs["flower_start"] is None
+
+
+@pytest.mark.asyncio
+async def test_update_plant_with_empty_string_dates(
+    hass: HomeAssistant, mock_coordinator, mock_strain_library, mock_plant
+):
+    """Test updating plant with empty string dates."""
+    mock_coordinator.plants = {"plant_1": mock_plant}
+
+    call = ServiceCall(
+        hass,
+        domain=DOMAIN,
+        service="update_plant",
+        data={
+            "plant_id": "plant_1",
+            "veg_start": "",
+            "flower_start": "None",
+        },
+    )
+
+    await handle_update_plant(hass, mock_coordinator, mock_strain_library, call)
+
+    call_kwargs = mock_coordinator.async_update_plant.call_args[1]
+    assert call_kwargs["veg_start"] is None
+    assert call_kwargs["flower_start"] is None
+
+
+@pytest.mark.asyncio
+async def test_take_clone_zero_clones(
+    hass: HomeAssistant,
+    mock_coordinator,
+    mock_strain_library,
+    mock_plant,
+    mock_growspace,
+):
+    """Test taking zero clones (should default to 1)."""
+    mock_coordinator.plants = {"mother_1": mock_plant}
+    mock_coordinator.growspaces = {"clone": mock_growspace}
+
+    call = ServiceCall(
+        hass,
+        domain=DOMAIN,
+        service="take_clone",
+        data={
+            "mother_plant_id": "mother_1",
+            "num_clones": 0,
+        },
+    )
+
+    await handle_take_clone(hass, mock_coordinator, mock_strain_library, call)
+
+    # Should default to 1
+    mock_coordinator.async_add_plant.assert_called_once()
