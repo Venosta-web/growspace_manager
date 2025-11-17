@@ -2,7 +2,7 @@ name: Build Release ZIP
 
 on:
   release:
-    types: [published]
+    types: [published] # This runs only when you click "Publish release"
 
 jobs:
   build_release:
@@ -10,14 +10,22 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      # 1. Checks out your repository code
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: ZIP Release
+      # 2. Creates the ZIP file
+      - name: Create ZIP archive
         run: |
+          # Go into the custom_components directory
           cd custom_components
-          zip -r ../growspace_manager.zip ./growspace_manager
 
+          # Create a zip file one level up (in the repo root)
+          # Zip the 'growspace_manager' folder
+          # Exclude the '.github' folder you have inside it
+          zip -r ../growspace_manager.zip ./growspace_manager -x "growspace_manager/.github/*"
+
+      # 3. Attaches the new zip file to your GitHub Release
       - name: Upload Release Asset
         uses: actions/upload-release-asset@v1
         env:
