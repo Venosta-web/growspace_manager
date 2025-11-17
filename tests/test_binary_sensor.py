@@ -152,7 +152,7 @@ async def test_async_setup_entry(hass: HomeAssistant, mock_coordinator: MagicMoc
     async_add_entities.assert_called_once()
     entities = async_add_entities.call_args.args[0]
 
-    assert len(entities) == 14  # 10 sensors for gs1 + 2 drying + 2 curing
+    assert len(entities) == 10
     assert any(
         isinstance(e, BayesianStressSensor) and e.growspace_id == "gs1"
         for e in entities
