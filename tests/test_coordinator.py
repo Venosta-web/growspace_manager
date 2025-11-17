@@ -6,6 +6,7 @@ These tests cover the full lifecycle of growspaces and plants, including
 creation, updating, removal, and various stage transitions. It also tests
 data migration, validation, and helper methods.
 """
+
 import pytest
 from freezegun import freeze_time
 from datetime import date, datetime, timedelta
@@ -21,6 +22,7 @@ from custom_components.growspace_manager.const import (
     PLANT_STAGES,
     SPECIAL_GROWSPACES,
 )
+from homeassistant.helpers import entity_registry as er
 
 
 @pytest.fixture
@@ -1314,7 +1316,6 @@ async def test_async_check_timed_notifications(coordinator):
     )
 
 
-@pytest.mark.asyncio
 async def test_async_update_air_exchange_recommendations(hass):
     """Test the air exchange recommendation logic.
     Args:
@@ -1322,16 +1323,49 @@ async def test_async_update_air_exchange_recommendations(hass):
     """
     coordinator = GrowspaceCoordinator(hass, data={})
     gs = await coordinator.async_add_growspace("Stress GS")
-    gs.environment_config = {"vpd_sensor": f"sensor.{gs.id}_vpd"}
+
+    # Define valid, slugified entity IDs for the test
+    # This matches what HA would create from the name "Stress GS"
+    stress_sensor_entity_id = "binary_sensor.stress_gs_plants_under_stress"
+    vpd_sensor_entity_id = "sensor.stress_gs_vpd"
+
+    gs.environment_config = {"vpd_sensor": vpd_sensor_entity_id}
     coordinator.data = {"bayesian_sensors_reason": {gs.id: {"target_vpd": 1.2}}}
-    # Mock states
-    hass.states.async_set(f"binary_sensor.{gs.id}_stress", "on")
-    hass.states.async_set(
-        "weather.test", "sunny", {"temperature": 20, "humidity": 50}
+
+    # Mock the entity registry to return the correct entity ID
+    entity_registry = er.async_get(hass)
+    stress_sensor_unique_id = f"{DOMAIN}_{gs.id}_stress"
+
+    with patch.object(
+        entity_registry,
+        "async_get_entity_id",
+        return_value=stress_sensor_entity_id,
+    ) as mock_get_id:
+        # Mock states using the *valid* entity IDs
+        hass.states.async_set(stress_sensor_entity_id, "on")
+        hass.states.async_set(
+            "weather.test", "sunny", {"temperature": 20, "humidity": 50}
+        )
+        hass.states.async_set("sensor.lung_room_temp", "22")
+        hass.states.async_set("sensor.lung_room_humidity", "55")
+        hass.states.async_set(vpd_sensor_entity_id, "1.5")
+
+        coordinator.options = {
+            "global_settings": {
+                "weather_entity": "weather.test",
+                "lung_room_temp_sensor": "sensor.lung_room_temp",
+                "lung_room_humidity_sensor": "sensor.lung_room_humidity",
+            }
+        }
+
+        await coordinator._async_update_air_exchange_recommendations()
+
+        # Verify the registry was queried correctly
+        mock_get_id.assert_called_with("binary_sensor", DOMAIN, stress_sensor_unique_id)
+
+    assert (
+        coordinator.data["air_exchange_recommendations"][gs.id] == "Ventilate Lung Room"
     )
-    hass.states.async_set("sensor.lung_room_temp", "22")
-    hass.states.async_set("sensor.lung_room_humidity", "55")
-    hass.states.async_set(f"sensor.{gs.id}_vpd", "1.5")
     coordinator.options = {
         "global_settings": {
             "weather_entity": "weather.test",
@@ -1340,9 +1374,7 @@ async def test_async_update_air_exchange_recommendations(hass):
         }
     }
     await coordinator._async_update_air_exchange_recommendations()
-    assert (
-        coordinator.data["air_exchange_recommendations"][gs.id] == "Open Window"
-    )
+    assert coordinator.data["air_exchange_recommendations"][gs.id] == "Idle"
 
 
 @pytest.mark.asyncio

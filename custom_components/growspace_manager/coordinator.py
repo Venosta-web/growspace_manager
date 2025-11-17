@@ -1,4 +1,5 @@
 """Data update coordinator for the Growspace Manager integration."""
+
 from __future__ import annotations
 
 from dataclasses import asdict
@@ -8,12 +9,14 @@ from .utils import (
     find_first_free_position,
     generate_growspace_grid,
     VPDCalculator,
+    parse_date_field as util_parse_date_field,
 )
 from .strain_library import StrainLibrary
 from .const import (
     STORAGE_KEY,
     PLANT_STAGES,
     DATE_FIELDS,
+    DOMAIN,
     STORAGE_VERSION,
     STORAGE_KEY_STRAIN_LIBRARY,
     SPECIAL_GROWSPACES,
@@ -51,7 +54,9 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
     entities.
     """
 
-    def __init__(self, hass, data: dict | None = None, options: dict | None = None) -> None:
+    def __init__(
+        self, hass, data: dict | None = None, options: dict | None = None
+    ) -> None:
         """Initialize the Growspace Coordinator.
 
         Args:
@@ -261,28 +266,66 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
     # =============================================================================
 
     def _get_plant_stage(self, plant: Plant) -> str:
-        """Determine the current growth stage of a plant based on its start dates.
+        """Determine the current growth stage of the plant.
 
-        The stage is determined by the most recent start date field that is set.
+        The stage is determined by a hierarchy: first by the special growspace
+        it's in, then by the most recent start date, and finally by the
+        explicitly set stage property.
 
         Args:
-            plant: The Plant object to check.
+            plant: The Plant object to analyze.
 
         Returns:
-            The current stage of the plant as a string.
+            The determined stage as a string.
         """
-        if getattr(plant, "cure_start", None):
-            return "cure"
-        if getattr(plant, "dry_start", None):
-            return "dry"
-        if getattr(plant, "flower_start", None):
-            return "flower"
-        if getattr(plant, "veg_start", None):
-            return "veg"
-        if getattr(plant, "clone_start", None):
-            return "clone"
-        if getattr(plant, "mother_start", None):
+        now = date.today()
+
+        # 1. Special growspaces override everything
+        if plant.growspace_id == "mother":
             return "mother"
+        if plant.growspace_id == "clone":
+            return "clone"
+        if plant.growspace_id == "dry":
+            return "dry"
+        if plant.growspace_id == "cure":
+            return "cure"
+
+        # 2. Date-based progression (most advanced stage wins)
+        # Use util_parse_date_field to get date objects for comparison
+        if (
+            cs := util_parse_date_field(getattr(plant, "cure_start", None))
+        ) and cs <= now:
+            return "cure"
+        if (
+            ds := util_parse_date_field(getattr(plant, "dry_start", None))
+        ) and ds <= now:
+            return "dry"
+        if (
+            fs := util_parse_date_field(getattr(plant, "flower_start", None))
+        ) and fs <= now:
+            return "flower"
+        if (
+            vs := util_parse_date_field(getattr(plant, "veg_start", None))
+        ) and vs <= now:
+            return "veg"
+        if (
+            cs := util_parse_date_field(getattr(plant, "clone_start", None))
+        ) and cs <= now:
+            return "clone"
+        if (
+            ms := util_parse_date_field(getattr(plant, "mother_start", None))
+        ) and ms <= now:
+            return "mother"
+        if (
+            ss := util_parse_date_field(getattr(plant, "seedling_start", None))
+        ) and ss <= now:
+            return "seedling"
+
+        # 3. Fallback to explicitly set stage
+        if plant.stage in PLANT_STAGES:
+            return plant.stage
+
+        # Default
         return "seedling"
 
     def get_plant(self, plant_id: str) -> Plant | None:
@@ -2097,7 +2140,9 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
                             ] = True
                             await self.async_save()
 
-    async def _send_notification(self, growspace_id: str, title: str, message: str) -> None:
+    async def _send_notification(
+        self, growspace_id: str, title: str, message: str
+    ) -> None:
         """Send a notification to the target configured for a specific growspace.
 
         Args:
@@ -2184,9 +2229,19 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
             else None
         )
 
+        entity_registry = er.async_get(self.hass)
         for growspace_id, growspace in self.growspaces.items():
-            stress_sensor_id = f"binary_sensor.{growspace_id}_stress"
-            stress_state = self.hass.states.get(stress_sensor_id)
+            # Find the entity ID from the unique ID
+            stress_sensor_unique_id = f"{DOMAIN}_{growspace_id}_stress"
+            stress_sensor_entity_id = entity_registry.async_get_entity_id(
+                "binary_sensor", DOMAIN, stress_sensor_unique_id
+            )
+
+            if not stress_sensor_entity_id:
+                recommendations[growspace_id] = "Idle"  # Sensor not registered yet
+                continue
+
+            stress_state = self.hass.states.get(stress_sensor_entity_id)
 
             if not stress_state or stress_state.state != "on":
                 recommendations[growspace_id] = "Idle"
