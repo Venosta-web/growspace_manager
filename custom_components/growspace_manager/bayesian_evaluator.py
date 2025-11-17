@@ -399,7 +399,7 @@ def evaluate_optimal_co2(
                 observations.append(PROB_PERFECT)
             elif 800 <= co2 <= 1500:
                 observations.append(PROB_GOOD)
-            elif 400 <= co2 <= 600:
+            elif 400 <= co2 <= 800:
                 observations.append(PROB_ACCEPTABLE)
             else:
                 observations.append(prob_out_of_range)
