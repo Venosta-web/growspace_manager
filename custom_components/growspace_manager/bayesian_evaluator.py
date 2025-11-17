@@ -151,7 +151,7 @@ def evaluate_direct_temp_stress(
         prob = env_config.get("prob_temp_high_heat", (0.85, 0.15))
         observations.append(prob)
         reasons.append((prob[0], f"High Heat ({temp})"))
-    elif state.flower_days >= 42 and temp > 24:
+    elif state.flower_days >= 42 and temp > 27:
         prob = (0.70, 0.30)
         observations.append(prob)
         reasons.append((prob[0], f"Temp Warm ({temp})"))
@@ -204,14 +204,14 @@ def evaluate_direct_humidity_stress(
         prob = env_config.get("prob_humidity_high_veg_late", (0.85, 0.15))
         observations.append(prob)
         reasons.append((prob[0], f"Humidity High ({hum})"))
-    elif flower_early and (hum > 55 or hum < 45):
+    elif flower_early and (hum > 60 or hum < 45):
         prob = (0.75, 0.25)
         observations.append(prob)
-        reasons.append((prob[0], f"Humidity out of range (45-55) ({hum})"))
-    elif flower_late and (hum > 50 or hum < 40):
+        reasons.append((prob[0], f"Humidity out of range (45-60) ({hum})"))
+    elif flower_late and (hum > 55 or hum < 40):
         prob = (0.85, 0.15)
         observations.append(prob)
-        reasons.append((prob[0], f"Humidity out of range (40-50) ({hum})"))
+        reasons.append((prob[0], f"Humidity out of range (40-55) ({hum})"))
 
     return observations, reasons
 
@@ -296,7 +296,7 @@ def evaluate_optimal_temperature(
     match (state.is_lights_on, state.flower_days):
         # Case A: Lights ON & Late Flower (Days >= 42)
         case True, days if days >= 42:
-            if 18 <= state.temp <= 24:  # Perfect range for late flower
+            if 22 <= state.temp <= 26:  # Perfect range for late flower
                 observations.append(PROB_PERFECT)
             else:
                 observations.append(prob_out_of_range)

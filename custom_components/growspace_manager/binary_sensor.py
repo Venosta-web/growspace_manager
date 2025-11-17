@@ -871,7 +871,7 @@ class BayesianMoldRiskSensor(BayesianEnvironmentSensor):
                     observations.append(prob)
                     self._reasons.append((prob[0], f"Night VPD Low ({state.vpd})"))
             else:  # Daytime checks
-                if state.humidity is not None and state.humidity > 55:
+                if state.humidity is not None and state.humidity > 60:
                     prob = self.env_config.get(
                         "prob_mold_humidity_high_day", (0.95, 0.20)
                     )
