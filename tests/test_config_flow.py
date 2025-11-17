@@ -883,7 +883,7 @@ async def test_options_flow_init_configure_environment(
     )
     config_entry.add_to_hass(hass)
     mock_coordinator = MagicMock()
-    mock_coordinator.get_sorted_growspace_options = AsyncMock(
+    mock_coordinator.get_sorted_growspace_options = MagicMock(
         return_value=[("gs1", "Growspace 1")]
     )
     hass.data[DOMAIN] = {config_entry.entry_id: {"coordinator": mock_coordinator}}
@@ -907,7 +907,7 @@ async def test_options_flow_select_growspace_for_env_show_form(
     )
     config_entry.add_to_hass(hass)
     mock_coordinator = MagicMock()
-    mock_coordinator.get_sorted_growspace_options = AsyncMock(
+    mock_coordinator.get_sorted_growspace_options = MagicMock(
         return_value=[("gs1", "Growspace 1")]
     )
     hass.data[DOMAIN] = {config_entry.entry_id: {"coordinator": mock_coordinator}}
@@ -928,7 +928,7 @@ async def test_options_flow_select_growspace_for_env_no_growspaces(
     """Test select growspace for env when no growspaces exist."""
     config_entry = MockConfigEntry(domain=DOMAIN, data={"name": "Test"}, options={})
     config_entry.add_to_hass(hass)
-    mock_coordinator.get_sorted_growspace_options = AsyncMock(return_value=[])
+    mock_coordinator.get_sorted_growspace_options = MagicMock(return_value=[])
     hass.data[DOMAIN] = {config_entry.entry_id: {"coordinator": mock_coordinator}}
 
     flow = OptionsFlowHandler(config_entry)
