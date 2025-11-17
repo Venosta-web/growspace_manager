@@ -1333,135 +1333,182 @@ class BayesianOptimalConditionsSensor(BayesianEnvironmentSensor):
         state = self._get_base_environment_state()
         observations = []
 
-        # Good temperature range
-        # === OPTIMAL TEMPERATURE ===
+        # --- Constants for Probability ---
+        # (P(Obs|True), P(Obs|False))
+        prob_perfect = (0.95, 0.20)
+        prob_good = (0.85, 0.30)
+        prob_acceptable = (0.65, 0.45)
+        prob_out_of_range = (0.20, 0.75)
+        prob_vpd_out_of_range = (0.25, 0.70)
+
+        # --- 1. OPTIMAL TEMPERATURE ---
         if state.temp is not None:
-            if state.is_lights_on:
-                # Late flower has different optimal temps
-                if state.flower_days >= 42:
+            # Match against (is_lights_on, flower_days) for branching logic
+            match (state.is_lights_on, state.flower_days):
+                # Case A: Lights ON & Late Flower (Days >= 42)
+                case True, days if days >= 42:
                     if 18 <= state.temp <= 24:  # Perfect range for late flower
-                        observations.append((0.95, 0.20))
+                        observations.append(prob_perfect)
                     else:
-                        prob = (0.20, 0.75)
-                        observations.append(prob)
+                        observations.append(prob_out_of_range)
                         self._reasons.append(
-                            (prob[1], f"Temp out of range ({state.temp})")
+                            (
+                                prob_out_of_range[1],
+                                f"Temp out of range Late Flower ({state.temp})",
+                            )
                         )
-                # Normal logic - collapsed into 'elif'
-                elif 24 <= state.temp <= 26:
-                    observations.append((0.95, 0.20))
-                # Good range
-                elif 22 <= state.temp <= 28:
-                    observations.append((0.85, 0.30))
-                # Acceptable range
-                elif 20 <= state.temp <= 29:
-                    observations.append((0.65, 0.45))
-                # Outside optimal
-                else:
-                    prob = (0.20, 0.75)
-                    observations.append(prob)
-                    self._reasons.append((prob[1], f"Temp out of range ({state.temp})"))
-            else:  # Nighttime logic
-                if 20 <= state.temp <= 23:
-                    observations.append((0.95, 0.20))
-                else:
-                    prob = (0.20, 0.75)
-                    observations.append(prob)
-                    self._reasons.append(
-                        (prob[1], f"Night temp out of range ({state.temp})")
-                    )
-        # VPD in optimal range for stage
+
+                # Case B: Lights ON & Normal (Days < 42 or Veg)
+                case True, _:
+                    if 24 <= state.temp <= 26:
+                        observations.append(prob_perfect)
+                    elif 22 <= state.temp <= 28:
+                        observations.append(prob_good)
+                    elif 20 <= state.temp <= 29:
+                        observations.append(prob_acceptable)
+                    else:
+                        observations.append(prob_out_of_range)
+                        self._reasons.append(
+                            (prob_out_of_range[1], f"Temp out of range ({state.temp})")
+                        )
+
+                # Case C: Lights OFF (Nighttime)
+                case False, _:
+                    if 20 <= state.temp <= 23:
+                        observations.append(prob_perfect)
+                    else:
+                        observations.append(prob_out_of_range)
+                        self._reasons.append(
+                            (
+                                prob_out_of_range[1],
+                                f"Night temp out of range ({state.temp})",
+                            )
+                        )
+
+        # --- 2. OPTIMAL VPD (Refactored for clarity) ---
         if state.vpd is not None:
             vpd_optimal = False
 
-            if state.is_lights_on:
-                # Seedling/Clone/Early Veg: 0.4-0.8 kPa
-                if state.flower_days == 0 and state.veg_days < 14:
-                    if 0.5 <= state.vpd <= 0.7:  # Perfect
-                        vpd_optimal = True
-                        observations.append((0.95, 0.18))
-                    elif 0.4 <= state.vpd <= 0.8:  # Good
-                        observations.append((0.80, 0.28))
+            # Define VPD stages based on growth cycle
+            VPD_STAGES = {
+                # is_lights_on: (veg_start, veg_end, flower_start, flower_end)
+                "DAY": [
+                    (
+                        (0, 14, 0, 0),
+                        (0.5, 0.7),
+                        (0.4, 0.8),
+                        (0.95, 0.18),
+                        (0.80, 0.28),
+                    ),  # Early Veg
+                    (
+                        (14, float("inf"), 0, 0),
+                        (0.9, 1.1),
+                        (0.8, 1.2),
+                        (0.95, 0.18),
+                        (0.85, 0.25),
+                    ),  # Late Veg
+                    (
+                        (0, float("inf"), 1, 42),
+                        (1.1, 1.4),
+                        (1.0, 1.5),
+                        (0.95, 0.18),
+                        (0.85, 0.25),
+                    ),  # Early/Mid Flower
+                    (
+                        (0, float("inf"), 42, float("inf")),
+                        (1.3, 1.5),
+                        (1.2, 1.6),
+                        (0.95, 0.15),
+                        (0.85, 0.22),
+                    ),  # Late Flower
+                ],
+                "NIGHT": [
+                    (
+                        (0, 14, 0, 0),
+                        (0.4, 0.8),
+                        (0.4, 0.8),
+                        (0.90, 0.20),
+                        (0.90, 0.20),
+                    ),  # Early Veg (Night: usually only one range)
+                    (
+                        (14, float("inf"), 0, 0),
+                        (0.6, 1.1),
+                        (0.6, 1.1),
+                        (0.90, 0.20),
+                        (0.90, 0.20),
+                    ),  # Late Veg
+                    (
+                        (0, float("inf"), 1, 42),
+                        (0.8, 1.2),
+                        (0.8, 1.2),
+                        (0.90, 0.20),
+                        (0.90, 0.20),
+                    ),  # Early/Mid Flower
+                    (
+                        (0, float("inf"), 42, float("inf")),
+                        (0.9, 1.2),
+                        (0.9, 1.2),
+                        (0.90, 0.20),
+                        (0.90, 0.20),
+                    ),  # Late Flower
+                ],
+            }
 
-                # Late Veg: 0.8-1.2 kPa
-                elif state.flower_days == 0 and state.veg_days >= 14:
-                    if 0.9 <= state.vpd <= 1.1:  # Perfect
-                        vpd_optimal = True
-                        observations.append((0.95, 0.18))
-                    elif 0.8 <= state.vpd <= 1.2:  # Good
-                        observations.append((0.85, 0.25))
+            # Get appropriate stages based on lights state
+            stage_list = (
+                VPD_STAGES["DAY"] if state.is_lights_on else VPD_STAGES["NIGHT"]
+            )
 
-                # Early-Mid Flower: 1.0-1.5 kPa
-                elif 0 < state.flower_days < 42:
-                    if 1.1 <= state.vpd <= 1.4:  # Perfect
-                        vpd_optimal = True
-                        observations.append((0.95, 0.18))
-                    elif 1.0 <= state.vpd <= 1.5:  # Good
-                        observations.append((0.85, 0.25))
+            for (v_min, v_max, f_min, f_max), (p_low, p_high), (
+                g_low,
+                g_high,
+            ), p_perf, p_good in stage_list:
+                # Check if current state matches the stage criteria
+                is_veg = state.flower_days == 0 and v_min <= state.veg_days < v_max
+                is_flower = state.flower_days > 0 and f_min <= state.flower_days < f_max
 
-                # Late Flower: 1.2-1.5 kPa (drier to prevent mold)
-                elif state.flower_days >= 42:
-                    if 1.3 <= state.vpd <= 1.5:  # Perfect
+                if is_veg or is_flower:
+                    # Check performance within the stage
+                    if p_low <= state.vpd <= p_high:  # Perfect Range
                         vpd_optimal = True
-                        observations.append((0.95, 0.15))
-                    elif 1.2 <= state.vpd <= 1.6:  # Good
-                        observations.append((0.85, 0.22))
-            else:  # Nighttime logic
-                # Seedling/Clone/Early Veg: 0.4-0.8 kPa
-                if state.flower_days == 0 and state.veg_days < 14:
-                    if 0.4 <= state.vpd <= 0.8:
-                        vpd_optimal = True
-                        observations.append((0.90, 0.20))
-                # Late Veg: 0.6-1.1 kPa
-                elif state.flower_days == 0 and state.veg_days >= 14:
-                    if 0.6 <= state.vpd <= 1.1:
-                        vpd_optimal = True
-                        observations.append((0.90, 0.20))
-                # Early-Mid Flower: 0.8 - 1.2 kPa
-                elif 0 < state.flower_days < 42:
-                    if 0.8 <= state.vpd <= 1.2:
-                        vpd_optimal = True
-                        observations.append((0.90, 0.20))
-                # Late Flower: 0.9-1.2 kPa
-                elif state.flower_days >= 42:
-                    if 0.9 <= state.vpd <= 1.2:
-                        vpd_optimal = True
-                        observations.append((0.90, 0.20))
+                        observations.append(p_perf)
+                    elif g_low <= state.vpd <= g_high:  # Good/Acceptable Range
+                        observations.append(p_good)
 
-            # If not optimal, reduce probability
+                    break  # Matched a stage, stop checking
+
+            # If no optimal range was met for the identified stage, apply penalty
             if not vpd_optimal:
-                prob = (0.25, 0.70)
-                observations.append(prob)
-                self._reasons.append((prob[1], f"VPD out of range ({state.vpd})"))
+                observations.append(prob_vpd_out_of_range)
+                self._reasons.append(
+                    (prob_vpd_out_of_range[1], f"VPD out of range ({state.vpd})")
+                )
 
-        # Good CO2 levels
+        # --- 3. GOOD CO2 LEVELS (Minor cleanup, not ideal for match/case due to ranges) ---
         if state.co2 is not None:
             if state.flower_days >= 42:
                 # Late flower prefers lower CO2
-                if 400 <= state.co2 <= 800:
+                co2 = state.co2
+                if 400 <= co2 <= 800:
                     observations.append((0.90, 0.25))
-                elif 800 < state.co2 <= 1200:
+                elif 800 < co2 <= 1200:
                     observations.append((0.4, 0.6))  # Slightly negative
-                # Other ranges are not optimal, so no positive obs.
-                # Let stress sensor handle out-of-bounds.
+                # Else (outside 400-1200): no observation, let stress handle low/high extremes.
             else:
-                # Enhanced CO2 (optimal for fast growth)
-                if 1000 <= state.co2 <= 1400:
-                    observations.append((0.95, 0.20))
-                # Good elevated CO2
-                elif 800 <= state.co2 <= 1500:
-                    observations.append((0.85, 0.30))
-                # Adequate ambient CO2
-                elif 400 <= state.co2 <= 600:
+                # Normal/Veg/Early Flower logic
+                co2 = state.co2
+                if 1000 <= co2 <= 1400:
+                    observations.append(prob_perfect)
+                elif 800 <= co2 <= 1500:
+                    observations.append(prob_good)
+                elif 400 <= co2 <= 600:
                     observations.append((0.60, 0.45))
-                # Outside optimal range
                 else:
-                    prob = (0.20, 0.75)
-                    observations.append(prob)
-                    if state.co2 < 400:
-                        self._reasons.append((prob[1], f"CO2 Low ({state.co2})"))
-                    else:
-                        self._reasons.append((prob[1], f"CO2 High ({state.co2})"))
+                    observations.append(prob_out_of_range)
+                    reason_detail = "CO2 Low" if co2 < 400 else "CO2 High"
+                    self._reasons.append(
+                        (prob_out_of_range[1], f"{reason_detail} ({co2})")
+                    )
 
         self._probability = self._calculate_bayesian_probability(
             self.prior, observations
