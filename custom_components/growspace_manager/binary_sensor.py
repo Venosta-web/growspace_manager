@@ -1390,7 +1390,7 @@ class BayesianOptimalConditionsSensor(BayesianEnvironmentSensor):
             vpd_optimal = False
 
             # Define VPD stages based on growth cycle
-            VPD_STAGES = {
+            vpd_stages = {
                 # is_lights_on: (veg_start, veg_end, flower_start, flower_end)
                 "DAY": [
                     (
@@ -1456,7 +1456,7 @@ class BayesianOptimalConditionsSensor(BayesianEnvironmentSensor):
 
             # Get appropriate stages based on lights state
             stage_list = (
-                VPD_STAGES["DAY"] if state.is_lights_on else VPD_STAGES["NIGHT"]
+                vpd_stages["DAY"] if state.is_lights_on else vpd_stages["NIGHT"]
             )
 
             for (v_min, v_max, f_min, f_max), (p_low, p_high), (
