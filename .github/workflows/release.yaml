@@ -15,15 +15,15 @@ jobs:
         uses: actions/checkout@v4
 
       # 2. Creates the ZIP file
-      - name: Create ZIP archive
+      - name: ZIP Release
         run: |
-          # Go into the custom_components directory
           cd custom_components
-
-          # Create a zip file one level up (in the repo root)
-          # Zip the 'growspace_manager' folder
-          # Exclude the '.github' folder you have inside it
-          zip -r ../growspace_manager.zip ./growspace_manager -x "growspace_manager/.github/*"
+          zip -r ../growspace_manager.zip ./growspace_manager \
+            -x "growspace_manager/.github/*" \
+            -x "growspace_manager/.coverage" \
+            -x "growspace_manager/.gitignore" \
+            -x "growspace_manager/pytest.ini" \
+            -x "growspace_manager/module.json"
 
       # 3. Attaches the new zip file to your GitHub Release
       - name: Upload Release Asset
