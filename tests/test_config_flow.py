@@ -426,7 +426,7 @@ async def test_options_flow_manage_growspaces_remove(
 
 @pytest.mark.asyncio
 async def test_options_flow_manage_growspaces_remove_error(
-    hass: Home Assistant, mock_coordinator
+    hass: HomeAssistant, mock_coordinator
 ):
     """Test error handling for the 'remove' action.
 
