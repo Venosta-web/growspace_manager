@@ -1,7 +1,9 @@
 """Constants for the Growspace Manager integration."""
 
-import voluptuous as vol
 from datetime import date
+
+import voluptuous as vol
+
 
 DOMAIN = "growspace_manager"
 STORAGE_VERSION = 1

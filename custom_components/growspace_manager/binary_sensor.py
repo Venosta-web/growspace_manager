@@ -598,21 +598,55 @@ class BayesianStressSensor(BayesianEnvironmentSensor):
         return None
 
     async def _async_update_probability(self) -> None:
-        """Calculate the probability of plant stress based on environmental factors.
-
-        This method gathers evidence from temperature, humidity, VPD, and CO2
-        sensors, as well as their trends, to determine the likelihood that
-        plants are currently under stress.
-        """
+        """Calculate the probability of plant stress based on environmental factors."""
         self._reasons = []
         state = self._get_base_environment_state()
         observations = []
+
+        # 1. ASYNCHRONOUS TREND ANALYSIS (High Complexity/IO)
+        trend_obs, trend_reasons = await self._async_evaluate_trend_analysis(state)
+        observations.extend(trend_obs)
+        self._reasons.extend(trend_reasons)
+
+        # 2. DIRECT OBSERVATIONS
+        # Grouping complex synchronous checks into focused helpers
+
+        temp_obs, temp_reasons = self._evaluate_direct_temp_stress(state)
+        observations.extend(temp_obs)
+        self._reasons.extend(temp_reasons)
+
+        hum_obs, hum_reasons = self._evaluate_direct_humidity_stress(state)
+        observations.extend(hum_obs)
+        self._reasons.extend(hum_reasons)
+
+        vpd_obs, vpd_reasons = self._evaluate_direct_vpd_stress(state)
+        observations.extend(vpd_obs)
+        self._reasons.extend(vpd_reasons)
+
+        co2_obs, co2_reasons = self._evaluate_direct_co2_stress(state)
+        observations.extend(co2_obs)
+        self._reasons.extend(co2_reasons)
+
+        self._probability = self._calculate_bayesian_probability(
+            self.prior, observations
+        )
+        self.async_write_ha_state()
+
+    # =========================================================================
+    # NEW HELPER EVALUATION METHODS
+    # =========================================================================
+
+    async def _async_evaluate_trend_analysis(
+        self, state: EnvironmentState
+    ) -> tuple[list[tuple[float, float]], list[tuple[float, str]]]:
+        """Evaluate rising trends for temperature, humidity, and VPD from sensors/history."""
+        observations = []
+        reasons = []
 
         self._sensor_states["temperature_trend"] = "stable"
         self._sensor_states["humidity_trend"] = "stable"
         self._sensor_states["vpd_trend"] = "stable"
 
-        # --- Trend Analysis for Stress ---
         for sensor_key, trend_key in [
             ("temperature", "temperature_trend"),
             ("humidity", "humidity_trend"),
@@ -621,23 +655,22 @@ class BayesianStressSensor(BayesianEnvironmentSensor):
             trend_sensor_id = self.env_config.get(f"{sensor_key}_trend_sensor")
             stats_sensor_id = self.env_config.get(f"{sensor_key}_stats_sensor")
 
+            # --- External Trend Sensor Logic (If/Elif/Else Chain for Source) ---
             if trend_sensor_id:
                 trend_state = self.hass.states.get(trend_sensor_id)
                 if trend_state and trend_state.state == "on":  # Rising trend
                     self._sensor_states[trend_key] = "rising"
                     gradient = trend_state.attributes.get("gradient", 0)
-                    if gradient > 0.1:
-                        prob = self.env_config.get("prob_trend_fast_rise", (0.95, 0.15))
-                        observations.append(prob)
-                        self._reasons.append(
-                            (prob[0], f"{sensor_key.capitalize()} rising fast")
-                        )
-                    else:
-                        prob = self.env_config.get("prob_trend_slow_rise", (0.75, 0.30))
-                        observations.append(prob)
-                        self._reasons.append(
-                            (prob[0], f"{sensor_key.capitalize()} rising")
-                        )
+                    prob = (
+                        self.env_config.get("prob_trend_fast_rise", (0.95, 0.15))
+                        if gradient > 0.1
+                        else self.env_config.get("prob_trend_slow_rise", (0.75, 0.30))
+                    )
+                    observations.append(prob)
+                    reason_suffix = " fast" if gradient > 0.1 else ""
+                    reasons.append(
+                        (prob[0], f"{sensor_key.capitalize()} rising{reason_suffix}")
+                    )
 
             elif stats_sensor_id:
                 stats_state = self.hass.states.get(stats_sensor_id)
@@ -650,11 +683,9 @@ class BayesianStressSensor(BayesianEnvironmentSensor):
                         self._sensor_states[trend_key] = "rising"
                         prob = (0.85, 0.25)
                         observations.append(prob)
-                        self._reasons.append(
-                            (prob[0], f"{sensor_key.capitalize()} rising")
-                        )
+                        reasons.append((prob[0], f"{sensor_key.capitalize()} rising"))
 
-            else:  # Fallback to manual analysis
+            else:  # Fallback to manual analysis (Requires await)
                 duration = self.env_config.get(f"{sensor_key}_trend_duration", 30)
                 threshold = self.env_config.get(f"{sensor_key}_trend_threshold", 26.0)
                 sensitivity = self.env_config.get(
@@ -670,205 +701,256 @@ class BayesianStressSensor(BayesianEnvironmentSensor):
                         p_false = 0.5 - (sensitivity * 0.4)
                         prob = (p_true, p_false)
                         observations.append(prob)
-                        self._reasons.append(
-                            (prob[0], f"{sensor_key.capitalize()} rising")
-                        )
+                        reasons.append((prob[0], f"{sensor_key.capitalize()} rising"))
 
-        # --- Direct Observations ---
-        if state.temp is not None:
-            if not state.is_lights_on and state.temp > 24:
-                prob = self.env_config.get("prob_night_temp_high", (0.80, 0.20))
-                observations.append(prob)
-                self._reasons.append((prob[0], f"Night Temp High ({state.temp})"))
+        return observations, reasons
 
-            if state.temp > 32:
-                prob = self.env_config.get("prob_temp_extreme_heat", (0.98, 0.05))
-                observations.append(prob)
-                self._reasons.append((prob[0], f"Extreme Heat ({state.temp})"))
-            elif state.temp > 30:
-                prob = self.env_config.get("prob_temp_high_heat", (0.85, 0.15))
-                observations.append(prob)
-                self._reasons.append((prob[0], f"High Heat ({state.temp})"))
-            elif state.flower_days >= 42 and state.temp > 24:
-                prob = (0.70, 0.30)
-                observations.append(prob)
-                self._reasons.append((prob[0], f"Temp Warm ({state.temp})"))
-            elif state.temp > 28:
-                prob = self.env_config.get("prob_temp_warm", (0.65, 0.30))
-                observations.append(prob)
-                self._reasons.append((prob[0], f"Temp Warm ({state.temp})"))
-            elif state.temp < 15:
-                prob = self.env_config.get("prob_temp_extreme_cold", (0.95, 0.08))
-                observations.append(prob)
-                self._reasons.append((prob[0], f"Extreme Cold ({state.temp})"))
-            elif state.temp < 18:
-                prob = self.env_config.get("prob_temp_cold", (0.80, 0.20))
-                observations.append(prob)
-                self._reasons.append((prob[0], f"Temp Cold ({state.temp})"))
+    def _evaluate_direct_temp_stress(
+        self, state: EnvironmentState
+    ) -> tuple[list[tuple[float, float]], list[tuple[float, str]]]:
+        """Evaluate temperature against extreme/out-of-range stress thresholds."""
+        observations = []
+        reasons = []
 
-        if state.humidity is not None:
-            if state.humidity < 35:
-                prob = self.env_config.get("prob_humidity_too_dry", (0.85, 0.20))
-                observations.append(prob)
-                self._reasons.append((prob[0], f"Humidity Dry ({state.humidity})"))
-            # Check for high humidity based on growth stage
-            if state.flower_days == 0 and state.veg_days < 14 and state.humidity > 80:
-                prob = self.env_config.get("prob_humidity_high_veg_early", (0.80, 0.20))
-                observations.append(prob)
-                self._reasons.append((prob[0], f"Humidity High ({state.humidity})"))
-            elif (
-                state.flower_days == 0 and state.veg_days >= 14 and state.humidity > 70
-            ):
-                prob = self.env_config.get("prob_humidity_high_veg_late", (0.85, 0.15))
-                observations.append(prob)
-                self._reasons.append((prob[0], f"Humidity High ({state.humidity})"))
-            elif 0 < state.flower_days < 42 and (
-                state.humidity > 55 or state.humidity < 45
-            ):  # Early Flower
-                if state.humidity > 55 or state.humidity < 45:
-                    prob = (0.75, 0.25)
-                    observations.append(prob)
-                    self._reasons.append(
-                        (prob[0], f"Humidity out of range ({state.humidity})")
-                    )
-            elif state.flower_days >= 42 and (
-                state.humidity > 50 or state.humidity < 40
-            ):  # Late Flower
-                if state.humidity > 50 or state.humidity < 40:
-                    prob = (0.85, 0.15)
-                    observations.append(prob)
-                    self._reasons.append(
-                        (prob[0], f"Humidity out of range ({state.humidity})")
-                    )
+        if state.temp is None:
+            return observations, reasons
 
-        if state.vpd is not None:
-            # Define VPD thresholds for each stage, day and night
-            vpd_thresholds = {
-                "veg_early": {
-                    "day": {
-                        "stress": (0.3, 1.0),
-                        "mild": (0.4, 0.8),
-                        "prob_keys": (
-                            "prob_vpd_stress_veg_early",
-                            "prob_vpd_mild_stress_veg_early",
-                        ),
-                        "prob_defaults": ((0.85, 0.15), (0.60, 0.30)),
-                    },
-                    "night": {
-                        "stress": (0.3, 1.0),
-                        "mild": (0.4, 0.8),
-                        "prob_keys": (
-                            "prob_vpd_stress_veg_early",
-                            "prob_vpd_mild_stress_veg_early",
-                        ),
-                        "prob_defaults": ((0.85, 0.15), (0.60, 0.30)),
-                    },
+        temp = state.temp
+
+        # 1: Night High Temp Check ---
+        # This check is independent of the main stress cascade and was previously a separate 'if'.
+        if not state.is_lights_on and temp > 24:
+            prob = self.env_config.get("prob_night_temp_high", (0.80, 0.20))
+            observations.append(prob)
+            reasons.append((prob[0], f"Night Temp High ({temp})"))
+
+        # 2: General Stress/Warm/Cold Checks ---
+        # These checks cascade for priority, but are independent of the night check above.
+        if temp > 32:
+            prob = self.env_config.get("prob_temp_extreme_heat", (0.98, 0.05))
+            observations.append(prob)
+            reasons.append((prob[0], f"Extreme Heat ({temp})"))
+        elif temp > 30:
+            prob = self.env_config.get("prob_temp_high_heat", (0.85, 0.15))
+            observations.append(prob)
+            reasons.append((prob[0], f"High Heat ({temp})"))
+        elif state.flower_days >= 42 and temp > 24:
+            prob = (0.70, 0.30)
+            observations.append(prob)
+            reasons.append((prob[0], f"Temp Warm ({temp})"))
+        elif temp > 28:
+            prob = self.env_config.get("prob_temp_warm", (0.65, 0.30))
+            observations.append(prob)
+            reasons.append((prob[0], f"Temp Warm ({temp})"))
+        elif temp < 15:
+            prob = self.env_config.get("prob_temp_extreme_cold", (0.95, 0.08))
+            observations.append(prob)
+            reasons.append((prob[0], f"Extreme Cold ({temp})"))
+        elif temp < 18:
+            prob = self.env_config.get("prob_temp_cold", (0.80, 0.20))
+            observations.append(prob)
+            reasons.append((prob[0], f"Temp Cold ({temp})"))
+
+        return observations, reasons
+
+    def _evaluate_direct_humidity_stress(
+        self, state: EnvironmentState
+    ) -> tuple[list[tuple[float, float]], list[tuple[float, str]]]:
+        """Evaluate humidity against stage-dependent stress thresholds."""
+        observations = []
+        reasons = []
+
+        if state.humidity is None:
+            return observations, reasons
+
+        hum = state.humidity
+
+        # Universal low humidity check
+        if hum < 35:
+            prob = self.env_config.get("prob_humidity_too_dry", (0.85, 0.20))
+            observations.append(prob)
+            reasons.append((prob[0], f"Humidity Dry ({hum})"))
+
+        # Stage-specific high humidity/out-of-range checks
+        veg_early = state.flower_days == 0 and state.veg_days < 14
+        veg_late = state.flower_days == 0 and state.veg_days >= 14
+        flower_early = 0 < state.flower_days < 42
+        flower_late = state.flower_days >= 42
+
+        # Use elif for mutually exclusive stage checks
+        if veg_early and hum > 80:
+            prob = self.env_config.get("prob_humidity_high_veg_early", (0.80, 0.20))
+            observations.append(prob)
+            reasons.append((prob[0], f"Humidity High ({hum})"))
+        elif veg_late and hum > 70:
+            prob = self.env_config.get("prob_humidity_high_veg_late", (0.85, 0.15))
+            observations.append(prob)
+            reasons.append((prob[0], f"Humidity High ({hum})"))
+        elif flower_early and (hum > 55 or hum < 45):
+            prob = (0.75, 0.25)
+            observations.append(prob)
+            reasons.append((prob[0], f"Humidity out of range (45-55) ({hum})"))
+        elif flower_late and (hum > 50 or hum < 40):
+            prob = (0.85, 0.15)
+            observations.append(prob)
+            reasons.append((prob[0], f"Humidity out of range (40-50) ({hum})"))
+
+        return observations, reasons
+
+    def _determine_vpd_stage_thresholds(self, state: EnvironmentState) -> dict | None:
+        """Determine the current stage and return the necessary thresholds."""
+        vpd_thresholds = {
+            "veg_early": {  # flower_days == 0 and veg_days < 14
+                "day": {
+                    "stress": (0.3, 1.0),
+                    "mild": (0.4, 0.8),
+                    "prob_keys": (
+                        "prob_vpd_stress_veg_early",
+                        "prob_vpd_mild_stress_veg_early",
+                    ),
+                    "prob_defaults": ((0.85, 0.15), (0.60, 0.30)),
                 },
-                "veg_late": {
-                    "day": {
-                        "stress": (0.6, 1.4),
-                        "mild": (0.8, 1.2),
-                        "prob_keys": (
-                            "prob_vpd_stress_veg_late",
-                            "prob_vpd_mild_stress_veg_late",
-                        ),
-                        "prob_defaults": ((0.80, 0.18), (0.55, 0.35)),
-                    },
-                    "night": {
-                        "stress": (0.3, 1.0),
-                        "mild": (0.5, 0.8),
-                        "prob_keys": (
-                            "prob_vpd_stress_veg_late",
-                            "prob_vpd_mild_stress_veg_late",
-                        ),
-                        "prob_defaults": ((0.80, 0.18), (0.55, 0.35)),
-                    },
+                "night": {
+                    "stress": (0.3, 1.0),
+                    "mild": (0.4, 0.8),
+                    "prob_keys": (
+                        "prob_vpd_stress_veg_early",
+                        "prob_vpd_mild_stress_veg_early",
+                    ),
+                    "prob_defaults": ((0.85, 0.15), (0.60, 0.30)),
                 },
-                "flower_early": {
-                    "day": {
-                        "stress": (0.8, 1.6),
-                        "mild": (1.0, 1.5),
-                        "prob_keys": (
-                            "prob_vpd_stress_flower_early",
-                            "prob_vpd_mild_stress_flower_early",
-                        ),
-                        "prob_defaults": ((0.85, 0.15), (0.60, 0.30)),
-                    },
-                    "night": {
-                        "stress": (0.5, 1.1),
-                        "mild": (0.7, 1.0),
-                        "prob_keys": (
-                            "prob_vpd_stress_flower_early",
-                            "prob_vpd_mild_stress_flower_early",
-                        ),
-                        "prob_defaults": ((0.85, 0.15), (0.60, 0.30)),
-                    },
+            },
+            "veg_late": {  # flower_days == 0 and veg_days >= 14
+                "day": {
+                    "stress": (0.6, 1.4),
+                    "mild": (0.8, 1.2),
+                    "prob_keys": (
+                        "prob_vpd_stress_veg_late",
+                        "prob_vpd_mild_stress_veg_late",
+                    ),
+                    "prob_defaults": ((0.80, 0.18), (0.55, 0.35)),
                 },
-                "flower_late": {
-                    "day": {
-                        "stress": (1.0, 1.6),
-                        "mild": (1.2, 1.5),
-                        "prob_keys": (
-                            "prob_vpd_stress_flower_late",
-                            "prob_vpd_mild_stress_flower_late",
-                        ),
-                        "prob_defaults": ((0.90, 0.12), (0.65, 0.28)),
-                    },
-                    "night": {
-                        "stress": (0.6, 1.2),
-                        "mild": (0.8, 1.1),
-                        "prob_keys": (
-                            "prob_vpd_stress_flower_late",
-                            "prob_vpd_mild_stress_flower_late",
-                        ),
-                        "prob_defaults": ((0.90, 0.12), (0.65, 0.28)),
-                    },
+                "night": {
+                    "stress": (0.3, 1.0),
+                    "mild": (0.5, 0.8),
+                    "prob_keys": (
+                        "prob_vpd_stress_veg_late",
+                        "prob_vpd_mild_stress_veg_late",
+                    ),
+                    "prob_defaults": ((0.80, 0.18), (0.55, 0.35)),
                 },
-            }
+            },
+            "flower_early": {  # 0 < flower_days < 42
+                "day": {
+                    "stress": (0.8, 1.6),
+                    "mild": (1.0, 1.5),
+                    "prob_keys": (
+                        "prob_vpd_stress_flower_early",
+                        "prob_vpd_mild_stress_flower_early",
+                    ),
+                    "prob_defaults": ((0.85, 0.15), (0.60, 0.30)),
+                },
+                "night": {
+                    "stress": (0.5, 1.1),
+                    "mild": (0.7, 1.0),
+                    "prob_keys": (
+                        "prob_vpd_stress_flower_early",
+                        "prob_vpd_mild_stress_flower_early",
+                    ),
+                    "prob_defaults": ((0.85, 0.15), (0.60, 0.30)),
+                },
+            },
+            "flower_late": {  # flower_days >= 42
+                "day": {
+                    "stress": (1.0, 1.6),
+                    "mild": (1.2, 1.5),
+                    "prob_keys": (
+                        "prob_vpd_stress_flower_late",
+                        "prob_vpd_mild_stress_flower_late",
+                    ),
+                    "prob_defaults": ((0.90, 0.12), (0.65, 0.28)),
+                },
+                "night": {
+                    "stress": (0.6, 1.2),
+                    "mild": (0.8, 1.1),
+                    "prob_keys": (
+                        "prob_vpd_stress_flower_late",
+                        "prob_vpd_mild_stress_flower_late",
+                    ),
+                    "prob_defaults": ((0.90, 0.12), (0.65, 0.28)),
+                },
+            },
+        }
 
-            # Determine current growth stage
-            stage = None
-            if state.flower_days == 0 and state.veg_days < 14:
-                stage = "veg_early"
-            elif state.flower_days == 0 and state.veg_days >= 14:
-                stage = "veg_late"
-            elif 0 < state.flower_days < 42:
-                stage = "flower_early"
-            elif state.flower_days >= 42:
-                stage = "flower_late"
+        # Determine current growth stage
+        stage_key = None
+        if state.flower_days == 0 and state.veg_days < 14:
+            stage_key = "veg_early"
+        elif state.flower_days == 0 and state.veg_days >= 14:
+            stage_key = "veg_late"
+        elif 0 < state.flower_days < 42:
+            stage_key = "flower_early"
+        elif state.flower_days >= 42:
+            stage_key = "flower_late"
 
-            if stage:
-                time_of_day = "day" if state.is_lights_on else "night"
-                thresholds = vpd_thresholds[stage][time_of_day]
+        if stage_key:
+            time_of_day = "day" if state.is_lights_on else "night"
+            return vpd_thresholds[stage_key][time_of_day]
 
-                stress_low, stress_high = thresholds["stress"]
-                mild_low, mild_high = thresholds["mild"]
-                prob_stress_key, prob_mild_key = thresholds["prob_keys"]
-                prob_stress_default, prob_mild_default = thresholds["prob_defaults"]
+        return None
 
-                if state.vpd < stress_low or state.vpd > stress_high:
-                    prob = self.env_config.get(prob_stress_key, prob_stress_default)
-                    observations.append(prob)
-                    self._reasons.append((prob[0], f"VPD out of range ({state.vpd})"))
-                elif state.vpd < mild_low or state.vpd > mild_high:
-                    prob = self.env_config.get(prob_mild_key, prob_mild_default)
-                    observations.append(prob)
-                    self._reasons.append((prob[0], f"VPD out of range ({state.vpd})"))
+    def _evaluate_direct_vpd_stress(
+        self, state: EnvironmentState
+    ) -> tuple[list[tuple[float, float]], list[tuple[float, str]]]:
+        """Evaluate VPD against stage-dependent stress thresholds."""
+        observations = []
+        reasons = []
 
-        if state.co2 is not None:
-            if state.co2 < 400:
-                prob = (0.80, 0.25)
+        if state.vpd is None:
+            return observations, reasons
+
+        thresholds = self._determine_vpd_stage_thresholds(state)
+
+        if thresholds:
+            stress_low, stress_high = thresholds["stress"]
+            mild_low, mild_high = thresholds["mild"]
+            prob_stress_key, prob_mild_key = thresholds["prob_keys"]
+            prob_stress_default, prob_mild_default = thresholds["prob_defaults"]
+
+            if state.vpd < stress_low or state.vpd > stress_high:
+                prob = self.env_config.get(prob_stress_key, prob_stress_default)
                 observations.append(prob)
-                self._reasons.append((prob[0], f"CO2 Low ({state.co2})"))
-            elif state.co2 > 1600:
-                prob = (0.95, 0.10)
+                reasons.append((prob[0], f"VPD out of range ({state.vpd})"))
+            elif state.vpd < mild_low or state.vpd > mild_high:
+                prob = self.env_config.get(prob_mild_key, prob_mild_default)
                 observations.append(prob)
-                self._reasons.append((prob[0], f"CO2 High ({state.co2})"))
+                reasons.append((prob[0], f"VPD out of range ({state.vpd})"))
 
-        self._probability = self._calculate_bayesian_probability(
-            self.prior, observations
-        )
-        self.async_write_ha_state()
+        return observations, reasons
+
+    def _evaluate_direct_co2_stress(
+        self, state: EnvironmentState
+    ) -> tuple[list[tuple[float, float]], list[tuple[float, str]]]:
+        """Evaluate CO2 against low/high stress thresholds."""
+        observations = []
+        reasons = []
+
+        if state.co2 is None:
+            return observations, reasons
+
+        co2 = state.co2
+
+        # Universal CO2 stress checks (not stage-dependent in this sensor's logic)
+        if co2 < 400:
+            prob = (0.80, 0.25)
+            observations.append(prob)
+            reasons.append((prob[0], f"CO2 Low ({co2})"))
+        elif co2 > 1600:
+            prob = (0.95, 0.10)
+            observations.append(prob)
+            reasons.append((prob[0], f"CO2 High ({co2})"))
+
+        return observations, reasons
 
 
 class LightCycleVerificationSensor(BinarySensorEntity):
@@ -979,23 +1061,17 @@ class LightCycleVerificationSensor(BinarySensorEntity):
         stage_info = self._get_growth_stage_info()
         is_flower_stage = stage_info["flower_days"] > 0
 
-        # Veg stage: 18 hours on, 6 hours off
-        if not is_flower_stage:
-            if is_light_on:
-                # Light should not be on for *more* than 18 hours
-                self._is_correct = time_since_last_changed <= timedelta(hours=18)
-            else:
-                # Light should not be off for *more* than 6 hours
-                self._is_correct = time_since_last_changed <= timedelta(hours=6)
+        # Determine the schedule duration based on the stage:
+        #    Flower (12/12) is max 12h ON, 12h OFF.
+        #    Veg (18/6) is max 18h ON, 6h OFF.
+        max_on_duration_hours = 12 if is_flower_stage else 18
+        max_off_duration_hours = 12 if is_flower_stage else 6
 
-        # Flower stage: 12 hours on, 12 hours off
-        else:
-            if is_light_on:
-                # Light should not be on for *more* than 12 hours
-                self._is_correct = time_since_last_changed <= timedelta(hours=12)
-            else:
-                # Light should not be off for *more* than 12 hours
-                self._is_correct = time_since_last_changed <= timedelta(hours=12)
+        # Select the correct time limit (ON or OFF duration)
+        limit_hours = max_on_duration_hours if is_light_on else max_off_duration_hours
+
+        # Apply the single check
+        self._is_correct = time_since_last_changed <= timedelta(hours=limit_hours)
 
         self._time_in_current_state = time_since_last_changed
         self.async_write_ha_state()
@@ -1333,184 +1409,218 @@ class BayesianOptimalConditionsSensor(BayesianEnvironmentSensor):
         state = self._get_base_environment_state()
         observations = []
 
-        # --- Constants for Probability ---
-        # (P(Obs|True), P(Obs|False))
-        prob_perfect = (0.95, 0.20)
-        prob_good = (0.85, 0.30)
-        prob_acceptable = (0.65, 0.45)
-        prob_out_of_range = (0.20, 0.75)
-        prob_vpd_out_of_range = (0.25, 0.70)
+        # 1. OPTIMAL TEMPERATURE
+        temp_obs, temp_reasons = self._evaluate_optimal_temperature(state)
+        observations.extend(temp_obs)
+        self._reasons.extend(temp_reasons)
 
-        # --- 1. OPTIMAL TEMPERATURE ---
-        if state.temp is not None:
-            # Match against (is_lights_on, flower_days) for branching logic
-            match (state.is_lights_on, state.flower_days):
-                # Case A: Lights ON & Late Flower (Days >= 42)
-                case True, days if days >= 42:
-                    if 18 <= state.temp <= 24:  # Perfect range for late flower
-                        observations.append(prob_perfect)
-                    else:
-                        observations.append(prob_out_of_range)
-                        self._reasons.append(
-                            (
-                                prob_out_of_range[1],
-                                f"Temp out of range Late Flower ({state.temp})",
-                            )
-                        )
+        # 2. OPTIMAL VPD
+        vpd_obs, vpd_reasons = self._evaluate_optimal_vpd(state)
+        observations.extend(vpd_obs)
+        self._reasons.extend(vpd_reasons)
 
-                # Case B: Lights ON & Normal (Days < 42 or Veg)
-                case True, _:
-                    if 24 <= state.temp <= 26:
-                        observations.append(prob_perfect)
-                    elif 22 <= state.temp <= 28:
-                        observations.append(prob_good)
-                    elif 20 <= state.temp <= 29:
-                        observations.append(prob_acceptable)
-                    else:
-                        observations.append(prob_out_of_range)
-                        self._reasons.append(
-                            (prob_out_of_range[1], f"Temp out of range ({state.temp})")
-                        )
-
-                # Case C: Lights OFF (Nighttime)
-                case False, _:
-                    if 20 <= state.temp <= 23:
-                        observations.append(prob_perfect)
-                    else:
-                        observations.append(prob_out_of_range)
-                        self._reasons.append(
-                            (
-                                prob_out_of_range[1],
-                                f"Night temp out of range ({state.temp})",
-                            )
-                        )
-
-        # --- 2. OPTIMAL VPD (Refactored for clarity) ---
-        if state.vpd is not None:
-            vpd_optimal = False
-
-            # Define VPD stages based on growth cycle
-            vpd_stages = {
-                # is_lights_on: (veg_start, veg_end, flower_start, flower_end)
-                "DAY": [
-                    (
-                        (0, 14, 0, 0),
-                        (0.5, 0.7),
-                        (0.4, 0.8),
-                        (0.95, 0.18),
-                        (0.80, 0.28),
-                    ),  # Early Veg
-                    (
-                        (14, float("inf"), 0, 0),
-                        (0.9, 1.1),
-                        (0.8, 1.2),
-                        (0.95, 0.18),
-                        (0.85, 0.25),
-                    ),  # Late Veg
-                    (
-                        (0, float("inf"), 1, 42),
-                        (1.1, 1.4),
-                        (1.0, 1.5),
-                        (0.95, 0.18),
-                        (0.85, 0.25),
-                    ),  # Early/Mid Flower
-                    (
-                        (0, float("inf"), 42, float("inf")),
-                        (1.3, 1.5),
-                        (1.2, 1.6),
-                        (0.95, 0.15),
-                        (0.85, 0.22),
-                    ),  # Late Flower
-                ],
-                "NIGHT": [
-                    (
-                        (0, 14, 0, 0),
-                        (0.4, 0.8),
-                        (0.4, 0.8),
-                        (0.90, 0.20),
-                        (0.90, 0.20),
-                    ),  # Early Veg (Night: usually only one range)
-                    (
-                        (14, float("inf"), 0, 0),
-                        (0.6, 1.1),
-                        (0.6, 1.1),
-                        (0.90, 0.20),
-                        (0.90, 0.20),
-                    ),  # Late Veg
-                    (
-                        (0, float("inf"), 1, 42),
-                        (0.8, 1.2),
-                        (0.8, 1.2),
-                        (0.90, 0.20),
-                        (0.90, 0.20),
-                    ),  # Early/Mid Flower
-                    (
-                        (0, float("inf"), 42, float("inf")),
-                        (0.9, 1.2),
-                        (0.9, 1.2),
-                        (0.90, 0.20),
-                        (0.90, 0.20),
-                    ),  # Late Flower
-                ],
-            }
-
-            # Get appropriate stages based on lights state
-            stage_list = (
-                vpd_stages["DAY"] if state.is_lights_on else vpd_stages["NIGHT"]
-            )
-
-            for (v_min, v_max, f_min, f_max), (p_low, p_high), (
-                g_low,
-                g_high,
-            ), p_perf, p_good in stage_list:
-                # Check if current state matches the stage criteria
-                is_veg = state.flower_days == 0 and v_min <= state.veg_days < v_max
-                is_flower = state.flower_days > 0 and f_min <= state.flower_days < f_max
-
-                if is_veg or is_flower:
-                    # Check performance within the stage
-                    if p_low <= state.vpd <= p_high:  # Perfect Range
-                        vpd_optimal = True
-                        observations.append(p_perf)
-                    elif g_low <= state.vpd <= g_high:  # Good/Acceptable Range
-                        observations.append(p_good)
-
-                    break  # Matched a stage, stop checking
-
-            # If no optimal range was met for the identified stage, apply penalty
-            if not vpd_optimal:
-                observations.append(prob_vpd_out_of_range)
-                self._reasons.append(
-                    (prob_vpd_out_of_range[1], f"VPD out of range ({state.vpd})")
-                )
-
-        # --- 3. GOOD CO2 LEVELS (Minor cleanup, not ideal for match/case due to ranges) ---
-        if state.co2 is not None:
-            if state.flower_days >= 42:
-                # Late flower prefers lower CO2
-                co2 = state.co2
-                if 400 <= co2 <= 800:
-                    observations.append((0.90, 0.25))
-                elif 800 < co2 <= 1200:
-                    observations.append((0.4, 0.6))  # Slightly negative
-                # Else (outside 400-1200): no observation, let stress handle low/high extremes.
-            else:
-                # Normal/Veg/Early Flower logic
-                co2 = state.co2
-                if 1000 <= co2 <= 1400:
-                    observations.append(prob_perfect)
-                elif 800 <= co2 <= 1500:
-                    observations.append(prob_good)
-                elif 400 <= co2 <= 600:
-                    observations.append((0.60, 0.45))
-                else:
-                    observations.append(prob_out_of_range)
-                    reason_detail = "CO2 Low" if co2 < 400 else "CO2 High"
-                    self._reasons.append(
-                        (prob_out_of_range[1], f"{reason_detail} ({co2})")
-                    )
+        # 3. OPTIMAL CO2 LEVELS
+        co2_obs, co2_reasons = self._evaluate_optimal_co2(state)
+        observations.extend(co2_obs)
+        self._reasons.extend(co2_reasons)
 
         self._probability = self._calculate_bayesian_probability(
             self.prior, observations
         )
         self.async_write_ha_state()
+
+    # =========================================================================
+    # HELPER EVALUATION METHODS
+    # =========================================================================
+
+    def _evaluate_optimal_temperature(
+        self, state: EnvironmentState
+    ) -> tuple[list[tuple[float, float]], list[tuple[float, str]]]:
+        """Evaluate temperature against optimal ranges for the current stage/light cycle."""
+        observations = []
+        reasons = []
+
+        if state.temp is None:
+            return observations, reasons
+
+        # Constants (using snake_case per Pylint suggestion for local variables)
+        prob_perfect = (0.95, 0.20)
+        prob_good = (0.85, 0.30)
+        prob_acceptable = (0.65, 0.45)
+        prob_out_of_range = (0.20, 0.75)
+
+        # Match against (is_lights_on, flower_days) for branching logic
+        match (state.is_lights_on, state.flower_days):
+            # Case A: Lights ON & Late Flower (Days >= 42)
+            case True, days if days >= 42:
+                if 18 <= state.temp <= 24:  # Perfect range for late flower
+                    observations.append(prob_perfect)
+                else:
+                    observations.append(prob_out_of_range)
+                    reasons.append(
+                        (
+                            prob_out_of_range[1],
+                            f"Temp out of range Late Flower ({state.temp})",
+                        )
+                    )
+
+            # Case B: Lights ON & Normal (Days < 42 or Veg)
+            case True, _:
+                if 24 <= state.temp <= 26:
+                    observations.append(prob_perfect)
+                elif 22 <= state.temp <= 28:
+                    observations.append(prob_good)
+                elif 20 <= state.temp <= 29:
+                    observations.append(prob_acceptable)
+                else:
+                    observations.append(prob_out_of_range)
+                    reasons.append(
+                        (prob_out_of_range[1], f"Temp out of range ({state.temp})")
+                    )
+
+            # Case C: Lights OFF (Nighttime)
+            case False, _:
+                if 20 <= state.temp <= 23:
+                    observations.append(prob_perfect)
+                else:
+                    observations.append(prob_out_of_range)
+                    reasons.append(
+                        (
+                            prob_out_of_range[1],
+                            f"Night temp out of range ({state.temp})",
+                        )
+                    )
+        return observations, reasons
+
+    def _evaluate_optimal_vpd(
+        self, state: EnvironmentState
+    ) -> tuple[list[tuple[float, float]], list[tuple[float, str]]]:
+        """Evaluate VPD against optimal ranges for the current stage/light cycle."""
+        observations = []
+        reasons = []
+
+        if state.vpd is None:
+            return observations, reasons
+
+        vpd_optimal = False
+        prob_vpd_out_of_range = (0.25, 0.70)
+
+        # Define VPD stages: (veg_min, veg_max, flower_min, flower_max),
+        # (P_low, P_high), (G_low, G_high), P_perf, P_good
+        vpd_stages = {
+            "DAY": [
+                ((0, 14, 0, 0), (0.5, 0.7), (0.4, 0.8), (0.95, 0.18), (0.80, 0.28)),
+                (
+                    (14, float("inf"), 0, 0),
+                    (0.9, 1.1),
+                    (0.8, 1.2),
+                    (0.95, 0.18),
+                    (0.85, 0.25),
+                ),
+                (
+                    (0, float("inf"), 1, 42),
+                    (1.1, 1.4),
+                    (1.0, 1.5),
+                    (0.95, 0.18),
+                    (0.85, 0.25),
+                ),
+                (
+                    (0, float("inf"), 42, float("inf")),
+                    (1.3, 1.5),
+                    (1.2, 1.6),
+                    (0.95, 0.15),
+                    (0.85, 0.22),
+                ),
+            ],
+            "NIGHT": [
+                ((0, 14, 0, 0), (0.4, 0.8), (0.4, 0.8), (0.90, 0.20), (0.90, 0.20)),
+                (
+                    (14, float("inf"), 0, 0),
+                    (0.6, 1.1),
+                    (0.6, 1.1),
+                    (0.90, 0.20),
+                    (0.90, 0.20),
+                ),
+                (
+                    (0, float("inf"), 1, 42),
+                    (0.8, 1.2),
+                    (0.8, 1.2),
+                    (0.90, 0.20),
+                    (0.90, 0.20),
+                ),
+                (
+                    (0, float("inf"), 42, float("inf")),
+                    (0.9, 1.2),
+                    (0.9, 1.2),
+                    (0.90, 0.20),
+                    (0.90, 0.20),
+                ),
+            ],
+        }
+
+        stage_list = vpd_stages["DAY"] if state.is_lights_on else vpd_stages["NIGHT"]
+
+        for (v_min, v_max, f_min, f_max), (p_low, p_high), (
+            g_low,
+            g_high,
+        ), prob_perf, prob_good in stage_list:
+            is_veg = state.flower_days == 0 and v_min <= state.veg_days < v_max
+            is_flower = state.flower_days > 0 and f_min <= state.flower_days < f_max
+
+            if is_veg or is_flower:
+                # Check performance within the stage
+                if p_low <= state.vpd <= p_high:  # Perfect Range
+                    vpd_optimal = True
+                    observations.append(prob_perf)
+                elif g_low <= state.vpd <= g_high:  # Good/Acceptable Range
+                    observations.append(prob_good)
+
+                break  # Matched a stage, stop checking
+
+        # If not optimal, reduce probability
+        if not vpd_optimal:
+            observations.append(prob_vpd_out_of_range)
+            reasons.append(
+                (prob_vpd_out_of_range[1], f"VPD out of range ({state.vpd})")
+            )
+
+        return observations, reasons
+
+    def _evaluate_optimal_co2(
+        self, state: EnvironmentState
+    ) -> tuple[list[tuple[float, float]], list[tuple[float, str]]]:
+        """Evaluate CO2 levels against optimal ranges for the current stage."""
+        observations = []
+        reasons = []
+
+        if state.co2 is None:
+            return observations, reasons
+
+        # Constants (retrieved from surrounding context)
+        prob_perfect = (0.95, 0.20)
+        prob_good = (0.85, 0.30)
+        prob_acceptable = (0.60, 0.45)
+        prob_out_of_range = (0.20, 0.75)
+        co2 = state.co2
+
+        # Use match/case on the result of the stage check (True or False)
+        match state.flower_days >= 42:
+            case True:  # Late Flower Logic
+                # Late flower prefers lower CO2
+                if 400 <= co2 <= 800:
+                    observations.append((0.90, 0.25))
+                elif 800 < co2 <= 1200:
+                    observations.append((0.4, 0.6))
+
+            case False:  # Normal/Veg/Early Flower logic
+                if 1000 <= co2 <= 1400:
+                    observations.append(prob_perfect)
+                elif 800 <= co2 <= 1500:
+                    observations.append(prob_good)
+                elif 400 <= co2 <= 600:
+                    observations.append(prob_acceptable)
+                else:
+                    observations.append(prob_out_of_range)
+                    reason_detail = "CO2 Low" if co2 < 400 else "CO2 High"
+                    reasons.append((prob_out_of_range[1], f"{reason_detail} ({co2})"))
+        return observations, reasons

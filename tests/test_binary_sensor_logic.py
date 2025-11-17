@@ -1,19 +1,17 @@
 """Tests for the Bayesian environment sensor logic."""
 
-import pytest
-
-from unittest.mock import AsyncMock, MagicMock, patch
 from datetime import datetime, timedelta
+from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
 
 from homeassistant.core import HomeAssistant
 from homeassistant.util.dt import utcnow
-
 
 from custom_components.growspace_manager.binary_sensor import (
     BayesianStressSensor,
     BayesianMoldRiskSensor,
     BayesianOptimalConditionsSensor,
-    LightCycleVerificationSensor,
 )
 from custom_components.growspace_manager.coordinator import GrowspaceCoordinator
 from custom_components.growspace_manager.const import DOMAIN
