@@ -1,6 +1,7 @@
 """Utility functions for date parsing, formatting, and calculations in growspace_manager."""
 
 from __future__ import annotations
+import math
 from datetime import date, datetime
 from dateutil import parser
 from .models import Plant, Growspace
@@ -77,3 +78,36 @@ def generate_growspace_grid(
         r, c = plant.row - 1, plant.col - 1
         grid[r][c] = plant.plant_id
     return grid
+
+
+class VPDCalculator:
+    """A utility class for calculating Vapor Pressure Deficit (VPD)."""
+
+    @staticmethod
+    def calculate_vpd(temperature_c: float, humidity_rh: float) -> float | None:
+        """
+        Calculate Vapor Pressure Deficit (VPD) in kPa.
+
+        Args:
+            temperature_c: Temperature in degrees Celsius.
+            humidity_rh: Relative humidity in percent (e.g., 65.5).
+
+        Returns:
+            The calculated VPD in kilopascals (kPa), or None if inputs are invalid.
+        """
+        if not isinstance(temperature_c, (int, float)) or not isinstance(
+            humidity_rh, (int, float)
+        ):
+            return None
+
+        # Magnus formula to calculate saturation vapor pressure (SVP) in kPa
+        svp = 0.61094 * math.exp(
+            (17.625 * temperature_c) / (243.04 + temperature_c)
+        )
+
+        # Calculate actual vapor pressure (AVP)
+        avp = svp * (humidity_rh / 100)
+
+        # Calculate VPD
+        vpd = svp - avp
+        return round(vpd, 2)

@@ -1,13 +1,16 @@
 """Test plant services."""
 
+from datetime import date
+from unittest.mock import Mock, AsyncMock, patch
+
 import pytest
-from datetime import date, datetime
-from unittest.mock import Mock, AsyncMock, patch, MagicMock
+
+
 from homeassistant.core import HomeAssistant, ServiceCall
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers import event as event_helper
 
-from ..services.plant import (
+from custom_components.growspace_manager.services.plant import (
     handle_add_plant,
     handle_take_clone,
     handle_move_clone,
@@ -18,7 +21,8 @@ from ..services.plant import (
     handle_transition_plant_stage,
     handle_harvest_plant,
 )
-from ..const import DOMAIN
+
+from custom_components.growspace_manager.const import DOMAIN
 
 
 @pytest.fixture
@@ -85,6 +89,7 @@ def mock_plant():
 async def test_add_plant_success(
     hass, mock_coordinator, mock_strain_library, mock_growspace
 ):
+    """Test adding plant."""
     mock_coordinator.growspaces = {"gs1": mock_growspace}
 
     call = ServiceCall(
@@ -109,6 +114,7 @@ async def test_add_plant_success(
     hass.bus.async_listen(f"{DOMAIN}_plant_added", listener)
 
     await handle_add_plant(hass, mock_coordinator, mock_strain_library, call)
+    await hass.async_block_till_done()
 
     mock_coordinator.async_add_plant.assert_called_once()
     mock_coordinator.async_save.assert_called_once()
@@ -333,6 +339,7 @@ async def test_take_clone_success(
 
     # Call the service handler
     await handle_take_clone(hass, mock_coordinator, mock_strain_library, call)
+    await hass.async_block_till_done()
 
     # Assertions
     assert mock_coordinator.async_add_plant.call_count == 2
@@ -491,6 +498,7 @@ async def test_take_clone_partial_failure(
 
     # Run the handler
     await handle_take_clone(hass, mock_coordinator, mock_strain_library, call)
+    await hass.async_block_till_done()
 
     # Assert that the coordinator still saved after the partial success
     mock_coordinator.async_save.assert_called_once()
@@ -540,6 +548,7 @@ async def test_move_clone_success(
 
     # Run the handler
     await handle_move_clone(hass, mock_coordinator, mock_strain_library, call)
+    await hass.async_block_till_done()
 
     # Assertions
     mock_coordinator.async_add_plant.assert_called_once()
@@ -751,6 +760,7 @@ async def test_update_plant_success(
 
     # Act
     await handle_update_plant(hass, mock_coordinator, mock_strain_library, call)
+    await hass.async_block_till_done()
 
     # Assert
     mock_coordinator.async_update_plant.assert_called_once()
@@ -964,6 +974,7 @@ async def test_remove_plant_success(
 
     # Act
     await handle_remove_plant(hass, mock_coordinator, mock_strain_library, call)
+    await hass.async_block_till_done()
 
     # Assert
     mock_coordinator.async_remove_plant.assert_called_once_with("plant_1")
@@ -1066,6 +1077,7 @@ async def test_switch_plants_success(
 
     # Act
     await handle_switch_plants(hass, mock_coordinator, mock_strain_library, call)
+    await hass.async_block_till_done()
 
     # Assert
     mock_coordinator.async_switch_plants.assert_called_once_with("plant_1", "plant_2")
@@ -1202,6 +1214,7 @@ async def test_move_plant_to_empty_position(
 
     # Act
     await handle_move_plant(hass, mock_coordinator, mock_strain_library, call)
+    await hass.async_block_till_done()
 
     # Assert
     mock_coordinator.async_move_plant.assert_called_once_with("plant_1", 3, 3)
@@ -1257,6 +1270,7 @@ async def test_move_plant_switch_with_occupant(
 
     # Act
     await handle_move_plant(hass, mock_coordinator, mock_strain_library, call)
+    await hass.async_block_till_done()
 
     # Assert
     mock_coordinator.async_switch_plants.assert_called_once_with("plant_1", "plant_2")
@@ -1392,6 +1406,7 @@ async def test_transition_plant_stage_success(
     await handle_transition_plant_stage(
         hass, mock_coordinator, mock_strain_library, call
     )
+    await hass.async_block_till_done()
 
     # Assert
     mock_coordinator.async_transition_plant_stage.assert_called_once_with(
@@ -1571,6 +1586,7 @@ async def test_harvest_plant_success(
     hass.bus.async_listen(f"{DOMAIN}_plant_harvested", events.append)
 
     await handle_harvest_plant(hass, mock_coordinator, mock_strain_library, call)
+    await hass.async_block_till_done()
 
     # Assert
     mock_coordinator.async_harvest_plant.assert_called_once_with(
@@ -1635,6 +1651,9 @@ async def test_harvest_plant_entity_id_resolution(
 
     # Act
     await handle_harvest_plant(hass, mock_coordinator, mock_strain_library, call)
+    await hass.async_block_till_done()
+
+    await hass.async_block_till_done()
 
     # Assert
     mock_coordinator.async_harvest_plant.assert_called_once_with(

@@ -20,6 +20,7 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 # Local / relative imports
 from .coordinator import GrowspaceCoordinator
+from .helpers import async_setup_trend_sensor, async_setup_statistics_sensor
 from .models import Plant, Growspace
 from .utils import (
     parse_date_field,
@@ -27,10 +28,30 @@ from .utils import (
     calculate_days_since,
     find_first_free_position,
     generate_growspace_grid,
+    VPDCalculator,
 )
-from .const import DOMAIN, DEFAULT_NOTIFICATION_EVENTS
+from .const import DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
+
+
+async def _async_create_derivative_sensors(
+    hass: HomeAssistant,
+    config_entry: ConfigEntry,
+    growspace: Growspace,
+):
+    """Create trend and statistics sensors for a growspace."""
+    if growspace.environment_config:
+        created_entities = hass.data[DOMAIN][config_entry.entry_id]["created_entities"]
+        for sensor_type in ["temperature", "humidity", "vpd"]:
+            source_sensor = growspace.environment_config.get(f"{sensor_type}_sensor")
+            if source_sensor:
+                trend_unique_id = await async_setup_trend_sensor(hass, source_sensor, growspace.id, growspace.name, sensor_type)
+                if trend_unique_id and trend_unique_id not in created_entities:
+                    created_entities.append(trend_unique_id)
+                stats_unique_id = await async_setup_statistics_sensor(hass, source_sensor, growspace.id, growspace.name, sensor_type)
+                if stats_unique_id and stats_unique_id not in created_entities:
+                    created_entities.append(stats_unique_id)
 
 
 async def async_setup_entry(
@@ -54,6 +75,8 @@ async def async_setup_entry(
         growspace_entities[growspace_id] = gs_entity
         initial_entities.append(gs_entity)
 
+        await _async_create_derivative_sensors(hass, config_entry, growspace)
+
         for plant in coordinator.get_growspace_plants(growspace_id):
             pe = PlantEntity(coordinator, plant)
             plant_entities[plant.plant_id] = pe
@@ -62,18 +85,16 @@ async def async_setup_entry(
     # Add your GrowspaceListSensor
     initial_entities.append(GrowspaceListSensor(coordinator))
 
-    _LOGGER.warning(
-        "DEBUG: coordinator.growspaces = %s",
+    _LOGGER.debug(
+        "coordinator.growspaces = %s",
         {gid: gs.name for gid, gs in coordinator.growspaces.items()},
     )
-    _LOGGER.warning(
-        "DEBUG: Created growspace_entities = %s", list(growspace_entities.keys())
-    )
-    _LOGGER.warning("DEBUG: Total initial_entities = %d", len(initial_entities))
+    _LOGGER.debug("Created growspace_entities = %s", list(growspace_entities.keys()))
+    _LOGGER.debug("Total initial_entities = %d", len(initial_entities))
     for entity in initial_entities:
         if isinstance(entity, GrowspaceOverviewSensor):
-            _LOGGER.warning(
-                "DEBUG: Growspace entity - unique_id=%s, name=%s",
+            _LOGGER.debug(
+                "Growspace entity - unique_id=%s, name=%s",
                 entity.unique_id,
                 entity.name,
             )
@@ -119,6 +140,8 @@ async def async_setup_entry(
                 growspace_entities[growspace_id] = entity
                 async_add_entities([entity])
 
+                await _async_create_derivative_sensors(hass, config_entry, growspace)
+
         # Growspaces: remove deleted
         for removed_gs_id in list(growspace_entities.keys()):
             if removed_gs_id not in coordinator.growspaces:
@@ -145,7 +168,7 @@ async def async_setup_entry(
                 # Try to find and remove from registry
                 ent_reg_entry = entity_registry.async_get(entity.entity_id)
                 if ent_reg_entry:
-                    _LOGGER.warning(
+                    _LOGGER.info(
                         "Removing orphaned plant entity from registry: %s",
                         entity.entity_id,
                     )
@@ -158,6 +181,131 @@ async def async_setup_entry(
         coordinator.hass.async_create_task(_handlecoordinator_update_async())
 
     coordinator.async_add_listener(_listener_callback)
+
+    # Create global VPD sensors
+    global_entities = []
+    global_settings = config_entry.options.get("global_settings", {})
+    if global_settings:
+        if global_settings.get("weather_entity"):
+            global_entities.append(
+                VpdSensor(
+                    coordinator,
+                    "outside",
+                    "Outside VPD",
+                    global_settings.get("weather_entity"),
+                    None,
+                    None,
+                )
+            )
+        if global_settings.get(
+            "lung_room_temp_sensor"
+        ) and global_settings.get("lung_room_humidity_sensor"):
+            global_entities.append(
+                VpdSensor(
+                    coordinator,
+                    "lung_room",
+                    "Lung Room VPD",
+                    None,
+                    global_settings.get("lung_room_temp_sensor"),
+                    global_settings.get("lung_room_humidity_sensor"),
+                )
+            )
+    if global_entities:
+        async_add_entities(global_entities)
+
+    # Add AirExchange recommendation sensors for each growspace
+    air_exchange_sensors = [
+        AirExchangeSensor(coordinator, growspace_id)
+        for growspace_id in coordinator.growspaces
+    ]
+    async_add_entities(air_exchange_sensors)
+
+
+class VpdSensor(CoordinatorEntity[GrowspaceCoordinator], SensorEntity):
+    """Global sensor to calculate VPD for a given location (outside/lung room)."""
+
+    def __init__(
+        self,
+        coordinator: GrowspaceCoordinator,
+        location_id: str,
+        name: str,
+        weather_entity: str | None,
+        temp_sensor: str | None,
+        humidity_sensor: str | None,
+    ) -> None:
+        """Initialize the sensor."""
+        super().__init__(coordinator)
+        self._location_id = location_id
+        self._attr_name = name
+        self._attr_unique_id = f"{DOMAIN}_{location_id}_vpd"
+        self._weather_entity = weather_entity
+        self._temp_sensor = temp_sensor
+        self._humidity_sensor = humidity_sensor
+        self._attr_state_class = SensorStateClass.MEASUREMENT
+        self._attr_native_unit_of_measurement = "kPa"
+        self._attr_icon = "mdi:cloud-check-variant"
+
+    @property
+    def native_value(self) -> float | None:
+        """Return the state of the sensor."""
+        hass = self.coordinator.hass
+        temp = None
+        humidity = None
+
+        if self._weather_entity:
+            weather_state = hass.states.get(self._weather_entity)
+            if weather_state and weather_state.attributes:
+                temp = weather_state.attributes.get("temperature")
+                humidity = weather_state.attributes.get("humidity")
+        elif self._temp_sensor and self._humidity_sensor:
+            temp_state = hass.states.get(self._temp_sensor)
+            if temp_state and temp_state.state not in ["unknown", "unavailable"]:
+                try:
+                    temp = float(temp_state.state)
+                except (ValueError, TypeError):
+                    temp = None
+            humidity_state = hass.states.get(self._humidity_sensor)
+            if humidity_state and humidity_state.state not in ["unknown", "unavailable"]:
+                try:
+                    humidity = float(humidity_state.state)
+                except (ValueError, TypeError):
+                    humidity = None
+
+        if temp is not None and humidity is not None:
+            return VPDCalculator.calculate_vpd(temp, humidity)
+        return None
+
+
+class AirExchangeSensor(CoordinatorEntity[GrowspaceCoordinator], SensorEntity):
+    """Sensor to recommend air exchange action for a growspace."""
+
+    def __init__(
+        self, coordinator: GrowspaceCoordinator, growspace_id: str
+    ) -> None:
+        """Initialize the sensor."""
+        super().__init__(coordinator)
+        self.growspace_id = growspace_id
+        self.growspace = coordinator.growspaces[growspace_id]
+        self._attr_name = f"{self.growspace.name} Air Exchange"
+        self._attr_unique_id = f"{DOMAIN}_{self.growspace_id}_air_exchange"
+        self._attr_icon = "mdi:air-filter"
+
+        self._attr_device_info = DeviceInfo(
+            identifiers={(DOMAIN, self.growspace_id)},
+            name=self.growspace.name,
+            model="Growspace",
+            manufacturer="Growspace Manager",
+        )
+
+    @property
+    def state(self) -> str:
+        """Return the recommended action."""
+        # The actual state is calculated in the coordinator and stored.
+        # This sensor just retrieves it.
+        recommendation = self.coordinator.data.get("air_exchange_recommendations", {}).get(
+            self.growspace_id, "Idle"
+        )
+        return recommendation
 
 
 class GrowspaceOverviewSensor(SensorEntity):
@@ -385,12 +533,6 @@ class PlantEntity(SensorEntity):
         # Get growspace if needed
         growspace = self.coordinator.growspaces.get(plant.growspace_id)
 
-        # Check for notifications for current stage
-        if stage in ["veg", "flower"] and growspace:
-            days = self.coordinator.calculate_days_in_stage(plant, stage)
-            if days and self._should_send_notification(plant, stage, days, growspace):
-                self._send_notification(plant, stage, days, growspace)
-
         return stage
 
     @property
@@ -440,178 +582,58 @@ class PlantEntity(SensorEntity):
             "flower_week": flower_week,
         }
 
-    def _check_and_send_notifications(
-        self, plant: Plant, current_stage: str, growspace: Growspace
-    ) -> None:
-        # Check all stages that could have notifications
-        stages_to_check = []
-
-        # Add current stage
-        stages_to_check.append(current_stage)
-
-        # For plants in later stages, also check if we missed earlier notifications
-        stage_order = ["seedling", "clone", "mother", "veg", "flower", "dry", "cure"]
-        current_index = (
-            stage_order.index(current_stage) if current_stage in stage_order else 0
-        )
-
-        # Check previous stages too (in case we missed notifications during stage transitions)
-        for i, stage in enumerate(stage_order):
-            if i <= current_index and (f"{plant.stage}_start"):
-                stages_to_check.append(stage)
-
-        # Remove duplicates while preserving order
-        stages_to_check = list(dict.fromkeys(stages_to_check))
-
-        for stage in stages_to_check:
-            if stage in [
-                "veg",
-                "flower",
-                "dry",
-                "cure",
-            ]:  # Only stages with notification events
-                days = self.coordinator.calculate_days_in_stage(plant, stage)
-                if days > 0 and self._should_send_notification(
-                    plant, stage, days, growspace
-                ):
-                    self._send_notification(plant, stage, days, growspace)
-
-    def _should_send_notification(
-        self, plant: Plant, stage: str, days: int, growspace: Growspace
-    ) -> bool:
-        """Check if we should send a notification for this plant/stage/days combination."""
-
-        notification_target = growspace.notification_target
-
-        if not notification_target:
-            _LOGGER.debug(
-                "Skipping notification for plant %s (no target set). Stage=%s Days=%s",
-                plant.plant_id,
-                stage,
-                days,
-            )
-            return False
-
-        # ✅ NEW: Check if notifications are enabled for this growspace
-        if not self.coordinator.is_notifications_enabled(plant.growspace_id):
-            _LOGGER.debug(
-                "Skipping notification for plant %s (notifications disabled via switch). Stage=%s Days=%s",
-                plant.plant_id,
-                stage,
-                days,
-            )
-            return False
-
-        # Check if notification already sent
-        should_send = self.coordinator.should_send_notification(
-            plant.plant_id, stage, days
-        )
-
-        has_matching_event = any(
-            event["days"] == days and event["stage"] == stage
-            for event in DEFAULT_NOTIFICATION_EVENTS.values()
-        )
-
-        final_should_send = should_send and has_matching_event
-
-        _LOGGER.debug(
-            "Notification check: Plant=%s Stage=%s Days=%s HasTarget=%s NotificationsEnabled=%s AlreadySent=%s HasEvent=%s → %s",
-            plant.plant_id,
-            stage,
-            days,
-            bool(notification_target),
-            self.coordinator.is_notifications_enabled(plant.growspace_id),
-            not should_send,
-            has_matching_event,
-            final_should_send,
-        )
-
-        return final_should_send
-
-    def _send_notification(
-        self, plant: Plant, stage: str, days: int, growspace: Growspace
-    ):
-        """Send notification for plant milestone."""
-
-        notification_target = growspace.notification_target
-
-        if not notification_target:
-            _LOGGER.debug(
-                "No notification target found for growspace %s", plant.growspace_id
-            )
-            return
-
-        # Find matching notification event
-        message = None
-        for event_data in DEFAULT_NOTIFICATION_EVENTS.values():
-            if event_data["days"] == days and event_data["stage"] == stage:
-                message = event_data["message"]
-                break
-
-        if not message:
-            _LOGGER.debug(
-                "No matching notification event for Plant=%s Stage=%s Days=%s",
-                plant.plant_id,
-                stage,
-                days,
-            )
-            return
-
-        _LOGGER.info(
-            "Sending notification → Growspace=%s Plant=%s Target=%s Stage=%s Days=%s Message='%s'",
-            growspace.name,
-            plant.plant_id,
-            notification_target,
-            stage,
-            days,
-            message,
-        )
-
-        # Mark notification as sent FIRST to prevent duplicates
-        self.hass.async_create_task(
-            self.coordinator.mark_notification_sent(plant.plant_id, stage, days)
-        )
-
-        # Fire the notify service
-        self.hass.async_create_task(
-            self.hass.services.async_call(
-                "notify",
-                notification_target,
-                {
-                    "title": f"Growspace: {growspace.name}",
-                    "message": f"{plant.strain} ({plant.row},{plant.col}) - {message}",
-                    "data": {
-                        "plant_id": plant.plant_id,
-                        "growspace_id": plant.growspace_id,
-                        "stage": stage,
-                        "days": days,
-                    },
-                },
-            )
-        )
-
     async def async_added_to_hass(self) -> None:
         """When entity is added to hass."""
         self.coordinator.async_add_listener(self.async_write_ha_state)
 
 
-class StrainLibrarySensor(SensorEntity):
+class StrainLibrarySensor(CoordinatorEntity[GrowspaceCoordinator], SensorEntity):
+    """Sensor to expose strain library analytics."""
+
     def __init__(self, coordinator: GrowspaceCoordinator) -> None:
-        self.coordinator = coordinator
+        """Initialize the StrainLibrarySensor."""
+        super().__init__(coordinator)
         self._attr_name = "Growspace Strain Library"
         self._attr_unique_id = f"{DOMAIN}_strain_library"
         self._attr_icon = "mdi:leaf"
 
     @property
-    def state(self) -> str:
-        return "ok"
+    def state(self) -> int:
+        """Return the number of unique strains in the library."""
+        return len(self.coordinator.strains.get_all())
 
     @property
-    def extra_state_attributes(self) -> dict:
-        return {"strains": self.coordinator.get_strain_options()}
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Return analytics for each strain as attributes."""
+        analytics = {}
+        all_strains = self.coordinator.strains.get_all()
 
-    async def async_added_to_hass(self):
-        self.coordinator.async_add_listener(self.async_write_ha_state)
+        for key, data in all_strains.items():
+            strain, phenotype = key.split("|")
+            harvests = data.get("harvests", [])
+            num_harvests = len(harvests)
+
+            if num_harvests == 0:
+                continue
+
+            # Calculate average veg and flower times
+            total_veg_days = sum(h.get("veg_days", 0) for h in harvests)
+            total_flower_days = sum(h.get("flower_days", 0) for h in harvests)
+            avg_veg_days = round(total_veg_days / num_harvests)
+            avg_flower_days = round(total_flower_days / num_harvests)
+
+            # Sanitize for attribute names (lowercase, spaces to _)
+            attr_base = f"{strain.lower().replace(' ', '_')}"
+            if phenotype != "default":
+                attr_base += f"_{phenotype.lower().replace(' ', '_')}"
+
+            analytics[f"{attr_base}_avg_veg_time"] = avg_veg_days
+            analytics[f"{attr_base}_avg_flower_time"] = avg_flower_days
+            analytics[f"{attr_base}_harvests"] = num_harvests
+
+        # Add the raw data for advanced users if needed
+        analytics["raw_data"] = all_strains
+        return analytics
 
 
 class GrowspaceListSensor(SensorEntity):
