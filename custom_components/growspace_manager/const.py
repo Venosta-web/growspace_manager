@@ -123,12 +123,11 @@ def valid_date_or_none(value):
     try:
         # Attempt to parse ISO format, handling potential timezone 'Z'
         # Ensure value is converted to string to handle potential datetime objects directly
-        return date.fromisoformat(str(value).replace("Z", "+00:00"))
+        return date.fromisoformat(str(value).replace("Z", ""))
     except ValueError:
         raise vol.Invalid(
             f"'{value}' is not a valid date or ISO format string"
         ) from None
-
 
 def valid_growspace_id(value):
     """Validate that a value is a non-empty string for a growspace ID.
