@@ -99,4 +99,19 @@ All I/O operations must be asynchronous.
 
 For a comprehensive guide to all development standards, please refer to the detailed documentation in the `.gemini-guidelines` directory of this repository.
 
+### External Documentation
+
+When you need to access Home Assistant documentation, use the `context7` tool. This tool can fetch documentation for various libraries, including Home Assistant.
+
+To get documentation for Home Assistant, you can use the following commands:
+
+1.  First, resolve the library ID for Home Assistant:
+    ```
+    -resolve-library-id homeassistant
+    ```
+2.  Then, use the `get-library-docs` command with the resolved ID. For example, to get documentation about integrations:
+    ```
+    -get-library-docs /websites/developers_home-assistant_io integrations
+    ```
+
 ---

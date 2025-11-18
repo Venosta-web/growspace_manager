@@ -1,7 +1,7 @@
 """Tests for the StrainLibrary class."""
 
 import pytest
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 from custom_components.growspace_manager.strain_library import StrainLibrary
 
@@ -44,6 +44,17 @@ async def test_load_old_format(strain_library, mock_store):
     assert "Strain A|default" in strain_library.strains
     assert "Strain B|default" in strain_library.strains
     mock_store.async_save.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_load_invalid_format(strain_library, mock_store):
+    """Test loading invalid data."""
+    mock_store.async_load.return_value = None
+    strain_library.store = mock_store
+
+    await strain_library.load()
+
+    assert strain_library.strains == {}
 
 
 @pytest.mark.asyncio
@@ -97,6 +108,22 @@ async def test_import_library_replace(strain_library):
 
     assert "Old Strain|default" not in strain_library.strains
     assert "New Strain|default" in strain_library.strains
+
+
+@pytest.mark.asyncio
+async def test_import_library_invalid_data(strain_library):
+    """Test importing a library with invalid data."""
+    strain_library.strains = {"Old Strain|default": {}}
+    strain_library.store = MagicMock()
+    strain_library.store.async_save = AsyncMock()
+    import_data = ["invalid data"]
+
+    with patch("custom_components.growspace_manager.strain_library._LOGGER") as mock_logger:
+        count = await strain_library.import_library(import_data, replace=True)
+        assert count == 1
+        assert "Old Strain|default" in strain_library.strains
+        mock_logger.warning.assert_called_once()
+
 
 
 @pytest.mark.asyncio

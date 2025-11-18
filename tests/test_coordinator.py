@@ -579,7 +579,7 @@ async def test_parse_date_fields(coordinator: GrowspaceCoordinator):
 
 @pytest.mark.asyncio
 async def test_calculate_days(coordinator):
-    """Test the `_calculate_days` helper for various input types.
+    """Test the `calculate_days` helper for various input types.
 
     Args:
         coordinator: The mock GrowspaceCoordinator.
@@ -587,28 +587,28 @@ async def test_calculate_days(coordinator):
     today = date.today()
 
     # Using string
-    days = coordinator._calculate_days("2025-01-01")
+    days = coordinator.calculate_days("2025-01-01")
     expected = (today - date(2025, 1, 1)).days
     assert days == expected
 
     # Using date
     start = date(2024, 12, 31)
-    days = coordinator._calculate_days(start)
+    days = coordinator.calculate_days(start)
     expected = (today - start).days
     assert days == expected
 
     # Using datetime
     start_dt = datetime(2024, 12, 30, 15, 0)
-    days = coordinator._calculate_days(start_dt)
+    days = coordinator.calculate_days(start_dt)
     expected = (today - start_dt.date()).days
     assert days == expected
 
     # None or 'None' should return 0
-    assert coordinator._calculate_days(None) == 0
-    assert coordinator._calculate_days("None") == 0
+    assert coordinator.calculate_days(None) == 0
+    assert coordinator.calculate_days("None") == 0
 
     # Invalid string returns 0 (logs warning)
-    assert coordinator._calculate_days("invalid-date") == 0
+    assert coordinator.calculate_days("invalid-date") == 0
 
 
 @pytest.mark.asyncio

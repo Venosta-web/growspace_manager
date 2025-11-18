@@ -733,14 +733,17 @@ class OptionsFlowHandler(OptionsFlow):
                 else:  # co2
                     entity_key = f"{feature}_sensor"
                     domain = ["sensor", "input_number"]
-                    device_class = "carbon_dioxide"
+                    device_class = ["carbon_dioxide"]
+
+                entity_selector_config_args: dict[str, Any] = {}
+                entity_selector_config_args["domain"] = domain
+                if device_class is not None:
+                    entity_selector_config_args["device_class"] = device_class
 
                 schema_dict[
                     vol.Optional(entity_key, default=growspace_options.get(entity_key))
                 ] = selector.EntitySelector(
-                    selector.EntitySelectorConfig(
-                        domain=domain, device_class=device_class
-                    )
+                    selector.EntitySelectorConfig(**entity_selector_config_args)
                 )
         # Thresholds
         for key, default in [("stress_threshold", 0.70), ("mold_threshold", 0.75)]:
@@ -838,6 +841,10 @@ class OptionsFlowHandler(OptionsFlow):
         coordinator = self.hass.data[DOMAIN][self._config_entry.entry_id]["coordinator"]
         growspace = coordinator.growspaces.get(self._selected_growspace_id)
 
+        # Add this check early
+        if not growspace:
+            return self.async_abort(reason="growspace_not_found")
+
         if user_input is not None:
             env_config = self._env_config_step1.copy()
             env_config.pop("configure_advanced", None)
@@ -865,7 +872,7 @@ class OptionsFlowHandler(OptionsFlow):
                 # Update env_config *after* all parsing is successful
                 env_config.update(parsed_user_input)
 
-            except (ValueError, SyntaxError):
+            except (ValueError, SyntaxError, TypeError):
                 _LOGGER.warning("Invalid tuple format submitted", exc_info=True)
                 return self.async_show_form(
                     step_id="configure_advanced_bayesian",
@@ -873,6 +880,7 @@ class OptionsFlowHandler(OptionsFlow):
                         self._env_config_step1
                     ),
                     errors={"base": "invalid_tuple_format"},
+                    description_placeholders={"growspace_name": growspace.name},
                 )
 
             growspace.environment_config = env_config
