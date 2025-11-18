@@ -96,16 +96,25 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
                     self.plants[pid] = Plant.from_dict(pdata)
                 elif isinstance(pdata, Plant):
                     self.plants[pid] = pdata
-            except Exception:
-                _LOGGER.warning("Failed to load plant %s: %s", pid, pdata)
+                else:
+                    raise TypeError(f"Invalid data type for plant {pid}: {type(pdata)}")
+            except Exception as e:
+                _LOGGER.warning("Failed to load plant %s: %s", pid, e)
 
         # Optionally load growspaces if stored
         raw_growspaces = data.get("growspaces", {})
         for gid, gdata in raw_growspaces.items():
             try:
-                self.growspaces[gid] = Growspace.from_dict(gdata)
-            except Exception:
-                _LOGGER.warning("Failed to load growspace %s: %s", gid, gdata)
+                if isinstance(gdata, dict):
+                    self.growspaces[gid] = Growspace.from_dict(gdata)
+                elif isinstance(gdata, Growspace):
+                    self.growspaces[gid] = gdata
+                else:
+                    raise TypeError(
+                        f"Invalid data type for growspace {gid}: {type(gdata)}"
+                    )
+            except Exception as e:
+                _LOGGER.warning("Failed to load growspace %s: %s", gid, e)
 
         _LOGGER.debug(
             "Loaded %d plants and %d growspaces", len(self.plants), len(self.growspaces)
@@ -540,7 +549,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
             The canonical ID of the special growspace.
         """
         # Get canonical form
-        canonical_id, canonical_name = self._canonical_special(growspace_id)
+        canonical_id, _ = self._canonical_special(growspace_id)
 
         # Clean up any legacy aliases
         self._cleanup_legacy_aliases(canonical_id)
@@ -548,12 +557,12 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
         # Create or update the canonical growspace
         if canonical_id not in self.growspaces:
             self._create_special_growspace(
-                canonical_id, canonical_name, rows, plants_per_row
+                canonical_id, name, rows, plants_per_row
             )
             # ✅ Enable notifications by default for new special growspace
             self._notifications_enabled[canonical_id] = True
         else:
-            self._update_special_growspace_name(canonical_id, canonical_name)
+            self._update_special_growspace_name(canonical_id, name)
 
         self.update_data_property()
         return canonical_id

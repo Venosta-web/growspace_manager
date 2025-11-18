@@ -57,7 +57,7 @@ SPECIAL_GROWSPACES = {
     "dry": {
         "canonical_id": "dry",
         "canonical_name": "dry",
-        "aliases": ["dry_overview"],
+        "aliases": ["dry_overview", "drying"],
     },
     "cure": {
         "canonical_id": "cure",
