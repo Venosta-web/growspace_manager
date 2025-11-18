@@ -2,7 +2,7 @@ import pytest
 from datetime import date
 from homeassistant.exceptions import HomeAssistantError
 
-from custom_components.growspace_manager.services import (
+from custom_components.growspace_manager.const import (
     ADD_GROWSPACE_SCHEMA,
     REMOVE_GROWSPACE_SCHEMA,
     ADD_PLANT_SCHEMA,
@@ -28,7 +28,6 @@ def test_add_growspace_schema_valid():
     data = {"name": "Test GS", "rows": 3, "plants_per_row": 3}
     validated = ADD_GROWSPACE_SCHEMA(data)
     assert validated == data
-
 
 
 def test_add_growspace_schema_invalid():
@@ -124,7 +123,7 @@ def test_take_clone_schema_valid():
 
 
 def test_debug_cleanup_legacy_schema_valid():
-    data = {"dry_only": True, "cure_only": False, "force": True}
+    data = {"dry_only": True, "cure_only": False}
     validated = DEBUG_CLEANUP_LEGACY_SCHEMA(data)
     assert validated["dry_only"] is True
 
