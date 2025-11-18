@@ -1,19 +1,21 @@
 from __future__ import annotations
-import logging
-from typing import Any, TYPE_CHECKING, Awaitable, Callable, Tuple, List
-from homeassistant.helpers.typing import StateType
 
-# CORRECTED IMPORT: Use .models for module within the current package
-from .models import EnvironmentState
+import logging
+from collections.abc import Awaitable
+from typing import TYPE_CHECKING, Callable
+
+from homeassistant.core import State
+
 from .bayesian_data import (
-    VPD_STRESS_THRESHOLDS,
+    PROB_ACCEPTABLE,
+    PROB_GOOD,
+    PROB_PERFECT,
+    PROB_STRESS_OUT_OF_RANGE,
     PROB_VPD_STRESS_OUT_OF_RANGE,
     VPD_OPTIMAL_THRESHOLDS,
-    PROB_STRESS_OUT_OF_RANGE,
-    PROB_PERFECT,
-    PROB_GOOD,
-    PROB_ACCEPTABLE,
+    VPD_STRESS_THRESHOLDS,
 )
+from .models import EnvironmentState
 
 if TYPE_CHECKING:
     from .binary_sensor import BayesianEnvironmentSensor
@@ -21,10 +23,10 @@ if TYPE_CHECKING:
 _LOGGER = logging.getLogger(__name__)
 
 # Type aliases for readability
-Obs = Tuple[float, float]
-Reason = Tuple[float, str]
-ObservationList = List[Obs]
-ReasonList = List[Reason]
+Obs = tuple[float, float]
+Reason = tuple[float, str]
+ObservationList = list[Obs]
+ReasonList = list[Reason]
 
 # =========================================================================
 # HELPER: VPD STAGE THRESHOLD LOOKUP
@@ -50,16 +52,17 @@ def _determine_stage_key(state: EnvironmentState) -> str | None:
 
 
 async def async_evaluate_stress_trend(
-    sensor_instance: "BayesianEnvironmentSensor", state: EnvironmentState
-) -> tuple[ObservationList, ReasonList]:
+    sensor_instance: BayesianEnvironmentSensor, state: EnvironmentState
+) -> tuple[ObservationList, ReasonList, dict[str, str]]:
     """Evaluate rising trends for temperature, humidity, and VPD from sensors/history."""
     observations: ObservationList = []
     reasons: ReasonList = []
+    trend_states: dict[str, str] = {}
     env_config = sensor_instance.env_config
 
-    sensor_instance._sensor_states["temperature_trend"] = "stable"
-    sensor_instance._sensor_states["humidity_trend"] = "stable"
-    sensor_instance._sensor_states["vpd_trend"] = "stable"
+    trend_states["temperature_trend"] = "stable"
+    trend_states["humidity_trend"] = "stable"
+    trend_states["vpd_trend"] = "stable"
 
     # Define common variables and helpers outside the loop for cleaner logic
     analyze_trend: Callable[[str, int, float], Awaitable[dict]] = (
@@ -77,9 +80,9 @@ async def async_evaluate_stress_trend(
 
         # --- External Trend Sensor Logic ---
         if trend_sensor_id:
-            trend_state: StateType = sensor_instance.hass.states.get(trend_sensor_id)
+            trend_state: State | None = sensor_instance.hass.states.get(trend_sensor_id)
             if trend_state and trend_state.state == "on":  # Rising trend
-                sensor_instance._sensor_states[trend_key] = "rising"
+                trend_states[trend_key] = "rising"
                 gradient = trend_state.attributes.get("gradient", 0)
                 prob = (
                     env_config.get("prob_trend_fast_rise", (0.95, 0.15))
@@ -93,14 +96,14 @@ async def async_evaluate_stress_trend(
                 )
 
         elif stats_sensor_id:
-            stats_state: StateType = sensor_instance.hass.states.get(stats_sensor_id)
+            stats_state: State | None = sensor_instance.hass.states.get(stats_sensor_id)
             if (
                 stats_state
                 and (change := stats_state.attributes.get("change")) is not None
             ):
                 threshold = 0.2 if sensor_key == "vpd" else 1.0
                 if change > threshold:
-                    sensor_instance._sensor_states[trend_key] = "rising"
+                    trend_states[trend_key] = "rising"
                     prob = (0.85, 0.25)
                     observations.append(prob)
                     reasons.append((prob[0], f"{sensor_key.capitalize()} rising"))
@@ -113,7 +116,7 @@ async def async_evaluate_stress_trend(
                 analysis = await analyze_trend(
                     env_config[f"{sensor_key}_sensor"], duration, threshold
                 )
-                sensor_instance._sensor_states[trend_key] = analysis["trend"]
+                trend_states[trend_key] = analysis["trend"]
                 if analysis["trend"] == "rising" and analysis["crossed_threshold"]:
                     p_true = 0.5 + (sensitivity * 0.45)
                     p_false = 0.5 - (sensitivity * 0.4)
@@ -121,7 +124,104 @@ async def async_evaluate_stress_trend(
                     observations.append(prob)
                     reasons.append((prob[0], f"{sensor_key.capitalize()} rising"))
 
-    return observations, reasons
+    return observations, reasons, trend_states
+
+
+async def _async_evaluate_external_mold_trend_sensor(
+    sensor_instance: BayesianEnvironmentSensor,
+    env_config: dict,
+    sensor_key: str,
+    trend_key: str,
+    observations: ObservationList,
+    reasons: ReasonList,
+    trend_states: dict[str, str],
+) -> None:
+    """Evaluate external trend sensors for mold risk (humidity and VPD)."""
+    trend_sensor_id = env_config.get(f"{sensor_key}_trend_sensor")
+    stats_sensor_id = env_config.get(f"{sensor_key}_stats_sensor")
+
+    if trend_sensor_id:
+        trend_state: State | None = sensor_instance.hass.states.get(trend_sensor_id)
+        if trend_state and trend_state.state == ("on" if sensor_key == "humidity" else "off"):
+            trend_states[trend_key] = "rising" if sensor_key == "humidity" else "falling"
+            prob = (0.90, 0.20)
+            observations.append(prob)
+            reasons.append((prob[0], f"{sensor_key.capitalize()} {"rising" if sensor_key == "humidity" else "falling"}"))
+    elif stats_sensor_id:
+        stats_state: State | None = sensor_instance.hass.states.get(stats_sensor_id)
+        if (
+            stats_state
+            and (change := stats_state.attributes.get("change")) is not None
+        ):
+            if (sensor_key == "humidity" and change > 1.0) or (
+                sensor_key == "vpd" and change < -0.1
+            ):
+                trend_states[trend_key] = "rising" if sensor_key == "humidity" else "falling"
+                prob = (0.85, 0.25)
+                observations.append(prob)
+                reasons.append((prob[0], f"{sensor_key.capitalize()} {"rising" if sensor_key == "humidity" else "falling"}"))
+
+
+async def _async_evaluate_fallback_mold_trend_analysis(
+    sensor_instance: BayesianEnvironmentSensor,
+    env_config: dict,
+    sensor_key: str,
+    trend_key: str,
+    observations: ObservationList,
+    reasons: ReasonList,
+    trend_states: dict[str, str],
+    analyze_trend: Callable[[str, int, float], Awaitable[dict]],
+) -> None:
+    """Perform fallback manual trend analysis for mold risk."""
+    if not env_config.get(f"{sensor_key}_trend_sensor") and not env_config.get(
+        f"{sensor_key}_stats_sensor"
+    ):
+        duration = env_config.get(f"{sensor_key}_trend_duration", 30)
+        threshold = 101 if sensor_key == "humidity" else -1
+        sensitivity = env_config.get(f"{sensor_key}_trend_sensitivity", 0.5)
+        if env_config.get(f"{sensor_key}_sensor"):
+            analysis = await analyze_trend(
+                env_config[f"{sensor_key}_sensor"], duration, threshold
+            )
+            trend_states[f"{sensor_key}_trend"] = analysis["trend"]
+            if (sensor_key == "humidity" and analysis["trend"] == "rising") or (
+                sensor_key == "vpd" and analysis["trend"] == "falling"
+            ):
+                p_true = 0.5 + (sensitivity * 0.45)
+                p_false = 0.5 - (sensitivity * 0.4)
+                prob = (p_true, p_false)
+                observations.append(prob)
+                reasons.append((prob[0], f"{sensor_key.capitalize()} trend"))
+
+
+async def async_evaluate_mold_risk_trend(
+    sensor_instance: BayesianEnvironmentSensor, state: EnvironmentState
+) -> tuple[ObservationList, ReasonList, dict[str, str]]:
+    """Evaluate trends for humidity and VPD for mold risk."""
+    observations: ObservationList = []
+    reasons: ReasonList = []
+    trend_states: dict[str, str] = {}
+    env_config = sensor_instance.env_config
+
+    trend_states["humidity_trend"] = "stable"
+    trend_states["vpd_trend"] = "stable"
+
+    analyze_trend: Callable[[str, int, float], Awaitable[dict]] = (
+        sensor_instance._async_analyze_sensor_trend
+    )
+
+    for sensor_key, trend_key in [
+        ("humidity", "humidity_trend"),
+        ("vpd", "vpd_trend"),
+    ]:
+        await _async_evaluate_external_mold_trend_sensor(
+            sensor_instance, env_config, sensor_key, trend_key, observations, reasons, trend_states
+        )
+        await _async_evaluate_fallback_mold_trend_analysis(
+            sensor_instance, env_config, sensor_key, trend_key, observations, reasons, trend_states, analyze_trend
+        )
+
+    return observations, reasons, trend_states
 
 
 def evaluate_direct_temp_stress(
@@ -399,7 +499,7 @@ def evaluate_optimal_co2(
                 observations.append(PROB_PERFECT)
             elif 800 <= co2 <= 1500:
                 observations.append(PROB_GOOD)
-            elif 400 <= co2 <= 800:
+            elif 400 <= co2 <= 600:
                 observations.append(PROB_ACCEPTABLE)
             else:
                 observations.append(prob_out_of_range)

@@ -722,7 +722,7 @@ async def test_stress_sensor_stage_and_time_logic(
     [
         # Case 1: High humidity at night in late flower
         (
-            {"temp": 20, "humidity": 55, "vpd": 1.0, "light": "off"},
+            {"temp": 20, "humidity": 61, "vpd": 1.0, "light": "off"},
             {"veg_days": 30, "flower_days": 40},
             "Night Humidity High",
         ),

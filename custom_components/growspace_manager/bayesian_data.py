@@ -1,5 +1,7 @@
+"""Constants and type aliases for Bayesian evaluation in Growspace Manager."""
 from __future__ import annotations
-from typing import Final, Any, Dict, List, Tuple
+
+from typing import Any, Final
 
 # =========================================================================
 # GENERAL PROBABILITY CONSTANTS (P(Obs|True), P(Obs|False))
@@ -15,9 +17,9 @@ PROB_STRESS_OUT_OF_RANGE: Final = (0.20, 0.75)
 PROB_VPD_STRESS_OUT_OF_RANGE: Final = (0.25, 0.70)
 
 # Type aliases for complex structures
-VpdThresholdsDict = Dict[str, Dict[str, Dict[str, Any]]]
-DryingCuringThresholds = Dict[
-    str, Tuple[float, float, Tuple[float, float], Tuple[float, float]]
+VpdThresholdsDict = dict[str, dict[str, dict[str, Any]]]
+DryingCuringThresholds = dict[
+    str, tuple[float, float, tuple[float, float], tuple[float, float]]
 ]
 
 
@@ -125,7 +127,7 @@ CURING_THRESHOLDS: Final[DryingCuringThresholds] = {
 # Structure: stage -> time_of_day -> [ (P_low, P_high, P_prob), (G_low, G_high, G_prob), ... ]
 
 VPD_OPTIMAL_THRESHOLDS: Final[
-    Dict[str, Dict[str, List[Tuple[float, float, Tuple[float, float]]]]]
+    dict[str, dict[str, list[tuple[float, float, tuple[float, float]]]]]
 ] = {
     "veg_early": {
         "day": [(0.5, 0.9, (0.95, 0.18)), (0.4, 0.8, (0.80, 0.28))],

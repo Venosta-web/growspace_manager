@@ -29,6 +29,7 @@ from .const import DOMAIN, DEFAULT_BAYESIAN_PRIORS, DEFAULT_BAYESIAN_THRESHOLDS
 from .models import EnvironmentState
 from .bayesian_data import DRYING_THRESHOLDS, CURING_THRESHOLDS
 from .bayesian_evaluator import (
+    ReasonList,
     async_evaluate_stress_trend,
     evaluate_direct_temp_stress,
     evaluate_direct_humidity_stress,
@@ -37,6 +38,7 @@ from .bayesian_evaluator import (
     evaluate_optimal_temperature,
     evaluate_optimal_vpd,
     evaluate_optimal_co2,
+    async_evaluate_mold_risk_trend,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -153,7 +155,7 @@ class BayesianEnvironmentSensor(BinarySensorEntity):
         )
 
         self._sensor_states = {}
-        self._reasons: list[tuple[float, str]] = []
+        self._reasons: ReasonList = []
         self._probability = 0.0
         self._last_notification_sent: datetime | None = None
         self._notification_cooldown = timedelta(minutes=5)
@@ -493,9 +495,10 @@ class BayesianStressSensor(BayesianEnvironmentSensor):
         observations = []
 
         # 1. ASYNCHRONOUS TREND ANALYSIS (Logic moved to bayesian_evaluator.py)
-        trend_obs, trend_reasons = await async_evaluate_stress_trend(self, state)
+        trend_obs, trend_reasons, trend_states = await async_evaluate_stress_trend(self, state)
         observations.extend(trend_obs)
         self._reasons.extend(trend_reasons)
+        self._sensor_states.update(trend_states)
 
         # 2. DIRECT OBSERVATIONS (Logic moved to bayesian_evaluator.py)
 
@@ -790,84 +793,11 @@ class BayesianMoldRiskSensor(BayesianEnvironmentSensor):
         state = self._get_base_environment_state()
         observations = []
 
-        self._sensor_states["humidity_trend"] = "stable"
-        self._sensor_states["vpd_trend"] = "stable"
-
-        # --- Trend Analysis for Mold Risk ---
-        # Rising humidity trend is a risk
-        trend_sensor_id = self.env_config.get("humidity_trend_sensor")
-        stats_sensor_id = self.env_config.get("humidity_stats_sensor")
-        if trend_sensor_id:
-            if (
-                trend_state := self.hass.states.get(trend_sensor_id)
-            ) and trend_state.state == "on":
-                self._sensor_states["humidity_trend"] = "rising"
-                prob = (0.90, 0.20)
-                observations.append(prob)
-                self._reasons.append((prob[0], "Humidity rising"))
-        elif stats_sensor_id:
-            if (
-                (stats_state := self.hass.states.get(stats_sensor_id))
-                and (change := stats_state.attributes.get("change")) is not None
-                and change > 1.0
-            ):
-                self._sensor_states["humidity_trend"] = "rising"
-                prob = (0.85, 0.25)
-                observations.append(prob)
-                self._reasons.append((prob[0], "Humidity rising"))
-
-        # Falling VPD trend is a risk
-        trend_sensor_id = self.env_config.get("vpd_trend_sensor")
-        stats_sensor_id = self.env_config.get("vpd_stats_sensor")
-        if trend_sensor_id:
-            if (
-                trend_state := self.hass.states.get(trend_sensor_id)
-            ) and trend_state.state == "off":
-                self._sensor_states["vpd_trend"] = "falling"
-                prob = (0.90, 0.20)
-                observations.append(prob)
-                self._reasons.append((prob[0], "VPD falling"))
-        elif stats_sensor_id:
-            if (
-                (stats_state := self.hass.states.get(stats_sensor_id))
-                and (change := stats_state.attributes.get("change")) is not None
-                and change < -0.1
-            ):
-                self._sensor_states["vpd_trend"] = "falling"
-                prob = (0.85, 0.25)
-                observations.append(prob)
-                self._reasons.append((prob[0], "VPD falling"))
-
-        # --- Direct Observations ---
-        # Fallback manual trend analysis for mold risk
-        for sensor_key in ["humidity", "vpd"]:
-            if not self.env_config.get(
-                f"{sensor_key}_trend_sensor"
-            ) and not self.env_config.get(f"{sensor_key}_stats_sensor"):
-                duration = self.env_config.get(f"{sensor_key}_trend_duration", 30)
-                # For mold, a simple threshold isn't as useful as just detecting the trend direction
-                # We pass a high threshold for humidity (rising) and low for VPD (falling)
-                # to effectively just check direction
-                threshold = 101 if sensor_key == "humidity" else -1
-                sensitivity = self.env_config.get(
-                    f"{sensor_key}_trend_sensitivity", 0.5
-                )
-                if self.env_config.get(f"{sensor_key}_sensor"):
-                    analysis = await self._async_analyze_sensor_trend(
-                        self.env_config[f"{sensor_key}_sensor"], duration, threshold
-                    )
-                    self._sensor_states[f"{sensor_key}_trend"] = analysis["trend"]
-                    # Add observation if humidity is rising OR vpd is falling
-                    if (sensor_key == "humidity" and analysis["trend"] == "rising") or (
-                        sensor_key == "vpd" and analysis["trend"] == "falling"
-                    ):
-                        p_true = 0.5 + (sensitivity * 0.45)
-                        p_false = 0.5 - (sensitivity * 0.4)
-                        prob = (p_true, p_false)
-                        observations.append(prob)
-                        self._reasons.append(
-                            (prob[0], f"{sensor_key.capitalize()} trend")
-                        )
+        # --- Trend Analysis for Mold Risk (Moved to bayesian_evaluator.py) ---
+        trend_obs, trend_reasons, trend_states = await async_evaluate_mold_risk_trend(self, state)
+        observations.extend(trend_obs)
+        self._reasons.extend(trend_reasons)
+        self._sensor_states.update(trend_states)
 
         if state.flower_days >= 35:
             prob = (0.80, 0.20)
@@ -883,7 +813,7 @@ class BayesianMoldRiskSensor(BayesianEnvironmentSensor):
                 prob = self.env_config.get("prob_mold_lights_off", (0.75, 0.30))
                 observations.append(prob)
                 self._reasons.append((prob[0], "Lights Off"))
-                if state.humidity is not None and state.humidity > 50:
+                if state.humidity is not None and state.humidity > 60:
                     prob = self.env_config.get(
                         "prob_mold_humidity_high_night", (0.99, 0.10)
                     )
@@ -891,7 +821,7 @@ class BayesianMoldRiskSensor(BayesianEnvironmentSensor):
                     self._reasons.append(
                         (prob[0], f"Night Humidity High ({state.humidity})")
                     )
-                if state.vpd is not None and state.vpd < 1.3:
+                if state.vpd is not None and state.vpd < 0.8:
                     prob = self.env_config.get("prob_mold_vpd_low_night", (0.95, 0.20))
                     observations.append(prob)
                     self._reasons.append((prob[0], f"Night VPD Low ({state.vpd})"))

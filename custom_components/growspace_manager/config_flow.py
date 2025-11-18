@@ -263,9 +263,8 @@ class OptionsFlowHandler(OptionsFlow):
         Args:
             config_entry: The configuration entry.
         """
-        # ADD THIS LINE:
-        self.config_entry = config_entry
-        self._current_options: dict[str, Any] = self.config_entry.options.copy()
+        self._config_entry = config_entry
+        self._current_options: dict[str, Any] = self._config_entry.options.copy()
 
     async def async_step_init(
         self, user_input: dict[str, Any] | None = None
@@ -308,7 +307,7 @@ class OptionsFlowHandler(OptionsFlow):
         Returns:
             A ConfigFlowResult directing to the appropriate action (add/edit/delete).
         """
-        coordinator = self.hass.data[DOMAIN][self.config_entry.entry_id]["coordinator"]
+        coordinator = self.hass.data[DOMAIN][self._config_entry.entry_id]["coordinator"]
 
         if user_input is not None:
             action = user_input.get("action")
@@ -323,7 +322,7 @@ class OptionsFlowHandler(OptionsFlow):
             elif action == "delete":
                 notification_id = user_input.get("notification_id")
                 if notification_id:
-                    new_options = self.config_entry.options.copy()
+                    new_options = self._config_entry.options.copy()
                     notifications = new_options.get("timed_notifications", [])
                     notifications = [
                         n for n in notifications if n.get("id") != notification_id
@@ -331,7 +330,7 @@ class OptionsFlowHandler(OptionsFlow):
                     new_options["timed_notifications"] = notifications
 
                     self.hass.config_entries.async_update_entry(
-                        self.config_entry, options=new_options
+                        self._config_entry, options=new_options
                     )
                     coordinator.options = new_options
 
@@ -354,7 +353,7 @@ class OptionsFlowHandler(OptionsFlow):
         Returns:
             A voluptuous schema for the form.
         """
-        notifications = self.config_entry.options.get("timed_notifications", [])
+        notifications = self._config_entry.options.get("timed_notifications", [])
 
         notification_options = [
             selector.SelectOptionDict(
@@ -400,10 +399,10 @@ class OptionsFlowHandler(OptionsFlow):
         Returns:
             A ConfigFlowResult.
         """
-        coordinator = self.hass.data[DOMAIN][self.config_entry.entry_id]["coordinator"]
+        coordinator = self.hass.data[DOMAIN][self._config_entry.entry_id]["coordinator"]
 
         if user_input is not None:
-            new_options = self.config_entry.options.copy()
+            new_options = self._config_entry.options.copy()
             notifications = new_options.get("timed_notifications", [])
 
             # Add a unique ID to the new notification
@@ -414,7 +413,7 @@ class OptionsFlowHandler(OptionsFlow):
 
             # Update the config entry and the coordinator's in-memory options
             self.hass.config_entries.async_update_entry(
-                self.config_entry, options=new_options
+                self._config_entry, options=new_options
             )
             coordinator.options = new_options
 
@@ -439,15 +438,15 @@ class OptionsFlowHandler(OptionsFlow):
         Returns:
             A ConfigFlowResult.
         """
-        coordinator = self.hass.data[DOMAIN][self.config_entry.entry_id]["coordinator"]
+        coordinator = self.hass.data[DOMAIN][self._config_entry.entry_id]["coordinator"]
         notification_id = self._selected_notification_id
-        notifications = self.config_entry.options.get("timed_notifications", [])
+        notifications = self._config_entry.options.get("timed_notifications", [])
         notification = next(
             (n for n in notifications if n.get("id") == notification_id), None
         )
 
         if user_input is not None:
-            new_options = self.config_entry.options.copy()
+            new_options = self._config_entry.options.copy()
             notifications = new_options.get("timed_notifications", [])
 
             # Find and update the existing notification
@@ -462,7 +461,7 @@ class OptionsFlowHandler(OptionsFlow):
 
             # Update the config entry and the coordinator's in-memory options
             self.hass.config_entries.async_update_entry(
-                self.config_entry, options=new_options
+                self._config_entry, options=new_options
             )
             coordinator.options = new_options
 
@@ -550,7 +549,7 @@ class OptionsFlowHandler(OptionsFlow):
             A ConfigFlowResult directing to the appropriate action.
         """
         try:
-            coordinator = self.hass.data[DOMAIN][self.config_entry.entry_id][
+            coordinator = self.hass.data[DOMAIN][self._config_entry.entry_id][
                 "coordinator"
             ]
         except KeyError:
@@ -581,7 +580,7 @@ class OptionsFlowHandler(OptionsFlow):
                 return self.async_show_form(
                     step_id="init",
                     data_schema=self.add_suggested_values_to_schema(
-                        self._get_main_menu_schema(), self.config_entry.options
+                        self._get_main_menu_schema(), self._config_entry.options
                     ),
                 )
 
@@ -601,7 +600,7 @@ class OptionsFlowHandler(OptionsFlow):
         Returns:
             A ConfigFlowResult.
         """
-        coordinator = self.hass.data[DOMAIN][self.config_entry.entry_id]["coordinator"]
+        coordinator = self.hass.data[DOMAIN][self._config_entry.entry_id]["coordinator"]
         growspace_options = coordinator.get_sorted_growspace_options()
 
         if not growspace_options:
@@ -639,7 +638,7 @@ class OptionsFlowHandler(OptionsFlow):
         Returns:
             A ConfigFlowResult.
         """
-        coordinator = self.hass.data[DOMAIN][self.config_entry.entry_id]["coordinator"]
+        coordinator = self.hass.data[DOMAIN][self._config_entry.entry_id]["coordinator"]
         growspace = coordinator.growspaces.get(self._selected_growspace_id)
 
         if not growspace:
@@ -685,7 +684,7 @@ class OptionsFlowHandler(OptionsFlow):
             new_options = self._current_options.copy()
             new_options[self._selected_growspace_id] = env_config
             self.hass.config_entries.async_update_entry(
-                self.config_entry, options=new_options
+                self._config_entry, options=new_options
             )
             coordinator.options = new_options
 
@@ -836,7 +835,7 @@ class OptionsFlowHandler(OptionsFlow):
         Returns:
             A ConfigFlowResult.
         """
-        coordinator = self.hass.data[DOMAIN][self.config_entry.entry_id]["coordinator"]
+        coordinator = self.hass.data[DOMAIN][self._config_entry.entry_id]["coordinator"]
         growspace = coordinator.growspaces.get(self._selected_growspace_id)
 
         if user_input is not None:
@@ -880,10 +879,10 @@ class OptionsFlowHandler(OptionsFlow):
             await coordinator.async_save()
             await coordinator.async_refresh()
 
-            final_options = self.config_entry.options.copy()
+            final_options = self._config_entry.options.copy()
             final_options[self._selected_growspace_id] = env_config
             self.hass.config_entries.async_update_entry(
-                self.config_entry, options=final_options
+                self._config_entry, options=final_options
             )
 
             _LOGGER.info(
@@ -956,7 +955,7 @@ class OptionsFlowHandler(OptionsFlow):
             A ConfigFlowResult.
         """
         try:
-            coordinator = self.hass.data[DOMAIN][self.config_entry.entry_id][
+            coordinator = self.hass.data[DOMAIN][self._config_entry.entry_id][
                 "coordinator"
             ]
         except KeyError:
@@ -1010,7 +1009,7 @@ class OptionsFlowHandler(OptionsFlow):
             A ConfigFlowResult.
         """
         try:
-            coordinator = self.hass.data[DOMAIN][self.config_entry.entry_id][
+            coordinator = self.hass.data[DOMAIN][self._config_entry.entry_id][
                 "coordinator"
             ]
         except KeyError:
@@ -1064,7 +1063,7 @@ class OptionsFlowHandler(OptionsFlow):
         Returns:
             A ConfigFlowResult directing to the appropriate action.
         """
-        coordinator = self.hass.data[DOMAIN][self.config_entry.entry_id]["coordinator"]
+        coordinator = self.hass.data[DOMAIN][self._config_entry.entry_id]["coordinator"]
 
         if user_input is not None:
             action = user_input.get("action")
@@ -1087,7 +1086,7 @@ class OptionsFlowHandler(OptionsFlow):
                 return self.async_show_form(
                     step_id="init",
                     data_schema=self.add_suggested_values_to_schema(
-                        coordinator, self.config_entry.options
+                        coordinator, self._config_entry.options
                     ),
                 )
 
@@ -1108,11 +1107,11 @@ class OptionsFlowHandler(OptionsFlow):
             A ConfigFlowResult.
         """
         try:
-            coordinator = self.hass.data[DOMAIN][self.config_entry.entry_id][
+            coordinator = self.hass.data[DOMAIN][self._config_entry.entry_id][
                 "coordinator"
             ]
             # Reload coordinator data from storage to ensure we have latest growspaces
-            store = self.hass.data[DOMAIN][self.config_entry.entry_id]["store"]
+            store = self.hass.data[DOMAIN][self._config_entry.entry_id]["store"]
             fresh_data = await store.async_load() or {}
 
             # Correctly deserialize data into objects
@@ -1138,7 +1137,7 @@ class OptionsFlowHandler(OptionsFlow):
             )
             return self.async_abort(reason="setup_error")
 
-        _LOGGER.info(f"Config entry ID: {self.config_entry.entry_id}")
+        _LOGGER.info(f"Config entry ID: {self._config_entry.entry_id}")
         _LOGGER.info(
             f"Available growspaces in coordinator: {list(coordinator.growspaces.keys())}"
         )
@@ -1146,7 +1145,7 @@ class OptionsFlowHandler(OptionsFlow):
         # Get growspaces from device registry
         device_registry = dr.async_get(self.hass)
         devices = device_registry.devices.get_devices_for_config_entry_id(
-            self.config_entry.entry_id
+            self._config_entry.entry_id
         )
 
         _LOGGER.info(f"Total devices for config entry: {len(devices)}")
@@ -1198,7 +1197,7 @@ class OptionsFlowHandler(OptionsFlow):
         Returns:
             A ConfigFlowResult.
         """
-        coordinator = self.hass.data[DOMAIN][self.config_entry.entry_id]["coordinator"]
+        coordinator = self.hass.data[DOMAIN][self._config_entry.entry_id]["coordinator"]
         growspace = coordinator.growspaces.get(self._selected_growspace_id)
 
         if user_input is not None:
@@ -1236,7 +1235,7 @@ class OptionsFlowHandler(OptionsFlow):
         Returns:
             A ConfigFlowResult.
         """
-        coordinator = self.hass.data[DOMAIN][self.config_entry.entry_id]["coordinator"]
+        coordinator = self.hass.data[DOMAIN][self._config_entry.entry_id]["coordinator"]
         plant = coordinator.plants.get(self._selected_plant_id)
 
         if not plant:
@@ -1441,15 +1440,15 @@ class OptionsFlowHandler(OptionsFlow):
         """
         if user_input is not None:
             # Save the global settings into the main config_entry's options
-            new_options = self.config_entry.options.copy()
+            new_options = self._config_entry.options.copy()
             new_options["global_settings"] = user_input
             self.hass.config_entries.async_update_entry(
-                self.config_entry, options=new_options
+                self._config_entry, options=new_options
             )
             return self.async_create_entry(title="", data={})
 
         # Get current global settings to prepopulate the form
-        global_settings = self.config_entry.options.get("global_settings", {})
+        global_settings = self._config_entry.options.get("global_settings", {})
 
         schema_dict = {
             vol.Optional(
