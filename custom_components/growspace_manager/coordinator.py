@@ -481,7 +481,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
             if field in kwargs:
                 kwargs[field] = self._parse_date_field(kwargs[field])
 
-    def _calculate_days(self, start_date: str | date | datetime | None) -> int:
+    def calculate_days(self, start_date: str | date | datetime | None) -> int:
         """Calculate the number of days that have passed since a given date.
 
         Args:
@@ -2013,7 +2013,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
             The number of days in the stage.
         """
         start_date = getattr(plant, f"{stage}_start", None)
-        return self._calculate_days(start_date)
+        return self.calculate_days(start_date)
 
     def get_growspace_grid(self, growspace_id: str) -> list[list[str | None]]:
         """Generate a 2D grid representation of a growspace's plant layout.

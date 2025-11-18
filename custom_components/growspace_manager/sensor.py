@@ -19,7 +19,8 @@ from dateutil import parser
 from homeassistant.components.sensor import SensorEntity, SensorStateClass
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers.entity import DeviceInfo, Entity
+from homeassistant.helpers.device_registry import DeviceInfo
+from homeassistant.helpers.entity import Entity
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
@@ -61,10 +62,14 @@ async def _async_create_derivative_sensors(
         for sensor_type in ["temperature", "humidity", "vpd"]:
             source_sensor = growspace.environment_config.get(f"{sensor_type}_sensor")
             if source_sensor:
-                trend_unique_id = await async_setup_trend_sensor(hass, source_sensor, growspace.id, growspace.name, sensor_type)
+                trend_unique_id = await async_setup_trend_sensor(
+                    hass, source_sensor, growspace.id, growspace.name, sensor_type
+                )
                 if trend_unique_id and trend_unique_id not in created_entities:
                     created_entities.append(trend_unique_id)
-                stats_unique_id = await async_setup_statistics_sensor(hass, source_sensor, growspace.id, growspace.name, sensor_type)
+                stats_unique_id = await async_setup_statistics_sensor(
+                    hass, source_sensor, growspace.id, growspace.name, sensor_type
+                )
                 if stats_unique_id and stats_unique_id not in created_entities:
                     created_entities.append(stats_unique_id)
 
@@ -204,8 +209,8 @@ async def async_setup_entry(
                 await entity.async_remove()
 
     # Listen for coordinator updates to manage dynamic entities
-    def _listener_callback() -> None:
-        coordinator.hass.async_create_task(_handlecoordinator_update_async())
+    async def _listener_callback() -> None:
+        await _handlecoordinator_update_async()
 
     coordinator.async_add_listener(_listener_callback)
 
@@ -224,9 +229,9 @@ async def async_setup_entry(
                     None,
                 )
             )
-        if global_settings.get(
-            "lung_room_temp_sensor"
-        ) and global_settings.get("lung_room_humidity_sensor"):
+        if global_settings.get("lung_room_temp_sensor") and global_settings.get(
+            "lung_room_humidity_sensor"
+        ):
             global_entities.append(
                 VpdSensor(
                     coordinator,
@@ -306,7 +311,10 @@ class VpdSensor(CoordinatorEntity[GrowspaceCoordinator], SensorEntity):
                 except (ValueError, TypeError):
                     temp = None
             humidity_state = hass.states.get(self._humidity_sensor)
-            if humidity_state and humidity_state.state not in ["unknown", "unavailable"]:
+            if humidity_state and humidity_state.state not in [
+                "unknown",
+                "unavailable",
+            ]:
                 try:
                     humidity = float(humidity_state.state)
                 except (ValueError, TypeError):
@@ -325,9 +333,7 @@ class AirExchangeSensor(CoordinatorEntity[GrowspaceCoordinator], SensorEntity):
     alleviate environmental stress.
     """
 
-    def __init__(
-        self, coordinator: GrowspaceCoordinator, growspace_id: str
-    ) -> None:
+    def __init__(self, coordinator: GrowspaceCoordinator, growspace_id: str) -> None:
         """Initialize the air exchange sensor.
 
         Args:
@@ -353,9 +359,9 @@ class AirExchangeSensor(CoordinatorEntity[GrowspaceCoordinator], SensorEntity):
         """Return the current recommended air exchange action."""
         # The actual state is calculated in the coordinator and stored.
         # This sensor just retrieves it.
-        recommendation = self.coordinator.data.get("air_exchange_recommendations", {}).get(
-            self.growspace_id, "Idle"
-        )
+        recommendation = self.coordinator.data.get(
+            "air_exchange_recommendations", {}
+        ).get(self.growspace_id, "Idle")
         return recommendation
 
 
@@ -381,30 +387,8 @@ class GrowspaceOverviewSensor(SensorEntity):
         self.coordinator = coordinator
         self.growspace_id = growspace_id
         self.growspace = growspace
-        self._attr_name = f"{growspace.name}"
-
-        # Use stable unique_id matching canonical growspace_id to avoid duplicates
+        self._attr_name = growspace.name
         self._attr_unique_id = f"{DOMAIN}_{growspace_id}"
-        # Force fixed entity IDs for special growspaces
-        if growspace.id == "dry":
-            self._attr_unique_id = f"{DOMAIN}_growspace_dry"
-            self._attr_name = "dry"
-        elif growspace.id == "cure":
-            self._attr_unique_id = "growspace_cure"
-            self._attr_name = "cure"
-            self._attr_entity_id = "sensor.cure"
-        elif growspace.id == "mother":
-            self._attr_unique_id = "growspace_mother"
-            self._attr_name = "mother"
-            self._attr_entity_id = "sensor.mother"
-        elif growspace.id == "clone":
-            self._attr_unique_id = "growspace_clone"
-            self._attr_name = "clone"
-            self._attr_entity_id = "sensor.clone"
-        else:
-            self._attr_unique_id = f"growspace_{growspace.id}"
-            self._attr_name = f"{growspace.name}"
-            self._attr_entity_id = f"sensor.{growspace.id}"
 
         # Set up device info
         self._attr_device_info = DeviceInfo(

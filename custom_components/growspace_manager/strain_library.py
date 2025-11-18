@@ -60,9 +60,9 @@ class StrainLibrary:
                 self._get_key(strain, ""): {"harvests": []} for strain in data
             }
             await self.save()  # Save in the new format immediately
-        elif isinstance(data, dict):  # New format
+        elif isinstance(data, dict):  # Current format: dict
             self.strains = data or {}
-        else:  # No data or invalid format
+        else:  # No data or unrecognized format
             self.strains = {}
 
     async def save(self) -> None:

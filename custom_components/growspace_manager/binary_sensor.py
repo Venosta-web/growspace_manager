@@ -14,7 +14,7 @@ from datetime import date, datetime, timedelta
 
 from homeassistant.components.binary_sensor import BinarySensorEntity
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.core import HomeAssistant, callback
+from homeassistant.core import HomeAssistant, callback, State
 from homeassistant.helpers.recorder import get_instance as get_recorder_instance
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
@@ -312,7 +312,8 @@ class BayesianEnvironmentSensor(BinarySensorEntity):
             numeric_states = [
                 (s.last_updated, float(s.state))
                 for s in states
-                if s.state not in [STATE_UNKNOWN, STATE_UNAVAILABLE]
+                if isinstance(s, State)
+                and s.state not in [STATE_UNKNOWN, STATE_UNAVAILABLE]
                 and s.state is not None
             ]
 
@@ -415,8 +416,7 @@ class BayesianEnvironmentSensor(BinarySensorEntity):
         new_state_on = self.is_on
 
         if new_state_on != old_state_on:
-            notification = self.get_notification_title_message(new_state_on)
-            if notification:
+            if notification := self.get_notification_title_message(new_state_on):
                 title, message = notification
                 await self._send_notification(title, message)
 
@@ -495,7 +495,9 @@ class BayesianStressSensor(BayesianEnvironmentSensor):
         observations = []
 
         # 1. ASYNCHRONOUS TREND ANALYSIS (Logic moved to bayesian_evaluator.py)
-        trend_obs, trend_reasons, trend_states = await async_evaluate_stress_trend(self, state)
+        trend_obs, trend_reasons, trend_states = await async_evaluate_stress_trend(
+            self, state
+        )
         observations.extend(trend_obs)
         self._reasons.extend(trend_reasons)
         self._sensor_states.update(trend_states)
@@ -586,7 +588,7 @@ class LightCycleVerificationSensor(BinarySensorEntity):
 
         max_veg = max(
             (
-                self.coordinator._calculate_days(p.veg_start)
+                self.coordinator.calculate_days(p.veg_start)
                 for p in plants
                 if p.veg_start
             ),
@@ -594,7 +596,7 @@ class LightCycleVerificationSensor(BinarySensorEntity):
         )
         max_flower = max(
             (
-                self.coordinator._calculate_days(p.flower_start)
+                self.coordinator.calculate_days(p.flower_start)
                 for p in plants
                 if p.flower_start
             ),
@@ -794,7 +796,9 @@ class BayesianMoldRiskSensor(BayesianEnvironmentSensor):
         observations = []
 
         # --- Trend Analysis for Mold Risk (Moved to bayesian_evaluator.py) ---
-        trend_obs, trend_reasons, trend_states = await async_evaluate_mold_risk_trend(self, state)
+        trend_obs, trend_reasons, trend_states = await async_evaluate_mold_risk_trend(
+            self, state
+        )
         observations.extend(trend_obs)
         self._reasons.extend(trend_reasons)
         self._sensor_states.update(trend_states)

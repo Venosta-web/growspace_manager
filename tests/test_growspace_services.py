@@ -77,6 +77,36 @@ async def test_handle_add_growspace(
 
 
 @pytest.mark.asyncio
+@patch("homeassistant.helpers.device_registry.async_get")
+async def test_handle_add_growspace_no_mobile_app_notification(
+    mock_async_get,
+    mock_hass,
+    mock_coordinator,
+    mock_strain_library,
+    mock_call,
+):
+    """Test handle_add_growspace when notification_target is not a mobile app."""
+    mock_call.data = {
+        "name": "Test GS",
+        "rows": 2,
+        "plants_per_row": 3,
+        "notification_target": "non_existent_mobile_app",
+    }
+    mock_async_get.return_value.devices = {}  # No mobile devices registered
+
+    await handle_add_growspace(
+        mock_hass, mock_coordinator, mock_strain_library, mock_call
+    )
+
+    mock_coordinator.async_add_growspace.assert_awaited_once_with(
+        name="Test GS", rows=2, plants_per_row=3, notification_target=None
+    )
+    mock_hass.bus.async_fire.assert_called_once_with(
+        f"{DOMAIN}_growspace_added", {"growspace_id": "gs1", "name": "Test GS"}
+    )
+
+
+@pytest.mark.asyncio
 @patch(
     "custom_components.growspace_manager.services.growspace.create_notification"
 )
