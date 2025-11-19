@@ -145,6 +145,36 @@ class StrainLibrary:
         await self.save()
         return len(self.strains)
 
+    async def import_strains(
+        self, strains: list[str], replace: bool = False
+    ) -> int:
+        """Import a list of strains.
+
+        Args:
+            strains: The list of strain names to import.
+            replace: If True, the existing library will be cleared before import.
+
+        Returns:
+            The total number of strains in the library after the import.
+        """
+        if not isinstance(strains, list):
+            _LOGGER.warning("Import failed: strains must be a list.")
+            return len(self.strains)
+
+        new_data = {
+            self._get_key(strain, ""): {"harvests": []} for strain in strains
+        }
+
+        if replace:
+            self.strains = new_data
+        else:
+            for key, value in new_data.items():
+                if key not in self.strains:
+                    self.strains[key] = value
+        
+        await self.save()
+        return len(self.strains)
+
     async def clear(self) -> int:
         """Clear all entries from the strain library.
 

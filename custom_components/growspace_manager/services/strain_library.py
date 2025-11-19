@@ -107,7 +107,7 @@ async def handle_clear_strain_library(
     try:
         # Assuming StrainLibrary has an instance method to clear its strains.
         # If not, you might need to adapt this based on its actual API.
-        cleared_count = await strain_library.clear_strains()
+        cleared_count = await strain_library.clear()
 
         _LOGGER.info("Cleared %s strains from library", cleared_count)
         await coordinator.async_save()
@@ -118,7 +118,7 @@ async def handle_clear_strain_library(
         )
     except AttributeError:
         _LOGGER.error(
-            "StrainLibrary instance does not have a 'clear_strains' method. Please verify the method name."
+            "StrainLibrary instance does not have a 'clear' method. Please verify the method name."
         )
         create_notification(
             hass,
