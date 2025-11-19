@@ -731,7 +731,17 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
         # ✅ Load strain library data (strains already initialized in __init__)
         strain_data = data.get("strain_library", [])
         if strain_data:
-            await self.strains.import_strains(strain_data, replace=True)
+            # Convert list to dict format for import_library if necessary
+            # strain_data from storage might be a list of strings (old format) or dict (new format)
+            # get_all() returns a dict, but async_save saves list(self.strains.get_all()) ?? 
+            # Wait, line 660: "strain_library": list(self.strains.get_all()),
+            # get_all() returns dict. list(dict) returns list of keys!
+            # So strain_data is a list of keys (strings).
+            
+            library_data = {
+                f"{strain.strip()}|default": {"harvests": []} for strain in strain_data
+            }
+            await self.strains.import_library(library_data, replace=True)
             _LOGGER.info("Loaded %d strains", len(strain_data))
 
         # Migrate legacy growspace aliases

@@ -209,8 +209,8 @@ async def async_setup_entry(
                 await entity.async_remove()
 
     # Listen for coordinator updates to manage dynamic entities
-    async def _listener_callback() -> None:
-        await _handlecoordinator_update_async()
+    def _listener_callback() -> None:
+        hass.async_create_task(_handlecoordinator_update_async())
 
     coordinator.async_add_listener(_listener_callback)
 
