@@ -1,0 +1,35 @@
+name: Pre-release
+
+on:
+  push:
+    branches:
+      - prerelease
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # 2. Creates the ZIP file
+      - name: ZIP Release
+        run: |
+          cd custom_components
+          zip -r ../growspace_manager.zip ./growspace_manager \
+            -x "growspace_manager/.github/*" \
+            -x "growspace_manager/.coverage" \
+            -x "growspace_manager/.gitignore" \
+            -x "growspace_manager/pytest.ini" \
+            -x "growspace_manager/module.json"
+
+      # 3. Creates the GitHub Pre-release and attaches the new zip file
+      - name: Create Pre-release
+        uses: softprops/action-gh-release@v1
+        with:
+          prerelease: true
+          tag_name: prerelease-${{ github.sha }}
+          name: Pre-release-${{ github.ref_name }}-${{ github.sha_short }}
+          files: growspace_manager.zip
