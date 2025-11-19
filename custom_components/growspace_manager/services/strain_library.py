@@ -67,8 +67,30 @@ async def handle_import_strain_library(
         return
 
     try:
-        added_count = await strain_library.import_strains(
-            strains=strains_to_import,
+        # Convert list of strings to the expected dictionary format for import_library
+        # This ensures compatibility if the StrainLibrary class definition hasn't updated yet.
+        library_data = {
+            strain.strip() + "|": {"harvests": []} for strain in strains_to_import
+        }
+        
+        # Note: The key format in StrainLibrary._get_key is f"{strain.strip()}|{phenotype.strip() or 'default'}"
+        # Since we don't have phenotypes here, we might need to be careful.
+        # Let's check how import_strains implemented it:
+        # self._get_key(strain, "") -> strain|default (if empty phenotype becomes default?)
+        # Let's look at _get_key again.
+        
+        # Re-reading _get_key from previous view_file:
+        # return f"{strain.strip()}|{phenotype.strip() or 'default'}"
+        
+        # So if phenotype is empty string "", it becomes "default".
+        # So key is "StrainName|default".
+        
+        library_data = {
+            f"{strain.strip()}|default": {"harvests": []} for strain in strains_to_import
+        }
+
+        added_count = await strain_library.import_library(
+            library_data=library_data,
             replace=replace_existing,
         )
         _LOGGER.info(
