@@ -1,0 +1,48 @@
+name: Pre-release
+
+on:
+  push:
+    branches:
+      - prerelease
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Update version
+        run: |
+          VERSION="0.2.$(date +%Y%m%d%H%M%S)"
+          echo "New version: $VERSION"
+          cd custom_components/growspace_manager
+          # Use jq to reliably update the version
+          if ! jq --arg v "$VERSION" '.version = $v' manifest.json > manifest.json.tmp; then
+            echo "jq command failed"
+            exit 1
+          fi
+          mv manifest.json.tmp manifest.json
+          cd ../..
+
+      # 2. Creates the ZIP file
+      - name: ZIP Release
+        run: |
+          cd custom_components
+          zip -r ../growspace_manager.zip ./growspace_manager \
+            -x "growspace_manager/.github/*" \
+            -x "growspace_manager/.coverage" \
+            -x "growspace_manager/.gitignore" \
+            -x "growspace_manager/pytest.ini" \
+            -x "growspace_manager/module.json"
+
+      # 3. Creates the GitHub Pre-release and attaches the new zip file
+      - name: Create Pre-release
+        uses: softprops/action-gh-release@v1
+        with:
+          prerelease: true
+          tag_name: prerelease-${{ github.sha }}
+          name: Pre-release-${{ github.ref_name }}-${{ github.sha_short }}
+          files: growspace_manager.zip
