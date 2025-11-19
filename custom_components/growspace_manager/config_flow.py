@@ -289,6 +289,8 @@ class OptionsFlowHandler(OptionsFlow):
                 return await self.async_step_configure_global()
             if action == "manage_timed_notifications":
                 return await self.async_step_manage_timed_notifications()
+            if action == "manage_strain_library":
+                return await self.async_step_manage_strain_library()
             return self.async_create_entry(title="", data=user_input)
 
         return self.async_show_form(
@@ -1513,6 +1515,10 @@ class OptionsFlowHandler(OptionsFlow):
                                 value="manage_timed_notifications",
                                 label="Timed Notifications",
                             ),
+                            selector.SelectOptionDict(
+                                value="manage_strain_library",
+                                label="Manage Strain Library",
+                            ),
                         ],
                         mode=selector.SelectSelectorMode.DROPDOWN,
                     )
@@ -1674,7 +1680,85 @@ class OptionsFlowHandler(OptionsFlow):
             A voluptuous schema for the form.
         """
 
-        growspace = coordinator.growspaces.get(plant.growspace_id)
+    async def async_step_manage_strain_library(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Show the menu for managing the strain library."""
+        coordinator = self.hass.data[DOMAIN][self._config_entry.entry_id][
+            "coordinator"
+        ]
+
+        if user_input is not None:
+            action = user_input.get("action")
+            if action == "add":
+                return await self.async_step_add_strain()
+            if action == "remove":
+                strain_to_remove = user_input.get("strain_id")
+                if strain_to_remove:
+                    strain, phenotype = strain_to_remove.split("|")
+                    await coordinator.async_remove_strain(strain, phenotype)
+                # Redisplay the form to show the updated list
+                return self.async_show_form(
+                    step_id="manage_strain_library",
+                    data_schema=self._get_strain_library_schema(coordinator),
+                )
+            if action == "back":
+                return await self.async_step_init()
+
+        return self.async_show_form(
+            step_id="manage_strain_library",
+            data_schema=self._get_strain_library_schema(coordinator),
+        )
+
+    async def async_step_add_strain(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Show the form for adding a new strain."""
+        coordinator = self.hass.data[DOMAIN][self._config_entry.entry_id][
+            "coordinator"
+        ]
+
+        if user_input is not None:
+            strain = user_input.get("strain")
+            phenotype = user_input.get("phenotype")
+            await coordinator.async_add_strain(strain, phenotype)
+            return await self.async_step_manage_strain_library()
+
+        return self.async_show_form(
+            step_id="add_strain",
+            data_schema=vol.Schema(
+                {
+                    vol.Required("strain"): selector.TextSelector(),
+                    vol.Optional("phenotype"): selector.TextSelector(),
+                }
+            ),
+        )
+
+    def _get_strain_library_schema(self, coordinator) -> vol.Schema:
+        """Build the schema for the strain library management menu."""
+        strains = coordinator.strains.get_all()
+        strain_options = [
+            selector.SelectOptionDict(value=key, label=key) for key in strains.keys()
+        ]
+
+        schema = {
+            vol.Required("action", default="add"): selector.SelectSelector(
+                selector.SelectSelectorConfig(
+                    options=[
+                        selector.SelectOptionDict(value="add", label="Add Strain"),
+                        selector.SelectOptionDict(value="remove", label="Remove Strain"),
+                        selector.SelectOptionDict(value="back", label="← Back"),
+                    ]
+                )
+            )
+        }
+
+        if strain_options:
+            schema[vol.Optional("strain_id")] = selector.SelectSelector(
+                selector.SelectSelectorConfig(options=strain_options)
+            )
+
+        return vol.Schema(schema)
 
         # Ensure rows and plants_per_row are integers
         rows = int(growspace.rows) if growspace else 10

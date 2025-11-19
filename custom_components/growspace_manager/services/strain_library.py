@@ -116,6 +116,18 @@ async def handle_import_strain_library(
         raise
 
 
+async def handle_add_strain(
+    hass: HomeAssistant,
+    coordinator: GrowspaceCoordinator,
+    strain_library: StrainLibrary,
+    call: ServiceCall,
+) -> None:
+    """Handle the add_strain service call."""
+    strain = call.data.get("strain")
+    phenotype = call.data.get("phenotype")
+    await coordinator.async_add_strain(strain, phenotype)
+
+
 async def handle_clear_strain_library(
     hass: HomeAssistant,
     coordinator: GrowspaceCoordinator,
