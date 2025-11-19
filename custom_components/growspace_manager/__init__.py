@@ -16,6 +16,7 @@ from homeassistant.helpers.storage import Store
 from .const import (
     ADD_GROWSPACE_SCHEMA,
     ADD_PLANT_SCHEMA,
+    ADD_STRAIN_SCHEMA,
     CLEAR_STRAIN_LIBRARY_SCHEMA,
     CONFIGURE_ENVIRONMENT_SCHEMA,
     DEBUG_CLEANUP_LEGACY_SCHEMA,
@@ -178,6 +179,11 @@ async def _register_services(
             strain_library_services.handle_clear_strain_library,
             CLEAR_STRAIN_LIBRARY_SCHEMA,
         ),
+        (
+            "add_strain",
+            strain_library_services.handle_add_strain,
+            ADD_STRAIN_SCHEMA,
+        ),
         ("test_notification", debug.handle_test_notification, None),
         (
             "debug_cleanup_legacy",
@@ -295,6 +301,7 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             "export_strain_library",
             "import_strain_library",
             "clear_strain_library",
+            "add_strain",
             "test_notification",
             "debug_cleanup_legacy",
             "debug_list_growspaces",

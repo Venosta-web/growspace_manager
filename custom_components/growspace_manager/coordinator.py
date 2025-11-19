@@ -1941,29 +1941,39 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
     # STRAIN LIBRARY MANAGEMENT
     # =============================================================================
 
-    async def add_strain(self, strain: str) -> None:
+    async def async_add_strain(
+        self, strain: str, phenotype: str | None = None
+    ) -> None:
         """Add a new strain to the strain library.
 
         Args:
             strain: The name of the strain to add.
+            phenotype: The phenotype of the strain (optional).
         """
-        await self.strains.add(strain)
+        await self.strains.add_strain(strain, phenotype)
+        self.async_set_updated_data(self.data)
 
-    async def remove_strain(self, strain: str) -> None:
+    async def async_remove_strain(self, strain: str, phenotype: str) -> None:
         """Remove a strain from the strain library.
 
         Args:
             strain: The name of the strain to remove.
+            phenotype: The phenotype of the strain to remove.
         """
-        await self.strains.remove(strain)
+        await self.strains.remove_strain_phenotype(strain, phenotype)
+        self.async_set_updated_data(self.data)
 
     def get_strain_options(self) -> list[str]:
-        """Get a list of all strains in the library.
+        """Get a sorted list of unique strain names from the library.
 
         Returns:
-            A list of strain names.
+            A sorted list of unique strain names.
         """
-        return self.strains.get_all()
+        # The keys are in 'strain|phenotype' format
+        all_keys = self.strains.get_all().keys()
+        # Extract just the strain part and get unique values
+        unique_strains = sorted({key.split("|")[0] for key in all_keys})
+        return unique_strains
 
     def export_strain_library(self) -> list[str]:
         """Export all strains from the library.
