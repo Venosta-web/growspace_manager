@@ -1172,9 +1172,36 @@ async def test_switch_plants_exception(
         mock_notify.assert_called()
 
 
-# ============================================================================
-# Test handle_move_plant
-# ============================================================================
+@pytest.mark.asyncio
+async def test_update_plant_adds_to_strain_library_if_new(
+    hass: HomeAssistant, mock_coordinator, mock_strain_library, mock_plant
+):
+    """Test that updating a plant with a new strain/phenotype adds it to the library."""
+    # Arrange
+    mock_coordinator.plants = {"plant_1": mock_plant}
+    mock_strain_library._get_key.return_value = "New Strain|New Pheno"
+    mock_strain_library.strains = {}  # Strain doesn't exist
+
+    call = ServiceCall(
+        hass,
+        domain=DOMAIN,
+        service="update_plant",
+        data={
+            "plant_id": "plant_1",
+            "strain": "New Strain",
+            "phenotype": "New Pheno",
+        },
+    )
+
+    # Act
+    await handle_update_plant(hass, mock_coordinator, mock_strain_library, call)
+    await hass.async_block_till_done()
+
+    # Assert
+    mock_strain_library.add_strain.assert_called_once_with(
+        "New Strain", "New Pheno"
+    )
+    mock_coordinator.async_update_plant.assert_called_once()
 
 
 @pytest.mark.asyncio

@@ -453,6 +453,22 @@ async def handle_update_plant(
             )
             return
 
+        # If strain and phenotype are being updated, ensure they exist in the library
+        if "strain" in update_data and "phenotype" in update_data:
+            strain = update_data["strain"]
+            phenotype = update_data["phenotype"]
+            key = strain_library._get_key(strain, phenotype)
+            if key not in strain_library.strains:
+                _LOGGER.info(
+                    "Strain '%s' with phenotype '%s' not in library, adding it.",
+                    strain,
+                    phenotype,
+                )
+                await strain_library.add_strain(
+                    strain,
+                    phenotype,
+                )
+
         await coordinator.async_update_plant(plant_id, **update_data)
         _LOGGER.info(
             "Plant %s updated successfully with fields: %s",
