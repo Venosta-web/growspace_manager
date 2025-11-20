@@ -1109,6 +1109,10 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
 
         await self.async_save()
         return plant
+        self.plants[plant_id] = plant
+
+        await self.async_save()
+        return plant
 
     async def _handle_clone_creation(
         self,
