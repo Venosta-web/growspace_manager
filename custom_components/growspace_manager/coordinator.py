@@ -55,7 +55,11 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
     """
 
     def __init__(
-        self, hass, data: dict | None = None, options: dict | None = None
+        self,
+        hass,
+        data: dict | None = None,
+        options: dict | None = None,
+        strain_library: StrainLibrary | None = None,
     ) -> None:
         """Initialize the Growspace Coordinator.
 
@@ -78,8 +82,12 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
         self.options = options or {}
         _LOGGER.info("--- COORDINATOR INITIALIZED WITH OPTIONS: %s ---", self.options)
 
-        # Initialize strain library immediately
-        self.strains = StrainLibrary(hass, STORAGE_VERSION, STORAGE_KEY_STRAIN_LIBRARY)
+        # Initialize strain library
+        if strain_library is None:
+            # Fallback for testing or legacy init
+            self.strains = StrainLibrary(hass, STORAGE_VERSION, STORAGE_KEY_STRAIN_LIBRARY)
+        else:
+            self.strains = strain_library
 
         self._notifications_sent: dict[str, dict[str, bool]] = {}
         self._notifications_enabled: dict[
@@ -657,7 +665,6 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
             {
                 "plants": {pid: asdict(p) for pid, p in self.plants.items()},
                 "growspaces": {gid: asdict(g) for gid, g in self.growspaces.items()},
-                "strain_library": list(self.strains.get_all()),
                 "notifications_sent": self._notifications_sent,  # ✅ Save notification tracking
                 "notifications_enabled": self._notifications_enabled,  # ✅ Save switch states
             }
@@ -728,21 +735,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
             if growspace_id not in self._notifications_enabled:
                 self._notifications_enabled[growspace_id] = True
 
-        # ✅ Load strain library data (strains already initialized in __init__)
-        strain_data = data.get("strain_library", [])
-        if strain_data:
-            # Convert list to dict format for import_library if necessary
-            # strain_data from storage might be a list of strings (old format) or dict (new format)
-            # get_all() returns a dict, but async_save saves list(self.strains.get_all()) ?? 
-            # Wait, line 660: "strain_library": list(self.strains.get_all()),
-            # get_all() returns dict. list(dict) returns list of keys!
-            # So strain_data is a list of keys (strings).
-            
-            library_data = {
-                f"{strain.strip()}|default": {"harvests": []} for strain in strain_data
-            }
-            await self.strains.import_library(library_data, replace=True)
-            _LOGGER.info("Loaded %d strains", len(strain_data))
+
 
         # Migrate legacy growspace aliases
         self._migrate_legacy_growspaces()
@@ -1941,28 +1934,6 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
     # STRAIN LIBRARY MANAGEMENT
     # =============================================================================
 
-    async def async_add_strain(
-        self, strain: str, phenotype: str | None = None
-    ) -> None:
-        """Add a new strain to the strain library.
-
-        Args:
-            strain: The name of the strain to add.
-            phenotype: The phenotype of the strain (optional).
-        """
-        await self.strains.add_strain(strain, phenotype)
-        self.async_set_updated_data(self.data)
-
-    async def async_remove_strain(self, strain: str, phenotype: str) -> None:
-        """Remove a strain from the strain library.
-
-        Args:
-            strain: The name of the strain to remove.
-            phenotype: The phenotype of the strain to remove.
-        """
-        await self.strains.remove_strain_phenotype(strain, phenotype)
-        self.async_set_updated_data(self.data)
-
     def get_strain_options(self) -> list[str]:
         """Get a sorted list of unique strain names from the library.
 
@@ -1983,17 +1954,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
         """
         return self.get_strain_options()
 
-    async def import_strains(self, strains: list[str], replace: bool = False) -> int:
-        """Import a list of strains into the library.
 
-        Args:
-            strains: The list of strain names to import.
-            replace: If True, replaces the entire library. Otherwise, adds to it.
-
-        Returns:
-            The number of strains successfully imported.
-        """
-        return await self.strains.import_strains(strains, replace)
 
     async def clear_strains(self) -> int:
         """Remove all strains from the library.

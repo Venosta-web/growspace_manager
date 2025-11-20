@@ -1696,7 +1696,7 @@ class OptionsFlowHandler(OptionsFlow):
                 strain_to_remove = user_input.get("strain_id")
                 if strain_to_remove:
                     strain, phenotype = strain_to_remove.split("|")
-                    await coordinator.async_remove_strain(strain, phenotype)
+                    await coordinator.strains.remove_strain(strain, phenotype)
                 # Redisplay the form to show the updated list
                 return self.async_show_form(
                     step_id="manage_strain_library",
@@ -1721,7 +1721,7 @@ class OptionsFlowHandler(OptionsFlow):
         if user_input is not None:
             strain = user_input.get("strain")
             phenotype = user_input.get("phenotype")
-            await coordinator.async_add_strain(strain, phenotype)
+            await coordinator.strains.add_strain(strain, phenotype)
             return await self.async_step_manage_strain_library()
 
         return self.async_show_form(

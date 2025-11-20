@@ -125,7 +125,7 @@ async def handle_add_strain(
     """Handle the add_strain service call."""
     strain = call.data.get("strain")
     phenotype = call.data.get("phenotype")
-    await coordinator.async_add_strain(strain, phenotype)
+    await strain_library.add_strain(strain, phenotype)
 
 
 async def handle_clear_strain_library(

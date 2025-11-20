@@ -73,19 +73,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     store = Store(hass, STORAGE_VERSION, STORAGE_KEY)
     data = await store.async_load() or {}
 
-    coordinator = GrowspaceCoordinator(
-        hass,
-        data,
-    )
-    await coordinator.async_load()  # Load data into the coordinator
-
-    # Ensure DOMAIN exists in hass.data
-    hass.data.setdefault(DOMAIN, {})
-    hass.data[DOMAIN][entry.entry_id] = {
-        "coordinator": coordinator,
-        "created_entities": [],
-    }
-
     # Initialize and load Strain Library (global instance)
     strain_library_instance = StrainLibrary(
         hass,
@@ -93,7 +80,20 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         storage_key=STORAGE_KEY_STRAIN_LIBRARY,
     )
     await strain_library_instance.load()
+    hass.data.setdefault(DOMAIN, {})
     hass.data[DOMAIN]["strain_library"] = strain_library_instance
+
+    coordinator = GrowspaceCoordinator(
+        hass,
+        data,
+        strain_library=strain_library_instance,
+    )
+    await coordinator.async_load()  # Load data into the coordinator
+
+    hass.data[DOMAIN][entry.entry_id] = {
+        "coordinator": coordinator,
+        "created_entities": [],
+    }
 
     # Register all custom services
     _LOGGER.debug("Registering services for domain %s", DOMAIN)
