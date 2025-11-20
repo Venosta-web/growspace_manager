@@ -446,3 +446,17 @@ add_strain:
       required: false
       selector:
         text:
+
+remove_strain:
+  description: Remove a strain from the strain library
+  fields:
+    strain:
+      description: Name of the strain
+      required: true
+      selector:
+        text:
+    phenotype:
+      description: Phenotype of the strain
+      required: false
+      selector:
+        text:

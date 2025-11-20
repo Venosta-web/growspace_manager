@@ -62,11 +62,14 @@ class StrainLibrary:
             await self.save()  # Save in the new format immediately
         elif isinstance(data, dict):  # Current format: dict
             self.strains = data or {}
+            _LOGGER.info("Loaded strain library with %d strains", len(self.strains))
         else:  # No data or unrecognized format
             self.strains = {}
+            _LOGGER.info("Initialized empty strain library (no data found)")
 
     async def save(self) -> None:
         """Save the current strain library to persistent storage."""
+        _LOGGER.debug("Saving strain library with %d strains", len(self.strains))
         await self.store.async_save(self.strains)
 
     async def record_harvest(

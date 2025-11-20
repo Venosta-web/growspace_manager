@@ -32,6 +32,7 @@ from .const import (
     REMOVE_ENVIRONMENT_SCHEMA,
     REMOVE_GROWSPACE_SCHEMA,
     REMOVE_PLANT_SCHEMA,
+    REMOVE_STRAIN_SCHEMA,
     STORAGE_KEY,
     STORAGE_KEY_STRAIN_LIBRARY,
     STORAGE_VERSION,
@@ -183,6 +184,11 @@ async def _register_services(
             "add_strain",
             strain_library_services.handle_add_strain,
             ADD_STRAIN_SCHEMA,
+        ),
+        (
+            "remove_strain",
+            strain_library_services.handle_remove_strain,
+            REMOVE_STRAIN_SCHEMA,
         ),
         ("test_notification", debug.handle_test_notification, None),
         (

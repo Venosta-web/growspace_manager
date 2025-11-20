@@ -740,6 +740,13 @@ class StrainLibrarySensor(CoordinatorEntity[GrowspaceCoordinator], SensorEntity)
 
         # Add the raw data for advanced users if needed
         analytics["raw_data"] = all_strains
+        
+        # Add simple list of strains for frontend (matching frontend expectation)
+        # Frontend expects a list of strings.
+        # The keys are "Strain Name|Phenotype" or "Strain Name|default"
+        # We should probably return just the keys as strings.
+        analytics["strains"] = list(all_strains.keys())
+
         return analytics
 
 
