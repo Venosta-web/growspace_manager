@@ -1679,86 +1679,7 @@ class OptionsFlowHandler(OptionsFlow):
         Returns:
             A voluptuous schema for the form.
         """
-
-    async def async_step_manage_strain_library(
-        self, user_input: dict[str, Any] | None = None
-    ) -> ConfigFlowResult:
-        """Show the menu for managing the strain library."""
-        coordinator = self.hass.data[DOMAIN][self._config_entry.entry_id][
-            "coordinator"
-        ]
-
-        if user_input is not None:
-            action = user_input.get("action")
-            if action == "add":
-                return await self.async_step_add_strain()
-            if action == "remove":
-                strain_to_remove = user_input.get("strain_id")
-                if strain_to_remove:
-                    strain, phenotype = strain_to_remove.split("|")
-                    await coordinator.strains.remove_strain(strain, phenotype)
-                # Redisplay the form to show the updated list
-                return self.async_show_form(
-                    step_id="manage_strain_library",
-                    data_schema=self._get_strain_library_schema(coordinator),
-                )
-            if action == "back":
-                return await self.async_step_init()
-
-        return self.async_show_form(
-            step_id="manage_strain_library",
-            data_schema=self._get_strain_library_schema(coordinator),
-        )
-
-    async def async_step_add_strain(
-        self, user_input: dict[str, Any] | None = None
-    ) -> ConfigFlowResult:
-        """Show the form for adding a new strain."""
-        coordinator = self.hass.data[DOMAIN][self._config_entry.entry_id][
-            "coordinator"
-        ]
-
-        if user_input is not None:
-            strain = user_input.get("strain")
-            phenotype = user_input.get("phenotype")
-            await coordinator.strains.add_strain(strain, phenotype)
-            return await self.async_step_manage_strain_library()
-
-        return self.async_show_form(
-            step_id="add_strain",
-            data_schema=vol.Schema(
-                {
-                    vol.Required("strain"): selector.TextSelector(),
-                    vol.Optional("phenotype"): selector.TextSelector(),
-                }
-            ),
-        )
-
-    def _get_strain_library_schema(self, coordinator) -> vol.Schema:
-        """Build the schema for the strain library management menu."""
-        strains = coordinator.strains.get_all()
-        strain_options = [
-            selector.SelectOptionDict(value=key, label=key) for key in strains.keys()
-        ]
-
-        schema = {
-            vol.Required("action", default="add"): selector.SelectSelector(
-                selector.SelectSelectorConfig(
-                    options=[
-                        selector.SelectOptionDict(value="add", label="Add Strain"),
-                        selector.SelectOptionDict(value="remove", label="Remove Strain"),
-                        selector.SelectOptionDict(value="back", label="← Back"),
-                    ]
-                )
-            )
-        }
-
-        if strain_options:
-            schema[vol.Optional("strain_id")] = selector.SelectSelector(
-                selector.SelectSelectorConfig(options=strain_options)
-            )
-
-        return vol.Schema(schema)
+        growspace = coordinator.growspaces.get(plant.growspace_id) if plant else None
 
         # Ensure rows and plants_per_row are integers
         rows = int(growspace.rows) if growspace else 10
@@ -1787,21 +1708,17 @@ class OptionsFlowHandler(OptionsFlow):
         return vol.Schema(
             {
                 vol.Optional(
-                    "strain", default=plant.get("strain", "")
+                    "strain", default=plant.strain if plant else ""
                 ): strain_selector,
                 vol.Optional(
-                    "phenotype", default=plant.get("phenotype", "")
+                    "phenotype", default=plant.phenotype if plant else ""
                 ): selector.TextSelector(),
-                vol.Optional(
-                    "row", default=plant.get("row", 1)
-                ): selector.NumberSelector(
+                vol.Optional("row", default=plant.row if plant else 1): selector.NumberSelector(
                     selector.NumberSelectorConfig(
                         min=1, max=rows, mode=selector.NumberSelectorMode.BOX
                     )
                 ),
-                vol.Optional(
-                    "col", default=plant.get("col", 1)
-                ): selector.NumberSelector(
+                vol.Optional("col", default=plant.col if plant else 1): selector.NumberSelector(
                     selector.NumberSelectorConfig(
                         min=1, max=plants_per_row, mode=selector.NumberSelectorMode.BOX
                     )
@@ -1810,3 +1727,21 @@ class OptionsFlowHandler(OptionsFlow):
                 vol.Optional("flower_start"): selector.DateSelector(),
             }
         )
+
+    async def async_step_manage_strain_library(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Show the menu for managing the strain library."""
+        coordinator = self.hass.data[DOMAIN][self._config_entry.entry_id][
+            "coordinator"
+        ]
+
+        if user_input is not None:
+            action = user_input.get("action")
+            if action == "add":
+                return await self.async_step_add_strain()
+            if action == "remove":
+                strain_to_remove = user_input.get("strain_id")
+                if strain_to_remove:
+                    strain, phenotype = strain_to_remove.split("|")
+                    await coordinator.strains.remove_strain_phenotype(strain, phenotype)
