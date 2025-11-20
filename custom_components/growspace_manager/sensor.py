@@ -716,7 +716,11 @@ class StrainLibrarySensor(CoordinatorEntity[GrowspaceCoordinator], SensorEntity)
         all_strains = self.coordinator.strains.get_all()
 
         for key, data in all_strains.items():
-            strain, phenotype = key.split("|")
+            try:
+                strain, phenotype = key.split("|", 1)
+            except ValueError:
+                _LOGGER.warning("Could not parse strain key: %s", key)
+                continue
             harvests = data.get("harvests", [])
             num_harvests = len(harvests)
 
