@@ -796,7 +796,10 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
         # ✅ Enable notifications by default for new growspace
         self._notifications_enabled[growspace_id] = True
 
+        self.update_data_property()
         await self.async_save()
+        self.async_set_updated_data(self.data)
+
         return growspace
 
     async def async_remove_growspace(self, growspace_id: str) -> None:
