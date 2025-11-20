@@ -433,3 +433,30 @@ configure_environment:
           min: 0.5
           max: 0.95
           step: 0.05
+add_strain:
+  description: Add a strain to the strain library
+  fields:
+    strain:
+      description: Name of the strain
+      required: true
+      selector:
+        text:
+    phenotype:
+      description: Phenotype of the strain
+      required: false
+      selector:
+        text:
+
+remove_strain:
+  description: Remove a strain from the strain library
+  fields:
+    strain:
+      description: Name of the strain
+      required: true
+      selector:
+        text:
+    phenotype:
+      description: Phenotype of the strain
+      required: false
+      selector:
+        text:

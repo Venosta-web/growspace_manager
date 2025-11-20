@@ -305,6 +305,20 @@ CLEAR_STRAIN_LIBRARY_SCHEMA = vol.Schema(
     }
 )
 
+ADD_STRAIN_SCHEMA = vol.Schema(
+    {
+        vol.Required("strain"): str,
+        vol.Optional("phenotype"): str,
+    }
+)
+
+REMOVE_STRAIN_SCHEMA = vol.Schema(
+    {
+        vol.Required("strain"): str,
+        vol.Optional("phenotype"): str,
+    }
+)
+
 # Debug Schemas
 DEBUG_CLEANUP_LEGACY_SCHEMA = vol.Schema(
     {

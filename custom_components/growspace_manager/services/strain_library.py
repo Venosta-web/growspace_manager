@@ -68,23 +68,7 @@ async def handle_import_strain_library(
 
     try:
         # Convert list of strings to the expected dictionary format for import_library
-        # This ensures compatibility if the StrainLibrary class definition hasn't updated yet.
-        library_data = {
-            strain.strip() + "|": {"harvests": []} for strain in strains_to_import
-        }
-        
-        # Note: The key format in StrainLibrary._get_key is f"{strain.strip()}|{phenotype.strip() or 'default'}"
-        # Since we don't have phenotypes here, we might need to be careful.
-        # Let's check how import_strains implemented it:
-        # self._get_key(strain, "") -> strain|default (if empty phenotype becomes default?)
-        # Let's look at _get_key again.
-        
-        # Re-reading _get_key from previous view_file:
-        # return f"{strain.strip()}|{phenotype.strip() or 'default'}"
-        
-        # So if phenotype is empty string "", it becomes "default".
-        # So key is "StrainName|default".
-        
+        # We use 'default' for phenotype to match StrainLibrary._get_key logic
         library_data = {
             f"{strain.strip()}|default": {"harvests": []} for strain in strains_to_import
         }
@@ -114,6 +98,31 @@ async def handle_import_strain_library(
             title="Growspace Manager Error",
         )
         raise
+
+
+async def handle_add_strain(
+    hass: HomeAssistant,
+    coordinator: GrowspaceCoordinator,
+    strain_library: StrainLibrary,
+    call: ServiceCall,
+) -> None:
+    """Handle the add_strain service call."""
+    strain = call.data.get("strain")
+    phenotype = call.data.get("phenotype")
+    await strain_library.add_strain(strain, phenotype)
+
+
+
+async def handle_remove_strain(
+    hass: HomeAssistant,
+    coordinator: GrowspaceCoordinator,
+    strain_library: StrainLibrary,
+    call: ServiceCall,
+) -> None:
+    """Handle the remove_strain service call."""
+    strain = call.data.get("strain")
+    phenotype = call.data.get("phenotype")
+    await strain_library.remove_strain_phenotype(strain, phenotype)
 
 
 async def handle_clear_strain_library(

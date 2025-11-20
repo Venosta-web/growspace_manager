@@ -62,11 +62,14 @@ class StrainLibrary:
             await self.save()  # Save in the new format immediately
         elif isinstance(data, dict):  # Current format: dict
             self.strains = data or {}
+            _LOGGER.info("Loaded strain library with %d strains", len(self.strains))
         else:  # No data or unrecognized format
             self.strains = {}
+            _LOGGER.info("Initialized empty strain library (no data found)")
 
     async def save(self) -> None:
         """Save the current strain library to persistent storage."""
+        _LOGGER.debug("Saving strain library with %d strains", len(self.strains))
         await self.store.async_save(self.strains)
 
     async def record_harvest(
@@ -100,6 +103,21 @@ class StrainLibrary:
             flower_days,
         )
         await self.save()
+
+    async def add_strain(self, strain: str, phenotype: str | None = None) -> None:
+        """Add a single strain/phenotype combination to the library.
+
+        If the strain/phenotype already exists, this method does nothing.
+
+        Args:
+            strain: The name of the strain to add.
+            phenotype: The phenotype of the strain (optional).
+        """
+        key = self._get_key(strain, phenotype or "default")
+        if key not in self.strains:
+            self.strains[key] = {"harvests": []}
+            _LOGGER.info("Added strain %s to library", key)
+            await self.save()
 
     async def remove_strain_phenotype(self, strain: str, phenotype: str) -> None:
         """Remove a specific strain/phenotype combination from the library.

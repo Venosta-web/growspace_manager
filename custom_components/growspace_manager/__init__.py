@@ -16,6 +16,7 @@ from homeassistant.helpers.storage import Store
 from .const import (
     ADD_GROWSPACE_SCHEMA,
     ADD_PLANT_SCHEMA,
+    ADD_STRAIN_SCHEMA,
     CLEAR_STRAIN_LIBRARY_SCHEMA,
     CONFIGURE_ENVIRONMENT_SCHEMA,
     DEBUG_CLEANUP_LEGACY_SCHEMA,
@@ -31,6 +32,7 @@ from .const import (
     REMOVE_ENVIRONMENT_SCHEMA,
     REMOVE_GROWSPACE_SCHEMA,
     REMOVE_PLANT_SCHEMA,
+    REMOVE_STRAIN_SCHEMA,
     STORAGE_KEY,
     STORAGE_KEY_STRAIN_LIBRARY,
     STORAGE_VERSION,
@@ -72,19 +74,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     store = Store(hass, STORAGE_VERSION, STORAGE_KEY)
     data = await store.async_load() or {}
 
-    coordinator = GrowspaceCoordinator(
-        hass,
-        data,
-    )
-    await coordinator.async_load()  # Load data into the coordinator
-
-    # Ensure DOMAIN exists in hass.data
-    hass.data.setdefault(DOMAIN, {})
-    hass.data[DOMAIN][entry.entry_id] = {
-        "coordinator": coordinator,
-        "created_entities": [],
-    }
-
     # Initialize and load Strain Library (global instance)
     strain_library_instance = StrainLibrary(
         hass,
@@ -92,7 +81,21 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         storage_key=STORAGE_KEY_STRAIN_LIBRARY,
     )
     await strain_library_instance.load()
+    hass.data.setdefault(DOMAIN, {})
     hass.data[DOMAIN]["strain_library"] = strain_library_instance
+
+    coordinator = GrowspaceCoordinator(
+        hass,
+        data,
+        strain_library=strain_library_instance,
+    )
+    await coordinator.async_load()  # Load data into the coordinator
+
+    hass.data[DOMAIN][entry.entry_id] = {
+        "coordinator": coordinator,
+        "store": store,
+        "created_entities": [],
+    }
 
     # Register all custom services
     _LOGGER.debug("Registering services for domain %s", DOMAIN)
@@ -177,6 +180,16 @@ async def _register_services(
             "clear_strain_library",
             strain_library_services.handle_clear_strain_library,
             CLEAR_STRAIN_LIBRARY_SCHEMA,
+        ),
+        (
+            "add_strain",
+            strain_library_services.handle_add_strain,
+            ADD_STRAIN_SCHEMA,
+        ),
+        (
+            "remove_strain",
+            strain_library_services.handle_remove_strain,
+            REMOVE_STRAIN_SCHEMA,
         ),
         ("test_notification", debug.handle_test_notification, None),
         (
@@ -295,6 +308,7 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             "export_strain_library",
             "import_strain_library",
             "clear_strain_library",
+            "add_strain",
             "test_notification",
             "debug_cleanup_legacy",
             "debug_list_growspaces",
