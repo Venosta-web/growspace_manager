@@ -1061,6 +1061,28 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
         Returns:
             The newly created Plant object.
         """
+        try:
+            self._validate_position_not_occupied(growspace_id, row, col)
+            final_row, final_col = row, col
+        except ValueError:
+            _LOGGER.info(
+                "Position (%d, %d) in growspace %s is occupied. Finding first available spot.",
+                row,
+                col,
+                growspace_id,
+            )
+            try:
+                final_row, final_col = self._find_first_available_position(
+                    growspace_id
+                )
+                _LOGGER.info(
+                    "Found available position at (%d, %d)", final_row, final_col
+                )
+            except ValueError as e:
+                # This happens if the growspace is full
+                _LOGGER.error("Could not add plant: %s", e)
+                raise e  # Re-raise the exception to be handled by the caller
+
         plant_id = str(uuid.uuid4())
         today = date.today().isoformat()
         plant = Plant(
@@ -1068,8 +1090,8 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
             growspace_id=growspace_id,
             strain=strain.strip(),
             phenotype=phenotype or "",
-            row=row,
-            col=col,
+            row=final_row,
+            col=final_col,
             stage=stage,
             created_at=today,
             type=type,
