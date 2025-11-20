@@ -42,7 +42,7 @@ def mock_coordinator():
     coordinator.async_save = AsyncMock()
     coordinator.async_request_refresh = AsyncMock()
     coordinator.get_growspace_plants = Mock(return_value=[])
-    coordinator._find_first_available_position = Mock(return_value=(1, 1))
+    coordinator.find_first_free_position = Mock(return_value=(1, 1))
     coordinator.store = Mock()
     coordinator.store.async_load = AsyncMock()
     coordinator.async_load = AsyncMock()
@@ -2017,52 +2017,37 @@ async def test_update_plant_with_empty_string_dates(
 
 
 @pytest.mark.asyncio
-@pytest.mark.asyncio
-async def test_move_plant_to_empty_position(
-    hass: HomeAssistant,
-    mock_coordinator,
-    mock_strain_library,
-    mock_plant,
-    mock_growspace,
+async def test_update_plant_moves_to_free_space_if_occupied(
+    hass: HomeAssistant, mock_coordinator, mock_strain_library, mock_plant
 ):
-    """Test moving plant to an empty position."""
+    """Test that updating a plant to an occupied position moves it to a free space."""
     # Arrange
-    mock_plant.row = 1
-    mock_plant.col = 1
-    mock_coordinator.plants = {"plant_1": mock_plant}
-    mock_coordinator.growspaces = {"gs1": mock_growspace}
-    mock_coordinator.get_growspace_plants = Mock(return_value=[mock_plant])
+    plant_2 = Mock()
+    plant_2.plant_id = "plant_2"
+    plant_2.row = 2
+    plant_2.col = 2
+    plant_2.growspace_id = "gs1"
+
+    mock_coordinator.plants = {"plant_1": mock_plant, "plant_2": plant_2}
+    mock_coordinator.get_growspace_plants.return_value = [mock_plant, plant_2]
+    mock_coordinator.find_first_free_position.return_value = (3, 3)
 
     call = ServiceCall(
         hass,
         domain=DOMAIN,
-        service="move_plant",
-        data={
-            "plant_id": "plant_1",
-            "new_row": 3,
-            "new_col": 3,
-        },
+        service="update_plant",
+        data={"plant_id": "plant_1", "row": 2, "col": 2},  # Try to move to plant_2's spot
     )
 
-    # Capture events via async_listen
-    events = []
-
-    def listener(event):
-        events.append(event)
-
-    hass.bus.async_listen(f"{DOMAIN}_plant_moved", listener)
-
     # Act
-    await handle_move_plant(hass, mock_coordinator, mock_strain_library, call)
+    await handle_update_plant(hass, mock_coordinator, mock_strain_library, call)
     await hass.async_block_till_done()
 
     # Assert
-    mock_coordinator.async_move_plant.assert_called_once_with("plant_1", 3, 3)
-    mock_coordinator.async_save.assert_called_once()
-    mock_coordinator.async_request_refresh.assert_called_once()
-
-    assert len(events) == 1
-    assert events[0].event_type == f"{DOMAIN}_plant_moved"
+    mock_coordinator.async_update_plant.assert_called_once()
+    update_kwargs = mock_coordinator.async_update_plant.call_args[1]
+    assert update_kwargs.get("row") == 3
+    assert update_kwargs.get("col") == 3
 
 
 @pytest.mark.asyncio

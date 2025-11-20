@@ -419,6 +419,45 @@ async def handle_update_plant(
 
         _LOGGER.debug("UPDATE_PLANT: Incoming call.data: %s", call.data)
 
+        plant = coordinator.plants[plant_id]
+        growspace_id = plant.growspace_id
+
+        # If position is being updated, check for conflicts
+        if "row" in call.data and "col" in call.data:
+            new_row, new_col = call.data["row"], call.data["col"]
+            existing_plants = coordinator.get_growspace_plants(growspace_id)
+            is_occupied = any(
+                p.plant_id != plant_id and p.row == new_row and p.col == new_col
+                for p in existing_plants
+            )
+
+            if is_occupied:
+                _LOGGER.warning(
+                    "Position (%d,%d) in growspace %s is occupied. Finding first free space.",
+                    new_row,
+                    new_col,
+                    growspace_id,
+                )
+                free_row, free_col = coordinator.find_first_free_position(growspace_id)
+                if free_row is not None and free_col is not None:
+                    _LOGGER.info(
+                        "Moving plant %s to first free space: (%d,%d)",
+                        plant_id,
+                        free_row,
+                        free_col,
+                    )
+                    call.data["row"] = free_row
+                    call.data["col"] = free_col
+                else:
+                    _LOGGER.error(
+                        "No free space found in growspace %s for plant %s. Position will not be updated.",
+                        growspace_id,
+                        plant_id,
+                    )
+                    # Remove row/col from call.data to prevent update
+                    call.data.pop("row")
+                    call.data.pop("col")
+
         update_data = {}
         for k, v in call.data.items():
             if k == "plant_id":
