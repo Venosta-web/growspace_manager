@@ -110,7 +110,7 @@ async def handle_add_strain(
     strain = call.data.get("strain")
     phenotype = call.data.get("phenotype")
     await strain_library.add_strain(strain, phenotype)
-
+    await coordinator.async_request_refresh()
 
 
 async def handle_remove_strain(
@@ -123,6 +123,7 @@ async def handle_remove_strain(
     strain = call.data.get("strain")
     phenotype = call.data.get("phenotype")
     await strain_library.remove_strain_phenotype(strain, phenotype)
+    await coordinator.async_request_refresh()
 
 
 async def handle_clear_strain_library(
