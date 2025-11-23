@@ -50,11 +50,25 @@ class StrainLibrary:
     async def load(self) -> None:
         """Load the strain library from persistent storage.
 
-        No migration is performed; the system assumes the new format or starts fresh.
+        Performs migration: renames 'notes' key to 'description' if found.
         """
         data = await self.store.async_load()
         if isinstance(data, dict):
             self.strains = data
+
+            # Migration: Rename 'notes' to 'description'
+            migrated_count = 0
+            for strain_data in self.strains.values():
+                if "phenotypes" in strain_data:
+                    for pheno_data in strain_data["phenotypes"].values():
+                        if "notes" in pheno_data and "description" not in pheno_data:
+                            pheno_data["description"] = pheno_data.pop("notes")
+                            migrated_count += 1
+
+            if migrated_count > 0:
+                _LOGGER.info("Migrated %d strain phenotypes from 'notes' to 'description'", migrated_count)
+                await self.save()
+
             _LOGGER.info("Loaded strain library with %d strains", len(self.strains))
         else:
             self.strains = {}
@@ -109,7 +123,7 @@ class StrainLibrary:
         sex: str | None = None,
         flower_days_min: int | None = None,
         flower_days_max: int | None = None,
-        notes: str | None = None,
+        description: str | None = None,
         image_base64: str | None = None,
     ) -> None:
         """Add a single strain/phenotype combination to the library.
@@ -123,7 +137,7 @@ class StrainLibrary:
             sex: The sex of the strain (e.g., Feminized, Regular, Autoflower).
             flower_days_min: Minimum flowering days.
             flower_days_max: Maximum flowering days.
-            notes: Grower notes or description.
+            description: Grower description or notes.
             image_base64: Base64 encoded image string.
         """
         strain = strain.strip()
@@ -147,7 +161,7 @@ class StrainLibrary:
                 sex,
                 flower_days_min,
                 flower_days_max,
-                notes,
+                description,
                 image_base64,
             ]
         ):
@@ -160,7 +174,7 @@ class StrainLibrary:
                 sex=sex,
                 flower_days_min=flower_days_min,
                 flower_days_max=flower_days_max,
-                notes=notes,
+                description=description,
                 image_base64=image_base64,
             )
 
@@ -174,7 +188,7 @@ class StrainLibrary:
         sex: str | None = None,
         flower_days_min: int | None = None,
         flower_days_max: int | None = None,
-        notes: str | None = None,
+        description: str | None = None,
         image_base64: str | None = None,
     ) -> None:
         """Set metadata for a specific strain.
@@ -188,7 +202,7 @@ class StrainLibrary:
             sex: The sex of the strain (e.g., Feminized, Regular, Autoflower).
             flower_days_min: Minimum flowering days.
             flower_days_max: Maximum flowering days.
-            notes: Grower notes or description.
+            description: Grower description or notes.
             image_base64: Base64 encoded image string.
         """
         strain = strain.strip()
@@ -218,8 +232,8 @@ class StrainLibrary:
             pheno_data["flower_days_min"] = flower_days_min
         if flower_days_max is not None:
             pheno_data["flower_days_max"] = flower_days_max
-        if notes is not None:
-            pheno_data["notes"] = notes
+        if description is not None:
+            pheno_data["description"] = description
 
         # Image Handling
         if image_base64:

@@ -446,6 +446,106 @@ add_strain:
       required: false
       selector:
         text:
+    breeder:
+      description: Breeder of the strain
+      required: false
+      selector:
+        text:
+    type:
+      description: Type of the strain (e.g., Indica, Sativa)
+      required: false
+      selector:
+        text:
+    lineage:
+      description: Lineage of the strain
+      required: false
+      selector:
+        text:
+    sex:
+      description: Sex of the strain
+      required: false
+      selector:
+        text:
+    flower_days_min:
+      description: Minimum flowering days
+      required: false
+      selector:
+        number:
+          min: 0
+    flower_days_max:
+      description: Maximum flowering days
+      required: false
+      selector:
+        number:
+          min: 0
+    description:
+      description: Description of the strain
+      required: false
+      selector:
+        text:
+          multiline: true
+    image_base64:
+      description: Base64 encoded image
+      required: false
+      selector:
+        text:
+
+update_strain_meta:
+  description: Update metadata for a strain
+  fields:
+    strain:
+      description: Name of the strain
+      required: true
+      selector:
+        text:
+    phenotype:
+      description: Phenotype of the strain
+      required: false
+      selector:
+        text:
+    breeder:
+      description: Breeder of the strain
+      required: false
+      selector:
+        text:
+    type:
+      description: Type of the strain (e.g., Indica, Sativa)
+      required: false
+      selector:
+        text:
+    lineage:
+      description: Lineage of the strain
+      required: false
+      selector:
+        text:
+    sex:
+      description: Sex of the strain
+      required: false
+      selector:
+        text:
+    flower_days_min:
+      description: Minimum flowering days
+      required: false
+      selector:
+        number:
+          min: 0
+    flower_days_max:
+      description: Maximum flowering days
+      required: false
+      selector:
+        number:
+          min: 0
+    description:
+      description: Description of the strain
+      required: false
+      selector:
+        text:
+          multiline: true
+    image_base64:
+      description: Base64 encoded image
+      required: false
+      selector:
+        text:
 
 remove_strain:
   description: Remove a strain from the strain library

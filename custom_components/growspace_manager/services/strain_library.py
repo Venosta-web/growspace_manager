@@ -116,7 +116,7 @@ async def handle_add_strain(
     sex = call.data.get("sex")
     flower_days_min = call.data.get("flower_days_min")
     flower_days_max = call.data.get("flower_days_max")
-    notes = call.data.get("notes")
+    description = call.data.get("description")
     image_base64 = call.data.get("image_base64")
 
     await strain_library.add_strain(
@@ -128,7 +128,7 @@ async def handle_add_strain(
         sex=sex,
         flower_days_min=flower_days_min,
         flower_days_max=flower_days_max,
-        notes=notes,
+        description=description,
         image_base64=image_base64,
     )
     await coordinator.async_request_refresh()
@@ -149,7 +149,7 @@ async def handle_update_strain_meta(
     sex = call.data.get("sex")
     flower_days_min = call.data.get("flower_days_min")
     flower_days_max = call.data.get("flower_days_max")
-    notes = call.data.get("notes")
+    description = call.data.get("description")
     image_base64 = call.data.get("image_base64")
 
     await strain_library.set_strain_meta(
@@ -161,7 +161,7 @@ async def handle_update_strain_meta(
         sex=sex,
         flower_days_min=flower_days_min,
         flower_days_max=flower_days_max,
-        notes=notes,
+        description=description,
         image_base64=image_base64,
     )
     await coordinator.async_request_refresh()
