@@ -332,16 +332,40 @@ def test_strain_library_sensor_state_and_attributes(mock_coordinator):
     Args:
         mock_coordinator: The mock coordinator fixture.
     """
-    # Mock the new data structure
+    # Mock the new data structure from StrainLibrary.get_all()
+    # Structure: {strain_name: { "phenotypes": { pheno_name: { "harvests": [], ...meta... } }, "meta": {} }}
     mock_coordinator.strains.get_all.return_value = {
-        "Strain A|A": {
-            "harvests": [
-                {"veg_days": 30, "flower_days": 60},
-                {"veg_days": 35, "flower_days": 65},
-            ]
+        "Strain A": {
+            "phenotypes": {
+                "Pheno A": {
+                    "harvests": [
+                        {"veg_days": 30, "flower_days": 60},
+                        {"veg_days": 35, "flower_days": 65},
+                    ],
+                    "description": "A very nice pheno",
+                    "image_path": "/local/img.jpg"
+                }
+            },
+            "meta": {"breeder": "Breeder A"}
         },
-        "Strain B|default": {"harvests": [{"veg_days": 40, "flower_days": 70}]},
-        "Strain C|C": {"harvests": []}, # No harvests
+        "Strain B": {
+            "phenotypes": {
+                "default": {
+                    "harvests": [{"veg_days": 40, "flower_days": 70}],
+                    # No extra metadata
+                }
+            },
+            "meta": {}
+        },
+        "Strain C": {
+            "phenotypes": {
+                "Pheno C": {
+                    "harvests": [], # No harvests
+                    "description": "Not harvested yet"
+                }
+            },
+            "meta": {}
+        }
     }
 
     sensor = StrainLibrarySensor(mock_coordinator)
@@ -350,16 +374,38 @@ def test_strain_library_sensor_state_and_attributes(mock_coordinator):
     assert sensor.state == 3
 
     attrs = sensor.extra_state_attributes
-    assert "raw_data" in attrs
-    assert "strain_a_a_avg_veg_time" in attrs
-    assert attrs["strain_a_a_avg_veg_time"] == 32
-    assert attrs["strain_a_a_avg_flower_time"] == 62
-    assert attrs["strain_a_a_harvests"] == 2
-    assert "strain_b_avg_veg_time" in attrs
-    assert attrs["strain_b_avg_veg_time"] == 40
-    assert attrs["strain_b_avg_flower_time"] == 70
-    assert attrs["strain_b_harvests"] == 1
-    assert "strain_c_c_avg_veg_time" not in attrs # Should not be present if no harvests
+    strains_data = attrs["strains"]
+
+    # Check Strain A (with metadata)
+    assert "Strain A" in strains_data
+    strain_a = strains_data["Strain A"]
+    pheno_a = strain_a["phenotypes"]["Pheno A"]
+
+    # Check stats
+    assert pheno_a["avg_veg_days"] == 32  # round(65/2)
+    assert pheno_a["avg_flower_days"] == 62 # round(125/2)
+    assert pheno_a["total_harvests"] == 2
+
+    # Check metadata inclusion
+    assert pheno_a["description"] == "A very nice pheno"
+    assert pheno_a["image_path"] == "/local/img.jpg"
+
+    # Check harvest exclusion
+    assert "harvests" not in pheno_a
+
+    # Check Strain B (no metadata)
+    assert "Strain B" in strains_data
+    pheno_b = strains_data["Strain B"]["phenotypes"]["default"]
+    assert pheno_b["avg_veg_days"] == 40
+    assert pheno_b["total_harvests"] == 1
+    assert "harvests" not in pheno_b
+
+    # Check Strain C (no harvests but metadata)
+    assert "Strain C" in strains_data
+    pheno_c = strains_data["Strain C"]["phenotypes"]["Pheno C"]
+    assert pheno_c["avg_veg_days"] == 0
+    assert pheno_c["total_harvests"] == 0
+    assert pheno_c["description"] == "Not harvested yet"
 
 # --------------------
 # GrowspaceListSensor

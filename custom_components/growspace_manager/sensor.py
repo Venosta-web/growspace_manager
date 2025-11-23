@@ -24,19 +24,16 @@ from homeassistant.helpers.entity import Entity
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
+from .const import DOMAIN
+
 # Local / relative imports
 from .coordinator import GrowspaceCoordinator
-from .helpers import async_setup_trend_sensor, async_setup_statistics_sensor
-from .models import Plant, Growspace
+from .helpers import async_setup_statistics_sensor, async_setup_trend_sensor
+from .models import Growspace, Plant
 from .utils import (
-    parse_date_field,
-    format_date,
-    calculate_days_since,
-    find_first_free_position,
-    generate_growspace_grid,
     VPDCalculator,
+    parse_date_field,
 )
-from .const import DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -632,7 +629,7 @@ class PlantEntity(SensorEntity):
         stage = self._determine_stage(plant)
 
         # Get growspace if needed
-        growspace = self.coordinator.growspaces.get(plant.growspace_id)
+        self.coordinator.growspaces.get(plant.growspace_id)
 
         return stage
 
@@ -729,17 +726,23 @@ class StrainLibrarySensor(CoordinatorEntity[GrowspaceCoordinator], SensorEntity)
                 if num_harvests > 0:
                     total_veg = sum(h.get("veg_days", 0) for h in harvests)
                     total_flower = sum(h.get("flower_days", 0) for h in harvests)
-                    pheno_analytics[pheno_name] = {
+                    stats = {
                         "avg_veg_days": round(total_veg / num_harvests),
                         "avg_flower_days": round(total_flower / num_harvests),
-                        "total_harvests": num_harvests
+                        "total_harvests": num_harvests,
                     }
                 else:
-                    pheno_analytics[pheno_name] = {
+                    stats = {
                         "avg_veg_days": 0,
                         "avg_flower_days": 0,
-                        "total_harvests": 0
+                        "total_harvests": 0,
                     }
+
+                # Extract metadata, excluding the raw harvest list
+                pheno_meta = {k: v for k, v in pheno_data.items() if k != "harvests"}
+
+                # Merge them
+                pheno_analytics[pheno_name] = {**stats, **pheno_meta}
 
             # Calculate strain-level analytics
             num_strain_harvests = len(strain_harvests)
