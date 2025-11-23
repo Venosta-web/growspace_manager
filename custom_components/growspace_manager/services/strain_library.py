@@ -122,10 +122,28 @@ async def handle_update_strain_meta(
 ) -> None:
     """Handle the update_strain_meta service call."""
     strain = call.data.get("strain")
+    phenotype = call.data.get("phenotype")
     breeder = call.data.get("breeder")
     strain_type = call.data.get("type")
+    lineage = call.data.get("lineage")
+    sex = call.data.get("sex")
+    flower_days_min = call.data.get("flower_days_min")
+    flower_days_max = call.data.get("flower_days_max")
+    notes = call.data.get("notes")
+    image_base64 = call.data.get("image_base64")
 
-    await strain_library.set_strain_meta(strain, breeder, strain_type)
+    await strain_library.set_strain_meta(
+        strain=strain,
+        phenotype=phenotype,
+        breeder=breeder,
+        strain_type=strain_type,
+        lineage=lineage,
+        sex=sex,
+        flower_days_min=flower_days_min,
+        flower_days_max=flower_days_max,
+        notes=notes,
+        image_base64=image_base64,
+    )
     await coordinator.async_request_refresh()
 
 
