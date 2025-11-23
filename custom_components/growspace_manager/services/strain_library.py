@@ -1,6 +1,7 @@
 """Services related to Strain Library."""
 
 import logging
+from typing import Any
 from homeassistant.components.persistent_notification import (
     async_create as create_notification,
 )
@@ -18,11 +19,11 @@ async def handle_get_strain_library(
     coordinator: GrowspaceCoordinator,
     strain_library: StrainLibrary,
     call: ServiceCall,
-) -> list[str]:  # Returning list[str] as per original type hint
-    """Return the list of strains."""
-    # Ensure strain library is loaded; async_setup_entry should have done this, but it's safe.
+) -> dict[str, Any]:
+    """Return the full strain library hierarchy."""
+    # Ensure strain library is loaded
     await strain_library.load()
-    strains = list(strain_library.strains)
+    strains = strain_library.get_all()
 
     # Fire an event with the result
     hass.bus.async_fire(f"{DOMAIN}_strain_library_fetched", {"strains": strains})
@@ -37,13 +38,9 @@ async def handle_export_strain_library(
     call: ServiceCall,
 ) -> None:
     """Handle export strain library service call."""
-    # The original code called coordinator.get_strain_options().
-    # Assuming strain_library.strains contains the data to be exported.
-    strains_to_export = list(strain_library.strains)
-    _LOGGER.info("Exporting strain library: %s strains", len(strains_to_export))
+    strains_to_export = strain_library.get_all()
+    _LOGGER.info("Exporting strain library with %d strains", len(strains_to_export))
 
-    # Save coordinator data, which might include references to strains,
-    # but the strain library itself might use its own storage.
     await coordinator.async_save()
     await coordinator.async_request_refresh()
 
@@ -59,32 +56,36 @@ async def handle_import_strain_library(
     call: ServiceCall,
 ) -> None:
     """Handle import strain library service call."""
-    strains_to_import = call.data.get("strains", [])
+    strains_input = call.data.get("strains")
     replace_existing = call.data.get("replace", False)
 
-    if not strains_to_import:
-        _LOGGER.warning("No strains provided for import.")
+    if not strains_input:
+        _LOGGER.warning("No data provided for import.")
         return
 
     try:
-        # Convert list of strings to the expected dictionary format for import_library
-        # We use 'default' for phenotype to match StrainLibrary._get_key logic
-        library_data = {
-            f"{strain.strip()}|default": {"harvests": []} for strain in strains_to_import
-        }
+        added_count = 0
+        if isinstance(strains_input, dict):
+            # New hierarchical format
+            added_count = await strain_library.import_library(
+                library_data=strains_input,
+                replace=replace_existing,
+            )
+        elif isinstance(strains_input, list):
+            # List of strain names (creates default structure)
+            added_count = await strain_library.import_strains(
+                strains=strains_input,
+                replace=replace_existing,
+            )
+        else:
+            raise ValueError("Invalid format for 'strains'. Must be a dictionary or list.")
 
-        added_count = await strain_library.import_library(
-            library_data=library_data,
-            replace=replace_existing,
-        )
         _LOGGER.info(
-            "Imported %s strains to library (replace=%s)", added_count, replace_existing
+            "Imported strains to library (count=%s, replace=%s)", added_count, replace_existing
         )
 
-        await coordinator.async_save()  # Save coordinator data
-        await (
-            coordinator.async_request_refresh()
-        )  # Refresh entities if strain data affects them
+        await coordinator.async_save()
+        await coordinator.async_request_refresh()
 
         hass.bus.async_fire(
             f"{DOMAIN}_strain_library_imported",
@@ -113,6 +114,21 @@ async def handle_add_strain(
     await coordinator.async_request_refresh()
 
 
+async def handle_update_strain_meta(
+    hass: HomeAssistant,
+    coordinator: GrowspaceCoordinator,
+    strain_library: StrainLibrary,
+    call: ServiceCall,
+) -> None:
+    """Handle the update_strain_meta service call."""
+    strain = call.data.get("strain")
+    breeder = call.data.get("breeder")
+    strain_type = call.data.get("type")
+
+    await strain_library.set_strain_meta(strain, breeder, strain_type)
+    await coordinator.async_request_refresh()
+
+
 async def handle_remove_strain(
     hass: HomeAssistant,
     coordinator: GrowspaceCoordinator,
@@ -122,7 +138,13 @@ async def handle_remove_strain(
     """Handle the remove_strain service call."""
     strain = call.data.get("strain")
     phenotype = call.data.get("phenotype")
-    await strain_library.remove_strain_phenotype(strain, phenotype)
+
+    if phenotype:
+        await strain_library.remove_strain_phenotype(strain, phenotype)
+    else:
+        # If no phenotype specified, remove the entire strain
+        await strain_library.remove_strain(strain)
+
     await coordinator.async_request_refresh()
 
 
@@ -133,12 +155,7 @@ async def handle_clear_strain_library(
     call: ServiceCall,
 ) -> None:
     """Handle clear strain library service call."""
-    # The original code had `StrainLibrary.clear(self)`.
-    # Assuming `clear_strains` is an instance method on `StrainLibrary` that returns the count cleared.
-    # If `StrainLibrary.clear` was a static/class method, the call would be `StrainLibrary.clear(strain_library)`.
     try:
-        # Assuming StrainLibrary has an instance method to clear its strains.
-        # If not, you might need to adapt this based on its actual API.
         cleared_count = await strain_library.clear()
 
         _LOGGER.info("Cleared %s strains from library", cleared_count)
@@ -148,16 +165,6 @@ async def handle_clear_strain_library(
         hass.bus.async_fire(
             f"{DOMAIN}_strain_library_cleared", {"cleared_count": cleared_count}
         )
-    except AttributeError:
-        _LOGGER.error(
-            "StrainLibrary instance does not have a 'clear' method. Please verify the method name."
-        )
-        create_notification(
-            hass,
-            "Error clearing strain library: Method not found.",
-            title="Growspace Manager Error",
-        )
-        raise
     except Exception as err:
         _LOGGER.exception("Failed to clear strain library: %s", err)
         create_notification(

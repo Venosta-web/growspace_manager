@@ -1968,11 +1968,8 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
         Returns:
             A sorted list of unique strain names.
         """
-        # The keys are in 'strain|phenotype' format
-        all_keys = self.strains.get_all().keys()
-        # Extract just the strain part and get unique values
-        unique_strains = sorted({key.split("|")[0] for key in all_keys})
-        return unique_strains
+        # The keys are just the strain names in the new hierarchical structure
+        return sorted(self.strains.get_all().keys())
 
     def export_strain_library(self) -> list[str]:
         """Export all strains from the library.

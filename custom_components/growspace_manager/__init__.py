@@ -33,6 +33,7 @@ from .const import (
     REMOVE_GROWSPACE_SCHEMA,
     REMOVE_PLANT_SCHEMA,
     REMOVE_STRAIN_SCHEMA,
+    UPDATE_STRAIN_META_SCHEMA,
     STORAGE_KEY,
     STORAGE_KEY_STRAIN_LIBRARY,
     STORAGE_VERSION,
@@ -191,6 +192,11 @@ async def _register_services(
             strain_library_services.handle_remove_strain,
             REMOVE_STRAIN_SCHEMA,
         ),
+        (
+            "update_strain_meta",
+            strain_library_services.handle_update_strain_meta,
+            UPDATE_STRAIN_META_SCHEMA,
+        ),
         ("test_notification", debug.handle_test_notification, None),
         (
             "debug_cleanup_legacy",
@@ -309,6 +315,7 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             "import_strain_library",
             "clear_strain_library",
             "add_strain",
+            "update_strain_meta",
             "test_notification",
             "debug_cleanup_legacy",
             "debug_list_growspaces",
