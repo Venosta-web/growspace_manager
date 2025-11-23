@@ -315,7 +315,7 @@ ADD_STRAIN_SCHEMA = vol.Schema(
         vol.Optional("sex"): str,
         vol.Optional("flower_days_min"): vol.All(vol.Coerce(int), vol.Range(min=0)),
         vol.Optional("flower_days_max"): vol.All(vol.Coerce(int), vol.Range(min=0)),
-        vol.Optional("notes"): str,
+        vol.Optional("description"): str,
         vol.Optional("image_base64"): str,
     }
 )
@@ -337,7 +337,7 @@ UPDATE_STRAIN_META_SCHEMA = vol.Schema(
         vol.Optional("sex"): str,
         vol.Optional("flower_days_min"): vol.All(vol.Coerce(int), vol.Range(min=0)),
         vol.Optional("flower_days_max"): vol.All(vol.Coerce(int), vol.Range(min=0)),
-        vol.Optional("notes"): str,
+        vol.Optional("description"): str,
         vol.Optional("image_base64"): str,
     }
 )
