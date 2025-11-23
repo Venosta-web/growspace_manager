@@ -125,6 +125,7 @@ class StrainLibrary:
         flower_days_max: int | None = None,
         description: str | None = None,
         image_base64: str | None = None,
+        image_crop_meta: dict | None = None,
     ) -> None:
         """Add a single strain/phenotype combination to the library.
 
@@ -139,6 +140,7 @@ class StrainLibrary:
             flower_days_max: Maximum flowering days.
             description: Grower description or notes.
             image_base64: Base64 encoded image string.
+            image_crop_meta: Metadata for cropping the image in the frontend.
         """
         strain = strain.strip()
         phenotype = phenotype.strip() if phenotype else "default"
@@ -163,6 +165,7 @@ class StrainLibrary:
                 flower_days_max,
                 description,
                 image_base64,
+                image_crop_meta,
             ]
         ):
             await self.set_strain_meta(
@@ -176,6 +179,7 @@ class StrainLibrary:
                 flower_days_max=flower_days_max,
                 description=description,
                 image_base64=image_base64,
+                image_crop_meta=image_crop_meta,
             )
 
     async def set_strain_meta(
@@ -190,6 +194,7 @@ class StrainLibrary:
         flower_days_max: int | None = None,
         description: str | None = None,
         image_base64: str | None = None,
+        image_crop_meta: dict | None = None,
     ) -> None:
         """Set metadata for a specific strain.
 
@@ -234,6 +239,8 @@ class StrainLibrary:
             pheno_data["flower_days_max"] = flower_days_max
         if description is not None:
             pheno_data["description"] = description
+        if image_crop_meta is not None:
+            pheno_data["image_crop_meta"] = image_crop_meta
 
         # Image Handling
         if image_base64:
