@@ -2,6 +2,7 @@
 
 import logging
 from typing import Any
+
 from homeassistant.components.persistent_notification import (
     async_create as create_notification,
 )
@@ -78,7 +79,7 @@ async def handle_import_strain_library(
                 replace=replace_existing,
             )
         else:
-            raise ValueError("Invalid format for 'strains'. Must be a dictionary or list.")
+            raise TypeError("Invalid format for 'strains'. Must be a dictionary or list.")
 
         _LOGGER.info(
             "Imported strains to library (count=%s, replace=%s)", added_count, replace_existing
@@ -128,6 +129,7 @@ async def handle_add_strain(
     if not image_base64:
         image_base64 = call.data.get("image")
 
+    image_path = call.data.get("image_path")
     image_crop_meta = call.data.get("image_crop_meta")
 
     await strain_library.add_strain(
@@ -141,6 +143,7 @@ async def handle_add_strain(
         flower_days_max=flower_days_max,
         description=description,
         image_base64=image_base64,
+        image_path=image_path,
         image_crop_meta=image_crop_meta,
     )
     await coordinator.async_request_refresh()
@@ -173,6 +176,7 @@ async def handle_update_strain_meta(
     if not image_base64:
         image_base64 = call.data.get("image")
 
+    image_path = call.data.get("image_path")
     image_crop_meta = call.data.get("image_crop_meta")
 
     await strain_library.set_strain_meta(
@@ -186,6 +190,7 @@ async def handle_update_strain_meta(
         flower_days_max=flower_days_max,
         description=description,
         image_base64=image_base64,
+        image_path=image_path,
         image_crop_meta=image_crop_meta,
     )
     await coordinator.async_request_refresh()
