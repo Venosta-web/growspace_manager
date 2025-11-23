@@ -128,6 +128,8 @@ async def handle_add_strain(
     if not image_base64:
         image_base64 = call.data.get("image")
 
+    image_crop_meta = call.data.get("image_crop_meta")
+
     await strain_library.add_strain(
         strain=strain,
         phenotype=phenotype,
@@ -139,6 +141,7 @@ async def handle_add_strain(
         flower_days_max=flower_days_max,
         description=description,
         image_base64=image_base64,
+        image_crop_meta=image_crop_meta,
     )
     await coordinator.async_request_refresh()
 
@@ -170,6 +173,8 @@ async def handle_update_strain_meta(
     if not image_base64:
         image_base64 = call.data.get("image")
 
+    image_crop_meta = call.data.get("image_crop_meta")
+
     await strain_library.set_strain_meta(
         strain=strain,
         phenotype=phenotype,
@@ -181,6 +186,7 @@ async def handle_update_strain_meta(
         flower_days_max=flower_days_max,
         description=description,
         image_base64=image_base64,
+        image_crop_meta=image_crop_meta,
     )
     await coordinator.async_request_refresh()
 
