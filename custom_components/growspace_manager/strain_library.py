@@ -7,6 +7,7 @@ into strain performance.
 """
 
 from __future__ import annotations
+
 import base64
 import logging
 import os
@@ -125,6 +126,7 @@ class StrainLibrary:
         flower_days_max: int | None = None,
         description: str | None = None,
         image_base64: str | None = None,
+        image_path: str | None = None,
         image_crop_meta: dict | None = None,
     ) -> None:
         """Add a single strain/phenotype combination to the library.
@@ -140,6 +142,7 @@ class StrainLibrary:
             flower_days_max: Maximum flowering days.
             description: Grower description or notes.
             image_base64: Base64 encoded image string.
+            image_path: Path to an existing image.
             image_crop_meta: Metadata for cropping the image in the frontend.
         """
         strain = strain.strip()
@@ -165,6 +168,7 @@ class StrainLibrary:
                 flower_days_max,
                 description,
                 image_base64,
+                image_path,
                 image_crop_meta,
             ]
         ):
@@ -179,6 +183,7 @@ class StrainLibrary:
                 flower_days_max=flower_days_max,
                 description=description,
                 image_base64=image_base64,
+                image_path=image_path,
                 image_crop_meta=image_crop_meta,
             )
 
@@ -194,6 +199,7 @@ class StrainLibrary:
         flower_days_max: int | None = None,
         description: str | None = None,
         image_base64: str | None = None,
+        image_path: str | None = None,
         image_crop_meta: dict | None = None,
     ) -> None:
         """Set metadata for a specific strain.
@@ -209,6 +215,7 @@ class StrainLibrary:
             flower_days_max: Maximum flowering days.
             description: Grower description or notes.
             image_base64: Base64 encoded image string.
+            image_path: Path to an existing image.
         """
         strain = strain.strip()
         phenotype = phenotype.strip() if phenotype else "default"
@@ -217,22 +224,65 @@ class StrainLibrary:
             self.strains[strain] = {"phenotypes": {}, "meta": {}}
 
         # Strain-level metadata
-        if "meta" not in self.strains[strain]:
-            self.strains[strain]["meta"] = {}
-        if breeder is not None:
-            self.strains[strain]["meta"]["breeder"] = breeder
-        if strain_type is not None:
-            self.strains[strain]["meta"]["type"] = strain_type
-        if lineage is not None:
-            self.strains[strain]["meta"]["lineage"] = lineage
-        if sex is not None:
-            self.strains[strain]["meta"]["sex"] = sex
+        self._update_strain_level_meta(strain, breeder, strain_type, lineage, sex)
 
         # Phenotype-level metadata
         if phenotype not in self.strains[strain]["phenotypes"]:
             self.strains[strain]["phenotypes"][phenotype] = {"harvests": []}
 
         pheno_data = self.strains[strain]["phenotypes"][phenotype]
+        self._update_phenotype_meta(
+            pheno_data, flower_days_min, flower_days_max, description, image_crop_meta
+        )
+
+        # Image Handling
+        if image_base64:
+            await self._save_strain_image(
+                strain, phenotype, image_base64, pheno_data
+            )
+        elif image_path:
+            pheno_data["image_path"] = image_path
+            _LOGGER.info(
+                "Assigned existing image path for %s (%s): %s",
+                strain,
+                phenotype,
+                image_path,
+            )
+
+        _LOGGER.info("Updated metadata for strain %s (%s)", strain, phenotype)
+        await self.save()
+
+    def _update_strain_level_meta(
+        self,
+        strain: str,
+        breeder: str | None,
+        strain_type: str | None,
+        lineage: str | None,
+        sex: str | None,
+    ) -> None:
+        """Update strain-level metadata."""
+        if "meta" not in self.strains[strain]:
+            self.strains[strain]["meta"] = {}
+
+        meta = self.strains[strain]["meta"]
+        if breeder is not None:
+            meta["breeder"] = breeder
+        if strain_type is not None:
+            meta["type"] = strain_type
+        if lineage is not None:
+            meta["lineage"] = lineage
+        if sex is not None:
+            meta["sex"] = sex
+
+    def _update_phenotype_meta(
+        self,
+        pheno_data: dict[str, Any],
+        flower_days_min: int | None,
+        flower_days_max: int | None,
+        description: str | None,
+        image_crop_meta: dict | None,
+    ) -> None:
+        """Update phenotype-level metadata."""
         if flower_days_min is not None:
             pheno_data["flower_days_min"] = flower_days_min
         if flower_days_max is not None:
@@ -242,48 +292,58 @@ class StrainLibrary:
         if image_crop_meta is not None:
             pheno_data["image_crop_meta"] = image_crop_meta
 
-        # Image Handling
-        if image_base64:
-            try:
-                # Handle Data URI if present
-                if image_base64.startswith("data:"):
-                    # Split at the comma to remove metadata header (e.g., "data:image/png;base64,")
-                    try:
-                        _, image_base64 = image_base64.split(",", 1)
-                    except ValueError:
-                         _LOGGER.warning("Invalid Data URI format for image")
+    async def _save_strain_image(
+        self,
+        strain: str,
+        phenotype: str,
+        image_base64: str,
+        pheno_data: dict[str, Any],
+    ) -> None:
+        """Decode and save a strain image to disk.
 
-                # Determine write path
-                # Use standard 'www' folder which maps to '/local/'
-                base_dir = self.hass.config.path("www", "growspace_manager", "strains")
-                if not os.path.exists(base_dir):
-                    os.makedirs(base_dir)
+        Args:
+            strain: The name of the strain.
+            phenotype: The phenotype name.
+            image_base64: The base64 encoded image string.
+            pheno_data: The dictionary to update with the new image path.
+        """
+        try:
+            # Handle Data URI if present
+            if image_base64.startswith("data:"):
+                # Split at the comma to remove metadata header (e.g., "data:image/png;base64,")
+                try:
+                    _, image_base64 = image_base64.split(",", 1)
+                except ValueError:
+                    _LOGGER.warning("Invalid Data URI format for image")
 
-                # Generate filename
-                safe_strain = slugify(strain)
-                safe_pheno = slugify(phenotype)
-                filename = f"{safe_strain}_{safe_pheno}.jpg"
-                file_path = os.path.join(base_dir, filename)
+            # Determine write path
+            # Use standard 'www' folder which maps to '/local/'
+            base_dir = self.hass.config.path("www", "growspace_manager", "strains")
+            if not os.path.exists(base_dir):
+                os.makedirs(base_dir)
 
-                # Decode and write
-                image_data = base64.b64decode(image_base64)
+            # Generate filename
+            safe_strain = slugify(strain)
+            safe_pheno = slugify(phenotype)
+            filename = f"{safe_strain}_{safe_pheno}.jpg"
+            file_path = os.path.join(base_dir, filename)
 
-                def _write_image():
-                    with open(file_path, "wb") as f:
-                        f.write(image_data)
+            # Decode and write
+            image_data = base64.b64decode(image_base64)
 
-                await self.hass.async_add_executor_job(_write_image)
+            def _write_image():
+                with open(file_path, "wb") as f:
+                    f.write(image_data)
 
-                # Store relative web path
-                web_path = f"/local/growspace_manager/strains/{filename}"
-                pheno_data["image_path"] = web_path
-                _LOGGER.info("Saved image for %s (%s) to %s", strain, phenotype, file_path)
+            await self.hass.async_add_executor_job(_write_image)
 
-            except Exception as err:
-                _LOGGER.error("Failed to save strain image: %s", err)
+            # Store relative web path
+            web_path = f"/local/growspace_manager/strains/{filename}"
+            pheno_data["image_path"] = web_path
+            _LOGGER.info("Saved image for %s (%s) to %s", strain, phenotype, file_path)
 
-        _LOGGER.info("Updated metadata for strain %s (%s)", strain, phenotype)
-        await self.save()
+        except Exception as err:
+            _LOGGER.error("Failed to save strain image: %s", err)
 
     async def remove_strain_phenotype(self, strain: str, phenotype: str) -> None:
         """Remove a specific phenotype from a strain.

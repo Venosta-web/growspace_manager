@@ -4,7 +4,6 @@ from datetime import date
 
 import voluptuous as vol
 
-
 DOMAIN = "growspace_manager"
 STORAGE_VERSION = 1
 STORAGE_KEY = f"{DOMAIN}_storage"
@@ -320,6 +319,7 @@ ADD_STRAIN_SCHEMA = vol.Schema(
         vol.Optional("description"): str,
         vol.Optional("image_base64"): str,
         vol.Optional("image"): str,
+        vol.Optional("image_path"): str,
         vol.Optional("image_crop_meta"): dict,
     }
 )
@@ -346,6 +346,7 @@ UPDATE_STRAIN_META_SCHEMA = vol.Schema(
         vol.Optional("description"): str,
         vol.Optional("image_base64"): str,
         vol.Optional("image"): str,
+        vol.Optional("image_path"): str,
         vol.Optional("image_crop_meta"): dict,
     }
 )
