@@ -712,46 +712,57 @@ class StrainLibrarySensor(CoordinatorEntity[GrowspaceCoordinator], SensorEntity)
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
         """Return the calculated strain analytics as state attributes."""
-        analytics = {}
+        analytics_data = {}
         all_strains = self.coordinator.strains.get_all()
 
-        for key, data in all_strains.items():
-            try:
-                strain, phenotype = key.split("|", 1)
-            except ValueError:
-                _LOGGER.warning("Could not parse strain key: %s", key)
-                continue
-            harvests = data.get("harvests", [])
-            num_harvests = len(harvests)
+        for strain_name, strain_data in all_strains.items():
+            phenotypes = strain_data.get("phenotypes", {})
+            strain_harvests = []
 
-            if num_harvests == 0:
-                continue
+            # Process each phenotype
+            pheno_analytics = {}
+            for pheno_name, pheno_data in phenotypes.items():
+                harvests = pheno_data.get("harvests", [])
+                strain_harvests.extend(harvests)
 
-            # Calculate average veg and flower times
-            total_veg_days = sum(h.get("veg_days", 0) for h in harvests)
-            total_flower_days = sum(h.get("flower_days", 0) for h in harvests)
-            avg_veg_days = round(total_veg_days / num_harvests)
-            avg_flower_days = round(total_flower_days / num_harvests)
+                num_harvests = len(harvests)
+                if num_harvests > 0:
+                    total_veg = sum(h.get("veg_days", 0) for h in harvests)
+                    total_flower = sum(h.get("flower_days", 0) for h in harvests)
+                    pheno_analytics[pheno_name] = {
+                        "avg_veg_days": round(total_veg / num_harvests),
+                        "avg_flower_days": round(total_flower / num_harvests),
+                        "total_harvests": num_harvests
+                    }
+                else:
+                    pheno_analytics[pheno_name] = {
+                        "avg_veg_days": 0,
+                        "avg_flower_days": 0,
+                        "total_harvests": 0
+                    }
 
-            # Sanitize for attribute names (lowercase, spaces to _)
-            attr_base = f"{strain.lower().replace(' ', '_')}"
-            if phenotype != "default":
-                attr_base += f"_{phenotype.lower().replace(' ', '_')}"
+            # Calculate strain-level analytics
+            num_strain_harvests = len(strain_harvests)
+            strain_avg_veg = 0
+            strain_avg_flower = 0
+            if num_strain_harvests > 0:
+                strain_avg_veg = round(sum(h.get("veg_days", 0) for h in strain_harvests) / num_strain_harvests)
+                strain_avg_flower = round(sum(h.get("flower_days", 0) for h in strain_harvests) / num_strain_harvests)
 
-            analytics[f"{attr_base}_avg_veg_time"] = avg_veg_days
-            analytics[f"{attr_base}_avg_flower_time"] = avg_flower_days
-            analytics[f"{attr_base}_harvests"] = num_harvests
+            analytics_data[strain_name] = {
+                "meta": strain_data.get("meta", {}),
+                "analytics": {
+                    "avg_veg_days": strain_avg_veg,
+                    "avg_flower_days": strain_avg_flower,
+                    "total_harvests": num_strain_harvests
+                },
+                "phenotypes": pheno_analytics
+            }
 
-        # Add the raw data for advanced users if needed
-        analytics["raw_data"] = all_strains
-        
-        # Add simple list of strains for frontend (matching frontend expectation)
-        # Frontend expects a list of strings.
-        # The keys are "Strain Name|Phenotype" or "Strain Name|default"
-        # We should probably return just the keys as strings.
-        analytics["strains"] = list(all_strains.keys())
-
-        return analytics
+        return {
+            "strains": analytics_data,
+            "strain_list": list(all_strains.keys())
+        }
 
 
 class GrowspaceListSensor(SensorEntity):

@@ -294,7 +294,7 @@ EXPORT_STRAIN_LIBRARY_SCHEMA = vol.Schema(
 
 IMPORT_STRAIN_LIBRARY_SCHEMA = vol.Schema(
     {
-        vol.Required("strains"): list,  # Expecting a list of strain data dictionaries
+        vol.Optional("strains"): vol.Any(dict, list),  # Allow dict or list for import
         vol.Optional("replace", default=False): bool,
     }
 )
@@ -316,6 +316,14 @@ REMOVE_STRAIN_SCHEMA = vol.Schema(
     {
         vol.Required("strain"): str,
         vol.Optional("phenotype"): str,
+    }
+)
+
+UPDATE_STRAIN_META_SCHEMA = vol.Schema(
+    {
+        vol.Required("strain"): str,
+        vol.Optional("breeder"): str,
+        vol.Optional("type"): str,
     }
 )
 
