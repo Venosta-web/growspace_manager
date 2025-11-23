@@ -317,6 +317,7 @@ ADD_STRAIN_SCHEMA = vol.Schema(
         vol.Optional("flower_days_max"): vol.All(vol.Coerce(int), vol.Range(min=0)),
         vol.Optional("description"): str,
         vol.Optional("image_base64"): str,
+        vol.Optional("image"): str,
     }
 )
 
@@ -339,6 +340,7 @@ UPDATE_STRAIN_META_SCHEMA = vol.Schema(
         vol.Optional("flower_days_max"): vol.All(vol.Coerce(int), vol.Range(min=0)),
         vol.Optional("description"): str,
         vol.Optional("image_base64"): str,
+        vol.Optional("image"): str,
     }
 )
 
