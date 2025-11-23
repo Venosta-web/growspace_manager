@@ -7,10 +7,13 @@ into strain performance.
 """
 
 from __future__ import annotations
+import base64
 import logging
+import os
 from typing import Any
 
 from homeassistant.helpers.storage import Store
+from homeassistant.util import slugify
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -116,28 +119,95 @@ class StrainLibrary:
             await self.save()
 
     async def set_strain_meta(
-        self, strain: str, breeder: str | None = None, strain_type: str | None = None
+        self,
+        strain: str,
+        phenotype: str | None = None,
+        breeder: str | None = None,
+        strain_type: str | None = None,
+        lineage: str | None = None,
+        sex: str | None = None,
+        flower_days_min: int | None = None,
+        flower_days_max: int | None = None,
+        notes: str | None = None,
+        image_base64: str | None = None,
     ) -> None:
         """Set metadata for a specific strain.
 
         Args:
             strain: The name of the strain.
-            breeder: The breeder name (optional).
-            strain_type: The strain type (e.g., Indica, Sativa) (optional).
+            phenotype: The specific phenotype (defaults to "default").
+            breeder: The breeder name.
+            strain_type: The strain type (e.g., Indica, Sativa).
+            lineage: The lineage or parent strains.
+            sex: The sex of the strain (e.g., Feminized, Regular, Autoflower).
+            flower_days_min: Minimum flowering days.
+            flower_days_max: Maximum flowering days.
+            notes: Grower notes or description.
+            image_base64: Base64 encoded image string.
         """
         strain = strain.strip()
+        phenotype = phenotype.strip() if phenotype else "default"
+
         if strain not in self.strains:
             self.strains[strain] = {"phenotypes": {}, "meta": {}}
 
+        # Strain-level metadata
         if "meta" not in self.strains[strain]:
             self.strains[strain]["meta"] = {}
-
         if breeder is not None:
             self.strains[strain]["meta"]["breeder"] = breeder
         if strain_type is not None:
             self.strains[strain]["meta"]["type"] = strain_type
+        if lineage is not None:
+            self.strains[strain]["meta"]["lineage"] = lineage
+        if sex is not None:
+            self.strains[strain]["meta"]["sex"] = sex
 
-        _LOGGER.info("Updated metadata for strain %s", strain)
+        # Phenotype-level metadata
+        if phenotype not in self.strains[strain]["phenotypes"]:
+            self.strains[strain]["phenotypes"][phenotype] = {"harvests": []}
+
+        pheno_data = self.strains[strain]["phenotypes"][phenotype]
+        if flower_days_min is not None:
+            pheno_data["flower_days_min"] = flower_days_min
+        if flower_days_max is not None:
+            pheno_data["flower_days_max"] = flower_days_max
+        if notes is not None:
+            pheno_data["notes"] = notes
+
+        # Image Handling
+        if image_base64:
+            try:
+                # Determine write path
+                # Use standard 'www' folder which maps to '/local/'
+                base_dir = self.hass.config.path("www", "growspace_manager", "strain-images")
+                if not os.path.exists(base_dir):
+                    os.makedirs(base_dir)
+
+                # Generate filename
+                safe_strain = slugify(strain)
+                safe_pheno = slugify(phenotype)
+                filename = f"{safe_strain}_{safe_pheno}.jpg"
+                file_path = os.path.join(base_dir, filename)
+
+                # Decode and write
+                image_data = base64.b64decode(image_base64)
+
+                def _write_image():
+                    with open(file_path, "wb") as f:
+                        f.write(image_data)
+
+                await self.hass.async_add_executor_job(_write_image)
+
+                # Store relative web path
+                web_path = f"/local/growspace_manager/strain-images/{filename}"
+                pheno_data["image_path"] = web_path
+                _LOGGER.info("Saved image for %s (%s) to %s", strain, phenotype, file_path)
+
+            except Exception as err:
+                _LOGGER.error("Failed to save strain image: %s", err)
+
+        _LOGGER.info("Updated metadata for strain %s (%s)", strain, phenotype)
         await self.save()
 
     async def remove_strain_phenotype(self, strain: str, phenotype: str) -> None:
