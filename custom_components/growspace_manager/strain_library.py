@@ -238,9 +238,17 @@ class StrainLibrary:
         # Image Handling
         if image_base64:
             try:
+                # Handle Data URI if present
+                if image_base64.startswith("data:"):
+                    # Split at the comma to remove metadata header (e.g., "data:image/png;base64,")
+                    try:
+                        _, image_base64 = image_base64.split(",", 1)
+                    except ValueError:
+                         _LOGGER.warning("Invalid Data URI format for image")
+
                 # Determine write path
                 # Use standard 'www' folder which maps to '/local/'
-                base_dir = self.hass.config.path("www", "growspace_manager", "strain-images")
+                base_dir = self.hass.config.path("www", "growspace_manager", "strains")
                 if not os.path.exists(base_dir):
                     os.makedirs(base_dir)
 
@@ -260,7 +268,7 @@ class StrainLibrary:
                 await self.hass.async_add_executor_job(_write_image)
 
                 # Store relative web path
-                web_path = f"/local/growspace_manager/strain-images/{filename}"
+                web_path = f"/local/growspace_manager/strains/{filename}"
                 pheno_data["image_path"] = web_path
                 _LOGGER.info("Saved image for %s (%s) to %s", strain, phenotype, file_path)
 

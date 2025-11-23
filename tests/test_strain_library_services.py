@@ -12,6 +12,8 @@ from custom_components.growspace_manager.services.strain_library import (
     handle_export_strain_library,
     handle_import_strain_library,
     handle_clear_strain_library,
+    handle_add_strain,
+    handle_update_strain_meta,
 )
 from custom_components.growspace_manager.const import DOMAIN
 
@@ -41,6 +43,8 @@ def mock_strain_library():
     strain_library.strains = {"Strain A", "Strain B"}
     strain_library.import_strains = AsyncMock(return_value=2)
     strain_library.clear_strains = AsyncMock(return_value=2)
+    strain_library.add_strain = AsyncMock()
+    strain_library.set_strain_meta = AsyncMock()
     return strain_library
 
 
@@ -138,6 +142,67 @@ async def test_handle_import_strain_library_exception(
         )
 
     mock_create_notification.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_handle_add_strain_with_image(
+    mock_hass, mock_coordinator, mock_strain_library, mock_call
+):
+    """Test handle_add_strain service uses 'image' parameter if 'image_base64' is missing."""
+    mock_call.data = {
+        "strain": "Strain A",
+        "image": "base64encodedstring"
+    }
+
+    await handle_add_strain(
+        mock_hass, mock_coordinator, mock_strain_library, mock_call
+    )
+
+    mock_strain_library.add_strain.assert_awaited_once()
+    call_args = mock_strain_library.add_strain.call_args.kwargs
+    assert call_args["strain"] == "Strain A"
+    assert call_args["image_base64"] == "base64encodedstring"
+
+
+@pytest.mark.asyncio
+async def test_handle_add_strain_with_image_base64(
+    mock_hass, mock_coordinator, mock_strain_library, mock_call
+):
+    """Test handle_add_strain service uses 'image_base64' if present."""
+    mock_call.data = {
+        "strain": "Strain A",
+        "image_base64": "base64encodedstring",
+        "image": "ignored"
+    }
+
+    await handle_add_strain(
+        mock_hass, mock_coordinator, mock_strain_library, mock_call
+    )
+
+    mock_strain_library.add_strain.assert_awaited_once()
+    call_args = mock_strain_library.add_strain.call_args.kwargs
+    assert call_args["strain"] == "Strain A"
+    assert call_args["image_base64"] == "base64encodedstring"
+
+
+@pytest.mark.asyncio
+async def test_handle_update_strain_meta_with_image(
+    mock_hass, mock_coordinator, mock_strain_library, mock_call
+):
+    """Test handle_update_strain_meta service uses 'image' parameter if 'image_base64' is missing."""
+    mock_call.data = {
+        "strain": "Strain A",
+        "image": "base64encodedstring"
+    }
+
+    await handle_update_strain_meta(
+        mock_hass, mock_coordinator, mock_strain_library, mock_call
+    )
+
+    mock_strain_library.set_strain_meta.assert_awaited_once()
+    call_args = mock_strain_library.set_strain_meta.call_args.kwargs
+    assert call_args["strain"] == "Strain A"
+    assert call_args["image_base64"] == "base64encodedstring"
 
 
 @pytest.mark.asyncio
