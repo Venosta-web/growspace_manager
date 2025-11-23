@@ -489,32 +489,56 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
             if field in kwargs:
                 kwargs[field] = self._parse_date_field(kwargs[field])
 
-    def calculate_days(self, start_date: str | date | datetime | None) -> int:
+    def _to_date(self, date_value: DateInput) -> date | None:
+        """Convert a date input to a date object.
+
+        Args:
+            date_value: The date value to convert.
+
+        Returns:
+            A date object or None if conversion fails.
+        """
+        if not date_value or str(date_value) == "None":
+            return None
+        try:
+            if isinstance(date_value, datetime):
+                return date_value.date()
+            elif isinstance(date_value, date):
+                return date_value
+            elif isinstance(date_value, str):
+                return parser.isoparse(date_value).date()
+        except Exception as e:
+            _LOGGER.warning("Failed to parse date %s: %s", date_value, e)
+        return None
+
+    def calculate_days(
+        self, start_date: DateInput, end_date: DateInput = None
+    ) -> int:
         """Calculate the number of days that have passed since a given date.
+
+        If an end_date is provided and is valid (i.e., not in the future relative
+        to today), the calculation is capped at that date. Otherwise, it
+        calculates up to today.
 
         Args:
             start_date: The start date to calculate from.
+            end_date: The optional end date to cap the duration.
 
         Returns:
             The total number of days passed, or 0 if the date is invalid.
         """
-        if not start_date or start_date == "None":  # extra guard
+        start_dt = self._to_date(start_date)
+        if not start_dt:
             return 0
 
-        try:
-            if isinstance(start_date, datetime):
-                dt = start_date.date()
-            elif isinstance(start_date, date):
-                dt = start_date
-            elif isinstance(start_date, str):
-                dt = parser.isoparse(start_date).date()
-            else:
-                return 0
+        target_date = date.today()
 
-            return (date.today() - dt).days
-        except Exception as e:
-            _LOGGER.warning("Failed to calculate days for date %s: %s", start_date, e)
-            return 0
+        if end_date:
+            end_dt = self._to_date(end_date)
+            if end_dt and end_dt <= target_date:
+                target_date = end_dt
+
+        return (target_date - start_dt).days
 
     def _generate_unique_name(self, base_name: str) -> str:
         """Generate a unique growspace name by appending a counter if necessary.
@@ -2019,7 +2043,18 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
             The number of days in the stage.
         """
         start_date = getattr(plant, f"{stage}_start", None)
-        return self.calculate_days(start_date)
+
+        end_date = None
+        if stage == "seedling" or stage == "clone":
+            end_date = getattr(plant, "veg_start", None)
+        elif stage == "veg":
+            end_date = getattr(plant, "flower_start", None)
+        elif stage == "flower":
+            end_date = getattr(plant, "dry_start", None)
+        elif stage == "dry":
+            end_date = getattr(plant, "cure_start", None)
+
+        return self.calculate_days(start_date, end_date)
 
     def get_growspace_grid(self, growspace_id: str) -> list[list[str | None]]:
         """Generate a 2D grid representation of a growspace's plant layout.
