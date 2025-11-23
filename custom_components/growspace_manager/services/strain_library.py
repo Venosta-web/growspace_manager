@@ -117,7 +117,10 @@ async def handle_add_strain(
     flower_days_min = call.data.get("flower_days_min")
     flower_days_max = call.data.get("flower_days_max")
     description = call.data.get("description")
+
     image_base64 = call.data.get("image_base64")
+    if not image_base64:
+        image_base64 = call.data.get("image")
 
     await strain_library.add_strain(
         strain=strain,
@@ -150,7 +153,10 @@ async def handle_update_strain_meta(
     flower_days_min = call.data.get("flower_days_min")
     flower_days_max = call.data.get("flower_days_max")
     description = call.data.get("description")
+
     image_base64 = call.data.get("image_base64")
+    if not image_base64:
+        image_base64 = call.data.get("image")
 
     await strain_library.set_strain_meta(
         strain=strain,
