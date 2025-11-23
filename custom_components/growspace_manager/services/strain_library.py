@@ -115,7 +115,13 @@ async def handle_add_strain(
     lineage = call.data.get("lineage")
     sex = call.data.get("sex")
     flower_days_min = call.data.get("flower_days_min")
+    if flower_days_min is None:
+        flower_days_min = call.data.get("flowering_days_min")
+
     flower_days_max = call.data.get("flower_days_max")
+    if flower_days_max is None:
+        flower_days_max = call.data.get("flowering_days_max")
+
     description = call.data.get("description")
 
     image_base64 = call.data.get("image_base64")
@@ -151,7 +157,13 @@ async def handle_update_strain_meta(
     lineage = call.data.get("lineage")
     sex = call.data.get("sex")
     flower_days_min = call.data.get("flower_days_min")
+    if flower_days_min is None:
+        flower_days_min = call.data.get("flowering_days_min")
+
     flower_days_max = call.data.get("flower_days_max")
+    if flower_days_max is None:
+        flower_days_max = call.data.get("flowering_days_max")
+
     description = call.data.get("description")
 
     image_base64 = call.data.get("image_base64")
