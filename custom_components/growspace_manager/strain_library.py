@@ -99,12 +99,32 @@ class StrainLibrary:
         )
         await self.save()
 
-    async def add_strain(self, strain: str, phenotype: str | None = None) -> None:
+    async def add_strain(
+        self,
+        strain: str,
+        phenotype: str | None = None,
+        breeder: str | None = None,
+        strain_type: str | None = None,
+        lineage: str | None = None,
+        sex: str | None = None,
+        flower_days_min: int | None = None,
+        flower_days_max: int | None = None,
+        notes: str | None = None,
+        image_base64: str | None = None,
+    ) -> None:
         """Add a single strain/phenotype combination to the library.
 
         Args:
             strain: The name of the strain to add.
             phenotype: The phenotype of the strain (optional).
+            breeder: The breeder name.
+            strain_type: The strain type (e.g., Indica, Sativa).
+            lineage: The lineage or parent strains.
+            sex: The sex of the strain (e.g., Feminized, Regular, Autoflower).
+            flower_days_min: Minimum flowering days.
+            flower_days_max: Maximum flowering days.
+            notes: Grower notes or description.
+            image_base64: Base64 encoded image string.
         """
         strain = strain.strip()
         phenotype = phenotype.strip() if phenotype else "default"
@@ -117,6 +137,32 @@ class StrainLibrary:
             self.strains[strain]["phenotypes"][phenotype] = {"harvests": []}
             _LOGGER.info("Added phenotype %s to strain %s", phenotype, strain)
             await self.save()
+
+        # Apply metadata if provided
+        if any(
+            [
+                breeder,
+                strain_type,
+                lineage,
+                sex,
+                flower_days_min,
+                flower_days_max,
+                notes,
+                image_base64,
+            ]
+        ):
+            await self.set_strain_meta(
+                strain=strain,
+                phenotype=phenotype,
+                breeder=breeder,
+                strain_type=strain_type,
+                lineage=lineage,
+                sex=sex,
+                flower_days_min=flower_days_min,
+                flower_days_max=flower_days_max,
+                notes=notes,
+                image_base64=image_base64,
+            )
 
     async def set_strain_meta(
         self,

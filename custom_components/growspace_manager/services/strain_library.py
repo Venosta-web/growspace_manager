@@ -110,7 +110,27 @@ async def handle_add_strain(
     """Handle the add_strain service call."""
     strain = call.data.get("strain")
     phenotype = call.data.get("phenotype")
-    await strain_library.add_strain(strain, phenotype)
+    breeder = call.data.get("breeder")
+    strain_type = call.data.get("type")
+    lineage = call.data.get("lineage")
+    sex = call.data.get("sex")
+    flower_days_min = call.data.get("flower_days_min")
+    flower_days_max = call.data.get("flower_days_max")
+    notes = call.data.get("notes")
+    image_base64 = call.data.get("image_base64")
+
+    await strain_library.add_strain(
+        strain=strain,
+        phenotype=phenotype,
+        breeder=breeder,
+        strain_type=strain_type,
+        lineage=lineage,
+        sex=sex,
+        flower_days_min=flower_days_min,
+        flower_days_max=flower_days_max,
+        notes=notes,
+        image_base64=image_base64,
+    )
     await coordinator.async_request_refresh()
 
 

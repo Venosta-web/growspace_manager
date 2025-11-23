@@ -309,6 +309,14 @@ ADD_STRAIN_SCHEMA = vol.Schema(
     {
         vol.Required("strain"): str,
         vol.Optional("phenotype"): str,
+        vol.Optional("breeder"): str,
+        vol.Optional("type"): str,
+        vol.Optional("lineage"): str,
+        vol.Optional("sex"): str,
+        vol.Optional("flower_days_min"): vol.All(vol.Coerce(int), vol.Range(min=0)),
+        vol.Optional("flower_days_max"): vol.All(vol.Coerce(int), vol.Range(min=0)),
+        vol.Optional("notes"): str,
+        vol.Optional("image_base64"): str,
     }
 )
 
