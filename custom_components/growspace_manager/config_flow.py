@@ -25,7 +25,6 @@ from homeassistant.core import HomeAssistant, callback
 import homeassistant.helpers.config_validation as cv
 from homeassistant.helpers import selector
 from homeassistant.helpers import device_registry as dr
-from homeassistant.components import conversation
 
 from .models import Growspace, Plant
 from .const import DOMAIN, DEFAULT_NAME
@@ -291,83 +290,11 @@ class OptionsFlowHandler(OptionsFlow):
                 return await self.async_step_configure_global()
             if action == "manage_timed_notifications":
                 return await self.async_step_manage_timed_notifications()
-            if action == "configure_ai":
-                return await self.async_step_configure_ai()
             return self.async_create_entry(title="", data=user_input)
 
         return self.async_show_form(
             step_id="init",
             data_schema=self._get_main_menu_schema(),
-        )
-
-    async def async_step_configure_ai(
-        self, user_input: dict[str, Any] | None = None
-    ) -> ConfigFlowResult:
-        """Show the form for configuring the AI assistant.
-
-        Args:
-            user_input: The user's input from the form, if any.
-
-        Returns:
-            A ConfigFlowResult.
-        """
-        if user_input is not None:
-            # Save the AI settings into the main config_entry's options
-            new_options = self.config_entry.options.copy()
-            new_options["ai_config"] = user_input
-            # OptionsFlow automatically updates config entry options with the data returned
-            return self.async_create_entry(title="", data=new_options)
-
-        # Get available agents
-        agents = []
-        try:
-            agent_list = conversation.async_get_agents(self.hass)
-            for agent in agent_list:
-                agents.append(
-                    selector.SelectOptionDict(value=agent.id, label=agent.name)
-                )
-        except AttributeError:
-            # Fallback for newer HA versions or if method changed
-            _LOGGER.warning("Could not retrieve conversation agents via async_get_agents")
-            # Try getting the default agent to at least show something
-            try:
-                default_agent = await conversation.async_get_agent(self.hass)
-                if default_agent:
-                    agents.append(
-                        selector.SelectOptionDict(
-                            value=default_agent.id, label=f"{default_agent.name} (Default)"
-                        )
-                    )
-            except Exception as err:
-                _LOGGER.error("Error retrieving default agent: %s", err)
-
-        # Get current AI settings to prepopulate the form
-        ai_config = self.config_entry.options.get("ai_config", {})
-
-        schema = {
-            vol.Required("ai_enabled", default=ai_config.get("ai_enabled", False)): selector.BooleanSelector(),
-        }
-
-        if agents:
-            schema[vol.Optional("ai_agent_id", default=ai_config.get("ai_agent_id"))] = selector.SelectSelector(
-                selector.SelectSelectorConfig(
-                    options=agents,
-                    mode=selector.SelectSelectorMode.DROPDOWN,
-                )
-            )
-        else:
-             schema[vol.Optional("ai_agent_id", default=ai_config.get("ai_agent_id"))] = selector.TextSelector()
-
-        schema[vol.Optional("ai_personality", default=ai_config.get("ai_personality", ""))] = selector.TextSelector(
-            selector.TextSelectorConfig(
-                multiline=True
-            )
-        )
-
-        return self.async_show_form(
-            step_id="configure_ai",
-            data_schema=vol.Schema(schema),
-            description_placeholders={}
         )
 
     async def async_step_manage_timed_notifications(
@@ -1578,10 +1505,6 @@ class OptionsFlowHandler(OptionsFlow):
                             selector.SelectOptionDict(
                                 value="manage_timed_notifications",
                                 label="Timed Notifications",
-                            ),
-                            selector.SelectOptionDict(
-                                value="configure_ai",
-                                label="Configure AI Assistant",
                             ),
                         ],
                         mode=selector.SelectSelectorMode.DROPDOWN,
