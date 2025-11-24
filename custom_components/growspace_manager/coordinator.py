@@ -1413,6 +1413,8 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
 
         plant.updated_at = date.today().isoformat()
         await self.async_save()
+        self.update_data_property()
+        self.async_set_updated_data(self.data)
         return plant
 
     def _handle_position_update(
@@ -1570,6 +1572,8 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
         plant.flower_start = date.today().isoformat()
         plant.updated_at = plant.flower_start
         await self.async_save()
+        self.update_data_property()
+        self.async_set_updated_data(self.data)
         return plant
 
     async def async_start_drying(self, plant_id: str) -> Plant:
@@ -1589,6 +1593,8 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
         plant.dry_start = date.today().isoformat()
         plant.updated_at = plant.dry_start
         await self.async_save()
+        self.update_data_property()
+        self.async_set_updated_data(self.data)
         return plant
 
     async def async_start_curing(self, plant_id: str) -> Plant:
@@ -1608,6 +1614,8 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
         plant.cure_start = date.today().isoformat()
         plant.updated_at = plant.cure_start
         await self.async_save()
+        self.update_data_property()
+        self.async_set_updated_data(self.data)
         return plant
 
     async def async_harvest(self, plant_id: str) -> Plant:
@@ -1627,6 +1635,8 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
         plant.dry_start = date.today().isoformat()
         plant.updated_at = plant.dry_start
         await self.async_save()
+        self.update_data_property()
+        self.async_set_updated_data(self.data)
         return plant
 
     async def async_harvest_plant(

@@ -113,8 +113,6 @@ async def handle_add_plant(
             dry_start=dry_start,
             cure_start=cure_start,
         )
-        await coordinator.async_save()
-        await coordinator.async_request_refresh()
         _LOGGER.info(
             "Plant %s added successfully to growspace %s at (%d,%d)",
             plant_id,
@@ -235,8 +233,6 @@ async def handle_take_clone(
             # Continue trying to add other clones if one fails
 
     if clones_added_count > 0:
-        await coordinator.async_save()
-        await coordinator.async_request_refresh()
         hass.bus.async_fire(
             f"{DOMAIN}_clones_taken",
             {
@@ -349,8 +345,6 @@ async def handle_move_clone(
 
         # Remove the old plant (the clone)
         await coordinator.async_remove_plant(plant_id)
-        await coordinator.async_save()
-        await coordinator.async_request_refresh()
 
         _LOGGER.info(
             "Moved clone %s (now %s) to growspace %s at (%s,%s)",
@@ -422,9 +416,12 @@ async def handle_update_plant(
         plant = coordinator.plants[plant_id]
         growspace_id = plant.growspace_id
 
+        # Create a mutable copy of call.data to allow modifications
+        service_data = dict(call.data)
+
         # If position is being updated, check for conflicts
-        if "row" in call.data and "col" in call.data:
-            new_row, new_col = call.data["row"], call.data["col"]
+        if "row" in service_data and "col" in service_data:
+            new_row, new_col = service_data["row"], service_data["col"]
             existing_plants = coordinator.get_growspace_plants(growspace_id)
             is_occupied = any(
                 p.plant_id != plant_id and p.row == new_row and p.col == new_col
@@ -446,20 +443,20 @@ async def handle_update_plant(
                         free_row,
                         free_col,
                     )
-                    call.data["row"] = free_row
-                    call.data["col"] = free_col
+                    service_data["row"] = free_row
+                    service_data["col"] = free_col
                 else:
                     _LOGGER.error(
                         "No free space found in growspace %s for plant %s. Position will not be updated.",
                         growspace_id,
                         plant_id,
                     )
-                    # Remove row/col from call.data to prevent update
-                    call.data.pop("row")
-                    call.data.pop("col")
+                    # Remove row/col from service_data to prevent update
+                    service_data.pop("row")
+                    service_data.pop("col")
 
         update_data = {}
-        for k, v in call.data.items():
+        for k, v in service_data.items():
             if k == "plant_id":
                 continue
 
@@ -519,8 +516,6 @@ async def handle_update_plant(
             f"{DOMAIN}_plant_updated",
             {"plant_id": plant_id, "updated_fields": list(update_data.keys())},
         )
-        await coordinator.async_save()
-        await coordinator.async_request_refresh()
 
     except Exception as err:
         _LOGGER.exception("Failed to update plant %s: %s", plant_id, err)
@@ -558,9 +553,6 @@ async def handle_remove_plant(
             plant_id,
             plant_info.growspace_id,
         )
-
-        await coordinator.async_save()
-        await coordinator.async_request_refresh()
 
         hass.bus.async_fire(
             f"{DOMAIN}_plant_removed",
@@ -610,8 +602,6 @@ async def handle_switch_plants(
 
         await coordinator.async_switch_plants(plant_id_1, plant_id_2)
         _LOGGER.info("Plants %s and %s switched successfully", plant_id_1, plant_id_2)
-        await coordinator.async_save()
-        await coordinator.async_request_refresh()
 
         hass.bus.async_fire(
             f"{DOMAIN}_plants_switched",
@@ -727,8 +717,6 @@ async def handle_move_plant(
                     "plant2_new_position": f"({old_row},{old_col})",
                 },
             )
-            await coordinator.async_save()
-            await coordinator.async_request_refresh()
             _LOGGER.info(
                 "Successfully switched positions for %s and %s.",
                 plant_id,
@@ -737,8 +725,6 @@ async def handle_move_plant(
         else:
             # Position is empty, just move normally
             await coordinator.async_move_plant(plant_id, new_row, new_col)
-            await coordinator.async_save()
-            await coordinator.async_request_refresh()
             _LOGGER.info(
                 "Plant %s moved to (%d,%d) in growspace %s",
                 plant.strain,
@@ -813,8 +799,6 @@ async def handle_transition_plant_stage(
             transition_date=transition_date,
         )
         _LOGGER.info("Plant %s transitioned to %s stage", plant_id, new_stage)
-        await coordinator.async_save()
-        await coordinator.async_request_refresh()
 
         hass.bus.async_fire(
             f"{DOMAIN}_plant_transitioned",
@@ -947,8 +931,6 @@ async def handle_harvest_plant(
             transition_date=transition_date,
         )
         _LOGGER.info("Plant %s harvested successfully", plant_id)
-        await coordinator.async_save()
-        await coordinator.async_request_refresh()
 
         hass.bus.async_fire(
             f"{DOMAIN}_plant_harvested",
