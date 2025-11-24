@@ -330,10 +330,10 @@ class OptionsFlowHandler(OptionsFlow):
 
         return self.async_show_form(
             step_id="configure_ai",
-            data_schema=self._get_ai_settings_schema(),
+            data_schema=await self._get_ai_settings_schema(),
         )
 
-    def _get_ai_settings_schema(self) -> vol.Schema:
+    async def _get_ai_settings_schema(self) -> vol.Schema:
         """Build the schema for AI settings.
 
         Returns:
@@ -1855,3 +1855,156 @@ class OptionsFlowHandler(OptionsFlow):
                 if strain_to_remove:
                     strain, phenotype = strain_to_remove.split("|")
                     await coordinator.strains.remove_strain_phenotype(strain, phenotype)
+                    # Return to menu after action
+                    return self.async_show_form(
+                        step_id="manage_strain_library",
+                        data_schema=self._get_strain_management_schema(coordinator),
+                    )
+            if action == "back":
+                return self.async_show_form(
+                    step_id="init",
+                    data_schema=self.add_suggested_values_to_schema(
+                        self._get_main_menu_schema(), self._config_entry.options
+                    ),
+                )
+
+        return self.async_show_form(
+            step_id="manage_strain_library",
+            data_schema=self._get_strain_management_schema(coordinator),
+        )
+
+    async def async_step_add_strain(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Show the form for adding a new strain."""
+        coordinator = self.hass.data[DOMAIN][self._config_entry.entry_id][
+            "coordinator"
+        ]
+
+        if user_input is not None:
+            try:
+                await coordinator.strains.add_strain(
+                    strain=user_input["strain"],
+                    phenotype=user_input.get("phenotype"),
+                    breeder=user_input.get("breeder"),
+                    strain_type=user_input.get("type"),
+                    lineage=user_input.get("lineage"),
+                    sex=user_input.get("sex"),
+                    flower_days_min=user_input.get("flower_days_min"),
+                    flower_days_max=user_input.get("flower_days_max"),
+                    description=user_input.get("description"),
+                    sativa_percentage=user_input.get("sativa_percentage"),
+                    indica_percentage=user_input.get("indica_percentage"),
+                )
+                return self.async_show_form(
+                    step_id="manage_strain_library",
+                    data_schema=self._get_strain_management_schema(coordinator),
+                )
+            except Exception as err:
+                _LOGGER.error("Error adding strain: %s", err)
+                return self.async_show_form(
+                    step_id="add_strain",
+                    data_schema=self._get_add_strain_schema(),
+                    errors={"base": str(err)},
+                )
+
+        return self.async_show_form(
+            step_id="add_strain",
+            data_schema=self._get_add_strain_schema(),
+        )
+
+    def _get_strain_management_schema(self, coordinator) -> vol.Schema:
+        """Build the schema for the strain management menu."""
+        strain_options = []
+        all_strains = coordinator.strains.get_all()
+
+        for strain_name, data in all_strains.items():
+            phenotypes = data.get("phenotypes", {})
+            for pheno_name in phenotypes:
+                label = f"{strain_name}"
+                if pheno_name and pheno_name != "default":
+                    label += f" ({pheno_name})"
+
+                value = f"{strain_name}|{pheno_name}"
+                strain_options.append(
+                    selector.SelectOptionDict(value=value, label=label)
+                )
+
+        # Sort alphabetically
+        strain_options.sort(key=lambda x: x["label"])
+
+        schema = {
+            vol.Required("action"): selector.SelectSelector(
+                selector.SelectSelectorConfig(
+                    options=[
+                        selector.SelectOptionDict(value="add", label="Add New Strain"),
+                        selector.SelectOptionDict(value="remove", label="Remove Strain/Phenotype"),
+                        selector.SelectOptionDict(value="back", label="← Back to Main Menu"),
+                    ],
+                    mode=selector.SelectSelectorMode.DROPDOWN,
+                )
+            )
+        }
+
+        if strain_options:
+            schema[vol.Optional("strain_id")] = selector.SelectSelector(
+                selector.SelectSelectorConfig(
+                    options=strain_options,
+                    mode=selector.SelectSelectorMode.DROPDOWN,
+                )
+            )
+
+        return vol.Schema(schema)
+
+    def _get_add_strain_schema(self) -> vol.Schema:
+        """Build the schema for adding a new strain."""
+        return vol.Schema(
+            {
+                vol.Required("strain"): selector.TextSelector(),
+                vol.Optional("phenotype"): selector.TextSelector(),
+                vol.Optional("breeder"): selector.TextSelector(),
+                vol.Optional("type"): selector.SelectSelector(
+                    selector.SelectSelectorConfig(
+                        options=[
+                            selector.SelectOptionDict(value="Sativa", label="Sativa"),
+                            selector.SelectOptionDict(value="Indica", label="Indica"),
+                            selector.SelectOptionDict(value="Hybrid", label="Hybrid"),
+                            selector.SelectOptionDict(value="Ruderalis", label="Ruderalis"),
+                        ],
+                        custom_value=True,
+                        mode=selector.SelectSelectorMode.DROPDOWN,
+                    )
+                ),
+                vol.Optional("sex"): selector.SelectSelector(
+                    selector.SelectSelectorConfig(
+                        options=[
+                            selector.SelectOptionDict(value="Feminized", label="Feminized"),
+                            selector.SelectOptionDict(value="Regular", label="Regular"),
+                            selector.SelectOptionDict(value="Autoflower", label="Autoflower"),
+                        ],
+                        custom_value=True,
+                        mode=selector.SelectSelectorMode.DROPDOWN,
+                    )
+                ),
+                vol.Optional("lineage"): selector.TextSelector(),
+                vol.Optional("sativa_percentage"): selector.NumberSelector(
+                    selector.NumberSelectorConfig(
+                        min=0, max=100, mode=selector.NumberSelectorMode.BOX, unit_of_measurement="%"
+                    )
+                ),
+                vol.Optional("indica_percentage"): selector.NumberSelector(
+                    selector.NumberSelectorConfig(
+                        min=0, max=100, mode=selector.NumberSelectorMode.BOX, unit_of_measurement="%"
+                    )
+                ),
+                vol.Optional("flower_days_min"): selector.NumberSelector(
+                    selector.NumberSelectorConfig(min=0, mode=selector.NumberSelectorMode.BOX)
+                ),
+                vol.Optional("flower_days_max"): selector.NumberSelector(
+                    selector.NumberSelectorConfig(min=0, mode=selector.NumberSelectorMode.BOX)
+                ),
+                vol.Optional("description"): selector.TextSelector(
+                    selector.TextSelectorConfig(multiline=True)
+                ),
+            }
+        )
