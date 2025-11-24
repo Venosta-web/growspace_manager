@@ -9,7 +9,7 @@ from homeassistant.components.persistent_notification import (
     async_create as create_notification,
 )
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.core import HomeAssistant, ServiceCall
+from homeassistant.core import HomeAssistant, ServiceCall, SupportsResponse
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.storage import Store
 
@@ -34,6 +34,7 @@ from .const import (
     REMOVE_PLANT_SCHEMA,
     REMOVE_STRAIN_SCHEMA,
     UPDATE_STRAIN_META_SCHEMA,
+    ASK_GROW_ADVICE_SCHEMA,
     STORAGE_KEY,
     STORAGE_KEY_STRAIN_LIBRARY,
     STORAGE_VERSION,
@@ -241,6 +242,17 @@ async def _register_services(
         )
         _LOGGER.debug("Registered service: %s", service_name)
 
+    # Register ask_grow_advice with supports_response
+    async def ask_grow_advice_wrapper(
+        call: ServiceCall, _handler=growspace.handle_ask_grow_advice
+    ):
+         return await _handler(hass, coordinator, strain_library_instance, call)
+
+    hass.services.async_register(
+        DOMAIN, "ask_grow_advice", ask_grow_advice_wrapper, schema=ASK_GROW_ADVICE_SCHEMA, supports_response=SupportsResponse.ONLY
+    )
+    _LOGGER.debug("Registered service: ask_grow_advice")
+
     # Register the standalone 'get_strain_library' service
     async def get_strain_library_wrapper(
         call: ServiceCall, _handler=strain_library_services.handle_get_strain_library
@@ -324,6 +336,7 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             "get_strain_library",
             "configure_environment",
             "remove_environment",
+            "ask_grow_advice",
         ]
 
         for service_name in service_names_to_remove:
