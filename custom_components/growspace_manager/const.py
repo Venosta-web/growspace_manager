@@ -293,7 +293,7 @@ EXPORT_STRAIN_LIBRARY_SCHEMA = vol.Schema(
 
 IMPORT_STRAIN_LIBRARY_SCHEMA = vol.Schema(
     {
-        vol.Optional("strains"): vol.Any(dict, list),  # Allow dict or list for import
+        vol.Required("file_path"): str,
         vol.Optional("replace", default=False): bool,
     }
 )
