@@ -17,7 +17,7 @@ from homeassistant.components.binary_sensor import BinarySensorEntity
 from homeassistant.components.recorder import history
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import STATE_UNAVAILABLE, STATE_UNKNOWN
-from homeassistant.core import HomeAssistant, State, callback
+from homeassistant.core import Context, HomeAssistant, State, callback
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.event import async_track_state_change_event
@@ -421,7 +421,8 @@ class BayesianEnvironmentSensor(BinarySensorEntity):
                     self.hass,
                     text=prompt,
                     conversation_id=None,
-                    agent_id=agent_id
+                    agent_id=agent_id,
+                    context=Context(),
                 )
 
                 if (

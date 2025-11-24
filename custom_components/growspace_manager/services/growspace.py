@@ -122,7 +122,8 @@ async def handle_ask_grow_advice(
             hass,
             text=prompt,
             conversation_id=None,
-            agent_id=agent_id
+            agent_id=agent_id,
+            context=call.context,
         )
 
         response_text = "Sorry, I couldn't generate advice at this time."
