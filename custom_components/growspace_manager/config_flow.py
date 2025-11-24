@@ -11,31 +11,30 @@ from __future__ import annotations
 import ast
 import logging
 import uuid
-from typing import Any, Optional
+from typing import Any
 
+import homeassistant.helpers.config_validation as cv
 import voluptuous as vol
-
 from homeassistant import config_entries
+from homeassistant.components import conversation
 from homeassistant.config_entries import (
+    ConfigEntry,
     ConfigFlowResult,
     OptionsFlow,
-    ConfigEntry,
 )
-from homeassistant.core import HomeAssistant, callback
-import homeassistant.helpers.config_validation as cv
-from homeassistant.helpers import selector
+from homeassistant.core import callback
 from homeassistant.helpers import device_registry as dr
-from homeassistant.helpers import llm
+from homeassistant.helpers import selector
 
-from .models import Growspace, Plant
 from .const import (
-    DOMAIN,
-    DEFAULT_NAME,
+    AI_PERSONALITIES,
     CONF_AI_ENABLED,
     CONF_ASSISTANT_ID,
     CONF_NOTIFICATION_PERSONALITY,
-    AI_PERSONALITIES,
+    DEFAULT_NAME,
+    DOMAIN,
 )
+from .models import Growspace, Plant
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -343,7 +342,7 @@ class OptionsFlowHandler(OptionsFlow):
         current_settings = self._config_entry.options.get("ai_settings", {})
 
         # Get available assistants
-        assistants = llm.async_get_assistants(self.hass)
+        assistants = conversation.async_get_agents(self.hass)
         assistant_options = [
             selector.SelectOptionDict(value=assistant.id, label=assistant.name)
             for assistant in assistants
@@ -619,7 +618,7 @@ class OptionsFlowHandler(OptionsFlow):
         )
 
     async def async_step_manage_growspaces(
-        self, user_input: Optional[dict[str, Any]] | None
+        self, user_input: dict[str, Any] | None | None
     ) -> ConfigFlowResult:
         """Show the menu for managing growspaces (add, update, remove).
 
