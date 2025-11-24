@@ -1,7 +1,6 @@
 export_strain_library:
   description: Export the strain library and images to a ZIP file
-  fields:
-    # No input fields required
+  # No fields required
 
 import_strain_library:
   description: Import a strain library from a ZIP file containing data and images
@@ -22,6 +21,16 @@ import_strain_library:
       default: false
       selector:
         boolean:
+
+clear_strain_library:
+  description: Clear all strains from the library
+  # No fields required
+
+get_strain_library:
+  description: Get the full strain library data (for frontend use)
+  response:
+    library:
+      description: The strain library data dictionary
 
 add_growspace:
   description: Add a new growspace
@@ -298,6 +307,7 @@ transition_plant_stage:
       required: false
       selector:
         date:
+
 test_notification:
   description: Send a test notification for a plant
   fields:
@@ -321,6 +331,7 @@ test_notification:
         number:
           min: 1
           max: 200
+
 harvest_plant:
   description: Harvest a plant and move it to the appropriate growspace
   fields:
@@ -339,6 +350,7 @@ harvest_plant:
       required: false
       selector:
         date:
+
 take_clone:
   description: Clone a plant and move it to the appropriate clone growspace
   fields:
@@ -362,6 +374,7 @@ take_clone:
       required: false
       selector:
         number:
+
 move_clone:
   description: Move a clone to a different growspace
   fields:
@@ -380,6 +393,7 @@ move_clone:
       required: false
       selector:
         date:
+
 switch_plants:
   description: Switch positions of two plants
   fields:
@@ -393,6 +407,7 @@ switch_plants:
       required: true
       selector:
         text:
+
 configure_environment:
   name: Configure Environment Monitoring
   description: Set up environment sensors for Bayesian monitoring on a growspace
@@ -476,6 +491,16 @@ configure_environment:
           min: 0.5
           max: 0.95
           step: 0.05
+
+remove_environment:
+  description: Remove environment configuration for a growspace
+  fields:
+    growspace_id:
+      description: ID of the growspace
+      required: true
+      selector:
+        text:
+
 add_strain:
   description: Add a strain to the strain library
   fields:
@@ -603,3 +628,49 @@ remove_strain:
       required: false
       selector:
         text:
+
+debug_cleanup_legacy:
+  description: Cleanup legacy data (Debug)
+  fields:
+    dry_only:
+      description: Only cleanup dry growspaces
+      required: false
+      default: false
+      selector:
+        boolean:
+    cure_only:
+      description: Only cleanup cure growspaces
+      required: false
+      default: false
+      selector:
+        boolean:
+
+debug_list_growspaces:
+  description: List all growspaces in logs (Debug)
+  # No fields
+
+debug_reset_special_growspaces:
+  description: Reset special growspaces (dry, cure, etc.) (Debug)
+  fields:
+    reset_dry:
+      description: Reset dry growspace
+      required: false
+      default: true
+      selector:
+        boolean:
+    reset_cure:
+      description: Reset cure growspace
+      required: false
+      default: true
+      selector:
+        boolean:
+    preserve_plants:
+      description: Preserve plants in growspaces
+      required: false
+      default: true
+      selector:
+        boolean:
+
+debug_consolidate_growspaces:
+  description: Consolidate duplicate special growspaces (Debug)
+  # No fields
