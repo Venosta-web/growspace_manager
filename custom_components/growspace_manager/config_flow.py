@@ -342,28 +342,22 @@ class OptionsFlowHandler(OptionsFlow):
         current_settings = self._config_entry.options.get("ai_settings", {})
 
         # Get available assistants
-        try:
-            assistants = conversation.async_get_agents(self.hass)
-        except AttributeError:
-            # Fallback for newer Home Assistant versions where async_get_agents is removed
-            _LOGGER.debug("conversation.async_get_agents not found, attempting fallback")
-            assistants = []
-            if "conversation" in self.hass.data:
-                data = self.hass.data["conversation"]
-                if isinstance(data, dict):
-                    assistants = list(data.values())
-                # Handle potential AgentManager object in newer versions
-                elif hasattr(data, "agents"):
-                    assistants = list(data.agents.values()) if isinstance(data.agents, dict) else data.agents
-                # Try async_get_agent if it exists (suggested by error message)
-                elif hasattr(conversation, "async_get_agent"):
-                    try:
-                        # Try to get default agent
-                        default_agent = await conversation.async_get_agent(self.hass)
-                        if default_agent:
-                            assistants.append(default_agent)
-                    except Exception:
-                        pass
+        assistants = []
+        if "conversation" in self.hass.data:
+            agent_manager = self.hass.data["conversation"]
+            # Attempt to use the modern AgentManager method
+            if hasattr(agent_manager, "async_get_agents"):
+                assistants = await agent_manager.async_get_agents()
+
+        if not assistants:
+            # Fallback to default agent if no agents returned (or manager missing)
+            try:
+                # conversation.async_get_agent(hass) gets the default agent
+                default_agent = await conversation.async_get_agent(self.hass)
+                if default_agent:
+                    assistants = [default_agent]
+            except Exception:
+                pass
 
         # Filter to ensure we have valid agent objects
         valid_assistants = [
