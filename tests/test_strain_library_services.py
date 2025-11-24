@@ -1,7 +1,9 @@
 """Tests for the Strain Library services."""
 
 import pytest
-from unittest.mock import AsyncMock, MagicMock, patch
+import os
+import base64
+from unittest.mock import AsyncMock, MagicMock, patch, ANY
 
 from homeassistant.core import HomeAssistant, ServiceCall
 
@@ -23,6 +25,8 @@ def mock_hass():
     """Fixture for a mock HomeAssistant instance."""
     hass = MagicMock(spec=HomeAssistant)
     hass.bus = MagicMock()
+    hass.data = {}
+    hass.config = MagicMock()
     return hass
 
 
@@ -41,10 +45,14 @@ def mock_strain_library():
     strain_library = MagicMock(spec=StrainLibrary)
     strain_library.load = AsyncMock()
     strain_library.strains = {"Strain A", "Strain B"}
-    strain_library.import_strains = AsyncMock(return_value=2)
-    strain_library.clear_strains = AsyncMock(return_value=2)
+    # Corrected method names
+    strain_library.import_library_from_zip = AsyncMock(return_value=2)
+    strain_library.clear = AsyncMock(return_value=2)
     strain_library.add_strain = AsyncMock()
     strain_library.set_strain_meta = AsyncMock()
+    strain_library.save = AsyncMock()
+    strain_library.export_library_to_zip = AsyncMock(return_value="/tmp/mock_export.zip")
+    strain_library.get_all = MagicMock(return_value={"Strain A": {}, "Strain B": {}})
     return strain_library
 
 
@@ -76,51 +84,94 @@ async def test_handle_export_strain_library(
     mock_hass, mock_coordinator, mock_strain_library, mock_call
 ):
     """Test handle_export_strain_library service."""
+    mock_hass.config.path = MagicMock(side_effect=lambda *args: "/".join(args))
+
     await handle_export_strain_library(
         mock_hass, mock_coordinator, mock_strain_library, mock_call
     )
 
     mock_coordinator.async_save.assert_awaited_once()
-    mock_coordinator.async_request_refresh.assert_awaited_once()
     fired_event = mock_hass.bus.async_fire.call_args[0][0]
     fired_data = mock_hass.bus.async_fire.call_args[0][1]
     assert fired_event == f"{DOMAIN}_strain_library_exported"
-    assert set(fired_data["strains"]) == {"Strain A", "Strain B"}
+    assert fired_data["file_path"] == "/tmp/mock_export.zip"
 
 
 @pytest.mark.asyncio
-async def test_handle_import_strain_library(
+async def test_handle_import_strain_library_path(
     mock_hass, mock_coordinator, mock_strain_library, mock_call
 ):
-    """Test handle_import_strain_library service."""
-    mock_call.data = {"strains": ["Strain C", "Strain D"], "replace": True}
+    """Test handle_import_strain_library service with file path."""
+    mock_call.data = {"file_path": "/tmp/test.zip", "replace": True}
 
     await handle_import_strain_library(
         mock_hass, mock_coordinator, mock_strain_library, mock_call
     )
 
-    mock_strain_library.import_strains.assert_awaited_once_with(
-        strains=["Strain C", "Strain D"], replace=True
+    # Note: replace=True in service call means merge=False in method call
+    mock_strain_library.import_library_from_zip.assert_awaited_once_with(
+        zip_path="/tmp/test.zip", merge=False
     )
-    mock_coordinator.async_save.assert_awaited_once()
+    mock_strain_library.save.assert_awaited_once()
     mock_coordinator.async_request_refresh.assert_awaited_once()
     mock_hass.bus.async_fire.assert_called_once_with(
-        f"{DOMAIN}_strain_library_imported", {"added_count": 2, "replace": True}
+        f"{DOMAIN}_strain_library_imported", {"strains_count": 2, "merged": False}
     )
 
 
 @pytest.mark.asyncio
-async def test_handle_import_strain_library_no_strains(
+async def test_handle_import_strain_library_base64(
     mock_hass, mock_coordinator, mock_strain_library, mock_call
 ):
-    """Test handle_import_strain_library with no strains."""
-    mock_call.data = {"strains": [], "replace": False}
+    """Test handle_import_strain_library service with base64 data."""
+    # Create dummy zip content
+    dummy_content = b"PK\x03\x04dummyzipcontent"
+    encoded_content = base64.b64encode(dummy_content).decode("utf-8")
+
+    # Simulate a Data URI prefix
+    zip_base64 = f"data:application/zip;base64,{encoded_content}"
+
+    mock_call.data = {"zip_base64": zip_base64, "replace": False}
+
+    # We need to mock os.remove to avoid actual file deletion error if temp file doesn't exist (though it should)
+    # And we want to capture the temp file path
+
+    with patch("custom_components.growspace_manager.services.strain_library.tempfile.NamedTemporaryFile") as mock_temp:
+        mock_temp_obj = MagicMock()
+        mock_temp_obj.name = "/tmp/random_temp_file.zip"
+        # Context manager support
+        mock_temp.return_value.__enter__.return_value = mock_temp_obj
+
+        # Patch os.remove
+        with patch("os.remove") as mock_remove, patch("os.path.exists", return_value=True):
+            await handle_import_strain_library(
+                mock_hass, mock_coordinator, mock_strain_library, mock_call
+            )
+
+            # verify write was called with decoded data
+            mock_temp_obj.write.assert_called_with(dummy_content)
+
+            # verify import was called with temp path
+            mock_strain_library.import_library_from_zip.assert_awaited_once_with(
+                zip_path="/tmp/random_temp_file.zip", merge=True
+            )
+
+            # verify cleanup
+            mock_remove.assert_called_with("/tmp/random_temp_file.zip")
+
+
+@pytest.mark.asyncio
+async def test_handle_import_strain_library_no_input(
+    mock_hass, mock_coordinator, mock_strain_library, mock_call
+):
+    """Test handle_import_strain_library with no input."""
+    mock_call.data = {}
 
     await handle_import_strain_library(
         mock_hass, mock_coordinator, mock_strain_library, mock_call
     )
 
-    mock_strain_library.import_strains.assert_not_called()
+    mock_strain_library.import_library_from_zip.assert_not_called()
 
 
 @pytest.mark.asyncio
@@ -133,8 +184,8 @@ async def test_handle_import_strain_library_exception(
     mock_call,
 ):
     """Test handle_import_strain_library with an exception."""
-    mock_call.data = {"strains": ["Strain C"], "replace": False}
-    mock_strain_library.import_strains.side_effect = Exception("Import failed")
+    mock_call.data = {"file_path": "/tmp/test.zip", "replace": False}
+    mock_strain_library.import_library_from_zip.side_effect = Exception("Import failed")
 
     with pytest.raises(Exception, match="Import failed"):
         await handle_import_strain_library(
@@ -214,7 +265,7 @@ async def test_handle_clear_strain_library(
         mock_hass, mock_coordinator, mock_strain_library, mock_call
     )
 
-    mock_strain_library.clear_strains.assert_awaited_once()
+    mock_strain_library.clear.assert_awaited_once()
     mock_coordinator.async_save.assert_awaited_once()
     mock_coordinator.async_request_refresh.assert_awaited_once()
     mock_hass.bus.async_fire.assert_called_once_with(
@@ -232,7 +283,7 @@ async def test_handle_clear_strain_library_attribute_error(
     mock_call,
 ):
     """Test handle_clear_strain_library with AttributeError."""
-    mock_strain_library.clear_strains.side_effect = AttributeError("Method not found")
+    mock_strain_library.clear.side_effect = AttributeError("Method not found")
 
     with pytest.raises(AttributeError, match="Method not found"):
         await handle_clear_strain_library(
@@ -252,7 +303,7 @@ async def test_handle_clear_strain_library_exception(
     mock_call,
 ):
     """Test handle_clear_strain_library with a generic exception."""
-    mock_strain_library.clear_strains.side_effect = Exception("Clear failed")
+    mock_strain_library.clear.side_effect = Exception("Clear failed")
 
     with pytest.raises(Exception, match="Clear failed"):
         await handle_clear_strain_library(

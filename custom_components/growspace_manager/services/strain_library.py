@@ -1,6 +1,9 @@
 """Services related to Strain Library."""
 
+import base64
 import logging
+import os
+import tempfile
 from typing import Any
 
 from homeassistant.components.persistent_notification import (
@@ -86,14 +89,41 @@ async def handle_import_strain_library(
 ) -> None:
     """Handle import strain library service call."""
     file_path = call.data.get("file_path")
+    zip_base64 = call.data.get("zip_base64")
+
     # 'replace' argument in service call: True means overwrite.
     # 'merge' argument in library method: True means merge.
     # So merge = not replace.
     replace_existing = call.data.get("replace", False)
     merge_data = not replace_existing
 
+    temp_file_path = None
+
+    # 1. Handle Base64 Upload (Frontend)
+    if zip_base64:
+        try:
+            # Strip Data URI header if present (e.g., "data:application/zip;base64,...")
+            if "," in zip_base64:
+                _, zip_base64 = zip_base64.split(",", 1)
+
+            file_data = base64.b64decode(zip_base64)
+
+            # Create a temporary file
+            with tempfile.NamedTemporaryFile(delete=False, suffix=".zip") as tmp:
+                tmp.write(file_data)
+                temp_file_path = tmp.name
+                file_path = tmp.name  # Use this temp path for import
+
+        except Exception as err:
+            _LOGGER.error("Failed to process uploaded zip file: %s", err)
+            create_notification(
+                hass, "Failed to process uploaded file.", title="Import Error"
+            )
+            return
+
+    # 2. Validate we have a path (either from arg or temp file)
     if not file_path:
-        _LOGGER.warning("No file path provided for import.")
+        _LOGGER.warning("No file path or base64 data provided for import.")
         return
 
     try:
@@ -130,6 +160,14 @@ async def handle_import_strain_library(
             title="Growspace Manager Error",
         )
         raise
+
+    finally:
+        # 3. Cleanup Temporary File
+        if temp_file_path and os.path.exists(temp_file_path):
+            try:
+                os.remove(temp_file_path)
+            except OSError as e:
+                _LOGGER.warning("Could not remove temp file %s: %s", temp_file_path, e)
 
 
 async def handle_add_strain(

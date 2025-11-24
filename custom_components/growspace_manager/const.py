@@ -306,7 +306,8 @@ EXPORT_STRAIN_LIBRARY_SCHEMA = vol.Schema(
 
 IMPORT_STRAIN_LIBRARY_SCHEMA = vol.Schema(
     {
-        vol.Required("file_path"): str,
+        vol.Optional("file_path"): str,
+        vol.Optional("zip_base64"): str,
         vol.Optional("replace", default=False): bool,
     }
 )
