@@ -128,6 +128,8 @@ class StrainLibrary:
         image_base64: str | None = None,
         image_path: str | None = None,
         image_crop_meta: dict | None = None,
+        sativa_percentage: int | None = None,
+        indica_percentage: int | None = None,
     ) -> None:
         """Add a single strain/phenotype combination to the library.
 
@@ -144,6 +146,8 @@ class StrainLibrary:
             image_base64: Base64 encoded image string.
             image_path: Path to an existing image.
             image_crop_meta: Metadata for cropping the image in the frontend.
+            sativa_percentage: Percentage of Sativa genetics (0-100).
+            indica_percentage: Percentage of Indica genetics (0-100).
         """
         strain = strain.strip()
         phenotype = phenotype.strip() if phenotype else "default"
@@ -170,6 +174,8 @@ class StrainLibrary:
                 image_base64,
                 image_path,
                 image_crop_meta,
+                sativa_percentage is not None,
+                indica_percentage is not None,
             ]
         ):
             await self.set_strain_meta(
@@ -185,6 +191,8 @@ class StrainLibrary:
                 image_base64=image_base64,
                 image_path=image_path,
                 image_crop_meta=image_crop_meta,
+                sativa_percentage=sativa_percentage,
+                indica_percentage=indica_percentage,
             )
 
     async def set_strain_meta(
@@ -201,6 +209,8 @@ class StrainLibrary:
         image_base64: str | None = None,
         image_path: str | None = None,
         image_crop_meta: dict | None = None,
+        sativa_percentage: int | None = None,
+        indica_percentage: int | None = None,
     ) -> None:
         """Set metadata for a specific strain.
 
@@ -216,6 +226,9 @@ class StrainLibrary:
             description: Grower description or notes.
             image_base64: Base64 encoded image string.
             image_path: Path to an existing image.
+            image_crop_meta: Metadata for cropping the image in the frontend.
+            sativa_percentage: Percentage of Sativa genetics (0-100).
+            indica_percentage: Percentage of Indica genetics (0-100).
         """
         strain = strain.strip()
         phenotype = phenotype.strip() if phenotype else "default"
@@ -224,7 +237,10 @@ class StrainLibrary:
             self.strains[strain] = {"phenotypes": {}, "meta": {}}
 
         # Strain-level metadata
-        self._update_strain_level_meta(strain, breeder, strain_type, lineage, sex)
+        self._update_strain_level_meta(
+            strain, breeder, strain_type, lineage, sex,
+            sativa_percentage, indica_percentage
+        )
 
         # Phenotype-level metadata
         if phenotype not in self.strains[strain]["phenotypes"]:
@@ -259,6 +275,8 @@ class StrainLibrary:
         strain_type: str | None,
         lineage: str | None,
         sex: str | None,
+        sativa_percentage: int | None,
+        indica_percentage: int | None,
     ) -> None:
         """Update strain-level metadata."""
         if "meta" not in self.strains[strain]:
@@ -267,12 +285,38 @@ class StrainLibrary:
         meta = self.strains[strain]["meta"]
         if breeder is not None:
             meta["breeder"] = breeder
+
+        # Determine the effective strain type (new or existing)
+        effective_type = strain_type if strain_type is not None else meta.get("type")
+
         if strain_type is not None:
             meta["type"] = strain_type
         if lineage is not None:
             meta["lineage"] = lineage
         if sex is not None:
             meta["sex"] = sex
+
+        # Hybrid Percentage Logic
+        if effective_type and str(effective_type).lower() == "hybrid":
+            # Auto-calculate if one is missing
+            if sativa_percentage is not None and indica_percentage is None:
+                indica_percentage = 100 - sativa_percentage
+            elif indica_percentage is not None and sativa_percentage is None:
+                sativa_percentage = 100 - indica_percentage
+
+            # Validate if we have values to update
+            if sativa_percentage is not None and indica_percentage is not None:
+                if sativa_percentage + indica_percentage > 100:
+                    raise ValueError(
+                        f"Combined Sativa ({sativa_percentage}%) and Indica ({indica_percentage}%) "
+                        f"percentage cannot exceed 100%."
+                    )
+                meta["sativa_percentage"] = sativa_percentage
+                meta["indica_percentage"] = indica_percentage
+
+        elif sativa_percentage is not None or indica_percentage is not None:
+            # If strictly enforcing "Only type hybrid", we reject attempts to set these on non-hybrids.
+            raise ValueError("Sativa/Indica percentages can only be set for 'Hybrid' strains.")
 
     def _update_phenotype_meta(
         self,

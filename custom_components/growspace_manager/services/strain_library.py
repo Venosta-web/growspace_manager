@@ -7,6 +7,7 @@ from homeassistant.components.persistent_notification import (
     async_create as create_notification,
 )
 from homeassistant.core import HomeAssistant, ServiceCall
+from homeassistant.exceptions import HomeAssistantError
 
 from ..const import DOMAIN
 from ..coordinator import GrowspaceCoordinator
@@ -131,21 +132,29 @@ async def handle_add_strain(
 
     image_path = call.data.get("image_path")
     image_crop_meta = call.data.get("image_crop_meta")
+    sativa_percentage = call.data.get("sativa_percentage")
+    indica_percentage = call.data.get("indica_percentage")
 
-    await strain_library.add_strain(
-        strain=strain,
-        phenotype=phenotype,
-        breeder=breeder,
-        strain_type=strain_type,
-        lineage=lineage,
-        sex=sex,
-        flower_days_min=flower_days_min,
-        flower_days_max=flower_days_max,
-        description=description,
-        image_base64=image_base64,
-        image_path=image_path,
-        image_crop_meta=image_crop_meta,
-    )
+    try:
+        await strain_library.add_strain(
+            strain=strain,
+            phenotype=phenotype,
+            breeder=breeder,
+            strain_type=strain_type,
+            lineage=lineage,
+            sex=sex,
+            flower_days_min=flower_days_min,
+            flower_days_max=flower_days_max,
+            description=description,
+            image_base64=image_base64,
+            image_path=image_path,
+            image_crop_meta=image_crop_meta,
+            sativa_percentage=sativa_percentage,
+            indica_percentage=indica_percentage,
+        )
+    except ValueError as err:
+        raise HomeAssistantError(str(err)) from err
+
     await coordinator.async_request_refresh()
 
 
@@ -178,21 +187,29 @@ async def handle_update_strain_meta(
 
     image_path = call.data.get("image_path")
     image_crop_meta = call.data.get("image_crop_meta")
+    sativa_percentage = call.data.get("sativa_percentage")
+    indica_percentage = call.data.get("indica_percentage")
 
-    await strain_library.set_strain_meta(
-        strain=strain,
-        phenotype=phenotype,
-        breeder=breeder,
-        strain_type=strain_type,
-        lineage=lineage,
-        sex=sex,
-        flower_days_min=flower_days_min,
-        flower_days_max=flower_days_max,
-        description=description,
-        image_base64=image_base64,
-        image_path=image_path,
-        image_crop_meta=image_crop_meta,
-    )
+    try:
+        await strain_library.set_strain_meta(
+            strain=strain,
+            phenotype=phenotype,
+            breeder=breeder,
+            strain_type=strain_type,
+            lineage=lineage,
+            sex=sex,
+            flower_days_min=flower_days_min,
+            flower_days_max=flower_days_max,
+            description=description,
+            image_base64=image_base64,
+            image_path=image_path,
+            image_crop_meta=image_crop_meta,
+            sativa_percentage=sativa_percentage,
+            indica_percentage=indica_percentage,
+        )
+    except ValueError as err:
+        raise HomeAssistantError(str(err)) from err
+
     await coordinator.async_request_refresh()
 
 

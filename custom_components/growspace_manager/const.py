@@ -321,6 +321,8 @@ ADD_STRAIN_SCHEMA = vol.Schema(
         vol.Optional("image"): str,
         vol.Optional("image_path"): str,
         vol.Optional("image_crop_meta"): dict,
+        vol.Optional("sativa_percentage"): vol.All(vol.Coerce(int), vol.Range(min=0, max=100)),
+        vol.Optional("indica_percentage"): vol.All(vol.Coerce(int), vol.Range(min=0, max=100)),
     }
 )
 
@@ -348,6 +350,8 @@ UPDATE_STRAIN_META_SCHEMA = vol.Schema(
         vol.Optional("image"): str,
         vol.Optional("image_path"): str,
         vol.Optional("image_crop_meta"): dict,
+        vol.Optional("sativa_percentage"): vol.All(vol.Coerce(int), vol.Range(min=0, max=100)),
+        vol.Optional("indica_percentage"): vol.All(vol.Coerce(int), vol.Range(min=0, max=100)),
     }
 )
 
