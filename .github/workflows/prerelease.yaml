@@ -30,13 +30,13 @@ jobs:
       # 2. Creates the ZIP file
       - name: ZIP Release
         run: |
-          cd custom_components
-          zip -r ../growspace_manager.zip ./growspace_manager \
-            -x "growspace_manager/.github/*" \
-            -x "growspace_manager/.coverage" \
-            -x "growspace_manager/.gitignore" \
-            -x "growspace_manager/pytest.ini" \
-            -x "growspace_manager/module.json"
+          cd custom_components/growspace_manager
+          zip -r ../../growspace_manager.zip . \
+            -x ".github/*" \
+            -x ".coverage" \
+            -x ".gitignore" \
+            -x "pytest.ini" \
+            -x "module.json"
 
       # 3. Creates the GitHub Pre-release and attaches the new zip file
       - name: Create Pre-release
