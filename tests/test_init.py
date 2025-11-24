@@ -13,7 +13,33 @@ from homeassistant.helpers import entity_registry as er
 
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 from custom_components.growspace_manager import async_setup_entry, async_unload_entry, _register_services, async_reload_entry, _async_update_listener
-from custom_components.growspace_manager.const import DOMAIN, ADD_GROWSPACE_SCHEMA, REMOVE_GROWSPACE_SCHEMA, ADD_PLANT_SCHEMA, UPDATE_PLANT_SCHEMA, REMOVE_PLANT_SCHEMA, MOVE_PLANT_SCHEMA, SWITCH_PLANT_SCHEMA, TRANSITION_PLANT_SCHEMA, TAKE_CLONE_SCHEMA, MOVE_CLONE_SCHEMA, HARVEST_PLANT_SCHEMA, EXPORT_STRAIN_LIBRARY_SCHEMA, IMPORT_STRAIN_LIBRARY_SCHEMA, CLEAR_STRAIN_LIBRARY_SCHEMA, DEBUG_CLEANUP_LEGACY_SCHEMA, DEBUG_LIST_GROWSPACES_SCHEMA, DEBUG_RESET_SPECIAL_GROWSPACES_SCHEMA, DEBUG_CONSOLIDATE_DUPLICATE_SPECIAL_SCHEMA, CONFIGURE_ENVIRONMENT_SCHEMA, REMOVE_ENVIRONMENT_SCHEMA
+from custom_components.growspace_manager.const import (
+    DOMAIN,
+    ADD_GROWSPACE_SCHEMA,
+    REMOVE_GROWSPACE_SCHEMA,
+    ADD_PLANT_SCHEMA,
+    UPDATE_PLANT_SCHEMA,
+    REMOVE_PLANT_SCHEMA,
+    MOVE_PLANT_SCHEMA,
+    SWITCH_PLANT_SCHEMA,
+    TRANSITION_PLANT_SCHEMA,
+    TAKE_CLONE_SCHEMA,
+    MOVE_CLONE_SCHEMA,
+    HARVEST_PLANT_SCHEMA,
+    EXPORT_STRAIN_LIBRARY_SCHEMA,
+    IMPORT_STRAIN_LIBRARY_SCHEMA,
+    CLEAR_STRAIN_LIBRARY_SCHEMA,
+    DEBUG_CLEANUP_LEGACY_SCHEMA,
+    DEBUG_LIST_GROWSPACES_SCHEMA,
+    DEBUG_RESET_SPECIAL_GROWSPACES_SCHEMA,
+    DEBUG_CONSOLIDATE_DUPLICATE_SPECIAL_SCHEMA,
+    CONFIGURE_ENVIRONMENT_SCHEMA,
+    REMOVE_ENVIRONMENT_SCHEMA,
+    ASK_GROW_ADVICE_SCHEMA,
+    ADD_STRAIN_SCHEMA,
+    REMOVE_STRAIN_SCHEMA,
+    UPDATE_STRAIN_META_SCHEMA
+)
 from custom_components.growspace_manager.services import (
     debug,
     environment,
@@ -135,10 +161,13 @@ async def test_register_services(
         ("debug_consolidate_growspaces", DEBUG_CONSOLIDATE_DUPLICATE_SPECIAL_SCHEMA),
         ("configure_environment", CONFIGURE_ENVIRONMENT_SCHEMA),
         ("remove_environment", REMOVE_ENVIRONMENT_SCHEMA),
+        ("add_strain", ADD_STRAIN_SCHEMA),
+        ("remove_strain", REMOVE_STRAIN_SCHEMA),
+        ("update_strain_meta", UPDATE_STRAIN_META_SCHEMA)
     ]
 
-    # +1 for get_strain_library
-    assert mock_hass.services.async_register.call_count == len(expected_services) + 1
+    # +2 for get_strain_library and ask_grow_advice
+    assert mock_hass.services.async_register.call_count == len(expected_services) + 2
 
     registered_calls = mock_hass.services.async_register.call_args_list
 
@@ -166,6 +195,17 @@ async def test_register_services(
             found_get_strain_library = True
             break
     assert found_get_strain_library, "Service get_strain_library not registered correctly."
+
+    # Check ask_grow_advice separately
+    found_ask_grow_advice = False
+    for call_args in registered_calls:
+        domain, service_name, service_wrapper_mock = call_args.args
+        registered_schema = call_args.kwargs.get("schema")
+        if domain == DOMAIN and service_name == "ask_grow_advice":
+            if registered_schema == ASK_GROW_ADVICE_SCHEMA:
+                found_ask_grow_advice = True
+            break
+    assert found_ask_grow_advice, "Service ask_grow_advice not registered correctly."
 @pytest.mark.asyncio
 async def test_async_unload_entry(mock_hass):
     """Test a successful unload of the integration entry."""

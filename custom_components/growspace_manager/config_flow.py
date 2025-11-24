@@ -25,9 +25,17 @@ from homeassistant.core import HomeAssistant, callback
 import homeassistant.helpers.config_validation as cv
 from homeassistant.helpers import selector
 from homeassistant.helpers import device_registry as dr
+from homeassistant.helpers import llm
 
 from .models import Growspace, Plant
-from .const import DOMAIN, DEFAULT_NAME
+from .const import (
+    DOMAIN,
+    DEFAULT_NAME,
+    CONF_AI_ENABLED,
+    CONF_ASSISTANT_ID,
+    CONF_NOTIFICATION_PERSONALITY,
+    AI_PERSONALITIES,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -287,6 +295,8 @@ class OptionsFlowHandler(OptionsFlow):
                 return await self.async_step_select_growspace_for_env()
             if action == "configure_global":
                 return await self.async_step_configure_global()
+            if action == "configure_ai":
+                return await self.async_step_configure_ai()
             if action == "manage_timed_notifications":
                 return await self.async_step_manage_timed_notifications()
             if action == "manage_strain_library":
@@ -297,6 +307,75 @@ class OptionsFlowHandler(OptionsFlow):
             step_id="init",
             data_schema=self._get_main_menu_schema(),
         )
+
+    async def async_step_configure_ai(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Show the form for configuring AI settings.
+
+        Args:
+            user_input: The user's input from the form, if any.
+
+        Returns:
+            A ConfigFlowResult.
+        """
+        if user_input is not None:
+            new_options = self._config_entry.options.copy()
+            new_options["ai_settings"] = user_input
+
+            # Also update coordinator if needed, but options update triggers reload usually
+            self.hass.config_entries.async_update_entry(
+                self._config_entry, options=new_options
+            )
+            return self.async_create_entry(title="", data={})
+
+        return self.async_show_form(
+            step_id="configure_ai",
+            data_schema=self._get_ai_settings_schema(),
+        )
+
+    def _get_ai_settings_schema(self) -> vol.Schema:
+        """Build the schema for AI settings.
+
+        Returns:
+            A voluptuous schema for the form.
+        """
+        current_settings = self._config_entry.options.get("ai_settings", {})
+
+        # Get available assistants
+        assistants = llm.async_get_assistants(self.hass)
+        assistant_options = [
+            selector.SelectOptionDict(value=assistant.id, label=assistant.name)
+            for assistant in assistants
+        ]
+
+        schema = {
+            vol.Required(
+                CONF_AI_ENABLED, default=current_settings.get(CONF_AI_ENABLED, False)
+            ): selector.BooleanSelector(),
+        }
+
+        if assistant_options:
+             schema[vol.Optional(
+                CONF_ASSISTANT_ID, default=current_settings.get(CONF_ASSISTANT_ID)
+            )] = selector.SelectSelector(
+                selector.SelectSelectorConfig(
+                    options=assistant_options,
+                    mode=selector.SelectSelectorMode.DROPDOWN,
+                )
+            )
+
+        schema[vol.Optional(
+            CONF_NOTIFICATION_PERSONALITY,
+            default=current_settings.get(CONF_NOTIFICATION_PERSONALITY, "Standard")
+        )] = selector.SelectSelector(
+            selector.SelectSelectorConfig(
+                options=AI_PERSONALITIES,
+                mode=selector.SelectSelectorMode.DROPDOWN,
+            )
+        )
+
+        return vol.Schema(schema)
 
     async def async_step_manage_timed_notifications(
         self, user_input: dict[str, Any] | None = None

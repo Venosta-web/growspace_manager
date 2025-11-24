@@ -16,6 +16,19 @@ PLATFORMS: list[str] = [
 DEFAULT_NAME = "Growspace Manager"
 ATTR_TOTAL_DAYS = "total_days"
 
+# AI Configuration
+CONF_AI_ENABLED = "ai_enabled"
+CONF_ASSISTANT_ID = "assistant_id"
+CONF_NOTIFICATION_PERSONALITY = "notification_personality"
+
+AI_PERSONALITIES = [
+    "Standard",
+    "Scientific",
+    "Chill Stoner",
+    "Strict Coach",
+    "Pirate",
+]
+
 # Notification events - configurable per growspace
 DEFAULT_NOTIFICATION_EVENTS = {
     "day_21_veg": {
@@ -397,5 +410,13 @@ REMOVE_ENVIRONMENT_SCHEMA = vol.Schema(
     {
         # Erfordert nur die ID des Growspace, um die Konfiguration zu entfernen.
         vol.Required("growspace_id"): str
+    }
+)
+
+# Ask Grow Advice Schema
+ASK_GROW_ADVICE_SCHEMA = vol.Schema(
+    {
+        vol.Required("growspace_id"): vol.All(str, valid_growspace_id),
+        vol.Optional("user_query"): str,
     }
 )

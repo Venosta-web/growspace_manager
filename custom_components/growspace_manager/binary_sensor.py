@@ -25,7 +25,14 @@ from homeassistant.util.dt import utcnow
 
 
 from .coordinator import GrowspaceCoordinator
-from .const import DOMAIN, DEFAULT_BAYESIAN_PRIORS, DEFAULT_BAYESIAN_THRESHOLDS
+from .const import (
+    DOMAIN,
+    DEFAULT_BAYESIAN_PRIORS,
+    DEFAULT_BAYESIAN_THRESHOLDS,
+    CONF_AI_ENABLED,
+    CONF_ASSISTANT_ID,
+    CONF_NOTIFICATION_PERSONALITY,
+)
 from .models import EnvironmentState
 from .bayesian_data import DRYING_THRESHOLDS, CURING_THRESHOLDS
 from .bayesian_evaluator import (
@@ -382,6 +389,56 @@ class BayesianEnvironmentSensor(BinarySensorEntity):
 
         self._last_notification_sent = now
 
+        # AI Personality Injection
+        final_message = message
+        ai_settings = self.coordinator.options.get("ai_settings", {})
+
+        if (
+            ai_settings.get(CONF_AI_ENABLED)
+            and ai_settings.get(CONF_ASSISTANT_ID)
+        ):
+            try:
+                personality = ai_settings.get(CONF_NOTIFICATION_PERSONALITY, "Standard")
+                agent_id = ai_settings.get(CONF_ASSISTANT_ID)
+
+                # Format sensor readings for context
+                readings = []
+                for k, v in self._sensor_states.items():
+                    if v is not None and not isinstance(v, bool):
+                         readings.append(f"{k}: {v}")
+                readings_str = ", ".join(readings)
+
+                prompt = (
+                    f"Rewrite this alert as a {personality}. Keep it under 1 sentence. "
+                    f"Include specific sensor data if relevant. "
+                    f"Original Alert: '{message}'. "
+                    f"Current Readings: {readings_str}"
+                )
+
+                _LOGGER.debug("Sending prompt to LLM: %s", prompt)
+
+                result = await conversation.async_process(
+                    self.hass,
+                    text=prompt,
+                    conversation_id=None,
+                    agent_id=agent_id
+                )
+
+                if (
+                    result
+                    and result.response
+                    and result.response.speech
+                    and result.response.speech.get("plain")
+                ):
+                    final_message = result.response.speech["plain"]["speech"]
+                    _LOGGER.info("AI rewrote notification: %s", final_message)
+                else:
+                    _LOGGER.warning("LLM returned empty response, using default message.")
+
+            except Exception as err:
+                _LOGGER.error("Failed to process AI notification: %s", err)
+                # Fallback to original message is automatic since final_message starts as message
+
         # Get the service name (e.g., "mobile_app_my_phone")
         notification_service = growspace.notification_target.replace("notify.", "")
 
@@ -390,13 +447,13 @@ class BayesianEnvironmentSensor(BinarySensorEntity):
                 "notify",
                 notification_service,
                 {
-                    "message": message,
+                    "message": final_message,
                     "title": title,
                 },
                 blocking=False,
             )
             _LOGGER.info(
-                "Notification sent to %s: %s - %s", notification_service, title, message
+                "Notification sent to %s: %s - %s", notification_service, title, final_message
             )
         except (AttributeError, TypeError, ValueError) as e:
             _LOGGER.error(
