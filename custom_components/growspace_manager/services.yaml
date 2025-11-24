@@ -8,7 +8,12 @@ import_strain_library:
   fields:
     file_path:
       description: The full path to the ZIP file on the server (e.g. uploaded via Lovelace)
-      required: true
+      required: false
+      selector:
+        text:
+    zip_base64:
+      description: Base64 encoded ZIP file content (used by frontend uploads)
+      required: false
       selector:
         text:
     replace:
