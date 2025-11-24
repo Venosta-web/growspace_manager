@@ -9,8 +9,12 @@ into strain performance.
 from __future__ import annotations
 
 import base64
+import datetime
+import json
 import logging
 import os
+import shutil
+import zipfile
 from typing import Any
 
 from homeassistant.helpers.storage import Store
@@ -507,3 +511,176 @@ class StrainLibrary:
         self.strains.clear()
         await self.save()
         return count
+
+    async def export_library_to_zip(self, output_dir: str) -> str:
+        """Export the strain library and images to a ZIP file.
+
+        Args:
+            output_dir: The directory where the ZIP file should be saved.
+
+        Returns:
+            The absolute path to the created ZIP file.
+        """
+        return await self.hass.async_add_executor_job(self._export_sync, output_dir)
+
+    def _export_sync(self, output_dir: str) -> str:
+        """Synchronous helper to create the export ZIP file."""
+        # Ensure output directory exists
+        if not os.path.exists(output_dir):
+            os.makedirs(output_dir)
+
+        # Generate filename with timestamp
+        timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+        zip_filename = f"strain_library_export_{timestamp}.zip"
+        zip_path = os.path.join(output_dir, zip_filename)
+
+        # Prepare a copy of strains to modify image paths for export
+        # We use json to deep copy
+        strains_export = json.loads(json.dumps(self.strains))
+
+        with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zipf:
+            # Iterate through strains to find images
+            for strain_data in strains_export.values():
+                if "phenotypes" in strain_data:
+                    for pheno_data in strain_data["phenotypes"].values():
+                        if "image_path" in pheno_data:
+                            image_web_path = pheno_data["image_path"]
+                            # Check if it's a local file (/local/...)
+                            if image_web_path.startswith("/local/"):
+                                # Resolve to filesystem path
+                                relative_path = image_web_path.replace("/local/", "", 1)
+                                file_system_path = self.hass.config.path("www", relative_path)
+
+                                if os.path.exists(file_system_path):
+                                    # Add to ZIP
+                                    # We'll store it in an 'images' folder inside the ZIP
+                                    filename = os.path.basename(file_system_path)
+                                    zip_entry_name = f"images/{filename}"
+                                    zipf.write(file_system_path, zip_entry_name)
+
+                                    # Update path in export JSON to be relative to ZIP root
+                                    pheno_data["image_path"] = zip_entry_name
+                                else:
+                                    _LOGGER.warning("Image file not found for export: %s", file_system_path)
+
+            # Write the library JSON to the ZIP
+            zipf.writestr("library.json", json.dumps(strains_export, indent=2))
+
+        _LOGGER.info("Exported strain library to %s", zip_path)
+        return zip_path
+
+    async def import_library_from_zip(self, zip_path: str, merge: bool = True) -> int:
+        """Import a strain library from a ZIP file containing data and images.
+
+        Args:
+            zip_path: The path to the ZIP file.
+            merge: If True, merge with existing data. If False, overwrite.
+
+        Returns:
+            The number of strains imported (total count in library).
+        """
+        return await self.hass.async_add_executor_job(self._import_sync, zip_path, merge)
+
+    def _import_sync(self, zip_path: str, merge: bool) -> int:
+        """Synchronous helper to import from a ZIP file."""
+        if not os.path.exists(zip_path):
+            raise FileNotFoundError(f"ZIP file not found: {zip_path}")
+
+        if not zipfile.is_zipfile(zip_path):
+            raise ValueError(f"Not a valid ZIP file: {zip_path}")
+
+        # Temporary directory for extraction could be used, but we can read directly
+        # and write images directly to destination.
+
+        target_images_dir = self.hass.config.path("www", "growspace_manager", "strains")
+        if not os.path.exists(target_images_dir):
+            os.makedirs(target_images_dir)
+
+        library_data = {}
+
+        with zipfile.ZipFile(zip_path, "r") as zipf:
+            # Check for library.json
+            if "library.json" not in zipf.namelist():
+                raise ValueError("Invalid export file: library.json not found in archive")
+
+            # Read library data
+            with zipf.open("library.json") as f:
+                library_data = json.load(f)
+
+            # Process images
+            # We look for files in the 'images/' folder of the zip
+            for file_info in zipf.infolist():
+                if file_info.filename.startswith("images/") and not file_info.is_dir():
+                    filename = os.path.basename(file_info.filename)
+                    target_path = os.path.join(target_images_dir, filename)
+
+                    # Extract file
+                    with zipf.open(file_info) as source, open(target_path, "wb") as target:
+                        shutil.copyfileobj(source, target)
+
+                    _LOGGER.debug("Restored image: %s", target_path)
+
+        # Post-process library data to fix image paths
+        for strain_data in library_data.values():
+            if "phenotypes" in strain_data:
+                for pheno_data in strain_data["phenotypes"].values():
+                    if "image_path" in pheno_data:
+                        image_zip_path = pheno_data["image_path"]
+                        # If it was exported as "images/filename.jpg", convert back to /local/
+                        if image_zip_path.startswith("images/"):
+                            filename = os.path.basename(image_zip_path)
+                            # Verify the file exists (we just extracted it)
+                            # Map to web path
+                            pheno_data["image_path"] = f"/local/growspace_manager/strains/{filename}"
+
+        # Merge or Overwrite
+        if not merge:
+            self.strains = library_data
+        else:
+            # Merge logic
+            for strain, data in library_data.items():
+                if strain not in self.strains:
+                    self.strains[strain] = data
+                else:
+                    # Merge Meta
+                    if "meta" in data:
+                        if "meta" not in self.strains[strain]:
+                            self.strains[strain]["meta"] = {}
+                        self.strains[strain]["meta"].update(data["meta"])
+
+                    # Merge Phenotypes
+                    if "phenotypes" in data:
+                        if "phenotypes" not in self.strains[strain]:
+                            self.strains[strain]["phenotypes"] = {}
+
+                        existing_phenos = self.strains[strain]["phenotypes"]
+                        for pheno_name, pheno_data in data["phenotypes"].items():
+                            if pheno_name not in existing_phenos:
+                                existing_phenos[pheno_name] = pheno_data
+                            else:
+                                # Update phenotype data (e.g. description, image, limits)
+                                # We preserve harvests from existing if not present in new,
+                                # but generally we merge keys.
+                                # 'harvests' is a list. Appending duplicate harvests might be bad.
+                                # For simplicity, we'll assume we update metadata but maybe not merge harvest lists
+                                # unless we want to be very smart.
+                                # Let's update keys other than harvests first.
+                                for k, v in pheno_data.items():
+                                    if k != "harvests":
+                                        existing_phenos[pheno_name][k] = v
+                                    elif k == "harvests":
+                                        # Optional: Merge harvests uniquely?
+                                        # For now, let's just append new ones if we want to be safe,
+                                        # or replace if we want to update.
+                                        # Given "Merge", typically we want to keep existing data.
+                                        # Let's append new harvests if they aren't exact duplicates?
+                                        # That's expensive. Let's just leave existing harvests alone for now
+                                        # unless the user strictly asked for harvest sync.
+                                        # The requirement is "Strain library import/export".
+                                        # I'll stick to updating metadata fields.
+                                        pass
+
+        # We need to save the result.
+        # Since we are in a sync method called by executor, we can't await self.save().
+        # So we return control to the async wrapper.
+        return len(self.strains)

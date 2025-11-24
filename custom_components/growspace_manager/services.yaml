@@ -1,3 +1,23 @@
+export_strain_library:
+  description: Export the strain library and images to a ZIP file
+  fields:
+    # No input fields required
+
+import_strain_library:
+  description: Import a strain library from a ZIP file containing data and images
+  fields:
+    file_path:
+      description: The full path to the ZIP file on the server (e.g. uploaded via Lovelace)
+      required: true
+      selector:
+        text:
+    replace:
+      description: If true, overwrite existing library. If false (default), merge.
+      required: false
+      default: false
+      selector:
+        boolean:
+
 add_growspace:
   description: Add a new growspace
   fields:

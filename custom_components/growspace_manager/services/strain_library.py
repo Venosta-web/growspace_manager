@@ -40,15 +40,42 @@ async def handle_export_strain_library(
     call: ServiceCall,
 ) -> None:
     """Handle export strain library service call."""
-    strains_to_export = strain_library.get_all()
-    _LOGGER.info("Exporting strain library with %d strains", len(strains_to_export))
+    try:
+        output_dir = hass.config.path("www", "growspace_manager", "exports")
 
-    await coordinator.async_save()
-    await coordinator.async_request_refresh()
+        zip_path = await strain_library.export_library_to_zip(output_dir)
 
-    hass.bus.async_fire(
-        f"{DOMAIN}_strain_library_exported", {"strains": strains_to_export}
-    )
+        # Calculate web accessible path
+        # /config/www/ maps to /local/
+        relative_path = zip_path.replace(hass.config.path("www"), "/local")
+
+        _LOGGER.info("Exported strain library to %s (web: %s)", zip_path, relative_path)
+
+        await coordinator.async_save()
+
+        hass.bus.async_fire(
+            f"{DOMAIN}_strain_library_exported",
+            {
+                "file_path": zip_path,
+                "url": relative_path,
+                "strains_count": len(strain_library.get_all())
+            }
+        )
+
+        create_notification(
+            hass,
+            f"Strain library exported successfully.\nPath: {zip_path}",
+            title="Strain Library Export",
+        )
+
+    except Exception as err:
+        _LOGGER.exception("Failed to export strain library: %s", err)
+        create_notification(
+            hass,
+            f"Failed to export strain library: {str(err)}",
+            title="Growspace Manager Error",
+        )
+        raise
 
 
 async def handle_import_strain_library(
@@ -58,41 +85,43 @@ async def handle_import_strain_library(
     call: ServiceCall,
 ) -> None:
     """Handle import strain library service call."""
-    strains_input = call.data.get("strains")
+    file_path = call.data.get("file_path")
+    # 'replace' argument in service call: True means overwrite.
+    # 'merge' argument in library method: True means merge.
+    # So merge = not replace.
     replace_existing = call.data.get("replace", False)
+    merge_data = not replace_existing
 
-    if not strains_input:
-        _LOGGER.warning("No data provided for import.")
+    if not file_path:
+        _LOGGER.warning("No file path provided for import.")
         return
 
     try:
-        added_count = 0
-        if isinstance(strains_input, dict):
-            # New hierarchical format
-            added_count = await strain_library.import_library(
-                library_data=strains_input,
-                replace=replace_existing,
-            )
-        elif isinstance(strains_input, list):
-            # List of strain names (creates default structure)
-            added_count = await strain_library.import_strains(
-                strains=strains_input,
-                replace=replace_existing,
-            )
-        else:
-            raise TypeError("Invalid format for 'strains'. Must be a dictionary or list.")
-
-        _LOGGER.info(
-            "Imported strains to library (count=%s, replace=%s)", added_count, replace_existing
+        strains_count = await strain_library.import_library_from_zip(
+            zip_path=file_path,
+            merge=merge_data,
         )
 
-        await coordinator.async_save()
+        # Save the updated library to storage
+        await strain_library.save()
+
+        _LOGGER.info(
+            "Imported strain library from %s. Total strains: %d", file_path, strains_count
+        )
+
         await coordinator.async_request_refresh()
 
         hass.bus.async_fire(
             f"{DOMAIN}_strain_library_imported",
-            {"added_count": added_count, "replace": replace_existing},
+            {"strains_count": strains_count, "merged": merge_data},
         )
+
+        create_notification(
+            hass,
+            f"Strain library imported successfully.\nTotal Strains: {strains_count}",
+            title="Strain Library Import",
+        )
+
     except Exception as err:
         _LOGGER.exception("Failed to import strain library: %s", err)
         create_notification(
