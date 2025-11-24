@@ -1591,6 +1591,10 @@ class OptionsFlowHandler(OptionsFlow):
                                 label="Configure Global Sensors",
                             ),
                             selector.SelectOptionDict(
+                                value="configure_ai",
+                                label="Configure AI Assistant",
+                            ),
+                            selector.SelectOptionDict(
                                 value="manage_timed_notifications",
                                 label="Timed Notifications",
                             ),
