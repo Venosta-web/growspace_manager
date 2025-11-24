@@ -493,8 +493,17 @@ async def handle_update_plant(
         if "strain" in update_data and "phenotype" in update_data:
             strain = update_data["strain"]
             phenotype = update_data["phenotype"]
-            key = strain_library._get_key(strain, phenotype)
-            if key not in strain_library.strains:
+
+            # Check if strain and phenotype exist in library, using keys consistent with StrainLibrary
+            strain_key = strain.strip()
+            pheno_key = phenotype.strip() if phenotype else "default"
+
+            strain_exists = strain_key in strain_library.strains
+            phenotype_exists = False
+            if strain_exists:
+                phenotype_exists = pheno_key in strain_library.strains[strain_key]["phenotypes"]
+
+            if not strain_exists or not phenotype_exists:
                 _LOGGER.info(
                     "Strain '%s' with phenotype '%s' not in library, adding it.",
                     strain,

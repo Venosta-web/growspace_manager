@@ -1184,8 +1184,8 @@ async def test_update_plant_adds_to_strain_library_if_new(
     """Test that updating a plant with a new strain/phenotype adds it to the library."""
     # Arrange
     mock_coordinator.plants = {"plant_1": mock_plant}
-    mock_strain_library._get_key.return_value = "New Strain|New Pheno"
-    mock_strain_library.strains = {}  # Strain doesn't exist
+    # Ensure the check logic sees "New Strain" as missing
+    mock_strain_library.strains = {}
 
     call = ServiceCall(
         hass,
