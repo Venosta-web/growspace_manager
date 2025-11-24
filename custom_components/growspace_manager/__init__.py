@@ -3,8 +3,12 @@
 from __future__ import annotations
 
 import logging
+import os
+import tempfile
 
+from aiohttp import web
 import homeassistant.helpers.config_validation as cv
+from homeassistant.components.http import HomeAssistantView
 from homeassistant.components.persistent_notification import (
     async_create as create_notification,
 )
@@ -85,6 +89,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     await strain_library_instance.load()
     hass.data.setdefault(DOMAIN, {})
     hass.data[DOMAIN]["strain_library"] = strain_library_instance
+
+    hass.http.register_view(StrainLibraryUploadView(hass, strain_library_instance))
 
     coordinator = GrowspaceCoordinator(
         hass,
@@ -363,3 +369,52 @@ async def _async_update_listener(hass: HomeAssistant, entry: ConfigEntry) -> Non
     """Handle options update by reloading entry."""
     _LOGGER.debug("Options updated for entry %s, reloading.", entry.entry_id)
     await hass.config_entries.async_reload(entry.entry_id)
+
+
+class StrainLibraryUploadView(HomeAssistantView):
+    """View to handle strain library imports via HTTP upload."""
+
+    url = "/api/growspace_manager/import_strains"
+    name = "api:growspace_manager:import_strains"
+    requires_auth = True
+
+    def __init__(self, hass: HomeAssistant, strain_library: StrainLibrary) -> None:
+        """Initialize the view."""
+        self.hass = hass
+        self.strain_library = strain_library
+
+    async def post(self, request: web.Request) -> web.Response:
+        """Handle the POST request for file upload."""
+        # 1. Read the multipart data (file)
+        reader = await request.multipart()
+        file_field = await reader.next()
+
+        if not file_field or file_field.name != "file":
+            return web.Response(status=400, text="No file provided")
+
+        # 2. Save to temp file
+        # (Use a scalable chunk write to avoid memory issues)
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".zip") as tmp:
+            temp_path = tmp.name
+            while True:
+                chunk = await file_field.read_chunk()
+                if not chunk:
+                    break
+                tmp.write(chunk)
+
+        try:
+            # 3. Process Import
+            count = await self.strain_library.import_library_from_zip(
+                temp_path, merge=True
+            )
+            await self.strain_library.save()
+            return self.json({"success": True, "imported_count": count})
+
+        except Exception as err:  # pylint: disable=broad-except
+            _LOGGER.exception("Error processing strain library upload")
+            return self.json({"success": False, "error": str(err)})
+
+        finally:
+            # Cleanup
+            if os.path.exists(temp_path):
+                os.remove(temp_path)
