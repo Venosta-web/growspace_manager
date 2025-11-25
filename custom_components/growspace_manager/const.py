@@ -194,7 +194,6 @@ ADD_PLANT_SCHEMA = vol.Schema(
 )
 
 # Update Plant
-# THIS SCHEMA DOES NOT INCLUDE 'growspace_id' AS IT'S NOT MEANT TO BE UPDATED VIA THIS SERVICE
 UPDATE_PLANT_SCHEMA = vol.Schema(
     {
         vol.Required("plant_id"): str,
@@ -209,7 +208,6 @@ UPDATE_PLANT_SCHEMA = vol.Schema(
         vol.Optional("mother_start"): valid_date_or_none,
         vol.Optional("clone_start"): valid_date_or_none,
         vol.Optional("veg_start"): valid_date_or_none,
-        # CORRECTED: flower_start now uses valid_date_or_none
         vol.Optional("flower_start"): valid_date_or_none,
         vol.Optional("dry_start"): valid_date_or_none,
         vol.Optional("cure_start"): valid_date_or_none,
@@ -218,8 +216,8 @@ UPDATE_PLANT_SCHEMA = vol.Schema(
         vol.Optional("flower_days"): vol.All(vol.Coerce(int)),
         vol.Optional("dry_days"): vol.All(vol.Coerce(int)),
         vol.Optional("cure_days"): vol.All(vol.Coerce(int)),
-        vol.Optional("mother_days"): vol.All(vol.Coerce(int)),  # ✅ Add this too
-        vol.Optional("clone_days"): vol.All(vol.Coerce(int)),  # ✅ Add this too
+        vol.Optional("mother_days"): vol.All(vol.Coerce(int)),
+        vol.Optional("clone_days"): vol.All(vol.Coerce(int)),
     },
     extra=vol.ALLOW_EXTRA,
 )
@@ -328,8 +326,8 @@ ADD_STRAIN_SCHEMA = vol.Schema(
         vol.Optional("sex"): str,
         vol.Optional("flower_days_min"): vol.All(vol.Coerce(int), vol.Range(min=0)),
         vol.Optional("flower_days_max"): vol.All(vol.Coerce(int), vol.Range(min=0)),
-    vol.Optional("flowering_days_min"): vol.All(vol.Coerce(int), vol.Range(min=0)),
-    vol.Optional("flowering_days_max"): vol.All(vol.Coerce(int), vol.Range(min=0)),
+        vol.Optional("flowering_days_min"): vol.All(vol.Coerce(int), vol.Range(min=0)),
+        vol.Optional("flowering_days_max"): vol.All(vol.Coerce(int), vol.Range(min=0)),
         vol.Optional("description"): str,
         vol.Optional("image_base64"): str,
         vol.Optional("image"): str,
