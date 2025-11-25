@@ -428,11 +428,6 @@ class OptionsFlowHandler(OptionsFlow):
                 new_options = self._config_entry.options.copy()
                 new_options["ai_settings"] = user_input
 
-                # Update the config entry
-                self.hass.config_entries.async_update_entry(
-                    self._config_entry, options=new_options
-                )
-
                 # Inform user about the changes
                 return self.async_create_entry(
                     title="",
@@ -485,15 +480,10 @@ class OptionsFlowHandler(OptionsFlow):
                     ]
                     new_options["timed_notifications"] = notifications
 
-                    self.hass.config_entries.async_update_entry(
-                        self._config_entry, options=new_options
-                    )
+                    # Update coordinator's in-memory options
                     coordinator.options = new_options
 
-                    return self.async_show_form(
-                        step_id="manage_timed_notifications",
-                        data_schema=self._get_timed_notification_schema(coordinator),
-                    )
+                    return self.async_create_entry(title="", data=new_options)
 
         return self.async_show_form(
             step_id="manage_timed_notifications",
@@ -567,16 +557,10 @@ class OptionsFlowHandler(OptionsFlow):
             notifications.append(new_notification)
             new_options["timed_notifications"] = notifications
 
-            # Update the config entry and the coordinator's in-memory options
-            self.hass.config_entries.async_update_entry(
-                self._config_entry, options=new_options
-            )
+            # Update the coordinator's in-memory options
             coordinator.options = new_options
 
-            return self.async_show_form(
-                step_id="manage_timed_notifications",
-                data_schema=self._get_timed_notification_schema(coordinator),
-            )
+            return self.async_create_entry(title="", data=new_options)
 
         return self.async_show_form(
             step_id="add_timed_notification",
@@ -615,16 +599,10 @@ class OptionsFlowHandler(OptionsFlow):
 
             new_options["timed_notifications"] = notifications
 
-            # Update the config entry and the coordinator's in-memory options
-            self.hass.config_entries.async_update_entry(
-                self._config_entry, options=new_options
-            )
+            # Update the coordinator's in-memory options
             coordinator.options = new_options
 
-            return self.async_show_form(
-                step_id="manage_timed_notifications",
-                data_schema=self._get_timed_notification_schema(coordinator),
-            )
+            return self.async_create_entry(title="", data=new_options)
 
         return self.async_show_form(
             step_id="edit_timed_notification",
@@ -835,15 +813,6 @@ class OptionsFlowHandler(OptionsFlow):
             await coordinator.async_save()
             await coordinator.async_refresh()
 
-            # OPTIONAL: Sync to config_entry.options
-            # but it's not necessary if you're storing in the growspace object
-            new_options = self._current_options.copy()
-            new_options[self._selected_growspace_id] = env_config
-            self.hass.config_entries.async_update_entry(
-                self._config_entry, options=new_options
-            )
-            coordinator.options = new_options
-
             _LOGGER.info(
                 "Environment configuration saved for growspace %s: %s",
                 growspace.name,
@@ -1042,12 +1011,6 @@ class OptionsFlowHandler(OptionsFlow):
             growspace.environment_config = env_config
             await coordinator.async_save()
             await coordinator.async_refresh()
-
-            final_options = self._config_entry.options.copy()
-            final_options[self._selected_growspace_id] = env_config
-            self.hass.config_entries.async_update_entry(
-                self._config_entry, options=final_options
-            )
 
             _LOGGER.info(
                 "Advanced Bayesian configuration saved for %s: %s",
@@ -1606,10 +1569,7 @@ class OptionsFlowHandler(OptionsFlow):
             # Save the global settings into the main config_entry's options
             new_options = self._config_entry.options.copy()
             new_options["global_settings"] = user_input
-            self.hass.config_entries.async_update_entry(
-                self._config_entry, options=new_options
-            )
-            return self.async_create_entry(title="", data={})
+            return self.async_create_entry(title="", data=new_options)
 
         # Get current global settings to prepopulate the form
         global_settings = self._config_entry.options.get("global_settings", {})
