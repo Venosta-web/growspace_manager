@@ -75,9 +75,7 @@ async def handle_ask_grow_advice(
 
         # Check if AI is enabled
         ai_settings = coordinator.options.get("ai_settings", {})
-        if not ai_settings.get(CONF_AI_ENABLED) or not ai_settings.get(
-            CONF_ASSISTANT_ID
-        ):
+        if not ai_settings.get(CONF_AI_ENABLED):
             raise ServiceValidationError(
                 "AI assistant is not enabled. Please go to the Growspace Manager integration settings to enable it."
             )
