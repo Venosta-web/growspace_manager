@@ -722,7 +722,7 @@ strain_recommendation:
   description: Get AI recommendations for strain selection based on your goals and history
   fields:
     preferences:
-      description: Your preferences (as key-value pairs, e.g., {"grow_time": "fast", "yield": "high"})
+      description: 'Your preferences (as key-value pairs, e.g., {"grow_time": "fast", "yield": "high"})'
       required: false
       selector:
         object:
