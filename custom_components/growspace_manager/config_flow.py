@@ -356,10 +356,13 @@ class OptionsFlowHandler(OptionsFlow):
                 pass
 
         # Filter to ensure we have valid agent objects
-        valid_assistants = [
-            a for a in assistants
-            if hasattr(a, "id") and hasattr(a, "name")
-        ]
+        valid_assistants = []
+        for a in assistants:
+            if hasattr(a, "name") and (hasattr(a, "id") or hasattr(a, "entity_id")):
+                # Ensure we attach a unified 'id' attribute for the selector if missing
+                if not hasattr(a, "id"):
+                    a.id = a.entity_id
+                valid_assistants.append(a)
 
         assistant_options = [
             selector.SelectOptionDict(value=assistant.id, label=assistant.name)
