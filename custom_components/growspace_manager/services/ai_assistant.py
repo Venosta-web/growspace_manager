@@ -558,14 +558,19 @@ async def handle_strain_recommendation(
 
     # Include growspace context if provided
     growspace_context = ""
-    # ... (keep growspace logic) ...
+    if growspace_id:
+        try:
+            gs_data = assistant._gather_growspace_data(growspace_id)
+            growspace_context = f"\nTARGET GROWSPACE: {gs_data['growspace']['name']} ({gs_data['growspace']['size']})"
+        except Exception as e:
+            _LOGGER.warning("Failed to gather growspace data for strain recommendation for growspace %s: %s", growspace_id, e)
 
     prompt = (
         "You are a cannabis cultivation expert helping select strains for the next grow. "
         "Based on historical performance data and user preferences, recommend the best strains.\n\n"
         f"{context}\n\n"
         f"{pref_str}\n"
-        f"{query_str}\n"  # <--- INJECT IT HERE
+        f"{query_str}\n"
         f"{growspace_context}\n\n"
         "Provide:\n"
         "1. Top 3 strain recommendations with reasoning\n"
