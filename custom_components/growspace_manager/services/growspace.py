@@ -2,6 +2,7 @@
 
 import logging
 from homeassistant.core import HomeAssistant, ServiceCall, SupportsResponse
+from homeassistant.exceptions import ServiceValidationError
 from homeassistant.components.persistent_notification import (
     async_create as create_notification,
 )
@@ -74,13 +75,17 @@ async def handle_ask_grow_advice(
 
         # Check if AI is enabled
         ai_settings = coordinator.options.get("ai_settings", {})
-        if not ai_settings.get(CONF_AI_ENABLED) or not ai_settings.get(CONF_ASSISTANT_ID):
-             raise ValueError("AI features are not enabled or configured.")
+        if not ai_settings.get(CONF_AI_ENABLED) or not ai_settings.get(
+            CONF_ASSISTANT_ID
+        ):
+            raise ServiceValidationError(
+                "AI assistant is not enabled. Please go to the Growspace Manager integration settings to enable it."
+            )
 
         agent_id = ai_settings.get(CONF_ASSISTANT_ID)
         growspace = coordinator.growspaces.get(growspace_id)
         if not growspace:
-             raise ValueError(f"Growspace {growspace_id} not found.")
+            raise ServiceValidationError(f"Growspace {growspace_id} not found.")
 
         # Gather Environment State
         env_config = getattr(growspace, "environment_config", {})

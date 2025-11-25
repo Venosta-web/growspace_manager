@@ -5,6 +5,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 from homeassistant.core import HomeAssistant, ServiceCall, State, Context
 from homeassistant.const import STATE_UNAVAILABLE, STATE_UNKNOWN
+from homeassistant.exceptions import ServiceValidationError
 
 from custom_components.growspace_manager.coordinator import GrowspaceCoordinator
 from custom_components.growspace_manager.strain_library import StrainLibrary
@@ -199,7 +200,11 @@ async def test_handle_remove_growspace_exception(
 
 
 @pytest.mark.asyncio
-@patch("custom_components.growspace_manager.services.growspace.conversation.async_process", create=True)
+@patch(
+    "custom_components.growspace_manager.services.growspace.conversation.async_process",
+    new_callable=AsyncMock,
+    create=True,
+)
 async def test_handle_ask_grow_advice_success(
     mock_process,
     mock_hass,
@@ -249,7 +254,10 @@ async def test_handle_ask_grow_advice_ai_disabled(
     mock_call.data = {"growspace_id": "gs1"}
     mock_coordinator.options["ai_settings"][CONF_AI_ENABLED] = False
 
-    with pytest.raises(ValueError, match="AI features are not enabled"):
+    with pytest.raises(
+        ServiceValidationError,
+        match="AI assistant is not enabled. Please go to the Growspace Manager integration settings to enable it.",
+    ):
         await handle_ask_grow_advice(
             mock_hass, mock_coordinator, mock_strain_library, mock_call
         )
@@ -265,14 +273,18 @@ async def test_handle_ask_grow_advice_growspace_not_found(
     """Test handle_ask_grow_advice for non-existent growspace."""
     mock_call.data = {"growspace_id": "gs_invalid"}
 
-    with pytest.raises(ValueError, match="Growspace gs_invalid not found"):
+    with pytest.raises(ServiceValidationError, match="Growspace gs_invalid not found"):
         await handle_ask_grow_advice(
             mock_hass, mock_coordinator, mock_strain_library, mock_call
         )
 
 
 @pytest.mark.asyncio
-@patch("custom_components.growspace_manager.services.growspace.conversation.async_process", create=True)
+@patch(
+    "custom_components.growspace_manager.services.growspace.conversation.async_process",
+    new_callable=AsyncMock,
+    create=True,
+)
 async def test_handle_ask_grow_advice_llm_failure(
     mock_process,
     mock_hass,
