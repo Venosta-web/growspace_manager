@@ -57,6 +57,7 @@ from .services import (
     growspace,
     plant,
     strain_library as strain_library_services,
+    ai_assistant,
 )
 from .strain_library import StrainLibrary
 
@@ -260,16 +261,51 @@ async def _register_services(
         )
         _LOGGER.debug("Registered service: %s", service_name)
 
-    # Register ask_grow_advice with supports_response
+    # --- AI Services Registration (SupportsResponse.ONLY) ---
+
+    # 1. Ask Grow Advice (Switched to ai_assistant handler)
     async def ask_grow_advice_wrapper(
-        call: ServiceCall, _handler=growspace.handle_ask_grow_advice
+        call: ServiceCall, _handler=ai_assistant.handle_ask_grow_advice
     ):
          return await _handler(hass, coordinator, strain_library_instance, call)
 
     hass.services.async_register(
-        DOMAIN, "ask_grow_advice", ask_grow_advice_wrapper, schema=ASK_GROW_ADVICE_SCHEMA, supports_response=SupportsResponse.ONLY
+        DOMAIN, 
+        "ask_grow_advice", 
+        ask_grow_advice_wrapper, 
+        schema=ASK_GROW_ADVICE_SCHEMA, 
+        supports_response=SupportsResponse.ONLY
     )
-    _LOGGER.debug("Registered service: ask_grow_advice")
+
+    # 2. Analyze All Growspaces (New)
+    async def analyze_all_wrapper(
+        call: ServiceCall, _handler=ai_assistant.handle_analyze_all_growspaces
+    ):
+         return await _handler(hass, coordinator, strain_library_instance, call)
+
+    hass.services.async_register(
+        DOMAIN, 
+        "analyze_all_growspaces", 
+        analyze_all_wrapper, 
+        schema=ANALYZE_ALL_GROWSPACES_SCHEMA, 
+        supports_response=SupportsResponse.ONLY
+    )
+
+    # 3. Strain Recommendation (New)
+    async def strain_rec_wrapper(
+        call: ServiceCall, _handler=ai_assistant.handle_strain_recommendation
+    ):
+         return await _handler(hass, coordinator, strain_library_instance, call)
+
+    hass.services.async_register(
+        DOMAIN, 
+        "strain_recommendation", 
+        strain_rec_wrapper, 
+        schema=STRAIN_RECOMMENDATION_SCHEMA, 
+        supports_response=SupportsResponse.ONLY
+    )
+
+    _LOGGER.debug("Registered AI services: ask_grow_advice, analyze_all_growspaces, strain_recommendation")
 
     # Register the standalone 'get_strain_library' service
     async def get_strain_library_wrapper(
