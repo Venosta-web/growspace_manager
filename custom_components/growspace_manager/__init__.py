@@ -46,6 +46,9 @@ from .const import (
     TAKE_CLONE_SCHEMA,
     TRANSITION_PLANT_SCHEMA,
     UPDATE_PLANT_SCHEMA,
+    ASK_GROW_ADVICE_SCHEMA,
+    ANALYZE_ALL_GROWSPACES_SCHEMA,
+    STRAIN_RECOMMENDATION_SCHEMA,
 )
 from .coordinator import GrowspaceCoordinator
 from .services import (

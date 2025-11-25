@@ -674,3 +674,65 @@ debug_reset_special_growspaces:
 debug_consolidate_growspaces:
   description: Consolidate duplicate special growspaces (Debug)
   # No fields
+
+ask_grow_advice:
+  description: Get AI-powered grow advice and recommendations for a growspace
+  fields:
+    growspace_id:
+      description: ID of the growspace to analyze
+      required: true
+      selector:
+        text:
+    user_query:
+      description: Optional specific question or concern
+      required: false
+      selector:
+        text:
+          multiline: true
+    context_type:
+      description: Type of advice needed
+      required: false
+      default: general
+      selector:
+        select:
+          options:
+            - label: "General Advice"
+              value: "general"
+            - label: "Problem Diagnosis"
+              value: "diagnostic"
+            - label: "Optimization Tips"
+              value: "optimization"
+            - label: "Grow Planning"
+              value: "planning"
+  response:
+    response:
+      description: AI-generated advice and recommendations
+
+analyze_all_growspaces:
+  description: Analyze all growspaces and provide a comprehensive facility report
+  response:
+    response:
+      description: Comprehensive analysis report
+    issues_count:
+      description: Number of issues detected across all growspaces
+    growspaces_analyzed:
+      description: Total number of growspaces analyzed
+
+strain_recommendation:
+  description: Get AI recommendations for strain selection based on your goals and history
+  fields:
+    preferences:
+      description: Your preferences (as key-value pairs, e.g., {"grow_time": "fast", "yield": "high"})
+      required: false
+      selector:
+        object:
+    growspace_id:
+      description: Optional - Target growspace for recommendations
+      required: false
+      selector:
+        text:
+  response:
+    response:
+      description: Strain recommendations with reasoning
+    strains_analyzed:
+      description: Number of strains analyzed
