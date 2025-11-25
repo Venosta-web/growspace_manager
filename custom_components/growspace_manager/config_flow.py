@@ -322,11 +322,7 @@ class OptionsFlowHandler(OptionsFlow):
             new_options = self._config_entry.options.copy()
             new_options["ai_settings"] = user_input
 
-            # Also update coordinator if needed, but options update triggers reload usually
-            self.hass.config_entries.async_update_entry(
-                self._config_entry, options=new_options
-            )
-            return self.async_create_entry(title="", data={})
+            return self.async_create_entry(title="", data=new_options)
 
         return self.async_show_form(
             step_id="configure_ai",
