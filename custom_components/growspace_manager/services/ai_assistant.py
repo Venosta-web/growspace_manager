@@ -521,9 +521,28 @@ async def handle_strain_recommendation(
 
         # Calculate average performance
         all_harvests = []
-        for pheno_data in phenotypes.values():
-            all_harvests.extend(pheno_data.get("harvests", []))
+        est_flower_min = None
+        est_flower_max = None
+        description = meta.get("description", "")
 
+        for pheno_name, pheno_data in phenotypes.items():
+            all_harvests.extend(pheno_data.get("harvests", []))
+            # Capture estimates from phenotypes if available
+            if not est_flower_min and pheno_data.get("flower_days_min"):
+                est_flower_min = pheno_data["flower_days_min"]
+            if not est_flower_max and pheno_data.get("flower_days_max"):
+                est_flower_max = pheno_data["flower_days_max"]
+            if not description and pheno_data.get("description"):
+                description = pheno_data["description"]
+
+        # Start building strain info string
+        strain_info = f"\n{strain_name}:"
+        strain_info += f"\n  Type: {meta.get('type', 'Unknown')}"
+        strain_info += f"\n  Breeder: {meta.get('breeder', 'Unknown')}"
+        if description:
+             strain_info += f"\n  Description: {description[:100]}..." # Truncate for token limit
+
+        # Add Performance OR Estimates
         if all_harvests:
             avg_veg = sum(h.get("veg_days", 0) for h in all_harvests) / len(
                 all_harvests
@@ -533,13 +552,19 @@ async def handle_strain_recommendation(
             )
             total_days = avg_veg + avg_flower
 
-            strain_lines.append(
-                f"\n{strain_name}:"
-                f"\n  Type: {meta.get('type', 'Unknown')}"
-                f"\n  Avg Total Time: {round(total_days)} days ({round(avg_veg)}d veg + {round(avg_flower)}d flower)"
-                f"\n  Harvests: {len(all_harvests)}"
-                f"\n  Breeder: {meta.get('breeder', 'Unknown')}"
+            strain_info += (
+                f"\n  Avg Total Time: {round(total_days)} days "
+                f"({round(avg_veg)}d veg + {round(avg_flower)}d flower)"
+                f"\n  Harvests Recorded: {len(all_harvests)}"
             )
+        else:
+            # No history, use estimates if available
+            if est_flower_min or est_flower_max:
+                strain_info += f"\n  Est. Flowering: {est_flower_min or '?'}-{est_flower_max or '?'} days"
+            else:
+                strain_info += "\n  History: No harvests recorded yet"
+
+        strain_lines.append(strain_info)
 
     context = "\n".join(strain_lines)
 
