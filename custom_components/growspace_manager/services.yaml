@@ -731,6 +731,12 @@ strain_recommendation:
       required: false
       selector:
         text:
+    user_query:
+      description: Natural language query describing what you are looking for (e.g., "something fruity for daytime")
+      required: false
+      selector:
+        text:
+          multiline: true
   response:
     response:
       description: Strain recommendations with reasoning
