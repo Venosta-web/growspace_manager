@@ -508,6 +508,7 @@ async def handle_strain_recommendation(
 
     preferences = call.data.get("preferences", {})
     growspace_id = call.data.get("growspace_id")
+    user_query = call.data.get("user_query")
 
     # Get strain library data
     all_strains = strain_library.get_all()
@@ -545,10 +546,15 @@ async def handle_strain_recommendation(
     # Build preferences string
     pref_str = ""
     if preferences:
-        pref_lines = ["USER PREFERENCES:"]
+        pref_lines = ["USER PREFERENCES (Structured):"]
         for key, value in preferences.items():
             pref_lines.append(f"  {key}: {value}")
         pref_str = "\n".join(pref_lines)
+
+    # Build User Query String
+    query_str = ""
+    if user_query:
+        query_str = f"\nUSER REQUEST: {user_query}" # <--- ADD THIS
 
     # Include growspace context if provided
     growspace_context = ""
@@ -556,14 +562,15 @@ async def handle_strain_recommendation(
         try:
             gs_data = assistant._gather_growspace_data(growspace_id)
             growspace_context = f"\nTARGET GROWSPACE: {gs_data['growspace']['name']} ({gs_data['growspace']['size']})"
-        except Exception:
-            pass
+        except Exception as e:
+            _LOGGER.warning("Failed to gather growspace data for strain recommendation for growspace %s: %s", growspace_id, e)
 
     prompt = (
         "You are a cannabis cultivation expert helping select strains for the next grow. "
         "Based on historical performance data and user preferences, recommend the best strains.\n\n"
         f"{context}\n\n"
         f"{pref_str}\n"
+        f"{query_str}\n"
         f"{growspace_context}\n\n"
         "Provide:\n"
         "1. Top 3 strain recommendations with reasoning\n"

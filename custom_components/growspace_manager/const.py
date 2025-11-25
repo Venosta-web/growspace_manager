@@ -429,5 +429,6 @@ STRAIN_RECOMMENDATION_SCHEMA = vol.Schema(
     {
         vol.Optional("preferences"): dict,
         vol.Optional("growspace_id"): str,
+        vol.Optional("user_query"): str,
     }
 )
