@@ -414,10 +414,22 @@ REMOVE_ENVIRONMENT_SCHEMA = vol.Schema(
     }
 )
 
-# Ask Grow Advice Schema
+# AI Service Schemas
 ASK_GROW_ADVICE_SCHEMA = vol.Schema(
     {
         vol.Required("growspace_id"): vol.All(str, valid_growspace_id),
         vol.Optional("user_query"): str,
+        vol.Optional("context_type", default="general"): vol.In(
+            ["general", "diagnostic", "optimization", "planning"]
+        ),
+    }
+)
+
+ANALYZE_ALL_GROWSPACES_SCHEMA = vol.Schema({})  # No required parameters
+
+STRAIN_RECOMMENDATION_SCHEMA = vol.Schema(
+    {
+        vol.Optional("preferences"): dict,
+        vol.Optional("growspace_id"): str,
     }
 )

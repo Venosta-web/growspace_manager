@@ -393,10 +393,7 @@ class BayesianEnvironmentSensor(BinarySensorEntity):
         final_message = message
         ai_settings = self.coordinator.options.get("ai_settings", {})
 
-        if (
-            ai_settings.get(CONF_AI_ENABLED)
-            and ai_settings.get(CONF_ASSISTANT_ID)
-        ):
+        if ai_settings.get(CONF_AI_ENABLED) and ai_settings.get(CONF_ASSISTANT_ID):
             try:
                 personality = ai_settings.get(CONF_NOTIFICATION_PERSONALITY, "Standard")
                 agent_id = ai_settings.get(CONF_ASSISTANT_ID)
@@ -405,24 +402,57 @@ class BayesianEnvironmentSensor(BinarySensorEntity):
                 readings = []
                 for k, v in self._sensor_states.items():
                     if v is not None and not isinstance(v, bool):
-                         readings.append(f"{k}: {v}")
+                        readings.append(f"{k}: {v}")
                 readings_str = ", ".join(readings)
 
-                prompt = (
-                    f"Rewrite this alert as a {personality}. Keep it under 1 sentence. "
-                    f"Include specific sensor data if relevant. "
-                    f"Original Alert: '{message}'. "
-                    f"Current Readings: {readings_str}"
+                # Build a more sophisticated prompt for the AI
+                system_context = (
+                    f"You are a {personality} cannabis cultivation assistant. "
+                    "Your job is to rewrite alerts in your unique style while keeping them informative.\n\n"
                 )
 
-                _LOGGER.debug("Sending prompt to LLM: %s", prompt)
+                if personality.lower() == "scientific":
+                    system_context += (
+                        "Use precise technical terminology. Be analytical and data-driven. "
+                        "Reference specific thresholds and values."
+                    )
+                elif personality.lower() == "chill stoner":
+                    system_context += (
+                        "Be laid-back and friendly, but still helpful. Use casual language. "
+                        "Keep the vibe relaxed but don't skip important details."
+                    )
+                elif personality.lower() == "strict coach":
+                    system_context += (
+                        "Be direct and authoritative. Emphasize urgency where appropriate. "
+                        "Make it clear what needs to be done immediately."
+                    )
+                elif personality.lower() == "pirate":
+                    system_context += (
+                        "Write like a pirate (arr, matey, etc.) but maintain clarity. "
+                        "Make it fun while conveying the essential information."
+                    )
+                else:  # Standard
+                    system_context += (
+                        "Be clear, professional, and helpful. "
+                        "Keep the message concise but informative."
+                    )
 
-                result = await conversation.async_process(
+                prompt = (
+                    f"{system_context}\n\n"
+                    f"Original Alert: {message}\n"
+                    f"Current Sensor Data: {readings_str}\n"
+                    f"Growspace: {growspace.name}\n\n"
+                    "Rewrite this alert in 1-2 sentences. Include specific sensor values if they're relevant to the alert."
+                )
+
+                _LOGGER.debug("Sending notification rewrite prompt to AI assistant")
+
+                result = await conversation.async_converse(
                     self.hass,
                     text=prompt,
                     conversation_id=None,
-                    agent_id=agent_id,
                     context=Context(),
+                    agent_id=agent_id,
                 )
 
                 if (
@@ -431,14 +461,26 @@ class BayesianEnvironmentSensor(BinarySensorEntity):
                     and result.response.speech
                     and result.response.speech.get("plain")
                 ):
-                    final_message = result.response.speech["plain"]["speech"]
-                    _LOGGER.info("AI rewrote notification: %s", final_message)
+                    rewritten = result.response.speech["plain"]["speech"]
+                    # Validate the response isn't too long
+                    if len(rewritten) < 250:  # Reasonable notification length
+                        final_message = rewritten
+                        _LOGGER.info(
+                            "AI rewrote notification in %s style", personality
+                        )
+                    else:
+                        _LOGGER.warning(
+                            "AI response too long (%d chars), using default",
+                            len(rewritten),
+                        )
                 else:
-                    _LOGGER.warning("LLM returned empty response, using default message.")
+                    _LOGGER.warning(
+                        "AI returned empty response, using default message"
+                    )
 
             except Exception as err:
                 _LOGGER.error("Failed to process AI notification: %s", err)
-                # Fallback to original message is automatic since final_message starts as message
+                # Fallback to original message is automatic
 
         # Get the service name (e.g., "mobile_app_my_phone")
         notification_service = growspace.notification_target.replace("notify.", "")
@@ -454,7 +496,10 @@ class BayesianEnvironmentSensor(BinarySensorEntity):
                 blocking=False,
             )
             _LOGGER.info(
-                "Notification sent to %s: %s - %s", notification_service, title, final_message
+                "Notification sent to %s: %s - %s",
+                notification_service,
+                title,
+                final_message,
             )
         except (AttributeError, TypeError, ValueError) as e:
             _LOGGER.error(

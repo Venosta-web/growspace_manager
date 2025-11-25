@@ -307,6 +307,104 @@ class OptionsFlowHandler(OptionsFlow):
             data_schema=self._get_main_menu_schema(),
         )
 
+    async def _get_ai_settings_schema(self) -> vol.Schema:
+        """Build the schema for AI settings with enhanced options."""
+        current_settings = self._config_entry.options.get("ai_settings", {})
+
+        # Get available conversation agents (LLM integrations)
+        assistants = []
+        try:
+            # Try to get agents from the conversation integration
+            if hasattr(conversation, "async_get_conversation_agents"):
+                # Newer HA versions
+                agents_dict = await conversation.async_get_conversation_agents(self.hass)
+                assistants = [
+                    {"id": agent_id, "name": agent_info.name}
+                    for agent_id, agent_info in agents_dict.items()
+                ]
+            else:
+                # Fallback for older versions
+                agent_manager = self.hass.data.get("conversation")
+                if agent_manager and hasattr(agent_manager, "async_get_agents"):
+                    assistants = await agent_manager.async_get_agents()
+        except Exception as err:
+            _LOGGER.warning("Could not fetch conversation agents: %s", err)
+
+        # Filter to valid agents with id and name
+        valid_assistants = [
+            a for a in assistants if isinstance(a, dict) and "id" in a and "name" in a
+        ]
+
+        if not valid_assistants:
+            # If no agents found, try to get at least the default
+            try:
+                default_agent = await conversation.async_get_agent(self.hass)
+                if default_agent and hasattr(default_agent, "id"):
+                    valid_assistants = [
+                        {"id": default_agent.id, "name": "Default Assistant"}
+                    ]
+            except Exception:
+                pass
+
+        assistant_options = [
+            selector.SelectOptionDict(value=assistant["id"], label=assistant["name"])
+            for assistant in valid_assistants
+        ]
+
+        schema = {
+            vol.Required(
+                CONF_AI_ENABLED, default=current_settings.get(CONF_AI_ENABLED, False)
+            ): selector.BooleanSelector(),
+        }
+
+        if assistant_options:
+            schema[
+                vol.Optional(
+                    CONF_ASSISTANT_ID,
+                    default=current_settings.get(CONF_ASSISTANT_ID),
+                )
+            ] = selector.SelectSelector(
+                selector.SelectSelectorConfig(
+                    options=assistant_options,
+                    mode=selector.SelectSelectorMode.DROPDOWN,
+                )
+            )
+        else:
+            # Show a text field if no assistants detected (shouldn't happen normally)
+            schema[
+                vol.Optional(
+                    CONF_ASSISTANT_ID, default=current_settings.get(CONF_ASSISTANT_ID)
+                )
+            ] = selector.TextSelector(
+                selector.TextSelectorConfig(
+                    type=selector.TextSelectorType.TEXT,
+                )
+            )
+
+        schema[
+            vol.Optional(
+                CONF_NOTIFICATION_PERSONALITY,
+                default=current_settings.get(
+                    CONF_NOTIFICATION_PERSONALITY, "Standard"
+                ),
+            )
+        ] = selector.SelectSelector(
+            selector.SelectSelectorConfig(
+                options=AI_PERSONALITIES,
+                mode=selector.SelectSelectorMode.DROPDOWN,
+            )
+        )
+
+        # Add option to enable/disable AI notifications separately from advice
+        schema[
+            vol.Optional(
+                "ai_notifications_enabled",
+                default=current_settings.get("ai_notifications_enabled", True),
+            )
+        ] = selector.BooleanSelector()
+
+        return vol.Schema(schema)
+
     async def async_step_configure_ai(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
@@ -318,85 +416,42 @@ class OptionsFlowHandler(OptionsFlow):
         Returns:
             A ConfigFlowResult.
         """
-        if user_input is not None:
-            new_options = self._config_entry.options.copy()
-            new_options["ai_settings"] = user_input
+        errors = {}
 
-            return self.async_create_entry(title="", data=new_options)
+        if user_input is not None:
+            # Validate that if AI is enabled, an assistant is selected
+            if user_input.get(CONF_AI_ENABLED) and not user_input.get(
+                CONF_ASSISTANT_ID
+            ):
+                errors["base"] = "assistant_required"
+            else:
+                new_options = self._config_entry.options.copy()
+                new_options["ai_settings"] = user_input
+
+                # Update the config entry
+                self.hass.config_entries.async_update_entry(
+                    self._config_entry, options=new_options
+                )
+
+                # Inform user about the changes
+                return self.async_create_entry(
+                    title="",
+                    data=new_options,
+                    description="AI settings have been updated. "
+                    + ("AI features are now enabled. " if user_input.get(CONF_AI_ENABLED) else "AI features are disabled. ")
+                    + f"Assistant: {user_input.get(CONF_ASSISTANT_ID, 'None')}",
+                )
 
         return self.async_show_form(
             step_id="configure_ai",
             data_schema=await self._get_ai_settings_schema(),
+            errors=errors,
+            description_placeholders={
+                "info": "Configure AI-powered features for grow advice and notifications. "
+                "You need a conversation/LLM integration (like Google Gemini, OpenAI, etc.) "
+                "configured in Home Assistant for this to work."
+            },
         )
-
-    async def _get_ai_settings_schema(self) -> vol.Schema:
-        """Build the schema for AI settings.
-
-        Returns:
-            A voluptuous schema for the form.
-        """
-        current_settings = self._config_entry.options.get("ai_settings", {})
-
-        # Get available assistants
-        assistants = []
-        if "conversation" in self.hass.data:
-            agent_manager = self.hass.data["conversation"]
-            # Attempt to use the modern AgentManager method
-            if hasattr(agent_manager, "async_get_agents"):
-                assistants = await agent_manager.async_get_agents()
-
-        if not assistants:
-            # Fallback to default agent if no agents returned (or manager missing)
-            try:
-                # conversation.async_get_agent(hass) gets the default agent
-                default_agent = await conversation.async_get_agent(self.hass)
-                if default_agent:
-                    assistants = [default_agent]
-            except Exception:
-                pass
-
-        # Filter to ensure we have valid agent objects
-        valid_assistants = []
-        for a in assistants:
-            if hasattr(a, "name") and (hasattr(a, "id") or hasattr(a, "entity_id")):
-                # Ensure we attach a unified 'id' attribute for the selector if missing
-                if not hasattr(a, "id"):
-                    a.id = a.entity_id
-                valid_assistants.append(a)
-
-        assistant_options = [
-            selector.SelectOptionDict(value=assistant.id, label=assistant.name)
-            for assistant in valid_assistants
-        ]
-
-        schema = {
-            vol.Required(
-                CONF_AI_ENABLED, default=current_settings.get(CONF_AI_ENABLED, False)
-            ): selector.BooleanSelector(),
-        }
-
-        if assistant_options:
-             schema[vol.Optional(
-                CONF_ASSISTANT_ID, default=current_settings.get(CONF_ASSISTANT_ID)
-            )] = selector.SelectSelector(
-                selector.SelectSelectorConfig(
-                    options=assistant_options,
-                    mode=selector.SelectSelectorMode.DROPDOWN,
-                )
-            )
-
-        schema[vol.Optional(
-            CONF_NOTIFICATION_PERSONALITY,
-            default=current_settings.get(CONF_NOTIFICATION_PERSONALITY, "Standard")
-        )] = selector.SelectSelector(
-            selector.SelectSelectorConfig(
-                options=AI_PERSONALITIES,
-                mode=selector.SelectSelectorMode.DROPDOWN,
-            )
-        )
-
-        return vol.Schema(schema)
-
     async def async_step_manage_timed_notifications(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
