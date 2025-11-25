@@ -64,6 +64,12 @@ PLATFORMS = ["binary_sensor", "sensor", "switch", "calendar"]
 CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)  # pylint: disable=invalid-name
 
 
+async def _async_update_listener(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    """Handle options update by reloading entry."""
+    _LOGGER.debug("Options updated for entry %s, reloading.", entry.entry_id)
+    await hass.config_entries.async_reload(entry.entry_id)
+
+
 async def async_setup(_hass: HomeAssistant, _config: dict):
     """Set up the integration via YAML (optional)."""
     _LOGGER.debug("Running async_setup for %s", DOMAIN)
@@ -95,6 +101,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     coordinator = GrowspaceCoordinator(
         hass,
         data,
+        options=entry.options,
         strain_library=strain_library_instance,
     )
     await coordinator.async_load()  # Load data into the coordinator
@@ -104,6 +111,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         "store": store,
         "created_entities": [],
     }
+
+    entry.add_update_listener(_async_update_listener)
 
     # Register all custom services
     _LOGGER.debug("Registering services for domain %s", DOMAIN)
@@ -362,12 +371,6 @@ async def async_reload_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
     _LOGGER.debug(
         "Reloading Growspace Manager integration for entry %s", entry.entry_id
     )
-    await hass.config_entries.async_reload(entry.entry_id)
-
-
-async def _async_update_listener(hass: HomeAssistant, entry: ConfigEntry) -> None:
-    """Handle options update by reloading entry."""
-    _LOGGER.debug("Options updated for entry %s, reloading.", entry.entry_id)
     await hass.config_entries.async_reload(entry.entry_id)
 
 
