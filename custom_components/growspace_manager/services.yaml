@@ -740,5 +740,108 @@ strain_recommendation:
   response:
     response:
       description: Strain recommendations with reasoning
-    strains_analyzed:
-      description: Number of strains analyzed
+
+set_irrigation_settings:
+  description: Set irrigation and drain pump settings for a growspace.
+  fields:
+    growspace_id:
+      description: The ID of the growspace to configure.
+      required: true
+      selector:
+        text:
+    irrigation_pump_entity:
+      description: The switch entity for the irrigation pump.
+      required: false
+      selector:
+        entity:
+          domain: switch
+    drain_pump_entity:
+      description: The switch entity for the drain pump.
+      required: false
+      selector:
+        entity:
+          domain: switch
+    irrigation_duration:
+      description: Default duration in seconds for an irrigation cycle.
+      required: false
+      selector:
+        number:
+          min: 1
+          unit_of_measurement: "seconds"
+    drain_duration:
+      description: Default duration in seconds for a drain cycle.
+      required: false
+      selector:
+        number:
+          min: 1
+          unit_of_measurement: "seconds"
+
+add_irrigation_time:
+  description: Add a specific time to the irrigation schedule.
+  fields:
+    growspace_id:
+      description: The ID of the growspace.
+      required: true
+      selector:
+        text:
+    time:
+      description: The time to trigger the irrigation (e.g., "14:30:00").
+      required: true
+      selector:
+        time:
+    duration:
+      description: Optional duration in seconds to override the default.
+      required: false
+      selector:
+        number:
+          min: 1
+          unit_of_measurement: "seconds"
+
+remove_irrigation_time:
+  description: Remove a specific time from the irrigation schedule.
+  fields:
+    growspace_id:
+      description: The ID of the growspace.
+      required: true
+      selector:
+        text:
+    time:
+      description: The time to remove from the schedule (e.g., "14:30:00").
+      required: true
+      selector:
+        time:
+
+add_drain_time:
+  description: Add a specific time to the drain schedule.
+  fields:
+    growspace_id:
+      description: The ID of the growspace.
+      required: true
+      selector:
+        text:
+    time:
+      description: The time to trigger the drain (e.g., "08:00:00").
+      required: true
+      selector:
+        time:
+    duration:
+      description: Optional duration in seconds to override the default.
+      required: false
+      selector:
+        number:
+          min: 1
+          unit_of_measurement: "seconds"
+
+remove_drain_time:
+  description: Remove a specific time from the drain schedule.
+  fields:
+    growspace_id:
+      description: The ID of the growspace.
+      required: true
+      selector:
+        text:
+    time:
+      description: The time to remove from the schedule (e.g., "08:00:00").
+      required: true
+      selector:
+        time:

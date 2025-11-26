@@ -49,11 +49,17 @@ from .const import (
     ASK_GROW_ADVICE_SCHEMA,
     ANALYZE_ALL_GROWSPACES_SCHEMA,
     STRAIN_RECOMMENDATION_SCHEMA,
+    ADD_DRAIN_TIME_SCHEMA,
+    ADD_IRRIGATION_TIME_SCHEMA,
+    REMOVE_DRAIN_TIME_SCHEMA,
+    REMOVE_IRRIGATION_TIME_SCHEMA,
+    SET_IRRIGATION_SETTINGS_SCHEMA,
 )
 from .coordinator import GrowspaceCoordinator
 from .irrigation_coordinator import IrrigationCoordinator
 from .services import (
     debug,
+    irrigation,
     environment,
     growspace,
     plant,
@@ -257,6 +263,31 @@ async def _register_services(
             "remove_environment",
             environment.handle_remove_environment,
             REMOVE_ENVIRONMENT_SCHEMA,
+        ),
+        (
+            "set_irrigation_settings",
+            irrigation.handle_set_irrigation_settings,
+            SET_IRRIGATION_SETTINGS_SCHEMA,
+        ),
+        (
+            "add_irrigation_time",
+            irrigation.handle_add_irrigation_time,
+            ADD_IRRIGATION_TIME_SCHEMA,
+        ),
+        (
+            "remove_irrigation_time",
+            irrigation.handle_remove_irrigation_time,
+            REMOVE_IRRIGATION_TIME_SCHEMA,
+        ),
+        (
+            "add_drain_time",
+            irrigation.handle_add_drain_time,
+            ADD_DRAIN_TIME_SCHEMA,
+        ),
+        (
+            "remove_drain_time",
+            irrigation.handle_remove_drain_time,
+            REMOVE_DRAIN_TIME_SCHEMA,
         ),
     ]
 
