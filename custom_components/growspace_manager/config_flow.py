@@ -1654,12 +1654,18 @@ class OptionsFlowHandler(OptionsFlow):
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
         """Show a form to select a growspace before configuring its irrigation."""
-        coordinator = self.hass.data[DOMAIN][self._config_entry.entry_id]["coordinator"]
+        try: 
+            coordinator = self.hass.data[DOMAIN][self._config_entry.entry_id]["coordinator"]
+        except KeyError:
+            _LOGGER.error("Coordinator not found for irrigation config flow.")
+            return self.async_abort(reason="setup_error")
         growspace_options = coordinator.get_sorted_growspace_options()
 
         if not growspace_options:
+            _LOGGER.error("IRRIGATION FLOW ABORT: No growspaces available to configure.")   
             return self.async_abort(reason="no_growspaces")
 
+        _LOGGER.debug("IRRIGATION FLOW: Found %d growspaces: %s", len(growspace_options), growspace_options)
         if user_input is not None:
             self._selected_growspace_id = user_input["growspace_id"]
             return await self.async_step_configure_irrigation()
@@ -1710,6 +1716,16 @@ class OptionsFlowHandler(OptionsFlow):
             self._selected_growspace_id, {}
         )
 
+        # --- START OF FIX: Ensure EntitySelector receives None instead of "" ---
+        irrigation_pump_default = irrigation_options.get("irrigation_pump_entity")
+        if not irrigation_pump_default:
+            irrigation_pump_default = None
+
+        drain_pump_default = irrigation_options.get("drain_pump_entity")
+        if not drain_pump_default:
+            drain_pump_default = None
+        # --- END OF FIX ---
+
         if user_input is not None:
             # 1. Update the configuration entry with the new pump settings/durations
             new_options = self._current_options.copy()
@@ -1736,13 +1752,15 @@ class OptionsFlowHandler(OptionsFlow):
             # R/W Fields: Pump Settings (User edits and submits these)
             vol.Optional(
                 "irrigation_pump_entity",
-                default=irrigation_options.get("irrigation_pump_entity"),
+                # Use the cleaned default variable
+                default=irrigation_pump_default,
             ): selector.EntitySelector(
                 selector.EntitySelectorConfig(domain="switch")
             ),
             vol.Optional(
                 "drain_pump_entity",
-                default=irrigation_options.get("drain_pump_entity"),
+                # Use the cleaned default variable
+                default=drain_pump_default,
             ): selector.EntitySelector(
                 selector.EntitySelectorConfig(domain="switch")
             ),
