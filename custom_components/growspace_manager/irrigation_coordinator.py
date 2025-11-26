@@ -71,6 +71,9 @@ class IrrigationCoordinator:
         if not time_str:
             raise ValueError("Time cannot be empty")
 
+        if len(time_str) == 5:
+            time_str = f"{time_str}:00"
+            
         options = dict(self._config_entry.options)
         if "irrigation" not in options:
             options["irrigation"] = {}
