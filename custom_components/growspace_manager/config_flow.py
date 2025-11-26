@@ -1654,7 +1654,11 @@ class OptionsFlowHandler(OptionsFlow):
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
         """Show a form to select a growspace before configuring its irrigation."""
-        coordinator = self.hass.data[DOMAIN][self._config_entry.entry_id]["coordinator"]
+        try: 
+            coordinator = self.hass.data[DOMAIN][self._config_entry.entry_id]["coordinator"]
+        except KeyError:
+            _LOGGER.error("Coordinator not found for irrigation config flow.")
+            return self.async_abort(reason="setup_error")
         growspace_options = coordinator.get_sorted_growspace_options()
 
         if not growspace_options:
