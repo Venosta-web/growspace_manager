@@ -1736,32 +1736,39 @@ class OptionsFlowHandler(OptionsFlow):
             if self._selected_growspace_id not in new_options["irrigation"]:
                 new_options["irrigation"][self._selected_growspace_id] = {}
 
-            # The form only contains pump settings and durations (R/W fields).
-            # We must preserve the existing schedules (read-only in the form)
-            updated_settings = user_input.copy()
+            # CRITICAL FIX: Only update the R/W fields (pump entities and durations)
+            # Filter out the read-only fields that were passed for display purposes
+            updated_settings = {
+                k: v for k, v in user_input.items() 
+                if k not in ["current_irrigation_times", "current_drain_times", "growspace_id_read_only"]
+            }
 
-            # Preserve schedules which are only manipulated via service calls
-            updated_settings["irrigation_times"] = irrigation_options.get("irrigation_times", [])
-            updated_settings["drain_times"] = irrigation_options.get("drain_times", [])
+            # Preserve the existing schedules from storage
+            existing_config = new_options["irrigation"][self._selected_growspace_id]
+            updated_settings["irrigation_times"] = existing_config.get("irrigation_times", [])
+            updated_settings["drain_times"] = existing_config.get("drain_times", [])
 
+            # Update the config
             new_options["irrigation"][self._selected_growspace_id].update(updated_settings)
 
             # This triggers async_update_listener in __init__.py, reloading the IrrigationCoordinator
-            return self.async_create_entry(title="", data=new_options)
+            return self.async_create_entry(
+                title="",
+                data=new_options,
+                description="Irrigation settings have been updated.",
+            )
 
         # 2. Define schema to pass ALL data to the Lovelace component
         schema = vol.Schema({
             # R/W Fields: Pump Settings (User edits and submits these)
             vol.Optional(
                 "irrigation_pump_entity",
-                # Use the cleaned default variable
                 default=irrigation_pump_default,
             ): selector.EntitySelector(
                 selector.EntitySelectorConfig(domain="switch")
             ),
             vol.Optional(
                 "drain_pump_entity",
-                # Use the cleaned default variable
                 default=drain_pump_default,
             ): selector.EntitySelector(
                 selector.EntitySelectorConfig(domain="switch")
