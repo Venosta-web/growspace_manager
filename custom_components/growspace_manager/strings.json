@@ -23,7 +23,72 @@
           "manage_growspaces": "Manage Growspaces",
           "manage_plants": "Manage Plants",
           "configure_environment": "Configure Growspace Environment",
-          "configure_global": "Configure Global Sensors"
+          "configure_global": "Configure Global Sensors",
+          "configure_irrigation": "Configure Irrigation"
+        }
+      },
+      "select_growspace_for_irrigation": {
+        "title": "Select Growspace for Irrigation",
+        "description": "Choose which growspace to configure the irrigation controller for.",
+        "data": {
+          "growspace_id": "Growspace"
+        }
+      },
+      "configure_irrigation": {
+        "title": "Configure Irrigation for {growspace_name}",
+        "description": "Manage the irrigation and drain controller for this growspace.",
+        "menu_options": {
+          "edit_pump_settings": "Edit Pump Settings",
+          "add_irrigation_time": "Add Irrigation Time",
+          "remove_irrigation_time": "Remove Irrigation Time",
+          "add_drain_time": "Add Drain Time",
+          "remove_drain_time": "Remove Drain Time"
+        }
+      },
+      "edit_pump_settings": {
+        "title": "Edit Pump Settings for {growspace_name}",
+        "description": "Configure the switch entities and default run durations.",
+        "data": {
+          "irrigation_pump_entity": "Irrigation Pump Switch",
+          "drain_pump_entity": "Drain Pump Switch",
+          "irrigation_duration": "Default Irrigation Duration (seconds)",
+          "drain_duration": "Default Drain Duration (seconds)"
+        }
+      },
+      "add_irrigation_time": {
+        "title": "Add Irrigation Time for {growspace_name}",
+        "description": "Add a new time slot for an irrigation event. You can optionally set a custom duration.",
+        "data": {
+          "time": "Time",
+          "duration": "Custom Duration (seconds)"
+        },
+        "data_description": {
+          "duration": "Optional: a custom duration for this specific event."
+        }
+      },
+      "remove_irrigation_time": {
+        "title": "Remove Irrigation Time for {growspace_name}",
+        "description": "Select an irrigation time to remove.",
+        "data": {
+          "time": "Irrigation Time"
+        }
+      },
+      "add_drain_time": {
+        "title": "Add Drain Time for {growspace_name}",
+        "description": "Add a new time slot for a drain event. You can optionally set a custom duration.",
+        "data": {
+          "time": "Time",
+          "duration": "Custom Duration (seconds)"
+        },
+        "data_description": {
+          "duration": "Optional: a custom duration for this specific event."
+        }
+      },
+      "remove_drain_time": {
+        "title": "Remove Drain Time for {growspace_name}",
+        "description": "Select a drain time to remove.",
+        "data": {
+          "time": "Drain Time"
         }
       },
       "configure_global": {
