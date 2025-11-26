@@ -1691,330 +1691,93 @@ class OptionsFlowHandler(OptionsFlow):
         if not growspace:
             return self.async_abort(reason="growspace_not_found")
 
-        if user_input is not None:
-            action = user_input.get("action")
-            if action == "edit_pump_settings":
-                return await self.async_step_edit_pump_settings()
-            if action == "add_irrigation_time":
-                return await self.async_step_add_irrigation_time()
-            if action == "remove_irrigation_time":
-                return await self.async_step_remove_irrigation_time()
-            if action == "add_drain_time":
-                return await self.async_step_add_drain_time()
-            if action == "remove_drain_time":
-                return await self.async_step_remove_drain_time()
-            if action == "back":
-                return await self.async_step_init()
+        # [MODIFIED]: Route directly to the unified overview step
+        return await self.async_step_irrigation_overview()
 
-        return self.async_show_form(
-            step_id="configure_irrigation",
-            data_schema=self._get_irrigation_menu_schema(),
-            description_placeholders={"growspace_name": growspace.name},
-        )
 
-    def _get_irrigation_menu_schema(self) -> vol.Schema:
-        """Build the schema for the irrigation configuration menu."""
-        return vol.Schema(
-            {
-                vol.Required("action"): selector.SelectSelector(
-                    selector.SelectSelectorConfig(
-                        options=[
-                            selector.SelectOptionDict(
-                                value="edit_pump_settings", label="Edit Pump Settings"
-                            ),
-                            selector.SelectOptionDict(
-                                value="add_irrigation_time", label="Add Irrigation Time"
-                            ),
-                            selector.SelectOptionDict(
-                                value="remove_irrigation_time",
-                                label="Remove Irrigation Time",
-                            ),
-                            selector.SelectOptionDict(
-                                value="add_drain_time", label="Add Drain Time"
-                            ),
-                            selector.SelectOptionDict(
-                                value="remove_drain_time", label="Remove Drain Time"
-                            ),
-                            selector.SelectOptionDict(
-                                value="back", label="← Back to Main Menu"
-                            ),
-                        ]
-                    )
-                )
-            }
-        )
-
-    async def async_step_edit_pump_settings(
+    async def async_step_irrigation_overview(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
-        """Show the form for editing pump settings."""
+        """Show the unified irrigation management screen for the Lovelace card."""
         coordinator = self.hass.data[DOMAIN][self._config_entry.entry_id]["coordinator"]
         growspace = coordinator.growspaces.get(self._selected_growspace_id)
 
         if not growspace:
             return self.async_abort(reason="growspace_not_found")
 
+        # Load ALL current irrigation options for the growspace
         irrigation_options = self._current_options.get("irrigation", {}).get(
             self._selected_growspace_id, {}
         )
 
         if user_input is not None:
+            # 1. Update the configuration entry with the new pump settings/durations
             new_options = self._current_options.copy()
             if "irrigation" not in new_options:
                 new_options["irrigation"] = {}
             if self._selected_growspace_id not in new_options["irrigation"]:
                 new_options["irrigation"][self._selected_growspace_id] = {}
 
-            new_options["irrigation"][self._selected_growspace_id].update(user_input)
+            # The form only contains pump settings and durations (R/W fields).
+            # We must preserve the existing schedules (read-only in the form)
+            updated_settings = user_input.copy()
+
+            # Preserve schedules which are only manipulated via service calls
+            updated_settings["irrigation_times"] = irrigation_options.get("irrigation_times", [])
+            updated_settings["drain_times"] = irrigation_options.get("drain_times", [])
+
+            new_options["irrigation"][self._selected_growspace_id].update(updated_settings)
+
+            # This triggers async_update_listener in __init__.py, reloading the IrrigationCoordinator
             return self.async_create_entry(title="", data=new_options)
 
-        schema = vol.Schema(
-            {
-                vol.Optional(
-                    "irrigation_pump_entity",
-                    default=irrigation_options.get("irrigation_pump_entity"),
-                ): selector.EntitySelector(
-                    selector.EntitySelectorConfig(domain="switch")
-                ),
-                vol.Optional(
-                    "drain_pump_entity",
-                    default=irrigation_options.get("drain_pump_entity"),
-                ): selector.EntitySelector(
-                    selector.EntitySelectorConfig(domain="switch")
-                ),
-                vol.Optional(
-                    "irrigation_duration",
-                    default=irrigation_options.get("irrigation_duration", 30),
-                ): selector.NumberSelector(
-                    selector.NumberSelectorConfig(
-                        min=1, mode=selector.NumberSelectorMode.BOX
-                    )
-                ),
-                vol.Optional(
-                    "drain_duration",
-                    default=irrigation_options.get("drain_duration", 30),
-                ): selector.NumberSelector(
-                    selector.NumberSelectorConfig(
-                        min=1, mode=selector.NumberSelectorMode.BOX
-                    )
-                ),
-            }
-        )
+        # 2. Define schema to pass ALL data to the Lovelace component
+        schema = vol.Schema({
+            # R/W Fields: Pump Settings (User edits and submits these)
+            vol.Optional(
+                "irrigation_pump_entity",
+                default=irrigation_options.get("irrigation_pump_entity"),
+            ): selector.EntitySelector(
+                selector.EntitySelectorConfig(domain="switch")
+            ),
+            vol.Optional(
+                "drain_pump_entity",
+                default=irrigation_options.get("drain_pump_entity"),
+            ): selector.EntitySelector(
+                selector.EntitySelectorConfig(domain="switch")
+            ),
+            vol.Optional(
+                "irrigation_duration",
+                default=irrigation_options.get("irrigation_duration", 30),
+            ): selector.NumberSelector(
+                selector.NumberSelectorConfig(min=1, mode=selector.NumberSelectorMode.BOX)
+            ),
+            vol.Optional(
+                "drain_duration",
+                default=irrigation_options.get("drain_duration", 30),
+            ): selector.NumberSelector(
+                selector.NumberSelectorConfig(min=1, mode=selector.NumberSelectorMode.BOX)
+            ),
+
+            # Read-only Fields: Schedules and ID (Passed to frontend for visual use/service calls)
+            # Must be stringified to pass complex objects through schema inputs
+            vol.Optional("current_irrigation_times",
+                default=str(irrigation_options.get("irrigation_times", []))
+            ): selector.TextSelector(),
+            vol.Optional("current_drain_times",
+                default=str(irrigation_options.get("drain_times", []))
+            ): selector.TextSelector(),
+            vol.Optional("growspace_id_read_only",
+                default=self._selected_growspace_id
+            ): selector.TextSelector(),
+        })
 
         return self.async_show_form(
-            step_id="edit_pump_settings",
+            step_id="irrigation_overview",
             data_schema=schema,
             description_placeholders={"growspace_name": growspace.name},
         )
 
-    async def async_step_add_irrigation_time(
-        self, user_input: dict[str, Any] | None = None
-    ) -> ConfigFlowResult:
-        """Show the form for adding an irrigation time."""
-        coordinator = self.hass.data[DOMAIN][self._config_entry.entry_id]["coordinator"]
-        growspace = coordinator.growspaces.get(self._selected_growspace_id)
-
-        if not growspace:
-            return self.async_abort(reason="growspace_not_found")
-
-        if user_input is not None:
-            new_options = self._current_options.copy()
-            if "irrigation" not in new_options:
-                new_options["irrigation"] = {}
-            if self._selected_growspace_id not in new_options["irrigation"]:
-                new_options["irrigation"][self._selected_growspace_id] = {}
-
-            irrigation_times = new_options["irrigation"][
-                self._selected_growspace_id
-            ].get("irrigation_times", [])
-
-            time_entry = {"time": user_input["time"]}
-            if user_input.get("duration"):
-                time_entry["duration"] = user_input.get("duration")
-
-            irrigation_times.append(time_entry)
-
-            new_options["irrigation"][self._selected_growspace_id][
-                "irrigation_times"
-            ] = irrigation_times
-
-            return self.async_create_entry(title="", data=new_options)
-
-        schema = vol.Schema(
-            {
-                vol.Required("time"): selector.TimeSelector(),
-                vol.Optional("duration"): selector.NumberSelector(
-                    selector.NumberSelectorConfig(
-                        min=1, mode=selector.NumberSelectorMode.BOX
-                    )
-                ),
-            }
-        )
-
-        return self.async_show_form(
-            step_id="add_irrigation_time",
-            data_schema=schema,
-            description_placeholders={"growspace_name": growspace.name},
-        )
-
-    async def async_step_remove_irrigation_time(
-        self, user_input: dict[str, Any] | None = None
-    ) -> ConfigFlowResult:
-        """Show the form for removing an irrigation time."""
-        coordinator = self.hass.data[DOMAIN][self._config_entry.entry_id]["coordinator"]
-        growspace = coordinator.growspaces.get(self._selected_growspace_id)
-
-        if not growspace:
-            return self.async_abort(reason="growspace_not_found")
-
-        irrigation_options = self._current_options.get("irrigation", {}).get(
-            self._selected_growspace_id, {}
-        )
-        irrigation_times = irrigation_options.get("irrigation_times", [])
-
-        if not irrigation_times:
-            return self.async_abort(reason="no_irrigation_times")
-
-        if user_input is not None:
-            new_options = self._current_options.copy()
-
-            index_to_remove = int(user_input["time_index"])
-
-            if 0 <= index_to_remove < len(irrigation_times):
-                irrigation_times.pop(index_to_remove)
-
-            new_options["irrigation"][self._selected_growspace_id][
-                "irrigation_times"
-            ] = irrigation_times
-
-            return self.async_create_entry(title="", data=new_options)
-
-        time_options = [
-            selector.SelectOptionDict(
-                value=str(i),
-                label=f"{t['time']} (Duration: {t.get('duration', 'default')})",
-            )
-            for i, t in enumerate(irrigation_times)
-        ]
-
-        schema = vol.Schema(
-            {
-                vol.Required("time_index"): selector.SelectSelector(
-                    selector.SelectSelectorConfig(options=time_options)
-                ),
-            }
-        )
-
-        return self.async_show_form(
-            step_id="remove_irrigation_time",
-            data_schema=schema,
-            description_placeholders={"growspace_name": growspace.name},
-        )
-
-    async def async_step_add_drain_time(
-        self, user_input: dict[str, Any] | None = None
-    ) -> ConfigFlowResult:
-        """Show the form for adding a drain time."""
-        coordinator = self.hass.data[DOMAIN][self._config_entry.entry_id]["coordinator"]
-        growspace = coordinator.growspaces.get(self._selected_growspace_id)
-
-        if not growspace:
-            return self.async_abort(reason="growspace_not_found")
-
-        if user_input is not None:
-            new_options = self._current_options.copy()
-            if "irrigation" not in new_options:
-                new_options["irrigation"] = {}
-            if self._selected_growspace_id not in new_options["irrigation"]:
-                new_options["irrigation"][self._selected_growspace_id] = {}
-
-            drain_times = new_options["irrigation"][
-                self._selected_growspace_id
-            ].get("drain_times", [])
-
-            time_entry = {"time": user_input["time"]}
-            if user_input.get("duration"):
-                time_entry["duration"] = user_input.get("duration")
-
-            drain_times.append(time_entry)
-
-            new_options["irrigation"][self._selected_growspace_id][
-                "drain_times"
-            ] = drain_times
-
-            return self.async_create_entry(title="", data=new_options)
-
-        schema = vol.Schema(
-            {
-                vol.Required("time"): selector.TimeSelector(),
-                vol.Optional("duration"): selector.NumberSelector(
-                    selector.NumberSelectorConfig(
-                        min=1, mode=selector.NumberSelectorMode.BOX
-                    )
-                ),
-            }
-        )
-
-        return self.async_show_form(
-            step_id="add_drain_time",
-            data_schema=schema,
-            description_placeholders={"growspace_name": growspace.name},
-        )
-
-    async def async_step_remove_drain_time(
-        self, user_input: dict[str, Any] | None = None
-    ) -> ConfigFlowResult:
-        """Show the form for removing a drain time."""
-        coordinator = self.hass.data[DOMAIN][self._config_entry.entry_id]["coordinator"]
-        growspace = coordinator.growspaces.get(self._selected_growspace_id)
-
-        if not growspace:
-            return self.async_abort(reason="growspace_not_found")
-
-        irrigation_options = self._current_options.get("irrigation", {}).get(
-            self._selected_growspace_id, {}
-        )
-        drain_times = irrigation_options.get("drain_times", [])
-
-        if not drain_times:
-            return self.async_abort(reason="no_drain_times")
-
-        if user_input is not None:
-            new_options = self._current_options.copy()
-
-            index_to_remove = int(user_input["time_index"])
-
-            if 0 <= index_to_remove < len(drain_times):
-                drain_times.pop(index_to_remove)
-
-
-            new_options["irrigation"][self._selected_growspace_id][
-                "drain_times"
-            ] = drain_times
-
-            return self.async_create_entry(title="", data=new_options)
-
-        time_options = [
-            selector.SelectOptionDict(
-                value=str(i),
-                label=f"{t['time']} (Duration: {t.get('duration', 'default')})",
-            )
-            for i, t in enumerate(drain_times)
-        ]
-
-        schema = vol.Schema(
-            {
-                vol.Required("time_index"): selector.SelectSelector(
-                    selector.SelectSelectorConfig(options=time_options)
-                ),
-            }
-        )
-
-        return self.async_show_form(
-            step_id="remove_drain_time",
-            data_schema=schema,
-            description_placeholders={"growspace_name": growspace.name},
-        )
 
     def _get_plant_management_schema(self, coordinator) -> vol.Schema:
         """Build the schema for the plant management menu.
