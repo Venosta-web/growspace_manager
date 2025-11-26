@@ -51,6 +51,7 @@ from .const import (
     STRAIN_RECOMMENDATION_SCHEMA,
 )
 from .coordinator import GrowspaceCoordinator
+from .irrigation_coordinator import IrrigationCoordinator
 from .services import (
     debug,
     environment,
@@ -114,7 +115,16 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         "coordinator": coordinator,
         "store": store,
         "created_entities": [],
+        "irrigation_coordinators": {},
     }
+
+    # Set up irrigation coordinators for each growspace
+    for growspace_id in coordinator.growspaces:
+        irrigation_coordinator = IrrigationCoordinator(hass, entry, growspace_id)
+        await irrigation_coordinator.async_setup()
+        hass.data[DOMAIN][entry.entry_id]["irrigation_coordinators"][
+            growspace_id
+        ] = irrigation_coordinator
 
     entry.add_update_listener(_async_update_listener)
 
@@ -325,6 +335,12 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     # Clean up dynamically created entities before unloading platforms
     entry_data = hass.data.get(DOMAIN, {}).get(entry.entry_id, {})
+
+    # Cancel irrigation listeners
+    if "irrigation_coordinators" in entry_data:
+        for coordinator in entry_data["irrigation_coordinators"].values():
+            coordinator.async_cancel_listeners()
+
     created_unique_ids = entry_data.get("created_entities", [])
     entity_registry = er.async_get(hass)
 
