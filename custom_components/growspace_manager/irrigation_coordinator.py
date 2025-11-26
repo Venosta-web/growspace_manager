@@ -165,7 +165,10 @@ class IrrigationCoordinator:
                     time_str,
                 )
                 return
-
+            
+            if len(time_str) == 5:
+                time_str = f"{time_str}:00"
+                
             time_obj = datetime.strptime(time_str, "%H:%M:%S").time()
 
             handler = partial(
