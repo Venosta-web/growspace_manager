@@ -42,7 +42,7 @@ class IrrigationCoordinator:
         except KeyError:
             return None
 
-    async def _update_config_entry_options(self, new_options: dict[str, Any]) -> None:
+    async def _update_config_entry_options(self, new_options: dict[str, Any], reload_listeners: bool = True) -> None:
         """Update the config entry options and reload listeners."""
         # Update the config entry - this persists the data
         self.hass.config_entries.async_update_entry(
@@ -55,14 +55,12 @@ class IrrigationCoordinator:
         # Update the coordinator's data property
         self._main_coordinator.update_data_property()
         
-        # Trigger a save to ensure persistence
-        await self._main_coordinator.async_save()
-        
-        # Notify listeners
+        # Notify listeners (but don't save to avoid circular updates)
         self._main_coordinator.async_set_updated_data(self._main_coordinator.data)
         
         # Reload the irrigation listeners with new schedule
-        await self.async_update_listeners()
+        if reload_listeners:
+            await self.async_update_listeners()
 
     async def async_set_settings(self, new_settings: dict[str, Any]) -> None:
         """Update the irrigation settings for the growspace."""
@@ -179,18 +177,21 @@ class IrrigationCoordinator:
 
     async def async_setup(self):
         """Set up the irrigation schedules."""
+        # Load schedules without triggering updates
         await self.async_update_listeners()
 
     async def async_update_listeners(self, *args):
         """Remove old listeners and create new ones based on current config."""
         self.async_cancel_listeners()
 
-        # Get irrigation options from config entry
+        # Get irrigation options from config entry (FRESH READ)
         options = self._config_entry.options.get("irrigation", {}).get(
             self._growspace_id, {}
         )
-        irrigation_times = options.get("irrigation_times", [])
-        drain_times = options.get("drain_times", [])
+        
+        # Make defensive copies to avoid reference issues
+        irrigation_times = list(options.get("irrigation_times", []))
+        drain_times = list(options.get("drain_times", []))
 
         _LOGGER.debug(
             "Setting up listeners for growspace %s: %d irrigation times, %d drain times",
@@ -198,6 +199,12 @@ class IrrigationCoordinator:
             len(irrigation_times),
             len(drain_times)
         )
+        
+        # Log the actual schedule data for debugging
+        if irrigation_times:
+            _LOGGER.debug("Irrigation schedule: %s", irrigation_times)
+        if drain_times:
+            _LOGGER.debug("Drain schedule: %s", drain_times)
 
         for event in irrigation_times:
             self._schedule_event(event, "irrigation")

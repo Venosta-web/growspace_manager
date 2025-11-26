@@ -124,9 +124,16 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         "irrigation_coordinators": {},
     }
 
-    # Set up irrigation coordinators for each growspace
     for growspace_id in coordinator.growspaces:
-        irrigation_coordinator = IrrigationCoordinator(hass, entry, growspace_id, coordinator) # Added coordinator reference
+        # ADD THIS DEBUG LOGGING
+        irrigation_config = entry.options.get("irrigation", {}).get(growspace_id, {})
+        _LOGGER.debug(
+            "IRRIGATION INIT - Growspace: %s, Config: %s",
+            growspace_id,
+            irrigation_config
+        )
+        
+        irrigation_coordinator = IrrigationCoordinator(hass, entry, growspace_id, coordinator)
         await irrigation_coordinator.async_setup()
         hass.data[DOMAIN][entry.entry_id]["irrigation_coordinators"][
             growspace_id
