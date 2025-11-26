@@ -5,13 +5,16 @@ import asyncio
 import logging
 from datetime import datetime
 from functools import partial
-from typing import Any
+from typing import Any, TYPE_CHECKING
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.event import async_track_time_change
 
 from .const import DOMAIN
+
+if TYPE_CHECKING:
+    from .coordinator import GrowspaceCoordinator
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -20,7 +23,7 @@ class IrrigationCoordinator:
     """Manages irrigation and drain schedules for a specific growspace."""
 
     def __init__(
-        self, hass: HomeAssistant, config_entry: ConfigEntry, growspace_id: str, main_coordinator: GrowspaceCoordinator
+        self, hass: HomeAssistant, config_entry: ConfigEntry, growspace_id: str, main_coordinator: "GrowspaceCoordinator"
     ):
         """Initialize the irrigation coordinator."""
         self.hass = hass
@@ -41,17 +44,29 @@ class IrrigationCoordinator:
 
     async def _update_config_entry_options(self, new_options: dict[str, Any]) -> None:
         """Update the config entry options and reload listeners."""
+        # Update the config entry - this persists the data
         self.hass.config_entries.async_update_entry(
             self._config_entry, options=new_options
         )
+        
+        # Also update the main coordinator's options reference
         self._main_coordinator.options = new_options
+        
+        # Update the coordinator's data property
         self._main_coordinator.update_data_property()
+        
+        # Trigger a save to ensure persistence
+        await self._main_coordinator.async_save()
+        
+        # Notify listeners
         self._main_coordinator.async_set_updated_data(self._main_coordinator.data)
         
+        # Reload the irrigation listeners with new schedule
         await self.async_update_listeners()
 
     async def async_set_settings(self, new_settings: dict[str, Any]) -> None:
         """Update the irrigation settings for the growspace."""
+        # Get a mutable copy of current options
         options = dict(self._config_entry.options)
 
         if "irrigation" not in options:
@@ -59,6 +74,7 @@ class IrrigationCoordinator:
         if self._growspace_id not in options["irrigation"]:
             options["irrigation"][self._growspace_id] = {}
 
+        # Update with new settings
         current_settings = options["irrigation"][self._growspace_id]
         current_settings.update(new_settings)
 
@@ -67,6 +83,8 @@ class IrrigationCoordinator:
             self._growspace_id,
             new_settings,
         )
+        
+        # Persist the changes
         await self._update_config_entry_options(options)
 
     async def async_add_schedule_item(
@@ -78,8 +96,10 @@ class IrrigationCoordinator:
 
         if len(time_str) == 5:
             time_str = f"{time_str}:00"
-            
+        
+        # Get a mutable copy of current options
         options = dict(self._config_entry.options)
+        
         if "irrigation" not in options:
             options["irrigation"] = {}
         if self._growspace_id not in options["irrigation"]:
@@ -90,16 +110,24 @@ class IrrigationCoordinator:
         if schedule_key not in growspace_options:
             growspace_options[schedule_key] = []
 
-        schedule = growspace_options[schedule_key]
-
+        # Create a new list to ensure we're not modifying a reference
+        schedule = list(growspace_options[schedule_key])
+        
+        # Add the new schedule item
         schedule.append({"time": time_str, "duration": duration})
+        
+        # Update the schedule in options
+        growspace_options[schedule_key] = schedule
+        
         _LOGGER.info(
-            "Added %s to %s for growspace %s",
+            "Added %s to %s for growspace %s. Schedule now has %d items.",
             {"time": time_str, "duration": duration},
             schedule_key,
             self._growspace_id,
+            len(schedule)
         )
 
+        # Persist the changes
         await self._update_config_entry_options(options)
 
     async def async_remove_schedule_item(self, schedule_key: str, time_str: str) -> None:
@@ -107,13 +135,16 @@ class IrrigationCoordinator:
         if not time_str:
             raise ValueError("Time cannot be empty")
 
+        # Get a mutable copy of current options
         options = dict(self._config_entry.options)
 
         try:
-            schedule = options["irrigation"][self._growspace_id][schedule_key]
-
+            # Create a new list with items filtered out
+            schedule = list(options["irrigation"][self._growspace_id][schedule_key])
             items_before = len(schedule)
-            schedule[:] = [item for item in schedule if item.get("time") != time_str]
+            
+            # Filter out matching times
+            schedule = [item for item in schedule if item.get("time") != time_str]
             items_after = len(schedule)
 
             if items_before == items_after:
@@ -125,6 +156,9 @@ class IrrigationCoordinator:
                 )
                 return
 
+            # Update the schedule
+            options["irrigation"][self._growspace_id][schedule_key] = schedule
+            
             _LOGGER.info(
                 "Removed %d item(s) with time %s from %s for growspace %s",
                 items_before - items_after,
@@ -133,6 +167,7 @@ class IrrigationCoordinator:
                 self._growspace_id,
             )
 
+            # Persist the changes
             await self._update_config_entry_options(options)
 
         except KeyError:
@@ -150,11 +185,19 @@ class IrrigationCoordinator:
         """Remove old listeners and create new ones based on current config."""
         self.async_cancel_listeners()
 
+        # Get irrigation options from config entry
         options = self._config_entry.options.get("irrigation", {}).get(
             self._growspace_id, {}
         )
         irrigation_times = options.get("irrigation_times", [])
         drain_times = options.get("drain_times", [])
+
+        _LOGGER.debug(
+            "Setting up listeners for growspace %s: %d irrigation times, %d drain times",
+            self._growspace_id,
+            len(irrigation_times),
+            len(drain_times)
+        )
 
         for event in irrigation_times:
             self._schedule_event(event, "irrigation")
@@ -183,15 +226,16 @@ class IrrigationCoordinator:
                 self._handle_event, event_type=event_type, event_data=event
             )
 
-            self._listeners.append(
-                async_track_time_change(
-                    self.hass,
-                    handler,
-                    hour=time_obj.hour,
-                    minute=time_obj.minute,
-                    second=time_obj.second,
-                )
+            listener = async_track_time_change(
+                self.hass,
+                handler,
+                hour=time_obj.hour,
+                minute=time_obj.minute,
+                second=time_obj.second,
             )
+            
+            self._listeners.append(listener)
+            
             _LOGGER.debug(
                 "Scheduled %s event for growspace %s at %s",
                 event_type,
