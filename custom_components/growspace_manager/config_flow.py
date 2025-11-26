@@ -1782,10 +1782,10 @@ class OptionsFlowHandler(OptionsFlow):
             # Read-only Fields: Schedules and ID (Passed to frontend for visual use/service calls)
             # Must be stringified to pass complex objects through schema inputs
             vol.Optional("current_irrigation_times",
-                default=json.dumps(irrigation_options.get("irrigation_times", [])) // <-- FIXED
+                default=json.dumps(irrigation_options.get("irrigation_times", []))
             ): selector.TextSelector(),
             vol.Optional("current_drain_times",
-                default=json.dumps(irrigation_options.get("drain_times", [])) // <-- FIXED
+                default=json.dumps(irrigation_options.get("drain_times", []))
             ): selector.TextSelector(),
             vol.Optional("growspace_id_read_only",
                 default=self._selected_growspace_id
