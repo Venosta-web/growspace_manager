@@ -8,6 +8,8 @@ for managing growspaces, plants, and environment sensor configurations.
 
 from __future__ import annotations
 
+import json
+
 import ast
 import logging
 import uuid
@@ -1780,10 +1782,10 @@ class OptionsFlowHandler(OptionsFlow):
             # Read-only Fields: Schedules and ID (Passed to frontend for visual use/service calls)
             # Must be stringified to pass complex objects through schema inputs
             vol.Optional("current_irrigation_times",
-                default=str(irrigation_options.get("irrigation_times", []))
+                default=json.dumps(irrigation_options.get("irrigation_times", [])) // <-- FIXED
             ): selector.TextSelector(),
             vol.Optional("current_drain_times",
-                default=str(irrigation_options.get("drain_times", []))
+                default=json.dumps(irrigation_options.get("drain_times", [])) // <-- FIXED
             ): selector.TextSelector(),
             vol.Optional("growspace_id_read_only",
                 default=self._selected_growspace_id
