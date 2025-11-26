@@ -29,6 +29,111 @@ class IrrigationCoordinator:
         self._listeners: list[callable] = []
         self._running_tasks: dict[str, asyncio.Task[Any]] = {}
 
+    def get_default_duration(self, event_type: str) -> int | None:
+        """Get the default duration for a given event type."""
+        try:
+            return self._config_entry.options["irrigation"][self._growspace_id][
+                f"{event_type}_duration"
+            ]
+        except KeyError:
+            return None
+
+    async def _update_config_entry_options(self, new_options: dict[str, Any]) -> None:
+        """Update the config entry options and reload listeners."""
+        self.hass.config_entries.async_update_entry(
+            self._config_entry, options=new_options
+        )
+        await self.async_update_listeners()
+
+    async def async_set_settings(self, new_settings: dict[str, Any]) -> None:
+        """Update the irrigation settings for the growspace."""
+        options = dict(self._config_entry.options)
+
+        if "irrigation" not in options:
+            options["irrigation"] = {}
+        if self._growspace_id not in options["irrigation"]:
+            options["irrigation"][self._growspace_id] = {}
+
+        current_settings = options["irrigation"][self._growspace_id]
+        current_settings.update(new_settings)
+
+        _LOGGER.debug(
+            "Updating irrigation settings for %s with: %s",
+            self._growspace_id,
+            new_settings,
+        )
+        await self._update_config_entry_options(options)
+
+    async def async_add_schedule_item(
+        self, schedule_key: str, time_str: str, duration: int | None
+    ) -> None:
+        """Add a time entry to an irrigation or drain schedule."""
+        if not time_str:
+            raise ValueError("Time cannot be empty")
+
+        options = dict(self._config_entry.options)
+        if "irrigation" not in options:
+            options["irrigation"] = {}
+        if self._growspace_id not in options["irrigation"]:
+            options["irrigation"][self._growspace_id] = {}
+
+        growspace_options = options["irrigation"][self._growspace_id]
+
+        if schedule_key not in growspace_options:
+            growspace_options[schedule_key] = []
+
+        schedule = growspace_options[schedule_key]
+
+        schedule.append({"time": time_str, "duration": duration})
+        _LOGGER.info(
+            "Added %s to %s for growspace %s",
+            {"time": time_str, "duration": duration},
+            schedule_key,
+            self._growspace_id,
+        )
+
+        await self._update_config_entry_options(options)
+
+    async def async_remove_schedule_item(self, schedule_key: str, time_str: str) -> None:
+        """Remove all matching time entries from a schedule."""
+        if not time_str:
+            raise ValueError("Time cannot be empty")
+
+        options = dict(self._config_entry.options)
+
+        try:
+            schedule = options["irrigation"][self._growspace_id][schedule_key]
+
+            items_before = len(schedule)
+            schedule[:] = [item for item in schedule if item.get("time") != time_str]
+            items_after = len(schedule)
+
+            if items_before == items_after:
+                _LOGGER.warning(
+                    "Time %s not found in %s for growspace %s. No items removed.",
+                    time_str,
+                    schedule_key,
+                    self._growspace_id,
+                )
+                return
+
+            _LOGGER.info(
+                "Removed %d item(s) with time %s from %s for growspace %s",
+                items_before - items_after,
+                time_str,
+                schedule_key,
+                self._growspace_id,
+            )
+
+            await self._update_config_entry_options(options)
+
+        except KeyError:
+            _LOGGER.warning(
+                "Cannot remove item: schedule '%s' not found for growspace %s.",
+                schedule_key,
+                self._growspace_id,
+            )
+
     async def async_setup(self):
         """Set up the irrigation schedules."""
         await self.async_update_listeners()

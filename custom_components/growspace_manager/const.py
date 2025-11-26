@@ -432,3 +432,32 @@ STRAIN_RECOMMENDATION_SCHEMA = vol.Schema(
         vol.Optional("user_query"): str,
     }
 )
+
+# --- Irrigation Service Schemas ---
+
+SET_IRRIGATION_SETTINGS_SCHEMA = vol.Schema(
+    {
+        vol.Required("growspace_id"): vol.All(str, valid_growspace_id),
+        vol.Optional("irrigation_pump_entity"): str,
+        vol.Optional("drain_pump_entity"): str,
+        vol.Optional("irrigation_duration"): vol.All(vol.Coerce(int), vol.Range(min=1)),
+        vol.Optional("drain_duration"): vol.All(vol.Coerce(int), vol.Range(min=1)),
+    }
+)
+
+_ADD_SCHEDULE_TIME_BASE = {
+    vol.Required("growspace_id"): vol.All(str, valid_growspace_id),
+    vol.Required("time"): str, # Use string for HH:MM:SS format
+    vol.Optional("duration"): vol.All(vol.Coerce(int), vol.Range(min=1)),
+}
+
+ADD_IRRIGATION_TIME_SCHEMA = vol.Schema(_ADD_SCHEDULE_TIME_BASE)
+ADD_DRAIN_TIME_SCHEMA = vol.Schema(_ADD_SCHEDULE_TIME_BASE)
+
+REMOVE_TIME_BASE = {
+    vol.Required("growspace_id"): vol.All(str, valid_growspace_id),
+    vol.Required("time"): str,
+}
+
+REMOVE_IRRIGATION_TIME_SCHEMA = vol.Schema(REMOVE_TIME_BASE)
+REMOVE_DRAIN_TIME_SCHEMA = vol.Schema(REMOVE_TIME_BASE)
