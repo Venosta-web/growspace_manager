@@ -20,7 +20,7 @@ class IrrigationCoordinator:
     """Manages irrigation and drain schedules for a specific growspace."""
 
     def __init__(
-        self, hass: HomeAssistant, config_entry: ConfigEntry, growspace_id: str
+        self, hass: HomeAssistant, config_entry: ConfigEntry, growspace_id: str, main_coordinator: GrowspaceCoordinator
     ):
         """Initialize the irrigation coordinator."""
         self.hass = hass
