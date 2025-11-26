@@ -448,6 +448,11 @@ class GrowspaceOverviewSensor(SensorEntity):
         # Calculate weeks from days
         veg_week = self._days_to_week(max_veg)
         flower_week = self._days_to_week(max_flower)
+        
+        # Get irrigation settings from coordinator options
+        irrigation_options = self.coordinator.options.get("irrigation", {}).get(
+            self.growspace_id, {}
+        )
 
         # Create grid representation
         grid = {}
@@ -490,6 +495,8 @@ class GrowspaceOverviewSensor(SensorEntity):
             "veg_week": veg_week,
             "flower_week": flower_week,
             "max_stage_summary": f"Veg: {max_veg}d (W{veg_week}), Flower: {max_flower}d (W{flower_week})",
+            "irrigation_times": irrigation_options.get("irrigation_times", []),
+            "drain_times": irrigation_options.get("drain_times", []),
             "grid": grid,
         }
 
