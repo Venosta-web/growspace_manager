@@ -123,9 +123,9 @@ class GrowspaceCalendar(CalendarEntity):
                     start_date = dt_util.parse_datetime(start_date_str).date()
                     event_date = start_date + timedelta(days=days_offset)
 
-                    # Create an all-day event
-                    event_start = datetime.combine(event_date, datetime.min.time())
-                    event_end = datetime.combine(event_date, datetime.max.time())
+                    # Create an all-day event and make it timezone-aware
+                    event_start = dt_util.as_local(datetime.combine(event_date, datetime.min.time()))
+                    event_end = dt_util.as_local(datetime.combine(event_date, datetime.max.time()))
 
                     event = CalendarEvent(
                         start=event_start,

@@ -9,35 +9,44 @@ cycle schedule.
 from __future__ import annotations
 
 import logging
-from typing import Any
 from datetime import date, datetime, timedelta
+from typing import Any
 
+from homeassistant.components import conversation
 from homeassistant.components.binary_sensor import BinarySensorEntity
+from homeassistant.components.recorder import history
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.core import HomeAssistant, callback
-from homeassistant.helpers.recorder import get_instance as get_recorder_instance
+from homeassistant.const import STATE_UNAVAILABLE, STATE_UNKNOWN
+from homeassistant.core import Context, HomeAssistant, State, callback
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.event import async_track_state_change_event
-from homeassistant.const import STATE_UNAVAILABLE, STATE_UNKNOWN
-from homeassistant.components.recorder import history
+from homeassistant.helpers.recorder import get_instance as get_recorder_instance
 from homeassistant.util.dt import utcnow
 
-
-from .coordinator import GrowspaceCoordinator
-from .const import DOMAIN, DEFAULT_BAYESIAN_PRIORS, DEFAULT_BAYESIAN_THRESHOLDS
-from .models import EnvironmentState
-from .bayesian_data import DRYING_THRESHOLDS, CURING_THRESHOLDS
+from .bayesian_data import CURING_THRESHOLDS, DRYING_THRESHOLDS
 from .bayesian_evaluator import (
+    ReasonList,
+    async_evaluate_mold_risk_trend,
     async_evaluate_stress_trend,
-    evaluate_direct_temp_stress,
-    evaluate_direct_humidity_stress,
-    evaluate_direct_vpd_stress,
     evaluate_direct_co2_stress,
+    evaluate_direct_humidity_stress,
+    evaluate_direct_temp_stress,
+    evaluate_direct_vpd_stress,
+    evaluate_optimal_co2,
     evaluate_optimal_temperature,
     evaluate_optimal_vpd,
-    evaluate_optimal_co2,
 )
+from .const import (
+    CONF_AI_ENABLED,
+    CONF_ASSISTANT_ID,
+    CONF_NOTIFICATION_PERSONALITY,
+    DEFAULT_BAYESIAN_PRIORS,
+    DEFAULT_BAYESIAN_THRESHOLDS,
+    DOMAIN,
+)
+from .coordinator import GrowspaceCoordinator
+from .models import EnvironmentState
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -153,7 +162,7 @@ class BayesianEnvironmentSensor(BinarySensorEntity):
         )
 
         self._sensor_states = {}
-        self._reasons: list[tuple[float, str]] = []
+        self._reasons: ReasonList = []
         self._probability = 0.0
         self._last_notification_sent: datetime | None = None
         self._notification_cooldown = timedelta(minutes=5)
@@ -310,7 +319,8 @@ class BayesianEnvironmentSensor(BinarySensorEntity):
             numeric_states = [
                 (s.last_updated, float(s.state))
                 for s in states
-                if s.state not in [STATE_UNKNOWN, STATE_UNAVAILABLE]
+                if isinstance(s, State)
+                and s.state not in [STATE_UNKNOWN, STATE_UNAVAILABLE]
                 and s.state is not None
             ]
 
@@ -379,6 +389,99 @@ class BayesianEnvironmentSensor(BinarySensorEntity):
 
         self._last_notification_sent = now
 
+        # AI Personality Injection
+        final_message = message
+        ai_settings = self.coordinator.options.get("ai_settings", {})
+
+        if ai_settings.get(CONF_AI_ENABLED) and ai_settings.get(CONF_ASSISTANT_ID):
+            try:
+                personality = ai_settings.get(CONF_NOTIFICATION_PERSONALITY, "Standard")
+                agent_id = ai_settings.get(CONF_ASSISTANT_ID)
+
+                # Format sensor readings for context
+                readings = []
+                for k, v in self._sensor_states.items():
+                    if v is not None and not isinstance(v, bool):
+                        readings.append(f"{k}: {v}")
+                readings_str = ", ".join(readings)
+
+                # Build a more sophisticated prompt for the AI
+                system_context = (
+                    f"You are a {personality} cannabis cultivation assistant. "
+                    "Your job is to rewrite alerts in your unique style while keeping them informative.\n\n"
+                )
+
+                if personality.lower() == "scientific":
+                    system_context += (
+                        "Use precise technical terminology. Be analytical and data-driven. "
+                        "Reference specific thresholds and values."
+                    )
+                elif personality.lower() == "chill stoner":
+                    system_context += (
+                        "Be laid-back and friendly, but still helpful. Use casual language. "
+                        "Keep the vibe relaxed but don't skip important details."
+                    )
+                elif personality.lower() == "strict coach":
+                    system_context += (
+                        "Be direct and authoritative. Emphasize urgency where appropriate. "
+                        "Make it clear what needs to be done immediately."
+                    )
+                elif personality.lower() == "pirate":
+                    system_context += (
+                        "Write like a pirate (arr, matey, etc.) but maintain clarity. "
+                        "Make it fun while conveying the essential information."
+                    )
+                else:  # Standard
+                    system_context += (
+                        "Be clear, professional, and helpful. "
+                        "Keep the message concise but informative."
+                    )
+
+                prompt = (
+                    f"{system_context}\n\n"
+                    f"Original Alert: {message}\n"
+                    f"Current Sensor Data: {readings_str}\n"
+                    f"Growspace: {growspace.name}\n\n"
+                    "Rewrite this alert in 1-2 sentences. Include specific sensor values if they're relevant to the alert."
+                )
+
+                _LOGGER.debug("Sending notification rewrite prompt to AI assistant")
+
+                result = await conversation.async_converse(
+                    self.hass,
+                    text=prompt,
+                    conversation_id=None,
+                    context=Context(),
+                    agent_id=agent_id,
+                )
+
+                if (
+                    result
+                    and result.response
+                    and result.response.speech
+                    and result.response.speech.get("plain")
+                ):
+                    rewritten = result.response.speech["plain"]["speech"]
+                    # Validate the response isn't too long
+                    if len(rewritten) < 250:  # Reasonable notification length
+                        final_message = rewritten
+                        _LOGGER.info(
+                            "AI rewrote notification in %s style", personality
+                        )
+                    else:
+                        _LOGGER.warning(
+                            "AI response too long (%d chars), using default",
+                            len(rewritten),
+                        )
+                else:
+                    _LOGGER.warning(
+                        "AI returned empty response, using default message"
+                    )
+
+            except Exception as err:
+                _LOGGER.error("Failed to process AI notification: %s", err)
+                # Fallback to original message is automatic
+
         # Get the service name (e.g., "mobile_app_my_phone")
         notification_service = growspace.notification_target.replace("notify.", "")
 
@@ -387,13 +490,16 @@ class BayesianEnvironmentSensor(BinarySensorEntity):
                 "notify",
                 notification_service,
                 {
-                    "message": message,
+                    "message": final_message,
                     "title": title,
                 },
                 blocking=False,
             )
             _LOGGER.info(
-                "Notification sent to %s: %s - %s", notification_service, title, message
+                "Notification sent to %s: %s - %s",
+                notification_service,
+                title,
+                final_message,
             )
         except (AttributeError, TypeError, ValueError) as e:
             _LOGGER.error(
@@ -413,8 +519,7 @@ class BayesianEnvironmentSensor(BinarySensorEntity):
         new_state_on = self.is_on
 
         if new_state_on != old_state_on:
-            notification = self.get_notification_title_message(new_state_on)
-            if notification:
+            if notification := self.get_notification_title_message(new_state_on):
                 title, message = notification
                 await self._send_notification(title, message)
 
@@ -493,9 +598,12 @@ class BayesianStressSensor(BayesianEnvironmentSensor):
         observations = []
 
         # 1. ASYNCHRONOUS TREND ANALYSIS (Logic moved to bayesian_evaluator.py)
-        trend_obs, trend_reasons = await async_evaluate_stress_trend(self, state)
+        trend_obs, trend_reasons, trend_states = await async_evaluate_stress_trend(
+            self, state
+        )
         observations.extend(trend_obs)
         self._reasons.extend(trend_reasons)
+        self._sensor_states.update(trend_states)
 
         # 2. DIRECT OBSERVATIONS (Logic moved to bayesian_evaluator.py)
 
@@ -583,7 +691,7 @@ class LightCycleVerificationSensor(BinarySensorEntity):
 
         max_veg = max(
             (
-                self.coordinator._calculate_days(p.veg_start)
+                self.coordinator.calculate_days(p.veg_start)
                 for p in plants
                 if p.veg_start
             ),
@@ -591,7 +699,7 @@ class LightCycleVerificationSensor(BinarySensorEntity):
         )
         max_flower = max(
             (
-                self.coordinator._calculate_days(p.flower_start)
+                self.coordinator.calculate_days(p.flower_start)
                 for p in plants
                 if p.flower_start
             ),
@@ -790,84 +898,13 @@ class BayesianMoldRiskSensor(BayesianEnvironmentSensor):
         state = self._get_base_environment_state()
         observations = []
 
-        self._sensor_states["humidity_trend"] = "stable"
-        self._sensor_states["vpd_trend"] = "stable"
-
-        # --- Trend Analysis for Mold Risk ---
-        # Rising humidity trend is a risk
-        trend_sensor_id = self.env_config.get("humidity_trend_sensor")
-        stats_sensor_id = self.env_config.get("humidity_stats_sensor")
-        if trend_sensor_id:
-            if (
-                trend_state := self.hass.states.get(trend_sensor_id)
-            ) and trend_state.state == "on":
-                self._sensor_states["humidity_trend"] = "rising"
-                prob = (0.90, 0.20)
-                observations.append(prob)
-                self._reasons.append((prob[0], "Humidity rising"))
-        elif stats_sensor_id:
-            if (
-                (stats_state := self.hass.states.get(stats_sensor_id))
-                and (change := stats_state.attributes.get("change")) is not None
-                and change > 1.0
-            ):
-                self._sensor_states["humidity_trend"] = "rising"
-                prob = (0.85, 0.25)
-                observations.append(prob)
-                self._reasons.append((prob[0], "Humidity rising"))
-
-        # Falling VPD trend is a risk
-        trend_sensor_id = self.env_config.get("vpd_trend_sensor")
-        stats_sensor_id = self.env_config.get("vpd_stats_sensor")
-        if trend_sensor_id:
-            if (
-                trend_state := self.hass.states.get(trend_sensor_id)
-            ) and trend_state.state == "off":
-                self._sensor_states["vpd_trend"] = "falling"
-                prob = (0.90, 0.20)
-                observations.append(prob)
-                self._reasons.append((prob[0], "VPD falling"))
-        elif stats_sensor_id:
-            if (
-                (stats_state := self.hass.states.get(stats_sensor_id))
-                and (change := stats_state.attributes.get("change")) is not None
-                and change < -0.1
-            ):
-                self._sensor_states["vpd_trend"] = "falling"
-                prob = (0.85, 0.25)
-                observations.append(prob)
-                self._reasons.append((prob[0], "VPD falling"))
-
-        # --- Direct Observations ---
-        # Fallback manual trend analysis for mold risk
-        for sensor_key in ["humidity", "vpd"]:
-            if not self.env_config.get(
-                f"{sensor_key}_trend_sensor"
-            ) and not self.env_config.get(f"{sensor_key}_stats_sensor"):
-                duration = self.env_config.get(f"{sensor_key}_trend_duration", 30)
-                # For mold, a simple threshold isn't as useful as just detecting the trend direction
-                # We pass a high threshold for humidity (rising) and low for VPD (falling)
-                # to effectively just check direction
-                threshold = 101 if sensor_key == "humidity" else -1
-                sensitivity = self.env_config.get(
-                    f"{sensor_key}_trend_sensitivity", 0.5
-                )
-                if self.env_config.get(f"{sensor_key}_sensor"):
-                    analysis = await self._async_analyze_sensor_trend(
-                        self.env_config[f"{sensor_key}_sensor"], duration, threshold
-                    )
-                    self._sensor_states[f"{sensor_key}_trend"] = analysis["trend"]
-                    # Add observation if humidity is rising OR vpd is falling
-                    if (sensor_key == "humidity" and analysis["trend"] == "rising") or (
-                        sensor_key == "vpd" and analysis["trend"] == "falling"
-                    ):
-                        p_true = 0.5 + (sensitivity * 0.45)
-                        p_false = 0.5 - (sensitivity * 0.4)
-                        prob = (p_true, p_false)
-                        observations.append(prob)
-                        self._reasons.append(
-                            (prob[0], f"{sensor_key.capitalize()} trend")
-                        )
+        # --- Trend Analysis for Mold Risk (Moved to bayesian_evaluator.py) ---
+        trend_obs, trend_reasons, trend_states = await async_evaluate_mold_risk_trend(
+            self, state
+        )
+        observations.extend(trend_obs)
+        self._reasons.extend(trend_reasons)
+        self._sensor_states.update(trend_states)
 
         if state.flower_days >= 35:
             prob = (0.80, 0.20)
@@ -883,7 +920,7 @@ class BayesianMoldRiskSensor(BayesianEnvironmentSensor):
                 prob = self.env_config.get("prob_mold_lights_off", (0.75, 0.30))
                 observations.append(prob)
                 self._reasons.append((prob[0], "Lights Off"))
-                if state.humidity is not None and state.humidity > 50:
+                if state.humidity is not None and state.humidity > 60:
                     prob = self.env_config.get(
                         "prob_mold_humidity_high_night", (0.99, 0.10)
                     )
@@ -891,7 +928,7 @@ class BayesianMoldRiskSensor(BayesianEnvironmentSensor):
                     self._reasons.append(
                         (prob[0], f"Night Humidity High ({state.humidity})")
                     )
-                if state.vpd is not None and state.vpd < 1.3:
+                if state.vpd is not None and state.vpd < 0.8:
                     prob = self.env_config.get("prob_mold_vpd_low_night", (0.95, 0.20))
                     observations.append(prob)
                     self._reasons.append((prob[0], f"Night VPD Low ({state.vpd})"))

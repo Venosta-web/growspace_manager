@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from . import plant, strain_library, debug
-from ..service_schemas import (
+from ..const import (
     ADD_GROWSPACE_SCHEMA,
     REMOVE_GROWSPACE_SCHEMA,
     ADD_PLANT_SCHEMA,
@@ -22,4 +22,7 @@ from ..service_schemas import (
     DEBUG_LIST_GROWSPACES_SCHEMA,
     DEBUG_RESET_SPECIAL_GROWSPACES_SCHEMA,
     DEBUG_CONSOLIDATE_DUPLICATE_SPECIAL_SCHEMA,
+    ASK_GROW_ADVICE_SCHEMA,
+    ANALYZE_ALL_GROWSPACES_SCHEMA,
+    STRAIN_RECOMMENDATION_SCHEMA,
 )
