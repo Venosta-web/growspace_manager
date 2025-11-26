@@ -40,7 +40,6 @@ from .const import (
     UPDATE_STRAIN_META_SCHEMA,
     ASK_GROW_ADVICE_SCHEMA,
     STORAGE_KEY,
-    STORAGE_KEY_STRAIN_LIBRARY,
     STORAGE_VERSION,
     SWITCH_PLANT_SCHEMA,
     TAKE_CLONE_SCHEMA,
@@ -98,12 +97,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     data = await store.async_load() or {}
 
     # Initialize and load Strain Library (global instance)
-    strain_library_instance = StrainLibrary(
-        hass,
-        storage_version=STORAGE_VERSION,
-        storage_key=STORAGE_KEY_STRAIN_LIBRARY,
-    )
-    await strain_library_instance.load()
+    strain_library_instance = StrainLibrary(hass)
+    await strain_library_instance.async_setup()
     hass.data.setdefault(DOMAIN, {})
     hass.data[DOMAIN]["strain_library"] = strain_library_instance
 

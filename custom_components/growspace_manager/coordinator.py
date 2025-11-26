@@ -18,7 +18,6 @@ from .const import (
     DATE_FIELDS,
     DOMAIN,
     STORAGE_VERSION,
-    STORAGE_KEY_STRAIN_LIBRARY,
     SPECIAL_GROWSPACES,
 )
 import logging
@@ -85,7 +84,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
         # Initialize strain library
         if strain_library is None:
             # Fallback for testing or legacy init
-            self.strains = StrainLibrary(hass, STORAGE_VERSION, STORAGE_KEY_STRAIN_LIBRARY)
+            self.strains = StrainLibrary(hass)
         else:
             self.strains = strain_library
 
@@ -748,13 +747,13 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
             _LOGGER.exception("Error loading growspaces: %s", e, exc_info=True)
             self.growspaces = {}
 
-        # ✅ Load notification tracking
+        # Load notification tracking
         self._notifications_sent = data.get("notifications_sent", {})
 
-        # ✅ Load notification switch states
+        # Load notification switch states
         self._notifications_enabled = data.get("notifications_enabled", {})
 
-        # ✅ Ensure all growspaces have a notification enabled state (default True)
+        # Ensure all growspaces have a notification enabled state (default True)
         for growspace_id in self.growspaces.keys():
             if growspace_id not in self._notifications_enabled:
                 self._notifications_enabled[growspace_id] = True
