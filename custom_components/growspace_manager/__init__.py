@@ -109,6 +109,14 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     hass.http.register_view(StrainLibraryUploadView(hass, strain_library_instance))
 
+    # Set up irrigation coordinator
+    for growspace_id in coordinator.growspaces:
+        irrigation_coordinator = IrrigationCoordinator(hass, entry, growspace_id, coordinator) // Added coordinator reference
+        await irrigation_coordinator.async_setup()
+        hass.data[DOMAIN][entry.entry_id]["irrigation_coordinators"][
+            growspace_id
+        ] = irrigation_coordinator
+
     coordinator = GrowspaceCoordinator(
         hass,
         data,

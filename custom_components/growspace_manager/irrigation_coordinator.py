@@ -26,6 +26,7 @@ class IrrigationCoordinator:
         self.hass = hass
         self._config_entry = config_entry
         self._growspace_id = growspace_id
+        self._main_coordinator = main_coordinator
         self._listeners: list[callable] = []
         self._running_tasks: dict[str, asyncio.Task[Any]] = {}
 
@@ -43,6 +44,10 @@ class IrrigationCoordinator:
         self.hass.config_entries.async_update_entry(
             self._config_entry, options=new_options
         )
+        self._main_coordinator.options = new_options
+        self._main_coordinator.update_data_property()
+        self._main_coordinator.async_set_updated_data(self._main_coordinator.data)
+        
         await self.async_update_listeners()
 
     async def async_set_settings(self, new_settings: dict[str, Any]) -> None:
