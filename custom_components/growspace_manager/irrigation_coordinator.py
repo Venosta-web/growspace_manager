@@ -1,5 +1,6 @@
 """Coordinator for handling irrigation and drain schedules."""
 from __future__ import annotations
+from copy import deepcopy
 
 import asyncio
 import logging
