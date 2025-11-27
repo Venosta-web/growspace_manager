@@ -286,6 +286,8 @@ class StrainLibrary:
         if image_base64:
             image_path = await self._save_strain_image(strain, phenotype, image_base64)
             pheno_data["image_path"] = image_path
+        elif image_path:
+            pheno_data["image_path"] = image_path
 
         # 5. INSERT or REPLACE Phenotype Data
         pheno_data = {k: v for k, v in pheno_data.items() if v is not None}
@@ -347,7 +349,6 @@ class StrainLibrary:
         image_base64: str,
     ) -> str:
         """Decode and save a strain image to disk."""
-        # ... [Image saving logic remains the same] ...
         try:
             # Handle Data URI if present
             if image_base64.startswith("data:"):
@@ -468,10 +469,16 @@ class StrainLibrary:
             )
             
             for pheno_name, pheno_data in phenotypes.items():
+                # Fix image path if it's from an export (relative path)
+                image_path = pheno_data.get("image_path")
+                if image_path and image_path.startswith("images/"):
+                     filename = os.path.basename(image_path)
+                     image_path = f"/local/growspace_manager/strains/{filename}"
+
                 await self.add_strain(
                     strain=strain_name, phenotype=pheno_name,
                     flower_days_min=pheno_data.get("flower_days_min"), flower_days_max=pheno_data.get("flower_days_max"),
-                    description=pheno_data.get("description"), image_path=pheno_data.get("image_path"),
+                    description=pheno_data.get("description"), image_path=image_path,
                     image_crop_meta=pheno_data.get("image_crop_meta"),
                 )
                 
@@ -594,5 +601,5 @@ class StrainLibrary:
                         shutil.copyfileobj(source, target)
 
         # After sync import, call async import data method
-        self.hass.async_create_task(self.import_library(library_data, replace=not merge))
+        self.hass.create_task(self.import_library(library_data, replace=not merge))
         return len(self.strains) # Return existing count immediately, or use a reload pattern

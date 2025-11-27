@@ -745,8 +745,12 @@ class StrainLibrarySensor(CoordinatorEntity[GrowspaceCoordinator], SensorEntity)
                         "total_harvests": 0,
                     }
 
-                # Extract metadata, excluding the raw harvest list
-                pheno_meta = {k: v for k, v in pheno_data.items() if k != "harvests"}
+                # Extract metadata, excluding the raw harvest list and large fields
+                pheno_meta = {
+                    k: v
+                    for k, v in pheno_data.items()
+                    if k not in ["harvests", "description", "image_path", "image_crop_meta"]
+                }
 
                 # Merge them
                 pheno_analytics[pheno_name] = {**stats, **pheno_meta}

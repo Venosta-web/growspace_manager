@@ -354,10 +354,15 @@ async def _register_services(
     async def get_strain_library_wrapper(
         call: ServiceCall, _handler=strain_library_services.handle_get_strain_library
     ):
-        await _handler(hass, coordinator, strain_library_instance, call)
+        result = await _handler(hass, coordinator, strain_library_instance, call)
+        _LOGGER.debug("get_strain_library_wrapper result type: %s", type(result))
+        return result
 
     hass.services.async_register(
-        DOMAIN, "get_strain_library", get_strain_library_wrapper
+        DOMAIN,
+        "get_strain_library",
+        get_strain_library_wrapper,
+        supports_response=SupportsResponse.ONLY,
     )
     _LOGGER.debug("Registered service: get_strain_library")
 
