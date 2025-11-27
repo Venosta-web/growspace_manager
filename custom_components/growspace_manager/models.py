@@ -33,6 +33,7 @@ class Growspace:
     created_at: str = field(default_factory=lambda: date.today().isoformat())
     device_id: str | None = None
     environment_config: dict[str, Any] = field(default_factory=dict)
+    irrigation_config: dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict:
         """Convert the dataclass instance to a dictionary.
