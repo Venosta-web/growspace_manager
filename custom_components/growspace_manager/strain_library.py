@@ -594,5 +594,5 @@ class StrainLibrary:
                         shutil.copyfileobj(source, target)
 
         # After sync import, call async import data method
-        self.hass.async_create_task(self.import_library(library_data, replace=not merge))
+        self.hass.create_task(self.import_library(library_data, replace=not merge))
         return len(self.strains) # Return existing count immediately, or use a reload pattern
