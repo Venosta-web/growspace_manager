@@ -93,6 +93,7 @@ MAX_ROWS = 20
 MAX_PLANTS_PER_ROW = 20
 
 # Strain Library defaults
+DB_FILE_STRAIN_LIBRARY = "strain_library.db"
 STORAGE_KEY_STRAIN_LIBRARY = "strain_library"
 
 DEFAULT_BAYESIAN_PRIORS = {

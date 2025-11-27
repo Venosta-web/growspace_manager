@@ -1,9 +1,8 @@
-"""Manages the strain library for the Growspace Manager integration.
+"""Manages the strain library for the Growspace Manager integration using SQLite.
 
 This file defines the `StrainLibrary` class, which is responsible for storing,
-retrieving, and analyzing data about different cannabis strains. It tracks harvest
-analytics, such as vegetative and flowering durations, to provide insights
-into strain performance.
+retrieving, and analyzing data about different cannabis strains using a dedicated
+asynchronous SQLite database (aiosqlite).
 """
 
 from __future__ import annotations
@@ -16,99 +15,170 @@ import os
 import shutil
 import zipfile
 from typing import Any
+from collections.abc import Mapping
 
-from homeassistant.helpers.storage import Store
+import aiosqlite
+from homeassistant.core import HomeAssistant
 from homeassistant.util import slugify
+
+from .const import DB_FILE_STRAIN_LIBRARY
 
 _LOGGER = logging.getLogger(__name__)
 
 
+# Database Schema Definition
+STRAIN_LIBRARY_SCHEMA = """
+CREATE TABLE IF NOT EXISTS strains (
+    strain_id INTEGER PRIMARY KEY,
+    strain_name TEXT UNIQUE NOT NULL,
+    breeder TEXT,
+    type TEXT,
+    lineage TEXT,
+    sex TEXT,
+    sativa_percentage INTEGER,
+    indica_percentage INTEGER
+);
+CREATE TABLE IF NOT EXISTS phenotypes (
+    phenotype_id INTEGER PRIMARY KEY,
+    strain_id INTEGER,
+    phenotype_name TEXT NOT NULL,
+    description TEXT,
+    image_path TEXT,
+    image_crop_meta TEXT,
+    flower_days_min INTEGER,
+    flower_days_max INTEGER,
+    UNIQUE (strain_id, phenotype_name),
+    FOREIGN KEY(strain_id) REFERENCES strains(strain_id)
+);
+CREATE TABLE IF NOT EXISTS harvests (
+    harvest_id INTEGER PRIMARY KEY,
+    phenotype_id INTEGER,
+    veg_days INTEGER NOT NULL,
+    flower_days INTEGER NOT NULL,
+    harvest_date TEXT NOT NULL,
+    FOREIGN KEY(phenotype_id) REFERENCES phenotypes(phenotype_id)
+);
+"""
+
+
 class StrainLibrary:
-    """A class to manage the strain library with harvest analytics.
+    """A class to manage the strain library with harvest analytics using a SQLite DB."""
 
-    This class handles the loading, saving, and manipulation of strain data
-    using a hierarchical structure:
-    {
-      "Strain Name": {
-        "phenotypes": {
-          "Pheno Name": { "harvests": [...] },
-          "default": { "harvests": [...] }
-        },
-        "meta": { "breeder": "...", "type": "..." }
-      }
-    }
-    """
-
-    def __init__(self, hass, storage_version: int, storage_key: str) -> None:
+    def __init__(self, hass: HomeAssistant) -> None:
         """Initialize the StrainLibrary.
 
         Args:
             hass: The Home Assistant instance.
-            storage_version: The version of the storage schema.
-            storage_key: The key under which to store the data in Home Assistant's
-                         storage.
         """
         self.hass = hass
-        self.store = Store(hass, storage_version, storage_key)
-        self.strains: dict[str, dict[str, Any]] = {}
+        self._db_path = hass.config.path(DB_FILE_STRAIN_LIBRARY)
+        self._db: aiosqlite.Connection | None = None
+        self.strains: dict[str, Any] = {} # In-memory cache of metadata only
+
+    async def async_setup(self) -> None:
+        """Set up the SQLite database connection and ensure schema is present."""
+        if self._db is None:
+            self._db = await aiosqlite.connect(self._db_path, loop=self.hass.loop)
+            self._db.row_factory = aiosqlite.Row # Use dict-like rows
+
+        async with self._db.cursor() as cursor:
+            await cursor.executescript(STRAIN_LIBRARY_SCHEMA)
+            await self._db.commit()
+
+        _LOGGER.info("Strain library database successfully opened and schema verified at %s", self._db_path)
+        await self.load()
 
     async def load(self) -> None:
-        """Load the strain library from persistent storage.
+        """Load the strain library metadata from the database into in-memory cache."""
+        if self._db is None:
+            await self.async_setup()
 
-        Performs migration: renames 'notes' key to 'description' if found.
+        self.strains = {}
+        query = """
+            SELECT
+                s.strain_id, s.strain_name, s.breeder, s.type, s.lineage, s.sex, s.sativa_percentage, s.indica_percentage,
+                p.phenotype_id, p.phenotype_name, p.description, p.image_path, p.image_crop_meta, p.flower_days_min, p.flower_days_max
+            FROM strains s
+            LEFT JOIN phenotypes p ON s.strain_id = p.strain_id
         """
-        data = await self.store.async_load()
-        if isinstance(data, dict):
-            self.strains = data
 
-            # Migration: Rename 'notes' to 'description'
-            migrated_count = 0
-            for strain_data in self.strains.values():
-                if "phenotypes" in strain_data:
-                    for pheno_data in strain_data["phenotypes"].values():
-                        if "notes" in pheno_data and "description" not in pheno_data:
-                            pheno_data["description"] = pheno_data.pop("notes")
-                            migrated_count += 1
+        async with self._db.execute(query) as cursor:
+            rows = await cursor.fetchall()
+            for row in rows:
+                strain_name = row['strain_name']
+                phenotype_name = row['phenotype_name'] or 'default'
 
-            if migrated_count > 0:
-                _LOGGER.info("Migrated %d strain phenotypes from 'notes' to 'description'", migrated_count)
-                await self.save()
+                if strain_name not in self.strains:
+                    self.strains[strain_name] = {
+                        "meta": {
+                            k: row[k] for k in ['breeder', 'type', 'lineage', 'sex', 'sativa_percentage', 'indica_percentage'] if row[k] is not None
+                        },
+                        "phenotypes": {}
+                    }
+                
+                if row['phenotype_id'] is not None:
+                    # Fetch and convert JSON blob
+                    image_crop_meta = row['image_crop_meta']
+                    try:
+                        image_crop_meta = json.loads(image_crop_meta) if image_crop_meta else None
+                    except json.JSONDecodeError:
+                        _LOGGER.warning("Could not decode image_crop_meta for %s (%s)", strain_name, phenotype_name)
+                        image_crop_meta = None
 
-            _LOGGER.info("Loaded strain library with %d strains", len(self.strains))
-        else:
-            self.strains = {}
-            _LOGGER.info("Initialized empty strain library (no valid data found)")
+                    phenotype_data = {
+                        "phenotype_id": row['phenotype_id'],
+                        "description": row['description'],
+                        "image_path": row['image_path'],
+                        "image_crop_meta": image_crop_meta,
+                        "flower_days_min": row['flower_days_min'],
+                        "flower_days_max": row['flower_days_max'],
+                        "harvests": await self._fetch_harvests(row['phenotype_id'])
+                    }
+
+                    # Filter None values from phenotype_data
+                    phenotype_data = {k: v for k, v in phenotype_data.items() if v is not None}
+                    self.strains[strain_name]["phenotypes"][phenotype_name] = phenotype_data
+
+        _LOGGER.info("Loaded strain library metadata for %d strains", len(self.strains))
+
+    async def _fetch_harvests(self, phenotype_id: int) -> list[Mapping]:
+        """Fetch all harvest records for a given phenotype ID."""
+        query = """
+            SELECT veg_days, flower_days, harvest_date FROM harvests WHERE phenotype_id = ?
+        """
+        async with self._db.execute(query, (phenotype_id,)) as cursor:
+            # We don't need to return harvest_id, only the data required by sensor
+            return [dict(row) for row in await cursor.fetchall()]
 
     async def save(self) -> None:
-        """Save the current strain library to persistent storage."""
-        _LOGGER.debug("Saving strain library with %d strains", len(self.strains))
-        await self.store.async_save(self.strains)
+        """No-op for SQLite implementation, changes are committed immediately by caller."""
+        pass # Changes are committed immediately by the methods below
 
     async def record_harvest(
         self, strain: str, phenotype: str, veg_days: int, flower_days: int
     ) -> None:
-        """Record a harvest event for a specific strain and phenotype.
-
-        Args:
-            strain: The name of the harvested strain.
-            phenotype: The phenotype of the harvested strain.
-            veg_days: The number of days spent in the vegetative stage.
-            flower_days: The number of days spent in the flowering stage.
-        """
+        """Record a harvest event for a specific strain and phenotype."""
         strain = strain.strip()
         phenotype = phenotype.strip() or "default"
 
-        if strain not in self.strains:
-            self.strains[strain] = {"phenotypes": {}, "meta": {}}
+        phenotype_id = await self._ensure_strain_and_phenotype_exist(strain, phenotype)
+        harvest_date = datetime.now().isoformat()
 
-        if phenotype not in self.strains[strain]["phenotypes"]:
-            self.strains[strain]["phenotypes"][phenotype] = {"harvests": []}
-
-        harvest_data = {
-            "veg_days": veg_days,
-            "flower_days": flower_days,
-        }
-        self.strains[strain]["phenotypes"][phenotype]["harvests"].append(harvest_data)
+        query = """
+            INSERT INTO harvests (phenotype_id, veg_days, flower_days, harvest_date)
+            VALUES (?, ?, ?, ?)
+        """
+        await self._db.execute(query, (phenotype_id, veg_days, flower_days, harvest_date))
+        await self._db.commit()
+        
+        # Invalidate the cache for this phenotype's harvests to force recalculation on next load
+        if strain in self.strains and phenotype in self.strains[strain]['phenotypes']:
+             self.strains[strain]['phenotypes'][phenotype]['harvests'].append({
+                 "veg_days": veg_days, 
+                 "flower_days": flower_days, 
+                 "harvest_date": harvest_date
+             })
+             
         _LOGGER.info(
             "Recorded harvest for %s (%s): veg=%d days, flower=%d days",
             strain,
@@ -116,7 +186,36 @@ class StrainLibrary:
             veg_days,
             flower_days,
         )
-        await self.save()
+
+    async def _ensure_strain_and_phenotype_exist(self, strain_name: str, phenotype_name: str) -> int:
+        """Ensure the strain and phenotype records exist, returning the phenotype ID."""
+        # 1. Ensure Strain exists (using current in-memory meta if possible)
+        async with self._db.execute("SELECT strain_id FROM strains WHERE strain_name = ?", (strain_name,)) as cursor:
+            strain_row = await cursor.fetchone()
+            if not strain_row:
+                await self.add_strain(strain_name, phenotype_name) # Uses internal method for initial add
+                async with self._db.execute("SELECT strain_id FROM strains WHERE strain_name = ?", (strain_name,)) as c:
+                     strain_row = await c.fetchone()
+                     if not strain_row:
+                         raise RuntimeError(f"Failed to create and retrieve strain ID for {strain_name}")
+            strain_id = strain_row[0]
+
+        # 2. Ensure Phenotype exists
+        query = "SELECT phenotype_id FROM phenotypes WHERE strain_id = ? AND phenotype_name = ?"
+        async with self._db.execute(query, (strain_id, phenotype_name)) as cursor:
+            phenotype_row = await cursor.fetchone()
+            if not phenotype_row:
+                # Phenotype does not exist, insert default phenotype record
+                insert_query = """
+                    INSERT INTO phenotypes (strain_id, phenotype_name) VALUES (?, ?)
+                """
+                await self._db.execute(insert_query, (strain_id, phenotype_name))
+                await self._db.commit()
+                # Re-query for the new ID
+                async with self._db.execute(query, (strain_id, phenotype_name)) as c:
+                    phenotype_row = await c.fetchone()
+
+            return phenotype_row[0]
 
     async def add_strain(
         self,
@@ -135,69 +234,84 @@ class StrainLibrary:
         sativa_percentage: int | None = None,
         indica_percentage: int | None = None,
     ) -> None:
-        """Add a single strain/phenotype combination to the library.
-
-        Args:
-            strain: The name of the strain to add.
-            phenotype: The phenotype of the strain (optional).
-            breeder: The breeder name.
-            strain_type: The strain type (e.g., Indica, Sativa).
-            lineage: The lineage or parent strains.
-            sex: The sex of the strain (e.g., Feminized, Regular, Autoflower).
-            flower_days_min: Minimum flowering days.
-            flower_days_max: Maximum flowering days.
-            description: Grower description or notes.
-            image_base64: Base64 encoded image string.
-            image_path: Path to an existing image.
-            image_crop_meta: Metadata for cropping the image in the frontend.
-            sativa_percentage: Percentage of Sativa genetics (0-100).
-            indica_percentage: Percentage of Indica genetics (0-100).
-        """
+        """Add a single strain/phenotype combination to the database."""
         strain = strain.strip()
         phenotype = phenotype.strip() if phenotype else "default"
 
-        if strain not in self.strains:
-            self.strains[strain] = {"phenotypes": {}, "meta": {}}
-            _LOGGER.info("Created new strain entry: %s", strain)
+        if strain_type and str(strain_type).lower() == "hybrid":
+            if sativa_percentage is not None and indica_percentage is None:
+                indica_percentage = 100 - sativa_percentage
+            elif indica_percentage is not None and sativa_percentage is None:
+                sativa_percentage = 100 - indica_percentage
 
-        if phenotype not in self.strains[strain]["phenotypes"]:
-            self.strains[strain]["phenotypes"][phenotype] = {"harvests": []}
-            _LOGGER.info("Added phenotype %s to strain %s", phenotype, strain)
-            await self.save()
+            if sativa_percentage is not None and indica_percentage is not None and sativa_percentage + indica_percentage > 100:
+                raise ValueError("Combined Sativa/Indica percentage cannot exceed 100%.")
 
-        # Apply metadata if provided
-        if any(
-            [
-                breeder,
-                strain_type,
-                lineage,
-                sex,
-                flower_days_min,
-                flower_days_max,
-                description,
-                image_base64,
-                image_path,
-                image_crop_meta,
-                sativa_percentage is not None,
-                indica_percentage is not None,
-            ]
-        ):
-            await self.set_strain_meta(
-                strain=strain,
-                phenotype=phenotype,
-                breeder=breeder,
-                strain_type=strain_type,
-                lineage=lineage,
-                sex=sex,
-                flower_days_min=flower_days_min,
-                flower_days_max=flower_days_max,
-                description=description,
-                image_base64=image_base64,
-                image_path=image_path,
-                image_crop_meta=image_crop_meta,
-                sativa_percentage=sativa_percentage,
-                indica_percentage=indica_percentage,
-            )
+        # 1. INSERT or IGNORE Strain Metadata
+        strain_data = {
+            "breeder": breeder, "type": strain_type, "lineage": lineage, "sex": sex,
+            "sativa_percentage": sativa_percentage, "indica_percentage": indica_percentage
+        }
+        strain_data = {k: v for k, v in strain_data.items() if v is not None}
+        
+        strain_fields = ", ".join(["strain_name"] + list(strain_data.keys()))
+        strain_values = ", ".join(["?"] * (len(strain_data) + 1))
+        
+        query = f"""
+            INSERT OR REPLACE INTO strains ({strain_fields})
+            VALUES ({strain_values})
+            ON CONFLICT(strain_name) DO UPDATE SET
+                breeder=COALESCE(excluded.breeder, breeder),
+                type=COALESCE(excluded.type, type),
+                lineage=COALESCE(excluded.lineage, lineage),
+                sex=COALESCE(excluded.sex, sex),
+                sativa_percentage=COALESCE(excluded.sativa_percentage, sativa_percentage),
+                indica_percentage=COALESCE(excluded.indica_percentage, indica_percentage)
+            WHERE strain_name = excluded.strain_name
+        """
+        await self._db.execute(query, (strain,) + tuple(strain_data.values()))
+        await self._db.commit()
+
+        # 2. Get Strain ID
+        async with self._db.execute("SELECT strain_id FROM strains WHERE strain_name = ?", (strain,)) as cursor:
+            strain_id = (await cursor.fetchone())[0]
+
+        # 3. Handle Phenotype-specific data
+        pheno_data = {
+            "description": description, "image_crop_meta": json.dumps(image_crop_meta) if image_crop_meta is not None else None,
+            "flower_days_min": flower_days_min, "flower_days_max": flower_days_max
+        }
+
+        # 4. Handle Image Saving
+        if image_base64:
+            image_path = await self._save_strain_image(strain, phenotype, image_base64)
+            pheno_data["image_path"] = image_path
+
+        # 5. INSERT or REPLACE Phenotype Data
+        pheno_data = {k: v for k, v in pheno_data.items() if v is not None}
+
+        if pheno_data:
+            pheno_fields = ", ".join(["strain_id", "phenotype_name"] + list(pheno_data.keys()))
+            pheno_values = ", ".join(["?"] * (len(pheno_data) + 2))
+            
+            # The Phenotype ID is auto-generated, so we use INSERT OR REPLACE on the UNIQUE constraint (strain_id, phenotype_name)
+            query = f"""
+                INSERT INTO phenotypes ({pheno_fields})
+                VALUES ({pheno_values})
+                ON CONFLICT(strain_id, phenotype_name) DO UPDATE SET
+                    description=COALESCE(excluded.description, description),
+                    image_path=COALESCE(excluded.image_path, image_path),
+                    image_crop_meta=COALESCE(excluded.image_crop_meta, image_crop_meta),
+                    flower_days_min=COALESCE(excluded.flower_days_min, flower_days_min),
+                    flower_days_max=COALESCE(excluded.flower_days_max, flower_days_max)
+            """
+            await self._db.execute(query, (strain_id, phenotype) + tuple(pheno_data.values()))
+            await self._db.commit()
+            
+        # Re-load into cache for immediate sensor updates
+        await self.load()
+        _LOGGER.info("Successfully added/updated strain %s (%s)", strain, phenotype)
+
 
     async def set_strain_meta(
         self,
@@ -216,167 +330,41 @@ class StrainLibrary:
         sativa_percentage: int | None = None,
         indica_percentage: int | None = None,
     ) -> None:
-        """Set metadata for a specific strain.
-
-        Args:
-            strain: The name of the strain.
-            phenotype: The specific phenotype (defaults to "default").
-            breeder: The breeder name.
-            strain_type: The strain type (e.g., Indica, Sativa).
-            lineage: The lineage or parent strains.
-            sex: The sex of the strain (e.g., Feminized, Regular, Autoflower).
-            flower_days_min: Minimum flowering days.
-            flower_days_max: Maximum flowering days.
-            description: Grower description or notes.
-            image_base64: Base64 encoded image string.
-            image_path: Path to an existing image.
-            image_crop_meta: Metadata for cropping the image in the frontend.
-            sativa_percentage: Percentage of Sativa genetics (0-100).
-            indica_percentage: Percentage of Indica genetics (0-100).
-        """
-        strain = strain.strip()
-        phenotype = phenotype.strip() if phenotype else "default"
-
-        if strain not in self.strains:
-            self.strains[strain] = {"phenotypes": {}, "meta": {}}
-
-        # Strain-level metadata
-        self._update_strain_level_meta(
-            strain, breeder, strain_type, lineage, sex,
-            sativa_percentage, indica_percentage
+        """Set metadata for a specific strain by calling add_strain (which handles update logic)."""
+        await self.add_strain(
+            strain=strain, phenotype=phenotype, breeder=breeder, strain_type=strain_type, 
+            lineage=lineage, sex=sex, flower_days_min=flower_days_min, 
+            flower_days_max=flower_days_max, description=description, 
+            image_base64=image_base64, image_path=image_path, 
+            image_crop_meta=image_crop_meta, sativa_percentage=sativa_percentage, 
+            indica_percentage=indica_percentage
         )
-
-        # Phenotype-level metadata
-        if phenotype not in self.strains[strain]["phenotypes"]:
-            self.strains[strain]["phenotypes"][phenotype] = {"harvests": []}
-
-        pheno_data = self.strains[strain]["phenotypes"][phenotype]
-        self._update_phenotype_meta(
-            pheno_data, flower_days_min, flower_days_max, description, image_crop_meta
-        )
-
-        # Image Handling
-        if image_base64:
-            await self._save_strain_image(
-                strain, phenotype, image_base64, pheno_data
-            )
-        elif image_path:
-            pheno_data["image_path"] = image_path
-            _LOGGER.info(
-                "Assigned existing image path for %s (%s): %s",
-                strain,
-                phenotype,
-                image_path,
-            )
-
-        _LOGGER.info("Updated metadata for strain %s (%s)", strain, phenotype)
-        await self.save()
-
-    def _update_strain_level_meta(
-        self,
-        strain: str,
-        breeder: str | None,
-        strain_type: str | None,
-        lineage: str | None,
-        sex: str | None,
-        sativa_percentage: int | None,
-        indica_percentage: int | None,
-    ) -> None:
-        """Update strain-level metadata."""
-        if "meta" not in self.strains[strain]:
-            self.strains[strain]["meta"] = {}
-
-        meta = self.strains[strain]["meta"]
-        if breeder is not None:
-            meta["breeder"] = breeder
-
-        # Determine the effective strain type (new or existing)
-        effective_type = strain_type if strain_type is not None else meta.get("type")
-
-        if strain_type is not None:
-            meta["type"] = strain_type
-        if lineage is not None:
-            meta["lineage"] = lineage
-        if sex is not None:
-            meta["sex"] = sex
-
-        # Hybrid Percentage Logic
-        if effective_type and str(effective_type).lower() == "hybrid":
-            # Auto-calculate if one is missing
-            if sativa_percentage is not None and indica_percentage is None:
-                indica_percentage = 100 - sativa_percentage
-            elif indica_percentage is not None and sativa_percentage is None:
-                sativa_percentage = 100 - indica_percentage
-
-            # Validate if we have values to update
-            if sativa_percentage is not None and indica_percentage is not None:
-                if sativa_percentage + indica_percentage > 100:
-                    raise ValueError(
-                        f"Combined Sativa ({sativa_percentage}%) and Indica ({indica_percentage}%) "
-                        f"percentage cannot exceed 100%."
-                    )
-                meta["sativa_percentage"] = sativa_percentage
-                meta["indica_percentage"] = indica_percentage
-
-        elif sativa_percentage is not None or indica_percentage is not None:
-            # If strictly enforcing "Only type hybrid", we reject attempts to set these on non-hybrids.
-            raise ValueError("Sativa/Indica percentages can only be set for 'Hybrid' strains.")
-
-    def _update_phenotype_meta(
-        self,
-        pheno_data: dict[str, Any],
-        flower_days_min: int | None,
-        flower_days_max: int | None,
-        description: str | None,
-        image_crop_meta: dict | None,
-    ) -> None:
-        """Update phenotype-level metadata."""
-        if flower_days_min is not None:
-            pheno_data["flower_days_min"] = flower_days_min
-        if flower_days_max is not None:
-            pheno_data["flower_days_max"] = flower_days_max
-        if description is not None:
-            pheno_data["description"] = description
-        if image_crop_meta is not None:
-            pheno_data["image_crop_meta"] = image_crop_meta
 
     async def _save_strain_image(
         self,
         strain: str,
         phenotype: str,
         image_base64: str,
-        pheno_data: dict[str, Any],
-    ) -> None:
-        """Decode and save a strain image to disk.
-
-        Args:
-            strain: The name of the strain.
-            phenotype: The phenotype name.
-            image_base64: The base64 encoded image string.
-            pheno_data: The dictionary to update with the new image path.
-        """
+    ) -> str:
+        """Decode and save a strain image to disk."""
+        # ... [Image saving logic remains the same] ...
         try:
             # Handle Data URI if present
             if image_base64.startswith("data:"):
-                # Split at the comma to remove metadata header (e.g., "data:image/png;base64,")
                 try:
                     _, image_base64 = image_base64.split(",", 1)
                 except ValueError:
                     _LOGGER.warning("Invalid Data URI format for image")
 
-            # Determine write path
-            # Use standard 'www' folder which maps to '/local/'
             base_dir = self.hass.config.path("www", "growspace_manager", "strains")
             if not os.path.exists(base_dir):
                 os.makedirs(base_dir)
 
-            # Generate filename
             safe_strain = slugify(strain)
             safe_pheno = slugify(phenotype)
             filename = f"{safe_strain}_{safe_pheno}.jpg"
             file_path = os.path.join(base_dir, filename)
 
-            # Decode and write
             image_data = base64.b64decode(image_base64)
 
             def _write_image():
@@ -385,200 +373,195 @@ class StrainLibrary:
 
             await self.hass.async_add_executor_job(_write_image)
 
-            # Store relative web path
             web_path = f"/local/growspace_manager/strains/{filename}"
-            pheno_data["image_path"] = web_path
-            _LOGGER.info("Saved image for %s (%s) to %s", strain, phenotype, file_path)
+            return web_path
 
         except Exception as err:
             _LOGGER.error("Failed to save strain image: %s", err)
+            return ""
 
     async def remove_strain_phenotype(self, strain: str, phenotype: str) -> None:
-        """Remove a specific phenotype from a strain.
-
-        Args:
-            strain: The name of the strain.
-            phenotype: The phenotype to remove.
-        """
-        strain = strain.strip()
+        """Remove a specific phenotype from the database."""
         phenotype = phenotype.strip() or "default"
+        
+        # 1. Get IDs
+        query = """
+            SELECT p.phenotype_id, s.strain_id FROM phenotypes p
+            JOIN strains s ON p.strain_id = s.strain_id
+            WHERE s.strain_name = ? AND p.phenotype_name = ?
+        """
+        async with self._db.execute(query, (strain, phenotype)) as cursor:
+            row = await cursor.fetchone()
+            if not row:
+                return
 
-        if strain in self.strains:
-            if phenotype in self.strains[strain]["phenotypes"]:
-                self.strains[strain]["phenotypes"].pop(phenotype)
-                _LOGGER.info("Removed phenotype %s from strain %s", phenotype, strain)
-                await self.save()
+            phenotype_id = row['phenotype_id']
+            strain_id = row['strain_id']
+            
+        # 2. Delete harvests associated with the phenotype
+        await self._db.execute("DELETE FROM harvests WHERE phenotype_id = ?", (phenotype_id,))
+        
+        # 3. Delete the phenotype record itself
+        await self._db.execute("DELETE FROM phenotypes WHERE phenotype_id = ?", (phenotype_id,))
+        await self._db.commit()
+
+        # 4. Check if any other phenotypes exist for the strain. If not, delete the strain record.
+        async with self._db.execute("SELECT COUNT(*) FROM phenotypes WHERE strain_id = ?", (strain_id,)) as cursor:
+            if (await cursor.fetchone())[0] == 0:
+                await self._db.execute("DELETE FROM strains WHERE strain_id = ?", (strain_id,))
+                await self._db.commit()
+                
+        await self.load()
+        _LOGGER.info("Removed phenotype %s from strain %s", phenotype, strain)
 
     async def remove_strain(self, strain: str) -> None:
-        """Remove an entire strain and all its phenotypes.
-
-        Args:
-            strain: The name of the strain to remove.
+        """Remove an entire strain and all its associated data from the database."""
+        # 1. Get strain_id
+        async with self._db.execute("SELECT strain_id FROM strains WHERE strain_name = ?", (strain,)) as cursor:
+            row = await cursor.fetchone()
+            if not row:
+                return
+            strain_id = row[0]
+            
+        # 2. Delete all related phenotypes and harvests
+        query = """
+            DELETE FROM harvests 
+            WHERE phenotype_id IN (SELECT phenotype_id FROM phenotypes WHERE strain_id = ?)
         """
-        strain = strain.strip()
-        if strain in self.strains:
-            self.strains.pop(strain)
-            _LOGGER.info("Removed strain %s from library", strain)
-            await self.save()
+        await self._db.execute(query, (strain_id,))
+        await self._db.execute("DELETE FROM phenotypes WHERE strain_id = ?", (strain_id,))
+        
+        # 3. Delete the strain record itself
+        await self._db.execute("DELETE FROM strains WHERE strain_id = ?", (strain_id,))
+        await self._db.commit()
+        
+        await self.load()
+        _LOGGER.info("Removed strain %s from library", strain)
 
     def get_all(self) -> dict[str, dict[str, Any]]:
-        """Return the entire raw dictionary of strain data.
-
-        Returns:
-            A dictionary containing all stored strain and harvest data.
-        """
+        """Return the entire raw dictionary of strain data from the in-memory cache."""
         return self.strains
 
     async def import_library(
         self, library_data: dict[str, Any], replace: bool = False
     ) -> int:
-        """Import a strain library from a dictionary.
-
-        Args:
-            library_data: The dictionary of strain data to import (new format).
-            replace: If True, the existing library will be cleared before import.
-
-        Returns:
-            The total number of strains in the library after the import.
-        """
+        """Import a strain library from a dictionary into the database."""
         if not isinstance(library_data, dict):
             _LOGGER.warning("Import failed: data must be a dictionary.")
             return len(self.strains)
 
         if replace:
-            self.strains = library_data
-        else:
-            # Deep merge logic is complex; for now we do top-level strain merge/update
-            for strain, data in library_data.items():
-                if strain not in self.strains:
-                    self.strains[strain] = data
-                else:
-                    # Merge phenotypes
-                    if "phenotypes" in data:
-                        if "phenotypes" not in self.strains[strain]:
-                            self.strains[strain]["phenotypes"] = {}
-                        self.strains[strain]["phenotypes"].update(data["phenotypes"])
-                    # Merge meta
-                    if "meta" in data:
-                        if "meta" not in self.strains[strain]:
-                            self.strains[strain]["meta"] = {}
-                        self.strains[strain]["meta"].update(data["meta"])
+            await self.clear()
 
-        await self.save()
+        imported_count = 0
+        for strain_name, strain_data in library_data.items():
+            meta = strain_data.get("meta", {})
+            phenotypes = strain_data.get("phenotypes", {})
+            
+            # Use the robust add_strain method to handle upsert of metadata
+            await self.add_strain(
+                strain=strain_name,
+                breeder=meta.get("breeder"), strain_type=meta.get("type"), lineage=meta.get("lineage"),
+                sex=meta.get("sex"), sativa_percentage=meta.get("sativa_percentage"), indica_percentage=meta.get("indica_percentage"),
+                # Pass nulls if we want to merge, but add_strain defaults to ignoring Nones if updating.
+                # Since we want to ensure phenotype data exists, we loop through phenotypes now:
+            )
+            
+            for pheno_name, pheno_data in phenotypes.items():
+                await self.add_strain(
+                    strain=strain_name, phenotype=pheno_name,
+                    flower_days_min=pheno_data.get("flower_days_min"), flower_days_max=pheno_data.get("flower_days_max"),
+                    description=pheno_data.get("description"), image_path=pheno_data.get("image_path"),
+                    image_crop_meta=pheno_data.get("image_crop_meta"),
+                )
+                
+                # Insert harvests separately
+                phenotype_id = await self._ensure_strain_and_phenotype_exist(strain_name, pheno_name)
+                for harvest in pheno_data.get("harvests", []):
+                    await self._db.execute(
+                        """
+                        INSERT INTO harvests (phenotype_id, veg_days, flower_days, harvest_date)
+                        VALUES (?, ?, ?, ?)
+                        ON CONFLICT DO NOTHING
+                        """,
+                        (phenotype_id, harvest['veg_days'], harvest['flower_days'], harvest.get('harvest_date', datetime.now().isoformat()))
+                    )
+                await self._db.commit()
+
+            imported_count += 1
+            
+        await self.load() # Reload cache after successful imports
         return len(self.strains)
 
     async def import_strains(
         self, strains: list[str], replace: bool = False
     ) -> int:
-        """Import a list of strain names (creating default structure).
-
-        Args:
-            strains: The list of strain names to import.
-            replace: If True, the existing library will be cleared before import.
-
-        Returns:
-            The total number of strains in the library after the import.
-        """
+        """Import a list of strain names (creating default structure)."""
         if not isinstance(strains, list):
             _LOGGER.warning("Import failed: strains must be a list.")
             return len(self.strains)
 
-        new_data = {}
-        for strain in strains:
-            new_data[strain] = {
-                "phenotypes": {"default": {"harvests": []}},
-                "meta": {}
-            }
-
         if replace:
-            self.strains = new_data
-        else:
-            for strain, data in new_data.items():
-                if strain not in self.strains:
-                    self.strains[strain] = data
-                # If strain exists, we don't overwrite it with empty defaults
+            await self.clear()
 
-        await self.save()
+        for strain in strains:
+            await self.add_strain(strain)
+            
+        await self.load()
         return len(self.strains)
 
     async def clear(self) -> int:
-        """Clear all entries from the strain library.
-
-        Returns:
-            The number of strains that were cleared.
-        """
+        """Clear all entries from the strain library database."""
         count = len(self.strains)
+        
+        query = "DELETE FROM harvests; DELETE FROM phenotypes; DELETE FROM strains;"
+        await self._db.executescript(query)
+        await self._db.commit()
+        
         self.strains.clear()
-        await self.save()
         return count
 
     async def export_library_to_zip(self, output_dir: str) -> str:
-        """Export the strain library and images to a ZIP file.
-
-        Args:
-            output_dir: The directory where the ZIP file should be saved.
-
-        Returns:
-            The absolute path to the created ZIP file.
-        """
+        """Export the strain library and images to a ZIP file."""
+        # The logic here remains functionally the same, only the source of self.strains has changed
         return await self.hass.async_add_executor_job(self._export_sync, output_dir)
 
     def _export_sync(self, output_dir: str) -> str:
         """Synchronous helper to create the export ZIP file."""
-        # Ensure output directory exists
         if not os.path.exists(output_dir):
             os.makedirs(output_dir)
 
-        # Generate filename with timestamp
         timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
         zip_filename = f"strain_library_export_{timestamp}.zip"
         zip_path = os.path.join(output_dir, zip_filename)
 
-        # Prepare a copy of strains to modify image paths for export
-        # We use json to deep copy
-        strains_export = json.loads(json.dumps(self.strains))
+        strains_export = self.get_all() # Get the current full cache for export
 
         with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zipf:
-            # Iterate through strains to find images
             for strain_data in strains_export.values():
                 if "phenotypes" in strain_data:
                     for pheno_data in strain_data["phenotypes"].values():
                         if "image_path" in pheno_data:
                             image_web_path = pheno_data["image_path"]
-                            # Check if it's a local file (/local/...)
                             if image_web_path.startswith("/local/"):
-                                # Resolve to filesystem path
                                 relative_path = image_web_path.replace("/local/", "", 1)
                                 file_system_path = self.hass.config.path("www", relative_path)
 
                                 if os.path.exists(file_system_path):
-                                    # Add to ZIP
-                                    # We'll store it in an 'images' folder inside the ZIP
                                     filename = os.path.basename(file_system_path)
                                     zip_entry_name = f"images/{filename}"
                                     zipf.write(file_system_path, zip_entry_name)
-
-                                    # Update path in export JSON to be relative to ZIP root
                                     pheno_data["image_path"] = zip_entry_name
                                 else:
                                     _LOGGER.warning("Image file not found for export: %s", file_system_path)
 
-            # Write the library JSON to the ZIP
             zipf.writestr("library.json", json.dumps(strains_export, indent=2))
 
         _LOGGER.info("Exported strain library to %s", zip_path)
         return zip_path
 
     async def import_library_from_zip(self, zip_path: str, merge: bool = True) -> int:
-        """Import a strain library from a ZIP file containing data and images.
-
-        Args:
-            zip_path: The path to the ZIP file.
-            merge: If True, merge with existing data. If False, overwrite.
-
-        Returns:
-            The number of strains imported (total count in library).
-        """
+        """Import a strain library from a ZIP file containing data and images."""
         return await self.hass.async_add_executor_job(self._import_sync, zip_path, merge)
 
     def _import_sync(self, zip_path: str, merge: bool) -> int:
@@ -589,9 +572,6 @@ class StrainLibrary:
         if not zipfile.is_zipfile(zip_path):
             raise ValueError(f"Not a valid ZIP file: {zip_path}")
 
-        # Temporary directory for extraction could be used, but we can read directly
-        # and write images directly to destination.
-
         target_images_dir = self.hass.config.path("www", "growspace_manager", "strains")
         if not os.path.exists(target_images_dir):
             os.makedirs(target_images_dir)
@@ -599,88 +579,20 @@ class StrainLibrary:
         library_data = {}
 
         with zipfile.ZipFile(zip_path, "r") as zipf:
-            # Check for library.json
             if "library.json" not in zipf.namelist():
                 raise ValueError("Invalid export file: library.json not found in archive")
 
-            # Read library data
             with zipf.open("library.json") as f:
                 library_data = json.load(f)
 
-            # Process images
-            # We look for files in the 'images/' folder of the zip
             for file_info in zipf.infolist():
                 if file_info.filename.startswith("images/") and not file_info.is_dir():
                     filename = os.path.basename(file_info.filename)
                     target_path = os.path.join(target_images_dir, filename)
 
-                    # Extract file
                     with zipf.open(file_info) as source, open(target_path, "wb") as target:
                         shutil.copyfileobj(source, target)
 
-                    _LOGGER.debug("Restored image: %s", target_path)
-
-        # Post-process library data to fix image paths
-        for strain_data in library_data.values():
-            if "phenotypes" in strain_data:
-                for pheno_data in strain_data["phenotypes"].values():
-                    if "image_path" in pheno_data:
-                        image_zip_path = pheno_data["image_path"]
-                        # If it was exported as "images/filename.jpg", convert back to /local/
-                        if image_zip_path.startswith("images/"):
-                            filename = os.path.basename(image_zip_path)
-                            # Verify the file exists (we just extracted it)
-                            # Map to web path
-                            pheno_data["image_path"] = f"/local/growspace_manager/strains/{filename}"
-
-        # Merge or Overwrite
-        if not merge:
-            self.strains = library_data
-        else:
-            # Merge logic
-            for strain, data in library_data.items():
-                if strain not in self.strains:
-                    self.strains[strain] = data
-                else:
-                    # Merge Meta
-                    if "meta" in data:
-                        if "meta" not in self.strains[strain]:
-                            self.strains[strain]["meta"] = {}
-                        self.strains[strain]["meta"].update(data["meta"])
-
-                    # Merge Phenotypes
-                    if "phenotypes" in data:
-                        if "phenotypes" not in self.strains[strain]:
-                            self.strains[strain]["phenotypes"] = {}
-
-                        existing_phenos = self.strains[strain]["phenotypes"]
-                        for pheno_name, pheno_data in data["phenotypes"].items():
-                            if pheno_name not in existing_phenos:
-                                existing_phenos[pheno_name] = pheno_data
-                            else:
-                                # Update phenotype data (e.g. description, image, limits)
-                                # We preserve harvests from existing if not present in new,
-                                # but generally we merge keys.
-                                # 'harvests' is a list. Appending duplicate harvests might be bad.
-                                # For simplicity, we'll assume we update metadata but maybe not merge harvest lists
-                                # unless we want to be very smart.
-                                # Let's update keys other than harvests first.
-                                for k, v in pheno_data.items():
-                                    if k != "harvests":
-                                        existing_phenos[pheno_name][k] = v
-                                    elif k == "harvests":
-                                        # Optional: Merge harvests uniquely?
-                                        # For now, let's just append new ones if we want to be safe,
-                                        # or replace if we want to update.
-                                        # Given "Merge", typically we want to keep existing data.
-                                        # Let's append new harvests if they aren't exact duplicates?
-                                        # That's expensive. Let's just leave existing harvests alone for now
-                                        # unless the user strictly asked for harvest sync.
-                                        # The requirement is "Strain library import/export".
-                                        # I'll stick to updating metadata fields.
-                                        pass
-
-        # We need to save the result.
-        # Since we are in a sync method called by executor, we can't await self.save().
-        # So we return control to the async wrapper.
-        return len(self.strains)
+        # After sync import, call async import data method
+        self.hass.async_create_task(self.import_library(library_data, replace=not merge))
+        return len(self.strains) # Return existing count immediately, or use a reload pattern
