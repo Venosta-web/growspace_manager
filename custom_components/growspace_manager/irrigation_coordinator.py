@@ -36,26 +36,17 @@ class IrrigationCoordinator:
     def get_default_duration(self, event_type: str) -> int | None:
         """Get the default duration for a given event type."""
         try:
-            return self._config_entry.options["irrigation"][self._growspace_id][
-                f"{event_type}_duration"
-            ]
-        except KeyError:
+            growspace = self._main_coordinator.growspaces[self._growspace_id]
+            return growspace.irrigation_config.get(f"{event_type}_duration")
+        except (KeyError, AttributeError):
             return None
 
-    async def _update_config_entry_options(self, new_options: dict[str, Any], reload_listeners: bool = True) -> None:
-        """Update the config entry options and reload listeners."""
-        # Update the config entry - this persists the data
-        self.hass.config_entries.async_update_entry(
-            self._config_entry, options=new_options
-        )
+    async def _save_and_reload(self, reload_listeners: bool = True) -> None:
+        """Save changes to storage and reload listeners."""
+        # Save to custom storage via main coordinator
+        await self._main_coordinator.async_save()
         
-        # Also update the main coordinator's options reference
-        self._main_coordinator.options = new_options
-        
-        # Update the coordinator's data property
-        self._main_coordinator.update_data_property()
-        
-        # Notify listeners (but don't save to avoid circular updates)
+        # Notify listeners of update
         self._main_coordinator.async_set_updated_data(self._main_coordinator.data)
         
         # Reload the irrigation listeners with new schedule
@@ -64,17 +55,10 @@ class IrrigationCoordinator:
 
     async def async_set_settings(self, new_settings: dict[str, Any]) -> None:
         """Update the irrigation settings for the growspace."""
-        # Get a mutable copy of current options
-        options = dict(self._config_entry.options)
-
-        if "irrigation" not in options:
-            options["irrigation"] = {}
-        if self._growspace_id not in options["irrigation"]:
-            options["irrigation"][self._growspace_id] = {}
-
-        # Update with new settings
-        current_settings = options["irrigation"][self._growspace_id]
-        current_settings.update(new_settings)
+        growspace = self._main_coordinator.growspaces[self._growspace_id]
+        
+        # Update settings in growspace object
+        growspace.irrigation_config.update(new_settings)
 
         _LOGGER.debug(
             "Updating irrigation settings for %s with: %s",
@@ -83,7 +67,7 @@ class IrrigationCoordinator:
         )
         
         # Persist the changes
-        await self._update_config_entry_options(options)
+        await self._save_and_reload()
 
     async def async_add_schedule_item(
         self, schedule_key: str, time_str: str, duration: int | None
@@ -95,55 +79,41 @@ class IrrigationCoordinator:
         if len(time_str) == 5:
             time_str = f"{time_str}:00"
         
-        # Get a mutable copy of current options
-        options = dict(self._config_entry.options)
+        growspace = self._main_coordinator.growspaces[self._growspace_id]
         
-        if "irrigation" not in options:
-            options["irrigation"] = {}
-        if self._growspace_id not in options["irrigation"]:
-            options["irrigation"][self._growspace_id] = {}
+        if schedule_key not in growspace.irrigation_config:
+            growspace.irrigation_config[schedule_key] = []
 
-        growspace_options = options["irrigation"][self._growspace_id]
-
-        if schedule_key not in growspace_options:
-            growspace_options[schedule_key] = []
-
-        # Create a new list to ensure we're not modifying a reference
-        schedule = list(growspace_options[schedule_key])
-        
         # Add the new schedule item
-        schedule.append({"time": time_str, "duration": duration})
-        
-        # Update the schedule in options
-        growspace_options[schedule_key] = schedule
+        growspace.irrigation_config[schedule_key].append({"time": time_str, "duration": duration})
         
         _LOGGER.info(
             "Added %s to %s for growspace %s. Schedule now has %d items.",
             {"time": time_str, "duration": duration},
             schedule_key,
             self._growspace_id,
-            len(schedule)
+            len(growspace.irrigation_config[schedule_key])
         )
 
         # Persist the changes
-        await self._update_config_entry_options(options)
+        await self._save_and_reload()
 
     async def async_remove_schedule_item(self, schedule_key: str, time_str: str) -> None:
         """Remove all matching time entries from a schedule."""
         if not time_str:
             raise ValueError("Time cannot be empty")
 
-        # Get a mutable copy of current options
-        options = dict(self._config_entry.options)
+        growspace = self._main_coordinator.growspaces[self._growspace_id]
 
         try:
-            # Create a new list with items filtered out
-            schedule = list(options["irrigation"][self._growspace_id][schedule_key])
+            schedule = growspace.irrigation_config.get(schedule_key, [])
             items_before = len(schedule)
             
             # Filter out matching times
-            schedule = [item for item in schedule if item.get("time") != time_str]
-            items_after = len(schedule)
+            growspace.irrigation_config[schedule_key] = [
+                item for item in schedule if item.get("time") != time_str
+            ]
+            items_after = len(growspace.irrigation_config[schedule_key])
 
             if items_before == items_after:
                 _LOGGER.warning(
@@ -153,9 +123,6 @@ class IrrigationCoordinator:
                     self._growspace_id,
                 )
                 return
-
-            # Update the schedule
-            options["irrigation"][self._growspace_id][schedule_key] = schedule
             
             _LOGGER.info(
                 "Removed %d item(s) with time %s from %s for growspace %s",
@@ -166,7 +133,7 @@ class IrrigationCoordinator:
             )
 
             # Persist the changes
-            await self._update_config_entry_options(options)
+            await self._save_and_reload()
 
         except KeyError:
             _LOGGER.warning(
@@ -177,6 +144,21 @@ class IrrigationCoordinator:
 
     async def async_setup(self):
         """Set up the irrigation schedules."""
+        # MIGRATION: Check if we have legacy options in config entry but empty growspace config
+        growspace = self._main_coordinator.growspaces[self._growspace_id]
+        
+        if not growspace.irrigation_config:
+            legacy_options = self._config_entry.options.get("irrigation", {}).get(
+                self._growspace_id, {}
+            )
+            if legacy_options:
+                _LOGGER.info(
+                    "Migrating irrigation settings for %s from ConfigEntry to Storage",
+                    self._growspace_id
+                )
+                growspace.irrigation_config = dict(legacy_options)
+                await self._main_coordinator.async_save()
+
         # Load schedules without triggering updates
         await self.async_update_listeners()
 
@@ -184,10 +166,9 @@ class IrrigationCoordinator:
         """Remove old listeners and create new ones based on current config."""
         self.async_cancel_listeners()
 
-        # Get irrigation options from config entry (FRESH READ)
-        options = self._config_entry.options.get("irrigation", {}).get(
-            self._growspace_id, {}
-        )
+        # Get irrigation options from growspace object
+        growspace = self._main_coordinator.growspaces[self._growspace_id]
+        options = growspace.irrigation_config
         
         # Make defensive copies to avoid reference issues
         irrigation_times = list(options.get("irrigation_times", []))
