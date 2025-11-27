@@ -124,6 +124,7 @@ class GrowAssistant:
             "mold_risk": "high_mold_risk",
             "optimal": "optimal_conditions",
         }
+        
 
         for key, sensor_suffix in sensor_types.items():
             entity_id = f"binary_sensor.{growspace_id}_{sensor_suffix}"
@@ -297,6 +298,155 @@ class GrowAssistant:
                 )
             lines.append("")
 
+        sensor_types = {
+            "stress": "plants_under_stress",
+            "mold_risk": "high_mold_risk",
+            "optimal": "optimal_conditions",
+        }
+
+        for key, sensor_suffix in sensor_types.items():
+            entity_id = f"binary_sensor.{growspace_id}_{sensor_suffix}"
+            state = self.hass.states.get(entity_id)
+
+            if state:
+                is_on = state.state == "on"
+                bayesian_data[key]["active"] = is_on
+                bayesian_data[key]["probability"] = state.attributes.get(
+                    "probability", 0
+                )
+                bayesian_data[key]["reasons"] = state.attributes.get("reasons", [])
+
+        # Light schedule verification
+        light_entity_id = f"binary_sensor.{growspace_id}_light_schedule_correct"
+        light_state = self.hass.states.get(light_entity_id)
+        if light_state:
+            bayesian_data["light_schedule"]["correct"] = light_state.state == "on"
+            bayesian_data["light_schedule"]["expected"] = light_state.attributes.get(
+                "expected_schedule", "Unknown"
+            )
+
+        return bayesian_data
+
+    def _summarize_plants(self, plants: list) -> dict[str, Any]:
+        """Create a summary of plants in the growspace."""
+        if not plants:
+            return {"count": 0, "stages": {}, "strains": []}
+
+        stages = {}
+        strains = set()
+
+        for plant in plants:
+            stage = getattr(plant, "stage", "unknown")
+            stages[stage] = stages.get(stage, 0) + 1
+            strains.add(plant.strain)
+
+            # Calculate stage durations
+            veg_days = self.coordinator.calculate_days_in_stage(plant, "veg")
+            flower_days = self.coordinator.calculate_days_in_stage(plant, "flower")
+
+        return {
+            "count": len(plants),
+            "stages": stages,
+            "strains": list(strains),
+            "max_veg_days": max(
+                (
+                    self.coordinator.calculate_days_in_stage(p, "veg")
+                    for p in plants
+                    if p.veg_start
+                ),
+                default=0,
+            ),
+            "max_flower_days": max(
+                (
+                    self.coordinator.calculate_days_in_stage(p, "flower")
+                    for p in plants
+                    if p.flower_start
+                ),
+                default=0,
+            ),
+        }
+
+    def _get_strain_analytics(self, plants: list) -> dict[str, Any]:
+        """Get analytics for strains currently growing."""
+        analytics = {}
+        all_strains = self.strain_library.get_all()
+
+        for plant in plants:
+            strain_name = plant.strain
+            if strain_name not in analytics and strain_name in all_strains:
+                strain_data = all_strains[strain_name]
+                phenotypes = strain_data.get("phenotypes", {})
+
+                # Calculate averages across all phenotypes
+                all_harvests = []
+                for pheno_data in phenotypes.values():
+                    all_harvests.extend(pheno_data.get("harvests", []))
+
+                if all_harvests:
+                    avg_veg = sum(h.get("veg_days", 0) for h in all_harvests) / len(
+                        all_harvests
+                    )
+                    avg_flower = sum(
+                        h.get("flower_days", 0) for h in all_harvests
+                    ) / len(all_harvests)
+
+                    analytics[strain_name] = {
+                        "avg_veg_days": round(avg_veg),
+                        "avg_flower_days": round(avg_flower),
+                        "total_harvests": len(all_harvests),
+                        "meta": strain_data.get("meta", {}),
+                    }
+
+        return analytics
+
+    def _format_context_data(self, data: dict[str, Any]) -> str:
+        """Format growspace data into a clear context string for the AI."""
+        lines = [
+            f"GROWSPACE: {data['growspace']['name']} ({data['growspace']['size']})",
+            f"TOTAL PLANTS: {data['growspace']['total_plants']}",
+            "",
+            "CURRENT ENVIRONMENT:",
+        ]
+
+        # Add sensor readings
+        for sensor, reading in data["environment"]["sensors"].items():
+            sensor_name = sensor.replace("_sensor", "").replace("_", " ").title()
+            lines.append(f"  {sensor_name}: {reading}")
+
+        lines.append("")
+
+        # Add Bayesian analysis
+        analysis = data["analysis"]
+        if analysis["stress"]["active"]:
+            lines.append("⚠️ STRESS DETECTED:")
+            for reason in analysis["stress"]["reasons"]:
+                lines.append(f"  - {reason}")
+            lines.append("")
+
+        if analysis["mold_risk"]["active"]:
+            lines.append("🍄 MOLD RISK DETECTED:")
+            for reason in analysis["mold_risk"]["reasons"]:
+                lines.append(f"  - {reason}")
+            lines.append("")
+
+        if analysis["optimal"]["active"]:
+            lines.append("✅ Optimal conditions achieved")
+            lines.append("")
+
+        # Add plant summary
+        plants = data["plants"]
+        if plants["count"] > 0:
+            lines.append("PLANTS:")
+            lines.append(f"  Total: {plants['count']}")
+            lines.append(f"  Strains: {', '.join(plants['strains'])}")
+            if plants["max_veg_days"] > 0:
+                lines.append(f"  Max Veg: Day {plants['max_veg_days']}")
+            if plants["max_flower_days"] > 0:
+                lines.append(
+                    f"  Max Flower: Day {plants['max_flower_days']} (Week {plants['max_flower_days'] // 7})"
+                )
+            lines.append("")
+
         # Add strain analytics if available
         if data["strain_analytics"]:
             lines.append("STRAIN HISTORY:")
@@ -313,6 +463,7 @@ class GrowAssistant:
         growspace_id: str,
         user_query: str | None = None,
         context_type: str = "general",
+        max_length: int | None = None,
     ) -> str:
         """Get AI-powered grow advice for a growspace.
 
@@ -320,6 +471,7 @@ class GrowAssistant:
             growspace_id: The ID of the growspace to analyze
             user_query: Optional specific question from the user
             context_type: Type of advice context (general, diagnostic, optimization, planning)
+            max_length: Optional maximum length for the response
 
         Returns:
             AI-generated advice string
@@ -335,7 +487,12 @@ class GrowAssistant:
         system_prompt = self._build_system_prompt(context_type)
         user_prompt = user_query or "Provide a status update and recommendations."
 
-        full_prompt = f"{system_prompt}\n\n{context}\n\nUser Question: {user_prompt}"
+        # Add length constraint to prompt if specified
+        length_instruction = ""
+        if max_length:
+            length_instruction = f"\n\nIMPORTANT: Keep your response concise and under {max_length} characters."
+
+        full_prompt = f"{system_prompt}\n\n{context}\n\nUser Question: {user_prompt}{length_instruction}"
 
         _LOGGER.debug("Sending prompt to AI assistant (length: %d)", len(full_prompt))
 
@@ -356,6 +513,11 @@ class GrowAssistant:
                 and result.response.speech.get("plain")
             ):
                 response = result.response.speech["plain"]["speech"]
+                
+                # Enforce max length truncation if specified
+                if max_length and len(response) > max_length:
+                    response = response[:max_length].rsplit(' ', 1)[0] + "..."
+                    
                 _LOGGER.info(
                     "AI assistant provided advice for growspace %s", growspace_id
                 )
@@ -383,9 +545,10 @@ async def handle_ask_grow_advice(
     growspace_id = call.data["growspace_id"]
     user_query = call.data.get("user_query")
     context_type = call.data.get("context_type", "general")
+    max_length = call.data.get("max_length")
 
     assistant = GrowAssistant(hass, coordinator, strain_library)
-    response = await assistant.get_grow_advice(growspace_id, user_query, context_type)
+    response = await assistant.get_grow_advice(growspace_id, user_query, context_type, max_length)
 
     return {"response": response}
 
@@ -403,6 +566,7 @@ async def handle_analyze_all_growspaces(
     assistant = GrowAssistant(hass, coordinator, strain_library)
     ai_settings = assistant._get_ai_settings()
     agent_id = ai_settings.get(CONF_ASSISTANT_ID)
+    max_length = call.data.get("max_length")
 
     # Gather data for all growspaces
     all_data = []
@@ -452,6 +616,10 @@ async def handle_analyze_all_growspaces(
     context = "\n".join(summary_lines)
 
     # Ask AI for comprehensive analysis
+    length_instruction = ""
+    if max_length:
+        length_instruction = f"\n\nIMPORTANT: Keep your response concise and under {max_length} characters."
+
     prompt = (
         "You are analyzing an entire cannabis cultivation facility. "
         "Provide a prioritized action plan focusing on:\n"
@@ -460,7 +628,7 @@ async def handle_analyze_all_growspaces(
         "3. Preventive measures\n"
         "4. Schedule recommendations\n\n"
         f"{context}\n\n"
-        "Provide a structured report with specific, actionable recommendations."
+        f"Provide a structured report with specific, actionable recommendations.{length_instruction}"
     )
 
     try:
@@ -479,6 +647,11 @@ async def handle_analyze_all_growspaces(
             and result.response.speech.get("plain")
         ):
             response = result.response.speech["plain"]["speech"]
+            
+            # Enforce max length truncation if specified
+            if max_length and len(response) > max_length:
+                response = response[:max_length].rsplit(' ', 1)[0] + "..."
+                
             return {
                 "response": response,
                 "issues_count": len(issues_found),
@@ -505,6 +678,7 @@ async def handle_strain_recommendation(
     assistant = GrowAssistant(hass, coordinator, strain_library)
     ai_settings = assistant._get_ai_settings()
     agent_id = ai_settings.get(CONF_ASSISTANT_ID)
+    max_length = call.data.get("max_length")
 
     preferences = call.data.get("preferences", {})
     growspace_id = call.data.get("growspace_id")
@@ -590,6 +764,10 @@ async def handle_strain_recommendation(
         except Exception as e:
             _LOGGER.warning("Failed to gather growspace data for strain recommendation for growspace %s: %s", growspace_id, e)
 
+    length_instruction = ""
+    if max_length:
+        length_instruction = f"\n\nIMPORTANT: Keep your response concise and under {max_length} characters."
+
     prompt = (
         "You are a cannabis cultivation expert helping select strains for the next grow. "
         "Based on historical performance data and user preferences, recommend the best strains.\n\n"
@@ -602,6 +780,7 @@ async def handle_strain_recommendation(
         "2. Expected timeline for each\n"
         "3. Any special considerations\n"
         "4. Phenotype recommendations if applicable"
+        f"{length_instruction}"
     )
 
     try:
@@ -620,6 +799,11 @@ async def handle_strain_recommendation(
             and result.response.speech.get("plain")
         ):
             response = result.response.speech["plain"]["speech"]
+            
+            # Enforce max length truncation if specified
+            if max_length and len(response) > max_length:
+                response = response[:max_length].rsplit(' ', 1)[0] + "..."
+                
             return {"response": response, "strains_analyzed": len(all_strains)}
         else:
             raise ServiceValidationError("AI assistant returned an empty response")
