@@ -421,16 +421,22 @@ ASK_GROW_ADVICE_SCHEMA = vol.Schema(
         vol.Optional("context_type", default="general"): vol.In(
             ["general", "diagnostic", "optimization", "planning"]
         ),
+        vol.Optional("max_length"): vol.All(vol.Coerce(int), vol.Range(min=1)),
     }
 )
 
-ANALYZE_ALL_GROWSPACES_SCHEMA = vol.Schema({})  # No required parameters
+ANALYZE_ALL_GROWSPACES_SCHEMA = vol.Schema(
+    {
+        vol.Optional("max_length"): vol.All(vol.Coerce(int), vol.Range(min=1)),
+    }
+)
 
 STRAIN_RECOMMENDATION_SCHEMA = vol.Schema(
     {
         vol.Optional("preferences"): dict,
         vol.Optional("growspace_id"): str,
         vol.Optional("user_query"): str,
+        vol.Optional("max_length"): vol.All(vol.Coerce(int), vol.Range(min=1)),
     }
 )
 
