@@ -150,6 +150,8 @@ async def handle_take_clone(
     """Handle taking clones from a plant."""
     mother_plant_id = call.data["mother_plant_id"]
     transition_date = call.data.get("transition_date")  # Optional transition date
+    if transition_date is None:
+        transition_date = date.today()  # Default to today if not provided
 
     # Number of clones to make (default = 1)
     num_clones = call.data.get("num_clones", 1)
