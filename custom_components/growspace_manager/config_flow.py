@@ -1713,10 +1713,8 @@ class OptionsFlowHandler(OptionsFlow):
         if not growspace:
             return self.async_abort(reason="growspace_not_found")
 
-        # Load ALL current irrigation options for the growspace
-        irrigation_options = self._current_options.get("irrigation", {}).get(
-            self._selected_growspace_id, {}
-        )
+        # Load ALL current irrigation options for the growspace from the Growspace object
+        irrigation_options = growspace.irrigation_config
 
         # --- START OF FIX: Ensure EntitySelector receives None instead of "" ---
         irrigation_pump_default = irrigation_options.get("irrigation_pump_entity")
@@ -1729,13 +1727,8 @@ class OptionsFlowHandler(OptionsFlow):
         # --- END OF FIX ---
 
         if user_input is not None:
-            # 1. Update the configuration entry with the new pump settings/durations
-            new_options = self._current_options.copy()
-            if "irrigation" not in new_options:
-                new_options["irrigation"] = {}
-            if self._selected_growspace_id not in new_options["irrigation"]:
-                new_options["irrigation"][self._selected_growspace_id] = {}
-
+            # 1. Update the Growspace object directly
+            
             # CRITICAL FIX: Only update the R/W fields (pump entities and durations)
             # Filter out the read-only fields that were passed for display purposes
             updated_settings = {
@@ -1743,18 +1736,19 @@ class OptionsFlowHandler(OptionsFlow):
                 if k not in ["current_irrigation_times", "current_drain_times", "growspace_id_read_only"]
             }
 
-            # Preserve the existing schedules from storage
-            existing_config = new_options["irrigation"][self._selected_growspace_id]
-            updated_settings["irrigation_times"] = existing_config.get("irrigation_times", [])
-            updated_settings["drain_times"] = existing_config.get("drain_times", [])
+            # Update the config in the growspace object
+            growspace.irrigation_config.update(updated_settings)
 
-            # Update the config
-            new_options["irrigation"][self._selected_growspace_id].update(updated_settings)
+            # Save via coordinator
+            await coordinator.async_save()
+            
+            # Notify listeners (including IrrigationCoordinator)
+            coordinator.async_set_updated_data(coordinator.data)
 
             # This triggers async_update_listener in __init__.py, reloading the IrrigationCoordinator
             return self.async_create_entry(
                 title="",
-                data=new_options,
+                data=self._current_options, # No changes to ConfigEntry options
                 description="Irrigation settings have been updated.",
             )
 

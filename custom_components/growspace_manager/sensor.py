@@ -449,10 +449,8 @@ class GrowspaceOverviewSensor(SensorEntity):
         veg_week = self._days_to_week(max_veg)
         flower_week = self._days_to_week(max_flower)
         
-        # Get irrigation settings from coordinator options
-        irrigation_options = self.coordinator.options.get("irrigation", {}).get(
-            self.growspace_id, {}
-        )
+        # Get irrigation settings from growspace object
+        irrigation_options = self.growspace.irrigation_config
 
         # Create grid representation
         grid = {}
