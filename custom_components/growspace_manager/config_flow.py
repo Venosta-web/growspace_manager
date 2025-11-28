@@ -429,8 +429,15 @@ class OptionsFlowHandler(OptionsFlow):
             ):
                 errors["base"] = "assistant_required"
             else:
+                coordinator = self.hass.data[DOMAIN][self._config_entry.entry_id]["coordinator"]
                 new_options = self._config_entry.options.copy()
                 new_options["ai_settings"] = user_input
+
+                # Update coordinator's in-memory options
+                coordinator.options = new_options
+
+                # Save to storage
+                await coordinator.async_save()
 
                 # Inform user about the changes
                 return self.async_create_entry(
