@@ -1948,18 +1948,23 @@ class OptionsFlowHandler(OptionsFlow):
             else selector.TextSelector()
         )
 
+        # Relax limits for special growspaces
+        is_special = growspace.id in ["mother", "clone", "dry", "cure"]
+        max_row = 100 if is_special else rows
+        max_col = 100 if is_special else plants_per_row
+
         return vol.Schema(
             {
                 vol.Required("strain"): strain_selector,
                 vol.Optional("phenotype"): selector.TextSelector(),
                 vol.Required("row", default=1): selector.NumberSelector(
                     selector.NumberSelectorConfig(
-                        min=1, max=rows, mode=selector.NumberSelectorMode.BOX
+                        min=1, max=max_row, mode=selector.NumberSelectorMode.BOX
                     )
                 ),
                 vol.Required("col", default=1): selector.NumberSelector(
                     selector.NumberSelectorConfig(
-                        min=1, max=plants_per_row, mode=selector.NumberSelectorMode.BOX
+                        min=1, max=max_col, mode=selector.NumberSelectorMode.BOX
                     )
                 ),
                 vol.Optional("veg_start"): selector.DateSelector(),
@@ -2003,6 +2008,11 @@ class OptionsFlowHandler(OptionsFlow):
         else:
             strain_selector = selector.TextSelector()
 
+        # Relax limits for special growspaces
+        is_special = growspace and growspace.id in ["mother", "clone", "dry", "cure"]
+        max_row = 100 if is_special else rows
+        max_col = 100 if is_special else plants_per_row
+
         return vol.Schema(
             {
                 vol.Optional(
@@ -2013,12 +2023,12 @@ class OptionsFlowHandler(OptionsFlow):
                 ): selector.TextSelector(),
                 vol.Optional("row", default=plant.row if plant else 1): selector.NumberSelector(
                     selector.NumberSelectorConfig(
-                        min=1, max=rows, mode=selector.NumberSelectorMode.BOX
+                        min=1, max=max_row, mode=selector.NumberSelectorMode.BOX
                     )
                 ),
                 vol.Optional("col", default=plant.col if plant else 1): selector.NumberSelector(
                     selector.NumberSelectorConfig(
-                        min=1, max=plants_per_row, mode=selector.NumberSelectorMode.BOX
+                        min=1, max=max_col, mode=selector.NumberSelectorMode.BOX
                     )
                 ),
                 vol.Optional("veg_start"): selector.DateSelector(),
