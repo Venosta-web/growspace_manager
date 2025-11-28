@@ -677,13 +677,6 @@ debug_consolidate_growspaces:
 
 analyze_all_growspaces:
   description: Analyze all growspaces and provide a comprehensive facility report
-  response:
-    response:
-      description: Comprehensive analysis report
-    issues_count:
-      description: Number of issues detected across all growspaces
-    growspaces_analyzed:
-      description: Total number of growspaces analyzed
 
 strain_recommendation:
   description: Get AI recommendations for strain selection based on your goals and history
