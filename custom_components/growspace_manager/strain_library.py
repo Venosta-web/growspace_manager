@@ -6,6 +6,7 @@ asynchronous SQLite database (aiosqlite).
 """
 
 from __future__ import annotations
+import base64
 import datetime
 import json
 import logging
