@@ -874,7 +874,31 @@ class OptionsFlowHandler(OptionsFlow):
                 ] = selector.EntitySelector(
                     selector.EntitySelectorConfig(**entity_selector_config_args)
                 )
-        # Thresholds
+                schema_dict[
+                    vol.Optional(entity_key, default=growspace_options.get(entity_key))
+                ] = selector.EntitySelector(
+                    selector.EntitySelectorConfig(**entity_selector_config_args)
+                )
+
+        # Dehumidifier / Switch configuration
+        configure_dehumidifier = growspace_options.get(
+            "configure_dehumidifier", bool(growspace_options.get("dehumidifier_entity"))
+        )
+        schema_dict[
+            vol.Optional("configure_dehumidifier", default=configure_dehumidifier)
+        ] = selector.BooleanSelector()
+
+        if configure_dehumidifier:
+            schema_dict[
+                vol.Optional(
+                    "dehumidifier_entity",
+                    default=growspace_options.get("dehumidifier_entity"),
+                )
+            ] = selector.EntitySelector(
+                selector.EntitySelectorConfig(
+                    domain=["switch", "humidifier", "sensor", "binary_sensor"]
+                )
+            )
         for key, default in [("stress_threshold", 0.70), ("mold_threshold", 0.75)]:
             schema_dict[
                 vol.Optional(key, default=growspace_options.get(key, default))

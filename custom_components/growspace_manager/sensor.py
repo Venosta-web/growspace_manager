@@ -504,6 +504,13 @@ class GrowspaceOverviewSensor(CoordinatorEntity[GrowspaceCoordinator], SensorEnt
             "grid": grid,
         }
 
+        # Add dehumidifier state if configured
+        dehumidifier_entity = growspace.environment_config.get("dehumidifier_entity")
+        if dehumidifier_entity:
+            state_obj = self.coordinator.hass.states.get(dehumidifier_entity)
+            attributes["dehumidifier_entity"] = dehumidifier_entity
+            attributes["dehumidifier_state"] = state_obj.state if state_obj else None
+
 
 class PlantEntity(SensorEntity):
     """A sensor representing a single plant in a growspace.
