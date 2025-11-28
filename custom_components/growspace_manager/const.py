@@ -405,6 +405,7 @@ CONFIGURE_ENVIRONMENT_SCHEMA = vol.Schema(
         vol.Required("humidity_sensor"): str,
         vol.Required("vpd_sensor"): str,
         vol.Optional("co2_sensor"): str,
+        vol.Optional("dehumidifier_entity"): str,
         vol.Optional("circulation_fan"): str,
         vol.Optional("light_sensor"): str,
         vol.Optional("stress_threshold", default=0.70): vol.All(

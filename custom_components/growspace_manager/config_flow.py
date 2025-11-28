@@ -874,7 +874,31 @@ class OptionsFlowHandler(OptionsFlow):
                 ] = selector.EntitySelector(
                     selector.EntitySelectorConfig(**entity_selector_config_args)
                 )
-        # Thresholds
+                schema_dict[
+                    vol.Optional(entity_key, default=growspace_options.get(entity_key))
+                ] = selector.EntitySelector(
+                    selector.EntitySelectorConfig(**entity_selector_config_args)
+                )
+
+        # Dehumidifier / Switch configuration
+        configure_dehumidifier = growspace_options.get(
+            "configure_dehumidifier", bool(growspace_options.get("dehumidifier_entity"))
+        )
+        schema_dict[
+            vol.Optional("configure_dehumidifier", default=configure_dehumidifier)
+        ] = selector.BooleanSelector()
+
+        if configure_dehumidifier:
+            schema_dict[
+                vol.Optional(
+                    "dehumidifier_entity",
+                    default=growspace_options.get("dehumidifier_entity"),
+                )
+            ] = selector.EntitySelector(
+                selector.EntitySelectorConfig(
+                    domain=["switch", "humidifier", "sensor", "binary_sensor"]
+                )
+            )
         for key, default in [("stress_threshold", 0.70), ("mold_threshold", 0.75)]:
             schema_dict[
                 vol.Optional(key, default=growspace_options.get(key, default))
@@ -1924,18 +1948,23 @@ class OptionsFlowHandler(OptionsFlow):
             else selector.TextSelector()
         )
 
+        # Relax limits for special growspaces
+        is_special = growspace.id in ["mother", "clone", "dry", "cure"]
+        max_row = 100 if is_special else rows
+        max_col = 100 if is_special else plants_per_row
+
         return vol.Schema(
             {
                 vol.Required("strain"): strain_selector,
                 vol.Optional("phenotype"): selector.TextSelector(),
                 vol.Required("row", default=1): selector.NumberSelector(
                     selector.NumberSelectorConfig(
-                        min=1, max=rows, mode=selector.NumberSelectorMode.BOX
+                        min=1, max=max_row, mode=selector.NumberSelectorMode.BOX
                     )
                 ),
                 vol.Required("col", default=1): selector.NumberSelector(
                     selector.NumberSelectorConfig(
-                        min=1, max=plants_per_row, mode=selector.NumberSelectorMode.BOX
+                        min=1, max=max_col, mode=selector.NumberSelectorMode.BOX
                     )
                 ),
                 vol.Optional("veg_start"): selector.DateSelector(),
@@ -1979,6 +2008,11 @@ class OptionsFlowHandler(OptionsFlow):
         else:
             strain_selector = selector.TextSelector()
 
+        # Relax limits for special growspaces
+        is_special = growspace and growspace.id in ["mother", "clone", "dry", "cure"]
+        max_row = 100 if is_special else rows
+        max_col = 100 if is_special else plants_per_row
+
         return vol.Schema(
             {
                 vol.Optional(
@@ -1989,12 +2023,12 @@ class OptionsFlowHandler(OptionsFlow):
                 ): selector.TextSelector(),
                 vol.Optional("row", default=plant.row if plant else 1): selector.NumberSelector(
                     selector.NumberSelectorConfig(
-                        min=1, max=rows, mode=selector.NumberSelectorMode.BOX
+                        min=1, max=max_row, mode=selector.NumberSelectorMode.BOX
                     )
                 ),
                 vol.Optional("col", default=plant.col if plant else 1): selector.NumberSelector(
                     selector.NumberSelectorConfig(
-                        min=1, max=plants_per_row, mode=selector.NumberSelectorMode.BOX
+                        min=1, max=max_col, mode=selector.NumberSelectorMode.BOX
                     )
                 ),
                 vol.Optional("veg_start"): selector.DateSelector(),
