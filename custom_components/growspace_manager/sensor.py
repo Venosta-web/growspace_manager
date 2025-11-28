@@ -99,6 +99,9 @@ async def async_setup_entry(
         StrainLibrarySensor(coordinator),
     ]
 
+    # Track calculated VPD sensors
+    calculated_vpd_sensors: list[CalculatedVpdSensor] = []
+
     # Create initial entities
     for growspace_id, growspace in coordinator.growspaces.items():
         gs_entity = GrowspaceOverviewSensor(coordinator, growspace_id, growspace)
@@ -106,6 +109,36 @@ async def async_setup_entry(
         initial_entities.append(gs_entity)
 
         await _async_create_derivative_sensors(hass, config_entry, growspace)
+
+        # Check if we need to create a calculated VPD sensor
+        env_config = growspace.environment_config or {}
+        temp_sensor = env_config.get("temperature_sensor")
+        humidity_sensor = env_config.get("humidity_sensor")
+        vpd_sensor = env_config.get("vpd_sensor")
+
+        # Create calculated VPD if temp and humidity exist but no VPD sensor
+        if temp_sensor and humidity_sensor and not vpd_sensor:
+            lst_offset = env_config.get("lst_offset", -2.0)
+            calc_vpd_sensor = CalculatedVpdSensor(
+                coordinator,
+                growspace_id,
+                growspace.name,
+                temp_sensor,
+                humidity_sensor,
+                lst_offset,
+            )
+            calculated_vpd_sensors.append(calc_vpd_sensor)
+            initial_entities.append(calc_vpd_sensor)
+
+            # Auto-populate the vpd_sensor in env_config with the calculated sensor
+            env_config["vpd_sensor"] = f"sensor.{growspace_id}_calculated_vpd"
+            growspace.environment_config = env_config
+
+            _LOGGER.info(
+                "Created calculated VPD sensor for %s (LST offset: %.1f°C)",
+                growspace.name,
+                lst_offset,
+            )
 
         for plant in coordinator.get_growspace_plants(growspace_id):
             pe = PlantEntity(coordinator, plant)
@@ -321,6 +354,89 @@ class VpdSensor(CoordinatorEntity[GrowspaceCoordinator], SensorEntity):
         if temp is not None and humidity is not None:
             return VPDCalculator.calculate_vpd(temp, humidity)
         return None
+
+
+class CalculatedVpdSensor(CoordinatorEntity[GrowspaceCoordinator], SensorEntity):
+    """A sensor that calculates VPD from temperature and humidity with LST offset.
+
+    This sensor is automatically created when a growspace has temperature and
+    humidity sensors configured but no physical VPD sensor. It uses the configured
+    LST (Leaf Surface Temperature) offset to calculate VPD more accurately.
+    """
+
+    def __init__(
+        self,
+        coordinator: GrowspaceCoordinator,
+        growspace_id: str,
+        growspace_name: str,
+        temp_sensor: str,
+        humidity_sensor: str,
+        lst_offset: float = -2.0,
+    ) -> None:
+        """Initialize the calculated VPD sensor.
+
+        Args:
+            coordinator: The data update coordinator.
+            growspace_id: The ID of the growspace.
+            growspace_name: The name of the growspace.
+            temp_sensor: The entity ID of the temperature sensor.
+            humidity_sensor: The entity ID of the humidity sensor.
+            lst_offset: The leaf surface temperature offset in °C (default: -2.0).
+        """
+        super().__init__(coordinator)
+        self._growspace_id = growspace_id
+        self._attr_name = f"{growspace_name} Calculated VPD"
+        self._attr_unique_id = f"{DOMAIN}_{growspace_id}_calculated_vpd"
+        self._temp_sensor = temp_sensor
+        self._humidity_sensor = humidity_sensor
+        self._lst_offset = lst_offset
+        self._attr_state_class = SensorStateClass.MEASUREMENT
+        self._attr_native_unit_of_measurement = "kPa"
+        self._attr_icon = "mdi:cloud-percent"
+
+        self._attr_device_info = DeviceInfo(
+            identifiers={(DOMAIN, growspace_id)},
+            name=growspace_name,
+            model="Growspace",
+            manufacturer="Growspace Manager",
+        )
+
+    @property
+    def native_value(self) -> float | None:
+        """Return the calculated VPD value in kPa."""
+        hass = self.coordinator.hass
+        temp = None
+        humidity = None
+
+        temp_state = hass.states.get(self._temp_sensor)
+        if temp_state and temp_state.state not in ["unknown", "unavailable"]:
+            try:
+                temp = float(temp_state.state)
+            except (ValueError, TypeError):
+                temp = None
+
+        humidity_state = hass.states.get(self._humidity_sensor)
+        if humidity_state and humidity_state.state not in ["unknown", "unavailable"]:
+            try:
+                humidity = float(humidity_state.state)
+            except (ValueError, TypeError):
+                humidity = None
+
+        if temp is not None and humidity is not None:
+            return VPDCalculator.calculate_vpd_with_lst_offset(
+                temp, humidity, self._lst_offset
+            )
+        return None
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Return additional state attributes."""
+        return {
+            "temperature_sensor": self._temp_sensor,
+            "humidity_sensor": self._humidity_sensor,
+            "lst_offset": self._lst_offset,
+            "calculation_method": "Calculated from temperature and humidity",
+        }
 
 
 class AirExchangeSensor(CoordinatorEntity[GrowspaceCoordinator], SensorEntity):

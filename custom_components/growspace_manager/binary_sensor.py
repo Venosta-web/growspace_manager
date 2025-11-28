@@ -121,9 +121,16 @@ async def async_setup_entry(
 
 
 def _validate_env_config(config: dict) -> bool:
-    """Validate that the required environment sensor entities are configured."""
-    required = ["temperature_sensor", "humidity_sensor", "vpd_sensor"]
-    return all(config.get(key) for key in required)
+    """Validate that the required environment sensor entities are configured.
+    
+    VPD sensor can be either directly configured or calculated from temp and humidity.
+    """
+    has_temp = bool(config.get("temperature_sensor"))
+    has_humidity = bool(config.get("humidity_sensor"))
+    has_vpd = bool(config.get("vpd_sensor"))
+    
+    # Valid if we have temp, humidity, and either a VPD sensor or ability to calculate it
+    return has_temp and has_humidity and (has_vpd or (has_temp and has_humidity))
 
 
 class BayesianEnvironmentSensor(BinarySensorEntity):
