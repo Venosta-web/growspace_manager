@@ -33,6 +33,7 @@ from .models import Growspace, Plant
 from .utils import (
     VPDCalculator,
     parse_date_field,
+    calculate_days_since,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -406,16 +407,12 @@ class GrowspaceOverviewSensor(SensorEntity):
         """Calculate the number of days since a given date string.
 
         Args:
-            date_str: The date in 'YYYY-MM-DD' format.
+            date_str: The date string (ISO format).
 
         Returns:
             The number of days that have passed.
         """
-        try:
-            dt = datetime.strptime(date_str, "%Y-%m-%d").date()
-        except Exception:
-            return 0
-        return (date.today() - dt).days
+        return calculate_days_since(date_str)
 
     @staticmethod
     def _days_to_week(days: int) -> int:
@@ -539,23 +536,7 @@ class PlantEntity(SensorEntity):
             manufacturer="Growspace Manager",
         )
 
-    def _parse_date(self, value: str | None) -> date | None:
-        """Safely parse a date string into a date object.
 
-        Args:
-            value: The date string to parse.
-
-        Returns:
-            A date object, or None if parsing fails.
-        """
-        if not value:
-            return None
-        if isinstance(value, date):
-            return value
-        try:
-            return parser.isoparse(value).date()
-        except Exception:
-            return None
 
     def _determine_stage(self, plant: Plant) -> str:
         """Determine the current growth stage of the plant.
@@ -570,7 +551,7 @@ class PlantEntity(SensorEntity):
         Returns:
             The determined stage as a string.
         """
-        now = date.today()
+        now = datetime.now()
 
         # 1. Special growspaces override everything
         if plant.growspace_id == "mother":

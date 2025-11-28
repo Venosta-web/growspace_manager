@@ -8,7 +8,7 @@ provide a structured way to handle and pass around data.
 from __future__ import annotations
 from dataclasses import dataclass, field, asdict, fields
 from typing import Any, Optional
-from datetime import date
+from datetime import datetime
 
 
 @dataclass
@@ -30,7 +30,7 @@ class Growspace:
     rows: int = 3
     plants_per_row: int = 3
     notification_target: str | None = None
-    created_at: str = field(default_factory=lambda: date.today().isoformat())
+    created_at: str = field(default_factory=lambda: datetime.now().isoformat())
     device_id: str | None = None
     environment_config: dict[str, Any] = field(default_factory=dict)
     irrigation_config: dict[str, Any] = field(default_factory=dict)
