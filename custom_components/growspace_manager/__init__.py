@@ -65,6 +65,7 @@ from .services import (
     strain_library as strain_library_services,
     ai_assistant,
 )
+from .intent import async_setup_intents
 from .strain_library import StrainLibrary
 
 _LOGGER = logging.getLogger(__name__)
@@ -139,6 +140,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # Register all custom services
     _LOGGER.debug("Registering services for domain %s", DOMAIN)
     await _register_services(hass, coordinator, strain_library_instance)
+
+    # Set up intents
+    await async_setup_intents(hass)
 
     # Handle pending growspace if initiated before entry setup completion
     if "pending_growspace" in hass.data.get(DOMAIN, {}):
