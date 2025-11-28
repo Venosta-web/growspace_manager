@@ -9,28 +9,29 @@ from .models import Plant, Growspace
 DateInput = str | datetime | date | None
 
 
-def parse_date_field(date_value: DateInput) -> date | None:
-    """Parse various date inputs into a date object."""
+def parse_date_field(date_value: DateInput) -> datetime | None:
+    """Parse various date inputs into a datetime object."""
     if date_value is None:
         return None
     if isinstance(date_value, datetime):
-        return date_value.date()  # <-- convert datetime to date
-    if isinstance(date_value, date):
         return date_value
+    if isinstance(date_value, date):
+        return datetime.combine(date_value, datetime.min.time())
     if isinstance(date_value, str):
         try:
-            return parser.isoparse(date_value).date()  # <-- always return date
+            # Attempt to parse ISO format
+            return parser.isoparse(date_value)
         except (ValueError, TypeError):
             return None
     return None
 
 
 def format_date(date_value: DateInput) -> str | None:
-    """Format a date input into a 'YYYY-MM-DD' string."""
+    """Format a date input into an ISO string."""
     dt = parse_date_field(date_value)
     if dt is None:
         return None
-    return dt.isoformat()  # will now always be "YYYY-MM-DD"
+    return dt.isoformat()
 
 
 def calculate_days_since(
@@ -38,10 +39,10 @@ def calculate_days_since(
 ) -> int:
     """Returns the number of days from start_date to end_date.
 
-    If end_date is None, uses today's date.
+    If end_date is None, uses current time.
     """
     start = parse_date_field(start_date)
-    end = parse_date_field(end_date) if end_date else date.today()
+    end = parse_date_field(end_date) if end_date else datetime.now()
     if start is None or end is None:
         return 0
     return (end - start).days

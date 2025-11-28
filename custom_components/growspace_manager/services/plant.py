@@ -79,10 +79,13 @@ async def handle_add_plant(
                 return
 
         # Parse and handle optional dates
-        def parse_date_field(field_name: str) -> date | None:
+        # Parse and handle optional dates
+        def parse_date_field(field_name: str) -> datetime | None:
             val = call.data.get(field_name)
-            if isinstance(val, date):
+            if isinstance(val, datetime):
                 return val
+            if isinstance(val, date):
+                return datetime.combine(val, datetime.min.time())
             return None  # Leave None if not provided or invalid
 
         seedling_start = parse_date_field("seedling_start")
@@ -96,8 +99,8 @@ async def handle_add_plant(
         # Auto-set mother_start if stage is mother and not provided.
         # This logic is specific to a 'mother' growspace ID. Ensure 'mother' is a known special ID.
         if growspace_id == "mother" and not mother_start:
-            mother_start = date.today()
-            _LOGGER.debug("Auto-setting mother_start to today for 'mother' growspace.")
+            mother_start = datetime.now()
+            _LOGGER.debug("Auto-setting mother_start to now for 'mother' growspace.")
 
         plant_id = await coordinator.async_add_plant(
             growspace_id=growspace_id,
@@ -151,7 +154,7 @@ async def handle_take_clone(
     mother_plant_id = call.data["mother_plant_id"]
     transition_date = call.data.get("transition_date")  # Optional transition date
     if transition_date is None:
-        transition_date = date.today()  # Default to today if not provided
+        transition_date = datetime.now()  # Default to now if not provided
 
     # Number of clones to make (default = 1)
     num_clones = call.data.get("num_clones", 1)
@@ -266,8 +269,8 @@ async def handle_move_clone(
     plant_id = call.data.get("plant_id")
     target_growspace_id = call.data.get("target_growspace_id")
     transition_date_str = call.data.get(
-        "transition_date", date.today().isoformat()
-    )  # Default to today
+        "transition_date", datetime.now().isoformat()
+    )  # Default to now
 
     if not plant_id or not target_growspace_id:
         _LOGGER.error(
@@ -292,13 +295,13 @@ async def handle_move_clone(
     try:
         transition_date = datetime.fromisoformat(
             transition_date_str.replace("Z", "+00:00")
-        ).date()
+        )
     except (TypeError, ValueError):
         _LOGGER.warning(
-            "Invalid transition_date format '%s' for move_clone, using today's date.",
+            "Invalid transition_date format '%s' for move_clone, using current time.",
             transition_date_str,
         )
-        transition_date = date.today()
+        transition_date = datetime.now()
 
     plant = coordinator.plants[plant_id]
 
@@ -398,16 +401,18 @@ async def handle_update_plant(
             )
             return
 
-        def parse_date_field(val) -> date | None:
+        def parse_date_field(val) -> datetime | None:
             """Helper to parse date strings or return None."""
             if not val or val in ("None", ""):
                 return None
-            if isinstance(val, date):
+            if isinstance(val, datetime):
                 return val
+            if isinstance(val, date):
+                return datetime.combine(val, datetime.min.time())
             if isinstance(val, str):
                 try:
                     # Attempt to parse ISO format, handling potential timezone 'Z'
-                    return datetime.fromisoformat(val.replace("Z", "+00:00")).date()
+                    return datetime.fromisoformat(val.replace("Z", "+00:00"))
                 except ValueError:
                     _LOGGER.warning("Could not parse date string: %s", val)
                     return None
@@ -792,7 +797,7 @@ async def handle_transition_plant_stage(
                 # Attempt to parse date, ensure it's a date object
                 transition_date = datetime.fromisoformat(
                     transition_date_str.replace("Z", "+00:00")
-                ).date()
+                )
             except ValueError:
                 _LOGGER.warning(
                     "Could not parse transition_date string: %s", transition_date_str
