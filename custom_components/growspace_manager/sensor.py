@@ -695,67 +695,8 @@ class StrainLibrarySensor(CoordinatorEntity[GrowspaceCoordinator], SensorEntity)
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
         """Return the calculated strain analytics as state attributes."""
-        analytics_data = {}
-        all_strains = self.coordinator.strains.get_all()
-
-        for strain_name, strain_data in all_strains.items():
-            phenotypes = strain_data.get("phenotypes", {})
-            strain_harvests = []
-
-            # Process each phenotype
-            pheno_analytics = {}
-            for pheno_name, pheno_data in phenotypes.items():
-                harvests = pheno_data.get("harvests", [])
-                strain_harvests.extend(harvests)
-
-                num_harvests = len(harvests)
-                if num_harvests > 0:
-                    total_veg = sum(h.get("veg_days", 0) for h in harvests)
-                    total_flower = sum(h.get("flower_days", 0) for h in harvests)
-                    stats = {
-                        "avg_veg_days": round(total_veg / num_harvests),
-                        "avg_flower_days": round(total_flower / num_harvests),
-                        "total_harvests": num_harvests,
-                    }
-                else:
-                    stats = {
-                        "avg_veg_days": 0,
-                        "avg_flower_days": 0,
-                        "total_harvests": 0,
-                    }
-
-                # Extract metadata, excluding the raw harvest list and large fields
-                pheno_meta = {
-                    k: v
-                    for k, v in pheno_data.items()
-                    if k not in ["harvests", "description", "image_path", "image_crop_meta"]
-                }
-
-                # Merge them
-                pheno_analytics[pheno_name] = {**stats, **pheno_meta}
-
-            # Calculate strain-level analytics
-            num_strain_harvests = len(strain_harvests)
-            strain_avg_veg = 0
-            strain_avg_flower = 0
-            if num_strain_harvests > 0:
-                strain_avg_veg = round(sum(h.get("veg_days", 0) for h in strain_harvests) / num_strain_harvests)
-                strain_avg_flower = round(sum(h.get("flower_days", 0) for h in strain_harvests) / num_strain_harvests)
-
-            analytics_data[strain_name] = {
-                "meta": strain_data.get("meta", {}),
-                "analytics": {
-                    "avg_veg_days": strain_avg_veg,
-                    "avg_flower_days": strain_avg_flower,
-                    "total_harvests": num_strain_harvests
-                },
-                "phenotypes": pheno_analytics
-            }
-
-        return {
-            "strains": analytics_data,
-            "strain_list": list(all_strains.keys())
-        }
+        # Use the cached analytics from StrainLibrary to avoid heavy computation on the main loop.
+        return self.coordinator.strains.get_analytics()
 
 
 class GrowspaceListSensor(SensorEntity):
