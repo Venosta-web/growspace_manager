@@ -363,7 +363,7 @@ class AirExchangeSensor(CoordinatorEntity[GrowspaceCoordinator], SensorEntity):
         return recommendation
 
 
-class GrowspaceOverviewSensor(SensorEntity):
+class GrowspaceOverviewSensor(CoordinatorEntity[GrowspaceCoordinator], SensorEntity):
     """A sensor that provides an overview of a single growspace.
 
     The state of this sensor is the number of plants in the growspace. Its
@@ -382,9 +382,10 @@ class GrowspaceOverviewSensor(SensorEntity):
             growspace_id: The ID of the growspace.
             growspace: The Growspace data object.
         """
-        self.coordinator = coordinator
+        super().__init__(coordinator)
         self.growspace_id = growspace_id
-        self.growspace = growspace
+        # We don't store self.growspace anymore to ensure we always get the latest
+        # object from the coordinator.
         self._attr_name = growspace.name
         self._attr_unique_id = f"{DOMAIN}_{growspace_id}"
 
@@ -431,6 +432,8 @@ class GrowspaceOverviewSensor(SensorEntity):
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
         """Return the detailed state attributes for the growspace."""
+        # Always fetch the latest growspace object from the coordinator
+        growspace = self.coordinator.growspaces[self.growspace_id]
         plants = self.coordinator.get_growspace_plants(self.growspace_id)
 
         # Calculate max stage days
@@ -447,15 +450,21 @@ class GrowspaceOverviewSensor(SensorEntity):
         flower_week = self._days_to_week(max_flower)
         
         # Get irrigation settings from growspace object
-        irrigation_options = self.growspace.irrigation_config
+        irrigation_options = growspace.irrigation_config
+
+        _LOGGER.debug(
+            "GrowspaceOverviewSensor attributes update for %s. Irrigation items: %d",
+            self.growspace_id,
+            len(irrigation_options.get("irrigation_times", []))
+        )
 
         # Create grid representation
         grid = {}
-        for row in range(1, int(self.growspace.rows) + 1):
+        for row in range(1, int(growspace.rows) + 1):
             for col in range(
                 1,
                 int(
-                    self.growspace.plants_per_row,
+                    growspace.plants_per_row,
                 )
                 + 1,
             ):
@@ -480,11 +489,11 @@ class GrowspaceOverviewSensor(SensorEntity):
             }
 
         return {
-            "growspace_id": self.growspace.id,
-            "rows": self.growspace.rows,
-            "plants_per_row": self.growspace.plants_per_row,
+            "growspace_id": growspace.id,
+            "rows": growspace.rows,
+            "plants_per_row": growspace.plants_per_row,
             "total_plants": len(plants),
-            "notification_target": self.growspace.notification_target,
+            "notification_target": growspace.notification_target,
             "max_veg_days": max_veg,
             "max_flower_days": max_flower,
             "veg_week": veg_week,
@@ -494,15 +503,6 @@ class GrowspaceOverviewSensor(SensorEntity):
             "drain_times": irrigation_options.get("drain_times", []),
             "grid": grid,
         }
-
-    async def async_added_to_hass(self) -> None:
-        """Register callbacks when the entity is added to Home Assistant."""
-        self.coordinator.async_add_listener(self.async_write_ha_state)
-
-    async def async_will_remove_from_hass(self) -> None:
-        """Clean up when the entity is removed from Home Assistant."""
-        # Note: In a real implementation, you'd remove the listener here
-        pass
 
 
 class PlantEntity(SensorEntity):
