@@ -824,6 +824,7 @@ class OptionsFlowHandler(OptionsFlow):
             )
             return self.async_create_entry(title="", data={})
 
+
         schema_dict = {}
 
         # Basic sensors - Use growspace_options for defaults
@@ -838,6 +839,37 @@ class OptionsFlowHandler(OptionsFlow):
                         domain=["sensor", "input_number"],
                         device_class=device_class,
                     )
+                )
+            )
+
+        # VPD sensor - optional
+        schema_dict[vol.Optional("vpd_sensor", default=growspace_options.get("vpd_sensor"))] = (
+            selector.EntitySelector(
+                selector.EntitySelectorConfig(
+                    domain=["sensor", "input_number"],
+                    device_class="pressure",
+                )
+            )
+        )
+
+        # LST offset - only show if temp and humidity are set but VPD is not
+        has_temp = bool(growspace_options.get("temperature_sensor"))
+        has_humidity = bool(growspace_options.get("humidity_sensor"))
+        has_vpd = bool(growspace_options.get("vpd_sensor"))
+
+        if has_temp and has_humidity and not has_vpd:
+            schema_dict[
+                vol.Optional(
+                    "lst_offset",
+                    default=growspace_options.get("lst_offset", -2.0),
+                )
+            ] = selector.NumberSelector(
+                selector.NumberSelectorConfig(
+                    min=-5.0,
+                    max=5.0,
+                    step=0.5,
+                    mode=selector.NumberSelectorMode.BOX,
+                    unit_of_measurement="°C",
                 )
             )
 
