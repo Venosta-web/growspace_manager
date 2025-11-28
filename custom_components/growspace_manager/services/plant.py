@@ -79,10 +79,13 @@ async def handle_add_plant(
                 return
 
         # Parse and handle optional dates
-        def parse_date_field(field_name: str) -> date | None:
+        # Parse and handle optional dates
+        def parse_date_field(field_name: str) -> datetime | None:
             val = call.data.get(field_name)
-            if isinstance(val, date):
+            if isinstance(val, datetime):
                 return val
+            if isinstance(val, date):
+                return datetime.combine(val, datetime.min.time())
             return None  # Leave None if not provided or invalid
 
         seedling_start = parse_date_field("seedling_start")
@@ -96,8 +99,8 @@ async def handle_add_plant(
         # Auto-set mother_start if stage is mother and not provided.
         # This logic is specific to a 'mother' growspace ID. Ensure 'mother' is a known special ID.
         if growspace_id == "mother" and not mother_start:
-            mother_start = date.today()
-            _LOGGER.debug("Auto-setting mother_start to today for 'mother' growspace.")
+            mother_start = datetime.now()
+            _LOGGER.debug("Auto-setting mother_start to now for 'mother' growspace.")
 
         plant_id = await coordinator.async_add_plant(
             growspace_id=growspace_id,
@@ -113,8 +116,6 @@ async def handle_add_plant(
             dry_start=dry_start,
             cure_start=cure_start,
         )
-        await coordinator.async_save()
-        await coordinator.async_request_refresh()
         _LOGGER.info(
             "Plant %s added successfully to growspace %s at (%d,%d)",
             plant_id,
@@ -152,6 +153,8 @@ async def handle_take_clone(
     """Handle taking clones from a plant."""
     mother_plant_id = call.data["mother_plant_id"]
     transition_date = call.data.get("transition_date")  # Optional transition date
+    if transition_date is None:
+        transition_date = datetime.now()  # Default to now if not provided
 
     # Number of clones to make (default = 1)
     num_clones = call.data.get("num_clones", 1)
@@ -235,8 +238,6 @@ async def handle_take_clone(
             # Continue trying to add other clones if one fails
 
     if clones_added_count > 0:
-        await coordinator.async_save()
-        await coordinator.async_request_refresh()
         hass.bus.async_fire(
             f"{DOMAIN}_clones_taken",
             {
@@ -268,8 +269,8 @@ async def handle_move_clone(
     plant_id = call.data.get("plant_id")
     target_growspace_id = call.data.get("target_growspace_id")
     transition_date_str = call.data.get(
-        "transition_date", date.today().isoformat()
-    )  # Default to today
+        "transition_date", datetime.now().isoformat()
+    )  # Default to now
 
     if not plant_id or not target_growspace_id:
         _LOGGER.error(
@@ -294,13 +295,13 @@ async def handle_move_clone(
     try:
         transition_date = datetime.fromisoformat(
             transition_date_str.replace("Z", "+00:00")
-        ).date()
+        )
     except (TypeError, ValueError):
         _LOGGER.warning(
-            "Invalid transition_date format '%s' for move_clone, using today's date.",
+            "Invalid transition_date format '%s' for move_clone, using current time.",
             transition_date_str,
         )
-        transition_date = date.today()
+        transition_date = datetime.now()
 
     plant = coordinator.plants[plant_id]
 
@@ -349,8 +350,6 @@ async def handle_move_clone(
 
         # Remove the old plant (the clone)
         await coordinator.async_remove_plant(plant_id)
-        await coordinator.async_save()
-        await coordinator.async_request_refresh()
 
         _LOGGER.info(
             "Moved clone %s (now %s) to growspace %s at (%s,%s)",
@@ -402,16 +401,18 @@ async def handle_update_plant(
             )
             return
 
-        def parse_date_field(val) -> date | None:
+        def parse_date_field(val) -> datetime | None:
             """Helper to parse date strings or return None."""
             if not val or val in ("None", ""):
                 return None
-            if isinstance(val, date):
+            if isinstance(val, datetime):
                 return val
+            if isinstance(val, date):
+                return datetime.combine(val, datetime.min.time())
             if isinstance(val, str):
                 try:
                     # Attempt to parse ISO format, handling potential timezone 'Z'
-                    return datetime.fromisoformat(val.replace("Z", "+00:00")).date()
+                    return datetime.fromisoformat(val.replace("Z", "+00:00"))
                 except ValueError:
                     _LOGGER.warning("Could not parse date string: %s", val)
                     return None
@@ -419,8 +420,50 @@ async def handle_update_plant(
 
         _LOGGER.debug("UPDATE_PLANT: Incoming call.data: %s", call.data)
 
+        plant = coordinator.plants[plant_id]
+        growspace_id = plant.growspace_id
+
+        # Create a mutable copy of call.data to allow modifications
+        service_data = dict(call.data)
+
+        # If position is being updated, check for conflicts
+        if "row" in service_data and "col" in service_data:
+            new_row, new_col = service_data["row"], service_data["col"]
+            existing_plants = coordinator.get_growspace_plants(growspace_id)
+            is_occupied = any(
+                p.plant_id != plant_id and p.row == new_row and p.col == new_col
+                for p in existing_plants
+            )
+
+            if is_occupied:
+                _LOGGER.warning(
+                    "Position (%d,%d) in growspace %s is occupied. Finding first free space.",
+                    new_row,
+                    new_col,
+                    growspace_id,
+                )
+                free_row, free_col = coordinator.find_first_free_position(growspace_id)
+                if free_row is not None and free_col is not None:
+                    _LOGGER.info(
+                        "Moving plant %s to first free space: (%d,%d)",
+                        plant_id,
+                        free_row,
+                        free_col,
+                    )
+                    service_data["row"] = free_row
+                    service_data["col"] = free_col
+                else:
+                    _LOGGER.error(
+                        "No free space found in growspace %s for plant %s. Position will not be updated.",
+                        growspace_id,
+                        plant_id,
+                    )
+                    # Remove row/col from service_data to prevent update
+                    service_data.pop("row")
+                    service_data.pop("col")
+
         update_data = {}
-        for k, v in call.data.items():
+        for k, v in service_data.items():
             if k == "plant_id":
                 continue
 
@@ -453,6 +496,31 @@ async def handle_update_plant(
             )
             return
 
+        # If strain and phenotype are being updated, ensure they exist in the library
+        if "strain" in update_data and "phenotype" in update_data:
+            strain = update_data["strain"]
+            phenotype = update_data["phenotype"]
+
+            # Check if strain and phenotype exist in library, using keys consistent with StrainLibrary
+            strain_key = strain.strip()
+            pheno_key = phenotype.strip() if phenotype else "default"
+
+            strain_exists = strain_key in strain_library.strains
+            phenotype_exists = False
+            if strain_exists:
+                phenotype_exists = pheno_key in strain_library.strains[strain_key]["phenotypes"]
+
+            if not strain_exists or not phenotype_exists:
+                _LOGGER.info(
+                    "Strain '%s' with phenotype '%s' not in library, adding it.",
+                    strain,
+                    phenotype,
+                )
+                await strain_library.add_strain(
+                    strain,
+                    phenotype,
+                )
+
         await coordinator.async_update_plant(plant_id, **update_data)
         _LOGGER.info(
             "Plant %s updated successfully with fields: %s",
@@ -464,8 +532,6 @@ async def handle_update_plant(
             f"{DOMAIN}_plant_updated",
             {"plant_id": plant_id, "updated_fields": list(update_data.keys())},
         )
-        await coordinator.async_save()
-        await coordinator.async_request_refresh()
 
     except Exception as err:
         _LOGGER.exception("Failed to update plant %s: %s", plant_id, err)
@@ -503,9 +569,6 @@ async def handle_remove_plant(
             plant_id,
             plant_info.growspace_id,
         )
-
-        await coordinator.async_save()
-        await coordinator.async_request_refresh()
 
         hass.bus.async_fire(
             f"{DOMAIN}_plant_removed",
@@ -555,8 +618,6 @@ async def handle_switch_plants(
 
         await coordinator.async_switch_plants(plant_id_1, plant_id_2)
         _LOGGER.info("Plants %s and %s switched successfully", plant_id_1, plant_id_2)
-        await coordinator.async_save()
-        await coordinator.async_request_refresh()
 
         hass.bus.async_fire(
             f"{DOMAIN}_plants_switched",
@@ -672,8 +733,6 @@ async def handle_move_plant(
                     "plant2_new_position": f"({old_row},{old_col})",
                 },
             )
-            await coordinator.async_save()
-            await coordinator.async_request_refresh()
             _LOGGER.info(
                 "Successfully switched positions for %s and %s.",
                 plant_id,
@@ -682,8 +741,6 @@ async def handle_move_plant(
         else:
             # Position is empty, just move normally
             await coordinator.async_move_plant(plant_id, new_row, new_col)
-            await coordinator.async_save()
-            await coordinator.async_request_refresh()
             _LOGGER.info(
                 "Plant %s moved to (%d,%d) in growspace %s",
                 plant.strain,
@@ -740,7 +797,7 @@ async def handle_transition_plant_stage(
                 # Attempt to parse date, ensure it's a date object
                 transition_date = datetime.fromisoformat(
                     transition_date_str.replace("Z", "+00:00")
-                ).date()
+                )
             except ValueError:
                 _LOGGER.warning(
                     "Could not parse transition_date string: %s", transition_date_str
@@ -758,8 +815,6 @@ async def handle_transition_plant_stage(
             transition_date=transition_date,
         )
         _LOGGER.info("Plant %s transitioned to %s stage", plant_id, new_stage)
-        await coordinator.async_save()
-        await coordinator.async_request_refresh()
 
         hass.bus.async_fire(
             f"{DOMAIN}_plant_transitioned",
@@ -892,8 +947,6 @@ async def handle_harvest_plant(
             transition_date=transition_date,
         )
         _LOGGER.info("Plant %s harvested successfully", plant_id)
-        await coordinator.async_save()
-        await coordinator.async_request_refresh()
 
         hass.bus.async_fire(
             f"{DOMAIN}_plant_harvested",

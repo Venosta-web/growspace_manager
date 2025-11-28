@@ -4,7 +4,6 @@ from datetime import date
 
 import voluptuous as vol
 
-
 DOMAIN = "growspace_manager"
 STORAGE_VERSION = 1
 STORAGE_KEY = f"{DOMAIN}_storage"
@@ -16,6 +15,19 @@ PLATFORMS: list[str] = [
 
 DEFAULT_NAME = "Growspace Manager"
 ATTR_TOTAL_DAYS = "total_days"
+
+# AI Configuration
+CONF_AI_ENABLED = "ai_enabled"
+CONF_ASSISTANT_ID = "assistant_id"
+CONF_NOTIFICATION_PERSONALITY = "notification_personality"
+
+AI_PERSONALITIES = [
+    "Standard",
+    "Scientific",
+    "Chill Stoner",
+    "Strict Coach",
+    "Pirate",
+]
 
 # Notification events - configurable per growspace
 DEFAULT_NOTIFICATION_EVENTS = {
@@ -57,7 +69,7 @@ SPECIAL_GROWSPACES = {
     "dry": {
         "canonical_id": "dry",
         "canonical_name": "dry",
-        "aliases": ["dry_overview"],
+        "aliases": ["dry_overview", "drying"],
     },
     "cure": {
         "canonical_id": "cure",
@@ -81,6 +93,7 @@ MAX_ROWS = 20
 MAX_PLANTS_PER_ROW = 20
 
 # Strain Library defaults
+DB_FILE_STRAIN_LIBRARY = "strain_library.db"
 STORAGE_KEY_STRAIN_LIBRARY = "strain_library"
 
 DEFAULT_BAYESIAN_PRIORS = {
@@ -123,12 +136,11 @@ def valid_date_or_none(value):
     try:
         # Attempt to parse ISO format, handling potential timezone 'Z'
         # Ensure value is converted to string to handle potential datetime objects directly
-        return date.fromisoformat(str(value).replace("Z", "+00:00"))
+        return date.fromisoformat(str(value).replace("Z", ""))
     except ValueError:
         raise vol.Invalid(
             f"'{value}' is not a valid date or ISO format string"
         ) from None
-
 
 def valid_growspace_id(value):
     """Validate that a value is a non-empty string for a growspace ID.
@@ -183,7 +195,6 @@ ADD_PLANT_SCHEMA = vol.Schema(
 )
 
 # Update Plant
-# THIS SCHEMA DOES NOT INCLUDE 'growspace_id' AS IT'S NOT MEANT TO BE UPDATED VIA THIS SERVICE
 UPDATE_PLANT_SCHEMA = vol.Schema(
     {
         vol.Required("plant_id"): str,
@@ -198,7 +209,6 @@ UPDATE_PLANT_SCHEMA = vol.Schema(
         vol.Optional("mother_start"): valid_date_or_none,
         vol.Optional("clone_start"): valid_date_or_none,
         vol.Optional("veg_start"): valid_date_or_none,
-        # CORRECTED: flower_start now uses valid_date_or_none
         vol.Optional("flower_start"): valid_date_or_none,
         vol.Optional("dry_start"): valid_date_or_none,
         vol.Optional("cure_start"): valid_date_or_none,
@@ -207,8 +217,8 @@ UPDATE_PLANT_SCHEMA = vol.Schema(
         vol.Optional("flower_days"): vol.All(vol.Coerce(int)),
         vol.Optional("dry_days"): vol.All(vol.Coerce(int)),
         vol.Optional("cure_days"): vol.All(vol.Coerce(int)),
-        vol.Optional("mother_days"): vol.All(vol.Coerce(int)),  # ✅ Add this too
-        vol.Optional("clone_days"): vol.All(vol.Coerce(int)),  # ✅ Add this too
+        vol.Optional("mother_days"): vol.All(vol.Coerce(int)),
+        vol.Optional("clone_days"): vol.All(vol.Coerce(int)),
     },
     extra=vol.ALLOW_EXTRA,
 )
@@ -295,7 +305,8 @@ EXPORT_STRAIN_LIBRARY_SCHEMA = vol.Schema(
 
 IMPORT_STRAIN_LIBRARY_SCHEMA = vol.Schema(
     {
-        vol.Required("strains"): list,  # Expecting a list of strain data dictionaries
+        vol.Optional("file_path"): str,
+        vol.Optional("zip_base64"): str,
         vol.Optional("replace", default=False): bool,
     }
 )
@@ -303,6 +314,57 @@ IMPORT_STRAIN_LIBRARY_SCHEMA = vol.Schema(
 CLEAR_STRAIN_LIBRARY_SCHEMA = vol.Schema(
     {
         # No parameters needed to clear all strains
+    }
+)
+
+ADD_STRAIN_SCHEMA = vol.Schema(
+    {
+        vol.Required("strain"): str,
+        vol.Optional("phenotype"): str,
+        vol.Optional("breeder"): str,
+        vol.Optional("type"): str,
+        vol.Optional("lineage"): str,
+        vol.Optional("sex"): str,
+        vol.Optional("flower_days_min"): vol.All(vol.Coerce(int), vol.Range(min=0)),
+        vol.Optional("flower_days_max"): vol.All(vol.Coerce(int), vol.Range(min=0)),
+        vol.Optional("flowering_days_min"): vol.All(vol.Coerce(int), vol.Range(min=0)),
+        vol.Optional("flowering_days_max"): vol.All(vol.Coerce(int), vol.Range(min=0)),
+        vol.Optional("description"): str,
+        vol.Optional("image_base64"): str,
+        vol.Optional("image"): str,
+        vol.Optional("image_path"): str,
+        vol.Optional("image_crop_meta"): dict,
+        vol.Optional("sativa_percentage"): vol.All(vol.Coerce(int), vol.Range(min=0, max=100)),
+        vol.Optional("indica_percentage"): vol.All(vol.Coerce(int), vol.Range(min=0, max=100)),
+    }
+)
+
+REMOVE_STRAIN_SCHEMA = vol.Schema(
+    {
+        vol.Required("strain"): str,
+        vol.Optional("phenotype"): str,
+    }
+)
+
+UPDATE_STRAIN_META_SCHEMA = vol.Schema(
+    {
+        vol.Required("strain"): str,
+        vol.Optional("phenotype"): str,
+        vol.Optional("breeder"): str,
+        vol.Optional("type"): str,
+        vol.Optional("lineage"): str,
+        vol.Optional("sex"): str,
+        vol.Optional("flower_days_min"): vol.All(vol.Coerce(int), vol.Range(min=0)),
+        vol.Optional("flower_days_max"): vol.All(vol.Coerce(int), vol.Range(min=0)),
+        vol.Optional("flowering_days_min"): vol.All(vol.Coerce(int), vol.Range(min=0)),
+        vol.Optional("flowering_days_max"): vol.All(vol.Coerce(int), vol.Range(min=0)),
+        vol.Optional("description"): str,
+        vol.Optional("image_base64"): str,
+        vol.Optional("image"): str,
+        vol.Optional("image_path"): str,
+        vol.Optional("image_crop_meta"): dict,
+        vol.Optional("sativa_percentage"): vol.All(vol.Coerce(int), vol.Range(min=0, max=100)),
+        vol.Optional("indica_percentage"): vol.All(vol.Coerce(int), vol.Range(min=0, max=100)),
     }
 )
 
@@ -350,3 +412,59 @@ REMOVE_ENVIRONMENT_SCHEMA = vol.Schema(
         vol.Required("growspace_id"): str
     }
 )
+
+# AI Service Schemas
+ASK_GROW_ADVICE_SCHEMA = vol.Schema(
+    {
+        vol.Required("growspace_id"): vol.All(str, valid_growspace_id),
+        vol.Optional("user_query"): str,
+        vol.Optional("context_type", default="general"): vol.In(
+            ["general", "diagnostic", "optimization", "planning"]
+        ),
+        vol.Optional("max_length"): vol.All(vol.Coerce(int), vol.Range(min=1)),
+    }
+)
+
+ANALYZE_ALL_GROWSPACES_SCHEMA = vol.Schema(
+    {
+        vol.Optional("max_length"): vol.All(vol.Coerce(int), vol.Range(min=1)),
+    }
+)
+
+STRAIN_RECOMMENDATION_SCHEMA = vol.Schema(
+    {
+        vol.Optional("preferences"): dict,
+        vol.Optional("growspace_id"): str,
+        vol.Optional("user_query"): str,
+        vol.Optional("max_length"): vol.All(vol.Coerce(int), vol.Range(min=1)),
+    }
+)
+
+# --- Irrigation Service Schemas ---
+
+SET_IRRIGATION_SETTINGS_SCHEMA = vol.Schema(
+    {
+        vol.Required("growspace_id"): vol.All(str, valid_growspace_id),
+        vol.Optional("irrigation_pump_entity"): str,
+        vol.Optional("drain_pump_entity"): str,
+        vol.Optional("irrigation_duration"): vol.All(vol.Coerce(int), vol.Range(min=1)),
+        vol.Optional("drain_duration"): vol.All(vol.Coerce(int), vol.Range(min=1)),
+    }
+)
+
+_ADD_SCHEDULE_TIME_BASE = {
+    vol.Required("growspace_id"): vol.All(str, valid_growspace_id),
+    vol.Required("time"): str, # Use string for HH:MM:SS format
+    vol.Optional("duration"): vol.All(vol.Coerce(int), vol.Range(min=1)),
+}
+
+ADD_IRRIGATION_TIME_SCHEMA = vol.Schema(_ADD_SCHEDULE_TIME_BASE)
+ADD_DRAIN_TIME_SCHEMA = vol.Schema(_ADD_SCHEDULE_TIME_BASE)
+
+REMOVE_TIME_BASE = {
+    vol.Required("growspace_id"): vol.All(str, valid_growspace_id),
+    vol.Required("time"): str,
+}
+
+REMOVE_IRRIGATION_TIME_SCHEMA = vol.Schema(REMOVE_TIME_BASE)
+REMOVE_DRAIN_TIME_SCHEMA = vol.Schema(REMOVE_TIME_BASE)

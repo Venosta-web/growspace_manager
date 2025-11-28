@@ -41,17 +41,17 @@ async def _migrate_plants_from_legacy_growspace(
     for plant in plants_to_migrate:
         plant_id = plant.plant_id
         if plant_id in coordinator.plants:
-            coordinator.plants[plant_id]["growspace_id"] = canonical_id
+            coordinator.plants[plant_id].growspace_id = canonical_id
             try:
-                new_row, new_col = coordinator.find_first_available_position(
+                new_row, new_col = coordinator._find_first_available_position(
                     canonical_id
                 )
-                coordinator.plants[plant_id]["row"] = new_row
-                coordinator.plants[plant_id]["col"] = new_col
+                coordinator.plants[plant_id].row = new_row
+                coordinator.plants[plant_id].col = new_col
                 migrated_plants_info.append(
                     f"{plant.strain} ({plant_id}) to {canonical_id} at ({new_row},{new_col})"
                 )
-            except Exception as e:
+            except ValueError as e:
                 _LOGGER.warning(
                     "Failed to find position for migrated plant %s: %s",
                     plant_id,
@@ -66,6 +66,7 @@ async def _migrate_plants_from_legacy_growspace(
     coordinator.growspaces.pop(legacy_id, None)
     _LOGGER.debug("Removed legacy growspace %s.", legacy_id)
 
+
 async def _cleanup_dry_legacy_growspaces(
     hass: HomeAssistant,
     coordinator: GrowspaceCoordinator,
@@ -74,11 +75,12 @@ async def _cleanup_dry_legacy_growspaces(
     legacy_dry: list[str],
 ) -> None:
     for legacy_id in legacy_dry:
-        canonical_dry = coordinator.ensure_special_growspace("dry", "dry")
+        canonical_dry = coordinator._ensure_special_growspace("dry", "dry")
         await _migrate_plants_from_legacy_growspace(
             coordinator, legacy_id, canonical_dry, migrated_plants_info
         )
         removed_growspaces.append(legacy_id)
+
 
 async def _cleanup_cure_legacy_growspaces(
     hass: HomeAssistant,
@@ -88,7 +90,7 @@ async def _cleanup_cure_legacy_growspaces(
     legacy_cure: list[str],
 ) -> None:
     for legacy_id in legacy_cure:
-        canonical_cure = coordinator.ensure_special_growspace("cure", "cure")
+        canonical_cure = coordinator._ensure_special_growspace("cure", "cure")
         await _migrate_plants_from_legacy_growspace(
             coordinator, legacy_id, canonical_cure, migrated_plants_info
         )
@@ -138,7 +140,7 @@ async def debug_cleanup_legacy(
         if not cure_only:
             for legacy_id in legacy_dry:
                 # Ensure canonical dry exists
-                canonical_dry = coordinator.ensure_special_growspace("dry", "dry")
+                canonical_dry = coordinator._ensure_special_growspace("dry", "dry")
                 await _migrate_plants_from_legacy_growspace(
                     coordinator, legacy_id, canonical_dry, migrated_plants_info
                 )
@@ -147,7 +149,7 @@ async def debug_cleanup_legacy(
         # Cleanup cure legacy growspaces
         if not dry_only:
             for legacy_id in legacy_cure:
-                canonical_cure = coordinator.ensure_special_growspace("cure", "cure")
+                canonical_cure = coordinator._ensure_special_growspace("cure", "cure")
                 await _migrate_plants_from_legacy_growspace(
                     coordinator, legacy_id, canonical_cure, migrated_plants_info
                 )
@@ -185,12 +187,12 @@ async def debug_list_growspaces(
     for gs_id, gs_data in coordinator.growspaces.items():
         plant_count = len(coordinator.get_growspace_plants(gs_id))
         _LOGGER.debug(
-            "%s -> name='%s', plants=%d, rows=%s, cols=%s",
+            "%s -> name='%s', plants=%d, rows=%s, plants_per_row=%s",
             gs_id,
-            gs_data.get("name"),
+            gs_data.name,
             plant_count,
-            gs_data.get("rows"),
-            gs_data.get("plants_per_row"),
+            gs_data.rows,
+            gs_data.plants_per_row,
         )
 
     _LOGGER.debug("=== Plants by Growspace ===")
@@ -221,12 +223,12 @@ async def _restore_plants_to_canonical_growspace(
         plant_id = plant_data["plant_id"]
         if plant_id in coordinator.plants:
             try:
-                new_row, new_col = coordinator.find_first_available_position(
+                new_row, new_col = coordinator._find_first_available_position(
                     canonical_id
                 )
-                coordinator.plants[plant_id]["growspace_id"] = canonical_id
-                coordinator.plants[plant_id]["row"] = new_row
-                coordinator.plants[plant_id]["col"] = new_col
+                coordinator.plants[plant_id].growspace_id = canonical_id
+                coordinator.plants[plant_id].row = new_row
+                coordinator.plants[plant_id].col = new_col
                 restored_count += 1
                 _LOGGER.debug(
                     "Restored %s to %s at (%d,%d) from %s",
@@ -236,7 +238,7 @@ async def _restore_plants_to_canonical_growspace(
                     new_col,
                     plant_data["old_pos"],
                 )
-            except Exception as e:
+            except ValueError as e:
                 _LOGGER.warning(
                     "Failed to assign position to preserved plant %s: %s",
                     plant_id,
@@ -248,6 +250,7 @@ async def _restore_plants_to_canonical_growspace(
                 plant_id,
             )
     _LOGGER.debug("Restored %d plants to canonical %s", restored_count, log_prefix)
+
 
 async def _handle_reset_dry_growspace(
     hass: HomeAssistant,
@@ -278,12 +281,13 @@ async def _handle_reset_dry_growspace(
         coordinator.growspaces.pop(dry_id, None)
         _LOGGER.debug("Removed dry growspace %s", dry_id)
 
-    canonical_dry = coordinator.ensure_special_growspace("dry", "dry")
+    canonical_dry = coordinator._ensure_special_growspace("dry", "dry")
 
     if preserve_plants and dry_plants_data_to_restore:
         await _restore_plants_to_canonical_growspace(
             coordinator, canonical_dry, dry_plants_data_to_restore, "dry"
         )
+
 
 async def _handle_reset_cure_growspace(
     hass: HomeAssistant,
@@ -305,16 +309,16 @@ async def _handle_reset_cure_growspace(
                     cure_plants_data_to_restore.append(
                         {
                             "plant_id": plant.plant_id,
-                    "strain": plant.strain,
-                    "old_pos": f"({plant.row},{plant.col})",
-                }
-            )
+                            "strain": plant.strain,
+                            "old_pos": f"({plant.row},{plant.col})",
+                        }
+                    )
 
     for cure_id in cure_ids_to_remove:
         coordinator.growspaces.pop(cure_id, None)
         _LOGGER.debug("Removed cure growspace %s", cure_id)
 
-    canonical_cure = coordinator.ensure_special_growspace("cure", "cure")
+    canonical_cure = coordinator._ensure_special_growspace("cure", "cure")
 
     if preserve_plants and cure_plants_data_to_restore:
         await _restore_plants_to_canonical_growspace(
@@ -373,9 +377,9 @@ async def debug_consolidate_duplicate_special(
 
         for gs_id, gs_data in coordinator.growspaces.items():
             # Using .lower() for case-insensitive comparison of names
-            if gs_data.get("name", "").lower() == "dry":
+            if gs_data.name.lower() == "dry":
                 dry_growspaces[gs_id] = gs_data
-            elif gs_data.get("name", "").lower() == "cure":
+            elif gs_data.name.lower() == "cure":
                 cure_growspaces[gs_id] = gs_data
 
         _LOGGER.debug("Found dry growspaces: %s", list(dry_growspaces.keys()))
@@ -394,7 +398,7 @@ async def debug_consolidate_duplicate_special(
             )
 
             if canonical_dry not in coordinator.growspaces:
-                coordinator.ensure_special_growspace("dry", "dry")
+                coordinator._ensure_special_growspace("dry", "dry")
 
             await _consolidate_plants_to_canonical_growspace(
                 coordinator, duplicate_ids, canonical_dry, "dry"
@@ -413,7 +417,7 @@ async def debug_consolidate_duplicate_special(
             )
 
             if canonical_cure not in coordinator.growspaces:
-                coordinator.ensure_special_growspace("cure", "cure")
+                coordinator._ensure_special_growspace("cure", "cure")
 
             await _consolidate_plants_to_canonical_growspace(
                 coordinator, duplicate_ids, canonical_cure, "cure"
@@ -443,12 +447,12 @@ async def _consolidate_plants_to_canonical_growspace(
             plant_id = plant.plant_id
             if plant_id in coordinator.plants:
                 try:
-                    new_row, new_col = coordinator.find_first_available_position(
+                    new_row, new_col = coordinator._find_first_available_position(
                         canonical_id
                     )
-                    coordinator.plants[plant_id]["growspace_id"] = canonical_id
-                    coordinator.plants[plant_id]["row"] = new_row
-                    coordinator.plants[plant_id]["col"] = new_col
+                    coordinator.plants[plant_id].growspace_id = canonical_id
+                    coordinator.plants[plant_id].row = new_row
+                    coordinator.plants[plant_id].col = new_col
                     _LOGGER.debug(
                         "Moved plant %s from duplicate %s %s to %s at (%d,%d)",
                         plant_id,
@@ -458,7 +462,7 @@ async def _consolidate_plants_to_canonical_growspace(
                         new_row,
                         new_col,
                     )
-                except Exception as e:
+                except ValueError as e:
                     _LOGGER.warning(
                         "Failed to find position for plant %s from duplicate %s: %s",
                         plant_id,

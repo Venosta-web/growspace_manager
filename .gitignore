@@ -103,3 +103,7 @@ dmypy.json
 # === ADD THIS SECTION ===
 # IDE / Editor
 .vscode/
+.gemini/
+
+# hacs
+custom_components/hacs/

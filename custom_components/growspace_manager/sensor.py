@@ -19,23 +19,22 @@ from dateutil import parser
 from homeassistant.components.sensor import SensorEntity, SensorStateClass
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers.entity import DeviceInfo, Entity
+from homeassistant.helpers.device_registry import DeviceInfo
+from homeassistant.helpers.entity import Entity
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
+from .const import DOMAIN
+
 # Local / relative imports
 from .coordinator import GrowspaceCoordinator
-from .helpers import async_setup_trend_sensor, async_setup_statistics_sensor
-from .models import Plant, Growspace
+from .helpers import async_setup_statistics_sensor, async_setup_trend_sensor
+from .models import Growspace, Plant
 from .utils import (
-    parse_date_field,
-    format_date,
-    calculate_days_since,
-    find_first_free_position,
-    generate_growspace_grid,
     VPDCalculator,
+    parse_date_field,
+    calculate_days_since,
 )
-from .const import DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -61,10 +60,14 @@ async def _async_create_derivative_sensors(
         for sensor_type in ["temperature", "humidity", "vpd"]:
             source_sensor = growspace.environment_config.get(f"{sensor_type}_sensor")
             if source_sensor:
-                trend_unique_id = await async_setup_trend_sensor(hass, source_sensor, growspace.id, growspace.name, sensor_type)
+                trend_unique_id = await async_setup_trend_sensor(
+                    hass, source_sensor, growspace.id, growspace.name, sensor_type
+                )
                 if trend_unique_id and trend_unique_id not in created_entities:
                     created_entities.append(trend_unique_id)
-                stats_unique_id = await async_setup_statistics_sensor(hass, source_sensor, growspace.id, growspace.name, sensor_type)
+                stats_unique_id = await async_setup_statistics_sensor(
+                    hass, source_sensor, growspace.id, growspace.name, sensor_type
+                )
                 if stats_unique_id and stats_unique_id not in created_entities:
                     created_entities.append(stats_unique_id)
 
@@ -205,7 +208,7 @@ async def async_setup_entry(
 
     # Listen for coordinator updates to manage dynamic entities
     def _listener_callback() -> None:
-        coordinator.hass.async_create_task(_handlecoordinator_update_async())
+        hass.async_create_task(_handlecoordinator_update_async())
 
     coordinator.async_add_listener(_listener_callback)
 
@@ -224,9 +227,9 @@ async def async_setup_entry(
                     None,
                 )
             )
-        if global_settings.get(
-            "lung_room_temp_sensor"
-        ) and global_settings.get("lung_room_humidity_sensor"):
+        if global_settings.get("lung_room_temp_sensor") and global_settings.get(
+            "lung_room_humidity_sensor"
+        ):
             global_entities.append(
                 VpdSensor(
                     coordinator,
@@ -306,7 +309,10 @@ class VpdSensor(CoordinatorEntity[GrowspaceCoordinator], SensorEntity):
                 except (ValueError, TypeError):
                     temp = None
             humidity_state = hass.states.get(self._humidity_sensor)
-            if humidity_state and humidity_state.state not in ["unknown", "unavailable"]:
+            if humidity_state and humidity_state.state not in [
+                "unknown",
+                "unavailable",
+            ]:
                 try:
                     humidity = float(humidity_state.state)
                 except (ValueError, TypeError):
@@ -325,9 +331,7 @@ class AirExchangeSensor(CoordinatorEntity[GrowspaceCoordinator], SensorEntity):
     alleviate environmental stress.
     """
 
-    def __init__(
-        self, coordinator: GrowspaceCoordinator, growspace_id: str
-    ) -> None:
+    def __init__(self, coordinator: GrowspaceCoordinator, growspace_id: str) -> None:
         """Initialize the air exchange sensor.
 
         Args:
@@ -353,13 +357,13 @@ class AirExchangeSensor(CoordinatorEntity[GrowspaceCoordinator], SensorEntity):
         """Return the current recommended air exchange action."""
         # The actual state is calculated in the coordinator and stored.
         # This sensor just retrieves it.
-        recommendation = self.coordinator.data.get("air_exchange_recommendations", {}).get(
-            self.growspace_id, "Idle"
-        )
+        recommendation = self.coordinator.data.get(
+            "air_exchange_recommendations", {}
+        ).get(self.growspace_id, "Idle")
         return recommendation
 
 
-class GrowspaceOverviewSensor(SensorEntity):
+class GrowspaceOverviewSensor(CoordinatorEntity[GrowspaceCoordinator], SensorEntity):
     """A sensor that provides an overview of a single growspace.
 
     The state of this sensor is the number of plants in the growspace. Its
@@ -378,33 +382,12 @@ class GrowspaceOverviewSensor(SensorEntity):
             growspace_id: The ID of the growspace.
             growspace: The Growspace data object.
         """
-        self.coordinator = coordinator
+        super().__init__(coordinator)
         self.growspace_id = growspace_id
-        self.growspace = growspace
-        self._attr_name = f"{growspace.name}"
-
-        # Use stable unique_id matching canonical growspace_id to avoid duplicates
+        # We don't store self.growspace anymore to ensure we always get the latest
+        # object from the coordinator.
+        self._attr_name = growspace.name
         self._attr_unique_id = f"{DOMAIN}_{growspace_id}"
-        # Force fixed entity IDs for special growspaces
-        if growspace.id == "dry":
-            self._attr_unique_id = f"{DOMAIN}_growspace_dry"
-            self._attr_name = "dry"
-        elif growspace.id == "cure":
-            self._attr_unique_id = "growspace_cure"
-            self._attr_name = "cure"
-            self._attr_entity_id = "sensor.cure"
-        elif growspace.id == "mother":
-            self._attr_unique_id = "growspace_mother"
-            self._attr_name = "mother"
-            self._attr_entity_id = "sensor.mother"
-        elif growspace.id == "clone":
-            self._attr_unique_id = "growspace_clone"
-            self._attr_name = "clone"
-            self._attr_entity_id = "sensor.clone"
-        else:
-            self._attr_unique_id = f"growspace_{growspace.id}"
-            self._attr_name = f"{growspace.name}"
-            self._attr_entity_id = f"sensor.{growspace.id}"
 
         # Set up device info
         self._attr_device_info = DeviceInfo(
@@ -425,16 +408,12 @@ class GrowspaceOverviewSensor(SensorEntity):
         """Calculate the number of days since a given date string.
 
         Args:
-            date_str: The date in 'YYYY-MM-DD' format.
+            date_str: The date string (ISO format).
 
         Returns:
             The number of days that have passed.
         """
-        try:
-            dt = datetime.strptime(date_str, "%Y-%m-%d").date()
-        except Exception:
-            return 0
-        return (date.today() - dt).days
+        return calculate_days_since(date_str)
 
     @staticmethod
     def _days_to_week(days: int) -> int:
@@ -453,6 +432,8 @@ class GrowspaceOverviewSensor(SensorEntity):
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
         """Return the detailed state attributes for the growspace."""
+        # Always fetch the latest growspace object from the coordinator
+        growspace = self.coordinator.growspaces[self.growspace_id]
         plants = self.coordinator.get_growspace_plants(self.growspace_id)
 
         # Calculate max stage days
@@ -467,14 +448,23 @@ class GrowspaceOverviewSensor(SensorEntity):
         # Calculate weeks from days
         veg_week = self._days_to_week(max_veg)
         flower_week = self._days_to_week(max_flower)
+        
+        # Get irrigation settings from growspace object
+        irrigation_options = growspace.irrigation_config
+
+        _LOGGER.debug(
+            "GrowspaceOverviewSensor attributes update for %s. Irrigation items: %d",
+            self.growspace_id,
+            len(irrigation_options.get("irrigation_times", []))
+        )
 
         # Create grid representation
         grid = {}
-        for row in range(1, int(self.growspace.rows) + 1):
+        for row in range(1, int(growspace.rows) + 1):
             for col in range(
                 1,
                 int(
-                    self.growspace.plants_per_row,
+                    growspace.plants_per_row,
                 )
                 + 1,
             ):
@@ -499,27 +489,20 @@ class GrowspaceOverviewSensor(SensorEntity):
             }
 
         return {
-            "growspace_id": self.growspace.id,
-            "rows": self.growspace.rows,
-            "plants_per_row": self.growspace.plants_per_row,
+            "growspace_id": growspace.id,
+            "rows": growspace.rows,
+            "plants_per_row": growspace.plants_per_row,
             "total_plants": len(plants),
-            "notification_target": self.growspace.notification_target,
+            "notification_target": growspace.notification_target,
             "max_veg_days": max_veg,
             "max_flower_days": max_flower,
             "veg_week": veg_week,
             "flower_week": flower_week,
             "max_stage_summary": f"Veg: {max_veg}d (W{veg_week}), Flower: {max_flower}d (W{flower_week})",
+            "irrigation_times": irrigation_options.get("irrigation_times", []),
+            "drain_times": irrigation_options.get("drain_times", []),
             "grid": grid,
         }
-
-    async def async_added_to_hass(self) -> None:
-        """Register callbacks when the entity is added to Home Assistant."""
-        self.coordinator.async_add_listener(self.async_write_ha_state)
-
-    async def async_will_remove_from_hass(self) -> None:
-        """Clean up when the entity is removed from Home Assistant."""
-        # Note: In a real implementation, you'd remove the listener here
-        pass
 
 
 class PlantEntity(SensorEntity):
@@ -553,23 +536,7 @@ class PlantEntity(SensorEntity):
             manufacturer="Growspace Manager",
         )
 
-    def _parse_date(self, value: str | None) -> date | None:
-        """Safely parse a date string into a date object.
 
-        Args:
-            value: The date string to parse.
-
-        Returns:
-            A date object, or None if parsing fails.
-        """
-        if not value:
-            return None
-        if isinstance(value, date):
-            return value
-        try:
-            return parser.isoparse(value).date()
-        except Exception:
-            return None
 
     def _determine_stage(self, plant: Plant) -> str:
         """Determine the current growth stage of the plant.
@@ -584,7 +551,7 @@ class PlantEntity(SensorEntity):
         Returns:
             The determined stage as a string.
         """
-        now = date.today()
+        now = datetime.now()
 
         # 1. Special growspaces override everything
         if plant.growspace_id == "mother":
@@ -648,7 +615,7 @@ class PlantEntity(SensorEntity):
         stage = self._determine_stage(plant)
 
         # Get growspace if needed
-        growspace = self.coordinator.growspaces.get(plant.growspace_id)
+        self.coordinator.growspaces.get(plant.growspace_id)
 
         return stage
 
@@ -728,35 +695,67 @@ class StrainLibrarySensor(CoordinatorEntity[GrowspaceCoordinator], SensorEntity)
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
         """Return the calculated strain analytics as state attributes."""
-        analytics = {}
+        analytics_data = {}
         all_strains = self.coordinator.strains.get_all()
 
-        for key, data in all_strains.items():
-            strain, phenotype = key.split("|")
-            harvests = data.get("harvests", [])
-            num_harvests = len(harvests)
+        for strain_name, strain_data in all_strains.items():
+            phenotypes = strain_data.get("phenotypes", {})
+            strain_harvests = []
 
-            if num_harvests == 0:
-                continue
+            # Process each phenotype
+            pheno_analytics = {}
+            for pheno_name, pheno_data in phenotypes.items():
+                harvests = pheno_data.get("harvests", [])
+                strain_harvests.extend(harvests)
 
-            # Calculate average veg and flower times
-            total_veg_days = sum(h.get("veg_days", 0) for h in harvests)
-            total_flower_days = sum(h.get("flower_days", 0) for h in harvests)
-            avg_veg_days = round(total_veg_days / num_harvests)
-            avg_flower_days = round(total_flower_days / num_harvests)
+                num_harvests = len(harvests)
+                if num_harvests > 0:
+                    total_veg = sum(h.get("veg_days", 0) for h in harvests)
+                    total_flower = sum(h.get("flower_days", 0) for h in harvests)
+                    stats = {
+                        "avg_veg_days": round(total_veg / num_harvests),
+                        "avg_flower_days": round(total_flower / num_harvests),
+                        "total_harvests": num_harvests,
+                    }
+                else:
+                    stats = {
+                        "avg_veg_days": 0,
+                        "avg_flower_days": 0,
+                        "total_harvests": 0,
+                    }
 
-            # Sanitize for attribute names (lowercase, spaces to _)
-            attr_base = f"{strain.lower().replace(' ', '_')}"
-            if phenotype != "default":
-                attr_base += f"_{phenotype.lower().replace(' ', '_')}"
+                # Extract metadata, excluding the raw harvest list and large fields
+                pheno_meta = {
+                    k: v
+                    for k, v in pheno_data.items()
+                    if k not in ["harvests", "description", "image_path", "image_crop_meta"]
+                }
 
-            analytics[f"{attr_base}_avg_veg_time"] = avg_veg_days
-            analytics[f"{attr_base}_avg_flower_time"] = avg_flower_days
-            analytics[f"{attr_base}_harvests"] = num_harvests
+                # Merge them
+                pheno_analytics[pheno_name] = {**stats, **pheno_meta}
 
-        # Add the raw data for advanced users if needed
-        analytics["raw_data"] = all_strains
-        return analytics
+            # Calculate strain-level analytics
+            num_strain_harvests = len(strain_harvests)
+            strain_avg_veg = 0
+            strain_avg_flower = 0
+            if num_strain_harvests > 0:
+                strain_avg_veg = round(sum(h.get("veg_days", 0) for h in strain_harvests) / num_strain_harvests)
+                strain_avg_flower = round(sum(h.get("flower_days", 0) for h in strain_harvests) / num_strain_harvests)
+
+            analytics_data[strain_name] = {
+                "meta": strain_data.get("meta", {}),
+                "analytics": {
+                    "avg_veg_days": strain_avg_veg,
+                    "avg_flower_days": strain_avg_flower,
+                    "total_harvests": num_strain_harvests
+                },
+                "phenotypes": pheno_analytics
+            }
+
+        return {
+            "strains": analytics_data,
+            "strain_list": list(all_strains.keys())
+        }
 
 
 class GrowspaceListSensor(SensorEntity):

@@ -8,26 +8,35 @@ for managing growspaces, plants, and environment sensor configurations.
 
 from __future__ import annotations
 
+import json
+
 import ast
 import logging
 import uuid
-from typing import Any, Optional
+from typing import Any
 
+import homeassistant.helpers.config_validation as cv
 import voluptuous as vol
-
 from homeassistant import config_entries
+from homeassistant.components import conversation
 from homeassistant.config_entries import (
+    ConfigEntry,
     ConfigFlowResult,
     OptionsFlow,
-    ConfigEntry,
 )
-from homeassistant.core import HomeAssistant, callback
-import homeassistant.helpers.config_validation as cv
-from homeassistant.helpers import selector
+from homeassistant.core import callback
 from homeassistant.helpers import device_registry as dr
+from homeassistant.helpers import selector
 
+from .const import (
+    AI_PERSONALITIES,
+    CONF_AI_ENABLED,
+    CONF_ASSISTANT_ID,
+    CONF_NOTIFICATION_PERSONALITY,
+    DEFAULT_NAME,
+    DOMAIN,
+)
 from .models import Growspace, Plant
-from .const import DOMAIN, DEFAULT_NAME
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -263,9 +272,8 @@ class OptionsFlowHandler(OptionsFlow):
         Args:
             config_entry: The configuration entry.
         """
-        # ADD THIS LINE:
-        self.config_entry = config_entry
-        self._current_options: dict[str, Any] = self.config_entry.options.copy()
+        self._config_entry = config_entry
+        self._current_options: dict[str, Any] = self._config_entry.options.copy()
 
     async def async_step_init(
         self, user_input: dict[str, Any] | None = None
@@ -288,8 +296,14 @@ class OptionsFlowHandler(OptionsFlow):
                 return await self.async_step_select_growspace_for_env()
             if action == "configure_global":
                 return await self.async_step_configure_global()
+            if action == "configure_ai":
+                return await self.async_step_configure_ai()
             if action == "manage_timed_notifications":
                 return await self.async_step_manage_timed_notifications()
+            if action == "manage_strain_library":
+                return await self.async_step_manage_strain_library()
+            if action == "configure_irrigation":
+                return await self.async_step_select_growspace_for_irrigation()
             return self.async_create_entry(title="", data=user_input)
 
         return self.async_show_form(
@@ -297,6 +311,146 @@ class OptionsFlowHandler(OptionsFlow):
             data_schema=self._get_main_menu_schema(),
         )
 
+    async def _get_ai_settings_schema(self) -> vol.Schema:
+        """Build the schema for AI settings with enhanced options."""
+        current_settings = self._config_entry.options.get("ai_settings", {})
+
+        # Get available conversation agents (LLM integrations)
+        assistants = []
+        try:
+            # Try to get agents from the conversation integration
+            if hasattr(conversation, "async_get_conversation_agents"):
+                # Newer HA versions
+                agents_dict = await conversation.async_get_conversation_agents(self.hass)
+                assistants = [
+                    {"id": agent_id, "name": agent_info.name}
+                    for agent_id, agent_info in agents_dict.items()
+                ]
+            else:
+                # Fallback for older versions
+                agent_manager = self.hass.data.get("conversation")
+                if agent_manager and hasattr(agent_manager, "async_get_agents"):
+                    assistants = await agent_manager.async_get_agents()
+        except Exception as err:
+            _LOGGER.warning("Could not fetch conversation agents: %s", err)
+
+        # Filter to valid agents with id and name
+        valid_assistants = [
+            a for a in assistants if isinstance(a, dict) and "id" in a and "name" in a
+        ]
+
+        if not valid_assistants:
+            # If no agents found, try to get at least the default
+            try:
+                default_agent = await conversation.async_get_agent(self.hass)
+                if default_agent and hasattr(default_agent, "id"):
+                    valid_assistants = [
+                        {"id": default_agent.id, "name": "Default Assistant"}
+                    ]
+            except Exception:
+                pass
+
+        assistant_options = [
+            selector.SelectOptionDict(value=assistant["id"], label=assistant["name"])
+            for assistant in valid_assistants
+        ]
+
+        schema = {
+            vol.Required(
+                CONF_AI_ENABLED, default=current_settings.get(CONF_AI_ENABLED, False)
+            ): selector.BooleanSelector(),
+        }
+
+        if assistant_options:
+            schema[
+                vol.Optional(
+                    CONF_ASSISTANT_ID,
+                    default=current_settings.get(CONF_ASSISTANT_ID),
+                )
+            ] = selector.SelectSelector(
+                selector.SelectSelectorConfig(
+                    options=assistant_options,
+                    mode=selector.SelectSelectorMode.DROPDOWN,
+                )
+            )
+        else:
+            # Show a text field if no assistants detected (shouldn't happen normally)
+            schema[
+                vol.Optional(
+                    CONF_ASSISTANT_ID, default=current_settings.get(CONF_ASSISTANT_ID)
+                )
+            ] = selector.TextSelector(
+                selector.TextSelectorConfig(
+                    type=selector.TextSelectorType.TEXT,
+                )
+            )
+
+        schema[
+            vol.Optional(
+                CONF_NOTIFICATION_PERSONALITY,
+                default=current_settings.get(
+                    CONF_NOTIFICATION_PERSONALITY, "Standard"
+                ),
+            )
+        ] = selector.SelectSelector(
+            selector.SelectSelectorConfig(
+                options=AI_PERSONALITIES,
+                mode=selector.SelectSelectorMode.DROPDOWN,
+            )
+        )
+
+        # Add option to enable/disable AI notifications separately from advice
+        schema[
+            vol.Optional(
+                "ai_notifications_enabled",
+                default=current_settings.get("ai_notifications_enabled", True),
+            )
+        ] = selector.BooleanSelector()
+
+        return vol.Schema(schema)
+
+    async def async_step_configure_ai(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Show the form for configuring AI settings.
+
+        Args:
+            user_input: The user's input from the form, if any.
+
+        Returns:
+            A ConfigFlowResult.
+        """
+        errors = {}
+
+        if user_input is not None:
+            # Validate that if AI is enabled, an assistant is selected
+            if user_input.get(CONF_AI_ENABLED) and not user_input.get(
+                CONF_ASSISTANT_ID
+            ):
+                errors["base"] = "assistant_required"
+            else:
+                new_options = self._config_entry.options.copy()
+                new_options["ai_settings"] = user_input
+
+                # Inform user about the changes
+                return self.async_create_entry(
+                    title="",
+                    data=new_options,
+                    description="AI settings have been updated. "
+                    + ("AI features are now enabled. " if user_input.get(CONF_AI_ENABLED) else "AI features are disabled. ")
+                    + f"Assistant: {user_input.get(CONF_ASSISTANT_ID, 'None')}",
+                )
+
+        return self.async_show_form(
+            step_id="configure_ai",
+            data_schema=await self._get_ai_settings_schema(),
+            errors=errors,
+            description_placeholders={
+                "info": "Configure AI-powered features for grow advice and notifications. "
+                "You need a conversation/LLM integration (like Google Gemini, OpenAI, etc.) "
+                "configured in Home Assistant for this to work."
+            },
+        )
     async def async_step_manage_timed_notifications(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
@@ -308,7 +462,7 @@ class OptionsFlowHandler(OptionsFlow):
         Returns:
             A ConfigFlowResult directing to the appropriate action (add/edit/delete).
         """
-        coordinator = self.hass.data[DOMAIN][self.config_entry.entry_id]["coordinator"]
+        coordinator = self.hass.data[DOMAIN][self._config_entry.entry_id]["coordinator"]
 
         if user_input is not None:
             action = user_input.get("action")
@@ -323,22 +477,17 @@ class OptionsFlowHandler(OptionsFlow):
             elif action == "delete":
                 notification_id = user_input.get("notification_id")
                 if notification_id:
-                    new_options = self.config_entry.options.copy()
+                    new_options = self._config_entry.options.copy()
                     notifications = new_options.get("timed_notifications", [])
                     notifications = [
                         n for n in notifications if n.get("id") != notification_id
                     ]
                     new_options["timed_notifications"] = notifications
 
-                    self.hass.config_entries.async_update_entry(
-                        self.config_entry, options=new_options
-                    )
+                    # Update coordinator's in-memory options
                     coordinator.options = new_options
 
-                    return self.async_show_form(
-                        step_id="manage_timed_notifications",
-                        data_schema=self._get_timed_notification_schema(coordinator),
-                    )
+                    return self.async_create_entry(title="", data=new_options)
 
         return self.async_show_form(
             step_id="manage_timed_notifications",
@@ -354,7 +503,7 @@ class OptionsFlowHandler(OptionsFlow):
         Returns:
             A voluptuous schema for the form.
         """
-        notifications = self.config_entry.options.get("timed_notifications", [])
+        notifications = self._config_entry.options.get("timed_notifications", [])
 
         notification_options = [
             selector.SelectOptionDict(
@@ -400,10 +549,10 @@ class OptionsFlowHandler(OptionsFlow):
         Returns:
             A ConfigFlowResult.
         """
-        coordinator = self.hass.data[DOMAIN][self.config_entry.entry_id]["coordinator"]
+        coordinator = self.hass.data[DOMAIN][self._config_entry.entry_id]["coordinator"]
 
         if user_input is not None:
-            new_options = self.config_entry.options.copy()
+            new_options = self._config_entry.options.copy()
             notifications = new_options.get("timed_notifications", [])
 
             # Add a unique ID to the new notification
@@ -412,16 +561,10 @@ class OptionsFlowHandler(OptionsFlow):
             notifications.append(new_notification)
             new_options["timed_notifications"] = notifications
 
-            # Update the config entry and the coordinator's in-memory options
-            self.hass.config_entries.async_update_entry(
-                self.config_entry, options=new_options
-            )
+            # Update the coordinator's in-memory options
             coordinator.options = new_options
 
-            return self.async_show_form(
-                step_id="manage_timed_notifications",
-                data_schema=self._get_timed_notification_schema(coordinator),
-            )
+            return self.async_create_entry(title="", data=new_options)
 
         return self.async_show_form(
             step_id="add_timed_notification",
@@ -439,15 +582,15 @@ class OptionsFlowHandler(OptionsFlow):
         Returns:
             A ConfigFlowResult.
         """
-        coordinator = self.hass.data[DOMAIN][self.config_entry.entry_id]["coordinator"]
+        coordinator = self.hass.data[DOMAIN][self._config_entry.entry_id]["coordinator"]
         notification_id = self._selected_notification_id
-        notifications = self.config_entry.options.get("timed_notifications", [])
+        notifications = self._config_entry.options.get("timed_notifications", [])
         notification = next(
             (n for n in notifications if n.get("id") == notification_id), None
         )
 
         if user_input is not None:
-            new_options = self.config_entry.options.copy()
+            new_options = self._config_entry.options.copy()
             notifications = new_options.get("timed_notifications", [])
 
             # Find and update the existing notification
@@ -460,16 +603,10 @@ class OptionsFlowHandler(OptionsFlow):
 
             new_options["timed_notifications"] = notifications
 
-            # Update the config entry and the coordinator's in-memory options
-            self.hass.config_entries.async_update_entry(
-                self.config_entry, options=new_options
-            )
+            # Update the coordinator's in-memory options
             coordinator.options = new_options
 
-            return self.async_show_form(
-                step_id="manage_timed_notifications",
-                data_schema=self._get_timed_notification_schema(coordinator),
-            )
+            return self.async_create_entry(title="", data=new_options)
 
         return self.async_show_form(
             step_id="edit_timed_notification",
@@ -539,7 +676,7 @@ class OptionsFlowHandler(OptionsFlow):
         )
 
     async def async_step_manage_growspaces(
-        self, user_input: Optional[dict[str, Any]] | None
+        self, user_input: dict[str, Any] | None | None
     ) -> ConfigFlowResult:
         """Show the menu for managing growspaces (add, update, remove).
 
@@ -550,7 +687,7 @@ class OptionsFlowHandler(OptionsFlow):
             A ConfigFlowResult directing to the appropriate action.
         """
         try:
-            coordinator = self.hass.data[DOMAIN][self.config_entry.entry_id][
+            coordinator = self.hass.data[DOMAIN][self._config_entry.entry_id][
                 "coordinator"
             ]
         except KeyError:
@@ -581,7 +718,7 @@ class OptionsFlowHandler(OptionsFlow):
                 return self.async_show_form(
                     step_id="init",
                     data_schema=self.add_suggested_values_to_schema(
-                        self._get_main_menu_schema(), self.config_entry.options
+                        self._get_main_menu_schema(), self._config_entry.options
                     ),
                 )
 
@@ -601,7 +738,7 @@ class OptionsFlowHandler(OptionsFlow):
         Returns:
             A ConfigFlowResult.
         """
-        coordinator = self.hass.data[DOMAIN][self.config_entry.entry_id]["coordinator"]
+        coordinator = self.hass.data[DOMAIN][self._config_entry.entry_id]["coordinator"]
         growspace_options = coordinator.get_sorted_growspace_options()
 
         if not growspace_options:
@@ -639,7 +776,7 @@ class OptionsFlowHandler(OptionsFlow):
         Returns:
             A ConfigFlowResult.
         """
-        coordinator = self.hass.data[DOMAIN][self.config_entry.entry_id]["coordinator"]
+        coordinator = self.hass.data[DOMAIN][self._config_entry.entry_id]["coordinator"]
         growspace = coordinator.growspaces.get(self._selected_growspace_id)
 
         if not growspace:
@@ -679,15 +816,6 @@ class OptionsFlowHandler(OptionsFlow):
             growspace.environment_config = env_config
             await coordinator.async_save()
             await coordinator.async_refresh()
-
-            # OPTIONAL: Sync to config_entry.options
-            # but it's not necessary if you're storing in the growspace object
-            new_options = self._current_options.copy()
-            new_options[self._selected_growspace_id] = env_config
-            self.hass.config_entries.async_update_entry(
-                self.config_entry, options=new_options
-            )
-            coordinator.options = new_options
 
             _LOGGER.info(
                 "Environment configuration saved for growspace %s: %s",
@@ -734,14 +862,17 @@ class OptionsFlowHandler(OptionsFlow):
                 else:  # co2
                     entity_key = f"{feature}_sensor"
                     domain = ["sensor", "input_number"]
-                    device_class = "carbon_dioxide"
+                    device_class = ["carbon_dioxide"]
+
+                entity_selector_config_args: dict[str, Any] = {}
+                entity_selector_config_args["domain"] = domain
+                if device_class is not None:
+                    entity_selector_config_args["device_class"] = device_class
 
                 schema_dict[
                     vol.Optional(entity_key, default=growspace_options.get(entity_key))
                 ] = selector.EntitySelector(
-                    selector.EntitySelectorConfig(
-                        domain=domain, device_class=device_class
-                    )
+                    selector.EntitySelectorConfig(**entity_selector_config_args)
                 )
         # Thresholds
         for key, default in [("stress_threshold", 0.70), ("mold_threshold", 0.75)]:
@@ -836,8 +967,12 @@ class OptionsFlowHandler(OptionsFlow):
         Returns:
             A ConfigFlowResult.
         """
-        coordinator = self.hass.data[DOMAIN][self.config_entry.entry_id]["coordinator"]
+        coordinator = self.hass.data[DOMAIN][self._config_entry.entry_id]["coordinator"]
         growspace = coordinator.growspaces.get(self._selected_growspace_id)
+
+        # Add this check early
+        if not growspace:
+            return self.async_abort(reason="growspace_not_found")
 
         if user_input is not None:
             env_config = self._env_config_step1.copy()
@@ -866,7 +1001,7 @@ class OptionsFlowHandler(OptionsFlow):
                 # Update env_config *after* all parsing is successful
                 env_config.update(parsed_user_input)
 
-            except (ValueError, SyntaxError):
+            except (ValueError, SyntaxError, TypeError):
                 _LOGGER.warning("Invalid tuple format submitted", exc_info=True)
                 return self.async_show_form(
                     step_id="configure_advanced_bayesian",
@@ -874,17 +1009,12 @@ class OptionsFlowHandler(OptionsFlow):
                         self._env_config_step1
                     ),
                     errors={"base": "invalid_tuple_format"},
+                    description_placeholders={"growspace_name": growspace.name},
                 )
 
             growspace.environment_config = env_config
             await coordinator.async_save()
             await coordinator.async_refresh()
-
-            final_options = self.config_entry.options.copy()
-            final_options[self._selected_growspace_id] = env_config
-            self.hass.config_entries.async_update_entry(
-                self.config_entry, options=final_options
-            )
 
             _LOGGER.info(
                 "Advanced Bayesian configuration saved for %s: %s",
@@ -956,7 +1086,7 @@ class OptionsFlowHandler(OptionsFlow):
             A ConfigFlowResult.
         """
         try:
-            coordinator = self.hass.data[DOMAIN][self.config_entry.entry_id][
+            coordinator = self.hass.data[DOMAIN][self._config_entry.entry_id][
                 "coordinator"
             ]
         except KeyError:
@@ -1010,7 +1140,7 @@ class OptionsFlowHandler(OptionsFlow):
             A ConfigFlowResult.
         """
         try:
-            coordinator = self.hass.data[DOMAIN][self.config_entry.entry_id][
+            coordinator = self.hass.data[DOMAIN][self._config_entry.entry_id][
                 "coordinator"
             ]
         except KeyError:
@@ -1064,7 +1194,7 @@ class OptionsFlowHandler(OptionsFlow):
         Returns:
             A ConfigFlowResult directing to the appropriate action.
         """
-        coordinator = self.hass.data[DOMAIN][self.config_entry.entry_id]["coordinator"]
+        coordinator = self.hass.data[DOMAIN][self._config_entry.entry_id]["coordinator"]
 
         if user_input is not None:
             action = user_input.get("action")
@@ -1087,7 +1217,7 @@ class OptionsFlowHandler(OptionsFlow):
                 return self.async_show_form(
                     step_id="init",
                     data_schema=self.add_suggested_values_to_schema(
-                        coordinator, self.config_entry.options
+                        coordinator, self._config_entry.options
                     ),
                 )
 
@@ -1108,11 +1238,11 @@ class OptionsFlowHandler(OptionsFlow):
             A ConfigFlowResult.
         """
         try:
-            coordinator = self.hass.data[DOMAIN][self.config_entry.entry_id][
+            coordinator = self.hass.data[DOMAIN][self._config_entry.entry_id][
                 "coordinator"
             ]
             # Reload coordinator data from storage to ensure we have latest growspaces
-            store = self.hass.data[DOMAIN][self.config_entry.entry_id]["store"]
+            store = self.hass.data[DOMAIN][self._config_entry.entry_id]["store"]
             fresh_data = await store.async_load() or {}
 
             # Correctly deserialize data into objects
@@ -1138,7 +1268,7 @@ class OptionsFlowHandler(OptionsFlow):
             )
             return self.async_abort(reason="setup_error")
 
-        _LOGGER.info(f"Config entry ID: {self.config_entry.entry_id}")
+        _LOGGER.info(f"Config entry ID: {self._config_entry.entry_id}")
         _LOGGER.info(
             f"Available growspaces in coordinator: {list(coordinator.growspaces.keys())}"
         )
@@ -1146,7 +1276,7 @@ class OptionsFlowHandler(OptionsFlow):
         # Get growspaces from device registry
         device_registry = dr.async_get(self.hass)
         devices = device_registry.devices.get_devices_for_config_entry_id(
-            self.config_entry.entry_id
+            self._config_entry.entry_id
         )
 
         _LOGGER.info(f"Total devices for config entry: {len(devices)}")
@@ -1198,7 +1328,7 @@ class OptionsFlowHandler(OptionsFlow):
         Returns:
             A ConfigFlowResult.
         """
-        coordinator = self.hass.data[DOMAIN][self.config_entry.entry_id]["coordinator"]
+        coordinator = self.hass.data[DOMAIN][self._config_entry.entry_id]["coordinator"]
         growspace = coordinator.growspaces.get(self._selected_growspace_id)
 
         if user_input is not None:
@@ -1236,7 +1366,7 @@ class OptionsFlowHandler(OptionsFlow):
         Returns:
             A ConfigFlowResult.
         """
-        coordinator = self.hass.data[DOMAIN][self.config_entry.entry_id]["coordinator"]
+        coordinator = self.hass.data[DOMAIN][self._config_entry.entry_id]["coordinator"]
         plant = coordinator.plants.get(self._selected_plant_id)
 
         if not plant:
@@ -1441,15 +1571,12 @@ class OptionsFlowHandler(OptionsFlow):
         """
         if user_input is not None:
             # Save the global settings into the main config_entry's options
-            new_options = self.config_entry.options.copy()
+            new_options = self._config_entry.options.copy()
             new_options["global_settings"] = user_input
-            self.hass.config_entries.async_update_entry(
-                self.config_entry, options=new_options
-            )
-            return self.async_create_entry(title="", data={})
+            return self.async_create_entry(title="", data=new_options)
 
         # Get current global settings to prepopulate the form
-        global_settings = self.config_entry.options.get("global_settings", {})
+        global_settings = self._config_entry.options.get("global_settings", {})
 
         schema_dict = {
             vol.Optional(
@@ -1503,8 +1630,20 @@ class OptionsFlowHandler(OptionsFlow):
                                 label="Configure Global Sensors",
                             ),
                             selector.SelectOptionDict(
+                                value="configure_ai",
+                                label="Configure AI Assistant",
+                            ),
+                            selector.SelectOptionDict(
                                 value="manage_timed_notifications",
                                 label="Timed Notifications",
+                            ),
+                            selector.SelectOptionDict(
+                                value="manage_strain_library",
+                                label="Manage Strain Library",
+                            ),
+                            selector.SelectOptionDict(
+                                value="configure_irrigation",
+                                label="Configure Irrigation",
                             ),
                         ],
                         mode=selector.SelectSelectorMode.DROPDOWN,
@@ -1512,6 +1651,154 @@ class OptionsFlowHandler(OptionsFlow):
                 )
             }
         )
+
+    async def async_step_select_growspace_for_irrigation(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Show a form to select a growspace before configuring its irrigation."""
+        try: 
+            coordinator = self.hass.data[DOMAIN][self._config_entry.entry_id]["coordinator"]
+        except KeyError:
+            _LOGGER.error("Coordinator not found for irrigation config flow.")
+            return self.async_abort(reason="setup_error")
+        growspace_options = coordinator.get_sorted_growspace_options()
+
+        if not growspace_options:
+            _LOGGER.error("IRRIGATION FLOW ABORT: No growspaces available to configure.")   
+            return self.async_abort(reason="no_growspaces")
+
+        _LOGGER.debug("IRRIGATION FLOW: Found %d growspaces: %s", len(growspace_options), growspace_options)
+        if user_input is not None:
+            self._selected_growspace_id = user_input["growspace_id"]
+            return await self.async_step_configure_irrigation()
+
+        schema = vol.Schema(
+            {
+                vol.Required("growspace_id"): selector.SelectSelector(
+                    selector.SelectSelectorConfig(
+                        options=[
+                            {"value": gs_id, "label": name}
+                            for gs_id, name in growspace_options
+                        ],
+                        mode=selector.SelectSelectorMode.DROPDOWN,
+                    )
+                )
+            }
+        )
+        return self.async_show_form(
+            step_id="select_growspace_for_irrigation", data_schema=schema
+        )
+
+    async def async_step_configure_irrigation(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Show the irrigation configuration menu for a selected growspace."""
+        coordinator = self.hass.data[DOMAIN][self._config_entry.entry_id]["coordinator"]
+        growspace = coordinator.growspaces.get(self._selected_growspace_id)
+
+        if not growspace:
+            return self.async_abort(reason="growspace_not_found")
+
+        # [MODIFIED]: Route directly to the unified overview step
+        return await self.async_step_irrigation_overview()
+
+
+    async def async_step_irrigation_overview(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Show the unified irrigation management screen for the Lovelace card."""
+        coordinator = self.hass.data[DOMAIN][self._config_entry.entry_id]["coordinator"]
+        growspace = coordinator.growspaces.get(self._selected_growspace_id)
+
+        if not growspace:
+            return self.async_abort(reason="growspace_not_found")
+
+        # Load ALL current irrigation options for the growspace from the Growspace object
+        irrigation_options = growspace.irrigation_config
+
+        # --- START OF FIX: Ensure EntitySelector receives None instead of "" ---
+        irrigation_pump_default = irrigation_options.get("irrigation_pump_entity")
+        if not irrigation_pump_default:
+            irrigation_pump_default = None
+
+        drain_pump_default = irrigation_options.get("drain_pump_entity")
+        if not drain_pump_default:
+            drain_pump_default = None
+        # --- END OF FIX ---
+
+        if user_input is not None:
+            # 1. Update the Growspace object directly
+            
+            # CRITICAL FIX: Only update the R/W fields (pump entities and durations)
+            # Filter out the read-only fields that were passed for display purposes
+            updated_settings = {
+                k: v for k, v in user_input.items() 
+                if k not in ["current_irrigation_times", "current_drain_times", "growspace_id_read_only"]
+            }
+
+            # Update the config in the growspace object
+            growspace.irrigation_config.update(updated_settings)
+
+            # Save via coordinator
+            await coordinator.async_save()
+            
+            # Notify listeners (including IrrigationCoordinator)
+            coordinator.async_set_updated_data(coordinator.data)
+
+            # This triggers async_update_listener in __init__.py, reloading the IrrigationCoordinator
+            return self.async_create_entry(
+                title="",
+                data=self._current_options, # No changes to ConfigEntry options
+                description="Irrigation settings have been updated.",
+            )
+
+        # 2. Define schema to pass ALL data to the Lovelace component
+        schema = vol.Schema({
+            # R/W Fields: Pump Settings (User edits and submits these)
+            vol.Optional(
+                "irrigation_pump_entity",
+                default=irrigation_pump_default,
+            ): selector.EntitySelector(
+                selector.EntitySelectorConfig(domain="switch")
+            ),
+            vol.Optional(
+                "drain_pump_entity",
+                default=drain_pump_default,
+            ): selector.EntitySelector(
+                selector.EntitySelectorConfig(domain="switch")
+            ),
+            vol.Optional(
+                "irrigation_duration",
+                default=irrigation_options.get("irrigation_duration", 30),
+            ): selector.NumberSelector(
+                selector.NumberSelectorConfig(min=1, mode=selector.NumberSelectorMode.BOX)
+            ),
+            vol.Optional(
+                "drain_duration",
+                default=irrigation_options.get("drain_duration", 30),
+            ): selector.NumberSelector(
+                selector.NumberSelectorConfig(min=1, mode=selector.NumberSelectorMode.BOX)
+            ),
+
+            # Read-only Fields: Schedules and ID (Passed to frontend for visual use/service calls)
+            # Must be stringified to pass complex objects through schema inputs
+            vol.Optional("current_irrigation_times",
+                default=json.dumps(irrigation_options.get("irrigation_times", []))
+            ): selector.TextSelector(),
+            vol.Optional("current_drain_times",
+                default=json.dumps(irrigation_options.get("drain_times", []))
+            ): selector.TextSelector(),
+            vol.Optional("growspace_id_read_only",
+                default=self._selected_growspace_id
+            ): selector.TextSelector(),
+        })
+
+        return self.async_show_form(
+            step_id="irrigation_overview",
+            data_schema=schema,
+            description_placeholders={"growspace_name": growspace.name},
+        )
+
 
     def _get_plant_management_schema(self, coordinator) -> vol.Schema:
         """Build the schema for the plant management menu.
@@ -1666,8 +1953,7 @@ class OptionsFlowHandler(OptionsFlow):
         Returns:
             A voluptuous schema for the form.
         """
-
-        growspace = coordinator.growspaces.get(plant.growspace_id)
+        growspace = coordinator.growspaces.get(plant.growspace_id) if plant else None
 
         # Ensure rows and plants_per_row are integers
         rows = int(growspace.rows) if growspace else 10
@@ -1696,26 +1982,193 @@ class OptionsFlowHandler(OptionsFlow):
         return vol.Schema(
             {
                 vol.Optional(
-                    "strain", default=plant.get("strain", "")
+                    "strain", default=plant.strain if plant else ""
                 ): strain_selector,
                 vol.Optional(
-                    "phenotype", default=plant.get("phenotype", "")
+                    "phenotype", default=plant.phenotype if plant else ""
                 ): selector.TextSelector(),
-                vol.Optional(
-                    "row", default=plant.get("row", 1)
-                ): selector.NumberSelector(
+                vol.Optional("row", default=plant.row if plant else 1): selector.NumberSelector(
                     selector.NumberSelectorConfig(
                         min=1, max=rows, mode=selector.NumberSelectorMode.BOX
                     )
                 ),
-                vol.Optional(
-                    "col", default=plant.get("col", 1)
-                ): selector.NumberSelector(
+                vol.Optional("col", default=plant.col if plant else 1): selector.NumberSelector(
                     selector.NumberSelectorConfig(
                         min=1, max=plants_per_row, mode=selector.NumberSelectorMode.BOX
                     )
                 ),
                 vol.Optional("veg_start"): selector.DateSelector(),
                 vol.Optional("flower_start"): selector.DateSelector(),
+            }
+        )
+
+    async def async_step_manage_strain_library(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Show the menu for managing the strain library."""
+        coordinator = self.hass.data[DOMAIN][self._config_entry.entry_id][
+            "coordinator"
+        ]
+
+        if user_input is not None:
+            action = user_input.get("action")
+            if action == "add":
+                return await self.async_step_add_strain()
+            if action == "remove":
+                strain_to_remove = user_input.get("strain_id")
+                if strain_to_remove:
+                    strain, phenotype = strain_to_remove.split("|")
+                    await coordinator.strains.remove_strain_phenotype(strain, phenotype)
+                    # Return to menu after action
+                    return self.async_show_form(
+                        step_id="manage_strain_library",
+                        data_schema=self._get_strain_management_schema(coordinator),
+                    )
+            if action == "back":
+                return self.async_show_form(
+                    step_id="init",
+                    data_schema=self.add_suggested_values_to_schema(
+                        self._get_main_menu_schema(), self._config_entry.options
+                    ),
+                )
+
+        return self.async_show_form(
+            step_id="manage_strain_library",
+            data_schema=self._get_strain_management_schema(coordinator),
+        )
+
+    async def async_step_add_strain(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Show the form for adding a new strain."""
+        coordinator = self.hass.data[DOMAIN][self._config_entry.entry_id][
+            "coordinator"
+        ]
+
+        if user_input is not None:
+            try:
+                await coordinator.strains.add_strain(
+                    strain=user_input["strain"],
+                    phenotype=user_input.get("phenotype"),
+                    breeder=user_input.get("breeder"),
+                    strain_type=user_input.get("type"),
+                    lineage=user_input.get("lineage"),
+                    sex=user_input.get("sex"),
+                    flower_days_min=user_input.get("flower_days_min"),
+                    flower_days_max=user_input.get("flower_days_max"),
+                    description=user_input.get("description"),
+                    sativa_percentage=user_input.get("sativa_percentage"),
+                    indica_percentage=user_input.get("indica_percentage"),
+                )
+                return self.async_show_form(
+                    step_id="manage_strain_library",
+                    data_schema=self._get_strain_management_schema(coordinator),
+                )
+            except Exception as err:
+                _LOGGER.error("Error adding strain: %s", err)
+                return self.async_show_form(
+                    step_id="add_strain",
+                    data_schema=self._get_add_strain_schema(),
+                    errors={"base": str(err)},
+                )
+
+        return self.async_show_form(
+            step_id="add_strain",
+            data_schema=self._get_add_strain_schema(),
+        )
+
+    def _get_strain_management_schema(self, coordinator) -> vol.Schema:
+        """Build the schema for the strain management menu."""
+        strain_options = []
+        all_strains = coordinator.strains.get_all()
+
+        for strain_name, data in all_strains.items():
+            phenotypes = data.get("phenotypes", {})
+            for pheno_name in phenotypes:
+                label = f"{strain_name}"
+                if pheno_name and pheno_name != "default":
+                    label += f" ({pheno_name})"
+
+                value = f"{strain_name}|{pheno_name}"
+                strain_options.append(
+                    selector.SelectOptionDict(value=value, label=label)
+                )
+
+        # Sort alphabetically
+        strain_options.sort(key=lambda x: x["label"])
+
+        schema = {
+            vol.Required("action"): selector.SelectSelector(
+                selector.SelectSelectorConfig(
+                    options=[
+                        selector.SelectOptionDict(value="add", label="Add New Strain"),
+                        selector.SelectOptionDict(value="remove", label="Remove Strain/Phenotype"),
+                        selector.SelectOptionDict(value="back", label="← Back to Main Menu"),
+                    ],
+                    mode=selector.SelectSelectorMode.DROPDOWN,
+                )
+            )
+        }
+
+        if strain_options:
+            schema[vol.Optional("strain_id")] = selector.SelectSelector(
+                selector.SelectSelectorConfig(
+                    options=strain_options,
+                    mode=selector.SelectSelectorMode.DROPDOWN,
+                )
+            )
+
+        return vol.Schema(schema)
+
+    def _get_add_strain_schema(self) -> vol.Schema:
+        """Build the schema for adding a new strain."""
+        return vol.Schema(
+            {
+                vol.Required("strain"): selector.TextSelector(),
+                vol.Optional("phenotype"): selector.TextSelector(),
+                vol.Optional("breeder"): selector.TextSelector(),
+                vol.Optional("type"): selector.SelectSelector(
+                    selector.SelectSelectorConfig(
+                        options=[
+                            selector.SelectOptionDict(value="Sativa", label="Sativa"),
+                            selector.SelectOptionDict(value="Indica", label="Indica"),
+                            selector.SelectOptionDict(value="Hybrid", label="Hybrid"),
+                            selector.SelectOptionDict(value="Ruderalis", label="Ruderalis"),
+                        ],
+                        custom_value=True,
+                        mode=selector.SelectSelectorMode.DROPDOWN,
+                    )
+                ),
+                vol.Optional("sex"): selector.SelectSelector(
+                    selector.SelectSelectorConfig(
+                        options=[
+                            selector.SelectOptionDict(value="Feminized", label="Feminized"),
+                            selector.SelectOptionDict(value="Regular", label="Regular"),
+                            selector.SelectOptionDict(value="Autoflower", label="Autoflower"),
+                        ],
+                        custom_value=True,
+                        mode=selector.SelectSelectorMode.DROPDOWN,
+                    )
+                ),
+                vol.Optional("lineage"): selector.TextSelector(),
+                vol.Optional("sativa_percentage"): selector.NumberSelector(
+                    selector.NumberSelectorConfig(
+                        min=0, max=100, mode=selector.NumberSelectorMode.BOX, unit_of_measurement="%"
+                    )
+                ),
+                vol.Optional("indica_percentage"): selector.NumberSelector(
+                    selector.NumberSelectorConfig(
+                        min=0, max=100, mode=selector.NumberSelectorMode.BOX, unit_of_measurement="%"
+                    )
+                ),
+                vol.Optional("flower_days_min"): selector.NumberSelector(
+                    selector.NumberSelectorConfig(min=0, mode=selector.NumberSelectorMode.BOX)
+                ),
+                vol.Optional("flower_days_max"): selector.NumberSelector(
+                    selector.NumberSelectorConfig(min=0, mode=selector.NumberSelectorMode.BOX)
+                ),
+                vol.Optional("description"): selector.TextSelector(
+                    selector.TextSelectorConfig(multiline=True)
+                ),
             }
         )
