@@ -1,6 +1,6 @@
 """Constants for the Growspace Manager integration."""
 
-from datetime import date
+from datetime import date, datetime
 
 import voluptuous as vol
 
@@ -131,12 +131,22 @@ def valid_date_or_none(value):
     """
     if value is None or value == "":
         return None
+    if isinstance(value, datetime):
+        return value
     if isinstance(value, date):
         return value
+    
+    value_str = str(value).replace("Z", "")
+    
+    # Try parsing as datetime first (most specific)
     try:
-        # Attempt to parse ISO format, handling potential timezone 'Z'
-        # Ensure value is converted to string to handle potential datetime objects directly
-        return date.fromisoformat(str(value).replace("Z", ""))
+        return datetime.fromisoformat(value_str)
+    except ValueError:
+        pass
+
+    # Try parsing as date
+    try:
+        return date.fromisoformat(value_str)
     except ValueError:
         raise vol.Invalid(
             f"'{value}' is not a valid date or ISO format string"
