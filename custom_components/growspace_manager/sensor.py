@@ -488,7 +488,8 @@ class GrowspaceOverviewSensor(CoordinatorEntity[GrowspaceCoordinator], SensorEnt
                 "position": f"({row_i},{col_i})",
             }
 
-        return {
+        # Build attributes dict
+        attributes = {
             "growspace_id": growspace.id,
             "rows": growspace.rows,
             "plants_per_row": growspace.plants_per_row,
@@ -505,11 +506,18 @@ class GrowspaceOverviewSensor(CoordinatorEntity[GrowspaceCoordinator], SensorEnt
         }
 
         # Add dehumidifier state if configured
-        dehumidifier_entity = growspace.environment_config.get("dehumidifier_entity")
-        if dehumidifier_entity:
-            state_obj = self.coordinator.hass.states.get(dehumidifier_entity)
-            attributes["dehumidifier_entity"] = dehumidifier_entity
-            attributes["dehumidifier_state"] = state_obj.state if state_obj else None
+        if growspace.environment_config:
+            dehumidifier_entity = growspace.environment_config.get("dehumidifier_entity")
+            if dehumidifier_entity:
+                state_obj = self.coordinator.hass.states.get(dehumidifier_entity)
+                attributes["dehumidifier_entity"] = dehumidifier_entity
+                attributes["dehumidifier_state"] = state_obj.state if state_obj else None
+                if state_obj:
+                    attributes["dehumidifier_humidity"] = state_obj.attributes.get("humidity")
+                    attributes["dehumidifier_current_humidity"] = state_obj.attributes.get("current_humidity")
+                    attributes["dehumidifier_mode"] = state_obj.attributes.get("mode")
+
+        return attributes
 
 
 class PlantEntity(SensorEntity):
