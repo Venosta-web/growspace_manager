@@ -237,7 +237,7 @@ def evaluate_direct_temp_stress(
     temp = state.temp
 
     # 1: Night High Temp Check (Independent IF)
-    if not state.is_lights_on and temp > 24:
+    if state.is_lights_on is False and temp > 24:
         prob = env_config.get("prob_night_temp_high", (0.80, 0.20))
         observations.append(prob)
         reasons.append((prob[0], f"Night Temp High ({temp})"))
@@ -330,7 +330,8 @@ def evaluate_direct_vpd_stress(
     stage_key = _determine_stage_key(state)
 
     if stage_key:
-        time_of_day = "day" if state.is_lights_on else "night"
+        # Treat None (missing sensor) as "day" (active) for threshold lookup
+        time_of_day = "night" if state.is_lights_on is False else "day"
         thresholds = VPD_STRESS_THRESHOLDS[stage_key][time_of_day]
 
         stress_low, stress_high = thresholds["stress"]
@@ -407,8 +408,8 @@ def evaluate_optimal_temperature(
                     )
                 )
 
-        # Case B: Lights ON & Normal (Days < 42 or Veg)
-        case True, _:
+        # Case B: Lights ON & Normal (Days < 42 or Veg) OR Missing Sensor (None)
+        case (True, _) | (None, _):
             if 24 <= state.temp <= 26:
                 observations.append(PROB_PERFECT)
             elif 22 <= state.temp <= 28:
@@ -452,7 +453,8 @@ def evaluate_optimal_vpd(
     stage_key = _determine_stage_key(state)
 
     if stage_key:
-        time_of_day = "day" if state.is_lights_on else "night"
+        # Treat None (missing sensor) as "day" (active) for threshold lookup
+        time_of_day = "night" if state.is_lights_on is False else "day"
 
         # Look up optimal thresholds from the data constant
         stage_limits = VPD_OPTIMAL_THRESHOLDS.get(stage_key, {}).get(time_of_day, [])

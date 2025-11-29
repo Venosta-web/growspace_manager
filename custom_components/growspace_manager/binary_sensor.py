@@ -186,13 +186,14 @@ class BayesianEnvironmentSensor(BinarySensorEntity):
 
         # Lights-Aware Logic
         light_sensor = self.env_config.get("light_sensor")
-        is_lights_on = False
+        is_lights_on = None
         if light_sensor:
             light_state = self.hass.states.get(light_sensor)
             if light_state:
                 if light_state.domain == "sensor":
                     sensor_value = self._get_sensor_value(light_sensor)
-                    is_lights_on = bool(sensor_value and sensor_value > 0)
+                    if sensor_value is not None:
+                        is_lights_on = bool(sensor_value > 0)
                 else:
                     is_lights_on = light_state.state == "on"
 
