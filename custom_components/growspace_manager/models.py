@@ -181,6 +181,6 @@ class EnvironmentState:
     co2: float | None
     veg_days: int
     flower_days: int
-    is_lights_on: bool
+    is_lights_on: bool | None
     fan_off: bool
     dehumidifier_on: bool | None = None

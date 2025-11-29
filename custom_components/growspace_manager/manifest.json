@@ -8,7 +8,9 @@
   "dependencies": [
     "recorder",
     "conversation",
-    "http"
+    "http",
+    "aiosqlite",
+    "intent"
   ],
   "documentation": "https://github.com/Venosta-web/growspace_manager",
   "iot_class": "local_polling",
