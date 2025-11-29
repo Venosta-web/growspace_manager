@@ -270,9 +270,8 @@ class IrrigationCoordinator:
             )
             self._running_tasks[event_type].cancel()
 
-        options = self._config_entry.options.get("irrigation", {}).get(
-            self._growspace_id, {}
-        )
+        growspace = self._main_coordinator.growspaces[self._growspace_id]
+        options = growspace.irrigation_config
         pump_entity = options.get(f"{event_type}_pump_entity")
         duration = event_data.get("duration") or options.get(f"{event_type}_duration")
 
