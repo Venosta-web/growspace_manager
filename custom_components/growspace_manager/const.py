@@ -253,8 +253,8 @@ MOVE_PLANT_SCHEMA = vol.Schema(
 # Switch Plants
 SWITCH_PLANT_SCHEMA = vol.Schema(
     {
-        vol.Required("plant_id_1"): str,
-        vol.Required("plant_id_2"): str,
+        vol.Required("plant1_id"): str,
+        vol.Required("plant2_id"): str,
     }
 )
 
