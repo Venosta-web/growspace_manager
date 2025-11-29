@@ -397,12 +397,12 @@ move_clone:
 switch_plants:
   description: Switch positions of two plants
   fields:
-    plant_id_1:
+    plant1_id:
       description: ID of the first plant
       required: true
       selector:
         text:
-    plant_id_2:
+    plant2_id:
       description: ID of the second plant
       required: true
       selector:

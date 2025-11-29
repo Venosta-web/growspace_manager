@@ -597,8 +597,8 @@ async def handle_switch_plants(
 ) -> None:
     """Handle switch plants service call."""
     try:
-        plant_id_1 = call.data["plant_id_1"]
-        plant_id_2 = call.data["plant_id_2"]
+        plant_id_1 = call.data["plant1_id"]
+        plant_id_2 = call.data["plant2_id"]
 
         if plant_id_1 not in coordinator.plants:
             _LOGGER.error("Plant %s does not exist for switch_plants", plant_id_1)
