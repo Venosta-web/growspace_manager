@@ -183,3 +183,4 @@ class EnvironmentState:
     flower_days: int
     is_lights_on: bool
     fan_off: bool
+    dehumidifier_on: bool | None = None

@@ -203,6 +203,13 @@ class BayesianEnvironmentSensor(BinarySensorEntity):
             and fan_state.state == "off"
         )
 
+        dehumidifier_entity = self.env_config.get("dehumidifier_entity")
+        dehumidifier_on = False
+        if dehumidifier_entity:
+            dehum_state = self.hass.states.get(dehumidifier_entity)
+            if dehum_state and dehum_state.state == "on":
+                dehumidifier_on = True
+
         self._sensor_states = {
             "temperature": temp,
             "humidity": humidity,
@@ -212,6 +219,7 @@ class BayesianEnvironmentSensor(BinarySensorEntity):
             "flower_days": flower_days,
             "is_lights_on": is_lights_on,
             "fan_off": fan_off,
+            "dehumidifier_on": dehumidifier_on,
         }
 
         return EnvironmentState(
@@ -223,6 +231,7 @@ class BayesianEnvironmentSensor(BinarySensorEntity):
             flower_days=flower_days,
             is_lights_on=is_lights_on,
             fan_off=fan_off,
+            dehumidifier_on=dehumidifier_on,
         )
 
     async def async_added_to_hass(self) -> None:
@@ -235,6 +244,7 @@ class BayesianEnvironmentSensor(BinarySensorEntity):
             self.env_config.get("vpd_sensor"),
             self.env_config.get("co2_sensor"),
             self.env_config.get("circulation_fan"),
+            self.env_config.get("dehumidifier_entity"),
         ]
 
         sensors = [s for s in sensors if s]
@@ -630,6 +640,21 @@ class BayesianStressSensor(BayesianEnvironmentSensor):
         observations.extend(co2_obs)
         self._reasons.extend(co2_reasons)
 
+        # 3. ACTIVE DESICCATION (Dehumidifier running while dry/high VPD)
+        if state.dehumidifier_on:
+            is_dry = state.humidity is not None and state.humidity < 40
+            is_high_vpd = state.vpd is not None and state.vpd > 1.5
+            
+            if is_dry or is_high_vpd:
+                prob = (0.99, 0.01)
+                observations.append(prob)
+                reason = "Active Desiccation (Dehum ON + "
+                if is_dry:
+                    reason += f"Low Humidity {state.humidity}%)"
+                else:
+                    reason += f"High VPD {state.vpd}kPa)"
+                self._reasons.append((prob[0], reason))
+
         self._probability = self._calculate_bayesian_probability(
             self.prior, observations
         )
@@ -957,6 +982,12 @@ class BayesianMoldRiskSensor(BayesianEnvironmentSensor):
                 observations.append(prob)
                 self._reasons.append((prob[0], "Circulation Fan Off"))
 
+        # Control Saturation: Dehumidifier running but humidity still high
+        if state.dehumidifier_on and state.humidity is not None and state.humidity > 60:
+            prob = (0.95, 0.1)
+            observations.append(prob)
+            self._reasons.append((prob[0], f"Dehumidifier Ineffective (ON + Hum {state.humidity}%)"))
+
         self._probability = self._calculate_bayesian_probability(
             self.prior, observations
         )
@@ -1010,6 +1041,12 @@ class BayesianOptimalConditionsSensor(BayesianEnvironmentSensor):
         co2_obs, co2_reasons = evaluate_optimal_co2(state, self.env_config)
         observations.extend(co2_obs)
         self._reasons.extend(co2_reasons)
+
+        # 4. SYSTEM STABILITY (Dehumidifier fighting)
+        if state.dehumidifier_on:
+            prob = (0.4, 0.7)
+            observations.append(prob)
+            self._reasons.append((prob[0], "System Fighting (Dehumidifier ON)"))
 
         self._probability = self._calculate_bayesian_probability(
             self.prior, observations
