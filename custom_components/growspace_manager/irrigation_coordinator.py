@@ -84,16 +84,32 @@ class IrrigationCoordinator:
         if schedule_key not in growspace.irrigation_config:
             growspace.irrigation_config[schedule_key] = []
 
-        # Add the new schedule item
-        growspace.irrigation_config[schedule_key].append({"time": time_str, "duration": duration})
-        
-        _LOGGER.info(
-            "Added %s to %s for growspace %s. Schedule now has %d items.",
-            {"time": time_str, "duration": duration},
-            schedule_key,
-            self._growspace_id,
-            len(growspace.irrigation_config[schedule_key])
+        # Check if item with same time already exists
+        existing_item = next(
+            (item for item in growspace.irrigation_config[schedule_key] if item.get("time") == time_str),
+            None
         )
+
+        if existing_item:
+            # Update existing item
+            existing_item["duration"] = duration
+            _LOGGER.info(
+                "Updated %s in %s for growspace %s. Duration set to %s.",
+                time_str,
+                schedule_key,
+                self._growspace_id,
+                duration
+            )
+        else:
+            # Add new schedule item
+            growspace.irrigation_config[schedule_key].append({"time": time_str, "duration": duration})
+            _LOGGER.info(
+                "Added %s to %s for growspace %s. Schedule now has %d items.",
+                {"time": time_str, "duration": duration},
+                schedule_key,
+                self._growspace_id,
+                len(growspace.irrigation_config[schedule_key])
+            )
 
         # Persist the changes
         await self._save_and_reload()
@@ -187,10 +203,14 @@ class IrrigationCoordinator:
         if drain_times:
             _LOGGER.debug("Drain schedule: %s", drain_times)
 
-        for event in irrigation_times:
+        # Deduplicate events based on time
+        unique_irrigation_times = {event["time"]: event for event in irrigation_times}.values()
+        unique_drain_times = {event["time"]: event for event in drain_times}.values()
+
+        for event in unique_irrigation_times:
             self._schedule_event(event, "irrigation")
 
-        for event in drain_times:
+        for event in unique_drain_times:
             self._schedule_event(event, "drain")
 
     def _schedule_event(self, event: dict[str, Any], event_type: str):
