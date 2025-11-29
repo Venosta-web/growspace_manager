@@ -919,6 +919,27 @@ class OptionsFlowHandler(OptionsFlow):
                     selector.EntitySelectorConfig(**entity_selector_config_args)
                 )
 
+        # Exhaust and Humidifier (0-10 sensors)
+        for feature in ["exhaust", "humidifier"]:
+            enabled = growspace_options.get(
+                f"configure_{feature}", bool(growspace_options.get(f"{feature}_sensor"))
+            )
+            schema_dict[vol.Optional(f"configure_{feature}", default=enabled)] = (
+                selector.BooleanSelector()
+            )
+            if enabled:
+                schema_dict[
+                    vol.Optional(
+                        f"{feature}_sensor",
+                        default=growspace_options.get(f"{feature}_sensor"),
+                    )
+                ] = selector.EntitySelector(
+                    selector.EntitySelectorConfig(
+                        domain=["sensor", "input_number"],
+                        device_class="power_factor",
+                    )
+                )
+
         # Dehumidifier / Switch configuration
         configure_dehumidifier = growspace_options.get(
             "configure_dehumidifier", bool(growspace_options.get("dehumidifier_entity"))

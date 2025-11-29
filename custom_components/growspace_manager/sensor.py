@@ -623,7 +623,10 @@ class GrowspaceOverviewSensor(CoordinatorEntity[GrowspaceCoordinator], SensorEnt
 
         # Add dehumidifier state if configured
         if growspace.environment_config:
-            dehumidifier_entity = growspace.environment_config.get("dehumidifier_entity")
+            env_config = growspace.environment_config
+            
+            # Dehumidifier
+            dehumidifier_entity = env_config.get("dehumidifier_entity")
             if dehumidifier_entity:
                 state_obj = self.coordinator.hass.states.get(dehumidifier_entity)
                 attributes["dehumidifier_entity"] = dehumidifier_entity
@@ -632,6 +635,20 @@ class GrowspaceOverviewSensor(CoordinatorEntity[GrowspaceCoordinator], SensorEnt
                     attributes["dehumidifier_humidity"] = state_obj.attributes.get("humidity")
                     attributes["dehumidifier_current_humidity"] = state_obj.attributes.get("current_humidity")
                     attributes["dehumidifier_mode"] = state_obj.attributes.get("mode")
+
+            # Exhaust Sensor
+            exhaust_entity = env_config.get("exhaust_sensor")
+            if exhaust_entity:
+                state_obj = self.coordinator.hass.states.get(exhaust_entity)
+                attributes["exhaust_entity"] = exhaust_entity
+                attributes["exhaust_value"] = state_obj.state if state_obj else None
+
+            # Humidifier Sensor
+            humidifier_entity = env_config.get("humidifier_sensor")
+            if humidifier_entity:
+                state_obj = self.coordinator.hass.states.get(humidifier_entity)
+                attributes["humidifier_entity"] = humidifier_entity
+                attributes["humidifier_value"] = state_obj.state if state_obj else None
 
         return attributes
 
