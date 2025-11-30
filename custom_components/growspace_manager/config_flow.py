@@ -840,7 +840,7 @@ class OptionsFlowHandler(OptionsFlow):
             if not self._env_config_step1.get("configure_dehumidifier"):
                 self._env_config_step1["dehumidifier_entity"] = None
                 self._env_config_step1["control_dehumidifier"] = False
-                
+
             if user_input.get("configure_advanced"):
                 return await self.async_step_configure_advanced_bayesian()
 
@@ -883,12 +883,15 @@ class OptionsFlowHandler(OptionsFlow):
             )
 
         # VPD sensor - optional
-        schema_dict[vol.Optional("vpd_sensor", default=growspace_options.get("vpd_sensor"))] = (
-            selector.EntitySelector(
-                selector.EntitySelectorConfig(
-                    domain=["sensor", "input_number"],
-                    device_class="pressure",
-                )
+        schema_dict[
+            vol.Optional(
+                "vpd_sensor",
+                default=growspace_options.get("vpd_sensor") or vol.UNDEFINED,
+            )
+        ] = selector.EntitySelector(
+            selector.EntitySelectorConfig(
+                domain=["sensor", "input_number"],
+                device_class="pressure",
             )
         )
 
@@ -948,10 +951,11 @@ class OptionsFlowHandler(OptionsFlow):
                 )
 
                 if feature == "fan":
+                    
                     schema_dict[
                         vol.Optional(
                             "fan_power_sensor",
-                            default=growspace_options.get("fan_power_sensor"),
+                            default=growspace_options.get("fan_power_sensor") or vol.UNDEFINED,
                         )
                     ] = selector.EntitySelector(
                         selector.EntitySelectorConfig(
@@ -972,7 +976,7 @@ class OptionsFlowHandler(OptionsFlow):
                 schema_dict[
                     vol.Optional(
                         f"{feature}_sensor",
-                        default=growspace_options.get(f"{feature}_sensor"),
+                        default=growspace_options.get(f"{feature}_sensor") or vol.UNDEFINED,
                     )
                 ] = selector.EntitySelector(
                     selector.EntitySelectorConfig(
@@ -993,7 +997,7 @@ class OptionsFlowHandler(OptionsFlow):
             schema_dict[
                 vol.Optional(
                     "dehumidifier_entity",
-                    default=growspace_options.get("dehumidifier_entity"),
+                    default=growspace_options.get("dehumidifier_entity") or vol.UNDEFINED,
                 )
             ] = selector.EntitySelector(
                 selector.EntitySelectorConfig(
