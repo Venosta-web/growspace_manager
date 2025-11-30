@@ -24,7 +24,13 @@ from homeassistant.helpers.event import async_track_state_change_event
 from homeassistant.helpers.recorder import get_instance as get_recorder_instance
 from homeassistant.util.dt import utcnow
 
-from .bayesian_data import CURING_THRESHOLDS, DRYING_THRESHOLDS
+from .bayesian_data import (
+    CURING_THRESHOLDS,
+    DRYING_THRESHOLDS,
+    PROB_MOLD_HUMIDIFIER_ON,
+    PROB_MOLD_STAGNANT_AIR,
+    PROB_STRESS_SATURATION,
+)
 from .bayesian_evaluator import (
     ReasonList,
     async_evaluate_mold_risk_trend,
@@ -213,6 +219,12 @@ class BayesianEnvironmentSensor(BinarySensorEntity):
             if dehum_state and dehum_state.state == "on":
                 dehumidifier_on = True
 
+        exhaust_sensor = self.env_config.get("exhaust_sensor")
+        exhaust_value = self._get_sensor_value(exhaust_sensor)
+
+        humidifier_sensor = self.env_config.get("humidifier_sensor")
+        humidifier_value = self._get_sensor_value(humidifier_sensor)
+
         self._sensor_states = {
             "temperature": temp,
             "humidity": humidity,
@@ -223,6 +235,8 @@ class BayesianEnvironmentSensor(BinarySensorEntity):
             "is_lights_on": is_lights_on,
             "fan_off": fan_off,
             "dehumidifier_on": dehumidifier_on,
+            "exhaust_value": exhaust_value,
+            "humidifier_value": humidifier_value,
         }
 
         return EnvironmentState(
@@ -235,6 +249,8 @@ class BayesianEnvironmentSensor(BinarySensorEntity):
             is_lights_on=is_lights_on,
             fan_off=fan_off,
             dehumidifier_on=dehumidifier_on,
+            exhaust_value=exhaust_value,
+            humidifier_value=humidifier_value,
         )
 
     async def async_added_to_hass(self) -> None:
@@ -248,6 +264,8 @@ class BayesianEnvironmentSensor(BinarySensorEntity):
             self.env_config.get("co2_sensor"),
             self.env_config.get("circulation_fan"),
             self.env_config.get("dehumidifier_entity"),
+            self.env_config.get("exhaust_sensor"),
+            self.env_config.get("humidifier_sensor"),
         ]
 
         sensors = [s for s in sensors if s]
@@ -666,6 +684,29 @@ class BayesianStressSensor(BayesianEnvironmentSensor):
                     reason += f"High VPD {state.vpd}kPa)"
                 self._reasons.append((prob[0], reason))
 
+        # 4. ACTIVE SATURATION (Humidifier running while humid)
+        if state.humidifier_value is not None and state.humidifier_value > 0:
+            is_humid = False
+            threshold = 0
+            
+            if state.flower_days == 0:  # Veg
+                if state.humidity is not None and state.humidity > 75:
+                    is_humid = True
+                    threshold = 75
+            else:  # Flower
+                if state.humidity is not None and state.humidity > 60:
+                    is_humid = True
+                    threshold = 60
+            
+            if is_humid:
+                observations.append(PROB_STRESS_SATURATION)
+                self._reasons.append(
+                    (
+                        PROB_STRESS_SATURATION[0],
+                        f"Active Saturation (Humidifier ON + High Humidity {state.humidity}%)",
+                    )
+                )
+
         self._probability = self._calculate_bayesian_probability(
             self.prior, observations
         )
@@ -1023,6 +1064,20 @@ class BayesianMoldRiskSensor(BayesianEnvironmentSensor):
                 prob = self.env_config.get("prob_mold_fan_off", (0.80, 0.15))
                 observations.append(prob)
                 self._reasons.append((prob[0], "Circulation Fan Off"))
+
+            # Stagnant Air: Low exhaust during late flower
+            if state.exhaust_value is not None and state.exhaust_value < 10:
+                observations.append(PROB_MOLD_STAGNANT_AIR)
+                self._reasons.append(
+                    (PROB_MOLD_STAGNANT_AIR[0], f"Stagnant Air (Exhaust {state.exhaust_value}%)")
+                )
+
+            # Humidifier Risk: Humidifier running in late flower
+            if state.humidifier_value is not None and state.humidifier_value > 0:
+                observations.append(PROB_MOLD_HUMIDIFIER_ON)
+                self._reasons.append(
+                    (PROB_MOLD_HUMIDIFIER_ON[0], "Humidifier ON in Late Flower")
+                )
 
         # Control Saturation: Dehumidifier running but humidity still high
         if state.dehumidifier_on and state.humidity is not None and state.humidity > 60:
