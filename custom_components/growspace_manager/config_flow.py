@@ -822,6 +822,25 @@ class OptionsFlowHandler(OptionsFlow):
             )  # Start with existing config
             self._env_config_step1.update(user_input)  # Update with new values
 
+            if not self._env_config_step1.get("configure_light"):
+                self._env_config_step1["light_sensor"] = None
+
+            if not self._env_config_step1.get("configure_fan"):
+                self._env_config_step1["circulation_fan"] = None
+
+            if not self._env_config_step1.get("configure_co2"):
+                self._env_config_step1["co2_sensor"] = None
+
+            if not self._env_config_step1.get("configure_exhaust"):
+                self._env_config_step1["exhaust_sensor"] = None
+
+            if not self._env_config_step1.get("configure_humidifier"):
+                self._env_config_step1["humidifier_sensor"] = None
+
+            if not self._env_config_step1.get("configure_dehumidifier"):
+                self._env_config_step1["dehumidifier_entity"] = None
+                self._env_config_step1["control_dehumidifier"] = False
+                
             if user_input.get("configure_advanced"):
                 return await self.async_step_configure_advanced_bayesian()
 
