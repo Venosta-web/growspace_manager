@@ -16,6 +16,15 @@ PLATFORMS: list[str] = [
 DEFAULT_NAME = "Growspace Manager"
 ATTR_TOTAL_DAYS = "total_days"
 
+# Default Photoperiods (Hours of Light)
+DEFAULT_VEG_DAY_HOURS = 18
+DEFAULT_FLOWER_DAY_HOURS = 12
+
+# Stage Durations (Days)
+DEFAULT_VEG_EARLY_DAYS = 14
+DEFAULT_FLOWER_EARLY_DAYS = 21
+DEFAULT_FLOWER_MID_DAYS = 21  # Duration of mid flower (21-42 days)
+
 # AI Configuration
 CONF_AI_ENABLED = "ai_enabled"
 CONF_ASSISTANT_ID = "assistant_id"

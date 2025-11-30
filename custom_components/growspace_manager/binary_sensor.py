@@ -44,6 +44,8 @@ from .const import (
     DEFAULT_BAYESIAN_PRIORS,
     DEFAULT_BAYESIAN_THRESHOLDS,
     DOMAIN,
+    DEFAULT_VEG_DAY_HOURS,
+    DEFAULT_FLOWER_DAY_HOURS,
 )
 from .coordinator import GrowspaceCoordinator
 from .models import EnvironmentState
@@ -748,6 +750,21 @@ class LightCycleVerificationSensor(BinarySensorEntity):
         )
         return {"veg_days": max_veg, "flower_days": max_flower}
 
+    def _get_current_stage_key(self, stage_info: dict[str, int]) -> str:
+        """Determine the current stage key based on day counts."""
+        veg_days = stage_info["veg_days"]
+        flower_days = stage_info["flower_days"]
+
+        if flower_days == 0:
+            return "veg"
+        if 0 < flower_days < 21:
+            return "flower_early"
+        if 21 <= flower_days < 42:
+            return "flower_mid"
+        if flower_days >= 42:
+            return "flower_late"
+        return "veg"
+
     async def async_update(self) -> None:
         """Update the sensor's state based on the light's on/off duration."""
         if not self.light_entity_id:
@@ -766,11 +783,19 @@ class LightCycleVerificationSensor(BinarySensorEntity):
         time_since_last_changed = now - light_state.last_changed
 
         stage_info = self._get_growth_stage_info()
-        is_flower_stage = stage_info["flower_days"] > 0
+        stage_key = self._get_current_stage_key(stage_info)
+
+        # Get configured day hours for the current stage
+        if stage_key == "veg":
+            day_hours = self.env_config.get("veg_day_hours", DEFAULT_VEG_DAY_HOURS)
+        else:
+            day_hours = self.env_config.get(
+                f"{stage_key}_day_hours", DEFAULT_FLOWER_DAY_HOURS
+            )
 
         # Determine the schedule duration based on the stage:
-        max_on_duration_hours = 12 if is_flower_stage else 18
-        max_off_duration_hours = 12 if is_flower_stage else 6
+        max_on_duration_hours = day_hours
+        max_off_duration_hours = 24 - day_hours
 
         # Select the correct time limit (ON or OFF duration)
         limit_hours = max_on_duration_hours if is_light_on else max_off_duration_hours
@@ -790,8 +815,16 @@ class LightCycleVerificationSensor(BinarySensorEntity):
     def extra_state_attributes(self) -> dict[str, Any]:
         """Return the state attributes for the entity."""
         stage_info = self._get_growth_stage_info()
-        is_flower_stage = stage_info["flower_days"] > 0
-        expected_schedule = "12/12" if is_flower_stage else "18/6"
+        stage_key = self._get_current_stage_key(stage_info)
+
+        if stage_key == "veg":
+            day_hours = self.env_config.get("veg_day_hours", DEFAULT_VEG_DAY_HOURS)
+        else:
+            day_hours = self.env_config.get(
+                f"{stage_key}_day_hours", DEFAULT_FLOWER_DAY_HOURS
+            )
+        
+        expected_schedule = f"{day_hours}/{24 - day_hours}"
 
         return {
             "expected_schedule": expected_schedule,

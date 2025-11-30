@@ -35,6 +35,8 @@ from .const import (
     CONF_NOTIFICATION_PERSONALITY,
     DEFAULT_NAME,
     DOMAIN,
+    DEFAULT_VEG_DAY_HOURS,
+    DEFAULT_FLOWER_DAY_HOURS,
 )
 from .models import Growspace, Plant
 
@@ -1005,6 +1007,32 @@ class OptionsFlowHandler(OptionsFlow):
                     max=0.95,
                     step=0.05,
                     mode=selector.NumberSelectorMode.SLIDER,
+                )
+            )
+
+        # Photoperiod Configuration
+        schema_dict[
+            vol.Optional(
+                "veg_day_hours",
+                default=growspace_options.get("veg_day_hours", DEFAULT_VEG_DAY_HOURS),
+            )
+        ] = selector.NumberSelector(
+            selector.NumberSelectorConfig(
+                min=1, max=24, step=1, mode=selector.NumberSelectorMode.BOX
+            )
+        )
+
+        for stage in ["flower_early", "flower_mid", "flower_late"]:
+            schema_dict[
+                vol.Optional(
+                    f"{stage}_day_hours",
+                    default=growspace_options.get(
+                        f"{stage}_day_hours", DEFAULT_FLOWER_DAY_HOURS
+                    ),
+                )
+            ] = selector.NumberSelector(
+                selector.NumberSelectorConfig(
+                    min=1, max=24, step=1, mode=selector.NumberSelectorMode.BOX
                 )
             )
 

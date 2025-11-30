@@ -83,6 +83,26 @@ VPD_STRESS_THRESHOLDS: Final[VpdThresholdsDict] = {
             "prob_defaults": ((0.85, 0.15), (0.60, 0.30)),
         },
     },
+    "flower_mid": {
+        "day": {
+            "stress": (0.9, 1.6),
+            "mild": (1.1, 1.5),
+            "prob_keys": (
+                "prob_vpd_stress_flower_mid",
+                "prob_vpd_mild_stress_flower_mid",
+            ),
+            "prob_defaults": ((0.88, 0.14), (0.62, 0.29)),
+        },
+        "night": {
+            "stress": (0.6, 1.2),
+            "mild": (0.8, 1.1),
+            "prob_keys": (
+                "prob_vpd_stress_flower_mid",
+                "prob_vpd_mild_stress_flower_mid",
+            ),
+            "prob_defaults": ((0.88, 0.14), (0.62, 0.29)),
+        },
+    },
     "flower_late": {
         "day": {
             "stress": (1.0, 1.6),
@@ -140,6 +160,10 @@ VPD_OPTIMAL_THRESHOLDS: Final[
     "flower_early": {
         "day": [(0.9, 1.4, (0.95, 0.18)), (1.0, 1.5, (0.85, 0.25))],
         "night": [(0.8, 1.2, (0.90, 0.20))],
+    },
+    "flower_mid": {
+        "day": [(0.95, 1.45, (0.95, 0.17)), (1.1, 1.55, (0.85, 0.24))],
+        "night": [(0.85, 1.2, (0.90, 0.20))],
     },
     "flower_late": {
         "day": [(1.0, 1.5, (0.95, 0.15)), (1.2, 1.6, (0.85, 0.22))],
