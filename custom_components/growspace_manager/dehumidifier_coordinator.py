@@ -22,20 +22,20 @@ _LOGGER = logging.getLogger(__name__)
 # Format: {stage: {day_or_night: {on: float, off: float}}}
 DEFAULT_THRESHOLDS = {
     "veg": {
-        "day": {"on": 0.8, "off": 1.2},
-        "night": {"on": 0.75, "off": 1.15},
+        "day": {"on": 0.6, "off": 0.7},
+        "night": {"on": 0.65, "off": 0.75},
     },
     "early_flower": {
-        "day": {"on": 1.2, "off": 1.3},
-        "night": {"on": 1.1, "off": 1.25},
+        "day": {"on": 1.1, "off": 1.2},
+        "night": {"on": 0.7, "off": 0.9},
     },
     "mid_flower": {
-        "day": {"on": 1.4, "off": 1.5},
-        "night": {"on": 1.3, "off": 1.45},
+        "day": {"on": 1.25, "off": 1.35},
+        "night": {"on": 0.9, "off": 1},
     },
     "late_flower": {
-        "day": {"on": 1.4, "off": 1.55},
-        "night": {"on": 1.35, "off": 1.5},
+        "day": {"on": 1.35, "off": 1.4},
+        "night": {"on": 0.95, "off": 1.05},
     },
 }
 
