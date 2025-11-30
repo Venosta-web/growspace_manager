@@ -15,6 +15,11 @@ PROB_ACCEPTABLE: Final = (0.65, 0.45)
 # Used by Stress Sensor
 PROB_STRESS_OUT_OF_RANGE: Final = (0.20, 0.75)
 PROB_VPD_STRESS_OUT_OF_RANGE: Final = (0.25, 0.70)
+PROB_STRESS_SATURATION: Final = (0.99, 0.01)
+
+# Used by Mold Risk Sensor
+PROB_MOLD_STAGNANT_AIR: Final = (0.85, 0.15)
+PROB_MOLD_HUMIDIFIER_ON: Final = (0.95, 0.10)
 
 # Type aliases for complex structures
 VpdThresholdsDict = dict[str, dict[str, dict[str, Any]]]

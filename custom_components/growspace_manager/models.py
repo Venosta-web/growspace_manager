@@ -185,3 +185,5 @@ class EnvironmentState:
     is_lights_on: bool | None
     fan_off: bool
     dehumidifier_on: bool | None = None
+    exhaust_value: float | None = None
+    humidifier_value: float | None = None
