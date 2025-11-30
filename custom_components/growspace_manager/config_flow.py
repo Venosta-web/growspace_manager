@@ -932,7 +932,7 @@ class OptionsFlowHandler(OptionsFlow):
                     device_class = None
                 elif feature == "fan":
                     entity_key = "circulation_fan"
-                    domain = ["fan", "switch", "input_boolean"]
+                    domain = ["fan", "switch", "input_boolean", "sensor", "input_number"]
                     device_class = None
                 else:  # co2
                     entity_key = f"{feature}_sensor"
@@ -949,20 +949,6 @@ class OptionsFlowHandler(OptionsFlow):
                 ] = selector.EntitySelector(
                     selector.EntitySelectorConfig(**entity_selector_config_args)
                 )
-
-                if feature == "fan":
-                    
-                    schema_dict[
-                        vol.Optional(
-                            "fan_power_sensor",
-                            default=growspace_options.get("fan_power_sensor") or vol.UNDEFINED,
-                        )
-                    ] = selector.EntitySelector(
-                        selector.EntitySelectorConfig(
-                            domain=["sensor", "input_number"],
-                            device_class=["power", "power_factor"],
-                        )
-                    )
 
         # Exhaust and Humidifier (0-10 sensors)
         for feature in ["exhaust", "humidifier"]:
