@@ -56,6 +56,7 @@ from .const import (
     SET_DEHUMIDIFIER_CONTROL_SCHEMA,
 )
 from .coordinator import GrowspaceCoordinator
+from .dehumidifier_coordinator import DehumidifierCoordinator
 from .irrigation_coordinator import IrrigationCoordinator
 from .services import (
     debug,
@@ -119,6 +120,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         "store": store,
         "created_entities": [],
         "irrigation_coordinators": {},
+        "dehumidifier_coordinators": {},
     }
 
     for growspace_id in coordinator.growspaces:
@@ -135,6 +137,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         hass.data[DOMAIN][entry.entry_id]["irrigation_coordinators"][
             growspace_id
         ] = irrigation_coordinator
+
+        dehumidifier_coordinator = DehumidifierCoordinator(hass, entry, growspace_id, coordinator)
+        await dehumidifier_coordinator.async_setup()
+        hass.data[DOMAIN][entry.entry_id]["dehumidifier_coordinators"][
+            growspace_id
+        ] = dehumidifier_coordinator
 
     entry.add_update_listener(_async_update_listener)
 
@@ -387,6 +395,10 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # Cancel irrigation listeners
     if "irrigation_coordinators" in entry_data:
         for coordinator in entry_data["irrigation_coordinators"].values():
+            coordinator.async_cancel_listeners()
+    # Cancel dehumidifier listeners
+    if "dehumidifier_coordinators" in entry_data:
+        for coordinator in entry_data["dehumidifier_coordinators"].values():
             coordinator.async_cancel_listeners()
 
     created_unique_ids = entry_data.get("created_entities", [])
