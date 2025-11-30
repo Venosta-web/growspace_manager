@@ -635,7 +635,7 @@ class GrowspaceOverviewSensor(CoordinatorEntity[GrowspaceCoordinator], SensorEnt
                     attributes["dehumidifier_humidity"] = state_obj.attributes.get("humidity")
                     attributes["dehumidifier_current_humidity"] = state_obj.attributes.get("current_humidity")
                     attributes["dehumidifier_mode"] = state_obj.attributes.get("mode")
-
+                    attributes["dehumidifier_control_enabled"] = env_config.get("control_dehumidifier", False)
             # Exhaust Sensor
             exhaust_entity = env_config.get("exhaust_sensor")
             if exhaust_entity:
