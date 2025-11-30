@@ -39,8 +39,10 @@ def _determine_stage_key(state: EnvironmentState) -> str | None:
         return "veg_early"
     if state.flower_days == 0 and state.veg_days >= 14:
         return "veg_late"
-    if 0 < state.flower_days < 42:
+    if 0 < state.flower_days < 21:
         return "flower_early"
+    if 21 <= state.flower_days < 42:
+        return "flower_mid"
     if state.flower_days >= 42:
         return "flower_late"
     return None
