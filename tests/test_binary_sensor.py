@@ -1562,3 +1562,56 @@ class TestBayesianEnvironmentSensor:
 
 
 
+
+@pytest.mark.asyncio
+async def test_light_state_gradient_logic(
+    hass: HomeAssistant, mock_coordinator, env_config
+):
+    """Test the 5-minute gradient logic for light state transitions."""
+    hass.data[DOMAIN] = {MOCK_CONFIG_ENTRY_ID: {"coordinator": mock_coordinator}}
+
+    # Setup sensor
+    sensor = BayesianStressSensor(
+        mock_coordinator,
+        "gs1",
+        env_config,
+    )
+    sensor.hass = hass
+    sensor.entity_id = "binary_sensor.test_gradient"
+    
+    # Mock time
+    initial_time = utcnow()
+    
+    # 1. Initial State: Lights ON
+    set_sensor_state(hass, "light.grow_light", "on")
+    set_sensor_state(hass, "sensor.temp", 25) # Optimal day temp
+    await hass.async_block_till_done()
+
+    with patch("custom_components.growspace_manager.binary_sensor.utcnow", return_value=initial_time):
+        state = sensor._get_base_environment_state()
+        assert state.is_lights_on is True
+        assert sensor._last_light_state is True
+        assert sensor._last_light_change_time == initial_time
+
+    # 2. Lights turn OFF (Transition Start)
+    set_sensor_state(hass, "light.grow_light", "off")
+    await hass.async_block_till_done()
+    
+    # Time advances 2 minutes (within 5 min gradient)
+    current_time = initial_time + timedelta(minutes=2)
+    
+    with patch("custom_components.growspace_manager.binary_sensor.utcnow", return_value=current_time):
+        state = sensor._get_base_environment_state()
+        # Should still report as ON (previous state) because we are in the gradient
+        assert state.is_lights_on is True
+        # Internal state should be updated though
+        assert sensor._last_light_state is False
+        assert sensor._last_light_change_time == current_time
+
+    # 3. Time advances to 6 minutes (Gradient Over)
+    final_time = initial_time + timedelta(minutes=8)
+    
+    with patch("custom_components.growspace_manager.binary_sensor.utcnow", return_value=final_time):
+        state = sensor._get_base_environment_state()
+        # Should now report as OFF (actual state)
+        assert state.is_lights_on is False

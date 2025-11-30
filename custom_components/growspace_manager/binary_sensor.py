@@ -181,6 +181,8 @@ class BayesianEnvironmentSensor(BinarySensorEntity):
         self._probability = 0.0
         self._last_notification_sent: datetime | None = None
         self._notification_cooldown = timedelta(minutes=5)
+        self._last_light_change_time: datetime | None = None
+        self._last_light_state: bool | None = None
 
     def _get_base_environment_state(self) -> EnvironmentState:
         """Fetch sensor values and return a structured EnvironmentState object."""
@@ -194,16 +196,44 @@ class BayesianEnvironmentSensor(BinarySensorEntity):
 
         # Lights-Aware Logic
         light_sensor = self.env_config.get("light_sensor")
-        is_lights_on = None
+        current_lights_on = None
         if light_sensor:
             light_state = self.hass.states.get(light_sensor)
             if light_state:
                 if light_state.domain == "sensor":
                     sensor_value = self._get_sensor_value(light_sensor)
                     if sensor_value is not None:
-                        is_lights_on = bool(sensor_value > 0)
+                        current_lights_on = bool(sensor_value > 0)
                 else:
-                    is_lights_on = light_state.state == "on"
+                    current_lights_on = light_state.state == "on"
+
+        # Apply 5-minute gradient/hysteresis for light state changes
+        now = utcnow()
+        if self._last_light_state is None:
+            # First run, initialize
+            self._last_light_state = current_lights_on
+            self._last_light_change_time = now
+        elif current_lights_on != self._last_light_state:
+            # State changed, update tracking
+            self._last_light_state = current_lights_on
+            self._last_light_change_time = now
+
+        # Determine effective light state for logic
+        is_lights_on = current_lights_on
+        if (
+            self._last_light_change_time
+            and (now - self._last_light_change_time) < timedelta(minutes=5)
+        ):
+            # In transition period, use the PREVIOUS state (inverse of current)
+            # This prevents immediate stress alerts when lights toggle
+            if current_lights_on is not None:
+                 is_lights_on = not current_lights_on
+            _LOGGER.debug(
+                "In light transition period for %s. Actual: %s, Effective: %s",
+                self.growspace_id,
+                current_lights_on,
+                is_lights_on,
+            )
 
         fan_entity = self.env_config.get("circulation_fan")
         fan_off = bool(
