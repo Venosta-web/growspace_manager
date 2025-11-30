@@ -35,6 +35,7 @@ from .utils import (
     parse_date_field,
     calculate_days_since,
     days_to_week,
+    calculate_plant_stage,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -662,57 +663,6 @@ class PlantEntity(SensorEntity):
 
 
 
-    def _determine_stage(self, plant: Plant) -> str:
-        """Determine the current growth stage of the plant.
-
-        The stage is determined by a hierarchy: first by the special growspace
-        it's in, then by the most recent start date, and finally by the
-        explicitly set stage property.
-
-        Args:
-            plant: The Plant object to analyze.
-
-        Returns:
-            The determined stage as a string.
-        """
-        now = datetime.now()
-
-        # 1. Special growspaces override everything
-        if plant.growspace_id == "mother":
-            return "mother"
-        if plant.growspace_id == "clone":
-            return "clone"
-        if plant.growspace_id == "dry":
-            return "dry"
-        if plant.growspace_id == "cure":
-            return "cure"
-
-        # 2. Date-based progression (most advanced stage wins)
-        flower_start = parse_date_field(plant.flower_start)
-        veg_start = parse_date_field(plant.veg_start)
-        seedling_start = parse_date_field(plant.seedling_start)
-
-        if flower_start and flower_start <= now:
-            return "flower"
-        if veg_start and veg_start <= now:
-            return "veg"
-        if seedling_start and seedling_start <= now:
-            return "seedling"
-
-        # 3. Fallback to explicitly set stage if none of the above applies
-        if plant.stage in [
-            "seedling",
-            "mother",
-            "clone",
-            "veg",
-            "flower",
-            "dry",
-            "cure",
-        ]:
-            return plant.stage
-
-        # Default
-        return "seedling"
 
 
     @property
@@ -723,7 +673,7 @@ class PlantEntity(SensorEntity):
         if not plant:
             return "unknown"
 
-        stage = self._determine_stage(plant)
+        stage = calculate_plant_stage(plant)
 
         # Get growspace if needed
         self.coordinator.growspaces.get(plant.growspace_id)
@@ -737,7 +687,7 @@ class PlantEntity(SensorEntity):
         if not plant:
             return {}
 
-        stage = self._determine_stage(plant)
+        stage = calculate_plant_stage(plant)
         seedling_days = self.coordinator.calculate_days_in_stage(plant, "seedling")
         mother_days = self.coordinator.calculate_days_in_stage(plant, "mother")
         clone_days = self.coordinator.calculate_days_in_stage(plant, "clone")
