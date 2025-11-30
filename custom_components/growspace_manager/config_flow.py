@@ -1820,6 +1820,13 @@ class OptionsFlowHandler(OptionsFlow):
                 if k not in ["current_irrigation_times", "current_drain_times", "growspace_id_read_only"]
             }
 
+            # Explicitly handle pump entities to allow clearing them (setting to None)
+            # If they are missing from user_input (e.g. cleared in UI), set them to None
+            if "irrigation_pump_entity" not in updated_settings:
+                updated_settings["irrigation_pump_entity"] = None
+            if "drain_pump_entity" not in updated_settings:
+                updated_settings["drain_pump_entity"] = None
+
             # Update the config in the growspace object
             growspace.irrigation_config.update(updated_settings)
 
