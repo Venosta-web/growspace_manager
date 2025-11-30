@@ -35,20 +35,16 @@ class GrowAssistant:
         self.coordinator = coordinator
         self.strain_library = strain_library
 
-    def _get_ai_settings(self) -> dict[str, Any]:
+    def _get_ai_settings(self) -> dict[str, Any] | None:
         """Get and validate AI settings from coordinator options."""
         ai_settings = self.coordinator.options.get("ai_settings", {})
 
         if not ai_settings.get(CONF_AI_ENABLED):
-            raise ServiceValidationError(
-                "AI assistant is not enabled. Please enable it in integration settings."
-            )
+            return None
 
         agent_id = ai_settings.get(CONF_ASSISTANT_ID)
         if not agent_id:
-            raise ServiceValidationError(
-                "No AI assistant configured. Please select an assistant in integration settings."
-            )
+            return None
 
         return ai_settings
 
@@ -328,10 +324,12 @@ class GrowAssistant:
             AI-generated advice string
         """
         ai_settings = self._get_ai_settings()
-        agent_id = ai_settings.get(CONF_ASSISTANT_ID)
+        agent_id = None
+        if ai_settings:
+            agent_id = ai_settings.get(CONF_ASSISTANT_ID)
 
         if max_length is None:
-            max_length = ai_settings.get("max_response_length", 250)
+            max_length = ai_settings.get("max_response_length", 250) if ai_settings else 250
 
         # Gather all relevant data
         data = self._gather_growspace_data(growspace_id)
@@ -352,6 +350,10 @@ class GrowAssistant:
 
         # Call the conversation API
         try:
+            if not agent_id:
+                 _LOGGER.info("AI assistant not configured, returning raw context")
+                 return f"AI Assistant not configured. Raw Data:\n\n{context}"
+
             result = await conversation.async_converse(
                 self.hass,
                 text=full_prompt,
@@ -383,7 +385,8 @@ class GrowAssistant:
 
         except Exception as err:
             _LOGGER.error("Error getting AI advice: %s", err)
-            raise ServiceValidationError(f"Failed to get AI advice: {str(err)}")
+            # Fallback to context if AI fails
+            return f"AI Assistant Error: {err}\n\nRaw Data:\n\n{context}"
 
 
 async def handle_ask_grow_advice(
@@ -419,11 +422,14 @@ async def handle_analyze_all_growspaces(
     """
     assistant = GrowAssistant(hass, coordinator, strain_library)
     ai_settings = assistant._get_ai_settings()
-    agent_id = ai_settings.get(CONF_ASSISTANT_ID)
+    agent_id = None
+    if ai_settings:
+        agent_id = ai_settings.get(CONF_ASSISTANT_ID)
+    
     max_length = call.data.get("max_length")
 
     if max_length is None:
-        max_length = ai_settings.get("max_response_length", 250)
+        max_length = ai_settings.get("max_response_length", 250) if ai_settings else 250
 
     # Gather data for all growspaces
     all_data = []
@@ -489,6 +495,14 @@ async def handle_analyze_all_growspaces(
     )
 
     try:
+        if not agent_id:
+             _LOGGER.info("AI assistant not configured, returning summary report")
+             return {
+                "response": f"AI Assistant not configured. Summary Report:\n\n{context}",
+                "issues_count": len(issues_found),
+                "growspaces_analyzed": len(all_data),
+            }
+
         result = await conversation.async_converse(
             hass,
             text=prompt,
@@ -519,7 +533,12 @@ async def handle_analyze_all_growspaces(
 
     except Exception as err:
         _LOGGER.error("Error analyzing all growspaces: %s", err)
-        raise ServiceValidationError(f"Failed to analyze growspaces: {str(err)}")
+        # Fallback to summary
+        return {
+            "response": f"Error analyzing growspaces: {err}\n\nSummary Report:\n\n{context}",
+            "issues_count": len(issues_found),
+            "growspaces_analyzed": len(all_data),
+        }
 
 
 async def handle_strain_recommendation(
@@ -534,11 +553,14 @@ async def handle_strain_recommendation(
     """
     assistant = GrowAssistant(hass, coordinator, strain_library)
     ai_settings = assistant._get_ai_settings()
-    agent_id = ai_settings.get(CONF_ASSISTANT_ID)
+    agent_id = None
+    if ai_settings:
+        agent_id = ai_settings.get(CONF_ASSISTANT_ID)
+
     max_length = call.data.get("max_length")
 
     if max_length is None:
-        max_length = ai_settings.get("max_response_length", 250)
+        max_length = ai_settings.get("max_response_length", 250) if ai_settings else 250
 
     preferences = call.data.get("preferences", {})
     growspace_id = call.data.get("growspace_id")
@@ -644,6 +666,10 @@ async def handle_strain_recommendation(
     )
 
     try:
+        if not agent_id:
+             _LOGGER.info("AI assistant not configured, returning strain context")
+             return {"response": f"AI Assistant not configured. Strain Data:\n\n{context}", "strains_analyzed": len(all_strains)}
+
         result = await conversation.async_converse(
             hass,
             text=prompt,
@@ -670,4 +696,4 @@ async def handle_strain_recommendation(
 
     except Exception as err:
         _LOGGER.error("Error getting strain recommendations: %s", err)
-        raise ServiceValidationError(f"Failed to get recommendations: {str(err)}")
+        return {"response": f"Error getting recommendations: {err}\n\nStrain Data:\n\n{context}", "strains_analyzed": len(all_strains)}
