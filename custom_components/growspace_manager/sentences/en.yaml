@@ -1,0 +1,10 @@
+language: en
+intents:
+  GrowspaceManagerAskAdvice:
+    data:
+      - sentences:
+          - "Ask [growspace] manager for advice on {growspace}"
+          - "Get grow advice for {growspace}"
+          - "How is {growspace} doing"
+          - "What does the grow assistant say about {growspace}"
+          - "Ask grow assistant about {growspace}"

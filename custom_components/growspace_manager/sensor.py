@@ -99,6 +99,9 @@ async def async_setup_entry(
         StrainLibrarySensor(coordinator),
     ]
 
+    # Track calculated VPD sensors
+    calculated_vpd_sensors: list[CalculatedVpdSensor] = []
+
     # Create initial entities
     for growspace_id, growspace in coordinator.growspaces.items():
         gs_entity = GrowspaceOverviewSensor(coordinator, growspace_id, growspace)
@@ -106,6 +109,36 @@ async def async_setup_entry(
         initial_entities.append(gs_entity)
 
         await _async_create_derivative_sensors(hass, config_entry, growspace)
+
+        # Check if we need to create a calculated VPD sensor
+        env_config = growspace.environment_config or {}
+        temp_sensor = env_config.get("temperature_sensor")
+        humidity_sensor = env_config.get("humidity_sensor")
+        vpd_sensor = env_config.get("vpd_sensor")
+
+        # Create calculated VPD if temp and humidity exist but no VPD sensor
+        if temp_sensor and humidity_sensor and not vpd_sensor:
+            lst_offset = env_config.get("lst_offset", -2.0)
+            calc_vpd_sensor = CalculatedVpdSensor(
+                coordinator,
+                growspace_id,
+                growspace.name,
+                temp_sensor,
+                humidity_sensor,
+                lst_offset,
+            )
+            calculated_vpd_sensors.append(calc_vpd_sensor)
+            initial_entities.append(calc_vpd_sensor)
+
+            # Auto-populate the vpd_sensor in env_config with the calculated sensor
+            env_config["vpd_sensor"] = f"sensor.{growspace_id}_calculated_vpd"
+            growspace.environment_config = env_config
+
+            _LOGGER.info(
+                "Created calculated VPD sensor for %s (LST offset: %.1f°C)",
+                growspace.name,
+                lst_offset,
+            )
 
         for plant in coordinator.get_growspace_plants(growspace_id):
             pe = PlantEntity(coordinator, plant)
@@ -323,6 +356,89 @@ class VpdSensor(CoordinatorEntity[GrowspaceCoordinator], SensorEntity):
         return None
 
 
+class CalculatedVpdSensor(CoordinatorEntity[GrowspaceCoordinator], SensorEntity):
+    """A sensor that calculates VPD from temperature and humidity with LST offset.
+
+    This sensor is automatically created when a growspace has temperature and
+    humidity sensors configured but no physical VPD sensor. It uses the configured
+    LST (Leaf Surface Temperature) offset to calculate VPD more accurately.
+    """
+
+    def __init__(
+        self,
+        coordinator: GrowspaceCoordinator,
+        growspace_id: str,
+        growspace_name: str,
+        temp_sensor: str,
+        humidity_sensor: str,
+        lst_offset: float = -2.0,
+    ) -> None:
+        """Initialize the calculated VPD sensor.
+
+        Args:
+            coordinator: The data update coordinator.
+            growspace_id: The ID of the growspace.
+            growspace_name: The name of the growspace.
+            temp_sensor: The entity ID of the temperature sensor.
+            humidity_sensor: The entity ID of the humidity sensor.
+            lst_offset: The leaf surface temperature offset in °C (default: -2.0).
+        """
+        super().__init__(coordinator)
+        self._growspace_id = growspace_id
+        self._attr_name = f"{growspace_name} Calculated VPD"
+        self._attr_unique_id = f"{DOMAIN}_{growspace_id}_calculated_vpd"
+        self._temp_sensor = temp_sensor
+        self._humidity_sensor = humidity_sensor
+        self._lst_offset = lst_offset
+        self._attr_state_class = SensorStateClass.MEASUREMENT
+        self._attr_native_unit_of_measurement = "kPa"
+        self._attr_icon = "mdi:cloud-percent"
+
+        self._attr_device_info = DeviceInfo(
+            identifiers={(DOMAIN, growspace_id)},
+            name=growspace_name,
+            model="Growspace",
+            manufacturer="Growspace Manager",
+        )
+
+    @property
+    def native_value(self) -> float | None:
+        """Return the calculated VPD value in kPa."""
+        hass = self.coordinator.hass
+        temp = None
+        humidity = None
+
+        temp_state = hass.states.get(self._temp_sensor)
+        if temp_state and temp_state.state not in ["unknown", "unavailable"]:
+            try:
+                temp = float(temp_state.state)
+            except (ValueError, TypeError):
+                temp = None
+
+        humidity_state = hass.states.get(self._humidity_sensor)
+        if humidity_state and humidity_state.state not in ["unknown", "unavailable"]:
+            try:
+                humidity = float(humidity_state.state)
+            except (ValueError, TypeError):
+                humidity = None
+
+        if temp is not None and humidity is not None:
+            return VPDCalculator.calculate_vpd_with_lst_offset(
+                temp, humidity, self._lst_offset
+            )
+        return None
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Return additional state attributes."""
+        return {
+            "temperature_sensor": self._temp_sensor,
+            "humidity_sensor": self._humidity_sensor,
+            "lst_offset": self._lst_offset,
+            "calculation_method": "Calculated from temperature and humidity",
+        }
+
+
 class AirExchangeSensor(CoordinatorEntity[GrowspaceCoordinator], SensorEntity):
     """A sensor that provides an air exchange recommendation for a growspace.
 
@@ -488,7 +604,8 @@ class GrowspaceOverviewSensor(CoordinatorEntity[GrowspaceCoordinator], SensorEnt
                 "position": f"({row_i},{col_i})",
             }
 
-        return {
+        # Build attributes dict
+        attributes = {
             "growspace_id": growspace.id,
             "rows": growspace.rows,
             "plants_per_row": growspace.plants_per_row,
@@ -503,6 +620,37 @@ class GrowspaceOverviewSensor(CoordinatorEntity[GrowspaceCoordinator], SensorEnt
             "drain_times": irrigation_options.get("drain_times", []),
             "grid": grid,
         }
+
+        # Add dehumidifier state if configured
+        if growspace.environment_config:
+            env_config = growspace.environment_config
+            
+            # Dehumidifier
+            dehumidifier_entity = env_config.get("dehumidifier_entity")
+            if dehumidifier_entity:
+                state_obj = self.coordinator.hass.states.get(dehumidifier_entity)
+                attributes["dehumidifier_entity"] = dehumidifier_entity
+                attributes["dehumidifier_state"] = state_obj.state if state_obj else None
+                if state_obj:
+                    attributes["dehumidifier_humidity"] = state_obj.attributes.get("humidity")
+                    attributes["dehumidifier_current_humidity"] = state_obj.attributes.get("current_humidity")
+                    attributes["dehumidifier_mode"] = state_obj.attributes.get("mode")
+
+            # Exhaust Sensor
+            exhaust_entity = env_config.get("exhaust_sensor")
+            if exhaust_entity:
+                state_obj = self.coordinator.hass.states.get(exhaust_entity)
+                attributes["exhaust_entity"] = exhaust_entity
+                attributes["exhaust_value"] = state_obj.state if state_obj else None
+
+            # Humidifier Sensor
+            humidifier_entity = env_config.get("humidifier_sensor")
+            if humidifier_entity:
+                state_obj = self.coordinator.hass.states.get(humidifier_entity)
+                attributes["humidifier_entity"] = humidifier_entity
+                attributes["humidifier_value"] = state_obj.state if state_obj else None
+
+        return attributes
 
 
 class PlantEntity(SensorEntity):
@@ -695,67 +843,8 @@ class StrainLibrarySensor(CoordinatorEntity[GrowspaceCoordinator], SensorEntity)
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
         """Return the calculated strain analytics as state attributes."""
-        analytics_data = {}
-        all_strains = self.coordinator.strains.get_all()
-
-        for strain_name, strain_data in all_strains.items():
-            phenotypes = strain_data.get("phenotypes", {})
-            strain_harvests = []
-
-            # Process each phenotype
-            pheno_analytics = {}
-            for pheno_name, pheno_data in phenotypes.items():
-                harvests = pheno_data.get("harvests", [])
-                strain_harvests.extend(harvests)
-
-                num_harvests = len(harvests)
-                if num_harvests > 0:
-                    total_veg = sum(h.get("veg_days", 0) for h in harvests)
-                    total_flower = sum(h.get("flower_days", 0) for h in harvests)
-                    stats = {
-                        "avg_veg_days": round(total_veg / num_harvests),
-                        "avg_flower_days": round(total_flower / num_harvests),
-                        "total_harvests": num_harvests,
-                    }
-                else:
-                    stats = {
-                        "avg_veg_days": 0,
-                        "avg_flower_days": 0,
-                        "total_harvests": 0,
-                    }
-
-                # Extract metadata, excluding the raw harvest list and large fields
-                pheno_meta = {
-                    k: v
-                    for k, v in pheno_data.items()
-                    if k not in ["harvests", "description", "image_path", "image_crop_meta"]
-                }
-
-                # Merge them
-                pheno_analytics[pheno_name] = {**stats, **pheno_meta}
-
-            # Calculate strain-level analytics
-            num_strain_harvests = len(strain_harvests)
-            strain_avg_veg = 0
-            strain_avg_flower = 0
-            if num_strain_harvests > 0:
-                strain_avg_veg = round(sum(h.get("veg_days", 0) for h in strain_harvests) / num_strain_harvests)
-                strain_avg_flower = round(sum(h.get("flower_days", 0) for h in strain_harvests) / num_strain_harvests)
-
-            analytics_data[strain_name] = {
-                "meta": strain_data.get("meta", {}),
-                "analytics": {
-                    "avg_veg_days": strain_avg_veg,
-                    "avg_flower_days": strain_avg_flower,
-                    "total_harvests": num_strain_harvests
-                },
-                "phenotypes": pheno_analytics
-            }
-
-        return {
-            "strains": analytics_data,
-            "strain_list": list(all_strains.keys())
-        }
+        # Use the cached analytics from StrainLibrary to avoid heavy computation on the main loop.
+        return self.coordinator.strains.get_analytics()
 
 
 class GrowspaceListSensor(SensorEntity):

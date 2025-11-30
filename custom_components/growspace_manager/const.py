@@ -1,6 +1,6 @@
 """Constants for the Growspace Manager integration."""
 
-from datetime import date
+from datetime import date, datetime
 
 import voluptuous as vol
 
@@ -131,12 +131,22 @@ def valid_date_or_none(value):
     """
     if value is None or value == "":
         return None
+    if isinstance(value, datetime):
+        return value
     if isinstance(value, date):
         return value
+    
+    value_str = str(value).replace("Z", "")
+    
+    # Try parsing as datetime first (most specific)
     try:
-        # Attempt to parse ISO format, handling potential timezone 'Z'
-        # Ensure value is converted to string to handle potential datetime objects directly
-        return date.fromisoformat(str(value).replace("Z", ""))
+        return datetime.fromisoformat(value_str)
+    except ValueError:
+        pass
+
+    # Try parsing as date
+    try:
+        return date.fromisoformat(value_str)
     except ValueError:
         raise vol.Invalid(
             f"'{value}' is not a valid date or ISO format string"
@@ -243,8 +253,8 @@ MOVE_PLANT_SCHEMA = vol.Schema(
 # Switch Plants
 SWITCH_PLANT_SCHEMA = vol.Schema(
     {
-        vol.Required("plant_id_1"): str,
-        vol.Required("plant_id_2"): str,
+        vol.Required("plant1_id"): str,
+        vol.Required("plant2_id"): str,
     }
 )
 
@@ -395,6 +405,7 @@ CONFIGURE_ENVIRONMENT_SCHEMA = vol.Schema(
         vol.Required("humidity_sensor"): str,
         vol.Required("vpd_sensor"): str,
         vol.Optional("co2_sensor"): str,
+        vol.Optional("dehumidifier_entity"): str,
         vol.Optional("circulation_fan"): str,
         vol.Optional("light_sensor"): str,
         vol.Optional("stress_threshold", default=0.70): vol.All(

@@ -429,8 +429,15 @@ class OptionsFlowHandler(OptionsFlow):
             ):
                 errors["base"] = "assistant_required"
             else:
+                coordinator = self.hass.data[DOMAIN][self._config_entry.entry_id]["coordinator"]
                 new_options = self._config_entry.options.copy()
                 new_options["ai_settings"] = user_input
+
+                # Update coordinator's in-memory options
+                coordinator.options = new_options
+
+                # Save to storage
+                await coordinator.async_save()
 
                 # Inform user about the changes
                 return self.async_create_entry(
@@ -824,6 +831,7 @@ class OptionsFlowHandler(OptionsFlow):
             )
             return self.async_create_entry(title="", data={})
 
+
         schema_dict = {}
 
         # Basic sensors - Use growspace_options for defaults
@@ -838,6 +846,37 @@ class OptionsFlowHandler(OptionsFlow):
                         domain=["sensor", "input_number"],
                         device_class=device_class,
                     )
+                )
+            )
+
+        # VPD sensor - optional
+        schema_dict[vol.Optional("vpd_sensor", default=growspace_options.get("vpd_sensor"))] = (
+            selector.EntitySelector(
+                selector.EntitySelectorConfig(
+                    domain=["sensor", "input_number"],
+                    device_class="pressure",
+                )
+            )
+        )
+
+        # LST offset - only show if temp and humidity are set but VPD is not
+        has_temp = bool(growspace_options.get("temperature_sensor"))
+        has_humidity = bool(growspace_options.get("humidity_sensor"))
+        has_vpd = bool(growspace_options.get("vpd_sensor"))
+
+        if has_temp and has_humidity and not has_vpd:
+            schema_dict[
+                vol.Optional(
+                    "lst_offset",
+                    default=growspace_options.get("lst_offset", -2.0),
+                )
+            ] = selector.NumberSelector(
+                selector.NumberSelectorConfig(
+                    min=-5.0,
+                    max=5.0,
+                    step=0.5,
+                    mode=selector.NumberSelectorMode.BOX,
+                    unit_of_measurement="°C",
                 )
             )
 
@@ -874,7 +913,52 @@ class OptionsFlowHandler(OptionsFlow):
                 ] = selector.EntitySelector(
                     selector.EntitySelectorConfig(**entity_selector_config_args)
                 )
-        # Thresholds
+                schema_dict[
+                    vol.Optional(entity_key, default=growspace_options.get(entity_key))
+                ] = selector.EntitySelector(
+                    selector.EntitySelectorConfig(**entity_selector_config_args)
+                )
+
+        # Exhaust and Humidifier (0-10 sensors)
+        for feature in ["exhaust", "humidifier"]:
+            enabled = growspace_options.get(
+                f"configure_{feature}", bool(growspace_options.get(f"{feature}_sensor"))
+            )
+            schema_dict[vol.Optional(f"configure_{feature}", default=enabled)] = (
+                selector.BooleanSelector()
+            )
+            if enabled:
+                schema_dict[
+                    vol.Optional(
+                        f"{feature}_sensor",
+                        default=growspace_options.get(f"{feature}_sensor"),
+                    )
+                ] = selector.EntitySelector(
+                    selector.EntitySelectorConfig(
+                        domain=["sensor", "input_number"],
+                        device_class="power_factor",
+                    )
+                )
+
+        # Dehumidifier / Switch configuration
+        configure_dehumidifier = growspace_options.get(
+            "configure_dehumidifier", bool(growspace_options.get("dehumidifier_entity"))
+        )
+        schema_dict[
+            vol.Optional("configure_dehumidifier", default=configure_dehumidifier)
+        ] = selector.BooleanSelector()
+
+        if configure_dehumidifier:
+            schema_dict[
+                vol.Optional(
+                    "dehumidifier_entity",
+                    default=growspace_options.get("dehumidifier_entity"),
+                )
+            ] = selector.EntitySelector(
+                selector.EntitySelectorConfig(
+                    domain=["switch", "humidifier", "sensor", "binary_sensor"]
+                )
+            )
         for key, default in [("stress_threshold", 0.70), ("mold_threshold", 0.75)]:
             schema_dict[
                 vol.Optional(key, default=growspace_options.get(key, default))
@@ -1736,6 +1820,13 @@ class OptionsFlowHandler(OptionsFlow):
                 if k not in ["current_irrigation_times", "current_drain_times", "growspace_id_read_only"]
             }
 
+            # Explicitly handle pump entities to allow clearing them (setting to None)
+            # If they are missing from user_input (e.g. cleared in UI), set them to None
+            if "irrigation_pump_entity" not in updated_settings:
+                updated_settings["irrigation_pump_entity"] = None
+            if "drain_pump_entity" not in updated_settings:
+                updated_settings["drain_pump_entity"] = None
+
             # Update the config in the growspace object
             growspace.irrigation_config.update(updated_settings)
 
@@ -1924,18 +2015,23 @@ class OptionsFlowHandler(OptionsFlow):
             else selector.TextSelector()
         )
 
+        # Relax limits for special growspaces
+        is_special = growspace.id in ["mother", "clone", "dry", "cure"]
+        max_row = 100 if is_special else rows
+        max_col = 100 if is_special else plants_per_row
+
         return vol.Schema(
             {
                 vol.Required("strain"): strain_selector,
                 vol.Optional("phenotype"): selector.TextSelector(),
                 vol.Required("row", default=1): selector.NumberSelector(
                     selector.NumberSelectorConfig(
-                        min=1, max=rows, mode=selector.NumberSelectorMode.BOX
+                        min=1, max=max_row, mode=selector.NumberSelectorMode.BOX
                     )
                 ),
                 vol.Required("col", default=1): selector.NumberSelector(
                     selector.NumberSelectorConfig(
-                        min=1, max=plants_per_row, mode=selector.NumberSelectorMode.BOX
+                        min=1, max=max_col, mode=selector.NumberSelectorMode.BOX
                     )
                 ),
                 vol.Optional("veg_start"): selector.DateSelector(),
@@ -1979,6 +2075,11 @@ class OptionsFlowHandler(OptionsFlow):
         else:
             strain_selector = selector.TextSelector()
 
+        # Relax limits for special growspaces
+        is_special = growspace and growspace.id in ["mother", "clone", "dry", "cure"]
+        max_row = 100 if is_special else rows
+        max_col = 100 if is_special else plants_per_row
+
         return vol.Schema(
             {
                 vol.Optional(
@@ -1989,12 +2090,12 @@ class OptionsFlowHandler(OptionsFlow):
                 ): selector.TextSelector(),
                 vol.Optional("row", default=plant.row if plant else 1): selector.NumberSelector(
                     selector.NumberSelectorConfig(
-                        min=1, max=rows, mode=selector.NumberSelectorMode.BOX
+                        min=1, max=max_row, mode=selector.NumberSelectorMode.BOX
                     )
                 ),
                 vol.Optional("col", default=plant.col if plant else 1): selector.NumberSelector(
                     selector.NumberSelectorConfig(
-                        min=1, max=plants_per_row, mode=selector.NumberSelectorMode.BOX
+                        min=1, max=max_col, mode=selector.NumberSelectorMode.BOX
                     )
                 ),
                 vol.Optional("veg_start"): selector.DateSelector(),

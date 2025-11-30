@@ -45,7 +45,11 @@ async def handle_add_plant(
 
         # Check position bounds
         row, col = call.data["row"], call.data["col"]
-        if row < 1 or row > growspace.rows or col < 1 or col > growspace.plants_per_row:
+        
+        # Skip boundary check for special growspaces
+        is_special = growspace_id in ["mother", "clone", "dry", "cure"]
+        
+        if not is_special and (row < 1 or row > growspace.rows or col < 1 or col > growspace.plants_per_row):
             _LOGGER.error(
                 "Position (%s,%s) is outside growspace bounds (%dx%d) for %s",
                 row,
@@ -593,8 +597,8 @@ async def handle_switch_plants(
 ) -> None:
     """Handle switch plants service call."""
     try:
-        plant_id_1 = call.data["plant_id_1"]
-        plant_id_2 = call.data["plant_id_2"]
+        plant_id_1 = call.data["plant1_id"]
+        plant_id_2 = call.data["plant2_id"]
 
         if plant_id_1 not in coordinator.plants:
             _LOGGER.error("Plant %s does not exist for switch_plants", plant_id_1)
@@ -666,7 +670,11 @@ async def handle_move_plant(
 
         # Validate new position is within bounds
         new_row, new_col = call.data["new_row"], call.data["new_col"]
-        if (
+        
+        # Skip boundary check for special growspaces
+        is_special = plant.growspace_id in ["mother", "clone", "dry", "cure"]
+        
+        if not is_special and (
             new_row < 1
             or new_row > growspace.rows
             or new_col < 1

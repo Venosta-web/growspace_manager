@@ -112,3 +112,43 @@ class VPDCalculator:
         # Calculate VPD
         vpd = svp - avp
         return round(vpd, 2)
+
+    @staticmethod
+    def calculate_vpd_with_lst_offset(
+        air_temperature_c: float, humidity_rh: float, lst_offset: float = -2.0
+    ) -> float | None:
+        """
+        Calculate Vapor Pressure Deficit (VPD) with Leaf Surface Temperature offset.
+
+        Args:
+            air_temperature_c: Air temperature in degrees Celsius.
+            humidity_rh: Relative humidity in percent (e.g., 65.5).
+            lst_offset: Temperature offset for leaf surface (default: -2.0°C).
+
+        Returns:
+            The calculated VPD in kilopascals (kPa), or None if inputs are invalid.
+        """
+        if not isinstance(air_temperature_c, (int, float)) or not isinstance(
+            humidity_rh, (int, float)
+        ):
+            return None
+
+        # Calculate leaf temperature
+        leaf_temperature_c = air_temperature_c + lst_offset
+
+        # Magnus formula for saturation vapor pressure at leaf temperature
+        svp_leaf = 0.61094 * math.exp(
+            (17.625 * leaf_temperature_c) / (243.04 + leaf_temperature_c)
+        )
+
+        # Magnus formula for saturation vapor pressure at air temperature
+        svp_air = 0.61094 * math.exp(
+            (17.625 * air_temperature_c) / (243.04 + air_temperature_c)
+        )
+
+        # Calculate actual vapor pressure from air
+        avp = svp_air * (humidity_rh / 100)
+
+        # VPD is the difference between leaf SVP and air AVP
+        vpd = svp_leaf - avp
+        return round(vpd, 2)

@@ -417,6 +417,11 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
             ValueError: If the row or column is outside the defined grid size.
         """
         growspace = self.growspaces[growspace_id]
+        
+        # Skip boundary check for special growspaces
+        if growspace_id in ["mother", "clone", "dry", "cure"]:
+            return
+
         max_rows = int(growspace.rows)
         max_cols = int(growspace.plants_per_row)
 
