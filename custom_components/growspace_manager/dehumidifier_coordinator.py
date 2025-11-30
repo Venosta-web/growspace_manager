@@ -84,6 +84,8 @@ class DehumidifierCoordinator:
 
         if self.vpd_sensor and self.dehumidifier_entity and self.control_dehumidifier:
             self._setup_listeners()
+            # Start initial check after reload/starup
+            self.hass.async_create_task(self.async_check_and_control())
             _LOGGER.info(
                 "DehumidifierCoordinator initialized for %s (VPD: %s, Dehum: %s)",
                 self.growspace.name,
