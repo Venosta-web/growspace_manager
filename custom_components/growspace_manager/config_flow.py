@@ -813,7 +813,6 @@ class OptionsFlowHandler(OptionsFlow):
         )
 
         if user_input is not None:
-            # FIX: Filter out None and empty string values BEFORE processing
             user_input = {
                 k: v for k, v in user_input.items() if v is not None and v != ""
             }
@@ -928,11 +927,19 @@ class OptionsFlowHandler(OptionsFlow):
                 ] = selector.EntitySelector(
                     selector.EntitySelectorConfig(**entity_selector_config_args)
                 )
-                schema_dict[
-                    vol.Optional(entity_key, default=growspace_options.get(entity_key))
-                ] = selector.EntitySelector(
-                    selector.EntitySelectorConfig(**entity_selector_config_args)
-                )
+
+                if feature == "fan":
+                    schema_dict[
+                        vol.Optional(
+                            "fan_power_sensor",
+                            default=growspace_options.get("fan_power_sensor"),
+                        )
+                    ] = selector.EntitySelector(
+                        selector.EntitySelectorConfig(
+                            domain=["sensor", "input_number"],
+                            device_class=["power", "power_factor"],
+                        )
+                    )
 
         # Exhaust and Humidifier (0-10 sensors)
         for feature in ["exhaust", "humidifier"]:
