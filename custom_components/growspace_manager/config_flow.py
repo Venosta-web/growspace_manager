@@ -407,6 +407,21 @@ class OptionsFlowHandler(OptionsFlow):
             )
         ] = selector.BooleanSelector()
 
+        # Add option to limit AI response length
+        schema[
+            vol.Optional(
+                "max_response_length",
+                default=current_settings.get("max_response_length", 250),
+            )
+        ] = selector.NumberSelector(
+            selector.NumberSelectorConfig(
+                min=50,
+                max=1000,
+                step=10,
+                mode=selector.NumberSelectorMode.BOX,
+            )
+        )
+
         return vol.Schema(schema)
 
     async def async_step_configure_ai(
