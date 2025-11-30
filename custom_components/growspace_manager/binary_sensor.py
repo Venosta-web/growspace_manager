@@ -415,6 +415,7 @@ class BayesianEnvironmentSensor(BinarySensorEntity):
             try:
                 personality = ai_settings.get(CONF_NOTIFICATION_PERSONALITY, "Standard")
                 agent_id = ai_settings.get(CONF_ASSISTANT_ID)
+                max_length = ai_settings.get("max_response_length", 250)
 
                 # Format sensor readings for context
                 readings = []
@@ -460,7 +461,8 @@ class BayesianEnvironmentSensor(BinarySensorEntity):
                     f"Original Alert: {message}\n"
                     f"Current Sensor Data: {readings_str}\n"
                     f"Growspace: {growspace.name}\n\n"
-                    "Rewrite this alert in 1-2 sentences. Include specific sensor values if they're relevant to the alert."
+                    f"Rewrite this alert in 1-2 sentences. Keep it under {max_length} characters. "
+                    "Include specific sensor values if they're relevant to the alert."
                 )
 
                 _LOGGER.debug("Sending notification rewrite prompt to AI assistant")
@@ -481,16 +483,22 @@ class BayesianEnvironmentSensor(BinarySensorEntity):
                 ):
                     rewritten = result.response.speech["plain"]["speech"]
                     # Validate the response isn't too long
-                    if len(rewritten) < 250:  # Reasonable notification length
+                    if len(rewritten) <= max_length:
                         final_message = rewritten
                         _LOGGER.info(
                             "AI rewrote notification in %s style", personality
                         )
                     else:
-                        _LOGGER.warning(
-                            "AI response too long (%d chars), using default",
-                            len(rewritten),
-                        )
+                        # Try to truncate intelligently if it's close
+                        if len(rewritten) < max_length + 50:
+                             final_message = rewritten[:max_length].rsplit(' ', 1)[0] + "..."
+                             _LOGGER.info("AI response truncated to fit length limit")
+                        else:
+                            _LOGGER.warning(
+                                "AI response too long (%d chars > %d), using default",
+                                len(rewritten),
+                                max_length,
+                            )
                 else:
                     _LOGGER.warning(
                         "AI returned empty response, using default message"

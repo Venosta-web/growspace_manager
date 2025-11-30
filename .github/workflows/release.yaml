@@ -14,6 +14,20 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Update version in manifest.json
+        run: |
+          # Strip 'v' prefix from tag name
+          VERSION="${GITHUB_REF_NAME#v}"
+          echo "Updating version to $VERSION"
+          cd custom_components/growspace_manager
+          # Use jq to reliably update the version
+          if ! jq --arg v "$VERSION" '.version = $v' manifest.json > manifest.json.tmp; then
+            echo "jq command failed"
+            exit 1
+          fi
+          mv manifest.json.tmp manifest.json
+          cd ../..
+
       # 2. Creates the ZIP file
       - name: ZIP Release
         run: |
@@ -27,7 +41,10 @@ jobs:
 
       # 3. Creates the GitHub Release and attaches the new zip file
       - name: Create Release
-        uses: softprops/action-gh-release@v1
+        uses: softprops/action-gh-release@v2
         if: startsWith(github.ref, 'refs/tags/')
         with:
-          files: growspace_manager.zip
+          tag_name: ${{ github.ref_name }}
+          files: |
+            growspace_manager.zip
+          fail_on_unmatched_files: true

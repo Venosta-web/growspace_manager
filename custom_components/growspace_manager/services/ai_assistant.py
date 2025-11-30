@@ -298,155 +298,6 @@ class GrowAssistant:
                 )
             lines.append("")
 
-        sensor_types = {
-            "stress": "plants_under_stress",
-            "mold_risk": "high_mold_risk",
-            "optimal": "optimal_conditions",
-        }
-
-        for key, sensor_suffix in sensor_types.items():
-            entity_id = f"binary_sensor.{growspace_id}_{sensor_suffix}"
-            state = self.hass.states.get(entity_id)
-
-            if state:
-                is_on = state.state == "on"
-                bayesian_data[key]["active"] = is_on
-                bayesian_data[key]["probability"] = state.attributes.get(
-                    "probability", 0
-                )
-                bayesian_data[key]["reasons"] = state.attributes.get("reasons", [])
-
-        # Light schedule verification
-        light_entity_id = f"binary_sensor.{growspace_id}_light_schedule_correct"
-        light_state = self.hass.states.get(light_entity_id)
-        if light_state:
-            bayesian_data["light_schedule"]["correct"] = light_state.state == "on"
-            bayesian_data["light_schedule"]["expected"] = light_state.attributes.get(
-                "expected_schedule", "Unknown"
-            )
-
-        return bayesian_data
-
-    def _summarize_plants(self, plants: list) -> dict[str, Any]:
-        """Create a summary of plants in the growspace."""
-        if not plants:
-            return {"count": 0, "stages": {}, "strains": []}
-
-        stages = {}
-        strains = set()
-
-        for plant in plants:
-            stage = getattr(plant, "stage", "unknown")
-            stages[stage] = stages.get(stage, 0) + 1
-            strains.add(plant.strain)
-
-            # Calculate stage durations
-            veg_days = self.coordinator.calculate_days_in_stage(plant, "veg")
-            flower_days = self.coordinator.calculate_days_in_stage(plant, "flower")
-
-        return {
-            "count": len(plants),
-            "stages": stages,
-            "strains": list(strains),
-            "max_veg_days": max(
-                (
-                    self.coordinator.calculate_days_in_stage(p, "veg")
-                    for p in plants
-                    if p.veg_start
-                ),
-                default=0,
-            ),
-            "max_flower_days": max(
-                (
-                    self.coordinator.calculate_days_in_stage(p, "flower")
-                    for p in plants
-                    if p.flower_start
-                ),
-                default=0,
-            ),
-        }
-
-    def _get_strain_analytics(self, plants: list) -> dict[str, Any]:
-        """Get analytics for strains currently growing."""
-        analytics = {}
-        all_strains = self.strain_library.get_all()
-
-        for plant in plants:
-            strain_name = plant.strain
-            if strain_name not in analytics and strain_name in all_strains:
-                strain_data = all_strains[strain_name]
-                phenotypes = strain_data.get("phenotypes", {})
-
-                # Calculate averages across all phenotypes
-                all_harvests = []
-                for pheno_data in phenotypes.values():
-                    all_harvests.extend(pheno_data.get("harvests", []))
-
-                if all_harvests:
-                    avg_veg = sum(h.get("veg_days", 0) for h in all_harvests) / len(
-                        all_harvests
-                    )
-                    avg_flower = sum(
-                        h.get("flower_days", 0) for h in all_harvests
-                    ) / len(all_harvests)
-
-                    analytics[strain_name] = {
-                        "avg_veg_days": round(avg_veg),
-                        "avg_flower_days": round(avg_flower),
-                        "total_harvests": len(all_harvests),
-                        "meta": strain_data.get("meta", {}),
-                    }
-
-        return analytics
-
-    def _format_context_data(self, data: dict[str, Any]) -> str:
-        """Format growspace data into a clear context string for the AI."""
-        lines = [
-            f"GROWSPACE: {data['growspace']['name']} ({data['growspace']['size']})",
-            f"TOTAL PLANTS: {data['growspace']['total_plants']}",
-            "",
-            "CURRENT ENVIRONMENT:",
-        ]
-
-        # Add sensor readings
-        for sensor, reading in data["environment"]["sensors"].items():
-            sensor_name = sensor.replace("_sensor", "").replace("_", " ").title()
-            lines.append(f"  {sensor_name}: {reading}")
-
-        lines.append("")
-
-        # Add Bayesian analysis
-        analysis = data["analysis"]
-        if analysis["stress"]["active"]:
-            lines.append("⚠️ STRESS DETECTED:")
-            for reason in analysis["stress"]["reasons"]:
-                lines.append(f"  - {reason}")
-            lines.append("")
-
-        if analysis["mold_risk"]["active"]:
-            lines.append("🍄 MOLD RISK DETECTED:")
-            for reason in analysis["mold_risk"]["reasons"]:
-                lines.append(f"  - {reason}")
-            lines.append("")
-
-        if analysis["optimal"]["active"]:
-            lines.append("✅ Optimal conditions achieved")
-            lines.append("")
-
-        # Add plant summary
-        plants = data["plants"]
-        if plants["count"] > 0:
-            lines.append("PLANTS:")
-            lines.append(f"  Total: {plants['count']}")
-            lines.append(f"  Strains: {', '.join(plants['strains'])}")
-            if plants["max_veg_days"] > 0:
-                lines.append(f"  Max Veg: Day {plants['max_veg_days']}")
-            if plants["max_flower_days"] > 0:
-                lines.append(
-                    f"  Max Flower: Day {plants['max_flower_days']} (Week {plants['max_flower_days'] // 7})"
-                )
-            lines.append("")
-
         # Add strain analytics if available
         if data["strain_analytics"]:
             lines.append("STRAIN HISTORY:")
@@ -478,6 +329,9 @@ class GrowAssistant:
         """
         ai_settings = self._get_ai_settings()
         agent_id = ai_settings.get(CONF_ASSISTANT_ID)
+
+        if max_length is None:
+            max_length = ai_settings.get("max_response_length", 250)
 
         # Gather all relevant data
         data = self._gather_growspace_data(growspace_id)
@@ -567,6 +421,9 @@ async def handle_analyze_all_growspaces(
     ai_settings = assistant._get_ai_settings()
     agent_id = ai_settings.get(CONF_ASSISTANT_ID)
     max_length = call.data.get("max_length")
+
+    if max_length is None:
+        max_length = ai_settings.get("max_response_length", 250)
 
     # Gather data for all growspaces
     all_data = []
@@ -679,6 +536,9 @@ async def handle_strain_recommendation(
     ai_settings = assistant._get_ai_settings()
     agent_id = ai_settings.get(CONF_ASSISTANT_ID)
     max_length = call.data.get("max_length")
+
+    if max_length is None:
+        max_length = ai_settings.get("max_response_length", 250)
 
     preferences = call.data.get("preferences", {})
     growspace_id = call.data.get("growspace_id")
