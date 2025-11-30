@@ -34,6 +34,7 @@ from .utils import (
     VPDCalculator,
     parse_date_field,
     calculate_days_since,
+    days_to_week,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -519,31 +520,6 @@ class GrowspaceOverviewSensor(CoordinatorEntity[GrowspaceCoordinator], SensorEnt
         plants = self.coordinator.get_growspace_plants(self.growspace_id)
         return len(plants)
 
-    @staticmethod
-    def _days_since(date_str: str) -> int:
-        """Calculate the number of days since a given date string.
-
-        Args:
-            date_str: The date string (ISO format).
-
-        Returns:
-            The number of days that have passed.
-        """
-        return calculate_days_since(date_str)
-
-    @staticmethod
-    def _days_to_week(days: int) -> int:
-        """Convert a number of days into a week number (1-indexed).
-
-        Args:
-            days: The number of days.
-
-        Returns:
-            The corresponding week number.
-        """
-        if days <= 0:
-            return 0
-        return (days - 1) // 7 + 1
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
@@ -554,16 +530,16 @@ class GrowspaceOverviewSensor(CoordinatorEntity[GrowspaceCoordinator], SensorEnt
 
         # Calculate max stage days
         max_veg = max(
-            (self._days_since(p.veg_start) for p in plants if p.veg_start), default=0
+            (calculate_days_since(p.veg_start) for p in plants if p.veg_start), default=0
         )
         max_flower = max(
-            (self._days_since(p.flower_start) for p in plants if p.flower_start),
+            (calculate_days_since(p.flower_start) for p in plants if p.flower_start),
             default=0,
         )
 
         # Calculate weeks from days
-        veg_week = self._days_to_week(max_veg)
-        flower_week = self._days_to_week(max_flower)
+        veg_week = days_to_week(max_veg)
+        flower_week = days_to_week(max_flower)
         
         # Get irrigation settings from growspace object
         irrigation_options = growspace.irrigation_config
@@ -738,19 +714,6 @@ class PlantEntity(SensorEntity):
         # Default
         return "seedling"
 
-    @staticmethod
-    def _days_to_week(days: int) -> int:
-        """Convert a number of days into a week number (1-indexed).
-
-        Args:
-            days: The number of days.
-
-        Returns:
-            The corresponding week number.
-        """
-        if days <= 0:
-            return 0
-        return (days - 1) // 7 + 1
 
     @property
     def state(self) -> str:
@@ -784,8 +747,8 @@ class PlantEntity(SensorEntity):
         cure_days = self.coordinator.calculate_days_in_stage(plant, "cure")
 
         # Calculate weeks
-        veg_week = self._days_to_week(veg_days or 0)
-        flower_week = self._days_to_week(flower_days or 0)
+        veg_week = days_to_week(veg_days or 0)
+        flower_week = days_to_week(flower_days or 0)
 
         return {
             "stage": stage,
