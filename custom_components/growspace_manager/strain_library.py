@@ -90,8 +90,20 @@ class StrainLibrary:
 
     async def load(self) -> None:
         """Load all strain and phenotype data into the in-memory cache."""
-        self.strains = {}
-        self._analytics_cache = None  # Invalidate analytics cache on load
+        # Fetch all harvests first to avoid N+1 queries and async calls in the loop
+        harvests_by_pheno: dict[int, list[dict[str, Any]]] = {}
+        async with self._db.execute("SELECT phenotype_id, veg_days, flower_days, harvest_date FROM harvests") as cursor:
+            async for row in cursor:
+                pheno_id = row["phenotype_id"]
+                if pheno_id not in harvests_by_pheno:
+                    harvests_by_pheno[pheno_id] = []
+                harvests_by_pheno[pheno_id].append({
+                    "veg_days": row["veg_days"],
+                    "flower_days": row["flower_days"],
+                    "harvest_date": row["harvest_date"],
+                })
+
+        new_strains: dict[str, dict[str, Any]] = {}
         query = """
             SELECT
                 s.strain_id, s.strain_name, s.breeder, s.type, s.lineage, s.sex,
@@ -106,8 +118,8 @@ class StrainLibrary:
             for row in rows:
                 strain_name = row["strain_name"]
                 phenotype_name = row["phenotype_name"] or "default"
-                if strain_name not in self.strains:
-                    self.strains[strain_name] = {
+                if strain_name not in new_strains:
+                    new_strains[strain_name] = {
                         "meta": {
                             k: row[k]
                             for k in [
@@ -134,27 +146,24 @@ class StrainLibrary:
                             phenotype_name,
                         )
                         image_crop_meta = None
+                    
+                    pheno_id = row["phenotype_id"]
                     phenotype_data = {
-                        "phenotype_id": row["phenotype_id"],
+                        "phenotype_id": pheno_id,
                         "description": row["description"],
                         "image_path": row["image_path"],
                         "image_crop_meta": image_crop_meta,
                         "flower_days_min": row["flower_days_min"],
                         "flower_days_max": row["flower_days_max"],
-                        "harvests": await self._fetch_harvests(row["phenotype_id"]),
+                        "harvests": harvests_by_pheno.get(pheno_id, []),
                     }
                     # Remove None values
                     phenotype_data = {k: v for k, v in phenotype_data.items() if v is not None}
-                    self.strains[strain_name]["phenotypes"][phenotype_name] = phenotype_data
+                    new_strains[strain_name]["phenotypes"][phenotype_name] = phenotype_data
+        
+        self.strains = new_strains
+        self._analytics_cache = None  # Invalidate analytics cache
         _LOGGER.info("Loaded strain library metadata for %d strains", len(self.strains))
-
-    async def _fetch_harvests(self, phenotype_id: int) -> list[Mapping[str, Any]]:
-        """Fetch all harvest records for a given phenotype ID."""
-        query = """
-            SELECT veg_days, flower_days, harvest_date FROM harvests WHERE phenotype_id = ?
-        """
-        async with self._db.execute(query, (phenotype_id,)) as cursor:
-            return [dict(row) for row in await cursor.fetchall()]
 
     async def save(self) -> None:
         """No-op for SQLite implementation - changes are committed immediately."""
