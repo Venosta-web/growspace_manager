@@ -71,7 +71,7 @@ class DehumidifierCoordinator:
             return
 
         self.env_config = self.growspace.environment_config or {}
-        self.dehumidifier_config = self.growspace.dehumidifier_config or {} # Fallback if separate config used
+        self.dehumidifier_config = getattr(self.growspace, "dehumidifier_config", {})
 
         # Entity IDs
         self.vpd_sensor = self.env_config.get("vpd_sensor")
