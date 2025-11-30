@@ -9,7 +9,6 @@
     "recorder",
     "conversation",
     "http",
-    "aiosqlite",
     "intent"
   ],
   "documentation": "https://github.com/Venosta-web/growspace_manager",
