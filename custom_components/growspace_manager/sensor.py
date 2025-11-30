@@ -650,13 +650,6 @@ class GrowspaceOverviewSensor(CoordinatorEntity[GrowspaceCoordinator], SensorEnt
                 attributes["humidifier_entity"] = humidifier_entity
                 attributes["humidifier_value"] = state_obj.state if state_obj else None
 
-            # Fan Power Sensor
-            fan_power_entity = env_config.get("fan_power_sensor")
-            if fan_power_entity:
-                state_obj = self.coordinator.hass.states.get(fan_power_entity)
-                attributes["fan_power_entity"] = fan_power_entity
-                attributes["fan_power_value"] = state_obj.state if state_obj else None
-
         return attributes
 
 
