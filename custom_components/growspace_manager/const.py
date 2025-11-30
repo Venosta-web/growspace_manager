@@ -479,3 +479,10 @@ REMOVE_TIME_BASE = {
 
 REMOVE_IRRIGATION_TIME_SCHEMA = vol.Schema(REMOVE_TIME_BASE)
 REMOVE_DRAIN_TIME_SCHEMA = vol.Schema(REMOVE_TIME_BASE)
+
+SET_DEHUMIDIFIER_CONTROL_SCHEMA = vol.Schema(
+    {
+        vol.Required("growspace_id"): vol.All(str, valid_growspace_id),
+        vol.Required("enabled"): bool,
+    }
+)

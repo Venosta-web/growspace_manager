@@ -53,6 +53,7 @@ from .const import (
     REMOVE_DRAIN_TIME_SCHEMA,
     REMOVE_IRRIGATION_TIME_SCHEMA,
     SET_IRRIGATION_SETTINGS_SCHEMA,
+    SET_DEHUMIDIFIER_CONTROL_SCHEMA,
 )
 from .coordinator import GrowspaceCoordinator
 from .irrigation_coordinator import IrrigationCoordinator
@@ -271,6 +272,11 @@ async def _register_services(
             REMOVE_ENVIRONMENT_SCHEMA,
         ),
         (
+            "set_dehumidifier_control",
+            environment.handle_set_dehumidifier_control,
+            SET_DEHUMIDIFIER_CONTROL_SCHEMA,
+        ),
+        (
             "set_irrigation_settings",
             irrigation.handle_set_irrigation_settings,
             SET_IRRIGATION_SETTINGS_SCHEMA,
@@ -448,6 +454,7 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             "get_strain_library",
             "configure_environment",
             "remove_environment",
+            "set_dehumidifier_control",
             "ask_grow_advice",
         ]
 

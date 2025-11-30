@@ -110,3 +110,41 @@ async def handle_remove_environment(
         f"{success_msg}\n\nPlease reload the integration for binary sensors to be removed.",
         title="Growspace Manager - Environment Removed",
     )
+
+
+async def handle_set_dehumidifier_control(
+    hass: HomeAssistant,
+    coordinator: GrowspaceCoordinator,
+    strain_library: StrainLibrary,
+    call: ServiceCall,
+) -> None:
+    """Handle the set_dehumidifier_control service call."""
+    growspace_id = call.data.get("growspace_id")
+    enabled = call.data.get("enabled")
+
+    if growspace_id not in coordinator.growspaces:
+        error_msg = f"Growspace '{growspace_id}' not found"
+        _LOGGER.error(error_msg)
+        create_notification(
+            hass,
+            error_msg,
+            title="Growspace Manager - Error",
+        )
+        return
+
+    growspace = coordinator.growspaces[growspace_id]
+
+    if not growspace.environment_config:
+        growspace.environment_config = {}
+
+    # Update configuration
+    growspace.environment_config["control_dehumidifier"] = enabled
+
+    # Save to storage
+    await coordinator.async_save()
+
+    # Trigger coordinator update
+    await coordinator.async_refresh()
+
+    status = "enabled" if enabled else "disabled"
+    _LOGGER.info(f"Dehumidifier control {status} for '{growspace.name}'")
