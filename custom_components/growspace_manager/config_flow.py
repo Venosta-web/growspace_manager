@@ -945,7 +945,7 @@ class OptionsFlowHandler(OptionsFlow):
                     entity_selector_config_args["device_class"] = device_class
 
                 schema_dict[
-                    vol.Optional(entity_key, default=growspace_options.get(entity_key))
+                    vol.Optional(entity_key, default=growspace_options.get(entity_key) or vol.UNDEFINED)
                 ] = selector.EntitySelector(
                     selector.EntitySelectorConfig(**entity_selector_config_args)
                 )
