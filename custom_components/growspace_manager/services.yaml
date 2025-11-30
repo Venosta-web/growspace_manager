@@ -796,3 +796,17 @@ remove_drain_time:
       required: true
       selector:
         time:
+
+set_dehumidifier_control:
+  description: Enable or disable dehumidifier control for a growspace.
+  fields:
+    growspace_id:
+      description: The ID of the growspace.
+      required: true
+      selector:
+        text:
+    enabled:
+      description: Whether to enable dehumidifier control.
+      required: true
+      selector:
+        boolean:

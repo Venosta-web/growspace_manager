@@ -974,6 +974,12 @@ class OptionsFlowHandler(OptionsFlow):
                     domain=["switch", "humidifier", "sensor", "binary_sensor"]
                 )
             )
+            schema_dict[
+                vol.Optional(
+                    "control_dehumidifier",
+                    default=growspace_options.get("control_dehumidifier", False),
+                )
+            ] = selector.BooleanSelector()
         for key, default in [("stress_threshold", 0.70), ("mold_threshold", 0.75)]:
             schema_dict[
                 vol.Optional(key, default=growspace_options.get(key, default))
