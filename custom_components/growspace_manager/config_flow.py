@@ -38,6 +38,7 @@ from .const import (
     DEFAULT_VEG_DAY_HOURS,
     DEFAULT_FLOWER_DAY_HOURS,
 )
+from .dehumidifier_coordinator import DEFAULT_THRESHOLDS
 from .models import Growspace, Plant
 
 _LOGGER = logging.getLogger(__name__)
@@ -839,17 +840,6 @@ class OptionsFlowHandler(OptionsFlow):
             if not self._env_config_step1.get("configure_humidifier"):
                 self._env_config_step1["humidifier_sensor"] = None
 
-            if not self._env_config_step1.get("configure_dehumidifier"):
-                self._env_config_step1["dehumidifier_entity"] = None
-                self._env_config_step1["control_dehumidifier"] = False
-
-            if user_input.get("configure_advanced"):
-                return await self.async_step_configure_advanced_bayesian()
-
-            # Not configuring advanced, so we save and finish
-            env_config = self._env_config_step1.copy()
-            env_config.pop("configure_advanced", None)
-
             # Already filtered above, but keep this as a safety check
             env_config = {
                 k: v for k, v in env_config.items() if v is not None and v != ""
@@ -1101,6 +1091,99 @@ class OptionsFlowHandler(OptionsFlow):
 
         return self.async_show_form(
             step_id="configure_environment",
+            data_schema=vol.Schema(schema_dict),
+            description_placeholders={"growspace_name": growspace.name},
+        )
+
+
+    async def async_step_configure_dehumidifier(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Show the form for configuring dehumidifier thresholds.
+
+        Args:
+            user_input: The user's input from the form, if any.
+
+        Returns:
+            A ConfigFlowResult.
+        """
+        coordinator = self.hass.data[DOMAIN][self._config_entry.entry_id]["coordinator"]
+        growspace = coordinator.growspaces.get(self._selected_growspace_id)
+
+        if not growspace:
+            return self.async_abort(reason="growspace_not_found")
+
+        # Load existing thresholds or defaults
+        current_thresholds = (
+            growspace.environment_config.get("dehumidifier_thresholds") or {}
+        )
+
+        if user_input is not None:
+            # Process input back into nested structure
+            new_thresholds = {}
+            for stage in ["veg", "early_flower", "mid_flower", "late_flower"]:
+                new_thresholds[stage] = {}
+                for cycle in ["day", "night"]:
+                    new_thresholds[stage][cycle] = {
+                        "on": user_input[f"{stage}_{cycle}_on"],
+                        "off": user_input[f"{stage}_{cycle}_off"],
+                    }
+
+            # Update config
+            env_config = self._env_config_step1.copy()
+            env_config["dehumidifier_thresholds"] = new_thresholds
+
+            if env_config.get("configure_advanced"):
+                # Update temporary config and move to next step
+                self._env_config_step1 = env_config
+                return await self.async_step_configure_advanced_bayesian()
+
+            # Save and finish
+            env_config.pop("configure_advanced", None)
+            growspace.environment_config = env_config
+            await coordinator.async_save()
+            await coordinator.async_refresh()
+            return self.async_create_entry(title="", data={})
+
+        schema_dict = {}
+        for stage in ["veg", "early_flower", "mid_flower", "late_flower"]:
+            for cycle in ["day", "night"]:
+                defaults = current_thresholds.get(stage, {}).get(
+                    cycle, DEFAULT_THRESHOLDS[stage][cycle]
+                )
+                
+                # ON Threshold
+                schema_dict[
+                    vol.Required(
+                        f"{stage}_{cycle}_on", default=defaults["on"]
+                    )
+                ] = selector.NumberSelector(
+                    selector.NumberSelectorConfig(
+                        min=0.1,
+                        max=3.0,
+                        step=0.01,
+                        mode=selector.NumberSelectorMode.BOX,
+                        unit_of_measurement="kPa",
+                    )
+                )
+                
+                # OFF Threshold
+                schema_dict[
+                    vol.Required(
+                        f"{stage}_{cycle}_off", default=defaults["off"]
+                    )
+                ] = selector.NumberSelector(
+                    selector.NumberSelectorConfig(
+                        min=0.1,
+                        max=3.0,
+                        step=0.01,
+                        mode=selector.NumberSelectorMode.BOX,
+                        unit_of_measurement="kPa",
+                    )
+                )
+
+        return self.async_show_form(
+            step_id="configure_dehumidifier",
             data_schema=vol.Schema(schema_dict),
             description_placeholders={"growspace_name": growspace.name},
         )
