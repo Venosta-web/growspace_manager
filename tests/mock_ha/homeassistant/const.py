@@ -1,0 +1,5 @@
+STATE_UNAVAILABLE = "unavailable"
+STATE_UNKNOWN = "unknown"
+CONF_AI_ENABLED = "ai_enabled"
+CONF_ASSISTANT_ID = "assistant_id"
+CONF_NOTIFICATION_PERSONALITY = "notification_personality"
