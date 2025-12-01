@@ -210,3 +210,48 @@ class NotificationManager:
             _LOGGER.error("Failed to process AI notification: %s", err)
         
         return original_message
+
+    async def async_check_timed_notifications(self) -> None:
+        """Check all configured timed notifications and send them if the conditions are met."""
+        notifications = self.coordinator.options.get("timed_notifications", [])
+        if not notifications:
+            return
+
+        for notification in notifications:
+            trigger_type = notification["trigger_type"]  # 'veg' or 'flower'
+            day_to_trigger = int(notification["day"])
+            message = notification["message"]
+            growspace_ids = notification["growspace_ids"]
+            notification_id = notification["id"]
+
+            for gs_id in growspace_ids:
+                growspace = self.coordinator.growspaces.get(gs_id)
+                if not growspace:
+                    continue
+
+                plants = self.coordinator.get_growspace_plants(gs_id)
+                for plant in plants:
+                    days_in_stage = self.coordinator.calculate_days_in_stage(
+                        plant, trigger_type
+                    )
+
+                    if days_in_stage >= day_to_trigger:
+                        notification_key = f"timed_{notification_id}"
+                        if not self.coordinator._notifications_sent.get(
+                            plant.plant_id, {}
+                        ).get(notification_key, False):
+                            _LOGGER.info(
+                                "Triggering timed notification for plant %s in %s",
+                                plant.plant_id,
+                                growspace.name,
+                            )
+                            title = f"{growspace.name} - {trigger_type.capitalize()} Day {day_to_trigger}"
+
+                            await self.async_send_notification(gs_id, title, message)
+
+                            if plant.plant_id not in self.coordinator._notifications_sent:
+                                self.coordinator._notifications_sent[plant.plant_id] = {}
+                            self.coordinator._notifications_sent[plant.plant_id][
+                                notification_key
+                            ] = True
+                            await self.coordinator.async_save()
