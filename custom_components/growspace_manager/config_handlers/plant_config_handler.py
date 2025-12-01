@@ -97,67 +97,145 @@ class PlantConfigHandler:
         coordinator = self.hass.data[DOMAIN][self.config_entry.entry_id]["coordinator"]
         await coordinator.async_update_plant(plant_id, **kwargs)
 
-    def get_add_plant_schema(self, growspace, coordinator) -> vol.Schema:
-        """Build the schema for adding a plant."""
-        # This would need to be adapted from the original config_flow logic
-        # For now, I'll implement a basic schema and refine it if needed
-        # We need to access the strain library for strains
-        
-        strains = []
-        if hasattr(coordinator, "strain_library"):
-             strains = coordinator.strain_library.get_all_strains()
-        
-        strain_options = [
-            selector.SelectOptionDict(value=s.id, label=s.name)
-            for s in strains
-        ]
-        
-        schema = {
-            vol.Required("strain"): selector.SelectSelector(
+    def get_growspace_selection_schema(
+        self, growspace_devices, coordinator
+    ) -> vol.Schema:
+        """Build the schema for selecting a growspace from the device registry."""
+        growspace_options = []
+
+        for device in growspace_devices:
+            # Extract growspace_id from device identifiers
+            growspace_id = None
+            for identifier_set in device.identifiers:
+                if identifier_set[0] == DOMAIN:
+                    growspace_id = identifier_set[1]
+                    break
+
+            if growspace_id:
+                growspace_obj = coordinator.growspaces.get(growspace_id)
+                rows = getattr(growspace_obj, "rows", "?")
+                plants_per_row = getattr(growspace_obj, "plants_per_row", "?")
+
+                growspace_options.append(
+                    selector.SelectOptionDict(
+                        value=growspace_id,
+                        label=f"{device.name} ({rows}x{plants_per_row})",
+                    )
+                )
+
+        return vol.Schema(
+            {
+                vol.Required("growspace_id"): selector.SelectSelector(
+                    selector.SelectSelectorConfig(options=growspace_options)
+                ),
+            }
+        )
+
+    def get_add_plant_schema(self, growspace, coordinator=None) -> vol.Schema:
+        """Build the schema for the add plant form."""
+        if not growspace:
+            return vol.Schema({})
+
+        rows = getattr(growspace, "rows", 10)
+        plants_per_row = getattr(growspace, "plants_per_row", 10)
+
+        # Get strain options for autocomplete
+        strain_options = []
+        if coordinator:
+            strain_list = coordinator.get_strain_options()
+            strain_options = [
+                selector.SelectOptionDict(value=strain, label=strain)
+                for strain in strain_list
+            ]
+
+        strain_selector = (
+            selector.SelectSelector(
                 selector.SelectSelectorConfig(
                     options=strain_options,
-                    mode=selector.SelectSelectorMode.DROPDOWN,
                     custom_value=True,
+                    mode=selector.SelectSelectorMode.DROPDOWN,
                 )
-            ),
-            vol.Required("row", default=1): selector.NumberSelector(
-                selector.NumberSelectorConfig(
-                    min=1, max=growspace.rows, mode=selector.NumberSelectorMode.BOX
-                )
-            ),
-            vol.Required("col", default=1): selector.NumberSelector(
-                selector.NumberSelectorConfig(
-                    min=1, max=growspace.plants_per_row, mode=selector.NumberSelectorMode.BOX
-                )
-            ),
-            vol.Optional("phenotype"): selector.TextSelector(),
-            vol.Optional("veg_start"): selector.DateSelector(),
-            vol.Optional("flower_start"): selector.DateSelector(),
-        }
-        return vol.Schema(schema)
+            )
+            if strain_options
+            else selector.TextSelector()
+        )
+
+        # Relax limits for special growspaces
+        is_special = growspace.id in ["mother", "clone", "dry", "cure"]
+        max_row = 100 if is_special else rows
+        max_col = 100 if is_special else plants_per_row
+
+        return vol.Schema(
+            {
+                vol.Required("strain"): strain_selector,
+                vol.Optional("phenotype"): selector.TextSelector(),
+                vol.Required("row", default=1): selector.NumberSelector(
+                    selector.NumberSelectorConfig(
+                        min=1, max=max_row, mode=selector.NumberSelectorMode.BOX
+                    )
+                ),
+                vol.Required("col", default=1): selector.NumberSelector(
+                    selector.NumberSelectorConfig(
+                        min=1, max=max_col, mode=selector.NumberSelectorMode.BOX
+                    )
+                ),
+                vol.Optional("veg_start"): selector.DateSelector(),
+                vol.Optional("flower_start"): selector.DateSelector(),
+            }
+        )
 
     def get_update_plant_schema(self, plant, coordinator) -> vol.Schema:
-        """Build the schema for updating a plant."""
-        # Similar to add schema but with defaults from plant
-        strains = []
-        if hasattr(coordinator, "strain_library"):
-             strains = coordinator.strain_library.get_all_strains()
-        
+        """Build the schema for the update plant form."""
+        growspace = coordinator.growspaces.get(plant.growspace_id) if plant else None
+
+        # Ensure rows and plants_per_row are integers
+        rows = int(growspace.rows) if growspace else 10
+        plants_per_row = int(growspace.plants_per_row) if growspace else 10
+
+        # Get strain options for autocomplete
+        strain_options = []
+        strain_list = coordinator.get_strain_options()
         strain_options = [
-            selector.SelectOptionDict(value=s.id, label=s.name)
-            for s in strains
+            selector.SelectOptionDict(value=strain, label=strain)
+            for strain in strain_list
         ]
 
-        schema = {
-            vol.Optional("strain", default=plant.strain): selector.SelectSelector(
+        # Use autocomplete selector if we have strains, otherwise text input
+        if strain_options:
+            strain_selector = selector.SelectSelector(
                 selector.SelectSelectorConfig(
                     options=strain_options,
-                    mode=selector.SelectSelectorMode.DROPDOWN,
                     custom_value=True,
+                    mode=selector.SelectSelectorMode.DROPDOWN,
                 )
-            ),
-            vol.Optional("phenotype", default=plant.phenotype or ""): selector.TextSelector(),
-            vol.Optional("veg_start"): selector.DateSelector(),
-            vol.Optional("flower_start"): selector.DateSelector(),
-        }
-        return vol.Schema(schema)
+            )
+        else:
+            strain_selector = selector.TextSelector()
+
+        # Relax limits for special growspaces
+        is_special = growspace and growspace.id in ["mother", "clone", "dry", "cure"]
+        max_row = 100 if is_special else rows
+        max_col = 100 if is_special else plants_per_row
+
+        return vol.Schema(
+            {
+                vol.Optional(
+                    "strain", default=plant.strain if plant else ""
+                ): strain_selector,
+                vol.Optional(
+                    "phenotype", default=plant.phenotype if plant else ""
+                ): selector.TextSelector(),
+                vol.Optional("row", default=plant.row if plant else 1): selector.NumberSelector(
+                    selector.NumberSelectorConfig(
+                        min=1, max=max_row, mode=selector.NumberSelectorMode.BOX
+                    )
+                ),
+                vol.Optional("col", default=plant.col if plant else 1): selector.NumberSelector(
+                    selector.NumberSelectorConfig(
+                        min=1, max=max_col, mode=selector.NumberSelectorMode.BOX
+                    )
+                ),
+                vol.Optional("veg_start"): selector.DateSelector(),
+                vol.Optional("flower_start"): selector.DateSelector(),
+            }
+        )
