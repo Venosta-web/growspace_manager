@@ -40,6 +40,9 @@ from .const import (
 )
 from .dehumidifier_coordinator import DEFAULT_THRESHOLDS
 from .models import Growspace, Plant
+from .config_handlers.growspace_config_handler import GrowspaceConfigHandler
+from .config_handlers.plant_config_handler import PlantConfigHandler
+from .config_handlers.ai_config_handler import AIConfigHandler
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -192,60 +195,16 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 _LOGGER.exception("Error in async_step_add_growspace: %s", err)
                 return self.async_show_form(
                     step_id="add_growspace",
-                    data_schema=self._get_add_growspace_schema(),
+                    data_schema=GrowspaceConfigHandler(self.hass, None).get_add_growspace_schema(),
                     errors={"base": f"Error: {err}"},
                 )
 
         _LOGGER.debug("Showing add_growspace form")
         return self.async_show_form(
             step_id="add_growspace",
-            data_schema=self._get_add_growspace_schema(),
+            data_schema=GrowspaceConfigHandler(self.hass, None).get_add_growspace_schema(),
         )
 
-    def _get_add_growspace_schema(self):
-        """Build the voluptuous schema for the add growspace form.
-
-        Returns:
-            A voluptuous schema for the form.
-        """
-        base = {
-            vol.Required("name"): selector.TextSelector(),
-            vol.Required("rows", default=4): selector.NumberSelector(
-                selector.NumberSelectorConfig(
-                    min=1, max=20, mode=selector.NumberSelectorMode.BOX
-                )
-            ),
-            vol.Required("plants_per_row", default=4): selector.NumberSelector(
-                selector.NumberSelectorConfig(
-                    min=1, max=20, mode=selector.NumberSelectorMode.BOX
-                )
-            ),
-            vol.Optional("notification_target"): selector.TextSelector(),
-        }
-
-        # Get available notify services
-        services = self.hass.services.async_services().get("notify", {})
-        notification_options = [
-            selector.SelectOptionDict(
-                value=service,
-                label=service.replace("mobile_app_", "").replace("_", " ").title(),
-            )
-            for service in services
-            if service.startswith("mobile_app_")
-        ]
-
-        if notification_options:
-            base[vol.Optional("notification_target")] = selector.SelectSelector(
-                selector.SelectSelectorConfig(
-                    options=notification_options,
-                    custom_value=False,
-                    mode=selector.SelectSelectorMode.DROPDOWN,
-                )
-            )
-        else:
-            base[vol.Optional("notification_target")] = selector.TextSelector()
-
-        return vol.Schema(base)
 
     @staticmethod
     @callback
@@ -277,6 +236,10 @@ class OptionsFlowHandler(OptionsFlow):
         """
         self._config_entry = config_entry
         self._current_options: dict[str, Any] = self._config_entry.options.copy()
+        
+        self.growspace_handler = GrowspaceConfigHandler(self.hass, self._config_entry)
+        self.plant_handler = PlantConfigHandler(self.hass, self._config_entry)
+        self.ai_handler = AIConfigHandler(self.hass, self._config_entry)
 
     async def async_step_init(
         self, user_input: dict[str, Any] | None = None
@@ -314,130 +277,11 @@ class OptionsFlowHandler(OptionsFlow):
             data_schema=self._get_main_menu_schema(),
         )
 
-    async def _get_ai_settings_schema(self) -> vol.Schema:
-        """Build the schema for AI settings with enhanced options."""
-        current_settings = self._config_entry.options.get("ai_settings", {})
-
-        # Get available conversation agents (LLM integrations)
-        assistants = []
-        try:
-            # Try to get agents from the conversation integration
-            if hasattr(conversation, "async_get_conversation_agents"):
-                # Newer HA versions
-                agents_dict = await conversation.async_get_conversation_agents(self.hass)
-                assistants = [
-                    {"id": agent_id, "name": agent_info.name}
-                    for agent_id, agent_info in agents_dict.items()
-                ]
-            else:
-                # Fallback for older versions
-                agent_manager = self.hass.data.get("conversation")
-                if agent_manager and hasattr(agent_manager, "async_get_agents"):
-                    assistants = await agent_manager.async_get_agents()
-        except Exception as err:
-            _LOGGER.warning("Could not fetch conversation agents: %s", err)
-
-        # Filter to valid agents with id and name
-        valid_assistants = [
-            a for a in assistants if isinstance(a, dict) and "id" in a and "name" in a
-        ]
-
-        if not valid_assistants:
-            # If no agents found, try to get at least the default
-            try:
-                default_agent = await conversation.async_get_agent(self.hass)
-                if default_agent and hasattr(default_agent, "id"):
-                    valid_assistants = [
-                        {"id": default_agent.id, "name": "Default Assistant"}
-                    ]
-            except Exception:
-                pass
-
-        assistant_options = [
-            selector.SelectOptionDict(value=assistant["id"], label=assistant["name"])
-            for assistant in valid_assistants
-        ]
-
-        schema = {
-            vol.Required(
-                CONF_AI_ENABLED, default=current_settings.get(CONF_AI_ENABLED, False)
-            ): selector.BooleanSelector(),
-        }
-
-        if assistant_options:
-            schema[
-                vol.Optional(
-                    CONF_ASSISTANT_ID,
-                    default=current_settings.get(CONF_ASSISTANT_ID),
-                )
-            ] = selector.SelectSelector(
-                selector.SelectSelectorConfig(
-                    options=assistant_options,
-                    mode=selector.SelectSelectorMode.DROPDOWN,
-                )
-            )
-        else:
-            # Show a text field if no assistants detected (shouldn't happen normally)
-            schema[
-                vol.Optional(
-                    CONF_ASSISTANT_ID, default=current_settings.get(CONF_ASSISTANT_ID)
-                )
-            ] = selector.TextSelector(
-                selector.TextSelectorConfig(
-                    type=selector.TextSelectorType.TEXT,
-                )
-            )
-
-        schema[
-            vol.Optional(
-                CONF_NOTIFICATION_PERSONALITY,
-                default=current_settings.get(
-                    CONF_NOTIFICATION_PERSONALITY, "Standard"
-                ),
-            )
-        ] = selector.SelectSelector(
-            selector.SelectSelectorConfig(
-                options=AI_PERSONALITIES,
-                mode=selector.SelectSelectorMode.DROPDOWN,
-            )
-        )
-
-        # Add option to enable/disable AI notifications separately from advice
-        schema[
-            vol.Optional(
-                "ai_notifications_enabled",
-                default=current_settings.get("ai_notifications_enabled", True),
-            )
-        ] = selector.BooleanSelector()
-
-        # Add option to limit AI response length
-        schema[
-            vol.Optional(
-                "max_response_length",
-                default=current_settings.get("max_response_length", 250),
-            )
-        ] = selector.NumberSelector(
-            selector.NumberSelectorConfig(
-                min=50,
-                max=1000,
-                step=10,
-                mode=selector.NumberSelectorMode.BOX,
-            )
-        )
-
-        return vol.Schema(schema)
 
     async def async_step_configure_ai(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
-        """Show the form for configuring AI settings.
-
-        Args:
-            user_input: The user's input from the form, if any.
-
-        Returns:
-            A ConfigFlowResult.
-        """
+        """Show the form for configuring AI settings."""
         errors = {}
 
         if user_input is not None:
@@ -448,19 +292,12 @@ class OptionsFlowHandler(OptionsFlow):
                 errors["base"] = "assistant_required"
             else:
                 coordinator = self.hass.data[DOMAIN][self._config_entry.entry_id]["coordinator"]
-                new_options = self._config_entry.options.copy()
-                new_options["ai_settings"] = user_input
-
-                # Update coordinator's in-memory options
-                coordinator.options = new_options
-
-                # Save to storage
-                await coordinator.async_save()
+                await self.ai_handler.save_ai_settings(coordinator, user_input)
 
                 # Inform user about the changes
                 return self.async_create_entry(
                     title="",
-                    data=new_options,
+                    data=self._config_entry.options,
                     description="AI settings have been updated. "
                     + ("AI features are now enabled. " if user_input.get(CONF_AI_ENABLED) else "AI features are disabled. ")
                     + f"Assistant: {user_input.get(CONF_ASSISTANT_ID, 'None')}",
@@ -468,7 +305,7 @@ class OptionsFlowHandler(OptionsFlow):
 
         return self.async_show_form(
             step_id="configure_ai",
-            data_schema=await self._get_ai_settings_schema(),
+            data_schema=await self.ai_handler.get_ai_settings_schema(),
             errors=errors,
             description_placeholders={
                 "info": "Configure AI-powered features for grow advice and notifications. "
@@ -660,57 +497,53 @@ class OptionsFlowHandler(OptionsFlow):
             for gs_id, gs in coordinator.growspaces.items()
         ]
 
-        return vol.Schema(
-            {
-                vol.Required(
-                    "growspace_ids", default=notification.get("growspace_ids", [])
-                ): selector.SelectSelector(
-                    selector.SelectSelectorConfig(
-                        options=growspace_options,
-                        multiple=True,
-                        mode=selector.SelectSelectorMode.LIST,
-                    )
-                ),
-                vol.Required(
-                    "trigger_type", default=notification.get("trigger_type", "flower")
-                ): selector.SelectSelector(
-                    selector.SelectSelectorConfig(
-                        options=[
-                            selector.SelectOptionDict(
-                                value="flower", label="Flower Day"
-                            ),
-                            selector.SelectOptionDict(value="veg", label="Veg Day"),
-                        ]
-                    )
-                ),
-                vol.Required(
-                    "day", default=notification.get("day", 1)
-                ): selector.NumberSelector(
-                    selector.NumberSelectorConfig(
-                        min=1, mode=selector.NumberSelectorMode.BOX
-                    )
-                ),
-                vol.Required(
-                    "message", default=notification.get("message", "")
-                ): selector.TextSelector(
-                    selector.TextSelectorConfig(
-                        type=selector.TextSelectorType.TEXT,
-                    )
-                ),
-            }
-        )
+        schema = {
+            vol.Required(
+                "message", default=notification.get("message", "")
+            ): selector.TextSelector(),
+            vol.Required(
+                "trigger_type",
+                default=notification.get("trigger_type", "days_since_flip"),
+            ): selector.SelectSelector(
+                selector.SelectSelectorConfig(
+                    options=[
+                        selector.SelectOptionDict(
+                            value="days_since_flip", label="Days Since Flip"
+                        ),
+                        selector.SelectOptionDict(
+                            value="days_since_germination",
+                            label="Days Since Germination",
+                        ),
+                    ],
+                    mode=selector.SelectSelectorMode.DROPDOWN,
+                )
+            ),
+            vol.Required(
+                "day", default=notification.get("day", 1)
+            ): selector.NumberSelector(
+                selector.NumberSelectorConfig(
+                    min=1, mode=selector.NumberSelectorMode.BOX
+                )
+            ),
+        }
 
+        if growspace_options:
+            schema[
+                vol.Optional(
+                    "growspace_id", default=notification.get("growspace_id")
+                )
+            ] = selector.SelectSelector(
+                selector.SelectSelectorConfig(
+                    options=growspace_options,
+                    mode=selector.SelectSelectorMode.DROPDOWN,
+                )
+            )
+
+        return vol.Schema(schema)
     async def async_step_manage_growspaces(
         self, user_input: dict[str, Any] | None | None
     ) -> ConfigFlowResult:
-        """Show the menu for managing growspaces (add, update, remove).
-
-        Args:
-            user_input: The user's input from the form, if any.
-
-        Returns:
-            A ConfigFlowResult directing to the appropriate action.
-        """
+        """Show the menu for managing growspaces (add, update, remove)."""
         try:
             coordinator = self.hass.data[DOMAIN][self._config_entry.entry_id][
                 "coordinator"
@@ -731,12 +564,12 @@ class OptionsFlowHandler(OptionsFlow):
                 return await self.async_step_update_growspace()
             elif action == "remove" and user_input.get("growspace_id"):
                 try:
-                    await coordinator.async_remove_growspace(user_input["growspace_id"])
+                    await self.growspace_handler.async_remove_growspace(user_input["growspace_id"])
                 except Exception as err:
                     _LOGGER.error("Error removing growspace: %s", err, exc_info=True)
                     return self.async_show_form(
                         step_id="manage_growspaces",
-                        data_schema=self._get_growspace_management_schema(coordinator),
+                        data_schema=self.growspace_handler.get_growspace_management_schema(coordinator),
                         errors={"base": "remove_failed"},
                     )
             elif action == "back":
@@ -749,7 +582,68 @@ class OptionsFlowHandler(OptionsFlow):
 
         return self.async_show_form(
             step_id="manage_growspaces",
-            data_schema=self._get_growspace_management_schema(coordinator),
+            data_schema=self.growspace_handler.get_growspace_management_schema(coordinator),
+        )
+
+    async def async_step_add_growspace(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Show the form for adding a new growspace."""
+        if user_input is not None:
+            try:
+                await self.growspace_handler.async_add_growspace(user_input)
+                return self.async_create_entry(title="", data={})
+            except Exception as err:
+                _LOGGER.exception("Error adding growspace: %s", err)
+                return self.async_show_form(
+                    step_id="add_growspace",
+                    data_schema=self.growspace_handler.get_add_growspace_schema(),
+                    errors={"base": "add_failed"},
+                )
+
+        return self.async_show_form(
+            step_id="add_growspace",
+            data_schema=self.growspace_handler.get_add_growspace_schema(),
+        )
+
+    async def async_step_update_growspace(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Show the form for updating an existing growspace."""
+        try:
+            coordinator = self.hass.data[DOMAIN][self._config_entry.entry_id][
+                "coordinator"
+            ]
+        except KeyError:
+            _LOGGER.error(
+                "Coordinator not found - integration may not be properly set up"
+            )
+            return self.async_abort(reason="setup_error")
+
+        growspace = coordinator.growspaces.get(self._selected_growspace_id)
+
+        if not growspace:
+            _LOGGER.error("Growspace not found: %s", self._selected_growspace_id)
+            return self.async_abort(reason="growspace_not_found")
+
+        if user_input is not None:
+            try:
+                await self.growspace_handler.async_update_growspace(
+                    self._selected_growspace_id, user_input
+                )
+                return self.async_create_entry(title="", data={})
+
+            except Exception as err:
+                _LOGGER.error("Error updating growspace: %s", err, exc_info=True)
+                return self.async_show_form(
+                    step_id="update_growspace",
+                    data_schema=self.growspace_handler.get_update_growspace_schema(growspace),
+                    errors={"base": "update_failed"},
+                )
+
+        return self.async_show_form(
+            step_id="update_growspace",
+            data_schema=self.growspace_handler.get_update_growspace_schema(growspace),
         )
 
     async def async_step_select_growspace_for_env(
@@ -842,7 +736,7 @@ class OptionsFlowHandler(OptionsFlow):
 
             # Already filtered above, but keep this as a safety check
             env_config = {
-                k: v for k, v in env_config.items() if v is not None and v != ""
+                k: v for k, v in self._env_config_step1.items() if v is not None and v != ""
             }
 
             growspace.environment_config = env_config
@@ -1306,490 +1200,6 @@ class OptionsFlowHandler(OptionsFlow):
         }
         return vol.Schema(schema_dict)
 
-    async def async_step_add_growspace(
-        self, user_input: dict[str, Any] | None = None
-    ) -> ConfigFlowResult:
-        """Show the form for adding a new growspace.
-
-        Args:
-            user_input: The user's input from the form, if any.
-
-        Returns:
-            A ConfigFlowResult.
-        """
-        try:
-            coordinator = self.hass.data[DOMAIN][self._config_entry.entry_id][
-                "coordinator"
-            ]
-        except KeyError:
-            _LOGGER.error(
-                "Coordinator not found - integration may not be properly set up"
-            )
-            return self.async_abort(reason="setup_error")
-
-        if user_input is not None:
-            try:
-                _LOGGER.debug("Config flow received growspace data: %s", user_input)
-                _LOGGER.debug("About to call coordinator.async_add_growspace")
-                growspace = await coordinator.async_add_growspace(
-                    name=user_input["name"],
-                    rows=user_input["rows"],
-                    plants_per_row=user_input["plants_per_row"],
-                    notification_target=user_input.get("notification_target"),
-                )
-                _LOGGER.debug(
-                    "Successfully added growspace: %s with ID: %s",
-                    user_input["name"],
-                    growspace.id,
-                )
-                return self.async_create_entry(title="", data={})
-            except Exception as err:
-                _LOGGER.exception("Error adding growspace: %s", err)
-                return self.async_show_form(
-                    step_id="add_growspace",
-                    data_schema=self._get_add_growspace_schema(),
-                    errors={"base": "add_failed"},
-                )
-
-        _LOGGER.debug(
-            "Showing add_growspace form with schema fields: %s",
-            list(self._get_add_growspace_schema().schema.keys()),
-        )
-        return self.async_show_form(
-            step_id="add_growspace",
-            data_schema=self._get_add_growspace_schema(),
-        )
-
-    async def async_step_update_growspace(
-        self, user_input: dict[str, Any] | None = None
-    ) -> ConfigFlowResult:
-        """Show the form for updating an existing growspace.
-
-        Args:
-            user_input: The user's input from the form, if any.
-
-        Returns:
-            A ConfigFlowResult.
-        """
-        try:
-            coordinator = self.hass.data[DOMAIN][self._config_entry.entry_id][
-                "coordinator"
-            ]
-        except KeyError:
-            _LOGGER.error(
-                "Coordinator not found - integration may not be properly set up"
-            )
-            return self.async_abort(reason="setup_error")
-
-        growspace = coordinator.growspaces.get(self._selected_growspace_id)
-
-        if not growspace:
-            _LOGGER.error("Growspace not found: %s", self._selected_growspace_id)
-            return self.async_abort(reason="growspace_not_found")
-
-        if user_input is not None:
-            try:
-                # Filter out empty values
-                update_data = {k: v for k, v in user_input.items() if v}
-
-                # Call coordinator's update method (you'll need to implement this)
-                await coordinator.async_update_growspace(
-                    self._selected_growspace_id, **update_data
-                )
-
-                _LOGGER.info(
-                    "Successfully updated growspace: %s", self._selected_growspace_id
-                )
-                return self.async_create_entry(title="", data={})
-
-            except Exception as err:
-                _LOGGER.error("Error updating growspace: %s", err, exc_info=True)
-                return self.async_show_form(
-                    step_id="update_growspace",
-                    data_schema=self._get_update_growspace_schema(growspace),
-                    errors={"base": "update_failed"},
-                )
-
-        return self.async_show_form(
-            step_id="update_growspace",
-            data_schema=self._get_update_growspace_schema(growspace),
-        )
-
-    async def async_step_manage_plants(
-        self, user_input: dict[str, Any] | None = None
-    ) -> ConfigFlowResult:
-        """Show the menu for managing plants (add, update, remove).
-
-        Args:
-            user_input: The user's input from the form, if any.
-
-        Returns:
-            A ConfigFlowResult directing to the appropriate action.
-        """
-        coordinator = self.hass.data[DOMAIN][self._config_entry.entry_id]["coordinator"]
-
-        if user_input is not None:
-            action = user_input.get("action")
-
-            if action == "add":
-                return await self.async_step_select_growspace_for_plant()
-            if action == "update" and user_input.get("plant_id"):
-                self._selected_plant_id = user_input["plant_id"]
-                return await self.async_step_update_plant()
-            if action == "remove" and user_input.get("plant_id"):
-                try:
-                    await coordinator.async_remove_plant(user_input["plant_id"])
-                except Exception:
-                    return self.async_show_form(
-                        step_id="manage_plants",
-                        data_schema=self._get_plant_management_schema(coordinator),
-                        errors={"base": "remove_failed"},
-                    )
-            if action == "back":
-                return self.async_show_form(
-                    step_id="init",
-                    data_schema=self.add_suggested_values_to_schema(
-                        coordinator, self._config_entry.options
-                    ),
-                )
-
-        return self.async_show_form(
-            step_id="manage_plants",
-            data_schema=self._get_plant_management_schema(coordinator),
-        )
-
-    async def async_step_select_growspace_for_plant(
-        self, user_input: dict[str, Any] | None = None
-    ) -> ConfigFlowResult:
-        """Show a form to select a growspace before adding a new plant.
-
-        Args:
-            user_input: The user's input from the form, if any.
-
-        Returns:
-            A ConfigFlowResult.
-        """
-        try:
-            coordinator = self.hass.data[DOMAIN][self._config_entry.entry_id][
-                "coordinator"
-            ]
-            # Reload coordinator data from storage to ensure we have latest growspaces
-            store = self.hass.data[DOMAIN][self._config_entry.entry_id]["store"]
-            fresh_data = await store.async_load() or {}
-
-            # Correctly deserialize data into objects
-            coordinator.growspaces = {
-                gid: Growspace.from_dict(g)
-                for gid, g in fresh_data.get("growspaces", {}).items()
-            }
-            coordinator.plants = {
-                pid: Plant.from_dict(p)
-                for pid, p in fresh_data.get("plants", {}).items()
-            }
-
-            coordinator._notifications_sent = fresh_data.get("notifications_sent", {})
-            # Update the data property
-            coordinator.data = {
-                "growspaces": coordinator.growspaces,
-                "plants": coordinator.plants,
-                "notifications_sent": coordinator._notifications_sent,
-            }
-        except KeyError:
-            _LOGGER.error(
-                "Coordinator not found - integration may not be properly set up"
-            )
-            return self.async_abort(reason="setup_error")
-
-        _LOGGER.info(f"Config entry ID: {self._config_entry.entry_id}")
-        _LOGGER.info(
-            f"Available growspaces in coordinator: {list(coordinator.growspaces.keys())}"
-        )
-
-        # Get growspaces from device registry
-        device_registry = dr.async_get(self.hass)
-        devices = device_registry.devices.get_devices_for_config_entry_id(
-            self._config_entry.entry_id
-        )
-
-        _LOGGER.info(f"Total devices for config entry: {len(devices)}")
-        _LOGGER.info(
-            f"All devices: {[(d.name, d.model, d.identifiers) for d in devices]}"
-        )
-
-        # Filter for growspace devices
-        growspace_devices = [
-            device
-            for device in devices
-            if device.model == "Growspace"
-            and any(identifier[0] == DOMAIN for identifier in device.identifiers)
-        ]
-
-        _LOGGER.info(f"Found {len(growspace_devices)} growspace devices")
-        for device in growspace_devices:
-            _LOGGER.info(f"Growspace device: {device.name} - {device.identifiers}")
-
-        if not growspace_devices:
-            _LOGGER.warning("No growspace devices found in device registry")
-            return self.async_show_form(
-                step_id="select_growspace_for_plant",
-                data_schema=vol.Schema({}),
-                errors={
-                    "base": "No growspaces available. Please create a growspace first."
-                },
-            )
-
-        if user_input is not None:
-            self._selected_growspace_id = user_input["growspace_id"]
-            return await self.async_step_add_plant()
-
-        return self.async_show_form(
-            step_id="select_growspace_for_plant",
-            data_schema=self._get_growspace_selection_schema_from_devices(
-                growspace_devices, coordinator
-            ),
-        )
-
-    async def async_step_add_plant(
-        self, user_input: dict[str, Any] | None = None
-    ) -> ConfigFlowResult:
-        """Show the form for adding a new plant to a selected growspace.
-
-        Args:
-            user_input: The user's input from the form, if any.
-
-        Returns:
-            A ConfigFlowResult.
-        """
-        coordinator = self.hass.data[DOMAIN][self._config_entry.entry_id]["coordinator"]
-        growspace = coordinator.growspaces.get(self._selected_growspace_id)
-
-        if user_input is not None:
-            try:
-                await coordinator.async_add_plant(
-                    growspace_id=self._selected_growspace_id,
-                    strain=user_input["strain"],
-                    row=user_input["row"],
-                    col=user_input["col"],
-                    phenotype=user_input.get("phenotype"),
-                    veg_start=user_input.get("veg_start"),
-                    flower_start=user_input.get("flower_start"),
-                )
-                return self.async_create_entry(title="", data={})
-            except Exception as err:
-                return self.async_show_form(
-                    step_id="add_plant",
-                    data_schema=self._get_add_plant_schema(growspace, coordinator),
-                    errors={"base": str(err)},
-                )
-
-        return self.async_show_form(
-            step_id="add_plant",
-            data_schema=self._get_add_plant_schema(growspace, coordinator),
-        )
-
-    async def async_step_update_plant(
-        self, user_input: dict[str, Any] | None = None
-    ) -> ConfigFlowResult:
-        """Show the form for updating an existing plant.
-
-        Args:
-            user_input: The user's input from the form, if any.
-
-        Returns:
-            A ConfigFlowResult.
-        """
-        coordinator = self.hass.data[DOMAIN][self._config_entry.entry_id]["coordinator"]
-        plant = coordinator.plants.get(self._selected_plant_id)
-
-        if not plant:
-            return self.async_abort(reason="plant_not_found")
-
-        if user_input is not None:
-            try:
-                # Filter out empty values
-                update_data = {k: v for k, v in user_input.items() if v}
-                await coordinator.async_update_plant(
-                    self._selected_plant_id, **update_data
-                )
-                return self.async_create_entry(title="", data={})
-            except Exception as err:
-                return self.async_show_form(
-                    step_id="update_plant",
-                    data_schema=self._get_update_plant_schema(plant, coordinator),
-                    errors={"base": str(err)},
-                )
-
-        return self.async_show_form(
-            step_id="update_plant",
-            data_schema=self._get_update_plant_schema(plant, coordinator),
-        )
-
-    def _get_growspace_management_schema(self, coordinator) -> vol.Schema:
-        """Build the schema for the growspace management menu.
-
-        Args:
-            coordinator: The data update coordinator.
-
-        Returns:
-            A voluptuous schema for the form.
-        """
-        growspace_options = [
-            selector.SelectOptionDict(
-                value=growspace_id,
-                label=f"{growspace.name} ({len(coordinator.get_growspace_plants(growspace_id))} plants)",
-            )
-            for growspace_id, growspace in coordinator.growspaces.items()
-        ]
-
-        schema: dict[Any, Any] = {
-            vol.Required("action"): selector.SelectSelector(
-                selector.SelectSelectorConfig(
-                    options=[
-                        selector.SelectOptionDict(value="add", label="Add Growspace"),
-                        selector.SelectOptionDict(
-                            value="update", label="Update Growspace"
-                        ),
-                        selector.SelectOptionDict(
-                            value="remove", label="Remove Growspace"
-                        ),
-                        selector.SelectOptionDict(
-                            value="back", label="← Back to Main Menu"
-                        ),
-                    ],
-                    mode=selector.SelectSelectorMode.DROPDOWN,
-                )
-            )
-        }
-
-        if growspace_options:
-            schema[vol.Optional("growspace_id")] = selector.SelectSelector(
-                selector.SelectSelectorConfig(
-                    options=growspace_options,
-                    mode=selector.SelectSelectorMode.DROPDOWN,
-                    custom_value=True,  # ✅ allow typing a new growspace
-                )
-            )
-        else:
-            # If no growspaces exist yet, allow text input only
-            schema[vol.Optional("growspace_id")] = selector.TextSelector()
-
-        return vol.Schema(schema)
-
-    def _get_add_growspace_schema(self):
-        """Build the schema for the add growspace form.
-
-        Returns:
-            A voluptuous schema for the form.
-        """
-        base = {
-            vol.Required("name"): selector.TextSelector(),
-            vol.Required("rows", default=4): selector.NumberSelector(
-                selector.NumberSelectorConfig(
-                    min=1, max=20, mode=selector.NumberSelectorMode.BOX
-                )
-            ),
-            vol.Required("plants_per_row", default=4): selector.NumberSelector(
-                selector.NumberSelectorConfig(
-                    min=1, max=20, mode=selector.NumberSelectorMode.BOX
-                )
-            ),
-        }
-
-        # Get available notify services
-        services = self.hass.services.async_services().get("notify", {})
-        notification_options = [
-            selector.SelectOptionDict(
-                value=service,
-                label=service.replace("mobile_app_", "").replace("_", " ").title(),
-            )
-            for service in services
-            if service.startswith("mobile_app_")
-        ]
-
-        if notification_options:
-            base[vol.Required("notification_target")] = selector.SelectSelector(
-                selector.SelectSelectorConfig(
-                    options=notification_options,
-                    custom_value=False,
-                    mode=selector.SelectSelectorMode.DROPDOWN,
-                )
-            )
-        else:
-            # No notify services available, allow leaving it empty
-            _LOGGER.info(
-                "No notify services found – notification_target will be optional."
-            )
-            base[vol.Required("notification_target")] = selector.TextSelector()
-
-        return vol.Schema(base)
-
-    def _get_update_growspace_schema(self, growspace) -> vol.Schema:
-        """Build the schema for the update growspace form.
-
-        Args:
-            growspace: The growspace object to pre-fill the form.
-
-        Returns:
-            A voluptuous schema for the form.
-        """
-        if not growspace:
-            return vol.Schema({})
-
-        # Get available notify services
-        services = self.hass.services.async_services().get("notify", {})
-        notification_options = [
-            selector.SelectOptionDict(
-                value=service,
-                label=service.replace("mobile_app_", "").replace("_", " ").title(),
-            )
-            for service in services
-            if service.startswith("mobile_app_")
-        ]
-
-        # Add "None" option to allow clearing notification target
-        notification_options.insert(
-            0, selector.SelectOptionDict(value="", label="None (No notifications)")
-        )
-
-        current_notification = getattr(growspace, "notification_target", None) or ""
-
-        base = {
-            vol.Optional(
-                "name", default=getattr(growspace, "name", "")
-            ): selector.TextSelector(),
-            vol.Optional(
-                "rows", default=getattr(growspace, "rows", 4)
-            ): selector.NumberSelector(
-                selector.NumberSelectorConfig(
-                    min=1, max=20, mode=selector.NumberSelectorMode.BOX
-                )
-            ),
-            vol.Optional(
-                "plants_per_row", default=getattr(growspace, "plants_per_row", 4)
-            ): selector.NumberSelector(
-                selector.NumberSelectorConfig(
-                    min=1, max=20, mode=selector.NumberSelectorMode.BOX
-                )
-            ),
-        }
-
-        if notification_options:
-            base[vol.Optional("notification_target", default=current_notification)] = (
-                selector.SelectSelector(
-                    selector.SelectSelectorConfig(
-                        options=notification_options,
-                        custom_value=False,
-                        mode=selector.SelectSelectorMode.DROPDOWN,
-                    )
-                )
-            )
-        else:
-            base[vol.Optional("notification_target", default=current_notification)] = (
-                selector.TextSelector()
-            )
-
-        return vol.Schema(base)
-
     async def async_step_configure_global(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
@@ -2037,338 +1447,6 @@ class OptionsFlowHandler(OptionsFlow):
             data_schema=schema,
             description_placeholders={"growspace_name": growspace.name},
         )
-
-
-    def _get_plant_management_schema(self, coordinator) -> vol.Schema:
-        """Build the schema for the plant management menu.
-
-        Args:
-            coordinator: The data update coordinator.
-
-        Returns:
-            A voluptuous schema for the form.
-        """
-        plant_options = []
-
-        for plant_id, plant in coordinator.plants.items():
-            # plant is now a Plant object
-            growspace = coordinator.growspaces.get(plant.growspace_id)
-            growspace_name = (
-                getattr(growspace, "name", "Unknown") if growspace else "Unknown"
-            )
-            label = f"{plant.strain} - {growspace_name} ({plant.row},{plant.col})"
-            plant_options.append(selector.SelectOptionDict(value=plant_id, label=label))
-
-        schema = {
-            vol.Required("action"): selector.SelectSelector(
-                selector.SelectSelectorConfig(
-                    options=[
-                        selector.SelectOptionDict(value="add", label="Add New Plant"),
-                        selector.SelectOptionDict(value="update", label="Update Plant"),
-                        selector.SelectOptionDict(value="remove", label="Remove Plant"),
-                        selector.SelectOptionDict(
-                            value="back", label="← Back to Main Menu"
-                        ),
-                    ]
-                )
-            )
-        }
-
-        if plant_options:
-            schema[vol.Required("plant_id")] = selector.SelectSelector(
-                selector.SelectSelectorConfig(
-                    options=plant_options,
-                    mode=selector.SelectSelectorMode.DROPDOWN,
-                )
-            )
-
-        return vol.Schema(schema)
-
-    def _get_growspace_selection_schema_from_devices(
-        self, growspace_devices, coordinator
-    ) -> vol.Schema:
-        """Build the schema for selecting a growspace from the device registry.
-
-        Args:
-            growspace_devices: A list of growspace device objects.
-            coordinator: The data update coordinator.
-
-        Returns:
-            A voluptuous schema for the form.
-        """
-        growspace_options = []
-
-        for device in growspace_devices:
-            # Extract growspace_id from device identifiers
-            growspace_id = None
-            for identifier_set in device.identifiers:
-                if identifier_set[0] == DOMAIN:
-                    growspace_id = identifier_set[1]
-                    break
-
-            if growspace_id:
-                growspace_obj = coordinator.growspaces.get(growspace_id)
-                rows = getattr(growspace_obj, "rows", "?")
-                plants_per_row = getattr(growspace_obj, "plants_per_row", "?")
-
-                growspace_options.append(
-                    selector.SelectOptionDict(
-                        value=growspace_id,
-                        label=f"{device.name} ({rows}x{plants_per_row})",
-                    )
-                )
-
-        return vol.Schema(
-            {
-                vol.Required("growspace_id"): selector.SelectSelector(
-                    selector.SelectSelectorConfig(options=growspace_options)
-                ),
-            }
-        )
-
-    def _get_add_plant_schema(self, growspace, coordinator=None) -> vol.Schema:
-        """Build the schema for the add plant form.
-
-        Args:
-            growspace: The growspace object where the plant will be added.
-            coordinator: The data update coordinator.
-
-        Returns:
-            A voluptuous schema for the form.
-        """
-        if not growspace:
-            return vol.Schema({})
-
-        rows = getattr(growspace, "rows", 10)
-        plants_per_row = getattr(growspace, "plants_per_row", 10)
-
-        # Get strain options for autocomplete
-        strain_options = []
-        if coordinator:
-            strain_list = coordinator.get_strain_options()
-            strain_options = [
-                selector.SelectOptionDict(value=strain, label=strain)
-                for strain in strain_list
-            ]
-
-        strain_selector = (
-            selector.SelectSelector(
-                selector.SelectSelectorConfig(
-                    options=strain_options,
-                    custom_value=True,
-                    mode=selector.SelectSelectorMode.DROPDOWN,
-                )
-            )
-            if strain_options
-            else selector.TextSelector()
-        )
-
-        # Relax limits for special growspaces
-        is_special = growspace.id in ["mother", "clone", "dry", "cure"]
-        max_row = 100 if is_special else rows
-        max_col = 100 if is_special else plants_per_row
-
-        return vol.Schema(
-            {
-                vol.Required("strain"): strain_selector,
-                vol.Optional("phenotype"): selector.TextSelector(),
-                vol.Required("row", default=1): selector.NumberSelector(
-                    selector.NumberSelectorConfig(
-                        min=1, max=max_row, mode=selector.NumberSelectorMode.BOX
-                    )
-                ),
-                vol.Required("col", default=1): selector.NumberSelector(
-                    selector.NumberSelectorConfig(
-                        min=1, max=max_col, mode=selector.NumberSelectorMode.BOX
-                    )
-                ),
-                vol.Optional("veg_start"): selector.DateSelector(),
-                vol.Optional("flower_start"): selector.DateSelector(),
-            }
-        )
-
-    def _get_update_plant_schema(self, plant, coordinator) -> vol.Schema:
-        """Build the schema for the update plant form.
-
-        Args:
-            plant: The plant object to pre-fill the form.
-            coordinator: The data update coordinator.
-
-        Returns:
-            A voluptuous schema for the form.
-        """
-        growspace = coordinator.growspaces.get(plant.growspace_id) if plant else None
-
-        # Ensure rows and plants_per_row are integers
-        rows = int(growspace.rows) if growspace else 10
-        plants_per_row = int(growspace.plants_per_row) if growspace else 10
-
-        # Get strain options for autocomplete
-        strain_options = []
-        strain_list = coordinator.get_strain_options()
-        strain_options = [
-            selector.SelectOptionDict(value=strain, label=strain)
-            for strain in strain_list
-        ]
-
-        # Use autocomplete selector if we have strains, otherwise text input
-        if strain_options:
-            strain_selector = selector.SelectSelector(
-                selector.SelectSelectorConfig(
-                    options=strain_options,
-                    custom_value=True,  # Allow custom entries
-                    mode=selector.SelectSelectorMode.DROPDOWN,
-                )
-            )
-        else:
-            strain_selector = selector.TextSelector()
-
-        # Relax limits for special growspaces
-        is_special = growspace and growspace.id in ["mother", "clone", "dry", "cure"]
-        max_row = 100 if is_special else rows
-        max_col = 100 if is_special else plants_per_row
-
-        return vol.Schema(
-            {
-                vol.Optional(
-                    "strain", default=plant.strain if plant else ""
-                ): strain_selector,
-                vol.Optional(
-                    "phenotype", default=plant.phenotype if plant else ""
-                ): selector.TextSelector(),
-                vol.Optional("row", default=plant.row if plant else 1): selector.NumberSelector(
-                    selector.NumberSelectorConfig(
-                        min=1, max=max_row, mode=selector.NumberSelectorMode.BOX
-                    )
-                ),
-                vol.Optional("col", default=plant.col if plant else 1): selector.NumberSelector(
-                    selector.NumberSelectorConfig(
-                        min=1, max=max_col, mode=selector.NumberSelectorMode.BOX
-                    )
-                ),
-                vol.Optional("veg_start"): selector.DateSelector(),
-                vol.Optional("flower_start"): selector.DateSelector(),
-            }
-        )
-
-    async def async_step_manage_strain_library(
-        self, user_input: dict[str, Any] | None = None
-    ) -> ConfigFlowResult:
-        """Show the menu for managing the strain library."""
-        coordinator = self.hass.data[DOMAIN][self._config_entry.entry_id][
-            "coordinator"
-        ]
-
-        if user_input is not None:
-            action = user_input.get("action")
-            if action == "add":
-                return await self.async_step_add_strain()
-            if action == "remove":
-                strain_to_remove = user_input.get("strain_id")
-                if strain_to_remove:
-                    strain, phenotype = strain_to_remove.split("|")
-                    await coordinator.strains.remove_strain_phenotype(strain, phenotype)
-                    # Return to menu after action
-                    return self.async_show_form(
-                        step_id="manage_strain_library",
-                        data_schema=self._get_strain_management_schema(coordinator),
-                    )
-            if action == "back":
-                return self.async_show_form(
-                    step_id="init",
-                    data_schema=self.add_suggested_values_to_schema(
-                        self._get_main_menu_schema(), self._config_entry.options
-                    ),
-                )
-
-        return self.async_show_form(
-            step_id="manage_strain_library",
-            data_schema=self._get_strain_management_schema(coordinator),
-        )
-
-    async def async_step_add_strain(
-        self, user_input: dict[str, Any] | None = None
-    ) -> ConfigFlowResult:
-        """Show the form for adding a new strain."""
-        coordinator = self.hass.data[DOMAIN][self._config_entry.entry_id][
-            "coordinator"
-        ]
-
-        if user_input is not None:
-            try:
-                await coordinator.strains.add_strain(
-                    strain=user_input["strain"],
-                    phenotype=user_input.get("phenotype"),
-                    breeder=user_input.get("breeder"),
-                    strain_type=user_input.get("type"),
-                    lineage=user_input.get("lineage"),
-                    sex=user_input.get("sex"),
-                    flower_days_min=user_input.get("flower_days_min"),
-                    flower_days_max=user_input.get("flower_days_max"),
-                    description=user_input.get("description"),
-                    sativa_percentage=user_input.get("sativa_percentage"),
-                    indica_percentage=user_input.get("indica_percentage"),
-                )
-                return self.async_show_form(
-                    step_id="manage_strain_library",
-                    data_schema=self._get_strain_management_schema(coordinator),
-                )
-            except Exception as err:
-                _LOGGER.error("Error adding strain: %s", err)
-                return self.async_show_form(
-                    step_id="add_strain",
-                    data_schema=self._get_add_strain_schema(),
-                    errors={"base": str(err)},
-                )
-
-        return self.async_show_form(
-            step_id="add_strain",
-            data_schema=self._get_add_strain_schema(),
-        )
-
-    def _get_strain_management_schema(self, coordinator) -> vol.Schema:
-        """Build the schema for the strain management menu."""
-        strain_options = []
-        all_strains = coordinator.strains.get_all()
-
-        for strain_name, data in all_strains.items():
-            phenotypes = data.get("phenotypes", {})
-            for pheno_name in phenotypes:
-                label = f"{strain_name}"
-                if pheno_name and pheno_name != "default":
-                    label += f" ({pheno_name})"
-
-                value = f"{strain_name}|{pheno_name}"
-                strain_options.append(
-                    selector.SelectOptionDict(value=value, label=label)
-                )
-
-        # Sort alphabetically
-        strain_options.sort(key=lambda x: x["label"])
-
-        schema = {
-            vol.Required("action"): selector.SelectSelector(
-                selector.SelectSelectorConfig(
-                    options=[
-                        selector.SelectOptionDict(value="add", label="Add New Strain"),
-                        selector.SelectOptionDict(value="remove", label="Remove Strain/Phenotype"),
-                        selector.SelectOptionDict(value="back", label="← Back to Main Menu"),
-                    ],
-                    mode=selector.SelectSelectorMode.DROPDOWN,
-                )
-            )
-        }
-
-        if strain_options:
-            schema[vol.Optional("strain_id")] = selector.SelectSelector(
-                selector.SelectSelectorConfig(
-                    options=strain_options,
-                    mode=selector.SelectSelectorMode.DROPDOWN,
-                )
-            )
-
-        return vol.Schema(schema)
-
     async def async_step_manage_plants(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
@@ -2499,9 +1577,6 @@ class OptionsFlowHandler(OptionsFlow):
             step_id="update_plant",
             data_schema=self.plant_handler.get_update_plant_schema(plant, coordinator),
         )
-
-    # --- Strain Library Management (To be refactored later) ---
-
     async def async_step_manage_strain_library(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:

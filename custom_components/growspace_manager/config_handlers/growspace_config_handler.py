@@ -116,3 +116,74 @@ class GrowspaceConfigHandler:
         """Remove a growspace."""
         coordinator = self.hass.data[DOMAIN][self.config_entry.entry_id]["coordinator"]
         await coordinator.async_remove_growspace(growspace_id)
+
+    def get_update_growspace_schema(self, growspace) -> vol.Schema:
+        """Build the schema for the update growspace form."""
+        if not growspace:
+            return vol.Schema({})
+
+        # Get available notify services
+        services = self.hass.services.async_services().get("notify", {})
+        notification_options = [
+            selector.SelectOptionDict(
+                value=service,
+                label=service.replace("mobile_app_", "").replace("_", " ").title(),
+            )
+            for service in services
+            if service.startswith("mobile_app_")
+        ]
+
+        # Add "None" option to allow clearing notification target
+        notification_options.insert(
+            0, selector.SelectOptionDict(value="", label="None (No notifications)")
+        )
+
+        current_notification = getattr(growspace, "notification_target", None) or ""
+
+        base = {
+            vol.Optional(
+                "name", default=getattr(growspace, "name", "")
+            ): selector.TextSelector(),
+            vol.Optional(
+                "rows", default=getattr(growspace, "rows", 4)
+            ): selector.NumberSelector(
+                selector.NumberSelectorConfig(
+                    min=1, max=20, mode=selector.NumberSelectorMode.BOX
+                )
+            ),
+            vol.Optional(
+                "plants_per_row", default=getattr(growspace, "plants_per_row", 4)
+            ): selector.NumberSelector(
+                selector.NumberSelectorConfig(
+                    min=1, max=20, mode=selector.NumberSelectorMode.BOX
+                )
+            ),
+        }
+
+        if notification_options:
+            base[vol.Optional("notification_target", default=current_notification)] = (
+                selector.SelectSelector(
+                    selector.SelectSelectorConfig(
+                        options=notification_options,
+                        custom_value=False,
+                        mode=selector.SelectSelectorMode.DROPDOWN,
+                    )
+                )
+            )
+        else:
+            base[vol.Optional("notification_target", default=current_notification)] = (
+                selector.TextSelector()
+            )
+
+        return vol.Schema(base)
+
+    async def async_update_growspace(
+        self, growspace_id: str, user_input: dict[str, Any]
+    ) -> None:
+        """Update an existing growspace."""
+        coordinator = self.hass.data[DOMAIN][self.config_entry.entry_id]["coordinator"]
+        
+        # Filter out empty values
+        update_data = {k: v for k, v in user_input.items() if v}
+        
+        await coordinator.async_update_growspace(growspace_id, **update_data)
