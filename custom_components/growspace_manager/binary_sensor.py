@@ -12,16 +12,13 @@ import logging
 from datetime import date, datetime, timedelta
 from typing import Any
 
-from homeassistant.components import conversation
 from homeassistant.components.binary_sensor import BinarySensorEntity
-from homeassistant.components.recorder import history
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import STATE_UNAVAILABLE, STATE_UNKNOWN
-from homeassistant.core import Context, HomeAssistant, State, callback
+from homeassistant.core import HomeAssistant, State, callback
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.event import async_track_state_change_event
-from homeassistant.helpers.recorder import get_instance as get_recorder_instance
 from homeassistant.util.dt import utcnow
 
 from .bayesian_data import (
@@ -44,9 +41,6 @@ from .bayesian_evaluator import (
     evaluate_optimal_vpd,
 )
 from .const import (
-    CONF_AI_ENABLED,
-    CONF_ASSISTANT_ID,
-    CONF_NOTIFICATION_PERSONALITY,
     DEFAULT_BAYESIAN_PRIORS,
     DEFAULT_BAYESIAN_THRESHOLDS,
     DOMAIN,
@@ -55,6 +49,8 @@ from .const import (
 )
 from .coordinator import GrowspaceCoordinator
 from .models import EnvironmentState
+from .trend_analyzer import TrendAnalyzer
+from .notification_manager import NotificationManager
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -179,10 +175,11 @@ class BayesianEnvironmentSensor(BinarySensorEntity):
         self._sensor_states = {}
         self._reasons: ReasonList = []
         self._probability = 0.0
-        self._last_notification_sent: datetime | None = None
-        self._notification_cooldown = timedelta(minutes=5)
         self._last_light_change_time: datetime | None = None
         self._last_light_state: bool | None = None
+
+        self.trend_analyzer = TrendAnalyzer(self.coordinator.hass)
+        self.notification_manager = NotificationManager(self.coordinator.hass, self.coordinator)
 
     def _get_base_environment_state(self) -> EnvironmentState:
         """Fetch sensor values and return a structured EnvironmentState object."""
@@ -367,220 +364,19 @@ class BayesianEnvironmentSensor(BinarySensorEntity):
         self, sensor_id: str, duration_minutes: int, threshold: float
     ) -> dict[str, Any]:
         """Analyze the trend of a sensor's history to detect rising or falling patterns."""
-        start_time = utcnow() - timedelta(minutes=duration_minutes)
-        end_time = utcnow()
-
-        try:
-            history_list = await get_recorder_instance(
-                self.hass
-            ).async_add_executor_job(
-                lambda: history.get_significant_states(
-                    self.hass,
-                    start_time,
-                    end_time,
-                    [sensor_id],
-                    include_start_time_state=True,
-                )
-            )
-
-            states = history_list.get(sensor_id, [])
-            numeric_states = [
-                (s.last_updated, float(s.state))
-                for s in states
-                if isinstance(s, State)
-                and s.state not in [STATE_UNKNOWN, STATE_UNAVAILABLE]
-                and s.state is not None
-            ]
-
-            if len(numeric_states) < 2:
-                return {"trend": "stable", "crossed_threshold": False}
-
-            # Trend calculation (simplified: change between first and last value)
-            start_value = numeric_states[0][1]
-            end_value = numeric_states[-1][1]
-            change = end_value - start_value
-
-            trend = "stable"
-            if change > 0.01:
-                trend = "rising"
-            elif change < -0.01:
-                trend = "falling"
-
-            # Check if value was consistently above threshold
-            crossed_threshold = all(value > threshold for _, value in numeric_states)
-
-            return {"trend": trend, "crossed_threshold": crossed_threshold}
-
-        except (AttributeError, TypeError, ValueError) as e:
-            _LOGGER.error("Error analyzing sensor history for %s: %s", sensor_id, e)
-            return {"trend": "unknown", "crossed_threshold": False}
+        return await self.trend_analyzer.async_analyze_sensor_trend(
+            sensor_id, duration_minutes, threshold
+        )
 
     def _generate_notification_message(self, base_message: str) -> str:
         """Construct a detailed notification message from the list of reasons."""
-        sorted_reasons = sorted(self._reasons, reverse=True)
-        message = base_message
-
-        for _, reason in sorted_reasons:
-            if len(message) + len(reason) + 2 < 65:
-                message += f", {reason}"
-            else:
-                break
-        return message
+        return self.notification_manager.generate_notification_message(base_message, self._reasons)
 
     async def _send_notification(self, title: str, message: str) -> None:
         """Send a notification to the configured target for the growspace."""
-        now = utcnow()
-        if (
-            self._last_notification_sent
-            and (now - self._last_notification_sent) < self._notification_cooldown
-        ):
-            _LOGGER.debug(
-                "Notification cooldown active for %s, skipping notification",
-                self.growspace_id,
-            )
-            return
-
-        growspace = self.coordinator.growspaces.get(self.growspace_id)
-        if not growspace or not growspace.notification_target:
-            _LOGGER.debug(
-                "No notification target configured for %s, skipping notification",
-                self.growspace_id,
-            )
-            return
-
-        # Check if notifications are enabled in coordinator
-        if not self.coordinator.is_notifications_enabled(self.growspace_id):
-            _LOGGER.debug(
-                "Notifications disabled in coordinator for %s", self.growspace_id
-            )
-            return
-
-        self._last_notification_sent = now
-
-        # AI Personality Injection
-        final_message = message
-        ai_settings = self.coordinator.options.get("ai_settings", {})
-
-        if ai_settings.get(CONF_AI_ENABLED) and ai_settings.get(CONF_ASSISTANT_ID):
-            try:
-                personality = ai_settings.get(CONF_NOTIFICATION_PERSONALITY, "Standard")
-                agent_id = ai_settings.get(CONF_ASSISTANT_ID)
-                max_length = ai_settings.get("max_response_length", 250)
-
-                # Format sensor readings for context
-                readings = []
-                for k, v in self._sensor_states.items():
-                    if v is not None and not isinstance(v, bool):
-                        readings.append(f"{k}: {v}")
-                readings_str = ", ".join(readings)
-
-                # Build a more sophisticated prompt for the AI
-                system_context = (
-                    f"You are a {personality} cannabis cultivation assistant. "
-                    "Your job is to rewrite alerts in your unique style while keeping them informative.\n\n"
-                )
-
-                if personality.lower() == "scientific":
-                    system_context += (
-                        "Use precise technical terminology. Be analytical and data-driven. "
-                        "Reference specific thresholds and values."
-                    )
-                elif personality.lower() == "chill stoner":
-                    system_context += (
-                        "Be laid-back and friendly, but still helpful. Use casual language. "
-                        "Keep the vibe relaxed but don't skip important details."
-                    )
-                elif personality.lower() == "strict coach":
-                    system_context += (
-                        "Be direct and authoritative. Emphasize urgency where appropriate. "
-                        "Make it clear what needs to be done immediately."
-                    )
-                elif personality.lower() == "pirate":
-                    system_context += (
-                        "Write like a pirate (arr, matey, etc.) but maintain clarity. "
-                        "Make it fun while conveying the essential information."
-                    )
-                else:  # Standard
-                    system_context += (
-                        "Be clear, professional, and helpful. "
-                        "Keep the message concise but informative."
-                    )
-
-                prompt = (
-                    f"{system_context}\n\n"
-                    f"Original Alert: {message}\n"
-                    f"Current Sensor Data: {readings_str}\n"
-                    f"Growspace: {growspace.name}\n\n"
-                    f"Rewrite this alert in 1-2 sentences. Keep it under {max_length} characters. "
-                    "Include specific sensor values if they're relevant to the alert."
-                )
-
-                _LOGGER.debug("Sending notification rewrite prompt to AI assistant")
-
-                result = await conversation.async_converse(
-                    self.hass,
-                    text=prompt,
-                    conversation_id=None,
-                    context=Context(),
-                    agent_id=agent_id,
-                )
-
-                if (
-                    result
-                    and result.response
-                    and result.response.speech
-                    and result.response.speech.get("plain")
-                ):
-                    rewritten = result.response.speech["plain"]["speech"]
-                    # Validate the response isn't too long
-                    if len(rewritten) <= max_length:
-                        final_message = rewritten
-                        _LOGGER.info(
-                            "AI rewrote notification in %s style", personality
-                        )
-                    else:
-                        # Try to truncate intelligently if it's close
-                        if len(rewritten) < max_length + 50:
-                             final_message = rewritten[:max_length].rsplit(' ', 1)[0] + "..."
-                             _LOGGER.info("AI response truncated to fit length limit")
-                        else:
-                            _LOGGER.warning(
-                                "AI response too long (%d chars > %d), using default",
-                                len(rewritten),
-                                max_length,
-                            )
-                else:
-                    _LOGGER.warning(
-                        "AI returned empty response, using default message"
-                    )
-
-            except Exception as err:
-                _LOGGER.error("Failed to process AI notification: %s", err)
-                # Fallback to original message is automatic
-
-        # Get the service name (e.g., "mobile_app_my_phone")
-        notification_service = growspace.notification_target.replace("notify.", "")
-
-        try:
-            await self.hass.services.async_call(
-                "notify",
-                notification_service,
-                {
-                    "message": final_message,
-                    "title": title,
-                },
-                blocking=False,
-            )
-            _LOGGER.info(
-                "Notification sent to %s: %s - %s",
-                notification_service,
-                title,
-                final_message,
-            )
-        except (AttributeError, TypeError, ValueError) as e:
-            _LOGGER.error(
-                "Failed to send notification to %s: %s", notification_service, e
-            )
+        await self.notification_manager.async_send_notification(
+            self.growspace_id, title, message, self._sensor_states
+        )
 
     def get_notification_title_message(
         self, new_state_on: bool

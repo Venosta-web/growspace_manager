@@ -20,6 +20,9 @@ from homeassistant.core import HomeAssistant
 from homeassistant.util import slugify
 
 from .const import DB_FILE_STRAIN_LIBRARY
+from .image_manager import ImageManager
+from .import_export_manager import ImportExportManager
+
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -72,6 +75,11 @@ class StrainLibrary:
         self._db: aiosqlite.Connection | None = None
         self.strains: dict[str, dict[str, Any]] = {}
         self._analytics_cache: dict[str, Any] | None = None
+        self.image_manager = ImageManager(
+            hass, hass.config.path("www", "growspace_manager", "strains")
+        )
+        self.import_export_manager = ImportExportManager(hass)
+
 
     async def async_setup(self) -> None:
         """Set up the database connection and schema."""
@@ -294,7 +302,12 @@ class StrainLibrary:
         }
         # Image handling
         if image_base64:
-            image_path = await self._save_strain_image(strain, phenotype, image_base64)
+            safe_strain = slugify(strain)
+            safe_pheno = slugify(phenotype)
+            
+            abs_path = await self.image_manager.save_strain_image(safe_strain, safe_pheno, image_base64)
+            filename = os.path.basename(abs_path)
+            image_path = f"/local/growspace_manager/strains/{filename}"
             pheno_data["image_path"] = image_path
         elif image_path:
             pheno_data["image_path"] = image_path
@@ -358,28 +371,6 @@ class StrainLibrary:
             indica_percentage=indica_percentage,
         )
 
-    async def _save_strain_image(self, strain: str, phenotype: str, image_base64: str) -> str:
-        """Decode and save a strain image to the www directory, returning a web path."""
-        try:
-            if image_base64.startswith("data:"):
-                # Strip data URI prefix
-                _, image_base64 = image_base64.split(",", 1)
-            base_dir = self.hass.config.path("www", "growspace_manager", "strains")
-            os.makedirs(base_dir, exist_ok=True)
-            safe_strain = slugify(strain)
-            safe_pheno = slugify(phenotype)
-            filename = f"{safe_strain}_{safe_pheno}.jpg"
-            file_path = os.path.join(base_dir, filename)
-            image_data = base64.b64decode(image_base64)
-            def _write():
-                with open(file_path, "wb") as f:
-                    f.write(image_data)
-            await self.hass.async_add_executor_job(_write)
-            return f"/local/growspace_manager/strains/{filename}"
-        except Exception as err:
-            _LOGGER.error("Failed to save strain image: %s", err)
-            return ""
-
     async def remove_strain_phenotype(self, strain: str, phenotype: str) -> None:
         """Remove a specific phenotype and its harvests."""
         phenotype = phenotype.strip() or "default"
@@ -399,6 +390,12 @@ class StrainLibrary:
         await self._db.execute("DELETE FROM harvests WHERE phenotype_id = ?", (phenotype_id,))
         await self._db.execute("DELETE FROM phenotypes WHERE phenotype_id = ?", (phenotype_id,))
         await self._db.commit()
+        
+        # Delete image
+        safe_strain = slugify(strain)
+        safe_pheno = slugify(phenotype)
+        self.image_manager.delete_image(safe_strain, safe_pheno)
+
         # If no other phenotypes, delete strain
         async with self._db.execute("SELECT COUNT(*) FROM phenotypes WHERE strain_id = ?", (strain_id,)) as cur:
             if (await cur.fetchone())[0] == 0:
@@ -562,53 +559,20 @@ class StrainLibrary:
         # Ensure analytics are up‑to‑date (cached or calculated)
         if self._analytics_cache is None:
             self.get_analytics()
-        return await self.hass.async_add_executor_job(self._export_sync, output_dir)
+        
+        # Get all data
+        library_data = self.get_all()
+        
+        return await self.import_export_manager.export_library(library_data, output_dir)
 
-    def _export_sync(self, output_dir: str) -> str:
-        """Synchronous helper to create the export ZIP file."""
-        os.makedirs(output_dir, exist_ok=True)
-        timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-        zip_path = os.path.join(output_dir, f"strain_library_export_{timestamp}.zip")
-        strains_export = self.get_all()
-        with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zipf:
-            for strain_data in strains_export.values():
-                if "phenotypes" in strain_data:
-                    for pheno_data in strain_data["phenotypes"].values():
-                        if "image_path" in pheno_data:
-                            img_path = pheno_data["image_path"]
-                            if img_path.startswith("/local/"):
-                                rel = img_path.replace("/local/", "", 1)
-                                fs_path = self.hass.config.path(rel)
-                                if os.path.exists(fs_path):
-                                    zip_name = f"images/{os.path.basename(fs_path)}"
-                                    zipf.write(fs_path, zip_name)
-                                    pheno_data["image_path"] = zip_name
-        zipf.writestr("library.json", json.dumps(strains_export, indent=2))
-        _LOGGER.info("Exported strain library to %s", zip_path)
-        return zip_path
 
     async def import_library_from_zip(self, zip_path: str, merge: bool = True) -> int:
         """Import a library from a ZIP archive."""
-        return await self.hass.async_add_executor_job(self._import_sync, zip_path, merge)
-
-    def _import_sync(self, zip_path: str, merge: bool) -> int:
-        """Synchronous helper to import from a ZIP file."""
-        if not os.path.exists(zip_path):
-            raise FileNotFoundError(f"ZIP file not found: {zip_path}")
-        if not zipfile.is_zipfile(zip_path):
-            raise ValueError(f"Not a valid ZIP file: {zip_path}")
         target_dir = self.hass.config.path("www", "growspace_manager", "strains")
-        os.makedirs(target_dir, exist_ok=True)
-        with zipfile.ZipFile(zip_path, "r") as zipf:
-            if "library.json" not in zipf.namelist():
-                raise ValueError("library.json missing from archive")
-            with zipf.open("library.json") as f:
-                library_data = json.load(f)
-            for info in zipf.infolist():
-                if info.filename.startswith("images/") and not info.is_dir():
-                    dest = os.path.join(target_dir, os.path.basename(info.filename))
-                    with zipf.open(info) as src, open(dest, "wb") as dst:
-                        shutil.copyfileobj(src, dst)
+        library_data = await self.import_export_manager.import_library(zip_path, target_dir)
+        
         # Schedule async import of the JSON data
-        self.hass.create_task(self.import_library(library_data, replace=not merge))
-        return len(self.strains)
+        # Note: import_library is async, so we can await it directly if we are in an async context.
+        # But original code used create_task. Let's see if we can await it.
+        # The method returns int (count), so awaiting is better.
+        return await self.import_library(library_data, replace=not merge)

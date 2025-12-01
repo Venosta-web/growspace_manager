@@ -13,6 +13,9 @@ from .utils import (
     calculate_plant_stage,
 )
 from .strain_library import StrainLibrary
+from .migration_manager import MigrationManager
+from .growspace_validator import GrowspaceValidator
+from .storage_manager import StorageManager
 from .const import (
     STORAGE_KEY,
     PLANT_STAGES,
@@ -31,7 +34,6 @@ from homeassistant.helpers import (
     device_registry as dr,
     entity_registry as er,
 )
-from homeassistant.helpers.storage import Store
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 
 
@@ -77,7 +79,6 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
         self.hass = hass
         self.growspaces: dict[str, Growspace] = {}
         self.plants: dict[str, Plant] = {}
-        self.store: Store = Store(hass, STORAGE_VERSION, STORAGE_KEY)
 
         self.options = options or {}
         _LOGGER.info("--- COORDINATOR INITIALIZED WITH OPTIONS: %s ---", self.options)
@@ -89,6 +90,10 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
         else:
             self.strains = strain_library
 
+        self.migration_manager = MigrationManager(self)
+        self.validator = GrowspaceValidator(self)
+        self.storage_manager = StorageManager(self, hass)
+
         self._notifications_sent: dict[str, dict[str, bool]] = {}
         self._notifications_enabled: dict[
             str, bool
@@ -97,6 +102,8 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
         self.options = options or {}
 
         # Load plants safely, ignoring invalid keys
+        if data is None:
+            data = {}
         raw_plants = data.get("plants", {})
         for pid, pdata in raw_plants.items():
             try:
@@ -163,120 +170,12 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
     # =============================================================================
 
     def _migrate_legacy_growspaces(self) -> None:
-        """Migrate legacy special growspace aliases to their canonical forms.
-
-        This method iterates through predefined special growspaces and their known
-        aliases, ensuring that any legacy data is updated to use the current,
-        standardized growspace IDs.
-        """
-        try:
-            for config in SPECIAL_GROWSPACES.values():
-                canonical_id = config["canonical_id"]
-                canonical_name = config["canonical_name"]
-                aliases = config["aliases"]
-
-                for alias in aliases:
-                    self._migrate_special_alias_if_needed(
-                        alias, canonical_id, canonical_name
-                    )
-        except ValueError as e:
-            _LOGGER.debug("Special growspace migration skipped: %s", e)
-
-    def _migrate_special_alias_if_needed(
-        self, alias_id: str, canonical_id: str, canonical_name: str
-    ) -> None:
-        """Migrate a single growspace alias to its canonical ID if it exists.
-
-        If a growspace with an old alias ID is found, its plants are moved to
-        the canonical growspace, which is created if it doesn't exist.
-
-        Args:
-            alias_id: The legacy ID of the growspace.
-            canonical_id: The standard ID to migrate to.
-            canonical_name: The standard name of the growspace.
-        """
-        if alias_id == canonical_id:
-            return
-
-        alias_exists = alias_id in self.growspaces
-        canonical_exists = canonical_id in self.growspaces
-
-        if alias_exists and not canonical_exists:
-            self._create_canonical_from_alias(alias_id, canonical_id, canonical_name)
-        elif alias_exists and canonical_exists:
-            self._consolidate_alias_into_canonical(alias_id, canonical_id)
-
-    def _create_canonical_from_alias(
-        self, alias_id: str, canonical_id: str, canonical_name: str
-    ) -> None:
-        """Create a new canonical growspace from a legacy alias.
-
-        This method transfers the settings and plants from the old alias
-        growspace to a new growspace with the canonical ID.
-
-        Args:
-            alias_id: The legacy ID of the growspace to migrate from.
-            canonical_id: The new, standard ID for the growspace.
-            canonical_name: The standard name for the new growspace.
-        """
-        src = self.growspaces[alias_id]
-        self.growspaces[canonical_id] = Growspace(
-            id=canonical_id,
-            name=canonical_name,
-            rows=int(
-                getattr(src, "rows", 3)
-                if isinstance(src, Growspace)
-                else src.get("rows", 3)
-            ),
-            plants_per_row=int(
-                getattr(src, "plants_per_row", 3)
-                if isinstance(src, Growspace)
-                else src.get("plants_per_row", 3)
-            ),
-            notification_target=getattr(src, "notification_target", None)
-            if isinstance(src, Growspace)
-            else src.get("notification_target"),
-            device_id=getattr(src, "device_id", None)
-            if isinstance(src, Growspace)
-            else None,
-        )
-
-        self._migrate_plants_to_growspace(alias_id, canonical_id)
-        self.growspaces.pop(alias_id, None)
-        self.update_data_property()
-
-        _LOGGER.info("Migrated growspace alias '%s' → '%s'", alias_id, canonical_id)
-
-    def _consolidate_alias_into_canonical(
-        self, alias_id: str, canonical_id: str
-    ) -> None:
-        """Consolidate plants from a legacy alias into an existing canonical growspace.
-
-        If both the alias and the canonical growspace exist, this method moves all
-        plants from the alias to the canonical growspace and then removes the alias.
-
-        Args:
-            alias_id: The legacy ID of the growspace.
-            canonical_id: The existing standard ID to consolidate into.
-        """
-        self._migrate_plants_to_growspace(alias_id, canonical_id)
-        self.growspaces.pop(alias_id, None)
-        self.update_data_property()
-
-        _LOGGER.info(
-            "Consolidated growspace alias '%s' into '%s'", alias_id, canonical_id
-        )
+        """Migrate legacy special growspace aliases to their canonical forms."""
+        self.migration_manager.migrate_legacy_growspaces()
 
     def _migrate_plants_to_growspace(self, from_id: str, to_id: str) -> None:
-        """Move all plants from one growspace to another.
-
-        Args:
-            from_id: The ID of the source growspace.
-            to_id: The ID of the target growspace.
-        """
-        for plant in self.plants.values():
-            if plant.growspace_id == from_id:
-                plant.growspace_id = to_id
+        """Move all plants from one growspace to another."""
+        self.migration_manager.migrate_plants_to_growspace(from_id, to_id)
 
     # =============================================================================
     # UTILITY AND HELPER METHODS
@@ -305,111 +204,13 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
         Returns:
             A tuple containing the canonical ID and canonical name.
         """
-        for config in SPECIAL_GROWSPACES.values():
-            canonical_id = config["canonical_id"]
-            canonical_name = config["canonical_name"]
-            aliases = config["aliases"]
-
-            for alias in aliases:
-                self._migrate_special_alias_if_needed(
-                    alias, canonical_id, canonical_name
-                )
+        self.migration_manager.migrate_legacy_growspaces()
 
         growspace = self.growspaces.get(gs_id)
         if growspace:
             return gs_id, growspace.name  # access attribute, not dict key
         return gs_id, gs_id
 
-    def _validate_growspace_exists(self, growspace_id: str) -> None:
-        """Validate that a growspace exists in the coordinator.
-
-        Args:
-            growspace_id: The ID of the growspace to validate.
-
-        Raises:
-            ValueError: If the growspace with the given ID does not exist.
-        """
-        if growspace_id not in self.growspaces:
-            raise ValueError(f"Growspace {growspace_id} does not exist")
-
-    def _validate_plant_exists(self, plant_id: str) -> None:
-        """Validate that a plant exists in the coordinator.
-
-        Args:
-            plant_id: The ID of the plant to validate.
-
-        Raises:
-            ValueError: If the plant with the given ID does not exist.
-        """
-        if plant_id not in self.plants:
-            raise ValueError(f"Plant {plant_id} does not exist")
-
-    def _validate_position_bounds(self, growspace_id: str, row: int, col: int) -> None:
-        """Validate that a position is within the bounds of a growspace grid.
-
-        Args:
-            growspace_id: The ID of the growspace.
-            row: The row number to check (1-based).
-            col: The column number to check (1-based).
-
-        Raises:
-            ValueError: If the row or column is outside the defined grid size.
-        """
-        growspace = self.growspaces[growspace_id]
-        
-        # Skip boundary check for special growspaces
-        if growspace_id in ["mother", "clone", "dry", "cure"]:
-            return
-
-        max_rows = int(growspace.rows)
-        max_cols = int(growspace.plants_per_row)
-
-        if row < 1 or row > max_rows:
-            raise ValueError(f"Row {row} is outside growspace bounds (1-{max_rows})")
-        if col < 1 or col > max_cols:
-            raise ValueError(f"Column {col} is outside growspace bounds (1-{max_cols})")
-
-    def _validate_position_not_occupied(
-        self,
-        growspace_id: str,
-        row: int,
-        col: int,
-        exclude_plant_id: str | None = None,
-    ) -> None:
-        """Validate that a grid position is not already occupied by another plant.
-
-        Args:
-            growspace_id: The ID of the growspace.
-            row: The row number to check.
-            col: The column number to check.
-            exclude_plant_id: A plant ID to exclude from the check (optional).
-
-        Raises:
-            ValueError: If the position is already occupied.
-        """
-        existing_plants = self.get_growspace_plants(growspace_id)
-        for existing_plant in existing_plants:
-            if (
-                existing_plant.plant_id != exclude_plant_id
-                and existing_plant.row == row
-                and existing_plant.col == col
-            ):
-                raise ValueError(
-                    f"Position ({row},{col}) is already occupied by {existing_plant.strain}"
-                )
-
-    def _find_first_available_position(self, growspace_id: str) -> tuple[int, int]:
-        """Find the first available (row, col) position in a growspace.
-
-        Args:
-            growspace_id: The ID of the growspace to search.
-
-        Returns:
-            A tuple containing the first free row and column.
-        """
-        growspace = self.growspaces[growspace_id]
-        occupied = {(p.row, p.col) for p in self.get_growspace_plants(growspace_id)}
-        return find_first_free_position(growspace, occupied)
 
     def _parse_date_field(self, date_value: str | datetime | date | None) -> str | None:
         """Parse and format a date field into a standard ISO format string.
@@ -542,22 +343,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
         self.update_data_property()
         return canonical_id
 
-    def _cleanup_legacy_aliases(self, canonical_id: str) -> None:
-        """Remove any legacy alias growspaces that have been migrated.
-
-        Args:
-            canonical_id: The canonical ID to clean up aliases for.
-        """
-        config = SPECIAL_GROWSPACES.get(canonical_id, {})
-        aliases = config.get("aliases", [])
-
-        if aliases:
-            for legacy_id in list(self.growspaces.keys()):
-                # Only remove if it's an exact alias match, not a user-created growspace
-                if legacy_id in aliases and legacy_id != canonical_id:
-                    self._migrate_plants_to_growspace(legacy_id, canonical_id)
-                    self.growspaces.pop(legacy_id, None)
-                    _LOGGER.info("Removed legacy growspace: %s", legacy_id)
+        self.migration_manager.cleanup_legacy_aliases(canonical_id)
 
     def _create_special_growspace(
         self, canonical_id: str, canonical_name: str, rows: int, plants_per_row: int
@@ -628,96 +414,19 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
 
     async def async_save(self) -> None:
         """Save the current state of all data to persistent storage."""
-        await self.store.async_save(
-            {
-                "plants": {pid: asdict(p) for pid, p in self.plants.items()},
-                "growspaces": {gid: asdict(g) for gid, g in self.growspaces.items()},
-                "notifications_sent": self._notifications_sent,  # ✅ Save notification tracking
-                "notifications_enabled": self._notifications_enabled,  # ✅ Save switch states
-            }
-        )
+        await self.storage_manager.async_save()
 
     async def async_load(self) -> None:
         """Load data from persistent storage and handle migrations."""
-        data = await self.store.async_load()
-        if not data:
-            _LOGGER.info("No stored data found, starting fresh")
-            return
-
-        _LOGGER.debug("DEBUG: Raw storage data keys = %s", list(data.keys()))
-        _LOGGER.debug(
-            "DEBUG: Raw growspaces in storage = %s",
-            list(data.get("growspaces", {}).keys()),
-        )
-        _LOGGER.info("Loading data from storage")
-
-        # Load plants using from_dict (handles migration)
-        try:
-            self.plants = {
-                pid: Plant.from_dict(p) for pid, p in data.get("plants", {}).items()
-            }
-            _LOGGER.info("Loaded %d plants", len(self.plants))
-        except Exception as e:
-            _LOGGER.error("Error loading plants: %s", e, exc_info=True)
-            self.plants = {}
-
-        # Load growspaces using from_dict (handles migration)
-        try:
-            self.growspaces = {
-                gid: Growspace.from_dict(g)
-                for gid, g in data.get("growspaces", {}).items()
-            }
-            _LOGGER.info("Loaded %d growspaces", len(self.growspaces))
-            if not self.options:
-                _LOGGER.debug("--- COORDINATOR HAS NO OPTIONS TO APPLY ---")
-            else:
-                _LOGGER.debug(
-                    "--- APPLYING OPTIONS TO GROWSPACES: %s ---", self.options
-                )
-                for growspace_id, growspace in self.growspaces.items():
-                    if growspace_id in self.options:
-                        growspace.environment_config = self.options[growspace_id]
-                        _LOGGER.debug(
-                            "--- SUCCESS: Applied env_config to '%s': %s ---",
-                            growspace.name,
-                            growspace.environment_config,
-                        )
-                    else:
-                        _LOGGER.info(
-                            "--- INFO: No options found for growspace '%s' ---",
-                            growspace.name,
-                        )
-        except Exception as e:
-            _LOGGER.exception("Error loading growspaces: %s", e, exc_info=True)
-            self.growspaces = {}
-
-        # Load notification tracking
-        self._notifications_sent = data.get("notifications_sent", {})
-
-        # Load notification switch states
-        self._notifications_enabled = data.get("notifications_enabled", {})
-
-        # Ensure all growspaces have a notification enabled state (default True)
-        for growspace_id in self.growspaces.keys():
-            if growspace_id not in self._notifications_enabled:
-                self._notifications_enabled[growspace_id] = True
-
-
-
-        # Migrate legacy growspace aliases
-        self._migrate_legacy_growspaces()
-
-        # Save migrated data back to storage
-        await self.async_save()
-        _LOGGER.info("Saved migrated data to storage")
+        await self.storage_manager.async_load()
 
     def update_data_property(self) -> None:
         """Update the central `self.data` property to reflect the current coordinator state."""
         self.data = {
             "growspaces": self.growspaces,
             "plants": self.plants,
-            "notifications_sent": self._notifications_sent,  # ✅ Changed from self.notifications
-            "notifications_enabled": self._notifications_enabled,  # ✅ Add switch states
+            "notifications_sent": self._notifications_sent,
+            "notifications_enabled": self._notifications_enabled,
         }
 
     # =============================================================================
@@ -775,7 +484,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
         Args:
             growspace_id: The ID of the growspace to remove.
         """
-        self._validate_growspace_exists(growspace_id)
+        self.validator.validate_growspace_exists(growspace_id)
 
         # Remove all plants in this growspace
         plants_to_remove = [
@@ -1032,7 +741,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
             The newly created Plant object.
         """
         try:
-            self._validate_position_not_occupied(growspace_id, row, col)
+            self.validator.validate_position_not_occupied(growspace_id, row, col)
             final_row, final_col = row, col
         except ValueError:
             _LOGGER.info(
@@ -1042,7 +751,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
                 growspace_id,
             )
             try:
-                final_row, final_col = self._find_first_available_position(
+                final_row, final_col = self.validator.find_first_available_position(
                     growspace_id
                 )
                 _LOGGER.info(
@@ -1116,7 +825,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
 
         if source_mother_id:
             # Validate mother plant exists
-            self._validate_plant_exists(source_mother_id)
+            self.validator.validate_plant_exists(source_mother_id)
             mother_plant = self.plants[source_mother_id]
 
             # Verify it's actually a mother plant
@@ -1266,14 +975,14 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
         Returns:
             A list of the newly created clone Plant objects.
         """
-        self._validate_plant_exists(mother_plant_id)
+        self.validator.validate_plant_exists(mother_plant_id)
 
         mother = self.plants[mother_plant_id]
         clone_gs_id = self._ensure_special_growspace("clone", "clone", 5, 5)
         clone_ids = []
 
         for _ in range(num_clones):
-            row, col = self._find_first_available_position(clone_gs_id)
+            row, col = self.validator.find_first_available_position(clone_gs_id)
             clone_data = {
                 "strain": mother.strain,
                 "phenotype": mother.phenotype,
@@ -1300,14 +1009,14 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
         Raises:
             ValueError: If the plant is not in the clone stage.
         """
-        self._validate_plant_exists(clone_id)
+        self.validator.validate_plant_exists(clone_id)
 
         clone = self.plants[clone_id]
         if clone.stage != "clone":
             raise ValueError("Plant is not in clone stage")
 
         veg_gs_id = self._ensure_special_growspace("veg", "veg", 5, 5)
-        row, col = self._find_first_available_position(veg_gs_id)
+        row, col = self.validator.find_first_available_position(veg_gs_id)
 
         await self.async_update_plant(
             clone_id,
@@ -1384,11 +1093,11 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
         growspace_id = kwargs.get("growspace_id", plant.growspace_id)
 
         # Validate bounds
-        self._validate_position_bounds(growspace_id, new_row, new_col)
+        self.validator.validate_position_bounds(growspace_id, new_row, new_col)
 
         # Check for conflicts unless force_position is True
         if not force_position and (new_row != plant.row or new_col != plant.col):
-            self._validate_position_not_occupied(
+            self.validator.validate_position_not_occupied(
                 growspace_id, new_row, new_col, plant_id
             )
 
@@ -1412,8 +1121,8 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
         Raises:
             ValueError: If the plants are in different growspaces.
         """
-        self._validate_plant_exists(plant1_id)
-        self._validate_plant_exists(plant2_id)
+        self.validator.validate_plant_exists(plant1_id)
+        self.validator.validate_plant_exists(plant2_id)
 
         plant1 = self.plants[plant1_id]
         plant2 = self.plants[plant2_id]
@@ -1478,7 +1187,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
         Raises:
             ValueError: If the new stage is invalid.
         """
-        self._validate_plant_exists(plant_id)
+        self.validator.validate_plant_exists(plant_id)
 
         if new_stage not in PLANT_STAGES:
             raise ValueError(
@@ -1600,7 +1309,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
             target_growspace_name: The name of the target growspace (used as a hint).
             transition_date: The date of the harvest (optional, defaults to today).
         """
-        self._validate_plant_exists(plant_id)
+        self.validator.validate_plant_exists(plant_id)
 
         plant = self.plants[plant_id]
         transition_date = transition_date or date.today().isoformat()
