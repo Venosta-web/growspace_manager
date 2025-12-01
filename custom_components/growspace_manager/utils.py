@@ -48,6 +48,20 @@ def calculate_days_since(
     return (end - start).days
 
 
+def days_to_week(days: int) -> int:
+    """Convert a number of days into a week number (1-indexed).
+
+    Args:
+        days: The number of days.
+
+    Returns:
+        The corresponding week number.
+    """
+    if days <= 0:
+        return 0
+    return (days - 1) // 7 + 1
+
+
 def find_first_free_position(
     growspace: Growspace, occupied_positions: set[tuple[int, int]]
 ) -> tuple[int, int]:

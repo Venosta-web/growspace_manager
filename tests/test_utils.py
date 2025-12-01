@@ -13,6 +13,7 @@ from custom_components.growspace_manager.utils import (
     calculate_days_since,
     find_first_free_position,
     generate_growspace_grid,
+    days_to_week,
 )
 from custom_components.growspace_manager.models import Plant, Growspace
 
@@ -124,3 +125,23 @@ def test_generate_growspace_grid_empty():
         [None, None],
         [None, None],
     ]
+
+
+# ----------------------------
+# days_to_week tests
+# ----------------------------
+@pytest.mark.parametrize(
+    "days,expected",
+    [
+        (0, 0),
+        (-5, 0),
+        (1, 1),
+        (7, 1),
+        (8, 2),
+        (14, 2),
+        (15, 3),
+    ],
+)
+def test_days_to_week(days, expected):
+    """Test the `days_to_week` function."""
+    assert days_to_week(days) == expected
