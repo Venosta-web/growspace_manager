@@ -201,8 +201,7 @@ async def handle_take_clone(
     clones_added_count = 0
     for i in range(num_clones):
         try:
-            # _find_first_available_position should ideally return (row, col) or raise an exception if no space.
-            row, col = coordinator._find_first_available_position(growspace_id)
+            row, col = validator.find_first_available_position(growspace_id)
             if row is None or col is None:  # Defensive check
                 _LOGGER.warning(
                     "No free slot found for clone %s/%s in growspace %s",
@@ -270,6 +269,9 @@ async def handle_move_clone(
     call: ServiceCall,
 ) -> None:
     """Move an existing clone using coordinator methods, typically to 'veg' stage."""
+    from ..growspace_validator import GrowspaceValidator
+    validator = GrowspaceValidator(coordinator)
+
     plant_id = call.data.get("plant_id")
     target_growspace_id = call.data.get("target_growspace_id")
     transition_date_str = call.data.get(
@@ -287,11 +289,13 @@ async def handle_move_clone(
         )
         return
 
-    if plant_id not in coordinator.plants:
-        _LOGGER.error("Plant %s does not exist for move_clone", plant_id)
+    try:
+        validator.validate_plant_exists(plant_id)
+    except ValueError as err:
+        _LOGGER.error("Validation error moving clone: %s", err)
         create_notification(
             hass,
-            f"Plant {plant_id} not found.",
+            f"Validation error: {str(err)}",
             title="Growspace Manager Error",
         )
         return
@@ -311,7 +315,7 @@ async def handle_move_clone(
 
     # Find first available position in target growspace
     try:
-        row, col = coordinator._find_first_available_position(target_growspace_id)
+        row, col = validator.find_first_available_position(target_growspace_id)
         if row is None or col is None:
             _LOGGER.warning(
                 "No free slot in growspace %s for clone %s",
@@ -394,16 +398,12 @@ async def handle_update_plant(
     call: ServiceCall,
 ) -> None:
     """Handle update plant service call."""
+    from ..growspace_validator import GrowspaceValidator
+    validator = GrowspaceValidator(coordinator)
+
     try:
         plant_id = call.data["plant_id"]
-        if plant_id not in coordinator.plants:
-            _LOGGER.error("Plant %s does not exist for update_plant", plant_id)
-            create_notification(
-                hass,
-                f"Plant {plant_id} does not exist.",
-                title="Growspace Manager Error",
-            )
-            return
+        validator.validate_plant_exists(plant_id)
 
         def parse_date_field(val) -> datetime | None:
             """Helper to parse date strings or return None."""
