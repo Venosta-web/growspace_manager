@@ -2369,6 +2369,246 @@ class OptionsFlowHandler(OptionsFlow):
 
         return vol.Schema(schema)
 
+    async def async_step_manage_plants(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Show the menu for managing plants (add, update, remove)."""
+        coordinator = self.hass.data[DOMAIN][self._config_entry.entry_id]["coordinator"]
+
+        if user_input is not None:
+            action = user_input.get("action")
+
+            if action == "add":
+                return await self.async_step_select_growspace_for_plant()
+            if action == "update" and user_input.get("plant_id"):
+                self._selected_plant_id = user_input["plant_id"]
+                return await self.async_step_update_plant()
+            if action == "remove" and user_input.get("plant_id"):
+                try:
+                    # We need to get the growspace_id for the plant to remove it
+                    # This is a bit tricky as the plant ID is unique globally but we need the growspace ID
+                    # Ideally the coordinator should handle this lookup or we iterate
+                    plant = coordinator.plants.get(user_input["plant_id"])
+                    if plant:
+                         await self.plant_handler.async_destroy_plant(plant.growspace_id, plant.id)
+                except Exception:
+                    return self.async_show_form(
+                        step_id="manage_plants",
+                        data_schema=self.plant_handler.get_plant_management_schema(coordinator),
+                        errors={"base": "remove_failed"},
+                    )
+            if action == "back":
+                return self.async_show_form(
+                    step_id="init",
+                    data_schema=self._get_main_menu_schema(),
+                )
+
+        return self.async_show_form(
+            step_id="manage_plants",
+            data_schema=self.plant_handler.get_plant_management_schema(coordinator),
+        )
+
+    async def async_step_select_growspace_for_plant(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Show a form to select a growspace before adding a new plant."""
+        coordinator = self.hass.data[DOMAIN][self._config_entry.entry_id]["coordinator"]
+        
+        if user_input is not None:
+            self._selected_growspace_id = user_input["growspace_id"]
+            return await self.async_step_add_plant()
+
+        # Reuse the growspace selection schema from GrowspaceConfigHandler if possible
+        # But here we need it for a specific purpose. 
+        # For simplicity, let's use a simple schema here as it's just a selection step
+        growspace_options = coordinator.get_sorted_growspace_options()
+        if not growspace_options:
+             return self.async_abort(reason="no_growspaces")
+
+        schema = vol.Schema({
+            vol.Required("growspace_id"): selector.SelectSelector(
+                selector.SelectSelectorConfig(
+                    options=[{"value": gid, "label": name} for gid, name in growspace_options],
+                    mode=selector.SelectSelectorMode.DROPDOWN
+                )
+            )
+        })
+
+        return self.async_show_form(
+            step_id="select_growspace_for_plant",
+            data_schema=schema,
+        )
+
+    async def async_step_add_plant(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Show the form for adding a new plant to a selected growspace."""
+        coordinator = self.hass.data[DOMAIN][self._config_entry.entry_id]["coordinator"]
+        growspace = coordinator.growspaces.get(self._selected_growspace_id)
+
+        if user_input is not None:
+            try:
+                await self.plant_handler.async_add_plant(
+                    growspace_id=self._selected_growspace_id,
+                    strain=user_input["strain"],
+                    row=user_input["row"],
+                    col=user_input["col"],
+                    phenotype=user_input.get("phenotype"),
+                    veg_start=user_input.get("veg_start"),
+                    flower_start=user_input.get("flower_start"),
+                )
+                return self.async_create_entry(title="", data={})
+            except Exception as err:
+                return self.async_show_form(
+                    step_id="add_plant",
+                    data_schema=self.plant_handler.get_add_plant_schema(growspace, coordinator),
+                    errors={"base": str(err)},
+                )
+
+        return self.async_show_form(
+            step_id="add_plant",
+            data_schema=self.plant_handler.get_add_plant_schema(growspace, coordinator),
+        )
+
+    async def async_step_update_plant(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Show the form for updating an existing plant."""
+        coordinator = self.hass.data[DOMAIN][self._config_entry.entry_id]["coordinator"]
+        plant = coordinator.plants.get(self._selected_plant_id)
+
+        if not plant:
+            return self.async_abort(reason="plant_not_found")
+
+        if user_input is not None:
+            try:
+                # Filter out empty values
+                update_data = {k: v for k, v in user_input.items() if v}
+                await self.plant_handler.async_update_plant(
+                    self._selected_plant_id, **update_data
+                )
+                return self.async_create_entry(title="", data={})
+            except Exception as err:
+                return self.async_show_form(
+                    step_id="update_plant",
+                    data_schema=self.plant_handler.get_update_plant_schema(plant, coordinator),
+                    errors={"base": str(err)},
+                )
+
+        return self.async_show_form(
+            step_id="update_plant",
+            data_schema=self.plant_handler.get_update_plant_schema(plant, coordinator),
+        )
+
+    # --- Strain Library Management (To be refactored later) ---
+
+    async def async_step_manage_strain_library(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Show the menu for managing the strain library."""
+        coordinator = self.hass.data[DOMAIN][self._config_entry.entry_id]["coordinator"]
+
+        if user_input is not None:
+            action = user_input.get("action")
+            if action == "add_strain":
+                return await self.async_step_add_strain()
+            if action == "edit_strain":
+                self._selected_strain_id = user_input.get("strain_id")
+                return await self.async_step_edit_strain()
+            if action == "delete_strain":
+                await coordinator.strain_library.async_delete_strain(user_input.get("strain_id"))
+                return self.async_show_form(
+                    step_id="manage_strain_library",
+                    data_schema=self._get_strain_library_menu_schema(coordinator),
+                )
+            if action == "import":
+                return await self.async_step_import_strain_library()
+            if action == "export":
+                return await self.async_step_export_strain_library()
+            if action == "back":
+                return self.async_show_form(
+                    step_id="init",
+                    data_schema=self._get_main_menu_schema(),
+                )
+
+        return self.async_show_form(
+            step_id="manage_strain_library",
+            data_schema=self._get_strain_library_menu_schema(coordinator),
+        )
+
+    def _get_strain_library_menu_schema(self, coordinator) -> vol.Schema:
+        """Build the schema for the strain library menu."""
+        strains = coordinator.strain_library.get_all_strains()
+        strain_options = [
+            selector.SelectOptionDict(value=s.id, label=s.name)
+            for s in strains
+        ]
+
+        schema = {
+            vol.Required("action"): selector.SelectSelector(
+                selector.SelectSelectorConfig(
+                    options=[
+                        selector.SelectOptionDict(value="add_strain", label="Add New Strain"),
+                        selector.SelectOptionDict(value="edit_strain", label="Edit Strain"),
+                        selector.SelectOptionDict(value="delete_strain", label="Delete Strain"),
+                        selector.SelectOptionDict(value="import", label="Import Library"),
+                        selector.SelectOptionDict(value="export", label="Export Library"),
+                        selector.SelectOptionDict(value="back", label="Back to Main Menu"),
+                    ],
+                    mode=selector.SelectSelectorMode.DROPDOWN,
+                )
+            )
+        }
+
+        if strain_options:
+            schema[vol.Optional("strain_id")] = selector.SelectSelector(
+                selector.SelectSelectorConfig(
+                    options=strain_options,
+                    mode=selector.SelectSelectorMode.DROPDOWN,
+                )
+            )
+
+        return vol.Schema(schema)
+
+    async def async_step_add_strain(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Show the form for adding a new strain."""
+        coordinator = self.hass.data[DOMAIN][self._config_entry.entry_id]["coordinator"]
+
+        if user_input is not None:
+            await coordinator.strain_library.async_add_strain(
+                name=user_input["strain"],
+                breeder=user_input.get("breeder"),
+                strain_type=user_input.get("type"),
+                sex=user_input.get("sex"),
+                description=user_input.get("description"),
+                flowering_days=user_input.get("flower_days_max"), # Simplified mapping
+            )
+            return await self.async_step_manage_strain_library()
+
+        return self.async_show_form(
+            step_id="add_strain",
+            data_schema=self._get_add_strain_schema(),
+        )
+
+    async def async_step_edit_strain(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Show the form for editing a strain."""
+        coordinator = self.hass.data[DOMAIN][self._config_entry.entry_id]["coordinator"]
+        strain = coordinator.strain_library.get_strain(self._selected_strain_id)
+
+        if user_input is not None:
+            # Update logic here
+            # For now, just return to menu as this is a placeholder restoration
+            return await self.async_step_manage_strain_library()
+
+        return self.async_show_form(
+            step_id="edit_strain",
+            data_schema=self._get_add_strain_schema(), # Reuse add schema for now
+        )
+
     def _get_add_strain_schema(self) -> vol.Schema:
         """Build the schema for adding a new strain."""
         return vol.Schema(
@@ -2421,3 +2661,13 @@ class OptionsFlowHandler(OptionsFlow):
                 ),
             }
         )
+
+    async def async_step_import_strain_library(self, user_input=None):
+        """Import strain library from ZIP."""
+        # Placeholder for import logic
+        return await self.async_step_manage_strain_library()
+
+    async def async_step_export_strain_library(self, user_input=None):
+        """Export strain library to ZIP."""
+        # Placeholder for export logic
+        return await self.async_step_manage_strain_library()
