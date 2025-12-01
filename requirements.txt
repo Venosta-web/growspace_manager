@@ -1,6 +1,8 @@
 # Home Assistant Core (Minimal)
 homeassistant
 aiosqlite
+Pillow
+python-dateutil
 voluptuous
 
 # Test Dependencies
