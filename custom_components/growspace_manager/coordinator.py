@@ -10,6 +10,7 @@ from .utils import (
     generate_growspace_grid,
     VPDCalculator,
     parse_date_field as util_parse_date_field,
+    calculate_plant_stage,
 )
 from .strain_library import StrainLibrary
 from .const import (
@@ -281,68 +282,6 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
     # UTILITY AND HELPER METHODS
     # =============================================================================
 
-    def _get_plant_stage(self, plant: Plant) -> str:
-        """Determine the current growth stage of the plant.
-
-        The stage is determined by a hierarchy: first by the special growspace
-        it's in, then by the most recent start date, and finally by the
-        explicitly set stage property.
-
-        Args:
-            plant: The Plant object to analyze.
-
-        Returns:
-            The determined stage as a string.
-        """
-        now = date.today()
-
-        # 1. Special growspaces override everything
-        if plant.growspace_id == "mother":
-            return "mother"
-        if plant.growspace_id == "clone":
-            return "clone"
-        if plant.growspace_id == "dry":
-            return "dry"
-        if plant.growspace_id == "cure":
-            return "cure"
-
-        # 2. Date-based progression (most advanced stage wins)
-        # Use util_parse_date_field to get date objects for comparison
-        if (
-            cs := util_parse_date_field(getattr(plant, "cure_start", None))
-        ) and cs <= now:
-            return "cure"
-        if (
-            ds := util_parse_date_field(getattr(plant, "dry_start", None))
-        ) and ds <= now:
-            return "dry"
-        if (
-            fs := util_parse_date_field(getattr(plant, "flower_start", None))
-        ) and fs <= now:
-            return "flower"
-        if (
-            vs := util_parse_date_field(getattr(plant, "veg_start", None))
-        ) and vs <= now:
-            return "veg"
-        if (
-            cs := util_parse_date_field(getattr(plant, "clone_start", None))
-        ) and cs <= now:
-            return "clone"
-        if (
-            ms := util_parse_date_field(getattr(plant, "mother_start", None))
-        ) and ms <= now:
-            return "mother"
-        if (
-            ss := util_parse_date_field(getattr(plant, "seedling_start", None))
-        ) and ss <= now:
-            return "seedling"
-
-        # 3. Fallback to explicitly set stage
-        if plant.stage in PLANT_STAGES:
-            return plant.stage
-
-        # Default
-        return "seedling"
 
     def get_plant(self, plant_id: str) -> Plant | None:
         """Retrieve a plant by its ID.
