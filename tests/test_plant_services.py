@@ -1421,7 +1421,7 @@ async def test_transition_plant_stage_success(
     mock_coordinator.async_transition_plant_stage.assert_called_once_with(
         plant_id="plant_1",
         new_stage="flower",
-        transition_date=datetime(2024, 1, 15, 0, 0),
+        transition_date="2024-01-15T00:00:00",
     )
     # mock_coordinator.async_save.assert_called_once()
     # mock_coordinator.async_request_refresh.assert_called_once()
@@ -1536,10 +1536,10 @@ async def test_transition_plant_stage_with_timezone(
     # Date strings are parsed to datetime objects. Input was 12:00:00Z.
     # We strip tzinfo for comparison as the test fixture might not have timezone setup perfectly or we want to compare naive.
     # Actually, let's just compare with what we expect: 12:00:00
-    actual_dt = call_kwargs["transition_date"]
-    if actual_dt.tzinfo:
-        actual_dt = actual_dt.replace(tzinfo=None)
-    assert actual_dt == datetime(2024, 1, 15, 12, 0)
+    actual_dt_str = call_kwargs["transition_date"]
+    # handle_transition_plant_stage converts to isoformat string
+    # Input was 12:00:00Z, so output should be 2024-01-15T12:00:00+00:00
+    assert actual_dt_str == "2024-01-15T12:00:00+00:00"
 
 
 @pytest.mark.asyncio
@@ -1607,7 +1607,10 @@ async def test_harvest_plant_success(
 
     # Assert
     mock_coordinator.async_harvest_plant.assert_called_once_with(
-        plant_id="plant_1", target_growspace_id="dry", transition_date=date(2024, 1, 15)
+        plant_id="plant_1",
+        target_growspace_id="dry",
+        target_growspace_name=None,
+        transition_date="2024-01-15",
     )
     # mock_coordinator.async_save.assert_called_once()
     # mock_coordinator.async_request_refresh.assert_called_once()
@@ -1674,7 +1677,10 @@ async def test_harvest_plant_entity_id_resolution(
 
     # Assert
     mock_coordinator.async_harvest_plant.assert_called_once_with(
-        plant_id="plant_1", target_growspace_id="dry", transition_date=None
+        plant_id="plant_1",
+        target_growspace_id="dry",
+        target_growspace_name=None,
+        transition_date=None,
     )
     # mock_coordinator.async_save.assert_called_once()
     # mock_coordinator.async_request_refresh.assert_called_once()
@@ -1838,8 +1844,8 @@ async def test_harvest_plant_with_timezone(
     await handle_harvest_plant(hass, mock_coordinator, mock_strain_library, call)
 
     call_kwargs = mock_coordinator.async_harvest_plant.call_args.kwargs
-    # handle_harvest_plant converts datetime to date
-    assert call_kwargs["transition_date"] == date(2024, 1, 15)
+    # handle_harvest_plant converts datetime to date then to isoformat string
+    assert call_kwargs["transition_date"] == "2024-01-15"
 
 
 @pytest.mark.asyncio

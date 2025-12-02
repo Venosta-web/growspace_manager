@@ -193,45 +193,7 @@ class BayesianEnvironmentSensor(BinarySensorEntity):
         veg_days = stage_info["veg_days"]
         flower_days = stage_info["flower_days"]
 
-        # Lights-Aware Logic
-        light_sensor = self.env_config.get("light_sensor")
-        current_lights_on = None
-        if light_sensor:
-            light_state = self.hass.states.get(light_sensor)
-            if light_state:
-                if light_state.domain == "sensor":
-                    sensor_value = self._get_sensor_value(light_sensor)
-                    if sensor_value is not None:
-                        current_lights_on = bool(sensor_value > 0)
-                else:
-                    current_lights_on = light_state.state == "on"
-
-        # Apply 5-minute gradient/hysteresis for light state changes
-        now = utcnow()
-        if self._last_light_state is None:
-            # First run, initialize
-            self._last_light_state = current_lights_on
-            self._last_light_change_time = now
-        elif current_lights_on != self._last_light_state:
-            # State changed, update tracking
-            self._last_light_state = current_lights_on
-            self._last_light_change_time = now
-
-        # Determine effective light state for logic
-        is_lights_on = current_lights_on
-        if self._last_light_change_time and (
-            now - self._last_light_change_time
-        ) < timedelta(minutes=5):
-            # In transition period, use the PREVIOUS state (inverse of current)
-            # This prevents immediate stress alerts when lights toggle
-            if current_lights_on is not None:
-                is_lights_on = not current_lights_on
-            _LOGGER.debug(
-                "In light transition period for %s. Actual: %s, Effective: %s",
-                self.growspace_id,
-                current_lights_on,
-                is_lights_on,
-            )
+        is_lights_on = self._determine_light_state()
 
         fan_entity = self.env_config.get("circulation_fan")
         fan_off = bool(
@@ -280,6 +242,48 @@ class BayesianEnvironmentSensor(BinarySensorEntity):
             exhaust_value=exhaust_value,
             humidifier_value=humidifier_value,
         )
+
+    def _determine_light_state(self) -> bool | None:
+        """Determine the effective light state with hysteresis."""
+        light_sensor = self.env_config.get("light_sensor")
+        current_lights_on = None
+        if light_sensor:
+            light_state = self.hass.states.get(light_sensor)
+            if light_state:
+                if light_state.domain == "sensor":
+                    sensor_value = self._get_sensor_value(light_sensor)
+                    if sensor_value is not None:
+                        current_lights_on = bool(sensor_value > 0)
+                else:
+                    current_lights_on = light_state.state == "on"
+
+        # Apply 5-minute gradient/hysteresis for light state changes
+        now = utcnow()
+        if self._last_light_state is None:
+            # First run, initialize
+            self._last_light_state = current_lights_on
+            self._last_light_change_time = now
+        elif current_lights_on != self._last_light_state:
+            # State changed, update tracking
+            self._last_light_state = current_lights_on
+            self._last_light_change_time = now
+
+        # Determine effective light state for logic
+        is_lights_on = current_lights_on
+        if self._last_light_change_time and (
+            now - self._last_light_change_time
+        ) < timedelta(minutes=5):
+            # In transition period, use the PREVIOUS state (inverse of current)
+            # This prevents immediate stress alerts when lights toggle
+            if current_lights_on is not None:
+                is_lights_on = not current_lights_on
+            _LOGGER.debug(
+                "In light transition period for %s. Actual: %s, Effective: %s",
+                self.growspace_id,
+                current_lights_on,
+                is_lights_on,
+            )
+        return is_lights_on
 
     async def async_added_to_hass(self) -> None:
         """Register callbacks when the entity is added to Home Assistant."""
@@ -543,7 +547,7 @@ class BayesianStressSensor(BayesianEnvironmentSensor):
                 )
 
         self._probability = self._calculate_bayesian_probability(
-            self.prior, observations
+            float(self.prior or 0.5), observations
         )
         self.async_write_ha_state()
 
@@ -757,7 +761,7 @@ class BayesianDryingSensor(BayesianEnvironmentSensor):
                 )
 
         self._probability = self._calculate_bayesian_probability(
-            self.prior, observations
+            float(self.prior or 0.5), observations
         )
         self.async_write_ha_state()
 
@@ -810,7 +814,7 @@ class BayesianCuringSensor(BayesianEnvironmentSensor):
                 )
 
         self._probability = self._calculate_bayesian_probability(
-            self.prior, observations
+            float(self.prior or 0.5), observations
         )
         self.async_write_ha_state()
 
@@ -857,65 +861,7 @@ class BayesianMoldRiskSensor(BayesianEnvironmentSensor):
         self._sensor_states.update(trend_states)
 
         if state.flower_days >= 35:
-            prob = (0.80, 0.20)
-            observations.append(prob)
-            self._reasons.append((prob[0], "Late Flower"))
-
-            if state.temp is not None and 16 < state.temp < 23:
-                prob = self.env_config.get("prob_mold_temp_danger_zone", (0.85, 0.30))
-                observations.append(prob)
-                self._reasons.append((prob[0], f"Temp in danger zone ({state.temp})"))
-
-            if not state.is_lights_on:
-                prob = self.env_config.get("prob_mold_lights_off", (0.75, 0.30))
-                observations.append(prob)
-                self._reasons.append((prob[0], "Lights Off"))
-                if state.humidity is not None and state.humidity > 60:
-                    prob = self.env_config.get(
-                        "prob_mold_humidity_high_night", (0.99, 0.10)
-                    )
-                    observations.append(prob)
-                    self._reasons.append(
-                        (prob[0], f"Night Humidity High ({state.humidity})")
-                    )
-                if state.vpd is not None and state.vpd < 0.8:
-                    prob = self.env_config.get("prob_mold_vpd_low_night", (0.95, 0.20))
-                    observations.append(prob)
-                    self._reasons.append((prob[0], f"Night VPD Low ({state.vpd})"))
-            else:  # Daytime checks
-                if state.humidity is not None and state.humidity > 60:
-                    prob = self.env_config.get(
-                        "prob_mold_humidity_high_day", (0.95, 0.20)
-                    )
-                    observations.append(prob)
-                    self._reasons.append(
-                        (prob[0], f"Day Humidity High ({state.humidity})")
-                    )
-                if state.vpd is not None and state.vpd < 0.9:
-                    prob = self.env_config.get("prob_mold_vpd_low_day", (0.90, 0.25))
-                    observations.append(prob)
-                    self._reasons.append((prob[0], f"Day VPD Low ({state.vpd})"))
-            if state.fan_off:
-                prob = self.env_config.get("prob_mold_fan_off", (0.80, 0.15))
-                observations.append(prob)
-                self._reasons.append((prob[0], "Circulation Fan Off"))
-
-            # Stagnant Air: Low exhaust during late flower
-            if state.exhaust_value is not None and state.exhaust_value < 10:
-                observations.append(PROB_MOLD_STAGNANT_AIR)
-                self._reasons.append(
-                    (
-                        PROB_MOLD_STAGNANT_AIR[0],
-                        f"Stagnant Air (Exhaust {state.exhaust_value}%)",
-                    )
-                )
-
-            # Humidifier Risk: Humidifier running in late flower
-            if state.humidifier_value is not None and state.humidifier_value > 0:
-                observations.append(PROB_MOLD_HUMIDIFIER_ON)
-                self._reasons.append(
-                    (PROB_MOLD_HUMIDIFIER_ON[0], "Humidifier ON in Late Flower")
-                )
+            self._evaluate_late_flower_mold_risk(state, observations)
 
         # Control Saturation: Dehumidifier running but humidity still high
         if state.dehumidifier_on and state.humidity is not None and state.humidity > 60:
@@ -926,9 +872,68 @@ class BayesianMoldRiskSensor(BayesianEnvironmentSensor):
             )
 
         self._probability = self._calculate_bayesian_probability(
-            self.prior, observations
+            float(self.prior or 0.5), observations
         )
         self.async_write_ha_state()
+
+    def _evaluate_late_flower_mold_risk(self, state, observations):
+        """Evaluate mold risk factors specific to late flower stage."""
+        prob = (0.80, 0.20)
+        observations.append(prob)
+        self._reasons.append((prob[0], "Late Flower"))
+
+        if state.temp is not None and 16 < state.temp < 23:
+            prob = self.env_config.get("prob_mold_temp_danger_zone", (0.85, 0.30))
+            observations.append(prob)
+            self._reasons.append((prob[0], f"Temp in danger zone ({state.temp})"))
+
+        if not state.is_lights_on:
+            prob = self.env_config.get("prob_mold_lights_off", (0.75, 0.30))
+            observations.append(prob)
+            self._reasons.append((prob[0], "Lights Off"))
+            if state.humidity is not None and state.humidity > 60:
+                prob = self.env_config.get(
+                    "prob_mold_humidity_high_night", (0.99, 0.10)
+                )
+                observations.append(prob)
+                self._reasons.append(
+                    (prob[0], f"Night Humidity High ({state.humidity})")
+                )
+            if state.vpd is not None and state.vpd < 0.8:
+                prob = self.env_config.get("prob_mold_vpd_low_night", (0.95, 0.20))
+                observations.append(prob)
+                self._reasons.append((prob[0], f"Night VPD Low ({state.vpd})"))
+        else:  # Daytime checks
+            if state.humidity is not None and state.humidity > 60:
+                prob = self.env_config.get("prob_mold_humidity_high_day", (0.95, 0.20))
+                observations.append(prob)
+                self._reasons.append((prob[0], f"Day Humidity High ({state.humidity})"))
+            if state.vpd is not None and state.vpd < 0.9:
+                prob = self.env_config.get("prob_mold_vpd_low_day", (0.90, 0.25))
+                observations.append(prob)
+                self._reasons.append((prob[0], f"Day VPD Low ({state.vpd})"))
+        if state.fan_off:
+            prob = self.env_config.get("prob_mold_fan_off", (0.80, 0.15))
+            observations.append(prob)
+            self._reasons.append((prob[0], "Circulation Fan Off"))
+
+        # Stagnant Air: Low exhaust during late flower
+        # TODO checking for <7 is more then enough also ommit the % and use x/10
+        if state.exhaust_value is not None and state.exhaust_value < 7:
+            observations.append(PROB_MOLD_STAGNANT_AIR)
+            self._reasons.append(
+                (
+                    PROB_MOLD_STAGNANT_AIR[0],
+                    f"Stagnant Air (Exhaust {state.exhaust_value}/10)",
+                )
+            )
+
+        # Humidifier Risk: Humidifier running in late flower
+        if state.humidifier_value is not None and state.humidifier_value > 0:
+            observations.append(PROB_MOLD_HUMIDIFIER_ON)
+            self._reasons.append(
+                (PROB_MOLD_HUMIDIFIER_ON[0], "Humidifier ON in Late Flower")
+            )
 
 
 class BayesianOptimalConditionsSensor(BayesianEnvironmentSensor):
@@ -986,6 +991,6 @@ class BayesianOptimalConditionsSensor(BayesianEnvironmentSensor):
             self._reasons.append((prob[0], "System Fighting (Dehumidifier ON)"))
 
         self._probability = self._calculate_bayesian_probability(
-            self.prior, observations
+            float(self.prior or 0.5), observations
         )
         self.async_write_ha_state()

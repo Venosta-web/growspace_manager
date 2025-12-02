@@ -7,6 +7,7 @@ and unloaded within Home Assistant.
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from aiohttp import BodyPartReader
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import entity_registry as er
 from pytest_homeassistant_custom_component.common import MockConfigEntry
@@ -498,7 +499,7 @@ async def test_strain_library_upload_view(mock_hass):
     assert response.text == "No file provided"
 
     # Test successful upload
-    mock_field = AsyncMock()
+    mock_field = AsyncMock(spec=BodyPartReader)
     mock_field.name = "file"
     mock_field.read_chunk = AsyncMock(side_effect=[b"some data", b""])
     mock_reader.next = AsyncMock(return_value=mock_field)

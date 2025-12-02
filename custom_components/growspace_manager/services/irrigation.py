@@ -1,4 +1,5 @@
 """Service handlers for irrigation-related services."""
+
 import logging
 from typing import TYPE_CHECKING
 
@@ -38,7 +39,7 @@ async def _get_irrigation_coordinator(
     except KeyError:
         raise ServiceValidationError(
             "Irrigation coordinators not found. Setup may be incomplete."
-        )
+        ) from None
 
 
 async def handle_set_irrigation_settings(
@@ -118,6 +119,4 @@ async def handle_remove_drain_time(
     """Handle the service call to remove a drain time from a schedule."""
     growspace_id = call.data["growspace_id"]
     irrigation_coord = await _get_irrigation_coordinator(hass, growspace_id)
-    await irrigation_coord.async_remove_schedule_item(
-        "drain_times", call.data["time"]
-    )
+    await irrigation_coord.async_remove_schedule_item("drain_times", call.data["time"])

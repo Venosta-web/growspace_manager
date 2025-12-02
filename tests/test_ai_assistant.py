@@ -101,9 +101,8 @@ async def test_get_grow_advice_no_ai_config(
     """Test getting advice with AI disabled."""
     mock_coordinator.options = {}
 
-    response = await assistant.get_grow_advice(GROWSPACE_ID, "Query")
-
-    assert "AI Assistant not configured" in response
+    with pytest.raises(ServiceValidationError, match="AI assistant is not enabled"):
+        await assistant.get_grow_advice(GROWSPACE_ID, "Query")
 
 
 async def test_get_grow_advice_empty_response(
@@ -115,12 +114,11 @@ async def test_get_grow_advice_empty_response(
         mock_result.response.speech = {"plain": {"speech": ""}}  # Empty
         mock_converse.return_value = mock_result
 
-        # Should catch ServiceValidationError and return error string
-        response = await assistant.get_grow_advice(GROWSPACE_ID, "Query")
-
-        # The error message format is: "AI Assistant Error: AI assistant returned an empty response\n\nRaw Data:..."
-        assert "AI Assistant Error" in response
-        assert "AI assistant returned an empty response" in response
+        # Should raise ServiceValidationError
+        with pytest.raises(
+            ServiceValidationError, match="AI assistant returned an empty response"
+        ):
+            await assistant.get_grow_advice(GROWSPACE_ID, "Query")
 
 
 async def test_handle_ask_grow_advice(mock_hass, mock_coordinator, mock_strain_library):

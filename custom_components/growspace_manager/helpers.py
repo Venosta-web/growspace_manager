@@ -4,6 +4,7 @@ This file contains utility functions for creating and managing Home Assistant
 entities, such as trend and statistics sensors, that are used by the main
 integration components.
 """
+
 from __future__ import annotations
 
 import logging
@@ -19,7 +20,11 @@ _LOGGER = logging.getLogger(__name__)
 
 
 async def async_setup_trend_sensor(
-    hass: HomeAssistant, source_sensor_entity_id: str, growspace_id: str, growspace_name: str, sensor_type: str
+    hass: HomeAssistant,
+    source_sensor_entity_id: str,
+    growspace_id: str,
+    growspace_name: str,
+    sensor_type: str,
 ) -> str | None:
     """Set up a trend binary sensor to monitor the gradient of a source sensor.
 
@@ -38,14 +43,17 @@ async def async_setup_trend_sensor(
     """
     entity_registry = er.async_get(hass)
     if not entity_registry.async_get(source_sensor_entity_id):
-        _LOGGER.warning(f"Source sensor {source_sensor_entity_id} not found in entity registry for trend sensor setup")
+        _LOGGER.warning(
+            "Source sensor %s not found in entity registry for trend sensor setup",
+            source_sensor_entity_id,
+        )
         return None
 
     name = f"{growspace_name} {sensor_type.replace('_', ' ').title()} Trend"
     unique_id = f"{DOMAIN}_{growspace_id}_{sensor_type}_trend"
 
     if entity_registry.async_get_entity_id("binary_sensor", "trend", unique_id):
-        _LOGGER.debug(f"Trend sensor with unique_id {unique_id} already exists.")
+        _LOGGER.debug("Trend sensor with unique_id %s already exists.", unique_id)
         return unique_id
 
     config = {
@@ -65,12 +73,16 @@ async def async_setup_trend_sensor(
         {},
         {"binary_sensor": [config]},
     )
-    _LOGGER.info(f"Setting up trend sensor: {name}")
+    _LOGGER.info("Setting up trend sensor: %s", name)
     return unique_id
 
 
 async def async_setup_statistics_sensor(
-    hass: HomeAssistant, source_sensor_entity_id: str, growspace_id: str, growspace_name: str, sensor_type: str
+    hass: HomeAssistant,
+    source_sensor_entity_id: str,
+    growspace_id: str,
+    growspace_name: str,
+    sensor_type: str,
 ) -> str | None:
     """Set up a statistics sensor to calculate metrics for a source sensor.
 
@@ -90,14 +102,17 @@ async def async_setup_statistics_sensor(
     """
     entity_registry = er.async_get(hass)
     if not entity_registry.async_get(source_sensor_entity_id):
-        _LOGGER.warning(f"Source sensor {source_sensor_entity_id} not found for statistics sensor setup")
+        _LOGGER.warning(
+            "Source sensor %s not found for statistics sensor setup",
+            source_sensor_entity_id,
+        )
         return None
 
     name = f"{growspace_name} {sensor_type.replace('_', ' ').title()} Stats"
     unique_id = f"{DOMAIN}_{growspace_id}_{sensor_type}_stats"
 
     if entity_registry.async_get_entity_id("sensor", "statistics", unique_id):
-        _LOGGER.debug(f"Statistics sensor with unique_id {unique_id} already exists.")
+        _LOGGER.debug("Statistics sensor with unique_id %s already exists.", unique_id)
         return unique_id
 
     config = {
@@ -112,9 +127,9 @@ async def async_setup_statistics_sensor(
     await async_load_platform(
         hass,
         "statistics",  # <-- Platform name
-        "sensor",      # <-- Entity domain
+        "sensor",  # <-- Entity domain
         config,
-        {DOMAIN: config}
+        {DOMAIN: config},
     )
-    _LOGGER.info(f"Setting up statistics sensor: {name}")
+    _LOGGER.info("Setting up statistics sensor: %s", name)
     return unique_id

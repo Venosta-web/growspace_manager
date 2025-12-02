@@ -6,7 +6,6 @@ import logging
 from typing import Any
 
 import voluptuous as vol
-from homeassistant.components import conversation
 from homeassistant.helpers import selector
 
 from ..const import (

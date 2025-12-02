@@ -1,11 +1,9 @@
 """Tests for the environment service handlers."""
 
 from unittest.mock import AsyncMock, Mock, patch
-
 import pytest
 from homeassistant.core import HomeAssistant
 
-from custom_components.growspace_manager.const import DOMAIN
 from custom_components.growspace_manager.services.environment import (
     handle_configure_environment,
     handle_remove_environment,
@@ -113,7 +111,7 @@ async def test_handle_remove_environment_success(
             hass, mock_coordinator, mock_strain_library, call
         )
 
-        assert growspace.environment_config is None
+        assert growspace.environment_config == {}
         mock_coordinator.async_save.assert_called_once()
         mock_coordinator.async_refresh.assert_called_once()
         mock_notify.assert_called_once()

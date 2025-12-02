@@ -18,5 +18,6 @@
     "aiosqlite",
     "Pillow"
   ],
+  "quality_scale": "silver",
   "version": "0.2.2.2"
 }

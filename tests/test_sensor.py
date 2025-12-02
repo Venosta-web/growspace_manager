@@ -11,6 +11,7 @@ from datetime import date, timedelta
 from unittest.mock import AsyncMock, MagicMock, Mock, patch
 
 import pytest
+
 from custom_components.growspace_manager import sensor as sensor_module
 from custom_components.growspace_manager.const import DOMAIN
 from custom_components.growspace_manager.sensor import (
@@ -366,6 +367,7 @@ async def test_async_setup_entry_dynamic_updates(mock_coordinator):
 
     gs_entity.async_remove = AsyncMock()
     plant_entity.async_remove = AsyncMock()
+    plant_entity.registry_entry = Mock(entity_id="sensor.plant_entity")
 
     # Mock entity registry for plant removal
     mock_registry = MagicMock()

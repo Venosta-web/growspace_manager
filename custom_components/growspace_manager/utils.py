@@ -119,9 +119,7 @@ class VPDCalculator:
             return None
 
         # Magnus formula to calculate saturation vapor pressure (SVP) in kPa
-        svp = 0.61094 * math.exp(
-            (17.625 * temperature_c) / (243.04 + temperature_c)
-        )
+        svp = 0.61094 * math.exp((17.625 * temperature_c) / (243.04 + temperature_c))
 
         # Calculate actual vapor pressure (AVP)
         avp = svp * (humidity_rh / 100)
@@ -184,44 +182,47 @@ def calculate_plant_stage(plant: Plant) -> str:
     Returns:
         The determined stage as a string.
     """
+    if stage := _get_stage_from_growspace(plant):
+        return stage
+
+    if stage := _get_stage_from_dates(plant):
+        return stage
+
+    if stage := _get_stage_fallback(plant):
+        return stage
+
+    return "seedling"
+
+
+def _get_stage_from_growspace(plant: Plant) -> str | None:
+    """Check if the plant is in a special growspace that dictates its stage."""
+    if plant.growspace_id in ("mother", "clone", "dry", "cure"):
+        return plant.growspace_id
+    return None
+
+
+def _get_stage_from_dates(plant: Plant) -> str | None:
+    """Determine stage based on start dates, prioritizing the most advanced stage."""
     now = datetime.now()
+    # Check in reverse order of progression (most advanced first)
+    dates = [
+        (plant.cure_start, "cure"),
+        (plant.dry_start, "dry"),
+        (plant.flower_start, "flower"),
+        (plant.veg_start, "veg"),
+        (plant.clone_start, "clone"),
+        (plant.mother_start, "mother"),
+        (plant.seedling_start, "seedling"),
+    ]
+    for date_val, stage in dates:
+        if (dt := parse_date_field(date_val)) and dt <= now:
+            return stage
+    return None
 
-    # 1. Special growspaces override everything
-    if plant.growspace_id == "mother":
-        return "mother"
-    if plant.growspace_id == "clone":
-        return "clone"
-    if plant.growspace_id == "dry":
-        return "dry"
-    if plant.growspace_id == "cure":
-        return "cure"
 
-    # 2. Date-based progression (most advanced stage wins)
-    cure_start = parse_date_field(plant.cure_start)
-    dry_start = parse_date_field(plant.dry_start)
-    flower_start = parse_date_field(plant.flower_start)
-    veg_start = parse_date_field(plant.veg_start)
-    clone_start = parse_date_field(plant.clone_start)
-    mother_start = parse_date_field(plant.mother_start)
-    seedling_start = parse_date_field(plant.seedling_start)
-
-    if cure_start and cure_start <= now:
-        return "cure"
-    if dry_start and dry_start <= now:
-        return "dry"
-    if flower_start and flower_start <= now:
-        return "flower"
-    if veg_start and veg_start <= now:
-        return "veg"
-    if clone_start and clone_start <= now:
-        return "clone"
-    if mother_start and mother_start <= now:
-        return "mother"
-    if seedling_start and seedling_start <= now:
-        return "seedling"
-
-    # 3. Fallback to explicitly set stage if none of the above applies
-    if plant.stage in [
+def _get_stage_fallback(plant: Plant) -> str | None:
+    """Fallback to the explicitly set stage if it's valid."""
+    valid_stages = {
         "seedling",
         "mother",
         "clone",
@@ -229,8 +230,7 @@ def calculate_plant_stage(plant: Plant) -> str:
         "flower",
         "dry",
         "cure",
-    ]:
+    }
+    if plant.stage in valid_stages:
         return plant.stage
-
-    # Default
-    return "seedling"
+    return None

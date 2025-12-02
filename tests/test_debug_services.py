@@ -7,12 +7,18 @@ from homeassistant.core import HomeAssistant, ServiceCall
 
 from custom_components.growspace_manager.coordinator import GrowspaceCoordinator
 from custom_components.growspace_manager.services.debug import (
+    _consolidate_plants_to_canonical_growspace,
+    _handle_reset_cure_growspace,
+    _handle_reset_dry_growspace,
+    _migrate_plants_from_legacy_growspace,
+    _restore_plants_to_canonical_growspace,
     debug_cleanup_legacy,
     debug_consolidate_duplicate_special,
     debug_list_growspaces,
     debug_reset_special_growspaces,
     handle_test_notification,
 )
+from custom_components.growspace_manager.models import Plant
 from custom_components.growspace_manager.strain_library import StrainLibrary
 
 
@@ -45,6 +51,13 @@ def mock_coordinator():
     coordinator.find_first_available_position = MagicMock()
     coordinator._find_first_available_position = MagicMock()
     coordinator._ensure_special_growspace = MagicMock()
+
+    # Mock validator
+    coordinator.validator = MagicMock()
+    coordinator.validator.find_first_available_position = (
+        coordinator.find_first_available_position
+    )
+
     return coordinator
 
 
@@ -363,12 +376,6 @@ async def test_debug_consolidate_duplicate_special_with_missing_canonical_and_mu
             mock_coordinator.async_save.assert_awaited_once()
 
 
-from custom_components.growspace_manager.models import Plant
-from custom_components.growspace_manager.services.debug import (
-    _migrate_plants_from_legacy_growspace,
-)
-
-
 @pytest.mark.asyncio
 async def test_migrate_plants_from_legacy_growspace_find_position_exception(
     mock_coordinator,
@@ -385,7 +392,7 @@ async def test_migrate_plants_from_legacy_growspace_find_position_exception(
     mock_coordinator.get_growspace_plants.return_value = [
         MagicMock(spec=Plant, plant_id="p1", strain="Test Strain", row=1, col=1)
     ]
-    mock_coordinator.find_first_available_position.side_effect = Exception(
+    mock_coordinator.find_first_available_position.side_effect = ValueError(
         "No position"
     )
 
@@ -446,7 +453,7 @@ async def test_migrate_plants_from_legacy_growspace_success(
     )
     mock_coordinator.plants = {"p1": mock_plant}
     mock_coordinator.get_growspace_plants.return_value = [mock_plant]
-    mock_coordinator._find_first_available_position.return_value = (2, 2)
+    mock_coordinator.find_first_available_position.return_value = (2, 2)
 
     await _migrate_plants_from_legacy_growspace(
         mock_coordinator, legacy_id, canonical_id, migrated_plants_info
@@ -457,11 +464,6 @@ async def test_migrate_plants_from_legacy_growspace_success(
     assert mock_plant.col == 2
     assert migrated_plants_info == ["Test Strain (p1) to dry at (2,2)"]
     assert legacy_id not in mock_coordinator.growspaces
-
-
-from custom_components.growspace_manager.services.debug import (
-    _restore_plants_to_canonical_growspace,
-)
 
 
 @pytest.mark.asyncio
@@ -478,7 +480,7 @@ async def test_restore_plants_to_canonical_growspace_find_position_exception(
     mock_coordinator.plants = {
         "p1": Plant(plant_id="p1", growspace_id="old_dry", strain="test")
     }
-    mock_coordinator.find_first_available_position.side_effect = Exception(
+    mock_coordinator.find_first_available_position.side_effect = ValueError(
         "No position"
     )
 
@@ -529,7 +531,7 @@ async def test_restore_plants_to_canonical_growspace_success(
         spec=Plant, plant_id="p1", growspace_id="old_dry", strain="test", row=1, col=1
     )
     mock_coordinator.plants = {"p1": mock_plant}
-    mock_coordinator._find_first_available_position.return_value = (2, 2)
+    mock_coordinator.find_first_available_position.return_value = (2, 2)
 
     with patch(
         "custom_components.growspace_manager.services.debug._LOGGER.debug"
@@ -548,12 +550,6 @@ async def test_restore_plants_to_canonical_growspace_success(
             2,
             "(1,1)",
         )
-
-
-from custom_components.growspace_manager.services.debug import (
-    _handle_reset_cure_growspace,
-    _handle_reset_dry_growspace,
-)
 
 
 @pytest.mark.asyncio
@@ -744,11 +740,6 @@ async def test_handle_reset_cure_growspace_preserve_plants_with_plants(
         )
 
 
-from custom_components.growspace_manager.services.debug import (
-    _consolidate_plants_to_canonical_growspace,
-)
-
-
 @pytest.mark.asyncio
 async def test_consolidate_plants_to_canonical_growspace_find_position_exception(
     mock_coordinator,
@@ -772,7 +763,7 @@ async def test_consolidate_plants_to_canonical_growspace_find_position_exception
     mock_coordinator.get_growspace_plants.return_value = [
         MagicMock(spec=Plant, plant_id="p1", strain="Test Strain", row=1, col=1)
     ]
-    mock_coordinator.find_first_available_position.side_effect = Exception(
+    mock_coordinator.find_first_available_position.side_effect = ValueError(
         "No position"
     )
 

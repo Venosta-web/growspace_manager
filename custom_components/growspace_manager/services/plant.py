@@ -496,7 +496,7 @@ async def handle_move_clone(
             col=col,
             stage="veg",  # Transitioning clone to veg
             clone_start=plant.clone_start,  # Keep original clone start date if it exists
-            source_mother=plant.source_mother,
+            source_mother=plant.source_mother or "",
             veg_start=transition_date,  # Set veg start date to transition date
         )
 
@@ -882,7 +882,7 @@ async def handle_transition_plant_stage(
         await coordinator.async_transition_plant_stage(
             plant_id=plant_id,
             new_stage=new_stage,
-            transition_date=transition_date,
+            transition_date=transition_date.isoformat() if transition_date else None,
         )
         _LOGGER.info("Plant %s transitioned to %s stage", plant_id, new_stage)
 
@@ -950,7 +950,8 @@ async def handle_harvest_plant(
         await coordinator.async_harvest_plant(
             plant_id=plant_id,
             target_growspace_id=target_growspace_id,
-            transition_date=transition_date,
+            target_growspace_name=None,
+            transition_date=transition_date.isoformat() if transition_date else None,
         )
         _LOGGER.info("Plant %s harvested successfully", plant_id)
 

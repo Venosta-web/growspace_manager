@@ -295,7 +295,7 @@ class StrainLibrary:
             "indica_percentage": indica_percentage,
         }
         strain_data = {k: v for k, v in strain_data.items() if v is not None}
-        fields = ", ".join(["strain_name"] + list(strain_data.keys()))
+        fields = ", ".join(["strain_name"] + list(strain_data))
         placeholders = ", ".join(["?"] * (len(strain_data) + 1))
         query = f"""
             INSERT OR REPLACE INTO strains ({fields})
@@ -308,7 +308,7 @@ class StrainLibrary:
                 sativa_percentage=COALESCE(excluded.sativa_percentage, sativa_percentage),
                 indica_percentage=COALESCE(excluded.indica_percentage, indica_percentage)
             WHERE strain_name = excluded.strain_name
-        """
+        """  # noqa: S608
         await self._db.execute(query, (strain,) + tuple(strain_data.values()))
         await self._db.commit()
         # Get strain_id
@@ -352,7 +352,7 @@ class StrainLibrary:
 
             # Build dynamic SET clause
             set_clause = ", ".join(
-                [f"{k}=COALESCE(excluded.{k}, {k})" for k in pheno_data.keys()]
+                [f"{k}=COALESCE(excluded.{k}, {k})" for k in pheno_data]
             )
 
             query = f"""
@@ -360,7 +360,7 @@ class StrainLibrary:
                 VALUES ({pheno_placeholders})
                 ON CONFLICT(strain_id, phenotype_name) DO UPDATE SET
                     {set_clause}
-            """
+            """  # noqa: S608
             await self._db.execute(
                 query, (strain_id, phenotype) + tuple(pheno_data.values())
             )

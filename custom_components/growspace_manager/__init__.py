@@ -7,7 +7,7 @@ import os
 import tempfile
 
 import homeassistant.helpers.config_validation as cv
-from aiohttp import web
+from aiohttp import BodyPartReader, web
 from homeassistant.components.http import HomeAssistantView
 from homeassistant.components.persistent_notification import (
     async_create as create_notification,
@@ -97,7 +97,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     )
 
     # Initialize Storage and Coordinator
-    store = Store(hass, STORAGE_VERSION, STORAGE_KEY)
+    store: Store = Store(hass, STORAGE_VERSION, STORAGE_KEY)
     data = await store.async_load() or {}
 
     # Initialize and load Strain Library (global instance)
@@ -111,7 +111,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     coordinator = GrowspaceCoordinator(
         hass,
         data,
-        options=entry.options,
+        options=dict(entry.options),
         strain_library=strain_library_instance,
     )
     await coordinator.async_load()  # Load data into the coordinator
@@ -533,7 +533,13 @@ class StrainLibraryUploadView(HomeAssistantView):
         reader = await request.multipart()
         file_field = await reader.next()
 
-        if not file_field or file_field.name != "file":
+        if not file_field:
+            return web.Response(status=400, text="No file provided")
+
+        if not isinstance(file_field, BodyPartReader):
+            return web.Response(status=400, text="Invalid file upload type")
+
+        if file_field.name != "file":
             return web.Response(status=400, text="No file provided")
 
         # 2. Save to temp file
