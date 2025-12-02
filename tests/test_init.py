@@ -462,7 +462,7 @@ async def test_async_unload_entry_with_coordinators(mock_hass):
     mock_irrigation.async_cancel_listeners = MagicMock()
 
     mock_dehumidifier = MagicMock()
-    mock_dehumidifier.async_cancel_listeners = MagicMock()
+    mock_dehumidifier.unload = MagicMock()
 
     mock_hass.data[DOMAIN] = {
         entry.entry_id: {
@@ -476,7 +476,7 @@ async def test_async_unload_entry_with_coordinators(mock_hass):
     assert await async_unload_entry(mock_hass, entry)
 
     mock_irrigation.async_cancel_listeners.assert_called_once()
-    mock_dehumidifier.async_cancel_listeners.assert_called_once()
+    mock_dehumidifier.unload.assert_called_once()
 
 
 @pytest.mark.asyncio
