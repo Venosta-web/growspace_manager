@@ -8,6 +8,7 @@ from homeassistant.components.persistent_notification import (
     async_create as create_notification,
 )
 from homeassistant.core import HomeAssistant, ServiceCall
+from homeassistant.exceptions import ServiceValidationError
 from homeassistant.helpers import entity_registry as er
 
 from ..const import DATE_FIELDS, DOMAIN  # Ensure DATE_FIELDS is imported
@@ -151,12 +152,10 @@ async def _ensure_plant_loaded(
         _LOGGER.error(
             "Plant %s still does not exist after storage reload attempt.", plant_id
         )
-        create_notification(
-            hass,
-            f"Plant {plant_id} not found and could not be reloaded from storage.",
-            title="Growspace Manager Error",
+        raise ServiceValidationError(
+            f"Plant {plant_id} not found and could not be reloaded from storage."
         )
-        return False
+    return True
 
     return True
 
@@ -175,12 +174,7 @@ async def handle_add_plant(
         growspace_id = call.data["growspace_id"]
         if growspace_id not in coordinator.growspaces:
             _LOGGER.error("Growspace %s does not exist for add_plant", growspace_id)
-            create_notification(
-                hass,
-                f"Growspace '{growspace_id}' not found.",
-                title="Growspace Manager Error",
-            )
-            return
+            raise ServiceValidationError(f"Growspace '{growspace_id}' not found.")
 
         growspace = coordinator.growspaces[growspace_id]
 
@@ -201,12 +195,9 @@ async def handle_add_plant(
                 growspace.plants_per_row,
                 growspace_id,
             )
-            create_notification(
-                hass,
-                f"Position ({row},{col}) is outside growspace '{growspace_id}' bounds.",
-                title="Growspace Manager Error",
+            raise ServiceValidationError(
+                f"Position ({row},{col}) is outside growspace '{growspace_id}' bounds."
             )
-            return
 
         # Check if position is occupied
         existing_plants = coordinator.get_growspace_plants(growspace_id)
@@ -218,12 +209,9 @@ async def handle_add_plant(
                     col,
                     growspace_id,
                 )
-                create_notification(
-                    hass,
-                    f"Position ({row},{col}) in growspace '{growspace_id}' is already occupied.",
-                    title="Growspace Manager Error",
+                raise ServiceValidationError(
+                    f"Position ({row},{col}) in growspace '{growspace_id}' is already occupied."
                 )
-                return
 
         # Parse and handle optional dates
         # Parse and handle optional dates
@@ -283,11 +271,6 @@ async def handle_add_plant(
 
     except Exception as err:
         _LOGGER.exception("Failed to add plant: %s", err)
-        create_notification(
-            hass,
-            f"Failed to add plant: {str(err)}",
-            title="Growspace Manager Error",
-        )
         raise
 
 
@@ -319,12 +302,7 @@ async def handle_take_clone(
 
     if mother_plant_id not in coordinator.plants:
         _LOGGER.error("Mother plant %s does not exist for take_clone", mother_plant_id)
-        create_notification(
-            hass,
-            f"Mother plant {mother_plant_id} not found.",
-            title="Growspace Manager Error",
-        )
-        return
+        raise ServiceValidationError(f"Mother plant {mother_plant_id} not found.")
 
     mother = coordinator.plants[mother_plant_id]
 
@@ -334,12 +312,7 @@ async def handle_take_clone(
         growspace_id is None
     ):  # This check is redundant if growspace_id is hardcoded, but good practice if it were dynamic.
         _LOGGER.error("No target growspace ID defined for clones.")
-        create_notification(
-            hass,
-            "Clone growspace ID is not configured.",
-            title="Growspace Manager Error",
-        )
-        return
+        raise ServiceValidationError("Clone growspace ID is not configured.")
 
     validator = GrowspaceValidator(coordinator)
 
@@ -385,26 +358,23 @@ async def handle_take_clone(
             )
             # Continue trying to add other clones if one fails
 
-    if clones_added_count > 0:
-        hass.bus.async_fire(
-            f"{DOMAIN}_clones_taken",
-            {
-                "mother_plant_id": mother_plant_id,
-                "target_growspace_id": growspace_id,
-                "num_clones_requested": num_clones,
-                "num_clones_added": clones_added_count,
-            },
-        )
-        _LOGGER.info(
-            "Successfully took %d clones from %s", clones_added_count, mother_plant_id
-        )
-    else:
+    if clones_added_count == 0:
         _LOGGER.error("Failed to add any clones for mother plant %s", mother_plant_id)
-        create_notification(
-            hass,
-            f"Failed to add any clones for mother plant {mother_plant_id}.",
-            title="Growspace Manager Error",
+        raise ServiceValidationError(
+            f"Failed to add any clones for mother plant {mother_plant_id}. No space available."
         )
+
+    hass.bus.async_fire(
+        f"{DOMAIN}_clones_taken",
+        {
+            "mother_plant_id": mother_plant_id,
+            "num_clones": clones_added_count,
+            "growspace_id": growspace_id,
+        },
+    )
+    _LOGGER.info(
+        "Successfully took %d clones from %s", clones_added_count, mother_plant_id
+    )
 
 
 async def handle_move_clone(
@@ -426,23 +396,15 @@ async def handle_move_clone(
         _LOGGER.error(
             "Missing plant_id or target_growspace_id for move_clone service call."
         )
-        create_notification(
-            hass,
-            "Missing plant_id or target_growspace_id for move_clone.",
-            title="Growspace Manager Error",
+        raise ServiceValidationError(
+            "Missing plant_id or target_growspace_id for move_clone."
         )
-        return
 
     try:
         validator.validate_plant_exists(plant_id)
     except ValueError as err:
         _LOGGER.error("Validation error moving clone: %s", err)
-        create_notification(
-            hass,
-            f"Validation error: {str(err)}",
-            title="Growspace Manager Error",
-        )
-        return
+        raise ServiceValidationError(f"Validation error: {str(err)}")
 
     try:
         transition_date = datetime.fromisoformat(
@@ -466,12 +428,9 @@ async def handle_move_clone(
                 target_growspace_id,
                 plant_id,
             )
-            create_notification(
-                hass,
-                f"No free slot in growspace '{target_growspace_id}' for clone {plant_id}.",
-                title="Growspace Manager Error",
+            raise ServiceValidationError(
+                f"No free slot in growspace '{target_growspace_id}' for clone {plant_id}."
             )
-            return
     except Exception as e:
         _LOGGER.error(
             "Could not find position in target growspace %s for clone %s: %s",
@@ -479,12 +438,9 @@ async def handle_move_clone(
             plant_id,
             e,
         )
-        create_notification(
-            hass,
-            f"Could not find position in growspace '{target_growspace_id}' for clone {plant_id}.",
-            title="Growspace Manager Error",
+        raise ServiceValidationError(
+            f"Could not find position in growspace '{target_growspace_id}' for clone {plant_id}."
         )
-        return
 
     # Add the plant to the new growspace, transitioning stage to 'veg'
     try:
@@ -600,11 +556,6 @@ async def handle_update_plant(
 
     except Exception as err:
         _LOGGER.exception("Failed to update plant: %s", err)
-        create_notification(
-            hass,
-            f"Failed to update plant: {str(err)}",
-            title="Growspace Manager Error",
-        )
         raise
 
 
@@ -619,13 +570,8 @@ async def handle_remove_plant(
         plant_id = call.data["plant_id"]
 
         if plant_id not in coordinator.plants:
-            _LOGGER.error("Plant %s does not exist for remove_plant", plant_id)
-            create_notification(
-                hass,
-                f"Plant {plant_id} does not exist",
-                title="Growspace Manager Error",
-            )
-            return
+            _LOGGER.error("Plant %s not found for removal", plant_id)
+            raise ServiceValidationError(f"Plant {plant_id} not found for removal.")
 
         plant_info = coordinator.plants[plant_id]  # Get info before removal
         await coordinator.async_remove_plant(plant_id)
@@ -642,11 +588,6 @@ async def handle_remove_plant(
 
     except Exception as err:
         _LOGGER.exception("Failed to remove plant %s: %s", plant_id, err)
-        create_notification(
-            hass,
-            f"Failed to remove plant {plant_id}: {str(err)}",
-            title="Growspace Manager Error",
-        )
         raise
 
 
@@ -664,20 +605,10 @@ async def handle_switch_plants(
     try:
         if plant_id_1 not in coordinator.plants:
             _LOGGER.error("Plant %s does not exist for switch_plants", plant_id_1)
-            create_notification(
-                hass,
-                f"Plant {plant_id_1} does not exist.",
-                title="Growspace Manager Error",
-            )
-            return
+            raise ServiceValidationError(f"Plant {plant_id_1} does not exist.")
         if plant_id_2 not in coordinator.plants:
             _LOGGER.error("Plant %s does not exist for switch_plants", plant_id_2)
-            create_notification(
-                hass,
-                f"Plant {plant_id_2} does not exist.",
-                title="Growspace Manager Error",
-            )
-            return
+            raise ServiceValidationError(f"Plant {plant_id_2} does not exist.")
 
         plant1_data = coordinator.plants[plant_id_1]
         plant2_data = coordinator.plants[plant_id_2]
@@ -701,11 +632,6 @@ async def handle_switch_plants(
         _LOGGER.exception(
             "Failed to switch plants %s and %s: %s", plant_id_1, plant_id_2, err
         )
-        create_notification(
-            hass,
-            f"Failed to switch plants: {str(err)}",
-            title="Growspace Manager Error",
-        )
         raise
 
 
@@ -720,12 +646,7 @@ async def handle_move_plant(
         plant_id = call.data["plant_id"]
         if plant_id not in coordinator.plants:
             _LOGGER.error("Plant %s does not exist for move_plant", plant_id)
-            create_notification(
-                hass,
-                f"Plant {plant_id} does not exist.",
-                title="Growspace Manager Error",
-            )
-            return
+            raise ServiceValidationError(f"Plant {plant_id} does not exist.")
 
         plant = coordinator.plants[plant_id]
         growspace = coordinator.growspaces[plant.growspace_id]
@@ -750,12 +671,9 @@ async def handle_move_plant(
                 growspace.plants_per_row,
                 plant.plant_id,
             )
-            create_notification(
-                hass,
-                f"New position ({new_row},{new_col}) is outside growspace '{plant.growspace_id}' bounds.",
-                title="Growspace Manager Error",
+            raise ServiceValidationError(
+                f"New position ({new_row},{new_col}) is outside growspace '{plant.growspace_id}' bounds."
             )
-            return
 
         old_row, old_col = plant.row, plant.col
 
@@ -831,11 +749,6 @@ async def handle_move_plant(
 
     except Exception as err:
         _LOGGER.exception("Failed to move plant %s: %s", plant_id, err)
-        create_notification(
-            hass,
-            f"Failed to move plant: {str(err)}",
-            title="Growspace Manager Error",
-        )
         raise
 
 
@@ -852,12 +765,7 @@ async def handle_transition_plant_stage(
             _LOGGER.error(
                 "Plant %s does not exist for transition_plant_stage", plant_id
             )
-            create_notification(
-                hass,
-                f"Plant {plant_id} does not exist.",
-                title="Growspace Manager Error",
-            )
-            return
+            raise ServiceValidationError(f"Plant {plant_id} does not exist.")
 
         new_stage = call.data["new_stage"]
         transition_date_str = call.data.get("transition_date")
@@ -872,12 +780,9 @@ async def handle_transition_plant_stage(
                 _LOGGER.warning(
                     "Could not parse transition_date string: %s", transition_date_str
                 )
-                create_notification(
-                    hass,
-                    f"Invalid transition_date format: {transition_date_str}.",
-                    title="Growspace Manager Error",
+                raise ServiceValidationError(
+                    f"Invalid transition_date format: {transition_date_str}."
                 )
-                return  # Abort if date is invalid and required
 
         await coordinator.async_transition_plant_stage(
             plant_id=plant_id,
@@ -899,11 +804,6 @@ async def handle_transition_plant_stage(
 
     except Exception as err:
         _LOGGER.exception("Failed to transition plant stage for %s: %s", plant_id, err)
-        create_notification(
-            hass,
-            f"Failed to transition plant stage: {str(err)}",
-            title="Growspace Manager Error",
-        )
         raise
 
 
@@ -917,10 +817,7 @@ async def handle_harvest_plant(
     plant_id = call.data.get("plant_id")
     if not plant_id:
         _LOGGER.error("Missing plant_id in harvest_plant service call.")
-        create_notification(
-            hass, "Missing plant_id for harvest_plant.", title="Growspace Manager Error"
-        )
-        return
+        raise ServiceValidationError("Missing plant_id for harvest_plant.")
 
     plant_id = _resolve_plant_id(hass, plant_id)
 
@@ -939,12 +836,9 @@ async def handle_harvest_plant(
             _LOGGER.warning(
                 "Could not parse transition_date string: %s", transition_date_str
             )
-            create_notification(
-                hass,
-                f"Invalid transition_date format: {transition_date_str}.",
-                title="Growspace Manager Error",
+            raise ServiceValidationError(
+                f"Invalid transition_date format: {transition_date_str}."
             )
-            return
 
     try:
         await coordinator.async_harvest_plant(

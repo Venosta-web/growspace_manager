@@ -4,10 +4,8 @@ from __future__ import annotations
 
 import logging
 
-from homeassistant.components.persistent_notification import (
-    async_create as create_notification,
-)
 from homeassistant.core import HomeAssistant, ServiceCall
+from homeassistant.exceptions import ServiceValidationError
 
 from ..coordinator import GrowspaceCoordinator
 from ..strain_library import StrainLibrary
@@ -27,12 +25,7 @@ async def handle_configure_environment(
     if growspace_id not in coordinator.growspaces:
         error_msg = f"Growspace '{growspace_id}' not found"
         _LOGGER.error(error_msg)
-        create_notification(
-            hass,
-            error_msg,
-            title="Growspace Manager - Environment Config Error",
-        )
-        return
+        raise ServiceValidationError(error_msg)
 
     growspace = coordinator.growspaces[growspace_id]
 
@@ -66,12 +59,6 @@ async def handle_configure_environment(
     success_msg = f"Environment monitoring configured for '{growspace.name}'"
     _LOGGER.info("%s: %s", success_msg, env_config)
 
-    create_notification(
-        hass,
-        success_msg,
-        title="Environment Configured",
-    )
-
 
 async def handle_remove_environment(
     hass: HomeAssistant,
@@ -85,12 +72,7 @@ async def handle_remove_environment(
     if growspace_id not in coordinator.growspaces:
         error_msg = f"Growspace '{growspace_id}' not found"
         _LOGGER.error(error_msg)
-        create_notification(
-            hass,
-            error_msg,
-            title="Growspace Manager - Environment Config Error",
-        )
-        return
+        raise ServiceValidationError(error_msg)
 
     growspace = coordinator.growspaces[growspace_id]
 
@@ -106,12 +88,6 @@ async def handle_remove_environment(
     success_msg = f"Environment monitoring removed for '{growspace.name}'"
     _LOGGER.info(success_msg)
 
-    create_notification(
-        hass,
-        f"{success_msg}\n\nPlease reload the integration for binary sensors to be removed.",
-        title="Growspace Manager - Environment Removed",
-    )
-
 
 async def handle_set_dehumidifier_control(
     hass: HomeAssistant,
@@ -126,12 +102,7 @@ async def handle_set_dehumidifier_control(
     if growspace_id not in coordinator.growspaces:
         error_msg = f"Growspace '{growspace_id}' not found"
         _LOGGER.error(error_msg)
-        create_notification(
-            hass,
-            error_msg,
-            title="Growspace Manager - Error",
-        )
-        return
+        raise ServiceValidationError(error_msg)
 
     growspace = coordinator.growspaces[growspace_id]
 

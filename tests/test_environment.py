@@ -3,6 +3,7 @@
 from unittest.mock import AsyncMock, Mock, patch
 import pytest
 from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import ServiceValidationError
 
 from custom_components.growspace_manager.services.environment import (
     handle_configure_environment,
@@ -49,25 +50,21 @@ async def test_handle_configure_environment_success(
         "mold_threshold": 0.85,
     }
 
-    with patch(
-        "custom_components.growspace_manager.services.environment.create_notification"
-    ) as mock_notify:
-        await handle_configure_environment(
-            hass, mock_coordinator, mock_strain_library, call
-        )
+    await handle_configure_environment(
+        hass, mock_coordinator, mock_strain_library, call
+    )
 
-        assert growspace.environment_config == {
-            "temperature_sensor": "sensor.temp",
-            "humidity_sensor": "sensor.hum",
-            "vpd_sensor": "sensor.vpd",
-            "co2_sensor": "sensor.co2",
-            "circulation_fan": "switch.fan",
-            "stress_threshold": 0.8,
-            "mold_threshold": 0.85,
-        }
-        mock_coordinator.async_save.assert_called_once()
-        mock_coordinator.async_refresh.assert_called_once()
-        mock_notify.assert_called_once()
+    assert growspace.environment_config == {
+        "temperature_sensor": "sensor.temp",
+        "humidity_sensor": "sensor.hum",
+        "vpd_sensor": "sensor.vpd",
+        "co2_sensor": "sensor.co2",
+        "circulation_fan": "switch.fan",
+        "stress_threshold": 0.8,
+        "mold_threshold": 0.85,
+    }
+    mock_coordinator.async_save.assert_called_once()
+    mock_coordinator.async_refresh.assert_called_once()
 
 
 @pytest.mark.asyncio
@@ -80,15 +77,12 @@ async def test_handle_configure_environment_missing_growspace(
     call = Mock()
     call.data = {"growspace_id": "gs1"}
 
-    with patch(
-        "custom_components.growspace_manager.services.environment.create_notification"
-    ) as mock_notify:
+    with pytest.raises(ServiceValidationError, match="Growspace.*not found"):
         await handle_configure_environment(
             hass, mock_coordinator, mock_strain_library, call
         )
 
-        mock_coordinator.async_save.assert_not_called()
-        mock_notify.assert_called_once()
+    mock_coordinator.async_save.assert_not_called()
 
 
 @pytest.mark.asyncio
@@ -104,17 +98,11 @@ async def test_handle_remove_environment_success(
     call = Mock()
     call.data = {"growspace_id": "gs1"}
 
-    with patch(
-        "custom_components.growspace_manager.services.environment.create_notification"
-    ) as mock_notify:
-        await handle_remove_environment(
-            hass, mock_coordinator, mock_strain_library, call
-        )
+    await handle_remove_environment(hass, mock_coordinator, mock_strain_library, call)
 
-        assert growspace.environment_config == {}
-        mock_coordinator.async_save.assert_called_once()
-        mock_coordinator.async_refresh.assert_called_once()
-        mock_notify.assert_called_once()
+    assert growspace.environment_config == {}
+    mock_coordinator.async_save.assert_called_once()
+    mock_coordinator.async_refresh.assert_called_once()
 
 
 @pytest.mark.asyncio
@@ -127,15 +115,12 @@ async def test_handle_remove_environment_missing_growspace(
     call = Mock()
     call.data = {"growspace_id": "gs1"}
 
-    with patch(
-        "custom_components.growspace_manager.services.environment.create_notification"
-    ) as mock_notify:
+    with pytest.raises(ServiceValidationError, match="Growspace.*not found"):
         await handle_remove_environment(
             hass, mock_coordinator, mock_strain_library, call
         )
 
-        mock_coordinator.async_save.assert_not_called()
-        mock_notify.assert_called_once()
+    mock_coordinator.async_save.assert_not_called()
 
 
 @pytest.mark.asyncio
@@ -191,12 +176,9 @@ async def test_handle_set_dehumidifier_control_missing_growspace(
     call = Mock()
     call.data = {"growspace_id": "gs1"}
 
-    with patch(
-        "custom_components.growspace_manager.services.environment.create_notification"
-    ) as mock_notify:
+    with pytest.raises(ServiceValidationError, match="Growspace.*not found"):
         await handle_set_dehumidifier_control(
             hass, mock_coordinator, mock_strain_library, call
         )
 
-        mock_coordinator.async_save.assert_not_called()
-        mock_notify.assert_called_once()
+    mock_coordinator.async_save.assert_not_called()

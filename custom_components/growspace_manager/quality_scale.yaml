@@ -95,7 +95,7 @@ unique-config-entry:
 # =============================================================================
 
 action-exceptions:
-  status: todo
+  status: done
   comment: Service actions raise exceptions when encountering failures
 
 config-entry-unloading:
