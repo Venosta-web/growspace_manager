@@ -3,10 +3,9 @@
 from __future__ import annotations
 
 import logging
-from typing import Any
 
 from .const import SPECIAL_GROWSPACES
-from .models import Growspace, Plant
+from .models import Growspace
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -59,13 +58,13 @@ class MigrationManager:
         """Create a new canonical growspace from a legacy alias."""
         growspaces = self.coordinator.growspaces
         src = growspaces[alias_id]
-        
+
         # Handle both dict and object access for src (just in case)
         # Though in coordinator it seems they are objects after load.
-        # But during load they might be dicts? 
+        # But during load they might be dicts?
         # The coordinator load converts them to objects first.
         # So we can assume objects.
-        
+
         rows = getattr(src, "rows", 3)
         plants_per_row = getattr(src, "plants_per_row", 3)
         notification_target = getattr(src, "notification_target", None)

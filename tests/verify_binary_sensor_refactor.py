@@ -1,6 +1,6 @@
-import sys
 import os
-from unittest.mock import MagicMock, AsyncMock
+import sys
+from unittest.mock import AsyncMock, MagicMock
 
 # Add mock_ha to sys.path
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "mock_ha")))
@@ -12,9 +12,11 @@ sys.modules["homeassistant.helpers.device_registry"] = MagicMock()
 sys.modules["homeassistant.helpers.event"] = MagicMock()
 
 import asyncio
+
 from custom_components.growspace_manager.binary_sensor import BayesianEnvironmentSensor
-from custom_components.growspace_manager.trend_analyzer import TrendAnalyzer
 from custom_components.growspace_manager.notification_manager import NotificationManager
+from custom_components.growspace_manager.trend_analyzer import TrendAnalyzer
+
 
 async def verify_refactor():
     print("Verifying BayesianEnvironmentSensor refactoring...")
@@ -71,7 +73,7 @@ async def verify_refactor():
     # Verify Delegation - Notification
     sensor.notification_manager.generate_notification_message = MagicMock(return_value="Generated Message")
     sensor.notification_manager.async_send_notification = AsyncMock()
-    
+
     msg = sensor._generate_notification_message("Base Message")
     if sensor.notification_manager.generate_notification_message.called:
         print("✅ _generate_notification_message delegates to NotificationManager")

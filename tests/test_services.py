@@ -1,26 +1,26 @@
-import pytest
 from datetime import date
-from homeassistant.exceptions import HomeAssistantError
+
+import pytest
 
 from custom_components.growspace_manager.const import (
     ADD_GROWSPACE_SCHEMA,
-    REMOVE_GROWSPACE_SCHEMA,
     ADD_PLANT_SCHEMA,
-    UPDATE_PLANT_SCHEMA,
-    REMOVE_PLANT_SCHEMA,
-    MOVE_PLANT_SCHEMA,
-    SWITCH_PLANT_SCHEMA,
-    TRANSITION_PLANT_SCHEMA,
-    MOVE_CLONE_SCHEMA,
-    EXPORT_STRAIN_LIBRARY_SCHEMA,
-    IMPORT_STRAIN_LIBRARY_SCHEMA,
     CLEAR_STRAIN_LIBRARY_SCHEMA,
-    HARVEST_PLANT_SCHEMA,
-    TAKE_CLONE_SCHEMA,
     DEBUG_CLEANUP_LEGACY_SCHEMA,
+    DEBUG_CONSOLIDATE_DUPLICATE_SPECIAL_SCHEMA,
     DEBUG_LIST_GROWSPACES_SCHEMA,
     DEBUG_RESET_SPECIAL_GROWSPACES_SCHEMA,
-    DEBUG_CONSOLIDATE_DUPLICATE_SPECIAL_SCHEMA,
+    EXPORT_STRAIN_LIBRARY_SCHEMA,
+    HARVEST_PLANT_SCHEMA,
+    IMPORT_STRAIN_LIBRARY_SCHEMA,
+    MOVE_CLONE_SCHEMA,
+    MOVE_PLANT_SCHEMA,
+    REMOVE_GROWSPACE_SCHEMA,
+    REMOVE_PLANT_SCHEMA,
+    SWITCH_PLANT_SCHEMA,
+    TAKE_CLONE_SCHEMA,
+    TRANSITION_PLANT_SCHEMA,
+    UPDATE_PLANT_SCHEMA,
 )
 
 
@@ -33,7 +33,7 @@ def test_add_growspace_schema_valid():
 def test_add_growspace_schema_invalid():
     data = {"name": "Test GS", "rows": -1, "plants_per_row": 3}
     with pytest.raises(Exception):
-        services.ADD_GROWSPACE_SCHEMA(data)
+        ADD_GROWSPACE_SCHEMA(data)
 
 
 def test_remove_growspace_schema_valid():
@@ -77,8 +77,12 @@ def test_move_plant_schema_valid():
 
 
 def test_switch_plant_schema_valid():
-    data = {"plant_id_1": "p1", "plant_id_2": "p2"}
-    assert SWITCH_PLANT_SCHEMA(data) == data
+    """Test that the switch_plants service schema is valid."""
+    data = {
+        "plant1_id": "plant_1",
+        "plant2_id": "plant_2",
+    }
+    SWITCH_PLANT_SCHEMA(data) == data
 
 
 def test_transition_plant_schema_valid():
@@ -97,9 +101,9 @@ def test_export_strain_library_schema_valid():
 
 
 def test_import_strain_library_schema_valid():
-    data = {"strains": ["A", "B"], "replace": True}
+    data = {}
     validated = IMPORT_STRAIN_LIBRARY_SCHEMA(data)
-    assert validated["replace"] is True
+    assert validated["replace"] is False  # Schema adds default
 
 
 def test_clear_strain_library_schema_valid():

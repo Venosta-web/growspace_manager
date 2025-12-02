@@ -15,7 +15,7 @@ from typing import Any
 from homeassistant.components.binary_sensor import BinarySensorEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import STATE_UNAVAILABLE, STATE_UNKNOWN
-from homeassistant.core import HomeAssistant, State, callback
+from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.event import async_track_state_change_event
@@ -43,14 +43,14 @@ from .bayesian_evaluator import (
 from .const import (
     DEFAULT_BAYESIAN_PRIORS,
     DEFAULT_BAYESIAN_THRESHOLDS,
-    DOMAIN,
-    DEFAULT_VEG_DAY_HOURS,
     DEFAULT_FLOWER_DAY_HOURS,
+    DEFAULT_VEG_DAY_HOURS,
+    DOMAIN,
 )
 from .coordinator import GrowspaceCoordinator
 from .models import EnvironmentState
-from .trend_analyzer import TrendAnalyzer
 from .notification_manager import NotificationManager
+from .trend_analyzer import TrendAnalyzer
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -126,13 +126,13 @@ async def async_setup_entry(
 
 def _validate_env_config(config: dict) -> bool:
     """Validate that the required environment sensor entities are configured.
-    
+
     VPD sensor can be either directly configured or calculated from temp and humidity.
     """
     has_temp = bool(config.get("temperature_sensor"))
     has_humidity = bool(config.get("humidity_sensor"))
     has_vpd = bool(config.get("vpd_sensor"))
-    
+
     # Valid if we have temp, humidity, and either a VPD sensor or ability to calculate it
     return has_temp and has_humidity and (has_vpd or (has_temp and has_humidity))
 
@@ -179,7 +179,9 @@ class BayesianEnvironmentSensor(BinarySensorEntity):
         self._last_light_state: bool | None = None
 
         self.trend_analyzer = TrendAnalyzer(self.coordinator.hass)
-        self.notification_manager = NotificationManager(self.coordinator.hass, self.coordinator)
+        self.notification_manager = NotificationManager(
+            self.coordinator.hass, self.coordinator
+        )
 
     def _get_base_environment_state(self) -> EnvironmentState:
         """Fetch sensor values and return a structured EnvironmentState object."""
@@ -217,14 +219,13 @@ class BayesianEnvironmentSensor(BinarySensorEntity):
 
         # Determine effective light state for logic
         is_lights_on = current_lights_on
-        if (
-            self._last_light_change_time
-            and (now - self._last_light_change_time) < timedelta(minutes=5)
-        ):
+        if self._last_light_change_time and (
+            now - self._last_light_change_time
+        ) < timedelta(minutes=5):
             # In transition period, use the PREVIOUS state (inverse of current)
             # This prevents immediate stress alerts when lights toggle
             if current_lights_on is not None:
-                 is_lights_on = not current_lights_on
+                is_lights_on = not current_lights_on
             _LOGGER.debug(
                 "In light transition period for %s. Actual: %s, Effective: %s",
                 self.growspace_id,
@@ -364,19 +365,28 @@ class BayesianEnvironmentSensor(BinarySensorEntity):
         self, sensor_id: str, duration_minutes: int, threshold: float
     ) -> dict[str, Any]:
         """Analyze the trend of a sensor's history to detect rising or falling patterns."""
-        return await self.trend_analyzer.async_analyze_sensor_trend(
-            sensor_id, duration_minutes, threshold
-        )
+        try:
+            return await self.trend_analyzer.async_analyze_sensor_trend(
+                sensor_id, duration_minutes, threshold
+            )
+        except Exception as e:
+            _LOGGER.error("Error analyzing sensor history for %s: %s", sensor_id, e)
+            return {"trend": "unknown", "crossed_threshold": False}
 
     def _generate_notification_message(self, base_message: str) -> str:
         """Construct a detailed notification message from the list of reasons."""
-        return self.notification_manager.generate_notification_message(base_message, self._reasons)
+        return self.notification_manager.generate_notification_message(
+            base_message, self._reasons
+        )
 
     async def _send_notification(self, title: str, message: str) -> None:
         """Send a notification to the configured target for the growspace."""
-        await self.notification_manager.async_send_notification(
-            self.growspace_id, title, message, self._sensor_states
-        )
+        try:
+            await self.notification_manager.async_send_notification(
+                self.growspace_id, title, message, self._sensor_states
+            )
+        except Exception as e:
+            _LOGGER.error("Failed to send notification to %s: %s", self.growspace_id, e)
 
     def get_notification_title_message(
         self, new_state_on: bool
@@ -499,7 +509,7 @@ class BayesianStressSensor(BayesianEnvironmentSensor):
         if state.dehumidifier_on:
             is_dry = state.humidity is not None and state.humidity < 40
             is_high_vpd = state.vpd is not None and state.vpd > 1.5
-            
+
             if is_dry or is_high_vpd:
                 prob = (0.99, 0.01)
                 observations.append(prob)
@@ -514,22 +524,21 @@ class BayesianStressSensor(BayesianEnvironmentSensor):
         if state.humidifier_value is not None and state.humidifier_value > 0:
             is_humid = False
             threshold = 0
-            
+
             if state.flower_days == 0:  # Veg
                 if state.humidity is not None and state.humidity > 75:
                     is_humid = True
                     threshold = 75
-            else:  # Flower
-                if state.humidity is not None and state.humidity > 60:
-                    is_humid = True
-                    threshold = 60
-            
+            elif state.humidity is not None and state.humidity > 60:
+                is_humid = True
+                threshold = 60
+
             if is_humid:
                 observations.append(PROB_STRESS_SATURATION)
                 self._reasons.append(
                     (
                         PROB_STRESS_SATURATION[0],
-                        f"Active Saturation (Humidifier ON + High Humidity {state.humidity}%)",
+                        f"Active Saturation (Humidifier ON + High Humidity {state.humidity}% > {threshold}%)",
                     )
                 )
 
@@ -619,7 +628,7 @@ class LightCycleVerificationSensor(BinarySensorEntity):
 
     def _get_current_stage_key(self, stage_info: dict[str, int]) -> str:
         """Determine the current stage key based on day counts."""
-        veg_days = stage_info["veg_days"]
+
         flower_days = stage_info["flower_days"]
 
         if flower_days == 0:
@@ -690,7 +699,7 @@ class LightCycleVerificationSensor(BinarySensorEntity):
             day_hours = self.env_config.get(
                 f"{stage_key}_day_hours", DEFAULT_FLOWER_DAY_HOURS
             )
-        
+
         expected_schedule = f"{day_hours}/{24 - day_hours}"
 
         return {
@@ -895,7 +904,10 @@ class BayesianMoldRiskSensor(BayesianEnvironmentSensor):
             if state.exhaust_value is not None and state.exhaust_value < 10:
                 observations.append(PROB_MOLD_STAGNANT_AIR)
                 self._reasons.append(
-                    (PROB_MOLD_STAGNANT_AIR[0], f"Stagnant Air (Exhaust {state.exhaust_value}%)")
+                    (
+                        PROB_MOLD_STAGNANT_AIR[0],
+                        f"Stagnant Air (Exhaust {state.exhaust_value}%)",
+                    )
                 )
 
             # Humidifier Risk: Humidifier running in late flower
@@ -909,7 +921,9 @@ class BayesianMoldRiskSensor(BayesianEnvironmentSensor):
         if state.dehumidifier_on and state.humidity is not None and state.humidity > 60:
             prob = (0.95, 0.1)
             observations.append(prob)
-            self._reasons.append((prob[0], f"Dehumidifier Ineffective (ON + Hum {state.humidity}%)"))
+            self._reasons.append(
+                (prob[0], f"Dehumidifier Ineffective (ON + Hum {state.humidity}%)")
+            )
 
         self._probability = self._calculate_bayesian_probability(
             self.prior, observations

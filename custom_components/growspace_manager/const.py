@@ -144,9 +144,9 @@ def valid_date_or_none(value):
         return value
     if isinstance(value, date):
         return value
-    
+
     value_str = str(value).replace("Z", "")
-    
+
     # Try parsing as datetime first (most specific)
     try:
         return datetime.fromisoformat(value_str)

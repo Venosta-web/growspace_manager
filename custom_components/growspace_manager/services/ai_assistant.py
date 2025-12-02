@@ -14,7 +14,7 @@ from homeassistant.const import STATE_UNAVAILABLE, STATE_UNKNOWN
 from homeassistant.core import Context, HomeAssistant, ServiceCall
 from homeassistant.exceptions import ServiceValidationError
 
-from ..const import CONF_AI_ENABLED, CONF_ASSISTANT_ID, DOMAIN
+from ..const import CONF_AI_ENABLED, CONF_ASSISTANT_ID
 from ..coordinator import GrowspaceCoordinator
 from ..strain_library import StrainLibrary
 
@@ -120,7 +120,6 @@ class GrowAssistant:
             "mold_risk": "high_mold_risk",
             "optimal": "optimal_conditions",
         }
-        
 
         for key, sensor_suffix in sensor_types.items():
             entity_id = f"binary_sensor.{growspace_id}_{sensor_suffix}"
@@ -329,7 +328,9 @@ class GrowAssistant:
             agent_id = ai_settings.get(CONF_ASSISTANT_ID)
 
         if max_length is None:
-            max_length = ai_settings.get("max_response_length", 250) if ai_settings else 250
+            max_length = (
+                ai_settings.get("max_response_length", 250) if ai_settings else 250
+            )
 
         # Gather all relevant data
         data = self._gather_growspace_data(growspace_id)
@@ -351,8 +352,8 @@ class GrowAssistant:
         # Call the conversation API
         try:
             if not agent_id:
-                 _LOGGER.info("AI assistant not configured, returning raw context")
-                 return f"AI Assistant not configured. Raw Data:\n\n{context}"
+                _LOGGER.info("AI assistant not configured, returning raw context")
+                return f"AI Assistant not configured. Raw Data:\n\n{context}"
 
             result = await conversation.async_converse(
                 self.hass,
@@ -367,21 +368,20 @@ class GrowAssistant:
                 and result.response
                 and result.response.speech
                 and result.response.speech.get("plain")
+                and result.response.speech["plain"].get("speech")
             ):
                 response = result.response.speech["plain"]["speech"]
-                
+
                 # Enforce max length truncation if specified
                 if max_length and len(response) > max_length:
-                    response = response[:max_length].rsplit(' ', 1)[0] + "..."
-                    
+                    response = response[:max_length].rsplit(" ", 1)[0] + "..."
+
                 _LOGGER.info(
                     "AI assistant provided advice for growspace %s", growspace_id
                 )
                 return response
             else:
-                raise ServiceValidationError(
-                    "AI assistant returned an empty response"
-                )
+                raise ServiceValidationError("AI assistant returned an empty response")
 
         except Exception as err:
             _LOGGER.error("Error getting AI advice: %s", err)
@@ -405,7 +405,9 @@ async def handle_ask_grow_advice(
     max_length = call.data.get("max_length")
 
     assistant = GrowAssistant(hass, coordinator, strain_library)
-    response = await assistant.get_grow_advice(growspace_id, user_query, context_type, max_length)
+    response = await assistant.get_grow_advice(
+        growspace_id, user_query, context_type, max_length
+    )
 
     return {"response": response}
 
@@ -425,7 +427,7 @@ async def handle_analyze_all_growspaces(
     agent_id = None
     if ai_settings:
         agent_id = ai_settings.get(CONF_ASSISTANT_ID)
-    
+
     max_length = call.data.get("max_length")
 
     if max_length is None:
@@ -468,9 +470,10 @@ async def handle_analyze_all_growspaces(
         summary_lines.append(f"  Plants: {data['plants']['count']}")
         if data["analysis"]["optimal"]["active"]:
             summary_lines.append("  Status: ✅ Optimal")
-        elif data["analysis"]["stress"]["active"] or data["analysis"]["mold_risk"][
-            "active"
-        ]:
+        elif (
+            data["analysis"]["stress"]["active"]
+            or data["analysis"]["mold_risk"]["active"]
+        ):
             summary_lines.append("  Status: ⚠️ Needs Attention")
         else:
             summary_lines.append("  Status: 📊 Normal")
@@ -496,8 +499,8 @@ async def handle_analyze_all_growspaces(
 
     try:
         if not agent_id:
-             _LOGGER.info("AI assistant not configured, returning summary report")
-             return {
+            _LOGGER.info("AI assistant not configured, returning summary report")
+            return {
                 "response": f"AI Assistant not configured. Summary Report:\n\n{context}",
                 "issues_count": len(issues_found),
                 "growspaces_analyzed": len(all_data),
@@ -518,11 +521,11 @@ async def handle_analyze_all_growspaces(
             and result.response.speech.get("plain")
         ):
             response = result.response.speech["plain"]["speech"]
-            
+
             # Enforce max length truncation if specified
             if max_length and len(response) > max_length:
-                response = response[:max_length].rsplit(' ', 1)[0] + "..."
-                
+                response = response[:max_length].rsplit(" ", 1)[0] + "..."
+
             return {
                 "response": response,
                 "issues_count": len(issues_found),
@@ -596,7 +599,9 @@ async def handle_strain_recommendation(
         strain_info += f"\n  Type: {meta.get('type', 'Unknown')}"
         strain_info += f"\n  Breeder: {meta.get('breeder', 'Unknown')}"
         if description:
-             strain_info += f"\n  Description: {description[:100]}..." # Truncate for token limit
+            strain_info += (
+                f"\n  Description: {description[:100]}..."  # Truncate for token limit
+            )
 
         # Add Performance OR Estimates
         if all_harvests:
@@ -613,12 +618,11 @@ async def handle_strain_recommendation(
                 f"({round(avg_veg)}d veg + {round(avg_flower)}d flower)"
                 f"\n  Harvests Recorded: {len(all_harvests)}"
             )
+        # No history, use estimates if available
+        elif est_flower_min or est_flower_max:
+            strain_info += f"\n  Est. Flowering: {est_flower_min or '?'}-{est_flower_max or '?'} days"
         else:
-            # No history, use estimates if available
-            if est_flower_min or est_flower_max:
-                strain_info += f"\n  Est. Flowering: {est_flower_min or '?'}-{est_flower_max or '?'} days"
-            else:
-                strain_info += "\n  History: No harvests recorded yet"
+            strain_info += "\n  History: No harvests recorded yet"
 
         strain_lines.append(strain_info)
 
@@ -635,7 +639,7 @@ async def handle_strain_recommendation(
     # Build User Query String
     query_str = ""
     if user_query:
-        query_str = f"\nUSER REQUEST: {user_query}" # <--- ADD THIS
+        query_str = f"\nUSER REQUEST: {user_query}"  # <--- ADD THIS
 
     # Include growspace context if provided
     growspace_context = ""
@@ -644,7 +648,11 @@ async def handle_strain_recommendation(
             gs_data = assistant._gather_growspace_data(growspace_id)
             growspace_context = f"\nTARGET GROWSPACE: {gs_data['growspace']['name']} ({gs_data['growspace']['size']})"
         except Exception as e:
-            _LOGGER.warning("Failed to gather growspace data for strain recommendation for growspace %s: %s", growspace_id, e)
+            _LOGGER.warning(
+                "Failed to gather growspace data for strain recommendation for growspace %s: %s",
+                growspace_id,
+                e,
+            )
 
     length_instruction = ""
     if max_length:
@@ -667,8 +675,11 @@ async def handle_strain_recommendation(
 
     try:
         if not agent_id:
-             _LOGGER.info("AI assistant not configured, returning strain context")
-             return {"response": f"AI Assistant not configured. Strain Data:\n\n{context}", "strains_analyzed": len(all_strains)}
+            _LOGGER.info("AI assistant not configured, returning strain context")
+            return {
+                "response": f"AI Assistant not configured. Strain Data:\n\n{context}",
+                "strains_analyzed": len(all_strains),
+            }
 
         result = await conversation.async_converse(
             hass,
@@ -685,15 +696,18 @@ async def handle_strain_recommendation(
             and result.response.speech.get("plain")
         ):
             response = result.response.speech["plain"]["speech"]
-            
+
             # Enforce max length truncation if specified
             if max_length and len(response) > max_length:
-                response = response[:max_length].rsplit(' ', 1)[0] + "..."
-                
+                response = response[:max_length].rsplit(" ", 1)[0] + "..."
+
             return {"response": response, "strains_analyzed": len(all_strains)}
         else:
             raise ServiceValidationError("AI assistant returned an empty response")
 
     except Exception as err:
         _LOGGER.error("Error getting strain recommendations: %s", err)
-        return {"response": f"Error getting recommendations: {err}\n\nStrain Data:\n\n{context}", "strains_analyzed": len(all_strains)}
+        return {
+            "response": f"Error getting recommendations: {err}\n\nStrain Data:\n\n{context}",
+            "strains_analyzed": len(all_strains),
+        }

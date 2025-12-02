@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Awaitable
-from typing import TYPE_CHECKING, Callable
+from collections.abc import Awaitable, Callable
+from typing import TYPE_CHECKING
 
 from homeassistant.core import State
 

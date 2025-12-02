@@ -1,15 +1,16 @@
 """Tests for the helper functions in helpers.py."""
 
-import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import pytest
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import entity_registry as er
 
 from custom_components.growspace_manager.helpers import (
-    async_setup_trend_sensor,
     async_setup_statistics_sensor,
+    async_setup_trend_sensor,
 )
+
 
 @pytest.fixture
 def mock_hass():
@@ -27,11 +28,11 @@ async def test_async_setup_trend_sensor(mock_hass):
 
     with patch("custom_components.growspace_manager.helpers.er.async_get", return_value=entity_registry), \
          patch("custom_components.growspace_manager.helpers.async_load_platform", new_callable=AsyncMock) as mock_load_platform:
-        
+
         unique_id = await async_setup_trend_sensor(
             mock_hass, "sensor.test", "gs1", "Growspace 1", "temperature"
         )
-        
+
         assert unique_id == "growspace_manager_gs1_temperature_trend"
         mock_load_platform.assert_called_once()
 
@@ -56,11 +57,11 @@ async def test_async_setup_trend_sensor_already_exists(mock_hass):
 
     with patch("custom_components.growspace_manager.helpers.er.async_get", return_value=entity_registry), \
          patch("custom_components.growspace_manager.helpers.async_load_platform", new_callable=AsyncMock) as mock_load_platform:
-        
+
         unique_id = await async_setup_trend_sensor(
             mock_hass, "sensor.test", "gs1", "Growspace 1", "temperature"
         )
-        
+
         assert unique_id == "growspace_manager_gs1_temperature_trend"
         mock_load_platform.assert_not_called()
 
@@ -73,11 +74,11 @@ async def test_async_setup_statistics_sensor(mock_hass):
 
     with patch("custom_components.growspace_manager.helpers.er.async_get", return_value=entity_registry), \
          patch("custom_components.growspace_manager.helpers.async_load_platform", new_callable=AsyncMock) as mock_load_platform:
-        
+
         unique_id = await async_setup_statistics_sensor(
             mock_hass, "sensor.test", "gs1", "Growspace 1", "temperature"
         )
-        
+
         assert unique_id == "growspace_manager_gs1_temperature_stats"
         mock_load_platform.assert_called_once()
 
@@ -102,10 +103,10 @@ async def test_async_setup_statistics_sensor_already_exists(mock_hass):
 
     with patch("custom_components.growspace_manager.helpers.er.async_get", return_value=entity_registry), \
          patch("custom_components.growspace_manager.helpers.async_load_platform", new_callable=AsyncMock) as mock_load_platform:
-        
+
         unique_id = await async_setup_statistics_sensor(
             mock_hass, "sensor.test", "gs1", "Growspace 1", "temperature"
         )
-        
+
         assert unique_id == "growspace_manager_gs1_temperature_stats"
         mock_load_platform.assert_not_called()

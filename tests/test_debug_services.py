@@ -1,20 +1,19 @@
 """Tests for the Debug services."""
 
-import pytest
-from unittest.mock import AsyncMock, MagicMock, patch, PropertyMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
+import pytest
 from homeassistant.core import HomeAssistant, ServiceCall
 
 from custom_components.growspace_manager.coordinator import GrowspaceCoordinator
-from custom_components.growspace_manager.strain_library import StrainLibrary
 from custom_components.growspace_manager.services.debug import (
-    handle_test_notification,
     debug_cleanup_legacy,
+    debug_consolidate_duplicate_special,
     debug_list_growspaces,
     debug_reset_special_growspaces,
-    debug_consolidate_duplicate_special,
+    handle_test_notification,
 )
-from custom_components.growspace_manager.const import DOMAIN
+from custom_components.growspace_manager.strain_library import StrainLibrary
 
 
 @pytest.fixture
@@ -364,10 +363,10 @@ async def test_debug_consolidate_duplicate_special_with_missing_canonical_and_mu
             mock_coordinator.async_save.assert_awaited_once()
 
 
+from custom_components.growspace_manager.models import Plant
 from custom_components.growspace_manager.services.debug import (
     _migrate_plants_from_legacy_growspace,
 )
-from custom_components.growspace_manager.models import Plant
 
 
 @pytest.mark.asyncio
@@ -552,8 +551,8 @@ async def test_restore_plants_to_canonical_growspace_success(
 
 
 from custom_components.growspace_manager.services.debug import (
-    _handle_reset_dry_growspace,
     _handle_reset_cure_growspace,
+    _handle_reset_dry_growspace,
 )
 
 
@@ -819,9 +818,8 @@ async def test_consolidate_plants_to_canonical_growspace_plant_not_in_coordinato
 
 
 from custom_components.growspace_manager.services.debug import (
-    _cleanup_dry_legacy_growspaces,
     _cleanup_cure_legacy_growspaces,
-    _consolidate_plants_to_canonical_growspace,
+    _cleanup_dry_legacy_growspaces,
 )
 
 

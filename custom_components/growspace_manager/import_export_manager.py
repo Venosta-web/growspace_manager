@@ -63,9 +63,9 @@ class ImportExportManager:
                                     zip_name = f"images/{os.path.basename(fs_path)}"
                                     zipf.write(fs_path, zip_name)
                                     pheno_data["image_path"] = zip_name
-            
+
             zipf.writestr("library.json", json.dumps(export_data, indent=2))
-        
+
         _LOGGER.info("Exported strain library to %s", zip_path)
         return zip_path
 
@@ -95,15 +95,15 @@ class ImportExportManager:
         with zipfile.ZipFile(zip_path, "r") as zipf:
             if "library.json" not in zipf.namelist():
                 raise ValueError("library.json missing from archive")
-            
+
             with zipf.open("library.json") as f:
                 library_data = json.load(f)
-            
+
             for info in zipf.infolist():
                 if info.filename.startswith("images/") and not info.is_dir():
                     # Extract image
                     dest = os.path.join(target_image_dir, os.path.basename(info.filename))
                     with zipf.open(info) as src, open(dest, "wb") as dst:
                         shutil.copyfileobj(src, dst)
-        
+
         return library_data

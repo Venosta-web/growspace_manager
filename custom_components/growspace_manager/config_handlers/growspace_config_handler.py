@@ -1,4 +1,5 @@
 """Growspace Configuration Handler for Growspace Manager."""
+
 from __future__ import annotations
 
 import logging
@@ -7,7 +8,7 @@ from typing import Any
 import voluptuous as vol
 from homeassistant.helpers import selector
 
-from .const import DOMAIN
+from ..const import DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -100,15 +101,15 @@ class GrowspaceConfigHandler:
     async def async_add_growspace(self, user_input: dict[str, Any]) -> None:
         """Add a new growspace."""
         coordinator = self.hass.data[DOMAIN][self.config_entry.entry_id]["coordinator"]
-        
+
         # Use coordinator to add growspace
-        coordinator.async_add_growspace(
+        await coordinator.async_add_growspace(
             name=user_input["name"],
             rows=user_input["rows"],
             plants_per_row=user_input["plants_per_row"],
             notification_target=user_input.get("notification_target"),
         )
-        
+
         # Save changes
         await coordinator.async_save()
 
@@ -182,8 +183,8 @@ class GrowspaceConfigHandler:
     ) -> None:
         """Update an existing growspace."""
         coordinator = self.hass.data[DOMAIN][self.config_entry.entry_id]["coordinator"]
-        
+
         # Filter out empty values
         update_data = {k: v for k, v in user_input.items() if v}
-        
+
         await coordinator.async_update_growspace(growspace_id, **update_data)

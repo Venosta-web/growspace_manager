@@ -29,7 +29,7 @@ class GrowspaceValidator:
     def validate_position_bounds(self, growspace_id: str, row: int, col: int) -> None:
         """Validate that a position is within the bounds of a growspace grid."""
         growspace = self.coordinator.growspaces[growspace_id]
-        
+
         # Skip boundary check for special growspaces
         if growspace_id in ["mother", "clone", "dry", "cure"]:
             return
@@ -53,12 +53,12 @@ class GrowspaceValidator:
         # We need to access get_growspace_plants from coordinator or implement it here
         # Implementing it here might be better to avoid circular dependency on method
         # But accessing coordinator.plants is fine.
-        
+
         existing_plants = [
             p for p in self.coordinator.plants.values()
             if p.growspace_id == growspace_id
         ]
-        
+
         for existing_plant in existing_plants:
             if (
                 existing_plant.plant_id != exclude_plant_id
@@ -73,8 +73,8 @@ class GrowspaceValidator:
         """Find the first available (row, col) position in a growspace."""
         growspace = self.coordinator.growspaces[growspace_id]
         occupied = {
-            (p.row, p.col) 
-            for p in self.coordinator.plants.values() 
+            (p.row, p.col)
+            for p in self.coordinator.plants.values()
             if p.growspace_id == growspace_id
         }
         return find_first_free_position(growspace, occupied)

@@ -1,8 +1,12 @@
 """Tests for the data models in models.py."""
 
-import pytest
 from datetime import date
-from custom_components.growspace_manager.models import Growspace, Plant, EnvironmentState
+
+from custom_components.growspace_manager.models import (
+    EnvironmentState,
+    Growspace,
+    Plant,
+)
 
 # --------------------
 # Growspace Model Tests

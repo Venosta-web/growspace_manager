@@ -1,17 +1,18 @@
 """Test the Growspace Manager options flow."""
 
+from unittest.mock import AsyncMock, Mock
+
 import pytest
 import voluptuous as vol
-from unittest.mock import Mock, AsyncMock, patch, MagicMock
 from homeassistant.core import HomeAssistant
 from homeassistant.data_entry_flow import FlowResultType
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
-from custom_components.growspace_manager.coordinator import GrowspaceCoordinator
-from custom_components.growspace_manager.const import DOMAIN
 from custom_components.growspace_manager.config_flow import (
     OptionsFlowHandler,
 )
+from custom_components.growspace_manager.const import DOMAIN
+from custom_components.growspace_manager.coordinator import GrowspaceCoordinator
 
 
 # Helper function to set up the test environment
@@ -31,7 +32,7 @@ def basic_mock_coordinator(hass: HomeAssistant):
     coordinator.growspaces = {}
     coordinator.plants = {}
     coordinator.get_growspace_plants.return_value = []
-    coordinator.get_sorted_growspace_options = AsyncMock(return_value=[])
+    coordinator.get_sorted_growspace_options = Mock(return_value=[])
     coordinator.async_add_growspace = AsyncMock()
     coordinator.async_remove_growspace = AsyncMock()
     coordinator.async_update_growspace = AsyncMock()
@@ -455,6 +456,9 @@ async def test_options_flow_manage_plants_add(hass, basic_mock_coordinator, mock
     """Test the add plant action in the options flow."""
     # Given
     basic_mock_coordinator.growspaces = {"test_grow": Mock(name="Test Growspace")}
+    basic_mock_coordinator.get_sorted_growspace_options.return_value = [
+        ("test_grow", "Test Growspace")
+    ]
     basic_mock_coordinator.get_strain_options.return_value = ["Strain A", "Strain B"]
     config_entry = await setup_test_environment(hass, basic_mock_coordinator)
     hass.data[DOMAIN][config_entry.entry_id]["store"] = mock_store
@@ -502,6 +506,8 @@ async def test_options_flow_manage_plants_remove(
 ):
     """Test remove plant action."""
     # Given
+    mock_plant = Mock(id="p1", growspace_id="gs1")
+    basic_mock_coordinator.plants = {"p1": mock_plant}
     config_entry = await setup_test_environment(hass, basic_mock_coordinator)
 
     # When
@@ -522,6 +528,8 @@ async def test_options_flow_manage_plants_remove_error(
     """Test error when removing plant."""
     # Given
     basic_mock_coordinator.async_remove_plant.side_effect = Exception("Test error")
+    mock_plant = Mock(id="p1", growspace_id="gs1")
+    basic_mock_coordinator.plants = {"p1": mock_plant}
     config_entry = await setup_test_environment(hass, basic_mock_coordinator)
 
     # When

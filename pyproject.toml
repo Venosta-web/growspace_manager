@@ -94,7 +94,7 @@ filterwarnings = [
 asyncio_default_fixture_loop_scope = "function"
 
 [tool.codespell]
-skip = "custom_components/ac_infinity/translations/*"
+skip = "custom_components/growspace_manager/translations/*"
 
 [tool.mypy]
 python_version = "3.13"

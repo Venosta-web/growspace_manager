@@ -1,24 +1,23 @@
 """Tests for the Growspace services."""
 
-import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from homeassistant.core import HomeAssistant, ServiceCall, State, Context
-from homeassistant.const import STATE_UNAVAILABLE, STATE_UNKNOWN
+import pytest
+from homeassistant.core import Context, HomeAssistant, ServiceCall, State
 from homeassistant.exceptions import ServiceValidationError
 
+from custom_components.growspace_manager.const import (
+    CONF_AI_ENABLED,
+    CONF_ASSISTANT_ID,
+    DOMAIN,
+)
 from custom_components.growspace_manager.coordinator import GrowspaceCoordinator
-from custom_components.growspace_manager.strain_library import StrainLibrary
 from custom_components.growspace_manager.services.growspace import (
     handle_add_growspace,
-    handle_remove_growspace,
     handle_ask_grow_advice,
+    handle_remove_growspace,
 )
-from custom_components.growspace_manager.const import (
-    DOMAIN,
-    CONF_AI_ENABLED,
-    CONF_ASSISTANT_ID
-)
+from custom_components.growspace_manager.strain_library import StrainLibrary
 
 
 @pytest.fixture

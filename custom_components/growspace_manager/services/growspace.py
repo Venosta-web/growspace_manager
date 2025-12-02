@@ -1,20 +1,17 @@
 """Services related to Growspaces."""
 
 import logging
-from homeassistant.core import HomeAssistant, ServiceCall, SupportsResponse
-from homeassistant.exceptions import ServiceValidationError
+
+import homeassistant.helpers.device_registry as dr
+from homeassistant.components import conversation
 from homeassistant.components.persistent_notification import (
     async_create as create_notification,
 )
-from homeassistant.components import conversation
 from homeassistant.const import STATE_UNAVAILABLE, STATE_UNKNOWN
-import homeassistant.helpers.device_registry as dr
+from homeassistant.core import HomeAssistant, ServiceCall
+from homeassistant.exceptions import ServiceValidationError
 
-from ..const import (
-    DOMAIN,
-    CONF_AI_ENABLED,
-    CONF_ASSISTANT_ID
-)
+from ..const import CONF_AI_ENABLED, CONF_ASSISTANT_ID, DOMAIN
 from ..coordinator import GrowspaceCoordinator
 from ..strain_library import StrainLibrary
 

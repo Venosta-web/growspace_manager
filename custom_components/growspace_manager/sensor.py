@@ -9,12 +9,9 @@ from __future__ import annotations
 
 # Standard library
 import logging
-from datetime import date, datetime
 from typing import Any
 
 # Third-party / external
-from dateutil import parser
-
 # Home Assistant
 from homeassistant.components.sensor import SensorEntity, SensorStateClass
 from homeassistant.config_entries import ConfigEntry
@@ -32,10 +29,9 @@ from .helpers import async_setup_statistics_sensor, async_setup_trend_sensor
 from .models import Growspace, Plant
 from .utils import (
     VPDCalculator,
-    parse_date_field,
     calculate_days_since,
-    days_to_week,
     calculate_plant_stage,
+    days_to_week,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -541,7 +537,7 @@ class GrowspaceOverviewSensor(CoordinatorEntity[GrowspaceCoordinator], SensorEnt
         # Calculate weeks from days
         veg_week = days_to_week(max_veg)
         flower_week = days_to_week(max_flower)
-        
+
         # Get irrigation settings from growspace object
         irrigation_options = growspace.irrigation_config
 
@@ -601,7 +597,7 @@ class GrowspaceOverviewSensor(CoordinatorEntity[GrowspaceCoordinator], SensorEnt
         # Add dehumidifier state if configured
         if growspace.environment_config:
             env_config = growspace.environment_config
-            
+
             # Dehumidifier
             dehumidifier_entity = env_config.get("dehumidifier_entity")
             if dehumidifier_entity:

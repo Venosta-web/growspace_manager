@@ -1,10 +1,13 @@
 """Utility functions for date parsing, formatting, and calculations in growspace_manager."""
 
 from __future__ import annotations
+
 import math
 from datetime import date, datetime
+
 from dateutil import parser
-from .models import Plant, Growspace
+
+from .models import Growspace, Plant
 
 DateInput = str | datetime | date | None
 
@@ -166,71 +169,6 @@ class VPDCalculator:
         # VPD is the difference between leaf SVP and air AVP
         vpd = svp_leaf - avp
         return round(vpd, 2)
-
-
-def calculate_plant_stage(plant: Plant) -> str:
-    """Determine the current growth stage of the plant.
-
-    The stage is determined by a hierarchy: first by the special growspace
-    it's in, then by the most recent start date, and finally by the
-    explicitly set stage property.
-
-    Args:
-        plant: The Plant object to analyze.
-
-    Returns:
-        The determined stage as a string.
-    """
-    now = datetime.now()
-
-    # 1. Special growspaces override everything
-    if plant.growspace_id == "mother":
-        return "mother"
-    if plant.growspace_id == "clone":
-        return "clone"
-    if plant.growspace_id == "dry":
-        return "dry"
-    if plant.growspace_id == "cure":
-        return "cure"
-
-    # 2. Date-based progression (most advanced stage wins)
-    cure_start = parse_date_field(plant.cure_start)
-    dry_start = parse_date_field(plant.dry_start)
-    flower_start = parse_date_field(plant.flower_start)
-    veg_start = parse_date_field(plant.veg_start)
-    clone_start = parse_date_field(plant.clone_start)
-    mother_start = parse_date_field(plant.mother_start)
-    seedling_start = parse_date_field(plant.seedling_start)
-
-    if cure_start and cure_start <= now:
-        return "cure"
-    if dry_start and dry_start <= now:
-        return "dry"
-    if flower_start and flower_start <= now:
-        return "flower"
-    if veg_start and veg_start <= now:
-        return "veg"
-    if clone_start and clone_start <= now:
-        return "clone"
-    if mother_start and mother_start <= now:
-        return "mother"
-    if seedling_start and seedling_start <= now:
-        return "seedling"
-
-    # 3. Fallback to explicitly set stage if none of the above applies
-    if plant.stage in [
-        "seedling",
-        "mother",
-        "clone",
-        "veg",
-        "flower",
-        "dry",
-        "cure",
-    ]:
-        return plant.stage
-
-    # Default
-    return "seedling"
 
 
 def calculate_plant_stage(plant: Plant) -> str:

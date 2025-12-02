@@ -1,13 +1,13 @@
 """Plant Configuration Handler for Growspace Manager."""
+
 from __future__ import annotations
 
 import logging
-from typing import Any
 
 import voluptuous as vol
 from homeassistant.helpers import selector
 
-from .const import DOMAIN
+from ..const import DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -68,7 +68,7 @@ class PlantConfigHandler:
     async def async_destroy_plant(self, growspace_id: str, plant_id: str) -> None:
         """Destroy a plant."""
         coordinator = self.hass.data[DOMAIN][self.config_entry.entry_id]["coordinator"]
-        await coordinator.async_remove_plant(growspace_id, plant_id)
+        await coordinator.async_remove_plant(plant_id)
 
     async def async_add_plant(
         self,
@@ -91,7 +91,7 @@ class PlantConfigHandler:
             veg_start=veg_start,
             flower_start=flower_start,
         )
-        
+
     async def async_update_plant(self, plant_id: str, **kwargs) -> None:
         """Update an existing plant."""
         coordinator = self.hass.data[DOMAIN][self.config_entry.entry_id]["coordinator"]
@@ -225,12 +225,16 @@ class PlantConfigHandler:
                 vol.Optional(
                     "phenotype", default=plant.phenotype if plant else ""
                 ): selector.TextSelector(),
-                vol.Optional("row", default=plant.row if plant else 1): selector.NumberSelector(
+                vol.Optional(
+                    "row", default=plant.row if plant else 1
+                ): selector.NumberSelector(
                     selector.NumberSelectorConfig(
                         min=1, max=max_row, mode=selector.NumberSelectorMode.BOX
                     )
                 ),
-                vol.Optional("col", default=plant.col if plant else 1): selector.NumberSelector(
+                vol.Optional(
+                    "col", default=plant.col if plant else 1
+                ): selector.NumberSelector(
                     selector.NumberSelectorConfig(
                         min=1, max=max_col, mode=selector.NumberSelectorMode.BOX
                     )
