@@ -32,42 +32,33 @@ class AIConfigHandler:
         """Build the schema for AI settings with enhanced options."""
         current_settings = self.config_entry.options.get("ai_settings", {})
 
-        # Get available conversation agents (LLM integrations)
+        # Get available conversation entities from the state machine
         assistants = []
         try:
-            # Try to get agents from the conversation integration
-            if hasattr(conversation, "async_get_conversation_agents"):
-                # Newer HA versions
-                agents_dict = await conversation.async_get_conversation_agents(
-                    self.hass
-                )
-                assistants = [
-                    {"id": agent_id, "name": agent_info.name}
-                    for agent_id, agent_info in agents_dict.items()
-                ]
-            else:
-                # Fallback for older versions
-                agent_manager = self.hass.data.get("conversation")
-                if agent_manager and hasattr(agent_manager, "async_get_agents"):
-                    assistants = await agent_manager.async_get_agents()
+            # Get all conversation entities from the state machine
+            states = self.hass.states.async_all("conversation")
+            assistants = [
+                {
+                    "id": state.entity_id,
+                    "name": state.attributes.get("friendly_name", state.entity_id),
+                }
+                for state in states
+            ]
+            _LOGGER.debug("Found %d conversation entities", len(assistants))
         except Exception as err:
-            _LOGGER.warning("Could not fetch conversation agents: %s", err)
+            _LOGGER.warning("Could not fetch conversation entities: %s", err)
 
-        # Filter to valid agents with id and name
+        # Filter to valid assistants with id and name
         valid_assistants = [
             a for a in assistants if isinstance(a, dict) and "id" in a and "name" in a
         ]
 
         if not valid_assistants:
-            # If no agents found, try to get at least the default
-            try:
-                default_agent = await conversation.async_get_agent(self.hass)
-                if default_agent and hasattr(default_agent, "id"):
-                    valid_assistants = [
-                        {"id": default_agent.id, "name": "Default Assistant"}
-                    ]
-            except Exception:
-                pass
+            # If no conversation entities found, log a warning
+            _LOGGER.warning(
+                "No conversation entities found. Please add a conversation integration "
+                "(like Google Generative AI, OpenAI, etc.) to Home Assistant."
+            )
 
         assistant_options = [
             selector.SelectOptionDict(value=assistant["id"], label=assistant["name"])
@@ -93,7 +84,7 @@ class AIConfigHandler:
                 )
             )
         else:
-            # Show a text field if no assistants detected (shouldn't happen normally)
+            # Show a text field if no assistants detected
             schema[
                 vol.Optional(
                     CONF_ASSISTANT_ID, default=current_settings.get(CONF_ASSISTANT_ID)
