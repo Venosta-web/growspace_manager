@@ -7,12 +7,11 @@ integration components.
 from __future__ import annotations
 
 import logging
-from typing import Optional
 
+from homeassistant.const import CONF_PLATFORM
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.discovery import async_load_platform
-from homeassistant.const import CONF_PLATFORM
 
 from .const import DOMAIN
 
@@ -21,7 +20,7 @@ _LOGGER = logging.getLogger(__name__)
 
 async def async_setup_trend_sensor(
     hass: HomeAssistant, source_sensor_entity_id: str, growspace_id: str, growspace_name: str, sensor_type: str
-) -> Optional[str]:
+) -> str | None:
     """Set up a trend binary sensor to monitor the gradient of a source sensor.
 
     This function dynamically creates a `trend` binary sensor that will turn 'on'
@@ -72,7 +71,7 @@ async def async_setup_trend_sensor(
 
 async def async_setup_statistics_sensor(
     hass: HomeAssistant, source_sensor_entity_id: str, growspace_id: str, growspace_name: str, sensor_type: str
-) -> Optional[str]:
+) -> str | None:
     """Set up a statistics sensor to calculate metrics for a source sensor.
 
     This function dynamically creates a `statistics` sensor that provides

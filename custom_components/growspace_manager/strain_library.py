@@ -6,14 +6,12 @@ asynchronous SQLite database (aiosqlite).
 """
 
 from __future__ import annotations
-import base64
+
 import datetime
 import json
 import logging
 import os
-import shutil
-import zipfile
-from typing import Any, Mapping
+from typing import Any
 
 import aiosqlite
 from homeassistant.core import HomeAssistant
@@ -22,7 +20,6 @@ from homeassistant.util import slugify
 from .const import DB_FILE_STRAIN_LIBRARY
 from .image_manager import ImageManager
 from .import_export_manager import ImportExportManager
-
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -80,7 +77,6 @@ class StrainLibrary:
         )
         self.import_export_manager = ImportExportManager(hass)
 
-
     async def async_setup(self) -> None:
         """Set up the database connection and schema."""
         _LOGGER.debug("Setting up StrainLibrary DB at %s", self._db_path)
@@ -100,16 +96,20 @@ class StrainLibrary:
         """Load all strain and phenotype data into the in-memory cache."""
         # Fetch all harvests first to avoid N+1 queries and async calls in the loop
         harvests_by_pheno: dict[int, list[dict[str, Any]]] = {}
-        async with self._db.execute("SELECT phenotype_id, veg_days, flower_days, harvest_date FROM harvests") as cursor:
+        async with self._db.execute(
+            "SELECT phenotype_id, veg_days, flower_days, harvest_date FROM harvests"
+        ) as cursor:
             async for row in cursor:
                 pheno_id = row["phenotype_id"]
                 if pheno_id not in harvests_by_pheno:
                     harvests_by_pheno[pheno_id] = []
-                harvests_by_pheno[pheno_id].append({
-                    "veg_days": row["veg_days"],
-                    "flower_days": row["flower_days"],
-                    "harvest_date": row["harvest_date"],
-                })
+                harvests_by_pheno[pheno_id].append(
+                    {
+                        "veg_days": row["veg_days"],
+                        "flower_days": row["flower_days"],
+                        "harvest_date": row["harvest_date"],
+                    }
+                )
 
         new_strains: dict[str, dict[str, Any]] = {}
         query = """
@@ -146,7 +146,9 @@ class StrainLibrary:
                     # Decode image_crop_meta JSON safely
                     image_crop_meta = row["image_crop_meta"]
                     try:
-                        image_crop_meta = json.loads(image_crop_meta) if image_crop_meta else None
+                        image_crop_meta = (
+                            json.loads(image_crop_meta) if image_crop_meta else None
+                        )
                     except json.JSONDecodeError:
                         _LOGGER.warning(
                             "Could not decode image_crop_meta for %s (%s)",
@@ -154,7 +156,7 @@ class StrainLibrary:
                             phenotype_name,
                         )
                         image_crop_meta = None
-                    
+
                     pheno_id = row["phenotype_id"]
                     phenotype_data = {
                         "phenotype_id": pheno_id,
@@ -166,9 +168,13 @@ class StrainLibrary:
                         "harvests": harvests_by_pheno.get(pheno_id, []),
                     }
                     # Remove None values
-                    phenotype_data = {k: v for k, v in phenotype_data.items() if v is not None}
-                    new_strains[strain_name]["phenotypes"][phenotype_name] = phenotype_data
-        
+                    phenotype_data = {
+                        k: v for k, v in phenotype_data.items() if v is not None
+                    }
+                    new_strains[strain_name]["phenotypes"][phenotype_name] = (
+                        phenotype_data
+                    )
+
         self.strains = new_strains
         self._analytics_cache = None  # Invalidate analytics cache
         _LOGGER.info("Loaded strain library metadata for %d strains", len(self.strains))
@@ -177,7 +183,9 @@ class StrainLibrary:
         """No-op for SQLite implementation - changes are committed immediately."""
         pass
 
-    async def record_harvest(self, strain: str, phenotype: str, veg_days: int, flower_days: int) -> None:
+    async def record_harvest(
+        self, strain: str, phenotype: str, veg_days: int, flower_days: int
+    ) -> None:
         """Record a harvest event for a specific strain and phenotype."""
         strain = strain.strip()
         phenotype = phenotype.strip() or "default"
@@ -187,14 +195,20 @@ class StrainLibrary:
             INSERT INTO harvests (phenotype_id, veg_days, flower_days, harvest_date)
             VALUES (?, ?, ?, ?)
         """
-        await self._db.execute(query, (phenotype_id, veg_days, flower_days, harvest_date))
+        await self._db.execute(
+            query, (phenotype_id, veg_days, flower_days, harvest_date)
+        )
         await self._db.commit()
         # Invalidate analytics cache
         self._analytics_cache = None
         # Update in‑memory cache for immediate sensor use
         if strain in self.strains and phenotype in self.strains[strain]["phenotypes"]:
             self.strains[strain]["phenotypes"][phenotype]["harvests"].append(
-                {"veg_days": veg_days, "flower_days": flower_days, "harvest_date": harvest_date}
+                {
+                    "veg_days": veg_days,
+                    "flower_days": flower_days,
+                    "harvest_date": harvest_date,
+                }
             )
         _LOGGER.info(
             "Recorded harvest for %s (%s): veg=%d days, flower=%d days",
@@ -204,7 +218,9 @@ class StrainLibrary:
             flower_days,
         )
 
-    async def _ensure_strain_and_phenotype_exist(self, strain_name: str, phenotype_name: str) -> int:
+    async def _ensure_strain_and_phenotype_exist(
+        self, strain_name: str, phenotype_name: str
+    ) -> int:
         """Ensure the strain and phenotype exist, returning the phenotype ID."""
         # Ensure strain exists
         async with self._db.execute(
@@ -214,7 +230,8 @@ class StrainLibrary:
             if not strain_row:
                 await self.add_strain(strain_name, phenotype_name)
                 async with self._db.execute(
-                    "SELECT strain_id FROM strains WHERE strain_name = ?", (strain_name,)
+                    "SELECT strain_id FROM strains WHERE strain_name = ?",
+                    (strain_name,),
                 ) as c:
                     strain_row = await c.fetchone()
                     if not strain_row:
@@ -225,7 +242,9 @@ class StrainLibrary:
         async with self._db.execute(query, (strain_id, phenotype_name)) as cursor:
             phenotype_row = await cursor.fetchone()
             if not phenotype_row:
-                insert = "INSERT INTO phenotypes (strain_id, phenotype_name) VALUES (?, ?)"
+                insert = (
+                    "INSERT INTO phenotypes (strain_id, phenotype_name) VALUES (?, ?)"
+                )
                 await self._db.execute(insert, (strain_id, phenotype_name))
                 await self._db.commit()
                 async with self._db.execute(query, (strain_id, phenotype_name)) as c:
@@ -263,7 +282,9 @@ class StrainLibrary:
                 and indica_percentage is not None
                 and sativa_percentage + indica_percentage > 100
             ):
-                raise ValueError("Combined Sativa/Indica percentage cannot exceed 100%.")
+                raise ValueError(
+                    "Combined Sativa/Indica percentage cannot exceed 100%."
+                )
         # Insert/replace strain metadata
         strain_data = {
             "breeder": breeder,
@@ -291,12 +312,16 @@ class StrainLibrary:
         await self._db.execute(query, (strain,) + tuple(strain_data.values()))
         await self._db.commit()
         # Get strain_id
-        async with self._db.execute("SELECT strain_id FROM strains WHERE strain_name = ?", (strain,)) as cur:
+        async with self._db.execute(
+            "SELECT strain_id FROM strains WHERE strain_name = ?", (strain,)
+        ) as cur:
             strain_id = (await cur.fetchone())[0]
         # Prepare phenotype data
         pheno_data = {
             "description": description,
-            "image_crop_meta": json.dumps(image_crop_meta) if image_crop_meta is not None else None,
+            "image_crop_meta": json.dumps(image_crop_meta)
+            if image_crop_meta is not None
+            else None,
             "flower_days_min": flower_days_min,
             "flower_days_max": flower_days_max,
         }
@@ -304,8 +329,10 @@ class StrainLibrary:
         if image_base64:
             safe_strain = slugify(strain)
             safe_pheno = slugify(phenotype)
-            
-            abs_path = await self.image_manager.save_strain_image(safe_strain, safe_pheno, image_base64)
+
+            abs_path = await self.image_manager.save_strain_image(
+                safe_strain, safe_pheno, image_base64
+            )
             filename = os.path.basename(abs_path)
             image_path = f"/local/growspace_manager/strains/{filename}"
             pheno_data["image_path"] = image_path
@@ -314,22 +341,39 @@ class StrainLibrary:
         # Invalidate analytics cache because data changed
         self._analytics_cache = None
         # Insert/replace phenotype data
+        # Insert/replace phenotype data
         pheno_data = {k: v for k, v in pheno_data.items() if v is not None}
+
         if pheno_data:
-            pheno_fields = ", ".join(["strain_id", "phenotype_name"] + list(pheno_data.keys()))
+            pheno_fields = ", ".join(
+                ["strain_id", "phenotype_name"] + list(pheno_data.keys())
+            )
             pheno_placeholders = ", ".join(["?"] * (len(pheno_data) + 2))
+
+            # Build dynamic SET clause
+            set_clause = ", ".join(
+                [f"{k}=COALESCE(excluded.{k}, {k})" for k in pheno_data.keys()]
+            )
+
             query = f"""
                 INSERT INTO phenotypes ({pheno_fields})
                 VALUES ({pheno_placeholders})
                 ON CONFLICT(strain_id, phenotype_name) DO UPDATE SET
-                    description=COALESCE(excluded.description, description),
-                    image_path=COALESCE(excluded.image_path, image_path),
-                    image_crop_meta=COALESCE(excluded.image_crop_meta, image_crop_meta),
-                    flower_days_min=COALESCE(excluded.flower_days_min, flower_days_min),
-                    flower_days_max=COALESCE(excluded.flower_days_max, flower_days_max)
+                    {set_clause}
             """
-            await self._db.execute(query, (strain_id, phenotype) + tuple(pheno_data.values()))
-            await self._db.commit()
+            await self._db.execute(
+                query, (strain_id, phenotype) + tuple(pheno_data.values())
+            )
+        else:
+            # Just ensure it exists
+            query = """
+                INSERT INTO phenotypes (strain_id, phenotype_name)
+                VALUES (?, ?)
+                ON CONFLICT(strain_id, phenotype_name) DO NOTHING
+            """
+            await self._db.execute(query, (strain_id, phenotype))
+
+        await self._db.commit()
         # Reload cache for immediate sensor updates
         await self.load()
         _LOGGER.info("Successfully added/updated strain %s (%s)", strain, phenotype)
@@ -387,19 +431,27 @@ class StrainLibrary:
             phenotype_id = row["phenotype_id"]
             strain_id = row["strain_id"]
         # Delete harvests and phenotype
-        await self._db.execute("DELETE FROM harvests WHERE phenotype_id = ?", (phenotype_id,))
-        await self._db.execute("DELETE FROM phenotypes WHERE phenotype_id = ?", (phenotype_id,))
+        await self._db.execute(
+            "DELETE FROM harvests WHERE phenotype_id = ?", (phenotype_id,)
+        )
+        await self._db.execute(
+            "DELETE FROM phenotypes WHERE phenotype_id = ?", (phenotype_id,)
+        )
         await self._db.commit()
-        
+
         # Delete image
         safe_strain = slugify(strain)
         safe_pheno = slugify(phenotype)
         self.image_manager.delete_image(safe_strain, safe_pheno)
 
         # If no other phenotypes, delete strain
-        async with self._db.execute("SELECT COUNT(*) FROM phenotypes WHERE strain_id = ?", (strain_id,)) as cur:
+        async with self._db.execute(
+            "SELECT COUNT(*) FROM phenotypes WHERE strain_id = ?", (strain_id,)
+        ) as cur:
             if (await cur.fetchone())[0] == 0:
-                await self._db.execute("DELETE FROM strains WHERE strain_id = ?", (strain_id,))
+                await self._db.execute(
+                    "DELETE FROM strains WHERE strain_id = ?", (strain_id,)
+                )
                 await self._db.commit()
         # Invalidate cache and reload
         self._analytics_cache = None
@@ -408,7 +460,9 @@ class StrainLibrary:
 
     async def remove_strain(self, strain: str) -> None:
         """Remove an entire strain and all related data."""
-        async with self._db.execute("SELECT strain_id FROM strains WHERE strain_name = ?", (strain,)) as cur:
+        async with self._db.execute(
+            "SELECT strain_id FROM strains WHERE strain_name = ?", (strain,)
+        ) as cur:
             row = await cur.fetchone()
             if not row:
                 return
@@ -418,7 +472,9 @@ class StrainLibrary:
             "DELETE FROM harvests WHERE phenotype_id IN (SELECT phenotype_id FROM phenotypes WHERE strain_id = ?)",
             (strain_id,),
         )
-        await self._db.execute("DELETE FROM phenotypes WHERE strain_id = ?", (strain_id,))
+        await self._db.execute(
+            "DELETE FROM phenotypes WHERE strain_id = ?", (strain_id,)
+        )
         await self._db.execute("DELETE FROM strains WHERE strain_id = ?", (strain_id,))
         await self._db.commit()
         # Invalidate cache and reload
@@ -455,14 +511,29 @@ class StrainLibrary:
                         "total_harvests": num,
                     }
                 else:
-                    stats = {"avg_veg_days": 0, "avg_flower_days": 0, "total_harvests": 0}
+                    stats = {
+                        "avg_veg_days": 0,
+                        "avg_flower_days": 0,
+                        "total_harvests": 0,
+                    }
                 # Exclude heavy fields
-                pheno_meta = {k: v for k, v in pheno_data.items() if k not in ["harvests", "description", "image_path", "image_crop_meta"]}
+                pheno_meta = {
+                    k: v
+                    for k, v in pheno_data.items()
+                    if k
+                    not in ["harvests", "description", "image_path", "image_crop_meta"]
+                }
                 pheno_analytics[pheno_name] = {**stats, **pheno_meta}
             num_strain_harvests = len(strain_harvests)
             if num_strain_harvests:
-                strain_avg_veg = round(sum(h.get("veg_days", 0) for h in strain_harvests) / num_strain_harvests)
-                strain_avg_flower = round(sum(h.get("flower_days", 0) for h in strain_harvests) / num_strain_harvests)
+                strain_avg_veg = round(
+                    sum(h.get("veg_days", 0) for h in strain_harvests)
+                    / num_strain_harvests
+                )
+                strain_avg_flower = round(
+                    sum(h.get("flower_days", 0) for h in strain_harvests)
+                    / num_strain_harvests
+                )
             else:
                 strain_avg_veg = 0
                 strain_avg_flower = 0
@@ -479,7 +550,9 @@ class StrainLibrary:
         self._analytics_cache = result
         return result
 
-    async def import_library(self, library_data: dict[str, Any], replace: bool = False) -> int:
+    async def import_library(
+        self, library_data: dict[str, Any], replace: bool = False
+    ) -> int:
         """Import a library dictionary into the database."""
         if not isinstance(library_data, dict):
             _LOGGER.warning("Import failed: data must be a dictionary.")
@@ -512,7 +585,9 @@ class StrainLibrary:
                     image_path=image_path,
                     image_crop_meta=pheno_data.get("image_crop_meta"),
                 )
-                phenotype_id = await self._ensure_strain_and_phenotype_exist(strain_name, pheno_name)
+                phenotype_id = await self._ensure_strain_and_phenotype_exist(
+                    strain_name, pheno_name
+                )
                 for harvest in pheno_data.get("harvests", []):
                     await self._db.execute(
                         """
@@ -524,7 +599,9 @@ class StrainLibrary:
                             phenotype_id,
                             harvest.get("veg_days"),
                             harvest.get("flower_days"),
-                            harvest.get("harvest_date", datetime.datetime.now().isoformat()),
+                            harvest.get(
+                                "harvest_date", datetime.datetime.now().isoformat()
+                            ),
                         ),
                     )
                 await self._db.commit()
@@ -548,7 +625,9 @@ class StrainLibrary:
     async def clear(self) -> int:
         """Clear all entries from the database."""
         count = len(self.strains)
-        await self._db.executescript("DELETE FROM harvests; DELETE FROM phenotypes; DELETE FROM strains;")
+        await self._db.executescript(
+            "DELETE FROM harvests; DELETE FROM phenotypes; DELETE FROM strains;"
+        )
         await self._db.commit()
         self.strains.clear()
         self._analytics_cache = None
@@ -559,18 +638,19 @@ class StrainLibrary:
         # Ensure analytics are up‑to‑date (cached or calculated)
         if self._analytics_cache is None:
             self.get_analytics()
-        
+
         # Get all data
         library_data = self.get_all()
-        
-        return await self.import_export_manager.export_library(library_data, output_dir)
 
+        return await self.import_export_manager.export_library(library_data, output_dir)
 
     async def import_library_from_zip(self, zip_path: str, merge: bool = True) -> int:
         """Import a library from a ZIP archive."""
         target_dir = self.hass.config.path("www", "growspace_manager", "strains")
-        library_data = await self.import_export_manager.import_library(zip_path, target_dir)
-        
+        library_data = await self.import_export_manager.import_library(
+            zip_path, target_dir
+        )
+
         # Schedule async import of the JSON data
         # Note: import_library is async, so we can await it directly if we are in an async context.
         # But original code used create_task. Let's see if we can await it.

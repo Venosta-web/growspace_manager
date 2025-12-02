@@ -49,7 +49,7 @@ class NotificationManager:
     ) -> None:
         """Send a notification to the configured target for the growspace."""
         now = utcnow()
-        
+
         # Check cooldown per growspace
         last_sent = self._last_notification_sent.get(growspace_id)
         if last_sent and (now - last_sent) < self._notification_cooldown:
@@ -192,23 +192,22 @@ class NotificationManager:
                 if len(rewritten) <= max_length:
                     _LOGGER.info("AI rewrote notification in %s style", personality)
                     return rewritten
+                # Try to truncate intelligently if it's close
+                elif len(rewritten) < max_length + 50:
+                    _LOGGER.info("AI response truncated to fit length limit")
+                    return rewritten[:max_length].rsplit(" ", 1)[0] + "..."
                 else:
-                    # Try to truncate intelligently if it's close
-                    if len(rewritten) < max_length + 50:
-                        _LOGGER.info("AI response truncated to fit length limit")
-                        return rewritten[:max_length].rsplit(' ', 1)[0] + "..."
-                    else:
-                        _LOGGER.warning(
-                            "AI response too long (%d chars > %d), using default",
-                            len(rewritten),
-                            max_length,
-                        )
+                    _LOGGER.warning(
+                        "AI response too long (%d chars > %d), using default",
+                        len(rewritten),
+                        max_length,
+                    )
             else:
                 _LOGGER.warning("AI returned empty response, using default message")
 
         except Exception as err:
             _LOGGER.error("Failed to process AI notification: %s", err)
-        
+
         return original_message
 
     async def async_check_timed_notifications(self) -> None:

@@ -1,15 +1,17 @@
 """Tests for the calendar platform of the Growspace Manager integration."""
 
+from datetime import timedelta
+from unittest.mock import MagicMock, Mock
+
 import pytest
-from unittest.mock import Mock, AsyncMock, MagicMock
-from datetime import datetime, timedelta
+from homeassistant.util import dt as dt_util
 
 from custom_components.growspace_manager.calendar import (
     GrowspaceCalendar,
     async_setup_entry,
 )
 from custom_components.growspace_manager.const import DOMAIN
-from homeassistant.util import dt as dt_util
+
 
 # --------------------
 # Fixtures
@@ -19,7 +21,7 @@ def mock_coordinator():
     """Create a mock GrowspaceCoordinator for calendar testing."""
     coordinator = Mock()
     coordinator.hass = Mock()
-    
+
     growspace_mock = Mock()
     growspace_mock.name = "Growspace 1"
     growspace_mock.id = "gs1"
@@ -27,7 +29,7 @@ def mock_coordinator():
     coordinator.growspaces = {
         "gs1": growspace_mock
     }
-    
+
     coordinator.plants = {
         "p1": Mock(
             plant_id="p1",
@@ -122,7 +124,7 @@ async def test_growspace_calendar_update_and_get_events(mock_coordinator):
 async def test_growspace_calendar_event_property(mock_coordinator):
     """Test the event property to get the next upcoming event."""
     calendar = GrowspaceCalendar(mock_coordinator, "gs1")
-    
+
     # Manually create future events
     now = dt_util.now()
     future_event1 = MagicMock()
@@ -131,7 +133,7 @@ async def test_growspace_calendar_event_property(mock_coordinator):
     future_event2.start_datetime_local = now + timedelta(hours=2)
     past_event = MagicMock()
     past_event.start_datetime_local = now - timedelta(hours=1)
-    
+
     calendar._events = [past_event, future_event2, future_event1]
     # Need to sort them as the property expects sorted list
     calendar._events.sort(key=lambda e: e.start_datetime_local)
@@ -146,7 +148,7 @@ async def test_growspace_calendar_no_events(mock_coordinator):
     mock_coordinator.options["timed_notifications"] = []
     calendar = GrowspaceCalendar(mock_coordinator, "gs1")
     await calendar.async_update()
-    
+
     start_date = dt_util.now() - timedelta(days=30)
     end_date = dt_util.now() + timedelta(days=30)
 
@@ -164,7 +166,7 @@ async def test_generate_events_handles_missing_start_date(mock_coordinator):
     start_date = dt_util.now() - timedelta(days=30)
     end_date = dt_util.now() + timedelta(days=30)
     events = await calendar.async_get_events(mock_coordinator.hass, start_date, end_date)
-    
+
     # Only the flower event should be created
     assert len(events) == 1
     assert events[0].summary.startswith("Flower")

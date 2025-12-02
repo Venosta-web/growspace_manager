@@ -99,6 +99,14 @@ All I/O operations must be asynchronous.
 
 For a comprehensive guide to all development standards, please refer to the detailed documentation in the `.gemini-guidelines` directory of this repository.
 
+### Testing
+
+When running tests, always use the virtual environment's pytest executable to ensure all dependencies are correctly loaded.
+
+```bash
+./venv/bin/pytest tests/
+```
+
 ### External Documentation
 
 When you need to access Home Assistant documentation, use the `context7` tool. This tool can fetch documentation for various libraries, including Home Assistant.

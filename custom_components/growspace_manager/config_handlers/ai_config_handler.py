@@ -1,4 +1,5 @@
 """AI Configuration Handler for Growspace Manager."""
+
 from __future__ import annotations
 
 import logging
@@ -8,7 +9,7 @@ import voluptuous as vol
 from homeassistant.components import conversation
 from homeassistant.helpers import selector
 
-from .const import (
+from ..const import (
     AI_PERSONALITIES,
     CONF_AI_ENABLED,
     CONF_ASSISTANT_ID,
@@ -37,7 +38,9 @@ class AIConfigHandler:
             # Try to get agents from the conversation integration
             if hasattr(conversation, "async_get_conversation_agents"):
                 # Newer HA versions
-                agents_dict = await conversation.async_get_conversation_agents(self.hass)
+                agents_dict = await conversation.async_get_conversation_agents(
+                    self.hass
+                )
                 assistants = [
                     {"id": agent_id, "name": agent_info.name}
                     for agent_id, agent_info in agents_dict.items()
@@ -104,9 +107,7 @@ class AIConfigHandler:
         schema[
             vol.Optional(
                 CONF_NOTIFICATION_PERSONALITY,
-                default=current_settings.get(
-                    CONF_NOTIFICATION_PERSONALITY, "Standard"
-                ),
+                default=current_settings.get(CONF_NOTIFICATION_PERSONALITY, "Standard"),
             )
         ] = selector.SelectSelector(
             selector.SelectSelectorConfig(
@@ -151,5 +152,5 @@ class AIConfigHandler:
 
         # Save to storage
         await coordinator.async_save()
-        
+
         return new_options

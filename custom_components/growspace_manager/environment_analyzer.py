@@ -11,6 +11,7 @@ from .utils import VPDCalculator
 
 if TYPE_CHECKING:
     from homeassistant.core import HomeAssistant
+
     from .coordinator import GrowspaceCoordinator
 
 _LOGGER = logging.getLogger(__name__)
@@ -64,19 +65,19 @@ class EnvironmentAnalyzer:
         outside_temp = None
         outside_humidity = None
         weather_entity_id = global_settings.get("weather_entity")
-        
+
         if weather_entity_id:
             weather_state = self.hass.states.get(weather_entity_id)
             if weather_state and weather_state.attributes:
                 outside_temp = weather_state.attributes.get("temperature")
                 outside_humidity = weather_state.attributes.get("humidity")
-        
+
         outside_vpd = (
             VPDCalculator.calculate_vpd(outside_temp, outside_humidity)
             if outside_temp is not None and outside_humidity is not None
             else None
         )
-        
+
         return outside_temp, outside_humidity, outside_vpd
 
     def _get_lung_room_conditions(
@@ -101,7 +102,7 @@ class EnvironmentAnalyzer:
             if lung_room_temp is not None and lung_room_humidity is not None
             else None
         )
-        
+
         return lung_room_temp, lung_room_humidity, lung_room_vpd
 
     def _calculate_recommendation(

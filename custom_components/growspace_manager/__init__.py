@@ -6,8 +6,8 @@ import logging
 import os
 import tempfile
 
-from aiohttp import web
 import homeassistant.helpers.config_validation as cv
+from aiohttp import web
 from homeassistant.components.http import HomeAssistantView
 from homeassistant.components.persistent_notification import (
     async_create as create_notification,
@@ -18,9 +18,13 @@ from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.storage import Store
 
 from .const import (
+    ADD_DRAIN_TIME_SCHEMA,
     ADD_GROWSPACE_SCHEMA,
+    ADD_IRRIGATION_TIME_SCHEMA,
     ADD_PLANT_SCHEMA,
     ADD_STRAIN_SCHEMA,
+    ANALYZE_ALL_GROWSPACES_SCHEMA,
+    ASK_GROW_ADVICE_SCHEMA,
     CLEAR_STRAIN_LIBRARY_SCHEMA,
     CONFIGURE_ENVIRONMENT_SCHEMA,
     DEBUG_CLEANUP_LEGACY_SCHEMA,
@@ -33,41 +37,38 @@ from .const import (
     IMPORT_STRAIN_LIBRARY_SCHEMA,
     MOVE_CLONE_SCHEMA,
     MOVE_PLANT_SCHEMA,
+    REMOVE_DRAIN_TIME_SCHEMA,
     REMOVE_ENVIRONMENT_SCHEMA,
     REMOVE_GROWSPACE_SCHEMA,
+    REMOVE_IRRIGATION_TIME_SCHEMA,
     REMOVE_PLANT_SCHEMA,
     REMOVE_STRAIN_SCHEMA,
-    UPDATE_STRAIN_META_SCHEMA,
-    ASK_GROW_ADVICE_SCHEMA,
+    SET_DEHUMIDIFIER_CONTROL_SCHEMA,
+    SET_IRRIGATION_SETTINGS_SCHEMA,
     STORAGE_KEY,
     STORAGE_VERSION,
+    STRAIN_RECOMMENDATION_SCHEMA,
     SWITCH_PLANT_SCHEMA,
     TAKE_CLONE_SCHEMA,
     TRANSITION_PLANT_SCHEMA,
     UPDATE_PLANT_SCHEMA,
-    ASK_GROW_ADVICE_SCHEMA,
-    ANALYZE_ALL_GROWSPACES_SCHEMA,
-    STRAIN_RECOMMENDATION_SCHEMA,
-    ADD_DRAIN_TIME_SCHEMA,
-    ADD_IRRIGATION_TIME_SCHEMA,
-    REMOVE_DRAIN_TIME_SCHEMA,
-    REMOVE_IRRIGATION_TIME_SCHEMA,
-    SET_IRRIGATION_SETTINGS_SCHEMA,
-    SET_DEHUMIDIFIER_CONTROL_SCHEMA,
+    UPDATE_STRAIN_META_SCHEMA,
 )
 from .coordinator import GrowspaceCoordinator
 from .dehumidifier_coordinator import DehumidifierCoordinator
+from .intent import async_setup_intents
 from .irrigation_coordinator import IrrigationCoordinator
 from .services import (
+    ai_assistant,
     debug,
-    irrigation,
     environment,
     growspace,
+    irrigation,
     plant,
-    strain_library as strain_library_services,
-    ai_assistant,
 )
-from .intent import async_setup_intents
+from .services import (
+    strain_library as strain_library_services,
+)
 from .strain_library import StrainLibrary
 
 _LOGGER = logging.getLogger(__name__)
@@ -129,20 +130,24 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         _LOGGER.debug(
             "IRRIGATION INIT - Growspace: %s, Config: %s",
             growspace_id,
-            irrigation_config
+            irrigation_config,
         )
-        
-        irrigation_coordinator = IrrigationCoordinator(hass, entry, growspace_id, coordinator)
-        await irrigation_coordinator.async_setup()
-        hass.data[DOMAIN][entry.entry_id]["irrigation_coordinators"][
-            growspace_id
-        ] = irrigation_coordinator
 
-        dehumidifier_coordinator = DehumidifierCoordinator(hass, entry, growspace_id, coordinator)
-        
-        hass.data[DOMAIN][entry.entry_id]["dehumidifier_coordinators"][
-            growspace_id
-        ] = dehumidifier_coordinator
+        irrigation_coordinator = IrrigationCoordinator(
+            hass, entry, growspace_id, coordinator
+        )
+        await irrigation_coordinator.async_setup()
+        hass.data[DOMAIN][entry.entry_id]["irrigation_coordinators"][growspace_id] = (
+            irrigation_coordinator
+        )
+
+        dehumidifier_coordinator = DehumidifierCoordinator(
+            hass, entry, growspace_id, coordinator
+        )
+
+        hass.data[DOMAIN][entry.entry_id]["dehumidifier_coordinators"][growspace_id] = (
+            dehumidifier_coordinator
+        )
 
     entry.add_update_listener(_async_update_listener)
 
@@ -328,45 +333,47 @@ async def _register_services(
     async def ask_grow_advice_wrapper(
         call: ServiceCall, _handler=ai_assistant.handle_ask_grow_advice
     ):
-         return await _handler(hass, coordinator, strain_library_instance, call)
+        return await _handler(hass, coordinator, strain_library_instance, call)
 
     hass.services.async_register(
-        DOMAIN, 
-        "ask_grow_advice", 
-        ask_grow_advice_wrapper, 
-        schema=ASK_GROW_ADVICE_SCHEMA, 
-        supports_response=SupportsResponse.ONLY
+        DOMAIN,
+        "ask_grow_advice",
+        ask_grow_advice_wrapper,
+        schema=ASK_GROW_ADVICE_SCHEMA,
+        supports_response=SupportsResponse.ONLY,
     )
 
     # 2. Analyze All Growspaces (New)
     async def analyze_all_wrapper(
         call: ServiceCall, _handler=ai_assistant.handle_analyze_all_growspaces
     ):
-         return await _handler(hass, coordinator, strain_library_instance, call)
+        return await _handler(hass, coordinator, strain_library_instance, call)
 
     hass.services.async_register(
-        DOMAIN, 
-        "analyze_all_growspaces", 
-        analyze_all_wrapper, 
-        schema=ANALYZE_ALL_GROWSPACES_SCHEMA, 
-        supports_response=SupportsResponse.ONLY
+        DOMAIN,
+        "analyze_all_growspaces",
+        analyze_all_wrapper,
+        schema=ANALYZE_ALL_GROWSPACES_SCHEMA,
+        supports_response=SupportsResponse.ONLY,
     )
 
     # 3. Strain Recommendation (New)
     async def strain_rec_wrapper(
         call: ServiceCall, _handler=ai_assistant.handle_strain_recommendation
     ):
-         return await _handler(hass, coordinator, strain_library_instance, call)
+        return await _handler(hass, coordinator, strain_library_instance, call)
 
     hass.services.async_register(
-        DOMAIN, 
-        "strain_recommendation", 
-        strain_rec_wrapper, 
-        schema=STRAIN_RECOMMENDATION_SCHEMA, 
-        supports_response=SupportsResponse.ONLY
+        DOMAIN,
+        "strain_recommendation",
+        strain_rec_wrapper,
+        schema=STRAIN_RECOMMENDATION_SCHEMA,
+        supports_response=SupportsResponse.ONLY,
     )
 
-    _LOGGER.debug("Registered AI services: ask_grow_advice, analyze_all_growspaces, strain_recommendation")
+    _LOGGER.debug(
+        "Registered AI services: ask_grow_advice, analyze_all_growspaces, strain_recommendation"
+    )
 
     # Register the standalone 'get_strain_library' service
     async def get_strain_library_wrapper(
@@ -385,22 +392,18 @@ async def _register_services(
     _LOGGER.debug("Registered service: get_strain_library")
 
 
-async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
-    """Unload a config entry."""
-    _LOGGER.debug("Unloading config entry %s for Growspace Manager", entry.entry_id)
-
-    # Clean up dynamically created entities before unloading platforms
-    entry_data = hass.data.get(DOMAIN, {}).get(entry.entry_id, {})
-
-    # Cancel irrigation listeners
+def _async_cancel_coordinators(entry_data: dict) -> None:
+    """Cancel irrigation and dehumidifier listeners."""
     if "irrigation_coordinators" in entry_data:
         for coordinator in entry_data["irrigation_coordinators"].values():
             coordinator.async_cancel_listeners()
-    # Cancel dehumidifier listeners
     if "dehumidifier_coordinators" in entry_data:
         for coordinator in entry_data["dehumidifier_coordinators"].values():
             coordinator.async_cancel_listeners()
 
+
+def _async_remove_dynamic_entities(hass: HomeAssistant, entry_data: dict) -> None:
+    """Remove dynamically created entities."""
     created_unique_ids = entry_data.get("created_entities", [])
     entity_registry = er.async_get(hass)
 
@@ -425,6 +428,61 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 unique_id,
             )
 
+
+def _async_remove_services(hass: HomeAssistant) -> None:
+    """Remove all registered services."""
+    service_names_to_remove = [
+        "add_growspace",
+        "remove_growspace",
+        "add_plant",
+        "update_plant",
+        "remove_plant",
+        "move_plant",
+        "switch_plants",
+        "transition_plant_stage",
+        "take_clone",
+        "move_clone",
+        "harvest_plant",
+        "export_strain_library",
+        "import_strain_library",
+        "clear_strain_library",
+        "add_strain",
+        "update_strain_meta",
+        "test_notification",
+        "debug_cleanup_legacy",
+        "debug_list_growspaces",
+        "debug_reset_special_growspaces",
+        "debug_consolidate_growspaces",
+        "get_strain_library",
+        "configure_environment",
+        "remove_environment",
+        "set_dehumidifier_control",
+        "ask_grow_advice",
+        "analyze_all_growspaces",
+        "strain_recommendation",
+        "set_irrigation_settings",
+        "add_irrigation_time",
+        "remove_irrigation_time",
+        "add_drain_time",
+        "remove_drain_time",
+    ]
+
+    for service_name in service_names_to_remove:
+        if hass.services.has_service(DOMAIN, service_name):
+            hass.services.async_remove(DOMAIN, service_name)
+            _LOGGER.debug("Removed service: %s", service_name)
+
+
+async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+    """Unload a config entry."""
+    _LOGGER.debug("Unloading config entry %s for Growspace Manager", entry.entry_id)
+
+    # Clean up dynamically created entities before unloading platforms
+    entry_data = hass.data.get(DOMAIN, {}).get(entry.entry_id, {})
+
+    _async_cancel_coordinators(entry_data)
+    _async_remove_dynamic_entities(hass, entry_data)
+
     unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
 
     if unload_ok:
@@ -440,40 +498,7 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 "Removed global strain_library and domain data as no entries remain."
             )
 
-        # Remove all registered services
-        service_names_to_remove = [
-            "add_growspace",
-            "remove_growspace",
-            "add_plant",
-            "update_plant",
-            "remove_plant",
-            "move_plant",
-            "switch_plants",
-            "transition_plant_stage",
-            "take_clone",
-            "move_clone",
-            "harvest_plant",
-            "export_strain_library",
-            "import_strain_library",
-            "clear_strain_library",
-            "add_strain",
-            "update_strain_meta",
-            "test_notification",
-            "debug_cleanup_legacy",
-            "debug_list_growspaces",
-            "debug_reset_special_growspaces",
-            "debug_con",
-            "get_strain_library",
-            "configure_environment",
-            "remove_environment",
-            "set_dehumidifier_control",
-            "ask_grow_advice",
-        ]
-
-        for service_name in service_names_to_remove:
-            if hass.services.has_service(DOMAIN, service_name):
-                hass.services.async_remove(DOMAIN, service_name)
-                _LOGGER.debug("Removed service: %s", service_name)
+        _async_remove_services(hass)
 
         _LOGGER.info("Unloaded Growspace Manager for entry %s", entry.entry_id)
         return True

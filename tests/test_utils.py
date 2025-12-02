@@ -4,19 +4,21 @@ This file contains a suite of tests for the various helper and utility functions
 defined in `custom_components/growspace_manager/utils.py`. It covers date
 parsing, formatting, calculations, and grid generation logic.
 """
+
 from datetime import date, datetime
+
 import pytest
 
+from custom_components.growspace_manager.models import Growspace, Plant
 from custom_components.growspace_manager.utils import (
-    parse_date_field,
-    format_date,
     calculate_days_since,
-    find_first_free_position,
-    generate_growspace_grid,
-    days_to_week,
     calculate_plant_stage,
+    days_to_week,
+    find_first_free_position,
+    format_date,
+    generate_growspace_grid,
+    parse_date_field,
 )
-from custom_components.growspace_manager.models import Plant, Growspace
 
 
 # ----------------------------
@@ -26,9 +28,9 @@ from custom_components.growspace_manager.models import Plant, Growspace
     "input_value,expected",
     [
         (None, None),
-        (date(2025, 11, 3), date(2025, 11, 3)),
-        (datetime(2025, 11, 3, 15, 30), date(2025, 11, 3)),
-        ("2025-11-03", date(2025, 11, 3)),
+        (date(2025, 11, 3), datetime(2025, 11, 3, 0, 0)),
+        (datetime(2025, 11, 3, 15, 30), datetime(2025, 11, 3, 15, 30)),
+        ("2025-11-03", datetime(2025, 11, 3, 0, 0)),
         ("invalid-date", None),
         (12345, None),
     ],
@@ -38,7 +40,7 @@ def test_parse_date_field(input_value, expected):
 
     Args:
         input_value: The value to be parsed.
-        expected: The expected `date` object or None.
+        expected: The expected `datetime` object or None.
     """
     assert parse_date_field(input_value) == expected
 
@@ -50,9 +52,9 @@ def test_parse_date_field(input_value, expected):
     "input_value,expected",
     [
         (None, None),
-        (date(2025, 11, 3), "2025-11-03"),
-        (datetime(2025, 11, 3, 15, 30), "2025-11-03"),
-        ("2025-11-03", "2025-11-03"),
+        (date(2025, 11, 3), "2025-11-03T00:00:00"),
+        (datetime(2025, 11, 3, 15, 30), "2025-11-03T15:30:00"),
+        ("2025-11-03", "2025-11-03T00:00:00"),
         ("invalid-date", None),
         (12345, None),
     ],
@@ -62,7 +64,7 @@ def test_format_date(input_value, expected):
 
     Args:
         input_value: The value to be formatted.
-        expected: The expected ISO-formatted date string or None.
+        expected: The expected ISO-formatted datetime string or None.
     """
     assert format_date(input_value) == expected
 

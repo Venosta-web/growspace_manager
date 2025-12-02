@@ -2,16 +2,14 @@
 from __future__ import annotations
 
 import logging
-from typing import Any
 
-from homeassistant.core import HomeAssistant
-from homeassistant.helpers import intent
 import homeassistant.helpers.config_validation as cv
 import voluptuous as vol
+from homeassistant.core import HomeAssistant
+from homeassistant.helpers import intent
 
 from .const import DOMAIN
 from .coordinator import GrowspaceCoordinator
-from .services.ai_assistant import handle_ask_grow_advice
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -71,7 +69,7 @@ class AskGrowAdviceIntent(intent.IntentHandler):
         # Calling the service via hass.services.async_call is usually better to ensure proper context,
         # but we want the return value (the speech).
         # However, intents usually return a speech response directly.
-        
+
         # Let's call the service and get the response
         try:
             response_data = await self.hass.services.async_call(
@@ -81,7 +79,7 @@ class AskGrowAdviceIntent(intent.IntentHandler):
                 blocking=True,
                 return_response=True,
             )
-            
+
             speech_text = "I couldn't get a response from the grow assistant."
             if response_data and "response" in response_data:
                 speech_text = response_data["response"]

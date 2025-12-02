@@ -2,42 +2,32 @@
 
 from __future__ import annotations
 
-from dataclasses import asdict
-from .models import Plant, Growspace
-from .utils import (
-    format_date,
-    find_first_free_position,
-    generate_growspace_grid,
-    VPDCalculator,
-    parse_date_field as util_parse_date_field,
-    calculate_plant_stage,
-)
-from .strain_library import StrainLibrary
-from .migration_manager import MigrationManager
-from .growspace_validator import GrowspaceValidator
-from .storage_manager import StorageManager
-from .environment_analyzer import EnvironmentAnalyzer
-from .notification_manager import NotificationManager
-from .const import (
-    STORAGE_KEY,
-    PLANT_STAGES,
-    DATE_FIELDS,
-    DOMAIN,
-    STORAGE_VERSION,
-    SPECIAL_GROWSPACES,
-)
 import logging
 import uuid
-from datetime import datetime, date
-from typing import TYPE_CHECKING, Any, Optional
+from datetime import date, datetime
+from typing import Any
 
 from dateutil import parser
-from homeassistant.helpers import (
-    device_registry as dr,
-    entity_registry as er,
-)
+from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 
+from .const import (
+    DATE_FIELDS,
+    PLANT_STAGES,
+)
+from .environment_analyzer import EnvironmentAnalyzer
+from .growspace_validator import GrowspaceValidator
+from .import_export_manager import ImportExportManager
+from .migration_manager import MigrationManager
+from .models import Growspace, Plant
+from .notification_manager import NotificationManager
+from .storage_manager import StorageManager
+from .strain_library import StrainLibrary
+from .utils import (
+    calculate_plant_stage,
+    format_date,
+    generate_growspace_grid,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -97,6 +87,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
         self.storage_manager = StorageManager(self, hass)
         self.environment_analyzer = EnvironmentAnalyzer(hass, self)
         self.notification_manager = NotificationManager(hass, self)
+        self.import_export_manager = ImportExportManager(hass)
 
         self._notifications_sent: dict[str, dict[str, bool]] = {}
         self._notifications_enabled: dict[
@@ -185,7 +176,6 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
     # UTILITY AND HELPER METHODS
     # =============================================================================
 
-
     def get_plant(self, plant_id: str) -> Plant | None:
         """Retrieve a plant by its ID.
 
@@ -214,7 +204,6 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
         if growspace:
             return gs_id, growspace.name  # access attribute, not dict key
         return gs_id, gs_id
-
 
     def _parse_date_field(self, date_value: str | datetime | date | None) -> str | None:
         """Parse and format a date field into a standard ISO format string.
@@ -259,9 +248,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
             _LOGGER.warning("Failed to parse date %s: %s", date_value, e)
         return None
 
-    def calculate_days(
-        self, start_date: DateInput, end_date: DateInput = None
-    ) -> int:
+    def calculate_days(self, start_date: DateInput, end_date: DateInput = None) -> int:
         """Calculate the number of days that have passed since a given date.
 
         If an end_date is provided and is valid (i.e., not in the future relative
@@ -332,13 +319,11 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
         canonical_id, _ = self._canonical_special(growspace_id)
 
         # Clean up any legacy aliases
-        self._cleanup_legacy_aliases(canonical_id)
+        self.migration_manager.cleanup_legacy_aliases(canonical_id)
 
         # Create or update the canonical growspace
         if canonical_id not in self.growspaces:
-            self._create_special_growspace(
-                canonical_id, name, rows, plants_per_row
-            )
+            self._create_special_growspace(canonical_id, name, rows, plants_per_row)
             # ✅ Enable notifications by default for new special growspace
             self._notifications_enabled[canonical_id] = True
         else:
@@ -346,8 +331,6 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
 
         self.update_data_property()
         return canonical_id
-
-        self.migration_manager.cleanup_legacy_aliases(canonical_id)
 
     def _create_special_growspace(
         self, canonical_id: str, canonical_name: str, rows: int, plants_per_row: int
@@ -1320,7 +1303,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
         transition_date = transition_date or date.today().isoformat()
 
         # Log harvest start
-        stage_before = self._get_plant_stage(plant)
+        stage_before = calculate_plant_stage(plant)
         _LOGGER.info(
             "Harvest start: plant_id=%s stage=%s current_growspace=%s target_id=%s target_name=%s date=%s",
             plant_id,
@@ -1412,8 +1395,8 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
         plant.growspace_id = target_growspace_id
 
         try:
-            row, col = self._find_first_available_position(target_growspace_id)
-            plant.row, plant.col = row, col
+            pos = self.validator.find_first_available_position(target_growspace_id)
+            plant.row, plant.col = pos
         except ValueError as e:
             _LOGGER.warning(
                 "Failed to find position in target growspace %s: %s",
@@ -1470,7 +1453,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
         Returns:
             True if the plant was moved, False otherwise.
         """
-        current_stage = self._get_plant_stage(plant)
+        current_stage = calculate_plant_stage(plant)
 
         # Handle name hints
         if target_growspace_name:
@@ -1518,7 +1501,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
         plant.growspace_id = clone_id
 
         try:
-            new_row, new_col = self._find_first_available_position(clone_id)
+            new_row, new_col = self.validator.find_first_available_position(clone_id)
             plant.row, plant.col = new_row, new_col
             await self.async_update_plant(
                 plant_id,
@@ -1567,7 +1550,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
             plant.device_id = growspace.device_id
 
         try:
-            new_row, new_col = self._find_first_available_position(dry_id)
+            new_row, new_col = self.validator.find_first_available_position(dry_id)
             plant.row, plant.col = new_row, new_col
             await self.async_update_plant(
                 plant_id,
@@ -1602,7 +1585,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
         plant.growspace_id = cure_id
 
         try:
-            new_row, new_col = self._find_first_available_position(cure_id)
+            new_row, new_col = self.validator.find_first_available_position(cure_id)
             plant.row, plant.col = new_row, new_col
             await self.async_update_plant(
                 plant_id,
@@ -1670,8 +1653,6 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
         """
         return self.get_strain_options()
 
-
-
     async def clear_strains(self) -> int:
         """Remove all strains from the library.
 
@@ -1712,7 +1693,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
         start_date = getattr(plant, f"{stage}_start", None)
 
         end_date = None
-        if stage == "seedling" or stage == "clone":
+        if stage in {"seedling", "clone"}:
             end_date = getattr(plant, "veg_start", None)
         elif stage == "veg":
             end_date = getattr(plant, "flower_start", None)
@@ -1812,4 +1793,3 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
 
         self._notifications_sent[plant_id][stage][str(days)] = True
         await self.async_save()
-

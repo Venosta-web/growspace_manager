@@ -5,7 +5,7 @@ import asyncio
 import logging
 from datetime import datetime
 from functools import partial
-from typing import Any, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
@@ -23,7 +23,7 @@ class IrrigationCoordinator:
     """Manages irrigation and drain schedules for a specific growspace."""
 
     def __init__(
-        self, hass: HomeAssistant, config_entry: ConfigEntry, growspace_id: str, main_coordinator: "GrowspaceCoordinator"
+        self, hass: HomeAssistant, config_entry: ConfigEntry, growspace_id: str, main_coordinator: GrowspaceCoordinator
     ):
         """Initialize the irrigation coordinator."""
         self.hass = hass
@@ -45,10 +45,10 @@ class IrrigationCoordinator:
         """Save changes to storage and reload listeners."""
         # Save to custom storage via main coordinator
         await self._main_coordinator.async_save()
-        
+
         # Notify listeners of update
         self._main_coordinator.async_set_updated_data(self._main_coordinator.data)
-        
+
         # Reload the irrigation listeners with new schedule
         if reload_listeners:
             await self.async_update_listeners()
@@ -56,7 +56,7 @@ class IrrigationCoordinator:
     async def async_set_settings(self, new_settings: dict[str, Any]) -> None:
         """Update the irrigation settings for the growspace."""
         growspace = self._main_coordinator.growspaces[self._growspace_id]
-        
+
         # Update settings in growspace object
         growspace.irrigation_config.update(new_settings)
 
@@ -65,7 +65,7 @@ class IrrigationCoordinator:
             self._growspace_id,
             new_settings,
         )
-        
+
         # Persist the changes
         await self._save_and_reload()
 
@@ -78,9 +78,9 @@ class IrrigationCoordinator:
 
         if len(time_str) == 5:
             time_str = f"{time_str}:00"
-        
+
         growspace = self._main_coordinator.growspaces[self._growspace_id]
-        
+
         if schedule_key not in growspace.irrigation_config:
             growspace.irrigation_config[schedule_key] = []
 
@@ -124,7 +124,7 @@ class IrrigationCoordinator:
         try:
             schedule = growspace.irrigation_config.get(schedule_key, [])
             items_before = len(schedule)
-            
+
             # Filter out matching times
             growspace.irrigation_config[schedule_key] = [
                 item for item in schedule if item.get("time") != time_str
@@ -139,7 +139,7 @@ class IrrigationCoordinator:
                     self._growspace_id,
                 )
                 return
-            
+
             _LOGGER.info(
                 "Removed %d item(s) with time %s from %s for growspace %s",
                 items_before - items_after,
@@ -162,7 +162,7 @@ class IrrigationCoordinator:
         """Set up the irrigation schedules."""
         # MIGRATION: Check if we have legacy options in config entry but empty growspace config
         growspace = self._main_coordinator.growspaces[self._growspace_id]
-        
+
         if not growspace.irrigation_config:
             legacy_options = self._config_entry.options.get("irrigation", {}).get(
                 self._growspace_id, {}
@@ -185,7 +185,7 @@ class IrrigationCoordinator:
         # Get irrigation options from growspace object
         growspace = self._main_coordinator.growspaces[self._growspace_id]
         options = growspace.irrigation_config
-        
+
         # Make defensive copies to avoid reference issues
         irrigation_times = list(options.get("irrigation_times", []))
         drain_times = list(options.get("drain_times", []))
@@ -196,7 +196,7 @@ class IrrigationCoordinator:
             len(irrigation_times),
             len(drain_times)
         )
-        
+
         # Log the actual schedule data for debugging
         if irrigation_times:
             _LOGGER.debug("Irrigation schedule: %s", irrigation_times)
@@ -224,10 +224,10 @@ class IrrigationCoordinator:
                     time_str,
                 )
                 return
-            
+
             if len(time_str) == 5:
                 time_str = f"{time_str}:00"
-                
+
             time_obj = datetime.strptime(time_str, "%H:%M:%S").time()
 
             handler = partial(
@@ -241,9 +241,9 @@ class IrrigationCoordinator:
                 minute=time_obj.minute,
                 second=time_obj.second,
             )
-            
+
             self._listeners.append(listener)
-            
+
             _LOGGER.debug(
                 "Scheduled %s event for growspace %s at %s",
                 event_type,

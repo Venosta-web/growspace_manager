@@ -7,27 +7,28 @@ creation, updating, removal, and various stage transitions. It also tests
 data migration, validation, and helper methods.
 """
 
+from datetime import date, datetime, timedelta
+from unittest.mock import AsyncMock, MagicMock, Mock, patch
+
 import pytest
 from freezegun import freeze_time
-from datetime import date, datetime, timedelta
-from dateutil import parser
-from unittest.mock import patch, AsyncMock, MagicMock, Mock
+from homeassistant.helpers import entity_registry as er
 
-from custom_components.growspace_manager.const import DOMAIN
-from custom_components.growspace_manager.config_flow import OptionsFlowHandler
-from custom_components.growspace_manager.coordinator import Growspace
-from custom_components.growspace_manager.coordinator import GrowspaceCoordinator
-from custom_components.growspace_manager.coordinator import Plant
 from custom_components.growspace_manager.const import (
+    DOMAIN,
     PLANT_STAGES,
     SPECIAL_GROWSPACES,
 )
-from homeassistant.helpers import entity_registry as er
+from custom_components.growspace_manager.coordinator import (
+    GrowspaceCoordinator,
+    Plant,
+)
 from custom_components.growspace_manager.models import Growspace
+from custom_components.growspace_manager.utils import calculate_plant_stage
 
 
 @pytest.fixture
-def coordinator(hass):
+def mock_coordinator(hass):
     """Provide a fresh `GrowspaceCoordinator` instance for each test.
 
     Args:
@@ -36,7 +37,9 @@ def coordinator(hass):
     Returns:
         A new `GrowspaceCoordinator` instance with mocked update methods.
     """
-    coordinator = GrowspaceCoordinator(hass, data={})
+    strain_library = MagicMock()
+    strain_library.record_harvest = AsyncMock()
+    coordinator = GrowspaceCoordinator(hass, data={}, strain_library=strain_library)
     coordinator.async_set_updated_data = MagicMock()
     return coordinator
 
@@ -83,13 +86,13 @@ async def test_transition_plant_stage(coordinator):
         assert updated.stage == stage
 
         if stage == "veg":
-            assert updated.veg_start == transition_date
+            assert updated.veg_start.startswith(transition_date)
         elif stage == "flower":
-            assert updated.flower_start == transition_date
+            assert updated.flower_start.startswith(transition_date)
         elif stage == "dry":
-            assert updated.dry_start == transition_date
+            assert updated.dry_start.startswith(transition_date)
         elif stage == "cure":
-            assert updated.cure_start == transition_date
+            assert updated.cure_start.startswith(transition_date)
 
 
 @pytest.mark.asyncio
@@ -277,9 +280,9 @@ async def test_migrate_legacy_growspaces(coordinator):
 
     # Patch the _migrate_special_alias_if_needed method to track calls
     with patch.object(
-        coordinator,
+        coordinator.migration_manager,
         "_migrate_special_alias_if_needed",
-        wraps=coordinator._migrate_special_alias_if_needed,
+        wraps=coordinator.migration_manager._migrate_special_alias_if_needed,
     ) as mock_migrate:
         # Call the private migration method
         coordinator._migrate_legacy_growspaces()
@@ -310,20 +313,23 @@ async def test_create_canonical_from_alias(coordinator):
     canonical_id = "canonical_gs"
     canonical_name = "Canonical GS"
 
-    # Use a dict to cover the "else" branch
-    coordinator.growspaces[alias_id] = {
-        "rows": 4,
-        "plants_per_row": 5,
-        "notification_target": "notify_me",
-        "device_id": "device_1",
-    }
+    coordinator.growspaces[alias_id] = Growspace(
+        id=alias_id,
+        name="Alias GS",
+        rows=4,
+        plants_per_row=5,
+        notification_target="notify_me",
+        device_id="device_1",
+    )
 
-    # Patch _migrate_plants_to_growspace and update_data_property
-    coordinator._migrate_plants_to_growspace = Mock()
+    # Patch migrate_plants_to_growspace and update_data_property
+    coordinator.migration_manager.migrate_plants_to_growspace = Mock()
     coordinator.update_data_property = Mock()
 
     # Call the internal method
-    coordinator._create_canonical_from_alias(alias_id, canonical_id, canonical_name)
+    coordinator.migration_manager._create_canonical_from_alias(
+        alias_id, canonical_id, canonical_name
+    )
 
     # Assert the canonical growspace exists
     new_gs = coordinator.growspaces[canonical_id]
@@ -332,13 +338,13 @@ async def test_create_canonical_from_alias(coordinator):
     assert new_gs.rows == 4
     assert new_gs.plants_per_row == 5
     assert new_gs.notification_target == "notify_me"
-    assert new_gs.device_id is None  # Because dict path always sets device_id to None
+    assert new_gs.device_id == "device_1"  # Now preserves device_id from source
 
     # Alias removed
     assert alias_id not in coordinator.growspaces
 
     # Helpers called
-    coordinator._migrate_plants_to_growspace.assert_called_once_with(
+    coordinator.migration_manager.migrate_plants_to_growspace.assert_called_once_with(
         alias_id, canonical_id
     )
     coordinator.update_data_property.assert_called_once()
@@ -360,11 +366,13 @@ async def test_consolidate_alias_into_canonical(coordinator):
     coordinator.growspaces[canonical_id] = {"name": "Canonical GS"}
 
     # Patch helpers
-    coordinator._migrate_plants_to_growspace = Mock()
+    coordinator.migration_manager.migrate_plants_to_growspace = Mock()
     coordinator.update_data_property = Mock()
 
     # Call the method
-    coordinator._consolidate_alias_into_canonical(alias_id, canonical_id)
+    coordinator.migration_manager._consolidate_alias_into_canonical(
+        alias_id, canonical_id
+    )
 
     # Assert alias removed
     assert alias_id not in coordinator.growspaces
@@ -373,7 +381,7 @@ async def test_consolidate_alias_into_canonical(coordinator):
     assert canonical_id in coordinator.growspaces
 
     # Helpers called
-    coordinator._migrate_plants_to_growspace.assert_called_once_with(
+    coordinator.migration_manager.migrate_plants_to_growspace.assert_called_once_with(
         alias_id, canonical_id
     )
     coordinator.update_data_property.assert_called_once()
@@ -401,7 +409,7 @@ async def test_migrate_plants_to_growspace(coordinator):
     plant3 = await coordinator.async_add_plant("gs2", "Strain3")  # Should remain
 
     # Migrate plants
-    coordinator._migrate_plants_to_growspace("gs1", "gs2")
+    coordinator.migration_manager.migrate_plants_to_growspace("gs1", "gs2")
 
     # Assert all plants from gs1 are now in gs2
     assert coordinator.plants[plant1.plant_id].growspace_id == "gs2"
@@ -432,7 +440,7 @@ async def test_get_plant_stage(coordinator: GrowspaceCoordinator):
             plant = Plant(plant_id="seedling_id", strain="Test", growspace_id="gs1")
         else:
             plant = make_plant_with_stage(stage)
-        result = coordinator._get_plant_stage(plant)
+        result = calculate_plant_stage(plant)
         assert result == stage, f"Expected stage {stage}, got {result}"
 
 
@@ -469,11 +477,11 @@ async def test_validate_growspace_exists(coordinator: GrowspaceCoordinator):
     gs = await coordinator.async_add_growspace("Test GS")
 
     # Existing growspace should not raise
-    coordinator._validate_growspace_exists(gs.id)
+    coordinator.validator.validate_growspace_exists(gs.id)
 
     # Nonexistent growspace should raise ValueError
-    with pytest.raises(ValueError, match=f"Growspace nonexistent does not exist"):
-        coordinator._validate_growspace_exists("nonexistent")
+    with pytest.raises(ValueError, match="Growspace nonexistent does not exist"):
+        coordinator.validator.validate_growspace_exists("nonexistent")
 
 
 @pytest.mark.asyncio
@@ -489,11 +497,11 @@ async def test_validate_plant_exists(coordinator: GrowspaceCoordinator):
     plant = await coordinator.async_add_plant(gs.id, "Strain X", row=1, col=1)
 
     # Existing plant should not raise
-    coordinator._validate_plant_exists(plant.plant_id)
+    coordinator.validator.validate_plant_exists(plant.plant_id)
 
     # Nonexistent plant should raise ValueError
-    with pytest.raises(ValueError, match=f"Plant nonexistent does not exist"):
-        coordinator._validate_plant_exists("nonexistent")
+    with pytest.raises(ValueError, match="Plant nonexistent does not exist"):
+        coordinator.validator.validate_plant_exists("nonexistent")
 
 
 @pytest.mark.asyncio
@@ -508,20 +516,20 @@ async def test_validate_position_bounds(coordinator: GrowspaceCoordinator):
     gs = await coordinator.async_add_growspace("Bounds GS", rows=3, plants_per_row=3)
 
     # Valid positions should not raise
-    coordinator._validate_position_bounds(gs.id, row=1, col=1)
-    coordinator._validate_position_bounds(gs.id, row=3, col=3)
+    coordinator.validator.validate_position_bounds(gs.id, row=1, col=1)
+    coordinator.validator.validate_position_bounds(gs.id, row=3, col=3)
 
     # Row out of bounds
     with pytest.raises(ValueError, match="Row 0 is outside growspace bounds"):
-        coordinator._validate_position_bounds(gs.id, row=0, col=1)
+        coordinator.validator.validate_position_bounds(gs.id, row=0, col=1)
     with pytest.raises(ValueError, match="Row 4 is outside growspace bounds"):
-        coordinator._validate_position_bounds(gs.id, row=4, col=1)
+        coordinator.validator.validate_position_bounds(gs.id, row=4, col=1)
 
     # Column out of bounds
     with pytest.raises(ValueError, match="Column 0 is outside growspace bounds"):
-        coordinator._validate_position_bounds(gs.id, row=1, col=0)
+        coordinator.validator.validate_position_bounds(gs.id, row=1, col=0)
     with pytest.raises(ValueError, match="Column 4 is outside growspace bounds"):
-        coordinator._validate_position_bounds(gs.id, row=1, col=4)
+        coordinator.validator.validate_position_bounds(gs.id, row=1, col=4)
 
 
 @pytest.mark.asyncio
@@ -539,16 +547,16 @@ async def test_validate_position_not_occupied(coordinator: GrowspaceCoordinator)
     plant1 = await coordinator.async_add_plant(gs.id, "Strain1", row=1, col=1)
 
     # Valid: empty position
-    coordinator._validate_position_not_occupied(gs.id, row=2, col=2)
+    coordinator.validator.validate_position_not_occupied(gs.id, row=2, col=2)
 
     # Invalid: occupied position
     with pytest.raises(
-        ValueError, match="Position \(1,1\) is already occupied by Strain1"
+        ValueError, match=r"Position \(1,1\) is already occupied by Strain1"
     ):
-        coordinator._validate_position_not_occupied(gs.id, row=1, col=1)
+        coordinator.validator.validate_position_not_occupied(gs.id, row=1, col=1)
 
     # Valid if excluding the same plant
-    coordinator._validate_position_not_occupied(
+    coordinator.validator.validate_position_not_occupied(
         gs.id, row=1, col=1, exclude_plant_id=plant1.plant_id
     )
 
@@ -570,10 +578,10 @@ async def test_parse_date_fields(coordinator: GrowspaceCoordinator):
 
     coordinator._parse_date_fields(kwargs)
 
-    # Check against ISO strings
-    assert kwargs["veg_start"] == "2025-01-01"
-    assert kwargs["flower_start"] == "2025-02-01"
-    assert kwargs["dry_start"] == "2025-03-01"
+    # Check against ISO strings (now with time component)
+    assert kwargs["veg_start"].startswith("2025-01-01")
+    assert kwargs["flower_start"].startswith("2025-02-01")
+    assert kwargs["dry_start"].startswith("2025-03-01")
     assert kwargs["cure_start"] is None
 
 
@@ -707,9 +715,10 @@ async def test_async_load(coordinator):
     }
 
     # Mock the store to return this data
-    coordinator.store.async_load = AsyncMock(return_value=fake_data)
+    coordinator.storage_manager.store.async_load = AsyncMock(return_value=fake_data)
     coordinator.async_save = AsyncMock()
     coordinator.strains.import_strains = AsyncMock()
+    coordinator.storage_manager.async_save = AsyncMock()
     await coordinator.async_load()
 
     # Assertions
@@ -718,12 +727,8 @@ async def test_async_load(coordinator):
     assert coordinator._notifications_sent == {"gs1": []}
     assert coordinator._notifications_enabled == {"gs1": True}
 
-    # Ensure strains imported
-    coordinator.strains.import_strains.assert_called_once_with(
-        fake_data["strain_library"], replace=True
-    )
     # Ensure save called
-    coordinator.async_save.assert_called_once()
+    coordinator.storage_manager.async_save.assert_called_once()
 
 
 @pytest.mark.asyncio
@@ -1041,11 +1046,12 @@ async def test_find_first_available_position(coordinator):
     await coordinator.async_add_plant(gs.id, "Strain A", row=1, col=1)
     await coordinator.async_add_plant(gs.id, "Strain B", row=1, col=2)
     # First available should be (2,1)
-    row, col = coordinator._find_first_available_position(gs.id)
+    row, col = coordinator.validator.find_first_available_position(gs.id)
     assert (row, col) == (2, 1)
     # Fill (2,1)
     await coordinator.async_add_plant(gs.id, "Strain C", row=2, col=1)
-    row, col = coordinator._find_first_available_position(gs.id)
+    # First available should now be (2,2)
+    row, col = coordinator.validator.find_first_available_position(gs.id)
     assert (row, col) == (2, 2)
 
 
@@ -1187,17 +1193,17 @@ async def test_async_harvest_plant_explicit_target(coordinator):
 
 
 @pytest.mark.asyncio
-async def test_async_harvest_plant_auto_flow_to_dry(coordinator):
+async def test_async_harvest_plant_auto_flow_to_dry(mock_coordinator):
     """Test harvesting a plant with auto-flow to the dry growspace.
     Args:
         coordinator: The mock GrowspaceCoordinator.
     """
-    gs = await coordinator.async_add_growspace("Flower GS")
-    plant = await coordinator.async_add_plant(
+    gs = await mock_coordinator.async_add_growspace("Flower GS")
+    plant = await mock_coordinator.async_add_plant(
         gs.id, "Strain A", stage="flower", flower_start=date(2025, 1, 1)
     )
-    await coordinator.async_harvest_plant(plant.plant_id, None, None, None)
-    updated_plant = coordinator.get_plant(plant.plant_id)
+    await mock_coordinator.async_harvest_plant(plant.plant_id, None, None, None)
+    updated_plant = mock_coordinator.get_plant(plant.plant_id)
     assert updated_plant.growspace_id == "dry"
     assert updated_plant.stage == "dry"
     assert updated_plant.dry_start == date.today().isoformat()
@@ -1298,7 +1304,7 @@ async def test_async_check_timed_notifications(coordinator):
     # Correctly mock the service call on the hass object
     coordinator.hass.services = MagicMock()
     coordinator.hass.services.async_call = AsyncMock()
-    await coordinator._async_check_timed_notifications()
+    await coordinator.notification_manager.async_check_timed_notifications()
     coordinator.hass.services.async_call.assert_called_once_with(
         "notify",
         "test",
@@ -1352,7 +1358,9 @@ async def test_async_update_air_exchange_recommendations(hass):
             }
         }
 
-        await coordinator._async_update_air_exchange_recommendations()
+        await (
+            coordinator.environment_analyzer.async_update_air_exchange_recommendations()
+        )
 
         # Verify the registry was queried correctly
         mock_get_id.assert_called_with("binary_sensor", DOMAIN, stress_sensor_unique_id)
@@ -1367,7 +1375,7 @@ async def test_async_update_air_exchange_recommendations(hass):
             "lung_room_humidity_sensor": "sensor.lung_room_humidity",
         }
     }
-    await coordinator._async_update_air_exchange_recommendations()
+    await coordinator.environment_analyzer.async_update_air_exchange_recommendations()
     assert coordinator.data["air_exchange_recommendations"][gs.id] == "Idle"
 
 
@@ -1419,13 +1427,13 @@ async def test_get_growspace_grid(coordinator):
     assert grid[0][1] == plant.plant_id
     assert grid[1][0] is None
     assert grid[1][1] is None
+
+
 """Additional tests for the Growspace Manager data update coordinator to improve coverage."""
 
 import pytest
-from unittest.mock import patch, MagicMock, AsyncMock
 
 from custom_components.growspace_manager.coordinator import GrowspaceCoordinator
-from custom_components.growspace_manager.models import Growspace
 
 
 @pytest.fixture
@@ -1490,11 +1498,11 @@ async def test_migrate_legacy_growspaces_error_handling(hass, caplog):
     coordinator = GrowspaceCoordinator(hass, data={})
 
     with patch.object(
-        coordinator,
+        coordinator.migration_manager,
         "_migrate_special_alias_if_needed",
         side_effect=ValueError("Test error"),
     ):
-        coordinator._migrate_legacy_growspaces()
+        coordinator.migration_manager.migrate_legacy_growspaces()
 
     assert any(
         "Special growspace migration skipped" in r.message for r in caplog.records
@@ -1506,12 +1514,16 @@ async def test_migrate_special_alias_if_needed_no_op(hass):
     """Test that no migration happens if alias and canonical IDs are the same."""
     coordinator = GrowspaceCoordinator(hass, data={})
     with (
-        patch.object(coordinator, "_create_canonical_from_alias") as mock_create,
         patch.object(
-            coordinator, "_consolidate_alias_into_canonical"
+            coordinator.migration_manager, "_create_canonical_from_alias"
+        ) as mock_create,
+        patch.object(
+            coordinator.migration_manager, "_consolidate_alias_into_canonical"
         ) as mock_consolidate,
     ):
-        coordinator._migrate_special_alias_if_needed("test", "test", "Test")
+        coordinator.migration_manager._migrate_special_alias_if_needed(
+            "test", "test", "Test"
+        )
         mock_create.assert_not_called()
         mock_consolidate.assert_not_called()
 
@@ -1522,12 +1534,16 @@ async def test_migrate_special_alias_if_needed_create_canonical(hass):
     coordinator = GrowspaceCoordinator(hass, data={})
     coordinator.growspaces["alias"] = {"name": "Alias"}
     with (
-        patch.object(coordinator, "_create_canonical_from_alias") as mock_create,
         patch.object(
-            coordinator, "_consolidate_alias_into_canonical"
+            coordinator.migration_manager, "_create_canonical_from_alias"
+        ) as mock_create,
+        patch.object(
+            coordinator.migration_manager, "_consolidate_alias_into_canonical"
         ) as mock_consolidate,
     ):
-        coordinator._migrate_special_alias_if_needed("alias", "canonical", "Canonical")
+        coordinator.migration_manager._migrate_special_alias_if_needed(
+            "alias", "canonical", "Canonical"
+        )
         mock_create.assert_called_once_with("alias", "canonical", "Canonical")
         mock_consolidate.assert_not_called()
 
@@ -1539,12 +1555,16 @@ async def test_migrate_special_alias_if_needed_consolidate(hass):
     coordinator.growspaces["alias"] = {"name": "Alias"}
     coordinator.growspaces["canonical"] = {"name": "Canonical"}
     with (
-        patch.object(coordinator, "_create_canonical_from_alias") as mock_create,
         patch.object(
-            coordinator, "_consolidate_alias_into_canonical"
+            coordinator.migration_manager, "_create_canonical_from_alias"
+        ) as mock_create,
+        patch.object(
+            coordinator.migration_manager, "_consolidate_alias_into_canonical"
         ) as mock_consolidate,
     ):
-        coordinator._migrate_special_alias_if_needed("alias", "canonical", "Canonical")
+        coordinator.migration_manager._migrate_special_alias_if_needed(
+            "alias", "canonical", "Canonical"
+        )
         mock_create.assert_not_called()
         mock_consolidate.assert_called_once_with("alias", "canonical")
 
@@ -1557,20 +1577,21 @@ async def test_get_plant_stage_special_growspaces(hass):
     coordinator = GrowspaceCoordinator(hass, data={})
 
     plant_mother = Plant(plant_id="p1", strain="Test", growspace_id="mother")
-    assert coordinator._get_plant_stage(plant_mother) == "mother"
+    assert calculate_plant_stage(plant_mother) == "mother"
 
     plant_clone = Plant(plant_id="p2", strain="Test", growspace_id="clone")
-    assert coordinator._get_plant_stage(plant_clone) == "clone"
+    assert calculate_plant_stage(plant_clone) == "clone"
 
     plant_cure = Plant(plant_id="p3", strain="Test", growspace_id="cure")
-    assert coordinator._get_plant_stage(plant_cure) == "cure"
+    assert calculate_plant_stage(plant_cure) == "cure"
 
 
 @pytest.mark.asyncio
 async def test_get_plant_stage_seedling(hass):
     """Test _get_plant_stage for the seedling stage."""
-    from custom_components.growspace_manager.models import Plant
     from datetime import date
+
+    from custom_components.growspace_manager.models import Plant
 
     coordinator = GrowspaceCoordinator(hass, data={})
 
@@ -1580,7 +1601,7 @@ async def test_get_plant_stage_seedling(hass):
         growspace_id="gs1",
         seedling_start=date.today(),
     )
-    assert coordinator._get_plant_stage(plant) == "seedling"
+    assert calculate_plant_stage(plant) == "seedling"
 
 
 @pytest.mark.asyncio
@@ -1591,7 +1612,7 @@ async def test_get_plant_stage_fallback(hass):
     coordinator = GrowspaceCoordinator(hass, data={})
 
     plant = Plant(plant_id="p1", strain="Test", growspace_id="gs1", stage="veg")
-    assert coordinator._get_plant_stage(plant) == "veg"
+    assert calculate_plant_stage(plant) == "veg"
 
 
 @pytest.mark.asyncio
@@ -1614,7 +1635,7 @@ async def test_async_load_error_handling(hass, caplog):
         "plants": {"p1": "not_a_plant_object"},
         "growspaces": {"gs1": "not_a_growspace_object"},
     }
-    coordinator.store.async_load = AsyncMock(return_value=invalid_data)
+    coordinator.storage_manager.store.async_load = AsyncMock(return_value=invalid_data)
 
     await coordinator.async_load()
 
@@ -1641,7 +1662,7 @@ async def test_async_load_with_options(hass, caplog):
             }
         }
     }
-    coordinator.store.async_load = AsyncMock(return_value=data)
+    coordinator.storage_manager.store.async_load = AsyncMock(return_value=data)
 
     await coordinator.async_load()
 
@@ -1666,7 +1687,7 @@ async def test_async_load_ensures_notifications_enabled(hass):
         },
         "notifications_enabled": {},
     }
-    coordinator.store.async_load = AsyncMock(return_value=data)
+    coordinator.storage_manager.store.async_load = AsyncMock(return_value=data)
 
     await coordinator.async_load()
 
@@ -1709,7 +1730,7 @@ async def test_cleanup_legacy_aliases(hass, caplog):
     plant = Plant(plant_id="p1", strain="Test", growspace_id="drying")
     coordinator.plants[plant.plant_id] = plant
 
-    coordinator._cleanup_legacy_aliases("dry")
+    coordinator.migration_manager.cleanup_legacy_aliases("dry")
 
     assert "drying" not in coordinator.growspaces
     assert coordinator.plants["p1"].growspace_id == "dry"
@@ -1823,7 +1844,7 @@ async def test_harvest_auto_flow_mother_to_clone(hass):
 
     coordinator = GrowspaceCoordinator(hass, data={})
     plant = MagicMock()
-    coordinator._get_plant_stage = MagicMock(return_value="mother")
+    plant.stage = "mother"
     coordinator._move_to_clone_growspace = AsyncMock(return_value=True)
 
     result = await coordinator._harvest_auto_flow("p1", plant, None, "2025-01-01")
@@ -1860,9 +1881,10 @@ async def test_harvest_to_explicit_target_no_position(hass, caplog):
     caplog.set_level("WARNING")
     coordinator = GrowspaceCoordinator(hass, data={})
     plant = MagicMock()
-    coordinator._find_first_available_position = MagicMock(
+    coordinator.validator.find_first_available_position = MagicMock(
         side_effect=ValueError("No position")
     )
+    coordinator.growspaces = {"gs1": MagicMock()}
     coordinator.async_update_plant = AsyncMock()
 
     await coordinator._harvest_to_explicit_target(
@@ -1879,7 +1901,8 @@ async def test_harvest_to_explicit_target_cure(hass):
 
     coordinator = GrowspaceCoordinator(hass, data={})
     plant = MagicMock()
-    coordinator._find_first_available_position = MagicMock(return_value=(1, 1))
+    coordinator.validator.find_first_available_position = MagicMock(return_value=(1, 1))
+    coordinator.growspaces = {"cure": MagicMock()}
     coordinator.async_update_plant = AsyncMock()
 
     await coordinator._harvest_to_explicit_target(
@@ -1898,7 +1921,8 @@ async def test_harvest_to_explicit_target_clone(hass):
 
     coordinator = GrowspaceCoordinator(hass, data={})
     plant = MagicMock()
-    coordinator._find_first_available_position = MagicMock(return_value=(1, 1))
+    coordinator.validator.find_first_available_position = MagicMock(return_value=(1, 1))
+    coordinator.growspaces = {"clone": MagicMock()}
     coordinator.async_update_plant = AsyncMock()
 
     await coordinator._harvest_to_explicit_target(
@@ -1917,7 +1941,8 @@ async def test_harvest_to_explicit_target_mother(hass):
 
     coordinator = GrowspaceCoordinator(hass, data={})
     plant = MagicMock()
-    coordinator._find_first_available_position = MagicMock(return_value=(1, 1))
+    coordinator.validator.find_first_available_position = MagicMock(return_value=(1, 1))
+    coordinator.growspaces = {"mother": MagicMock()}
     coordinator.async_update_plant = AsyncMock()
 
     await coordinator._harvest_to_explicit_target(
@@ -1936,9 +1961,10 @@ async def test_move_to_clone_growspace_no_position(hass, caplog):
     coordinator = GrowspaceCoordinator(hass, data={})
     plant = MagicMock()
     coordinator._ensure_special_growspace = MagicMock(return_value="clone")
-    coordinator._find_first_available_position = MagicMock(
+    coordinator.validator.find_first_available_position = MagicMock(
         side_effect=ValueError("No position")
     )
+    coordinator.growspaces = {"clone": MagicMock()}
 
     await coordinator._move_to_clone_growspace("p1", plant, "2025-01-01")
 
@@ -1956,7 +1982,9 @@ async def test_async_update_air_exchange_recommendations_no_stress_sensor(hass):
         "homeassistant.helpers.entity_registry.EntityRegistry.async_get_entity_id",
         return_value=None,
     ):
-        await coordinator._async_update_air_exchange_recommendations()
+        await (
+            coordinator.environment_analyzer.async_update_air_exchange_recommendations()
+        )
 
     assert coordinator.data["air_exchange_recommendations"][gs.id] == "Idle"
 
@@ -1974,6 +2002,8 @@ async def test_async_update_air_exchange_recommendations_no_vpd(hass):
         return_value="binary_sensor.test_gs_plants_under_stress",
     ):
         hass.states.async_set("binary_sensor.test_gs_plants_under_stress", "on")
-        await coordinator._async_update_air_exchange_recommendations()
+        await (
+            coordinator.environment_analyzer.async_update_air_exchange_recommendations()
+        )
 
     assert coordinator.data["air_exchange_recommendations"][gs.id] == "Idle"

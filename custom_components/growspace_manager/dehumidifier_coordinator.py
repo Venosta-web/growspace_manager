@@ -136,7 +136,7 @@ class DehumidifierCoordinator:
 
         # Determine Growth Stage
         stage_name = self._get_growth_stage()
-        
+
         # Determine Day/Night
         is_day = True # Default to day if no sensor
         if self.light_sensor:
@@ -160,7 +160,7 @@ class DehumidifierCoordinator:
         # Control Logic
         # Low VPD = High Humidity -> Needs Dehumidification (Turn ON)
         # High VPD = Low Humidity -> Stop Dehumidification (Turn OFF)
-        
+
         dehum_state = self.hass.states.get(self.dehumidifier_entity)
         is_on = dehum_state and dehum_state.state == STATE_ON
 
@@ -188,18 +188,16 @@ class DehumidifierCoordinator:
     def _get_growth_stage(self) -> str:
         """Determine the current growth stage for threshold selection."""
         plants = self.main_coordinator.get_growspace_plants(self.growspace_id)
-        
+
         max_veg_days = 0
         max_flower_days = 0
 
         for plant in plants:
             v_days = self.main_coordinator.calculate_days_in_stage(plant, "veg")
             f_days = self.main_coordinator.calculate_days_in_stage(plant, "flower")
-            
-            if v_days > max_veg_days:
-                max_veg_days = v_days
-            if f_days > max_flower_days:
-                max_flower_days = f_days
+
+            max_veg_days = max(max_veg_days, v_days)
+            max_flower_days = max(max_flower_days, f_days)
 
         # Logic from Prompt:
         # Veg: flower_days == 0 AND veg_days > 0
@@ -215,13 +213,13 @@ class DehumidifierCoordinator:
             return "early_flower"
         if max_veg_days > 0:
             return "veg"
-        
+
         return "veg" # Default
 
     def _get_current_thresholds(self, stage: str, is_day: bool) -> dict[str, float]:
         """Get the ON/OFF thresholds for the current state."""
         day_key = "day" if is_day else "night"
-        
+
         # Check user overrides first
         if (
             stage in self.user_thresholds
@@ -236,7 +234,7 @@ class DehumidifierCoordinator:
         """Turn the dehumidifier on or off."""
         service = SERVICE_TURN_ON if turn_on else SERVICE_TURN_OFF
         domain = self.dehumidifier_entity.split(".")[0]
-        
+
         # Support switch and humidifier domains
         if domain not in ("switch", "humidifier"):
             domain = "homeassistant"

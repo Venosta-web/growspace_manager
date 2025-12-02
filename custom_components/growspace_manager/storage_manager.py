@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import logging
 from dataclasses import asdict
-from typing import Any
 
 from homeassistant.helpers.storage import Store
 
@@ -74,7 +73,7 @@ class StorageManager:
                 for gid, g in data.get("growspaces", {}).items()
             }
             _LOGGER.info("Loaded %d growspaces", len(self.coordinator.growspaces))
-            
+
             # Apply options to growspaces
             if not self.coordinator.options:
                 _LOGGER.debug("--- COORDINATOR HAS NO OPTIONS TO APPLY ---")

@@ -7,9 +7,8 @@ import logging
 import os
 from io import BytesIO
 
-from PIL import Image
-
 from homeassistant.core import HomeAssistant
+from PIL import Image
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -76,7 +75,7 @@ class ImageManager:
 
             # Save optimized JPEG
             image.save(file_path, "JPEG", quality=85, optimize=True)
-            
+
             # Return relative path for web access if needed, or absolute path
             # For now returning absolute path as per original logic's intent
             return file_path
@@ -91,7 +90,7 @@ class ImageManager:
         if phenotype_id:
             filename += f"_{phenotype_id}"
         filename += ".jpg"
-        
+
         file_path = os.path.join(self.storage_dir, filename)
         if os.path.exists(file_path):
             return file_path

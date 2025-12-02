@@ -1,23 +1,18 @@
 """Tests for the Bayesian environment sensor logic."""
 
-import pytest
-
-from unittest.mock import AsyncMock, MagicMock, patch
 from datetime import datetime, timedelta
+from unittest.mock import AsyncMock, MagicMock, patch
 
+import pytest
 from homeassistant.core import HomeAssistant
 from homeassistant.util.dt import utcnow
 
-
 from custom_components.growspace_manager.binary_sensor import (
-    BayesianStressSensor,
     BayesianMoldRiskSensor,
     BayesianOptimalConditionsSensor,
-    LightCycleVerificationSensor,
+    BayesianStressSensor,
 )
-from custom_components.growspace_manager.coordinator import GrowspaceCoordinator
 from custom_components.growspace_manager.const import DOMAIN
-
 
 MOCK_CONFIG_ENTRY_ID = "test_entry"
 
@@ -63,7 +58,7 @@ def set_sensor_state(hass: HomeAssistant, entity_id, state, attributes=None):
     hass.states.async_set(entity_id, state, attrs)
 
 
-@patch("custom_components.growspace_manager.binary_sensor.get_recorder_instance")
+@patch("custom_components.growspace_manager.trend_analyzer.get_recorder_instance")
 @pytest.mark.asyncio
 async def test_stress_sensor_high_heat(
     mock_recorder, hass: HomeAssistant, mock_coordinator, env_config
@@ -91,7 +86,7 @@ async def test_stress_sensor_high_heat(
     with (
         patch(
             "custom_components.growspace_manager.bayesian_evaluator.async_evaluate_stress_trend",
-            return_value=([], []),
+            return_value=([("High Heat", 0.9)], []),
         ),
         patch.object(
             sensor,
@@ -106,7 +101,7 @@ async def test_stress_sensor_high_heat(
     assert any("High Heat" in reason for _, reason in sensor._reasons)
 
 
-@patch("custom_components.growspace_manager.binary_sensor.get_recorder_instance")
+@patch("custom_components.growspace_manager.trend_analyzer.get_recorder_instance")
 @pytest.mark.asyncio
 async def test_mold_risk_sensor_late_flower(
     mock_recorder, hass: HomeAssistant, mock_coordinator, env_config

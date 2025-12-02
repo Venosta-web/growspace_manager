@@ -1,20 +1,21 @@
-import pytest
 from unittest.mock import AsyncMock, MagicMock
 
+import pytest
+
+from custom_components.growspace_manager.bayesian_data import (
+    PROB_ACCEPTABLE,
+    PROB_GOOD,
+    PROB_PERFECT,
+    PROB_STRESS_OUT_OF_RANGE,
+)
 from custom_components.growspace_manager.bayesian_evaluator import (
     _async_evaluate_fallback_mold_trend_analysis,
-    evaluate_direct_temp_stress,
     evaluate_direct_humidity_stress,
+    evaluate_direct_temp_stress,
     evaluate_direct_vpd_stress,
     evaluate_optimal_temperature,
 )
 from custom_components.growspace_manager.models import EnvironmentState
-from custom_components.growspace_manager.bayesian_data import (
-    PROB_PERFECT,
-    PROB_GOOD,
-    PROB_ACCEPTABLE,
-    PROB_STRESS_OUT_OF_RANGE,
-)
 
 
 @pytest.mark.asyncio
@@ -167,6 +168,7 @@ def test_evaluate_optimal_temperature_no_temp():
 
 from custom_components.growspace_manager.bayesian_evaluator import evaluate_optimal_co2
 
+
 def test_evaluate_optimal_co2_no_co2():
     """Test evaluate_optimal_co2 when CO2 is None."""
     state = MagicMock(spec=EnvironmentState, co2=None)
@@ -220,6 +222,7 @@ def test_evaluate_optimal_co2_branches(
 
 from custom_components.growspace_manager.bayesian_evaluator import evaluate_optimal_vpd
 
+
 def test_evaluate_optimal_vpd_no_vpd():
     """Test evaluate_optimal_vpd when VPD is None."""
     state = MagicMock(spec=EnvironmentState, vpd=None)
@@ -232,6 +235,7 @@ def test_evaluate_optimal_vpd_no_vpd():
 from custom_components.growspace_manager.bayesian_evaluator import (
     _async_evaluate_external_mold_trend_sensor,
 )
+
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
@@ -294,6 +298,7 @@ async def test_async_evaluate_external_mold_trend_sensor(
 from custom_components.growspace_manager.bayesian_evaluator import (
     async_evaluate_stress_trend,
 )
+
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
@@ -368,6 +373,7 @@ async def test_async_evaluate_stress_trend(
 
 
 from custom_components.growspace_manager.bayesian_evaluator import _determine_stage_key
+
 
 def test_determine_stage_key_none():
     """Test _determine_stage_key when no stage key is determined."""
