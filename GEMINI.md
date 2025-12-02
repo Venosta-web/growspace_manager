@@ -107,6 +107,36 @@ When running tests, always use the virtual environment's pytest executable to en
 ./venv/bin/pytest tests/
 ```
 
+**IMPORTANT: Test-Driven Development**
+
+- **Run tests after every completed task** to ensure no regressions are introduced
+- Before marking any task as complete, verify that all tests pass
+- If you make changes to production code, run the relevant test suite immediately
+- For bug fixes, add a test that reproduces the bug first, then fix it
+- For new features, implement tests alongside the feature code
+
+**Test Execution Guidelines:**
+
+1. **After bug fixes**: Run the specific test file related to the bug
+   ```bash
+   ./venv/bin/pytest tests/test_<module>.py -v
+   ```
+
+2. **After feature additions**: Run all affected test files
+   ```bash
+   ./venv/bin/pytest tests/test_<module1>.py tests/test_<module2>.py -v
+   ```
+
+3. **Before completing any task**: Run the full test suite
+   ```bash
+   ./venv/bin/pytest tests/
+   ```
+
+4. **For critical changes** (coordinator, config flow, etc.): Run tests with coverage
+   ```bash
+   ./venv/bin/pytest --cov=custom_components.growspace_manager --cov-report=term-missing tests/
+   ```
+
 ### External Documentation
 
 When you need to access Home Assistant documentation, use the `context7` tool. This tool can fetch documentation for various libraries, including Home Assistant.

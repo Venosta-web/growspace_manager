@@ -399,7 +399,7 @@ def _async_cancel_coordinators(entry_data: dict) -> None:
             coordinator.async_cancel_listeners()
     if "dehumidifier_coordinators" in entry_data:
         for coordinator in entry_data["dehumidifier_coordinators"].values():
-            coordinator.async_cancel_listeners()
+            coordinator.unload()
 
 
 def _async_remove_dynamic_entities(hass: HomeAssistant, entry_data: dict) -> None:
