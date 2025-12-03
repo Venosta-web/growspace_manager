@@ -19,8 +19,6 @@ from homeassistant.helpers.storage import Store
 from homeassistant.helpers.typing import ConfigType
 
 from .const import DOMAIN, PLATFORMS, STORAGE_KEY, STORAGE_VERSION
-
-CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 from .coordinator import GrowspaceCoordinator
 from .dehumidifier_coordinator import DehumidifierCoordinator
 from .intent import async_setup_intents
@@ -67,6 +65,8 @@ from .services import (
     strain_library,
 )
 from .services.strain_library import StrainLibrary
+
+CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 
 _LOGGER = logging.getLogger(__name__)
 

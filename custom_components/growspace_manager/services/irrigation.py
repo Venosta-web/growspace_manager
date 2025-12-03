@@ -11,7 +11,6 @@ from ..const import DOMAIN
 if TYPE_CHECKING:
     from ..coordinator import GrowspaceCoordinator
     from ..irrigation_coordinator import IrrigationCoordinator
-    from ..strain_library import StrainLibrary
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -44,7 +43,6 @@ async def _get_irrigation_coordinator(
 async def handle_set_irrigation_settings(
     hass: HomeAssistant,
     coordinator: "GrowspaceCoordinator",
-    strain_library: "StrainLibrary",
     call: ServiceCall,
 ) -> None:
     """Handle the service call to set irrigation settings for a growspace."""
@@ -60,7 +58,6 @@ async def handle_set_irrigation_settings(
 async def handle_add_irrigation_time(
     hass: HomeAssistant,
     coordinator: "GrowspaceCoordinator",
-    strain_library: "StrainLibrary",
     call: ServiceCall,
 ) -> None:
     """Handle the service call to add an irrigation time to a schedule."""
@@ -79,7 +76,6 @@ async def handle_add_irrigation_time(
 async def handle_remove_irrigation_time(
     hass: HomeAssistant,
     coordinator: "GrowspaceCoordinator",
-    strain_library: "StrainLibrary",
     call: ServiceCall,
 ) -> None:
     """Handle the service call to remove an irrigation time from a schedule."""
@@ -93,7 +89,6 @@ async def handle_remove_irrigation_time(
 async def handle_add_drain_time(
     hass: HomeAssistant,
     coordinator: "GrowspaceCoordinator",
-    strain_library: "StrainLibrary",
     call: ServiceCall,
 ) -> None:
     """Handle the service call to add a drain time to a schedule."""
@@ -112,7 +107,6 @@ async def handle_add_drain_time(
 async def handle_remove_drain_time(
     hass: HomeAssistant,
     coordinator: "GrowspaceCoordinator",
-    strain_library: "StrainLibrary",
     call: ServiceCall,
 ) -> None:
     """Handle the service call to remove a drain time from a schedule."""
