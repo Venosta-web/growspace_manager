@@ -114,37 +114,37 @@ async def _register_services(
         ),
         (
             "remove_plant",
-            partial(plant.handle_remove_plant, hass, coordinator),
+            partial(plant.handle_remove_plant, hass, coordinator, strain_lib),
             REMOVE_PLANT_SCHEMA,
         ),
         (
             "update_plant",
-            partial(plant.handle_update_plant, hass, coordinator),
+            partial(plant.handle_update_plant, hass, coordinator, strain_lib),
             UPDATE_PLANT_SCHEMA,
         ),
         (
             "move_plant",
-            partial(plant.handle_move_plant, hass, coordinator),
+            partial(plant.handle_move_plant, hass, coordinator, strain_lib),
             MOVE_PLANT_SCHEMA,
         ),
         (
             "switch_plants",
-            partial(plant.handle_switch_plants, hass, coordinator),
+            partial(plant.handle_switch_plants, hass, coordinator, strain_lib),
             SWITCH_PLANT_SCHEMA,
         ),
         (
             "take_clone",
-            partial(plant.handle_take_clone, hass, coordinator),
+            partial(plant.handle_take_clone, hass, coordinator, strain_lib),
             TAKE_CLONE_SCHEMA,
         ),
         (
             "move_clone",
-            partial(plant.handle_move_clone, hass, coordinator),
+            partial(plant.handle_move_clone, hass, coordinator, strain_lib),
             MOVE_CLONE_SCHEMA,
         ),
         (
             "transition_plant_stage",
-            partial(plant.handle_transition_plant_stage, hass, coordinator),
+            partial(plant.handle_transition_plant_stage, hass, coordinator, strain_lib),
             TRANSITION_PLANT_SCHEMA,
         ),
         (
