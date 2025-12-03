@@ -144,24 +144,37 @@ async def _async_evaluate_external_mold_trend_sensor(
 
     if trend_sensor_id:
         trend_state: State | None = sensor_instance.hass.states.get(trend_sensor_id)
-        if trend_state and trend_state.state == ("on" if sensor_key == "humidity" else "off"):
-            trend_states[trend_key] = "rising" if sensor_key == "humidity" else "falling"
+        if trend_state and trend_state.state == (
+            "on" if sensor_key == "humidity" else "off"
+        ):
+            trend_states[trend_key] = (
+                "rising" if sensor_key == "humidity" else "falling"
+            )
             prob = (0.90, 0.20)
             observations.append(prob)
-            reasons.append((prob[0], f"{sensor_key.capitalize()} {"rising" if sensor_key == "humidity" else "falling"}"))
+            reasons.append(
+                (
+                    prob[0],
+                    f"{sensor_key.capitalize()} {'rising' if sensor_key == 'humidity' else 'falling'}",
+                )
+            )
     elif stats_sensor_id:
         stats_state: State | None = sensor_instance.hass.states.get(stats_sensor_id)
-        if (
-            stats_state
-            and (change := stats_state.attributes.get("change")) is not None
-        ):
+        if stats_state and (change := stats_state.attributes.get("change")) is not None:
             if (sensor_key == "humidity" and change > 1.0) or (
                 sensor_key == "vpd" and change < -0.1
             ):
-                trend_states[trend_key] = "rising" if sensor_key == "humidity" else "falling"
+                trend_states[trend_key] = (
+                    "rising" if sensor_key == "humidity" else "falling"
+                )
                 prob = (0.85, 0.25)
                 observations.append(prob)
-                reasons.append((prob[0], f"{sensor_key.capitalize()} {"rising" if sensor_key == "humidity" else "falling"}"))
+                reasons.append(
+                    (
+                        prob[0],
+                        f"{sensor_key.capitalize()} {'rising' if sensor_key == 'humidity' else 'falling'}",
+                    )
+                )
 
 
 async def _async_evaluate_fallback_mold_trend_analysis(
@@ -217,10 +230,23 @@ async def async_evaluate_mold_risk_trend(
         ("vpd", "vpd_trend"),
     ]:
         await _async_evaluate_external_mold_trend_sensor(
-            sensor_instance, env_config, sensor_key, trend_key, observations, reasons, trend_states
+            sensor_instance,
+            env_config,
+            sensor_key,
+            trend_key,
+            observations,
+            reasons,
+            trend_states,
         )
         await _async_evaluate_fallback_mold_trend_analysis(
-            sensor_instance, env_config, sensor_key, trend_key, observations, reasons, trend_states, analyze_trend
+            sensor_instance,
+            env_config,
+            sensor_key,
+            trend_key,
+            observations,
+            reasons,
+            trend_states,
+            analyze_trend,
         )
 
     return observations, reasons, trend_states
@@ -239,6 +265,7 @@ def evaluate_direct_temp_stress(
     temp = state.temp
 
     # 1: Night High Temp Check (Independent IF)
+    # Only check if we KNOW lights are off. If None (unknown), skip this check.
     if state.is_lights_on is False and temp > 24:
         prob = env_config.get("prob_night_temp_high", (0.80, 0.20))
         observations.append(prob)
@@ -333,6 +360,7 @@ def evaluate_direct_vpd_stress(
 
     if stage_key:
         # Treat None (missing sensor) as "day" (active) for threshold lookup
+        # If lights are explicitly False, use night. Otherwise (True or None), use day.
         time_of_day = "night" if state.is_lights_on is False else "day"
         thresholds = VPD_STRESS_THRESHOLDS[stage_key][time_of_day]
 
@@ -410,8 +438,8 @@ def evaluate_optimal_temperature(
                     )
                 )
 
-        # Case B: Lights ON & Normal (Days < 42 or Veg) OR Missing Sensor (None)
-        case (True, _) | (None, _):
+        # Case B: Lights ON & Normal (Days < 42 or Veg)
+        case True, _:
             if 24 <= state.temp <= 26:
                 observations.append(PROB_PERFECT)
             elif 22 <= state.temp <= 28:
@@ -423,6 +451,11 @@ def evaluate_optimal_temperature(
                 reasons.append(
                     (prob_out_of_range[1], f"Temp out of range ({state.temp})")
                 )
+
+        # Case C: Unknown Light State
+        case None, _:
+            # Do not penalize if light state is unknown
+            pass
 
         # Case C: Lights OFF (Nighttime)
         case False, _:
@@ -455,6 +488,9 @@ def evaluate_optimal_vpd(
     stage_key = _determine_stage_key(state)
 
     if stage_key:
+        if state.is_lights_on is None:
+            return observations, reasons
+
         # Treat None (missing sensor) as "day" (active) for threshold lookup
         time_of_day = "night" if state.is_lights_on is False else "day"
 

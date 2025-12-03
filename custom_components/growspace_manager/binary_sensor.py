@@ -247,9 +247,14 @@ class BayesianEnvironmentSensor(BinarySensorEntity):
         """Determine the effective light state with hysteresis."""
         light_sensor = self.env_config.get("light_sensor")
         current_lights_on = None
+
         if light_sensor:
             light_state = self.hass.states.get(light_sensor)
             if light_state:
+                # Check for unavailable/unknown states first
+                if light_state.state in (STATE_UNAVAILABLE, STATE_UNKNOWN):
+                    return None
+
                 if light_state.domain == "sensor":
                     sensor_value = self._get_sensor_value(light_sensor)
                     if sensor_value is not None:
