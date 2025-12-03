@@ -2,11 +2,10 @@
 
 from __future__ import annotations
 
-import logging  # Added this import
+import logging
 from datetime import date, datetime, timedelta
 from unittest.mock import AsyncMock, MagicMock, Mock, patch
 
-import homeassistant.util.dt as dt_util
 import pytest
 from homeassistant.const import STATE_UNAVAILABLE, STATE_UNKNOWN
 from homeassistant.core import HomeAssistant, State
@@ -372,7 +371,7 @@ async def test_optimal_conditions_notification_on_state_change(
         mock_send.assert_called_once()
 
 
-def test_generate_notification_message_truncation(mock_coordinator):
+def test_generate_notification_message_truncation(hass, mock_coordinator):
     """Test that the notification message is correctly truncated."""
     # Corrected instantiation
     sensor = BayesianStressSensor(
@@ -380,6 +379,9 @@ def test_generate_notification_message_truncation(mock_coordinator):
         "gs1",
         mock_coordinator.growspaces["gs1"].environment_config,
     )
+    # Use real NotificationManager to test truncation logic
+    sensor.notification_manager = NotificationManager(hass, mock_coordinator)
+
     sensor._reasons = [
         (0.9, "VPD out of range"),
         (0.8, "Temp is much too high for the current growth stage"),
@@ -516,7 +518,6 @@ async def test_bayesian_stress_sensor_granular(
     await hass.async_block_till_done()
 
     # Avoid light hysteresis
-    sensor._last_light_change_time = utcnow() - timedelta(minutes=10)
     sensor._last_light_state = True if light_state == "on" else False
 
     with (
@@ -762,7 +763,6 @@ async def test_stress_sensor_stage_and_time_logic(
     await hass.async_block_till_done()
 
     # Avoid light hysteresis
-    sensor._last_light_change_time = utcnow() - timedelta(minutes=10)
     sensor._last_light_state = True if light_state == "on" else False
 
     # Mock stage info
@@ -850,7 +850,6 @@ async def test_mold_risk_sensor_triggers(
     await hass.async_block_till_done()
 
     # Avoid light hysteresis
-    sensor._last_light_change_time = utcnow() - timedelta(minutes=10)
     sensor._last_light_state = True if light_state == "on" else False
 
     with (
@@ -924,7 +923,6 @@ async def test_optimal_sensor_off_states(
     await hass.async_block_till_done()
 
     # Avoid light hysteresis
-    sensor._last_light_change_time = utcnow() - timedelta(minutes=10)
     sensor._last_light_state = True if light_state == "on" else False
 
     # Mock stage info
@@ -1330,7 +1328,6 @@ class TestBayesianEnvironmentSensor:
 
             # Initialize light state tracking
             sensor._last_light_state = None
-            sensor._last_light_change_time = None
 
             sensor._probability = 0.679
             sensor.threshold = 0.5
@@ -1646,11 +1643,11 @@ class TestBayesianEnvironmentSensor:
 
 
 @pytest.mark.asyncio
-@patch("custom_components.growspace_manager.binary_sensor.utcnow")
-async def test_light_state_gradient_logic(
-    mock_utcnow, hass: HomeAssistant, mock_coordinator, env_config
+@pytest.mark.asyncio
+async def test_light_state_cooldown_logic(
+    hass: HomeAssistant, mock_coordinator, env_config
 ):
-    """Test the 5-minute gradient logic for light state transitions."""
+    """Test that light state changes trigger notification cooldown."""
 
     # Setup sensor
     sensor = BayesianStressSensor(
@@ -1659,54 +1656,40 @@ async def test_light_state_gradient_logic(
         env_config,
     )
     sensor.hass = hass
-    sensor.entity_id = "binary_sensor.test_gradient"
+    sensor.entity_id = "binary_sensor.test_cooldown"
 
-    # Mock time
-    initial_time = datetime(2023, 1, 1, 12, 0, 0, tzinfo=dt_util.UTC)
-    mock_utcnow.return_value = initial_time
+    # Mock notification manager
+    sensor.notification_manager = MagicMock()
 
     # 1. Initial State: Lights ON
-    # Initialize light tracking to bypass hysteresis
-    sensor._last_light_state = True  # Start with lights on
-    sensor._last_light_change_time = initial_time - timedelta(
-        minutes=10
-    )  # Long enough ago
+    sensor._last_light_state = True
     set_sensor_state(hass, "light.grow_light", "on")
-    set_sensor_state(hass, "sensor.temp", 25)  # Optimal day temp
     await hass.async_block_till_done()
 
     state = sensor._get_base_environment_state()
     assert state.is_lights_on is True
-    assert sensor._last_light_state is True
-    # No state change, so _last_light_change_time remains the same
-    assert sensor._last_light_change_time == initial_time - timedelta(minutes=10)
+    sensor.notification_manager.trigger_cooldown.assert_not_called()
 
-    # 2. Lights turn OFF (Transition Start)
+    # 2. Lights turn OFF
     set_sensor_state(hass, "light.grow_light", "off")
     await hass.async_block_till_done()
 
-    # Time advances 2 minutes (within 5 min gradient)
-    current_time = initial_time + timedelta(minutes=2)
-
-    mock_utcnow.return_value = current_time
-
     state = sensor._get_base_environment_state()
-    # Should still report as ON (previous state) because we are in the gradient
-    assert state.is_lights_on is True
-    # Internal state should be updated though
-    assert sensor._last_light_state is False
-    assert sensor._last_light_change_time == current_time
-
-    # 3. Time advances to 6 minutes (Gradient Over)
-    final_time = initial_time + timedelta(minutes=8)
-
-    mock_utcnow.return_value = final_time
-
-    state = sensor._get_base_environment_state()
+    # Should update immediately (no gradient)
     assert state.is_lights_on is False
-    assert sensor._last_light_state is False
-    # Change time should NOT have updated since the last change
-    assert sensor._last_light_change_time == current_time
+    # Should trigger cooldown
+    sensor.notification_manager.trigger_cooldown.assert_called_once_with("gs1")
+
+    sensor.notification_manager.trigger_cooldown.reset_mock()
+
+    # 3. Lights turn ON
+    set_sensor_state(hass, "light.grow_light", "on")
+    await hass.async_block_till_done()
+
+    state = sensor._get_base_environment_state()
+    assert state.is_lights_on is True
+    # Should trigger cooldown again
+    sensor.notification_manager.trigger_cooldown.assert_called_once_with("gs1")
 
 
 @pytest.mark.asyncio
