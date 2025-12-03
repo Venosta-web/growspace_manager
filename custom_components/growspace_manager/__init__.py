@@ -12,7 +12,7 @@ from typing import Any, cast
 from aiohttp import BodyPartReader, web
 from homeassistant.components.http import HomeAssistantView
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, SupportsResponse
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.storage import Store
@@ -299,9 +299,23 @@ async def _register_services(
     ]
 
     for service_name, handler, schema in services:
-        hass.services.async_register(
-            DOMAIN, service_name, cast(Any, handler), schema=schema
-        )
+        if service_name in [
+            "get_strain_library",
+            "strain_recommendation",
+            "ask_grow_advice",
+            "analyze_all_growspaces",
+        ]:
+            hass.services.async_register(
+                DOMAIN,
+                service_name,
+                cast(Any, handler),
+                schema=schema,
+                supports_response=SupportsResponse.ONLY,
+            )
+        else:
+            hass.services.async_register(
+                DOMAIN, service_name, cast(Any, handler), schema=schema
+            )
 
 
 async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
