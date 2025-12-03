@@ -588,19 +588,44 @@ class GrowspaceOverviewSensor(CoordinatorEntity[GrowspaceCoordinator], SensorEnt
                 "plant_id": plant.plant_id,
                 "strain": plant.strain,
                 "phenotype": plant.phenotype,
+                # Days in stage
+                "seedling_days": self.coordinator.calculate_days_in_stage(
+                    plant, "seedling"
+                ),
+                "mother_days": self.coordinator.calculate_days_in_stage(
+                    plant, "mother"
+                ),
+                "clone_days": self.coordinator.calculate_days_in_stage(plant, "clone"),
                 "veg_days": self.coordinator.calculate_days_in_stage(plant, "veg"),
                 "flower_days": self.coordinator.calculate_days_in_stage(
                     plant, "flower"
                 ),
+                "dry_days": self.coordinator.calculate_days_in_stage(plant, "dry"),
+                "cure_days": self.coordinator.calculate_days_in_stage(plant, "cure"),
+                # Start dates
+                "seedling_start": plant.seedling_start,
+                "mother_start": plant.mother_start,
+                "clone_start": plant.clone_start,
+                "veg_start": plant.veg_start,
+                "flower_start": plant.flower_start,
+                "dry_start": plant.dry_start,
+                "cure_start": plant.cure_start,
+                # Location & Stage
                 "row": row_i,
                 "col": col_i,
                 "position": f"({row_i},{col_i})",
                 "stage": calculate_plant_stage(plant),
             }
 
+        # Determine growspace type
+        gs_type = "normal"
+        if growspace.id in ("mother", "clone", "dry", "cure"):
+            gs_type = growspace.id
+
         # Build attributes dict
         attributes = {
             "growspace_id": growspace.id,
+            "type": gs_type,
             "rows": growspace.rows,
             "plants_per_row": growspace.plants_per_row,
             "total_plants": len(plants),
