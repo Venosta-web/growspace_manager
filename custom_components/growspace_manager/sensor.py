@@ -595,6 +595,7 @@ class GrowspaceOverviewSensor(CoordinatorEntity[GrowspaceCoordinator], SensorEnt
                 "row": row_i,
                 "col": col_i,
                 "position": f"({row_i},{col_i})",
+                "stage": calculate_plant_stage(plant),
             }
 
         # Build attributes dict
