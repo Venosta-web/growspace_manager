@@ -29,6 +29,11 @@ class NotificationManager:
         self._last_notification_sent: dict[str, datetime] = {}
         self._notification_cooldown = timedelta(minutes=5)
 
+    def trigger_cooldown(self, growspace_id: str) -> None:
+        """Manually trigger the notification cooldown for a growspace."""
+        self._last_notification_sent[growspace_id] = utcnow()
+        _LOGGER.debug("Notification cooldown triggered for %s", growspace_id)
+
     def generate_notification_message(
         self, base_message: str, reasons: list[tuple[float, str]]
     ) -> str:

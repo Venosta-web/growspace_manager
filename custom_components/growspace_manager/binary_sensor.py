@@ -49,7 +49,6 @@ from .const import (
 )
 from .coordinator import GrowspaceCoordinator
 from .models import EnvironmentState
-from .notification_manager import NotificationManager
 from .trend_analyzer import TrendAnalyzer
 
 _LOGGER = logging.getLogger(__name__)
@@ -175,13 +174,10 @@ class BayesianEnvironmentSensor(BinarySensorEntity):
         self._sensor_states: dict[str, Any] = {}
         self._reasons: ReasonList = []
         self._probability = 0.0
-        self._last_light_change_time: datetime | None = None
         self._last_light_state: bool | None = None
 
         self.trend_analyzer = TrendAnalyzer(self.coordinator.hass)
-        self.notification_manager = NotificationManager(
-            self.coordinator.hass, self.coordinator
-        )
+        self.notification_manager = self.coordinator.notification_manager
 
     def _get_base_environment_state(self) -> EnvironmentState:
         """Fetch sensor values and return a structured EnvironmentState object."""
@@ -247,7 +243,7 @@ class BayesianEnvironmentSensor(BinarySensorEntity):
         )
 
     def _determine_light_state(self) -> bool | None:
-        """Determine the effective light state with hysteresis."""
+        """Determine the light state and trigger cooldown on switch."""
         light_sensor = self.env_config.get("light_sensor")
         current_lights_on = None
 
@@ -265,33 +261,20 @@ class BayesianEnvironmentSensor(BinarySensorEntity):
                 else:
                     current_lights_on = light_state.state == "on"
 
-        # Apply 5-minute gradient/hysteresis for light state changes
-        now = utcnow()
-        if self._last_light_state is None:
-            # First run, initialize
-            self._last_light_state = current_lights_on
-            self._last_light_change_time = now
-        elif current_lights_on != self._last_light_state:
-            # State changed, update tracking
-            self._last_light_state = current_lights_on
-            self._last_light_change_time = now
-
-        # Determine effective light state for logic
-        is_lights_on = current_lights_on
-        if self._last_light_change_time and (
-            now - self._last_light_change_time
-        ) < timedelta(minutes=5):
-            # In transition period, use the PREVIOUS state (inverse of current)
-            # This prevents immediate stress alerts when lights toggle
-            if current_lights_on is not None:
-                is_lights_on = not current_lights_on
+        # Check for state change to trigger notification cooldown
+        if (
+            self._last_light_state is not None
+            and current_lights_on is not None
+            and self._last_light_state != current_lights_on
+        ):
             _LOGGER.debug(
-                "In light transition period for %s. Actual: %s, Effective: %s",
+                "Light switched in %s. Triggering notification cooldown.",
                 self.growspace_id,
-                current_lights_on,
-                is_lights_on,
             )
-        return is_lights_on
+            self.notification_manager.trigger_cooldown(self.growspace_id)
+
+        self._last_light_state = current_lights_on
+        return current_lights_on
 
     async def async_added_to_hass(self) -> None:
         """Register callbacks when the entity is added to Home Assistant."""
