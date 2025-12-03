@@ -16,7 +16,7 @@ appropriate-polling:
   notes: Using DataUpdateCoordinator with defined update interval
 
 brands:
-  status: todo
+  status: done
   comment: Has branding assets available for the integration
 
 common-modules:
