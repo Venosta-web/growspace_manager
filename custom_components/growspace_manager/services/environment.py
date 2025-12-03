@@ -8,7 +8,7 @@ from homeassistant.core import HomeAssistant, ServiceCall
 from homeassistant.exceptions import ServiceValidationError
 
 from ..coordinator import GrowspaceCoordinator
-from ..strain_library import StrainLibrary
+
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -16,7 +16,6 @@ _LOGGER = logging.getLogger(__name__)
 async def handle_configure_environment(
     hass: HomeAssistant,
     coordinator: GrowspaceCoordinator,
-    strain_library: StrainLibrary,
     call: ServiceCall,
 ) -> None:
     """Handle the configure_environment service call."""
@@ -63,7 +62,6 @@ async def handle_configure_environment(
 async def handle_remove_environment(
     hass: HomeAssistant,
     coordinator: GrowspaceCoordinator,
-    strain_library: StrainLibrary,
     call: ServiceCall,
 ) -> None:
     """Handle the remove_environment service call."""
@@ -92,7 +90,6 @@ async def handle_remove_environment(
 async def handle_set_dehumidifier_control(
     hass: HomeAssistant,
     coordinator: GrowspaceCoordinator,
-    strain_library: StrainLibrary,
     call: ServiceCall,
 ) -> None:
     """Handle the set_dehumidifier_control service call."""

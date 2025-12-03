@@ -1,6 +1,7 @@
 """Tests for the environment service handlers."""
 
-from unittest.mock import AsyncMock, Mock, patch
+from unittest.mock import AsyncMock, Mock
+
 import pytest
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ServiceValidationError
@@ -50,9 +51,7 @@ async def test_handle_configure_environment_success(
         "mold_threshold": 0.85,
     }
 
-    await handle_configure_environment(
-        hass, mock_coordinator, mock_strain_library, call
-    )
+    await handle_configure_environment(hass, mock_coordinator, call)
 
     assert growspace.environment_config == {
         "temperature_sensor": "sensor.temp",
@@ -78,9 +77,7 @@ async def test_handle_configure_environment_missing_growspace(
     call.data = {"growspace_id": "gs1"}
 
     with pytest.raises(ServiceValidationError, match="Growspace.*not found"):
-        await handle_configure_environment(
-            hass, mock_coordinator, mock_strain_library, call
-        )
+        await handle_configure_environment(hass, mock_coordinator, call)
 
     mock_coordinator.async_save.assert_not_called()
 
@@ -98,7 +95,7 @@ async def test_handle_remove_environment_success(
     call = Mock()
     call.data = {"growspace_id": "gs1"}
 
-    await handle_remove_environment(hass, mock_coordinator, mock_strain_library, call)
+    await handle_remove_environment(hass, mock_coordinator, call)
 
     assert growspace.environment_config == {}
     mock_coordinator.async_save.assert_called_once()
@@ -116,9 +113,7 @@ async def test_handle_remove_environment_missing_growspace(
     call.data = {"growspace_id": "gs1"}
 
     with pytest.raises(ServiceValidationError, match="Growspace.*not found"):
-        await handle_remove_environment(
-            hass, mock_coordinator, mock_strain_library, call
-        )
+        await handle_remove_environment(hass, mock_coordinator, call)
 
     mock_coordinator.async_save.assert_not_called()
 
@@ -136,9 +131,7 @@ async def test_handle_set_dehumidifier_control_success(
     call = Mock()
     call.data = {"growspace_id": "gs1", "enabled": True}
 
-    await handle_set_dehumidifier_control(
-        hass, mock_coordinator, mock_strain_library, call
-    )
+    await handle_set_dehumidifier_control(hass, mock_coordinator, call)
 
     assert growspace.environment_config["control_dehumidifier"] is True
     mock_coordinator.async_save.assert_called_once()
@@ -158,9 +151,7 @@ async def test_handle_set_dehumidifier_control_init_config(
     call = Mock()
     call.data = {"growspace_id": "gs1", "enabled": True}
 
-    await handle_set_dehumidifier_control(
-        hass, mock_coordinator, mock_strain_library, call
-    )
+    await handle_set_dehumidifier_control(hass, mock_coordinator, call)
 
     assert growspace.environment_config == {"control_dehumidifier": True}
     mock_coordinator.async_save.assert_called_once()
@@ -177,8 +168,6 @@ async def test_handle_set_dehumidifier_control_missing_growspace(
     call.data = {"growspace_id": "gs1"}
 
     with pytest.raises(ServiceValidationError, match="Growspace.*not found"):
-        await handle_set_dehumidifier_control(
-            hass, mock_coordinator, mock_strain_library, call
-        )
+        await handle_set_dehumidifier_control(hass, mock_coordinator, call)
 
     mock_coordinator.async_save.assert_not_called()
