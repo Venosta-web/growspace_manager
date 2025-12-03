@@ -13,11 +13,14 @@ from aiohttp import BodyPartReader, web
 from homeassistant.components.http import HomeAssistantView
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.storage import Store
 from homeassistant.helpers.typing import ConfigType
 
 from .const import DOMAIN, PLATFORMS, STORAGE_KEY, STORAGE_VERSION
+
+CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 from .coordinator import GrowspaceCoordinator
 from .dehumidifier_coordinator import DehumidifierCoordinator
 from .intent import async_setup_intents
