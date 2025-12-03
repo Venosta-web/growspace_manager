@@ -1,4 +1,5 @@
 """Notification manager for Growspace Manager."""
+
 from __future__ import annotations
 
 import logging
@@ -28,7 +29,9 @@ class NotificationManager:
         self._last_notification_sent: dict[str, datetime] = {}
         self._notification_cooldown = timedelta(minutes=5)
 
-    def generate_notification_message(self, base_message: str, reasons: list[tuple[float, str]]) -> str:
+    def generate_notification_message(
+        self, base_message: str, reasons: list[tuple[float, str]]
+    ) -> str:
         """Construct a detailed notification message from the list of reasons."""
         sorted_reasons = sorted(reasons, reverse=True)
         message = base_message
@@ -69,9 +72,7 @@ class NotificationManager:
 
         # Check if notifications are enabled in coordinator
         if not self.coordinator.is_notifications_enabled(growspace_id):
-            _LOGGER.debug(
-                "Notifications disabled in coordinator for %s", growspace_id
-            )
+            _LOGGER.debug("Notifications disabled in coordinator for %s", growspace_id)
             return
 
         self._last_notification_sent[growspace_id] = now
@@ -122,53 +123,12 @@ class NotificationManager:
             agent_id = ai_settings.get(CONF_ASSISTANT_ID)
             max_length = ai_settings.get("max_response_length", 250)
 
-            # Format sensor readings for context
-            readings = []
-            if sensor_states:
-                for k, v in sensor_states.items():
-                    if v is not None and not isinstance(v, bool):
-                        readings.append(f"{k}: {v}")
-            readings_str = ", ".join(readings)
-
-            # Build a more sophisticated prompt for the AI
-            system_context = (
-                f"You are a {personality} cannabis cultivation assistant. "
-                "Your job is to rewrite alerts in your unique style while keeping them informative.\n\n"
-            )
-
-            if personality.lower() == "scientific":
-                system_context += (
-                    "Use precise technical terminology. Be analytical and data-driven. "
-                    "Reference specific thresholds and values."
-                )
-            elif personality.lower() == "chill stoner":
-                system_context += (
-                    "Be laid-back and friendly, but still helpful. Use casual language. "
-                    "Keep the vibe relaxed but don't skip important details."
-                )
-            elif personality.lower() == "strict coach":
-                system_context += (
-                    "Be direct and authoritative. Emphasize urgency where appropriate. "
-                    "Make it clear what needs to be done immediately."
-                )
-            elif personality.lower() == "pirate":
-                system_context += (
-                    "Write like a pirate (arr, matey, etc.) but maintain clarity. "
-                    "Make it fun while conveying the essential information."
-                )
-            else:  # Standard
-                system_context += (
-                    "Be clear, professional, and helpful. "
-                    "Keep the message concise but informative."
-                )
-
-            prompt = (
-                f"{system_context}\n\n"
-                f"Original Alert: {original_message}\n"
-                f"Current Sensor Data: {readings_str}\n"
-                f"Growspace: {growspace_name}\n\n"
-                f"Rewrite this alert in 1-2 sentences. Keep it under {max_length} characters. "
-                "Include specific sensor values if they're relevant to the alert."
+            prompt = self._build_rewrite_prompt(
+                original_message,
+                growspace_name,
+                sensor_states,
+                personality,
+                max_length,
             )
 
             _LOGGER.debug("Sending notification rewrite prompt to AI assistant")
@@ -210,6 +170,64 @@ class NotificationManager:
 
         return original_message
 
+    def _build_rewrite_prompt(
+        self,
+        original_message: str,
+        growspace_name: str,
+        sensor_states: dict[str, Any] | None,
+        personality: str,
+        max_length: int,
+    ) -> str:
+        """Build the prompt for the AI to rewrite the notification."""
+        # Format sensor readings for context
+        readings = []
+        if sensor_states:
+            for k, v in sensor_states.items():
+                if v is not None and not isinstance(v, bool):
+                    readings.append(f"{k}: {v}")
+        readings_str = ", ".join(readings)
+
+        # Build a more sophisticated prompt for the AI
+        system_context = (
+            f"You are a {personality} cannabis cultivation assistant. "
+            "Your job is to rewrite alerts in your unique style while keeping them informative.\n\n"
+        )
+
+        if personality.lower() == "scientific":
+            system_context += (
+                "Use precise technical terminology. Be analytical and data-driven. "
+                "Reference specific thresholds and values."
+            )
+        elif personality.lower() == "chill stoner":
+            system_context += (
+                "Be laid-back and friendly, but still helpful. Use casual language. "
+                "Keep the vibe relaxed but don't skip important details."
+            )
+        elif personality.lower() == "strict coach":
+            system_context += (
+                "Be direct and authoritative. Emphasize urgency where appropriate. "
+                "Make it clear what needs to be done immediately."
+            )
+        elif personality.lower() == "pirate":
+            system_context += (
+                "Write like a pirate (arr, matey, etc.) but maintain clarity. "
+                "Make it fun while conveying the essential information."
+            )
+        else:  # Standard
+            system_context += (
+                "Be clear, professional, and helpful. "
+                "Keep the message concise but informative."
+            )
+
+        return (
+            f"{system_context}\n\n"
+            f"Original Alert: {original_message}\n"
+            f"Current Sensor Data: {readings_str}\n"
+            f"Growspace: {growspace_name}\n\n"
+            f"Rewrite this alert in 1-2 sentences. Keep it under {max_length} characters. "
+            "Include specific sensor values if they're relevant to the alert."
+        )
+
     async def async_check_timed_notifications(self) -> None:
         """Check all configured timed notifications and send them if the conditions are met."""
         notifications = self.coordinator.options.get("timed_notifications", [])
@@ -248,8 +266,13 @@ class NotificationManager:
 
                             await self.async_send_notification(gs_id, title, message)
 
-                            if plant.plant_id not in self.coordinator._notifications_sent:
-                                self.coordinator._notifications_sent[plant.plant_id] = {}
+                            if (
+                                plant.plant_id
+                                not in self.coordinator._notifications_sent
+                            ):
+                                self.coordinator._notifications_sent[
+                                    plant.plant_id
+                                ] = {}
                             self.coordinator._notifications_sent[plant.plant_id][
                                 notification_key
                             ] = True

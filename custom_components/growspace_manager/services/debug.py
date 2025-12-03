@@ -43,7 +43,7 @@ async def _migrate_plants_from_legacy_growspace(
         if plant_id in coordinator.plants:
             coordinator.plants[plant_id].growspace_id = canonical_id
             try:
-                new_row, new_col = coordinator._find_first_available_position(
+                new_row, new_col = coordinator.validator.find_first_available_position(
                     canonical_id
                 )
                 coordinator.plants[plant_id].row = new_row
@@ -97,7 +97,7 @@ async def _cleanup_cure_legacy_growspaces(
         removed_growspaces.append(legacy_id)
 
 
-async def debug_cleanup_legacy(
+async def handle_debug_cleanup_legacy(
     hass: HomeAssistant,
     coordinator: GrowspaceCoordinator,
     strain_library: StrainLibrary,
@@ -109,7 +109,7 @@ async def debug_cleanup_legacy(
     # 'force' parameter was present but not used in original logic, removed for clarity.
 
     removed_growspaces = []
-    migrated_plants_info = []  # Store info about migrated plants for logging
+    migrated_plants_info: list[str] = []  # Store info about migrated plants for logging
 
     _LOGGER.debug(
         "Starting legacy cleanup - dry_only=%s, cure_only=%s",
@@ -172,7 +172,7 @@ async def debug_cleanup_legacy(
         raise
 
 
-async def debug_list_growspaces(
+async def handle_debug_list_growspaces(
     hass: HomeAssistant,
     coordinator: GrowspaceCoordinator,
     strain_library: StrainLibrary,
@@ -223,7 +223,7 @@ async def _restore_plants_to_canonical_growspace(
         plant_id = plant_data["plant_id"]
         if plant_id in coordinator.plants:
             try:
-                new_row, new_col = coordinator._find_first_available_position(
+                new_row, new_col = coordinator.validator.find_first_available_position(
                     canonical_id
                 )
                 coordinator.plants[plant_id].growspace_id = canonical_id
@@ -326,7 +326,7 @@ async def _handle_reset_cure_growspace(
         )
 
 
-async def debug_reset_special_growspaces(
+async def handle_debug_reset_special_growspaces(
     hass: HomeAssistant,
     coordinator: GrowspaceCoordinator,
     strain_library: StrainLibrary,
@@ -362,7 +362,7 @@ async def debug_reset_special_growspaces(
         raise
 
 
-async def debug_consolidate_duplicate_special(
+async def handle_debug_consolidate_duplicate_special(
     hass: HomeAssistant,
     coordinator: GrowspaceCoordinator,
     strain_library: StrainLibrary,
@@ -447,8 +447,10 @@ async def _consolidate_plants_to_canonical_growspace(
             plant_id = plant.plant_id
             if plant_id in coordinator.plants:
                 try:
-                    new_row, new_col = coordinator._find_first_available_position(
-                        canonical_id
+                    new_row, new_col = (
+                        coordinator.validator.find_first_available_position(
+                            canonical_id
+                        )
                     )
                     coordinator.plants[plant_id].growspace_id = canonical_id
                     coordinator.plants[plant_id].row = new_row

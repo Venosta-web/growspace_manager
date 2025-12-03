@@ -1,4 +1,5 @@
 """Service handlers for irrigation-related services."""
+
 import logging
 from typing import TYPE_CHECKING
 
@@ -24,21 +25,20 @@ async def _get_irrigation_coordinator(
     if not entries:
         raise ServiceValidationError("Growspace Manager integration not yet set up.")
 
-    entry_id = entries[0].entry_id
+    entry = entries[0]
 
     try:
-        domain_data = hass.data[DOMAIN][entry_id]
-        irrigation_coordinators = domain_data["irrigation_coordinators"]
+        irrigation_coordinators = entry.runtime_data.irrigation_coordinators
 
         if growspace_id not in irrigation_coordinators:
             raise ServiceValidationError(
                 f"Growspace '{growspace_id}' not found or has no irrigation setup."
             )
         return irrigation_coordinators[growspace_id]
-    except KeyError:
+    except AttributeError:
         raise ServiceValidationError(
             "Irrigation coordinators not found. Setup may be incomplete."
-        )
+        ) from None
 
 
 async def handle_set_irrigation_settings(
@@ -118,6 +118,4 @@ async def handle_remove_drain_time(
     """Handle the service call to remove a drain time from a schedule."""
     growspace_id = call.data["growspace_id"]
     irrigation_coord = await _get_irrigation_coordinator(hass, growspace_id)
-    await irrigation_coord.async_remove_schedule_item(
-        "drain_times", call.data["time"]
-    )
+    await irrigation_coord.async_remove_schedule_item("drain_times", call.data["time"])

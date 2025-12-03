@@ -233,9 +233,9 @@ class OptionsFlowHandler(OptionsFlow):
         """
         self._config_entry = config_entry
         self._current_options: dict[str, Any] = self._config_entry.options.copy()
-        self._growspace_handler = None
-        self._plant_handler = None
-        self._ai_handler = None
+        self._growspace_handler: GrowspaceConfigHandler | None = None
+        self._plant_handler: PlantConfigHandler | None = None
+        self._ai_handler: AIConfigHandler | None = None
 
     @property
     def growspace_handler(self) -> GrowspaceConfigHandler:
@@ -309,10 +309,7 @@ class OptionsFlowHandler(OptionsFlow):
             ):
                 errors["base"] = "assistant_required"
             else:
-                coordinator = self.hass.data[DOMAIN][self._config_entry.entry_id][
-                    "coordinator"
-                ]
-                await self.ai_handler.save_ai_settings(coordinator, user_input)
+                await self.ai_handler.save_ai_settings(user_input)
 
                 # Inform user about the changes
                 return self.async_create_entry(
@@ -349,7 +346,7 @@ class OptionsFlowHandler(OptionsFlow):
         Returns:
             A ConfigFlowResult directing to the appropriate action (add/edit/delete).
         """
-        coordinator = self.hass.data[DOMAIN][self._config_entry.entry_id]["coordinator"]
+        coordinator = self._config_entry.runtime_data.coordinator
 
         if user_input is not None:
             action = user_input.get("action")
@@ -400,7 +397,7 @@ class OptionsFlowHandler(OptionsFlow):
             for n in notifications
         ]
 
-        schema = {
+        schema: dict[Any, Any] = {
             vol.Required("action", default="add"): selector.SelectSelector(
                 selector.SelectSelectorConfig(
                     options=[
@@ -436,7 +433,7 @@ class OptionsFlowHandler(OptionsFlow):
         Returns:
             A ConfigFlowResult.
         """
-        coordinator = self.hass.data[DOMAIN][self._config_entry.entry_id]["coordinator"]
+        coordinator = self._config_entry.runtime_data.coordinator
 
         if user_input is not None:
             new_options = self._config_entry.options.copy()
@@ -469,7 +466,7 @@ class OptionsFlowHandler(OptionsFlow):
         Returns:
             A ConfigFlowResult.
         """
-        coordinator = self.hass.data[DOMAIN][self._config_entry.entry_id]["coordinator"]
+        coordinator = self._config_entry.runtime_data.coordinator
         notification_id = self._selected_notification_id
         notifications = self._config_entry.options.get("timed_notifications", [])
         notification = next(
@@ -522,7 +519,7 @@ class OptionsFlowHandler(OptionsFlow):
             for gs_id, gs in coordinator.growspaces.items()
         ]
 
-        schema = {
+        schema: dict[Any, Any] = {
             vol.Required(
                 "message", default=notification.get("message", "")
             ): selector.TextSelector(),
@@ -569,10 +566,8 @@ class OptionsFlowHandler(OptionsFlow):
     ) -> ConfigFlowResult:
         """Show the menu for managing growspaces (add, update, remove)."""
         try:
-            coordinator = self.hass.data[DOMAIN][self._config_entry.entry_id][
-                "coordinator"
-            ]
-        except KeyError:
+            coordinator = self._config_entry.runtime_data.coordinator
+        except (KeyError, AttributeError):
             _LOGGER.error(
                 "Coordinator not found - integration may not be properly set up"
             )
@@ -583,16 +578,16 @@ class OptionsFlowHandler(OptionsFlow):
 
             if action == "add":
                 return await self.async_step_add_growspace()
-            elif action == "update" and user_input.get("growspace_id"):
+            if action == "update" and user_input.get("growspace_id"):
                 self._selected_growspace_id = user_input["growspace_id"]
                 return await self.async_step_update_growspace()
-            elif action == "remove" and user_input.get("growspace_id"):
+            if action == "remove" and user_input.get("growspace_id"):
                 try:
                     await self.growspace_handler.async_remove_growspace(
                         user_input["growspace_id"]
                     )
                 except Exception as err:
-                    _LOGGER.error("Error removing growspace: %s", err, exc_info=True)
+                    _LOGGER.exception("Error removing growspace: %s", err)
                     return self.async_show_form(
                         step_id="manage_growspaces",
                         data_schema=self.growspace_handler.get_growspace_management_schema(
@@ -600,7 +595,7 @@ class OptionsFlowHandler(OptionsFlow):
                         ),
                         errors={"base": "remove_failed"},
                     )
-            elif action == "back":
+            if action == "back":
                 return self.async_show_form(
                     step_id="init",
                     data_schema=self.add_suggested_values_to_schema(
@@ -621,8 +616,8 @@ class OptionsFlowHandler(OptionsFlow):
         """Show the form for adding a new growspace."""
         try:
             # Check if coordinator exists
-            self.hass.data[DOMAIN][self._config_entry.entry_id]["coordinator"]
-        except KeyError:
+            _ = self._config_entry.runtime_data.coordinator
+        except (KeyError, AttributeError):
             return self.async_abort(reason="setup_error")
 
         if user_input is not None:
@@ -647,10 +642,8 @@ class OptionsFlowHandler(OptionsFlow):
     ) -> ConfigFlowResult:
         """Show the form for updating an existing growspace."""
         try:
-            coordinator = self.hass.data[DOMAIN][self._config_entry.entry_id][
-                "coordinator"
-            ]
-        except KeyError:
+            coordinator = self._config_entry.runtime_data.coordinator
+        except (KeyError, AttributeError):
             _LOGGER.error(
                 "Coordinator not found - integration may not be properly set up"
             )
@@ -670,7 +663,7 @@ class OptionsFlowHandler(OptionsFlow):
                 return self.async_create_entry(title="", data={})
 
             except Exception as err:
-                _LOGGER.error("Error updating growspace: %s", err, exc_info=True)
+                _LOGGER.exception("Error updating growspace: %s", err)
                 return self.async_show_form(
                     step_id="update_growspace",
                     data_schema=self.growspace_handler.get_update_growspace_schema(
@@ -695,7 +688,7 @@ class OptionsFlowHandler(OptionsFlow):
         Returns:
             A ConfigFlowResult.
         """
-        coordinator = self.hass.data[DOMAIN][self._config_entry.entry_id]["coordinator"]
+        coordinator = self._config_entry.runtime_data.coordinator
         growspace_options = coordinator.get_sorted_growspace_options()
 
         if not growspace_options:
@@ -705,21 +698,19 @@ class OptionsFlowHandler(OptionsFlow):
             self._selected_growspace_id = user_input["growspace_id"]
             return await self.async_step_configure_environment()
 
-        schema = vol.Schema(
-            {
-                vol.Required("growspace_id"): selector.SelectSelector(
-                    selector.SelectSelectorConfig(
-                        options=[
-                            {"value": gs_id, "label": name}
-                            for gs_id, name in growspace_options
-                        ],
-                        mode=selector.SelectSelectorMode.DROPDOWN,
-                    )
+        schema: dict[Any, Any] = {
+            vol.Required("growspace_id"): selector.SelectSelector(
+                selector.SelectSelectorConfig(
+                    options=[
+                        selector.SelectOptionDict(value=gs_id, label=name)
+                        for gs_id, name in growspace_options
+                    ],
+                    mode=selector.SelectSelectorMode.DROPDOWN,
                 )
-            }
-        )
+            )
+        }
         return self.async_show_form(
-            step_id="select_growspace_for_env", data_schema=schema
+            step_id="select_growspace_for_env", data_schema=vol.Schema(schema)
         )
 
     async def async_step_configure_environment(
@@ -733,7 +724,7 @@ class OptionsFlowHandler(OptionsFlow):
         Returns:
             A ConfigFlowResult.
         """
-        coordinator = self.hass.data[DOMAIN][self._config_entry.entry_id]["coordinator"]
+        coordinator = self._config_entry.runtime_data.coordinator
         growspace = coordinator.growspaces.get(self._selected_growspace_id)
 
         if not growspace:
@@ -748,29 +739,9 @@ class OptionsFlowHandler(OptionsFlow):
         )
 
         if user_input is not None:
-            user_input = {
-                k: v for k, v in user_input.items() if v is not None and v != ""
-            }
-
-            self._env_config_step1 = (
-                growspace_options.copy()
-            )  # Start with existing config
-            self._env_config_step1.update(user_input)  # Update with new values
-
-            if not self._env_config_step1.get("configure_light"):
-                self._env_config_step1["light_sensor"] = None
-
-            if not self._env_config_step1.get("configure_fan"):
-                self._env_config_step1["circulation_fan"] = None
-
-            if not self._env_config_step1.get("configure_co2"):
-                self._env_config_step1["co2_sensor"] = None
-
-            if not self._env_config_step1.get("configure_exhaust"):
-                self._env_config_step1["exhaust_sensor"] = None
-
-            if not self._env_config_step1.get("configure_humidifier"):
-                self._env_config_step1["humidifier_sensor"] = None
+            self._env_config_step1 = self._process_environment_input(
+                user_input, growspace_options
+            )
 
             # Already filtered above, but keep this as a safety check
             env_config = {
@@ -799,252 +770,9 @@ class OptionsFlowHandler(OptionsFlow):
             )
             return self.async_create_entry(title="", data={})
 
-        schema_dict = {}
-
-        # Basic sensors - Use growspace_options for defaults
-        for key, device_class in [
-            ("temperature_sensor", "temperature"),
-            ("humidity_sensor", "humidity"),
-            ("vpd_sensor", "pressure"),
-        ]:
-            schema_dict[vol.Optional(key, default=growspace_options.get(key))] = (
-                selector.EntitySelector(
-                    selector.EntitySelectorConfig(
-                        domain=["sensor", "input_number"],
-                        device_class=device_class,
-                    )
-                )
-            )
-
-        # VPD sensor - optional
-        schema_dict[
-            vol.Optional(
-                "vpd_sensor",
-                default=growspace_options.get("vpd_sensor") or vol.UNDEFINED,
-            )
-        ] = selector.EntitySelector(
-            selector.EntitySelectorConfig(
-                domain=["sensor", "input_number"],
-                device_class="pressure",
-            )
-        )
-
-        # LST offset - only show if temp and humidity are set but VPD is not
-        has_temp = bool(growspace_options.get("temperature_sensor"))
-        has_humidity = bool(growspace_options.get("humidity_sensor"))
-        has_vpd = bool(growspace_options.get("vpd_sensor"))
-
-        if has_temp and has_humidity and not has_vpd:
-            schema_dict[
-                vol.Optional(
-                    "lst_offset",
-                    default=growspace_options.get("lst_offset", -2.0),
-                )
-            ] = selector.NumberSelector(
-                selector.NumberSelectorConfig(
-                    min=-5.0,
-                    max=5.0,
-                    step=0.5,
-                    mode=selector.NumberSelectorMode.BOX,
-                    unit_of_measurement="°C",
-                )
-            )
-
-        # Optional features with toggles
-        for feature in ["light", "co2", "fan"]:
-            # Use growspace_options for defaults
-            enabled = growspace_options.get(
-                f"configure_{feature}", bool(growspace_options.get(f"{feature}_sensor"))
-            )
-            schema_dict[vol.Optional(f"configure_{feature}", default=enabled)] = (
-                selector.BooleanSelector()
-            )
-            if enabled:
-                if feature == "light":
-                    entity_key = "light_sensor"
-                    domain = ["switch", "light", "input_boolean", "sensor"]
-                    device_class = None
-                elif feature == "fan":
-                    entity_key = "circulation_fan"
-                    domain = [
-                        "fan",
-                        "switch",
-                        "input_boolean",
-                        "sensor",
-                        "input_number",
-                    ]
-                    device_class = None
-                else:  # co2
-                    entity_key = f"{feature}_sensor"
-                    domain = ["sensor", "input_number"]
-                    device_class = ["carbon_dioxide"]
-
-                entity_selector_config_args: dict[str, Any] = {}
-                entity_selector_config_args["domain"] = domain
-                if device_class is not None:
-                    entity_selector_config_args["device_class"] = device_class
-
-                schema_dict[
-                    vol.Optional(
-                        entity_key,
-                        default=growspace_options.get(entity_key) or vol.UNDEFINED,
-                    )
-                ] = selector.EntitySelector(
-                    selector.EntitySelectorConfig(**entity_selector_config_args)
-                )
-
-        # Exhaust and Humidifier (0-10 sensors)
-        for feature in ["exhaust", "humidifier"]:
-            enabled = growspace_options.get(
-                f"configure_{feature}", bool(growspace_options.get(f"{feature}_sensor"))
-            )
-            schema_dict[vol.Optional(f"configure_{feature}", default=enabled)] = (
-                selector.BooleanSelector()
-            )
-            if enabled:
-                schema_dict[
-                    vol.Optional(
-                        f"{feature}_sensor",
-                        default=growspace_options.get(f"{feature}_sensor")
-                        or vol.UNDEFINED,
-                    )
-                ] = selector.EntitySelector(
-                    selector.EntitySelectorConfig(
-                        domain=["sensor", "input_number"],
-                        device_class="power_factor",
-                    )
-                )
-
-        # Dehumidifier / Switch configuration
-        configure_dehumidifier = growspace_options.get(
-            "configure_dehumidifier", bool(growspace_options.get("dehumidifier_entity"))
-        )
-        schema_dict[
-            vol.Optional("configure_dehumidifier", default=configure_dehumidifier)
-        ] = selector.BooleanSelector()
-
-        if configure_dehumidifier:
-            schema_dict[
-                vol.Optional(
-                    "dehumidifier_entity",
-                    default=growspace_options.get("dehumidifier_entity")
-                    or vol.UNDEFINED,
-                )
-            ] = selector.EntitySelector(
-                selector.EntitySelectorConfig(
-                    domain=["switch", "humidifier", "sensor", "binary_sensor"]
-                )
-            )
-            schema_dict[
-                vol.Optional(
-                    "control_dehumidifier",
-                    default=growspace_options.get("control_dehumidifier", False),
-                )
-            ] = selector.BooleanSelector()
-        for key, default in [("stress_threshold", 0.70), ("mold_threshold", 0.75)]:
-            schema_dict[
-                vol.Optional(key, default=growspace_options.get(key, default))
-            ] = selector.NumberSelector(
-                selector.NumberSelectorConfig(
-                    min=0.5,
-                    max=0.95,
-                    step=0.05,
-                    mode=selector.NumberSelectorMode.SLIDER,
-                )
-            )
-
-        # Photoperiod Configuration
-        schema_dict[
-            vol.Optional(
-                "veg_day_hours",
-                default=growspace_options.get("veg_day_hours", DEFAULT_VEG_DAY_HOURS),
-            )
-        ] = selector.NumberSelector(
-            selector.NumberSelectorConfig(
-                min=1, max=24, step=1, mode=selector.NumberSelectorMode.BOX
-            )
-        )
-
-        for stage in ["flower_early", "flower_mid", "flower_late"]:
-            schema_dict[
-                vol.Optional(
-                    f"{stage}_day_hours",
-                    default=growspace_options.get(
-                        f"{stage}_day_hours", DEFAULT_FLOWER_DAY_HOURS
-                    ),
-                )
-            ] = selector.NumberSelector(
-                selector.NumberSelectorConfig(
-                    min=1, max=24, step=1, mode=selector.NumberSelectorMode.BOX
-                )
-            )
-
-        # Thresholds
-        schema_dict[
-            vol.Optional(
-                "minimum_source_air_temperature",
-                default=growspace_options.get("minimum_source_air_temperature", 18),
-            )
-        ] = selector.NumberSelector(
-            selector.NumberSelectorConfig(
-                min=10, max=25, step=1, mode=selector.NumberSelectorMode.SLIDER
-            )
-        )
-
-        # Trend analysis settings (fallback)
-        for trend_type, default_threshold in [("vpd", 1.2), ("temp", 26.0)]:
-            schema_dict[
-                vol.Optional(
-                    f"{trend_type}_trend_duration",
-                    default=growspace_options.get(f"{trend_type}_trend_duration", 30),
-                )
-            ] = selector.NumberSelector(
-                selector.NumberSelectorConfig(
-                    min=5,
-                    max=120,
-                    step=5,
-                    mode=selector.NumberSelectorMode.BOX,
-                    unit_of_measurement="minutes",
-                )
-            )
-            if trend_type == "temp":
-                schema_dict[
-                    vol.Optional(
-                        f"{trend_type}_trend_threshold",
-                        default=growspace_options.get(
-                            f"{trend_type}_trend_threshold", default_threshold
-                        ),
-                    )
-                ] = selector.NumberSelector(
-                    selector.NumberSelectorConfig(
-                        min=20,
-                        max=35,
-                        step=0.5,
-                        mode=selector.NumberSelectorMode.BOX,
-                        unit_of_measurement="°C",
-                    )
-                )
-            schema_dict[
-                vol.Optional(
-                    f"{trend_type}_trend_sensitivity",
-                    default=growspace_options.get(
-                        f"{trend_type}_trend_sensitivity", 0.5
-                    ),
-                )
-            ] = selector.NumberSelector(
-                selector.NumberSelectorConfig(
-                    min=0.1, max=1.0, step=0.1, mode=selector.NumberSelectorMode.SLIDER
-                )
-            )
-
-        # Advanced settings toggle
-        schema_dict[vol.Optional("configure_advanced", default=False)] = (
-            selector.BooleanSelector()
-        )
-
         return self.async_show_form(
             step_id="configure_environment",
-            data_schema=vol.Schema(schema_dict),
+            data_schema=self._get_environment_schema_step1(growspace_options),
             description_placeholders={"growspace_name": growspace.name},
         )
 
@@ -1059,7 +787,7 @@ class OptionsFlowHandler(OptionsFlow):
         Returns:
             A ConfigFlowResult.
         """
-        coordinator = self.hass.data[DOMAIN][self._config_entry.entry_id]["coordinator"]
+        coordinator = self._config_entry.runtime_data.coordinator
         growspace = coordinator.growspaces.get(self._selected_growspace_id)
 
         if not growspace:
@@ -1072,7 +800,7 @@ class OptionsFlowHandler(OptionsFlow):
 
         if user_input is not None:
             # Process input back into nested structure
-            new_thresholds = {}
+            new_thresholds: dict[str, Any] = {}
             for stage in ["veg", "early_flower", "mid_flower", "late_flower"]:
                 new_thresholds[stage] = {}
                 for cycle in ["day", "night"]:
@@ -1147,7 +875,7 @@ class OptionsFlowHandler(OptionsFlow):
         Returns:
             A ConfigFlowResult.
         """
-        coordinator = self.hass.data[DOMAIN][self._config_entry.entry_id]["coordinator"]
+        coordinator = self._config_entry.runtime_data.coordinator
         growspace = coordinator.growspaces.get(self._selected_growspace_id)
 
         # Add this check early
@@ -1353,10 +1081,8 @@ class OptionsFlowHandler(OptionsFlow):
     ) -> ConfigFlowResult:
         """Show a form to select a growspace before configuring its irrigation."""
         try:
-            coordinator = self.hass.data[DOMAIN][self._config_entry.entry_id][
-                "coordinator"
-            ]
-        except KeyError:
+            coordinator = self._config_entry.runtime_data.coordinator
+        except (KeyError, AttributeError):
             _LOGGER.error("Coordinator not found for irrigation config flow.")
             return self.async_abort(reason="setup_error")
         growspace_options = coordinator.get_sorted_growspace_options()
@@ -1376,28 +1102,26 @@ class OptionsFlowHandler(OptionsFlow):
             self._selected_growspace_id = user_input["growspace_id"]
             return await self.async_step_configure_irrigation()
 
-        schema = vol.Schema(
-            {
-                vol.Required("growspace_id"): selector.SelectSelector(
-                    selector.SelectSelectorConfig(
-                        options=[
-                            {"value": gs_id, "label": name}
-                            for gs_id, name in growspace_options
-                        ],
-                        mode=selector.SelectSelectorMode.DROPDOWN,
-                    )
+        schema: dict[Any, Any] = {
+            vol.Required("growspace_id"): selector.SelectSelector(
+                selector.SelectSelectorConfig(
+                    options=[
+                        selector.SelectOptionDict(value=gs_id, label=name)
+                        for gs_id, name in growspace_options
+                    ],
+                    mode=selector.SelectSelectorMode.DROPDOWN,
                 )
-            }
-        )
+            )
+        }
         return self.async_show_form(
-            step_id="select_growspace_for_irrigation", data_schema=schema
+            step_id="select_growspace_for_irrigation", data_schema=vol.Schema(schema)
         )
 
     async def async_step_configure_irrigation(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
         """Show the irrigation configuration menu for a selected growspace."""
-        coordinator = self.hass.data[DOMAIN][self._config_entry.entry_id]["coordinator"]
+        coordinator = self._config_entry.runtime_data.coordinator
         growspace = coordinator.growspaces.get(self._selected_growspace_id)
 
         if not growspace:
@@ -1410,7 +1134,7 @@ class OptionsFlowHandler(OptionsFlow):
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
         """Show the unified irrigation management screen for the Lovelace card."""
-        coordinator = self.hass.data[DOMAIN][self._config_entry.entry_id]["coordinator"]
+        coordinator = self._config_entry.runtime_data.coordinator
         growspace = coordinator.growspaces.get(self._selected_growspace_id)
 
         if not growspace:
@@ -1526,7 +1250,7 @@ class OptionsFlowHandler(OptionsFlow):
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
         """Show the menu for managing plants (add, update, remove)."""
-        coordinator = self.hass.data[DOMAIN][self._config_entry.entry_id]["coordinator"]
+        coordinator = self._config_entry.runtime_data.coordinator
 
         if user_input is not None:
             action = user_input.get("action")
@@ -1569,7 +1293,7 @@ class OptionsFlowHandler(OptionsFlow):
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
         """Show a form to select a growspace before adding a new plant."""
-        coordinator = self.hass.data[DOMAIN][self._config_entry.entry_id]["coordinator"]
+        coordinator = self._config_entry.runtime_data.coordinator
 
         if user_input is not None:
             self._selected_growspace_id = user_input["growspace_id"]
@@ -1582,23 +1306,21 @@ class OptionsFlowHandler(OptionsFlow):
         if not growspace_options:
             return self.async_abort(reason="no_growspaces")
 
-        schema = vol.Schema(
-            {
-                vol.Required("growspace_id"): selector.SelectSelector(
-                    selector.SelectSelectorConfig(
-                        options=[
-                            {"value": gid, "label": name}
-                            for gid, name in growspace_options
-                        ],
-                        mode=selector.SelectSelectorMode.DROPDOWN,
-                    )
+        schema: dict[Any, Any] = {
+            vol.Required("growspace_id"): selector.SelectSelector(
+                selector.SelectSelectorConfig(
+                    options=[
+                        selector.SelectOptionDict(value=gid, label=name)
+                        for gid, name in growspace_options
+                    ],
+                    mode=selector.SelectSelectorMode.DROPDOWN,
                 )
-            }
-        )
+            )
+        }
 
         return self.async_show_form(
             step_id="select_growspace_for_plant",
-            data_schema=schema,
+            data_schema=vol.Schema(schema),
         )
 
     async def async_step_add_plant(
@@ -1606,10 +1328,8 @@ class OptionsFlowHandler(OptionsFlow):
     ) -> ConfigFlowResult:
         """Show the form for adding a new plant to a selected growspace."""
         try:
-            coordinator = self.hass.data[DOMAIN][self._config_entry.entry_id][
-                "coordinator"
-            ]
-        except KeyError:
+            coordinator = self._config_entry.runtime_data.coordinator
+        except (KeyError, AttributeError):
             return self.async_abort(reason="setup_error")
 
         growspace = coordinator.growspaces.get(self._selected_growspace_id)
@@ -1644,7 +1364,7 @@ class OptionsFlowHandler(OptionsFlow):
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
         """Show the form for updating an existing plant."""
-        coordinator = self.hass.data[DOMAIN][self._config_entry.entry_id]["coordinator"]
+        coordinator = self._config_entry.runtime_data.coordinator
         plant = coordinator.plants.get(self._selected_plant_id)
 
         if not plant:
@@ -1676,7 +1396,7 @@ class OptionsFlowHandler(OptionsFlow):
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
         """Show the menu for managing the strain library."""
-        coordinator = self.hass.data[DOMAIN][self._config_entry.entry_id]["coordinator"]
+        coordinator = self._config_entry.runtime_data.coordinator
 
         if user_input is not None:
             action = user_input.get("action")
@@ -1715,7 +1435,7 @@ class OptionsFlowHandler(OptionsFlow):
             selector.SelectOptionDict(value=s.id, label=s.name) for s in strains
         ]
 
-        schema = {
+        schema_dict: dict[vol.Optional | vol.Required, Any] = {
             vol.Required("action"): selector.SelectSelector(
                 selector.SelectSelectorConfig(
                     options=[
@@ -1744,20 +1464,20 @@ class OptionsFlowHandler(OptionsFlow):
         }
 
         if strain_options:
-            schema[vol.Optional("strain_id")] = selector.SelectSelector(
+            schema_dict[vol.Optional("strain_id")] = selector.SelectSelector(
                 selector.SelectSelectorConfig(
                     options=strain_options,
                     mode=selector.SelectSelectorMode.DROPDOWN,
                 )
             )
 
-        return vol.Schema(schema)
+        return vol.Schema(schema_dict)
 
     async def async_step_add_strain(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
         """Show the form for adding a new strain."""
-        coordinator = self.hass.data[DOMAIN][self._config_entry.entry_id]["coordinator"]
+        coordinator = self._config_entry.runtime_data.coordinator
 
         if user_input is not None:
             await coordinator.strain_library.async_add_strain(
@@ -1779,8 +1499,6 @@ class OptionsFlowHandler(OptionsFlow):
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
         """Show the form for editing a strain."""
-        coordinator = self.hass.data[DOMAIN][self._config_entry.entry_id]["coordinator"]
-        strain = coordinator.strain_library.get_strain(self._selected_strain_id)
 
         if user_input is not None:
             # Update logic here
@@ -1866,9 +1584,7 @@ class OptionsFlowHandler(OptionsFlow):
         errors = {}
         if user_input is not None:
             try:
-                coordinator = self.hass.data[DOMAIN][self._config_entry.entry_id][
-                    "coordinator"
-                ]
+                coordinator = self._config_entry.runtime_data.coordinator
                 file_path = user_input["file_path"]
 
                 # Use default image directory if not specified
@@ -1909,7 +1625,7 @@ class OptionsFlowHandler(OptionsFlow):
         if user_input is not None:
             return await self.async_step_manage_strain_library()
 
-        coordinator = self.hass.data[DOMAIN][self._config_entry.entry_id]["coordinator"]
+        coordinator = self._config_entry.runtime_data.coordinator
 
         # Default export location
         export_dir = self.hass.config.path("exports")
@@ -1926,3 +1642,331 @@ class OptionsFlowHandler(OptionsFlow):
         except Exception as e:
             _LOGGER.error("Export failed: %s", e)
             return self.async_abort(reason="export_failed")
+
+    def _process_environment_input(
+        self, user_input: dict[str, Any], growspace_options: dict[str, Any]
+    ) -> dict[str, Any]:
+        """Process user input and merge with existing options."""
+        user_input = {k: v for k, v in user_input.items() if v is not None and v != ""}
+
+        env_config = growspace_options.copy()
+        env_config.update(user_input)
+
+        # Clear disabled features
+        if not env_config.get("configure_light"):
+            env_config["light_sensor"] = None
+        if not env_config.get("configure_fan"):
+            env_config["circulation_fan"] = None
+        if not env_config.get("configure_co2"):
+            env_config["co2_sensor"] = None
+        if not env_config.get("configure_exhaust"):
+            env_config["exhaust_sensor"] = None
+        if not env_config.get("configure_humidifier"):
+            env_config["humidifier_sensor"] = None
+
+        return env_config
+
+    def _get_environment_schema_step1(
+        self, growspace_options: dict[str, Any]
+    ) -> vol.Schema:
+        """Build the schema for the first step of environment configuration."""
+        schema_dict: dict[Any, Any] = {}
+
+        self._add_basic_sensors_to_schema(schema_dict, growspace_options)
+        self._add_lst_offset_to_schema(schema_dict, growspace_options)
+        self._add_optional_features_to_schema(schema_dict, growspace_options)
+        self._add_exhaust_humidifier_to_schema(schema_dict, growspace_options)
+        self._add_dehumidifier_to_schema(schema_dict, growspace_options)
+
+        return vol.Schema(schema_dict)
+
+    def _add_basic_sensors_to_schema(
+        self, schema_dict: dict, growspace_options: dict[str, Any]
+    ) -> None:
+        """Add basic sensors (temp, humidity, vpd) to the schema."""
+        # Basic sensors
+        for key, device_class in [
+            ("temperature_sensor", "temperature"),
+            ("humidity_sensor", "humidity"),
+        ]:
+            schema_dict[vol.Optional(key, default=growspace_options.get(key))] = (
+                selector.EntitySelector(
+                    selector.EntitySelectorConfig(
+                        domain=["sensor", "input_number"],
+                        device_class=device_class,
+                    )
+                )
+            )
+
+        # VPD sensor - optional
+        schema_dict[
+            vol.Optional(
+                "vpd_sensor",
+                default=growspace_options.get("vpd_sensor") or vol.UNDEFINED,
+            )
+        ] = selector.EntitySelector(
+            selector.EntitySelectorConfig(
+                domain=["sensor", "input_number"],
+                device_class="pressure",
+            )
+        )
+
+    def _add_lst_offset_to_schema(
+        self, schema_dict: dict, growspace_options: dict[str, Any]
+    ) -> None:
+        """Add LST offset to the schema if applicable."""
+        has_temp = bool(growspace_options.get("temperature_sensor"))
+        has_humidity = bool(growspace_options.get("humidity_sensor"))
+        has_vpd = bool(growspace_options.get("vpd_sensor"))
+
+        if has_temp and has_humidity and not has_vpd:
+            schema_dict[
+                vol.Optional(
+                    "lst_offset",
+                    default=growspace_options.get("lst_offset", -2.0),
+                )
+            ] = selector.NumberSelector(
+                selector.NumberSelectorConfig(
+                    min=-5.0,
+                    max=5.0,
+                    step=0.5,
+                    mode=selector.NumberSelectorMode.BOX,
+                    unit_of_measurement="°C",
+                )
+            )
+
+    def _add_optional_features_to_schema(
+        self, schema_dict: dict, growspace_options: dict[str, Any]
+    ) -> None:
+        """Add optional features (light, co2, fan) to the schema."""
+        for feature in ["light", "co2", "fan"]:
+            enabled = growspace_options.get(
+                f"configure_{feature}",
+                bool(growspace_options.get(f"{feature}_sensor")),
+            )
+            schema_dict[vol.Optional(f"configure_{feature}", default=enabled)] = (
+                selector.BooleanSelector()
+            )
+            if enabled:
+                self._add_feature_entity_selector(
+                    schema_dict, feature, growspace_options
+                )
+
+    def _add_feature_entity_selector(
+        self, schema_dict: dict, feature: str, growspace_options: dict[str, Any]
+    ) -> None:
+        """Add the entity selector for a specific feature."""
+        if feature == "light":
+            entity_key = "light_sensor"
+            domain = ["switch", "light", "input_boolean", "sensor"]
+            device_class = None
+        elif feature == "fan":
+            entity_key = "circulation_fan"
+            domain = [
+                "fan",
+                "switch",
+                "input_boolean",
+                "sensor",
+                "input_number",
+            ]
+            device_class = None
+        else:  # co2
+            entity_key = f"{feature}_sensor"
+            domain = ["sensor", "input_number"]
+            device_class = ["carbon_dioxide"]
+
+        schema_dict[
+            vol.Optional(
+                entity_key,
+                default=growspace_options.get(entity_key) or vol.UNDEFINED,
+            )
+        ] = selector.EntitySelector(
+            selector.EntitySelectorConfig(
+                domain=domain,
+                device_class=device_class if device_class else [],
+            )
+        )
+
+    def _add_exhaust_humidifier_to_schema(
+        self, schema_dict: dict, growspace_options: dict[str, Any]
+    ) -> None:
+        """Add exhaust and humidifier to the schema."""
+        # Exhaust Fan
+        schema_dict[
+            vol.Optional(
+                "exhaust_fan_entity",
+                default=growspace_options.get("exhaust_fan_entity"),
+            )
+        ] = selector.EntitySelector(selector.EntitySelectorConfig(domain="fan"))
+
+        # Humidifier
+        schema_dict[
+            vol.Optional(
+                "humidifier_entity",
+                default=growspace_options.get("humidifier_entity"),
+            )
+        ] = selector.EntitySelector(selector.EntitySelectorConfig(domain="humidifier"))
+        for feature in ["exhaust", "humidifier"]:
+            enabled = growspace_options.get(
+                f"configure_{feature}",
+                bool(growspace_options.get(f"{feature}_sensor")),
+            )
+            schema_dict[vol.Optional(f"configure_{feature}", default=enabled)] = (
+                selector.BooleanSelector()
+            )
+            if enabled:
+                schema_dict[
+                    vol.Optional(
+                        f"{feature}_sensor",
+                        default=growspace_options.get(f"{feature}_sensor")
+                        or vol.UNDEFINED,
+                    )
+                ] = selector.EntitySelector(
+                    selector.EntitySelectorConfig(
+                        domain=["sensor", "input_number"],
+                        device_class="power_factor",
+                    )
+                )
+
+    def _add_dehumidifier_to_schema(
+        self, schema_dict: dict, growspace_options: dict[str, Any]
+    ) -> None:
+        """Add dehumidifier to the schema."""
+        configure_dehumidifier = growspace_options.get(
+            "configure_dehumidifier", bool(growspace_options.get("dehumidifier_entity"))
+        )
+        schema_dict[
+            vol.Optional("configure_dehumidifier", default=configure_dehumidifier)
+        ] = selector.BooleanSelector()
+
+        if configure_dehumidifier:
+            schema_dict[
+                vol.Optional(
+                    "dehumidifier_entity",
+                    default=growspace_options.get("dehumidifier_entity")
+                    or vol.UNDEFINED,
+                )
+            ] = selector.EntitySelector(
+                selector.EntitySelectorConfig(
+                    domain=["switch", "humidifier", "sensor", "binary_sensor"]
+                )
+            )
+            schema_dict[
+                vol.Optional(
+                    "control_dehumidifier",
+                    default=growspace_options.get("control_dehumidifier", False),
+                )
+            ] = selector.BooleanSelector()
+        for key, default in [("stress_threshold", 0.70), ("mold_threshold", 0.75)]:
+            schema_dict[
+                vol.Optional(key, default=growspace_options.get(key, default))
+            ] = selector.NumberSelector(
+                selector.NumberSelectorConfig(
+                    min=0.5,
+                    max=0.95,
+                    step=0.05,
+                    mode=selector.NumberSelectorMode.SLIDER,
+                )
+            )
+
+        # Photoperiod Configuration
+        schema_dict[
+            vol.Optional(
+                "veg_day_hours",
+                default=growspace_options.get("veg_day_hours", DEFAULT_VEG_DAY_HOURS),
+            )
+        ] = selector.NumberSelector(
+            selector.NumberSelectorConfig(
+                min=1, max=24, step=1, mode=selector.NumberSelectorMode.BOX
+            )
+        )
+
+        for stage in ["flower_early", "flower_mid", "flower_late"]:
+            schema_dict[
+                vol.Optional(
+                    f"{stage}_day_hours",
+                    default=growspace_options.get(
+                        f"{stage}_day_hours", DEFAULT_FLOWER_DAY_HOURS
+                    ),
+                )
+            ] = selector.NumberSelector(
+                selector.NumberSelectorConfig(
+                    min=1, max=24, step=1, mode=selector.NumberSelectorMode.BOX
+                )
+            )
+
+        # Thresholds
+        schema_dict[
+            vol.Optional(
+                "minimum_source_air_temperature",
+                default=growspace_options.get("minimum_source_air_temperature", 18),
+            )
+        ] = selector.NumberSelector(
+            selector.NumberSelectorConfig(
+                min=10, max=25, step=1, mode=selector.NumberSelectorMode.SLIDER
+            )
+        )
+
+        # Trend analysis settings (fallback)
+        for trend_type, default_threshold in [("vpd", 1.2), ("temp", 26.0)]:
+            schema_dict[
+                vol.Optional(
+                    f"trend_{trend_type}_threshold",
+                    default=growspace_options.get(
+                        f"trend_{trend_type}_threshold", default_threshold
+                    ),
+                )
+            ] = selector.NumberSelector(
+                selector.NumberSelectorConfig(
+                    min=0.1, max=50.0, step=0.1, mode=selector.NumberSelectorMode.BOX
+                )
+            )
+
+            schema_dict[
+                vol.Optional(
+                    f"{trend_type}_trend_duration",
+                    default=growspace_options.get(f"{trend_type}_trend_duration", 30),
+                )
+            ] = selector.NumberSelector(
+                selector.NumberSelectorConfig(
+                    min=5,
+                    max=120,
+                    step=5,
+                    mode=selector.NumberSelectorMode.BOX,
+                    unit_of_measurement="minutes",
+                )
+            )
+            if trend_type == "temp":
+                schema_dict[
+                    vol.Optional(
+                        f"{trend_type}_trend_threshold",
+                        default=growspace_options.get(
+                            f"{trend_type}_trend_threshold", default_threshold
+                        ),
+                    )
+                ] = selector.NumberSelector(
+                    selector.NumberSelectorConfig(
+                        min=20,
+                        max=35,
+                        step=0.5,
+                        mode=selector.NumberSelectorMode.BOX,
+                        unit_of_measurement="°C",
+                    )
+                )
+            schema_dict[
+                vol.Optional(
+                    f"{trend_type}_trend_sensitivity",
+                    default=growspace_options.get(
+                        f"{trend_type}_trend_sensitivity", 0.5
+                    ),
+                )
+            ] = selector.NumberSelector(
+                selector.NumberSelectorConfig(
+                    min=0.1, max=1.0, step=0.1, mode=selector.NumberSelectorMode.SLIDER
+                )
+            )
+
+        # Advanced settings toggle
+        schema_dict[vol.Optional("configure_advanced", default=False)] = (
+            selector.BooleanSelector()
+        )

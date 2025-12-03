@@ -8,8 +8,6 @@ from typing import Any
 import voluptuous as vol
 from homeassistant.helpers import selector
 
-from ..const import DOMAIN
-
 _LOGGER = logging.getLogger(__name__)
 
 
@@ -25,7 +23,7 @@ class GrowspaceConfigHandler:
         """Build the schema for the growspace management menu."""
         growspace_options = coordinator.get_sorted_growspace_options()
 
-        schema = {
+        schema: dict[Any, Any] = {
             vol.Required("action", default="add"): selector.SelectSelector(
                 selector.SelectSelectorConfig(
                     options=[
@@ -48,7 +46,7 @@ class GrowspaceConfigHandler:
             schema[vol.Optional("growspace_id")] = selector.SelectSelector(
                 selector.SelectSelectorConfig(
                     options=[
-                        {"value": gs_id, "label": name}
+                        selector.SelectOptionDict(value=gs_id, label=name)
                         for gs_id, name in growspace_options
                     ],
                     mode=selector.SelectSelectorMode.DROPDOWN,
@@ -100,7 +98,7 @@ class GrowspaceConfigHandler:
 
     async def async_add_growspace(self, user_input: dict[str, Any]) -> None:
         """Add a new growspace."""
-        coordinator = self.hass.data[DOMAIN][self.config_entry.entry_id]["coordinator"]
+        coordinator = self.config_entry.runtime_data.coordinator
 
         # Use coordinator to add growspace
         await coordinator.async_add_growspace(
@@ -115,7 +113,7 @@ class GrowspaceConfigHandler:
 
     async def async_remove_growspace(self, growspace_id: str) -> None:
         """Remove a growspace."""
-        coordinator = self.hass.data[DOMAIN][self.config_entry.entry_id]["coordinator"]
+        coordinator = self.config_entry.runtime_data.coordinator
         await coordinator.async_remove_growspace(growspace_id)
 
     def get_update_growspace_schema(self, growspace) -> vol.Schema:
@@ -182,7 +180,7 @@ class GrowspaceConfigHandler:
         self, growspace_id: str, user_input: dict[str, Any]
     ) -> None:
         """Update an existing growspace."""
-        coordinator = self.hass.data[DOMAIN][self.config_entry.entry_id]["coordinator"]
+        coordinator = self.config_entry.runtime_data.coordinator
 
         # Filter out empty values
         update_data = {k: v for k, v in user_input.items() if v}

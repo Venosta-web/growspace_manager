@@ -4,6 +4,7 @@ This file defines the calendar entities for the Growspace Manager integration.
 Each growspace gets its own calendar, which displays scheduled tasks and reminders
 based on the timed notifications configured by the user.
 """
+
 from __future__ import annotations
 
 import logging
@@ -37,7 +38,7 @@ async def async_setup_entry(
         config_entry: The configuration entry.
         async_add_entities: A callback function for adding new entities.
     """
-    coordinator = hass.data[DOMAIN][config_entry.entry_id]["coordinator"]
+    coordinator = config_entry.runtime_data.coordinator
     calendars = [
         GrowspaceCalendar(coordinator, growspace_id)
         for growspace_id in coordinator.growspaces
@@ -124,8 +125,12 @@ class GrowspaceCalendar(CalendarEntity):
                     event_date = start_date + timedelta(days=days_offset)
 
                     # Create an all-day event and make it timezone-aware
-                    event_start = dt_util.as_local(datetime.combine(event_date, datetime.min.time()))
-                    event_end = dt_util.as_local(datetime.combine(event_date, datetime.max.time()))
+                    event_start = dt_util.as_local(
+                        datetime.combine(event_date, datetime.min.time())
+                    )
+                    event_end = dt_util.as_local(
+                        datetime.combine(event_date, datetime.max.time())
+                    )
 
                     event = CalendarEvent(
                         start=event_start,
@@ -143,7 +148,6 @@ class GrowspaceCalendar(CalendarEntity):
                     )
 
         self._events = sorted(events, key=lambda e: e.start_datetime_local)
-
 
     async def async_update(self) -> None:
         """Update the calendar's list of events."""

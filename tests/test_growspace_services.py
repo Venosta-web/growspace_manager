@@ -14,8 +14,10 @@ from custom_components.growspace_manager.const import (
 from custom_components.growspace_manager.coordinator import GrowspaceCoordinator
 from custom_components.growspace_manager.services.growspace import (
     handle_add_growspace,
-    handle_ask_grow_advice,
     handle_remove_growspace,
+)
+from custom_components.growspace_manager.services.ai_assistant import (
+    handle_ask_grow_advice,
 )
 from custom_components.growspace_manager.strain_library import StrainLibrary
 
@@ -43,14 +45,11 @@ def mock_coordinator():
         "temperature_sensor": "sensor.temp",
         "humidity_sensor": "sensor.hum",
         "vpd_sensor": "sensor.vpd",
-        "co2_sensor": "sensor.co2"
+        "co2_sensor": "sensor.co2",
     }
     coordinator.growspaces = {"gs1": mock_gs}
     coordinator.options = {
-        "ai_settings": {
-            CONF_AI_ENABLED: True,
-            CONF_ASSISTANT_ID: "test_agent"
-        }
+        "ai_settings": {CONF_AI_ENABLED: True, CONF_ASSISTANT_ID: "test_agent"}
     }
     return coordinator
 
@@ -133,9 +132,7 @@ async def test_handle_add_growspace_no_mobile_app_notification(
 
 
 @pytest.mark.asyncio
-@patch(
-    "custom_components.growspace_manager.services.growspace.create_notification"
-)
+@patch("custom_components.growspace_manager.services.growspace.create_notification")
 @patch("homeassistant.helpers.device_registry.async_get")
 async def test_handle_add_growspace_exception(
     mock_async_get,
@@ -176,9 +173,7 @@ async def test_handle_remove_growspace(
 
 
 @pytest.mark.asyncio
-@patch(
-    "custom_components.growspace_manager.services.growspace.create_notification"
-)
+@patch("custom_components.growspace_manager.services.growspace.create_notification")
 async def test_handle_remove_growspace_exception(
     mock_create_notification,
     mock_hass,
@@ -200,12 +195,12 @@ async def test_handle_remove_growspace_exception(
 
 @pytest.mark.asyncio
 @patch(
-    "custom_components.growspace_manager.services.growspace.conversation.async_process",
+    "custom_components.growspace_manager.services.ai_assistant.conversation.async_converse",
     new_callable=AsyncMock,
     create=True,
 )
 async def test_handle_ask_grow_advice_success(
-    mock_process,
+    mock_converse,
     mock_hass,
     mock_coordinator,
     mock_strain_library,
@@ -218,28 +213,34 @@ async def test_handle_ask_grow_advice_success(
     def get_state(entity_id):
         if entity_id == "sensor.temp":
             return State("sensor.temp", "25", {"unit_of_measurement": "°C"})
-        if entity_id == "binary_sensor.growspace_manager_gs1_stress":
-             return State("binary_sensor.growspace_manager_gs1_stress", "on", {"reasons": ["Temp high"]})
+        if entity_id == "binary_sensor.gs1_plants_under_stress":
+            return State(
+                "binary_sensor.gs1_plants_under_stress",
+                "on",
+                {"reasons": ["Temp high"]},
+            )
         return None
+
     mock_hass.states.get.side_effect = get_state
 
     # Mock LLM response
     mock_response = MagicMock()
     mock_response.response.speech = {"plain": {"speech": "Things are hot."}}
-    mock_process.return_value = mock_response
+    mock_converse.return_value = mock_response
 
     result = await handle_ask_grow_advice(
         mock_hass, mock_coordinator, mock_strain_library, mock_call
     )
 
     assert result["response"] == "Things are hot."
-    mock_process.assert_awaited_once()
+    mock_converse.assert_awaited_once()
 
     # Verify prompt contains sensor data
-    call_args = mock_process.call_args
+    call_args = mock_converse.call_args
     prompt = call_args.kwargs["text"]
     assert "25 °C" in prompt
-    assert "Stress: Temp high" in prompt
+    assert "STRESS DETECTED" in prompt
+    assert "Temp high" in prompt
 
 
 @pytest.mark.asyncio
@@ -280,12 +281,12 @@ async def test_handle_ask_grow_advice_growspace_not_found(
 
 @pytest.mark.asyncio
 @patch(
-    "custom_components.growspace_manager.services.growspace.conversation.async_process",
+    "custom_components.growspace_manager.services.ai_assistant.conversation.async_process",
     new_callable=AsyncMock,
     create=True,
 )
 async def test_handle_ask_grow_advice_llm_failure(
-    mock_process,
+    mock_converse,
     mock_hass,
     mock_coordinator,
     mock_strain_library,
@@ -295,10 +296,10 @@ async def test_handle_ask_grow_advice_llm_failure(
     mock_call.data = {"growspace_id": "gs1"}
 
     # Mock LLM returns None or empty response
-    mock_process.return_value = MagicMock(response=None)
+    mock_converse.return_value = MagicMock(response=None)
 
     result = await handle_ask_grow_advice(
         mock_hass, mock_coordinator, mock_strain_library, mock_call
     )
 
-    assert result["response"] == "Sorry, I couldn't generate advice at this time."
+    assert result["response"].startswith("AI Assistant Error:")

@@ -92,11 +92,8 @@ class TestGetIrrigationCoordinator:
     ):
         """Test error when specified growspace is not found."""
         mock_hass.config_entries.async_entries.return_value = [mock_config_entry]
-        mock_hass.data[DOMAIN] = {
-            mock_config_entry.entry_id: {
-                "irrigation_coordinators": {"other_gs": mock_irrigation_coordinator}
-            }
-        }
+        mock_config_entry.runtime_data = MagicMock()
+        mock_config_entry.runtime_data.irrigation_coordinators = {"other_gs": mock_irrigation_coordinator}
 
         with pytest.raises(
             ServiceValidationError, match="'gs1' not found or has no irrigation setup"
@@ -109,11 +106,8 @@ class TestGetIrrigationCoordinator:
     ):
         """Test successful retrieval of irrigation coordinator."""
         mock_hass.config_entries.async_entries.return_value = [mock_config_entry]
-        mock_hass.data[DOMAIN] = {
-            mock_config_entry.entry_id: {
-                "irrigation_coordinators": {"gs1": mock_irrigation_coordinator}
-            }
-        }
+        mock_config_entry.runtime_data = MagicMock()
+        mock_config_entry.runtime_data.irrigation_coordinators = {"gs1": mock_irrigation_coordinator}
 
         result = await _get_irrigation_coordinator(mock_hass, "gs1")
         assert result == mock_irrigation_coordinator
@@ -134,11 +128,8 @@ class TestHandleSetIrrigationSettings:
         """Test setting irrigation settings."""
         # Setup
         mock_hass.config_entries.async_entries.return_value = [mock_config_entry]
-        mock_hass.data[DOMAIN] = {
-            mock_config_entry.entry_id: {
-                "irrigation_coordinators": {"gs1": mock_irrigation_coordinator}
-            }
-        }
+        mock_config_entry.runtime_data = MagicMock()
+        mock_config_entry.runtime_data.irrigation_coordinators = {"gs1": mock_irrigation_coordinator}
 
         call = MagicMock(spec=ServiceCall)
         call.data = {
@@ -199,11 +190,8 @@ class TestHandleAddIrrigationTime:
         """Test adding irrigation time with explicit duration."""
         # Setup
         mock_hass.config_entries.async_entries.return_value = [mock_config_entry]
-        mock_hass.data[DOMAIN] = {
-            mock_config_entry.entry_id: {
-                "irrigation_coordinators": {"gs1": mock_irrigation_coordinator}
-            }
-        }
+        mock_config_entry.runtime_data = MagicMock()
+        mock_config_entry.runtime_data.irrigation_coordinators = {"gs1": mock_irrigation_coordinator}
 
         call = MagicMock(spec=ServiceCall)
         call.data = {"growspace_id": "gs1", "time": "08:00:00", "duration": 600}
@@ -230,11 +218,8 @@ class TestHandleAddIrrigationTime:
         """Test adding irrigation time using default duration."""
         # Setup
         mock_hass.config_entries.async_entries.return_value = [mock_config_entry]
-        mock_hass.data[DOMAIN] = {
-            mock_config_entry.entry_id: {
-                "irrigation_coordinators": {"gs1": mock_irrigation_coordinator}
-            }
-        }
+        mock_config_entry.runtime_data = MagicMock()
+        mock_config_entry.runtime_data.irrigation_coordinators = {"gs1": mock_irrigation_coordinator}
 
         call = MagicMock(spec=ServiceCall)
         call.data = {"growspace_id": "gs1", "time": "08:00:00"}
@@ -268,11 +253,8 @@ class TestHandleRemoveIrrigationTime:
         """Test removing irrigation time."""
         # Setup
         mock_hass.config_entries.async_entries.return_value = [mock_config_entry]
-        mock_hass.data[DOMAIN] = {
-            mock_config_entry.entry_id: {
-                "irrigation_coordinators": {"gs1": mock_irrigation_coordinator}
-            }
-        }
+        mock_config_entry.runtime_data = MagicMock()
+        mock_config_entry.runtime_data.irrigation_coordinators = {"gs1": mock_irrigation_coordinator}
 
         call = MagicMock(spec=ServiceCall)
         call.data = {"growspace_id": "gs1", "time": "08:00:00"}
@@ -303,11 +285,8 @@ class TestHandleAddDrainTime:
         """Test adding drain time with explicit duration."""
         # Setup
         mock_hass.config_entries.async_entries.return_value = [mock_config_entry]
-        mock_hass.data[DOMAIN] = {
-            mock_config_entry.entry_id: {
-                "irrigation_coordinators": {"gs1": mock_irrigation_coordinator}
-            }
-        }
+        mock_config_entry.runtime_data = MagicMock()
+        mock_config_entry.runtime_data.irrigation_coordinators = {"gs1": mock_irrigation_coordinator}
 
         call = MagicMock(spec=ServiceCall)
         call.data = {"growspace_id": "gs1", "time": "10:00:00", "duration": 180}
@@ -334,11 +313,8 @@ class TestHandleAddDrainTime:
         """Test adding drain time using default duration."""
         # Setup
         mock_hass.config_entries.async_entries.return_value = [mock_config_entry]
-        mock_hass.data[DOMAIN] = {
-            mock_config_entry.entry_id: {
-                "irrigation_coordinators": {"gs1": mock_irrigation_coordinator}
-            }
-        }
+        mock_config_entry.runtime_data = MagicMock()
+        mock_config_entry.runtime_data.irrigation_coordinators = {"gs1": mock_irrigation_coordinator}
 
         call = MagicMock(spec=ServiceCall)
         call.data = {"growspace_id": "gs1", "time": "10:00:00"}
@@ -372,11 +348,8 @@ class TestHandleRemoveDrainTime:
         """Test removing drain time."""
         # Setup
         mock_hass.config_entries.async_entries.return_value = [mock_config_entry]
-        mock_hass.data[DOMAIN] = {
-            mock_config_entry.entry_id: {
-                "irrigation_coordinators": {"gs1": mock_irrigation_coordinator}
-            }
-        }
+        mock_config_entry.runtime_data = MagicMock()
+        mock_config_entry.runtime_data.irrigation_coordinators = {"gs1": mock_irrigation_coordinator}
 
         call = MagicMock(spec=ServiceCall)
         call.data = {"growspace_id": "gs1", "time": "10:00:00"}

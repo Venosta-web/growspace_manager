@@ -47,15 +47,17 @@ def mock_coordinator() -> MagicMock:
 def mock_hass(mock_coordinator) -> MagicMock:
     """Mock Home Assistant instance."""
     hass = MagicMock(spec=HomeAssistant)
-    hass.data = {DOMAIN: {ENTRY_ID: {"coordinator": mock_coordinator}}}
+    hass.data = {}
     return hass
 
 
 @pytest.fixture
-def mock_config_entry() -> MagicMock:
+def mock_config_entry(mock_coordinator) -> MagicMock:
     """Mock Config Entry."""
     entry = MagicMock(spec=ConfigEntry)
     entry.entry_id = ENTRY_ID
+    entry.runtime_data = MagicMock()
+    entry.runtime_data.coordinator = mock_coordinator
     return entry
 
 

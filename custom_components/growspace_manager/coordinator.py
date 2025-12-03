@@ -8,6 +8,7 @@ from datetime import date, datetime
 from typing import Any
 
 from dateutil import parser
+from homeassistant.core import HomeAssistant
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 
@@ -50,7 +51,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
 
     def __init__(
         self,
-        hass,
+        hass: HomeAssistant,
         data: dict | None = None,
         options: dict | None = None,
         strain_library: StrainLibrary | None = None,
@@ -89,17 +90,23 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
         self.notification_manager = NotificationManager(hass, self)
         self.import_export_manager = ImportExportManager(hass)
 
-        self._notifications_sent: dict[str, dict[str, bool]] = {}
+        self._notifications_sent: dict[str, dict[str, dict[str, bool]]] = {}
         self._notifications_enabled: dict[
             str, bool
         ] = {}  # ✅ Notification switch states
-        # Initialize Env options
-        self.options = options or {}
 
-        # Load plants safely, ignoring invalid keys
+        # Load data
         if data is None:
             data = {}
-        raw_plants = data.get("plants", {})
+        self._load_plants(data.get("plants", {}))
+        self._load_growspaces(data.get("growspaces", {}))
+
+        _LOGGER.debug(
+            "Loaded %d plants and %d growspaces", len(self.plants), len(self.growspaces)
+        )
+
+    def _load_plants(self, raw_plants: dict) -> None:
+        """Load plants from raw data."""
         for pid, pdata in raw_plants.items():
             try:
                 if isinstance(pdata, dict):
@@ -111,8 +118,8 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
             except Exception as e:
                 _LOGGER.warning("Failed to load plant %s: %s", pid, e)
 
-        # Optionally load growspaces if stored
-        raw_growspaces = data.get("growspaces", {})
+    def _load_growspaces(self, raw_growspaces: dict) -> None:
+        """Load growspaces from raw data."""
         for gid, gdata in raw_growspaces.items():
             try:
                 if isinstance(gdata, dict):
@@ -125,10 +132,6 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
                     )
             except Exception as e:
                 _LOGGER.warning("Failed to load growspace %s: %s", gid, e)
-
-        _LOGGER.debug(
-            "Loaded %d plants and %d growspaces", len(self.plants), len(self.growspaces)
-        )
 
     # -----------------------------
     # Methods for editor dropdown
@@ -810,6 +813,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
 
         # Check if source_mother is provided
         source_mother_id = kwargs.get("source_mother")
+        mother_plant: Plant | None = None
 
         if source_mother_id:
             # Validate mother plant exists
@@ -840,7 +844,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
         now = date.today().isoformat()
 
         # Create clone data
-        clone_data = {
+        clone_data: dict[str, Any] = {
             "plant_id": plant_id,
             "growspace_id": growspace_id,
             "strain": str(strain).strip(),
@@ -971,7 +975,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
 
         for _ in range(num_clones):
             row, col = self.validator.find_first_available_position(clone_gs_id)
-            clone_data = {
+            clone_data: dict[str, Any] = {
                 "strain": mother.strain,
                 "phenotype": mother.phenotype,
                 "type": "clone",

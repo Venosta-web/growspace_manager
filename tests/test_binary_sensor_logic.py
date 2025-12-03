@@ -93,7 +93,7 @@ async def test_stress_sensor_high_heat(
             "_get_growth_stage_info",
             return_value={"veg_days": 1, "flower_days": 0},
         ),
-        patch.object(sensor, "async_write_ha_state", new_callable=AsyncMock),
+        patch.object(sensor, "async_write_ha_state", new_callable=MagicMock),
     ):
         await sensor._async_update_probability()
 
@@ -133,17 +133,20 @@ async def test_mold_risk_sensor_late_flower(
     set_sensor_state(hass, "sensor.vpd", 1.0)  # Low VPD at night
     await hass.async_block_till_done()
 
-    sensor._days_since = lambda date_str: (
-        utcnow().date() - datetime.fromisoformat(date_str).date()
-    ).days
-
     with (
+        patch.object(
+            sensor,
+            "_days_since",
+            side_effect=lambda date_str: (
+                utcnow().date() - datetime.fromisoformat(date_str).date()
+            ).days,
+        ),
         patch(
             "custom_components.growspace_manager.binary_sensor.BayesianEnvironmentSensor._async_analyze_sensor_trend",
             new_callable=AsyncMock,
             return_value={"trend": "stable", "crossed_threshold": False},
         ),
-        patch.object(sensor, "async_write_ha_state", new_callable=AsyncMock),
+        patch.object(sensor, "async_write_ha_state", new_callable=MagicMock),
     ):
         await sensor._async_update_probability()
 
@@ -181,7 +184,7 @@ async def test_optimal_conditions_sensor(
             "_get_growth_stage_info",
             return_value={"veg_days": 20, "flower_days": 0},
         ),
-        patch.object(sensor, "async_write_ha_state", new_callable=AsyncMock),
+        patch.object(sensor, "async_write_ha_state", new_callable=MagicMock),
     ):
         await sensor._async_update_probability()
 

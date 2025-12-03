@@ -1,4 +1,5 @@
 """Intents for the Growspace Manager integration."""
+
 from __future__ import annotations
 
 import logging
@@ -9,7 +10,6 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers import intent
 
 from .const import DOMAIN
-from .coordinator import GrowspaceCoordinator
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -41,34 +41,15 @@ class AskGrowAdviceIntent(intent.IntentHandler):
         user_query = slots.get("query", {}).get("value")
 
         # Find the growspace ID based on the name
-        coordinator: GrowspaceCoordinator | None = None
-        growspace_id: str | None = None
+        growspace_id = self._find_growspace(growspace_name)
 
-        # Look through all config entries for this domain to find the growspace
-        if DOMAIN in self.hass.data:
-            for entry_data in self.hass.data[DOMAIN].values():
-                if isinstance(entry_data, dict) and "coordinator" in entry_data:
-                    curr_coordinator = entry_data["coordinator"]
-                    for gs_id, gs in curr_coordinator.growspaces.items():
-                        if gs.name.lower() == growspace_name.lower():
-                            coordinator = curr_coordinator
-                            growspace_id = gs_id
-                            break
-                if growspace_id:
-                    break
-
-        if not growspace_id or not coordinator:
+        if not growspace_id:
             raise intent.IntentHandleError(f"Growspace '{growspace_name}' not found")
 
         # Prepare the service call data
         service_data = {"growspace_id": growspace_id}
         if user_query:
             service_data["user_query"] = user_query
-
-        # We need to manually call the service handler logic or the service itself.
-        # Calling the service via hass.services.async_call is usually better to ensure proper context,
-        # but we want the return value (the speech).
-        # However, intents usually return a speech response directly.
 
         # Let's call the service and get the response
         try:
@@ -91,3 +72,14 @@ class AskGrowAdviceIntent(intent.IntentHandler):
         response = intent_obj.create_response()
         response.async_set_speech(speech_text)
         return response
+
+    def _find_growspace(self, growspace_name: str) -> str | None:
+        """Find the growspace ID based on the name."""
+        entries = self.hass.config_entries.async_entries(DOMAIN)
+        for entry in entries:
+            if hasattr(entry, "runtime_data"):
+                curr_coordinator = entry.runtime_data.coordinator
+                for gs_id, gs in curr_coordinator.growspaces.items():
+                    if gs.name.lower() == growspace_name.lower():
+                        return gs_id
+        return None

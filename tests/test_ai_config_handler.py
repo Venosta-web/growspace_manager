@@ -1,6 +1,6 @@
 """Tests for the AI Config Handler."""
 
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 import voluptuous as vol
@@ -21,6 +21,7 @@ def mock_hass():
     """Mock Home Assistant instance."""
     hass = MagicMock(spec=HomeAssistant)
     hass.data = {DOMAIN: {}}
+    hass.states = MagicMock()
     return hass
 
 
@@ -45,71 +46,36 @@ async def test_initialization(handler, mock_hass, mock_config_entry):
     assert handler.config_entry == mock_config_entry
 
 
-async def test_get_ai_settings_schema_defaults(handler):
+async def test_get_ai_settings_schema_defaults(handler, mock_hass):
     """Test schema generation with default values."""
-    with patch(
-        "custom_components.growspace_manager.config_handlers.ai_config_handler.conversation"
-    ) as mock_conversation:
-        mock_conversation.async_get_conversation_agents = AsyncMock(return_value={})
-        schema = await handler.get_ai_settings_schema()
+    mock_hass.states.async_all.return_value = []
+    schema = await handler.get_ai_settings_schema()
 
     assert isinstance(schema, vol.Schema)
-    # Verify key fields exist in schema
-    # Note: We can't easily inspect vol.Schema structure directly, but we can verify it accepts valid data
 
 
 async def test_get_ai_settings_schema_with_agents(handler, mock_hass):
     """Test schema generation with available conversation agents."""
-    agents = {
-        "agent1": MagicMock(name="Agent 1"),
-        "agent2": MagicMock(name="Agent 2"),
-    }
-    # Mock attributes for the agents
-    agents["agent1"].name = "Agent 1"
-    agents["agent2"].name = "Agent 2"
+    agent1 = MagicMock()
+    agent1.entity_id = "conversation.agent_1"
+    agent1.attributes = {"friendly_name": "Agent 1"}
 
-    with patch(
-        "custom_components.growspace_manager.config_handlers.ai_config_handler.conversation"
-    ) as mock_conversation:
-        mock_conversation.async_get_conversation_agents = AsyncMock(return_value=agents)
-        schema = await handler.get_ai_settings_schema()
+    agent2 = MagicMock()
+    agent2.entity_id = "conversation.agent_2"
+    agent2.attributes = {"friendly_name": "Agent 2"}
 
-    assert isinstance(schema, vol.Schema)
+    mock_hass.states.async_all.return_value = [agent1, agent2]
 
-
-async def test_get_ai_settings_schema_fallback(handler, mock_hass):
-    """Test schema generation fallback for older HA versions."""
-    # Simulate no async_get_conversation_agents by mocking the module and not setting the attribute
-    with patch(
-        "custom_components.growspace_manager.config_handlers.ai_config_handler.conversation"
-    ) as mock_conversation:
-        del mock_conversation.async_get_conversation_agents
-
-        # Mock hass.data.get("conversation")
-        mock_agent_manager = MagicMock()
-        mock_agent_manager.async_get_agents = AsyncMock(
-            return_value=[{"id": "agent1", "name": "Agent 1"}]
-        )
-        mock_hass.data = {"conversation": mock_agent_manager}
-
-        schema = await handler.get_ai_settings_schema()
+    schema = await handler.get_ai_settings_schema()
 
     assert isinstance(schema, vol.Schema)
 
 
 async def test_get_ai_settings_schema_no_agents(handler, mock_hass):
     """Test schema generation when no agents are found."""
-    with patch(
-        "custom_components.growspace_manager.config_handlers.ai_config_handler.conversation"
-    ) as mock_conversation:
-        mock_conversation.async_get_conversation_agents = AsyncMock(return_value={})
+    mock_hass.states.async_all.return_value = []
 
-        # Mock default agent fallback
-        mock_default_agent = MagicMock()
-        mock_default_agent.id = "default_agent"
-        mock_conversation.async_get_agent = AsyncMock(return_value=mock_default_agent)
-
-        schema = await handler.get_ai_settings_schema()
+    schema = await handler.get_ai_settings_schema()
 
     assert isinstance(schema, vol.Schema)
 
@@ -119,7 +85,10 @@ async def test_save_ai_settings(handler, mock_hass, mock_config_entry):
     # Setup coordinator mock
     mock_coordinator = MagicMock()
     mock_coordinator.async_save = AsyncMock()
-    mock_hass.data[DOMAIN]["test_entry"] = {"coordinator": mock_coordinator}
+
+    # Update to use runtime_data
+    mock_config_entry.runtime_data = MagicMock()
+    mock_config_entry.runtime_data.coordinator = mock_coordinator
 
     user_input = {
         CONF_AI_ENABLED: True,

@@ -1,8 +1,10 @@
 """Coordinator for handling irrigation and drain schedules."""
+
 from __future__ import annotations
 
 import asyncio
 import logging
+from collections.abc import Callable
 from datetime import datetime
 from functools import partial
 from typing import TYPE_CHECKING, Any
@@ -10,8 +12,6 @@ from typing import TYPE_CHECKING, Any
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.event import async_track_time_change
-
-from .const import DOMAIN
 
 if TYPE_CHECKING:
     from .coordinator import GrowspaceCoordinator
@@ -23,14 +23,18 @@ class IrrigationCoordinator:
     """Manages irrigation and drain schedules for a specific growspace."""
 
     def __init__(
-        self, hass: HomeAssistant, config_entry: ConfigEntry, growspace_id: str, main_coordinator: GrowspaceCoordinator
+        self,
+        hass: HomeAssistant,
+        config_entry: ConfigEntry,
+        growspace_id: str,
+        main_coordinator: GrowspaceCoordinator,
     ):
         """Initialize the irrigation coordinator."""
         self.hass = hass
         self._config_entry = config_entry
         self._growspace_id = growspace_id
         self._main_coordinator = main_coordinator
-        self._listeners: list[callable] = []
+        self._listeners: list[Callable] = []
         self._running_tasks: dict[str, asyncio.Task[Any]] = {}
 
     def get_default_duration(self, event_type: str) -> int | None:
@@ -86,8 +90,12 @@ class IrrigationCoordinator:
 
         # Check if item with same time already exists
         existing_item = next(
-            (item for item in growspace.irrigation_config[schedule_key] if item.get("time") == time_str),
-            None
+            (
+                item
+                for item in growspace.irrigation_config[schedule_key]
+                if item.get("time") == time_str
+            ),
+            None,
         )
 
         if existing_item:
@@ -98,23 +106,27 @@ class IrrigationCoordinator:
                 time_str,
                 schedule_key,
                 self._growspace_id,
-                duration
+                duration,
             )
         else:
             # Add new schedule item
-            growspace.irrigation_config[schedule_key].append({"time": time_str, "duration": duration})
+            growspace.irrigation_config[schedule_key].append(
+                {"time": time_str, "duration": duration}
+            )
             _LOGGER.info(
                 "Added %s to %s for growspace %s. Schedule now has %d items.",
                 {"time": time_str, "duration": duration},
                 schedule_key,
                 self._growspace_id,
-                len(growspace.irrigation_config[schedule_key])
+                len(growspace.irrigation_config[schedule_key]),
             )
 
         # Persist the changes
         await self._save_and_reload()
 
-    async def async_remove_schedule_item(self, schedule_key: str, time_str: str) -> None:
+    async def async_remove_schedule_item(
+        self, schedule_key: str, time_str: str
+    ) -> None:
         """Remove all matching time entries from a schedule."""
         if not time_str:
             raise ValueError("Time cannot be empty")
@@ -170,7 +182,7 @@ class IrrigationCoordinator:
             if legacy_options:
                 _LOGGER.info(
                     "Migrating irrigation settings for %s from ConfigEntry to Storage",
-                    self._growspace_id
+                    self._growspace_id,
                 )
                 growspace.irrigation_config = dict(legacy_options)
                 await self._main_coordinator.async_save()
@@ -194,7 +206,7 @@ class IrrigationCoordinator:
             "Setting up listeners for growspace %s: %d irrigation times, %d drain times",
             self._growspace_id,
             len(irrigation_times),
-            len(drain_times)
+            len(drain_times),
         )
 
         # Log the actual schedule data for debugging
@@ -204,7 +216,9 @@ class IrrigationCoordinator:
             _LOGGER.debug("Drain schedule: %s", drain_times)
 
         # Deduplicate events based on time
-        unique_irrigation_times = {event["time"]: event for event in irrigation_times}.values()
+        unique_irrigation_times = {
+            event["time"]: event for event in irrigation_times
+        }.values()
         unique_drain_times = {event["time"]: event for event in drain_times}.values()
 
         for event in unique_irrigation_times:
@@ -329,15 +343,11 @@ class IrrigationCoordinator:
             )
 
             # Send notification
-            coordinator = self.hass.data[DOMAIN][self._config_entry.entry_id][
-                "coordinator"
-            ]
+            coordinator = self._config_entry.runtime_data.coordinator
             growspace = coordinator.growspaces.get(self._growspace_id)
             if growspace and growspace.notification_target:
                 time_str = event_data.get("time", "Unknown Time")
-                message = (
-                    f"{event_type.capitalize()} Event Started at {time_str}, running for {duration} seconds."
-                )
+                message = f"{event_type.capitalize()} Event Started at {time_str}, running for {duration} seconds."
                 title = f"Growspace: {growspace.name}"
 
                 await self.hass.services.async_call(

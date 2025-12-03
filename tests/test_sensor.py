@@ -11,6 +11,7 @@ from datetime import date, timedelta
 from unittest.mock import AsyncMock, MagicMock, Mock, patch
 
 import pytest
+
 from custom_components.growspace_manager import sensor as sensor_module
 from custom_components.growspace_manager.const import DOMAIN
 from custom_components.growspace_manager.sensor import (
@@ -108,11 +109,7 @@ async def test_async_setup_entry_adds_entities(mock_coordinator):
     mock_coordinator.async_set_updated_data = AsyncMock()
     mock_coordinator.options = {}
 
-    hass.data = {
-        "growspace_manager": {
-            "entry_1": {"coordinator": mock_coordinator, "created_entities": []}
-        }
-    }
+
 
     added_entities = []
 
@@ -121,7 +118,7 @@ async def test_async_setup_entry_adds_entities(mock_coordinator):
         added_entities.extend(entities)
 
     await async_setup_entry(
-        hass, Mock(entry_id="entry_1", options={}), async_add_entities
+        hass, Mock(entry_id="entry_1", options={}, runtime_data=Mock(coordinator=mock_coordinator, created_entities=[])), async_add_entities
     )
 
     # Now entities should be added
@@ -140,11 +137,7 @@ async def test_async_setup_entry_calculated_vpd(mock_coordinator):
     """Test that `async_setup_entry` creates CalculatedVpdSensor."""
     hass = MagicMock()
     hass.config.config_dir = "/config"
-    hass.data = {
-        "growspace_manager": {
-            "entry_1": {"coordinator": mock_coordinator, "created_entities": []}
-        }
-    }
+
 
     # Growspace with temp/humidity but no VPD sensor
     mock_coordinator.growspaces = {
@@ -185,7 +178,7 @@ async def test_async_setup_entry_calculated_vpd(mock_coordinator):
         ),
     ):
         await async_setup_entry(
-            hass, Mock(entry_id="entry_1", options={}), async_add_entities
+            hass, Mock(entry_id="entry_1", options={}, runtime_data=Mock(coordinator=mock_coordinator, created_entities=[])), async_add_entities
         )
 
     # Check for CalculatedVpdSensor
@@ -209,11 +202,7 @@ async def test_async_setup_entry_global_vpd(mock_coordinator):
     """Test that `async_setup_entry` creates global VPD sensors."""
     hass = MagicMock()
     hass.config.config_dir = "/config"
-    hass.data = {
-        "growspace_manager": {
-            "entry_1": {"coordinator": mock_coordinator, "created_entities": []}
-        }
-    }
+
 
     mock_coordinator.growspaces = {}
     mock_coordinator.get_growspace_plants = Mock(return_value=[])
@@ -238,7 +227,7 @@ async def test_async_setup_entry_global_vpd(mock_coordinator):
         added_entities.extend(entities)
 
     await async_setup_entry(
-        hass, Mock(entry_id="entry_1", options=options), async_add_entities
+        hass, Mock(entry_id="entry_1", options=options, runtime_data=Mock(coordinator=mock_coordinator, created_entities=[])), async_add_entities
     )
 
     # Check for global VPD sensors
@@ -271,11 +260,7 @@ async def test_async_setup_entry_dynamic_updates(mock_coordinator):
     """Test dynamic addition and removal of entities."""
     hass = MagicMock()
     hass.config.config_dir = "/config"
-    hass.data = {
-        "growspace_manager": {
-            "entry_1": {"coordinator": mock_coordinator, "created_entities": []}
-        }
-    }
+
 
     mock_coordinator.hass = hass
 
@@ -306,7 +291,7 @@ async def test_async_setup_entry_dynamic_updates(mock_coordinator):
 
     # Setup with empty coordinator
     await async_setup_entry(
-        hass, Mock(entry_id="entry_1", options={}), async_add_entities
+        hass, Mock(entry_id="entry_1", options={}, runtime_data=Mock(coordinator=mock_coordinator, created_entities=[])), async_add_entities
     )
 
     assert listener_callback is not None
@@ -366,6 +351,7 @@ async def test_async_setup_entry_dynamic_updates(mock_coordinator):
 
     gs_entity.async_remove = AsyncMock()
     plant_entity.async_remove = AsyncMock()
+    plant_entity.registry_entry = Mock(entity_id="sensor.plant_entity")
 
     # Mock entity registry for plant removal
     mock_registry = MagicMock()
@@ -397,7 +383,7 @@ async def test_async_create_derivative_sensors(mock_coordinator):
             "vpd_sensor": "sensor.vpd",
         },
     )
-    hass.data = {DOMAIN: {config_entry.entry_id: {"created_entities": []}}}
+    config_entry.runtime_data = Mock(created_entities=[])
 
     with (
         patch(
@@ -426,7 +412,7 @@ async def test_async_create_derivative_sensors(mock_coordinator):
             hass, "sensor.temp", "gs1", growspace.name, "temperature"
         )
 
-        created_entities = hass.data[DOMAIN][config_entry.entry_id]["created_entities"]
+        created_entities = config_entry.runtime_data.created_entities
         assert "trend_1" in created_entities
         assert "stats_1" in created_entities
         assert "trend_2" in created_entities

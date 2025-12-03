@@ -69,18 +69,13 @@ def mock_coordinator():
 async def test_async_setup_entry_adds_entities(mock_coordinator):
     """Test that `async_setup_entry` correctly adds calendar entities."""
     hass = MagicMock()
-    hass.data = {
-        DOMAIN: {
-            "entry_1": {"coordinator": mock_coordinator}
-        }
-    }
 
     added_entities = []
 
     def async_add_entities(entities, update_before_add=False):
         added_entities.extend(entities)
 
-    await async_setup_entry(hass, Mock(entry_id="entry_1"), async_add_entities)
+    await async_setup_entry(hass, Mock(entry_id="entry_1", runtime_data=Mock(coordinator=mock_coordinator)), async_add_entities)
 
     assert len(added_entities) == 1
     assert isinstance(added_entities[0], GrowspaceCalendar)

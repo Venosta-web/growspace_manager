@@ -1,6 +1,6 @@
 """Test the Growspace Manager options flow."""
 
-from unittest.mock import AsyncMock, Mock
+from unittest.mock import AsyncMock, MagicMock, Mock
 
 import pytest
 import voluptuous as vol
@@ -19,8 +19,9 @@ from custom_components.growspace_manager.coordinator import GrowspaceCoordinator
 async def setup_test_environment(hass: HomeAssistant, coordinator):
     """Set up the test environment with a mock coordinator and config entry."""
     config_entry = MockConfigEntry(domain=DOMAIN, data={"name": "Test"})
+    config_entry.runtime_data = MagicMock()
+    config_entry.runtime_data.coordinator = coordinator
     config_entry.add_to_hass(hass)
-    hass.data[DOMAIN] = {config_entry.entry_id: {"coordinator": coordinator}}
     return config_entry
 
 
@@ -461,7 +462,7 @@ async def test_options_flow_manage_plants_add(hass, basic_mock_coordinator, mock
     ]
     basic_mock_coordinator.get_strain_options.return_value = ["Strain A", "Strain B"]
     config_entry = await setup_test_environment(hass, basic_mock_coordinator)
-    hass.data[DOMAIN][config_entry.entry_id]["store"] = mock_store
+    config_entry.runtime_data["store"] = mock_store
 
     # When
     flow = OptionsFlowHandler(config_entry)
@@ -485,7 +486,7 @@ async def test_options_flow_manage_plants_update(
     basic_mock_coordinator.growspaces = {"test_grow": Mock(name="Test Growspace")}
     basic_mock_coordinator.get_strain_options.return_value = ["Strain A", "Strain B"]
     config_entry = await setup_test_environment(hass, basic_mock_coordinator)
-    hass.data[DOMAIN][config_entry.entry_id]["store"] = mock_store
+    config_entry.runtime_data["store"] = mock_store
 
     # When
     flow = OptionsFlowHandler(config_entry)

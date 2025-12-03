@@ -22,3 +22,5 @@ codespell
 pytest-xdist
 freezegun
 requests-mock
+hassil
+home-assistant-intents

@@ -14,9 +14,10 @@
   "documentation": "https://github.com/Venosta-web/growspace_manager",
   "iot_class": "local_polling",
   "issue_tracker": "https://github.com/Venosta-web/growspace-manager/issues",
+  "quality_scale": "silver",
   "requirements": [
     "aiosqlite",
     "Pillow"
   ],
-  "version": "0.2.2.2"
+  "version": "0.2.4.2"
 }

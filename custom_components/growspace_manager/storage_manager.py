@@ -63,7 +63,7 @@ class StorageManager:
             }
             _LOGGER.info("Loaded %d plants", len(self.coordinator.plants))
         except Exception as e:
-            _LOGGER.error("Error loading plants: %s", e, exc_info=True)
+            _LOGGER.exception("Error loading plants: %s", e)
             self.coordinator.plants = {}
 
         # Load growspaces using from_dict (handles migration)
@@ -79,11 +79,14 @@ class StorageManager:
                 _LOGGER.debug("--- COORDINATOR HAS NO OPTIONS TO APPLY ---")
             else:
                 _LOGGER.debug(
-                    "--- APPLYING OPTIONS TO GROWSPACES: %s ---", self.coordinator.options
+                    "--- APPLYING OPTIONS TO GROWSPACES: %s ---",
+                    self.coordinator.options,
                 )
                 for growspace_id, growspace in self.coordinator.growspaces.items():
                     if growspace_id in self.coordinator.options:
-                        growspace.environment_config = self.coordinator.options[growspace_id]
+                        growspace.environment_config = self.coordinator.options[
+                            growspace_id
+                        ]
                         _LOGGER.debug(
                             "--- SUCCESS: Applied env_config to '%s': %s ---",
                             growspace.name,
@@ -95,7 +98,7 @@ class StorageManager:
                             growspace.name,
                         )
         except Exception as e:
-            _LOGGER.exception("Error loading growspaces: %s", e, exc_info=True)
+            _LOGGER.exception("Error loading growspaces: %s", e)
             self.coordinator.growspaces = {}
 
         # Load notification tracking
@@ -105,7 +108,7 @@ class StorageManager:
         self.coordinator._notifications_enabled = data.get("notifications_enabled", {})
 
         # Ensure all growspaces have a notification enabled state (default True)
-        for growspace_id in self.coordinator.growspaces.keys():
+        for growspace_id in self.coordinator.growspaces:
             if growspace_id not in self.coordinator._notifications_enabled:
                 self.coordinator._notifications_enabled[growspace_id] = True
 
@@ -113,10 +116,10 @@ class StorageManager:
         # We delegate this back to the coordinator's migration manager
         # But since we are in StorageManager, we can access it via coordinator
         if hasattr(self.coordinator, "migration_manager"):
-             self.coordinator.migration_manager.migrate_legacy_growspaces()
+            self.coordinator.migration_manager.migrate_legacy_growspaces()
         else:
-             # Fallback if migration manager is not yet initialized (should not happen if init order is correct)
-             _LOGGER.warning("MigrationManager not found on coordinator during load")
+            # Fallback if migration manager is not yet initialized (should not happen if init order is correct)
+            _LOGGER.warning("MigrationManager not found on coordinator during load")
 
         # Save migrated data back to storage
         await self.async_save()

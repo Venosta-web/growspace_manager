@@ -16,6 +16,7 @@ from typing import Any
 from homeassistant.components.sensor import SensorEntity, SensorStateClass
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity import Entity
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
@@ -54,7 +55,7 @@ async def _async_create_derivative_sensors(
         growspace: The Growspace object for which to create sensors.
     """
     if growspace.environment_config:
-        created_entities = hass.data[DOMAIN][config_entry.entry_id]["created_entities"]
+        created_entities = config_entry.runtime_data.created_entities
         for sensor_type in ["temperature", "humidity", "vpd"]:
             source_sensor = growspace.environment_config.get(f"{sensor_type}_sensor")
             if source_sensor:
@@ -75,90 +76,23 @@ async def async_setup_entry(
     config_entry: ConfigEntry,
     async_add_entities: AddEntitiesCallback,
 ) -> None:
-    """Set up the Growspace Manager sensor platform from a config entry.
-
-    This function is called by Home Assistant to initialize the sensor platform.
-    It creates sensors for each growspace and plant, as well as global sensors
-    like the Strain Library. It also sets up a listener to dynamically add and
-    remove entities as they are changed in the coordinator.
-
-    Args:
-        hass: The Home Assistant instance.
-        config_entry: The configuration entry.
-        async_add_entities: A callback function for adding new entities.
-    """
-    coordinator = hass.data[DOMAIN][config_entry.entry_id]["coordinator"]
+    """Set up the Growspace Manager sensor platform from a config entry."""
+    coordinator = config_entry.runtime_data.coordinator
 
     # Track created entities so we can add/remove dynamically
     growspace_entities: dict[str, GrowspaceOverviewSensor] = {}
     plant_entities: dict[str, PlantEntity] = {}
-
-    initial_entities: list[Entity] = [
-        StrainLibrarySensor(coordinator),
-    ]
-
-    # Track calculated VPD sensors
-    calculated_vpd_sensors: list[CalculatedVpdSensor] = []
+    initial_entities: list[Entity] = []
 
     # Create initial entities
-    for growspace_id, growspace in coordinator.growspaces.items():
-        gs_entity = GrowspaceOverviewSensor(coordinator, growspace_id, growspace)
-        growspace_entities[growspace_id] = gs_entity
-        initial_entities.append(gs_entity)
-
-        await _async_create_derivative_sensors(hass, config_entry, growspace)
-
-        # Check if we need to create a calculated VPD sensor
-        env_config = growspace.environment_config or {}
-        temp_sensor = env_config.get("temperature_sensor")
-        humidity_sensor = env_config.get("humidity_sensor")
-        vpd_sensor = env_config.get("vpd_sensor")
-
-        # Create calculated VPD if temp and humidity exist but no VPD sensor
-        if temp_sensor and humidity_sensor and not vpd_sensor:
-            lst_offset = env_config.get("lst_offset", -2.0)
-            calc_vpd_sensor = CalculatedVpdSensor(
-                coordinator,
-                growspace_id,
-                growspace.name,
-                temp_sensor,
-                humidity_sensor,
-                lst_offset,
-            )
-            calculated_vpd_sensors.append(calc_vpd_sensor)
-            initial_entities.append(calc_vpd_sensor)
-
-            # Auto-populate the vpd_sensor in env_config with the calculated sensor
-            env_config["vpd_sensor"] = f"sensor.{growspace_id}_calculated_vpd"
-            growspace.environment_config = env_config
-
-            _LOGGER.info(
-                "Created calculated VPD sensor for %s (LST offset: %.1f°C)",
-                growspace.name,
-                lst_offset,
-            )
-
-        for plant in coordinator.get_growspace_plants(growspace_id):
-            pe = PlantEntity(coordinator, plant)
-            plant_entities[plant.plant_id] = pe
-            initial_entities.append(pe)
-
-    # Add your GrowspaceListSensor
-    initial_entities.append(GrowspaceListSensor(coordinator))
-
-    _LOGGER.debug(
-        "coordinator.growspaces = %s",
-        {gid: gs.name for gid, gs in coordinator.growspaces.items()},
+    await _create_initial_entities(
+        hass,
+        coordinator,
+        config_entry,
+        initial_entities,
+        growspace_entities,
+        plant_entities,
     )
-    _LOGGER.debug("Created growspace_entities = %s", list(growspace_entities.keys()))
-    _LOGGER.debug("Total initial_entities = %d", len(initial_entities))
-    for entity in initial_entities:
-        if isinstance(entity, GrowspaceOverviewSensor):
-            _LOGGER.debug(
-                "Growspace entity - unique_id=%s, name=%s",
-                entity.unique_id,
-                entity.name,
-            )
 
     if initial_entities:
         async_add_entities(initial_entities)
@@ -166,82 +100,9 @@ async def async_setup_entry(
             "Added %d initial entities (growspaces/plants/strain library)",
             len(initial_entities),
         )
+
     # Ensure dry and cure growspaces exist after coordinator setup
-    dry_id = coordinator._ensure_special_growspace(
-        "dry", "dry", rows=3, plants_per_row=3
-    )
-    cure_id = coordinator._ensure_special_growspace(
-        "cure", "cure", rows=3, plants_per_row=3
-    )
-    clone_id = coordinator._ensure_special_growspace(
-        "clone", "clone", rows=3, plants_per_row=3
-    )
-    mother_id = coordinator._ensure_special_growspace(
-        "mother", "mother", rows=3, plants_per_row=3
-    )
-
-    # Save the changes to storage
-
-    await coordinator.async_save()
-
-    _LOGGER.info(
-        "Ensured special growspaces exist: dry=%s, cure=%s clone=%s mother=%s",
-        dry_id,
-        cure_id,
-        clone_id,
-        mother_id,
-    )
-
-    async def _handlecoordinator_update_async() -> None:
-        """Add new entities and remove missing ones when coordinator changes."""
-        # Growspaces: add new
-        for growspace_id, growspace in coordinator.growspaces.items():
-            if growspace_id not in growspace_entities:
-                entity = GrowspaceOverviewSensor(coordinator, growspace_id, growspace)
-                growspace_entities[growspace_id] = entity
-                async_add_entities([entity])
-
-                await _async_create_derivative_sensors(hass, config_entry, growspace)
-
-        # Growspaces: remove deleted
-        for removed_gs_id in list(growspace_entities.keys()):
-            if removed_gs_id not in coordinator.growspaces:
-                entity = growspace_entities.pop(removed_gs_id)
-                await entity.async_remove()
-
-        # Plants: add new
-        for plant in list(coordinator.plants.values()):
-            plant_id = plant.plant_id
-            if plant_id not in plant_entities:
-                entity = PlantEntity(coordinator, plant)
-                plant_entities[plant_id] = entity
-                async_add_entities([entity])
-
-        # Plants: remove deleted
-        from homeassistant.helpers import entity_registry as er
-
-        entity_registry = er.async_get(coordinator.hass)
-
-        for existing_id in list(plant_entities.keys()):
-            if existing_id not in coordinator.plants:
-                entity = plant_entities.pop(existing_id)
-
-                # Try to find and remove from registry
-                ent_reg_entry = entity_registry.async_get(entity.entity_id)
-                if ent_reg_entry:
-                    _LOGGER.info(
-                        "Removing orphaned plant entity from registry: %s",
-                        entity.entity_id,
-                    )
-                    entity_registry.async_remove(ent_reg_entry.entity_id)
-
-                await entity.async_remove()
-
-    # Listen for coordinator updates to manage dynamic entities
-    def _listener_callback() -> None:
-        hass.async_create_task(_handlecoordinator_update_async())
-
-    coordinator.async_add_listener(_listener_callback)
+    await _ensure_special_growspaces(coordinator)
 
     # Create global VPD sensors
     global_entities = []
@@ -280,6 +141,165 @@ async def async_setup_entry(
         for growspace_id in coordinator.growspaces
     ]
     async_add_entities(air_exchange_sensors)
+
+    async def _handle_coordinator_update_async() -> None:
+        """Add new entities and remove missing ones when coordinator changes."""
+        await _update_growspace_entities(
+            hass, coordinator, config_entry, growspace_entities, async_add_entities
+        )
+        await _update_plant_entities(
+            hass, coordinator, plant_entities, async_add_entities
+        )
+
+    def _listener_callback() -> None:
+        """Handle coordinator updates."""
+        hass.async_create_task(_handle_coordinator_update_async())
+
+    config_entry.async_on_unload(coordinator.async_add_listener(_listener_callback))
+
+
+async def _create_initial_entities(
+    hass: HomeAssistant,
+    coordinator: GrowspaceCoordinator,
+    config_entry: ConfigEntry,
+    initial_entities: list[Entity],
+    growspace_entities: dict[str, GrowspaceOverviewSensor],
+    plant_entities: dict[str, PlantEntity],
+) -> None:
+    """Create initial entities for the platform."""
+    # Strain Library
+    initial_entities.append(StrainLibrarySensor(coordinator))
+
+    # Growspaces and Plants
+    for growspace_id, growspace in coordinator.growspaces.items():
+        gs_entity = GrowspaceOverviewSensor(coordinator, growspace_id, growspace)
+        growspace_entities[growspace_id] = gs_entity
+        initial_entities.append(gs_entity)
+
+        await _async_create_derivative_sensors(hass, config_entry, growspace)
+        _handle_calculated_vpd_sensor(coordinator, growspace, initial_entities)
+
+        for plant in coordinator.get_growspace_plants(growspace_id):
+            pe = PlantEntity(coordinator, plant)
+            plant_entities[plant.plant_id] = pe
+            initial_entities.append(pe)
+
+    # Growspace List
+    initial_entities.append(GrowspaceListSensor(coordinator))
+
+
+async def _update_growspace_entities(
+    hass: HomeAssistant,
+    coordinator: GrowspaceCoordinator,
+    config_entry: ConfigEntry,
+    growspace_entities: dict[str, GrowspaceOverviewSensor],
+    async_add_entities: AddEntitiesCallback,
+) -> None:
+    """Update growspace entities based on coordinator data."""
+    # Add new
+    for growspace_id, growspace in coordinator.growspaces.items():
+        if growspace_id not in growspace_entities:
+            entity = GrowspaceOverviewSensor(coordinator, growspace_id, growspace)
+            growspace_entities[growspace_id] = entity
+            async_add_entities([entity])
+            await _async_create_derivative_sensors(hass, config_entry, growspace)
+
+    # Remove deleted
+    for removed_gs_id in list(growspace_entities.keys()):
+        if removed_gs_id not in coordinator.growspaces:
+            entity = growspace_entities.pop(removed_gs_id)
+            if entity.registry_entry:
+                er.async_get(hass).async_remove(entity.registry_entry.entity_id)
+            await entity.async_remove()
+
+
+async def _update_plant_entities(
+    hass: HomeAssistant,
+    coordinator: GrowspaceCoordinator,
+    plant_entities: dict[str, PlantEntity],
+    async_add_entities: AddEntitiesCallback,
+) -> None:
+    """Update plant entities based on coordinator data."""
+    # Add new
+    new_entities = []
+    for plant_id, plant in coordinator.plants.items():
+        if plant_id not in plant_entities:
+            pe = PlantEntity(coordinator, plant)
+            plant_entities[plant_id] = pe
+            new_entities.append(pe)
+
+    if new_entities:
+        async_add_entities(new_entities)
+
+    # Remove deleted
+    entity_registry = er.async_get(hass)
+    removed_plant_ids = set(plant_entities.keys()) - set(coordinator.plants.keys())
+    for pid in removed_plant_ids:
+        entity = plant_entities.pop(pid)
+        if entity.registry_entry:
+            entity_registry.async_remove(entity.registry_entry.entity_id)
+        await entity.async_remove()
+
+
+def _handle_calculated_vpd_sensor(
+    coordinator: GrowspaceCoordinator,
+    growspace: Growspace,
+    initial_entities: list[Entity],
+) -> None:
+    """Create calculated VPD sensor if needed."""
+    env_config = growspace.environment_config or {}
+    temp_sensor = env_config.get("temperature_sensor")
+    humidity_sensor = env_config.get("humidity_sensor")
+    vpd_sensor = env_config.get("vpd_sensor")
+
+    # Create calculated VPD if temp and humidity exist but no VPD sensor
+    if temp_sensor and humidity_sensor and not vpd_sensor:
+        lst_offset = env_config.get("lst_offset", -2.0)
+        calc_vpd_sensor = CalculatedVpdSensor(
+            coordinator,
+            growspace.id,
+            growspace.name,
+            temp_sensor,
+            humidity_sensor,
+            lst_offset,
+        )
+        initial_entities.append(calc_vpd_sensor)
+
+        # Auto-populate the vpd_sensor in env_config with the calculated sensor
+        env_config["vpd_sensor"] = f"sensor.{growspace.id}_calculated_vpd"
+        growspace.environment_config = env_config
+
+        _LOGGER.info(
+            "Created calculated VPD sensor for %s (LST offset: %.1f°C)",
+            growspace.name,
+            lst_offset,
+        )
+
+
+async def _ensure_special_growspaces(coordinator: GrowspaceCoordinator) -> None:
+    """Ensure special growspaces exist."""
+    dry_id = coordinator._ensure_special_growspace(
+        "dry", "dry", rows=3, plants_per_row=3
+    )
+    cure_id = coordinator._ensure_special_growspace(
+        "cure", "cure", rows=3, plants_per_row=3
+    )
+    clone_id = coordinator._ensure_special_growspace(
+        "clone", "clone", rows=3, plants_per_row=3
+    )
+    mother_id = coordinator._ensure_special_growspace(
+        "mother", "mother", rows=3, plants_per_row=3
+    )
+
+    await coordinator.async_save()
+
+    _LOGGER.info(
+        "Ensured special growspaces exist: dry=%s, cure=%s clone=%s mother=%s",
+        dry_id,
+        cure_id,
+        clone_id,
+        mother_id,
+    )
 
 
 class VpdSensor(CoordinatorEntity[GrowspaceCoordinator], SensorEntity):
@@ -467,7 +487,7 @@ class AirExchangeSensor(CoordinatorEntity[GrowspaceCoordinator], SensorEntity):
         )
 
     @property
-    def state(self) -> str:
+    def native_value(self) -> str:
         """Return the current recommended air exchange action."""
         # The actual state is calculated in the coordinator and stored.
         # This sensor just retrieves it.
@@ -512,11 +532,10 @@ class GrowspaceOverviewSensor(CoordinatorEntity[GrowspaceCoordinator], SensorEnt
         )
 
     @property
-    def state(self) -> int:
+    def native_value(self) -> int:
         """Return the number of plants in the growspace."""
         plants = self.coordinator.get_growspace_plants(self.growspace_id)
         return len(plants)
-
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
@@ -527,7 +546,8 @@ class GrowspaceOverviewSensor(CoordinatorEntity[GrowspaceCoordinator], SensorEnt
 
         # Calculate max stage days
         max_veg = max(
-            (calculate_days_since(p.veg_start) for p in plants if p.veg_start), default=0
+            (calculate_days_since(p.veg_start) for p in plants if p.veg_start),
+            default=0,
         )
         max_flower = max(
             (calculate_days_since(p.flower_start) for p in plants if p.flower_start),
@@ -544,11 +564,11 @@ class GrowspaceOverviewSensor(CoordinatorEntity[GrowspaceCoordinator], SensorEnt
         _LOGGER.debug(
             "GrowspaceOverviewSensor attributes update for %s. Irrigation items: %d",
             self.growspace_id,
-            len(irrigation_options.get("irrigation_times", []))
+            len(irrigation_options.get("irrigation_times", [])),
         )
 
         # Create grid representation
-        grid = {}
+        grid: dict[str, dict[str, Any] | None] = {}
         for row in range(1, int(growspace.rows) + 1):
             for col in range(
                 1,
@@ -603,12 +623,20 @@ class GrowspaceOverviewSensor(CoordinatorEntity[GrowspaceCoordinator], SensorEnt
             if dehumidifier_entity:
                 state_obj = self.coordinator.hass.states.get(dehumidifier_entity)
                 attributes["dehumidifier_entity"] = dehumidifier_entity
-                attributes["dehumidifier_state"] = state_obj.state if state_obj else None
+                attributes["dehumidifier_state"] = (
+                    state_obj.state if state_obj else None
+                )
                 if state_obj:
-                    attributes["dehumidifier_humidity"] = state_obj.attributes.get("humidity")
-                    attributes["dehumidifier_current_humidity"] = state_obj.attributes.get("current_humidity")
+                    attributes["dehumidifier_humidity"] = state_obj.attributes.get(
+                        "humidity"
+                    )
+                    attributes["dehumidifier_current_humidity"] = (
+                        state_obj.attributes.get("current_humidity")
+                    )
                     attributes["dehumidifier_mode"] = state_obj.attributes.get("mode")
-                    attributes["dehumidifier_control_enabled"] = env_config.get("control_dehumidifier", False)
+                    attributes["dehumidifier_control_enabled"] = env_config.get(
+                        "control_dehumidifier", False
+                    )
             # Exhaust Sensor
             exhaust_entity = env_config.get("exhaust_sensor")
             if exhaust_entity:
@@ -657,12 +685,8 @@ class PlantEntity(SensorEntity):
             manufacturer="Growspace Manager",
         )
 
-
-
-
-
     @property
-    def state(self) -> str:
+    def native_value(self) -> str:
         """Return the current growth stage of the plant."""
         # Get updated plant data
         plant = self.coordinator.plants.get(self._plant.plant_id)
@@ -745,7 +769,7 @@ class StrainLibrarySensor(CoordinatorEntity[GrowspaceCoordinator], SensorEntity)
         self._attr_icon = "mdi:leaf"
 
     @property
-    def state(self) -> int:
+    def native_value(self) -> int:
         """Return the number of unique strains in the library."""
         return len(self.coordinator.strains.get_all())
 
@@ -777,7 +801,7 @@ class GrowspaceListSensor(SensorEntity):
         self._growspaces = self.coordinator.get_growspace_options()
 
     @property
-    def state(self):
+    def native_value(self):
         """Return the total number of growspaces."""
         self._update_growspaces()
         return len(self._growspaces)
