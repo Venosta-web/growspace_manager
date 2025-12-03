@@ -211,12 +211,17 @@ async def _register_services(
         ),
         (
             "ask_grow_advice",
-            partial(ai_assistant.handle_ask_grow_advice, hass, coordinator),
+            partial(ai_assistant.handle_ask_grow_advice, hass, coordinator, strain_lib),
             ASK_GROW_ADVICE_SCHEMA,
         ),
         (
             "analyze_all_growspaces",
-            partial(ai_assistant.handle_analyze_all_growspaces, hass, coordinator),
+            partial(
+                ai_assistant.handle_analyze_all_growspaces,
+                hass,
+                coordinator,
+                strain_lib,
+            ),
             ANALYZE_ALL_GROWSPACES_SCHEMA,
         ),
         (
