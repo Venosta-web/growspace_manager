@@ -1746,7 +1746,7 @@ async def test_dehumidifier_state_detection(
     await hass.async_block_till_done()
 
     state = sensor._get_base_environment_state()
-    assert state.dehumidifier_on is False
+    assert state.dehumidifier_on is None
 
 
 @patch(

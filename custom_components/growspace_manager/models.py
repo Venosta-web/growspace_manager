@@ -26,6 +26,7 @@ class Growspace:
         device_id: The Home Assistant device ID associated with this growspace.
         environment_config: A dictionary of environment sensor configurations.
     """
+
     id: str
     name: str
     rows: int = 3
@@ -101,6 +102,7 @@ class Plant:
         transition_date: The date of the last stage transition.
         source_mother: The ID of the mother plant this plant was cloned from.
     """
+
     plant_id: str
     growspace_id: str
     strain: str
@@ -177,6 +179,7 @@ class EnvironmentState:
         is_lights_on: A boolean indicating if the lights are currently on.
         fan_off: A boolean indicating if the circulation fan is currently off.
     """
+
     temp: float | None
     humidity: float | None
     vpd: float | None
@@ -184,7 +187,7 @@ class EnvironmentState:
     veg_days: int
     flower_days: int
     is_lights_on: bool | None
-    fan_off: bool
+    fan_off: bool | None
     dehumidifier_on: bool | None = None
     exhaust_value: float | None = None
     humidifier_value: float | None = None

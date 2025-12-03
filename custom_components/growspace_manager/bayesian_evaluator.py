@@ -421,55 +421,76 @@ def evaluate_optimal_temperature(
     if state.temp is None:
         return observations, reasons
 
-    prob_out_of_range = PROB_STRESS_OUT_OF_RANGE  # Reuse stress probability
-
     # Match against (is_lights_on, flower_days) for branching logic
     match (state.is_lights_on, state.flower_days):
         # Case A: Lights ON & Late Flower (Days >= 42)
         case True, days if days >= 42:
-            if 22 <= state.temp <= 26:  # Perfect range for late flower
-                observations.append(PROB_PERFECT)
-            else:
-                observations.append(prob_out_of_range)
-                reasons.append(
-                    (
-                        prob_out_of_range[1],
-                        f"Temp out of range Late Flower ({state.temp})",
-                    )
-                )
+            _evaluate_optimal_temp_late_flower(state.temp, observations, reasons)
 
         # Case B: Lights ON & Normal (Days < 42 or Veg)
         case True, _:
-            if 24 <= state.temp <= 26:
-                observations.append(PROB_PERFECT)
-            elif 22 <= state.temp <= 28:
-                observations.append(PROB_GOOD)
-            elif 20 <= state.temp <= 29:
-                observations.append(PROB_ACCEPTABLE)
-            else:
-                observations.append(prob_out_of_range)
-                reasons.append(
-                    (prob_out_of_range[1], f"Temp out of range ({state.temp})")
-                )
+            _evaluate_optimal_temp_lights_on(state.temp, observations, reasons)
 
         # Case C: Unknown Light State
         case None, _:
             # Do not penalize if light state is unknown
             pass
 
-        # Case C: Lights OFF (Nighttime)
+        # Case D: Lights OFF (Nighttime)
         case False, _:
-            if 20 <= state.temp <= 23:
-                observations.append(PROB_PERFECT)
-            else:
-                observations.append(prob_out_of_range)
-                reasons.append(
-                    (
-                        prob_out_of_range[1],
-                        f"Night temp out of range ({state.temp})",
-                    )
-                )
+            _evaluate_optimal_temp_lights_off(state.temp, observations, reasons)
+
     return observations, reasons
+
+
+def _evaluate_optimal_temp_late_flower(
+    temp: float, observations: ObservationList, reasons: ReasonList
+) -> None:
+    """Evaluate optimal temperature for late flower stage."""
+    prob_out_of_range = PROB_STRESS_OUT_OF_RANGE
+    if 22 <= temp <= 26:  # Perfect range for late flower
+        observations.append(PROB_PERFECT)
+    else:
+        observations.append(prob_out_of_range)
+        reasons.append(
+            (
+                prob_out_of_range[1],
+                f"Temp out of range Late Flower ({temp})",
+            )
+        )
+
+
+def _evaluate_optimal_temp_lights_on(
+    temp: float, observations: ObservationList, reasons: ReasonList
+) -> None:
+    """Evaluate optimal temperature for lights on (normal/veg)."""
+    prob_out_of_range = PROB_STRESS_OUT_OF_RANGE
+    if 24 <= temp <= 26:
+        observations.append(PROB_PERFECT)
+    elif 22 <= temp <= 28:
+        observations.append(PROB_GOOD)
+    elif 20 <= temp <= 29:
+        observations.append(PROB_ACCEPTABLE)
+    else:
+        observations.append(prob_out_of_range)
+        reasons.append((prob_out_of_range[1], f"Temp out of range ({temp})"))
+
+
+def _evaluate_optimal_temp_lights_off(
+    temp: float, observations: ObservationList, reasons: ReasonList
+) -> None:
+    """Evaluate optimal temperature for lights off (night)."""
+    prob_out_of_range = PROB_STRESS_OUT_OF_RANGE
+    if 20 <= temp <= 23:
+        observations.append(PROB_PERFECT)
+    else:
+        observations.append(prob_out_of_range)
+        reasons.append(
+            (
+                prob_out_of_range[1],
+                f"Night temp out of range ({temp})",
+            )
+        )
 
 
 def evaluate_optimal_vpd(

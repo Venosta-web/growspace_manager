@@ -8,7 +8,10 @@ from homeassistant.const import STATE_UNAVAILABLE, STATE_UNKNOWN
 from homeassistant.core import HomeAssistant
 from homeassistant.util.dt import utcnow
 
-from custom_components.growspace_manager.binary_sensor import BayesianStressSensor
+from custom_components.growspace_manager.binary_sensor import (
+    BayesianMoldRiskSensor,
+    BayesianStressSensor,
+)
 
 
 @pytest.fixture
@@ -77,8 +80,10 @@ async def test_unavailable_light_sensor_no_night_stress(
     )
 
     # Mock trend analyzer
-    sensor._async_analyze_sensor_trend = AsyncMock(
-        return_value={"trend": "stable", "crossed_threshold": False}
+    setattr(
+        sensor,
+        "_async_analyze_sensor_trend",
+        AsyncMock(return_value={"trend": "stable", "crossed_threshold": False}),
     )
 
     # Scenario:
@@ -130,3 +135,94 @@ async def test_unavailable_light_sensor_no_night_stress(
         f"Found Night Temp High with 26C: {reasons}"
     )
     assert not sensor.is_on, f"Sensor triggered stress unexpectedly: {reasons}"
+
+
+@pytest.mark.asyncio
+async def test_unavailable_additional_sensors(hass: HomeAssistant, mock_coordinator):
+    """Test that unavailable fan/dehumidifier do not trigger false alerts."""
+
+    # Setup sensor
+    sensor = BayesianStressSensor(
+        mock_coordinator,
+        "gs1",
+        mock_coordinator.growspaces["gs1"].environment_config,
+    )
+    sensor.hass = hass
+    sensor.entity_id = "binary_sensor.test_stress_unavailable_others"
+    sensor.platform = MagicMock()
+
+    # Mock notification manager
+    sensor.notification_manager = MagicMock()
+    sensor.notification_manager.async_send_notification = AsyncMock()
+    sensor.notification_manager.generate_notification_message.side_effect = (
+        lambda *args: str(args)
+    )
+
+    # Mock trend analyzer
+    setattr(
+        sensor,
+        "_async_analyze_sensor_trend",
+        AsyncMock(return_value={"trend": "stable", "crossed_threshold": False}),
+    )
+
+    # Scenario:
+    # Fan is UNAVAILABLE (should not trigger "Fan Off" risk)
+    # Dehumidifier is UNAVAILABLE (should not trigger "Active Desiccation" risk)
+    # Temp/Hum/VPD are normal
+
+    set_sensor_state(hass, "sensor.temp", 25)
+    set_sensor_state(hass, "sensor.humidity", 60)
+    set_sensor_state(hass, "sensor.vpd", 1.0)
+    set_sensor_state(hass, "light.grow_light", "on")
+    set_sensor_state(hass, "switch.fan", STATE_UNAVAILABLE)
+    set_sensor_state(hass, "switch.dehumidifier", STATE_UNAVAILABLE)
+
+    await hass.async_block_till_done()
+
+    with patch.object(sensor, "async_write_ha_state", new_callable=MagicMock):
+        await sensor.async_update_and_notify()
+
+    # Verify results
+    # 1. Fan state should be None
+    assert sensor._sensor_states["fan_off"] is None
+    # 2. Dehumidifier state should be None
+    assert sensor._sensor_states["dehumidifier_on"] is None
+
+    # 3. Should NOT have "Circulation Fan Off" or "Active Desiccation" in reasons
+    # Note: "Circulation Fan Off" is checked in Mold Risk sensor, not Stress sensor directly (except maybe via shared logic if any).
+    # "Active Desiccation" IS in Stress Sensor.
+
+    reasons = [r[1] for r in sensor._reasons]
+    assert not any("Active Desiccation" in r for r in reasons), (
+        f"Found Active Desiccation in reasons: {reasons}"
+    )
+
+    # Also verify Mold Risk Sensor for Fan Off
+    mold_sensor = BayesianMoldRiskSensor(
+        mock_coordinator,
+        "gs1",
+        mock_coordinator.growspaces["gs1"].environment_config,
+    )
+    mold_sensor.hass = hass
+    mold_sensor.entity_id = "binary_sensor.test_mold_unavailable_fan"
+    mold_sensor.platform = MagicMock()
+    mold_sensor.notification_manager = MagicMock()
+    mold_sensor.notification_manager.async_send_notification = AsyncMock()
+    setattr(
+        mold_sensor,
+        "_async_analyze_sensor_trend",
+        AsyncMock(return_value={"trend": "stable", "crossed_threshold": False}),
+    )
+
+    # Force late flower to enable fan check
+    with patch.object(
+        mold_sensor,
+        "_get_growth_stage_info",
+        return_value={"veg_days": 30, "flower_days": 40},
+    ):
+        await mold_sensor.async_update_and_notify()
+
+    mold_reasons = [r[1] for r in mold_sensor._reasons]
+    assert not any("Circulation Fan Off" in r for r in mold_reasons), (
+        f"Found Circulation Fan Off in reasons: {mold_reasons}"
+    )

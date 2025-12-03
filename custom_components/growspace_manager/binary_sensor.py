@@ -196,18 +196,21 @@ class BayesianEnvironmentSensor(BinarySensorEntity):
         is_lights_on = self._determine_light_state()
 
         fan_entity = self.env_config.get("circulation_fan")
-        fan_off = bool(
-            fan_entity
-            and (fan_state := self.hass.states.get(fan_entity))
-            and fan_state.state == "off"
-        )
+        fan_off = None
+        if fan_entity:
+            fan_state = self.hass.states.get(fan_entity)
+            if fan_state and fan_state.state not in (STATE_UNAVAILABLE, STATE_UNKNOWN):
+                fan_off = fan_state.state == "off"
 
         dehumidifier_entity = self.env_config.get("dehumidifier_entity")
-        dehumidifier_on = False
+        dehumidifier_on = None
         if dehumidifier_entity:
             dehum_state = self.hass.states.get(dehumidifier_entity)
-            if dehum_state and dehum_state.state == "on":
-                dehumidifier_on = True
+            if dehum_state and dehum_state.state not in (
+                STATE_UNAVAILABLE,
+                STATE_UNKNOWN,
+            ):
+                dehumidifier_on = dehum_state.state == "on"
 
         exhaust_sensor = self.env_config.get("exhaust_sensor")
         exhaust_value = self._get_sensor_value(exhaust_sensor)
