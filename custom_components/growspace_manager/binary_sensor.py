@@ -918,7 +918,6 @@ class BayesianMoldRiskSensor(BayesianEnvironmentSensor):
             self._reasons.append((prob[0], "Circulation Fan Off"))
 
         # Stagnant Air: Low exhaust during late flower
-        # TODO checking for <7 is more then enough also ommit the % and use x/10
         if state.exhaust_value is not None and state.exhaust_value < 7:
             observations.append(PROB_MOLD_STAGNANT_AIR)
             self._reasons.append(

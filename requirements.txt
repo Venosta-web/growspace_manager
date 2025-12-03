@@ -22,3 +22,4 @@ codespell
 pytest-xdist
 freezegun
 requests-mock
+hassil
