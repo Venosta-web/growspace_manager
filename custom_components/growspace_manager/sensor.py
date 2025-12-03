@@ -55,7 +55,7 @@ async def _async_create_derivative_sensors(
         growspace: The Growspace object for which to create sensors.
     """
     if growspace.environment_config:
-        created_entities = hass.data[DOMAIN][config_entry.entry_id]["created_entities"]
+        created_entities = config_entry.runtime_data.created_entities
         for sensor_type in ["temperature", "humidity", "vpd"]:
             source_sensor = growspace.environment_config.get(f"{sensor_type}_sensor")
             if source_sensor:
@@ -77,7 +77,7 @@ async def async_setup_entry(
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     """Set up the Growspace Manager sensor platform from a config entry."""
-    coordinator = hass.data[DOMAIN][config_entry.entry_id]["coordinator"]
+    coordinator = config_entry.runtime_data.coordinator
 
     # Track created entities so we can add/remove dynamically
     growspace_entities: dict[str, GrowspaceOverviewSensor] = {}

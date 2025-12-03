@@ -1,6 +1,7 @@
 """Test plant services."""
 
 from datetime import date, datetime
+from typing import Any, cast
 from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
@@ -39,9 +40,8 @@ def mock_coordinator():
     coordinator.async_request_refresh = AsyncMock()
     coordinator.get_growspace_plants = Mock(return_value=[])
     coordinator.find_first_free_position = Mock(return_value=(1, 1))
-    coordinator._find_first_available_position = Mock(return_value=(1, 1))
-    coordinator.store = Mock()
-    coordinator.store.async_load = AsyncMock()
+    coordinator.validator = Mock()
+    coordinator.validator.find_first_available_position = Mock(return_value=(1, 1))
     coordinator.async_load = AsyncMock()
     return coordinator
 
@@ -1334,7 +1334,7 @@ async def test_transition_plant_stage_success(
         },
     )
 
-    events = []
+    events: list[Any] = []
     hass.bus.async_listen(f"{DOMAIN}_plant_transitioned", events.append)
 
     # Act
@@ -1515,7 +1515,7 @@ async def test_harvest_plant_success(
         },
     )
 
-    events = []
+    events: list[Any] = []
     hass.bus.async_listen(f"{DOMAIN}_plant_harvested", events.append)
 
     await handle_harvest_plant(hass, mock_coordinator, mock_strain_library, call)
@@ -1689,7 +1689,7 @@ async def test_harvest_plant_reload_error(
 ):
     """Test harvest when reload fails."""
     mock_coordinator.plants = {}
-    mock_coordinator.store.async_load.side_effect = Exception("Load error")
+    mock_coordinator.async_load.side_effect = Exception("Load error")
 
     call = ServiceCall(
         hass,
@@ -1833,7 +1833,7 @@ async def test_harvest_plant_no_entity_registry(
 ):
     """Test harvest when entity registry is not available."""
     mock_coordinator.plants = {}
-    hass.data = {}
+    hass.data = cast(Any, {})
     hass.states = Mock()
     hass.states.get = Mock(return_value=None)
 
@@ -1872,7 +1872,8 @@ async def test_update_plant_moves_to_free_space_if_occupied(
 
     mock_coordinator.plants = {"plant_1": mock_plant, "plant_2": plant_2}
     mock_coordinator.get_growspace_plants.return_value = [mock_plant, plant_2]
-    mock_coordinator.find_first_free_position.return_value = (3, 3)
+    mock_coordinator.validator = Mock()
+    mock_coordinator.validator.find_first_available_position.return_value = (3, 3)
 
     call = ServiceCall(
         hass,

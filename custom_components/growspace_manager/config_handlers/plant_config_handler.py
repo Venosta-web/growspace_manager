@@ -62,12 +62,12 @@ class PlantConfigHandler:
         self, growspace_id: str, plant_id: str, harvest_weight: float
     ) -> None:
         """Harvest a plant."""
-        coordinator = self.hass.data[DOMAIN][self.config_entry.entry_id]["coordinator"]
+        coordinator = self.config_entry.runtime_data.coordinator
         await coordinator.async_harvest_plant(growspace_id, plant_id, harvest_weight)
 
     async def async_destroy_plant(self, growspace_id: str, plant_id: str) -> None:
         """Destroy a plant."""
-        coordinator = self.hass.data[DOMAIN][self.config_entry.entry_id]["coordinator"]
+        coordinator = self.config_entry.runtime_data.coordinator
         await coordinator.async_remove_plant(plant_id)
 
     async def async_add_plant(
@@ -81,7 +81,7 @@ class PlantConfigHandler:
         flower_start: str | None = None,
     ) -> None:
         """Add a new plant."""
-        coordinator = self.hass.data[DOMAIN][self.config_entry.entry_id]["coordinator"]
+        coordinator = self.config_entry.runtime_data.coordinator
         await coordinator.async_add_plant(
             growspace_id=growspace_id,
             strain=strain,
@@ -94,7 +94,7 @@ class PlantConfigHandler:
 
     async def async_update_plant(self, plant_id: str, **kwargs) -> None:
         """Update an existing plant."""
-        coordinator = self.hass.data[DOMAIN][self.config_entry.entry_id]["coordinator"]
+        coordinator = self.config_entry.runtime_data.coordinator
         await coordinator.async_update_plant(plant_id, **kwargs)
 
     def get_growspace_selection_schema(

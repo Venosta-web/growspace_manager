@@ -71,9 +71,8 @@ async def test_async_setup_entry_creates_entities(mock_hass, mock_coordinator):
 
     mock_coordinator.is_notifications_enabled = Mock(return_value=True)
 
-    mock_hass.data = {DOMAIN: {"entry1": {"coordinator": mock_coordinator}}}
 
-    await async_setup_entry(mock_hass, Mock(entry_id="entry1"), fake_add_entities)
+    await async_setup_entry(mock_hass, Mock(entry_id="entry1", runtime_data=Mock(coordinator=mock_coordinator)), fake_add_entities)
 
     assert len(added_entities) == 1
     switch = added_entities[0]

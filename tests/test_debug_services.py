@@ -6,19 +6,21 @@ import pytest
 from homeassistant.core import HomeAssistant, ServiceCall
 
 from custom_components.growspace_manager.coordinator import GrowspaceCoordinator
+from custom_components.growspace_manager.models import Plant
 from custom_components.growspace_manager.services.debug import (
+    _cleanup_cure_legacy_growspaces,
+    _cleanup_dry_legacy_growspaces,
     _consolidate_plants_to_canonical_growspace,
     _handle_reset_cure_growspace,
     _handle_reset_dry_growspace,
     _migrate_plants_from_legacy_growspace,
     _restore_plants_to_canonical_growspace,
-    debug_cleanup_legacy,
-    debug_consolidate_duplicate_special,
-    debug_list_growspaces,
-    debug_reset_special_growspaces,
+    handle_debug_cleanup_legacy,
+    handle_debug_consolidate_duplicate_special,
+    handle_debug_list_growspaces,
+    handle_debug_reset_special_growspaces,
     handle_test_notification,
 )
-from custom_components.growspace_manager.models import Plant
 from custom_components.growspace_manager.strain_library import StrainLibrary
 
 
@@ -100,7 +102,7 @@ async def test_handle_test_notification(
 async def test_debug_cleanup_legacy(
     mock_hass, mock_coordinator, mock_strain_library, mock_call
 ):
-    """Test debug_cleanup_legacy service."""
+    """Test handle_debug_cleanup_legacy service."""
     mock_coordinator.growspaces = {
         "dry_overview_1": {},
         "cure_overview_1": {},
@@ -111,7 +113,7 @@ async def test_debug_cleanup_legacy(
     }
     mock_coordinator.find_first_available_position = MagicMock(return_value=(1, 1))
 
-    await debug_cleanup_legacy(
+    await handle_debug_cleanup_legacy(
         mock_hass, mock_coordinator, mock_strain_library, mock_call
     )
 
@@ -124,7 +126,7 @@ async def test_debug_cleanup_legacy(
 async def test_debug_cleanup_legacy_dry_only(
     mock_hass, mock_coordinator, mock_strain_library, mock_call
 ):
-    """Test debug_cleanup_legacy service with dry_only flag."""
+    """Test handle_debug_cleanup_legacy service with dry_only flag."""
     mock_call.data = {"dry_only": True}
     mock_coordinator.growspaces = {
         "dry_overview_1": {},
@@ -138,7 +140,7 @@ async def test_debug_cleanup_legacy_dry_only(
     }
     mock_coordinator.find_first_available_position = MagicMock(return_value=(1, 1))
 
-    await debug_cleanup_legacy(
+    await handle_debug_cleanup_legacy(
         mock_hass, mock_coordinator, mock_strain_library, mock_call
     )
 
@@ -151,7 +153,7 @@ async def test_debug_cleanup_legacy_dry_only(
 async def test_debug_cleanup_legacy_cure_only(
     mock_hass, mock_coordinator, mock_strain_library, mock_call
 ):
-    """Test debug_cleanup_legacy service with cure_only flag."""
+    """Test handle_debug_cleanup_legacy service with cure_only flag."""
     mock_call.data = {"cure_only": True}
     mock_coordinator.growspaces = {
         "dry_overview_1": {},
@@ -165,7 +167,7 @@ async def test_debug_cleanup_legacy_cure_only(
     }
     mock_coordinator.find_first_available_position = MagicMock(return_value=(1, 1))
 
-    await debug_cleanup_legacy(
+    await handle_debug_cleanup_legacy(
         mock_hass, mock_coordinator, mock_strain_library, mock_call
     )
 
@@ -178,7 +180,7 @@ async def test_debug_cleanup_legacy_cure_only(
 async def test_debug_list_growspaces(
     mock_hass, mock_coordinator, mock_strain_library, mock_call
 ):
-    """Test debug_list_growspaces service."""
+    """Test handle_debug_list_growspaces service."""
     mock_growspace = MagicMock()
     mock_growspace.name = "Test GS"
     mock_growspace.rows = 2
@@ -192,7 +194,7 @@ async def test_debug_list_growspaces(
     mock_coordinator.get_growspace_plants.return_value = [plant]
 
     with patch("logging.Logger.debug") as mock_debug:
-        await debug_list_growspaces(
+        await handle_debug_list_growspaces(
             mock_hass, mock_coordinator, mock_strain_library, mock_call
         )
         assert mock_debug.call_count > 0
@@ -202,13 +204,13 @@ async def test_debug_list_growspaces(
 async def test_debug_list_growspaces_no_growspaces(
     mock_hass, mock_coordinator, mock_strain_library, mock_call
 ):
-    """Test debug_list_growspaces service when no growspaces are found."""
+    """Test handle_debug_list_growspaces service when no growspaces are found."""
     mock_coordinator.growspaces = {}  # Ensure growspaces is empty
 
     with patch(
         "custom_components.growspace_manager.services.debug._LOGGER.debug"
     ) as mock_debug:
-        await debug_list_growspaces(
+        await handle_debug_list_growspaces(
             mock_hass, mock_coordinator, mock_strain_library, mock_call
         )
         mock_debug.assert_any_call("No growspaces found.")
@@ -218,11 +220,11 @@ async def test_debug_list_growspaces_no_growspaces(
 async def test_debug_reset_special_growspaces(
     mock_hass, mock_coordinator, mock_strain_library, mock_call
 ):
-    """Test debug_reset_special_growspaces service."""
+    """Test handle_debug_reset_special_growspaces service."""
     mock_coordinator.growspaces = {"dry": {}, "cure": {}}
     mock_coordinator._ensure_special_growspace = MagicMock(side_effect=["dry", "cure"])
 
-    await debug_reset_special_growspaces(
+    await handle_debug_reset_special_growspaces(
         mock_hass, mock_coordinator, mock_strain_library, mock_call
     )
 
@@ -233,7 +235,7 @@ async def test_debug_reset_special_growspaces(
 async def test_debug_reset_special_growspaces_preserve_plants(
     mock_hass, mock_coordinator, mock_strain_library, mock_call
 ):
-    """Test debug_reset_special_growspaces service with preserve_plants flag."""
+    """Test handle_debug_reset_special_growspaces service with preserve_plants flag."""
     mock_call.data = {"preserve_plants": True}
     mock_coordinator._ensure_special_growspace = MagicMock(side_effect=["dry", "cure"])
     mock_coordinator.get_growspace_plants.return_value = [MagicMock(plant_id="p1")]
@@ -242,7 +244,7 @@ async def test_debug_reset_special_growspaces_preserve_plants(
     }
     mock_coordinator.find_first_available_position = MagicMock(return_value=(1, 1))
 
-    await debug_reset_special_growspaces(
+    await handle_debug_reset_special_growspaces(
         mock_hass, mock_coordinator, mock_strain_library, mock_call
     )
 
@@ -253,7 +255,7 @@ async def test_debug_reset_special_growspaces_preserve_plants(
 async def test_debug_consolidate_duplicate_special(
     mock_hass, mock_coordinator, mock_strain_library, mock_call
 ):
-    """Test debug_consolidate_duplicate_special service."""
+    """Test handle_debug_consolidate_duplicate_special service."""
     mock_dry_gs = MagicMock()
     mock_dry_gs.name = "Dry"
     mock_dry_1_gs = MagicMock()
@@ -271,7 +273,7 @@ async def test_debug_consolidate_duplicate_special(
         "custom_components.growspace_manager.services.debug._consolidate_plants_to_canonical_growspace",
         new_callable=AsyncMock,
     ) as mock_consolidate:
-        await debug_consolidate_duplicate_special(
+        await handle_debug_consolidate_duplicate_special(
             mock_hass, mock_coordinator, mock_strain_library, mock_call
         )
         assert mock_consolidate.call_count > 0
@@ -282,7 +284,7 @@ async def test_debug_consolidate_duplicate_special(
 async def test_debug_consolidate_duplicate_special_no_duplicates(
     mock_hass, mock_coordinator, mock_strain_library, mock_call
 ):
-    """Test debug_consolidate_duplicate_special service with no duplicates."""
+    """Test handle_debug_consolidate_duplicate_special service with no duplicates."""
     mock_dry_gs = MagicMock()
     mock_dry_gs.name = "Dry"
     mock_cure_gs = MagicMock()
@@ -296,7 +298,7 @@ async def test_debug_consolidate_duplicate_special_no_duplicates(
         "custom_components.growspace_manager.services.debug._consolidate_plants_to_canonical_growspace",
         new_callable=AsyncMock,
     ) as mock_consolidate:
-        await debug_consolidate_duplicate_special(
+        await handle_debug_consolidate_duplicate_special(
             mock_hass, mock_coordinator, mock_strain_library, mock_call
         )
         assert mock_consolidate.call_count == 0
@@ -307,7 +309,7 @@ async def test_debug_consolidate_duplicate_special_no_duplicates(
 async def test_debug_consolidate_duplicate_special_with_missing_canonical_and_multiple_cure(
     mock_hass, mock_coordinator, mock_strain_library, mock_call
 ):
-    """Test debug_consolidate_duplicate_special service with missing canonical growspaces and multiple cure growspaces."""
+    """Test handle_debug_consolidate_duplicate_special service with missing canonical growspaces and multiple cure growspaces."""
     mock_dry_1_gs = MagicMock()
     mock_dry_1_gs.name = "Dry"  # Add this
     mock_dry_2_gs = MagicMock()
@@ -355,7 +357,7 @@ async def test_debug_consolidate_duplicate_special_with_missing_canonical_and_mu
             "custom_components.growspace_manager.services.debug._consolidate_plants_to_canonical_growspace",
             new_callable=AsyncMock,
         ) as mock_consolidate:
-            await debug_consolidate_duplicate_special(
+            await handle_debug_consolidate_duplicate_special(
                 mock_hass, mock_coordinator, mock_strain_library, mock_call
             )
 
@@ -383,7 +385,7 @@ async def test_migrate_plants_from_legacy_growspace_find_position_exception(
     """Test _migrate_plants_from_legacy_growspace when find_first_available_position raises an exception."""
     legacy_id = "dry_overview_1"
     canonical_id = "dry"
-    migrated_plants_info = []
+    migrated_plants_info: list[str] = []
 
     mock_coordinator.growspaces = {legacy_id: {}}
     mock_coordinator.plants = {
@@ -414,7 +416,7 @@ async def test_migrate_plants_from_legacy_growspace_plant_not_in_coordinator(
     """Test _migrate_plants_from_legacy_growspace when plant is not in coordinator.plants."""
     legacy_id = "dry_overview_1"
     canonical_id = "dry"
-    migrated_plants_info = []
+    migrated_plants_info: list[str] = []
 
     mock_coordinator.growspaces = {legacy_id: {}}
     mock_coordinator.plants = {}  # Plant not in here
@@ -440,7 +442,7 @@ async def test_migrate_plants_from_legacy_growspace_success(
     """Test _migrate_plants_from_legacy_growspace when a plant is successfully migrated."""
     legacy_id = "dry_overview_1"
     canonical_id = "dry"
-    migrated_plants_info = []
+    migrated_plants_info: list[str] = []
 
     mock_coordinator.growspaces = {legacy_id: {}}
     mock_plant = MagicMock(
@@ -808,17 +810,11 @@ async def test_consolidate_plants_to_canonical_growspace_plant_not_in_coordinato
         )  # Should still remove duplicate
 
 
-from custom_components.growspace_manager.services.debug import (
-    _cleanup_cure_legacy_growspaces,
-    _cleanup_dry_legacy_growspaces,
-)
-
-
 @pytest.mark.asyncio
 async def test_cleanup_dry_legacy_growspaces(mock_hass, mock_coordinator):
     """Test _cleanup_dry_legacy_growspaces function."""
-    migrated_plants_info = []
-    removed_growspaces = []
+    migrated_plants_info: list[str] = []
+    removed_growspaces: list[str] = []
     legacy_dry = ["dry_overview_1", "dry_overview_2"]
 
     mock_coordinator._ensure_special_growspace.return_value = "dry"
@@ -841,8 +837,8 @@ async def test_cleanup_dry_legacy_growspaces(mock_hass, mock_coordinator):
 @pytest.mark.asyncio
 async def test_cleanup_cure_legacy_growspaces(mock_hass, mock_coordinator):
     """Test _cleanup_cure_legacy_growspaces function."""
-    migrated_plants_info = []
-    removed_growspaces = []
+    migrated_plants_info: list[str] = []
+    removed_growspaces: list[str] = []
     legacy_cure = ["cure_overview_1", "cure_overview_2"]
 
     mock_coordinator._ensure_special_growspace.return_value = "cure"
@@ -866,7 +862,7 @@ async def test_cleanup_cure_legacy_growspaces(mock_hass, mock_coordinator):
 async def test_debug_cleanup_legacy_exception(
     mock_hass, mock_coordinator, mock_strain_library, mock_call
 ):
-    """Test debug_cleanup_legacy service with an exception."""
+    """Test handle_debug_cleanup_legacy service with an exception."""
     mock_coordinator.growspaces = {
         "dry_overview_1": {},
     }
@@ -875,7 +871,7 @@ async def test_debug_cleanup_legacy_exception(
     )
 
     with pytest.raises(Exception):
-        await debug_cleanup_legacy(
+        await handle_debug_cleanup_legacy(
             mock_hass, mock_coordinator, mock_strain_library, mock_call
         )
 
@@ -884,14 +880,14 @@ async def test_debug_cleanup_legacy_exception(
 async def test_debug_reset_special_growspaces_exception(
     mock_hass, mock_coordinator, mock_strain_library, mock_call
 ):
-    """Test debug_reset_special_growspaces service with an exception."""
+    """Test handle_debug_reset_special_growspaces service with an exception."""
     mock_coordinator.growspaces = {"dry": {}}
     mock_coordinator._ensure_special_growspace = MagicMock(
         side_effect=Exception("Test Exception")
     )
 
     with pytest.raises(Exception):
-        await debug_reset_special_growspaces(
+        await handle_debug_reset_special_growspaces(
             mock_hass, mock_coordinator, mock_strain_library, mock_call
         )
 
@@ -900,7 +896,7 @@ async def test_debug_reset_special_growspaces_exception(
 async def test_debug_consolidate_duplicate_special_exception(
     mock_hass, mock_coordinator, mock_strain_library, mock_call
 ):
-    """Test debug_consolidate_duplicate_special service with an exception."""
+    """Test handle_debug_consolidate_duplicate_special service with an exception."""
     mock_coordinator.growspaces = {
         "dry_1": {"name": "Dry"},
         "dry_2": {"name": "Dry"},
@@ -910,6 +906,6 @@ async def test_debug_consolidate_duplicate_special_exception(
     )
 
     with pytest.raises(Exception):
-        await debug_consolidate_duplicate_special(
+        await handle_debug_consolidate_duplicate_special(
             mock_hass, mock_coordinator, mock_strain_library, mock_call
         )

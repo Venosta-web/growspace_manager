@@ -63,7 +63,9 @@ def _resolve_position_conflict(
             new_col,
             growspace_id,
         )
-        free_row, free_col = coordinator.find_first_free_position(growspace_id)
+        free_row, free_col = coordinator.validator.find_first_available_position(
+            growspace_id
+        )
         if free_row is not None and free_col is not None:
             _LOGGER.info(
                 "Moving plant %s to first free space: (%d,%d)",
@@ -111,7 +113,7 @@ def _resolve_plant_id(hass: HomeAssistant, plant_id: str) -> str:
         return plant_id
 
     try:
-        entity_registry = hass.data.get(er.ENTITY_REGISTRY_DOMAIN)
+        entity_registry = hass.data.get(er.DATA_REGISTRY)
         if entity_registry:
             state = hass.states.get(plant_id)
             if state and state.attributes.get("plant_id"):
@@ -143,7 +145,6 @@ async def _ensure_plant_loaded(
         plant_id,
     )
     try:
-        await coordinator.store.async_load()
         await coordinator.async_load()
     except Exception as load_err:
         _LOGGER.error("Error reloading coordinator data: %s", load_err)
@@ -404,7 +405,7 @@ async def handle_move_clone(
         validator.validate_plant_exists(plant_id)
     except ValueError as err:
         _LOGGER.error("Validation error moving clone: %s", err)
-        raise ServiceValidationError(f"Validation error: {str(err)}")
+        raise ServiceValidationError(f"Validation error: {str(err)}") from err
 
     try:
         transition_date = datetime.fromisoformat(
@@ -440,7 +441,7 @@ async def handle_move_clone(
         )
         raise ServiceValidationError(
             f"Could not find position in growspace '{target_growspace_id}' for clone {plant_id}."
-        )
+        ) from e
 
     # Add the plant to the new growspace, transitioning stage to 'veg'
     try:
@@ -451,7 +452,11 @@ async def handle_move_clone(
             row=row,
             col=col,
             stage="veg",  # Transitioning clone to veg
-            clone_start=plant.clone_start,  # Keep original clone start date if it exists
+            clone_start=(
+                datetime.fromisoformat(plant.clone_start).date()
+                if isinstance(plant.clone_start, str)
+                else plant.clone_start
+            ),  # Convert string to date if needed
             source_mother=plant.source_mother or "",
             veg_start=transition_date,  # Set veg start date to transition date
         )
@@ -782,7 +787,7 @@ async def handle_transition_plant_stage(
                 )
                 raise ServiceValidationError(
                     f"Invalid transition_date format: {transition_date_str}."
-                )
+                ) from None
 
         await coordinator.async_transition_plant_stage(
             plant_id=plant_id,

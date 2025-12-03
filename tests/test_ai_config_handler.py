@@ -1,6 +1,6 @@
 """Tests for the AI Config Handler."""
 
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 import voluptuous as vol
@@ -85,7 +85,10 @@ async def test_save_ai_settings(handler, mock_hass, mock_config_entry):
     # Setup coordinator mock
     mock_coordinator = MagicMock()
     mock_coordinator.async_save = AsyncMock()
-    mock_hass.data[DOMAIN]["test_entry"] = {"coordinator": mock_coordinator}
+
+    # Update to use runtime_data
+    mock_config_entry.runtime_data = MagicMock()
+    mock_config_entry.runtime_data.coordinator = mock_coordinator
 
     user_input = {
         CONF_AI_ENABLED: True,

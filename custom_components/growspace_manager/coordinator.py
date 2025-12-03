@@ -90,7 +90,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
         self.notification_manager = NotificationManager(hass, self)
         self.import_export_manager = ImportExportManager(hass)
 
-        self._notifications_sent: dict[str, dict[str, bool]] = {}
+        self._notifications_sent: dict[str, dict[str, dict[str, bool]]] = {}
         self._notifications_enabled: dict[
             str, bool
         ] = {}  # ✅ Notification switch states
@@ -813,6 +813,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
 
         # Check if source_mother is provided
         source_mother_id = kwargs.get("source_mother")
+        mother_plant: Plant | None = None
 
         if source_mother_id:
             # Validate mother plant exists
@@ -843,7 +844,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
         now = date.today().isoformat()
 
         # Create clone data
-        clone_data = {
+        clone_data: dict[str, Any] = {
             "plant_id": plant_id,
             "growspace_id": growspace_id,
             "strain": str(strain).strip(),
@@ -974,7 +975,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
 
         for _ in range(num_clones):
             row, col = self.validator.find_first_available_position(clone_gs_id)
-            clone_data = {
+            clone_data: dict[str, Any] = {
                 "strain": mother.strain,
                 "phenotype": mother.phenotype,
                 "type": "clone",

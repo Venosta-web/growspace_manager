@@ -75,12 +75,10 @@ class AskGrowAdviceIntent(intent.IntentHandler):
 
     def _find_growspace(self, growspace_name: str) -> str | None:
         """Find the growspace ID based on the name."""
-        if DOMAIN not in self.hass.data:
-            return None
-
-        for entry_data in self.hass.data[DOMAIN].values():
-            if isinstance(entry_data, dict) and "coordinator" in entry_data:
-                curr_coordinator = entry_data["coordinator"]
+        entries = self.hass.config_entries.async_entries(DOMAIN)
+        for entry in entries:
+            if hasattr(entry, "runtime_data"):
+                curr_coordinator = entry.runtime_data.coordinator
                 for gs_id, gs in curr_coordinator.growspaces.items():
                     if gs.name.lower() == growspace_name.lower():
                         return gs_id

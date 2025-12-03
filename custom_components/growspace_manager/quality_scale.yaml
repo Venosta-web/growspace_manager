@@ -7,8 +7,8 @@
 # =============================================================================
 
 action-setup:
-  status: todo
-  comment: Service actions are registered in async_setup
+  status: done
+  comment: Service actions are registered in async_setup_entry
 
 appropriate-polling:
   status: done
@@ -33,7 +33,7 @@ config-flow:
   comment: Integration needs to be able to be set up via the UI
 
 data-description:
-  status: todo
+  status: done
   comment: Uses data_description to give context to fields
 
 config-entry-data-options:
@@ -41,23 +41,23 @@ config-entry-data-options:
   comment: Uses ConfigEntry.data and ConfigEntry.options correctly
 
 dependency-transparency:
-  status: todo
+  status: done
   comment: Dependency transparency
 
 docs-actions:
-  status: todo
+  status: done
   comment: The documentation describes the provided service actions that can be used
 
 docs-high-level-description:
-  status: todo
+  status: done
   comment: The documentation includes a high-level description of the integration brand, product, or service
 
 docs-installation-instructions:
-  status: todo
+  status: done
   comment: The documentation provides step-by-step installation instructions for the integration, including, if needed, prerequisites
 
 docs-removal-instructions:
-  status: todo
+  status: done
   comment: The documentation provides removal instructions
 
 entity-event-setup:
@@ -73,7 +73,7 @@ has-entity-name:
   comment: Entities use has_entity_name = True
 
 runtime-data:
-  status: todo
+  status: done
   comment: Use ConfigEntry.runtime_data to store runtime data
   notes: High priority for Silver compliance
 
@@ -103,11 +103,11 @@ config-entry-unloading:
   comment: Support config entry unloading
 
 docs-configuration-parameters:
-  status: todo
+  status: done
   comment: The documentation describes all integration configuration options
 
 docs-installation-parameters:
-  status: todo
+  status: done
   comment: The documentation describes all integration installation parameters
 
 entity-unavailable:
@@ -125,7 +125,7 @@ log-when-unavailable:
   notes: Handled by coordinator
 
 parallel-updates:
-  status: todo
+  status: done
   comment: Number of parallel updates is specified
 
 reauthentication-flow:
@@ -134,7 +134,7 @@ reauthentication-flow:
   reason: Local integration, no authentication required
 
 test-coverage:
-  status: todo
+  status: done
   comment: Above 95% test coverage for all integration modules
 
 # =============================================================================
@@ -230,7 +230,7 @@ stale-devices:
 # =============================================================================
 
 async-dependency:
-  status: todo
+  status: done
   comment: Dependency is async
 
 inject-websession:
@@ -238,5 +238,5 @@ inject-websession:
   comment: The integration dependency supports passing in a websession
 
 strict-typing:
-  status: todo
+  status: done
   comment: Strict typing

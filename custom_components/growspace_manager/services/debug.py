@@ -97,7 +97,7 @@ async def _cleanup_cure_legacy_growspaces(
         removed_growspaces.append(legacy_id)
 
 
-async def debug_cleanup_legacy(
+async def handle_debug_cleanup_legacy(
     hass: HomeAssistant,
     coordinator: GrowspaceCoordinator,
     strain_library: StrainLibrary,
@@ -172,7 +172,7 @@ async def debug_cleanup_legacy(
         raise
 
 
-async def debug_list_growspaces(
+async def handle_debug_list_growspaces(
     hass: HomeAssistant,
     coordinator: GrowspaceCoordinator,
     strain_library: StrainLibrary,
@@ -326,7 +326,7 @@ async def _handle_reset_cure_growspace(
         )
 
 
-async def debug_reset_special_growspaces(
+async def handle_debug_reset_special_growspaces(
     hass: HomeAssistant,
     coordinator: GrowspaceCoordinator,
     strain_library: StrainLibrary,
@@ -362,7 +362,7 @@ async def debug_reset_special_growspaces(
         raise
 
 
-async def debug_consolidate_duplicate_special(
+async def handle_debug_consolidate_duplicate_special(
     hass: HomeAssistant,
     coordinator: GrowspaceCoordinator,
     strain_library: StrainLibrary,

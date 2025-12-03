@@ -61,9 +61,9 @@ async def async_setup_entry(
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     """Set up the Growspace Manager Bayesian binary sensors from a config entry."""
-    coordinator = hass.data[DOMAIN][config_entry.entry_id]["coordinator"]
+    coordinator = config_entry.runtime_data.coordinator
 
-    entities = []
+    entities: list[BinarySensorEntity] = []
 
     # Create Bayesian sensors for each growspace that has environment config
     for growspace_id, growspace in coordinator.growspaces.items():
@@ -172,7 +172,7 @@ class BayesianEnvironmentSensor(BinarySensorEntity):
             manufacturer="Growspace Manager",
         )
 
-        self._sensor_states = {}
+        self._sensor_states: dict[str, Any] = {}
         self._reasons: ReasonList = []
         self._probability = 0.0
         self._last_light_change_time: datetime | None = None
@@ -300,12 +300,12 @@ class BayesianEnvironmentSensor(BinarySensorEntity):
             self.env_config.get("humidifier_sensor"),
         ]
 
-        sensors = [s for s in sensors if s]
+        sensors_filtered: list[str] = [s for s in sensors if s]
 
         self.async_on_remove(
             async_track_state_change_event(
                 self.hass,
-                sensors,
+                sensors_filtered,
                 self._async_sensor_changed,
             )
         )

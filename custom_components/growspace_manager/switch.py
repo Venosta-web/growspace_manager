@@ -27,18 +27,8 @@ async def async_setup_entry(
     config_entry: ConfigEntry,
     async_add_entities: AddEntitiesCallback,
 ) -> None:
-    """Set up the switch platform for Growspace Manager from a config entry.
-
-    This function is called by Home Assistant to set up the switch platform. It
-    creates a `GrowspaceNotificationSwitch` for each growspace that has a
-    notification target configured.
-
-    Args:
-        hass: The Home Assistant instance.
-        config_entry: The configuration entry.
-        async_add_entities: A callback function for adding new entities.
-    """
-    coordinator = hass.data[DOMAIN][config_entry.entry_id]["coordinator"]
+    """Set up the Growspace Manager switch platform from a config entry."""
+    coordinator = config_entry.runtime_data.coordinator
     entities = []
 
     # Create notification switches for each growspace

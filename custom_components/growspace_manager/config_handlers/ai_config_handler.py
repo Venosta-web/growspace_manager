@@ -13,7 +13,6 @@ from ..const import (
     CONF_AI_ENABLED,
     CONF_ASSISTANT_ID,
     CONF_NOTIFICATION_PERSONALITY,
-    DOMAIN,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -64,7 +63,7 @@ class AIConfigHandler:
             for assistant in valid_assistants
         ]
 
-        schema = {
+        schema: dict[Any, Any] = {
             vol.Required(
                 CONF_AI_ENABLED, default=current_settings.get(CONF_AI_ENABLED, False)
             ): selector.BooleanSelector(),
@@ -133,7 +132,7 @@ class AIConfigHandler:
 
     async def save_ai_settings(self, user_input: dict[str, Any]) -> dict[str, Any]:
         """Save AI settings to the coordinator and config entry."""
-        coordinator = self.hass.data[DOMAIN][self.config_entry.entry_id]["coordinator"]
+        coordinator = self.config_entry.runtime_data.coordinator
         new_options = self.config_entry.options.copy()
         new_options["ai_settings"] = user_input
 

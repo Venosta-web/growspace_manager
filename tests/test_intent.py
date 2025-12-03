@@ -34,7 +34,11 @@ def mock_coordinator() -> MagicMock:
 def mock_hass(mock_coordinator) -> MagicMock:
     """Mock Home Assistant instance."""
     hass = MagicMock(spec=HomeAssistant)
-    hass.data = {DOMAIN: {"test_entry": {"coordinator": mock_coordinator}}}
+    # Mock config entries
+    mock_entry = MagicMock()
+    mock_entry.runtime_data = MagicMock()
+    mock_entry.runtime_data.coordinator = mock_coordinator
+    hass.config_entries.async_entries.return_value = [mock_entry]
     hass.services = MagicMock()
     hass.services.async_call = AsyncMock()
     return hass
