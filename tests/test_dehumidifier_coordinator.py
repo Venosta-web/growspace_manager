@@ -26,7 +26,14 @@ def mock_hass():
     hass.states = MagicMock()
     hass.services = MagicMock()
     hass.services.async_call = AsyncMock()
-    hass.async_create_task = MagicMock()
+
+    def mock_create_task(target):
+        """Mock async_create_task to close coroutines."""
+        if hasattr(target, "close"):
+            target.close()
+        return MagicMock()
+
+    hass.async_create_task = MagicMock(side_effect=mock_create_task)
     hass.data = {}
     return hass
 
@@ -100,6 +107,7 @@ async def test_initialization_disabled(
     coord = DehumidifierCoordinator(
         mock_hass, mock_track_state_change_event, "gs1", mock_main_coordinator
     )
+    setattr(coord, "async_check_and_control", MagicMock())
 
     assert coord.control_dehumidifier is False
     assert len(coord._remove_listeners) == 0
@@ -117,6 +125,7 @@ async def test_initialization_missing_entities(
     coord = DehumidifierCoordinator(
         mock_hass, mock_track_state_change_event, "gs1", mock_main_coordinator
     )
+    setattr(coord, "async_check_and_control", MagicMock())
 
     assert len(coord._remove_listeners) == 0
     mock_track_state_change_event.assert_not_called()
