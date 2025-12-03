@@ -57,6 +57,7 @@ async def test_add_and_remove_plant(coordinator):
     removed = await coordinator.async_remove_plant(plant.plant_id)
     assert removed
     assert plant.plant_id not in coordinator.plants
+    coordinator.async_set_updated_data.assert_called()
 
 
 @pytest.mark.asyncio

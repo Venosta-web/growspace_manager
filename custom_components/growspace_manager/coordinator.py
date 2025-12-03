@@ -1618,7 +1618,9 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
         """
         if plant_id in self.plants:
             del self.plants[plant_id]
+            self.update_data_property()
             await self.async_save()
+            self.async_set_updated_data(self.data)
             return True
         return False
 
