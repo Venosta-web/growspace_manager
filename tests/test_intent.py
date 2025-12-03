@@ -3,7 +3,7 @@
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
-from homeassistant.core import HomeAssistant
+from homeassistant.core import Context, HomeAssistant
 from homeassistant.helpers import intent
 
 from custom_components.growspace_manager.const import DOMAIN
@@ -56,16 +56,15 @@ async def test_handle_intent_success(
     """Test successful intent handling."""
     intent_obj = intent.Intent(
         hass=mock_hass,
-        platform=None,
+        platform="test_platform",
         intent_type=INTENT_ASK_GROW_ADVICE,
         slots={
             "growspace": {"value": GROWSPACE_NAME},
             "query": {"value": "How are my plants?"},
         },
         text_input=None,
-        context=None,
+        context=Context(),
         language="en",
-        category=None,
     )
 
     # Mock service response
@@ -89,16 +88,15 @@ async def test_handle_intent_growspace_not_found(
     """Test intent handling when growspace is not found."""
     intent_obj = intent.Intent(
         hass=mock_hass,
-        platform=None,
+        platform="test_platform",
         intent_type=INTENT_ASK_GROW_ADVICE,
         slots={
             "growspace": {"value": "NonExistent"},
             "query": {"value": "Query"},
         },
         text_input=None,
-        context=None,
+        context=Context(),
         language="en",
-        category=None,
     )
 
     with pytest.raises(
@@ -113,16 +111,15 @@ async def test_handle_intent_service_error(
     """Test intent handling when service call fails."""
     intent_obj = intent.Intent(
         hass=mock_hass,
-        platform=None,
+        platform="test_platform",
         intent_type=INTENT_ASK_GROW_ADVICE,
         slots={
             "growspace": {"value": GROWSPACE_NAME},
             "query": {"value": "Query"},
         },
         text_input=None,
-        context=None,
+        context=Context(),
         language="en",
-        category=None,
     )
 
     mock_hass.services.async_call.side_effect = Exception("Service error")
@@ -139,16 +136,15 @@ async def test_handle_intent_no_response(
     """Test intent handling when service returns no response."""
     intent_obj = intent.Intent(
         hass=mock_hass,
-        platform=None,
+        platform="test_platform",
         intent_type=INTENT_ASK_GROW_ADVICE,
         slots={
             "growspace": {"value": GROWSPACE_NAME},
             "query": {"value": "Query"},
         },
         text_input=None,
-        context=None,
+        context=Context(),
         language="en",
-        category=None,
     )
 
     mock_hass.services.async_call.return_value = None

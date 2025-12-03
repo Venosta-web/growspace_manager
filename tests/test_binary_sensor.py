@@ -236,7 +236,7 @@ async def test_notification_sending(
     sensor.notification_manager.async_send_notification = AsyncMock()
 
     with (
-        patch.object(sensor, "async_write_ha_state", new_callable=AsyncMock),
+        patch.object(sensor, "async_write_ha_state", new_callable=MagicMock),
     ):
         await sensor.async_update_and_notify()
     assert not sensor.is_on
@@ -1008,7 +1008,7 @@ async def test_dry_cure_sensors_off_states(
     set_sensor_state(hass, "sensor.humidity", sensor_readings.get("humidity", 55))
     await hass.async_block_till_done()
 
-    with patch.object(sensor, "async_write_ha_state", new_callable=AsyncMock):
+    with patch.object(sensor, "async_write_ha_state", new_callable=MagicMock):
         await sensor._async_update_probability()
 
     assert not sensor.is_on
@@ -1026,7 +1026,7 @@ async def test_curing_sensor_skips_if_not_cure_growspace(mock_coordinator, env_c
     sensor.platform = MagicMock()
 
     with patch.object(
-        sensor, "async_write_ha_state", new_callable=AsyncMock
+        sensor, "async_write_ha_state", new_callable=MagicMock
     ) as mock_write_ha_state:
         await sensor._async_update_probability()
 
@@ -1045,7 +1045,7 @@ async def test_drying_sensor_skips_if_not_dry_growspace(mock_coordinator, env_co
     sensor.platform = MagicMock()
 
     with patch.object(
-        sensor, "async_write_ha_state", new_callable=AsyncMock
+        sensor, "async_write_ha_state", new_callable=MagicMock
     ) as mock_write_ha_state:
         await sensor._async_update_probability()
 
@@ -1109,7 +1109,7 @@ async def test_light_cycle_verification_sensor_async_update_no_light_entity(
     sensor.hass = hass
     sensor.light_entity_id = None
     with patch.object(
-        sensor, "async_write_ha_state", new_callable=AsyncMock
+        sensor, "async_write_ha_state", new_callable=MagicMock
     ) as mock_write_ha_state:
         await sensor.async_update()
         assert not sensor._is_correct
@@ -1126,7 +1126,7 @@ async def test_light_cycle_verification_sensor_async_update_light_state_unavaila
     sensor.light_entity_id = "light.test_light"
     hass.states.async_set("light.test_light", STATE_UNAVAILABLE)
     with patch.object(
-        sensor, "async_write_ha_state", new_callable=AsyncMock
+        sensor, "async_write_ha_state", new_callable=MagicMock
     ) as mock_write_ha_state:
         await sensor.async_update()
         assert not sensor._is_correct
@@ -1171,7 +1171,7 @@ async def test_light_cycle_verification_sensor_async_update(
         patch("homeassistant.core.StateMachine.get", return_value=mock_state),
         patch.object(sensor, "_get_growth_stage_info", return_value=stage_info),
         patch.object(
-            sensor, "async_write_ha_state", new_callable=AsyncMock
+            sensor, "async_write_ha_state", new_callable=MagicMock
         ) as mock_write_ha_state,
         patch(
             "custom_components.growspace_manager.binary_sensor.utcnow", return_value=now
