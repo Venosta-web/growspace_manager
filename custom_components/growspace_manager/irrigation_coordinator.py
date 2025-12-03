@@ -108,17 +108,27 @@ class IrrigationCoordinator:
                 self._growspace_id,
                 duration,
             )
-        else:
-            # Add new schedule item
-            growspace.irrigation_config[schedule_key].append(
-                {"time": time_str, "duration": duration}
+            # Force update by re-assigning the list (even if modified in place, this signals intent,
+            # but better to copy if we want to be purely immutable. For now, re-assigning the list
+            # to the dict key might trigger some observers if they observe the dict, but the
+            # main issue is likely the sensor holding a reference.
+            # Let's create a shallow copy to be safe and ensure a new reference.)
+            growspace.irrigation_config[schedule_key] = list(
+                growspace.irrigation_config[schedule_key]
             )
+        else:
+            # Add new schedule item - Create a NEW list to ensure state change detection
+            current_list = growspace.irrigation_config[schedule_key]
+            new_list = list(current_list)
+            new_list.append({"time": time_str, "duration": duration})
+            growspace.irrigation_config[schedule_key] = new_list
+
             _LOGGER.info(
                 "Added %s to %s for growspace %s. Schedule now has %d items.",
                 {"time": time_str, "duration": duration},
                 schedule_key,
                 self._growspace_id,
-                len(growspace.irrigation_config[schedule_key]),
+                len(new_list),
             )
 
         # Persist the changes

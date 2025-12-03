@@ -610,8 +610,8 @@ class GrowspaceOverviewSensor(CoordinatorEntity[GrowspaceCoordinator], SensorEnt
             "veg_week": veg_week,
             "flower_week": flower_week,
             "max_stage_summary": f"Veg: {max_veg}d (W{veg_week}), Flower: {max_flower}d (W{flower_week})",
-            "irrigation_times": irrigation_options.get("irrigation_times", []),
-            "drain_times": irrigation_options.get("drain_times", []),
+            "irrigation_times": list(irrigation_options.get("irrigation_times", [])),
+            "drain_times": list(irrigation_options.get("drain_times", [])),
             "grid": grid,
         }
 
