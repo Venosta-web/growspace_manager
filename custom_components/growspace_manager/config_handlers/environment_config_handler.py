@@ -7,6 +7,8 @@ import logging
 from typing import Any
 
 import voluptuous as vol
+from homeassistant.config_entries import ConfigEntry
+from homeassistant.core import HomeAssistant
 from homeassistant.helpers import selector
 
 from ..const import DEFAULT_FLOWER_DAY_HOURS, DEFAULT_VEG_DAY_HOURS
@@ -18,7 +20,7 @@ _LOGGER = logging.getLogger(__name__)
 class EnvironmentConfigHandler:
     """Handle environment configuration steps."""
 
-    def __init__(self, hass, config_entry) -> None:
+    def __init__(self, hass: HomeAssistant, config_entry: ConfigEntry) -> None:
         """Initialize the handler."""
         self.hass = hass
         self.config_entry = config_entry

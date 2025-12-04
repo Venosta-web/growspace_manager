@@ -6,6 +6,8 @@ import logging
 from typing import Any
 
 import voluptuous as vol
+from homeassistant.config_entries import ConfigEntry
+from homeassistant.core import HomeAssistant
 from homeassistant.helpers import selector
 
 _LOGGER = logging.getLogger(__name__)
@@ -14,7 +16,7 @@ _LOGGER = logging.getLogger(__name__)
 class NotificationConfigHandler:
     """Handle notification configuration steps."""
 
-    def __init__(self, hass, config_entry) -> None:
+    def __init__(self, hass: HomeAssistant, config_entry: ConfigEntry) -> None:
         """Initialize the handler."""
         self.hass = hass
         self.config_entry = config_entry

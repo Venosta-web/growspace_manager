@@ -6,7 +6,8 @@ import logging
 from typing import Any
 
 import voluptuous as vol
-
+from homeassistant.config_entries import ConfigEntry
+from homeassistant.core import HomeAssistant
 from homeassistant.helpers import selector
 
 from ..const import (
@@ -22,7 +23,7 @@ _LOGGER = logging.getLogger(__name__)
 class AIConfigHandler:
     """Handler for AI configuration steps."""
 
-    def __init__(self, hass, config_entry) -> None:
+    def __init__(self, hass: HomeAssistant, config_entry: ConfigEntry) -> None:
         """Initialize the AI config handler."""
         self.hass = hass
         self.config_entry = config_entry

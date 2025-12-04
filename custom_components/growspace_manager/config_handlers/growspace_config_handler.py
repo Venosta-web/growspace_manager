@@ -6,7 +6,6 @@ import logging
 from typing import Any
 
 import voluptuous as vol
-
 from homeassistant.helpers import selector
 
 _LOGGER = logging.getLogger(__name__)

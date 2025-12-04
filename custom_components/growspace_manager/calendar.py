@@ -7,8 +7,8 @@ based on the timed notifications configured by the user.
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta
 import logging
+from datetime import datetime, timedelta
 
 from homeassistant.components.calendar import CalendarEntity, CalendarEvent
 from homeassistant.config_entries import ConfigEntry

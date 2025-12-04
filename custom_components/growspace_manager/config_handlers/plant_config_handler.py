@@ -5,7 +5,6 @@ from __future__ import annotations
 import logging
 
 import voluptuous as vol
-
 from homeassistant.helpers import selector
 
 from ..const import DOMAIN

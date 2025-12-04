@@ -29,7 +29,7 @@ class GrowAssistant:
         hass: HomeAssistant,
         coordinator: GrowspaceCoordinator,
         strain_library: StrainLibrary,
-    ):
+    ) -> None:
         """Initialize the grow assistant."""
         self.hass = hass
         self.coordinator = coordinator
@@ -342,21 +342,7 @@ class GrowAssistant:
             AI-generated advice string
         """
         ai_settings = self._get_ai_settings()
-
-        # More descriptive error if settings are missing
-        if not ai_settings:
-            # Check raw options to give better feedback
-            raw_settings = self.coordinator.options.get("ai_settings", {})
-            if not raw_settings.get(CONF_AI_ENABLED):
-                raise ServiceValidationError(
-                    "AI assistant is not enabled. Please go to the Growspace Manager integration settings to enable it."
-                )
-            if not raw_settings.get(CONF_ASSISTANT_ID):
-                raise ServiceValidationError(
-                    "AI assistant enabled but no assistant ID selected. Please configure an assistant in settings."
-                )
-            # Fallback
-            raise ServiceValidationError("AI settings are invalid or incomplete.")
+        self._validate_ai_settings(ai_settings)
 
         agent_id = ai_settings.get(CONF_ASSISTANT_ID)
 
@@ -384,38 +370,9 @@ class GrowAssistant:
 
         # Call the conversation API
         try:
-            if not agent_id:
-                # Should be caught above, but double check
-                raise ServiceValidationError(
-                    "AI assistant is not enabled. Please go to the Growspace Manager integration settings to enable it."
-                )
-
-            result = await conversation.async_converse(
-                self.hass,
-                text=full_prompt,
-                conversation_id=None,
-                context=Context(),
-                agent_id=agent_id,
+            return await self._execute_conversation(
+                full_prompt, agent_id, max_length, growspace_id
             )
-
-            if (
-                result
-                and result.response
-                and result.response.speech
-                and result.response.speech.get("plain")
-                and result.response.speech["plain"].get("speech")
-            ):
-                response = result.response.speech["plain"]["speech"]
-
-                # Enforce max length truncation if specified
-                if max_length and len(response) > max_length:
-                    response = response[:max_length].rsplit(" ", 1)[0] + "..."
-
-                _LOGGER.info(
-                    "AI assistant provided advice for growspace %s", growspace_id
-                )
-                return response
-            raise ServiceValidationError("AI assistant returned an empty response")
 
         except ServiceValidationError:
             raise
@@ -423,6 +380,57 @@ class GrowAssistant:
             _LOGGER.error("Error getting AI advice: %s", err)
             # Fallback to context if AI fails
             return f"AI Assistant Error: {err}\n\nRaw Data:\n\n{context}"
+
+    def _validate_ai_settings(self, ai_settings: dict[str, Any] | None) -> None:
+        """Validate AI settings and raise specific errors if invalid."""
+        if not ai_settings:
+            # Check raw options to give better feedback
+            raw_settings = self.coordinator.options.get("ai_settings", {})
+            if not raw_settings.get(CONF_AI_ENABLED):
+                raise ServiceValidationError(
+                    "AI assistant is not enabled. Please go to the Growspace Manager integration settings to enable it."
+                )
+            if not raw_settings.get(CONF_ASSISTANT_ID):
+                raise ServiceValidationError(
+                    "AI assistant enabled but no assistant ID selected. Please configure an assistant in settings."
+                )
+            # Fallback
+            raise ServiceValidationError("AI settings are invalid or incomplete.")
+
+    async def _execute_conversation(
+        self, full_prompt: str, agent_id: str, max_length: int | None, growspace_id: str
+    ) -> str:
+        """Execute the conversation and process the response."""
+        if not agent_id:
+            # Should be caught above, but double check
+            raise ServiceValidationError(
+                "AI assistant is not enabled. Please go to the Growspace Manager integration settings to enable it."
+            )
+
+        result = await conversation.async_converse(
+            self.hass,
+            text=full_prompt,
+            conversation_id=None,
+            context=Context(),
+            agent_id=agent_id,
+        )
+
+        if (
+            result
+            and result.response
+            and result.response.speech
+            and result.response.speech.get("plain")
+            and result.response.speech["plain"].get("speech")
+        ):
+            response = result.response.speech["plain"]["speech"]
+
+            # Enforce max length truncation if specified
+            if max_length and len(response) > max_length:
+                response = response[:max_length].rsplit(" ", 1)[0] + "..."
+
+            _LOGGER.info("AI assistant provided advice for growspace %s", growspace_id)
+            return response
+        raise ServiceValidationError("AI assistant returned an empty response")
 
 
 async def handle_ask_grow_advice(

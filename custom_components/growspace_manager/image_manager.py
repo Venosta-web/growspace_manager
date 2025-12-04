@@ -3,13 +3,12 @@
 from __future__ import annotations
 
 import base64
-from io import BytesIO
 import logging
 import os
-
-from PIL import Image
+from io import BytesIO
 
 from homeassistant.core import HomeAssistant
+from PIL import Image
 
 _LOGGER = logging.getLogger(__name__)
 

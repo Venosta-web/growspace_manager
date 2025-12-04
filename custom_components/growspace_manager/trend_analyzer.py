@@ -1,8 +1,8 @@
 """Trend analysis service for Growspace Manager sensors."""
 from __future__ import annotations
 
-from datetime import timedelta
 import logging
+from datetime import timedelta
 from typing import Any
 
 from homeassistant.components.recorder import history
