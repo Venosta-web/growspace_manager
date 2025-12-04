@@ -1,15 +1,27 @@
+"""Bayesian evaluator module for Growspace Manager.
+
+This module contains logic for evaluating environmental conditions using Bayesian inference,
+including trend analysis and stress detection.
+"""
+
 from __future__ import annotations
 
-import logging
 from collections.abc import Awaitable, Callable
+import logging
 from typing import TYPE_CHECKING
 
 from homeassistant.core import State
 
-from .bayesian_data import (PROB_ACCEPTABLE, PROB_GOOD, PROB_PERFECT,
-                            PROB_STRESS_OUT_OF_RANGE,
-                            PROB_VPD_STRESS_OUT_OF_RANGE,
-                            VPD_OPTIMAL_THRESHOLDS, VPD_STRESS_THRESHOLDS)
+from .bayesian_data import (
+    PROB_ACCEPTABLE,
+    PROB_GOOD,
+    PROB_PERFECT,
+    PROB_SOIL_MOISTURE_STRESS,
+    PROB_STRESS_OUT_OF_RANGE,
+    PROB_VPD_STRESS_OUT_OF_RANGE,
+    VPD_OPTIMAL_THRESHOLDS,
+    VPD_STRESS_THRESHOLDS,
+)
 from .models import EnvironmentState
 
 if TYPE_CHECKING:
@@ -63,7 +75,7 @@ async def async_evaluate_stress_trend(
 
     # Define common variables and helpers outside the loop for cleaner logic
     analyze_trend: Callable[[str, int, float], Awaitable[dict]] = (
-        sensor_instance._async_analyze_sensor_trend
+        sensor_instance.async_analyze_sensor_trend
     )
 
     # --- Trend Analysis Logic (Moved from BayesianStressSensor) ---
@@ -217,7 +229,7 @@ async def async_evaluate_mold_risk_trend(
     trend_states["vpd_trend"] = "stable"
 
     analyze_trend: Callable[[str, int, float], Awaitable[dict]] = (
-        sensor_instance._async_analyze_sensor_trend
+        sensor_instance.async_analyze_sensor_trend
     )
 
     for sensor_key, trend_key in [
@@ -397,6 +409,31 @@ def evaluate_direct_co2_stress(
         prob = (0.95, 0.10)
         observations.append(prob)
         reasons.append((prob[0], f"CO2 High ({co2})"))
+
+    return observations, reasons
+
+
+def evaluate_soil_moisture_stress(
+    state: EnvironmentState, env_config: dict
+) -> tuple[ObservationList, ReasonList]:
+    """Evaluate soil moisture against stress thresholds."""
+    observations: ObservationList = []
+    reasons: ReasonList = []
+
+    if state.soil_moisture is None:
+        return observations, reasons
+
+    moisture = state.soil_moisture
+    prob_stress = PROB_SOIL_MOISTURE_STRESS
+
+    # Simple thresholds for now: < 20% (Dry) or > 60% (Wet)
+    # These could be made configurable in the future
+    if moisture < 20:
+        observations.append(prob_stress)
+        reasons.append((prob_stress[0], f"Soil Moisture Low ({moisture}%)"))
+    elif moisture > 60:
+        observations.append(prob_stress)
+        reasons.append((prob_stress[0], f"Soil Moisture High ({moisture}%)"))
 
     return observations, reasons
 

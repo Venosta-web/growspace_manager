@@ -1703,6 +1703,7 @@ class OptionsFlowHandler(OptionsFlow):
         for key, device_class in [
             ("temperature_sensor", "temperature"),
             ("humidity_sensor", "humidity"),
+            ("soil_moisture_sensor", "moisture"),
         ]:
             schema_dict[vol.Optional(key, default=growspace_options.get(key))] = (
                 selector.EntitySelector(

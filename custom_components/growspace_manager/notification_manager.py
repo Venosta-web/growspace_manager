@@ -2,16 +2,15 @@
 
 from __future__ import annotations
 
-import logging
 from datetime import datetime, timedelta
+import logging
 from typing import Any
 
 from homeassistant.components import conversation
 from homeassistant.core import Context, HomeAssistant
 from homeassistant.util.dt import utcnow
 
-from .const import (CONF_AI_ENABLED, CONF_ASSISTANT_ID,
-                    CONF_NOTIFICATION_PERSONALITY)
+from .const import CONF_AI_ENABLED, CONF_ASSISTANT_ID, CONF_NOTIFICATION_PERSONALITY
 
 _LOGGER = logging.getLogger(__name__)
 

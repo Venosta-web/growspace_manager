@@ -39,6 +39,7 @@ from .bayesian_evaluator import (
     evaluate_optimal_co2,
     evaluate_optimal_temperature,
     evaluate_optimal_vpd,
+    evaluate_soil_moisture_stress,
 )
 from .const import (
     DEFAULT_BAYESIAN_PRIORS,
@@ -219,11 +220,15 @@ class BayesianEnvironmentSensor(BinarySensorEntity):
         humidifier_sensor = self.env_config.get("humidifier_sensor")
         humidifier_value = self._get_sensor_value(humidifier_sensor)
 
+        soil_moisture_sensor = self.env_config.get("soil_moisture_sensor")
+        soil_moisture = self._get_sensor_value(soil_moisture_sensor)
+
         self._sensor_states = {
             "temperature": temp,
             "humidity": humidity,
             "vpd": vpd,
             "co2": co2,
+            "soil_moisture": soil_moisture,
             "veg_days": veg_days,
             "flower_days": flower_days,
             "is_lights_on": is_lights_on,
@@ -245,6 +250,7 @@ class BayesianEnvironmentSensor(BinarySensorEntity):
             dehumidifier_on=dehumidifier_on,
             exhaust_value=exhaust_value,
             humidifier_value=humidifier_value,
+            soil_moisture=soil_moisture,
         )
 
     def _determine_light_state(self) -> bool | None:
@@ -294,6 +300,7 @@ class BayesianEnvironmentSensor(BinarySensorEntity):
             self.env_config.get("dehumidifier_entity"),
             self.env_config.get("exhaust_sensor"),
             self.env_config.get("humidifier_sensor"),
+            self.env_config.get("soil_moisture_sensor"),
         ]
 
         sensors_filtered: list[str] = [s for s in sensors if s]
@@ -361,7 +368,7 @@ class BayesianEnvironmentSensor(BinarySensorEntity):
             "flower_days": max_flower,
         }
 
-    async def _async_analyze_sensor_trend(
+    async def async_analyze_sensor_trend(
         self, sensor_id: str, duration_minutes: int, threshold: float
     ) -> dict[str, Any]:
         """Analyze the trend of a sensor's history to detect rising or falling patterns."""
@@ -504,6 +511,10 @@ class BayesianStressSensor(BayesianEnvironmentSensor):
         co2_obs, co2_reasons = evaluate_direct_co2_stress(state, self.env_config)
         observations.extend(co2_obs)
         self._reasons.extend(co2_reasons)
+
+        moist_obs, moist_reasons = evaluate_soil_moisture_stress(state, self.env_config)
+        observations.extend(moist_obs)
+        self._reasons.extend(moist_reasons)
 
         # 3. ACTIVE DESICCATION (Dehumidifier running while dry/high VPD)
         if state.dehumidifier_on:
@@ -818,7 +829,12 @@ class BayesianCuringSensor(BayesianEnvironmentSensor):
 class BayesianMoldRiskSensor(BayesianEnvironmentSensor):
     """A Bayesian binary sensor for detecting high mold risk conditions."""
 
-    def __init__(self, coordinator, growspace_id, env_config) -> None:
+    def __init__(
+        self,
+        coordinator: GrowspaceCoordinator,
+        growspace_id: str,
+        env_config: dict[str, Any],
+    ) -> None:
         """Initialize the mold risk sensor."""
         super().__init__(
             coordinator,
@@ -872,7 +888,9 @@ class BayesianMoldRiskSensor(BayesianEnvironmentSensor):
         )
         self.async_write_ha_state()
 
-    def _evaluate_late_flower_mold_risk(self, state, observations):
+    def _evaluate_late_flower_mold_risk(
+        self, state: EnvironmentState, observations: list[tuple[float, float]]
+    ) -> None:
         """Evaluate mold risk factors specific to late flower stage."""
         prob = (0.80, 0.20)
         observations.append(prob)
@@ -934,7 +952,12 @@ class BayesianMoldRiskSensor(BayesianEnvironmentSensor):
 class BayesianOptimalConditionsSensor(BayesianEnvironmentSensor):
     """A Bayesian binary sensor for detecting optimal growing conditions."""
 
-    def __init__(self, coordinator, growspace_id, env_config) -> None:
+    def __init__(
+        self,
+        coordinator: GrowspaceCoordinator,
+        growspace_id: str,
+        env_config: dict[str, Any],
+    ) -> None:
         """Initialize the optimal conditions sensor."""
         super().__init__(
             coordinator,

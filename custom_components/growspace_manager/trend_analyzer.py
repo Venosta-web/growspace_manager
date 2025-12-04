@@ -1,15 +1,14 @@
 """Trend analysis service for Growspace Manager sensors."""
 from __future__ import annotations
 
-import logging
 from datetime import timedelta
+import logging
 from typing import Any
 
 from homeassistant.components.recorder import history
 from homeassistant.const import STATE_UNAVAILABLE, STATE_UNKNOWN
 from homeassistant.core import HomeAssistant, State
-from homeassistant.helpers.recorder import \
-    get_instance as get_recorder_instance
+from homeassistant.helpers.recorder import get_instance as get_recorder_instance
 from homeassistant.util.dt import utcnow
 
 _LOGGER = logging.getLogger(__name__)

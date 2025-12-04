@@ -47,7 +47,7 @@ def mock_coordinator(mock_growspace):
     return coordinator
 
 
-def set_sensor_state(hass, entity_id, state, attributes=None):
+def set_sensor_state(hass: HomeAssistant, entity_id, state, attributes=None):
     """Helper to set a sensor's state in hass."""
     if state is None:
         hass.states.async_set(entity_id, STATE_UNKNOWN, attributes)
@@ -59,7 +59,7 @@ def set_sensor_state(hass, entity_id, state, attributes=None):
 @pytest.mark.asyncio
 async def test_unavailable_light_sensor_no_night_stress(
     hass: HomeAssistant, mock_coordinator
-):
+) -> None:
     """Test that unavailable light sensor does not trigger Night Temp High stress."""
 
     # Setup sensor
@@ -82,7 +82,7 @@ async def test_unavailable_light_sensor_no_night_stress(
     # Mock trend analyzer
     setattr(
         sensor,
-        "_async_analyze_sensor_trend",
+        "async_analyze_sensor_trend",
         AsyncMock(return_value={"trend": "stable", "crossed_threshold": False}),
     )
 
@@ -138,7 +138,9 @@ async def test_unavailable_light_sensor_no_night_stress(
 
 
 @pytest.mark.asyncio
-async def test_unavailable_additional_sensors(hass: HomeAssistant, mock_coordinator):
+async def test_unavailable_additional_sensors(
+    hass: HomeAssistant, mock_coordinator
+) -> None:
     """Test that unavailable fan/dehumidifier do not trigger false alerts."""
 
     # Setup sensor
@@ -161,7 +163,7 @@ async def test_unavailable_additional_sensors(hass: HomeAssistant, mock_coordina
     # Mock trend analyzer
     setattr(
         sensor,
-        "_async_analyze_sensor_trend",
+        "async_analyze_sensor_trend",
         AsyncMock(return_value={"trend": "stable", "crossed_threshold": False}),
     )
 
@@ -210,7 +212,7 @@ async def test_unavailable_additional_sensors(hass: HomeAssistant, mock_coordina
     mold_sensor.notification_manager.async_send_notification = AsyncMock()
     setattr(
         mold_sensor,
-        "_async_analyze_sensor_trend",
+        "async_analyze_sensor_trend",
         AsyncMock(return_value={"trend": "stable", "crossed_threshold": False}),
     )
 

@@ -1,4 +1,5 @@
 """Constants and type aliases for Bayesian evaluation in Growspace Manager."""
+
 from __future__ import annotations
 
 from typing import Any, Final
@@ -20,6 +21,9 @@ PROB_STRESS_SATURATION: Final = (0.99, 0.01)
 # Used by Mold Risk Sensor
 PROB_MOLD_STAGNANT_AIR: Final = (0.85, 0.15)
 PROB_MOLD_HUMIDIFIER_ON: Final = (0.95, 0.10)
+
+# Used by Soil Moisture Sensor
+PROB_SOIL_MOISTURE_STRESS: Final = (0.85, 0.20)
 
 # Type aliases for complex structures
 VpdThresholdsDict = dict[str, dict[str, dict[str, Any]]]

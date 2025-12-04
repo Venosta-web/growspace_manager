@@ -9,17 +9,22 @@ from custom_components.growspace_manager.bayesian_data import (
     PROB_STRESS_OUT_OF_RANGE,
 )
 from custom_components.growspace_manager.bayesian_evaluator import (
+    _async_evaluate_external_mold_trend_sensor,
     _async_evaluate_fallback_mold_trend_analysis,
+    _determine_stage_key,
+    async_evaluate_stress_trend,
     evaluate_direct_humidity_stress,
     evaluate_direct_temp_stress,
     evaluate_direct_vpd_stress,
+    evaluate_optimal_co2,
     evaluate_optimal_temperature,
+    evaluate_optimal_vpd,
 )
 from custom_components.growspace_manager.models import EnvironmentState
 
 
 @pytest.mark.asyncio
-async def test_async_evaluate_fallback_mold_trend_analysis_rising():
+async def test_async_evaluate_fallback_mold_trend_analysis_rising() -> None:
     """Test fallback mold trend analysis for rising humidity."""
     sensor_instance = MagicMock()
     env_config = {
@@ -53,7 +58,7 @@ async def test_async_evaluate_fallback_mold_trend_analysis_rising():
 
 
 @pytest.mark.asyncio
-async def test_async_evaluate_fallback_mold_trend_analysis_falling():
+async def test_async_evaluate_fallback_mold_trend_analysis_falling() -> None:
     """Test fallback mold trend analysis for falling VPD."""
     sensor_instance = MagicMock()
     env_config = {
@@ -86,7 +91,7 @@ async def test_async_evaluate_fallback_mold_trend_analysis_falling():
     assert observations[0][1] == pytest.approx(0.3)
 
 
-def test_evaluate_direct_temp_stress_no_temp():
+def test_evaluate_direct_temp_stress_no_temp() -> None:
     """Test evaluate_direct_temp_stress when temperature is None."""
     state = MagicMock(spec=EnvironmentState, temp=None)
     env_config = {}
@@ -109,7 +114,7 @@ def test_evaluate_direct_temp_stress_no_temp():
 )
 def test_evaluate_direct_temp_stress_branches(
     temp, flower_days, is_lights_on, expected_reason, expected_prob
-):
+) -> None:
     """Test all branches of evaluate_direct_temp_stress."""
     state = MagicMock(
         spec=EnvironmentState,
@@ -125,7 +130,7 @@ def test_evaluate_direct_temp_stress_branches(
     assert observations[0] == expected_prob
 
 
-def test_evaluate_direct_humidity_stress_no_humidity():
+def test_evaluate_direct_humidity_stress_no_humidity() -> None:
     """Test evaluate_direct_humidity_stress when humidity is None."""
     state = MagicMock(spec=EnvironmentState, humidity=None)
     env_config = {}
@@ -134,7 +139,7 @@ def test_evaluate_direct_humidity_stress_no_humidity():
     assert reasons == []
 
 
-def test_evaluate_direct_humidity_stress_veg_early_high_humidity():
+def test_evaluate_direct_humidity_stress_veg_early_high_humidity() -> None:
     """Test evaluate_direct_humidity_stress for veg_early and high humidity."""
     state = MagicMock(spec=EnvironmentState, humidity=85, flower_days=0, veg_days=7)
     env_config = {}
@@ -145,7 +150,7 @@ def test_evaluate_direct_humidity_stress_veg_early_high_humidity():
     assert observations[0] == (0.80, 0.20)
 
 
-def test_evaluate_direct_vpd_stress_no_vpd():
+def test_evaluate_direct_vpd_stress_no_vpd() -> None:
     """Test evaluate_direct_vpd_stress when VPD is None."""
     state = MagicMock(spec=EnvironmentState, vpd=None)
     env_config = {}
@@ -154,7 +159,7 @@ def test_evaluate_direct_vpd_stress_no_vpd():
     assert reasons == []
 
 
-def test_evaluate_optimal_temperature_no_temp():
+def test_evaluate_optimal_temperature_no_temp() -> None:
     """Test evaluate_optimal_temperature when temperature is None."""
     state = MagicMock(spec=EnvironmentState, temp=None)
     env_config = {}
@@ -163,13 +168,7 @@ def test_evaluate_optimal_temperature_no_temp():
     assert reasons == []
 
 
-
-
-
-from custom_components.growspace_manager.bayesian_evaluator import evaluate_optimal_co2
-
-
-def test_evaluate_optimal_co2_no_co2():
+def test_evaluate_optimal_co2_no_co2() -> None:
     """Test evaluate_optimal_co2 when CO2 is None."""
     state = MagicMock(spec=EnvironmentState, co2=None)
     env_config = {}
@@ -186,7 +185,6 @@ def test_evaluate_optimal_co2_no_co2():
         (1000, 45, (0.4, 0.6), None),  # 800-1200 range
         (300, 45, [], None),  # outside range low, no observation
         (1300, 45, [], None),  # outside range high, no observation
-
         # Normal/Veg/Early Flower logic (flower_days < 42)
         (1200, 10, PROB_PERFECT, None),  # 1000-1400 range
         (900, 10, PROB_GOOD, None),  # 800-1500 range
@@ -197,7 +195,7 @@ def test_evaluate_optimal_co2_no_co2():
 )
 def test_evaluate_optimal_co2_branches(
     co2, flower_days, expected_prob, expected_reason_substring
-):
+) -> None:
     """Test all branches of evaluate_optimal_co2."""
     state = MagicMock(
         spec=EnvironmentState,
@@ -220,21 +218,13 @@ def test_evaluate_optimal_co2_branches(
         assert len(reasons) == 0
 
 
-from custom_components.growspace_manager.bayesian_evaluator import evaluate_optimal_vpd
-
-
-def test_evaluate_optimal_vpd_no_vpd():
+def test_evaluate_optimal_vpd_no_vpd() -> None:
     """Test evaluate_optimal_vpd when VPD is None."""
     state = MagicMock(spec=EnvironmentState, vpd=None)
     env_config = {}
     observations, reasons = evaluate_optimal_vpd(state, env_config)
     assert observations == []
     assert reasons == []
-
-
-from custom_components.growspace_manager.bayesian_evaluator import (
-    _async_evaluate_external_mold_trend_sensor,
-)
 
 
 @pytest.mark.asyncio
@@ -256,7 +246,7 @@ async def test_async_evaluate_external_mold_trend_sensor(
     expected_trend,
     expected_prob,
     expected_reason,
-):
+) -> None:
     """Test _async_evaluate_external_mold_trend_sensor for all scenarios."""
     sensor_instance = MagicMock()
     sensor_instance.hass = MagicMock()
@@ -295,23 +285,73 @@ async def test_async_evaluate_external_mold_trend_sensor(
     assert reasons[0][1] == expected_reason
 
 
-from custom_components.growspace_manager.bayesian_evaluator import (
-    async_evaluate_stress_trend,
-)
-
-
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     "test_sensor_key, use_trend_sensor, use_stats_sensor, trend_state_value, gradient, stats_change, manual_analysis_result, expected_trend, expected_prob, expected_reason",
     [
         # Trend Sensor Logic
-        ("temperature", True, False, "on", 0.2, None, None, "rising", (0.95, 0.15), "Temperature rising fast"),
-        ("humidity", True, False, "on", 0.05, None, None, "rising", (0.75, 0.30), "Humidity rising"),
+        (
+            "temperature",
+            True,
+            False,
+            "on",
+            0.2,
+            None,
+            None,
+            "rising",
+            (0.95, 0.15),
+            "Temperature rising fast",
+        ),
+        (
+            "humidity",
+            True,
+            False,
+            "on",
+            0.05,
+            None,
+            None,
+            "rising",
+            (0.75, 0.30),
+            "Humidity rising",
+        ),
         # Stats Sensor Logic
-        ("vpd", False, True, None, None, 0.3, None, "rising", (0.85, 0.25), "Vpd rising"),
-        ("temperature", False, True, None, None, 1.1, None, "rising", (0.85, 0.25), "Temperature rising"),
+        (
+            "vpd",
+            False,
+            True,
+            None,
+            None,
+            0.3,
+            None,
+            "rising",
+            (0.85, 0.25),
+            "Vpd rising",
+        ),
+        (
+            "temperature",
+            False,
+            True,
+            None,
+            None,
+            1.1,
+            None,
+            "rising",
+            (0.85, 0.25),
+            "Temperature rising",
+        ),
         # Fallback Manual Analysis Logic
-        ("humidity", False, False, None, None, None, {"trend": "rising", "crossed_threshold": True}, "rising", (0.725, 0.3), "Humidity rising"),
+        (
+            "humidity",
+            False,
+            False,
+            None,
+            None,
+            None,
+            {"trend": "rising", "crossed_threshold": True},
+            "rising",
+            (0.725, 0.3),
+            "Humidity rising",
+        ),
     ],
 )
 async def test_async_evaluate_stress_trend(
@@ -325,7 +365,7 @@ async def test_async_evaluate_stress_trend(
     expected_trend,
     expected_prob,
     expected_reason,
-):
+) -> None:
     """Test all branches of async_evaluate_stress_trend."""
     sensor_instance = MagicMock()
     sensor_instance.hass = MagicMock()
@@ -335,23 +375,37 @@ async def test_async_evaluate_stress_trend(
             return manual_analysis_result
         return {"trend": "stable", "crossed_threshold": False}
 
-    sensor_instance._async_analyze_sensor_trend = AsyncMock(side_effect=side_effect)
+    sensor_instance.async_analyze_sensor_trend = AsyncMock(side_effect=side_effect)
 
     env_config = {
         "prob_trend_fast_rise": (0.95, 0.15),
         "prob_trend_slow_rise": (0.75, 0.30),
     }
     for key in ["temperature", "humidity", "vpd"]:
-        env_config[f"{key}_trend_sensor"] = f"sensor.{key}_trend" if use_trend_sensor and key == test_sensor_key else None
-        env_config[f"{key}_stats_sensor"] = f"sensor.{key}_stats" if use_stats_sensor and key == test_sensor_key else None
-        env_config[f"{key}_sensor"] = f"sensor.{key}" if not (use_trend_sensor or use_stats_sensor) and key == test_sensor_key else None
+        env_config[f"{key}_trend_sensor"] = (
+            f"sensor.{key}_trend"
+            if use_trend_sensor and key == test_sensor_key
+            else None
+        )
+        env_config[f"{key}_stats_sensor"] = (
+            f"sensor.{key}_stats"
+            if use_stats_sensor and key == test_sensor_key
+            else None
+        )
+        env_config[f"{key}_sensor"] = (
+            f"sensor.{key}"
+            if not (use_trend_sensor or use_stats_sensor) and key == test_sensor_key
+            else None
+        )
         env_config[f"{key}_trend_sensitivity"] = 0.5
 
     sensor_instance.env_config = env_config
     state = MagicMock()
 
     if use_trend_sensor:
-        trend_state = MagicMock(state=trend_state_value, attributes={"gradient": gradient})
+        trend_state = MagicMock(
+            state=trend_state_value, attributes={"gradient": gradient}
+        )
         sensor_instance.hass.states.get.return_value = trend_state
     elif use_stats_sensor:
         stats_state = MagicMock(attributes={"change": stats_change})
@@ -372,15 +426,11 @@ async def test_async_evaluate_stress_trend(
     assert reasons[0][1] == expected_reason
 
 
-from custom_components.growspace_manager.bayesian_evaluator import _determine_stage_key
-
-
-def test_determine_stage_key_none():
+def test_determine_stage_key_none() -> None:
     """Test _determine_stage_key when no stage key is determined."""
     state = MagicMock(spec=EnvironmentState, flower_days=-1, veg_days=0)
     result = _determine_stage_key(state)
     assert result is None
-
 
 
 @pytest.mark.parametrize(
@@ -388,23 +438,45 @@ def test_determine_stage_key_none():
     [
         # Case A: Lights ON & Late Flower (Days >= 42)
         (24, 45, True, PROB_PERFECT, None),  # PROB_PERFECT
-
         # Case B: Lights ON & Normal (Days < 42 or Veg)
         (25, 10, True, PROB_PERFECT, None),  # PROB_PERFECT
         (27, 10, True, PROB_GOOD, None),  # PROB_GOOD
         (21, 10, True, PROB_ACCEPTABLE, None),  # PROB_ACCEPTABLE
-        (19, 10, True, PROB_STRESS_OUT_OF_RANGE, "Temp out of range"),  # out of range low
-        (30, 10, True, PROB_STRESS_OUT_OF_RANGE, "Temp out of range"),  # out of range high
-
+        (
+            19,
+            10,
+            True,
+            PROB_STRESS_OUT_OF_RANGE,
+            "Temp out of range",
+        ),  # out of range low
+        (
+            30,
+            10,
+            True,
+            PROB_STRESS_OUT_OF_RANGE,
+            "Temp out of range",
+        ),  # out of range high
         # Case C: Lights OFF (Nighttime)
         (21, 10, False, PROB_PERFECT, None),  # PROB_PERFECT
-        (18, 10, False, PROB_STRESS_OUT_OF_RANGE, "Night temp out of range"),  # out of range low
-        (25, 10, False, PROB_STRESS_OUT_OF_RANGE, "Night temp out of range"),  # out of range high
+        (
+            18,
+            10,
+            False,
+            PROB_STRESS_OUT_OF_RANGE,
+            "Night temp out of range",
+        ),  # out of range low
+        (
+            25,
+            10,
+            False,
+            PROB_STRESS_OUT_OF_RANGE,
+            "Night temp out of range",
+        ),  # out of range high
     ],
 )
 def test_evaluate_optimal_temperature_all_branches(
     temp, flower_days, is_lights_on, expected_prob, expected_reason_substring
-):
+) -> None:
     """Test all branches of evaluate_optimal_temperature."""
     state = MagicMock(
         spec=EnvironmentState,
