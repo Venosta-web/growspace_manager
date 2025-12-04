@@ -53,7 +53,7 @@ async def async_setup_trend_sensor(
     unique_id = f"{DOMAIN}_{growspace_id}_{sensor_type}_trend"
 
     if entity_registry.async_get_entity_id("binary_sensor", "trend", unique_id):
-        _LOGGER.debug("Trend sensor with unique_id %s already exists.", unique_id)
+        _LOGGER.debug("Trend sensor with unique_id %s already exists", unique_id)
         return unique_id
 
     config = {
@@ -112,7 +112,7 @@ async def async_setup_statistics_sensor(
     unique_id = f"{DOMAIN}_{growspace_id}_{sensor_type}_stats"
 
     if entity_registry.async_get_entity_id("sensor", "statistics", unique_id):
-        _LOGGER.debug("Statistics sensor with unique_id %s already exists.", unique_id)
+        _LOGGER.debug("Statistics sensor with unique_id %s already exists", unique_id)
         return unique_id
 
     config = {

@@ -343,8 +343,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: GrowspaceConfigEntry) ->
     await strain_library_instance.async_setup()
     hass.data.setdefault(DOMAIN, {})
 
-    hass.http.register_view(StrainLibraryUploadView(hass, strain_library_instance))
-
     coordinator = GrowspaceCoordinator(
         hass,
         data,
@@ -352,6 +350,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: GrowspaceConfigEntry) ->
         strain_library=strain_library_instance,
     )
     await coordinator.async_load()  # Load data into the coordinator
+
+    hass.http.register_view(
+        StrainLibraryUploadView(hass, strain_library_instance, coordinator)
+    )
 
     entry.runtime_data = GrowspaceRuntimeData(
         coordinator=coordinator,
@@ -567,10 +569,16 @@ class StrainLibraryUploadView(HomeAssistantView):
     name = "api:growspace_manager:import_strains"
     requires_auth = True
 
-    def __init__(self, hass: HomeAssistant, strain_library: StrainLibrary) -> None:
+    def __init__(
+        self,
+        hass: HomeAssistant,
+        strain_library: StrainLibrary,
+        coordinator: GrowspaceCoordinator,
+    ) -> None:
         """Initialize the view."""
         self.hass = hass
         self.strain_library = strain_library
+        self.coordinator = coordinator
 
     async def post(self, request: web.Request) -> web.Response:
         """Handle the POST request for file upload."""
@@ -603,6 +611,7 @@ class StrainLibraryUploadView(HomeAssistantView):
                 temp_path, merge=True
             )
             await self.strain_library.save()
+            await self.coordinator.async_request_refresh()
             return self.json({"success": True, "imported_count": count})
 
         except Exception as err:  # pylint: disable=broad-except

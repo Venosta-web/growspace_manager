@@ -301,7 +301,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
     # SPECIAL GROWSPACE MANAGEMENT
     # =============================================================================
 
-    def _ensure_special_growspace(
+    def ensure_special_growspace(
         self, growspace_id: str, name: str, rows: int = 3, plants_per_row: int = 3
     ) -> str:
         """Ensure a special growspace (e.g., 'dry', 'cure') exists.
@@ -380,7 +380,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
         Returns:
             The ID of the mother growspace.
         """
-        return self._ensure_special_growspace(
+        return self.ensure_special_growspace(
             "mother", "mother", rows=3, plants_per_row=3
         )
 
@@ -418,6 +418,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
             "plants": self.plants,
             "notifications_sent": self._notifications_sent,
             "notifications_enabled": self._notifications_enabled,
+            "_version": datetime.now().isoformat(),
         }
 
     # =============================================================================

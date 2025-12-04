@@ -181,6 +181,11 @@ class BayesianEnvironmentSensor(BinarySensorEntity):
 
     def _get_base_environment_state(self) -> EnvironmentState:
         """Fetch sensor values and return a structured EnvironmentState object."""
+        # Always fetch the latest config from the coordinator
+        growspace = self.coordinator.growspaces.get(self.growspace_id)
+        if growspace and growspace.environment_config:
+            self.env_config = growspace.environment_config
+
         temp = self._get_sensor_value(self.env_config.get("temperature_sensor"))
         humidity = self._get_sensor_value(self.env_config.get("humidity_sensor"))
         vpd = self._get_sensor_value(self.env_config.get("vpd_sensor"))

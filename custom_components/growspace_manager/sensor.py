@@ -176,8 +176,8 @@ async def _create_initial_entities(
         growspace_entities[growspace_id] = gs_entity
         initial_entities.append(gs_entity)
 
-        await _async_create_derivative_sensors(hass, config_entry, growspace)
         _handle_calculated_vpd_sensor(coordinator, growspace, initial_entities)
+        await _async_create_derivative_sensors(hass, config_entry, growspace)
 
         for plant in coordinator.get_growspace_plants(growspace_id):
             pe = PlantEntity(coordinator, plant)
@@ -278,16 +278,16 @@ def _handle_calculated_vpd_sensor(
 
 async def _ensure_special_growspaces(coordinator: GrowspaceCoordinator) -> None:
     """Ensure special growspaces exist."""
-    dry_id = coordinator._ensure_special_growspace(
+    dry_id = coordinator.ensure_special_growspace(
         "dry", "dry", rows=3, plants_per_row=3
     )
-    cure_id = coordinator._ensure_special_growspace(
+    cure_id = coordinator.ensure_special_growspace(
         "cure", "cure", rows=3, plants_per_row=3
     )
-    clone_id = coordinator._ensure_special_growspace(
+    clone_id = coordinator.ensure_special_growspace(
         "clone", "clone", rows=3, plants_per_row=3
     )
-    mother_id = coordinator._ensure_special_growspace(
+    mother_id = coordinator.ensure_special_growspace(
         "mother", "mother", rows=3, plants_per_row=3
     )
 
@@ -491,10 +491,9 @@ class AirExchangeSensor(CoordinatorEntity[GrowspaceCoordinator], SensorEntity):
         """Return the current recommended air exchange action."""
         # The actual state is calculated in the coordinator and stored.
         # This sensor just retrieves it.
-        recommendation = self.coordinator.data.get(
-            "air_exchange_recommendations", {}
-        ).get(self.growspace_id, "Idle")
-        return recommendation
+        return self.coordinator.data.get("air_exchange_recommendations", {}).get(
+            self.growspace_id, "Idle"
+        )
 
 
 class GrowspaceOverviewSensor(CoordinatorEntity[GrowspaceCoordinator], SensorEntity):
@@ -676,6 +675,13 @@ class GrowspaceOverviewSensor(CoordinatorEntity[GrowspaceCoordinator], SensorEnt
                 state_obj = self.coordinator.hass.states.get(humidifier_entity)
                 attributes["humidifier_entity"] = humidifier_entity
                 attributes["humidifier_value"] = state_obj.state if state_obj else None
+
+            # VPD Sensor
+            vpd_entity = env_config.get("vpd_sensor")
+            if vpd_entity:
+                state_obj = self.coordinator.hass.states.get(vpd_entity)
+                attributes["vpd_sensor"] = vpd_entity
+                attributes["vpd_value"] = state_obj.state if state_obj else None
 
         return attributes
 
