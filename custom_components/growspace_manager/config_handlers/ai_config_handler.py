@@ -22,7 +22,7 @@ _LOGGER = logging.getLogger(__name__)
 class AIConfigHandler:
     """Handler for AI configuration steps."""
 
-    def __init__(self, hass, config_entry):
+    def __init__(self, hass, config_entry) -> None:
         """Initialize the AI config handler."""
         self.hass = hass
         self.config_entry = config_entry
@@ -56,7 +56,7 @@ class AIConfigHandler:
             # If no conversation entities found, log a warning
             _LOGGER.warning(
                 "No conversation entities found. Please add a conversation integration "
-                "(like Google Generative AI, OpenAI, etc.) to Home Assistant."
+                "(like Google Generative AI, OpenAI, etc.) to Home Assistant"
             )
 
         assistant_options = [
