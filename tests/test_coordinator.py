@@ -155,7 +155,7 @@ async def test_ensure_special_growspace(coordinator):
     Args:
         coordinator: The mock GrowspaceCoordinator.
     """
-    gs_id = coordinator._ensure_special_growspace("mother", "Mother GS", 3, 3)
+    gs_id = coordinator.ensure_special_growspace("mother", "Mother GS", 3, 3)
     assert gs_id in coordinator.growspaces
     gs = coordinator.growspaces[gs_id]
     assert gs.name == "Mother GS"
@@ -719,7 +719,7 @@ async def test_async_load(coordinator):
     # Mock the store to return this data
     coordinator.storage_manager.store.async_load = AsyncMock(return_value=fake_data)
     coordinator.async_save = AsyncMock()
-    coordinator.strains.import_strains = AsyncMock()
+    coordinator.strain_library.import_strains = AsyncMock()
     coordinator.storage_manager.async_save = AsyncMock()
     await coordinator.async_load()
 
@@ -1445,7 +1445,7 @@ def coordinator(hass):
 @pytest.mark.asyncio
 async def test_init_with_invalid_growspace_data(hass, caplog):
     """Test coordinator initialization with invalid growspace data."""
-    caplog.set_level("WARNING")
+    caplog.set_level("ERROR")
 
     invalid_data = {
         "growspaces": {"gs1": "not_a_growspace_object"},
@@ -1453,14 +1453,14 @@ async def test_init_with_invalid_growspace_data(hass, caplog):
 
     GrowspaceCoordinator(hass, data=invalid_data)
 
-    warnings = [r.message for r in caplog.records if r.levelname == "WARNING"]
-    assert any("Failed to load growspace gs1" in w for w in warnings)
+    errors = [r.message for r in caplog.records if r.levelname == "ERROR"]
+    assert any("Failed to load growspace gs1" in e for e in errors)
 
 
 @pytest.mark.asyncio
 async def test_init_with_invalid_plant_data(hass, caplog):
     """Test coordinator initialization with invalid plant data."""
-    caplog.set_level("WARNING")
+    caplog.set_level("ERROR")
 
     invalid_data = {
         "growspaces": {
@@ -1471,8 +1471,8 @@ async def test_init_with_invalid_plant_data(hass, caplog):
 
     GrowspaceCoordinator(hass, data=invalid_data)
 
-    warnings = [r.message for r in caplog.records if r.levelname == "WARNING"]
-    assert any("Failed to load plant p1" in w for w in warnings)
+    errors = [r.message for r in caplog.records if r.levelname == "ERROR"]
+    assert any("Failed to load plant p1" in e for e in errors)
 
 
 @pytest.mark.asyncio
@@ -1700,7 +1700,7 @@ async def test_ensure_special_growspace_updates_name(hass, caplog):
         id="dry", name="Old Dry Name", rows=1, plants_per_row=1
     )
 
-    coordinator._ensure_special_growspace("dry", "Dry")
+    coordinator.ensure_special_growspace("dry", "Dry")
 
     assert coordinator.growspaces["dry"].name == "Dry"
     assert "Updated growspace name" in caplog.text
@@ -1971,7 +1971,7 @@ async def test_move_to_clone_growspace_no_position(hass, caplog):
     caplog.set_level("WARNING")
     coordinator = GrowspaceCoordinator(hass, data={})
     plant = MagicMock()
-    setattr(coordinator, "_ensure_special_growspace", MagicMock(return_value="clone"))
+    setattr(coordinator, "ensure_special_growspace", MagicMock(return_value="clone"))
     setattr(
         coordinator.validator,
         "find_first_available_position",

@@ -72,7 +72,7 @@ async def ensure_default_growspaces(coordinator):
         created_count = 0
         for growspace_id, name, rows, plants_per_row in default_growspaces:
             # Use the coordinator's method to ensure special growspaces
-            canonical_id = coordinator._ensure_special_growspace(  # noqa: SLF001
+            canonical_id = coordinator.ensure_special_growspace(
                 growspace_id, name, rows, plants_per_row
             )
             if canonical_id not in coordinator.growspaces:
@@ -1611,7 +1611,7 @@ class OptionsFlowHandler(OptionsFlow):
                 )
 
                 # Reload strains to reflect changes
-                await coordinator.strains.async_load()
+                await coordinator.strain_library.async_load()
 
                 return await self.async_step_manage_strain_library()
             except FileNotFoundError:
@@ -1647,7 +1647,7 @@ class OptionsFlowHandler(OptionsFlow):
 
         try:
             zip_path = await coordinator.import_export_manager.export_library(
-                coordinator.strains.get_all(), export_dir
+                coordinator.strain_library.get_all(), export_dir
             )
             return self.async_show_form(
                 step_id="export_strain_library",

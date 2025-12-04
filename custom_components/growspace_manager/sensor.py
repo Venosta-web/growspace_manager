@@ -23,12 +23,17 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import DOMAIN
+
 # Local / relative imports
 from .coordinator import GrowspaceCoordinator
 from .helpers import async_setup_statistics_sensor, async_setup_trend_sensor
 from .models import Growspace, Plant
-from .utils import (VPDCalculator, calculate_days_since, calculate_plant_stage,
-                    days_to_week)
+from .utils import (
+    VPDCalculator,
+    calculate_days_since,
+    calculate_plant_stage,
+    days_to_week,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -97,7 +102,7 @@ async def async_setup_entry(
         )
 
     # Ensure dry and cure growspaces exist after coordinator setup
-    await _ensure_special_growspaces(coordinator)
+    await ensure_special_growspaces(coordinator)
 
     # Create global VPD sensors
     global_entities = []
@@ -271,7 +276,7 @@ def _handle_calculated_vpd_sensor(
         )
 
 
-async def _ensure_special_growspaces(coordinator: GrowspaceCoordinator) -> None:
+async def ensure_special_growspaces(coordinator: GrowspaceCoordinator) -> None:
     """Ensure special growspaces exist."""
     dry_id = coordinator.ensure_special_growspace(
         "dry", "dry", rows=3, plants_per_row=3
@@ -798,13 +803,13 @@ class StrainLibrarySensor(CoordinatorEntity[GrowspaceCoordinator], SensorEntity)
     @property
     def native_value(self) -> int:
         """Return the number of unique strains in the library."""
-        return len(self.coordinator.strains.get_all())
+        return len(self.coordinator.strain_library.get_all())
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
         """Return the calculated strain analytics as state attributes."""
         # Use the cached analytics from StrainLibrary to avoid heavy computation on the main loop.
-        return self.coordinator.strains.get_analytics()
+        return self.coordinator.strain_library.get_analytics()
 
 
 class GrowspaceListSensor(SensorEntity):

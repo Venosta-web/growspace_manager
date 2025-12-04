@@ -82,7 +82,7 @@ def mock_coordinator():
 
 
 @pytest.mark.asyncio
-async def test_async_setup_entry_adds_entities(mock_coordinator):
+async def test_async_setup_entry_adds_entities(mock_coordinator) -> None:
     """Test that `async_setup_entry` correctly adds all expected sensor entities."""
     hass = MagicMock()
     hass.config.config_dir = "/config"
@@ -103,13 +103,11 @@ async def test_async_setup_entry_adds_entities(mock_coordinator):
         ]
     )
     mock_coordinator.async_save = AsyncMock()
-    mock_coordinator._ensure_special_growspace = Mock(
+    mock_coordinator.ensure_special_growspace = Mock(
         side_effect=lambda x, y, rows, plants_per_row: x
     )
     mock_coordinator.async_set_updated_data = AsyncMock()
     mock_coordinator.options = {}
-
-
 
     added_entities = []
 
@@ -118,7 +116,13 @@ async def test_async_setup_entry_adds_entities(mock_coordinator):
         added_entities.extend(entities)
 
     await async_setup_entry(
-        hass, Mock(entry_id="entry_1", options={}, runtime_data=Mock(coordinator=mock_coordinator, created_entities=[])), async_add_entities
+        hass,
+        Mock(
+            entry_id="entry_1",
+            options={},
+            runtime_data=Mock(coordinator=mock_coordinator, created_entities=[]),
+        ),
+        async_add_entities,
     )
 
     # Now entities should be added
@@ -133,11 +137,10 @@ async def test_async_setup_entry_adds_entities(mock_coordinator):
 
 
 @pytest.mark.asyncio
-async def test_async_setup_entry_calculated_vpd(mock_coordinator):
+async def test_async_setup_entry_calculated_vpd(mock_coordinator) -> None:
     """Test that `async_setup_entry` creates CalculatedVpdSensor."""
     hass = MagicMock()
     hass.config.config_dir = "/config"
-
 
     # Growspace with temp/humidity but no VPD sensor
     mock_coordinator.growspaces = {
@@ -156,7 +159,7 @@ async def test_async_setup_entry_calculated_vpd(mock_coordinator):
     }
     mock_coordinator.get_growspace_plants = Mock(return_value=[])
     mock_coordinator.async_save = AsyncMock()
-    mock_coordinator._ensure_special_growspace = Mock(
+    mock_coordinator.ensure_special_growspace = Mock(
         side_effect=lambda x, y, rows, plants_per_row: x
     )
     mock_coordinator.async_set_updated_data = AsyncMock()
@@ -178,7 +181,13 @@ async def test_async_setup_entry_calculated_vpd(mock_coordinator):
         ),
     ):
         await async_setup_entry(
-            hass, Mock(entry_id="entry_1", options={}, runtime_data=Mock(coordinator=mock_coordinator, created_entities=[])), async_add_entities
+            hass,
+            Mock(
+                entry_id="entry_1",
+                options={},
+                runtime_data=Mock(coordinator=mock_coordinator, created_entities=[]),
+            ),
+            async_add_entities,
         )
 
     # Check for CalculatedVpdSensor
@@ -198,16 +207,15 @@ async def test_async_setup_entry_calculated_vpd(mock_coordinator):
 
 
 @pytest.mark.asyncio
-async def test_async_setup_entry_global_vpd(mock_coordinator):
+async def test_async_setup_entry_global_vpd(mock_coordinator) -> None:
     """Test that `async_setup_entry` creates global VPD sensors."""
     hass = MagicMock()
     hass.config.config_dir = "/config"
 
-
     mock_coordinator.growspaces = {}
     mock_coordinator.get_growspace_plants = Mock(return_value=[])
     mock_coordinator.async_save = AsyncMock()
-    mock_coordinator._ensure_special_growspace = Mock(
+    mock_coordinator.ensure_special_growspace = Mock(
         side_effect=lambda x, y, rows, plants_per_row: x
     )
     mock_coordinator.async_set_updated_data = AsyncMock()
@@ -227,7 +235,13 @@ async def test_async_setup_entry_global_vpd(mock_coordinator):
         added_entities.extend(entities)
 
     await async_setup_entry(
-        hass, Mock(entry_id="entry_1", options=options, runtime_data=Mock(coordinator=mock_coordinator, created_entities=[])), async_add_entities
+        hass,
+        Mock(
+            entry_id="entry_1",
+            options=options,
+            runtime_data=Mock(coordinator=mock_coordinator, created_entities=[]),
+        ),
+        async_add_entities,
     )
 
     # Check for global VPD sensors
@@ -256,11 +270,10 @@ async def test_async_setup_entry_global_vpd(mock_coordinator):
 
 
 @pytest.mark.asyncio
-async def test_async_setup_entry_dynamic_updates(mock_coordinator):
+async def test_async_setup_entry_dynamic_updates(mock_coordinator) -> None:
     """Test dynamic addition and removal of entities."""
     hass = MagicMock()
     hass.config.config_dir = "/config"
-
 
     mock_coordinator.hass = hass
 
@@ -268,7 +281,7 @@ async def test_async_setup_entry_dynamic_updates(mock_coordinator):
     mock_coordinator.plants = {}
     mock_coordinator.get_growspace_plants = Mock(return_value=[])
     mock_coordinator.async_save = AsyncMock()
-    mock_coordinator._ensure_special_growspace = Mock(
+    mock_coordinator.ensure_special_growspace = Mock(
         side_effect=lambda x, y, rows, plants_per_row: x
     )
     mock_coordinator.async_set_updated_data = AsyncMock()
@@ -291,7 +304,13 @@ async def test_async_setup_entry_dynamic_updates(mock_coordinator):
 
     # Setup with empty coordinator
     await async_setup_entry(
-        hass, Mock(entry_id="entry_1", options={}, runtime_data=Mock(coordinator=mock_coordinator, created_entities=[])), async_add_entities
+        hass,
+        Mock(
+            entry_id="entry_1",
+            options={},
+            runtime_data=Mock(coordinator=mock_coordinator, created_entities=[]),
+        ),
+        async_add_entities,
     )
 
     assert listener_callback is not None
@@ -370,7 +389,7 @@ async def test_async_setup_entry_dynamic_updates(mock_coordinator):
 
 
 @pytest.mark.asyncio
-async def test_async_create_derivative_sensors(mock_coordinator):
+async def test_async_create_derivative_sensors(mock_coordinator) -> None:
     """Test that _async_create_derivative_sensors creates trend and statistics sensors."""
     hass = MagicMock()
     config_entry = Mock(entry_id="entry_1")
@@ -425,7 +444,7 @@ async def test_async_create_derivative_sensors(mock_coordinator):
 # --------------------
 # VpdSensor
 # --------------------
-def test_vpd_sensor_weather_entity(mock_coordinator):
+def test_vpd_sensor_weather_entity(mock_coordinator) -> None:
     """Test VpdSensor with a weather entity."""
     hass = MagicMock()
     weather_state = MagicMock()
@@ -439,7 +458,7 @@ def test_vpd_sensor_weather_entity(mock_coordinator):
     assert sensor.native_value is not None
 
 
-def test_vpd_sensor_temp_humidity_entities(mock_coordinator):
+def test_vpd_sensor_temp_humidity_entities(mock_coordinator) -> None:
     """Test VpdSensor with temperature and humidity sensors."""
     hass = MagicMock()
     temp_state = MagicMock()
@@ -460,7 +479,7 @@ def test_vpd_sensor_temp_humidity_entities(mock_coordinator):
     assert sensor.native_value is not None
 
 
-def test_vpd_sensor_invalid_states(mock_coordinator):
+def test_vpd_sensor_invalid_states(mock_coordinator) -> None:
     """Test VpdSensor with invalid sensor states."""
     hass = MagicMock()
     temp_state = MagicMock()
@@ -481,7 +500,7 @@ def test_vpd_sensor_invalid_states(mock_coordinator):
     assert sensor.native_value is None
 
 
-def test_vpd_sensor_value_error(mock_coordinator):
+def test_vpd_sensor_value_error(mock_coordinator) -> None:
     """Test VpdSensor handles ValueError during float conversion."""
     hass = MagicMock()
     temp_state = MagicMock()
@@ -505,7 +524,7 @@ def test_vpd_sensor_value_error(mock_coordinator):
 # --------------------
 # GrowspaceOverviewSensor
 # --------------------
-def test_growspace_overview_sensor_state_and_attributes(mock_coordinator):
+def test_growspace_overview_sensor_state_and_attributes(mock_coordinator) -> None:
     """Test the state and basic attributes of the `GrowspaceOverviewSensor`.
 
     Args:
@@ -531,7 +550,7 @@ def test_growspace_overview_sensor_state_and_attributes(mock_coordinator):
     assert attrs["grid"]["position_1_1"]["plant_id"] == "p1"
 
 
-def test_growspace_overview_sensor_environment_attributes(mock_coordinator):
+def test_growspace_overview_sensor_environment_attributes(mock_coordinator) -> None:
     """Test GrowspaceOverviewSensor environment attributes."""
     gs_mock = mock_coordinator.growspaces["gs1"]
     gs_mock.irrigation_config = {}
@@ -555,11 +574,14 @@ def test_growspace_overview_sensor_environment_attributes(mock_coordinator):
     humidifier_state = MagicMock()
     humidifier_state.state = "off"
 
-    hass.states.get.side_effect = lambda entity_id: {
-        "switch.dehumidifier": dehum_state,
-        "sensor.exhaust": exhaust_state,
-        "sensor.humidifier": humidifier_state,
-    }.get(entity_id)
+    def get_state(entity_id):
+        return {
+            "switch.dehumidifier": dehum_state,
+            "sensor.exhaust": exhaust_state,
+            "sensor.humidifier": humidifier_state,
+        }.get(entity_id)
+
+    hass.states.get.side_effect = get_state
 
     mock_coordinator.hass = hass
 
@@ -596,7 +618,7 @@ def test_growspace_overview_sensor_environment_attributes(mock_coordinator):
 )
 def test_growspace_overview_sensor_special_growspaces(
     mock_coordinator, special_id, special_name
-):
+) -> None:
     """Test GrowspaceOverviewSensor for special growspaces."""
     special_growspace = Mock(id=special_id, name=special_name)
     sensor = GrowspaceOverviewSensor(mock_coordinator, special_id, special_growspace)
@@ -606,7 +628,7 @@ def test_growspace_overview_sensor_special_growspaces(
 # --------------------
 # PlantEntity
 # --------------------
-def test_plant_entity_state_and_attributes(mock_coordinator):
+def test_plant_entity_state_and_attributes(mock_coordinator) -> None:
     """Test the state and attributes of the `PlantEntity` sensor.
 
     Args:
@@ -632,7 +654,7 @@ def test_plant_entity_state_and_attributes(mock_coordinator):
     assert "veg_days" in attrs
 
 
-def test_plant_entity_missing_plant(mock_coordinator):
+def test_plant_entity_missing_plant(mock_coordinator) -> None:
     """Test PlantEntity when the plant is missing from the coordinator."""
     plant = mock_coordinator.plants["p1"]
     entity = PlantEntity(mock_coordinator, plant)
@@ -642,7 +664,7 @@ def test_plant_entity_missing_plant(mock_coordinator):
 
 
 @pytest.mark.asyncio
-async def test_plant_entity_added_to_hass(mock_coordinator):
+async def test_plant_entity_added_to_hass(mock_coordinator) -> None:
     """Test PlantEntity registers listener when added to hass."""
     plant = list(mock_coordinator.plants.values())[0]
     entity = PlantEntity(mock_coordinator, plant)
@@ -658,7 +680,7 @@ async def test_plant_entity_added_to_hass(mock_coordinator):
 # --------------------
 # StrainLibrarySensor
 # --------------------
-def test_strain_library_sensor_state_and_attributes(mock_coordinator):
+def test_strain_library_sensor_state_and_attributes(mock_coordinator) -> None:
     """Test the state and attributes of the `StrainLibrarySensor`.
 
     Args:
@@ -666,7 +688,7 @@ def test_strain_library_sensor_state_and_attributes(mock_coordinator):
     """
     # Mock the new data structure from StrainLibrary.get_all()
     # Structure: {strain_name: { "phenotypes": { pheno_name: { "harvests": [], ...meta... } }, "meta": {} }}
-    mock_coordinator.strains.get_all.return_value = {
+    mock_coordinator.strain_library.get_all.return_value = {
         "Strain A": {
             "phenotypes": {
                 "Pheno A": {
@@ -701,7 +723,7 @@ def test_strain_library_sensor_state_and_attributes(mock_coordinator):
     }
 
     # Mock get_analytics to return what we expect, since the sensor calls it directly
-    mock_coordinator.strains.get_analytics.return_value = {
+    mock_coordinator.strain_library.get_analytics.return_value = {
         "strains": {
             "Strain A": {
                 "phenotypes": {
@@ -773,7 +795,7 @@ def test_strain_library_sensor_state_and_attributes(mock_coordinator):
 # --------------------
 # GrowspaceListSensor
 # --------------------
-def test_growspace_list_sensor_state_and_attributes(mock_coordinator):
+def test_growspace_list_sensor_state_and_attributes(mock_coordinator) -> None:
     """Test the state and attributes of the `GrowspaceListSensor`.
 
     Args:
@@ -789,7 +811,7 @@ def test_growspace_list_sensor_state_and_attributes(mock_coordinator):
 # --------------------
 # CalculatedVpdSensor
 # --------------------
-def test_calculated_vpd_sensor(mock_coordinator):
+def test_calculated_vpd_sensor(mock_coordinator) -> None:
     """Test CalculatedVpdSensor."""
 
     hass = MagicMock()
@@ -817,7 +839,7 @@ def test_calculated_vpd_sensor(mock_coordinator):
     )
 
 
-def test_calculated_vpd_sensor_invalid_states(mock_coordinator):
+def test_calculated_vpd_sensor_invalid_states(mock_coordinator) -> None:
     hass = MagicMock()
     temp_state = MagicMock()
     temp_state.state = "unknown"
@@ -833,7 +855,7 @@ def test_calculated_vpd_sensor_invalid_states(mock_coordinator):
     assert sensor.native_value is None
 
 
-def test_calculated_vpd_sensor_value_error(mock_coordinator):
+def test_calculated_vpd_sensor_value_error(mock_coordinator) -> None:
     """Test CalculatedVpdSensor handles ValueError."""
     hass = MagicMock()
     temp_state = MagicMock()
@@ -853,7 +875,7 @@ def test_calculated_vpd_sensor_value_error(mock_coordinator):
 # --------------------
 # AirExchangeSensor
 # --------------------
-def test_air_exchange_sensor(mock_coordinator):
+def test_air_exchange_sensor(mock_coordinator) -> None:
     """Test AirExchangeSensor."""
     mock_coordinator.data = {"air_exchange_recommendations": {"gs1": "Open Window"}}
 

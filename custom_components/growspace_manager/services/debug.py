@@ -2,8 +2,9 @@
 
 import logging
 
-from homeassistant.components.persistent_notification import \
-    async_create as create_notification
+from homeassistant.components.persistent_notification import (
+    async_create as create_notification,
+)
 from homeassistant.core import HomeAssistant, ServiceCall
 
 from ..coordinator import GrowspaceCoordinator
@@ -74,7 +75,7 @@ async def _cleanup_dry_legacy_growspaces(
     legacy_dry: list[str],
 ) -> None:
     for legacy_id in legacy_dry:
-        canonical_dry = coordinator._ensure_special_growspace("dry", "dry")
+        canonical_dry = coordinator.ensure_special_growspace("dry", "dry")
         await _migrate_plants_from_legacy_growspace(
             coordinator, legacy_id, canonical_dry, migrated_plants_info
         )
@@ -89,7 +90,7 @@ async def _cleanup_cure_legacy_growspaces(
     legacy_cure: list[str],
 ) -> None:
     for legacy_id in legacy_cure:
-        canonical_cure = coordinator._ensure_special_growspace("cure", "cure")
+        canonical_cure = coordinator.ensure_special_growspace("cure", "cure")
         await _migrate_plants_from_legacy_growspace(
             coordinator, legacy_id, canonical_cure, migrated_plants_info
         )
@@ -139,7 +140,7 @@ async def handle_debug_cleanup_legacy(
         if not cure_only:
             for legacy_id in legacy_dry:
                 # Ensure canonical dry exists
-                canonical_dry = coordinator._ensure_special_growspace("dry", "dry")
+                canonical_dry = coordinator.ensure_special_growspace("dry", "dry")
                 await _migrate_plants_from_legacy_growspace(
                     coordinator, legacy_id, canonical_dry, migrated_plants_info
                 )
@@ -148,7 +149,7 @@ async def handle_debug_cleanup_legacy(
         # Cleanup cure legacy growspaces
         if not dry_only:
             for legacy_id in legacy_cure:
-                canonical_cure = coordinator._ensure_special_growspace("cure", "cure")
+                canonical_cure = coordinator.ensure_special_growspace("cure", "cure")
                 await _migrate_plants_from_legacy_growspace(
                     coordinator, legacy_id, canonical_cure, migrated_plants_info
                 )
@@ -280,7 +281,7 @@ async def _handle_reset_dry_growspace(
         coordinator.growspaces.pop(dry_id, None)
         _LOGGER.debug("Removed dry growspace %s", dry_id)
 
-    canonical_dry = coordinator._ensure_special_growspace("dry", "dry")
+    canonical_dry = coordinator.ensure_special_growspace("dry", "dry")
 
     if preserve_plants and dry_plants_data_to_restore:
         await _restore_plants_to_canonical_growspace(
@@ -317,7 +318,7 @@ async def _handle_reset_cure_growspace(
         coordinator.growspaces.pop(cure_id, None)
         _LOGGER.debug("Removed cure growspace %s", cure_id)
 
-    canonical_cure = coordinator._ensure_special_growspace("cure", "cure")
+    canonical_cure = coordinator.ensure_special_growspace("cure", "cure")
 
     if preserve_plants and cure_plants_data_to_restore:
         await _restore_plants_to_canonical_growspace(
@@ -397,7 +398,7 @@ async def handle_debug_consolidate_duplicate_special(
             )
 
             if canonical_dry not in coordinator.growspaces:
-                coordinator._ensure_special_growspace("dry", "dry")
+                coordinator.ensure_special_growspace("dry", "dry")
 
             await _consolidate_plants_to_canonical_growspace(
                 coordinator, duplicate_ids, canonical_dry, "dry"
@@ -416,7 +417,7 @@ async def handle_debug_consolidate_duplicate_special(
             )
 
             if canonical_cure not in coordinator.growspaces:
-                coordinator._ensure_special_growspace("cure", "cure")
+                coordinator.ensure_special_growspace("cure", "cure")
 
             await _consolidate_plants_to_canonical_growspace(
                 coordinator, duplicate_ids, canonical_cure, "cure"

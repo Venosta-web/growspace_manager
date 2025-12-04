@@ -43,6 +43,10 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
     entities.
     """
 
+    growspaces: dict[str, Growspace] = {}
+    plants: dict[str, Plant] = {}
+    strain_library: StrainLibrary | None = None
+
     def __init__(
         self,
         hass: HomeAssistant,
@@ -73,9 +77,9 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
         # Initialize strain library
         if strain_library is None:
             # Fallback for testing or legacy init
-            self.strains = StrainLibrary(hass)
+            self.strain_library = StrainLibrary(hass)
         else:
-            self.strains = strain_library
+            self.strain_library = strain_library
 
         self.migration_manager = MigrationManager(self)
         self.validator = GrowspaceValidator(self)
@@ -973,7 +977,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
         self.validator.validate_plant_exists(mother_plant_id)
 
         mother = self.plants[mother_plant_id]
-        clone_gs_id = self._ensure_special_growspace("clone", "clone", 5, 5)
+        clone_gs_id = self.ensure_special_growspace("clone", "clone", 5, 5)
         clone_ids = []
 
         for _ in range(num_clones):
@@ -1010,7 +1014,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
         if clone.stage != "clone":
             raise ValueError("Plant is not in clone stage")
 
-        veg_gs_id = self._ensure_special_growspace("veg", "veg", 5, 5)
+        veg_gs_id = self.ensure_special_growspace("veg", "veg", 5, 5)
         row, col = self.validator.find_first_available_position(veg_gs_id)
 
         await self.async_update_plant(
@@ -1504,7 +1508,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
         Returns:
             True, as the plant is always moved.
         """
-        clone_id = self._ensure_special_growspace("clone", "clone", 5, 5)
+        clone_id = self.ensure_special_growspace("clone", "clone", 5, 5)
         plant.growspace_id = clone_id
 
         try:
@@ -1544,12 +1548,12 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
         flower_days = self.calculate_days_in_stage(plant, "flower")
 
         if veg_days > 0 or flower_days > 0:
-            await self.strains.record_harvest(
+            await self.strain_library.record_harvest(
                 plant.strain, plant.phenotype, veg_days, flower_days
             )
 
         # Now, proceed with moving the plant
-        dry_id = self._ensure_special_growspace("dry", "dry")
+        dry_id = self.ensure_special_growspace("dry", "dry")
         plant.growspace_id = dry_id
 
         growspace = self.growspaces.get(dry_id)
@@ -1588,7 +1592,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
         Returns:
             True, as the plant is always moved.
         """
-        cure_id = self._ensure_special_growspace("cure", "cure")
+        cure_id = self.ensure_special_growspace("cure", "cure")
         plant.growspace_id = cure_id
 
         try:
@@ -1652,7 +1656,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
             A sorted list of unique strain names.
         """
         # The keys are just the strain names in the new hierarchical structure
-        return sorted(self.strains.get_all().keys())
+        return sorted(self.strain_library.get_all().keys())
 
     def export_strain_library(self) -> list[str]:
         """Export all strains from the library.
@@ -1668,7 +1672,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
         Returns:
             The number of strains cleared.
         """
-        return await self.strains.clear()
+        return await self.strain_library.clear()
 
     # =============================================================================
     # QUERY AND CALCULATION METHODS

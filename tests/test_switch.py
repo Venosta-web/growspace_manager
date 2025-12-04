@@ -65,14 +65,17 @@ async def test_async_setup_entry_creates_entities(mock_hass, mock_coordinator):
 
     mock_coordinator.growspaces = {"gs1": gs1, "gs2": gs2}
     mock_coordinator.get_growspace_plants = Mock(return_value=[])
-    mock_coordinator._ensure_special_growspace = AsyncMock(return_value="special_gs")
+    mock_coordinator.ensure_special_growspace = AsyncMock(return_value="special_gs")
     mock_coordinator.async_save = AsyncMock()
     mock_coordinator.async_set_updated_data = Mock()
 
     mock_coordinator.is_notifications_enabled = Mock(return_value=True)
 
-
-    await async_setup_entry(mock_hass, Mock(entry_id="entry1", runtime_data=Mock(coordinator=mock_coordinator)), fake_add_entities)
+    await async_setup_entry(
+        mock_hass,
+        Mock(entry_id="entry1", runtime_data=Mock(coordinator=mock_coordinator)),
+        fake_add_entities,
+    )
 
     assert len(added_entities) == 1
     switch = added_entities[0]

@@ -457,7 +457,8 @@ async def test_strain_library_upload_view(mock_hass):
     mock_strain_library = AsyncMock()
     mock_strain_library.import_library_from_zip = AsyncMock(return_value=5)
 
-    view = StrainLibraryUploadView(mock_hass, mock_strain_library)
+    mock_coordinator = AsyncMock()
+    view = StrainLibraryUploadView(mock_hass, mock_strain_library, mock_coordinator)
 
     # Test missing file
     mock_request = MagicMock()
@@ -482,8 +483,8 @@ async def test_strain_library_upload_view(mock_hass):
         patch(
             "custom_components.growspace_manager.tempfile.NamedTemporaryFile"
         ) as mock_temp,
-        patch("custom_components.growspace_manager.os.remove") as mock_remove,
-        patch("custom_components.growspace_manager.os.path.exists", return_value=True),
+        patch("pathlib.Path.unlink") as mock_unlink,
+        patch("pathlib.Path.exists", return_value=True),
     ):
         mock_temp_file = MagicMock()
         mock_temp.return_value.__enter__.return_value = mock_temp_file
@@ -500,7 +501,7 @@ async def test_strain_library_upload_view(mock_hass):
         assert body["imported_count"] == 5
 
         mock_strain_library.import_library_from_zip.assert_called_once()
-        mock_remove.assert_called_once_with(safe_temp_path)
+        mock_unlink.assert_called_once()
 
     # Test exception handling
     mock_reader.next = AsyncMock(return_value=mock_field)
@@ -509,8 +510,8 @@ async def test_strain_library_upload_view(mock_hass):
 
     with (
         patch("custom_components.growspace_manager.tempfile.NamedTemporaryFile"),
-        patch("custom_components.growspace_manager.os.remove"),
-        patch("custom_components.growspace_manager.os.path.exists", return_value=True),
+        patch("pathlib.Path.unlink"),
+        patch("pathlib.Path.exists", return_value=True),
     ):
         response = await view.post(mock_request)
         assert response.status == 200
