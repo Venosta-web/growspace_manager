@@ -1795,7 +1795,7 @@ class OptionsFlowHandler(OptionsFlow):
         schema_dict[
             vol.Optional(
                 "exhaust_fan_entity",
-                default=growspace_options.get("exhaust_fan_entity"),
+                default=growspace_options.get("exhaust_fan_entity") or vol.UNDEFINED,
             )
         ] = selector.EntitySelector(selector.EntitySelectorConfig(domain="fan"))
 
@@ -1803,7 +1803,7 @@ class OptionsFlowHandler(OptionsFlow):
         schema_dict[
             vol.Optional(
                 "humidifier_entity",
-                default=growspace_options.get("humidifier_entity"),
+                default=growspace_options.get("humidifier_entity") or vol.UNDEFINED,
             )
         ] = selector.EntitySelector(selector.EntitySelectorConfig(domain="humidifier"))
         for feature in ["exhaust", "humidifier"]:
