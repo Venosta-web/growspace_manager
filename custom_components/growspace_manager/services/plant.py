@@ -1,11 +1,12 @@
 """Services related to Plants."""
 
-import logging
 from datetime import date, datetime
+import logging
 from typing import Any
 
-from homeassistant.components.persistent_notification import \
-    async_create as create_notification
+from homeassistant.components.persistent_notification import (
+    async_create as create_notification,
+)
 from homeassistant.core import HomeAssistant, ServiceCall
 from homeassistant.exceptions import ServiceValidationError
 from homeassistant.helpers import entity_registry as er

@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 import base64
+from io import BytesIO
 import logging
 import os
-from io import BytesIO
 
 from PIL import Image
 

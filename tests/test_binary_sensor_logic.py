@@ -62,7 +62,7 @@ def set_sensor_state(hass: HomeAssistant, entity_id, state, attributes=None):
 @pytest.mark.asyncio
 async def test_stress_sensor_high_heat(
     mock_recorder, hass: HomeAssistant, mock_coordinator, env_config
-):
+) -> None:
     """Test BayesianStressSensor for high heat."""
     hass.data[DOMAIN] = {MOCK_CONFIG_ENTRY_ID: {"coordinator": mock_coordinator}}
 
@@ -105,7 +105,7 @@ async def test_stress_sensor_high_heat(
 @pytest.mark.asyncio
 async def test_mold_risk_sensor_late_flower(
     mock_recorder, hass: HomeAssistant, mock_coordinator, env_config
-):
+) -> None:
     """Test BayesianMoldRiskSensor in late flower."""
     hass.data[DOMAIN] = {MOCK_CONFIG_ENTRY_ID: {"coordinator": mock_coordinator}}
 
@@ -141,12 +141,13 @@ async def test_mold_risk_sensor_late_flower(
                 utcnow().date() - datetime.fromisoformat(date_str).date()
             ).days,
         ),
-        patch(
-            "custom_components.growspace_manager.binary_sensor.BayesianEnvironmentSensor._async_analyze_sensor_trend",
+        patch.object(sensor, "async_write_ha_state", new_callable=MagicMock),
+        patch.object(
+            sensor,
+            "async_analyze_sensor_trend",
             new_callable=AsyncMock,
             return_value={"trend": "stable", "crossed_threshold": False},
         ),
-        patch.object(sensor, "async_write_ha_state", new_callable=MagicMock),
     ):
         await sensor._async_update_probability()
 
@@ -157,7 +158,7 @@ async def test_mold_risk_sensor_late_flower(
 @pytest.mark.asyncio
 async def test_optimal_conditions_sensor(
     hass: HomeAssistant, mock_coordinator, env_config
-):
+) -> None:
     """Test BayesianOptimalConditionsSensor for optimal conditions."""
     hass.data[DOMAIN] = {MOCK_CONFIG_ENTRY_ID: {"coordinator": mock_coordinator}}
 

@@ -6,9 +6,9 @@ import logging
 
 import voluptuous as vol
 
-import homeassistant.helpers.config_validation as cv
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import intent
+import homeassistant.helpers.config_validation as cv
 
 from .const import DOMAIN
 

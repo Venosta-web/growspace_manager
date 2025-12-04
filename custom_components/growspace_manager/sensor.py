@@ -683,6 +683,15 @@ class GrowspaceOverviewSensor(CoordinatorEntity[GrowspaceCoordinator], SensorEnt
                 attributes["vpd_sensor"] = vpd_entity
                 attributes["vpd_value"] = state_obj.state if state_obj else None
 
+            # Soil Moisture Sensor
+            soil_moisture_entity = env_config.get("soil_moisture_sensor")
+            if soil_moisture_entity:
+                state_obj = self.coordinator.hass.states.get(soil_moisture_entity)
+                attributes["soil_moisture_sensor"] = soil_moisture_entity
+                attributes["soil_moisture_value"] = (
+                    state_obj.state if state_obj else None
+                )
+
         return attributes
 
 

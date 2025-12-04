@@ -7,8 +7,8 @@ import json
 import logging
 import os
 import shutil
-import zipfile
 from typing import Any
+import zipfile
 
 from homeassistant.core import HomeAssistant
 

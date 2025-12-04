@@ -9,8 +9,12 @@ import voluptuous as vol
 
 from homeassistant.helpers import selector
 
-from ..const import (AI_PERSONALITIES, CONF_AI_ENABLED, CONF_ASSISTANT_ID,
-                     CONF_NOTIFICATION_PERSONALITY)
+from ..const import (
+    AI_PERSONALITIES,
+    CONF_AI_ENABLED,
+    CONF_ASSISTANT_ID,
+    CONF_NOTIFICATION_PERSONALITY,
+)
 
 _LOGGER = logging.getLogger(__name__)
 

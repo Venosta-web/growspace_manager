@@ -190,4 +190,6 @@ class EnvironmentState:
     fan_off: bool | None
     dehumidifier_on: bool | None = None
     exhaust_value: float | None = None
+    exhaust_value: float | None = None
     humidifier_value: float | None = None
+    soil_moisture: float | None = None
