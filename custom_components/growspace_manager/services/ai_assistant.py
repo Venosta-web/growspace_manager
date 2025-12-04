@@ -38,12 +38,15 @@ class GrowAssistant:
     def _get_ai_settings(self) -> dict[str, Any] | None:
         """Get and validate AI settings from coordinator options."""
         ai_settings = self.coordinator.options.get("ai_settings", {})
+        _LOGGER.debug("Retrieved AI settings from coordinator: %s", ai_settings)
 
         if not ai_settings.get(CONF_AI_ENABLED):
+            _LOGGER.debug("AI features are disabled in settings")
             return None
 
         agent_id = ai_settings.get(CONF_ASSISTANT_ID)
         if not agent_id:
+            _LOGGER.warning("AI enabled but no assistant ID configured")
             return None
 
         return ai_settings
@@ -339,9 +342,23 @@ class GrowAssistant:
             AI-generated advice string
         """
         ai_settings = self._get_ai_settings()
-        agent_id = None
-        if ai_settings:
-            agent_id = ai_settings.get(CONF_ASSISTANT_ID)
+
+        # More descriptive error if settings are missing
+        if not ai_settings:
+            # Check raw options to give better feedback
+            raw_settings = self.coordinator.options.get("ai_settings", {})
+            if not raw_settings.get(CONF_AI_ENABLED):
+                raise ServiceValidationError(
+                    "AI assistant is not enabled. Please go to the Growspace Manager integration settings to enable it."
+                )
+            if not raw_settings.get(CONF_ASSISTANT_ID):
+                raise ServiceValidationError(
+                    "AI assistant enabled but no assistant ID selected. Please configure an assistant in settings."
+                )
+            # Fallback
+            raise ServiceValidationError("AI settings are invalid or incomplete.")
+
+        agent_id = ai_settings.get(CONF_ASSISTANT_ID)
 
         if max_length is None:
             max_length = (
@@ -368,6 +385,7 @@ class GrowAssistant:
         # Call the conversation API
         try:
             if not agent_id:
+                # Should be caught above, but double check
                 raise ServiceValidationError(
                     "AI assistant is not enabled. Please go to the Growspace Manager integration settings to enable it."
                 )
