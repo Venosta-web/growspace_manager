@@ -3,9 +3,8 @@
 import logging
 
 import homeassistant.helpers.device_registry as dr
-from homeassistant.components.persistent_notification import (
-    async_create as create_notification,
-)
+from homeassistant.components.persistent_notification import \
+    async_create as create_notification
 from homeassistant.core import HomeAssistant, ServiceCall
 
 from ..const import DOMAIN
@@ -50,7 +49,7 @@ async def handle_add_growspace(
         _LOGGER.error("Failed to add growspace: %s", err)
         create_notification(
             hass,
-            f"Failed to add growspace: {str(err)}",
+            f"Failed to add growspace: {err!s}",
             title="Growspace Manager Error",
         )
         raise
@@ -74,7 +73,7 @@ async def handle_remove_growspace(
         _LOGGER.error("Failed to remove growspace: %s", err)
         create_notification(
             hass,
-            f"Failed to remove growspace: {str(err)}",
+            f"Failed to remove growspace: {err!s}",
             title="Growspace Manager Error",
         )
         raise

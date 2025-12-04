@@ -6,9 +6,8 @@ import os
 import tempfile
 from typing import Any
 
-from homeassistant.components.persistent_notification import (
-    async_create as create_notification,
-)
+from homeassistant.components.persistent_notification import \
+    async_create as create_notification
 from homeassistant.core import HomeAssistant, ServiceCall
 from homeassistant.exceptions import HomeAssistantError
 
@@ -75,7 +74,7 @@ async def handle_export_strain_library(
         _LOGGER.exception("Failed to export strain library: %s", err)
         create_notification(
             hass,
-            f"Failed to export strain library: {str(err)}",
+            f"Failed to export strain library: {err!s}",
             title="Growspace Manager Error",
         )
         raise
@@ -156,7 +155,7 @@ async def handle_import_strain_library(
         _LOGGER.exception("Failed to import strain library: %s", err)
         create_notification(
             hass,
-            f"Failed to import strain library: {str(err)}",
+            f"Failed to import strain library: {err!s}",
             title="Growspace Manager Error",
         )
         raise
@@ -320,7 +319,7 @@ async def handle_clear_strain_library(
         _LOGGER.exception("Failed to clear strain library: %s", err)
         create_notification(
             hass,
-            f"Failed to clear strain library: {str(err)}",
+            f"Failed to clear strain library: {err!s}",
             title="Growspace Manager Error",
         )
         raise

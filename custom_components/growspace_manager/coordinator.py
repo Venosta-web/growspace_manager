@@ -2,20 +2,18 @@
 
 from __future__ import annotations
 
-import logging
-import uuid
 from datetime import date, datetime
+import logging
 from typing import Any
+import uuid
 
 from dateutil import parser
+
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 
-from .const import (
-    DATE_FIELDS,
-    PLANT_STAGES,
-)
+from .const import DATE_FIELDS, PLANT_STAGES
 from .environment_analyzer import EnvironmentAnalyzer
 from .growspace_validator import GrowspaceValidator
 from .import_export_manager import ImportExportManager
@@ -24,11 +22,7 @@ from .models import Growspace, Plant
 from .notification_manager import NotificationManager
 from .storage_manager import StorageManager
 from .strain_library import StrainLibrary
-from .utils import (
-    calculate_plant_stage,
-    format_date,
-    generate_growspace_grid,
-)
+from .utils import calculate_plant_stage, format_date, generate_growspace_grid
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -114,9 +108,9 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
                 elif isinstance(pdata, Plant):
                     self.plants[pid] = pdata
                 else:
-                    raise TypeError(f"Invalid data type for plant {pid}: {type(pdata)}")
-            except Exception as e:
-                _LOGGER.warning("Failed to load plant %s: %s", pid, e)
+                    self._raise_invalid_plant_data_type(pid, pdata)
+            except Exception:
+                _LOGGER.exception("Failed to load plant %s", pid)
 
     def _load_growspaces(self, raw_growspaces: dict) -> None:
         """Load growspaces from raw data."""
@@ -127,14 +121,20 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
                 elif isinstance(gdata, Growspace):
                     self.growspaces[gid] = gdata
                 else:
-                    raise TypeError(
-                        f"Invalid data type for growspace {gid}: {type(gdata)}"
-                    )
-            except Exception as e:
-                _LOGGER.warning("Failed to load growspace %s: %s", gid, e)
+                    self._raise_invalid_growspace_data_type(gid, gdata)
+            except Exception:
+                _LOGGER.exception("Failed to load growspace %s", gid)
 
     # -----------------------------
     # Methods for editor dropdown
+    def _raise_invalid_plant_data_type(self, pid: str, pdata: Any) -> None:
+        """Raise TypeError for invalid plant data."""
+        raise TypeError(f"Invalid data type for plant {pid}: {type(pdata)}")
+
+    def _raise_invalid_growspace_data_type(self, gid: str, gdata: Any) -> None:
+        """Raise TypeError for invalid growspace data."""
+        raise TypeError(f"Invalid data type for growspace {gid}: {type(gdata)}")
+
     # -----------------------------
 
     def get_growspace_options(self) -> dict[str, str]:
@@ -243,12 +243,12 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
         try:
             if isinstance(date_value, datetime):
                 return date_value.date()
-            elif isinstance(date_value, date):
+            if isinstance(date_value, date):
                 return date_value
-            elif isinstance(date_value, str):
+            if isinstance(date_value, str):
                 return parser.isoparse(date_value).date()
-        except Exception as e:
-            _LOGGER.warning("Failed to parse date %s: %s", date_value, e)
+        except Exception:
+            _LOGGER.exception("Failed to parse date %s", date_value)
         return None
 
     def calculate_days(self, start_date: DateInput, end_date: DateInput = None) -> int:
@@ -609,9 +609,11 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
         plants_to_check = self.get_growspace_plants(growspace_id)
         invalid_plants = []
 
-        for plant in plants_to_check:
-            if int(plant.row) > new_rows or int(plant.col) > new_plants_per_row:
-                invalid_plants.append(plant)
+        invalid_plants = [
+            plant
+            for plant in plants_to_check
+            if int(plant.row) > new_rows or int(plant.col) > new_plants_per_row
+        ]
 
         if invalid_plants:
             _LOGGER.warning(
@@ -737,7 +739,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
             final_row, final_col = row, col
         except ValueError:
             _LOGGER.info(
-                "Position (%d, %d) in growspace %s is occupied. Finding first available spot.",
+                "Position (%d, %d) in growspace %s is occupied. Finding first available spot",
                 row,
                 col,
                 growspace_id,
@@ -752,7 +754,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
             except ValueError as e:
                 # This happens if the growspace is full
                 _LOGGER.error("Could not add plant: %s", e)
-                raise e  # Re-raise the exception to be handled by the caller
+                raise
 
         plant_id = str(uuid.uuid4())
         today = date.today().isoformat()

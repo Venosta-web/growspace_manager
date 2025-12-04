@@ -4,9 +4,8 @@ import logging
 from datetime import date, datetime
 from typing import Any
 
-from homeassistant.components.persistent_notification import (
-    async_create as create_notification,
-)
+from homeassistant.components.persistent_notification import \
+    async_create as create_notification
 from homeassistant.core import HomeAssistant, ServiceCall
 from homeassistant.exceptions import ServiceValidationError
 from homeassistant.helpers import entity_registry as er
@@ -405,7 +404,7 @@ async def handle_move_clone(
         validator.validate_plant_exists(plant_id)
     except ValueError as err:
         _LOGGER.error("Validation error moving clone: %s", err)
-        raise ServiceValidationError(f"Validation error: {str(err)}") from err
+        raise ServiceValidationError(f"Validation error: {err!s}") from err
 
     try:
         transition_date = datetime.fromisoformat(
@@ -490,7 +489,7 @@ async def handle_move_clone(
         _LOGGER.exception("Failed to move clone %s: %s", plant_id, e)
         create_notification(
             hass,
-            f"Failed to move clone {plant_id}: {str(e)}",
+            f"Failed to move clone {plant_id}: {e!s}",
             title="Growspace Manager Error",
         )
         raise
@@ -869,7 +868,7 @@ async def handle_harvest_plant(
         _LOGGER.exception("Failed to harvest plant %s: %s", plant_id, err)
         create_notification(
             hass,
-            f"Failed to harvest plant {plant_id}: {str(err)}",
+            f"Failed to harvest plant {plant_id}: {err!s}",
             title="Growspace Manager Error",
         )
         raise

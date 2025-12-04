@@ -2,19 +2,19 @@
 
 from __future__ import annotations
 
-import logging
-import os
-import tempfile
 from dataclasses import dataclass
 from functools import partial
+import logging
+import pathlib
+import tempfile
 from typing import Any, cast
 
 from aiohttp import BodyPartReader, web
+
 from homeassistant.components.http import HomeAssistantView
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, SupportsResponse
-from homeassistant.helpers import config_validation as cv
-from homeassistant.helpers import entity_registry as er
+from homeassistant.helpers import config_validation as cv, entity_registry as er
 from homeassistant.helpers.storage import Store
 from homeassistant.helpers.typing import ConfigType
 
@@ -410,11 +410,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: GrowspaceConfigEntry) ->
             _LOGGER.info(
                 "Created pending growspace: %s", pending.get("name", "unknown")
             )
-        except (KeyError, RuntimeError) as err:
+        except (KeyError, RuntimeError):
             _LOGGER.exception(
-                "Failed to create pending growspace %s: %s",
+                "Failed to create pending growspace %s",
                 pending.get("name", "unknown"),
-                err,
             )
             create_notification(
                 hass,
@@ -503,9 +502,9 @@ async def async_unload_entry(hass: HomeAssistant, entry: GrowspaceConfigEntry) -
 
         _LOGGER.info("Unloaded Growspace Manager for entry %s", entry.entry_id)
         return True
-    else:
-        _LOGGER.error("Failed to unload platforms for entry %s", entry.entry_id)
-        return False
+
+    _LOGGER.error("Failed to unload platforms for entry %s", entry.entry_id)
+    return False
 
 
 def _async_remove_services(hass: HomeAssistant) -> None:
@@ -572,12 +571,12 @@ class StrainLibraryUploadView(HomeAssistantView):
     def __init__(
         self,
         hass: HomeAssistant,
-        strain_library: StrainLibrary,
+        strain_lib: StrainLibrary,
         coordinator: GrowspaceCoordinator,
     ) -> None:
         """Initialize the view."""
         self.hass = hass
-        self.strain_library = strain_library
+        self.strain_library = strain_lib
         self.coordinator = coordinator
 
     async def post(self, request: web.Request) -> web.Response:
@@ -598,7 +597,7 @@ class StrainLibraryUploadView(HomeAssistantView):
         # 2. Save to temp file
         # (Use a scalable chunk write to avoid memory issues)
         with tempfile.NamedTemporaryFile(delete=False, suffix=".zip") as tmp:
-            temp_path = tmp.name
+            temp_path = pathlib.Path(tmp.name)
             while True:
                 chunk = await file_field.read_chunk()
                 if not chunk:
@@ -620,8 +619,8 @@ class StrainLibraryUploadView(HomeAssistantView):
 
         finally:
             # Cleanup
-            if os.path.exists(temp_path):
-                os.remove(temp_path)
+            if temp_path.exists():
+                temp_path.unlink()
 
 
 def create_notification(

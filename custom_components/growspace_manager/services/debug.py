@@ -2,9 +2,8 @@
 
 import logging
 
-from homeassistant.components.persistent_notification import (
-    async_create as create_notification,
-)
+from homeassistant.components.persistent_notification import \
+    async_create as create_notification
 from homeassistant.core import HomeAssistant, ServiceCall
 
 from ..coordinator import GrowspaceCoordinator

@@ -103,8 +103,7 @@ class VPDCalculator:
 
     @staticmethod
     def calculate_vpd(temperature_c: float, humidity_rh: float) -> float | None:
-        """
-        Calculate Vapor Pressure Deficit (VPD) in kPa.
+        """Calculate Vapor Pressure Deficit (VPD) in kPa.
 
         Args:
             temperature_c: Temperature in degrees Celsius.
@@ -132,8 +131,7 @@ class VPDCalculator:
     def calculate_vpd_with_lst_offset(
         air_temperature_c: float, humidity_rh: float, lst_offset: float = -2.0
     ) -> float | None:
-        """
-        Calculate Vapor Pressure Deficit (VPD) with Leaf Surface Temperature offset.
+        """Calculate Vapor Pressure Deficit (VPD) with Leaf Surface Temperature offset.
 
         Args:
             air_temperature_c: Air temperature in degrees Celsius.

@@ -415,8 +415,7 @@ class GrowAssistant:
                     "AI assistant provided advice for growspace %s", growspace_id
                 )
                 return response
-            else:
-                raise ServiceValidationError("AI assistant returned an empty response")
+            raise ServiceValidationError("AI assistant returned an empty response")
 
         except ServiceValidationError:
             raise
@@ -535,8 +534,7 @@ async def handle_analyze_all_growspaces(
                 "issues_count": len(issues_found),
                 "growspaces_analyzed": len(all_data),
             }
-        else:
-            raise ServiceValidationError("AI assistant returned an empty response")
+        raise ServiceValidationError("AI assistant returned an empty response")
 
     except Exception as err:
         _LOGGER.error("Error analyzing all growspaces: %s", err)
@@ -669,8 +667,7 @@ async def handle_strain_recommendation(
                 response = response[:max_length].rsplit(" ", 1)[0] + "..."
 
             return {"response": response, "strains_analyzed": len(all_strains)}
-        else:
-            raise ServiceValidationError("AI assistant returned an empty response")
+        raise ServiceValidationError("AI assistant returned an empty response")
 
     except Exception as err:
         _LOGGER.error("Error getting strain recommendations: %s", err)

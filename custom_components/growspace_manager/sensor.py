@@ -23,17 +23,12 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import DOMAIN
-
 # Local / relative imports
 from .coordinator import GrowspaceCoordinator
 from .helpers import async_setup_statistics_sensor, async_setup_trend_sensor
 from .models import Growspace, Plant
-from .utils import (
-    VPDCalculator,
-    calculate_days_since,
-    calculate_plant_stage,
-    days_to_week,
-)
+from .utils import (VPDCalculator, calculate_days_since, calculate_plant_stage,
+                    days_to_week)
 
 _LOGGER = logging.getLogger(__name__)
 
