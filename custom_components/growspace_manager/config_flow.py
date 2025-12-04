@@ -309,12 +309,12 @@ class OptionsFlowHandler(OptionsFlow):
             ):
                 errors["base"] = "assistant_required"
             else:
-                await self.ai_handler.save_ai_settings(user_input)
+                new_options = await self.ai_handler.save_ai_settings(user_input)
 
                 # Inform user about the changes
                 return self.async_create_entry(
                     title="",
-                    data=self._config_entry.options,
+                    data=new_options,
                     description="AI settings have been updated. "
                     + (
                         "AI features are now enabled. "
