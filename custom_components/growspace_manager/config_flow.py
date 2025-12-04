@@ -11,19 +11,16 @@ from __future__ import annotations
 import ast
 import json
 import logging
-import uuid
 from typing import Any
+import uuid
 
-import homeassistant.helpers.config_validation as cv
 import voluptuous as vol
+
 from homeassistant import config_entries
-from homeassistant.config_entries import (
-    ConfigEntry,
-    ConfigFlowResult,
-    OptionsFlow,
-)
+from homeassistant.config_entries import ConfigEntry, ConfigFlowResult, OptionsFlow
 from homeassistant.core import callback
 from homeassistant.helpers import selector
+import homeassistant.helpers.config_validation as cv
 
 from .config_handlers.ai_config_handler import AIConfigHandler
 from .config_handlers.growspace_config_handler import GrowspaceConfigHandler
@@ -75,7 +72,7 @@ async def ensure_default_growspaces(coordinator):
         created_count = 0
         for growspace_id, name, rows, plants_per_row in default_growspaces:
             # Use the coordinator's method to ensure special growspaces
-            canonical_id = coordinator._ensure_special_growspace(
+            canonical_id = coordinator.ensure_special_growspace(
                 growspace_id, name, rows, plants_per_row
             )
             if canonical_id not in coordinator.growspaces:
@@ -139,7 +136,7 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             )
 
         except Exception as err:
-            _LOGGER.exception("Error in async_step_user: %s", err)
+            _LOGGER.exception("Error in async_step_user")
             return self.async_show_form(
                 step_id="user",
                 data_schema=vol.Schema(
@@ -179,14 +176,8 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     "notification_target": user_input.get("notification_target"),
                 }
 
-                _LOGGER.debug(
-                    "Stored pending growspace data: %s",
-                    self.hass.data[DOMAIN]["pending_growspace"],
-                )
-                return entry
-
             except Exception as err:
-                _LOGGER.exception("Error in async_step_add_growspace: %s", err)
+                _LOGGER.exception("Error in async_step_add_growspace")
                 return self.async_show_form(
                     step_id="add_growspace",
                     data_schema=GrowspaceConfigHandler(
@@ -194,6 +185,12 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     ).get_add_growspace_schema(),
                     errors={"base": f"Error: {err}"},
                 )
+
+            _LOGGER.debug(
+                "Stored pending growspace data: %s",
+                self.hass.data[DOMAIN]["pending_growspace"],
+            )
+            return entry
 
         _LOGGER.debug("Showing add_growspace form")
         return self.async_show_form(
@@ -236,6 +233,11 @@ class OptionsFlowHandler(OptionsFlow):
         self._growspace_handler: GrowspaceConfigHandler | None = None
         self._plant_handler: PlantConfigHandler | None = None
         self._ai_handler: AIConfigHandler | None = None
+        self._selected_notification_id: str | None = None
+        self._selected_growspace_id: str | None = None
+        self._env_config_step1: dict[str, Any] | None = None
+        self._selected_plant_id: str | None = None
+        self._selected_strain_id: str | None = None
 
     @property
     def growspace_handler(self) -> GrowspaceConfigHandler:
@@ -353,12 +355,12 @@ class OptionsFlowHandler(OptionsFlow):
 
             if action == "add":
                 return await self.async_step_add_timed_notification()
-            elif action == "edit":
+            if action == "edit":
                 notification_id = user_input.get("notification_id")
                 if notification_id:
                     self._selected_notification_id = notification_id
                     return await self.async_step_edit_timed_notification()
-            elif action == "delete":
+            if action == "delete":
                 notification_id = user_input.get("notification_id")
                 if notification_id:
                     new_options = self._config_entry.options.copy()
@@ -562,7 +564,7 @@ class OptionsFlowHandler(OptionsFlow):
         return vol.Schema(schema)
 
     async def async_step_manage_growspaces(
-        self, user_input: dict[str, Any] | None | None
+        self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
         """Show the menu for managing growspaces (add, update, remove)."""
         try:
@@ -586,8 +588,8 @@ class OptionsFlowHandler(OptionsFlow):
                     await self.growspace_handler.async_remove_growspace(
                         user_input["growspace_id"]
                     )
-                except Exception as err:
-                    _LOGGER.exception("Error removing growspace: %s", err)
+                except Exception:
+                    _LOGGER.exception("Error removing growspace")
                     return self.async_show_form(
                         step_id="manage_growspaces",
                         data_schema=self.growspace_handler.get_growspace_management_schema(
@@ -624,8 +626,8 @@ class OptionsFlowHandler(OptionsFlow):
             try:
                 await self.growspace_handler.async_add_growspace(user_input)
                 return self.async_create_entry(title="", data={})
-            except Exception as err:
-                _LOGGER.exception("Error adding growspace: %s", err)
+            except Exception:
+                _LOGGER.exception("Error adding growspace")
                 return self.async_show_form(
                     step_id="add_growspace",
                     data_schema=self.growspace_handler.get_add_growspace_schema(),
@@ -662,8 +664,8 @@ class OptionsFlowHandler(OptionsFlow):
                 )
                 return self.async_create_entry(title="", data={})
 
-            except Exception as err:
-                _LOGGER.exception("Error updating growspace: %s", err)
+            except Exception:
+                _LOGGER.exception("Error updating growspace")
                 return self.async_show_form(
                     step_id="update_growspace",
                     data_schema=self.growspace_handler.get_update_growspace_schema(
@@ -887,26 +889,8 @@ class OptionsFlowHandler(OptionsFlow):
             env_config.pop("configure_advanced", None)
 
             try:
-                parsed_user_input = {}
-                for key, value in user_input.items():
-                    if isinstance(value, str):
-                        # Check if it's a valid tuple string
-                        if not value.startswith("(") or not value.endswith(")"):
-                            _LOGGER.warning(
-                                "Invalid tuple format for %s: %s", key, value
-                            )
-                            raise ValueError("Invalid tuple string format")
-
-                        parsed_value = ast.literal_eval(value)
-
-                        if not isinstance(parsed_value, tuple):
-                            raise TypeError("Parsed value is not a tuple")
-
-                        parsed_user_input[key] = parsed_value
-                    else:
-                        parsed_user_input[key] = value
-
                 # Update env_config *after* all parsing is successful
+                parsed_user_input = self._parse_advanced_bayesian_input(user_input)
                 env_config.update(parsed_user_input)
 
             except (ValueError, SyntaxError, TypeError):
@@ -981,6 +965,28 @@ class OptionsFlowHandler(OptionsFlow):
             for key, default in defaults.items()
         }
         return vol.Schema(schema_dict)
+
+    def _parse_advanced_bayesian_input(
+        self, user_input: dict[str, Any]
+    ) -> dict[str, Any]:
+        """Parse user input for advanced Bayesian settings."""
+        parsed_user_input = {}
+        for key, value in user_input.items():
+            if isinstance(value, str):
+                # Check if it's a valid tuple string
+                if not value.startswith("(") or not value.endswith(")"):
+                    _LOGGER.warning("Invalid tuple format for %s: %s", key, value)
+                    raise ValueError("Invalid tuple string format")
+
+                parsed_value = ast.literal_eval(value)
+
+                if not isinstance(parsed_value, tuple):
+                    raise TypeError("Parsed value is not a tuple")
+
+                parsed_user_input[key] = parsed_value
+            else:
+                parsed_user_input[key] = value
+        return parsed_user_input
 
     async def async_step_configure_global(
         self, user_input: dict[str, Any] | None = None
@@ -1083,14 +1089,12 @@ class OptionsFlowHandler(OptionsFlow):
         try:
             coordinator = self._config_entry.runtime_data.coordinator
         except (KeyError, AttributeError):
-            _LOGGER.error("Coordinator not found for irrigation config flow.")
+            _LOGGER.error("Coordinator not found for irrigation config flow")
             return self.async_abort(reason="setup_error")
         growspace_options = coordinator.get_sorted_growspace_options()
 
         if not growspace_options:
-            _LOGGER.error(
-                "IRRIGATION FLOW ABORT: No growspaces available to configure."
-            )
+            _LOGGER.error("IRRIGATION FLOW ABORT: No growspaces available to configure")
             return self.async_abort(reason="no_growspaces")
 
         _LOGGER.debug(
@@ -1200,13 +1204,13 @@ class OptionsFlowHandler(OptionsFlow):
                     "irrigation_pump_entity",
                     default=irrigation_pump_default,
                 ): selector.EntitySelector(
-                    selector.EntitySelectorConfig(domain="switch")
+                    selector.EntitySelectorConfig(domain=["switch", "input_boolean"])
                 ),
                 vol.Optional(
                     "drain_pump_entity",
                     default=drain_pump_default,
                 ): selector.EntitySelector(
-                    selector.EntitySelectorConfig(domain="switch")
+                    selector.EntitySelectorConfig(domain=["switch", "input_boolean"])
                 ),
                 vol.Optional(
                     "irrigation_duration",
@@ -1271,6 +1275,7 @@ class OptionsFlowHandler(OptionsFlow):
                             plant.growspace_id, plant.id
                         )
                 except Exception:
+                    _LOGGER.exception("Error removing plant")
                     return self.async_show_form(
                         step_id="manage_plants",
                         data_schema=self.plant_handler.get_plant_management_schema(
@@ -1347,6 +1352,7 @@ class OptionsFlowHandler(OptionsFlow):
                 )
                 return self.async_create_entry(title="", data={})
             except Exception as err:
+                _LOGGER.exception("Error adding plant")
                 return self.async_show_form(
                     step_id="add_plant",
                     data_schema=self.plant_handler.get_add_plant_schema(
@@ -1379,6 +1385,7 @@ class OptionsFlowHandler(OptionsFlow):
                 )
                 return self.async_create_entry(title="", data={})
             except Exception as err:
+                _LOGGER.exception("Error updating plant")
                 return self.async_show_form(
                     step_id="update_plant",
                     data_schema=self.plant_handler.get_update_plant_schema(
@@ -1406,9 +1413,17 @@ class OptionsFlowHandler(OptionsFlow):
                 self._selected_strain_id = user_input.get("strain_id")
                 return await self.async_step_edit_strain()
             if action == "delete_strain":
-                await coordinator.strain_library.async_delete_strain(
-                    user_input.get("strain_id")
-                )
+                try:
+                    await coordinator.strain_library.async_delete_strain(
+                        user_input.get("strain_id")
+                    )
+                except Exception:
+                    _LOGGER.exception("Error deleting strain")
+                    return self.async_show_form(
+                        step_id="manage_strain_library",
+                        data_schema=self._get_strain_library_menu_schema(coordinator),
+                        errors={"base": "delete_failed"},
+                    )
                 return self.async_show_form(
                     step_id="manage_strain_library",
                     data_schema=self._get_strain_library_menu_schema(coordinator),
@@ -1596,15 +1611,15 @@ class OptionsFlowHandler(OptionsFlow):
                 )
 
                 # Reload strains to reflect changes
-                await coordinator.strains.async_load()
+                await coordinator.strain_library.async_load()
 
                 return await self.async_step_manage_strain_library()
             except FileNotFoundError:
                 errors["base"] = "file_not_found"
             except ValueError:
                 errors["base"] = "invalid_zip"
-            except Exception as e:
-                _LOGGER.error("Import failed: %s", e)
+            except Exception:
+                _LOGGER.exception("Import failed")
                 errors["base"] = "import_failed"
 
         return self.async_show_form(
@@ -1632,15 +1647,15 @@ class OptionsFlowHandler(OptionsFlow):
 
         try:
             zip_path = await coordinator.import_export_manager.export_library(
-                coordinator.strains.get_all(), export_dir
+                coordinator.strain_library.get_all(), export_dir
             )
             return self.async_show_form(
                 step_id="export_strain_library",
                 description_placeholders={"path": zip_path},
                 last_step=True,
             )
-        except Exception as e:
-            _LOGGER.error("Export failed: %s", e)
+        except Exception:
+            _LOGGER.exception("Export failed")
             return self.async_abort(reason="export_failed")
 
     def _process_environment_input(
@@ -1795,17 +1810,23 @@ class OptionsFlowHandler(OptionsFlow):
         schema_dict[
             vol.Optional(
                 "exhaust_fan_entity",
-                default=growspace_options.get("exhaust_fan_entity"),
+                default=growspace_options.get("exhaust_fan_entity") or vol.UNDEFINED,
             )
-        ] = selector.EntitySelector(selector.EntitySelectorConfig(domain="fan"))
+        ] = selector.EntitySelector(
+            selector.EntitySelectorConfig(domain=["fan", "input_boolean", "switch"])
+        )
 
         # Humidifier
         schema_dict[
             vol.Optional(
                 "humidifier_entity",
-                default=growspace_options.get("humidifier_entity"),
+                default=growspace_options.get("humidifier_entity") or vol.UNDEFINED,
             )
-        ] = selector.EntitySelector(selector.EntitySelectorConfig(domain="humidifier"))
+        ] = selector.EntitySelector(
+            selector.EntitySelectorConfig(
+                domain=["humidifier", "input_boolean", "switch"]
+            )
+        )
         for feature in ["exhaust", "humidifier"]:
             enabled = growspace_options.get(
                 f"configure_{feature}",
@@ -1848,7 +1869,13 @@ class OptionsFlowHandler(OptionsFlow):
                 )
             ] = selector.EntitySelector(
                 selector.EntitySelectorConfig(
-                    domain=["switch", "humidifier", "sensor", "binary_sensor"]
+                    domain=[
+                        "switch",
+                        "humidifier",
+                        "sensor",
+                        "binary_sensor",
+                        "input_boolean",
+                    ]
                 )
             )
             schema_dict[

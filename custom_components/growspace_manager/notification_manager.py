@@ -10,11 +10,8 @@ from homeassistant.components import conversation
 from homeassistant.core import Context, HomeAssistant
 from homeassistant.util.dt import utcnow
 
-from .const import (
-    CONF_AI_ENABLED,
-    CONF_ASSISTANT_ID,
-    CONF_NOTIFICATION_PERSONALITY,
-)
+from .const import (CONF_AI_ENABLED, CONF_ASSISTANT_ID,
+                    CONF_NOTIFICATION_PERSONALITY)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -158,15 +155,14 @@ class NotificationManager:
                     _LOGGER.info("AI rewrote notification in %s style", personality)
                     return rewritten
                 # Try to truncate intelligently if it's close
-                elif len(rewritten) < max_length + 50:
+                if len(rewritten) < max_length + 50:
                     _LOGGER.info("AI response truncated to fit length limit")
                     return rewritten[:max_length].rsplit(" ", 1)[0] + "..."
-                else:
-                    _LOGGER.warning(
-                        "AI response too long (%d chars > %d), using default",
-                        len(rewritten),
-                        max_length,
-                    )
+                _LOGGER.warning(
+                    "AI response too long (%d chars > %d), using default",
+                    len(rewritten),
+                    max_length,
+                )
             else:
                 _LOGGER.warning("AI returned empty response, using default message")
 

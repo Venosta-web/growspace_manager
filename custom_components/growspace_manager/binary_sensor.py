@@ -8,8 +8,8 @@ cycle schedule.
 
 from __future__ import annotations
 
-import logging
 from datetime import date, datetime, timedelta
+import logging
 from typing import Any
 
 from homeassistant.components.binary_sensor import BinarySensorEntity
@@ -181,6 +181,11 @@ class BayesianEnvironmentSensor(BinarySensorEntity):
 
     def _get_base_environment_state(self) -> EnvironmentState:
         """Fetch sensor values and return a structured EnvironmentState object."""
+        # Always fetch the latest config from the coordinator
+        growspace = self.coordinator.growspaces.get(self.growspace_id)
+        if growspace and growspace.environment_config:
+            self.env_config = growspace.environment_config
+
         temp = self._get_sensor_value(self.env_config.get("temperature_sensor"))
         humidity = self._get_sensor_value(self.env_config.get("humidity_sensor"))
         vpd = self._get_sensor_value(self.env_config.get("vpd_sensor"))
@@ -268,7 +273,7 @@ class BayesianEnvironmentSensor(BinarySensorEntity):
             and self._last_light_state != current_lights_on
         ):
             _LOGGER.debug(
-                "Light switched in %s. Triggering notification cooldown.",
+                "Light switched in %s. Triggering notification cooldown",
                 self.growspace_id,
             )
             self.notification_manager.trigger_cooldown(self.growspace_id)
@@ -364,8 +369,8 @@ class BayesianEnvironmentSensor(BinarySensorEntity):
             return await self.trend_analyzer.async_analyze_sensor_trend(
                 sensor_id, duration_minutes, threshold
             )
-        except Exception as e:
-            _LOGGER.error("Error analyzing sensor history for %s: %s", sensor_id, e)
+        except Exception:
+            _LOGGER.exception("Error analyzing sensor history for %s", sensor_id)
             return {"trend": "unknown", "crossed_threshold": False}
 
     def _generate_notification_message(self, base_message: str) -> str:
@@ -380,8 +385,8 @@ class BayesianEnvironmentSensor(BinarySensorEntity):
             await self.notification_manager.async_send_notification(
                 self.growspace_id, title, message, self._sensor_states
             )
-        except Exception as e:
-            _LOGGER.error("Failed to send notification to %s: %s", self.growspace_id, e)
+        except Exception:
+            _LOGGER.exception("Failed to send notification to %s", self.growspace_id)
 
     def get_notification_title_message(
         self, new_state_on: bool
@@ -444,7 +449,7 @@ class BayesianEnvironmentSensor(BinarySensorEntity):
 class BayesianStressSensor(BayesianEnvironmentSensor):
     """A Bayesian binary sensor for detecting plant stress conditions."""
 
-    def __init__(self, coordinator, growspace_id, env_config):
+    def __init__(self, coordinator, growspace_id, env_config) -> None:
         """Initialize the plant stress sensor."""
         super().__init__(
             coordinator,
@@ -707,7 +712,7 @@ class LightCycleVerificationSensor(BinarySensorEntity):
 class BayesianDryingSensor(BayesianEnvironmentSensor):
     """A Bayesian binary sensor for detecting optimal drying conditions."""
 
-    def __init__(self, coordinator, growspace_id, env_config):
+    def __init__(self, coordinator, growspace_id, env_config) -> None:
         """Initialize the optimal drying sensor."""
         super().__init__(
             coordinator,
@@ -760,7 +765,7 @@ class BayesianDryingSensor(BayesianEnvironmentSensor):
 class BayesianCuringSensor(BayesianEnvironmentSensor):
     """A Bayesian binary sensor for detecting optimal curing conditions."""
 
-    def __init__(self, coordinator, growspace_id, env_config):
+    def __init__(self, coordinator, growspace_id, env_config) -> None:
         """Initialize the optimal curing sensor."""
         super().__init__(
             coordinator,
@@ -813,7 +818,7 @@ class BayesianCuringSensor(BayesianEnvironmentSensor):
 class BayesianMoldRiskSensor(BayesianEnvironmentSensor):
     """A Bayesian binary sensor for detecting high mold risk conditions."""
 
-    def __init__(self, coordinator, growspace_id, env_config):
+    def __init__(self, coordinator, growspace_id, env_config) -> None:
         """Initialize the mold risk sensor."""
         super().__init__(
             coordinator,
@@ -929,7 +934,7 @@ class BayesianMoldRiskSensor(BayesianEnvironmentSensor):
 class BayesianOptimalConditionsSensor(BayesianEnvironmentSensor):
     """A Bayesian binary sensor for detecting optimal growing conditions."""
 
-    def __init__(self, coordinator, growspace_id, env_config):
+    def __init__(self, coordinator, growspace_id, env_config) -> None:
         """Initialize the optimal conditions sensor."""
         super().__init__(
             coordinator,

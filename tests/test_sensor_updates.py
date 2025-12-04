@@ -39,7 +39,7 @@ def mock_hass():
     coordinator.get_growspace_plants.return_value = []
     coordinator.options = {}
     coordinator.async_save = AsyncMock()
-    coordinator._ensure_special_growspace.return_value = "dry"
+    coordinator.ensure_special_growspace.return_value = "dry"
 
     hass.data = {
         DOMAIN: {

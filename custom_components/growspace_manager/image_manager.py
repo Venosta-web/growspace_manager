@@ -7,8 +7,9 @@ import logging
 import os
 from io import BytesIO
 
-from homeassistant.core import HomeAssistant
 from PIL import Image
+
+from homeassistant.core import HomeAssistant
 
 _LOGGER = logging.getLogger(__name__)
 

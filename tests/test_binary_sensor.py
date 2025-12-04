@@ -1002,8 +1002,16 @@ async def test_dry_cure_sensors_off_states(
     sensor.platform = MagicMock()  # Mock platform
 
     # Mock sensor states
-    set_sensor_state(hass, "sensor.temp", sensor_readings.get("temp", 20))
-    set_sensor_state(hass, "sensor.humidity", sensor_readings.get("humidity", 55))
+    # Get the actual config the sensor will use (since it refreshes from coordinator)
+    actual_config = mock_coordinator.growspaces[growspace_id].environment_config
+
+    # Mock sensor states
+    set_sensor_state(
+        hass, actual_config["temperature_sensor"], sensor_readings.get("temp", 20)
+    )
+    set_sensor_state(
+        hass, actual_config["humidity_sensor"], sensor_readings.get("humidity", 55)
+    )
     await hass.async_block_till_done()
 
     with patch.object(sensor, "async_write_ha_state", new_callable=MagicMock):
@@ -1399,7 +1407,8 @@ class TestBayesianEnvironmentSensor:
 
         with caplog.at_level(logging.ERROR):
             await base_sensor._send_notification("Title", "Message")
-            assert "Failed to send notification to gs1: Test Error" in caplog.text
+            assert "Failed to send notification to gs1" in caplog.text
+            assert "Test Error" in caplog.text
 
     @pytest.mark.asyncio
     async def test_send_notification_disabled_in_coordinator(self, base_sensor, caplog):
@@ -1440,10 +1449,8 @@ class TestBayesianEnvironmentSensor:
                 "sensor.temp", 15, 21.0
             )
             assert result == {"trend": "unknown", "crossed_threshold": False}
-            assert (
-                "Error analyzing sensor history for sensor.temp: Test Error"
-                in caplog.text
-            )
+            assert "Error analyzing sensor history for sensor.temp" in caplog.text
+            assert "Test Error" in caplog.text
 
     @pytest.mark.parametrize(
         "date_str, expected_days",

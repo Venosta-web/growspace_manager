@@ -14,6 +14,7 @@ import os
 from typing import Any
 
 import aiosqlite
+
 from homeassistant.core import HomeAssistant
 from homeassistant.util import slugify
 
@@ -181,7 +182,6 @@ class StrainLibrary:
 
     async def save(self) -> None:
         """No-op for SQLite implementation - changes are committed immediately."""
-        pass
 
     async def record_harvest(
         self, strain: str, phenotype: str, veg_days: int, flower_days: int

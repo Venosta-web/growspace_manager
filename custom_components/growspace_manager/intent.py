@@ -4,8 +4,9 @@ from __future__ import annotations
 
 import logging
 
-import homeassistant.helpers.config_validation as cv
 import voluptuous as vol
+
+import homeassistant.helpers.config_validation as cv
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import intent
 

@@ -6,15 +6,10 @@ from typing import TYPE_CHECKING
 
 from homeassistant.core import State
 
-from .bayesian_data import (
-    PROB_ACCEPTABLE,
-    PROB_GOOD,
-    PROB_PERFECT,
-    PROB_STRESS_OUT_OF_RANGE,
-    PROB_VPD_STRESS_OUT_OF_RANGE,
-    VPD_OPTIMAL_THRESHOLDS,
-    VPD_STRESS_THRESHOLDS,
-)
+from .bayesian_data import (PROB_ACCEPTABLE, PROB_GOOD, PROB_PERFECT,
+                            PROB_STRESS_OUT_OF_RANGE,
+                            PROB_VPD_STRESS_OUT_OF_RANGE,
+                            VPD_OPTIMAL_THRESHOLDS, VPD_STRESS_THRESHOLDS)
 from .models import EnvironmentState
 
 if TYPE_CHECKING:
