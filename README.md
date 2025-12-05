@@ -6,6 +6,10 @@
 
 *   **Detailed Plant Tracking**: Monitor individual plants from seed to cure, tracking their strain, phenotype, position, and key dates (veg, flower, etc.).
 *   **Visual Growspace Layouts**: Organize your plants in a grid system for each growspace. Visualize your entire setup at a glance using the companion Lovelace card.
+*   **AI Assistant**: Built-in AI integration (powered by Home Assistant's conversation agents) provides:
+    *   **Diagnostics**: Analyze sensor data to identify issues like heat stress or VPD imbalances.
+    *   **Optimization**: Get tailored advice on how to improve your environment for the specific growth stage.
+    *   **Planning**: Ask for help with scheduling, training techniques, or harvest timing.
 *   **Advanced Environmental Monitoring**: Utilizes a sophisticated Bayesian inference engine to provide intelligent binary sensors for:
     *   **Plant Stress**: Detects when conditions like temperature, humidity, or VPD are likely causing stress to your plants.
     *   **Mold Risk**: Proactively warns you of conditions favorable to mold growth, especially during the critical late-flowering stage.
@@ -90,7 +94,17 @@ This is where the magic happens. By linking your existing sensors, you enable th
 *   **Optional**: A light or switch to determine if the lights are on/off, a CO2 sensor, and a circulation fan switch. Linking a light sensor enables more accurate day/night logic and activates the `LightCycleVerificationSensor`.
 5.  Click **Submit** to save. The Bayesian binary sensors will be created automatically.
 
-### Step 5: Add the Card to Your Dashboard
+### Step 5: Configure AI Assistant (Optional)
+Unlock intelligent insights by connecting a conversation agent.
+1.  Go back to the integration's **Configure** menu.
+2.  Select **Configure AI Assistant** and click **Submit**.
+3.  **Enable AI Assistant**: Toggle this on.
+4.  **Select Assistant**: Choose your preferred conversation agent (e.g., OpenAI, Google Generative AI, or a local LLM).
+5.  **Personality**: Choose a personality style (e.g., "Professional", "Friendly", "Scientist").
+6.  **Max Response Length**: Set a limit for the advice length to keep it concise.
+7.  Click **Submit**.
+
+### Step 6: Add the Card to Your Dashboard
 1.  Navigate to the dashboard where you want to display your growspace.
 2.  Click the three dots in the top right and select **Edit Dashboard**.
 3.  Click **+ Add Card** and search for the **Custom: Growspace Card**.
@@ -110,7 +124,17 @@ This integration will create the following entities for you:
 *   **Notification Switch**: (`switch.<growspace_name>_notifications`) Allows you to enable or disable notifications for a specific growspace.
 *   **Strain Library Sensor**: (`sensor.growspace_strain_library`) A sensor whose state is the number of unique strains and whose attributes contain detailed harvest analytics, including average veg/flower times.
 *   **Growspaces List Sensor**: (`sensor.growspaces_list`) A sensor whose attributes contain a list of all your configured growspaces.
-*   **Task Calendar**: (`calendar.<growspace_name>_tasks`) A calendar entity for each growspace that displays scheduled tasks based on timed notifications.
+*   **Task Calendar**: (`calendar.<growspace_name>_tasks`) A calendar entity for each growspace that displays scheduled tasks based on your timed notifications.
+
+### Services
+The integration exposes the following services:
+
+*   **`growspace_manager.ask_grow_advice`**: Ask the AI assistant for advice on a specific growspace.
+    *   **Targets**: A growspace overview sensor (e.g., `sensor.4x4_tent`).
+    *   **Fields**:
+        *   `user_query` (Optional): A specific question to ask. If omitted, the AI provides a general status update.
+        *   `context_type`: The type of advice needed (`general`, `diagnostic`, `optimization`, `planning`).
+        *   `max_length`: Maximum length of the response.
 
 ### Environmental Monitoring Sensors
 When you configure environmental sensors for a growspace, the following powerful binary sensors are created:

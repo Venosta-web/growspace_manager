@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 import uuid
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from typing import Any
 
 from dateutil import parser
@@ -64,6 +64,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
             hass,
             _LOGGER,
             name="Growspace Manager Coordinator",
+            update_interval=timedelta(minutes=15),
         )
 
         self.hass = hass
