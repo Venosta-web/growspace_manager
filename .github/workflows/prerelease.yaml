@@ -18,6 +18,7 @@ jobs:
         run: |
           VERSION="0.2.$(date +%Y%m%d%H%M%S)"
           echo "New version: $VERSION"
+          echo "VERSION=$VERSION" >> $GITHUB_ENV
           cd custom_components/growspace_manager
           # Use jq to reliably update the version
           if ! jq --arg v "$VERSION" '.version = $v' manifest.json > manifest.json.tmp; then
@@ -43,7 +44,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           prerelease: true
-          tag_name: prerelease-${{ github.sha }}
+          tag_name: v${{ env.VERSION }}-beta
           name: Pre-release-${{ github.ref_name }}-${{ github.sha }}
           files: growspace_manager.zip
 
