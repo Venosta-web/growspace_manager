@@ -2,11 +2,11 @@
 
 import logging
 
+import homeassistant.helpers.device_registry as dr
 from homeassistant.components.persistent_notification import (
     async_create as create_notification,
 )
 from homeassistant.core import HomeAssistant, ServiceCall
-import homeassistant.helpers.device_registry as dr
 
 from ..const import DOMAIN
 from ..coordinator import GrowspaceCoordinator

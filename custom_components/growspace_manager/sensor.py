@@ -567,6 +567,40 @@ class GrowspaceOverviewSensor(CoordinatorEntity[GrowspaceCoordinator], SensorEnt
         )
 
         # Create grid representation
+        grid = self._generate_plant_grid(growspace, plants)
+
+        # Determine growspace type
+        gs_type = "normal"
+        if growspace.id in ("mother", "clone", "dry", "cure"):
+            gs_type = growspace.id
+
+        # Build attributes dict
+        attributes = {
+            "growspace_id": growspace.id,
+            "type": gs_type,
+            "rows": growspace.rows,
+            "plants_per_row": growspace.plants_per_row,
+            "total_plants": len(plants),
+            "notification_target": growspace.notification_target,
+            "max_veg_days": max_veg,
+            "max_flower_days": max_flower,
+            "veg_week": veg_week,
+            "flower_week": flower_week,
+            "max_stage_summary": f"Veg: {max_veg}d (W{veg_week}), Flower: {max_flower}d (W{flower_week})",
+            "irrigation_times": list(irrigation_options.get("irrigation_times", [])),
+            "drain_times": list(irrigation_options.get("drain_times", [])),
+            "grid": grid,
+        }
+
+        # Add environment attributes
+        attributes.update(self._get_environment_attributes(growspace))
+
+        return attributes
+
+    def _generate_plant_grid(
+        self, growspace, plants
+    ) -> dict[str, dict[str, Any] | None]:
+        """Generate the plant grid representation."""
         grid: dict[str, dict[str, Any] | None] = {}
         for row in range(1, int(growspace.rows) + 1):
             for col in range(
@@ -615,31 +649,11 @@ class GrowspaceOverviewSensor(CoordinatorEntity[GrowspaceCoordinator], SensorEnt
                 "position": f"({row_i},{col_i})",
                 "stage": calculate_plant_stage(plant),
             }
+        return grid
 
-        # Determine growspace type
-        gs_type = "normal"
-        if growspace.id in ("mother", "clone", "dry", "cure"):
-            gs_type = growspace.id
-
-        # Build attributes dict
-        attributes = {
-            "growspace_id": growspace.id,
-            "type": gs_type,
-            "rows": growspace.rows,
-            "plants_per_row": growspace.plants_per_row,
-            "total_plants": len(plants),
-            "notification_target": growspace.notification_target,
-            "max_veg_days": max_veg,
-            "max_flower_days": max_flower,
-            "veg_week": veg_week,
-            "flower_week": flower_week,
-            "max_stage_summary": f"Veg: {max_veg}d (W{veg_week}), Flower: {max_flower}d (W{flower_week})",
-            "irrigation_times": list(irrigation_options.get("irrigation_times", [])),
-            "drain_times": list(irrigation_options.get("drain_times", [])),
-            "grid": grid,
-        }
-
-        # Add dehumidifier state if configured
+    def _get_environment_attributes(self, growspace) -> dict[str, Any]:
+        """Get environment-related attributes."""
+        attributes = {}
         if growspace.environment_config:
             env_config = growspace.environment_config
 
@@ -667,14 +681,14 @@ class GrowspaceOverviewSensor(CoordinatorEntity[GrowspaceCoordinator], SensorEnt
             if exhaust_entity:
                 state_obj = self.coordinator.hass.states.get(exhaust_entity)
                 attributes["exhaust_entity"] = exhaust_entity
-                attributes["exhaust_value"] = state_obj.state if state_obj else None
+                attributes["exhaust_state"] = state_obj.state if state_obj else None
 
             # Humidifier Sensor
             humidifier_entity = env_config.get("humidifier_sensor")
             if humidifier_entity:
                 state_obj = self.coordinator.hass.states.get(humidifier_entity)
                 attributes["humidifier_entity"] = humidifier_entity
-                attributes["humidifier_value"] = state_obj.state if state_obj else None
+                attributes["humidifier_state"] = state_obj.state if state_obj else None
 
             # VPD Sensor
             vpd_entity = env_config.get("vpd_sensor")

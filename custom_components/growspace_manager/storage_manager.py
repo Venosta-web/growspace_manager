@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from dataclasses import asdict
 import logging
+from dataclasses import asdict
 
 from homeassistant.helpers.storage import Store
 

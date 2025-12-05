@@ -14,7 +14,6 @@ import os
 from typing import Any
 
 import aiosqlite
-
 from homeassistant.core import HomeAssistant
 from homeassistant.util import slugify
 

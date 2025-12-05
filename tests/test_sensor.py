@@ -601,10 +601,10 @@ def test_growspace_overview_sensor_environment_attributes(mock_coordinator) -> N
     assert attrs["dehumidifier_control_enabled"] is True
 
     assert attrs["exhaust_entity"] == "sensor.exhaust"
-    assert attrs["exhaust_value"] == "100"
+    assert attrs["exhaust_state"] == "100"
 
     assert attrs["humidifier_entity"] == "sensor.humidifier"
-    assert attrs["humidifier_value"] == "off"
+    assert attrs["humidifier_state"] == "off"
 
 
 @pytest.mark.parametrize(

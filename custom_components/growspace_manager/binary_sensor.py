@@ -8,8 +8,8 @@ cycle schedule.
 
 from __future__ import annotations
 
-from datetime import date, datetime, timedelta
 import logging
+from datetime import date, datetime, timedelta
 from typing import Any
 
 from homeassistant.components.binary_sensor import BinarySensorEntity

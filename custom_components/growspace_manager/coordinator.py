@@ -2,13 +2,12 @@
 
 from __future__ import annotations
 
-from datetime import date, datetime
 import logging
-from typing import Any
 import uuid
+from datetime import date, datetime, timedelta
+from typing import Any
 
 from dateutil import parser
-
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
@@ -65,6 +64,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
             hass,
             _LOGGER,
             name="Growspace Manager Coordinator",
+            update_interval=timedelta(minutes=15),
         )
 
         self.hass = hass
