@@ -12,9 +12,11 @@ from typing import TYPE_CHECKING, Any
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.event import async_track_time_change
+from homeassistant.util.dt import utcnow
 
 if TYPE_CHECKING:
     from .coordinator import GrowspaceCoordinator
+from .models import BayesianEvent
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -28,7 +30,7 @@ class IrrigationCoordinator:
         config_entry: ConfigEntry,
         growspace_id: str,
         main_coordinator: GrowspaceCoordinator,
-    ):
+    ) -> None:
         """Initialize the irrigation coordinator."""
         self.hass = hass
         self._config_entry = config_entry
@@ -102,7 +104,7 @@ class IrrigationCoordinator:
             # Update existing item
             existing_item["duration"] = duration
             _LOGGER.info(
-                "Updated %s in %s for growspace %s. Duration set to %s.",
+                "Updated %s in %s for growspace %s. Duration set to %s",
                 time_str,
                 schedule_key,
                 self._growspace_id,
@@ -124,7 +126,7 @@ class IrrigationCoordinator:
             growspace.irrigation_config[schedule_key] = new_list
 
             _LOGGER.info(
-                "Added %s to %s for growspace %s. Schedule now has %d items.",
+                "Added %s to %s for growspace %s. Schedule now has %d items",
                 {"time": time_str, "duration": duration},
                 schedule_key,
                 self._growspace_id,
@@ -155,7 +157,7 @@ class IrrigationCoordinator:
 
             if items_before == items_after:
                 _LOGGER.warning(
-                    "Time %s not found in %s for growspace %s. No items removed.",
+                    "Time %s not found in %s for growspace %s. No items removed",
                     time_str,
                     schedule_key,
                     self._growspace_id,
@@ -175,7 +177,7 @@ class IrrigationCoordinator:
 
         except KeyError:
             _LOGGER.warning(
-                "Cannot remove item: schedule '%s' not found for growspace %s.",
+                "Cannot remove item: schedule '%s' not found for growspace %s",
                 schedule_key,
                 self._growspace_id,
             )
@@ -308,7 +310,7 @@ class IrrigationCoordinator:
             and not self._running_tasks[event_type].done()
         ):
             _LOGGER.warning(
-                "Cancelling previous %s event for growspace %s as a new one is starting.",
+                "Cancelling previous %s event for growspace %s as a new one is starting",
                 event_type,
                 self._growspace_id,
             )
@@ -321,7 +323,7 @@ class IrrigationCoordinator:
 
         if not pump_entity or not duration:
             _LOGGER.warning(
-                "%s event for growspace %s is not fully configured. Missing entity or duration.",
+                "%s event for growspace %s is not fully configured. Missing entity or duration",
                 event_type.capitalize(),
                 self._growspace_id,
             )
@@ -341,8 +343,9 @@ class IrrigationCoordinator:
     ):
         """Run the on-off cycle for a pump and send notifications."""
         try:
+            start_dt = utcnow()
             _LOGGER.info(
-                "Starting %s for %s (entity: %s), running for %s seconds.",
+                "Starting %s for %s (entity: %s), running for %s seconds",
                 event_type,
                 self._growspace_id,
                 pump_entity,
@@ -371,7 +374,7 @@ class IrrigationCoordinator:
 
         except asyncio.CancelledError:
             _LOGGER.info(
-                "%s event for %s (entity: %s) was cancelled.",
+                "%s event for %s (entity: %s) was cancelled",
                 event_type.capitalize(),
                 self._growspace_id,
                 pump_entity,
@@ -385,8 +388,22 @@ class IrrigationCoordinator:
                 e,
             )
         finally:
+            end_dt = utcnow()
+            duration_sec = (end_dt - start_dt).total_seconds()
+
+            event = BayesianEvent(
+                sensor_type=event_type,  # "irrigation" or "drain"
+                growspace_id=self._growspace_id,
+                start_time=start_dt.isoformat(),
+                end_time=end_dt.isoformat(),
+                duration_sec=duration_sec,
+                max_probability=1.0,  # Deterministic event
+                reasons=[f"Scheduled Cycle ({pump_entity})"],
+            )
+            self._main_coordinator.add_event(self._growspace_id, event)
+
             _LOGGER.info(
-                "Stopping %s for %s (entity: %s).",
+                "Stopping %s for %s (entity: %s)",
                 event_type,
                 self._growspace_id,
                 pump_entity,
