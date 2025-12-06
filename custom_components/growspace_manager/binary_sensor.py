@@ -49,7 +49,7 @@ from .const import (
     DOMAIN,
 )
 from .coordinator import GrowspaceCoordinator
-from .models import BayesianEvent, EnvironmentState
+from .models import EnvironmentState, GrowspaceEvent
 from .trend_analyzer import TrendAnalyzer
 
 _LOGGER = logging.getLogger(__name__)
@@ -428,13 +428,14 @@ class BayesianEnvironmentSensor(BinarySensorEntity):
             duration = (end_time - self._event_start_time).total_seconds()
 
             # Create the event object
-            event = BayesianEvent(
+            event = GrowspaceEvent(
                 sensor_type=self._sensor_type,
                 growspace_id=self.growspace_id,
                 start_time=self._event_start_time.isoformat(),
                 end_time=end_time.isoformat(),
                 duration_sec=int(duration),
-                max_probability=self._event_max_prob,
+                severity=self._event_max_prob,
+                category="alert",
                 reasons=[r[1] for r in sorted(self._reasons, reverse=True)[:5]],
             )
 

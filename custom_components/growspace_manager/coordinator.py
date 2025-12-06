@@ -17,7 +17,7 @@ from .environment_analyzer import EnvironmentAnalyzer
 from .growspace_validator import GrowspaceValidator
 from .import_export_manager import ImportExportManager
 from .migration_manager import MigrationManager
-from .models import BayesianEvent, Growspace, Plant
+from .models import GrowspaceEvent, Growspace, Plant
 from .notification_manager import NotificationManager
 from .storage_manager import StorageManager
 from .strain_library import StrainLibrary
@@ -70,7 +70,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
         self.hass = hass
         self.growspaces: dict[str, Growspace] = {}
         self.plants: dict[str, Plant] = {}
-        self.events: dict[str, list[BayesianEvent]] = {}
+        self.events: dict[str, list[GrowspaceEvent]] = {}
 
         self.options = options or {}
         _LOGGER.info("--- COORDINATOR INITIALIZED WITH OPTIONS: %s ---", self.options)
@@ -180,12 +180,12 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
     # EVENT LOGBOOK MANAGEMENT
     # =============================================================================
 
-    def add_event(self, growspace_id: str, event: BayesianEvent) -> None:
-        """Add a Bayesian event to the logbook.
+    def add_event(self, growspace_id: str, event: GrowspaceEvent) -> None:
+        """Add a Growspace event to the logbook.
 
         Args:
             growspace_id: The ID of the growspace where the event occurred.
-            event: The BayesianEvent object.
+            event: The GrowspaceEvent object.
         """
         if growspace_id not in self.events:
             self.events[growspace_id] = []

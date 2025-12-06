@@ -9,7 +9,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.storage import Store
 
 from .const import STORAGE_KEY, STORAGE_VERSION
-from .models import BayesianEvent, Growspace, Plant
+from .models import GrowspaceEvent, Growspace, Plant
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -110,7 +110,7 @@ class StorageManager:
         try:
             raw_events = data.get("events", {})
             self.coordinator.events = {
-                gid: [BayesianEvent.from_dict(evt) for evt in evts]
+                gid: [GrowspaceEvent.from_dict(evt) for evt in evts]
                 for gid, evts in raw_events.items()
             }
             _LOGGER.info(

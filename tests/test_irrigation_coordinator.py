@@ -162,6 +162,8 @@ async def test_run_pump_cycle(
         assert (
             event.duration_sec >= 0.0
         )  # Duration calculation depends on mock time which we didn't freeze, but > 0
+        assert event.severity == 1.0
+        assert event.category == "irrigation"
 
 
 async def test_handle_event_with_custom_duration(

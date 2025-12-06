@@ -196,17 +196,18 @@ class EnvironmentState:
 
 
 @dataclass
-class BayesianEvent:
-    """Represents a historical activation event of a Bayesian sensor.
+class GrowspaceEvent:
+    """Represents a historical significant event in a growspace.
 
     Attributes:
-        sensor_type: The type of sensor (e.g., 'mold_risk', 'stress').
+        sensor_type: The type of sensor or source (e.g., 'mold_risk', 'irrigation').
         growspace_id: The ID of the growspace where the event occurred.
         start_time: The ISO-formatted start time of the event.
         end_time: The ISO-formatted end time of the event.
         duration_sec: The duration of the event in seconds.
-        max_probability: The maximum probability reached during the event.
-        reasons: A list of contributing factors at the peak of the event.
+        severity: The severity or intensity of the event (0.0 to 1.0).
+        category: The category of the event (e.g., 'alert', 'irrigation').
+        reasons: A list of contributing factors or details.
     """
 
     sensor_type: str
@@ -214,7 +215,8 @@ class BayesianEvent:
     start_time: str
     end_time: str
     duration_sec: int
-    max_probability: float
+    severity: float
+    category: str
     reasons: list[str] = field(default_factory=list)
 
     def to_dict(self) -> dict:
@@ -222,6 +224,16 @@ class BayesianEvent:
         return asdict(self)
 
     @staticmethod
-    def from_dict(data: dict) -> BayesianEvent:
-        """Create a BayesianEvent instance from a dictionary."""
-        return BayesianEvent(**data)
+    def from_dict(data: dict) -> GrowspaceEvent:
+        """Create a GrowspaceEvent instance from a dictionary."""
+        data = data.copy()
+
+        # Backward compatibility for 'max_probability'
+        if "max_probability" in data and "severity" not in data:
+            data["severity"] = data.pop("max_probability")
+
+        # Default category if missing
+        if "category" not in data:
+            data["category"] = "alert"  # Default for legacy events
+
+        return GrowspaceEvent(**data)
