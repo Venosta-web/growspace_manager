@@ -236,4 +236,8 @@ class GrowspaceEvent:
         if "category" not in data:
             data["category"] = "alert"  # Default for legacy events
 
-        return GrowspaceEvent(**data)
+        # Only keep keys that match dataclass fields
+        allowed_keys = {f.name for f in fields(GrowspaceEvent)}
+        filtered_data = {k: v for k, v in data.items() if k in allowed_keys}
+
+        return GrowspaceEvent(**filtered_data)
