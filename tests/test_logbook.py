@@ -7,9 +7,9 @@ import pytest
 from homeassistant.core import HomeAssistant
 from homeassistant.util import dt as dt_util
 
+from custom_components.growspace_manager.binary_sensor import BayesianEnvironmentSensor
 from custom_components.growspace_manager.coordinator import GrowspaceCoordinator
 from custom_components.growspace_manager.models import BayesianEvent, Growspace
-from custom_components.growspace_manager.binary_sensor import BayesianEnvironmentSensor
 
 
 # --- Fixtures ---

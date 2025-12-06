@@ -9,8 +9,8 @@ from dataclasses import dataclass
 from functools import partial
 from typing import Any, cast
 
-from aiohttp import BodyPartReader, web
 import voluptuous as vol
+from aiohttp import BodyPartReader, web
 from homeassistant.components import websocket_api
 from homeassistant.components.http import HomeAssistantView
 from homeassistant.config_entries import ConfigEntry
