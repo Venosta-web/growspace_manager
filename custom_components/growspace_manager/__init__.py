@@ -10,6 +10,8 @@ from functools import partial
 from typing import Any, cast
 
 from aiohttp import BodyPartReader, web
+import voluptuous as vol
+from homeassistant.components import websocket_api
 from homeassistant.components.http import HomeAssistantView
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, SupportsResponse
@@ -394,6 +396,34 @@ async def async_setup_entry(hass: HomeAssistant, entry: GrowspaceConfigEntry) ->
     _LOGGER.debug("Registering services for domain %s", DOMAIN)
     await _register_services(hass, coordinator, strain_library_instance)
 
+    # Register WebSocket API
+    WS_TYPE_GET_LOG = f"{DOMAIN}/get_log"
+    SCHEMA_WS_GET_LOG = websocket_api.BASE_COMMAND_MESSAGE_SCHEMA.extend(
+        {
+            vol.Required("type"): WS_TYPE_GET_LOG,
+            vol.Optional("growspace_id"): str,
+        }
+    )
+
+    @websocket_api.async_response
+    async def websocket_get_event_log(hass: HomeAssistant, connection, msg):
+        """Handle get event log command."""
+        growspace_id = msg.get("growspace_id")
+        events_data = {}
+
+        if growspace_id:
+            events = coordinator.events.get(growspace_id, [])
+            events_data[growspace_id] = [e.to_dict() for e in events]
+        else:
+            for gid, evts in coordinator.events.items():
+                events_data[gid] = [e.to_dict() for e in evts]
+
+        connection.send_result(msg["id"], events_data)
+
+    hass.components.websocket_api.async_register_command(
+        WS_TYPE_GET_LOG, websocket_get_event_log, SCHEMA_WS_GET_LOG
+    )
+
     # Set up intents
     await async_setup_intents(hass)
 
@@ -607,7 +637,7 @@ class StrainLibraryUploadView(HomeAssistantView):
         try:
             # 3. Process Import
             count = await self.strain_library.import_library_from_zip(
-                temp_path, merge=True
+                str(temp_path), merge=True
             )
             await self.strain_library.save()
             await self.coordinator.async_request_refresh()

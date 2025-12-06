@@ -5,10 +5,11 @@ from __future__ import annotations
 import logging
 from dataclasses import asdict
 
+from homeassistant.core import HomeAssistant
 from homeassistant.helpers.storage import Store
 
 from .const import STORAGE_KEY, STORAGE_VERSION
-from .models import Growspace, Plant
+from .models import BayesianEvent, Growspace, Plant
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -16,7 +17,7 @@ _LOGGER = logging.getLogger(__name__)
 class StorageManager:
     """Manages data persistence for the Growspace Manager."""
 
-    def __init__(self, coordinator, hass) -> None:
+    def __init__(self, coordinator, hass: HomeAssistant) -> None:
         """Initialize the StorageManager.
 
         Args:
@@ -39,6 +40,10 @@ class StorageManager:
                 },
                 "notifications_sent": self.coordinator._notifications_sent,
                 "notifications_enabled": self.coordinator._notifications_enabled,
+                "events": {
+                    gid: [evt.to_dict() for evt in events]
+                    for gid, events in self.coordinator.events.items()
+                },
             }
         )
 
@@ -100,6 +105,20 @@ class StorageManager:
         except Exception as e:
             _LOGGER.exception("Error loading growspaces: %s", e)
             self.coordinator.growspaces = {}
+
+        # Load events
+        try:
+            raw_events = data.get("events", {})
+            self.coordinator.events = {
+                gid: [BayesianEvent.from_dict(evt) for evt in evts]
+                for gid, evts in raw_events.items()
+            }
+            _LOGGER.info(
+                "Loaded events for %d growspaces", len(self.coordinator.events)
+            )
+        except Exception as e:
+            _LOGGER.exception("Error loading events: %s", e)
+            self.coordinator.events = {}
 
         # Load notification tracking
         self.coordinator._notifications_sent = data.get("notifications_sent", {})
