@@ -43,6 +43,7 @@ def mock_main_coordinator() -> MagicMock:
     }
     coordinator.async_save = AsyncMock()
     coordinator.async_set_updated_data = MagicMock()
+    coordinator.add_event = MagicMock()
     return coordinator
 
 
@@ -91,7 +92,7 @@ async def test_setup_and_schedule_events(
     mock_hass: MagicMock,
     mock_config_entry: MagicMock,
     mock_main_coordinator: MagicMock,
-):
+) -> None:
     """Test that listeners are scheduled correctly on setup."""
     coordinator = IrrigationCoordinator(
         mock_hass, mock_config_entry, GROWSPACE_ID, mock_main_coordinator
@@ -110,7 +111,7 @@ async def test_setup_and_schedule_events(
 
 async def test_run_pump_cycle(
     mock_hass: MagicMock, mock_config_entry: MagicMock, mock_main_coordinator: MagicMock
-):
+) -> None:
     """Test the full pump cycle logic including service calls and delay."""
     coordinator = IrrigationCoordinator(
         mock_hass, mock_config_entry, GROWSPACE_ID, mock_main_coordinator
@@ -152,10 +153,20 @@ async def test_run_pump_cycle(
         assert found_notify, "Notification service call not found"
         mock_sleep.assert_awaited_once_with(30)
 
+        # Verify event logging
+        mock_main_coordinator.add_event.assert_called_once()
+        args, _ = mock_main_coordinator.add_event.call_args
+        assert args[0] == GROWSPACE_ID
+        event = args[1]
+        assert event.sensor_type == "irrigation"
+        assert (
+            event.duration_sec >= 0.0
+        )  # Duration calculation depends on mock time which we didn't freeze, but > 0
+
 
 async def test_handle_event_with_custom_duration(
     mock_hass: MagicMock, mock_config_entry: MagicMock, mock_main_coordinator: MagicMock
-):
+) -> None:
     """Test that an event with a custom duration overrides the default."""
     coordinator = IrrigationCoordinator(
         mock_hass, mock_config_entry, GROWSPACE_ID, mock_main_coordinator
@@ -176,7 +187,7 @@ async def test_handle_event_with_custom_duration(
 
 async def test_overlapping_events(
     mock_hass: MagicMock, mock_config_entry: MagicMock, mock_main_coordinator: MagicMock
-):
+) -> None:
     """Test that a new event cancels a running event of the same type."""
     coordinator = IrrigationCoordinator(
         mock_hass, mock_config_entry, GROWSPACE_ID, mock_main_coordinator
@@ -206,7 +217,7 @@ async def test_overlapping_events(
 
 async def test_get_default_duration(
     mock_hass: MagicMock, mock_config_entry: MagicMock, mock_main_coordinator: MagicMock
-):
+) -> None:
     """Test getting default duration for event types."""
     coordinator = IrrigationCoordinator(
         mock_hass, mock_config_entry, GROWSPACE_ID, mock_main_coordinator
@@ -219,7 +230,7 @@ async def test_get_default_duration(
 
 async def test_async_set_settings(
     mock_hass: MagicMock, mock_config_entry: MagicMock, mock_main_coordinator: MagicMock
-):
+) -> None:
     """Test updating irrigation settings."""
     coordinator = IrrigationCoordinator(
         mock_hass, mock_config_entry, GROWSPACE_ID, mock_main_coordinator
@@ -247,7 +258,7 @@ async def test_async_set_settings(
 
 async def test_async_add_schedule_item(
     mock_hass: MagicMock, mock_config_entry: MagicMock, mock_main_coordinator: MagicMock
-):
+) -> None:
     """Test adding and updating schedule items."""
     coordinator = IrrigationCoordinator(
         mock_hass, mock_config_entry, GROWSPACE_ID, mock_main_coordinator
@@ -277,7 +288,7 @@ async def test_async_add_schedule_item(
 
 async def test_async_remove_schedule_item(
     mock_hass: MagicMock, mock_config_entry: MagicMock, mock_main_coordinator: MagicMock
-):
+) -> None:
     """Test removing schedule items."""
     coordinator = IrrigationCoordinator(
         mock_hass, mock_config_entry, GROWSPACE_ID, mock_main_coordinator
@@ -309,7 +320,7 @@ async def test_async_remove_schedule_item(
 
 async def test_async_add_schedule_item_validation_error(
     mock_hass: MagicMock, mock_config_entry: MagicMock, mock_main_coordinator: MagicMock
-):
+) -> None:
     """Test validation errors when adding schedule items."""
     coordinator = IrrigationCoordinator(
         mock_hass, mock_config_entry, GROWSPACE_ID, mock_main_coordinator
@@ -321,7 +332,7 @@ async def test_async_add_schedule_item_validation_error(
 
 async def test_async_remove_schedule_item_validation_error(
     mock_hass: MagicMock, mock_config_entry: MagicMock, mock_main_coordinator: MagicMock
-):
+) -> None:
     """Test validation errors when removing schedule items."""
     coordinator = IrrigationCoordinator(
         mock_hass, mock_config_entry, GROWSPACE_ID, mock_main_coordinator
@@ -333,7 +344,7 @@ async def test_async_remove_schedule_item_validation_error(
 
 async def test_get_default_duration_error(
     mock_hass: MagicMock, mock_config_entry: MagicMock, mock_main_coordinator: MagicMock
-):
+) -> None:
     """Test error handling in get_default_duration."""
     coordinator = IrrigationCoordinator(
         mock_hass, mock_config_entry, GROWSPACE_ID, mock_main_coordinator
@@ -347,7 +358,7 @@ async def test_get_default_duration_error(
 
 async def test_async_setup_migration(
     mock_hass: MagicMock, mock_config_entry: MagicMock, mock_main_coordinator: MagicMock
-):
+) -> None:
     """Test migration of legacy irrigation settings."""
     # Setup growspace with empty irrigation config
     mock_main_coordinator.growspaces[GROWSPACE_ID].irrigation_config = {}
@@ -381,7 +392,7 @@ async def test_async_setup_migration(
 
 async def test_schedule_event_invalid_time(
     mock_hass: MagicMock, mock_config_entry: MagicMock, mock_main_coordinator: MagicMock
-):
+) -> None:
     """Test scheduling event with invalid time format."""
     coordinator = IrrigationCoordinator(
         mock_hass, mock_config_entry, GROWSPACE_ID, mock_main_coordinator
@@ -398,7 +409,7 @@ async def test_schedule_event_invalid_time(
 
 async def test_handle_event_missing_config(
     mock_hass: MagicMock, mock_config_entry: MagicMock, mock_main_coordinator: MagicMock
-):
+) -> None:
     """Test handling event with missing configuration."""
     coordinator = IrrigationCoordinator(
         mock_hass, mock_config_entry, GROWSPACE_ID, mock_main_coordinator
@@ -418,7 +429,7 @@ async def test_handle_event_missing_config(
 
 async def test_run_pump_cycle_cancellation(
     mock_hass: MagicMock, mock_config_entry: MagicMock, mock_main_coordinator: MagicMock
-):
+) -> None:
     """Test cancellation of pump cycle."""
     coordinator = IrrigationCoordinator(
         mock_hass, mock_config_entry, GROWSPACE_ID, mock_main_coordinator
@@ -436,7 +447,7 @@ async def test_run_pump_cycle_cancellation(
 
 async def test_run_pump_cycle_error(
     mock_hass: MagicMock, mock_config_entry: MagicMock, mock_main_coordinator: MagicMock
-):
+) -> None:
     """Test error handling in pump cycle."""
     coordinator = IrrigationCoordinator(
         mock_hass, mock_config_entry, GROWSPACE_ID, mock_main_coordinator
@@ -461,7 +472,7 @@ async def test_run_pump_cycle_error(
 
 async def test_async_setup_migration_empty_legacy(
     mock_hass: MagicMock, mock_config_entry: MagicMock, mock_main_coordinator: MagicMock
-):
+) -> None:
     """Test setup with no legacy options."""
     mock_main_coordinator.growspaces[GROWSPACE_ID].irrigation_config = {}
     mock_config_entry.options = {}
@@ -478,7 +489,7 @@ async def test_async_setup_migration_empty_legacy(
 
 async def test_async_add_schedule_item_new_key(
     mock_hass: MagicMock, mock_config_entry: MagicMock, mock_main_coordinator: MagicMock
-):
+) -> None:
     """Test adding item to a new schedule key."""
     coordinator = IrrigationCoordinator(
         mock_hass, mock_config_entry, GROWSPACE_ID, mock_main_coordinator
@@ -513,7 +524,7 @@ async def test_async_add_schedule_item_new_key(
 
 async def test_async_remove_schedule_item_key_error(
     mock_hass: MagicMock, mock_config_entry: MagicMock, mock_main_coordinator: MagicMock
-):
+) -> None:
     """Test removing item from non-existent schedule key."""
     coordinator = IrrigationCoordinator(
         mock_hass, mock_config_entry, GROWSPACE_ID, mock_main_coordinator
@@ -537,7 +548,7 @@ async def test_async_remove_schedule_item_key_error(
 
 async def test_async_remove_schedule_item_key_error_explicit(
     mock_hass: MagicMock, mock_config_entry: MagicMock, mock_main_coordinator: MagicMock
-):
+) -> None:
     """Test explicit KeyError handling in remove schedule item."""
     coordinator = IrrigationCoordinator(
         mock_hass, mock_config_entry, GROWSPACE_ID, mock_main_coordinator
@@ -573,7 +584,7 @@ async def test_async_remove_schedule_item_key_error_explicit(
 
 async def test_schedule_event_short_time_format(
     mock_hass: MagicMock, mock_config_entry: MagicMock, mock_main_coordinator: MagicMock
-):
+) -> None:
     """Test scheduling event with HH:MM format."""
     coordinator = IrrigationCoordinator(
         mock_hass, mock_config_entry, GROWSPACE_ID, mock_main_coordinator
@@ -589,7 +600,7 @@ async def test_schedule_event_short_time_format(
 
 async def test_async_cancel_listeners_with_tasks(
     mock_hass: MagicMock, mock_config_entry: MagicMock, mock_main_coordinator: MagicMock
-):
+) -> None:
     """Test cancelling listeners and running tasks."""
     coordinator = IrrigationCoordinator(
         mock_hass, mock_config_entry, GROWSPACE_ID, mock_main_coordinator
@@ -617,7 +628,7 @@ async def test_async_cancel_listeners_with_tasks(
 
 async def test_handle_event_cleanup_running_task(
     mock_hass: MagicMock, mock_config_entry: MagicMock, mock_main_coordinator: MagicMock
-):
+) -> None:
     """Test cleanup of finished task in _handle_event."""
     coordinator = IrrigationCoordinator(
         mock_hass, mock_config_entry, GROWSPACE_ID, mock_main_coordinator
@@ -642,7 +653,7 @@ async def test_handle_event_cleanup_running_task(
 
 async def test_run_pump_cycle_cleanup(
     mock_hass: MagicMock, mock_config_entry: MagicMock, mock_main_coordinator: MagicMock
-):
+) -> None:
     """Test that running task is removed after completion."""
     coordinator = IrrigationCoordinator(
         mock_hass, mock_config_entry, GROWSPACE_ID, mock_main_coordinator
