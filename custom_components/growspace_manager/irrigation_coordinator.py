@@ -388,19 +388,24 @@ class IrrigationCoordinator:
                 e,
             )
         finally:
-            end_dt = utcnow()
-            duration_sec = (end_dt - start_dt).total_seconds()
+            try:
+                end_dt = utcnow()
+                # Ensure start_dt is defined
+                if "start_dt" in locals():
+                    duration_sec = (end_dt - start_dt).total_seconds()
 
-            event = BayesianEvent(
-                sensor_type=event_type,  # "irrigation" or "drain"
-                growspace_id=self._growspace_id,
-                start_time=start_dt.isoformat(),
-                end_time=end_dt.isoformat(),
-                duration_sec=duration_sec,
-                max_probability=1.0,  # Deterministic event
-                reasons=[f"Scheduled Cycle ({pump_entity})"],
-            )
-            self._main_coordinator.add_event(self._growspace_id, event)
+                    event = BayesianEvent(
+                        sensor_type=event_type,  # "irrigation" or "drain"
+                        growspace_id=self._growspace_id,
+                        start_time=start_dt.isoformat(),
+                        end_time=end_dt.isoformat(),
+                        duration_sec=duration_sec,
+                        max_probability=1.0,  # Deterministic event
+                        reasons=[f"Scheduled Cycle ({pump_entity})"],
+                    )
+                    self._main_coordinator.add_event(self._growspace_id, event)
+            except Exception as log_err:
+                _LOGGER.warning("Could not log pump cycle event: %s", log_err)
 
             _LOGGER.info(
                 "Stopping %s for %s (entity: %s)",
