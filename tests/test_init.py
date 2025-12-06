@@ -69,6 +69,9 @@ def mock_hass():
     hass.data = {}
     hass.config = MagicMock()
     hass.config.config_dir = "/config"
+    hass.http = MagicMock()
+    hass.components = MagicMock()
+    hass.components.websocket_api = MagicMock()
     hass.services = MagicMock()
     hass.services.has_service = MagicMock(return_value=True)
     hass.services.async_remove = MagicMock()
