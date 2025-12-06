@@ -9,7 +9,7 @@ from homeassistant.util import dt as dt_util
 
 from custom_components.growspace_manager.binary_sensor import BayesianEnvironmentSensor
 from custom_components.growspace_manager.coordinator import GrowspaceCoordinator
-from custom_components.growspace_manager.models import BayesianEvent, Growspace
+from custom_components.growspace_manager.models import Growspace, GrowspaceEvent
 
 
 # --- Fixtures ---
@@ -24,19 +24,22 @@ def mock_coordinator(hass: HomeAssistant):
 
 
 # --- 1. Test Data Model ---
-def test_bayesian_event_model() -> None:
+def test_growspace_event_model() -> None:
     data = {
         "sensor_type": "mold_risk",
         "growspace_id": "gs1",
         "start_time": "2023-10-27T10:00:00+00:00",
         "end_time": "2023-10-27T10:05:00+00:00",
         "duration_sec": 300,
-        "max_probability": 0.95,
+        "severity": 0.95,
+        "category": "alert",
         "reasons": ["High Humidity"],
     }
-    event = BayesianEvent.from_dict(data)
+    event = GrowspaceEvent.from_dict(data)
     assert event.sensor_type == "mold_risk"
     assert event.duration_sec == 300
+    assert event.severity == 0.95
+    assert event.category == "alert"
     assert event.to_dict() == data
 
 
@@ -55,13 +58,14 @@ async def test_coordinator_rolling_buffer(hass: HomeAssistant) -> None:
     # Test adding 55 events
     gid = "gs1"
     for i in range(55):
-        event = BayesianEvent(
+        event = GrowspaceEvent(
             sensor_type="stress",
             growspace_id=gid,
             start_time=f"2023-01-01T{i:02}:00:00",
             end_time="2023-01-01T00:00:00",
             duration_sec=10,
-            max_probability=0.8,
+            severity=0.8,
+            category="alert",
             reasons=[],
         )
         coordinator.add_event(gid, event)
@@ -149,4 +153,5 @@ async def test_sensor_event_capture(hass: HomeAssistant, mock_coordinator) -> No
         assert args[0] == "gs1"
         event = args[1]
         assert event.duration_sec == 600  # 10 mins
-        assert event.max_probability == 0.95
+        assert event.severity == 0.95
+        assert event.category == "alert"

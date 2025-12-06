@@ -16,7 +16,7 @@ from homeassistant.util.dt import utcnow
 
 if TYPE_CHECKING:
     from .coordinator import GrowspaceCoordinator
-from .models import BayesianEvent
+from .models import GrowspaceEvent
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -393,19 +393,22 @@ class IrrigationCoordinator:
                 # Ensure start_dt is defined
                 if "start_dt" in locals():
                     duration_sec = (end_dt - start_dt).total_seconds()
-
-                    event = BayesianEvent(
-                        sensor_type=event_type,  # "irrigation" or "drain"
+                    # Create and add the event
+                    event = GrowspaceEvent(
+                        sensor_type="irrigation"
+                        if event_type == "irrigation"
+                        else "drain",
                         growspace_id=self._growspace_id,
                         start_time=start_dt.isoformat(),
                         end_time=end_dt.isoformat(),
-                        duration_sec=duration_sec,
-                        max_probability=1.0,  # Deterministic event
-                        reasons=[f"Scheduled Cycle ({pump_entity})"],
+                        duration_sec=int(duration_sec),
+                        severity=1.0,
+                        category="irrigation",
+                        reasons=[f"{event_type.capitalize()} cycle completed"],
                     )
                     self._main_coordinator.add_event(self._growspace_id, event)
-            except Exception as log_err:
-                _LOGGER.warning("Could not log pump cycle event: %s", log_err)
+            except Exception as e:
+                _LOGGER.error("Failed to log %s event: %s", event_type, e)
 
             _LOGGER.info(
                 "Stopping %s for %s (entity: %s)",

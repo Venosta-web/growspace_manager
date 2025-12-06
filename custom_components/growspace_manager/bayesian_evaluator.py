@@ -6,8 +6,8 @@ including trend analysis and stress detection.
 
 from __future__ import annotations
 
-import logging
 from collections.abc import Awaitable, Callable
+import logging
 from typing import TYPE_CHECKING
 
 from homeassistant.core import State
