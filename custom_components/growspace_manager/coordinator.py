@@ -17,7 +17,7 @@ from .environment_analyzer import EnvironmentAnalyzer
 from .growspace_validator import GrowspaceValidator
 from .import_export_manager import ImportExportManager
 from .migration_manager import MigrationManager
-from .models import GrowspaceEvent, Growspace, Plant
+from .models import Growspace, GrowspaceEvent, Plant
 from .notification_manager import NotificationManager
 from .storage_manager import StorageManager
 from .strain_library import StrainLibrary

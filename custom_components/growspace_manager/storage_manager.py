@@ -9,7 +9,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.storage import Store
 
 from .const import STORAGE_KEY, STORAGE_VERSION
-from .models import GrowspaceEvent, Growspace, Plant
+from .models import Growspace, GrowspaceEvent, Plant
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -61,64 +61,9 @@ class StorageManager:
         )
         _LOGGER.info("Loading data from storage")
 
-        # Load plants using from_dict (handles migration)
-        try:
-            self.coordinator.plants = {
-                pid: Plant.from_dict(p) for pid, p in data.get("plants", {}).items()
-            }
-            _LOGGER.info("Loaded %d plants", len(self.coordinator.plants))
-        except Exception as e:
-            _LOGGER.exception("Error loading plants: %s", e)
-            self.coordinator.plants = {}
-
-        # Load growspaces using from_dict (handles migration)
-        try:
-            self.coordinator.growspaces = {
-                gid: Growspace.from_dict(g)
-                for gid, g in data.get("growspaces", {}).items()
-            }
-            _LOGGER.info("Loaded %d growspaces", len(self.coordinator.growspaces))
-
-            # Apply options to growspaces
-            if not self.coordinator.options:
-                _LOGGER.debug("--- COORDINATOR HAS NO OPTIONS TO APPLY ---")
-            else:
-                _LOGGER.debug(
-                    "--- APPLYING OPTIONS TO GROWSPACES: %s ---",
-                    self.coordinator.options,
-                )
-                for growspace_id, growspace in self.coordinator.growspaces.items():
-                    if growspace_id in self.coordinator.options:
-                        growspace.environment_config = self.coordinator.options[
-                            growspace_id
-                        ]
-                        _LOGGER.debug(
-                            "--- SUCCESS: Applied env_config to '%s': %s ---",
-                            growspace.name,
-                            growspace.environment_config,
-                        )
-                    else:
-                        _LOGGER.info(
-                            "--- INFO: No options found for growspace '%s' ---",
-                            growspace.name,
-                        )
-        except Exception as e:
-            _LOGGER.exception("Error loading growspaces: %s", e)
-            self.coordinator.growspaces = {}
-
-        # Load events
-        try:
-            raw_events = data.get("events", {})
-            self.coordinator.events = {
-                gid: [GrowspaceEvent.from_dict(evt) for evt in evts]
-                for gid, evts in raw_events.items()
-            }
-            _LOGGER.info(
-                "Loaded events for %d growspaces", len(self.coordinator.events)
-            )
-        except Exception as e:
-            _LOGGER.exception("Error loading events: %s", e)
-            self.coordinator.events = {}
+        self._load_plants(data)
+        self._load_growspaces(data)
+        self._load_events(data)
 
         # Load notification tracking
         self.coordinator._notifications_sent = data.get("notifications_sent", {})
@@ -132,14 +77,75 @@ class StorageManager:
                 self.coordinator._notifications_enabled[growspace_id] = True
 
         # Migrate legacy growspace aliases
-        # We delegate this back to the coordinator's migration manager
-        # But since we are in StorageManager, we can access it via coordinator
         if hasattr(self.coordinator, "migration_manager"):
             self.coordinator.migration_manager.migrate_legacy_growspaces()
         else:
-            # Fallback if migration manager is not yet initialized (should not happen if init order is correct)
             _LOGGER.warning("MigrationManager not found on coordinator during load")
 
         # Save migrated data back to storage
         await self.async_save()
         _LOGGER.info("Saved migrated data to storage")
+
+    def _load_plants(self, data: dict) -> None:
+        """Load plants from storage data."""
+        try:
+            self.coordinator.plants = {
+                pid: Plant.from_dict(p) for pid, p in data.get("plants", {}).items()
+            }
+            _LOGGER.info("Loaded %d plants", len(self.coordinator.plants))
+        except Exception as e:
+            _LOGGER.exception("Error loading plants: %s", e)
+            self.coordinator.plants = {}
+
+    def _load_growspaces(self, data: dict) -> None:
+        """Load growspaces from storage data."""
+        try:
+            self.coordinator.growspaces = {
+                gid: Growspace.from_dict(g)
+                for gid, g in data.get("growspaces", {}).items()
+            }
+            _LOGGER.info("Loaded %d growspaces", len(self.coordinator.growspaces))
+
+            self._apply_options_to_growspaces()
+        except Exception as e:
+            _LOGGER.exception("Error loading growspaces: %s", e)
+            self.coordinator.growspaces = {}
+
+    def _apply_options_to_growspaces(self) -> None:
+        """Apply configuration options to loaded growspaces."""
+        if not self.coordinator.options:
+            _LOGGER.debug("--- COORDINATOR HAS NO OPTIONS TO APPLY ---")
+            return
+
+        _LOGGER.debug(
+            "--- APPLYING OPTIONS TO GROWSPACES: %s ---",
+            self.coordinator.options,
+        )
+        for growspace_id, growspace in self.coordinator.growspaces.items():
+            if growspace_id in self.coordinator.options:
+                growspace.environment_config = self.coordinator.options[growspace_id]
+                _LOGGER.debug(
+                    "--- SUCCESS: Applied env_config to '%s': %s ---",
+                    growspace.name,
+                    growspace.environment_config,
+                )
+            else:
+                _LOGGER.info(
+                    "--- INFO: No options found for growspace '%s' ---",
+                    growspace.name,
+                )
+
+    def _load_events(self, data: dict) -> None:
+        """Load events from storage data."""
+        try:
+            raw_events = data.get("events", {})
+            self.coordinator.events = {
+                gid: [GrowspaceEvent.from_dict(evt) for evt in evts]
+                for gid, evts in raw_events.items()
+            }
+            _LOGGER.info(
+                "Loaded events for %d growspaces", len(self.coordinator.events)
+            )
+        except Exception as e:
+            _LOGGER.exception("Error loading events: %s", e)
+            self.coordinator.events = {}
