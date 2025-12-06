@@ -420,8 +420,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: GrowspaceConfigEntry) ->
 
         connection.send_result(msg["id"], events_data)
 
-    hass.components.websocket_api.async_register_command(
-        WS_TYPE_GET_LOG, websocket_get_event_log, SCHEMA_WS_GET_LOG
+    websocket_api.async_register_command(
+        hass, WS_TYPE_GET_LOG, websocket_get_event_log, SCHEMA_WS_GET_LOG
     )
 
     # Set up intents
