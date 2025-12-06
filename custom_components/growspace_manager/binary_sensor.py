@@ -49,7 +49,7 @@ from .const import (
     DOMAIN,
 )
 from .coordinator import GrowspaceCoordinator
-from .models import EnvironmentState
+from .models import BayesianEvent, EnvironmentState
 from .trend_analyzer import TrendAnalyzer
 
 _LOGGER = logging.getLogger(__name__)
@@ -154,6 +154,7 @@ class BayesianEnvironmentSensor(BinarySensorEntity):
         self.coordinator = coordinator
         self.growspace_id = growspace_id
         self.env_config = env_config
+        self._sensor_type = sensor_type
         self._attr_should_poll = False
 
         growspace = coordinator.growspaces[growspace_id]
@@ -175,6 +176,8 @@ class BayesianEnvironmentSensor(BinarySensorEntity):
         self._sensor_states: dict[str, Any] = {}
         self._reasons: ReasonList = []
         self._probability = 0.0
+        self._event_start_time: datetime | None = None
+        self._event_max_prob: float = 0.0
         self._last_light_state: bool | None = None
 
         self.trend_analyzer = TrendAnalyzer(self.coordinator.hass)
@@ -409,6 +412,38 @@ class BayesianEnvironmentSensor(BinarySensorEntity):
         old_state_on = self.is_on
         await self._async_update_probability()
         new_state_on = self.is_on
+
+        # Event Capture Logic
+        if new_state_on:
+            self._event_max_prob = max(self._event_max_prob, self._probability)
+
+        # Detect Rising Edge (Start of Event)
+        if new_state_on and not old_state_on:
+            self._event_start_time = utcnow()
+            self._event_max_prob = self._probability
+
+        # Detect Falling Edge (End of Event)
+        elif not new_state_on and old_state_on and self._event_start_time:
+            end_time = utcnow()
+            duration = (end_time - self._event_start_time).total_seconds()
+
+            # Create the event object
+            event = BayesianEvent(
+                sensor_type=self._sensor_type,
+                growspace_id=self.growspace_id,
+                start_time=self._event_start_time.isoformat(),
+                end_time=end_time.isoformat(),
+                duration_sec=int(duration),
+                max_probability=self._event_max_prob,
+                reasons=[r[1] for r in sorted(self._reasons, reverse=True)[:5]],
+            )
+
+            # Add to coordinator
+            self.coordinator.add_event(self.growspace_id, event)
+
+            # Reset event tracking
+            self._event_start_time = None
+            self._event_max_prob = 0.0
 
         if new_state_on != old_state_on:
             if notification := self.get_notification_title_message(new_state_on):

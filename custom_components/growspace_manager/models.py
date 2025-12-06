@@ -190,6 +190,38 @@ class EnvironmentState:
     fan_off: bool | None
     dehumidifier_on: bool | None = None
     exhaust_value: float | None = None
-    exhaust_value: float | None = None
+
     humidifier_value: float | None = None
     soil_moisture: float | None = None
+
+
+@dataclass
+class BayesianEvent:
+    """Represents a historical activation event of a Bayesian sensor.
+
+    Attributes:
+        sensor_type: The type of sensor (e.g., 'mold_risk', 'stress').
+        growspace_id: The ID of the growspace where the event occurred.
+        start_time: The ISO-formatted start time of the event.
+        end_time: The ISO-formatted end time of the event.
+        duration_sec: The duration of the event in seconds.
+        max_probability: The maximum probability reached during the event.
+        reasons: A list of contributing factors at the peak of the event.
+    """
+
+    sensor_type: str
+    growspace_id: str
+    start_time: str
+    end_time: str
+    duration_sec: int
+    max_probability: float
+    reasons: list[str] = field(default_factory=list)
+
+    def to_dict(self) -> dict:
+        """Convert the dataclass instance to a dictionary."""
+        return asdict(self)
+
+    @staticmethod
+    def from_dict(data: dict) -> BayesianEvent:
+        """Create a BayesianEvent instance from a dictionary."""
+        return BayesianEvent(**data)

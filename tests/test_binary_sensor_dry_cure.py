@@ -56,7 +56,7 @@ def mock_coordinator(mock_growspace):
     return coordinator
 
 
-def test_get_growth_stage_info_dry_growspace(mock_coordinator):
+def test_get_growth_stage_info_dry_growspace(mock_coordinator) -> None:
     """Test _get_growth_stage_info for 'dry' growspace."""
     # Create sensor for 'dry' growspace
     sensor = BayesianStressSensor(
@@ -76,7 +76,7 @@ def test_get_growth_stage_info_dry_growspace(mock_coordinator):
     assert info["veg_days"] == 0
 
 
-def test_get_growth_stage_info_cure_growspace(mock_coordinator):
+def test_get_growth_stage_info_cure_growspace(mock_coordinator) -> None:
     """Test _get_growth_stage_info for 'cure' growspace."""
     # Setup cure growspace
     cure_growspace = MagicMock()

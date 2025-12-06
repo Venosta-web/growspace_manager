@@ -17,7 +17,7 @@ from .environment_analyzer import EnvironmentAnalyzer
 from .growspace_validator import GrowspaceValidator
 from .import_export_manager import ImportExportManager
 from .migration_manager import MigrationManager
-from .models import Growspace, Plant
+from .models import BayesianEvent, Growspace, Plant
 from .notification_manager import NotificationManager
 from .storage_manager import StorageManager
 from .strain_library import StrainLibrary
@@ -70,6 +70,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
         self.hass = hass
         self.growspaces: dict[str, Growspace] = {}
         self.plants: dict[str, Plant] = {}
+        self.events: dict[str, list[BayesianEvent]] = {}
 
         self.options = options or {}
         _LOGGER.info("--- COORDINATOR INITIALIZED WITH OPTIONS: %s ---", self.options)
@@ -175,9 +176,28 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
         """Migrate legacy special growspace aliases to their canonical forms."""
         self.migration_manager.migrate_legacy_growspaces()
 
-    def _migrate_plants_to_growspace(self, from_id: str, to_id: str) -> None:
-        """Move all plants from one growspace to another."""
-        self.migration_manager.migrate_plants_to_growspace(from_id, to_id)
+    # =============================================================================
+    # EVENT LOGBOOK MANAGEMENT
+    # =============================================================================
+
+    def add_event(self, growspace_id: str, event: BayesianEvent) -> None:
+        """Add a Bayesian event to the logbook.
+
+        Args:
+            growspace_id: The ID of the growspace where the event occurred.
+            event: The BayesianEvent object.
+        """
+        if growspace_id not in self.events:
+            self.events[growspace_id] = []
+
+        self.events[growspace_id].append(event)
+
+        # Enforce rolling buffer limit (max 50 events per growspace)
+        if len(self.events[growspace_id]) > 50:
+            self.events[growspace_id].pop(0)
+
+        # Persist changes
+        self.hass.async_create_task(self.async_save())
 
     # =============================================================================
     # UTILITY AND HELPER METHODS
