@@ -350,6 +350,9 @@ class BayesianEnvironmentSensor(BinarySensorEntity):
 
     def _get_growth_stage_info(self) -> dict[str, int]:
         """Get the current growth stage duration (veg and flower days) for the growspace."""
+        if self.growspace_id in ("dry", "cure"):
+            return {"veg_days": 0, "flower_days": 0}
+
         plants = self.coordinator.get_growspace_plants(self.growspace_id)
 
         if not plants:
