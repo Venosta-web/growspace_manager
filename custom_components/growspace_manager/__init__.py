@@ -9,8 +9,8 @@ from dataclasses import dataclass
 from functools import partial
 from typing import Any, cast
 
-from aiohttp import BodyPartReader, web
 import voluptuous as vol
+from aiohttp import BodyPartReader, web
 from homeassistant.components import websocket_api
 from homeassistant.components.http import HomeAssistantView
 from homeassistant.config_entries import ConfigEntry
@@ -420,8 +420,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: GrowspaceConfigEntry) ->
 
         connection.send_result(msg["id"], events_data)
 
-    hass.components.websocket_api.async_register_command(
-        WS_TYPE_GET_LOG, websocket_get_event_log, SCHEMA_WS_GET_LOG
+    websocket_api.async_register_command(
+        hass, WS_TYPE_GET_LOG, websocket_get_event_log, SCHEMA_WS_GET_LOG
     )
 
     # Set up intents

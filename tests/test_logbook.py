@@ -1,15 +1,15 @@
 """Tests for the Bayesian Event Logbook feature."""
 
 from datetime import datetime
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from homeassistant.core import HomeAssistant
 from homeassistant.util import dt as dt_util
 
+from custom_components.growspace_manager.binary_sensor import BayesianEnvironmentSensor
 from custom_components.growspace_manager.coordinator import GrowspaceCoordinator
 from custom_components.growspace_manager.models import BayesianEvent, Growspace
-from custom_components.growspace_manager.binary_sensor import BayesianEnvironmentSensor
 
 
 # --- Fixtures ---
@@ -96,8 +96,6 @@ async def test_sensor_event_capture(hass: HomeAssistant, mock_coordinator) -> No
     sensor._async_update_probability.side_effect = (
         None  # ensure it's not raising if previously set
     )
-    # Actually, we need it to be awaitable.
-    from unittest.mock import AsyncMock
 
     sensor._async_update_probability = AsyncMock()
 

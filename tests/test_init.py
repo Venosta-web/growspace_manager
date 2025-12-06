@@ -70,8 +70,8 @@ def mock_hass():
     hass.config = MagicMock()
     hass.config.config_dir = "/config"
     hass.http = MagicMock()
-    hass.components = MagicMock()
-    hass.components.websocket_api = MagicMock()
+    # hass.components = MagicMock() # No longer needed for websocket_api if patched
+    # But keep services as they are used
     hass.services = MagicMock()
     hass.services.has_service = MagicMock(return_value=True)
     hass.services.async_remove = MagicMock()
@@ -93,7 +93,7 @@ def mock_strain_library_for_services():
 
 
 @pytest.mark.asyncio
-async def test_async_setup_entry(mock_hass):
+async def test_async_setup_entry(mock_hass) -> None:
     """Test a successful setup of the integration entry."""
     entry = MockConfigEntry(domain=DOMAIN, data={}, options={})
     entry.add_to_hass(mock_hass)
@@ -112,12 +112,14 @@ async def test_async_setup_entry(mock_hass):
             "custom_components.growspace_manager._register_services",
             return_value=AsyncMock(),
         ),
+        patch("custom_components.growspace_manager.websocket_api") as mock_ws,
     ):
         assert await async_setup_entry(mock_hass, entry)
+        mock_ws.async_register_command.assert_called_once()
 
 
 @pytest.mark.asyncio
-async def test_async_setup_entry_with_pending_growspace(mock_hass):
+async def test_async_setup_entry_with_pending_growspace(mock_hass) -> None:
     """Test setup with a pending growspace."""
     entry = MockConfigEntry(domain=DOMAIN, data={}, options={})
     entry.add_to_hass(mock_hass)
@@ -142,13 +144,14 @@ async def test_async_setup_entry_with_pending_growspace(mock_hass):
             "custom_components.growspace_manager._register_services",
             return_value=AsyncMock(),
         ),
+        patch("custom_components.growspace_manager.websocket_api"),
     ):
         assert await async_setup_entry(mock_hass, entry)
         coordinator_mock.async_add_growspace.assert_called_once()
 
 
 @pytest.mark.asyncio
-async def test_async_setup_entry_with_pending_growspace_error(mock_hass):
+async def test_async_setup_entry_with_pending_growspace_error(mock_hass) -> None:
     """Test setup with an error during pending growspace creation."""
     entry = MockConfigEntry(domain=DOMAIN, data={}, options={})
     entry.add_to_hass(mock_hass)
@@ -177,6 +180,7 @@ async def test_async_setup_entry_with_pending_growspace_error(mock_hass):
         patch(
             "custom_components.growspace_manager.create_notification"
         ) as mock_create_notification,
+        patch("custom_components.growspace_manager.websocket_api"),
     ):
         assert await async_setup_entry(mock_hass, entry)
         mock_create_notification.assert_called_once()
@@ -185,7 +189,7 @@ async def test_async_setup_entry_with_pending_growspace_error(mock_hass):
 @pytest.mark.asyncio
 async def test_register_services(
     mock_hass, mock_coordinator_for_services, mock_strain_library_for_services
-):
+) -> None:
     """Test that _register_services correctly registers all services."""
     mock_hass.services.async_register = MagicMock()
 
@@ -265,7 +269,7 @@ async def test_register_services(
 
 
 @pytest.mark.asyncio
-async def test_async_unload_entry(mock_hass):
+async def test_async_unload_entry(mock_hass) -> None:
     """Test a successful unload of the integration entry."""
     entry = MockConfigEntry(domain=DOMAIN, data={}, options={}, entry_id="test_entry")
     entry.add_to_hass(mock_hass)
@@ -279,7 +283,7 @@ async def test_async_unload_entry(mock_hass):
 
 
 @pytest.mark.asyncio
-async def test_async_unload_entry_with_dynamic_entities(mock_hass):
+async def test_async_unload_entry_with_dynamic_entities(mock_hass) -> None:
     """Test unload with dynamic entities."""
     entry = MockConfigEntry(domain=DOMAIN, data={}, options={}, entry_id="test_entry")
     entry.add_to_hass(mock_hass)
@@ -306,7 +310,7 @@ async def test_async_unload_entry_with_dynamic_entities(mock_hass):
 
 
 @pytest.mark.asyncio
-async def test_async_unload_entry_with_unknown_dynamic_entities(mock_hass):
+async def test_async_unload_entry_with_unknown_dynamic_entities(mock_hass) -> None:
     """Test unload with an unknown dynamic entity."""
     entry = MockConfigEntry(domain=DOMAIN, data={}, options={}, entry_id="test_entry")
     entry.add_to_hass(mock_hass)
@@ -327,7 +331,7 @@ async def test_async_unload_entry_with_unknown_dynamic_entities(mock_hass):
 
 
 @pytest.mark.asyncio
-async def test_async_unload_entry_last_entry(mock_hass):
+async def test_async_unload_entry_last_entry(mock_hass) -> None:
     """Test unload of the last entry."""
     entry = MockConfigEntry(domain=DOMAIN, data={}, options={}, entry_id="test_entry")
     entry.add_to_hass(mock_hass)
@@ -341,7 +345,7 @@ async def test_async_unload_entry_last_entry(mock_hass):
 
 
 @pytest.mark.asyncio
-async def test_async_unload_entry_failure(mock_hass):
+async def test_async_unload_entry_failure(mock_hass) -> None:
     """Test a failure during unload."""
     entry = MockConfigEntry(domain=DOMAIN, data={}, options={}, entry_id="test_entry")
     entry.add_to_hass(mock_hass)
@@ -354,7 +358,7 @@ async def test_async_unload_entry_failure(mock_hass):
 
 
 @pytest.mark.asyncio
-async def test_async_reload_entry(mock_hass):
+async def test_async_reload_entry(mock_hass) -> None:
     """Test async_reload_entry reloads the config entry."""
     entry = MockConfigEntry(domain=DOMAIN, data={}, options={}, entry_id="test_entry")
     entry.add_to_hass(mock_hass)
@@ -366,7 +370,7 @@ async def test_async_reload_entry(mock_hass):
 
 
 @pytest.mark.asyncio
-async def test_async_update_listener(mock_hass):
+async def test_async_update_listener(mock_hass) -> None:
     """Test _async_update_listener reloads the config entry."""
     entry = MockConfigEntry(domain=DOMAIN, data={}, options={}, entry_id="test_entry")
     entry.add_to_hass(mock_hass)
@@ -378,13 +382,13 @@ async def test_async_update_listener(mock_hass):
 
 
 @pytest.mark.asyncio
-async def test_async_setup(mock_hass):
+async def test_async_setup(mock_hass) -> None:
     """Test async_setup."""
     assert await async_setup(mock_hass, {})
 
 
 @pytest.mark.asyncio
-async def test_async_setup_entry_with_growspaces(mock_hass):
+async def test_async_setup_entry_with_growspaces(mock_hass) -> None:
     """Test setup with existing growspaces to trigger coordinator creation."""
     entry = MockConfigEntry(
         domain=DOMAIN,
@@ -417,6 +421,7 @@ async def test_async_setup_entry_with_growspaces(mock_hass):
         patch(
             "custom_components.growspace_manager.DehumidifierCoordinator"
         ) as mock_dehumidifier,
+        patch("custom_components.growspace_manager.websocket_api"),
     ):
         mock_irrigation.return_value.async_setup = AsyncMock()
 
@@ -431,7 +436,7 @@ async def test_async_setup_entry_with_growspaces(mock_hass):
 
 
 @pytest.mark.asyncio
-async def test_async_unload_entry_with_coordinators(mock_hass):
+async def test_async_unload_entry_with_coordinators(mock_hass) -> None:
     """Test unload with irrigation and dehumidifier coordinators."""
     entry = MockConfigEntry(domain=DOMAIN, data={}, options={}, entry_id="test_entry")
     entry.add_to_hass(mock_hass)
@@ -455,7 +460,7 @@ async def test_async_unload_entry_with_coordinators(mock_hass):
 
 
 @pytest.mark.asyncio
-async def test_strain_library_upload_view(mock_hass):
+async def test_strain_library_upload_view(mock_hass) -> None:
     """Test StrainLibraryUploadView."""
     mock_strain_library = AsyncMock()
     mock_strain_library.import_library_from_zip = AsyncMock(return_value=5)
