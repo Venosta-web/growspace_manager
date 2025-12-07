@@ -407,6 +407,8 @@ async def test_async_setup_entry_with_growspaces(mock_hass) -> None:
     mock_gs1 = MagicMock()
     mock_gs1.irrigation_strategy.enabled = False
     coordinator_mock.growspaces = {"gs1": mock_gs1}
+    coordinator_mock.irrigation_coordinators = {}
+    coordinator_mock.dehumidifier_coordinators = {}
 
     with (
         patch("custom_components.growspace_manager.Store", return_value=AsyncMock()),

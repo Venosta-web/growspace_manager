@@ -134,7 +134,7 @@ class AIConfigHandler:
 
     async def save_ai_settings(self, user_input: dict[str, Any]) -> dict[str, Any]:
         """Save AI settings to the coordinator and config entry."""
-        coordinator = self.config_entry.runtime_data.coordinator
+        coordinator = self.config_entry.runtime_data
         new_options = self.config_entry.options.copy()
         new_options["ai_settings"] = user_input
 

@@ -374,7 +374,7 @@ class OptionsFlowHandler(OptionsFlow):
         Returns:
             A ConfigFlowResult directing to the appropriate action (add/edit/delete).
         """
-        coordinator = self._config_entry.runtime_data.coordinator
+        coordinator = self._config_entry.runtime_data
 
         if user_input is not None:
             action = user_input.get("action")
@@ -419,7 +419,7 @@ class OptionsFlowHandler(OptionsFlow):
         Returns:
             A ConfigFlowResult.
         """
-        coordinator = self._config_entry.runtime_data.coordinator
+        coordinator = self._config_entry.runtime_data
 
         if user_input is not None:
             new_options = self._config_entry.options.copy()
@@ -452,7 +452,7 @@ class OptionsFlowHandler(OptionsFlow):
         Returns:
             A ConfigFlowResult.
         """
-        coordinator = self._config_entry.runtime_data.coordinator
+        coordinator = self._config_entry.runtime_data
         notification_id = self._selected_notification_id
         notifications = self._config_entry.options.get("timed_notifications", [])
         notification = next(
@@ -490,7 +490,7 @@ class OptionsFlowHandler(OptionsFlow):
     ) -> ConfigFlowResult:
         """Show the menu for managing growspaces (add, update, remove)."""
         try:
-            coordinator = self._config_entry.runtime_data.coordinator
+            coordinator = self._config_entry.runtime_data
         except (KeyError, AttributeError):
             _LOGGER.error(
                 "Coordinator not found - integration may not be properly set up"
@@ -540,7 +540,7 @@ class OptionsFlowHandler(OptionsFlow):
         """Show the form for adding a new growspace."""
         try:
             # Check if coordinator exists
-            _ = self._config_entry.runtime_data.coordinator
+            _ = self._config_entry.runtime_data
         except (KeyError, AttributeError):
             return self.async_abort(reason="setup_error")
 
@@ -566,7 +566,7 @@ class OptionsFlowHandler(OptionsFlow):
     ) -> ConfigFlowResult:
         """Show the form for updating an existing growspace."""
         try:
-            coordinator = self._config_entry.runtime_data.coordinator
+            coordinator = self._config_entry.runtime_data
         except (KeyError, AttributeError):
             _LOGGER.error(
                 "Coordinator not found - integration may not be properly set up"
@@ -612,7 +612,7 @@ class OptionsFlowHandler(OptionsFlow):
         Returns:
             A ConfigFlowResult.
         """
-        coordinator = self._config_entry.runtime_data.coordinator
+        coordinator = self._config_entry.runtime_data
         growspace_options = coordinator.get_sorted_growspace_options()
 
         if not growspace_options:
@@ -648,7 +648,7 @@ class OptionsFlowHandler(OptionsFlow):
         Returns:
             A ConfigFlowResult.
         """
-        coordinator = self._config_entry.runtime_data.coordinator
+        coordinator = self._config_entry.runtime_data
         growspace = coordinator.growspaces.get(self._selected_growspace_id)
 
         if not growspace:
@@ -713,7 +713,7 @@ class OptionsFlowHandler(OptionsFlow):
         Returns:
             A ConfigFlowResult.
         """
-        coordinator = self._config_entry.runtime_data.coordinator
+        coordinator = self._config_entry.runtime_data
         growspace = coordinator.growspaces.get(self._selected_growspace_id)
 
         if not growspace:
@@ -768,7 +768,7 @@ class OptionsFlowHandler(OptionsFlow):
         Returns:
             A ConfigFlowResult.
         """
-        coordinator = self._config_entry.runtime_data.coordinator
+        coordinator = self._config_entry.runtime_data
         growspace = coordinator.growspaces.get(self._selected_growspace_id)
 
         # Add this check early
@@ -915,7 +915,7 @@ class OptionsFlowHandler(OptionsFlow):
     ) -> ConfigFlowResult:
         """Show a form to select a growspace before configuring its irrigation."""
         try:
-            coordinator = self._config_entry.runtime_data.coordinator
+            coordinator = self._config_entry.runtime_data
         except (KeyError, AttributeError):
             _LOGGER.error("Coordinator not found for irrigation config flow")
             return self.async_abort(reason="setup_error")
@@ -953,7 +953,7 @@ class OptionsFlowHandler(OptionsFlow):
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
         """Show the irrigation configuration menu for a selected growspace."""
-        coordinator = self._config_entry.runtime_data.coordinator
+        coordinator = self._config_entry.runtime_data
         growspace = coordinator.growspaces.get(self._selected_growspace_id)
 
         if not growspace:
@@ -966,7 +966,7 @@ class OptionsFlowHandler(OptionsFlow):
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
         """Show the unified irrigation management screen for the Lovelace card."""
-        coordinator = self._config_entry.runtime_data.coordinator
+        coordinator = self._config_entry.runtime_data
         growspace = coordinator.growspaces.get(self._selected_growspace_id)
 
         if not growspace:
@@ -1029,7 +1029,7 @@ class OptionsFlowHandler(OptionsFlow):
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
         """Show the menu for managing plants (add, update, remove)."""
-        coordinator = self._config_entry.runtime_data.coordinator
+        coordinator = self._config_entry.runtime_data
 
         if user_input is not None:
             action = user_input.get("action")
@@ -1073,7 +1073,7 @@ class OptionsFlowHandler(OptionsFlow):
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
         """Show a form to select a growspace before adding a new plant."""
-        coordinator = self._config_entry.runtime_data.coordinator
+        coordinator = self._config_entry.runtime_data
 
         if user_input is not None:
             self._selected_growspace_id = user_input["growspace_id"]
@@ -1108,7 +1108,7 @@ class OptionsFlowHandler(OptionsFlow):
     ) -> ConfigFlowResult:
         """Show the form for adding a new plant to a selected growspace."""
         try:
-            coordinator = self._config_entry.runtime_data.coordinator
+            coordinator = self._config_entry.runtime_data
         except (KeyError, AttributeError):
             return self.async_abort(reason="setup_error")
 
@@ -1145,7 +1145,7 @@ class OptionsFlowHandler(OptionsFlow):
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
         """Show the form for updating an existing plant."""
-        coordinator = self._config_entry.runtime_data.coordinator
+        coordinator = self._config_entry.runtime_data
         plant = coordinator.plants.get(self._selected_plant_id)
 
         if not plant:
@@ -1178,7 +1178,7 @@ class OptionsFlowHandler(OptionsFlow):
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
         """Show the menu for managing the strain library."""
-        coordinator = self._config_entry.runtime_data.coordinator
+        coordinator = self._config_entry.runtime_data
 
         if user_input is not None:
             action = user_input.get("action")
@@ -1267,7 +1267,7 @@ class OptionsFlowHandler(OptionsFlow):
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
         """Show the form for adding a new strain."""
-        coordinator = self._config_entry.runtime_data.coordinator
+        coordinator = self._config_entry.runtime_data
 
         if user_input is not None:
             await coordinator.strain_library.async_add_strain(
@@ -1374,7 +1374,7 @@ class OptionsFlowHandler(OptionsFlow):
         errors = {}
         if user_input is not None:
             try:
-                coordinator = self._config_entry.runtime_data.coordinator
+                coordinator = self._config_entry.runtime_data
                 file_path = user_input["file_path"]
 
                 # Use default image directory if not specified
@@ -1415,7 +1415,7 @@ class OptionsFlowHandler(OptionsFlow):
         if user_input is not None:
             return await self.async_step_manage_strain_library()
 
-        coordinator = self._config_entry.runtime_data.coordinator
+        coordinator = self._config_entry.runtime_data
 
         # Default export location
         export_dir = self.hass.config.path("exports")

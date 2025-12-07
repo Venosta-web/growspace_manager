@@ -78,7 +78,7 @@ class AskGrowAdviceIntent(intent.IntentHandler):
         entries = self.hass.config_entries.async_entries(DOMAIN)
         for entry in entries:
             if hasattr(entry, "runtime_data"):
-                curr_coordinator = entry.runtime_data.coordinator
+                curr_coordinator = entry.runtime_data
                 for gs_id, gs in curr_coordinator.growspaces.items():
                     if gs.name.lower() == growspace_name.lower():
                         return gs_id

@@ -5,7 +5,11 @@ from __future__ import annotations
 import logging
 
 import voluptuous as vol
+from homeassistant.config_entries import ConfigEntry
+from homeassistant.core import HomeAssistant
 from homeassistant.helpers import selector
+
+from custom_components.growspace_manager.coordinator import GrowspaceCoordinator
 
 from ..const import DOMAIN
 
@@ -15,12 +19,14 @@ _LOGGER = logging.getLogger(__name__)
 class PlantConfigHandler:
     """Handler for Plant configuration steps."""
 
-    def __init__(self, hass, config_entry):
+    def __init__(self, hass: HomeAssistant, config_entry: ConfigEntry) -> None:
         """Initialize the Plant config handler."""
         self.hass = hass
         self.config_entry = config_entry
 
-    def get_plant_management_schema(self, coordinator) -> vol.Schema:
+    def get_plant_management_schema(
+        self, coordinator: GrowspaceCoordinator
+    ) -> vol.Schema:
         """Build the schema for the plant management menu."""
         growspace_options = coordinator.get_sorted_growspace_options()
 
@@ -62,12 +68,12 @@ class PlantConfigHandler:
         self, growspace_id: str, plant_id: str, harvest_weight: float
     ) -> None:
         """Harvest a plant."""
-        coordinator = self.config_entry.runtime_data.coordinator
+        coordinator = self.config_entry.runtime_data
         await coordinator.async_harvest_plant(growspace_id, plant_id, harvest_weight)
 
     async def async_destroy_plant(self, growspace_id: str, plant_id: str) -> None:
         """Destroy a plant."""
-        coordinator = self.config_entry.runtime_data.coordinator
+        coordinator = self.config_entry.runtime_data
         await coordinator.async_remove_plant(plant_id)
 
     async def async_add_plant(
@@ -81,7 +87,7 @@ class PlantConfigHandler:
         flower_start: str | None = None,
     ) -> None:
         """Add a new plant."""
-        coordinator = self.config_entry.runtime_data.coordinator
+        coordinator = self.config_entry.runtime_data
         await coordinator.async_add_plant(
             growspace_id=growspace_id,
             strain=strain,
@@ -94,7 +100,7 @@ class PlantConfigHandler:
 
     async def async_update_plant(self, plant_id: str, **kwargs) -> None:
         """Update an existing plant."""
-        coordinator = self.config_entry.runtime_data.coordinator
+        coordinator = self.config_entry.runtime_data
         await coordinator.async_update_plant(plant_id, **kwargs)
 
     def get_growspace_selection_schema(

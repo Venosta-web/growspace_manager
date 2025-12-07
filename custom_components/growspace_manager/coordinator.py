@@ -94,6 +94,11 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
             str, bool
         ] = {}  # ✅ Notification switch states
 
+        # Initialize runtime coordination
+        self.irrigation_coordinators: dict[str, Any] = {}
+        self.dehumidifier_coordinators: dict[str, Any] = {}
+        self.created_entities: list[str] = []
+
         # Load data
         if data is None:
             data = {}

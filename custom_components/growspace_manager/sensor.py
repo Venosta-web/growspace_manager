@@ -84,7 +84,7 @@ async def async_setup_entry(
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     """Set up the Growspace Manager sensor platform from a config entry."""
-    coordinator = config_entry.runtime_data.coordinator
+    coordinator = config_entry.runtime_data
 
     # Track created entities so we can add/remove dynamically
     growspace_entities: dict[str, GrowspaceOverviewSensor] = {}

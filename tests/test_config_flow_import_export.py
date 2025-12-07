@@ -33,7 +33,7 @@ async def test_import_strain_library_show_form(
     config_entry = MockConfigEntry(domain=DOMAIN, data={"name": "Test"})
     config_entry.add_to_hass(hass)
     config_entry.runtime_data = MagicMock()
-    config_entry.runtime_data.coordinator = mock_coordinator
+    config_entry.runtime_data = mock_coordinator
 
     flow = OptionsFlowHandler(config_entry)
     flow.hass = hass
@@ -52,7 +52,7 @@ async def test_import_strain_library_success(
     config_entry = MockConfigEntry(domain=DOMAIN, data={"name": "Test"})
     config_entry.add_to_hass(hass)
     config_entry.runtime_data = MagicMock()
-    config_entry.runtime_data.coordinator = mock_coordinator
+    config_entry.runtime_data = mock_coordinator
 
     flow = OptionsFlowHandler(config_entry)
     flow.hass = hass
@@ -80,7 +80,7 @@ async def test_import_strain_library_file_not_found(
     config_entry = MockConfigEntry(domain=DOMAIN, data={"name": "Test"})
     config_entry.add_to_hass(hass)
     config_entry.runtime_data = MagicMock()
-    config_entry.runtime_data.coordinator = mock_coordinator
+    config_entry.runtime_data = mock_coordinator
 
     mock_coordinator.import_export_manager.import_library.side_effect = (
         FileNotFoundError
@@ -105,7 +105,7 @@ async def test_import_strain_library_invalid_zip(
     config_entry = MockConfigEntry(domain=DOMAIN, data={"name": "Test"})
     config_entry.add_to_hass(hass)
     config_entry.runtime_data = MagicMock()
-    config_entry.runtime_data.coordinator = mock_coordinator
+    config_entry.runtime_data = mock_coordinator
 
     mock_coordinator.import_export_manager.import_library.side_effect = ValueError
 
@@ -128,7 +128,7 @@ async def test_export_strain_library_success(
     config_entry = MockConfigEntry(domain=DOMAIN, data={"name": "Test"})
     config_entry.add_to_hass(hass)
     config_entry.runtime_data = MagicMock()
-    config_entry.runtime_data.coordinator = mock_coordinator
+    config_entry.runtime_data = mock_coordinator
 
     mock_coordinator.import_export_manager.export_library.return_value = str(
         tmp_path / "export.zip"
@@ -156,7 +156,7 @@ async def test_export_strain_library_failure(
     config_entry = MockConfigEntry(domain=DOMAIN, data={"name": "Test"})
     config_entry.add_to_hass(hass)
     config_entry.runtime_data = MagicMock()
-    config_entry.runtime_data.coordinator = mock_coordinator
+    config_entry.runtime_data = mock_coordinator
 
     mock_coordinator.import_export_manager.export_library.side_effect = Exception(
         "Export failed"

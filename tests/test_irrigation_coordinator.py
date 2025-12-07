@@ -120,7 +120,7 @@ async def test_run_pump_cycle(
 
     with patch("asyncio.sleep", new_callable=AsyncMock) as mock_sleep:
         # Ensure runtime_data.coordinator returns the mock_main_coordinator
-        mock_config_entry.runtime_data.coordinator = mock_main_coordinator
+        mock_config_entry.runtime_data = mock_main_coordinator
 
         await coordinator._run_pump_cycle(
             "irrigation", "switch.irrigation_pump", 30, event_data

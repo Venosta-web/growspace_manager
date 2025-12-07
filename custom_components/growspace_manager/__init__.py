@@ -5,7 +5,6 @@ from __future__ import annotations
 import logging
 import pathlib
 import tempfile
-from dataclasses import dataclass
 from functools import partial
 from typing import Any, cast
 
@@ -74,18 +73,7 @@ CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 _LOGGER = logging.getLogger(__name__)
 
 
-@dataclass
-class GrowspaceRuntimeData:
-    """Runtime data for the Growspace Manager integration."""
-
-    coordinator: GrowspaceCoordinator
-    store: Store
-    created_entities: list[str]
-    irrigation_coordinators: dict[str, IrrigationCoordinator | VWCIrrigationCoordinator]
-    dehumidifier_coordinators: dict[str, DehumidifierCoordinator]
-
-
-type GrowspaceConfigEntry = ConfigEntry[GrowspaceRuntimeData]
+type GrowspaceConfigEntry = ConfigEntry[GrowspaceCoordinator]
 
 
 async def _register_services(
@@ -344,7 +332,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: GrowspaceConfigEntry) ->
     # Initialize and load Strain Library (global instance)
     strain_library_instance = StrainLibrary(hass)
     await strain_library_instance.async_setup()
-    hass.data.setdefault(DOMAIN, {})
 
     coordinator = GrowspaceCoordinator(
         hass,
@@ -358,13 +345,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: GrowspaceConfigEntry) ->
         StrainLibraryUploadView(hass, strain_library_instance, coordinator)
     )
 
-    entry.runtime_data = GrowspaceRuntimeData(
-        coordinator=coordinator,
-        store=store,
-        created_entities=[],
-        irrigation_coordinators={},
-        dehumidifier_coordinators={},
-    )
+    entry.runtime_data = coordinator
 
     for growspace_id, gs in coordinator.growspaces.items():
         # ADD THIS DEBUG LOGGING
@@ -480,19 +461,19 @@ async def async_setup_entry(hass: HomeAssistant, entry: GrowspaceConfigEntry) ->
 # ... _register_services ...
 
 
-def _async_cancel_coordinators(runtime_data: GrowspaceRuntimeData) -> None:
+def _async_cancel_coordinators(coordinator: GrowspaceCoordinator) -> None:
     """Cancel irrigation and dehumidifier listeners."""
-    for irr_coordinator in runtime_data.irrigation_coordinators.values():
+    for irr_coordinator in coordinator.irrigation_coordinators.values():
         irr_coordinator.async_cancel_listeners()
-    for dehum_coordinator in runtime_data.dehumidifier_coordinators.values():
+    for dehum_coordinator in coordinator.dehumidifier_coordinators.values():
         dehum_coordinator.unload()
 
 
 def _async_remove_dynamic_entities(
-    hass: HomeAssistant, runtime_data: GrowspaceRuntimeData
+    hass: HomeAssistant, coordinator: GrowspaceCoordinator
 ) -> None:
     """Remove dynamically created entities."""
-    created_unique_ids = runtime_data.created_entities
+    created_unique_ids = coordinator.created_entities
     entity_registry = er.async_get(hass)
 
     for unique_id in created_unique_ids:
@@ -525,8 +506,6 @@ async def async_unload_entry(hass: HomeAssistant, entry: GrowspaceConfigEntry) -
     _LOGGER.debug("Unloading config entry %s for Growspace Manager", entry.entry_id)
 
     # Clean up dynamically created entities before unloading platforms
-    # entry_data = hass.data.get(DOMAIN, {}).get(entry.entry_id, {}) # OLD
-
     _async_cancel_coordinators(entry.runtime_data)
     _async_remove_dynamic_entities(hass, entry.runtime_data)
 

@@ -38,7 +38,7 @@ async def async_setup_entry(
         config_entry: The configuration entry.
         async_add_entities: A callback function for adding new entities.
     """
-    coordinator = config_entry.runtime_data.coordinator
+    coordinator = config_entry.runtime_data
     calendars = [
         GrowspaceCalendar(coordinator, growspace_id)
         for growspace_id in coordinator.growspaces

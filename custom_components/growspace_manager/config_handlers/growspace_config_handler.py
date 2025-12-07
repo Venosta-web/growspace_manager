@@ -6,7 +6,11 @@ import logging
 from typing import Any
 
 import voluptuous as vol
+from homeassistant.config_entries import ConfigEntry
+from homeassistant.core import HomeAssistant
 from homeassistant.helpers import selector
+
+from custom_components.growspace_manager.coordinator import GrowspaceCoordinator
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -14,12 +18,14 @@ _LOGGER = logging.getLogger(__name__)
 class GrowspaceConfigHandler:
     """Handler for Growspace configuration steps."""
 
-    def __init__(self, hass, config_entry):
+    def __init__(self, hass: HomeAssistant, config_entry: ConfigEntry) -> None:
         """Initialize the Growspace config handler."""
         self.hass = hass
         self.config_entry = config_entry
 
-    def get_growspace_management_schema(self, coordinator) -> vol.Schema:
+    def get_growspace_management_schema(
+        self, coordinator: GrowspaceCoordinator
+    ) -> vol.Schema:
         """Build the schema for the growspace management menu."""
         growspace_options = coordinator.get_sorted_growspace_options()
 
@@ -98,7 +104,7 @@ class GrowspaceConfigHandler:
 
     async def async_add_growspace(self, user_input: dict[str, Any]) -> None:
         """Add a new growspace."""
-        coordinator = self.config_entry.runtime_data.coordinator
+        coordinator = self.config_entry.runtime_data
 
         # Use coordinator to add growspace
         await coordinator.async_add_growspace(
@@ -113,7 +119,7 @@ class GrowspaceConfigHandler:
 
     async def async_remove_growspace(self, growspace_id: str) -> None:
         """Remove a growspace."""
-        coordinator = self.config_entry.runtime_data.coordinator
+        coordinator = self.config_entry.runtime_data
         await coordinator.async_remove_growspace(growspace_id)
 
     def get_update_growspace_schema(self, growspace) -> vol.Schema:
@@ -180,7 +186,7 @@ class GrowspaceConfigHandler:
         self, growspace_id: str, user_input: dict[str, Any]
     ) -> None:
         """Update an existing growspace."""
-        coordinator = self.config_entry.runtime_data.coordinator
+        coordinator = self.config_entry.runtime_data
 
         # Filter out empty values
         update_data = {k: v for k, v in user_input.items() if v}

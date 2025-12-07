@@ -57,7 +57,7 @@ def mock_config_entry(mock_coordinator) -> MagicMock:
     entry = MagicMock(spec=ConfigEntry)
     entry.entry_id = ENTRY_ID
     entry.runtime_data = MagicMock()
-    entry.runtime_data.coordinator = mock_coordinator
+    entry.runtime_data = mock_coordinator
     return entry
 
 
@@ -69,7 +69,7 @@ def handler(mock_hass: MagicMock, mock_config_entry: MagicMock) -> PlantConfigHa
 
 def test_initialization(
     handler: PlantConfigHandler, mock_hass: MagicMock, mock_config_entry: MagicMock
-):
+) -> None:
     """Test initialization."""
     assert handler.hass == mock_hass
     assert handler.config_entry == mock_config_entry
@@ -77,7 +77,7 @@ def test_initialization(
 
 def test_get_plant_management_schema(
     handler: PlantConfigHandler, mock_coordinator: MagicMock
-):
+) -> None:
     """Test generating the plant management schema."""
     schema = handler.get_plant_management_schema(mock_coordinator)
     assert isinstance(schema, vol.Schema)
@@ -88,7 +88,7 @@ def test_get_plant_management_schema(
 
 async def test_async_harvest_plant(
     handler: PlantConfigHandler, mock_coordinator: MagicMock
-):
+) -> None:
     """Test harvesting a plant."""
     await handler.async_harvest_plant(GROWSPACE_ID, "plant_1", 100.5)
     mock_coordinator.async_harvest_plant.assert_awaited_once_with(
@@ -98,7 +98,7 @@ async def test_async_harvest_plant(
 
 async def test_async_destroy_plant(
     handler: PlantConfigHandler, mock_coordinator: MagicMock
-):
+) -> None:
     """Test destroying a plant."""
     await handler.async_destroy_plant(GROWSPACE_ID, "plant_1")
     mock_coordinator.async_remove_plant.assert_awaited_once_with("plant_1")
@@ -106,7 +106,7 @@ async def test_async_destroy_plant(
 
 async def test_async_add_plant(
     handler: PlantConfigHandler, mock_coordinator: MagicMock
-):
+) -> None:
     """Test adding a plant."""
     await handler.async_add_plant(
         growspace_id=GROWSPACE_ID,
@@ -130,7 +130,7 @@ async def test_async_add_plant(
 
 async def test_async_update_plant(
     handler: PlantConfigHandler, mock_coordinator: MagicMock
-):
+) -> None:
     """Test updating a plant."""
     await handler.async_update_plant("plant_1", strain="New Strain")
     mock_coordinator.async_update_plant.assert_awaited_once_with(
@@ -140,7 +140,7 @@ async def test_async_update_plant(
 
 def test_get_growspace_selection_schema(
     handler: PlantConfigHandler, mock_coordinator: MagicMock
-):
+) -> None:
     """Test generating growspace selection schema."""
     # Mock devices
     device1 = MagicMock()
@@ -153,7 +153,9 @@ def test_get_growspace_selection_schema(
     assert isinstance(schema, vol.Schema)
 
 
-def test_get_add_plant_schema(handler: PlantConfigHandler, mock_coordinator: MagicMock):
+def test_get_add_plant_schema(
+    handler: PlantConfigHandler, mock_coordinator: MagicMock
+) -> None:
     """Test generating add plant schema."""
     growspace = mock_coordinator.growspaces[GROWSPACE_ID]
 
@@ -173,7 +175,7 @@ def test_get_add_plant_schema(handler: PlantConfigHandler, mock_coordinator: Mag
 
 def test_get_update_plant_schema(
     handler: PlantConfigHandler, mock_coordinator: MagicMock
-):
+) -> None:
     """Test generating update plant schema."""
     plant = Plant(
         plant_id="plant_1", growspace_id=GROWSPACE_ID, strain="Strain A", row=1, col=1

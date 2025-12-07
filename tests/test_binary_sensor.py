@@ -149,7 +149,7 @@ async def test_async_setup_entry(
     async_add_entities = MagicMock()
     config_entry = MagicMock()
     config_entry.entry_id = MOCK_CONFIG_ENTRY_ID
-    config_entry.runtime_data = Mock(coordinator=mock_coordinator)
+    config_entry.runtime_data = mock_coordinator
 
     await async_setup_entry(hass, config_entry, async_add_entities)
     await hass.async_block_till_done()
@@ -182,7 +182,7 @@ async def test_async_setup_entry_no_env_config(
     async_add_entities = MagicMock()
     config_entry = MagicMock()
     config_entry.entry_id = MOCK_CONFIG_ENTRY_ID
-    config_entry.runtime_data = Mock(coordinator=mock_coordinator)
+    config_entry.runtime_data = mock_coordinator
 
     await async_setup_entry(hass, config_entry, async_add_entities)
     await hass.async_block_till_done()

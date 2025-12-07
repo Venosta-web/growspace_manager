@@ -20,7 +20,7 @@ async def setup_test_environment(hass: HomeAssistant, coordinator):
     """Set up the test environment with a mock coordinator and config entry."""
     config_entry = MockConfigEntry(domain=DOMAIN, data={"name": "Test"})
     config_entry.runtime_data = MagicMock()
-    config_entry.runtime_data.coordinator = coordinator
+    config_entry.runtime_data = coordinator
     config_entry.add_to_hass(hass)
     return config_entry
 
@@ -59,7 +59,9 @@ def mock_store():
 
 
 @pytest.mark.asyncio
-async def test_options_flow_init_show_menu(hass: HomeAssistant, basic_mock_coordinator):
+async def test_options_flow_init_show_menu(
+    hass: HomeAssistant, basic_mock_coordinator
+) -> None:
     """Test showing the main options menu."""
     # Given
     config_entry = await setup_test_environment(hass, basic_mock_coordinator)
@@ -77,7 +79,7 @@ async def test_options_flow_init_show_menu(hass: HomeAssistant, basic_mock_coord
 @pytest.mark.asyncio
 async def test_options_flow_init_manage_growspaces(
     hass: HomeAssistant, basic_mock_coordinator
-):
+) -> None:
     """Test selecting manage growspaces from menu."""
     # Given
     config_entry = await setup_test_environment(hass, basic_mock_coordinator)
@@ -95,7 +97,7 @@ async def test_options_flow_init_manage_growspaces(
 @pytest.mark.asyncio
 async def test_options_flow_init_manage_plants(
     hass: HomeAssistant, basic_mock_coordinator
-):
+) -> None:
     """Test selecting manage plants from menu."""
     # Given
     config_entry = await setup_test_environment(hass, basic_mock_coordinator)
@@ -118,7 +120,7 @@ async def test_options_flow_init_manage_plants(
 @pytest.mark.asyncio
 async def test_options_flow_manage_growspaces_show_form(
     hass: HomeAssistant, basic_mock_coordinator
-):
+) -> None:
     """Test showing manage growspaces form."""
     # Given
     config_entry = await setup_test_environment(hass, basic_mock_coordinator)
@@ -136,7 +138,7 @@ async def test_options_flow_manage_growspaces_show_form(
 @pytest.mark.asyncio
 async def test_options_flow_manage_growspaces_add(
     hass: HomeAssistant, basic_mock_coordinator
-):
+) -> None:
     """Test adding growspace action."""
     # Given
     config_entry = await setup_test_environment(hass, basic_mock_coordinator)
@@ -154,7 +156,7 @@ async def test_options_flow_manage_growspaces_add(
 @pytest.mark.asyncio
 async def test_options_flow_manage_growspaces_update(
     hass: HomeAssistant, basic_mock_coordinator
-):
+) -> None:
     """Test update growspace action."""
     # Given
     basic_mock_coordinator.growspaces = {"gs1": Mock(name="Growspace 1")}
@@ -176,7 +178,7 @@ async def test_options_flow_manage_growspaces_update(
 @pytest.mark.asyncio
 async def test_options_flow_manage_growspaces_remove(
     hass: HomeAssistant, basic_mock_coordinator
-):
+) -> None:
     """Test remove growspace action."""
     # Given
     config_entry = await setup_test_environment(hass, basic_mock_coordinator)
@@ -195,7 +197,7 @@ async def test_options_flow_manage_growspaces_remove(
 @pytest.mark.asyncio
 async def test_options_flow_manage_growspaces_remove_error(
     hass: HomeAssistant, basic_mock_coordinator
-):
+) -> None:
     """Test error handling when removing growspace."""
     # Given
     basic_mock_coordinator.async_remove_growspace.side_effect = Exception("Test error")
@@ -214,7 +216,9 @@ async def test_options_flow_manage_growspaces_remove_error(
 
 
 @pytest.mark.asyncio
-async def test_options_flow_manage_growspaces_back(hass, basic_mock_coordinator):
+async def test_options_flow_manage_growspaces_back(
+    hass: HomeAssistant, basic_mock_coordinator
+) -> None:
     """Test going back to main menu in manage growspaces step."""
     # Given
     config_entry = await setup_test_environment(hass, basic_mock_coordinator)
@@ -231,7 +235,9 @@ async def test_options_flow_manage_growspaces_back(hass, basic_mock_coordinator)
 
 
 @pytest.mark.asyncio
-async def test_options_flow_manage_growspaces_no_coordinator(hass: HomeAssistant):
+async def test_options_flow_manage_growspaces_no_coordinator(
+    hass: HomeAssistant,
+) -> None:
     """Test error when coordinator not found."""
     # Given
     config_entry = MockConfigEntry(domain=DOMAIN, data={"name": "Test"})
@@ -255,7 +261,7 @@ async def test_options_flow_manage_growspaces_no_coordinator(hass: HomeAssistant
 @pytest.mark.asyncio
 async def test_options_flow_add_growspace_show_form(
     hass: HomeAssistant, basic_mock_coordinator
-):
+) -> None:
     """Test showing add growspace form."""
     # Given
     config_entry = await setup_test_environment(hass, basic_mock_coordinator)
@@ -275,7 +281,7 @@ async def test_options_flow_add_growspace_show_form(
 @pytest.mark.asyncio
 async def test_options_flow_add_growspace_success(
     hass: HomeAssistant, basic_mock_coordinator
-):
+) -> None:
     """Test successfully adding a growspace."""
     # Given
     config_entry = await setup_test_environment(hass, basic_mock_coordinator)
@@ -304,7 +310,7 @@ async def test_options_flow_add_growspace_success(
 @pytest.mark.asyncio
 async def test_options_flow_add_growspace_error(
     hass: HomeAssistant, basic_mock_coordinator
-):
+) -> None:
     """Test error handling when adding growspace."""
     # Given
     basic_mock_coordinator.async_add_growspace.side_effect = Exception("Test error")
@@ -331,7 +337,7 @@ async def test_options_flow_add_growspace_error(
 @pytest.mark.asyncio
 async def test_options_flow_update_growspace_show_form(
     hass: HomeAssistant, basic_mock_coordinator
-):
+) -> None:
     """Test showing update growspace form."""
     # Given
     mock_growspace = Mock()
@@ -358,7 +364,7 @@ async def test_options_flow_update_growspace_show_form(
 @pytest.mark.asyncio
 async def test_options_flow_update_growspace_success(
     hass: HomeAssistant, basic_mock_coordinator
-):
+) -> None:
     """Test successfully updating a growspace."""
     # Given
     mock_growspace = Mock()
@@ -384,7 +390,7 @@ async def test_options_flow_update_growspace_success(
 @pytest.mark.asyncio
 async def test_options_flow_update_growspace_not_found(
     hass: HomeAssistant, basic_mock_coordinator
-):
+) -> None:
     """Test updating non-existent growspace."""
     # Given
     config_entry = await setup_test_environment(hass, basic_mock_coordinator)
@@ -403,7 +409,7 @@ async def test_options_flow_update_growspace_not_found(
 @pytest.mark.asyncio
 async def test_options_flow_update_growspace_error(
     hass: HomeAssistant, basic_mock_coordinator
-):
+) -> None:
     """Test error handling when updating growspace."""
     # Given
     mock_growspace = Mock()
@@ -437,7 +443,7 @@ async def test_options_flow_update_growspace_error(
 @pytest.mark.asyncio
 async def test_options_flow_manage_plants_show_form(
     hass: HomeAssistant, basic_mock_coordinator
-):
+) -> None:
     """Test showing manage plants form."""
     # Given
     config_entry = await setup_test_environment(hass, basic_mock_coordinator)
@@ -453,7 +459,9 @@ async def test_options_flow_manage_plants_show_form(
 
 
 @pytest.mark.asyncio
-async def test_options_flow_manage_plants_add(hass, basic_mock_coordinator, mock_store):
+async def test_options_flow_manage_plants_add(
+    hass: HomeAssistant, basic_mock_coordinator, mock_store
+) -> None:
     """Test the add plant action in the options flow."""
     # Given
     basic_mock_coordinator.growspaces = {"test_grow": Mock(name="Test Growspace")}
@@ -462,7 +470,7 @@ async def test_options_flow_manage_plants_add(hass, basic_mock_coordinator, mock
     ]
     basic_mock_coordinator.get_strain_options.return_value = ["Strain A", "Strain B"]
     config_entry = await setup_test_environment(hass, basic_mock_coordinator)
-    config_entry.runtime_data["store"] = mock_store
+    config_entry.runtime_data.store = mock_store
 
     # When
     flow = OptionsFlowHandler(config_entry)
@@ -480,13 +488,13 @@ async def test_options_flow_manage_plants_add(hass, basic_mock_coordinator, mock
 @pytest.mark.asyncio
 async def test_options_flow_manage_plants_update(
     hass: HomeAssistant, basic_mock_coordinator, mock_store
-):
+) -> None:
     """Test update plant action."""
     # Given
     basic_mock_coordinator.growspaces = {"test_grow": Mock(name="Test Growspace")}
     basic_mock_coordinator.get_strain_options.return_value = ["Strain A", "Strain B"]
     config_entry = await setup_test_environment(hass, basic_mock_coordinator)
-    config_entry.runtime_data["store"] = mock_store
+    config_entry.runtime_data.store = mock_store
 
     # When
     flow = OptionsFlowHandler(config_entry)
@@ -504,7 +512,7 @@ async def test_options_flow_manage_plants_update(
 @pytest.mark.asyncio
 async def test_options_flow_manage_plants_remove(
     hass: HomeAssistant, basic_mock_coordinator
-):
+) -> None:
     """Test remove plant action."""
     # Given
     mock_plant = Mock(id="p1", growspace_id="gs1")
@@ -525,7 +533,7 @@ async def test_options_flow_manage_plants_remove(
 @pytest.mark.asyncio
 async def test_options_flow_manage_plants_remove_error(
     hass: HomeAssistant, basic_mock_coordinator
-):
+) -> None:
     """Test error when removing plant."""
     # Given
     basic_mock_coordinator.async_remove_plant.side_effect = Exception("Test error")
