@@ -34,7 +34,7 @@ def format_date(date_value: DateInput) -> str | None:
     dt = parse_date_field(date_value)
     if dt is None:
         return None
-    return dt.isoformat()
+    return dt.date().isoformat()
 
 
 def calculate_days_since(

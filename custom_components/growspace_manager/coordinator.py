@@ -808,16 +808,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
             phenotype=phenotype,
             row=final_row,
             col=final_col,
-            stage=stage
-            or calculate_plant_stage(
-                seedling_start=seedling_start,
-                veg_start=veg_start,
-                flower_start=flower_start,
-                dry_start=dry_start,
-                cure_start=cure_start,
-                mother_start=mother_start,
-                clone_start=clone_start,
-            ),
+            stage=stage or "",
             type=type,
             device_id=device_id,
             seedling_start=format_date(seedling_start),
@@ -831,6 +822,10 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
             updated_at=datetime.now().isoformat(),
             source_mother=source_mother,
         )
+
+        # Calculate stage if not explicitly provided
+        if not stage:
+            plant.stage = calculate_plant_stage(plant)
         self.plants[plant.plant_id] = plant
 
         self.update_data_property()

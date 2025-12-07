@@ -52,9 +52,9 @@ def test_parse_date_field(input_value, expected):
     "input_value,expected",
     [
         (None, None),
-        (date(2025, 11, 3), "2025-11-03T00:00:00"),
-        (datetime(2025, 11, 3, 15, 30), "2025-11-03T15:30:00"),
-        ("2025-11-03", "2025-11-03T00:00:00"),
+        (date(2025, 11, 3), "2025-11-03"),
+        (datetime(2025, 11, 3, 15, 30), "2025-11-03"),
+        ("2025-11-03", "2025-11-03"),
         ("invalid-date", None),
         (12345, None),
     ],
