@@ -637,17 +637,27 @@ class GrowspaceOverviewSensor(CoordinatorEntity[GrowspaceCoordinator], SensorEnt
         # 4. Determine Current Status
         vpd_status = "unknown"
         vpd_sensor_id = growspace.environment_config.get("vpd_sensor")
+
         if vpd_sensor_id:
-            state_obj = self.coordinator.hass.states.get(vpd_sensor_id)
-            if state_obj and state_obj.state not in (STATE_UNKNOWN, STATE_UNAVAILABLE):
-                with contextlib.suppress(ValueError):
-                    current_vpd = float(state_obj.state)
-                    if current_vpd < danger_min or current_vpd > danger_max:
-                        vpd_status = "danger"
-                    elif current_vpd < target_min or current_vpd > target_max:
-                        vpd_status = "warning"
-                    else:
-                        vpd_status = "optimal"
+            current_vpd = self._get_sensor_value(vpd_sensor_id)
+            if current_vpd is not None:
+                if current_vpd < danger_min or current_vpd > danger_max:
+                    vpd_status = "danger"
+                elif current_vpd < target_min or current_vpd > target_max:
+                    vpd_status = "warning"
+                else:
+                    vpd_status = "optimal"
+            else:
+                _LOGGER.debug(
+                    "VPD Sensor %s returned None (state might be invalid or unavailable)",
+                    vpd_sensor_id,
+                )
+        else:
+            _LOGGER.debug(
+                "No VPD Sensor configured for growspace %s env_config=%s",
+                growspace.id,
+                growspace.environment_config,
+            )
 
         return {
             "granular_stage": granular_stage,
@@ -658,6 +668,20 @@ class GrowspaceOverviewSensor(CoordinatorEntity[GrowspaceCoordinator], SensorEnt
             "vpd_danger_max": danger_max,
             "vpd_status": vpd_status,
         }
+
+    def _get_sensor_value(self, sensor_id: str | None) -> float | None:
+        """Safely get the numeric value from a sensor's state."""
+        if not sensor_id:
+            return None
+
+        state = self.coordinator.hass.states.get(sensor_id)
+        if not state or state.state in (STATE_UNAVAILABLE, STATE_UNKNOWN):
+            return None
+
+        try:
+            return float(state.state)
+        except (ValueError, TypeError):
+            return None
 
     def _determine_granular_stage(self, max_veg: int, max_flower: int) -> str:
         """Determine granular growth stage based on days."""
