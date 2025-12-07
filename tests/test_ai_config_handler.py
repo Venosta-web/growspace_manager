@@ -87,7 +87,6 @@ async def test_save_ai_settings(handler, mock_hass, mock_config_entry) -> None:
     mock_coordinator.async_save = AsyncMock()
 
     # Update to use runtime_data
-    mock_config_entry.runtime_data = MagicMock()
     mock_config_entry.runtime_data = mock_coordinator
 
     user_input = {

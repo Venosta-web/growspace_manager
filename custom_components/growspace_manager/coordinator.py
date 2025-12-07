@@ -5,12 +5,18 @@ from __future__ import annotations
 import logging
 import uuid
 from datetime import date, datetime, timedelta
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from dateutil import parser
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
+
+if TYPE_CHECKING:
+    from .dehumidifier_coordinator import DehumidifierCoordinator
+    from .irrigation_coordinator import IrrigationCoordinator
+    from .vwc_irrigation_coordinator import VWCIrrigationCoordinator
+
 
 from .const import DATE_FIELDS, PLANT_STAGES
 from .environment_analyzer import EnvironmentAnalyzer
@@ -95,8 +101,10 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
         ] = {}  # ✅ Notification switch states
 
         # Initialize runtime coordination
-        self.irrigation_coordinators: dict[str, Any] = {}
-        self.dehumidifier_coordinators: dict[str, Any] = {}
+        self.irrigation_coordinators: dict[
+            str, IrrigationCoordinator | VWCIrrigationCoordinator
+        ] = {}
+        self.dehumidifier_coordinators: dict[str, DehumidifierCoordinator] = {}
         self.created_entities: list[str] = []
 
         # Load data
