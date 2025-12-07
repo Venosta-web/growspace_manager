@@ -559,13 +559,21 @@ class GrowspaceOverviewSensor(CoordinatorEntity[GrowspaceCoordinator], SensorEnt
             (calculate_days_since(p.flower_start) for p in plants if p.flower_start),
             default=0,
         )
+        max_dry = max(
+            (calculate_days_since(p.dry_start) for p in plants if p.dry_start),
+            default=0,
+        )
+        max_cure = max(
+            (calculate_days_since(p.cure_start) for p in plants if p.cure_start),
+            default=0,
+        )
 
         # Calculate weeks from days
         veg_week = days_to_week(max_veg)
         flower_week = days_to_week(max_flower)
 
         biological_metrics = self._get_biological_metrics(
-            growspace, max_veg, max_flower
+            growspace, max_veg, max_flower, max_dry, max_cure
         )
 
         # Get irrigation settings from growspace object
@@ -614,10 +622,14 @@ class GrowspaceOverviewSensor(CoordinatorEntity[GrowspaceCoordinator], SensorEnt
         growspace: Growspace,
         max_veg: int,
         max_flower: int,
+        max_dry: int,
+        max_cure: int,
     ) -> dict[str, Any]:
         """Calculate biological target metrics for the growspace."""
         # 1. Determine Granular Growth Stage
-        granular_stage = self._determine_granular_stage(max_veg, max_flower)
+        granular_stage = self._determine_granular_stage(
+            max_veg, max_flower, max_dry, max_cure
+        )
 
         # 2. Determine Day/Night Cycle
         is_day = self._determine_is_day(growspace)
@@ -683,8 +695,14 @@ class GrowspaceOverviewSensor(CoordinatorEntity[GrowspaceCoordinator], SensorEnt
         except (ValueError, TypeError):
             return None
 
-    def _determine_granular_stage(self, max_veg: int, max_flower: int) -> str:
+    def _determine_granular_stage(
+        self, max_veg: int, max_flower: int, max_dry: int, max_cure: int
+    ) -> str:
         """Determine granular growth stage based on days."""
+        if max_cure > 0:
+            return "cure"
+        if max_dry > 0:
+            return "dry"
         if max_flower > 0:
             if max_flower <= DEFAULT_FLOWER_EARLY_DAYS:  # <= 21
                 return "flower_early"
