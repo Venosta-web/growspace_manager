@@ -261,3 +261,160 @@ async def test_custom_day_hours(vwc_coordinator, mock_hass, mock_growspace) -> N
     ):
         await vwc_coordinator._update_loop(now_p3)
         assert "P3" in vwc_coordinator._current_phase
+
+
+async def test_setup_unload(vwc_coordinator, mock_hass) -> None:
+    """Test async_setup and async_unload."""
+    with patch(
+        "custom_components.growspace_manager.vwc_irrigation_coordinator.async_track_time_interval"
+    ) as mock_track:
+        mock_remove = MagicMock()
+        mock_track.return_value = mock_remove
+
+        await vwc_coordinator.async_setup()
+        mock_track.assert_called_once()
+        assert vwc_coordinator._remove_update_listener is not None
+
+        await vwc_coordinator.async_unload()
+        mock_remove.assert_called_once()
+        assert vwc_coordinator._remove_update_listener is None
+
+
+async def test_cancel_listeners(vwc_coordinator, mock_hass) -> None:
+    """Test async_cancel_listeners alias."""
+    mock_remove = MagicMock()
+    vwc_coordinator._remove_update_listener = mock_remove
+
+    vwc_coordinator.async_cancel_listeners()
+
+    mock_remove.assert_called_once()
+    assert vwc_coordinator._remove_update_listener is None
+
+
+async def test_strategy_disabled(vwc_coordinator, mock_growspace, mock_hass) -> None:
+    """Test when irrigation strategy is disabled."""
+    mock_growspace.irrigation_strategy.enabled = False
+
+    await vwc_coordinator._update_loop(dt_util.utcnow())
+
+    # Should return early, no sensor check or phase logic
+    mock_hass.states.get.assert_not_called()
+
+
+async def test_sensor_states_invalid(vwc_coordinator, mock_hass) -> None:
+    """Test sensor returning invalid values."""
+    # 1. Unavailable
+    mock_hass.states.get.return_value = MagicMock(state="unavailable")
+    assert vwc_coordinator._get_sensor_value("sensor.test") is None
+
+    # 2. Unknown
+    mock_hass.states.get.return_value = MagicMock(state="unknown")
+    assert vwc_coordinator._get_sensor_value("sensor.test") is None
+
+    # 3. ValueError
+    mock_hass.states.get.return_value = MagicMock(state="not_a_number")
+    assert vwc_coordinator._get_sensor_value("sensor.test") is None
+
+    # Verify loop handles None return gracefully
+    now = datetime(2023, 1, 1, 10, 0, 0, tzinfo=dt_util.UTC)
+    with patch(
+        "custom_components.growspace_manager.vwc_irrigation_coordinator.now",
+        return_value=now,
+    ):
+        mock_hass.states.get.return_value = MagicMock(state="unavailable")
+        await vwc_coordinator._update_loop(now)
+        # Should log debug but not crash
+        mock_hass.services.async_call.assert_not_called()
+
+
+async def test_time_parsing_formats(vwc_coordinator, mock_growspace) -> None:
+    """Test different time formats in strategy."""
+    # Test HH:MM format (no seconds)
+    mock_growspace.irrigation_strategy.lights_on_time = "08:00"
+    period = vwc_coordinator._determine_time_period(
+        mock_growspace.irrigation_strategy, mock_growspace
+    )
+    # 8:00 start, default now() is likely different, but method calls now() internally.
+    # We should patch now() to verify the period calculation relative to 8:00.
+
+    now_p0 = datetime(2023, 1, 1, 8, 30, 0, tzinfo=dt_util.UTC)
+    with patch(
+        "custom_components.growspace_manager.vwc_irrigation_coordinator.now",
+        return_value=now_p0,
+    ):
+        period = vwc_coordinator._determine_time_period(
+            mock_growspace.irrigation_strategy, mock_growspace
+        )
+        assert period == "P0"
+
+
+async def test_before_lights_on(vwc_coordinator, mock_hass) -> None:
+    """Test P3 state before lights on time."""
+    # Lights on 08:00. Current time 07:00 -> P3
+    now = datetime(2023, 1, 1, 7, 0, 0, tzinfo=dt_util.UTC)
+    with patch(
+        "custom_components.growspace_manager.vwc_irrigation_coordinator.now",
+        return_value=now,
+    ):
+        mock_hass.states.get.return_value = MagicMock(state="40.0")
+        await vwc_coordinator._update_loop(now)
+        assert "P3" in vwc_coordinator._current_phase
+
+
+async def test_shot_interval_logic(vwc_coordinator, mock_hass) -> None:
+    """Test that shots are throttled by interval."""
+    strategy = vwc_coordinator._main_coordinator.growspaces["gs1"].irrigation_strategy
+    strategy.shot_interval_minutes = 15
+
+    # 1. Fire first shot
+    vwc_coordinator._last_shot_time = None
+    vwc_coordinator._handle_watering(strategy, "P1")
+
+    # Await the async task triggered by _handle_watering
+    await await_pump_task()
+
+    assert mock_hass.services.async_call.call_count == 2  # On then Off
+    mock_hass.services.async_call.reset_mock()
+
+    # 2. Try again 5 minutes later via _handle_watering directly
+    # Need to patch now() inside the method or set _last_shot_time manually
+
+    # Set last shot time to 12:00
+    last_time = datetime(2023, 1, 1, 12, 0, 0, tzinfo=dt_util.UTC)
+    vwc_coordinator._last_shot_time = last_time
+
+    # Current time 12:05 (Elapsed 5 min < 15)
+    current_time = datetime(2023, 1, 1, 12, 5, 0, tzinfo=dt_util.UTC)
+
+    with patch(
+        "custom_components.growspace_manager.vwc_irrigation_coordinator.now",
+        return_value=current_time,
+    ):
+        vwc_coordinator._handle_watering(strategy, "P1")
+        mock_hass.services.async_call.assert_not_called()
+
+
+async def test_missing_pump_entity(vwc_coordinator, mock_growspace, mock_hass) -> None:
+    """Test logic when pump entity is configured as empty/None."""
+    # Remove pump entity
+    mock_growspace.irrigation_config["irrigation_pump_entity"] = None
+
+    strategy = mock_growspace.irrigation_strategy
+
+    # Attempt watering
+    with patch(
+        "custom_components.growspace_manager.vwc_irrigation_coordinator.now",
+        return_value=datetime(2023, 1, 1, 12, 0, 0, tzinfo=dt_util.UTC),
+    ):
+        vwc_coordinator._handle_watering(strategy, "P1")
+        # Should return early
+        mock_hass.services.async_call.assert_not_called()
+
+
+async def test_loop_exception_handling(vwc_coordinator, mock_hass) -> None:
+    """Test high-level exception catching in update loop."""
+    # Make getting growspace raise KeyError
+    vwc_coordinator._main_coordinator.growspaces = {}
+
+    # Should not raise exception
+    await vwc_coordinator._update_loop(dt_util.utcnow())
