@@ -13,6 +13,43 @@ from typing import Any
 
 
 @dataclass
+class IrrigationStrategy:
+    """Configuration for VWC-based crop steering strategy.
+
+    Attributes:
+        enabled: Whether VWC steering is enabled.
+        lights_on_time: Time of day (HH:MM:SS) when lights turn on.
+        p0_duration_minutes: Duration of P0 (Activation) phase.
+        p2_stop_before_lights_off_minutes: Minutes before lights off to stop P2.
+        target_vwc_percent: Target VWC percentage for P1/P2.
+        maintenance_dryback_percent: Allowed dryback from target before re-watering in P2.
+        shot_duration_seconds: Duration of each irrigation shot in seconds.
+        shot_interval_minutes: Minutes between shots in P1.
+    """
+
+    enabled: bool = False
+    lights_on_time: str = "06:00:00"
+    p0_duration_minutes: int = 60
+    p2_stop_before_lights_off_minutes: int = 120
+    target_vwc_percent: float = 55.0
+    maintenance_dryback_percent: float = 2.0
+    shot_duration_seconds: int = 10
+    shot_interval_minutes: int = 15
+
+    def to_dict(self) -> dict:
+        """Convert to dictionary."""
+        return asdict(self)
+
+    @staticmethod
+    def from_dict(data: dict) -> IrrigationStrategy:
+        """Create from dictionary."""
+        data = data.copy()
+        allowed_keys = {f.name for f in fields(IrrigationStrategy)}
+        filtered_data = {k: v for k, v in data.items() if k in allowed_keys}
+        return IrrigationStrategy(**filtered_data)
+
+
+@dataclass
 class Growspace:
     """Represents a single growspace area.
 
@@ -25,6 +62,9 @@ class Growspace:
         created_at: The ISO-formatted date when the growspace was created.
         device_id: The Home Assistant device ID associated with this growspace.
         environment_config: A dictionary of environment sensor configurations.
+        irrigation_config: A dictionary of basic pump configurations and schedules.
+        dehumidifier_config: A dictionary of dehumidifier settings.
+        irrigation_strategy: The VWC crop steering strategy configuration.
     """
 
     id: str
@@ -37,6 +77,7 @@ class Growspace:
     environment_config: dict[str, Any] = field(default_factory=dict)
     irrigation_config: dict[str, Any] = field(default_factory=dict)
     dehumidifier_config: dict[str, Any] = field(default_factory=dict)
+    irrigation_strategy: IrrigationStrategy = field(default_factory=IrrigationStrategy)
 
     def to_dict(self) -> dict:
         """Convert the dataclass instance to a dictionary.
@@ -44,7 +85,11 @@ class Growspace:
         Returns:
             A dictionary representation of the Growspace.
         """
-        return asdict(self)
+        data = asdict(self)
+        # Manually handle nested dataclass conversion if asdict doesn't handle it deeply for factory fields sometimes?
+        # dataclasses.asdict should handle recursive conversion, but let's be safe if we need custom handling logic later.
+        # For now, standard asdict is specific enough.
+        return data
 
     @staticmethod
     def from_dict(data: dict) -> Growspace:
@@ -68,6 +113,14 @@ class Growspace:
 
         if "updated" in data and "updated_at" not in data:
             data["updated_at"] = data.pop("updated")
+
+        # Handle nested objects
+        if "irrigation_strategy" in data and isinstance(
+            data["irrigation_strategy"], dict
+        ):
+            data["irrigation_strategy"] = IrrigationStrategy.from_dict(
+                data["irrigation_strategy"]
+            )
 
         # Only keep keys that match dataclass fields
         allowed_keys = {f.name for f in fields(Growspace)}

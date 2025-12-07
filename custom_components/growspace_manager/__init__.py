@@ -67,6 +67,7 @@ from .services import (
     strain_library,
 )
 from .services.strain_library import StrainLibrary
+from .vwc_irrigation_coordinator import VWCIrrigationCoordinator
 
 CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 
@@ -80,7 +81,7 @@ class GrowspaceRuntimeData:
     coordinator: GrowspaceCoordinator
     store: Store
     created_entities: list[str]
-    irrigation_coordinators: dict[str, IrrigationCoordinator]
+    irrigation_coordinators: dict[str, IrrigationCoordinator | VWCIrrigationCoordinator]
     dehumidifier_coordinators: dict[str, DehumidifierCoordinator]
 
 
@@ -365,7 +366,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: GrowspaceConfigEntry) ->
         dehumidifier_coordinators={},
     )
 
-    for growspace_id in coordinator.growspaces:
+    for growspace_id, gs in coordinator.growspaces.items():
         # ADD THIS DEBUG LOGGING
         irrigation_config = entry.options.get("irrigation", {}).get(growspace_id, {})
         _LOGGER.debug(
@@ -374,9 +375,22 @@ async def async_setup_entry(hass: HomeAssistant, entry: GrowspaceConfigEntry) ->
             irrigation_config,
         )
 
-        irrigation_coordinator = IrrigationCoordinator(
-            hass, entry, growspace_id, coordinator
-        )
+        if hasattr(gs, "irrigation_strategy") and gs.irrigation_strategy.enabled:
+            _LOGGER.info(
+                "Initializing VWC Irrigation Coordinator for growspace %s", growspace_id
+            )
+            irrigation_coordinator = VWCIrrigationCoordinator(
+                hass, entry, growspace_id, coordinator
+            )
+        else:
+            _LOGGER.debug(
+                "Initializing Standard Irrigation Coordinator for growspace %s",
+                growspace_id,
+            )
+            irrigation_coordinator = IrrigationCoordinator(
+                hass, entry, growspace_id, coordinator
+            )
+
         await irrigation_coordinator.async_setup()
         entry.runtime_data.irrigation_coordinators[growspace_id] = (
             irrigation_coordinator

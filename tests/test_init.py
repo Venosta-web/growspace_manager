@@ -98,11 +98,14 @@ async def test_async_setup_entry(mock_hass) -> None:
     entry = MockConfigEntry(domain=DOMAIN, data={}, options={})
     entry.add_to_hass(mock_hass)
 
+    coordinator_mock = AsyncMock()
+    coordinator_mock.growspaces = {}
+
     with (
         patch("custom_components.growspace_manager.Store", return_value=AsyncMock()),
         patch(
             "custom_components.growspace_manager.GrowspaceCoordinator",
-            return_value=AsyncMock(),
+            return_value=coordinator_mock,
         ),
         patch(
             "custom_components.growspace_manager.StrainLibrary",
@@ -129,6 +132,7 @@ async def test_async_setup_entry_with_pending_growspace(mock_hass) -> None:
     }
 
     coordinator_mock = AsyncMock()
+    coordinator_mock.growspaces = {}
 
     with (
         patch("custom_components.growspace_manager.Store", return_value=AsyncMock()),
@@ -161,6 +165,7 @@ async def test_async_setup_entry_with_pending_growspace_error(mock_hass) -> None
     }  # Missing required fields
 
     coordinator_mock = AsyncMock()
+    coordinator_mock.growspaces = {}
     coordinator_mock.async_add_growspace.side_effect = KeyError("Test Error")
 
     with (
