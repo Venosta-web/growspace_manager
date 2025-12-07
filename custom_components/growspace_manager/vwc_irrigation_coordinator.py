@@ -150,11 +150,13 @@ class VWCIrrigationCoordinator:
         # Let's check environment config for day lengths.
         day_hours = 12  # Default
         if growspace.environment_config:
-            # Simple heuristic: if any plant is in veg, use veg hours? Mixed growspaces are hard.
-            # Let's use 12 hours as the standard for 'steering' since it's usually flower-focused.
-            # However, we can also check if 'veg_day_hours' is set.
-            # Let's stick to 12h for now as 'safe' assumption for flowering, which is where steering matters most.
-            pass
+            # This is a simplification. A more robust implementation would determine the dominant
+            # plant stage in the growspace and use the corresponding day hours.
+            # For now, we prefer flower hours if available, as steering is often flower-focused.
+            day_hours = growspace.environment_config.get(
+                "flower_day_hours",
+                growspace.environment_config.get("veg_day_hours", 12),
+            )
 
         # Calculate P0 End
         # We need datetime arithmetic then convert back to time
@@ -280,7 +282,7 @@ class VWCIrrigationCoordinator:
 
     async def _run_pump_cycle(self, pump_entity: str, duration: int, phase: str):
         """Execute the pump cycle."""
-        # Reuse logic similar to standard coordinator but simpler (no schedule event dict)
+        start_time = utcnow()
         try:
             await self.hass.services.async_call(
                 "switch", "turn_on", {"entity_id": pump_entity}, blocking=True
@@ -289,19 +291,23 @@ class VWCIrrigationCoordinator:
         except asyncio.CancelledError:
             pass
         finally:
+            end_time = utcnow()
             await self.hass.services.async_call(
                 "switch", "turn_off", {"entity_id": pump_entity}, blocking=True
             )
             # Log Event
-            await self._log_event(pump_entity, duration, phase)
+            actual_duration = int((end_time - start_time).total_seconds())
+            await self._log_event(phase, actual_duration, start_time, end_time)
 
-    async def _log_event(self, pump_entity: str, duration: int, phase: str):
+    async def _log_event(
+        self, phase: str, duration: int, start_time: datetime, end_time: datetime
+    ):
         """Log the irrigation event."""
         event = GrowspaceEvent(
             sensor_type="irrigation",
             growspace_id=self._growspace_id,
-            start_time=utcnow().isoformat(),  # Approx
-            end_time=utcnow().isoformat(),
+            start_time=start_time.isoformat(),
+            end_time=end_time.isoformat(),
             duration_sec=duration,
             severity=0.5,  # Info level
             category="irrigation",

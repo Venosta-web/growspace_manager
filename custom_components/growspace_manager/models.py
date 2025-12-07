@@ -85,11 +85,8 @@ class Growspace:
         Returns:
             A dictionary representation of the Growspace.
         """
-        data = asdict(self)
-        # Manually handle nested dataclass conversion if asdict doesn't handle it deeply for factory fields sometimes?
-        # dataclasses.asdict should handle recursive conversion, but let's be safe if we need custom handling logic later.
-        # For now, standard asdict is specific enough.
-        return data
+
+        return asdict(self)
 
     @staticmethod
     def from_dict(data: dict) -> Growspace:

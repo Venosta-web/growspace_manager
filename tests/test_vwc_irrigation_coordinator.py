@@ -59,6 +59,7 @@ def mock_growspace():
 def mock_main_coordinator(mock_growspace):
     coordinator = MagicMock()
     coordinator.growspaces = {"gs1": mock_growspace}
+    # Allow add_event to be called
     coordinator.add_event = MagicMock()
     return coordinator
 
@@ -107,9 +108,18 @@ async def test_p1_ramp_up(vwc_coordinator, mock_hass) -> None:
     # Time: 09:30 (Inside P1)
     now = datetime(2023, 1, 1, 9, 30, 0, tzinfo=dt_util.UTC)
 
-    with patch(
-        "custom_components.growspace_manager.vwc_irrigation_coordinator.now",
-        return_value=now,
+    with (
+        patch(
+            "custom_components.growspace_manager.vwc_irrigation_coordinator.now",
+            return_value=now,
+        ),
+        patch(
+            "custom_components.growspace_manager.vwc_irrigation_coordinator.utcnow",
+            side_effect=[
+                datetime(2023, 1, 1, 9, 30, 0, tzinfo=dt_util.UTC),
+                datetime(2023, 1, 1, 9, 30, 10, tzinfo=dt_util.UTC),
+            ],
+        ),
     ):
         # Sensor value: 40% (Target 50%) -> Should Water
         mock_hass.states.get.return_value = MagicMock(state="40.0")
@@ -121,6 +131,16 @@ async def test_p1_ramp_up(vwc_coordinator, mock_hass) -> None:
         mock_hass.services.async_call.assert_any_call(
             "switch", "turn_on", {"entity_id": "switch.pump"}, blocking=True
         )
+
+        # Verify log event called
+        mock_main_coordinator = vwc_coordinator._main_coordinator
+        mock_main_coordinator.add_event.assert_called_once()
+        # Verify timestamps in event
+        event = mock_main_coordinator.add_event.call_args[0][1]
+        assert event.category == "irrigation"
+        assert event.duration_sec == 10
+        assert event.start_time is not None
+        assert event.end_time is not None
 
 
 async def test_p1_target_reached(vwc_coordinator, mock_hass) -> None:
@@ -148,9 +168,18 @@ async def test_p2_maintenance(vwc_coordinator, mock_hass) -> None:
 
     now = datetime(2023, 1, 1, 12, 0, 0, tzinfo=dt_util.UTC)
 
-    with patch(
-        "custom_components.growspace_manager.vwc_irrigation_coordinator.now",
-        return_value=now,
+    with (
+        patch(
+            "custom_components.growspace_manager.vwc_irrigation_coordinator.now",
+            return_value=now,
+        ),
+        patch(
+            "custom_components.growspace_manager.vwc_irrigation_coordinator.utcnow",
+            side_effect=[
+                datetime(2023, 1, 1, 12, 0, 0, tzinfo=dt_util.UTC),
+                datetime(2023, 1, 1, 12, 0, 10, tzinfo=dt_util.UTC),
+            ],
+        ),
     ):
         # Case A: VWC 49% (Target 50%, Dryback 2% -> Trigger at 48%)
         # 49 > 48 -> No Water
@@ -166,6 +195,11 @@ async def test_p2_maintenance(vwc_coordinator, mock_hass) -> None:
         mock_hass.services.async_call.assert_any_call(
             "switch", "turn_on", {"entity_id": "switch.pump"}, blocking=True
         )
+
+        mock_main_coordinator = vwc_coordinator._main_coordinator
+        mock_main_coordinator.add_event.assert_called_once()
+        event = mock_main_coordinator.add_event.call_args[0][1]
+        assert event.duration_sec == 10
 
 
 async def test_p3_dryback(vwc_coordinator, mock_hass) -> None:
@@ -196,3 +230,34 @@ async def test_missing_sensor(vwc_coordinator, mock_hass, mock_growspace) -> Non
 
     assert vwc_coordinator._current_phase == "Disabled (No Sensor)"
     mock_hass.services.async_call.assert_not_called()
+
+
+async def test_custom_day_hours(vwc_coordinator, mock_hass, mock_growspace) -> None:
+    """Test custom day hours from environment config."""
+    # Config: 10 hours day (Lights On 08:00 -> Off 18:00)
+    # P2 Stop = 120 min before off -> 16:00
+    mock_growspace.environment_config = {
+        "soil_moisture_sensor": "sensor.moisture",
+        "flower_day_hours": 10,
+    }
+
+    # Case A: 15:00 -> Should be P2 (15 < 16)
+    now_p2 = datetime(2023, 1, 1, 15, 0, 0, tzinfo=dt_util.UTC)
+    with patch(
+        "custom_components.growspace_manager.vwc_irrigation_coordinator.now",
+        return_value=now_p2,
+    ):
+        mock_hass.states.get.return_value = MagicMock(state="45.0")
+        vwc_coordinator._target_reached_today = True  # Force P2
+        await vwc_coordinator._update_loop(now_p2)
+        assert vwc_coordinator._current_phase == "P2 - Maintenance"
+
+    # Case B: 17:00 -> Should be P3 (17 > 16)
+    # With default 12h (20:00 off, 18:00 stop), 17:00 would be P2.
+    now_p3 = datetime(2023, 1, 1, 17, 0, 0, tzinfo=dt_util.UTC)
+    with patch(
+        "custom_components.growspace_manager.vwc_irrigation_coordinator.now",
+        return_value=now_p3,
+    ):
+        await vwc_coordinator._update_loop(now_p3)
+        assert "P3" in vwc_coordinator._current_phase
