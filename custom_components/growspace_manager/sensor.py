@@ -8,6 +8,7 @@ and environmental calculations like VPD.
 from __future__ import annotations
 
 # Standard library
+import contextlib
 import logging
 from typing import Any
 
@@ -15,6 +16,7 @@ from typing import Any
 # Home Assistant
 from homeassistant.components.sensor import SensorEntity, SensorStateClass
 from homeassistant.config_entries import ConfigEntry
+from homeassistant.const import STATE_ON, STATE_UNAVAILABLE, STATE_UNKNOWN
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.device_registry import DeviceInfo
@@ -22,7 +24,12 @@ from homeassistant.helpers.entity import Entity
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .const import DOMAIN
+from .bayesian_data import VPD_STRESS_THRESHOLDS
+from .const import (
+    DEFAULT_FLOWER_EARLY_DAYS,
+    DEFAULT_VEG_EARLY_DAYS,
+    DOMAIN,
+)
 
 # Local / relative imports
 from .coordinator import GrowspaceCoordinator
@@ -557,6 +564,10 @@ class GrowspaceOverviewSensor(CoordinatorEntity[GrowspaceCoordinator], SensorEnt
         veg_week = days_to_week(max_veg)
         flower_week = days_to_week(max_flower)
 
+        biological_metrics = self._get_biological_metrics(
+            growspace, max_veg, max_flower
+        )
+
         # Get irrigation settings from growspace object
         irrigation_options = growspace.irrigation_config
 
@@ -590,12 +601,94 @@ class GrowspaceOverviewSensor(CoordinatorEntity[GrowspaceCoordinator], SensorEnt
             "irrigation_times": list(irrigation_options.get("irrigation_times", [])),
             "drain_times": list(irrigation_options.get("drain_times", [])),
             "grid": grid,
+            **biological_metrics,
         }
 
         # Add environment attributes
         attributes.update(self._get_environment_attributes(growspace))
 
         return attributes
+
+    def _get_biological_metrics(
+        self,
+        growspace: Growspace,
+        max_veg: int,
+        max_flower: int,
+    ) -> dict[str, Any]:
+        """Calculate biological target metrics for the growspace."""
+        # 1. Determine Granular Growth Stage
+        granular_stage = self._determine_granular_stage(max_veg, max_flower)
+
+        # 2. Determine Day/Night Cycle
+        is_day = self._determine_is_day(growspace)
+
+        # 3. Retrieve Biological Targets from bayesian_data.py
+        day_key = "day" if is_day else "night"
+
+        # Safe retrieval with defaults
+        threshold_data = VPD_STRESS_THRESHOLDS.get(
+            granular_stage, VPD_STRESS_THRESHOLDS["veg_early"]
+        )
+        cycle_data = threshold_data.get(day_key, threshold_data["day"])
+
+        target_min, target_max = cycle_data.get("mild", (0.8, 1.2))
+        danger_min, danger_max = cycle_data.get("stress", (0.6, 1.4))
+
+        # 4. Determine Current Status
+        vpd_status = "unknown"
+        vpd_sensor_id = growspace.environment_config.get("vpd_sensor")
+        if vpd_sensor_id:
+            state_obj = self.coordinator.hass.states.get(vpd_sensor_id)
+            if state_obj and state_obj.state not in (STATE_UNKNOWN, STATE_UNAVAILABLE):
+                with contextlib.suppress(ValueError):
+                    current_vpd = float(state_obj.state)
+                    if current_vpd < danger_min or current_vpd > danger_max:
+                        vpd_status = "danger"
+                    elif current_vpd < target_min or current_vpd > target_max:
+                        vpd_status = "warning"
+                    else:
+                        vpd_status = "optimal"
+
+        return {
+            "granular_stage": granular_stage,
+            "is_day": is_day,
+            "vpd_target_min": target_min,
+            "vpd_target_max": target_max,
+            "vpd_danger_min": danger_min,
+            "vpd_danger_max": danger_max,
+            "vpd_status": vpd_status,
+        }
+
+    def _determine_granular_stage(self, max_veg: int, max_flower: int) -> str:
+        """Determine granular growth stage based on days."""
+        if max_flower > 0:
+            if max_flower <= DEFAULT_FLOWER_EARLY_DAYS:  # <= 21
+                return "flower_early"
+            if max_flower <= (DEFAULT_FLOWER_EARLY_DAYS + 21):  # <= 42
+                return "flower_mid"
+            return "flower_late"
+        if max_veg > 0:
+            if max_veg <= DEFAULT_VEG_EARLY_DAYS:  # <= 14
+                return "veg_early"
+            return "veg_late"
+        return "veg_early"  # Default fallback
+
+    def _determine_is_day(self, growspace: Growspace) -> bool:
+        """Determine if it is currently day or night in the growspace."""
+        light_sensor = growspace.environment_config.get("light_sensor")
+        if light_sensor:
+            light_state = self.coordinator.hass.states.get(light_sensor)
+            if light_state and light_state.state not in (
+                STATE_UNKNOWN,
+                STATE_UNAVAILABLE,
+            ):
+                if light_state.state == STATE_ON:
+                    return True
+                if light_state.state == "off":
+                    return False
+                with contextlib.suppress(ValueError):
+                    return float(light_state.state) > 0
+        return True  # Default to day if no sensor or unknown
 
     def _generate_plant_grid(
         self, growspace, plants
