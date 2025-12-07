@@ -799,29 +799,34 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
                 _LOGGER.error("Could not add plant: %s", e)
                 raise
 
-        plant_id = str(uuid.uuid4())
-        today = date.today().isoformat()
+        # Create plant object
+        # Ensure dates are stored as strings to match Plant model
         plant = Plant(
-            plant_id=plant_id,
+            plant_id=str(uuid.uuid4()),
             growspace_id=growspace_id,
-            strain=strain.strip(),
-            phenotype=phenotype or "",
+            strain=strain,
+            phenotype=phenotype,
             row=final_row,
             col=final_col,
-            stage=stage,
-            created_at=today,
+            stage=stage or "",
             type=type,
             device_id=device_id,
-            seedling_start=str(seedling_start),
-            mother_start=str(mother_start),
-            clone_start=str(clone_start),
-            veg_start=str(veg_start),
-            flower_start=str(flower_start),
-            dry_start=str(dry_start),
-            cure_start=str(cure_start),
+            seedling_start=format_date(seedling_start),
+            mother_start=format_date(mother_start),
+            clone_start=format_date(clone_start),
+            veg_start=format_date(veg_start),
+            flower_start=format_date(flower_start),
+            dry_start=format_date(dry_start),
+            cure_start=format_date(cure_start),
+            created_at=datetime.now().isoformat(),
+            updated_at=datetime.now().isoformat(),
             source_mother=source_mother,
         )
-        self.plants[plant_id] = plant
+
+        # Calculate stage if not explicitly provided
+        if not stage:
+            plant.stage = calculate_plant_stage(plant)
+        self.plants[plant.plant_id] = plant
 
         self.update_data_property()
         await self.async_save()
@@ -1091,6 +1096,12 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
                 type(value),
                 id(value),
             )
+
+            # Enforce string format for date fields
+            if key in DATE_FIELDS:
+                value = self._parse_date_field(value)
+                updates[key] = value  # Update the value in 'updates' dict as well
+
         for key, value in updates.items():
             if hasattr(plant, key):
                 old_value = getattr(plant, key)

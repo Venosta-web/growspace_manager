@@ -1034,7 +1034,7 @@ async def test_async_transition_clone_to_veg(coordinator):
     clone = coordinator.plants[clone_id]
     assert clone.stage == "veg"
     assert clone.growspace_id == "veg"
-    assert clone.veg_start == "2025-11-03T16:44:40"
+    assert clone.veg_start == "2025-11-03"
 
     coordinator.async_save.assert_awaited()
     coordinator.async_set_updated_data.assert_called_with(coordinator.data)
