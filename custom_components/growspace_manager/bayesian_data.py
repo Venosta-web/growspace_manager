@@ -132,6 +132,34 @@ VPD_STRESS_THRESHOLDS: Final[VpdThresholdsDict] = {
             "prob_defaults": ((0.90, 0.12), (0.65, 0.28)),
         },
     },
+    "dry": {
+        "day": {
+            "stress": (0.6, 1.3),
+            "mild": (0.8, 1.1),
+            "prob_keys": ("prob_vpd_stress_dry", "prob_vpd_mild_stress_dry"),
+            "prob_defaults": ((0.95, 0.10), (0.10, 0.90)),
+        },
+        "night": {
+            "stress": (0.6, 1.3),
+            "mild": (0.8, 1.1),
+            "prob_keys": ("prob_vpd_stress_dry", "prob_vpd_mild_stress_dry"),
+            "prob_defaults": ((0.95, 0.10), (0.10, 0.90)),
+        },
+    },
+    "cure": {
+        "day": {
+            "stress": (0.5, 1.1),
+            "mild": (0.7, 0.9),
+            "prob_keys": ("prob_vpd_stress_cure", "prob_vpd_mild_stress_cure"),
+            "prob_defaults": ((0.95, 0.10), (0.10, 0.90)),
+        },
+        "night": {
+            "stress": (0.5, 1.1),
+            "mild": (0.7, 0.9),
+            "prob_keys": ("prob_vpd_stress_cure", "prob_vpd_mild_stress_cure"),
+            "prob_defaults": ((0.95, 0.10), (0.10, 0.90)),
+        },
+    },
 }
 
 # =========================================================================
