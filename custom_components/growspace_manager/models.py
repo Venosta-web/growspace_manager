@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from dataclasses import asdict, dataclass, field, fields
 from datetime import datetime
-from typing import Any
+from typing import Any, TypedDict
 
 
 @dataclass
@@ -291,3 +291,17 @@ class GrowspaceEvent:
         filtered_data = {k: v for k, v in data.items() if k in allowed_keys}
 
         return GrowspaceEvent(**filtered_data)
+
+
+class GrowspaceCoordinatorData(TypedDict):
+    """Data contract for the Growspace Coordinator.
+
+    This ensures strict typing for the data exposed to the frontend.
+    """
+
+    growspaces: dict[str, Growspace]
+    plants: dict[str, Plant]
+    notifications_sent: dict[str, dict[str, dict[str, bool]]]
+    notifications_enabled: dict[str, bool]
+    _version: str
+    air_exchange_recommendations: dict[str, str]

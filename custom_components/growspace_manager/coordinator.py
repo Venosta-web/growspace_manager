@@ -17,7 +17,7 @@ from .environment_analyzer import EnvironmentAnalyzer
 from .growspace_validator import GrowspaceValidator
 from .import_export_manager import ImportExportManager
 from .migration_manager import MigrationManager
-from .models import Growspace, GrowspaceEvent, Plant
+from .models import Growspace, GrowspaceCoordinatorData, GrowspaceEvent, Plant
 from .notification_manager import NotificationManager
 from .storage_manager import StorageManager
 from .strain_library import StrainLibrary
@@ -437,12 +437,18 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
 
     def update_data_property(self) -> None:
         """Update the central `self.data` property to reflect the current coordinator state."""
-        self.data = {
+        # Preserve existing recommendations if valid
+        recs = {}
+        if self.data and isinstance(self.data, dict):
+            recs = self.data.get("air_exchange_recommendations", {})
+
+        self.data: GrowspaceCoordinatorData = {
             "growspaces": self.growspaces,
             "plants": self.plants,
             "notifications_sent": self._notifications_sent,
             "notifications_enabled": self._notifications_enabled,
             "_version": datetime.now().isoformat(),
+            "air_exchange_recommendations": recs,
         }
 
     # =============================================================================
