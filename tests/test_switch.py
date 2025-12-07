@@ -47,7 +47,7 @@ def mock_hass(mock_coordinator: GrowspaceCoordinator):
 # Tests
 # --------------------
 @pytest.mark.asyncio
-async def test_async_setup_entry_creates_entities(mock_hass, mock_coordinator):
+async def test_async_setup_entry_creates_entities(mock_hass, mock_coordinator) -> None:
     added_entities = []
 
     # synchronous callback as Home Assistant expects
@@ -73,7 +73,7 @@ async def test_async_setup_entry_creates_entities(mock_hass, mock_coordinator):
 
     await async_setup_entry(
         mock_hass,
-        Mock(entry_id="entry1", runtime_data=Mock(coordinator=mock_coordinator)),
+        Mock(entry_id="entry1", runtime_data=mock_coordinator),
         fake_add_entities,
     )
 
@@ -86,7 +86,7 @@ async def test_async_setup_entry_creates_entities(mock_hass, mock_coordinator):
 
 
 @pytest.mark.asyncio
-async def test_growspace_notification_switch_on_off(mock_coordinator):
+async def test_growspace_notification_switch_on_off(mock_coordinator) -> None:
     # Growspace object
     growspace = SimpleNamespace(
         id="gs1", name="Growspace 1", notification_target="notify_me"
@@ -116,7 +116,7 @@ async def test_growspace_notification_switch_on_off(mock_coordinator):
 
 
 @pytest.mark.asyncio
-async def test_async_added_to_hass_calls_add_listener(mock_coordinator):
+async def test_async_added_to_hass_calls_add_listener(mock_coordinator) -> None:
     growspace = SimpleNamespace(
         id="gs1", name="Growspace 1", notification_target="notify_me"
     )

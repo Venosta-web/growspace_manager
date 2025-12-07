@@ -26,9 +26,7 @@ def mock_coordinator():
     growspace_mock.name = "Growspace 1"
     growspace_mock.id = "gs1"
 
-    coordinator.growspaces = {
-        "gs1": growspace_mock
-    }
+    coordinator.growspaces = {"gs1": growspace_mock}
 
     coordinator.plants = {
         "p1": Mock(
@@ -66,7 +64,7 @@ def mock_coordinator():
 # async_setup_entry
 # --------------------
 @pytest.mark.asyncio
-async def test_async_setup_entry_adds_entities(mock_coordinator):
+async def test_async_setup_entry_adds_entities(mock_coordinator) -> None:
     """Test that `async_setup_entry` correctly adds calendar entities."""
     hass = MagicMock()
 
@@ -75,7 +73,11 @@ async def test_async_setup_entry_adds_entities(mock_coordinator):
     def async_add_entities(entities, update_before_add=False):
         added_entities.extend(entities)
 
-    await async_setup_entry(hass, Mock(entry_id="entry_1", runtime_data=Mock(coordinator=mock_coordinator)), async_add_entities)
+    await async_setup_entry(
+        hass,
+        Mock(entry_id="entry_1", runtime_data=mock_coordinator),
+        async_add_entities,
+    )
 
     assert len(added_entities) == 1
     assert isinstance(added_entities[0], GrowspaceCalendar)
@@ -85,7 +87,7 @@ async def test_async_setup_entry_adds_entities(mock_coordinator):
 # --------------------
 # GrowspaceCalendar
 # --------------------
-def test_growspace_calendar_init(mock_coordinator):
+def test_growspace_calendar_init(mock_coordinator) -> None:
     """Test the initialization of the GrowspaceCalendar."""
     calendar = GrowspaceCalendar(mock_coordinator, "gs1")
     assert calendar.growspace_id == "gs1"
@@ -94,7 +96,7 @@ def test_growspace_calendar_init(mock_coordinator):
 
 
 @pytest.mark.asyncio
-async def test_growspace_calendar_update_and_get_events(mock_coordinator):
+async def test_growspace_calendar_update_and_get_events(mock_coordinator) -> None:
     """Test event generation and retrieval."""
     calendar = GrowspaceCalendar(mock_coordinator, "gs1")
     await calendar.async_update()
@@ -102,21 +104,29 @@ async def test_growspace_calendar_update_and_get_events(mock_coordinator):
     start_date = dt_util.now() - timedelta(days=30)
     end_date = dt_util.now() + timedelta(days=30)
 
-    events = await calendar.async_get_events(mock_coordinator.hass, start_date, end_date)
+    events = await calendar.async_get_events(
+        mock_coordinator.hass, start_date, end_date
+    )
     assert len(events) == 2
     assert all(e.start.tzinfo is not None for e in events)
 
-    veg_event_date = dt_util.parse_datetime(mock_coordinator.plants["p1"].veg_start).date() + timedelta(days=5)
-    flower_event_date = dt_util.parse_datetime(mock_coordinator.plants["p1"].flower_start).date() + timedelta(days=1)
+    veg_event_date = dt_util.parse_datetime(
+        mock_coordinator.plants["p1"].veg_start
+    ).date() + timedelta(days=5)
+    flower_event_date = dt_util.parse_datetime(
+        mock_coordinator.plants["p1"].flower_start
+    ).date() + timedelta(days=1)
 
     assert any(e.start.date() == veg_event_date for e in events)
     assert any(e.summary == "Veg Day 5 (Strain A): Check veg progress" for e in events)
     assert any(e.start.date() == flower_event_date for e in events)
-    assert any(e.summary == "Flower Day 1 (Strain A): First day of flower" for e in events)
+    assert any(
+        e.summary == "Flower Day 1 (Strain A): First day of flower" for e in events
+    )
 
 
 @pytest.mark.asyncio
-async def test_growspace_calendar_event_property(mock_coordinator):
+async def test_growspace_calendar_event_property(mock_coordinator) -> None:
     """Test the event property to get the next upcoming event."""
     calendar = GrowspaceCalendar(mock_coordinator, "gs1")
 
@@ -137,8 +147,9 @@ async def test_growspace_calendar_event_property(mock_coordinator):
     assert next_event is not None
     assert next_event.start_datetime_local == future_event1.start_datetime_local
 
+
 @pytest.mark.asyncio
-async def test_growspace_calendar_no_events(mock_coordinator):
+async def test_growspace_calendar_no_events(mock_coordinator) -> None:
     """Test calendar when no events are generated."""
     mock_coordinator.options["timed_notifications"] = []
     calendar = GrowspaceCalendar(mock_coordinator, "gs1")
@@ -147,12 +158,15 @@ async def test_growspace_calendar_no_events(mock_coordinator):
     start_date = dt_util.now() - timedelta(days=30)
     end_date = dt_util.now() + timedelta(days=30)
 
-    events = await calendar.async_get_events(mock_coordinator.hass, start_date, end_date)
+    events = await calendar.async_get_events(
+        mock_coordinator.hass, start_date, end_date
+    )
     assert len(events) == 0
     assert calendar.event is None
 
+
 @pytest.mark.asyncio
-async def test_generate_events_handles_missing_start_date(mock_coordinator):
+async def test_generate_events_handles_missing_start_date(mock_coordinator) -> None:
     """Test that event generation skips notifications with missing plant start dates."""
     mock_coordinator.plants["p1"].veg_start = None
     calendar = GrowspaceCalendar(mock_coordinator, "gs1")
@@ -160,14 +174,19 @@ async def test_generate_events_handles_missing_start_date(mock_coordinator):
 
     start_date = dt_util.now() - timedelta(days=30)
     end_date = dt_util.now() + timedelta(days=30)
-    events = await calendar.async_get_events(mock_coordinator.hass, start_date, end_date)
+    events = await calendar.async_get_events(
+        mock_coordinator.hass, start_date, end_date
+    )
 
     # Only the flower event should be created
     assert len(events) == 1
     assert events[0].summary.startswith("Flower")
 
+
 @pytest.mark.asyncio
-async def test_generate_events_handles_invalid_date_format(mock_coordinator, caplog):
+async def test_generate_events_handles_invalid_date_format(
+    mock_coordinator, caplog: pytest.LogCaptureFixture
+) -> None:
     """Test that event generation handles and logs errors for invalid date formats."""
     mock_coordinator.plants["p1"].flower_start = "not a date"
     calendar = GrowspaceCalendar(mock_coordinator, "gs1")
@@ -175,7 +194,9 @@ async def test_generate_events_handles_invalid_date_format(mock_coordinator, cap
 
     start_date = dt_util.now() - timedelta(days=30)
     end_date = dt_util.now() + timedelta(days=30)
-    events = await calendar.async_get_events(mock_coordinator.hass, start_date, end_date)
+    events = await calendar.async_get_events(
+        mock_coordinator.hass, start_date, end_date
+    )
 
     # Only the veg event should be created
     assert len(events) == 1

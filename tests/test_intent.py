@@ -37,7 +37,7 @@ def mock_hass(mock_coordinator) -> MagicMock:
     # Mock config entries
     mock_entry = MagicMock()
     mock_entry.runtime_data = MagicMock()
-    mock_entry.runtime_data.coordinator = mock_coordinator
+    mock_entry.runtime_data = mock_coordinator
     hass.config_entries.async_entries.return_value = [mock_entry]
     hass.services = MagicMock()
     hass.services.async_call = AsyncMock()
@@ -52,7 +52,7 @@ def intent_handler(mock_hass: MagicMock) -> AskGrowAdviceIntent:
 
 async def test_handle_intent_success(
     intent_handler: AskGrowAdviceIntent, mock_hass: MagicMock
-):
+) -> None:
     """Test successful intent handling."""
     intent_obj = intent.Intent(
         hass=mock_hass,
@@ -84,7 +84,7 @@ async def test_handle_intent_success(
 
 async def test_handle_intent_growspace_not_found(
     intent_handler: AskGrowAdviceIntent, mock_hass: MagicMock
-):
+) -> None:
     """Test intent handling when growspace is not found."""
     intent_obj = intent.Intent(
         hass=mock_hass,
@@ -107,7 +107,7 @@ async def test_handle_intent_growspace_not_found(
 
 async def test_handle_intent_service_error(
     intent_handler: AskGrowAdviceIntent, mock_hass: MagicMock
-):
+) -> None:
     """Test intent handling when service call fails."""
     intent_obj = intent.Intent(
         hass=mock_hass,
@@ -132,7 +132,7 @@ async def test_handle_intent_service_error(
 
 async def test_handle_intent_no_response(
     intent_handler: AskGrowAdviceIntent, mock_hass: MagicMock
-):
+) -> None:
     """Test intent handling when service returns no response."""
     intent_obj = intent.Intent(
         hass=mock_hass,

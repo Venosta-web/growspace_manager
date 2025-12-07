@@ -5,19 +5,25 @@ from __future__ import annotations
 import logging
 import uuid
 from datetime import date, datetime, timedelta
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from dateutil import parser
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 
+if TYPE_CHECKING:
+    from .dehumidifier_coordinator import DehumidifierCoordinator
+    from .irrigation_coordinator import IrrigationCoordinator
+    from .vwc_irrigation_coordinator import VWCIrrigationCoordinator
+
+
 from .const import DATE_FIELDS, PLANT_STAGES
 from .environment_analyzer import EnvironmentAnalyzer
 from .growspace_validator import GrowspaceValidator
 from .import_export_manager import ImportExportManager
 from .migration_manager import MigrationManager
-from .models import Growspace, GrowspaceEvent, Plant
+from .models import Growspace, GrowspaceCoordinatorData, GrowspaceEvent, Plant
 from .notification_manager import NotificationManager
 from .storage_manager import StorageManager
 from .strain_library import StrainLibrary
@@ -93,6 +99,13 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
         self._notifications_enabled: dict[
             str, bool
         ] = {}  # ✅ Notification switch states
+
+        # Initialize runtime coordination
+        self.irrigation_coordinators: dict[
+            str, IrrigationCoordinator | VWCIrrigationCoordinator
+        ] = {}
+        self.dehumidifier_coordinators: dict[str, DehumidifierCoordinator] = {}
+        self.created_entities: list[str] = []
 
         # Load data
         if data is None:
@@ -437,12 +450,18 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
 
     def update_data_property(self) -> None:
         """Update the central `self.data` property to reflect the current coordinator state."""
-        self.data = {
+        # Preserve existing recommendations if valid
+        recs = {}
+        if self.data and isinstance(self.data, dict):
+            recs = self.data.get("air_exchange_recommendations", {})
+
+        self.data: GrowspaceCoordinatorData = {
             "growspaces": self.growspaces,
             "plants": self.plants,
             "notifications_sent": self._notifications_sent,
             "notifications_enabled": self._notifications_enabled,
             "_version": datetime.now().isoformat(),
+            "air_exchange_recommendations": recs,
         }
 
     # =============================================================================

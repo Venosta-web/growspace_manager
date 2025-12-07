@@ -356,7 +356,7 @@ class IrrigationCoordinator:
             )
 
             # Send notification
-            coordinator = self._config_entry.runtime_data.coordinator
+            coordinator = self._config_entry.runtime_data
             growspace = coordinator.growspaces.get(self._growspace_id)
             if growspace and growspace.notification_target:
                 time_str = event_data.get("time", "Unknown Time")

@@ -40,13 +40,13 @@ def handler(mock_hass, mock_config_entry):
     return AIConfigHandler(mock_hass, mock_config_entry)
 
 
-async def test_initialization(handler, mock_hass, mock_config_entry):
+async def test_initialization(handler, mock_hass, mock_config_entry) -> None:
     """Test successful initialization."""
     assert handler.hass == mock_hass
     assert handler.config_entry == mock_config_entry
 
 
-async def test_get_ai_settings_schema_defaults(handler, mock_hass):
+async def test_get_ai_settings_schema_defaults(handler, mock_hass) -> None:
     """Test schema generation with default values."""
     mock_hass.states.async_all.return_value = []
     schema = await handler.get_ai_settings_schema()
@@ -54,7 +54,7 @@ async def test_get_ai_settings_schema_defaults(handler, mock_hass):
     assert isinstance(schema, vol.Schema)
 
 
-async def test_get_ai_settings_schema_with_agents(handler, mock_hass):
+async def test_get_ai_settings_schema_with_agents(handler, mock_hass) -> None:
     """Test schema generation with available conversation agents."""
     agent1 = MagicMock()
     agent1.entity_id = "conversation.agent_1"
@@ -71,7 +71,7 @@ async def test_get_ai_settings_schema_with_agents(handler, mock_hass):
     assert isinstance(schema, vol.Schema)
 
 
-async def test_get_ai_settings_schema_no_agents(handler, mock_hass):
+async def test_get_ai_settings_schema_no_agents(handler, mock_hass) -> None:
     """Test schema generation when no agents are found."""
     mock_hass.states.async_all.return_value = []
 
@@ -80,15 +80,14 @@ async def test_get_ai_settings_schema_no_agents(handler, mock_hass):
     assert isinstance(schema, vol.Schema)
 
 
-async def test_save_ai_settings(handler, mock_hass, mock_config_entry):
+async def test_save_ai_settings(handler, mock_hass, mock_config_entry) -> None:
     """Test saving AI settings."""
     # Setup coordinator mock
     mock_coordinator = MagicMock()
     mock_coordinator.async_save = AsyncMock()
 
     # Update to use runtime_data
-    mock_config_entry.runtime_data = MagicMock()
-    mock_config_entry.runtime_data.coordinator = mock_coordinator
+    mock_config_entry.runtime_data = mock_coordinator
 
     user_input = {
         CONF_AI_ENABLED: True,

@@ -73,6 +73,7 @@ def mock_coordinator():
     coordinator.get_strain_options.return_value = ["Strain A", "Strain B"]
     coordinator.get_growspace_options.return_value = ["gs1"]
     coordinator.strains = MagicMock()
+    coordinator.created_entities = []
     return coordinator
 
 
@@ -120,7 +121,7 @@ async def test_async_setup_entry_adds_entities(mock_coordinator) -> None:
         Mock(
             entry_id="entry_1",
             options={},
-            runtime_data=Mock(coordinator=mock_coordinator, created_entities=[]),
+            runtime_data=mock_coordinator,
         ),
         async_add_entities,
     )
@@ -185,7 +186,7 @@ async def test_async_setup_entry_calculated_vpd(mock_coordinator) -> None:
             Mock(
                 entry_id="entry_1",
                 options={},
-                runtime_data=Mock(coordinator=mock_coordinator, created_entities=[]),
+                runtime_data=mock_coordinator,
             ),
             async_add_entities,
         )
@@ -239,7 +240,7 @@ async def test_async_setup_entry_global_vpd(mock_coordinator) -> None:
         Mock(
             entry_id="entry_1",
             options=options,
-            runtime_data=Mock(coordinator=mock_coordinator, created_entities=[]),
+            runtime_data=mock_coordinator,
         ),
         async_add_entities,
     )
@@ -308,7 +309,7 @@ async def test_async_setup_entry_dynamic_updates(mock_coordinator) -> None:
         Mock(
             entry_id="entry_1",
             options={},
-            runtime_data=Mock(coordinator=mock_coordinator, created_entities=[]),
+            runtime_data=mock_coordinator,
         ),
         async_add_entities,
     )
@@ -402,7 +403,7 @@ async def test_async_create_derivative_sensors(mock_coordinator) -> None:
             "vpd_sensor": "sensor.vpd",
         },
     )
-    config_entry.runtime_data = Mock(created_entities=[])
+    config_entry.runtime_data = mock_coordinator
 
     with (
         patch(
