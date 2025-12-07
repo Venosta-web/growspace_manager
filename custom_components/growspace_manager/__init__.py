@@ -375,7 +375,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: GrowspaceConfigEntry) ->
             irrigation_config,
         )
 
-        if hasattr(gs, "irrigation_strategy") and gs.irrigation_strategy.enabled:
+        if gs.irrigation_strategy.enabled:
             _LOGGER.info(
                 "Initializing VWC Irrigation Coordinator for growspace %s", growspace_id
             )
