@@ -228,3 +228,20 @@ def test_growspace_event_from_dict_legacy() -> None:
     event = GrowspaceEvent.from_dict(data)
     assert event.severity == 0.95  # Mapped to severity
     assert event.category == "alert"  # Default category
+
+def test_growspace_event_from_dict_with_extra_fields() -> None:
+    """Test GrowspaceEvent from_dict with extra, unrecognized fields."""
+    data = {
+        "sensor_type": "test_sensor",
+        "growspace_id": "gs1",
+        "start_time": "2023-01-01T12:00:00",
+        "end_time": "2023-01-01T12:05:00",
+        "duration_sec": 300,
+        "severity": 0.8,
+        "category": "alert",
+        "reasons": ["Reason 1"],
+        "extra_field": "value",
+    }
+    event = GrowspaceEvent.from_dict(data)
+    assert event.severity == 0.8
+    assert "extra_field" not in event.to_dict()
