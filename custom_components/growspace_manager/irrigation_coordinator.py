@@ -342,6 +342,7 @@ class IrrigationCoordinator:
         event_data: dict[str, Any],
     ):
         """Run the on-off cycle for a pump and send notifications."""
+        start_dt = None
         try:
             start_dt = utcnow()
             _LOGGER.info(
@@ -391,7 +392,7 @@ class IrrigationCoordinator:
             try:
                 end_dt = utcnow()
                 # Ensure start_dt is defined
-                if "start_dt" in locals():
+                if start_dt:
                     duration_sec = (end_dt - start_dt).total_seconds()
                     # Create and add the event
                     event = GrowspaceEvent(
