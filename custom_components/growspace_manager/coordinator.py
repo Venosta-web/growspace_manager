@@ -1112,6 +1112,30 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
 
         # Parse transition date
         parsed_date = format_date(transition_date) or date.today().isoformat()
+        plant = self.plants[plant_id]
+
+        # Link stage changes to location changes
+        if new_stage == PlantStage.DRY:
+            await self.lifecycle_manager.move_to_dry_growspace(
+                plant_id, plant, parsed_date
+            )
+            return
+        if new_stage == PlantStage.CURE:
+            await self.lifecycle_manager.move_to_cure_growspace(
+                plant_id, plant, parsed_date
+            )
+            return
+        if new_stage == PlantStage.CLONE:
+            await self.lifecycle_manager.move_to_clone_growspace(
+                plant_id, plant, parsed_date
+            )
+            return
+        if new_stage == PlantStage.MOTHER:
+            # Mother logic usually implies staying put or moving to mother/clone tent?
+            # For now, let's treat it as a clone/mother move if defined
+            # But strictly speaking, moving TO mother stage usually happens in place or from clone
+            # Use specific move logic if exists, otherwise fallback to update
+            pass
 
         await self.async_update_plant(
             plant_id,

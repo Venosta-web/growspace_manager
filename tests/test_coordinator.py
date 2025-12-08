@@ -16,7 +16,6 @@ from freezegun import freeze_time
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import entity_registry as er
 
-
 from custom_components.growspace_manager.const import (
     DOMAIN,
     PLANT_STAGES,

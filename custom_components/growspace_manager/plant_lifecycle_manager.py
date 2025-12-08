@@ -50,7 +50,9 @@ class PlantLifecycleManager:
             True if the plant was moved, False otherwise.
         """
         # Explicit target provided
-        if target_growspace_id and target_growspace_id in self.coordinator.growspaces:
+        if target_growspace_id:
+            if target_growspace_id not in self.coordinator.growspaces:
+                raise ValueError(f"Target growspace {target_growspace_id} not found")
             return await self._harvest_to_explicit_target(
                 plant_id,
                 plant,
@@ -214,6 +216,10 @@ class PlantLifecycleManager:
         )
         plant.growspace_id = clone_id
 
+        growspace = self.coordinator.growspaces.get(clone_id)
+        if growspace:
+            plant.device_id = growspace.device_id
+
         try:
             new_row, new_col = self.coordinator.validator.find_first_available_position(
                 clone_id
@@ -253,16 +259,19 @@ class PlantLifecycleManager:
         flower_days = self.coordinator.calculate_days_in_stage(plant, PlantStage.FLOWER)
 
         if veg_days > 0 or flower_days > 0:
-            await self.coordinator.strain_library.record_harvest(
-                plant.strain, plant.phenotype, veg_days, flower_days
-            )
+            try:
+                await self.coordinator.strain_library.record_harvest(
+                    plant.strain, plant.phenotype, veg_days, flower_days
+                )
+            except Exception as e:
+                _LOGGER.warning("Failed to record harvest analytics: %s", e)
 
         # Now, proceed with moving the plant
         dry_id = self.coordinator.ensure_special_growspace(PlantStage.DRY, "dry")
         plant.growspace_id = dry_id
 
         growspace = self.coordinator.growspaces.get(dry_id)
-        if growspace and growspace.device_id:
+        if growspace:
             plant.device_id = growspace.device_id
 
         try:
@@ -301,6 +310,10 @@ class PlantLifecycleManager:
         """
         cure_id = self.coordinator.ensure_special_growspace(PlantStage.CURE, "cure")
         plant.growspace_id = cure_id
+
+        growspace = self.coordinator.growspaces.get(cure_id)
+        if growspace:
+            plant.device_id = growspace.device_id
 
         try:
             new_row, new_col = self.coordinator.validator.find_first_available_position(

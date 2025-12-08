@@ -157,3 +157,49 @@ async def test_harvest_auto_flow_explicit_dry(manager) -> None:
 
         await manager._harvest_auto_flow("p1", plant, "dry", "2023-01-01")
         mock_move_dry.assert_awaited()
+
+
+@pytest.mark.asyncio
+async def test_move_to_dry_growspace_device_id_ghosting(
+    manager, coordinator_mock
+) -> None:
+    """Test that moving to a growspace without a device ID clears the plant's device ID."""
+    plant = MagicMock(spec=Plant)
+    plant.plant_id = "p1"
+    plant.growspace_id = "gs1"
+    plant.device_id = "device_1"
+    plant.strain = "Strain"
+    plant.phenotype = "Pheno"
+
+    # Mock the destination dry growspace having NO device_id
+    coordinator_mock.ensure_special_growspace.return_value = "dry_gs"
+    mock_dry_gs = MagicMock()
+    mock_dry_gs.device_id = None  # Crucial: destination has no device
+    coordinator_mock.growspaces = {"dry_gs": mock_dry_gs}
+
+    # Mock update to inspect call args
+    coordinator_mock.async_update_plant = AsyncMock()
+
+    await manager.move_to_dry_growspace("p1", plant, "2023-01-01")
+
+    # The bug: code only updates if growspace.device_id is truthy.
+    # So plant.device_id stays "device_1" (Ghosting).
+    # The fix: it should be updated to None.
+    # We verify the fix by asserting it IS None (this test should fail currently)
+    assert plant.device_id is None
+
+
+@pytest.mark.asyncio
+async def test_handle_harvest_logic_fallthrough(manager, coordinator_mock) -> None:
+    """Test that invalid target_growspace_id raises ValueError and does not fall through."""
+    plant = MagicMock(spec=Plant)
+    plant.plant_id = "p1"
+    # Mock growspaces not containing 'invalid_gs'
+    coordinator_mock.growspaces = {"valid_gs": MagicMock()}
+
+    # Currently code falls through to auto-flow.
+    # We expect it to raise ValueError.
+    with pytest.raises(ValueError, match="Target growspace invalid_gs not found"):
+        await manager.handle_harvest_logic(
+            "p1", plant, "invalid_gs", "Invalid Name", "2023-01-01"
+        )

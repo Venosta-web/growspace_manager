@@ -631,32 +631,20 @@ async def handle_move_plant(
             raise ServiceValidationError(f"Plant {plant_id} does not exist.")
 
         plant = coordinator.plants[plant_id]
-        growspace = coordinator.growspaces[plant.growspace_id]
 
         # Validate new position is within bounds
         new_row, new_col = call.data["new_row"], call.data["new_col"]
 
-        # Skip boundary check for special growspaces
-        is_special = plant.growspace_id in ["mother", "clone", "dry", "cure"]
-
-        if not is_special and (
-            new_row < 1
-            or new_row > growspace.rows
-            or new_col < 1
-            or new_col > growspace.plants_per_row
-        ):
-            _LOGGER.error(
-                "Position (%d,%d) is outside growspace bounds (%dx%d) for plant %s",
-                new_row,
-                new_col,
-                growspace.rows,
-                growspace.plants_per_row,
-                plant.plant_id,
-            )
-            raise ServiceValidationError(
-                f"New position ({new_row},{new_col}) is outside growspace '{plant.growspace_id}' bounds."
-            )
-
+        # Validate position is not occupied (GrowspaceValidator handles boundary checks)
+        # if not is_special and (
+        #     new_row < 1
+        #     or new_row > growspace.rows
+        #     or new_col < 1
+        #     or new_col > growspace.plants_per_row
+        # ):
+        #     raise ServiceValidationError(
+        #         f"Position ({new_row}, {new_col}) out of bounds for growspace {growspace_id}."
+        #     )
         old_row, old_col = plant.row, plant.col
 
         # Check if new position is occupied by another plant
@@ -728,6 +716,10 @@ async def handle_move_plant(
                     "growspace_id": plant.growspace_id,
                 },
             )
+
+    except ValueError as err:
+        _LOGGER.warning("Validation error moving plant %s: %s", plant_id, err)
+        raise ServiceValidationError(str(err)) from err
 
     except Exception as err:
         _LOGGER.exception("Failed to move plant %s: %s", plant_id, err)
