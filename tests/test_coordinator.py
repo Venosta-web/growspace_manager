@@ -15,7 +15,7 @@ import pytest
 from freezegun import freeze_time
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import entity_registry as er
-from pytest import LogCaptureFixture
+
 
 from custom_components.growspace_manager.const import (
     DOMAIN,
@@ -573,30 +573,6 @@ async def test_validate_position_not_occupied(
 
 
 @pytest.mark.asyncio
-async def test_parse_date_fields(coordinator: GrowspaceCoordinator) -> None:
-    """Test that `_parse_date_fields` correctly formats various date types.
-
-    Args:
-        coordinator: The mock GrowspaceCoordinator.
-    """
-
-    kwargs = {
-        "veg_start": "2025-01-01",
-        "flower_start": date(2025, 2, 1),
-        "dry_start": datetime(2025, 3, 1, 12, 0),
-        "cure_start": None,
-    }
-
-    coordinator._parse_date_fields(kwargs)
-
-    # Check against ISO strings (now with time component)
-    assert str(kwargs["veg_start"]).startswith("2025-01-01")
-    assert str(kwargs["flower_start"]).startswith("2025-02-01")
-    assert str(kwargs["dry_start"]).startswith("2025-03-01")
-    assert kwargs["cure_start"] is None
-
-
-@pytest.mark.asyncio
 async def test_calculate_days(coordinator: GrowspaceCoordinator) -> None:
     """Test the `calculate_days` helper for various input types.
 
@@ -866,7 +842,7 @@ async def test_async_update_growspace_invalid_id(
 
 @pytest.mark.asyncio
 async def test_validate_plants_after_growspace_resize_logs_warnings(
-    coordinator: GrowspaceCoordinator, caplog: LogCaptureFixture
+    coordinator: GrowspaceCoordinator, caplog: pytest.LogCaptureFixture
 ) -> None:
     """Test that resizing a growspace logs warnings for out-of-bounds plants.
 
@@ -1456,7 +1432,7 @@ def coordinator(hass: HomeAssistant):
 
 @pytest.mark.asyncio
 async def test_init_with_invalid_growspace_data(
-    hass: HomeAssistant, caplog: LogCaptureFixture
+    hass: HomeAssistant, caplog: pytest.LogCaptureFixture
 ) -> None:
     """Test coordinator initialization with invalid growspace data."""
     caplog.set_level("ERROR")
@@ -1473,7 +1449,7 @@ async def test_init_with_invalid_growspace_data(
 
 @pytest.mark.asyncio
 async def test_init_with_invalid_plant_data(
-    hass: HomeAssistant, caplog: LogCaptureFixture
+    hass: HomeAssistant, caplog: pytest.LogCaptureFixture
 ) -> None:
     """Test coordinator initialization with invalid plant data."""
     caplog.set_level("ERROR")
@@ -1506,7 +1482,7 @@ async def test_init_with_plant_object(hass: HomeAssistant) -> None:
 
 @pytest.mark.asyncio
 async def test_migrate_legacy_growspaces_error_handling(
-    hass: HomeAssistant, caplog: LogCaptureFixture
+    hass: HomeAssistant, caplog: pytest.LogCaptureFixture
 ) -> None:
     """Test error handling in _migrate_legacy_growspaces."""
     caplog.set_level("DEBUG")
@@ -1632,7 +1608,7 @@ async def test_canonical_special_not_found(hass: HomeAssistant) -> None:
 
 @pytest.mark.asyncio
 async def test_async_load_error_handling(
-    hass: HomeAssistant, caplog: LogCaptureFixture
+    hass: HomeAssistant, caplog: pytest.LogCaptureFixture
 ) -> None:
     """Test error handling in async_load."""
 
@@ -1657,7 +1633,7 @@ async def test_async_load_error_handling(
 
 @pytest.mark.asyncio
 async def test_async_load_with_options(
-    hass: HomeAssistant, caplog: LogCaptureFixture
+    hass: HomeAssistant, caplog: pytest.LogCaptureFixture
 ) -> None:
     """Test async_load with options."""
 
@@ -1716,7 +1692,7 @@ async def test_async_load_ensures_notifications_enabled(hass: HomeAssistant) -> 
 
 @pytest.mark.asyncio
 async def test_ensure_special_growspace_updates_name(
-    hass: HomeAssistant, caplog: LogCaptureFixture
+    hass: HomeAssistant, caplog: pytest.LogCaptureFixture
 ) -> None:
     """Test that _ensure_special_growspace updates the name of an existing growspace."""
 
@@ -1734,7 +1710,7 @@ async def test_ensure_special_growspace_updates_name(
 
 @pytest.mark.asyncio
 async def test_cleanup_legacy_aliases(
-    hass: HomeAssistant, caplog: LogCaptureFixture
+    hass: HomeAssistant, caplog: pytest.LogCaptureFixture
 ) -> None:
     """Test that _cleanup_legacy_aliases removes legacy aliases and migrates plants."""
 
@@ -1912,7 +1888,7 @@ async def test_harvest_auto_flow_fallback_to_dry(hass: HomeAssistant) -> None:
 
 @pytest.mark.asyncio
 async def test_harvest_to_explicit_target_no_position(
-    hass: HomeAssistant, caplog: LogCaptureFixture
+    hass: HomeAssistant, caplog: pytest.LogCaptureFixture
 ) -> None:
     """Test _harvest_to_explicit_target when no position is available."""
 
@@ -2005,7 +1981,7 @@ async def test_harvest_to_explicit_target_mother(hass: HomeAssistant) -> None:
 
 @pytest.mark.asyncio
 async def test_move_to_clone_growspace_no_position(
-    hass: HomeAssistant, caplog: LogCaptureFixture
+    hass: HomeAssistant, caplog: pytest.LogCaptureFixture
 ) -> None:
     """Test _move_to_clone_growspace when no position is available."""
     caplog.set_level("WARNING")

@@ -6,7 +6,7 @@ import logging
 from datetime import date
 from typing import TYPE_CHECKING, Any
 
-from .const import PlantStage
+from .const import SPECIAL_GROWSPACES, PlantStage
 from .models import Plant
 from .utils import calculate_plant_stage
 
@@ -151,19 +151,37 @@ class PlantLifecycleManager:
 
         # Handle name hints
         if target_growspace_name:
-            if "dry" in target_growspace_name.lower():
+            name_lower = target_growspace_name.lower()
+
+            # Strict matching against special growspace aliases
+            if (
+                name_lower == "dry"
+                or name_lower in SPECIAL_GROWSPACES["dry"]["aliases"]
+            ):
                 return await self.move_to_dry_growspace(
                     plant_id, plant, transition_date
                 )
-            if "cure" in target_growspace_name.lower():
+            if (
+                name_lower == "cure"
+                or name_lower in SPECIAL_GROWSPACES["cure"]["aliases"]
+            ):
                 return await self.move_to_cure_growspace(
                     plant_id, plant, transition_date
                 )
-            if "clone" in target_growspace_name.lower():
+            if (
+                name_lower == "clone"
+                or name_lower in SPECIAL_GROWSPACES["clone"]["aliases"]
+            ):
                 return await self.move_to_clone_growspace(
                     plant_id, plant, transition_date
                 )
-            if "mother" in target_growspace_name.lower():
+            if (
+                name_lower == "mother"
+                or name_lower in SPECIAL_GROWSPACES["mother"]["aliases"]
+            ):
+                # Mother logic might reuse move_to_clone_growspace or similar, ensuring it ends up in mother growspace
+                # For now, sticking to original logic of moving to clone growspace if mother match found?
+                # Original logic: return await self.move_to_clone_growspace(...)
                 return await self.move_to_clone_growspace(
                     plant_id, plant, transition_date
                 )
@@ -307,7 +325,6 @@ class PlantLifecycleManager:
 
     async def handle_clone_creation(
         self,
-        plant_id: str,
         growspace_id: str,
         strain: str,
         row: int,
@@ -319,7 +336,6 @@ class PlantLifecycleManager:
         """Handle the creation of a clone plant, associating with mother if needed.
 
         Args:
-            plant_id: The new clone's ID.
             growspace_id: The target growspace ID.
             strain: Strain name.
             row: Row position.
@@ -331,47 +347,36 @@ class PlantLifecycleManager:
         Returns:
             The created plant ID.
         """
-        now = date.today()
-
-        clone_data = {
-            "plant_id": plant_id,
-            "growspace_id": growspace_id,
-            "strain": str(strain).strip(),
-            "row": int(row),
-            "col": int(col),
-            "stage": PlantStage.CLONE,
-            "type": PlantStage.CLONE,
-            "clone_start": now,
-            "created_at": now.isoformat(),
-        }
-
+        phenotype = kwargs.get("phenotype", "")
         if mother_plant:
-            clone_data["phenotype"] = mother_plant.phenotype
+            phenotype = mother_plant.phenotype or ""  # Handle None phenotype
 
-        if source_mother_id:
-            clone_data["source_mother"] = source_mother_id
-
-        # Override with any explicitly provided kwargs
-        clone_data.update(
-            {k: v for k, v in kwargs.items() if k not in ["stage", "clone_start"]}
+        # Use updated coordinator method which handles saving and ID generation
+        plant = await self.coordinator.async_add_plant(
+            growspace_id=growspace_id,
+            strain=str(strain).strip(),
+            plant_id=kwargs.get("plant_id"),
+            phenotype=phenotype,
+            row=int(row),
+            col=int(col),
+            stage=PlantStage.CLONE,
+            type=PlantStage.CLONE,
+            clone_start=date.today(),
+            source_mother=source_mother_id,
+            **{
+                k: v
+                for k, v in kwargs.items()
+                if k not in ["stage", "clone_start", "plant_id", "phenotype"]
+            },
         )
-
-        # Parse dates
-        self.coordinator._parse_date_fields(clone_data)
-
-        # Save the clone
-        self.coordinator.plants[plant_id] = Plant(**clone_data)
-        self.coordinator.update_data_property()
-        await self.coordinator.async_save()
-        self.coordinator.async_set_updated_data(self.coordinator.data)
 
         _LOGGER.info(
             "Created clone %s: %s at (%d,%d) from mother %s",
-            plant_id,
+            plant.plant_id,
             strain,
             row,
             col,
             source_mother_id or "unknown",
         )
 
-        return plant_id
+        return plant.plant_id

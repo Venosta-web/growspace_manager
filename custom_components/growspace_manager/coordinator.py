@@ -7,7 +7,6 @@ import uuid
 from datetime import date, datetime, timedelta
 from typing import TYPE_CHECKING, Any
 
-from dateutil import parser
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
@@ -28,7 +27,12 @@ from .notification_manager import NotificationManager
 from .plant_lifecycle_manager import PlantLifecycleManager
 from .storage_manager import StorageManager
 from .strain_library import StrainLibrary
-from .utils import calculate_plant_stage, format_date, generate_growspace_grid
+from .utils import (
+    calculate_plant_stage,
+    format_date,
+    generate_growspace_grid,
+    parse_date_field,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -212,7 +216,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
             self.events[growspace_id].pop(0)
 
         # Persist changes
-        self.hass.async_create_task(self.async_save())
+        self.hass.async_create_task(self.async_commit())
 
     # =============================================================================
     # UTILITY AND HELPER METHODS
@@ -247,27 +251,6 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
             return gs_id, growspace.name  # access attribute, not dict key
         return gs_id, gs_id
 
-    def _parse_date_field(self, date_value: str | datetime | date | None) -> str | None:
-        """Parse and format a date field into a standard ISO format string.
-
-        Args:
-            date_value: The date value to parse.
-
-        Returns:
-            The formatted date string, or None if the input is invalid.
-        """
-        return format_date(date_value)
-
-    def _parse_date_fields(self, kwargs: dict[str, Any]) -> None:
-        """Parse all standard date fields within a dictionary in-place.
-
-        Args:
-            kwargs: A dictionary of data that may contain date fields.
-        """
-        for field in DATE_FIELDS:
-            if field in kwargs:
-                kwargs[field] = self._parse_date_field(kwargs[field])
-
     def _to_date(self, date_value: DateInput) -> date | None:
         """Convert a date input to a date object.
 
@@ -285,7 +268,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
             if isinstance(date_value, date):
                 return date_value
             if isinstance(date_value, str):
-                return parser.isoparse(date_value).date()
+                return parse_date_field(date_value).date()
         except Exception:
             _LOGGER.exception("Failed to parse date %s", date_value)
         return None
@@ -371,6 +354,15 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
         else:
             self._update_special_growspace_name(canonical_id, name)
 
+        # self.update_data_property() - Handled by async_commit via async_add_growspace or manual call if needed
+        # NOTE: ensure_special_growspace effectively just prepares the structure.
+        # The actual save happens if it creates a NEW one via _create_special_growspace which calls nothing,
+        # or updates via _update_special_growspace_name.
+        # BUT wait, the original code called update_data_property() but didn't save?
+        # Let's check line 374: self.update_data_property()
+        # It updates local memory but doesn't persist to disk?
+        # The method returns canonical_id.
+        # Let's keep it safe and just update data property as before to avoiding changing behavior too much here unless we want to commit.
         self.update_data_property()
         return canonical_id
 
@@ -442,6 +434,12 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
 
         return self.data
 
+    async def async_commit(self) -> None:
+        """Commit changes to storage and notify listeners."""
+        self.update_data_property()
+        await self.async_save()
+        self.async_set_updated_data(self.data)
+
     async def async_save(self) -> None:
         """Save the current state of all data to persistent storage."""
         await self.storage_manager.async_save()
@@ -509,9 +507,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
         # ✅ Enable notifications by default for new growspace
         self._notifications_enabled[growspace_id] = True
 
-        self.update_data_property()
-        await self.async_save()
-        self.async_set_updated_data(self.data)
+        await self.async_commit()
 
         return growspace
 
@@ -540,9 +536,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
         # ✅ Remove notification state
         self._notifications_enabled.pop(growspace_id, None)
 
-        self.update_data_property()
-        await self.async_save()
-        self.async_set_updated_data(self.data)
+        await self.async_commit()
 
         _LOGGER.info(
             "Removed growspace %s (%s) and %d plants",
@@ -631,11 +625,8 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
                     plants_per_row or growspace.plants_per_row,
                 )
 
-            # Save to storage
-            await self.async_save()
-
-            # Notify all listeners (entities) about the update
-            self.async_set_updated_data(self.data)
+            # Save to storage and notify
+            await self.async_commit()
 
             _LOGGER.debug("Growspace update completed and saved")
         else:
@@ -719,11 +710,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
         # Update data dictionary
         self.data["notifications_enabled"] = self._notifications_enabled
 
-        # Save to storage
-        await self.async_save()
-
-        # Notify listeners (updates switch state)
-        self.async_set_updated_data(self.data)
+        await self.async_commit()
 
         _LOGGER.info(
             "Notifications for growspace %s (%s): %s -> %s",
@@ -741,6 +728,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
         self,
         growspace_id: str,
         strain: str,
+        plant_id: str | None = None,
         phenotype: str = "",
         row: int = 1,
         col: int = 1,
@@ -761,6 +749,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
         Args:
             growspace_id: The ID of the growspace to add the plant to.
             strain: The strain name of the plant.
+            plant_id: Optional specific ID for the plant.
             phenotype: The phenotype of the strain (optional).
             row: The row position in the grid.
             col: The column position in the grid.
@@ -804,7 +793,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
         # Create plant object
         # Ensure dates are stored as strings to match Plant model
         plant = Plant(
-            plant_id=str(uuid.uuid4()),
+            plant_id=plant_id or str(uuid.uuid4()),
             growspace_id=growspace_id,
             strain=strain,
             phenotype=phenotype,
@@ -828,11 +817,10 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
         # Calculate stage if not explicitly provided
         if not stage:
             plant.stage = calculate_plant_stage(plant)
+
         self.plants[plant.plant_id] = plant
 
-        self.update_data_property()
-        await self.async_save()
-        self.async_set_updated_data(self.data)
+        await self.async_commit()
 
         return plant
 
@@ -869,7 +857,12 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
         kwargs["mother_start"] = mother_start
 
         plant: Plant = await self.async_add_plant(
-            mother_id, strain, phenotype, row, col, **kwargs
+            growspace_id=mother_id,
+            strain=strain,
+            phenotype=phenotype,
+            row=row,
+            col=col,
+            **kwargs,
         )
         return plant
 
@@ -901,10 +894,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
 
         for _ in range(num_clones):
             row, col = self.validator.find_first_available_position(clone_gs_id)
-            clone_id = str(uuid.uuid4())
-
-            await self.lifecycle_manager.handle_clone_creation(
-                plant_id=clone_id,
+            clone_id = await self.lifecycle_manager.handle_clone_creation(
                 growspace_id=clone_gs_id,
                 strain=mother.strain,
                 row=row,
@@ -979,7 +969,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
 
             # Enforce string format for date fields
             if key in DATE_FIELDS:
-                value = self._parse_date_field(value)
+                value = format_date(value)
                 updates[key] = value  # Update the value in 'updates' dict as well
 
         for key, value in updates.items():
@@ -993,9 +983,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
                 _LOGGER.warning("COORDINATOR: Invalid field %s", key)
 
         plant.updated_at = date.today().isoformat()
-        await self.async_save()
-        self.update_data_property()
-        self.async_set_updated_data(self.data)
+        await self.async_commit()
         return plant
 
     def _handle_position_update(
@@ -1069,12 +1057,11 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
 
         # Update timestamps
         update_time = date.today().isoformat()
+
         plant1.updated_at = update_time
         plant2.updated_at = update_time
 
-        self.update_data_property()
-        await self.async_save()
-        self.async_set_updated_data(self.data)
+        await self.async_commit()
 
         _LOGGER.info(
             "Switched positions: %s (%s) moved from (%d,%d) to (%d,%d), %s (%s) moved from (%d,%d) to (%d,%d)",
@@ -1124,9 +1111,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
             )
 
         # Parse transition date
-        parsed_date = (
-            self._parse_date_field(transition_date) or date.today().isoformat()
-        )
+        parsed_date = format_date(transition_date) or date.today().isoformat()
 
         await self.async_update_plant(
             plant_id,
@@ -1152,9 +1137,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
         plant.stage = PlantStage.FLOWER
         plant.flower_start = date.today().isoformat()
         plant.updated_at = plant.flower_start
-        await self.async_save()
-        self.update_data_property()
-        self.async_set_updated_data(self.data)
+        await self.async_commit()
         return plant
 
     async def async_start_drying(self, plant_id: str) -> Plant:
@@ -1194,9 +1177,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
         plant.stage = PlantStage.CURE
         plant.cure_start = date.today().isoformat()
         plant.updated_at = plant.cure_start
-        await self.async_save()
-        self.update_data_property()
-        self.async_set_updated_data(self.data)
+        await self.async_commit()
         return plant
 
     async def async_harvest(self, plant_id: str) -> Plant:
@@ -1255,14 +1236,11 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
             transition_date,
         )
 
-        # Handle harvest logic via Lifecycle Manager
         moved = await self.lifecycle_manager.handle_harvest_logic(
             plant_id, plant, target_growspace_id, target_growspace_name, transition_date
         )
 
-        self.update_data_property()
-        await self.async_save()
-        self.async_set_updated_data(self.data)
+        await self.async_commit()
 
         _LOGGER.info(
             "Harvest end: plant_id=%s moved=%s target_growspace_id=%s row=%s col=%s stage=%s dry_start=%s cure_start=%s",
@@ -1287,9 +1265,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
         """
         if plant_id in self.plants:
             del self.plants[plant_id]
-            self.update_data_property()
-            await self.async_save()
-            self.async_set_updated_data(self.data)
+            await self.async_commit()
             return True
         return False
 
@@ -1467,4 +1443,4 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
             self._notifications_sent[plant_id][stage] = {}
 
         self._notifications_sent[plant_id][stage][str(days)] = True
-        await self.async_save()
+        await self.async_commit()
