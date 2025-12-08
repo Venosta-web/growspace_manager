@@ -65,7 +65,7 @@ async def _migrate_plants_from_legacy_growspace(
                 legacy_id,
             )
     coordinator.growspaces.pop(legacy_id, None)
-    _LOGGER.debug("Removed legacy growspace %s.", legacy_id)
+    _LOGGER.debug("Removed legacy growspace %s", legacy_id)
 
 
 async def _cleanup_dry_legacy_growspaces(
@@ -186,7 +186,7 @@ async def handle_debug_list_growspaces(
     """Debug service to list all growspaces."""
     _LOGGER.debug("=== Current Growspaces ===")
     if not coordinator.growspaces:
-        _LOGGER.debug("No growspaces found.")
+        _LOGGER.debug("No growspaces found")
         return
 
     for gs_id, gs_data in coordinator.growspaces.items():
@@ -214,7 +214,7 @@ async def handle_debug_list_growspaces(
                     plant.col,
                 )
         else:
-            _LOGGER.debug("%s has 0 plants.", gs_id)
+            _LOGGER.debug("%s has 0 plants", gs_id)
 
 
 async def _restore_plants_to_canonical_growspace(
@@ -432,7 +432,7 @@ async def handle_debug_reset_special_growspaces(
         coordinator.data["plants"] = coordinator.plants
         await coordinator.async_save()
 
-        _LOGGER.debug("Special growspace reset complete.")
+        _LOGGER.debug("Special growspace reset complete")
 
     except Exception as e:
         _LOGGER.exception("Special growspace reset failed: %s", e)

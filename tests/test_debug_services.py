@@ -213,7 +213,7 @@ async def test_debug_list_growspaces_no_growspaces(
         await handle_debug_list_growspaces(
             mock_hass, mock_coordinator, mock_strain_library, mock_call
         )
-        mock_debug.assert_any_call("No growspaces found.")
+        mock_debug.assert_any_call("No growspaces found")
 
 
 @pytest.mark.asyncio
@@ -381,7 +381,7 @@ async def test_debug_consolidate_duplicate_special_with_missing_canonical_and_mu
 @pytest.mark.asyncio
 async def test_migrate_plants_from_legacy_growspace_find_position_exception(
     mock_coordinator,
-):
+) -> None:
     """Test _migrate_plants_from_legacy_growspace when find_first_available_position raises an exception."""
     legacy_id = "dry_overview_1"
     canonical_id = "dry"
@@ -412,7 +412,7 @@ async def test_migrate_plants_from_legacy_growspace_find_position_exception(
 @pytest.mark.asyncio
 async def test_migrate_plants_from_legacy_growspace_plant_not_in_coordinator(
     mock_coordinator,
-):
+) -> None:
     """Test _migrate_plants_from_legacy_growspace when plant is not in coordinator.plants."""
     legacy_id = "dry_overview_1"
     canonical_id = "dry"
@@ -438,7 +438,7 @@ async def test_migrate_plants_from_legacy_growspace_plant_not_in_coordinator(
 @pytest.mark.asyncio
 async def test_migrate_plants_from_legacy_growspace_success(
     mock_coordinator,
-):
+) -> None:
     """Test _migrate_plants_from_legacy_growspace when a plant is successfully migrated."""
     legacy_id = "dry_overview_1"
     canonical_id = "dry"
@@ -471,7 +471,7 @@ async def test_migrate_plants_from_legacy_growspace_success(
 @pytest.mark.asyncio
 async def test_restore_plants_to_canonical_growspace_find_position_exception(
     mock_coordinator,
-):
+) -> None:
     """Test _restore_plants_to_canonical_growspace when find_first_available_position raises an exception."""
     canonical_id = "dry"
     plants_data_to_restore = [
@@ -501,7 +501,7 @@ async def test_restore_plants_to_canonical_growspace_find_position_exception(
 @pytest.mark.asyncio
 async def test_restore_plants_to_canonical_growspace_plant_not_in_coordinator(
     mock_coordinator,
-):
+) -> None:
     """Test _restore_plants_to_canonical_growspace when plant is not in coordinator.plants."""
     canonical_id = "dry"
     plants_data_to_restore = [
@@ -588,7 +588,7 @@ async def test_handle_reset_dry_growspace_preserve_plants_no_plants(
 @pytest.mark.asyncio
 async def test_handle_reset_dry_growspace_preserve_plants_with_plants(
     mock_hass, mock_coordinator
-):
+) -> None:
     """Test _handle_reset_dry_growspace when preserve_plants is true and plants are found."""
     preserve_plants = True
 
@@ -650,7 +650,7 @@ async def test_handle_reset_dry_growspace_preserve_plants_with_plants(
 @pytest.mark.asyncio
 async def test_handle_reset_cure_growspace_preserve_plants_no_plants(
     mock_hass, mock_coordinator
-):
+) -> None:
     """Test _handle_reset_cure_growspace when preserve_plants is true but no plants are found."""
     preserve_plants = True
 
@@ -681,7 +681,7 @@ async def test_handle_reset_cure_growspace_preserve_plants_no_plants(
 @pytest.mark.asyncio
 async def test_handle_reset_cure_growspace_preserve_plants_with_plants(
     mock_hass, mock_coordinator
-):
+) -> None:
     """Test _handle_reset_cure_growspace when preserve_plants is true and plants are found."""
     preserve_plants = True
 
@@ -745,7 +745,7 @@ async def test_handle_reset_cure_growspace_preserve_plants_with_plants(
 @pytest.mark.asyncio
 async def test_consolidate_plants_to_canonical_growspace_find_position_exception(
     mock_coordinator,
-):
+) -> None:
     """Test _consolidate_plants_to_canonical_growspace when find_first_available_position raises an exception."""
     duplicate_ids = ["dry_1"]
     canonical_id = "dry"

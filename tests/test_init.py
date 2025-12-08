@@ -118,7 +118,7 @@ async def test_async_setup_entry(mock_hass) -> None:
         patch("custom_components.growspace_manager.websocket_api") as mock_ws,
     ):
         assert await async_setup_entry(mock_hass, entry)
-        mock_ws.async_register_command.assert_called_once()
+        assert mock_ws.async_register_command.call_count == 2
 
 
 @pytest.mark.asyncio

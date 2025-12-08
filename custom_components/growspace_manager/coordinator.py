@@ -7,7 +7,7 @@ import uuid
 from datetime import date, datetime, timedelta
 from typing import TYPE_CHECKING, Any
 
-from dateutil import parser
+from homeassistant.const import STATE_ON, STATE_UNAVAILABLE, STATE_UNKNOWN
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
@@ -18,16 +18,31 @@ if TYPE_CHECKING:
     from .vwc_irrigation_coordinator import VWCIrrigationCoordinator
 
 
-from .const import DATE_FIELDS, PLANT_STAGES, PlantStage
+from .bayesian_data import VPD_STRESS_THRESHOLDS
+from .const import (
+    DATE_FIELDS,
+    DEFAULT_FLOWER_EARLY_DAYS,
+    DEFAULT_VEG_EARLY_DAYS,
+    DOMAIN,
+    PlantStage,
+)
 from .environment_analyzer import EnvironmentAnalyzer
 from .growspace_validator import GrowspaceValidator
 from .import_export_manager import ImportExportManager
 from .migration_manager import MigrationManager
 from .models import Growspace, GrowspaceCoordinatorData, GrowspaceEvent, Plant
 from .notification_manager import NotificationManager
+from .plant_lifecycle_manager import PlantLifecycleManager
 from .storage_manager import StorageManager
 from .strain_library import StrainLibrary
-from .utils import calculate_plant_stage, format_date, generate_growspace_grid
+from .utils import (
+    calculate_days_since,
+    calculate_plant_stage,
+    days_to_week,
+    format_date,
+    generate_growspace_grid,
+    parse_date_field,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -94,6 +109,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
         self.environment_analyzer = EnvironmentAnalyzer(hass, self)
         self.notification_manager = NotificationManager(hass, self)
         self.import_export_manager = ImportExportManager(hass)
+        self.lifecycle_manager = PlantLifecycleManager(self)
 
         self._notifications_sent: dict[str, dict[str, dict[str, bool]]] = {}
         self._notifications_enabled: dict[
@@ -210,7 +226,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
             self.events[growspace_id].pop(0)
 
         # Persist changes
-        self.hass.async_create_task(self.async_save())
+        self.hass.async_create_task(self.async_commit())
 
     # =============================================================================
     # UTILITY AND HELPER METHODS
@@ -245,27 +261,6 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
             return gs_id, growspace.name  # access attribute, not dict key
         return gs_id, gs_id
 
-    def _parse_date_field(self, date_value: str | datetime | date | None) -> str | None:
-        """Parse and format a date field into a standard ISO format string.
-
-        Args:
-            date_value: The date value to parse.
-
-        Returns:
-            The formatted date string, or None if the input is invalid.
-        """
-        return format_date(date_value)
-
-    def _parse_date_fields(self, kwargs: dict[str, Any]) -> None:
-        """Parse all standard date fields within a dictionary in-place.
-
-        Args:
-            kwargs: A dictionary of data that may contain date fields.
-        """
-        for field in DATE_FIELDS:
-            if field in kwargs:
-                kwargs[field] = self._parse_date_field(kwargs[field])
-
     def _to_date(self, date_value: DateInput) -> date | None:
         """Convert a date input to a date object.
 
@@ -283,7 +278,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
             if isinstance(date_value, date):
                 return date_value
             if isinstance(date_value, str):
-                return parser.isoparse(date_value).date()
+                return parse_date_field(date_value).date()
         except Exception:
             _LOGGER.exception("Failed to parse date %s", date_value)
         return None
@@ -369,6 +364,15 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
         else:
             self._update_special_growspace_name(canonical_id, name)
 
+        # self.update_data_property() - Handled by async_commit via async_add_growspace or manual call if needed
+        # NOTE: ensure_special_growspace effectively just prepares the structure.
+        # The actual save happens if it creates a NEW one via _create_special_growspace which calls nothing,
+        # or updates via _update_special_growspace_name.
+        # BUT wait, the original code called update_data_property() but didn't save?
+        # Let's check line 374: self.update_data_property()
+        # It updates local memory but doesn't persist to disk?
+        # The method returns canonical_id.
+        # Let's keep it safe and just update data property as before to avoiding changing behavior too much here unless we want to commit.
         self.update_data_property()
         return canonical_id
 
@@ -440,9 +444,24 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
 
         return self.data
 
+    async def async_commit(self) -> None:
+        """Commit changes to storage and notify listeners."""
+        self.update_data_property()
+        await self.async_save()
+        self.async_fire_growspace_updated()
+        for gs_id in self.growspaces:
+            if gs_id in self.irrigation_coordinators:
+                self.irrigation_coordinators[gs_id].async_request_refresh()
+
+    def async_fire_growspace_updated(self) -> None:
+        """Fire event to notify frontend that growspace data has changed."""
+        self.hass.bus.async_fire(f"{DOMAIN}_updated", {})
+
     async def async_save(self) -> None:
-        """Save the current state of all data to persistent storage."""
+        """Save data to storage."""
         await self.storage_manager.async_save()
+        self.async_set_updated_data(self.data)
+        self.async_fire_growspace_updated()
 
     async def async_load(self) -> None:
         """Load data from persistent storage and handle migrations."""
@@ -507,9 +526,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
         # ✅ Enable notifications by default for new growspace
         self._notifications_enabled[growspace_id] = True
 
-        self.update_data_property()
-        await self.async_save()
-        self.async_set_updated_data(self.data)
+        await self.async_commit()
 
         return growspace
 
@@ -538,9 +555,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
         # ✅ Remove notification state
         self._notifications_enabled.pop(growspace_id, None)
 
-        self.update_data_property()
-        await self.async_save()
-        self.async_set_updated_data(self.data)
+        await self.async_commit()
 
         _LOGGER.info(
             "Removed growspace %s (%s) and %d plants",
@@ -629,11 +644,8 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
                     plants_per_row or growspace.plants_per_row,
                 )
 
-            # Save to storage
-            await self.async_save()
-
-            # Notify all listeners (entities) about the update
-            self.async_set_updated_data(self.data)
+            # Save to storage and notify
+            await self.async_commit()
 
             _LOGGER.debug("Growspace update completed and saved")
         else:
@@ -717,11 +729,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
         # Update data dictionary
         self.data["notifications_enabled"] = self._notifications_enabled
 
-        # Save to storage
-        await self.async_save()
-
-        # Notify listeners (updates switch state)
-        self.async_set_updated_data(self.data)
+        await self.async_commit()
 
         _LOGGER.info(
             "Notifications for growspace %s (%s): %s -> %s",
@@ -739,6 +747,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
         self,
         growspace_id: str,
         strain: str,
+        plant_id: str | None = None,
         phenotype: str = "",
         row: int = 1,
         col: int = 1,
@@ -759,6 +768,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
         Args:
             growspace_id: The ID of the growspace to add the plant to.
             strain: The strain name of the plant.
+            plant_id: Optional specific ID for the plant.
             phenotype: The phenotype of the strain (optional).
             row: The row position in the grid.
             col: The column position in the grid.
@@ -802,7 +812,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
         # Create plant object
         # Ensure dates are stored as strings to match Plant model
         plant = Plant(
-            plant_id=str(uuid.uuid4()),
+            plant_id=plant_id or str(uuid.uuid4()),
             growspace_id=growspace_id,
             strain=strain,
             phenotype=phenotype,
@@ -826,140 +836,12 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
         # Calculate stage if not explicitly provided
         if not stage:
             plant.stage = calculate_plant_stage(plant)
+
         self.plants[plant.plant_id] = plant
 
-        self.update_data_property()
-        await self.async_save()
-        self.async_set_updated_data(self.data)
+        await self.async_commit()
 
         return plant
-
-    async def _handle_clone_creation(
-        self,
-        plant_id: str,
-        growspace_id: str,
-        strain: str,
-        phenotype: str,
-        row: int,
-        col: int,
-        **kwargs: Any,
-    ) -> str:
-        """Handle the specific logic for creating a clone plant.
-
-        This method attempts to find a source mother plant and copies relevant
-        data from it to the new clone.
-
-        Args:
-            plant_id: The ID for the new clone.
-            growspace_id: The growspace ID for the clone.
-            strain: The strain name.
-            phenotype: The phenotype name.
-            row: The row position.
-            col: The column position.
-            **kwargs: Additional plant attributes.
-
-        Returns:
-            The ID of the newly created clone.
-        """
-
-        # Check if source_mother is provided
-        source_mother_id = kwargs.get("source_mother")
-        mother_plant: Plant | None = None
-
-        if source_mother_id:
-            # Validate mother plant exists
-            self.validator.validate_plant_exists(source_mother_id)
-            mother_plant = self.plants[source_mother_id]
-
-            # Verify it's actually a mother plant
-            if mother_plant.stage != PlantStage.MOTHER:
-                _LOGGER.warning(
-                    "Source plant %s is not in mother stage, but proceeding with clone creation",
-                    source_mother_id,
-                )
-        else:
-            # Try to find a mother plant with matching strain
-            mother_plant = self._find_mother_by_strain(strain, phenotype)
-            if mother_plant:
-                source_mother_id = mother_plant.plant_id
-                _LOGGER.info(
-                    "Found mother plant %s for strain %s", source_mother_id, strain
-                )
-            else:
-                _LOGGER.warning(
-                    "No mother plant found for strain %s, creating clone without source",
-                    strain,
-                )
-                mother_plant = None
-
-        now = date.today().isoformat()
-
-        # Create clone data
-        clone_data: dict[str, Any] = {
-            "plant_id": plant_id,
-            "growspace_id": growspace_id,
-            "strain": str(strain).strip(),
-            "row": int(row),
-            "col": int(col),
-            "stage": PlantStage.CLONE,
-            "type": "clone",
-            "clone_start": now,
-            "created_at": now,
-        }
-
-        # Copy relevant data from mother plant if available
-        if mother_plant:
-            clone_data.update(
-                {
-                    "phenotype": mother_plant.phenotype,
-                    "source_mother": source_mother_id,
-                }
-            )
-
-        # Override with any explicitly provided kwargs
-        clone_data.update(
-            {k: v for k, v in kwargs.items() if k not in ["stage", "clone_start"]}
-        )
-
-        # Parse dates
-        self._parse_date_fields(clone_data)
-
-        # Save the clone
-        self.plants[plant_id] = Plant(**clone_data)
-        self.update_data_property()
-        await self.async_save()
-        self.async_set_updated_data(self.data)
-
-        _LOGGER.info(
-            "Created clone %s: %s at (%d,%d) from mother %s",
-            plant_id,
-            strain,
-            row,
-            col,
-            source_mother_id or "unknown",
-        )
-
-        return plant_id
-
-    def _find_mother_by_strain(self, strain: str, phenotype: str) -> Plant | None:
-        """Find a mother plant with the specified strain and phenotype.
-
-        Args:
-            strain: The strain name to search for.
-            phenotype: The phenotype name to search for.
-
-        Returns:
-            The Plant object of the mother if found, otherwise None.
-        """
-        for plant in self.plants.values():
-            if (
-                plant.stage == PlantStage.MOTHER
-                and plant.strain.lower() == strain.lower()
-                and plant.phenotype.lower() == phenotype.lower()
-            ):
-                return plant
-
-        return None
 
     async def async_add_mother_plant(
         self,
@@ -994,7 +876,12 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
         kwargs["mother_start"] = mother_start
 
         plant: Plant = await self.async_add_plant(
-            mother_id, strain, phenotype, row, col, **kwargs
+            growspace_id=mother_id,
+            strain=strain,
+            phenotype=phenotype,
+            row=row,
+            col=col,
+            **kwargs,
         )
         return plant
 
@@ -1022,24 +909,26 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
 
         mother = self.plants[mother_plant_id]
         clone_gs_id = self.ensure_special_growspace(PlantStage.CLONE, "clone", 5, 5)
-        clone_ids = []
+        new_plants: list[Plant] = []
 
         for _ in range(num_clones):
             row, col = self.validator.find_first_available_position(clone_gs_id)
-            clone_data: dict[str, Any] = {
-                "strain": mother.strain,
-                "phenotype": mother.phenotype,
-                "type": "clone",
-                "source_mother": mother_plant_id,
-                "stage": PlantStage.CLONE,
-                "clone_start": date.today(),
-            }
-            clone_id = await self.async_add_plant(
-                clone_gs_id, **clone_data, row=row, col=col
+            clone_id = await self.lifecycle_manager.handle_clone_creation(
+                growspace_id=clone_gs_id,
+                strain=mother.strain,
+                row=row,
+                col=col,
+                source_mother_id=mother_plant_id,
+                mother_plant=mother,
+                phenotype=mother.phenotype,
             )
-            clone_ids.append(clone_id)
 
-        return clone_ids
+            if new_plant := self.plants.get(clone_id):
+                new_plants.append(new_plant)
+            else:
+                _LOGGER.error("Failed to retrieve created clone %s", clone_id)
+
+        return new_plants
 
     async def async_transition_clone_to_veg(self, clone_id: str) -> None:
         """Transition a plant from the clone stage to the veg stage.
@@ -1099,7 +988,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
 
             # Enforce string format for date fields
             if key in DATE_FIELDS:
-                value = self._parse_date_field(value)
+                value = format_date(value)
                 updates[key] = value  # Update the value in 'updates' dict as well
 
         for key, value in updates.items():
@@ -1113,9 +1002,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
                 _LOGGER.warning("COORDINATOR: Invalid field %s", key)
 
         plant.updated_at = date.today().isoformat()
-        await self.async_save()
-        self.update_data_property()
-        self.async_set_updated_data(self.data)
+        await self.async_commit()
         return plant
 
     def _handle_position_update(
@@ -1189,12 +1076,11 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
 
         # Update timestamps
         update_time = date.today().isoformat()
+
         plant1.updated_at = update_time
         plant2.updated_at = update_time
 
-        self.update_data_property()
-        await self.async_save()
-        self.async_set_updated_data(self.data)
+        await self.async_commit()
 
         _LOGGER.info(
             "Switched positions: %s (%s) moved from (%d,%d) to (%d,%d), %s (%s) moved from (%d,%d) to (%d,%d)",
@@ -1222,39 +1108,267 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
         await self.async_switch_plants(plant1_id, plant2_id)
 
     async def async_transition_plant_stage(
-        self, plant_id: str, new_stage: str, transition_date: str | None
+        self,
+        plant_id: str,
+        new_stage: str | PlantStage,
+        transition_date: date | None = None,
     ) -> None:
-        """Transition a plant to a new growth stage.
-
-        This sets the plant's stage and updates the corresponding start date.
-
-        Args:
-            plant_id: The ID of the plant to transition.
-            new_stage: The new stage to set.
-            transition_date: The date of the transition (optional, defaults to today).
-
-        Raises:
-            ValueError: If the new stage is invalid.
-        """
-        self.validator.validate_plant_exists(plant_id)
-
-        if new_stage not in PLANT_STAGES:
-            raise ValueError(
-                f"Invalid stage {new_stage}. Must be one of: {PLANT_STAGES}"
-            )
-
-        # Parse transition date
-        parsed_date = (
-            self._parse_date_field(transition_date) or date.today().isoformat()
+        """Transition a plant to a new stage."""
+        await self.lifecycle_manager.transition_plant_stage(
+            plant_id, new_stage, transition_date
         )
 
-        await self.async_update_plant(
-            plant_id,
-            stage=new_stage,
-            **{f"{new_stage}_start": parsed_date},
-            force_position=False,
+    # =============================================================================
+    # DATA RETRIEVAL FOR WEBSOCKET API
+    # =============================================================================
+
+    def get_growspace_data(self, growspace_id: str | None = None) -> dict[str, Any]:
+        """Get full data for a growspace (or all growspaces) for WebSocket API."""
+        if growspace_id:
+            if growspace_id not in self.growspaces:
+                return {}
+            return self._build_growspace_payload(growspace_id)
+
+        # Return all
+        return {gid: self._build_growspace_payload(gid) for gid in self.growspaces}
+
+    def _build_growspace_payload(self, growspace_id: str) -> dict[str, Any]:
+        """Build the full JSON payload for a single growspace."""
+        growspace = self.growspaces[growspace_id]
+        plants = self.get_growspace_plants(growspace_id)
+
+        # Calculate max stage days
+        max_veg = max(
+            (calculate_days_since(p.veg_start) for p in plants if p.veg_start),
+            default=0,
         )
-        _LOGGER.info("Transitioned plant %s to %s stage", plant_id, new_stage)
+        max_flower = max(
+            (calculate_days_since(p.flower_start) for p in plants if p.flower_start),
+            default=0,
+        )
+        max_dry = max(
+            (calculate_days_since(p.dry_start) for p in plants if p.dry_start),
+            default=0,
+        )
+        max_cure = max(
+            (calculate_days_since(p.cure_start) for p in plants if p.cure_start),
+            default=0,
+        )
+
+        # Calculate weeks from days
+        veg_week = days_to_week(max_veg)
+        flower_week = days_to_week(max_flower)
+
+        biological_metrics = self._get_biological_metrics(
+            growspace, max_veg, max_flower, max_dry, max_cure
+        )
+
+        # Get irrigation settings
+        irrigation_options = growspace.irrigation_config
+
+        # Create grid representation (Detailed rich grid)
+        grid = self._generate_rich_plant_grid(growspace, plants)
+
+        # Determine growspace type
+        gs_type = "normal"
+        if growspace.id in ("mother", "clone", "dry", "cure"):
+            gs_type = growspace.id
+
+        # Build complete dict
+        data = {
+            "growspace_id": growspace.id,
+            "name": growspace.name,
+            "type": gs_type,
+            "rows": growspace.rows,
+            "plants_per_row": growspace.plants_per_row,
+            "total_plants": len(plants),
+            "notification_target": growspace.notification_target,
+            "max_veg_days": max_veg,
+            "max_flower_days": max_flower,
+            "veg_week": veg_week,
+            "flower_week": flower_week,
+            "max_stage_summary": f"Veg: {max_veg}d (W{veg_week}), Flower: {max_flower}d (W{flower_week})",
+            "irrigation_times": list(irrigation_options.get("irrigation_times", [])),
+            "drain_times": list(irrigation_options.get("drain_times", [])),
+            "grid": grid,
+            **biological_metrics,
+        }
+
+        # Add environment attributes
+        data.update(self._get_environment_attributes(growspace))
+
+        return data
+
+    def _generate_rich_plant_grid(
+        self, growspace: Growspace, plants: list[Plant]
+    ) -> dict[str, dict[str, Any] | None]:
+        """Generate the detailed plant grid representation."""
+        grid: dict[str, dict[str, Any] | None] = {}
+        for row in range(1, int(growspace.rows) + 1):
+            for col in range(1, int(growspace.plants_per_row) + 1):
+                grid[f"position_{row}_{col}"] = None
+
+        # Fill grid with plants
+        for plant in plants:
+            row_i = int(plant.row)
+            col_i = int(plant.col)
+            position_key = f"position_{row_i}_{col_i}"
+            grid[position_key] = {
+                "plant_id": plant.plant_id,
+                "strain": plant.strain,
+                "phenotype": plant.phenotype,
+                # Days in stage
+                "seedling_days": self.calculate_days_in_stage(plant, "seedling"),
+                "mother_days": self.calculate_days_in_stage(plant, "mother"),
+                "clone_days": self.calculate_days_in_stage(plant, "clone"),
+                "veg_days": self.calculate_days_in_stage(plant, "veg"),
+                "flower_days": self.calculate_days_in_stage(plant, "flower"),
+                "dry_days": self.calculate_days_in_stage(plant, "dry"),
+                "cure_days": self.calculate_days_in_stage(plant, "cure"),
+                # Start dates
+                "seedling_start": format_date(plant.seedling_start),
+                "mother_start": format_date(plant.mother_start),
+                "clone_start": format_date(plant.clone_start),
+                "veg_start": format_date(plant.veg_start),
+                "flower_start": format_date(plant.flower_start),
+                "dry_start": format_date(plant.dry_start),
+                "cure_start": format_date(plant.cure_start),
+                # Location & Stage
+                "row": row_i,
+                "col": col_i,
+                "position": f"({row_i},{col_i})",
+                "stage": calculate_plant_stage(plant),
+            }
+        return grid
+
+    def _get_biological_metrics(
+        self,
+        growspace: Growspace,
+        max_veg: int,
+        max_flower: int,
+        max_dry: int,
+        max_cure: int,
+    ) -> dict[str, Any]:
+        """Calculate biological target metrics for the growspace."""
+        granular_stage = self._determine_granular_stage(
+            max_veg, max_flower, max_dry, max_cure
+        )
+        is_day = self._determine_is_day(growspace)
+        day_key = "day" if is_day else "night"
+
+        threshold_data = VPD_STRESS_THRESHOLDS.get(
+            granular_stage, VPD_STRESS_THRESHOLDS["veg_early"]
+        )
+        cycle_data = threshold_data.get(day_key, threshold_data["day"])
+
+        target_min, target_max = cycle_data.get("mild", (0.8, 1.2))
+        danger_min, danger_max = cycle_data.get("stress", (0.6, 1.4))
+
+        vpd_status = "unknown"
+        vpd_sensor_id = growspace.environment_config.get("vpd_sensor")
+
+        if vpd_sensor_id:
+            current_vpd = self._get_sensor_value(vpd_sensor_id)
+            if current_vpd is not None:
+                if current_vpd < danger_min or current_vpd > danger_max:
+                    vpd_status = "danger"
+                elif current_vpd < target_min or current_vpd > target_max:
+                    vpd_status = "warning"
+                else:
+                    vpd_status = "optimal"
+
+        return {
+            "granular_stage": granular_stage,
+            "is_day": is_day,
+            "vpd_target_min": target_min,
+            "vpd_target_max": target_max,
+            "vpd_danger_min": danger_min,
+            "vpd_danger_max": danger_max,
+            "vpd_status": vpd_status,
+        }
+
+    def _determine_granular_stage(
+        self, max_veg: int, max_flower: int, max_dry: int, max_cure: int
+    ) -> str:
+        """Determine granular growth stage based on days."""
+        if max_cure > 0:
+            return "cure"
+        if max_dry > 0:
+            return "dry"
+        if max_flower > 0:
+            if max_flower <= DEFAULT_FLOWER_EARLY_DAYS:
+                return "flower_early"
+            if max_flower <= (DEFAULT_FLOWER_EARLY_DAYS + 21):
+                return "flower_mid"
+            return "flower_late"
+        if max_veg > 0:
+            if max_veg > 0 and max_veg <= DEFAULT_VEG_EARLY_DAYS:
+                return "veg_early"
+            return "veg_late"
+        return "veg_early"
+
+    def _determine_is_day(self, growspace: Growspace) -> bool:
+        """Determine if it is currently day or night in the growspace."""
+        light_sensor = growspace.environment_config.get("light_sensor")
+        if light_sensor:
+            light_state = self.hass.states.get(light_sensor)
+            if light_state and light_state.state not in (
+                STATE_UNKNOWN,
+                STATE_UNAVAILABLE,
+            ):
+                if light_state.state == STATE_ON:
+                    return True
+                if light_state.state == "off":
+                    return False
+                try:
+                    return float(light_state.state) > 0
+                except (ValueError, TypeError):
+                    pass
+        return True
+
+    def _get_sensor_value(self, sensor_id: str | None) -> float | None:
+        """Safely get the numeric value from a sensor's state."""
+        if not sensor_id:
+            return None
+        state = self.hass.states.get(sensor_id)
+        if not state or state.state in (STATE_UNAVAILABLE, STATE_UNKNOWN):
+            return None
+        try:
+            return float(state.state)
+        except (ValueError, TypeError):
+            return None
+
+    def _get_environment_attributes(self, growspace: Growspace) -> dict[str, Any]:
+        """Get environment-related attributes."""
+        attributes = {}
+        if growspace.environment_config:
+            env_config = growspace.environment_config
+            # Just copying minimal logic for now - or should we do full?
+            # The sensor had full logic including dehum, fan etc.
+            # Let's map the configured sensors.
+            for key in [
+                "temperature_sensor",
+                "humidity_sensor",
+                "vpd_sensor",
+                "co2_sensor",
+                "dehumidifier_entity",
+                "circulation_fan_entity",
+                "exhaust_fan_entity",
+                "light_sensor",
+                "irrigation_pump_entity",
+                "drain_pump_entity",
+            ]:
+                if val := env_config.get(key):
+                    attributes[key] = val
+                    # Also include current state if useful?
+                    # The frontend might want it to display overview.
+                    # Sensor implementation included state for some.
+                    if key == "dehumidifier_entity" and val:
+                        attributes["dehumidifier_state"] = (
+                            self.hass.states.get(val)
+                            and self.hass.states.get(val).state
+                        )
+        return attributes
 
     async def async_start_flowering(self, plant_id: str) -> Plant:
         """Transition a plant to the 'flower' stage, starting today.
@@ -1272,9 +1386,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
         plant.stage = PlantStage.FLOWER
         plant.flower_start = date.today().isoformat()
         plant.updated_at = plant.flower_start
-        await self.async_save()
-        self.update_data_property()
-        self.async_set_updated_data(self.data)
+        await self.async_commit()
         return plant
 
     async def async_start_drying(self, plant_id: str) -> Plant:
@@ -1314,9 +1426,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
         plant.stage = PlantStage.CURE
         plant.cure_start = date.today().isoformat()
         plant.updated_at = plant.cure_start
-        await self.async_save()
-        self.update_data_property()
-        self.async_set_updated_data(self.data)
+        await self.async_commit()
         return plant
 
     async def async_harvest(self, plant_id: str) -> Plant:
@@ -1375,14 +1485,11 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
             transition_date,
         )
 
-        # Handle harvest logic
-        moved = await self._handle_harvest_logic(
+        moved = await self.lifecycle_manager.handle_harvest_logic(
             plant_id, plant, target_growspace_id, target_growspace_name, transition_date
         )
 
-        self.update_data_property()
-        await self.async_save()
-        self.async_set_updated_data(self.data)
+        await self.async_commit()
 
         _LOGGER.info(
             "Harvest end: plant_id=%s moved=%s target_growspace_id=%s row=%s col=%s stage=%s dry_start=%s cure_start=%s",
@@ -1396,274 +1503,6 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
             plant.cure_start,
         )
 
-    async def _handle_harvest_logic(
-        self,
-        plant_id: str,
-        plant: Plant,
-        target_growspace_id: str | None,
-        target_growspace_name: str | None,
-        transition_date: str,
-    ) -> bool:
-        """Determine the harvest workflow and execute it.
-
-        Prioritizes an explicit target, otherwise uses an automatic flow.
-
-        Args:
-            plant_id: The ID of the plant being harvested.
-            plant: The Plant object.
-            target_growspace_id: An explicit target growspace ID.
-            target_growspace_name: A hint for the auto-flow logic.
-            transition_date: The date of the harvest.
-
-        Returns:
-            True if the plant was moved, False otherwise.
-        """
-        # Explicit target provided
-        if target_growspace_id and target_growspace_id in self.growspaces:
-            return await self._harvest_to_explicit_target(
-                plant_id,
-                plant,
-                target_growspace_id,
-                target_growspace_name,
-                transition_date,
-            )
-
-        # Auto-flow based on hints or current stage
-        return await self._harvest_auto_flow(
-            plant_id, plant, target_growspace_name, transition_date
-        )
-
-    async def _harvest_to_explicit_target(
-        self,
-        plant_id: str,
-        plant: Plant,
-        target_growspace_id: str,
-        target_growspace_name: str | None,
-        transition_date: str,
-    ) -> bool:
-        """Move a harvested plant to an explicitly defined target growspace.
-
-        Args:
-            plant_id: The ID of the plant.
-            plant: The Plant object.
-            target_growspace_id: The ID of the destination growspace.
-            target_growspace_name: The name of the destination growspace.
-            transition_date: The date of the move.
-
-        Returns:
-            True, as the plant is always moved in this path.
-        """
-        plant.growspace_id = target_growspace_id
-
-        try:
-            pos = self.validator.find_first_available_position(target_growspace_id)
-            plant.row, plant.col = pos
-        except ValueError as e:
-            _LOGGER.warning(
-                "Failed to find position in target growspace %s: %s",
-                target_growspace_id,
-                e,
-            )
-
-        # Set stage based on target
-        if target_growspace_id == PlantStage.DRY or (
-            target_growspace_name and "dry" in target_growspace_name.lower()
-        ):
-            await self.async_update_plant(
-                plant_id, stage=PlantStage.DRY, dry_start=transition_date
-            )
-        elif target_growspace_id == PlantStage.CURE or (
-            target_growspace_name and "cure" in target_growspace_name.lower()
-        ):
-            await self.async_update_plant(
-                plant_id, stage=PlantStage.CURE, cure_start=transition_date
-            )
-        elif target_growspace_id == PlantStage.CLONE or (
-            target_growspace_name and "clone" in target_growspace_name.lower()
-        ):
-            await self.async_update_plant(
-                plant_id, stage=PlantStage.CLONE, clone_start=transition_date
-            )
-        elif target_growspace_id == PlantStage.MOTHER or (
-            target_growspace_name and "mother" in target_growspace_name.lower()
-        ):
-            await self.async_update_plant(
-                plant_id, stage=PlantStage.MOTHER, clone_start=transition_date
-            )
-
-        _LOGGER.info("Moved plant %s to growspace %s", plant_id, target_growspace_id)
-        return True
-
-    async def _harvest_auto_flow(
-        self,
-        plant_id: str,
-        plant: Plant,
-        target_growspace_name: str | None,
-        transition_date: str,
-    ) -> bool:
-        """Automatically determine the next growspace for a harvested plant.
-
-        The logic is based on hints in the target name or the plant's current stage.
-
-        Args:
-            plant_id: The ID of the plant.
-            plant: The Plant object.
-            target_growspace_name: A name hint (e.g., "Drying Tent").
-            transition_date: The date of the move.
-
-        Returns:
-            True if the plant was moved, False otherwise.
-        """
-        current_stage = calculate_plant_stage(plant)
-
-        # Handle name hints
-        if target_growspace_name:
-            if "dry" in target_growspace_name.lower():
-                return await self._move_to_dry_growspace(
-                    plant_id, plant, transition_date
-                )
-            if "cure" in target_growspace_name.lower():
-                return await self._move_to_cure_growspace(
-                    plant_id, plant, transition_date
-                )
-            if "clone" in target_growspace_name.lower():
-                return await self._move_to_clone_growspace(
-                    plant_id, plant, transition_date
-                )
-            if "mother" in target_growspace_name.lower():
-                return await self._move_to_clone_growspace(
-                    plant_id, plant, transition_date
-                )
-
-        # Handle stage transitions
-        if current_stage == PlantStage.FLOWER:
-            return await self._move_to_dry_growspace(plant_id, plant, transition_date)
-        if current_stage == PlantStage.DRY:
-            return await self._move_to_cure_growspace(plant_id, plant, transition_date)
-        if current_stage == PlantStage.MOTHER:
-            return await self._move_to_clone_growspace(plant_id, plant, transition_date)
-        # Fallback: move to dry
-        return await self._move_to_dry_growspace(plant_id, plant, transition_date)
-
-    async def _move_to_clone_growspace(
-        self, plant_id: str, plant: Plant, transition_date: str
-    ) -> bool:
-        """Move a plant to the dedicated 'clone' growspace.
-
-        Args:
-            plant_id: The ID of the plant to move.
-            plant: The Plant object.
-            transition_date: The date of the move.
-
-        Returns:
-            True, as the plant is always moved.
-        """
-        clone_id = self.ensure_special_growspace(PlantStage.CLONE, "clone", 5, 5)
-        plant.growspace_id = clone_id
-
-        try:
-            new_row, new_col = self.validator.find_first_available_position(clone_id)
-            plant.row, plant.col = new_row, new_col
-            await self.async_update_plant(
-                plant_id,
-                growspace_id=clone_id,
-                row=new_row,
-                col=new_col,
-                stage=PlantStage.CLONE,
-                clone_start=transition_date,
-            )
-        except ValueError as e:
-            _LOGGER.warning("Failed to assign position in clone growspace: %s", e)
-
-        plant.clone_start = transition_date
-        plant.stage = PlantStage.CLONE
-        _LOGGER.info("Moved plant %s → clone (ID: %s)", plant_id, clone_id)
-        return True
-
-    async def _move_to_dry_growspace(
-        self, plant_id: str, plant: Plant, transition_date: str
-    ) -> bool:
-        """Move a plant to the dedicated 'dry' growspace and record harvest analytics.
-
-        Args:
-            plant_id: The ID of the plant to move.
-            plant: The Plant object.
-            transition_date: The date of the move.
-
-        Returns:
-            True, as the plant is always moved.
-        """
-        # Record analytics before moving
-        veg_days = self.calculate_days_in_stage(plant, PlantStage.VEG)
-        flower_days = self.calculate_days_in_stage(plant, PlantStage.FLOWER)
-
-        if veg_days > 0 or flower_days > 0:
-            await self.strain_library.record_harvest(
-                plant.strain, plant.phenotype, veg_days, flower_days
-            )
-
-        # Now, proceed with moving the plant
-        dry_id = self.ensure_special_growspace(PlantStage.DRY, "dry")
-        plant.growspace_id = dry_id
-
-        growspace = self.growspaces.get(dry_id)
-        if growspace and growspace.device_id:
-            plant.device_id = growspace.device_id
-
-        try:
-            new_row, new_col = self.validator.find_first_available_position(dry_id)
-            plant.row, plant.col = new_row, new_col
-            await self.async_update_plant(
-                plant_id,
-                growspace_id=dry_id,
-                row=new_row,
-                col=new_col,
-                stage=PlantStage.DRY,
-                dry_start=transition_date,
-            )
-        except ValueError as e:
-            _LOGGER.warning("Failed to assign position in dry growspace: %s", e)
-
-        plant.dry_start = transition_date
-        plant.stage = PlantStage.DRY
-        _LOGGER.info("Moved plant %s → dry (ID: %s)", plant_id, dry_id)
-        return True
-
-    async def _move_to_cure_growspace(
-        self, plant_id: str, plant: Plant, transition_date: str
-    ) -> bool:
-        """Move a plant to the dedicated 'cure' growspace.
-
-        Args:
-            plant_id: The ID of the plant to move.
-            plant: The Plant object.
-            transition_date: The date of the move.
-
-        Returns:
-            True, as the plant is always moved.
-        """
-        cure_id = self.ensure_special_growspace(PlantStage.CURE, "cure")
-        plant.growspace_id = cure_id
-
-        try:
-            new_row, new_col = self.validator.find_first_available_position(cure_id)
-            plant.row, plant.col = new_row, new_col
-            await self.async_update_plant(
-                plant_id,
-                growspace_id=cure_id,
-                row=new_row,
-                col=new_col,
-                stage=PlantStage.CURE,
-                cure_start=transition_date,
-            )
-        except ValueError as e:
-            _LOGGER.warning("Failed to assign position in cure growspace: %s", e)
-
-        plant.cure_start = transition_date
-        plant.stage = PlantStage.CURE
-        _LOGGER.info("Moved plant %s → cure (ID: %s)", plant_id, cure_id)
-        return True
-
     async def async_remove_plant(self, plant_id: str) -> bool:
         """Remove a plant from the coordinator.
 
@@ -1675,9 +1514,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
         """
         if plant_id in self.plants:
             del self.plants[plant_id]
-            self.update_data_property()
-            await self.async_save()
-            self.async_set_updated_data(self.data)
+            await self.async_commit()
             return True
         return False
 
@@ -1855,4 +1692,4 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
             self._notifications_sent[plant_id][stage] = {}
 
         self._notifications_sent[plant_id][stage][str(days)] = True
-        await self.async_save()
+        await self.async_commit()

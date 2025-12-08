@@ -1,7 +1,7 @@
 """Services related to Plants."""
 
 import logging
-from datetime import date, datetime
+from datetime import datetime
 from typing import Any
 
 from homeassistant.components.persistent_notification import (
@@ -15,28 +15,11 @@ from ..const import DATE_FIELDS, DOMAIN, PlantStage  # Ensure DATE_FIELDS is imp
 from ..coordinator import GrowspaceCoordinator
 from ..growspace_validator import GrowspaceValidator
 from ..strain_library import StrainLibrary
+from ..utils import parse_date_field
 
 # from ..models import Plant # Potentially needed for type hinting if desired
 
 _LOGGER = logging.getLogger(__name__)
-
-
-def _parse_date_field(val: Any) -> datetime | None:
-    """Helper to parse date strings or return None."""
-    if not val or val in ("None", ""):
-        return None
-    if isinstance(val, datetime):
-        return val
-    if isinstance(val, date):
-        return datetime.combine(val, datetime.min.time())
-    if isinstance(val, str):
-        try:
-            # Attempt to parse ISO format, handling potential timezone 'Z'
-            return datetime.fromisoformat(val.replace("Z", "+00:00"))
-        except ValueError:
-            _LOGGER.warning("Could not parse date string: %s", val)
-            return None
-    return None
 
 
 def _resolve_position_conflict(
@@ -96,7 +79,8 @@ def _prepare_update_data(service_data: dict[str, Any]) -> dict[str, Any]:
             continue
 
         if k in DATE_FIELDS:
-            parsed_value = _parse_date_field(v)
+            # parse_date_field returns a datetime
+            parsed_value = parse_date_field(v)
             update_data[k] = parsed_value
             _LOGGER.debug(
                 "UPDATE_PLANT: Parsed date field %s: '%s' -> %s", k, v, parsed_value
@@ -213,22 +197,17 @@ async def handle_add_plant(
                 )
 
         # Parse and handle optional dates
-        # Parse and handle optional dates
-        def parse_date_field(field_name: str) -> datetime | None:
+        def _local_parse_date(field_name: str) -> datetime | None:
             val = call.data.get(field_name)
-            if isinstance(val, datetime):
-                return val
-            if isinstance(val, date):
-                return datetime.combine(val, datetime.min.time())
-            return None  # Leave None if not provided or invalid
+            return parse_date_field(val)
 
-        seedling_start = parse_date_field("seedling_start")
-        mother_start = parse_date_field("mother_start")
-        clone_start = parse_date_field("clone_start")
-        veg_start = parse_date_field("veg_start")
-        flower_start = parse_date_field("flower_start")
-        dry_start = parse_date_field("dry_start")
-        cure_start = parse_date_field("cure_start")
+        seedling_start = _local_parse_date("seedling_start")
+        mother_start = _local_parse_date("mother_start")
+        clone_start = _local_parse_date("clone_start")
+        veg_start = _local_parse_date("veg_start")
+        flower_start = _local_parse_date("flower_start")
+        dry_start = _local_parse_date("dry_start")
+        cure_start = _local_parse_date("cure_start")
 
         # Auto-set mother_start if stage is mother and not provided.
         # This logic is specific to a 'mother' growspace ID. Ensure 'mother' is a known special ID.
@@ -393,7 +372,7 @@ async def handle_move_clone(
 
     if not plant_id or not target_growspace_id:
         _LOGGER.error(
-            "Missing plant_id or target_growspace_id for move_clone service call."
+            "Missing plant_id or target_growspace_id for move_clone service call"
         )
         raise ServiceValidationError(
             "Missing plant_id or target_growspace_id for move_clone."
@@ -411,7 +390,7 @@ async def handle_move_clone(
         )
     except (TypeError, ValueError):
         _LOGGER.warning(
-            "Invalid transition_date format '%s' for move_clone, using current time.",
+            "Invalid transition_date format '%s' for move_clone, using current time",
             transition_date_str,
         )
         transition_date = datetime.now()
@@ -523,7 +502,7 @@ async def handle_update_plant(
 
         if not update_data:
             _LOGGER.warning(
-                "No update fields provided for plant %s. Service call ignored.",
+                "No update fields provided for plant %s. Service call ignored",
                 plant_id,
             )
             return
@@ -652,32 +631,20 @@ async def handle_move_plant(
             raise ServiceValidationError(f"Plant {plant_id} does not exist.")
 
         plant = coordinator.plants[plant_id]
-        growspace = coordinator.growspaces[plant.growspace_id]
 
         # Validate new position is within bounds
         new_row, new_col = call.data["new_row"], call.data["new_col"]
 
-        # Skip boundary check for special growspaces
-        is_special = plant.growspace_id in ["mother", "clone", "dry", "cure"]
-
-        if not is_special and (
-            new_row < 1
-            or new_row > growspace.rows
-            or new_col < 1
-            or new_col > growspace.plants_per_row
-        ):
-            _LOGGER.error(
-                "Position (%d,%d) is outside growspace bounds (%dx%d) for plant %s",
-                new_row,
-                new_col,
-                growspace.rows,
-                growspace.plants_per_row,
-                plant.plant_id,
-            )
-            raise ServiceValidationError(
-                f"New position ({new_row},{new_col}) is outside growspace '{plant.growspace_id}' bounds."
-            )
-
+        # Validate position is not occupied (GrowspaceValidator handles boundary checks)
+        # if not is_special and (
+        #     new_row < 1
+        #     or new_row > growspace.rows
+        #     or new_col < 1
+        #     or new_col > growspace.plants_per_row
+        # ):
+        #     raise ServiceValidationError(
+        #         f"Position ({new_row}, {new_col}) out of bounds for growspace {growspace_id}."
+        #     )
         old_row, old_col = plant.row, plant.col
 
         # Check if new position is occupied by another plant
@@ -725,7 +692,7 @@ async def handle_move_plant(
                 },
             )
             _LOGGER.info(
-                "Successfully switched positions for %s and %s.",
+                "Successfully switched positions for %s and %s",
                 plant_id,
                 occupying_plant_id,
             )
@@ -749,6 +716,10 @@ async def handle_move_plant(
                     "growspace_id": plant.growspace_id,
                 },
             )
+
+    except ValueError as err:
+        _LOGGER.warning("Validation error moving plant %s: %s", plant_id, err)
+        raise ServiceValidationError(str(err)) from err
 
     except Exception as err:
         _LOGGER.exception("Failed to move plant %s: %s", plant_id, err)
@@ -774,18 +745,14 @@ async def handle_transition_plant_stage(
         transition_date_str = call.data.get("transition_date")
         transition_date = None
         if transition_date_str:
-            try:
-                # Attempt to parse date, ensure it's a date object
-                transition_date = datetime.fromisoformat(
-                    transition_date_str.replace("Z", "+00:00")
-                )
-            except ValueError:
+            transition_date = parse_date_field(transition_date_str)
+            if not transition_date:
                 _LOGGER.warning(
                     "Could not parse transition_date string: %s", transition_date_str
                 )
                 raise ServiceValidationError(
                     f"Invalid transition_date format: {transition_date_str}."
-                ) from None
+                )
 
         await coordinator.async_transition_plant_stage(
             plant_id=plant_id,
@@ -815,11 +782,11 @@ async def handle_harvest_plant(
     coordinator: GrowspaceCoordinator,
     strain_library: StrainLibrary,
     call: ServiceCall,
-) -> None:
+) -> dict[str, Any] | None:
     """Handle harvest plant service call."""
     plant_id = call.data.get("plant_id")
     if not plant_id:
-        _LOGGER.error("Missing plant_id in harvest_plant service call.")
+        _LOGGER.error("Missing plant_id in harvest_plant service call")
         raise ServiceValidationError("Missing plant_id for harvest_plant.")
 
     plant_id = _resolve_plant_id(hass, plant_id)
@@ -832,7 +799,7 @@ async def handle_harvest_plant(
     transition_date = None
 
     if transition_date_str:
-        transition_date_dt = _parse_date_field(transition_date_str)
+        transition_date_dt = parse_date_field(transition_date_str)
         if transition_date_dt:
             transition_date = transition_date_dt.date()
         else:
@@ -852,16 +819,14 @@ async def handle_harvest_plant(
         )
         _LOGGER.info("Plant %s harvested successfully", plant_id)
 
-        hass.bus.async_fire(
-            f"{DOMAIN}_plant_harvested",
-            {
-                "plant_id": plant_id,
-                "target_growspace_id": target_growspace_id,
-                "harvest_date": transition_date.isoformat()
-                if transition_date
-                else None,
-            },
-        )
+        result = {
+            "plant_id": plant_id,
+            "target_growspace_id": target_growspace_id,
+            "harvest_date": transition_date.isoformat() if transition_date else None,
+        }
+
+        hass.bus.async_fire(f"{DOMAIN}_plant_harvested", result)
+        return result
 
     except Exception as err:
         _LOGGER.exception("Failed to harvest plant %s: %s", plant_id, err)

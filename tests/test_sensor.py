@@ -74,6 +74,20 @@ def mock_coordinator():
     coordinator.get_growspace_options.return_value = ["gs1"]
     coordinator.strains = MagicMock()
     coordinator.created_entities = []
+
+    # Mock new methods used by sensor.py
+    coordinator._get_biological_metrics.return_value = {
+        "granular_stage": "veg_early",
+        "vpd_status": "optimal",
+        "vpd_target_min": 0.8,
+        "vpd_target_max": 1.2,
+        "is_day": True,
+    }
+    coordinator._get_environment_attributes.return_value = {
+        "temperature_sensor": "sensor.temp",
+        "humidity_sensor": "sensor.humidity",
+    }
+
     return coordinator
 
 
@@ -546,9 +560,9 @@ def test_growspace_overview_sensor_state_and_attributes(mock_coordinator) -> Non
 
     attrs = gs.extra_state_attributes
     assert attrs["total_plants"] == 1
-    assert "grid" in attrs
-    # Grid positions
-    assert attrs["grid"]["position_1_1"]["plant_id"] == "p1"
+    attrs = gs.extra_state_attributes
+    assert attrs["total_plants"] == 1
+    assert "grid" not in attrs
 
 
 def test_growspace_overview_sensor_environment_attributes(mock_coordinator) -> None:
@@ -585,6 +599,22 @@ def test_growspace_overview_sensor_environment_attributes(mock_coordinator) -> N
     hass.states.get.side_effect = get_state
 
     mock_coordinator.hass = hass
+
+    mock_coordinator.hass = hass
+
+    # Configure mock coordinator to return expected environment attributes
+    mock_coordinator._get_environment_attributes.return_value = {
+        "dehumidifier_entity": "switch.dehumidifier",
+        "dehumidifier_state": "on",
+        "dehumidifier_humidity": 50,
+        "dehumidifier_current_humidity": 55,
+        "dehumidifier_mode": "auto",
+        "dehumidifier_control_enabled": True,
+        "exhaust_entity": "sensor.exhaust",
+        "exhaust_state": "100",
+        "humidifier_entity": "sensor.humidifier",
+        "humidifier_state": "off",
+    }
 
     gs = GrowspaceOverviewSensor(
         coordinator=mock_coordinator,

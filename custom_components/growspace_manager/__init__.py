@@ -6,14 +6,14 @@ import logging
 import pathlib
 import tempfile
 
-from aiohttp import BodyPartReader, web
 import voluptuous as vol
-
+from aiohttp import BodyPartReader, web
 from homeassistant.components import websocket_api
 from homeassistant.components.http import HomeAssistantView
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers import config_validation as cv, entity_registry as er
+from homeassistant.helpers import config_validation as cv
+from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.storage import Store
 from homeassistant.helpers.typing import ConfigType
 
@@ -137,6 +137,26 @@ async def async_setup_entry(hass: HomeAssistant, entry: GrowspaceConfigEntry) ->
 
     websocket_api.async_register_command(
         hass, WS_TYPE_GET_LOG, websocket_get_event_log, SCHEMA_WS_GET_LOG
+    )
+
+    # Growspace Data
+    WS_TYPE_GET_DATA = f"{DOMAIN}/get_data"
+    SCHEMA_WS_GET_DATA = websocket_api.BASE_COMMAND_MESSAGE_SCHEMA.extend(
+        {
+            vol.Required("type"): WS_TYPE_GET_DATA,
+            vol.Optional("growspace_id"): str,
+        }
+    )
+
+    @websocket_api.async_response
+    async def websocket_get_growspace_data(hass: HomeAssistant, connection, msg):
+        """Handle get growspace data command."""
+        growspace_id = msg.get("growspace_id")
+        data = coordinator.get_growspace_data(growspace_id)
+        connection.send_result(msg["id"], data)
+
+    websocket_api.async_register_command(
+        hass, WS_TYPE_GET_DATA, websocket_get_growspace_data, SCHEMA_WS_GET_DATA
     )
 
     # Set up intents
