@@ -47,6 +47,7 @@ from .const import (
     DEFAULT_FLOWER_DAY_HOURS,
     DEFAULT_VEG_DAY_HOURS,
     DOMAIN,
+    PlantStage,
 )
 from .coordinator import GrowspaceCoordinator
 from .models import EnvironmentState, GrowspaceEvent
@@ -682,14 +683,14 @@ class LightCycleVerificationSensor(BinarySensorEntity):
         flower_days = stage_info["flower_days"]
 
         if flower_days == 0:
-            return "veg"
+            return PlantStage.VEG
         if 0 < flower_days < 21:
             return "flower_early"
         if 21 <= flower_days < 42:
             return "flower_mid"
         if flower_days >= 42:
             return "flower_late"
-        return "veg"
+        return PlantStage.VEG
 
     async def async_update(self) -> None:
         """Update the sensor's state based on the light's on/off duration."""
@@ -712,7 +713,7 @@ class LightCycleVerificationSensor(BinarySensorEntity):
         stage_key = self._get_current_stage_key(stage_info)
 
         # Get configured day hours for the current stage
-        if stage_key == "veg":
+        if stage_key == PlantStage.VEG:
             day_hours = self.env_config.get("veg_day_hours", DEFAULT_VEG_DAY_HOURS)
         else:
             day_hours = self.env_config.get(
@@ -743,7 +744,7 @@ class LightCycleVerificationSensor(BinarySensorEntity):
         stage_info = self._get_growth_stage_info()
         stage_key = self._get_current_stage_key(stage_info)
 
-        if stage_key == "veg":
+        if stage_key == PlantStage.VEG:
             day_hours = self.env_config.get("veg_day_hours", DEFAULT_VEG_DAY_HOURS)
         else:
             day_hours = self.env_config.get(
@@ -776,7 +777,7 @@ class BayesianDryingSensor(BayesianEnvironmentSensor):
 
     async def _async_update_probability(self) -> None:
         """Calculate the probability of optimal drying conditions."""
-        if self.growspace_id != "dry":
+        if self.growspace_id != PlantStage.DRY:
             self._probability = 0
             self.async_write_ha_state()
             return
@@ -829,7 +830,7 @@ class BayesianCuringSensor(BayesianEnvironmentSensor):
 
     async def _async_update_probability(self) -> None:
         """Calculate the probability of optimal curing conditions."""
-        if self.growspace_id != "cure":
+        if self.growspace_id != PlantStage.CURE:
             self._probability = 0
             self.async_write_ha_state()
             return

@@ -1,6 +1,7 @@
 """Constants for the Growspace Manager integration."""
 
 from datetime import date, datetime
+from enum import StrEnum
 
 import voluptuous as vol
 
@@ -60,9 +61,20 @@ DEFAULT_NOTIFICATION_EVENTS = {
     "day_7_dry": {"days": 7, "stage": "dry", "message": "Day 7 in dry"},
 }
 
+
+class PlantStage(StrEnum):
+    SEEDLING = "seedling"
+    CLONE = "clone"
+    MOTHER = "mother"
+    VEG = "veg"
+    FLOWER = "flower"
+    DRY = "dry"
+    CURE = "cure"
+
+
 # Plant stages
-PLANT_STAGES = ["seedling", "clone", "mother", "veg", "flower", "dry", "cure"]
-VALID_STAGES = ["seedling", "clone", "mother", "veg", "flower", "dry", "cure"]
+PLANT_STAGES = [stage.value for stage in PlantStage]
+VALID_STAGES = [stage.value for stage in PlantStage]
 
 # Existing DATE_FIELDS - Ensure consistency with schema definitions if adding more
 DATE_FIELDS = [
