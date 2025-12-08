@@ -12,12 +12,12 @@ from custom_components.growspace_manager.const import (
     DOMAIN,
 )
 from custom_components.growspace_manager.coordinator import GrowspaceCoordinator
+from custom_components.growspace_manager.services.ai_assistant import (
+    handle_ask_grow_advice,
+)
 from custom_components.growspace_manager.services.growspace import (
     handle_add_growspace,
     handle_remove_growspace,
-)
-from custom_components.growspace_manager.services.ai_assistant import (
-    handle_ask_grow_advice,
 )
 from custom_components.growspace_manager.strain_library import StrainLibrary
 

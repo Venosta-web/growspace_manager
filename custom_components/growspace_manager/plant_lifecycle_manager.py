@@ -6,7 +6,7 @@ import logging
 from datetime import date
 from typing import TYPE_CHECKING, Any
 
-from .const import SPECIAL_GROWSPACES, PlantStage
+from .const import PLANT_STAGES, SPECIAL_GROWSPACES, PlantStage
 from .models import Plant
 from .utils import calculate_plant_stage
 
@@ -123,7 +123,7 @@ class PlantLifecycleManager:
             target_growspace_name and "mother" in target_growspace_name.lower()
         ):
             await self.coordinator.async_update_plant(
-                plant_id, stage=PlantStage.MOTHER, clone_start=transition_date
+                plant_id, stage=PlantStage.MOTHER, mother_start=transition_date
             )
 
         _LOGGER.info("Moved plant %s to growspace %s", plant_id, target_growspace_id)
@@ -393,3 +393,60 @@ class PlantLifecycleManager:
         )
 
         return plant.plant_id
+
+    async def transition_plant_stage(
+        self,
+        plant_id: str,
+        new_stage: str | PlantStage,
+        transition_date: date | None = None,
+    ) -> None:
+        """Execute a plant stage transition with all associated logic.
+
+        Args:
+            plant_id: The ID of the plant.
+            new_stage: The target stage.
+            transition_date: The date of transition (defaults to today).
+        """
+        plant = self.coordinator.plants.get(plant_id)
+        if not plant:
+            raise ValueError(f"Plant {plant_id} not found")
+
+        if new_stage not in PLANT_STAGES and new_stage not in [
+            s.value for s in PlantStage
+        ]:
+            raise ValueError(f"Invalid stage: {new_stage}")
+
+        if not transition_date:
+            transition_date = date.today()
+
+        if isinstance(transition_date, str):
+            trans_date_str = transition_date
+        else:
+            trans_date_str = transition_date.isoformat()
+
+        # Update plant object
+        updates = {"stage": new_stage}
+
+        stage_start_map = {
+            PlantStage.VEG: "veg_start",
+            PlantStage.FLOWER: "flower_start",
+            PlantStage.DRY: "dry_start",
+            PlantStage.CURE: "cure_start",
+            PlantStage.CLONE: "clone_start",
+        }
+
+        if new_stage in stage_start_map:
+            updates[stage_start_map[new_stage]] = trans_date_str
+
+        # Update the plant
+        await self.coordinator.async_update_plant(plant_id, **updates)
+
+        # Handle physical moves for certain stages
+        move_handlers = {
+            PlantStage.DRY: self.move_to_dry_growspace,
+            PlantStage.CURE: self.move_to_cure_growspace,
+            PlantStage.CLONE: self.move_to_clone_growspace,
+        }
+
+        if new_stage in move_handlers:
+            await move_handlers[new_stage](plant_id, plant, trans_date_str)

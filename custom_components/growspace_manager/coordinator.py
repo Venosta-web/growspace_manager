@@ -446,6 +446,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
 
     async def async_commit(self) -> None:
         """Commit changes to storage and notify listeners."""
+        self.update_data_property()
         await self.async_save()
         self.async_fire_growspace_updated()
         for gs_id in self.growspaces:
@@ -459,7 +460,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
     async def async_save(self) -> None:
         """Save data to storage."""
         await self.storage_manager.async_save()
-        self.async_update_listeners()
+        self.async_set_updated_data(self.data)
         self.async_fire_growspace_updated()
 
     async def async_load(self) -> None:

@@ -744,7 +744,6 @@ async def test_async_remove_growspace(coordinator: GrowspaceCoordinator) -> None
 
         # Data update methods called
         coordinator.async_save.assert_awaited_once()
-        coordinator.async_set_updated_data.assert_called_once()
 
     # Assertions: growspace removed
     assert gs.id not in coordinator.growspaces
@@ -783,7 +782,6 @@ async def test_async_update_growspace(coordinator: GrowspaceCoordinator) -> None
 
         # Ensure async_save and async_set_updated_data were called
         coordinator.async_save.assert_awaited_once()
-        coordinator.async_set_updated_data.assert_called_once()
 
     updated_gs = coordinator.growspaces[gs.id]
 
@@ -910,7 +908,6 @@ async def test_set_notifications_enabled(coordinator: GrowspaceCoordinator) -> N
     await coordinator.set_notifications_enabled(gs.id, False)
     assert coordinator.is_notifications_enabled(gs.id) is False
     coordinator.async_save.assert_awaited_once()
-    coordinator.async_set_updated_data.assert_called_once_with(coordinator.data)
 
     # Enable notifications
     coordinator.async_save.reset_mock()
@@ -918,7 +915,6 @@ async def test_set_notifications_enabled(coordinator: GrowspaceCoordinator) -> N
     await coordinator.set_notifications_enabled(gs.id, True)
     assert coordinator.is_notifications_enabled(gs.id) is True
     coordinator.async_save.assert_awaited_once()
-    coordinator.async_set_updated_data.assert_called_once_with(coordinator.data)
 
     # Non-existent growspace
     coordinator.async_save.reset_mock()
@@ -969,7 +965,6 @@ async def test_handle_clone_creation(coordinator: GrowspaceCoordinator) -> None:
 
     # Ensure async_save and async_set_updated_data were called
     coordinator.async_save.assert_awaited_once()
-    coordinator.async_set_updated_data.assert_called_once_with(coordinator.data)
 
 
 @pytest.mark.asyncio
@@ -1010,7 +1005,6 @@ async def test_async_transition_clone_to_veg(coordinator: GrowspaceCoordinator) 
     assert clone.veg_start == "2025-11-03"
 
     coordinator.async_save.assert_awaited()
-    coordinator.async_set_updated_data.assert_called_with(coordinator.data)
 
 
 @pytest.mark.asyncio
@@ -1975,7 +1969,9 @@ async def test_harvest_to_explicit_target_mother(hass: HomeAssistant) -> None:
             "p1", plant, "mother", "mother", "2025-01-01"
         )
 
-        mock_update.assert_called_with("p1", stage="mother", clone_start="2025-01-01")
+        mock_update.assert_called_with(
+            "p1", stage=PlantStage.MOTHER, mother_start="2025-01-01"
+        )
 
 
 @pytest.mark.asyncio

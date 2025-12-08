@@ -1,5 +1,7 @@
-import pytest
 from unittest.mock import AsyncMock, patch
+
+import pytest
+
 from custom_components.growspace_manager.coordinator import GrowspaceCoordinator
 
 
