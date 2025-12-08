@@ -14,7 +14,7 @@ from homeassistant.const import STATE_UNAVAILABLE, STATE_UNKNOWN
 from homeassistant.core import Context, HomeAssistant, ServiceCall
 from homeassistant.exceptions import ServiceValidationError
 
-from ..const import CONF_AI_ENABLED, CONF_ASSISTANT_ID
+from ..const import CONF_AI_ENABLED, CONF_ASSISTANT_ID, PlantStage
 from ..coordinator import GrowspaceCoordinator
 from ..strain_library import StrainLibrary
 
@@ -171,7 +171,7 @@ class GrowAssistant:
             "strains": list(strains),
             "max_veg_days": max(
                 (
-                    self.coordinator.calculate_days_in_stage(p, "veg")
+                    self.coordinator.calculate_days_in_stage(p, PlantStage.VEG)
                     for p in plants
                     if p.veg_start
                 ),
@@ -179,7 +179,7 @@ class GrowAssistant:
             ),
             "max_flower_days": max(
                 (
-                    self.coordinator.calculate_days_in_stage(p, "flower")
+                    self.coordinator.calculate_days_in_stage(p, PlantStage.FLOWER)
                     for p in plants
                     if p.flower_start
                 ),

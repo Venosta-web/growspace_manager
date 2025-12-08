@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from .const import PlantStage
 from .utils import find_first_free_position
 
 
@@ -31,7 +32,12 @@ class GrowspaceValidator:
         growspace = self.coordinator.growspaces[growspace_id]
 
         # Skip boundary check for special growspaces
-        if growspace_id in ["mother", "clone", "dry", "cure"]:
+        if growspace_id in [
+            PlantStage.MOTHER,
+            PlantStage.CLONE,
+            PlantStage.DRY,
+            PlantStage.CURE,
+        ]:
             return
 
         max_rows = int(growspace.rows)
@@ -55,7 +61,8 @@ class GrowspaceValidator:
         # But accessing coordinator.plants is fine.
 
         existing_plants = [
-            p for p in self.coordinator.plants.values()
+            p
+            for p in self.coordinator.plants.values()
             if p.growspace_id == growspace_id
         ]
 

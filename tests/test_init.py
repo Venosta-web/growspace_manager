@@ -16,11 +16,11 @@ from pytest_homeassistant_custom_component.common import MockConfigEntry
 from custom_components.growspace_manager import (
     StrainLibraryUploadView,
     _async_update_listener,
-    _register_services,
     async_reload_entry,
     async_setup,
     async_setup_entry,
     async_unload_entry,
+    register_services,
 )
 from custom_components.growspace_manager.const import (
     ADD_DRAIN_TIME_SCHEMA,
@@ -112,7 +112,7 @@ async def test_async_setup_entry(mock_hass) -> None:
             return_value=AsyncMock(),
         ),
         patch(
-            "custom_components.growspace_manager._register_services",
+            "custom_components.growspace_manager.register_services",
             return_value=AsyncMock(),
         ),
         patch("custom_components.growspace_manager.websocket_api") as mock_ws,
@@ -145,7 +145,7 @@ async def test_async_setup_entry_with_pending_growspace(mock_hass) -> None:
             return_value=AsyncMock(),
         ),
         patch(
-            "custom_components.growspace_manager._register_services",
+            "custom_components.growspace_manager.register_services",
             return_value=AsyncMock(),
         ),
         patch("custom_components.growspace_manager.websocket_api"),
@@ -179,7 +179,7 @@ async def test_async_setup_entry_with_pending_growspace_error(mock_hass) -> None
             return_value=AsyncMock(),
         ),
         patch(
-            "custom_components.growspace_manager._register_services",
+            "custom_components.growspace_manager.register_services",
             return_value=AsyncMock(),
         ),
         patch(
@@ -195,10 +195,10 @@ async def test_async_setup_entry_with_pending_growspace_error(mock_hass) -> None
 async def test_register_services(
     mock_hass, mock_coordinator_for_services, mock_strain_library_for_services
 ) -> None:
-    """Test that _register_services correctly registers all services."""
+    """Test that register_services correctly registers all services."""
     mock_hass.services.async_register = MagicMock()
 
-    await _register_services(
+    await register_services(
         mock_hass, mock_coordinator_for_services, mock_strain_library_for_services
     )
 
@@ -421,7 +421,7 @@ async def test_async_setup_entry_with_growspaces(mock_hass) -> None:
             return_value=AsyncMock(),
         ),
         patch(
-            "custom_components.growspace_manager._register_services",
+            "custom_components.growspace_manager.register_services",
             return_value=AsyncMock(),
         ),
         patch(

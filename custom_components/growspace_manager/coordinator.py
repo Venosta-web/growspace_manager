@@ -18,7 +18,7 @@ if TYPE_CHECKING:
     from .vwc_irrigation_coordinator import VWCIrrigationCoordinator
 
 
-from .const import DATE_FIELDS, PLANT_STAGES
+from .const import DATE_FIELDS, PLANT_STAGES, PlantStage
 from .environment_analyzer import EnvironmentAnalyzer
 from .growspace_validator import GrowspaceValidator
 from .import_export_manager import ImportExportManager
@@ -418,7 +418,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
             The ID of the mother growspace.
         """
         return self.ensure_special_growspace(
-            "mother", "mother", rows=3, plants_per_row=3
+            PlantStage.MOTHER, "mother", rows=3, plants_per_row=3
         )
 
     # =============================================================================
@@ -872,7 +872,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
             mother_plant = self.plants[source_mother_id]
 
             # Verify it's actually a mother plant
-            if mother_plant.stage != "mother":
+            if mother_plant.stage != PlantStage.MOTHER:
                 _LOGGER.warning(
                     "Source plant %s is not in mother stage, but proceeding with clone creation",
                     source_mother_id,
@@ -901,7 +901,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
             "strain": str(strain).strip(),
             "row": int(row),
             "col": int(col),
-            "stage": "clone",
+            "stage": PlantStage.CLONE,
             "type": "clone",
             "clone_start": now,
             "created_at": now,
@@ -953,7 +953,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
         """
         for plant in self.plants.values():
             if (
-                plant.stage == "mother"
+                plant.stage == PlantStage.MOTHER
                 and plant.strain.lower() == strain.lower()
                 and plant.phenotype.lower() == phenotype.lower()
             ):
@@ -986,7 +986,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
             The newly created mother Plant object.
         """
         mother_id: str = self._ensure_mother_growspace()
-        kwargs["type"] = "mother"
+        kwargs["type"] = PlantStage.MOTHER
 
         # Set mother_start to today if not provided
         if mother_start is None:
@@ -1021,7 +1021,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
         self.validator.validate_plant_exists(mother_plant_id)
 
         mother = self.plants[mother_plant_id]
-        clone_gs_id = self.ensure_special_growspace("clone", "clone", 5, 5)
+        clone_gs_id = self.ensure_special_growspace(PlantStage.CLONE, "clone", 5, 5)
         clone_ids = []
 
         for _ in range(num_clones):
@@ -1031,7 +1031,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
                 "phenotype": mother.phenotype,
                 "type": "clone",
                 "source_mother": mother_plant_id,
-                "stage": "clone",
+                "stage": PlantStage.CLONE,
                 "clone_start": date.today(),
             }
             clone_id = await self.async_add_plant(
@@ -1055,10 +1055,10 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
         self.validator.validate_plant_exists(clone_id)
 
         clone = self.plants[clone_id]
-        if clone.stage != "clone":
+        if clone.stage != PlantStage.CLONE:
             raise ValueError("Plant is not in clone stage")
 
-        veg_gs_id = self.ensure_special_growspace("veg", "veg", 5, 5)
+        veg_gs_id = self.ensure_special_growspace(PlantStage.VEG, "veg", 5, 5)
         row, col = self.validator.find_first_available_position(veg_gs_id)
 
         await self.async_update_plant(
@@ -1066,7 +1066,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
             growspace_id=veg_gs_id,
             row=row,
             col=col,
-            stage="veg",
+            stage=PlantStage.VEG,
             veg_start=datetime.today().isoformat(),
         )
 
@@ -1269,7 +1269,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
         if not plant:
             raise ValueError(f"Plant {plant_id} not found")
 
-        plant.stage = "flower"
+        plant.stage = PlantStage.FLOWER
         plant.flower_start = date.today().isoformat()
         plant.updated_at = plant.flower_start
         await self.async_save()
@@ -1290,7 +1290,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
         if not plant:
             raise ValueError(f"Plant {plant_id} not found")
 
-        plant.stage = "drying"
+        plant.stage = PlantStage.DRY
         plant.dry_start = date.today().isoformat()
         plant.updated_at = plant.dry_start
         await self.async_save()
@@ -1311,7 +1311,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
         if not plant:
             raise ValueError(f"Plant {plant_id} not found")
 
-        plant.stage = "curing"
+        plant.stage = PlantStage.CURE
         plant.cure_start = date.today().isoformat()
         plant.updated_at = plant.cure_start
         await self.async_save()
@@ -1332,7 +1332,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
         if not plant:
             raise ValueError(f"Plant {plant_id} not found")
 
-        plant.stage = "dry"
+        plant.stage = PlantStage.DRY
         plant.dry_start = date.today().isoformat()
         plant.updated_at = plant.dry_start
         await self.async_save()
@@ -1466,29 +1466,29 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
             )
 
         # Set stage based on target
-        if target_growspace_id == "dry" or (
+        if target_growspace_id == PlantStage.DRY or (
             target_growspace_name and "dry" in target_growspace_name.lower()
         ):
             await self.async_update_plant(
-                plant_id, stage="dry", dry_start=transition_date
+                plant_id, stage=PlantStage.DRY, dry_start=transition_date
             )
-        elif target_growspace_id == "cure" or (
+        elif target_growspace_id == PlantStage.CURE or (
             target_growspace_name and "cure" in target_growspace_name.lower()
         ):
             await self.async_update_plant(
-                plant_id, stage="cure", cure_start=transition_date
+                plant_id, stage=PlantStage.CURE, cure_start=transition_date
             )
-        elif target_growspace_id == "clone" or (
+        elif target_growspace_id == PlantStage.CLONE or (
             target_growspace_name and "clone" in target_growspace_name.lower()
         ):
             await self.async_update_plant(
-                plant_id, stage="clone", clone_start=transition_date
+                plant_id, stage=PlantStage.CLONE, clone_start=transition_date
             )
-        elif target_growspace_id == "mother" or (
+        elif target_growspace_id == PlantStage.MOTHER or (
             target_growspace_name and "mother" in target_growspace_name.lower()
         ):
             await self.async_update_plant(
-                plant_id, stage="mother", clone_start=transition_date
+                plant_id, stage=PlantStage.MOTHER, clone_start=transition_date
             )
 
         _LOGGER.info("Moved plant %s to growspace %s", plant_id, target_growspace_id)
@@ -1536,11 +1536,11 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
                 )
 
         # Handle stage transitions
-        if current_stage == "flower":
+        if current_stage == PlantStage.FLOWER:
             return await self._move_to_dry_growspace(plant_id, plant, transition_date)
-        if current_stage == "dry":
+        if current_stage == PlantStage.DRY:
             return await self._move_to_cure_growspace(plant_id, plant, transition_date)
-        if current_stage == "mother":
+        if current_stage == PlantStage.MOTHER:
             return await self._move_to_clone_growspace(plant_id, plant, transition_date)
         # Fallback: move to dry
         return await self._move_to_dry_growspace(plant_id, plant, transition_date)
@@ -1558,7 +1558,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
         Returns:
             True, as the plant is always moved.
         """
-        clone_id = self.ensure_special_growspace("clone", "clone", 5, 5)
+        clone_id = self.ensure_special_growspace(PlantStage.CLONE, "clone", 5, 5)
         plant.growspace_id = clone_id
 
         try:
@@ -1569,14 +1569,14 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
                 growspace_id=clone_id,
                 row=new_row,
                 col=new_col,
-                stage="clone",
+                stage=PlantStage.CLONE,
                 clone_start=transition_date,
             )
         except ValueError as e:
             _LOGGER.warning("Failed to assign position in clone growspace: %s", e)
 
         plant.clone_start = transition_date
-        plant.stage = "clone"
+        plant.stage = PlantStage.CLONE
         _LOGGER.info("Moved plant %s → clone (ID: %s)", plant_id, clone_id)
         return True
 
@@ -1594,8 +1594,8 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
             True, as the plant is always moved.
         """
         # Record analytics before moving
-        veg_days = self.calculate_days_in_stage(plant, "veg")
-        flower_days = self.calculate_days_in_stage(plant, "flower")
+        veg_days = self.calculate_days_in_stage(plant, PlantStage.VEG)
+        flower_days = self.calculate_days_in_stage(plant, PlantStage.FLOWER)
 
         if veg_days > 0 or flower_days > 0:
             await self.strain_library.record_harvest(
@@ -1603,7 +1603,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
             )
 
         # Now, proceed with moving the plant
-        dry_id = self.ensure_special_growspace("dry", "dry")
+        dry_id = self.ensure_special_growspace(PlantStage.DRY, "dry")
         plant.growspace_id = dry_id
 
         growspace = self.growspaces.get(dry_id)
@@ -1618,14 +1618,14 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
                 growspace_id=dry_id,
                 row=new_row,
                 col=new_col,
-                stage="dry",
+                stage=PlantStage.DRY,
                 dry_start=transition_date,
             )
         except ValueError as e:
             _LOGGER.warning("Failed to assign position in dry growspace: %s", e)
 
         plant.dry_start = transition_date
-        plant.stage = "dry"
+        plant.stage = PlantStage.DRY
         _LOGGER.info("Moved plant %s → dry (ID: %s)", plant_id, dry_id)
         return True
 
@@ -1642,7 +1642,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
         Returns:
             True, as the plant is always moved.
         """
-        cure_id = self.ensure_special_growspace("cure", "cure")
+        cure_id = self.ensure_special_growspace(PlantStage.CURE, "cure")
         plant.growspace_id = cure_id
 
         try:
@@ -1653,14 +1653,14 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
                 growspace_id=cure_id,
                 row=new_row,
                 col=new_col,
-                stage="cure",
+                stage=PlantStage.CURE,
                 cure_start=transition_date,
             )
         except ValueError as e:
             _LOGGER.warning("Failed to assign position in cure growspace: %s", e)
 
         plant.cure_start = transition_date
-        plant.stage = "cure"
+        plant.stage = PlantStage.CURE
         _LOGGER.info("Moved plant %s → cure (ID: %s)", plant_id, cure_id)
         return True
 
@@ -1756,13 +1756,13 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
         start_date = getattr(plant, f"{stage}_start", None)
 
         end_date = None
-        if stage in {"seedling", "clone"}:
+        if stage in {PlantStage.SEEDLING, PlantStage.CLONE}:
             end_date = getattr(plant, "veg_start", None)
-        elif stage == "veg":
+        elif stage == PlantStage.VEG:
             end_date = getattr(plant, "flower_start", None)
-        elif stage == "flower":
+        elif stage == PlantStage.FLOWER:
             end_date = getattr(plant, "dry_start", None)
-        elif stage == "dry":
+        elif stage == PlantStage.DRY:
             end_date = getattr(plant, "cure_start", None)
 
         return self.calculate_days(start_date, end_date)
@@ -1794,14 +1794,14 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
             The guessed entity ID string.
         """
         # Handle special cases first
-        if growspace_id in ("dry", "dry_overview"):
-            return "sensor.dry"
-        if growspace_id in ("cure", "cure_overview"):
-            return "sensor.cure"
-        if growspace_id in ("mother", "mother_overview"):
-            return "sensor.mother"
-        if growspace_id in ("clone", "clone_overview"):
-            return "sensor.clone"
+        if growspace_id in (PlantStage.DRY, "dry_overview"):
+            return f"sensor.{PlantStage.DRY}"
+        if growspace_id in (PlantStage.CURE, "cure_overview"):
+            return f"sensor.{PlantStage.CURE}"
+        if growspace_id in (PlantStage.MOTHER, "mother_overview"):
+            return f"sensor.{PlantStage.MOTHER}"
+        if growspace_id in (PlantStage.CLONE, "clone_overview"):
+            return f"sensor.{PlantStage.CLONE}"
         # General case
         growspace = self.growspaces.get(growspace_id)
         name = getattr(growspace, "name", growspace_id) if growspace else growspace_id

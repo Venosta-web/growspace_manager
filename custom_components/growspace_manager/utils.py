@@ -7,6 +7,7 @@ from datetime import date, datetime
 
 from dateutil import parser
 
+from .const import PlantStage
 from .models import Growspace, Plant
 
 DateInput = str | datetime | date | None
@@ -189,12 +190,18 @@ def calculate_plant_stage(plant: Plant) -> str:
     if stage := _get_stage_fallback(plant):
         return stage
 
-    return "seedling"
+    return PlantStage.SEEDLING
 
 
 def _get_stage_from_growspace(plant: Plant) -> str | None:
     """Check if the plant is in a special growspace that dictates its stage."""
-    if plant.growspace_id in ("mother", "clone", "dry", "cure"):
+    # Note: These IDs must match the keys in SPECIAL_GROWSPACES or canonical IDs
+    if plant.growspace_id in (
+        PlantStage.MOTHER.value,
+        PlantStage.CLONE.value,
+        PlantStage.DRY.value,
+        PlantStage.CURE.value,
+    ):
         return plant.growspace_id
     return None
 
@@ -204,13 +211,13 @@ def _get_stage_from_dates(plant: Plant) -> str | None:
     now = datetime.now()
     # Check in reverse order of progression (most advanced first)
     dates = [
-        (plant.cure_start, "cure"),
-        (plant.dry_start, "dry"),
-        (plant.flower_start, "flower"),
-        (plant.veg_start, "veg"),
-        (plant.clone_start, "clone"),
-        (plant.mother_start, "mother"),
-        (plant.seedling_start, "seedling"),
+        (plant.cure_start, PlantStage.CURE),
+        (plant.dry_start, PlantStage.DRY),
+        (plant.flower_start, PlantStage.FLOWER),
+        (plant.veg_start, PlantStage.VEG),
+        (plant.clone_start, PlantStage.CLONE),
+        (plant.mother_start, PlantStage.MOTHER),
+        (plant.seedling_start, PlantStage.SEEDLING),
     ]
     for date_val, stage in dates:
         if (dt := parse_date_field(date_val)) and dt <= now:
@@ -220,15 +227,7 @@ def _get_stage_from_dates(plant: Plant) -> str | None:
 
 def _get_stage_fallback(plant: Plant) -> str | None:
     """Fallback to the explicitly set stage if it's valid."""
-    valid_stages = {
-        "seedling",
-        "mother",
-        "clone",
-        "veg",
-        "flower",
-        "dry",
-        "cure",
-    }
+    valid_stages = {stage.value for stage in PlantStage}
     if plant.stage in valid_stages:
         return plant.stage
     return None

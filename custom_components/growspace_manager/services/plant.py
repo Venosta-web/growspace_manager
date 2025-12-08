@@ -11,7 +11,7 @@ from homeassistant.core import HomeAssistant, ServiceCall
 from homeassistant.exceptions import ServiceValidationError
 from homeassistant.helpers import entity_registry as er
 
-from ..const import DATE_FIELDS, DOMAIN  # Ensure DATE_FIELDS is imported
+from ..const import DATE_FIELDS, DOMAIN, PlantStage  # Ensure DATE_FIELDS is imported
 from ..coordinator import GrowspaceCoordinator
 from ..growspace_validator import GrowspaceValidator
 from ..strain_library import StrainLibrary
@@ -58,7 +58,7 @@ def _resolve_position_conflict(
 
     if is_occupied:
         _LOGGER.warning(
-            "Position (%d,%d) in growspace %s is occupied. Finding first free space.",
+            "Position (%d,%d) in growspace %s is occupied. Finding first free space",
             new_row,
             new_col,
             growspace_id,
@@ -77,7 +77,7 @@ def _resolve_position_conflict(
             service_data["col"] = free_col
         else:
             _LOGGER.error(
-                "No free space found in growspace %s for plant %s. Position will not be updated.",
+                "No free space found in growspace %s for plant %s. Position will not be updated",
                 growspace_id,
                 plant_id,
             )
@@ -123,10 +123,10 @@ def _resolve_plant_id(hass: HomeAssistant, plant_id: str) -> str:
                 )
                 return resolved_id
             _LOGGER.warning(
-                "Could not resolve entity ID '%s' to a plant_id attribute.", plant_id
+                "Could not resolve entity ID '%s' to a plant_id attribute", plant_id
             )
         else:
-            _LOGGER.warning("Entity Registry not available, cannot resolve entity ID.")
+            _LOGGER.warning("Entity Registry not available, cannot resolve entity ID")
     except Exception as e:
         _LOGGER.warning("Error resolving entity ID '%s': %s", plant_id, e)
 
@@ -141,7 +141,7 @@ async def _ensure_plant_loaded(
         return True
 
     _LOGGER.warning(
-        "Plant %s not found in current coordinator data. Attempting to reload from storage.",
+        "Plant %s not found in current coordinator data. Attempting to reload from storage",
         plant_id,
     )
     try:
@@ -151,13 +151,11 @@ async def _ensure_plant_loaded(
 
     if plant_id not in coordinator.plants:
         _LOGGER.error(
-            "Plant %s still does not exist after storage reload attempt.", plant_id
+            "Plant %s still does not exist after storage reload attempt", plant_id
         )
         raise ServiceValidationError(
             f"Plant {plant_id} not found and could not be reloaded from storage."
         )
-    return True
-
     return True
 
 
@@ -236,7 +234,7 @@ async def handle_add_plant(
         # This logic is specific to a 'mother' growspace ID. Ensure 'mother' is a known special ID.
         if growspace_id == "mother" and not mother_start:
             mother_start = datetime.now()
-            _LOGGER.debug("Auto-setting mother_start to now for 'mother' growspace.")
+            _LOGGER.debug("Auto-setting mother_start to now for 'mother' growspace")
 
         plant_id = await coordinator.async_add_plant(
             growspace_id=growspace_id,
@@ -295,7 +293,7 @@ async def handle_take_clone(
             num_clones = 1
     except (TypeError, ValueError):
         num_clones = 1
-        _LOGGER.warning("Invalid num_clones provided, defaulting to 1.")
+        _LOGGER.warning("Invalid num_clones provided, defaulting to 1")
 
     _LOGGER.debug(
         "Handling take_clone for %s, requesting %d clones", mother_plant_id, num_clones
@@ -312,7 +310,7 @@ async def handle_take_clone(
     if (
         growspace_id is None
     ):  # This check is redundant if growspace_id is hardcoded, but good practice if it were dynamic.
-        _LOGGER.error("No target growspace ID defined for clones.")
+        _LOGGER.error("No target growspace ID defined for clones")
         raise ServiceValidationError("Clone growspace ID is not configured.")
 
     validator = GrowspaceValidator(coordinator)
@@ -336,7 +334,7 @@ async def handle_take_clone(
                 strain=mother.strain or "",
                 row=row,
                 col=col,
-                stage="clone",  # Set stage to clone
+                stage=PlantStage.CLONE,  # Set stage to clone
                 source_mother=mother_plant_id,  # Track lineage
                 clone_start=transition_date,  # Use provided transition date if any
             )
@@ -451,7 +449,7 @@ async def handle_move_clone(
             phenotype=plant.phenotype,
             row=row,
             col=col,
-            stage="veg",  # Transitioning clone to veg
+            stage=PlantStage.VEG,  # Transitioning clone to veg
             clone_start=(
                 datetime.fromisoformat(plant.clone_start).date()
                 if isinstance(plant.clone_start, str)

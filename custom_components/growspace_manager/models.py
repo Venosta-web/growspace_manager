@@ -11,6 +11,8 @@ from dataclasses import asdict, dataclass, field, fields
 from datetime import datetime
 from typing import Any, TypedDict
 
+from .const import PlantStage
+
 
 @dataclass
 class IrrigationStrategy:
@@ -159,7 +161,7 @@ class Plant:
     phenotype: str = ""
     row: int = 1
     col: int = 1
-    stage: str = ""
+    stage: PlantStage | str = ""
     type: str = "normal"
     device_id: str | None = None
     seedling_start: str | None = None
