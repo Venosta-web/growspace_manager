@@ -1321,7 +1321,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
                 "light_sensor": "light_sensor",
                 "irrigation_pump_entity": "irrigation_pump_entity",
                 "drain_pump_entity": "drain_pump_entity",
-                "dehumidifier_control_enabled": "dehumidifier_control_enabled",
+                "control_dehumidifier": "dehumidifier_control_enabled",
                 "exhaust_sensor": "exhaust_sensor",
                 "humidifier_sensor": "humidifier_sensor",
             }
