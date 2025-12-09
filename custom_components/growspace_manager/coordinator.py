@@ -1122,6 +1122,11 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
 
         # Get irrigation settings
         irrigation_options = growspace.irrigation_config
+        irrigation_strategy_dict = (
+            growspace.irrigation_strategy.to_dict()
+            if growspace.irrigation_strategy
+            else None
+        )
 
         # Create grid representation (Detailed rich grid)
         grid = self._generate_rich_plant_grid(growspace, plants)
@@ -1145,6 +1150,8 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
             "veg_week": veg_week,
             "flower_week": flower_week,
             "max_stage_summary": f"Veg: {max_veg}d (W{veg_week}), Flower: {max_flower}d (W{flower_week})",
+            "irrigation_config": irrigation_options,
+            "irrigation_strategy": irrigation_strategy_dict,
             "irrigation_times": list(irrigation_options.get("irrigation_times", [])),
             "drain_times": list(irrigation_options.get("drain_times", [])),
             "grid": grid,
@@ -1319,8 +1326,6 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
                 "exhaust_fan_entity": "exhaust_entity",
                 "circulation_fan_entity": "circulation_fan_entity",
                 "light_sensor": "light_sensor",
-                "irrigation_pump_entity": "irrigation_pump_entity",
-                "drain_pump_entity": "drain_pump_entity",
                 "control_dehumidifier": "dehumidifier_control_enabled",
                 "exhaust_sensor": "exhaust_sensor",
                 "humidifier_sensor": "humidifier_sensor",
