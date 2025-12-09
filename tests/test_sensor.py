@@ -73,7 +73,7 @@ def mock_coordinator():
     coordinator.get_strain_options.return_value = ["Strain A", "Strain B"]
     coordinator.get_growspace_options.return_value = ["gs1"]
     coordinator.strains = MagicMock()
-    coordinator.created_entities = []
+    coordinator.created_entity_ids = []
 
     # Mock new methods used by sensor.py
     coordinator._get_biological_metrics.return_value = {
@@ -446,14 +446,14 @@ async def test_async_create_derivative_sensors(mock_coordinator) -> None:
             hass, "sensor.temp", "gs1", growspace.name, "temperature"
         )
 
-        created_entities = config_entry.runtime_data.created_entities
-        assert "trend_1" in created_entities
-        assert "stats_1" in created_entities
-        assert "trend_2" in created_entities
-        assert "stats_2" in created_entities
-        assert "trend_3" in created_entities
-        assert "stats_3" in created_entities
-        assert len(created_entities) == 6
+        created_entity_ids = config_entry.runtime_data.created_entity_ids
+        assert "trend_1" in created_entity_ids
+        assert "stats_1" in created_entity_ids
+        assert "trend_2" in created_entity_ids
+        assert "stats_2" in created_entity_ids
+        assert "trend_3" in created_entity_ids
+        assert "stats_3" in created_entity_ids
+        assert len(created_entity_ids) == 6
 
 
 # --------------------
@@ -470,6 +470,7 @@ def test_vpd_sensor_weather_entity(mock_coordinator) -> None:
     sensor = VpdSensor(
         mock_coordinator, "outside", "Outside VPD", "weather.test", None, None
     )
+    sensor.hass = hass
     assert sensor.native_value is not None
 
 
@@ -491,6 +492,7 @@ def test_vpd_sensor_temp_humidity_entities(mock_coordinator) -> None:
         "sensor.temp",
         "sensor.humidity",
     )
+    sensor.hass = hass
     assert sensor.native_value is not None
 
 
@@ -512,6 +514,7 @@ def test_vpd_sensor_invalid_states(mock_coordinator) -> None:
         "sensor.temp",
         "sensor.humidity",
     )
+    sensor.hass = hass
     assert sensor.native_value is None
 
 
@@ -533,6 +536,7 @@ def test_vpd_sensor_value_error(mock_coordinator) -> None:
         "sensor.temp",
         "sensor.humidity",
     )
+    sensor.hass = hass
     assert sensor.native_value is None
 
 
@@ -861,6 +865,7 @@ def test_calculated_vpd_sensor(mock_coordinator) -> None:
         "sensor.humidity",
         lst_offset=-2.0,
     )
+    sensor.hass = hass
 
     assert sensor.native_value is not None
     assert sensor.extra_state_attributes["lst_offset"] == -2.0
@@ -882,6 +887,7 @@ def test_calculated_vpd_sensor_invalid_states(mock_coordinator) -> None:
     sensor = CalculatedVpdSensor(
         mock_coordinator, "gs1", "Growspace 1", "sensor.temp", "sensor.humidity"
     )
+    sensor.hass = hass
 
     assert sensor.native_value is None
 
@@ -899,6 +905,7 @@ def test_calculated_vpd_sensor_value_error(mock_coordinator) -> None:
     sensor = CalculatedVpdSensor(
         mock_coordinator, "gs1", "Growspace 1", "sensor.temp", "sensor.humidity"
     )
+    sensor.hass = hass
 
     assert sensor.native_value is None
 

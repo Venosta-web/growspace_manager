@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import uuid
 from datetime import date, datetime, timedelta
@@ -89,6 +90,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
         )
 
         self.hass = hass
+        self._lock = asyncio.Lock()
         self.growspaces: dict[str, Growspace] = {}
         self.plants: dict[str, Plant] = {}
         self.events: dict[str, list[GrowspaceEvent]] = {}
@@ -121,7 +123,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
             str, IrrigationCoordinator | VWCIrrigationCoordinator
         ] = {}
         self.dehumidifier_coordinators: dict[str, DehumidifierCoordinator] = {}
-        self.created_entities: list[str] = []
+        self.created_entity_ids: list[str] = []
 
         # Load data
         if data is None:
@@ -507,28 +509,31 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
         Returns:
             The newly created Growspace object.
         """
-        # Normalize notification target
-        if not notification_target or notification_target in ("None", "none", ""):
-            _LOGGER.debug("No notification target provided for growspace '%s'", name)
-            notification_target = None
+        async with self._lock:  # Added
+            # Normalize notification target
+            if not notification_target or notification_target in ("None", "none", ""):
+                _LOGGER.debug(
+                    "No notification target provided for growspace '%s'", name
+                )
+                notification_target = None
 
-        growspace_id = str(uuid.uuid4())
-        growspace = Growspace(
-            id=growspace_id,
-            name=name.strip(),
-            rows=rows,
-            plants_per_row=plants_per_row,
-            notification_target=notification_target,
-            device_id=device_id,
-        )
-        self.growspaces[growspace_id] = growspace
+            growspace_id = str(uuid.uuid4())
+            growspace = Growspace(
+                id=growspace_id,
+                name=name.strip(),
+                rows=rows,
+                plants_per_row=plants_per_row,
+                notification_target=notification_target,
+                device_id=device_id,
+            )
+            self.growspaces[growspace_id] = growspace
 
-        # ✅ Enable notifications by default for new growspace
-        self._notifications_enabled[growspace_id] = True
+            # ✅ Enable notifications by default for new growspace
+            self._notifications_enabled[growspace_id] = True
 
-        await self.async_commit()
+            await self.async_commit()
 
-        return growspace
+            return growspace
 
     async def async_remove_growspace(self, growspace_id: str) -> None:
         """Remove a growspace and all plants contained within it.
@@ -536,120 +541,111 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
         Args:
             growspace_id: The ID of the growspace to remove.
         """
-        self.validator.validate_growspace_exists(growspace_id)
+        async with self._lock:  # Added
+            self.validator.validate_growspace_exists(growspace_id)
 
-        # Remove all plants in this growspace
-        plants_to_remove = [
-            plant_id
-            for plant_id, plant in self.plants.items()
-            if plant.growspace_id == growspace_id
-        ]
+            # Remove all plants in this growspace
+            plants_to_remove = [
+                plant_id
+                for plant_id, plant in self.plants.items()
+                if plant.growspace_id == growspace_id
+            ]
 
-        for plant_id in plants_to_remove:
-            self.plants.pop(plant_id, None)
-            self._notifications_sent.pop(plant_id, None)  # ✅ Use _notifications_sent
+            for plant_id in plants_to_remove:
+                self.plants.pop(plant_id, None)
+                self._notifications_sent.pop(
+                    plant_id, None
+                )  # ✅ Use _notifications_sent
 
-        growspace_name = self.growspaces[growspace_id].name
-        self.growspaces.pop(growspace_id, None)
+            growspace_name = self.growspaces[growspace_id].name
+            self.growspaces.pop(growspace_id, None)
 
-        # ✅ Remove notification state
-        self._notifications_enabled.pop(growspace_id, None)
+            # ✅ Remove notification state
+            self._notifications_enabled.pop(growspace_id, None)
 
-        await self.async_commit()
-
-        _LOGGER.info(
-            "Removed growspace %s (%s) and %d plants",
-            growspace_id,
-            growspace_name,
-            len(plants_to_remove),
-        )
-
-    async def async_update_growspace(
-        self,
-        growspace_id: str,
-        name: str = "",
-        rows: int = 0,
-        plants_per_row: int = 0,
-        notification_target: str = "",
-    ) -> None:
-        """Update the properties of an existing growspace.
-
-        Args:
-            growspace_id: The ID of the growspace to update.
-            name: The new name for the growspace (optional).
-            rows: The new number of rows (optional).
-            plants_per_row: The new number of plants per row (optional).
-            notification_target: The new notification target (optional).
-
-        Raises:
-            ValueError: If the growspace_id is not found.
-        """
-        if growspace_id not in self.growspaces:
-            _LOGGER.error(
-                "Attempted to update non-existent growspace: %s", growspace_id
-            )
-            raise ValueError(f"Growspace {growspace_id} not found")
-
-        growspace = self.growspaces[growspace_id]
-        updated = False
-
-        # Track what changed for logging
-        changes = []
-
-        if name is not None and name != growspace.name:
-            old_name = growspace.name
-            growspace.name = name
-            changes.append(f"name: {old_name} -> {name}")
-            updated = True
-
-        if rows is not None and rows != growspace.rows:
-            old_rows = growspace.rows
-            growspace.rows = rows
-            changes.append(f"rows: {old_rows} -> {rows}")
-            updated = True
-
-        if plants_per_row is not None and plants_per_row != growspace.plants_per_row:
-            old_ppr = growspace.plants_per_row
-            growspace.plants_per_row = plants_per_row
-            changes.append(f"plants_per_row: {old_ppr} -> {plants_per_row}")
-            updated = True
-
-        # Handle notification_target - convert empty string to None
-        if notification_target is not None:
-            # Normalize both old and new values for comparison
-            current_target = growspace.notification_target or ""
-            new_target = notification_target.strip() if notification_target else ""
-
-            if current_target != new_target:
-                growspace.notification_target = new_target
-
-                changes.append(
-                    f"notification_target: {current_target or 'None'} -> {new_target or 'None'}"
-                )
-                updated = True
-
-        if updated:
-            _LOGGER.info(
-                "Updated growspace %s (%s): %s",
-                growspace_id,
-                growspace.name,
-                ", ".join(changes),
-            )
-
-            # Check if grid size changed and validate existing plants
-            if rows is not None or plants_per_row is not None:
-                await self._validate_plants_after_growspace_resize(
-                    growspace_id,
-                    rows or growspace.rows,
-                    plants_per_row or growspace.plants_per_row,
-                )
-
-            # Save to storage and notify
             await self.async_commit()
 
-            _LOGGER.debug("Growspace update completed and saved")
-        else:
-            _LOGGER.debug("No changes detected for growspace %s", growspace_id)
+            _LOGGER.info(
+                "Removed growspace %s (%s) and %d plants",
+                growspace_id,
+                growspace_name,
+                len(plants_to_remove),
+            )
+
+    async def async_update_growspace(
+        self, growspace_id: str, **kwargs: dict[str, Any]
+    ) -> None:
+        """Update a growspace."""
+        async with self._lock:
+            if growspace_id not in self.growspaces:
+                raise ValueError(f"Growspace {growspace_id} not found")
+
+            growspace = self.growspaces[growspace_id]
+            updated = False
+            changes = []
+
+            if "name" in kwargs:
+                name = kwargs["name"]
+                if name != growspace.name:
+                    changes.append(f"name: {growspace.name} -> {name}")
+                    growspace.name = name
+                    updated = True
+
+            if "rows" in kwargs:
+                rows = int(kwargs["rows"])
+                if rows != growspace.rows:
+                    changes.append(f"rows: {growspace.rows} -> {rows}")
+                    growspace.rows = rows
+                    updated = True
+
+            if "plants_per_row" in kwargs:
+                ppr = int(kwargs["plants_per_row"])
+                if ppr != growspace.plants_per_row:
+                    changes.append(
+                        f"plants_per_row: {growspace.plants_per_row} -> {ppr}"
+                    )
+                    growspace.plants_per_row = ppr
+                    updated = True
+
+            if "notification_target" in kwargs:
+                nt = kwargs["notification_target"]
+                # Normalize
+                nt = nt.strip() if nt else None
+                current = growspace.notification_target
+                if nt != current:
+                    changes.append(f"notification_target: {current} -> {nt}")
+                    growspace.notification_target = nt
+                    updated = True
+
+            if "environment_config" in kwargs:
+                growspace.environment_config = kwargs["environment_config"]
+                changes.append("environment_config updated")
+                updated = True
+
+            if "irrigation_config" in kwargs:
+                growspace.irrigation_config = kwargs["irrigation_config"]
+                changes.append("irrigation_config updated")
+                updated = True
+
+            if updated:
+                _LOGGER.info(
+                    "Updated growspace %s (%s): %s",
+                    growspace_id,
+                    growspace.name,
+                    ", ".join(changes),
+                )
+
+                # Validate plants if grid changed
+                if "rows" in kwargs or "plants_per_row" in kwargs:
+                    await self._validate_plants_after_growspace_resize(
+                        growspace_id,
+                        growspace.rows,
+                        growspace.plants_per_row,
+                    )
+
+                await self.async_commit()
+            else:
+                _LOGGER.debug("No changes detected for growspace %s", growspace_id)
 
     async def _validate_plants_after_growspace_resize(
         self, growspace_id: str, new_rows: int, new_plants_per_row: int
@@ -763,85 +759,63 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
         cure_start: date | None = None,
         source_mother: str = "",
     ) -> Plant:
-        """Add a new plant to the coordinator.
-
-        Args:
-            growspace_id: The ID of the growspace to add the plant to.
-            strain: The strain name of the plant.
-            plant_id: Optional specific ID for the plant.
-            phenotype: The phenotype of the strain (optional).
-            row: The row position in the grid.
-            col: The column position in the grid.
-            stage: The initial growth stage.
-            type: The type of plant (e.g., 'normal', 'clone', 'mother').
-            device_id: The device ID associated with the plant (optional).
-            seedling_start: The date the seedling stage started (optional).
-            mother_start: The date the mother stage started (optional).
-            clone_start: The date the clone stage started (optional).
-            veg_start: The date the veg stage started (optional).
-            flower_start: The date the flower stage started (optional).
-            dry_start: The date the dry stage started (optional).
-            cure_start: The date the cure stage started (optional).
-            source_mother: The ID of the mother plant this clone came from (optional).
-
-        Returns:
-            The newly created Plant object.
-        """
-        try:
-            self.validator.validate_position_not_occupied(growspace_id, row, col)
-            final_row, final_col = row, col
-        except ValueError:
-            _LOGGER.info(
-                "Position (%d, %d) in growspace %s is occupied. Finding first available spot",
-                row,
-                col,
-                growspace_id,
-            )
+        """Add a new plant to the coordinator."""
+        async with self._lock:
             try:
-                final_row, final_col = self.validator.find_first_available_position(
-                    growspace_id
-                )
+                self.validator.validate_position_not_occupied(growspace_id, row, col)
+                final_row, final_col = row, col
+            except ValueError:
                 _LOGGER.info(
-                    "Found available position at (%d, %d)", final_row, final_col
+                    "Position (%d, %d) in growspace %s is occupied. Finding first available spot",
+                    row,
+                    col,
+                    growspace_id,
                 )
-            except ValueError as e:
-                # This happens if the growspace is full
-                _LOGGER.error("Could not add plant: %s", e)
-                raise
+                try:
+                    final_row, final_col = self.validator.find_first_available_position(
+                        growspace_id
+                    )
+                    _LOGGER.info(
+                        "Found available position at (%d, %d)", final_row, final_col
+                    )
+                except ValueError as e:
+                    # This happens if the growspace is full
+                    _LOGGER.error("Could not add plant: %s", e)
+                    raise
 
-        # Create plant object
-        # Ensure dates are stored as strings to match Plant model
-        plant = Plant(
-            plant_id=plant_id or str(uuid.uuid4()),
-            growspace_id=growspace_id,
-            strain=strain,
-            phenotype=phenotype,
-            row=final_row,
-            col=final_col,
-            stage=stage or "",
-            type=type,
-            device_id=device_id,
-            seedling_start=format_date(seedling_start),
-            mother_start=format_date(mother_start),
-            clone_start=format_date(clone_start),
-            veg_start=format_date(veg_start),
-            flower_start=format_date(flower_start),
-            dry_start=format_date(dry_start),
-            cure_start=format_date(cure_start),
-            created_at=datetime.now().isoformat(),
-            updated_at=datetime.now().isoformat(),
-            source_mother=source_mother,
-        )
+            # Create plant object
+            # Ensure dates are stored as strings to match Plant model
+            plant = Plant(
+                plant_id=plant_id or str(uuid.uuid4()),
+                growspace_id=growspace_id,
+                strain=strain,
+                phenotype=phenotype,
+                row=final_row,
+                col=final_col,
+                stage=stage or "",
+                type=type,
+                device_id=device_id,
+                seedling_start=format_date(seedling_start),
+                mother_start=format_date(mother_start),
+                clone_start=format_date(clone_start),
+                veg_start=format_date(veg_start),
+                flower_start=format_date(flower_start),
+                dry_start=format_date(dry_start),
+                cure_start=format_date(cure_start),
+                created_at=datetime.now().isoformat(),
+                updated_at=datetime.now().isoformat(),
+                source_mother=source_mother,
+            )
 
-        # Calculate stage if not explicitly provided
-        if not stage:
-            plant.stage = calculate_plant_stage(plant)
+            # Calculate stage if not explicitly provided
+            if not stage:
+                plant.stage = calculate_plant_stage(plant)
 
-        self.plants[plant.plant_id] = plant
+            self.plants[plant.plant_id] = plant
 
-        await self.async_commit()
+            await self.async_commit()
 
-        return plant
+            return plant
 
     async def async_add_mother_plant(
         self,
@@ -960,50 +934,40 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
         )
 
     async def async_update_plant(self, plant_id: str, **updates) -> Plant:
-        """Update the attributes of an existing plant.
+        """Update the attributes of an existing plant."""
+        async with self._lock:
+            plant = self.plants.get(plant_id)
+            if not plant:
+                raise ValueError(f"Plant {plant_id} does not exist")
 
-        Args:
-            plant_id: The ID of the plant to update.
-            **updates: Keyword arguments for the fields to update.
-
-        Returns:
-            The updated Plant object.
-
-        Raises:
-            ValueError: If the plant does not exist.
-        """
-        plant = self.plants.get(plant_id)
-        if not plant:
-            raise ValueError(f"Plant {plant_id} does not exist")
-
-        _LOGGER.debug("COORDINATOR: Updating plant %s", plant_id)
-        for key, value in updates.items():
-            _LOGGER.debug(
-                "COORDINATOR: Field %s = %s (type: %s, id: %s)",
-                key,
-                value,
-                type(value),
-                id(value),
-            )
-
-            # Enforce string format for date fields
-            if key in DATE_FIELDS:
-                value = format_date(value)
-                updates[key] = value  # Update the value in 'updates' dict as well
-
-        for key, value in updates.items():
-            if hasattr(plant, key):
-                old_value = getattr(plant, key)
-                setattr(plant, key, value)
+            _LOGGER.debug("COORDINATOR: Updating plant %s", plant_id)
+            for key, value in updates.items():
                 _LOGGER.debug(
-                    "COORDINATOR: Updated %s: %s -> %s", key, old_value, value
+                    "COORDINATOR: Field %s = %s (type: %s, id: %s)",
+                    key,
+                    value,
+                    type(value),
+                    id(value),
                 )
-            else:
-                _LOGGER.warning("COORDINATOR: Invalid field %s", key)
 
-        plant.updated_at = date.today().isoformat()
-        await self.async_commit()
-        return plant
+                # Enforce string format for date fields
+                if key in DATE_FIELDS:
+                    value = format_date(value)
+                    updates[key] = value  # Update the value in 'updates' dict as well
+
+            for key, value in updates.items():
+                if hasattr(plant, key):
+                    old_value = getattr(plant, key)
+                    setattr(plant, key, value)
+                    _LOGGER.debug(
+                        "COORDINATOR: Updated %s: %s -> %s", key, old_value, value
+                    )
+                else:
+                    _LOGGER.warning("COORDINATOR: Invalid field %s", key)
+
+            plant.updated_at = date.today().isoformat()
+            await self.async_commit()
+            return plant
 
     def _handle_position_update(
         self,
@@ -1048,55 +1012,48 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
         await self.async_update_plant(plant_id, row=new_row, col=new_col)
 
     async def async_switch_plants(self, plant1_id: str, plant2_id: str) -> None:
-        """Switch the positions of two plants within the same growspace.
+        """Switch the positions of two plants within the same growspace."""
+        async with self._lock:
+            self.validator.validate_plant_exists(plant1_id)
+            self.validator.validate_plant_exists(plant2_id)
 
-        Args:
-            plant1_id: The ID of the first plant.
-            plant2_id: The ID of the second plant.
+            plant1 = self.plants[plant1_id]
+            plant2 = self.plants[plant2_id]
 
-        Raises:
-            ValueError: If the plants are in different growspaces.
-        """
-        self.validator.validate_plant_exists(plant1_id)
-        self.validator.validate_plant_exists(plant2_id)
+            # Ensure both plants are in the same growspace
+            if plant1.growspace_id != plant2.growspace_id:
+                raise ValueError("Cannot switch plants in different growspaces")
 
-        plant1 = self.plants[plant1_id]
-        plant2 = self.plants[plant2_id]
+            # Store and swap positions
+            plant1_row, plant1_col = plant1.row, plant1.col
+            plant2_row, plant2_col = plant2.row, plant2.col
 
-        # Ensure both plants are in the same growspace
-        if plant1.growspace_id != plant2.growspace_id:
-            raise ValueError("Cannot switch plants in different growspaces")
+            plant1.row, plant1.col = plant2_row, plant2_col
+            plant2.row, plant2.col = plant1_row, plant1_col
 
-        # Store and swap positions
-        plant1_row, plant1_col = plant1.row, plant1.col
-        plant2_row, plant2_col = plant2.row, plant2.col
+            # Update timestamps
+            update_time = date.today().isoformat()
 
-        plant1.row, plant1.col = plant2_row, plant2_col
-        plant2.row, plant2.col = plant1_row, plant1_col
+            plant1.updated_at = update_time
+            plant2.updated_at = update_time
 
-        # Update timestamps
-        update_time = date.today().isoformat()
+            await self.async_commit()
 
-        plant1.updated_at = update_time
-        plant2.updated_at = update_time
-
-        await self.async_commit()
-
-        _LOGGER.info(
-            "Switched positions: %s (%s) moved from (%d,%d) to (%d,%d), %s (%s) moved from (%d,%d) to (%d,%d)",
-            plant1_id,
-            plant1.strain,
-            plant1_col,
-            plant1_row,
-            plant2_col,
-            plant2_row,
-            plant2_id,
-            plant2.strain,
-            plant2_row,
-            plant2_col,
-            plant1_row,
-            plant1_col,
-        )
+            _LOGGER.info(
+                "Switched positions: %s (%s) moved from (%d,%d) to (%d,%d), %s (%s) moved from (%d,%d) to (%d,%d)",
+                plant1_id,
+                plant1.strain,
+                plant1_col,
+                plant1_row,
+                plant2_col,
+                plant2_row,
+                plant2_id,
+                plant2.strain,
+                plant2_row,
+                plant2_col,
+                plant1_row,
+                plant1_col,
+            )
 
     async def switch_plants_service(self, plant1_id: str, plant2_id: str) -> None:
         """Service call wrapper for switching the positions of two plants.
@@ -1380,84 +1337,60 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
         return attributes
 
     async def async_start_flowering(self, plant_id: str) -> Plant:
-        """Transition a plant to the 'flower' stage, starting today.
+        """Transition a plant to the 'flower' stage, starting today."""
+        async with self._lock:
+            plant = self.plants.get(plant_id)
+            if not plant:
+                raise ValueError(f"Plant {plant_id} not found")
 
-        Args:
-            plant_id: The ID of the plant.
-
-        Returns:
-            The updated Plant object.
-        """
-        plant = self.plants.get(plant_id)
-        if not plant:
-            raise ValueError(f"Plant {plant_id} not found")
-
-        plant.stage = PlantStage.FLOWER
-        plant.flower_start = date.today().isoformat()
-        plant.updated_at = plant.flower_start
-        await self.async_commit()
-        return plant
+            plant.stage = PlantStage.FLOWER
+            plant.flower_start = date.today().isoformat()
+            plant.updated_at = plant.flower_start
+            await self.async_commit()
+            return plant
 
     async def async_start_drying(self, plant_id: str) -> Plant:
-        """Transition a plant to the 'drying' stage, starting today.
+        """Transition a plant to the 'drying' stage, starting today."""
+        async with self._lock:
+            plant = self.plants.get(plant_id)
+            if not plant:
+                raise ValueError(f"Plant {plant_id} not found")
 
-        Args:
-            plant_id: The ID of the plant.
-
-        Returns:
-            The updated Plant object.
-        """
-        plant = self.plants.get(plant_id)
-        if not plant:
-            raise ValueError(f"Plant {plant_id} not found")
-
-        plant.stage = PlantStage.DRY
-        plant.dry_start = date.today().isoformat()
-        plant.updated_at = plant.dry_start
-        await self.async_save()
-        self.update_data_property()
-        self.async_set_updated_data(self.data)
-        return plant
+            plant.stage = PlantStage.DRY
+            plant.dry_start = date.today().isoformat()
+            plant.updated_at = plant.dry_start
+            await self.async_save()
+            self.update_data_property()
+            self.async_set_updated_data(self.data)
+            return plant
 
     async def async_start_curing(self, plant_id: str) -> Plant:
-        """Transition a plant to the 'curing' stage, starting today.
+        """Transition a plant to the 'curing' stage, starting today."""
+        async with self._lock:
+            plant = self.plants.get(plant_id)
+            if not plant:
+                raise ValueError(f"Plant {plant_id} not found")
 
-        Args:
-            plant_id: The ID of the plant.
-
-        Returns:
-            The updated Plant object.
-        """
-        plant = self.plants.get(plant_id)
-        if not plant:
-            raise ValueError(f"Plant {plant_id} not found")
-
-        plant.stage = PlantStage.CURE
-        plant.cure_start = date.today().isoformat()
-        plant.updated_at = plant.cure_start
-        await self.async_commit()
-        return plant
+            plant.stage = PlantStage.CURE
+            plant.cure_start = date.today().isoformat()
+            plant.updated_at = plant.cure_start
+            await self.async_commit()
+            return plant
 
     async def async_harvest(self, plant_id: str) -> Plant:
-        """Mark a plant as harvested, transitioning it to the 'dry' stage today.
+        """Mark a plant as harvested, transitioning it to the 'dry' stage today."""
+        async with self._lock:
+            plant = self.plants.get(plant_id)
+            if not plant:
+                raise ValueError(f"Plant {plant_id} not found")
 
-        Args:
-            plant_id: The ID of the plant.
-
-        Returns:
-            The updated Plant object.
-        """
-        plant = self.plants.get(plant_id)
-        if not plant:
-            raise ValueError(f"Plant {plant_id} not found")
-
-        plant.stage = PlantStage.DRY
-        plant.dry_start = date.today().isoformat()
-        plant.updated_at = plant.dry_start
-        await self.async_save()
-        self.update_data_property()
-        self.async_set_updated_data(self.data)
-        return plant
+            plant.stage = PlantStage.DRY
+            plant.dry_start = date.today().isoformat()
+            plant.updated_at = plant.dry_start
+            await self.async_save()
+            self.update_data_property()
+            self.async_set_updated_data(self.data)
+            return plant
 
     async def async_harvest_plant(
         self,
@@ -1513,19 +1446,13 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
         )
 
     async def async_remove_plant(self, plant_id: str) -> bool:
-        """Remove a plant from the coordinator.
-
-        Args:
-            plant_id: The ID of the plant to remove.
-
-        Returns:
-            True if the plant was removed, False if it was not found.
-        """
-        if plant_id in self.plants:
-            del self.plants[plant_id]
-            await self.async_commit()
-            return True
-        return False
+        """Remove a plant from the coordinator."""
+        async with self._lock:
+            if plant_id in self.plants:
+                del self.plants[plant_id]
+                await self.async_commit()
+                return True
+            return False
 
     async def _remove_plant_entities(self, plant_id: str) -> None:
         """Remove all Home Assistant entities associated with a specific plant.
