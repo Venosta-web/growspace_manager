@@ -1346,28 +1346,37 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
             # Just copying minimal logic for now - or should we do full?
             # The sensor had full logic including dehum, fan etc.
             # Let's map the configured sensors.
-            for key in [
-                "temperature_sensor",
-                "humidity_sensor",
-                "vpd_sensor",
-                "co2_sensor",
-                "dehumidifier_entity",
-                "circulation_fan_entity",
-                "exhaust_fan_entity",
-                "light_sensor",
-                "irrigation_pump_entity",
-                "drain_pump_entity",
-            ]:
-                if val := env_config.get(key):
-                    attributes[key] = val
-                    # Also include current state if useful?
-                    # The frontend might want it to display overview.
-                    # Sensor implementation included state for some.
-                    if key == "dehumidifier_entity" and val:
-                        attributes["dehumidifier_state"] = (
-                            self.hass.states.get(val)
-                            and self.hass.states.get(val).state
-                        )
+
+            # Map for aliasing or direct copy
+            # Frontend expects: exhaust_entity, humidifier_entity, dehumidifier_entity
+            # Config might have: exhaust_fan_entity, etc.
+
+            keys_to_map = {
+                "temperature_sensor": "temperature_sensor",
+                "humidity_sensor": "humidity_sensor",
+                "vpd_sensor": "vpd_sensor",
+                "co2_sensor": "co2_sensor",
+                "dehumidifier_entity": "dehumidifier_entity",
+                "humidifier_entity": "humidifier_entity",
+                "exhaust_entity": "exhaust_entity",
+                "exhaust_fan_entity": "exhaust_entity",
+                "circulation_fan_entity": "circulation_fan_entity",
+                "light_sensor": "light_sensor",
+                "irrigation_pump_entity": "irrigation_pump_entity",
+                "drain_pump_entity": "drain_pump_entity",
+                "dehumidifier_control_enabled": "dehumidifier_control_enabled",
+            }
+
+            for config_key, output_key in keys_to_map.items():
+                if val := env_config.get(config_key):
+                    attributes[output_key] = val
+
+                    if output_key == "dehumidifier_entity" and val:
+                        # Try to get state if possible, though frontend does this too
+                        state_obj = self.hass.states.get(val)
+                        if state_obj:
+                            attributes["dehumidifier_state"] = state_obj.state
+
         return attributes
 
     async def async_start_flowering(self, plant_id: str) -> Plant:
