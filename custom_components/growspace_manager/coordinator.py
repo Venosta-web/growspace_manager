@@ -1322,6 +1322,8 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
                 "irrigation_pump_entity": "irrigation_pump_entity",
                 "drain_pump_entity": "drain_pump_entity",
                 "dehumidifier_control_enabled": "dehumidifier_control_enabled",
+                "exhaust_sensor": "exhaust_sensor",
+                "humidifier_sensor": "humidifier_sensor",
             }
 
             for config_key, output_key in keys_to_map.items():
