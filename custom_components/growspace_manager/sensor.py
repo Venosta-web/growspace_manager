@@ -21,6 +21,7 @@ from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity import Entity
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
+from homeassistant.helpers.event import async_track_state_change_event
 
 from .const import (
     DOMAIN,
@@ -57,20 +58,20 @@ async def _async_create_derivative_sensors(
         growspace: The Growspace object for which to create sensors.
     """
     if growspace.environment_config:
-        created_entities = config_entry.runtime_data.created_entities
+        created_entity_ids = config_entry.runtime_data.created_entity_ids
         for sensor_type in ["temperature", "humidity", "vpd"]:
             source_sensor = growspace.environment_config.get(f"{sensor_type}_sensor")
             if source_sensor:
                 trend_unique_id = await async_setup_trend_sensor(
                     hass, source_sensor, growspace.id, growspace.name, sensor_type
                 )
-                if trend_unique_id and trend_unique_id not in created_entities:
-                    created_entities.append(trend_unique_id)
+                if trend_unique_id and trend_unique_id not in created_entity_ids:
+                    created_entity_ids.append(trend_unique_id)
                 stats_unique_id = await async_setup_statistics_sensor(
                     hass, source_sensor, growspace.id, growspace.name, sensor_type
                 )
-                if stats_unique_id and stats_unique_id not in created_entities:
-                    created_entities.append(stats_unique_id)
+                if stats_unique_id and stats_unique_id not in created_entity_ids:
+                    created_entity_ids.append(stats_unique_id)
 
 
 async def async_setup_entry(
@@ -304,7 +305,7 @@ async def ensure_special_growspaces(coordinator: GrowspaceCoordinator) -> None:
     )
 
 
-class VpdSensor(CoordinatorEntity[GrowspaceCoordinator], SensorEntity):
+class VpdSensor(SensorEntity):
     """A sensor that calculates Vapor Pressure Deficit (VPD).
 
     This sensor can calculate VPD from either a weather entity (for outside
@@ -324,14 +325,15 @@ class VpdSensor(CoordinatorEntity[GrowspaceCoordinator], SensorEntity):
         """Initialize the VPD sensor.
 
         Args:
-            coordinator: The data update coordinator.
+            coordinator: The data update coordinator (kept for consistency).
             location_id: A unique identifier for the location (e.g., 'outside').
             name: The display name for the sensor.
             weather_entity: The entity ID of a weather entity (optional).
             temp_sensor: The entity ID of a temperature sensor (optional).
             humidity_sensor: The entity ID of a humidity sensor (optional).
         """
-        super().__init__(coordinator)
+        # We handle coordinator manually if needed, or just use it for initial context
+        self._coordinator = coordinator
         self._location_id = location_id
         self._attr_name = name
         self._attr_unique_id = f"{DOMAIN}_{location_id}_vpd"
@@ -342,26 +344,47 @@ class VpdSensor(CoordinatorEntity[GrowspaceCoordinator], SensorEntity):
         self._attr_native_unit_of_measurement = "kPa"
         self._attr_icon = "mdi:cloud-check-variant"
 
+    async def async_added_to_hass(self) -> None:
+        """Register callbacks when the entity is added to Home Assistant."""
+        # Listen for state changes on source entities
+        entities_to_track = []
+        if self._weather_entity:
+            entities_to_track.append(self._weather_entity)
+        if self._temp_sensor:
+            entities_to_track.append(self._temp_sensor)
+        if self._humidity_sensor:
+            entities_to_track.append(self._humidity_sensor)
+
+        if entities_to_track:
+            self.async_on_remove(
+                async_track_state_change_event(
+                    self.hass, entities_to_track, self._handle_source_update
+                )
+            )
+
+    async def _handle_source_update(self, event) -> None:
+        """Handle updates from source sensors."""
+        self.async_write_ha_state()
+
     @property
     def native_value(self) -> float | None:
         """Return the calculated VPD value in kPa."""
-        hass = self.coordinator.hass
         temp = None
         humidity = None
 
         if self._weather_entity:
-            weather_state = hass.states.get(self._weather_entity)
+            weather_state = self.hass.states.get(self._weather_entity)
             if weather_state and weather_state.attributes:
                 temp = weather_state.attributes.get("temperature")
                 humidity = weather_state.attributes.get("humidity")
         elif self._temp_sensor and self._humidity_sensor:
-            temp_state = hass.states.get(self._temp_sensor)
+            temp_state = self.hass.states.get(self._temp_sensor)
             if temp_state and temp_state.state not in ["unknown", "unavailable"]:
                 try:
                     temp = float(temp_state.state)
                 except (ValueError, TypeError):
                     temp = None
-            humidity_state = hass.states.get(self._humidity_sensor)
+            humidity_state = self.hass.states.get(self._humidity_sensor)
             if humidity_state and humidity_state.state not in [
                 "unknown",
                 "unavailable",
@@ -376,7 +399,7 @@ class VpdSensor(CoordinatorEntity[GrowspaceCoordinator], SensorEntity):
         return None
 
 
-class CalculatedVpdSensor(CoordinatorEntity[GrowspaceCoordinator], SensorEntity):
+class CalculatedVpdSensor(SensorEntity):
     """A sensor that calculates VPD from temperature and humidity with LST offset.
 
     This sensor is automatically created when a growspace has temperature and
@@ -403,7 +426,8 @@ class CalculatedVpdSensor(CoordinatorEntity[GrowspaceCoordinator], SensorEntity)
             humidity_sensor: The entity ID of the humidity sensor.
             lst_offset: The leaf surface temperature offset in °C (default: -2.0).
         """
-        super().__init__(coordinator)
+        # We manually store coordinator if needed, but depend on self.hass for state
+        self._coordinator = coordinator
         self._growspace_id = growspace_id
         self._attr_name = f"{growspace_name} Calculated VPD"
         self._attr_unique_id = f"{DOMAIN}_{growspace_id}_calculated_vpd"
@@ -421,21 +445,34 @@ class CalculatedVpdSensor(CoordinatorEntity[GrowspaceCoordinator], SensorEntity)
             manufacturer="Growspace Manager",
         )
 
+    async def async_added_to_hass(self) -> None:
+        """Register callbacks when the entity is added to Home Assistant."""
+        # Listen for state changes on source entities
+        entities_to_track = [self._temp_sensor, self._humidity_sensor]
+        self.async_on_remove(
+            async_track_state_change_event(
+                self.hass, entities_to_track, self._handle_source_update
+            )
+        )
+
+    async def _handle_source_update(self, event) -> None:
+        """Handle updates from source sensors."""
+        self.async_write_ha_state()
+
     @property
     def native_value(self) -> float | None:
         """Return the calculated VPD value in kPa."""
-        hass = self.coordinator.hass
         temp = None
         humidity = None
 
-        temp_state = hass.states.get(self._temp_sensor)
+        temp_state = self.hass.states.get(self._temp_sensor)
         if temp_state and temp_state.state not in ["unknown", "unavailable"]:
             try:
                 temp = float(temp_state.state)
             except (ValueError, TypeError):
                 temp = None
 
-        humidity_state = hass.states.get(self._humidity_sensor)
+        humidity_state = self.hass.states.get(self._humidity_sensor)
         if humidity_state and humidity_state.state not in ["unknown", "unavailable"]:
             try:
                 humidity = float(humidity_state.state)

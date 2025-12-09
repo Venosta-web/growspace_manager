@@ -213,7 +213,7 @@ def _async_remove_dynamic_entities(
     hass: HomeAssistant, coordinator: GrowspaceCoordinator
 ) -> None:
     """Remove dynamically created entities."""
-    created_unique_ids = coordinator.created_entities
+    created_unique_ids = coordinator.created_entity_ids
     entity_registry = er.async_get(hass)
 
     for unique_id in created_unique_ids:
@@ -318,13 +318,31 @@ class StrainLibraryUploadView(HomeAssistantView):
 
         # 2. Save to temp file
         # (Use a scalable chunk write to avoid memory issues)
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".zip") as tmp:
-            temp_path = pathlib.Path(tmp.name)
+        # Create temp file in executor to avoid blocking
+        temp_fd, temp_path_str = await self.hass.async_add_executor_job(
+            tempfile.mkstemp, ".zip"
+        )
+        temp_path = pathlib.Path(temp_path_str)
+
+        try:
+            # We use a file object opened in binary write mode
+            def write_chunk(path: str, data: bytes) -> None:
+                with open(path, "ab") as f:
+                    f.write(data)
+
             while True:
                 chunk = await file_field.read_chunk()
                 if not chunk:
                     break
-                tmp.write(chunk)
+                await self.hass.async_add_executor_job(
+                    write_chunk, temp_path_str, chunk
+                )
+
+        except Exception:
+            # Clean up if writing fails
+            if temp_path.exists():
+                await self.hass.async_add_executor_job(temp_path.unlink)
+            raise
 
         try:
             # 3. Process Import
