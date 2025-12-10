@@ -7,11 +7,13 @@ from typing import Any
 
 from homeassistant.const import STATE_ON, STATE_UNAVAILABLE, STATE_UNKNOWN
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers import entity_registry as er
 
 from .bayesian_data import VPD_STRESS_THRESHOLDS
 from .const import (
     DEFAULT_FLOWER_EARLY_DAYS,
     DEFAULT_VEG_EARLY_DAYS,
+    DOMAIN,
     PlantStage,
 )
 from .models import Growspace, Plant
@@ -78,6 +80,13 @@ class GrowspaceSerializer:
         if growspace.id in ("mother", "clone", "dry", "cure"):
             gs_type = growspace.id
 
+        # Get air exchange recommendation
+        air_exchange = (
+            self.hass.data.get(DOMAIN, {})
+            .get("air_exchange_recommendations", {})
+            .get(growspace.id)
+        )
+
         # Build complete dict
         data = {
             "growspace_id": growspace.id,
@@ -95,6 +104,7 @@ class GrowspaceSerializer:
             "irrigation_config": irrigation_options,
             "irrigation_strategy": irrigation_strategy_dict,
             "grid": grid,
+            "air_exchange": air_exchange,
             **biological_metrics,
         }
 
@@ -107,6 +117,7 @@ class GrowspaceSerializer:
         self, growspace: Growspace, plants: list[Plant]
     ) -> dict[str, dict[str, Any] | None]:
         """Generate the detailed plant grid representation."""
+        registry = er.async_get(self.hass)
         grid: dict[str, dict[str, Any] | None] = {}
         for row in range(1, int(growspace.rows) + 1):
             for col in range(1, int(growspace.plants_per_row) + 1):
@@ -117,8 +128,15 @@ class GrowspaceSerializer:
             row_i = int(plant.row)
             col_i = int(plant.col)
             position_key = f"position_{row_i}_{col_i}"
+
+            # Look up safe entity_id
+            entity_id = registry.async_get_entity_id(
+                "sensor", DOMAIN, f"{DOMAIN}_{plant.plant_id}"
+            )
+
             grid[position_key] = {
                 "plant_id": plant.plant_id,
+                "entity_id": entity_id,  # Stable entity ID
                 "strain": plant.strain,
                 "phenotype": plant.phenotype,
                 # Days in stage
@@ -303,7 +321,7 @@ class GrowspaceSerializer:
             if vpd_entity:
                 state_obj = self.hass.states.get(vpd_entity)
                 attributes["vpd_sensor"] = vpd_entity
-                attributes["vpd_value"] = state_obj.state if state_obj else None
+                attributes["vpd"] = state_obj.state if state_obj else None
 
             # Soil Moisture Sensor
             soil_moisture_entity = env_config.get("soil_moisture_sensor")
