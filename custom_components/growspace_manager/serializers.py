@@ -7,11 +7,13 @@ from typing import Any
 
 from homeassistant.const import STATE_ON, STATE_UNAVAILABLE, STATE_UNKNOWN
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers import entity_registry as er
 
 from .bayesian_data import VPD_STRESS_THRESHOLDS
 from .const import (
     DEFAULT_FLOWER_EARLY_DAYS,
     DEFAULT_VEG_EARLY_DAYS,
+    DOMAIN,
     PlantStage,
 )
 from .models import Growspace, Plant
@@ -107,6 +109,7 @@ class GrowspaceSerializer:
         self, growspace: Growspace, plants: list[Plant]
     ) -> dict[str, dict[str, Any] | None]:
         """Generate the detailed plant grid representation."""
+        registry = er.async_get(self.hass)
         grid: dict[str, dict[str, Any] | None] = {}
         for row in range(1, int(growspace.rows) + 1):
             for col in range(1, int(growspace.plants_per_row) + 1):
@@ -117,8 +120,15 @@ class GrowspaceSerializer:
             row_i = int(plant.row)
             col_i = int(plant.col)
             position_key = f"position_{row_i}_{col_i}"
+
+            # Look up safe entity_id
+            entity_id = registry.async_get_entity_id(
+                "sensor", DOMAIN, f"{DOMAIN}_{plant.plant_id}"
+            )
+
             grid[position_key] = {
                 "plant_id": plant.plant_id,
+                "entity_id": entity_id,  # Stable entity ID
                 "strain": plant.strain,
                 "phenotype": plant.phenotype,
                 # Days in stage
