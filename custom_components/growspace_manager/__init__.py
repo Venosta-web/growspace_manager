@@ -45,21 +45,6 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
     hass.data[DOMAIN]["strain_library"] = strain_library_instance
 
     # Register View
-    # We need a coordinator for the view? The view takes a coordinator in init.
-    # StrainLibraryUploadView(hass, strain_library_instance, coordinator)
-    # The view uses coordinator to refresh after import.
-    # But which coordinator? Any? All?
-    # If we have multiple entries, we probably want to refresh all of them?
-    # Or maybe the view shouldn't take a specific coordinator?
-    # Let's inspect StrainLibraryUploadView. It calls coordinator.async_request_refresh().
-    # Ideally, it should refresh all coordinators.
-    # For now, let's pass None and update the View to handle it?
-    # Or update the View to look up all coordinators.
-
-    # Let's look at the view class definition further down in the file.
-    # It takes `coordinator: GrowspaceCoordinator`.
-    # I should change it to take `hass` and find coordinators.
-
     hass.http.register_view(StrainLibraryUploadView(hass, strain_library_instance))
 
     # Register all custom services
@@ -86,14 +71,18 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
                 coordinator = get_coordinator_for_call(hass, msg)
                 events = coordinator.events.get(growspace_id, [])
                 events_data[growspace_id] = [e.to_dict() for e in events]
-            except Exception:  # invalid growspace_id or no coordinator found
+            except (
+                ServiceValidationError
+            ):  # invalid growspace_id or no coordinator found
                 _LOGGER.warning(
                     "Could not find coordinator for growspace %s", growspace_id
                 )
         else:
             # Aggregate from all coordinators
             for entry in hass.config_entries.async_entries(DOMAIN):
-                if hasattr(entry, "runtime_data"):
+                if entry.state == ConfigEntryState.LOADED and hasattr(
+                    entry, "runtime_data"
+                ):
                     coord = entry.runtime_data
                     for gid, evts in coord.events.items():
                         events_data[gid] = [e.to_dict() for e in evts]
