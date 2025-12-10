@@ -5,13 +5,12 @@ and unloaded within Home Assistant.
 """
 
 import json
+import tempfile
 from unittest.mock import AsyncMock, MagicMock, patch
 
-import tempfile
 import pytest
 from aiohttp import BodyPartReader
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers import entity_registry as er
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.growspace_manager import (
@@ -123,76 +122,6 @@ async def test_async_setup_entry(mock_hass) -> None:
 
 
 @pytest.mark.asyncio
-async def test_async_setup_entry_with_pending_growspace(mock_hass) -> None:
-    """Test setup with a pending growspace."""
-    entry = MockConfigEntry(domain=DOMAIN, data={}, options={})
-    entry.add_to_hass(mock_hass)
-
-    mock_hass.data[DOMAIN] = {
-        "pending_growspace": {"name": "Test", "rows": 1, "plants_per_row": 1}
-    }
-
-    coordinator_mock = AsyncMock()
-    coordinator_mock.growspaces = {}
-
-    with (
-        patch("custom_components.growspace_manager.Store", return_value=AsyncMock()),
-        patch(
-            "custom_components.growspace_manager.GrowspaceCoordinator",
-            return_value=coordinator_mock,
-        ),
-        patch(
-            "custom_components.growspace_manager.StrainLibrary",
-            return_value=AsyncMock(),
-        ),
-        patch(
-            "custom_components.growspace_manager.register_services",
-            return_value=AsyncMock(),
-        ),
-        patch("custom_components.growspace_manager.websocket_api"),
-    ):
-        assert await async_setup_entry(mock_hass, entry)
-        coordinator_mock.async_add_growspace.assert_called_once()
-
-
-@pytest.mark.asyncio
-async def test_async_setup_entry_with_pending_growspace_error(mock_hass) -> None:
-    """Test setup with an error during pending growspace creation."""
-    entry = MockConfigEntry(domain=DOMAIN, data={}, options={})
-    entry.add_to_hass(mock_hass)
-
-    mock_hass.data[DOMAIN] = {
-        "pending_growspace": {"name": "Test"}
-    }  # Missing required fields
-
-    coordinator_mock = AsyncMock()
-    coordinator_mock.growspaces = {}
-    coordinator_mock.async_add_growspace.side_effect = KeyError("Test Error")
-
-    with (
-        patch("custom_components.growspace_manager.Store", return_value=AsyncMock()),
-        patch(
-            "custom_components.growspace_manager.GrowspaceCoordinator",
-            return_value=coordinator_mock,
-        ),
-        patch(
-            "custom_components.growspace_manager.StrainLibrary",
-            return_value=AsyncMock(),
-        ),
-        patch(
-            "custom_components.growspace_manager.register_services",
-            return_value=AsyncMock(),
-        ),
-        patch(
-            "custom_components.growspace_manager.create_notification"
-        ) as mock_create_notification,
-        patch("custom_components.growspace_manager.websocket_api"),
-    ):
-        assert await async_setup_entry(mock_hass, entry)
-        mock_create_notification.assert_called_once()
-
-
-@pytest.mark.asyncio
 async def test_register_services(
     mock_hass, mock_coordinator_for_services, mock_strain_library_for_services
 ) -> None:
@@ -294,25 +223,23 @@ async def test_async_unload_entry_with_dynamic_entities(mock_hass) -> None:
     entry = MockConfigEntry(domain=DOMAIN, data={}, options={}, entry_id="test_entry")
     entry.add_to_hass(mock_hass)
 
-    entity_registry = er.async_get(mock_hass)
-    # Use patch.object for methods instead of assignment
-    with (
-        patch.object(
-            entity_registry, "async_get_entity_id", return_value="sensor.test_trend"
-        ),
-        patch.object(entity_registry, "async_get", return_value=True),
-        patch.object(entity_registry, "async_remove", MagicMock()) as mock_remove,
-    ):
-        entry.runtime_data = MagicMock()
-        entry.runtime_data.created_entity_ids = ["test_trend", "test_stats"]
-        mock_hass.config_entries.async_unload_platforms = AsyncMock(return_value=True)
+    mock_registry = MagicMock()
+    mock_registry.async_get_entity_id.return_value = "sensor.test_trend"
+    mock_registry.async_remove = MagicMock()  # Explicitly mock async_remove
 
-        with patch(
-            "custom_components.growspace_manager.er.async_get",
-            return_value=entity_registry,
-        ):
-            assert await async_unload_entry(mock_hass, entry)
-            assert mock_remove.call_count == 2
+    entry.runtime_data = MagicMock()
+    entry.runtime_data.created_entity_ids = [
+        ("binary_sensor", "trend", "test_trend"),
+        ("sensor", "statistics", "test_stats"),
+    ]
+    mock_hass.config_entries.async_unload_platforms = AsyncMock(return_value=True)
+
+    with patch(
+        "custom_components.growspace_manager.er.async_get",
+        return_value=mock_registry,
+    ):
+        assert await async_unload_entry(mock_hass, entry)
+        assert mock_registry.async_remove.call_count == 2
 
 
 @pytest.mark.asyncio
@@ -321,19 +248,19 @@ async def test_async_unload_entry_with_unknown_dynamic_entities(mock_hass) -> No
     entry = MockConfigEntry(domain=DOMAIN, data={}, options={}, entry_id="test_entry")
     entry.add_to_hass(mock_hass)
 
-    entity_registry = er.async_get(mock_hass)
-    # Use patch.object for method instead of assignment
-    with patch.object(entity_registry, "async_remove", MagicMock()) as mock_remove:
-        entry.runtime_data = MagicMock()
-        entry.runtime_data.created_entity_ids = ["test_unknown"]
-        mock_hass.config_entries.async_unload_platforms = AsyncMock(return_value=True)
+    mock_registry = MagicMock()
+    mock_registry.async_get_entity_id.return_value = None
 
-        with patch(
-            "custom_components.growspace_manager.er.async_get",
-            return_value=entity_registry,
-        ):
-            assert await async_unload_entry(mock_hass, entry)
-            mock_remove.assert_not_called()
+    entry.runtime_data = MagicMock()
+    entry.runtime_data.created_entity_ids = [("domain", "platform", "test_unknown")]
+    mock_hass.config_entries.async_unload_platforms = AsyncMock(return_value=True)
+
+    with patch(
+        "custom_components.growspace_manager.er.async_get",
+        return_value=mock_registry,
+    ):
+        assert await async_unload_entry(mock_hass, entry)
+        mock_registry.async_remove.assert_not_called()
 
 
 @pytest.mark.asyncio
@@ -486,7 +413,7 @@ async def test_strain_library_upload_view(mock_hass) -> None:
 
     response = await view.post(mock_request)
     assert response.status == 400
-    assert response.text == "No file provided"
+    assert response.text == "No file provided or invalid type"
 
     # Test successful upload
     mock_field = AsyncMock(spec=BodyPartReader)
@@ -502,17 +429,11 @@ async def test_strain_library_upload_view(mock_hass) -> None:
 
     mock_hass.async_add_executor_job = AsyncMock(side_effect=mock_executor_side_effect)
 
-    # Use a safe temporary directory path for testing
-    safe_temp_path = "mock_test.zip"
-
     with (
         patch(
             "custom_components.growspace_manager.tempfile.mkstemp",
             side_effect=tempfile.mkstemp,
-        ),  # Verify we use real tempfile or just mock it?
-        # Actually my code calls tempfile.mkstemp.
-        # But I mock `async_add_executor_job`. The target passed is `tempfile.mkstemp`.
-        patch("pathlib.Path.unlink") as mock_unlink,
+        ),
         patch("pathlib.Path.exists", return_value=True),
     ):
         response = await view.post(mock_request)

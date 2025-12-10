@@ -255,8 +255,12 @@ class PlantLifecycleManager:
             True, as the plant is always moved.
         """
         # Record analytics before moving
-        veg_days = self.coordinator.calculate_days_in_stage(plant, PlantStage.VEG)
-        flower_days = self.coordinator.calculate_days_in_stage(plant, PlantStage.FLOWER)
+        veg_days = self.coordinator.serializer.calculate_days_in_stage(
+            plant, PlantStage.VEG
+        )
+        flower_days = self.coordinator.serializer.calculate_days_in_stage(
+            plant, PlantStage.FLOWER
+        )
 
         if veg_days > 0 or flower_days > 0:
             try:

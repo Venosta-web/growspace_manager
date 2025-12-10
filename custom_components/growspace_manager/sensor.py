@@ -20,12 +20,10 @@ from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity import Entity
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
-from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from homeassistant.helpers.event import async_track_state_change_event
+from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .const import (
-    DOMAIN,
-)
+from .const import DOMAIN
 
 # Local / relative imports
 from .coordinator import GrowspaceCoordinator
@@ -33,7 +31,6 @@ from .helpers import async_setup_statistics_sensor, async_setup_trend_sensor
 from .models import Growspace, Plant
 from .utils import (
     VPDCalculator,
-    calculate_days_since,
     calculate_plant_stage,
     days_to_week,
 )
@@ -65,13 +62,23 @@ async def _async_create_derivative_sensors(
                 trend_unique_id = await async_setup_trend_sensor(
                     hass, source_sensor, growspace.id, growspace.name, sensor_type
                 )
-                if trend_unique_id and trend_unique_id not in created_entity_ids:
-                    created_entity_ids.append(trend_unique_id)
+                if (
+                    trend_unique_id
+                    and ("binary_sensor", "trend", trend_unique_id)
+                    not in created_entity_ids
+                ):
+                    created_entity_ids.append(
+                        ("binary_sensor", "trend", trend_unique_id)
+                    )
                 stats_unique_id = await async_setup_statistics_sensor(
                     hass, source_sensor, growspace.id, growspace.name, sensor_type
                 )
-                if stats_unique_id and stats_unique_id not in created_entity_ids:
-                    created_entity_ids.append(stats_unique_id)
+                if (
+                    stats_unique_id
+                    and ("sensor", "statistics", stats_unique_id)
+                    not in created_entity_ids
+                ):
+                    created_entity_ids.append(("sensor", "statistics", stats_unique_id))
 
 
 async def async_setup_entry(
@@ -578,125 +585,17 @@ class GrowspaceOverviewSensor(CoordinatorEntity[GrowspaceCoordinator], SensorEnt
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
         """Return the detailed state attributes for the growspace."""
-        # Always fetch the latest growspace object from the coordinator
-        growspace = self.coordinator.growspaces[self.growspace_id]
-        plants = self.coordinator.get_growspace_plants(self.growspace_id)
-
-        # Calculate max stage days
-        max_veg = max(
-            (calculate_days_since(p.veg_start) for p in plants if p.veg_start),
-            default=0,
+        # Fetch pre-calculated serialization from coordinator
+        # This replaces all the heavy logic that was previously here
+        serialized = self.coordinator.data.get("serialized_growspaces", {}).get(
+            self.growspace_id, {}
         )
-        max_flower = max(
-            (calculate_days_since(p.flower_start) for p in plants if p.flower_start),
-            default=0,
-        )
-        max_dry = max(
-            (calculate_days_since(p.dry_start) for p in plants if p.dry_start),
-            default=0,
-        )
-        max_cure = max(
-            (calculate_days_since(p.cure_start) for p in plants if p.cure_start),
-            default=0,
-        )
+        # Create a copy to avoid modifying the original data
+        attributes = serialized.copy()
 
-        # Calculate weeks from days
-        veg_week = days_to_week(max_veg)
-        flower_week = days_to_week(max_flower)
-
-        biological_metrics = self.coordinator._get_biological_metrics(
-            growspace, max_veg, max_flower, max_dry, max_cure
-        )
-
-        # Get irrigation settings from growspace object
-        irrigation_options = growspace.irrigation_config
-
-        _LOGGER.debug(
-            "GrowspaceOverviewSensor attributes update for %s. Irrigation items: %d",
-            self.growspace_id,
-            len(irrigation_options.get("irrigation_times", [])),
-        )
-
-        # Determine growspace type
-        gs_type = "normal"
-        if growspace.id in ("mother", "clone", "dry", "cure"):
-            gs_type = growspace.id
-
-        # Build attributes dict
-        attributes = {
-            "growspace_id": growspace.id,
-            "type": gs_type,
-            "rows": growspace.rows,
-            "plants_per_row": growspace.plants_per_row,
-            "total_plants": len(plants),
-            "notification_target": growspace.notification_target,
-            "max_veg_days": max_veg,
-            "max_flower_days": max_flower,
-            "veg_week": veg_week,
-            "flower_week": flower_week,
-            "max_stage_summary": f"Veg: {max_veg}d (W{veg_week}), Flower: {max_flower}d (W{flower_week})",
-            **biological_metrics,
-        }
-
-        # Add environment attributes
-        attributes.update(self.coordinator._get_environment_attributes(growspace))
-
-        return attributes
-
-    def _get_environment_attributes(self, growspace) -> dict[str, Any]:
-        """Get environment-related attributes."""
-        attributes = {}
-        if growspace.environment_config:
-            env_config = growspace.environment_config
-
-            # Dehumidifier
-            dehumidifier_entity = env_config.get("dehumidifier_entity")
-            if dehumidifier_entity:
-                state_obj = self.coordinator.hass.states.get(dehumidifier_entity)
-                attributes["dehumidifier_entity"] = dehumidifier_entity
-                attributes["dehumidifier_state"] = (
-                    state_obj.state if state_obj else None
-                )
-                if state_obj:
-                    attributes["dehumidifier_humidity"] = state_obj.attributes.get(
-                        "humidity"
-                    )
-                    attributes["dehumidifier_current_humidity"] = (
-                        state_obj.attributes.get("current_humidity")
-                    )
-                    attributes["dehumidifier_mode"] = state_obj.attributes.get("mode")
-                    attributes["dehumidifier_control_enabled"] = env_config.get(
-                        "control_dehumidifier", False
-                    )
-            # Exhaust Sensor
-            exhaust_entity = env_config.get("exhaust_sensor")
-            if exhaust_entity:
-                state_obj = self.coordinator.hass.states.get(exhaust_entity)
-                attributes["exhaust_entity"] = exhaust_entity
-                attributes["exhaust_state"] = state_obj.state if state_obj else None
-
-            # Humidifier Sensor
-            humidifier_entity = env_config.get("humidifier_sensor")
-            if humidifier_entity:
-                state_obj = self.coordinator.hass.states.get(humidifier_entity)
-                attributes["humidifier_entity"] = humidifier_entity
-                attributes["humidifier_state"] = state_obj.state if state_obj else None
-
-            # VPD Sensor
-            vpd_entity = env_config.get("vpd_sensor")
-            if vpd_entity:
-                state_obj = self.coordinator.hass.states.get(vpd_entity)
-                attributes["vpd_sensor"] = vpd_entity
-                attributes["vpd_value"] = state_obj.state if state_obj else None
-
-            # Soil Moisture Sensor
-            soil_moisture_entity = env_config.get("soil_moisture_sensor")
-            if soil_moisture_entity:
-                state_obj = self.coordinator.hass.states.get(soil_moisture_entity)
-                attributes["soil_moisture_sensor"] = soil_moisture_entity
-                attributes["soil_moisture_value"] = (
-                    state_obj.state if state_obj else None
-                )
+        # Remove large data structures
+        attributes.pop("grid", None)
+        attributes.pop("plants", None)
 
         return attributes
 
@@ -755,13 +654,19 @@ class PlantEntity(SensorEntity):
             return {}
 
         stage = calculate_plant_stage(plant)
-        seedling_days = self.coordinator.calculate_days_in_stage(plant, "seedling")
-        mother_days = self.coordinator.calculate_days_in_stage(plant, "mother")
-        clone_days = self.coordinator.calculate_days_in_stage(plant, "clone")
-        veg_days = self.coordinator.calculate_days_in_stage(plant, "veg")
-        flower_days = self.coordinator.calculate_days_in_stage(plant, "flower")
-        dry_days = self.coordinator.calculate_days_in_stage(plant, "dry")
-        cure_days = self.coordinator.calculate_days_in_stage(plant, "cure")
+        seedling_days = self.coordinator.serializer.calculate_days_in_stage(
+            plant, "seedling"
+        )
+        mother_days = self.coordinator.serializer.calculate_days_in_stage(
+            plant, "mother"
+        )
+        clone_days = self.coordinator.serializer.calculate_days_in_stage(plant, "clone")
+        veg_days = self.coordinator.serializer.calculate_days_in_stage(plant, "veg")
+        flower_days = self.coordinator.serializer.calculate_days_in_stage(
+            plant, "flower"
+        )
+        dry_days = self.coordinator.serializer.calculate_days_in_stage(plant, "dry")
+        cure_days = self.coordinator.serializer.calculate_days_in_stage(plant, "cure")
 
         # Calculate weeks
         veg_week = days_to_week(veg_days or 0)

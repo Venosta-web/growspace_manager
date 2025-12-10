@@ -248,7 +248,7 @@ class NotificationManager:
 
                 plants = self.coordinator.get_growspace_plants(gs_id)
                 for plant in plants:
-                    days_in_stage = self.coordinator.calculate_days_in_stage(
+                    days_in_stage = self.coordinator.serializer.calculate_days_in_stage(
                         plant, trigger_type
                     )
 

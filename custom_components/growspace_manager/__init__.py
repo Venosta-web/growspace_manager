@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 import pathlib
 import tempfile
+from typing import Any
 
 import voluptuous as vol
 from aiohttp import BodyPartReader, web
@@ -163,8 +164,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: GrowspaceConfigEntry) ->
     await async_setup_intents(hass)
 
     # Handle pending growspace if initiated before entry setup completion
-    if "pending_growspace" in hass.data.get(DOMAIN, {}):
-        pending = hass.data[DOMAIN].pop("pending_growspace")
+    pending = entry.data.get("pending_growspace")
+    if pending:
         try:
             await coordinator.async_add_growspace(
                 name=pending["name"],
@@ -175,6 +176,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: GrowspaceConfigEntry) ->
             _LOGGER.info(
                 "Created pending growspace: %s", pending.get("name", "unknown")
             )
+
+            # Clean up pending data from config entry
+            new_data = entry.data.copy()
+            new_data.pop("pending_growspace")
+            hass.config_entries.async_update_entry(entry, data=new_data)
+
         except (KeyError, RuntimeError):
             _LOGGER.exception(
                 "Failed to create pending growspace %s",
@@ -216,18 +223,7 @@ def _async_remove_dynamic_entities(
     created_unique_ids = coordinator.created_entity_ids
     entity_registry = er.async_get(hass)
 
-    for unique_id in created_unique_ids:
-        # Determine the domain and platform from the unique_id
-        if "trend" in unique_id:
-            domain = "binary_sensor"
-            platform = "trend"
-        elif "stats" in unique_id:
-            domain = "sensor"
-            platform = "statistics"
-        else:
-            _LOGGER.warning("Unknown platform for unique_id: %s", unique_id)
-            continue
-
+    for domain, platform, unique_id in created_unique_ids:
         entity_id = entity_registry.async_get_entity_id(domain, platform, unique_id)
         if entity_id and entity_registry.async_get(entity_id):
             entity_registry.async_remove(entity_id)
@@ -301,24 +297,16 @@ class StrainLibraryUploadView(HomeAssistantView):
         self.strain_library = strain_lib
         self.coordinator = coordinator
 
-    async def post(self, request: web.Request) -> web.Response:
-        """Handle the POST request for file upload."""
-        # 1. Read the multipart data (file)
-        reader = await request.multipart()
-        file_field = await reader.next()
-
+    def _is_valid_upload_field(self, file_field: Any) -> bool:
+        """Validate the uploaded file field."""
         if not file_field:
-            return web.Response(status=400, text="No file provided")
-
+            return False
         if not isinstance(file_field, BodyPartReader):
-            return web.Response(status=400, text="Invalid file upload type")
+            return False
+        return file_field.name == "file"
 
-        if file_field.name != "file":
-            return web.Response(status=400, text="No file provided")
-
-        # 2. Save to temp file
-        # (Use a scalable chunk write to avoid memory issues)
-        # Create temp file in executor to avoid blocking
+    async def _save_upload_to_temp(self, file_field: BodyPartReader) -> pathlib.Path:
+        """Save uploaded stream to a temporary file."""
         temp_fd, temp_path_str = await self.hass.async_add_executor_job(
             tempfile.mkstemp, ".zip"
         )
@@ -337,12 +325,27 @@ class StrainLibraryUploadView(HomeAssistantView):
                 await self.hass.async_add_executor_job(
                     write_chunk, temp_path_str, chunk
                 )
-
+            return temp_path
         except Exception:
             # Clean up if writing fails
             if temp_path.exists():
                 await self.hass.async_add_executor_job(temp_path.unlink)
             raise
+
+    async def post(self, request: web.Request) -> web.Response:
+        """Handle the POST request for file upload."""
+        # 1. Read the multipart data (file)
+        reader = await request.multipart()
+        file_field = await reader.next()
+
+        if not self._is_valid_upload_field(file_field):
+            return web.Response(status=400, text="No file provided or invalid type")
+
+        # 2. Save to temp file
+        try:
+            temp_path = await self._save_upload_to_temp(file_field)
+        except Exception:
+            return web.Response(status=500, text="Failed to save upload")
 
         try:
             # 3. Process Import
@@ -360,7 +363,7 @@ class StrainLibraryUploadView(HomeAssistantView):
         finally:
             # Cleanup
             if temp_path.exists():
-                temp_path.unlink()
+                await self.hass.async_add_executor_job(temp_path.unlink)
 
 
 def create_notification(

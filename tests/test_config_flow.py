@@ -243,8 +243,8 @@ async def test_config_flow_add_growspace_with_data(hass: HomeAssistant) -> None:
     result = await flow.async_step_add_growspace(user_input=user_input)
 
     assert result.get("type") == FlowResultType.CREATE_ENTRY
-    assert "pending_growspace" in hass.data[DOMAIN]
-    assert hass.data[DOMAIN]["pending_growspace"]["name"] == "Test Growspace"
+    assert "pending_growspace" in result.get("data", {})
+    assert result["data"]["pending_growspace"]["name"] == "Test Growspace"
 
 
 @pytest.mark.asyncio
