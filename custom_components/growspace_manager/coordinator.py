@@ -1152,8 +1152,6 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
             "max_stage_summary": f"Veg: {max_veg}d (W{veg_week}), Flower: {max_flower}d (W{flower_week})",
             "irrigation_config": irrigation_options,
             "irrigation_strategy": irrigation_strategy_dict,
-            "irrigation_times": list(irrigation_options.get("irrigation_times", [])),
-            "drain_times": list(irrigation_options.get("drain_times", [])),
             "grid": grid,
             **biological_metrics,
         }
