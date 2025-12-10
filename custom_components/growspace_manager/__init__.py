@@ -11,10 +11,10 @@ import voluptuous as vol
 from aiohttp import BodyPartReader, web
 from homeassistant.components import websocket_api
 from homeassistant.components.http import HomeAssistantView
-from homeassistant.config_entries import ConfigEntry
+from homeassistant.config_entries import ConfigEntry, ConfigEntryState
 from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import ServiceValidationError
 from homeassistant.helpers import config_validation as cv
-from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.storage import Store
 from homeassistant.helpers.typing import ConfigType
 
@@ -23,7 +23,7 @@ from .coordinator import GrowspaceCoordinator
 from .dehumidifier_coordinator import DehumidifierCoordinator
 from .intent import async_setup_intents
 from .irrigation_coordinator import IrrigationCoordinator
-from .service_registration import register_services, remove_services
+from .service_registration import get_coordinator_for_call, register_services
 from .services.strain_library import StrainLibrary
 from .vwc_irrigation_coordinator import VWCIrrigationCoordinator
 
@@ -37,6 +37,91 @@ type GrowspaceConfigEntry = ConfigEntry[GrowspaceCoordinator]
 
 async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
     """Set up the Growspace Manager component."""
+    hass.data.setdefault(DOMAIN, {})
+
+    # Initialize and load Strain Library (global instance)
+    strain_library_instance = StrainLibrary(hass)
+    await strain_library_instance.async_setup()
+    hass.data[DOMAIN]["strain_library"] = strain_library_instance
+
+    # Register View
+    hass.http.register_view(StrainLibraryUploadView(hass, strain_library_instance))
+
+    # Register all custom services
+    _LOGGER.debug("Registering services for domain %s", DOMAIN)
+    await register_services(hass, strain_library_instance)
+
+    # Register WebSocket API
+    WS_TYPE_GET_LOG = f"{DOMAIN}/get_log"
+    SCHEMA_WS_GET_LOG = websocket_api.BASE_COMMAND_MESSAGE_SCHEMA.extend(
+        {
+            vol.Required("type"): WS_TYPE_GET_LOG,
+            vol.Optional("growspace_id"): str,
+        }
+    )
+
+    @websocket_api.async_response
+    async def websocket_get_event_log(hass: HomeAssistant, connection, msg):
+        """Handle get event log command."""
+        growspace_id = msg.get("growspace_id")
+        events_data = {}
+
+        if growspace_id:
+            try:
+                coordinator = get_coordinator_for_call(hass, msg)
+                events = coordinator.events.get(growspace_id, [])
+                events_data[growspace_id] = [e.to_dict() for e in events]
+            except (
+                ServiceValidationError
+            ):  # invalid growspace_id or no coordinator found
+                _LOGGER.warning(
+                    "Could not find coordinator for growspace %s", growspace_id
+                )
+        else:
+            # Aggregate from all coordinators
+            for entry in hass.config_entries.async_entries(DOMAIN):
+                if entry.state == ConfigEntryState.LOADED and hasattr(
+                    entry, "runtime_data"
+                ):
+                    coord = entry.runtime_data
+                    for gid, evts in coord.events.items():
+                        events_data[gid] = [e.to_dict() for e in evts]
+
+        connection.send_result(msg["id"], events_data)
+
+    websocket_api.async_register_command(
+        hass, WS_TYPE_GET_LOG, websocket_get_event_log, SCHEMA_WS_GET_LOG
+    )
+
+    # Growspace Data
+    WS_TYPE_GET_DATA = f"{DOMAIN}/get_data"
+    SCHEMA_WS_GET_DATA = websocket_api.BASE_COMMAND_MESSAGE_SCHEMA.extend(
+        {
+            vol.Required("type"): WS_TYPE_GET_DATA,
+            vol.Optional("growspace_id"): str,
+        }
+    )
+
+    @websocket_api.async_response
+    async def websocket_get_growspace_data(hass: HomeAssistant, connection, msg):
+        """Handle get growspace data command."""
+        growspace_id = msg.get("growspace_id")
+        try:
+            coordinator = get_coordinator_for_call(hass, msg)
+            data = coordinator.get_growspace_data(growspace_id)
+            connection.send_result(msg["id"], data)
+        except ServiceValidationError as err:
+            connection.send_error(msg["id"], "invalid_args", str(err))
+        except Exception as e:
+            connection.send_error(msg["id"], "unknown_error", str(e))
+
+    websocket_api.async_register_command(
+        hass, WS_TYPE_GET_DATA, websocket_get_growspace_data, SCHEMA_WS_GET_DATA
+    )
+
+    # Set up intents
+    await async_setup_intents(hass)
+
     return True
 
 
@@ -50,9 +135,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: GrowspaceConfigEntry) ->
     store: Store = Store(hass, STORAGE_VERSION, STORAGE_KEY)
     data = await store.async_load() or {}
 
-    # Initialize and load Strain Library (global instance)
-    strain_library_instance = StrainLibrary(hass)
-    await strain_library_instance.async_setup()
+    # Retrieve global Strain Library
+    strain_library_instance = hass.data[DOMAIN]["strain_library"]
 
     coordinator = GrowspaceCoordinator(
         hass,
@@ -61,10 +145,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: GrowspaceConfigEntry) ->
         strain_library=strain_library_instance,
     )
     await coordinator.async_load()  # Load data into the coordinator
-
-    hass.http.register_view(
-        StrainLibraryUploadView(hass, strain_library_instance, coordinator)
-    )
 
     entry.runtime_data = coordinator
 
@@ -108,61 +188,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: GrowspaceConfigEntry) ->
 
     entry.add_update_listener(_async_update_listener)
 
-    # Register all custom services
-    _LOGGER.debug("Registering services for domain %s", DOMAIN)
-    await register_services(hass, coordinator, strain_library_instance)
-
-    # Register WebSocket API
-    WS_TYPE_GET_LOG = f"{DOMAIN}/get_log"
-    SCHEMA_WS_GET_LOG = websocket_api.BASE_COMMAND_MESSAGE_SCHEMA.extend(
-        {
-            vol.Required("type"): WS_TYPE_GET_LOG,
-            vol.Optional("growspace_id"): str,
-        }
-    )
-
-    @websocket_api.async_response
-    async def websocket_get_event_log(hass: HomeAssistant, connection, msg):
-        """Handle get event log command."""
-        growspace_id = msg.get("growspace_id")
-        events_data = {}
-
-        if growspace_id:
-            events = coordinator.events.get(growspace_id, [])
-            events_data[growspace_id] = [e.to_dict() for e in events]
-        else:
-            for gid, evts in coordinator.events.items():
-                events_data[gid] = [e.to_dict() for e in evts]
-
-        connection.send_result(msg["id"], events_data)
-
-    websocket_api.async_register_command(
-        hass, WS_TYPE_GET_LOG, websocket_get_event_log, SCHEMA_WS_GET_LOG
-    )
-
-    # Growspace Data
-    WS_TYPE_GET_DATA = f"{DOMAIN}/get_data"
-    SCHEMA_WS_GET_DATA = websocket_api.BASE_COMMAND_MESSAGE_SCHEMA.extend(
-        {
-            vol.Required("type"): WS_TYPE_GET_DATA,
-            vol.Optional("growspace_id"): str,
-        }
-    )
-
-    @websocket_api.async_response
-    async def websocket_get_growspace_data(hass: HomeAssistant, connection, msg):
-        """Handle get growspace data command."""
-        growspace_id = msg.get("growspace_id")
-        data = coordinator.get_growspace_data(growspace_id)
-        connection.send_result(msg["id"], data)
-
-    websocket_api.async_register_command(
-        hass, WS_TYPE_GET_DATA, websocket_get_growspace_data, SCHEMA_WS_GET_DATA
-    )
-
-    # Set up intents
-    await async_setup_intents(hass)
-
     # Handle pending growspace if initiated before entry setup completion
     pending = entry.data.get("pending_growspace")
     if pending:
@@ -205,9 +230,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: GrowspaceConfigEntry) ->
     return True
 
 
-# ... _register_services ...
-
-
 def _async_cancel_coordinators(coordinator: GrowspaceCoordinator) -> None:
     """Cancel irrigation and dehumidifier listeners."""
     for irr_coordinator in coordinator.irrigation_coordinators.values():
@@ -216,25 +238,7 @@ def _async_cancel_coordinators(coordinator: GrowspaceCoordinator) -> None:
         dehum_coordinator.unload()
 
 
-def _async_remove_dynamic_entities(
-    hass: HomeAssistant, coordinator: GrowspaceCoordinator
-) -> None:
-    """Remove dynamically created entities."""
-    created_unique_ids = coordinator.created_entity_ids
-    entity_registry = er.async_get(hass)
-
-    for domain, platform, unique_id in created_unique_ids:
-        entity_id = entity_registry.async_get_entity_id(domain, platform, unique_id)
-        if entity_id and entity_registry.async_get(entity_id):
-            entity_registry.async_remove(entity_id)
-            _LOGGER.info(
-                "Removed dynamically created entity: %s (unique_id: %s)",
-                entity_id,
-                unique_id,
-            )
-
-
-# ... _async_remove_services ...
+# Removed _async_remove_dynamic_entities per user request
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: GrowspaceConfigEntry) -> bool:
@@ -243,21 +247,12 @@ async def async_unload_entry(hass: HomeAssistant, entry: GrowspaceConfigEntry) -
 
     # Clean up dynamically created entities before unloading platforms
     _async_cancel_coordinators(entry.runtime_data)
-    _async_remove_dynamic_entities(hass, entry.runtime_data)
+    # _async_remove_dynamic_entities(hass, entry.runtime_data) # Removed per request
 
     unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
 
     if unload_ok:
-        entries = hass.config_entries.async_entries(DOMAIN)
-        if (
-            len(entries) == 1
-        ):  # This is the last one (it's still in the list until fully unloaded?)
-            # Actually async_unload_entry is called before it's removed from entries list?
-            # Let's assume if we are unloading, we might want to clean up if no other entries.
-            pass
-
-        # For now, let's just remove services.
-        remove_services(hass)
+        # Services remain registered until HA shutdown
 
         _LOGGER.info("Unloaded Growspace Manager for entry %s", entry.entry_id)
         return True
@@ -290,12 +285,10 @@ class StrainLibraryUploadView(HomeAssistantView):
         self,
         hass: HomeAssistant,
         strain_lib: StrainLibrary,
-        coordinator: GrowspaceCoordinator,
     ) -> None:
         """Initialize the view."""
         self.hass = hass
         self.strain_library = strain_lib
-        self.coordinator = coordinator
 
     def _is_valid_upload_field(self, file_field: Any) -> bool:
         """Validate the uploaded file field."""
@@ -353,7 +346,14 @@ class StrainLibraryUploadView(HomeAssistantView):
                 str(temp_path), merge=True
             )
             await self.strain_library.save()
-            await self.coordinator.async_request_refresh()
+
+            # Request refresh for all coordinators
+            for entry in self.hass.config_entries.async_entries(DOMAIN):
+                if entry.state == ConfigEntryState.LOADED and hasattr(
+                    entry, "runtime_data"
+                ):
+                    await entry.runtime_data.async_request_refresh()
+
             return self.json({"success": True, "imported_count": count})
 
         except Exception as err:  # pylint: disable=broad-except

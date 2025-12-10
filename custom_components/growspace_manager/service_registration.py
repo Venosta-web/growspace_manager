@@ -6,7 +6,9 @@ import logging
 from functools import partial
 from typing import Any, cast
 
-from homeassistant.core import HomeAssistant, SupportsResponse
+from homeassistant.config_entries import ConfigEntryState
+from homeassistant.core import HomeAssistant, ServiceCall, SupportsResponse
+from homeassistant.exceptions import ServiceValidationError
 
 from .const import DOMAIN
 from .coordinator import GrowspaceCoordinator
@@ -56,220 +58,230 @@ from .services.strain_library import StrainLibrary
 _LOGGER = logging.getLogger(__name__)
 
 
+def get_coordinator_for_call(
+    hass: HomeAssistant, call: ServiceCall | dict
+) -> GrowspaceCoordinator:
+    """Retrieve the correct coordinator based on service call data."""
+    data = call.data if isinstance(call, ServiceCall) else call
+
+    # Get all potential coordinators from loaded entries
+    coordinators = [
+        entry.runtime_data
+        for entry in hass.config_entries.async_entries(DOMAIN)
+        if entry.state == ConfigEntryState.LOADED and hasattr(entry, "runtime_data")
+    ]
+
+    # 1. Try growspace_id
+    if growspace_id := (data.get("growspace_id") or data.get("target_growspace_id")):
+        for coordinator in coordinators:
+            if growspace_id in coordinator.growspaces:
+                return coordinator
+
+    # 2. Try plant_id
+    if plant_id := (data.get("plant_id") or data.get("mother_plant_id")):
+        for coordinator in coordinators:
+            if plant_id in coordinator.plants:
+                return coordinator
+
+    # 3. Fallback: If only one config entry exists, use it.
+    if len(coordinators) == 1:
+        return coordinators[0]
+
+    raise ServiceValidationError(
+        "Could not determine which Growspace Manager instance to use. "
+        "Please specify a valid growspace_id or plant_id."
+    )
+
+
 async def register_services(
     hass: HomeAssistant,
-    coordinator: GrowspaceCoordinator,
     strain_lib: StrainLibrary,
 ) -> None:
     """Register services for the Growspace Manager integration."""
+
+    async def _wrap_dynamic(
+        handler: Any,
+        needs_strain_lib: bool,
+        call: ServiceCall,
+    ) -> Any:
+        coordinator = get_coordinator_for_call(hass, call)
+        if needs_strain_lib:
+            return await handler(hass, coordinator, strain_lib, call)
+        return await handler(hass, coordinator, call)
+
+    # Helper to create the wrapper
+    def wrap(handler: Any, needs_strain_lib: bool = True) -> Any:
+        return partial(_wrap_dynamic, handler, needs_strain_lib)
+
     services = [
         (
             "add_growspace",
-            partial(
-                growspace.handle_add_growspace,
-                hass,
-                coordinator,
-                strain_lib,
-            ),
+            wrap(growspace.handle_add_growspace, True),
             ADD_GROWSPACE_SCHEMA,
         ),
         (
             "remove_growspace",
-            partial(growspace.handle_remove_growspace, hass, coordinator),
+            wrap(growspace.handle_remove_growspace, False),
             REMOVE_GROWSPACE_SCHEMA,
         ),
         (
             "add_plant",
-            partial(plant.handle_add_plant, hass, coordinator, strain_lib),
+            wrap(plant.handle_add_plant, True),
             ADD_PLANT_SCHEMA,
         ),
         (
             "remove_plant",
-            partial(plant.handle_remove_plant, hass, coordinator, strain_lib),
+            wrap(plant.handle_remove_plant, True),
             REMOVE_PLANT_SCHEMA,
         ),
         (
             "update_plant",
-            partial(plant.handle_update_plant, hass, coordinator, strain_lib),
+            wrap(plant.handle_update_plant, True),
             UPDATE_PLANT_SCHEMA,
         ),
         (
             "move_plant",
-            partial(plant.handle_move_plant, hass, coordinator, strain_lib),
+            wrap(plant.handle_move_plant, True),
             MOVE_PLANT_SCHEMA,
         ),
         (
             "switch_plants",
-            partial(plant.handle_switch_plants, hass, coordinator, strain_lib),
+            wrap(plant.handle_switch_plants, True),
             SWITCH_PLANT_SCHEMA,
         ),
         (
             "take_clone",
-            partial(plant.handle_take_clone, hass, coordinator, strain_lib),
+            wrap(plant.handle_take_clone, True),
             TAKE_CLONE_SCHEMA,
         ),
         (
             "move_clone",
-            partial(plant.handle_move_clone, hass, coordinator, strain_lib),
+            wrap(plant.handle_move_clone, True),
             MOVE_CLONE_SCHEMA,
         ),
         (
             "transition_plant_stage",
-            partial(plant.handle_transition_plant_stage, hass, coordinator, strain_lib),
+            wrap(plant.handle_transition_plant_stage, True),
             TRANSITION_PLANT_SCHEMA,
         ),
         (
             "harvest_plant",
-            partial(plant.handle_harvest_plant, hass, coordinator, strain_lib),
+            wrap(plant.handle_harvest_plant, True),
             HARVEST_PLANT_SCHEMA,
         ),
         (
             "add_strain",
-            partial(strain_library.handle_add_strain, hass, coordinator, strain_lib),
+            wrap(strain_library.handle_add_strain, True),
             ADD_STRAIN_SCHEMA,
         ),
         (
             "remove_strain",
-            partial(strain_library.handle_remove_strain, hass, coordinator, strain_lib),
+            wrap(strain_library.handle_remove_strain, True),
             REMOVE_STRAIN_SCHEMA,
         ),
         (
             "update_strain_meta",
-            partial(
-                strain_library.handle_update_strain_meta, hass, coordinator, strain_lib
-            ),
+            wrap(strain_library.handle_update_strain_meta, True),
             UPDATE_STRAIN_META_SCHEMA,
         ),
         (
             "import_strain_library",
-            partial(
-                strain_library.handle_import_strain_library,
-                hass,
-                coordinator,
-                strain_lib,
-            ),
+            wrap(strain_library.handle_import_strain_library, True),
             IMPORT_STRAIN_LIBRARY_SCHEMA,
         ),
         (
             "export_strain_library",
-            partial(
-                strain_library.handle_export_strain_library,
-                hass,
-                coordinator,
-                strain_lib,
-            ),
+            wrap(strain_library.handle_export_strain_library, True),
             EXPORT_STRAIN_LIBRARY_SCHEMA,
         ),
         (
             "clear_strain_library",
-            partial(
-                strain_library.handle_clear_strain_library,
-                hass,
-                coordinator,
-                strain_lib,
-            ),
+            wrap(strain_library.handle_clear_strain_library, True),
             CLEAR_STRAIN_LIBRARY_SCHEMA,
         ),
         (
             "strain_recommendation",
-            partial(
-                ai_assistant.handle_strain_recommendation,
-                hass,
-                coordinator,
-                strain_lib,
-            ),
+            wrap(ai_assistant.handle_strain_recommendation, True),
             STRAIN_RECOMMENDATION_SCHEMA,
         ),
         (
             "ask_grow_advice",
-            partial(ai_assistant.handle_ask_grow_advice, hass, coordinator, strain_lib),
+            wrap(ai_assistant.handle_ask_grow_advice, True),
             ASK_GROW_ADVICE_SCHEMA,
         ),
         (
             "analyze_all_growspaces",
-            partial(
-                ai_assistant.handle_analyze_all_growspaces,
-                hass,
-                coordinator,
-                strain_lib,
-            ),
+            wrap(ai_assistant.handle_analyze_all_growspaces, True),
             ANALYZE_ALL_GROWSPACES_SCHEMA,
         ),
         (
             "configure_environment",
-            partial(environment.handle_configure_environment, hass, coordinator),
+            wrap(environment.handle_configure_environment, False),
             CONFIGURE_ENVIRONMENT_SCHEMA,
         ),
         (
             "remove_environment",
-            partial(environment.handle_remove_environment, hass, coordinator),
+            wrap(environment.handle_remove_environment, False),
             REMOVE_ENVIRONMENT_SCHEMA,
         ),
         (
             "set_dehumidifier_control",
-            partial(environment.handle_set_dehumidifier_control, hass, coordinator),
+            wrap(environment.handle_set_dehumidifier_control, False),
             SET_DEHUMIDIFIER_CONTROL_SCHEMA,
         ),
         (
             "set_irrigation_settings",
-            partial(irrigation.handle_set_irrigation_settings, hass, coordinator),
+            wrap(irrigation.handle_set_irrigation_settings, False),
             SET_IRRIGATION_SETTINGS_SCHEMA,
         ),
         (
             "add_irrigation_time",
-            partial(irrigation.handle_add_irrigation_time, hass, coordinator),
+            wrap(irrigation.handle_add_irrigation_time, False),
             ADD_IRRIGATION_TIME_SCHEMA,
         ),
         (
             "remove_irrigation_time",
-            partial(irrigation.handle_remove_irrigation_time, hass, coordinator),
+            wrap(irrigation.handle_remove_irrigation_time, False),
             REMOVE_IRRIGATION_TIME_SCHEMA,
         ),
         (
             "add_drain_time",
-            partial(irrigation.handle_add_drain_time, hass, coordinator),
+            wrap(irrigation.handle_add_drain_time, False),
             ADD_DRAIN_TIME_SCHEMA,
         ),
         (
             "remove_drain_time",
-            partial(irrigation.handle_remove_drain_time, hass, coordinator),
+            wrap(irrigation.handle_remove_drain_time, False),
             REMOVE_DRAIN_TIME_SCHEMA,
         ),
         (
             "debug_list_growspaces",
-            partial(debug.handle_debug_list_growspaces, hass, coordinator),
+            wrap(debug.handle_debug_list_growspaces, False),
             DEBUG_LIST_GROWSPACES_SCHEMA,
         ),
         (
             "debug_reset_special_growspaces",
-            partial(debug.handle_debug_reset_special_growspaces, hass, coordinator),
+            wrap(debug.handle_debug_reset_special_growspaces, False),
             DEBUG_RESET_SPECIAL_GROWSPACES_SCHEMA,
         ),
         (
             "debug_consolidate_duplicate_special",
-            partial(
-                debug.handle_debug_consolidate_duplicate_special, hass, coordinator
-            ),
+            wrap(debug.handle_debug_consolidate_duplicate_special, False),
             DEBUG_CONSOLIDATE_DUPLICATE_SPECIAL_SCHEMA,
         ),
         (
             "debug_cleanup_legacy",
-            partial(debug.handle_debug_cleanup_legacy, hass, coordinator),
+            wrap(debug.handle_debug_cleanup_legacy, False),
             DEBUG_CLEANUP_LEGACY_SCHEMA,
         ),
         (
             "test_notification",
-            partial(debug.handle_test_notification, hass, coordinator, strain_lib),
+            wrap(debug.handle_test_notification, True),
             None,
         ),
         (
             "get_strain_library",
-            partial(
-                strain_library.handle_get_strain_library,
-                hass,
-                coordinator,
-                strain_lib,
-            ),
+            wrap(strain_library.handle_get_strain_library, True),
             None,
         ),
     ]
@@ -292,44 +304,3 @@ async def register_services(
             hass.services.async_register(
                 DOMAIN, service_name, cast(Any, handler), schema=schema
             )
-
-
-def remove_services(hass: HomeAssistant) -> None:
-    """Remove services for the Growspace Manager integration."""
-    services = [
-        "add_growspace",
-        "remove_growspace",
-        "add_plant",
-        "remove_plant",
-        "update_plant",
-        "move_plant",
-        "switch_plants",
-        "take_clone",
-        "move_clone",
-        "transition_plant_stage",
-        "harvest_plant",
-        "add_strain",
-        "remove_strain",
-        "update_strain_meta",
-        "export_strain_library",
-        "import_strain_library",
-        "clear_strain_library",
-        "get_strain_library",
-        "ask_grow_advice",
-        "analyze_all_growspaces",
-        "strain_recommendation",
-        "debug_cleanup_legacy",
-        "debug_list_growspaces",
-        "debug_reset_special_growspaces",
-        "debug_consolidate_growspaces",
-        "configure_environment",
-        "remove_environment",
-        "set_dehumidifier_control",
-        "set_irrigation_settings",
-        "add_irrigation_time",
-        "remove_irrigation_time",
-        "add_drain_time",
-        "remove_drain_time",
-    ]
-    for service in services:
-        hass.services.async_remove(DOMAIN, service)
