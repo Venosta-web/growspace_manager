@@ -11,8 +11,9 @@ import voluptuous as vol
 from aiohttp import BodyPartReader, web
 from homeassistant.components import websocket_api
 from homeassistant.components.http import HomeAssistantView
-from homeassistant.config_entries import ConfigEntry
+from homeassistant.config_entries import ConfigEntry, ConfigEntryState
 from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import ServiceValidationError
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.storage import Store
 from homeassistant.helpers.typing import ConfigType
@@ -120,6 +121,8 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
             coordinator = get_coordinator_for_call(hass, msg)
             data = coordinator.get_growspace_data(growspace_id)
             connection.send_result(msg["id"], data)
+        except ServiceValidationError as err:
+            connection.send_error(msg["id"], "invalid_args", str(err))
         except Exception as e:
             connection.send_error(msg["id"], "unknown_error", str(e))
 
@@ -238,9 +241,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: GrowspaceConfigEntry) ->
     return True
 
 
-# ... _register_services ...
-
-
 def _async_cancel_coordinators(coordinator: GrowspaceCoordinator) -> None:
     """Cancel irrigation and dehumidifier listeners."""
     for irr_coordinator in coordinator.irrigation_coordinators.values():
@@ -250,9 +250,6 @@ def _async_cancel_coordinators(coordinator: GrowspaceCoordinator) -> None:
 
 
 # Removed _async_remove_dynamic_entities per user request
-
-
-# ... _async_remove_services ...
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: GrowspaceConfigEntry) -> bool:
@@ -363,7 +360,9 @@ class StrainLibraryUploadView(HomeAssistantView):
 
             # Request refresh for all coordinators
             for entry in self.hass.config_entries.async_entries(DOMAIN):
-                if hasattr(entry, "runtime_data"):
+                if entry.state == ConfigEntryState.LOADED and hasattr(
+                    entry, "runtime_data"
+                ):
                     await entry.runtime_data.async_request_refresh()
 
             return self.json({"success": True, "imported_count": count})

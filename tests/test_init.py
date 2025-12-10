@@ -10,6 +10,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from aiohttp import BodyPartReader
+from homeassistant.config_entries import ConfigEntryState
 from homeassistant.core import HomeAssistant
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
@@ -378,6 +379,7 @@ async def test_strain_library_upload_view(mock_hass) -> None:
 
     # Mock hass.config_entries.async_entries to return list of mock entries with coordinators
     mock_entry1 = MagicMock()
+    mock_entry1.state = ConfigEntryState.LOADED
     mock_coord1 = AsyncMock()
     mock_entry1.runtime_data = mock_coord1
     mock_hass.config_entries.async_entries.return_value = [mock_entry1]

@@ -6,6 +6,7 @@ import logging
 from functools import partial
 from typing import Any, cast
 
+from homeassistant.config_entries import ConfigEntryState
 from homeassistant.core import HomeAssistant, ServiceCall, SupportsResponse
 from homeassistant.exceptions import ServiceValidationError
 
@@ -63,33 +64,28 @@ def get_coordinator_for_call(
     """Retrieve the correct coordinator based on service call data."""
     data = call.data if isinstance(call, ServiceCall) else call
 
+    # Get all potential coordinators from loaded entries
+    coordinators = [
+        entry.runtime_data
+        for entry in hass.config_entries.async_entries(DOMAIN)
+        if entry.state == ConfigEntryState.LOADED and hasattr(entry, "runtime_data")
+    ]
+
     # 1. Try growspace_id
-    growspace_id = data.get("growspace_id") or data.get("target_growspace_id")
-    if growspace_id:
-        for entry in hass.config_entries.async_entries(DOMAIN):
-            if not hasattr(entry, "runtime_data"):
-                continue
-            coordinator = entry.runtime_data
+    if growspace_id := (data.get("growspace_id") or data.get("target_growspace_id")):
+        for coordinator in coordinators:
             if growspace_id in coordinator.growspaces:
                 return coordinator
-            # Also check if it's a special growspace like "mother" which might be in any
-            # logic for handling multiple instances with special growspaces needs care.
-            # Assuming growspace IDs are unique across instances for now.
 
     # 2. Try plant_id
-    plant_id = data.get("plant_id") or data.get("mother_plant_id")
-    if plant_id:
-        for entry in hass.config_entries.async_entries(DOMAIN):
-            if not hasattr(entry, "runtime_data"):
-                continue
-            coordinator = entry.runtime_data
+    if plant_id := (data.get("plant_id") or data.get("mother_plant_id")):
+        for coordinator in coordinators:
             if plant_id in coordinator.plants:
                 return coordinator
 
     # 3. Fallback: If only one config entry exists, use it.
-    entries = hass.config_entries.async_entries(DOMAIN)
-    if len(entries) == 1:
-        return entries[0].runtime_data
+    if len(coordinators) == 1:
+        return coordinators[0]
 
     raise ServiceValidationError(
         "Could not determine which Growspace Manager instance to use. "
@@ -291,10 +287,6 @@ async def register_services(
     ]
 
     for service_name, handler, schema in services:
-        if hass.services.has_service(DOMAIN, service_name):
-            continue  # Skip if already registered (e.g. by another entry setup if we hadn't moved it to async_setup)
-            # Actually since we move to async_setup, it runs once.
-
         if service_name in [
             "get_strain_library",
             "strain_recommendation",
@@ -312,44 +304,3 @@ async def register_services(
             hass.services.async_register(
                 DOMAIN, service_name, cast(Any, handler), schema=schema
             )
-
-
-def remove_services(hass: HomeAssistant) -> None:
-    """Remove services for the Growspace Manager integration."""
-    services = [
-        "add_growspace",
-        "remove_growspace",
-        "add_plant",
-        "remove_plant",
-        "update_plant",
-        "move_plant",
-        "switch_plants",
-        "take_clone",
-        "move_clone",
-        "transition_plant_stage",
-        "harvest_plant",
-        "add_strain",
-        "remove_strain",
-        "update_strain_meta",
-        "export_strain_library",
-        "import_strain_library",
-        "clear_strain_library",
-        "get_strain_library",
-        "ask_grow_advice",
-        "analyze_all_growspaces",
-        "strain_recommendation",
-        "debug_cleanup_legacy",
-        "debug_list_growspaces",
-        "debug_reset_special_growspaces",
-        "debug_consolidate_growspaces",
-        "configure_environment",
-        "remove_environment",
-        "set_dehumidifier_control",
-        "set_irrigation_settings",
-        "add_irrigation_time",
-        "remove_irrigation_time",
-        "add_drain_time",
-        "remove_drain_time",
-    ]
-    for service in services:
-        hass.services.async_remove(DOMAIN, service)
