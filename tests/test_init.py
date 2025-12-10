@@ -70,8 +70,6 @@ def mock_hass():
     hass.config = MagicMock()
     hass.config.config_dir = "/config"
     hass.http = MagicMock()
-    # hass.components = MagicMock() # No longer needed for websocket_api if patched
-    # But keep services as they are used
     hass.services = MagicMock()
     hass.services.has_service = MagicMock(return_value=True)
     hass.services.async_remove = MagicMock()
@@ -93,10 +91,52 @@ def mock_strain_library_for_services():
 
 
 @pytest.mark.asyncio
+async def test_async_setup(mock_hass) -> None:
+    """Test async_setup registers global components."""
+    with (
+        patch(
+            "custom_components.growspace_manager.StrainLibrary",
+            return_value=AsyncMock(),
+        ) as mock_lib_cls,
+        patch(
+            "custom_components.growspace_manager.register_services",
+            return_value=AsyncMock(),
+        ) as mock_reg,
+        patch(
+            "custom_components.growspace_manager.websocket_api.async_register_command"
+        ) as mock_ws_reg,
+        patch(
+            "custom_components.growspace_manager.async_setup_intents",
+            return_value=AsyncMock(),
+        ),
+    ):
+        mock_lib = mock_lib_cls.return_value
+        assert await async_setup(mock_hass, {})
+
+        # Verify StrainLibrary init
+        mock_lib_cls.assert_called_once_with(mock_hass)
+        mock_lib.async_setup.assert_called_once()
+        assert mock_hass.data[DOMAIN]["strain_library"] == mock_lib
+
+        # Verify View registration
+        mock_hass.http.register_view.assert_called_once()
+
+        # Verify Services
+        mock_reg.assert_called_once_with(mock_hass, mock_lib)
+
+        # Verify WebSocket
+        assert mock_ws_reg.call_count >= 2
+
+
+@pytest.mark.asyncio
 async def test_async_setup_entry(mock_hass) -> None:
     """Test a successful setup of the integration entry."""
     entry = MockConfigEntry(domain=DOMAIN, data={}, options={})
     entry.add_to_hass(mock_hass)
+
+    # Mock global components
+    mock_lib = AsyncMock()
+    mock_hass.data[DOMAIN] = {"strain_library": mock_lib}
 
     coordinator_mock = AsyncMock()
     coordinator_mock.growspaces = {}
@@ -107,31 +147,20 @@ async def test_async_setup_entry(mock_hass) -> None:
             "custom_components.growspace_manager.GrowspaceCoordinator",
             return_value=coordinator_mock,
         ),
-        patch(
-            "custom_components.growspace_manager.StrainLibrary",
-            return_value=AsyncMock(),
-        ),
-        patch(
-            "custom_components.growspace_manager.register_services",
-            return_value=AsyncMock(),
-        ),
-        patch("custom_components.growspace_manager.websocket_api") as mock_ws,
     ):
         assert await async_setup_entry(mock_hass, entry)
-        assert mock_ws.async_register_command.call_count == 2
+        # Services are NOT registered here anymore
 
 
 @pytest.mark.asyncio
-async def test_register_services(
-    mock_hass, mock_coordinator_for_services, mock_strain_library_for_services
-) -> None:
+async def test_register_services(mock_hass, mock_strain_library_for_services) -> None:
     """Test that register_services correctly registers all services."""
     mock_hass.services.async_register = MagicMock()
+    # Mock has_service to return False so services are registered
+    mock_hass.services.has_service = MagicMock(return_value=False)
 
-    await register_services(
-        mock_hass, mock_coordinator_for_services, mock_strain_library_for_services
-    )
-
+    # Note: Coordinator is now dynamically looked up, so simple mock verifies registration call
+    await register_services(mock_hass, mock_strain_library_for_services)
     expected_services = {
         "add_growspace": ADD_GROWSPACE_SCHEMA,
         "remove_growspace": REMOVE_GROWSPACE_SCHEMA,
@@ -163,7 +192,7 @@ async def test_register_services(
         "remove_irrigation_time": REMOVE_IRRIGATION_TIME_SCHEMA,
         "add_drain_time": ADD_DRAIN_TIME_SCHEMA,
         "remove_drain_time": REMOVE_DRAIN_TIME_SCHEMA,
-        "get_strain_library": None,  # Schema checked separately in original test but we can check here if we know it
+        "get_strain_library": None,
         "ask_grow_advice": ASK_GROW_ADVICE_SCHEMA,
         "analyze_all_growspaces": ANALYZE_ALL_GROWSPACES_SCHEMA,
         "strain_recommendation": STRAIN_RECOMMENDATION_SCHEMA,
@@ -183,23 +212,8 @@ async def test_register_services(
 
     for service_name, schema in expected_services.items():
         assert service_name in registered_services
-        # Special handling for get_strain_library which might have a schema not in the list above in the original code
-        # In original code: registered_schema = call_args.kwargs.get("schema") # Also check schema for get_strain_library
-        # It seems get_strain_library has a schema? In the original code it was checked separately.
-        # Let's assume it has a schema if it was checked separately.
-        # Wait, in the original code:
-        # ("test_notification", None),
-        # And get_strain_library was checked separately.
-        # Let's check if get_strain_library has a schema in const.py or __init__.py.
-        # In __init__.py: async_register(DOMAIN, "get_strain_library", strain_library.handle_get_strain_library, schema=GET_STRAIN_LIBRARY_SCHEMA)
-        # But GET_STRAIN_LIBRARY_SCHEMA is not imported in test_init.py.
-        # So we should probably skip schema check for it or import it.
-        # Or just assert it is registered.
-
         if service_name == "get_strain_library":
-            # Just check existence for now as we don't have the schema imported
             continue
-
         assert registered_services[service_name] == schema
 
 
@@ -210,71 +224,14 @@ async def test_async_unload_entry(mock_hass) -> None:
     entry.add_to_hass(mock_hass)
 
     entry.runtime_data = MagicMock()
-    entry.runtime_data.created_entity_ids = []
+    entry.runtime_data.irrigation_coordinators = {}
+    entry.runtime_data.dehumidifier_coordinators = {}
     mock_hass.config_entries.async_unload_platforms = AsyncMock(return_value=True)
+    # mock_hass.config_entries.async_entries.return_value = [] # Simulate no other entries
 
     assert await async_unload_entry(mock_hass, entry)
-    assert DOMAIN not in mock_hass.data
-
-
-@pytest.mark.asyncio
-async def test_async_unload_entry_with_dynamic_entities(mock_hass) -> None:
-    """Test unload with dynamic entities."""
-    entry = MockConfigEntry(domain=DOMAIN, data={}, options={}, entry_id="test_entry")
-    entry.add_to_hass(mock_hass)
-
-    mock_registry = MagicMock()
-    mock_registry.async_get_entity_id.return_value = "sensor.test_trend"
-    mock_registry.async_remove = MagicMock()  # Explicitly mock async_remove
-
-    entry.runtime_data = MagicMock()
-    entry.runtime_data.created_entity_ids = [
-        ("binary_sensor", "trend", "test_trend"),
-        ("sensor", "statistics", "test_stats"),
-    ]
-    mock_hass.config_entries.async_unload_platforms = AsyncMock(return_value=True)
-
-    with patch(
-        "custom_components.growspace_manager.er.async_get",
-        return_value=mock_registry,
-    ):
-        assert await async_unload_entry(mock_hass, entry)
-        assert mock_registry.async_remove.call_count == 2
-
-
-@pytest.mark.asyncio
-async def test_async_unload_entry_with_unknown_dynamic_entities(mock_hass) -> None:
-    """Test unload with an unknown dynamic entity."""
-    entry = MockConfigEntry(domain=DOMAIN, data={}, options={}, entry_id="test_entry")
-    entry.add_to_hass(mock_hass)
-
-    mock_registry = MagicMock()
-    mock_registry.async_get_entity_id.return_value = None
-
-    entry.runtime_data = MagicMock()
-    entry.runtime_data.created_entity_ids = [("domain", "platform", "test_unknown")]
-    mock_hass.config_entries.async_unload_platforms = AsyncMock(return_value=True)
-
-    with patch(
-        "custom_components.growspace_manager.er.async_get",
-        return_value=mock_registry,
-    ):
-        assert await async_unload_entry(mock_hass, entry)
-        mock_registry.async_remove.assert_not_called()
-
-
-@pytest.mark.asyncio
-async def test_async_unload_entry_last_entry(mock_hass) -> None:
-    """Test unload of the last entry."""
-    entry = MockConfigEntry(domain=DOMAIN, data={}, options={}, entry_id="test_entry")
-    entry.add_to_hass(mock_hass)
-
-    entry.runtime_data = MagicMock()
-    entry.runtime_data.created_entity_ids = []
-    mock_hass.config_entries.async_unload_platforms = AsyncMock(return_value=True)
-
-    assert await async_unload_entry(mock_hass, entry)
-    assert DOMAIN not in mock_hass.data
+    # Service removal is no longer guaranteed on single entry unload as it's global
+    # But unload should succeed
 
 
 @pytest.mark.asyncio
@@ -284,7 +241,8 @@ async def test_async_unload_entry_failure(mock_hass) -> None:
     entry.add_to_hass(mock_hass)
 
     entry.runtime_data = MagicMock()
-    entry.runtime_data.created_entity_ids = []
+    entry.runtime_data.irrigation_coordinators = {}
+    entry.runtime_data.dehumidifier_coordinators = {}
     mock_hass.config_entries.async_unload_platforms = AsyncMock(return_value=False)
 
     assert not await async_unload_entry(mock_hass, entry)
@@ -315,12 +273,6 @@ async def test_async_update_listener(mock_hass) -> None:
 
 
 @pytest.mark.asyncio
-async def test_async_setup(mock_hass) -> None:
-    """Test async_setup."""
-    assert await async_setup(mock_hass, {})
-
-
-@pytest.mark.asyncio
 async def test_async_setup_entry_with_growspaces(mock_hass) -> None:
     """Test setup with existing growspaces to trigger coordinator creation."""
     entry = MockConfigEntry(
@@ -330,6 +282,10 @@ async def test_async_setup_entry_with_growspaces(mock_hass) -> None:
         entry_id="test_entry",
     )
     entry.add_to_hass(mock_hass)
+
+    # Mock global components
+    mock_lib = AsyncMock()
+    mock_hass.data[DOMAIN] = {"strain_library": mock_lib}
 
     coordinator_mock = AsyncMock()
     mock_gs1 = MagicMock()
@@ -345,20 +301,11 @@ async def test_async_setup_entry_with_growspaces(mock_hass) -> None:
             return_value=coordinator_mock,
         ),
         patch(
-            "custom_components.growspace_manager.StrainLibrary",
-            return_value=AsyncMock(),
-        ),
-        patch(
-            "custom_components.growspace_manager.register_services",
-            return_value=AsyncMock(),
-        ),
-        patch(
             "custom_components.growspace_manager.IrrigationCoordinator"
         ) as mock_irrigation,
         patch(
             "custom_components.growspace_manager.DehumidifierCoordinator"
         ) as mock_dehumidifier,
-        patch("custom_components.growspace_manager.websocket_api"),
     ):
         mock_irrigation.return_value.async_setup = AsyncMock()
 
@@ -402,8 +349,8 @@ async def test_strain_library_upload_view(mock_hass) -> None:
     mock_strain_library = AsyncMock()
     mock_strain_library.import_library_from_zip = AsyncMock(return_value=5)
 
-    mock_coordinator = AsyncMock()
-    view = StrainLibraryUploadView(mock_hass, mock_strain_library, mock_coordinator)
+    # NO coordinator in init now
+    view = StrainLibraryUploadView(mock_hass, mock_strain_library)
 
     # Test missing file
     mock_request = MagicMock()
@@ -429,6 +376,12 @@ async def test_strain_library_upload_view(mock_hass) -> None:
 
     mock_hass.async_add_executor_job = AsyncMock(side_effect=mock_executor_side_effect)
 
+    # Mock hass.config_entries.async_entries to return list of mock entries with coordinators
+    mock_entry1 = MagicMock()
+    mock_coord1 = AsyncMock()
+    mock_entry1.runtime_data = mock_coord1
+    mock_hass.config_entries.async_entries.return_value = [mock_entry1]
+
     with (
         patch(
             "custom_components.growspace_manager.tempfile.mkstemp",
@@ -439,15 +392,13 @@ async def test_strain_library_upload_view(mock_hass) -> None:
         response = await view.post(mock_request)
 
         assert response.status == 200
-        # Add type assertion for response.body
-        assert response.body is not None
-        assert isinstance(response.body, (str, bytes, bytearray))
         body = json.loads(response.body)
         assert body["success"] is True
         assert body["imported_count"] == 5
 
         mock_strain_library.import_library_from_zip.assert_called_once()
-        # mock_unlink.assert_called_once() # We might check logic or rely on clean test
+        # Verify coordinator refresh requested
+        mock_coord1.async_request_refresh.assert_called_once()
 
     # Test exception handling
     mock_reader.next = AsyncMock(return_value=mock_field)
@@ -464,9 +415,6 @@ async def test_strain_library_upload_view(mock_hass) -> None:
     ):
         response = await view.post(mock_request)
         assert response.status == 200
-        # Add type assertion for response.body
-        assert response.body is not None
-        assert isinstance(response.body, (str, bytes, bytearray))
         body = json.loads(response.body)
         assert body["success"] is False
         assert body["error"] == "Test Error"
