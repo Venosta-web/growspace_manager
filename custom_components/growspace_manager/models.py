@@ -306,4 +306,5 @@ class GrowspaceCoordinatorData(TypedDict):
     notifications_sent: dict[str, dict[str, dict[str, bool]]]
     notifications_enabled: dict[str, bool]
     _version: str
+    serialized_growspaces: dict[str, dict[str, Any]]
     air_exchange_recommendations: dict[str, str]

@@ -54,14 +54,14 @@ def manager(mock_hass: MagicMock, mock_coordinator: MagicMock) -> NotificationMa
 
 def test_initialization(
     manager: NotificationManager, mock_hass: MagicMock, mock_coordinator: MagicMock
-):
+) -> None:
     """Test initialization."""
     assert manager.hass == mock_hass
     assert manager.coordinator == mock_coordinator
     assert manager._last_notification_sent == {}
 
 
-def test_generate_notification_message(manager: NotificationManager):
+def test_generate_notification_message(manager: NotificationManager) -> None:
     """Test generating notification message."""
     base_message = "Base message"
     reasons = [(0.9, "Reason 1"), (0.8, "Reason 2")]
@@ -73,7 +73,7 @@ def test_generate_notification_message(manager: NotificationManager):
 
 async def test_async_send_notification_success(
     manager: NotificationManager, mock_hass: MagicMock
-):
+) -> None:
     """Test sending a notification successfully."""
     await manager.async_send_notification(GROWSPACE_ID, "Test Title", "Test Message")
 
@@ -87,7 +87,7 @@ async def test_async_send_notification_success(
 
 async def test_async_send_notification_cooldown(
     manager: NotificationManager, mock_hass: MagicMock
-):
+) -> None:
     """Test notification cooldown."""
     now = dt_util.utcnow()
     with patch(
@@ -110,7 +110,7 @@ async def test_async_send_notification_cooldown(
 
 async def test_async_send_notification_no_target(
     manager: NotificationManager, mock_coordinator: MagicMock, mock_hass: MagicMock
-):
+) -> None:
     """Test sending notification with no target configured."""
     mock_coordinator.growspaces[GROWSPACE_ID].notification_target = None
 
@@ -121,7 +121,7 @@ async def test_async_send_notification_no_target(
 
 async def test_async_send_notification_disabled(
     manager: NotificationManager, mock_coordinator: MagicMock, mock_hass: MagicMock
-):
+) -> None:
     """Test sending notification when disabled."""
     mock_coordinator.is_notifications_enabled.return_value = False
 
@@ -132,7 +132,7 @@ async def test_async_send_notification_disabled(
 
 async def test_async_send_notification_ai_rewrite(
     manager: NotificationManager, mock_coordinator: MagicMock, mock_hass: MagicMock
-):
+) -> None:
     """Test sending notification with AI rewrite."""
     mock_coordinator.options = {
         "ai_settings": {
@@ -163,7 +163,7 @@ async def test_async_send_notification_ai_rewrite(
 
 async def test_async_check_timed_notifications(
     manager: NotificationManager, mock_coordinator: MagicMock, mock_hass: MagicMock
-):
+) -> None:
     """Test checking timed notifications."""
     mock_coordinator.options = {
         "timed_notifications": [
@@ -183,7 +183,8 @@ async def test_async_check_timed_notifications(
         strain="Strain A",
     )
     mock_coordinator.get_growspace_plants.return_value = [plant]
-    mock_coordinator.calculate_days_in_stage.return_value = 10
+    mock_coordinator.serializer = MagicMock()
+    mock_coordinator.serializer.calculate_days_in_stage.return_value = 10
 
     await manager.async_check_timed_notifications()
 
@@ -192,7 +193,7 @@ async def test_async_check_timed_notifications(
     mock_coordinator.async_save.assert_awaited()
 
 
-def test_generate_notification_message_truncation(manager: NotificationManager):
+def test_generate_notification_message_truncation(manager: NotificationManager) -> None:
     """Test message truncation in generate_notification_message."""
     base_message = "Base"
     # Create reasons that will exceed the 65 char limit
@@ -219,7 +220,7 @@ def test_generate_notification_message_truncation(manager: NotificationManager):
 
 async def test_async_send_notification_exception(
     manager: NotificationManager, mock_hass: MagicMock
-):
+) -> None:
     """Test exception handling in async_send_notification."""
     mock_hass.services.async_call.side_effect = ValueError("Service Error")
 
@@ -229,7 +230,7 @@ async def test_async_send_notification_exception(
 
 async def test_rewrite_with_ai_personalities(
     manager: NotificationManager, mock_coordinator: MagicMock, mock_hass: MagicMock
-):
+) -> None:
     """Test AI rewrite with different personalities."""
     personalities = ["Scientific", "Chill Stoner", "Strict Coach", "Pirate", "Standard"]
 
@@ -279,7 +280,7 @@ async def test_rewrite_with_ai_personalities(
 
 async def test_rewrite_with_ai_sensor_formatting(
     manager: NotificationManager, mock_coordinator: MagicMock, mock_hass: MagicMock
-):
+) -> None:
     """Test AI rewrite with sensor data formatting."""
     mock_coordinator.options = {
         "ai_settings": {
@@ -310,7 +311,7 @@ async def test_rewrite_with_ai_sensor_formatting(
 
 async def test_rewrite_with_ai_truncation(
     manager: NotificationManager, mock_coordinator: MagicMock, mock_hass: MagicMock
-):
+) -> None:
     """Test AI response truncation."""
     mock_coordinator.options = {
         "ai_settings": {
@@ -349,7 +350,7 @@ async def test_rewrite_with_ai_truncation(
 
 async def test_rewrite_with_ai_empty_response(
     manager: NotificationManager, mock_coordinator: MagicMock, mock_hass: MagicMock
-):
+) -> None:
     """Test AI returning empty response."""
     mock_coordinator.options = {
         "ai_settings": {
@@ -371,7 +372,7 @@ async def test_rewrite_with_ai_empty_response(
 
 async def test_rewrite_with_ai_exception(
     manager: NotificationManager, mock_coordinator: MagicMock, mock_hass: MagicMock
-):
+) -> None:
     """Test exception during AI rewrite."""
     mock_coordinator.options = {
         "ai_settings": {
@@ -392,7 +393,7 @@ async def test_rewrite_with_ai_exception(
 
 async def test_async_check_timed_notifications_empty_config(
     manager: NotificationManager, mock_coordinator: MagicMock
-):
+) -> None:
     """Test checking timed notifications with empty config."""
     mock_coordinator.options = {}
     await manager.async_check_timed_notifications()
@@ -401,7 +402,7 @@ async def test_async_check_timed_notifications_empty_config(
 
 async def test_async_check_timed_notifications_missing_growspace(
     manager: NotificationManager, mock_coordinator: MagicMock
-):
+) -> None:
     """Test checking timed notifications for missing growspace."""
     mock_coordinator.options = {
         "timed_notifications": [

@@ -24,7 +24,8 @@ def coordinator_mock():
     mock.plants = {}
     mock.strain_library = MagicMock()
     mock.strain_library.record_harvest = AsyncMock()
-    mock.calculate_days_in_stage = MagicMock(return_value=10)
+    mock.serializer = MagicMock()
+    mock.serializer.calculate_days_in_stage = MagicMock(return_value=10)
     return mock
 
 
@@ -179,6 +180,7 @@ async def test_move_to_dry_growspace_device_id_ghosting(
 
     # Mock update to inspect call args
     coordinator_mock.async_update_plant = AsyncMock()
+    coordinator_mock.serializer.calculate_days_in_stage.return_value = 10
 
     await manager.move_to_dry_growspace("p1", plant, "2023-01-01")
 

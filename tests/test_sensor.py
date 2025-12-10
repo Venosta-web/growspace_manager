@@ -66,7 +66,9 @@ def mock_coordinator():
         )
     }
     coordinator.get_growspace_plants.return_value = list(coordinator.plants.values())
-    coordinator.calculate_days_in_stage.side_effect = lambda plant, stage: 1
+    coordinator.serializer = Mock()
+    coordinator.serializer.calculate_days_in_stage.return_value = 10
+
     coordinator.should_send_notification.return_value = True
     coordinator.mark_notification_sent = AsyncMock()
     coordinator.async_add_listener = Mock()
@@ -75,17 +77,25 @@ def mock_coordinator():
     coordinator.strains = MagicMock()
     coordinator.created_entity_ids = []
 
-    # Mock new methods used by sensor.py
-    coordinator._get_biological_metrics.return_value = {
-        "granular_stage": "veg_early",
-        "vpd_status": "optimal",
-        "vpd_target_min": 0.8,
-        "vpd_target_max": 1.2,
-        "is_day": True,
-    }
-    coordinator._get_environment_attributes.return_value = {
-        "temperature_sensor": "sensor.temp",
-        "humidity_sensor": "sensor.humidity",
+    # Mock data for serialized growspaces
+    coordinator.data = {
+        "serialized_growspaces": {
+            "gs1": {
+                "total_plants": 1,
+                "grid": [],
+                # Default empty values for environment to prevent KeyErrors in tests
+                "dehumidifier_entity": None,
+                "dehumidifier_state": None,
+                "dehumidifier_humidity": None,
+                "dehumidifier_current_humidity": None,
+                "dehumidifier_mode": None,
+                "dehumidifier_control_enabled": None,
+                "exhaust_entity": None,
+                "exhaust_state": None,
+                "humidifier_entity": None,
+                "humidifier_state": None,
+            }
+        }
     }
 
     return coordinator
@@ -447,12 +457,12 @@ async def test_async_create_derivative_sensors(mock_coordinator) -> None:
         )
 
         created_entity_ids = config_entry.runtime_data.created_entity_ids
-        assert "trend_1" in created_entity_ids
-        assert "stats_1" in created_entity_ids
-        assert "trend_2" in created_entity_ids
-        assert "stats_2" in created_entity_ids
-        assert "trend_3" in created_entity_ids
-        assert "stats_3" in created_entity_ids
+        assert ("binary_sensor", "trend", "trend_1") in created_entity_ids
+        assert ("sensor", "statistics", "stats_1") in created_entity_ids
+        assert ("binary_sensor", "trend", "trend_2") in created_entity_ids
+        assert ("sensor", "statistics", "stats_2") in created_entity_ids
+        assert ("binary_sensor", "trend", "trend_3") in created_entity_ids
+        assert ("sensor", "statistics", "stats_3") in created_entity_ids
         assert len(created_entity_ids) == 6
 
 
@@ -572,52 +582,23 @@ def test_growspace_overview_sensor_state_and_attributes(mock_coordinator) -> Non
 def test_growspace_overview_sensor_environment_attributes(mock_coordinator) -> None:
     """Test GrowspaceOverviewSensor environment attributes."""
     gs_mock = mock_coordinator.growspaces["gs1"]
-    gs_mock.irrigation_config = {}
-    gs_mock.environment_config = {
-        "dehumidifier_entity": "switch.dehumidifier",
-        "control_dehumidifier": True,
-        "exhaust_sensor": "sensor.exhaust",
-        "humidifier_sensor": "sensor.humidifier",
-    }
 
-    hass = MagicMock()
-
-    # Mock states
-    dehum_state = MagicMock()
-    dehum_state.state = "on"
-    dehum_state.attributes = {"humidity": 50, "current_humidity": 55, "mode": "auto"}
-
-    exhaust_state = MagicMock()
-    exhaust_state.state = "100"
-
-    humidifier_state = MagicMock()
-    humidifier_state.state = "off"
-
-    def get_state(entity_id):
-        return {
-            "switch.dehumidifier": dehum_state,
-            "sensor.exhaust": exhaust_state,
-            "sensor.humidifier": humidifier_state,
-        }.get(entity_id)
-
-    hass.states.get.side_effect = get_state
-
-    mock_coordinator.hass = hass
-
-    mock_coordinator.hass = hass
-
-    # Configure mock coordinator to return expected environment attributes
-    mock_coordinator._get_environment_attributes.return_value = {
-        "dehumidifier_entity": "switch.dehumidifier",
-        "dehumidifier_state": "on",
-        "dehumidifier_humidity": 50,
-        "dehumidifier_current_humidity": 55,
-        "dehumidifier_mode": "auto",
-        "dehumidifier_control_enabled": True,
-        "exhaust_entity": "sensor.exhaust",
-        "exhaust_state": "100",
-        "humidifier_entity": "sensor.humidifier",
-        "humidifier_state": "off",
+    # Configure mock coordinator data with expected environment attributes
+    mock_coordinator.data = {
+        "serialized_growspaces": {
+            "gs1": {
+                "dehumidifier_entity": "switch.dehumidifier",
+                "dehumidifier_state": "on",
+                "dehumidifier_humidity": 50,
+                "dehumidifier_current_humidity": 55,
+                "dehumidifier_mode": "auto",
+                "dehumidifier_control_enabled": True,
+                "exhaust_entity": "sensor.exhaust",
+                "exhaust_state": "100",
+                "humidifier_entity": "sensor.humidifier",
+                "humidifier_state": "off",
+            }
+        }
     }
 
     gs = GrowspaceOverviewSensor(

@@ -160,19 +160,20 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             try:
                 _LOGGER.debug("ConfigFlow received growspace data: %s", user_input)
 
-                entry = self.async_create_entry(
-                    title=getattr(self, "_integration_name", DEFAULT_NAME),
-                    data={"name": getattr(self, "_integration_name", DEFAULT_NAME)},
-                )
-
-                self.hass.data.setdefault(DOMAIN, {})
-                self.hass.data[DOMAIN]["pending_growspace"] = {
+                pending_growspace = {
                     "name": user_input["name"],
                     "rows": user_input["rows"],
                     "plants_per_row": user_input["plants_per_row"],
                     "notification_target": user_input.get("notification_target"),
                 }
 
+                entry = self.async_create_entry(
+                    title=getattr(self, "_integration_name", DEFAULT_NAME),
+                    data={
+                        "name": getattr(self, "_integration_name", DEFAULT_NAME),
+                        "pending_growspace": pending_growspace,
+                    },
+                )
             except Exception as err:
                 _LOGGER.exception("Error in async_step_add_growspace")
                 return self.async_show_form(
@@ -183,10 +184,7 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     errors={"base": f"Error: {err}"},
                 )
 
-            _LOGGER.debug(
-                "Stored pending growspace data: %s",
-                self.hass.data[DOMAIN]["pending_growspace"],
-            )
+            _LOGGER.debug("Stored pending growspace data in config entry")
             return entry
 
         _LOGGER.debug("Showing add_growspace form")
