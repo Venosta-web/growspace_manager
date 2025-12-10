@@ -41,10 +41,8 @@ class EnvironmentConfigHandler:
             env_config["circulation_fan"] = None
         if not env_config.get("configure_co2"):
             env_config["co2_sensor"] = None
-        if not env_config.get("configure_exhaust"):
-            env_config["exhaust_sensor"] = None
-        if not env_config.get("configure_humidifier"):
-            env_config["humidifier_sensor"] = None
+        if not env_config.get("configure_dehumidifier"):
+            env_config["dehumidifier_entity"] = None
 
         return env_config
 
@@ -110,8 +108,8 @@ class EnvironmentConfigHandler:
                 )
             ] = selector.NumberSelector(
                 selector.NumberSelectorConfig(
-                    min=-5.0,
-                    max=5.0,
+                    min=-10.0,
+                    max=10.0,
                     step=0.5,
                     mode=selector.NumberSelectorMode.BOX,
                     unit_of_measurement="°C",
@@ -174,48 +172,48 @@ class EnvironmentConfigHandler:
         self, schema_dict: dict, growspace_options: dict[str, Any]
     ) -> None:
         """Add exhaust and humidifier to the schema."""
-        # Exhaust Fan
+        # Exhaust Entity (Merged: Fan/Switch/Sensor)
         schema_dict[
             vol.Optional(
-                "exhaust_fan_entity",
-                default=growspace_options.get("exhaust_fan_entity") or vol.UNDEFINED,
-            )
-        ] = selector.EntitySelector(
-            selector.EntitySelectorConfig(domain=["fan", "input_boolean", "switch"])
-        )
-
-        # Humidifier
-        schema_dict[
-            vol.Optional(
-                "humidifier_entity",
-                default=growspace_options.get("humidifier_entity") or vol.UNDEFINED,
+                "exhaust_entity",
+                default=growspace_options.get("exhaust_entity")
+                or growspace_options.get("exhaust_fan_entity")
+                or growspace_options.get("exhaust_sensor")
+                or vol.UNDEFINED,
             )
         ] = selector.EntitySelector(
             selector.EntitySelectorConfig(
-                domain=["humidifier", "input_boolean", "switch"]
+                domain=[
+                    "fan",
+                    "switch",
+                    "input_boolean",
+                    "sensor",
+                    "binary_sensor",
+                    "input_number",
+                ]
             )
         )
-        for feature in ["exhaust", "humidifier"]:
-            enabled = growspace_options.get(
-                f"configure_{feature}",
-                bool(growspace_options.get(f"{feature}_sensor")),
+
+        # Humidifier Entity (Merged: Humidifier/Switch/Sensor)
+        schema_dict[
+            vol.Optional(
+                "humidifier_entity",
+                default=growspace_options.get("humidifier_entity")
+                or growspace_options.get("humidifier_sensor")
+                or vol.UNDEFINED,
             )
-            schema_dict[vol.Optional(f"configure_{feature}", default=enabled)] = (
-                selector.BooleanSelector()
+        ] = selector.EntitySelector(
+            selector.EntitySelectorConfig(
+                domain=[
+                    "humidifier",
+                    "switch",
+                    "input_boolean",
+                    "sensor",
+                    "binary_sensor",
+                    "input_number",
+                ]
             )
-            if enabled:
-                schema_dict[
-                    vol.Optional(
-                        f"{feature}_sensor",
-                        default=growspace_options.get(f"{feature}_sensor")
-                        or vol.UNDEFINED,
-                    )
-                ] = selector.EntitySelector(
-                    selector.EntitySelectorConfig(
-                        domain=["sensor", "input_number"],
-                        device_class="power_factor",
-                    )
-                )
+        )
 
     def _add_dehumidifier_to_schema(
         self, schema_dict: dict, growspace_options: dict[str, Any]
