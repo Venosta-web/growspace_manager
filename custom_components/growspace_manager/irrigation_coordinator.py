@@ -47,6 +47,10 @@ class IrrigationCoordinator:
         except (KeyError, AttributeError):
             return None
 
+    async def async_request_refresh(self) -> None:
+        """Refresh listeners when configuration changes."""
+        await self.async_update_listeners()
+
     async def _save_and_reload(self, reload_listeners: bool = True) -> None:
         """Save changes to storage and reload listeners."""
         # Save to custom storage via main coordinator

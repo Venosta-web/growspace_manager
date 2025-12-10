@@ -71,6 +71,16 @@ class VWCIrrigationCoordinator:
             self._remove_update_listener()
             self._remove_update_listener = None
 
+    async def async_request_refresh(self) -> None:
+        """Satisfy the interface expected by main coordinator.
+
+        VWC coordinator uses an active time interval loop, so explicit refresh
+        isn't strictly required, but this method prevents AttributeError.
+        """
+        # We could force an immediate check here if desired:
+        # await self._update_loop(now())
+        pass
+
     async def _update_loop(self, _now: datetime):
         """Main update loop triggered every minute."""
         try:
