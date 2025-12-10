@@ -80,6 +80,13 @@ class GrowspaceSerializer:
         if growspace.id in ("mother", "clone", "dry", "cure"):
             gs_type = growspace.id
 
+        # Get air exchange recommendation
+        air_exchange = (
+            self.hass.data.get(DOMAIN, {})
+            .get("air_exchange_recommendations", {})
+            .get(growspace.id)
+        )
+
         # Build complete dict
         data = {
             "growspace_id": growspace.id,
@@ -97,6 +104,7 @@ class GrowspaceSerializer:
             "irrigation_config": irrigation_options,
             "irrigation_strategy": irrigation_strategy_dict,
             "grid": grid,
+            "air_exchange": air_exchange,
             **biological_metrics,
         }
 
@@ -313,7 +321,7 @@ class GrowspaceSerializer:
             if vpd_entity:
                 state_obj = self.hass.states.get(vpd_entity)
                 attributes["vpd_sensor"] = vpd_entity
-                attributes["vpd_value"] = state_obj.state if state_obj else None
+                attributes["vpd"] = state_obj.state if state_obj else None
 
             # Soil Moisture Sensor
             soil_moisture_entity = env_config.get("soil_moisture_sensor")
