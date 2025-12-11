@@ -42,12 +42,13 @@ async def async_setup_trend_sensor(
         The unique ID of the created trend sensor, or None if setup failed.
     """
     entity_registry = er.async_get(hass)
-    if not entity_registry.async_get(source_sensor_entity_id):
-        _LOGGER.warning(
-            "Source sensor %s not found in entity registry for trend sensor setup",
-            source_sensor_entity_id,
-        )
-        return None
+    # Removing strict check to allow internal/queued entities to work
+    # if not entity_registry.async_get(source_sensor_entity_id):
+    #     _LOGGER.warning(
+    #         "Source sensor %s not found in entity registry for trend sensor setup",
+    #         source_sensor_entity_id,
+    #     )
+    #     return None
 
     name = f"{growspace_name} {sensor_type.replace('_', ' ').title()} Trend"
     unique_id = f"{DOMAIN}_{growspace_id}_{sensor_type}_trend"
@@ -101,12 +102,13 @@ async def async_setup_statistics_sensor(
         The unique ID of the created statistics sensor, or None if setup failed.
     """
     entity_registry = er.async_get(hass)
-    if not entity_registry.async_get(source_sensor_entity_id):
-        _LOGGER.warning(
-            "Source sensor %s not found for statistics sensor setup",
-            source_sensor_entity_id,
-        )
-        return None
+    # Removing strict check to allow internal/queued entities to work
+    # if not entity_registry.async_get(source_sensor_entity_id):
+    #     _LOGGER.warning(
+    #         "Source sensor %s not found for statistics sensor setup",
+    #         source_sensor_entity_id,
+    #     )
+    #     return None
 
     name = f"{growspace_name} {sensor_type.replace('_', ' ').title()} Stats"
     unique_id = f"{DOMAIN}_{growspace_id}_{sensor_type}_stats"

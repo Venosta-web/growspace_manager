@@ -22,6 +22,7 @@ from homeassistant.helpers.entity import Entity
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.event import async_track_state_change_event
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
+from homeassistant.util import slugify
 
 from .const import DOMAIN
 
@@ -276,7 +277,9 @@ def _handle_calculated_vpd_sensor(
         initial_entities.append(calc_vpd_sensor)
 
         # Auto-populate the vpd_sensor in env_config with the calculated sensor
-        env_config["vpd_sensor"] = f"sensor.{growspace.id}_calculated_vpd"
+        # Predict the entity ID from the name
+        calc_name = f"{growspace.name} Calculated VPD"
+        env_config["vpd_sensor"] = f"sensor.{slugify(calc_name)}"
         growspace.environment_config = env_config
 
         _LOGGER.info(
@@ -587,6 +590,9 @@ class GrowspaceOverviewSensor(CoordinatorEntity[GrowspaceCoordinator], SensorEnt
         """Return the detailed state attributes for the growspace."""
         # Fetch pre-calculated serialization from coordinator
         # This replaces all the heavy logic that was previously here
+        if not self.coordinator.data:
+            return {}
+
         serialized = self.coordinator.data.get("serialized_growspaces", {}).get(
             self.growspace_id, {}
         )
