@@ -7,7 +7,7 @@ voluptuous
 
 # Test Dependencies
 aiodhcpwatcher
-aiodns<3.2.0
+pycares<5
 ruff
 coverage
 pre-commit
