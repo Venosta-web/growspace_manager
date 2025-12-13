@@ -168,20 +168,19 @@ async def test_async_setup_entry_calculated_vpd(mock_coordinator) -> None:
     hass.config.config_dir = "/config"
 
     # Growspace with temp/humidity but no VPD sensor
-    mock_coordinator.growspaces = {
-        "gs1": Mock(
-            id="gs1",
-            name="Growspace 1",
-            rows=2,
-            plants_per_row=2,
-            environment_config={
-                "temperature_sensor": "sensor.temp",
-                "humidity_sensor": "sensor.humidity",
-                # "vpd_sensor": "sensor.vpd", # Missing
-                "lst_offset": -1.5,
-            },
-        )
-    }
+    gs_mock = Mock(
+        id="gs1",
+        rows=2,
+        plants_per_row=2,
+        environment_config={
+            "temperature_sensor": "sensor.temp",
+            "humidity_sensor": "sensor.humidity",
+            # "vpd_sensor": "sensor.vpd", # Missing
+            "lst_offset": -1.5,
+        },
+    )
+    gs_mock.name = "Growspace 1"
+    mock_coordinator.growspaces = {"gs1": gs_mock}
     mock_coordinator.get_growspace_plants = Mock(return_value=[])
     mock_coordinator.async_save = AsyncMock()
     mock_coordinator.ensure_special_growspace = Mock(
@@ -227,7 +226,7 @@ async def test_async_setup_entry_calculated_vpd(mock_coordinator) -> None:
     # Check that environment_config was updated
     assert (
         mock_coordinator.growspaces["gs1"].environment_config["vpd_sensor"]
-        == "sensor.gs1_calculated_vpd"
+        == "sensor.growspace_1_calculated_vpd"
     )
 
 
