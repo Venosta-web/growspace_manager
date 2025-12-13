@@ -145,9 +145,15 @@ class EnvironmentConfigHandler:
     ) -> None:
         """Add optional features (light, co2, fan) to the schema."""
         for feature in ["light", "co2", "fan"]:
+            # Check if feature is already configured (different keys for different features)
+            if feature == "fan":
+                existing_config = growspace_options.get("circulation_fan")
+            else:
+                existing_config = growspace_options.get(f"{feature}_sensor")
+
             enabled = growspace_options.get(
                 f"configure_{feature}",
-                bool(growspace_options.get(f"{feature}_sensor")),
+                bool(existing_config),
             )
             schema_dict[vol.Optional(f"configure_{feature}", default=enabled)] = (
                 selector.BooleanSelector()
@@ -180,17 +186,20 @@ class EnvironmentConfigHandler:
             domain = ["sensor", "input_number"]
             device_class = ["carbon_dioxide"]
 
+        # Build selector config - only include device_class if specified
+        selector_config = selector.EntitySelectorConfig(domain=domain)
+        if device_class:
+            selector_config = selector.EntitySelectorConfig(
+                domain=domain,
+                device_class=device_class,
+            )
+
         schema_dict[
             vol.Optional(
                 entity_key,
                 default=growspace_options.get(entity_key) or vol.UNDEFINED,
             )
-        ] = selector.EntitySelector(
-            selector.EntitySelectorConfig(
-                domain=domain,
-                device_class=device_class if device_class else [],
-            )
-        )
+        ] = selector.EntitySelector(selector_config)
 
     def _add_exhaust_humidifier_to_schema(
         self, schema_dict: dict, growspace_options: dict[str, Any]

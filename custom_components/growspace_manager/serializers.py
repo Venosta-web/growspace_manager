@@ -302,15 +302,19 @@ class GrowspaceSerializer:
                         "control_dehumidifier", False
                     )
 
-            # Exhaust Sensor
-            exhaust_entity = env_config.get("exhaust_sensor")
+            # Exhaust Sensor (check both exhaust_entity and exhaust_sensor keys)
+            exhaust_entity = env_config.get("exhaust_entity") or env_config.get(
+                "exhaust_sensor"
+            )
             if exhaust_entity:
                 state_obj = self.hass.states.get(exhaust_entity)
                 attributes["exhaust_entity"] = exhaust_entity
                 attributes["exhaust_state"] = state_obj.state if state_obj else None
 
-            # Humidifier Sensor
-            humidifier_entity = env_config.get("humidifier_sensor")
+            # Humidifier Sensor (check both humidifier_entity and humidifier_sensor keys)
+            humidifier_entity = env_config.get("humidifier_entity") or env_config.get(
+                "humidifier_sensor"
+            )
             if humidifier_entity:
                 state_obj = self.hass.states.get(humidifier_entity)
                 attributes["humidifier_entity"] = humidifier_entity
@@ -337,12 +341,18 @@ class GrowspaceSerializer:
                 "temperature_sensor": "temperature_sensor",
                 "humidity_sensor": "humidity_sensor",
                 "co2_sensor": "co2_sensor",
-                "circulation_fan_entity": "circulation_fan_entity",
                 "light_sensor": "light_sensor",
             }
 
             for config_key, output_key in keys_to_map.items():
                 if val := env_config.get(config_key):
                     attributes[output_key] = val
+
+            # Circulation fan (check both circulation_fan_entity and circulation_fan keys)
+            circulation_fan = env_config.get(
+                "circulation_fan_entity"
+            ) or env_config.get("circulation_fan")
+            if circulation_fan:
+                attributes["circulation_fan_entity"] = circulation_fan
 
         return attributes

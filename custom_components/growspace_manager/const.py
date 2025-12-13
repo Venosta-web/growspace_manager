@@ -210,6 +210,17 @@ REMOVE_GROWSPACE_SCHEMA = vol.Schema(
     }
 )
 
+# Update Growspace
+UPDATE_GROWSPACE_SCHEMA = vol.Schema(
+    {
+        vol.Required("growspace_id"): vol.All(str, valid_growspace_id),
+        vol.Optional("name"): str,
+        vol.Optional("rows"): vol.All(int, vol.Range(min=1)),
+        vol.Optional("plants_per_row"): vol.All(int, vol.Range(min=1)),
+        vol.Optional("notification_target"): str,
+    }
+)
+
 # Add Plant
 ADD_PLANT_SCHEMA = vol.Schema(
     {
@@ -435,7 +446,7 @@ CONFIGURE_ENVIRONMENT_SCHEMA = vol.Schema(
         vol.Required("growspace_id"): str,
         vol.Required("temperature_sensor"): str,
         vol.Required("humidity_sensor"): str,
-        vol.Required("vpd_sensor"): str,
+        vol.Optional("vpd_sensor"): str,
         vol.Optional("co2_sensor"): str,
         vol.Optional("dehumidifier_entity"): str,
         vol.Optional("circulation_fan"): str,

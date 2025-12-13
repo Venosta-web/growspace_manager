@@ -1,4 +1,5 @@
 """Trend analysis service for Growspace Manager sensors."""
+
 from __future__ import annotations
 
 import logging
@@ -42,13 +43,17 @@ class TrendAnalyzer:
             )
 
             states = history_list.get(sensor_id, [])
-            numeric_states = [
-                (s.last_updated, float(s.state))
-                for s in states
-                if isinstance(s, State)
-                and s.state not in [STATE_UNKNOWN, STATE_UNAVAILABLE]
-                and s.state is not None
-            ]
+            numeric_states = []
+            for s in states:
+                if not isinstance(s, State):
+                    continue
+                if s.state in [STATE_UNKNOWN, STATE_UNAVAILABLE, None, ""]:
+                    continue
+                try:
+                    numeric_states.append((s.last_updated, float(s.state)))
+                except (ValueError, TypeError):
+                    # Skip states that cannot be converted to float
+                    continue
 
             if len(numeric_states) < 2:
                 return {"trend": "stable", "crossed_threshold": False}

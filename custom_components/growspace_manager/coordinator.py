@@ -448,7 +448,9 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
         self.async_fire_growspace_updated()
         for gs_id in self.growspaces:
             if gs_id in self.irrigation_coordinators:
-                self.irrigation_coordinators[gs_id].async_request_refresh()
+                self.hass.async_create_task(
+                    self.irrigation_coordinators[gs_id].async_request_refresh()
+                )
 
     def async_fire_growspace_updated(self) -> None:
         """Fire event to notify frontend that growspace data has changed."""
@@ -534,7 +536,6 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
 
             # ✅ Enable notifications by default for new growspace
             self._notifications_enabled[growspace_id] = True
-
             await self.async_commit()
 
             return growspace
