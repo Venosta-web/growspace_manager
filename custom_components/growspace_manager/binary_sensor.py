@@ -64,65 +64,105 @@ async def async_setup_entry(
     """Set up the Growspace Manager Bayesian binary sensors from a config entry."""
     coordinator = config_entry.runtime_data
 
-    entities: list[BinarySensorEntity] = []
+    # Track initialized growspace IDs to prevent duplicates
+    # We store the SET of created sensor types for each growspace to be robust
+    # Format: "{growspace_id}_{sensor_type}"
+    initialized_sensors: set[str] = set()
 
-    # Create Bayesian sensors for each growspace that has environment config
-    for growspace_id, growspace in coordinator.growspaces.items():
-        env_config = getattr(growspace, "environment_config", None)
+    async def _update_binary_sensors():
+        """Check for new growspaces with environment config and add sensors."""
+        new_entities: list[BinarySensorEntity] = []
 
-        if env_config and _validate_env_config(env_config):
-            # --- MODIFIED LOGIC START ---
+        for growspace_id, growspace in coordinator.growspaces.items():
+            env_config = getattr(growspace, "environment_config", None)
 
-            if growspace_id == "dry":
-                # For 'dry', only add Drying and Mold Risk sensors
-                entities.extend(
-                    [
-                        BayesianDryingSensor(coordinator, growspace_id, env_config),
-                        BayesianMoldRiskSensor(coordinator, growspace_id, env_config),
-                    ]
-                )
-                _LOGGER.info(
-                    "Created specific Drying and Mold sensors for growspace: %s",
-                    growspace.name,
-                )
+            if env_config and _validate_env_config(env_config):
+                sensors_to_add = []
 
-            elif growspace_id == "cure":
-                # For 'cure', only add Curing and Mold Risk sensors
-                entities.extend(
-                    [
-                        BayesianCuringSensor(coordinator, growspace_id, env_config),
-                        BayesianMoldRiskSensor(coordinator, growspace_id, env_config),
-                    ]
-                )
-                _LOGGER.info(
-                    "Created specific Curing and Mold sensors for growspace: %s",
-                    growspace.name,
-                )
+                if growspace_id == "dry":
+                    # Drying
+                    if f"{growspace_id}_drying" not in initialized_sensors:
+                        sensors_to_add.append(
+                            BayesianDryingSensor(coordinator, growspace_id, env_config)
+                        )
+                        initialized_sensors.add(f"{growspace_id}_drying")
+                    # Mold
+                    if f"{growspace_id}_mold" not in initialized_sensors:
+                        sensors_to_add.append(
+                            BayesianMoldRiskSensor(
+                                coordinator, growspace_id, env_config
+                            )
+                        )
+                        initialized_sensors.add(f"{growspace_id}_mold")
 
-            else:
-                # For all other growspaces, add the standard set
-                entities.extend(
-                    [
-                        BayesianStressSensor(coordinator, growspace_id, env_config),
-                        BayesianMoldRiskSensor(coordinator, growspace_id, env_config),
-                        BayesianOptimalConditionsSensor(
-                            coordinator, growspace_id, env_config
-                        ),
-                    ]
-                )
-                _LOGGER.info(
-                    "Created standard Bayesian environment sensors for growspace: %s",
-                    growspace.name,
-                )
+                elif growspace_id == "cure":
+                    # Curing
+                    if f"{growspace_id}_curing" not in initialized_sensors:
+                        sensors_to_add.append(
+                            BayesianCuringSensor(coordinator, growspace_id, env_config)
+                        )
+                        initialized_sensors.add(f"{growspace_id}_curing")
+                    # Mold
+                    if f"{growspace_id}_mold" not in initialized_sensors:
+                        sensors_to_add.append(
+                            BayesianMoldRiskSensor(
+                                coordinator, growspace_id, env_config
+                            )
+                        )
+                        initialized_sensors.add(f"{growspace_id}_mold")
 
-            # This sensor applies to any growspace with a light sensor, regardless of type
-            if env_config.get("light_sensor"):
-                entities.append(
-                    LightCycleVerificationSensor(coordinator, growspace_id, env_config)
-                )
+                else:
+                    # Standard Set
+                    if f"{growspace_id}_stress" not in initialized_sensors:
+                        sensors_to_add.append(
+                            BayesianStressSensor(coordinator, growspace_id, env_config)
+                        )
+                        initialized_sensors.add(f"{growspace_id}_stress")
 
-    if entities:
-        async_add_entities(entities)
+                    if f"{growspace_id}_mold" not in initialized_sensors:
+                        sensors_to_add.append(
+                            BayesianMoldRiskSensor(
+                                coordinator, growspace_id, env_config
+                            )
+                        )
+                        initialized_sensors.add(f"{growspace_id}_mold")
+
+                    if f"{growspace_id}_optimal" not in initialized_sensors:
+                        sensors_to_add.append(
+                            BayesianOptimalConditionsSensor(
+                                coordinator, growspace_id, env_config
+                            )
+                        )
+                        initialized_sensors.add(f"{growspace_id}_optimal")
+
+                # Light Cycle Verification (applies to all if light sensor exists)
+                if env_config.get("light_sensor"):
+                    if f"{growspace_id}_light_verification" not in initialized_sensors:
+                        sensors_to_add.append(
+                            LightCycleVerificationSensor(
+                                coordinator, growspace_id, env_config
+                            )
+                        )
+                        initialized_sensors.add(f"{growspace_id}_light_verification")
+
+                if sensors_to_add:
+                    new_entities.extend(sensors_to_add)
+                    _LOGGER.debug(
+                        "Dynamically added Bayesian sensors for %s", growspace.name
+                    )
+
+        if new_entities:
+            async_add_entities(new_entities)
+
+    # Initial setup
+    await _update_binary_sensors()
+
+    # Listen for coordinator updates to add new sensors dynamically
+    config_entry.async_on_unload(
+        coordinator.async_add_listener(
+            lambda: hass.async_create_task(_update_binary_sensors())
+        )
+    )
 
 
 def _validate_env_config(config: dict) -> bool:

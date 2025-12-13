@@ -15,6 +15,7 @@ from .coordinator import GrowspaceCoordinator
 from .services import (
     ADD_DRAIN_TIME_SCHEMA,
     ADD_GROWSPACE_SCHEMA,
+    UPDATE_GROWSPACE_SCHEMA,
     ADD_IRRIGATION_TIME_SCHEMA,
     ADD_PLANT_SCHEMA,
     ADD_STRAIN_SCHEMA,
@@ -123,6 +124,11 @@ async def register_services(
             "remove_growspace",
             wrap(growspace.handle_remove_growspace, False),
             REMOVE_GROWSPACE_SCHEMA,
+        ),
+        (
+            "update_growspace",
+            wrap(growspace.handle_update_growspace, True),
+            UPDATE_GROWSPACE_SCHEMA,
         ),
         (
             "add_plant",

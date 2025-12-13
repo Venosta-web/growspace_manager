@@ -14,7 +14,8 @@ from unittest.mock import AsyncMock, MagicMock, Mock, patch
 import pytest
 from freezegun import freeze_time
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers import entity_registry as er
+from homeassistant.helpers import entity_registry as er, device_registry as dr
+from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.growspace_manager.const import (
     DOMAIN,
@@ -726,6 +727,18 @@ async def test_async_remove_growspace(coordinator: GrowspaceCoordinator) -> None
     """
     # Setup: add a growspace with plants
     gs = await coordinator.async_add_growspace("Test GS", 2, 2)
+
+    # Create a device entry
+    config_entry = MockConfigEntry(domain=DOMAIN, data={}, entry_id="test_entry")
+    config_entry.add_to_hass(coordinator.hass)
+
+    dev_reg = dr.async_get(coordinator.hass)
+    device_entry = dev_reg.async_get_or_create(
+        config_entry_id=config_entry.entry_id,
+        identifiers={(DOMAIN, gs.id)},
+        name="Test GS Device",
+    )
+
     plant1 = await coordinator.async_add_plant(gs.id, "StrainA", row=1, col=1)
     plant2 = await coordinator.async_add_plant(gs.id, "StrainB", row=2, col=2)
 
@@ -754,6 +767,9 @@ async def test_async_remove_growspace(coordinator: GrowspaceCoordinator) -> None
     assert plant1.plant_id not in coordinator._notifications_sent
     assert plant2.plant_id not in coordinator._notifications_sent
     assert gs.id not in coordinator._notifications_enabled
+
+    # Verify device removed
+    assert dev_reg.async_get_device(identifiers={(DOMAIN, gs.id)}) is None
 
 
 @pytest.mark.asyncio

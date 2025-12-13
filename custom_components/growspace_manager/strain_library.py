@@ -416,7 +416,8 @@ class StrainLibrary:
 
     async def remove_strain_phenotype(self, strain: str, phenotype: str) -> None:
         """Remove a specific phenotype and its harvests."""
-        phenotype = phenotype.strip() or "default"
+        phenotype = (phenotype or "default").strip()
+        strain = strain.strip()
         # Get IDs
         query = """
             SELECT p.phenotype_id, s.strain_id FROM phenotypes p
@@ -426,6 +427,11 @@ class StrainLibrary:
         async with self._db.execute(query, (strain, phenotype)) as cur:
             row = await cur.fetchone()
             if not row:
+                _LOGGER.warning(
+                    "Attempted to delete phenotype '%s' for strain '%s' but it was not found in database",
+                    phenotype,
+                    strain,
+                )
                 return
             phenotype_id = row["phenotype_id"]
             strain_id = row["strain_id"]
@@ -459,11 +465,16 @@ class StrainLibrary:
 
     async def remove_strain(self, strain: str) -> None:
         """Remove an entire strain and all related data."""
+        strain = strain.strip()
         async with self._db.execute(
             "SELECT strain_id FROM strains WHERE strain_name = ?", (strain,)
         ) as cur:
             row = await cur.fetchone()
             if not row:
+                _LOGGER.warning(
+                    "Attempted to delete strain '%s' but it was not found in database",
+                    strain,
+                )
                 return
             strain_id = row[0]
         # Delete harvests, phenotypes, strain

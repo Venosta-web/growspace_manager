@@ -22,6 +22,7 @@ from homeassistant.helpers.entity import Entity
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.event import async_track_state_change_event
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
+from homeassistant.util import slugify
 
 from .const import DOMAIN
 
@@ -94,6 +95,8 @@ async def async_setup_entry(
     plant_entities: dict[str, PlantEntity] = {}
     initial_entities: list[Entity] = []
 
+    calculated_vpd_growspace_ids: set[str] = set()
+
     # Create initial entities
     await _create_initial_entities(
         hass,
@@ -102,6 +105,7 @@ async def async_setup_entry(
         initial_entities,
         growspace_entities,
         plant_entities,
+        calculated_vpd_growspace_ids,
     )
 
     if initial_entities:
@@ -155,7 +159,12 @@ async def async_setup_entry(
     async def _handle_coordinator_update_async() -> None:
         """Add new entities and remove missing ones when coordinator changes."""
         await _update_growspace_entities(
-            hass, coordinator, config_entry, growspace_entities, async_add_entities
+            hass,
+            coordinator,
+            config_entry,
+            growspace_entities,
+            async_add_entities,
+            calculated_vpd_growspace_ids,
         )
         await _update_plant_entities(
             hass, coordinator, plant_entities, async_add_entities
@@ -175,6 +184,7 @@ async def _create_initial_entities(
     initial_entities: list[Entity],
     growspace_entities: dict[str, GrowspaceOverviewSensor],
     plant_entities: dict[str, PlantEntity],
+    calculated_vpd_growspace_ids: set[str],
 ) -> None:
     """Create initial entities for the platform."""
     # Strain Library
@@ -186,7 +196,11 @@ async def _create_initial_entities(
         growspace_entities[growspace_id] = gs_entity
         initial_entities.append(gs_entity)
 
-        _handle_calculated_vpd_sensor(coordinator, growspace, initial_entities)
+        vpd_entity = _check_calculated_vpd_sensor(coordinator, growspace)
+        if vpd_entity:
+            initial_entities.append(vpd_entity)
+            calculated_vpd_growspace_ids.add(growspace_id)
+
         await _async_create_derivative_sensors(hass, config_entry, growspace)
 
         for plant in coordinator.get_growspace_plants(growspace_id):
@@ -204,15 +218,28 @@ async def _update_growspace_entities(
     config_entry: ConfigEntry,
     growspace_entities: dict[str, GrowspaceOverviewSensor],
     async_add_entities: AddEntitiesCallback,
+    calculated_vpd_growspace_ids: set[str],
 ) -> None:
     """Update growspace entities based on coordinator data."""
     # Add new
     for growspace_id, growspace in coordinator.growspaces.items():
+        # New Growspace Entity
         if growspace_id not in growspace_entities:
             entity = GrowspaceOverviewSensor(coordinator, growspace_id, growspace)
             growspace_entities[growspace_id] = entity
             async_add_entities([entity])
-            await _async_create_derivative_sensors(hass, config_entry, growspace)
+
+        # Check for new derivative/calculated sensors for ALL growspaces
+        await _async_create_derivative_sensors(hass, config_entry, growspace)
+
+        if growspace_id not in calculated_vpd_growspace_ids:
+            vpd_entity = _check_calculated_vpd_sensor(coordinator, growspace)
+            if vpd_entity:
+                async_add_entities([vpd_entity])
+                calculated_vpd_growspace_ids.add(growspace_id)
+                # Request a refresh so the coordinator can use the newly created sensor data
+                # for its derived calculations (mold risk, etc.)
+                hass.async_create_task(coordinator.async_request_refresh())
 
     # Remove deleted
     for removed_gs_id in list(growspace_entities.keys()):
@@ -251,19 +278,31 @@ async def _update_plant_entities(
         await entity.async_remove()
 
 
-def _handle_calculated_vpd_sensor(
+def _check_calculated_vpd_sensor(
     coordinator: GrowspaceCoordinator,
     growspace: Growspace,
-    initial_entities: list[Entity],
-) -> None:
+) -> CalculatedVpdSensor | None:
     """Create calculated VPD sensor if needed."""
     env_config = growspace.environment_config or {}
     temp_sensor = env_config.get("temperature_sensor")
     humidity_sensor = env_config.get("humidity_sensor")
     vpd_sensor = env_config.get("vpd_sensor")
 
+    calc_name = f"{growspace.name} Calculated VPD"
+    expected_generated_id = f"sensor.{slugify(calc_name)}"
+    uuid_generated_id = f"sensor.{growspace.id}_calculated_vpd"
+
     # Create calculated VPD if temp and humidity exist but no VPD sensor
-    if temp_sensor and humidity_sensor and not vpd_sensor:
+    # OR if the set sensor is the one we generated
+    if (
+        temp_sensor
+        and humidity_sensor
+        and (
+            not vpd_sensor
+            or vpd_sensor == expected_generated_id
+            or vpd_sensor == uuid_generated_id
+        )
+    ):
         lst_offset = env_config.get("lst_offset", -2.0)
         calc_vpd_sensor = CalculatedVpdSensor(
             coordinator,
@@ -273,17 +312,16 @@ def _handle_calculated_vpd_sensor(
             humidity_sensor,
             lst_offset,
         )
-        initial_entities.append(calc_vpd_sensor)
 
-        # Auto-populate the vpd_sensor in env_config with the calculated sensor
-        env_config["vpd_sensor"] = f"sensor.{growspace.id}_calculated_vpd"
-        growspace.environment_config = env_config
+        if not vpd_sensor or vpd_sensor == uuid_generated_id:
+            env_config["vpd_sensor"] = expected_generated_id
+            growspace.environment_config = env_config
+            _LOGGER.info(
+                "Created and linked calculated VPD sensor for %s", growspace.name
+            )
 
-        _LOGGER.info(
-            "Created calculated VPD sensor for %s (LST offset: %.1f°C)",
-            growspace.name,
-            lst_offset,
-        )
+        return calc_vpd_sensor
+    return None
 
 
 async def ensure_special_growspaces(coordinator: GrowspaceCoordinator) -> None:
@@ -587,6 +625,9 @@ class GrowspaceOverviewSensor(CoordinatorEntity[GrowspaceCoordinator], SensorEnt
         """Return the detailed state attributes for the growspace."""
         # Fetch pre-calculated serialization from coordinator
         # This replaces all the heavy logic that was previously here
+        if not self.coordinator.data:
+            return {}
+
         serialized = self.coordinator.data.get("serialized_growspaces", {}).get(
             self.growspace_id, {}
         )

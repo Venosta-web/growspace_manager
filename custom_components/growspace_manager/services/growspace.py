@@ -56,10 +56,34 @@ async def handle_add_growspace(
         raise
 
 
+async def handle_update_growspace(
+    hass: HomeAssistant,
+    coordinator: GrowspaceCoordinator,
+    call: ServiceCall,
+) -> None:
+    """Handle update growspace service call."""
+    try:
+        await coordinator.async_update_growspace(
+            growspace_id=call.data["growspace_id"],
+            name=call.data.get("name"),
+            rows=call.data.get("rows"),
+            plants_per_row=call.data.get("plants_per_row"),
+            notification_target=call.data.get("notification_target"),
+        )
+        _LOGGER.info("Growspace %s updated successfully", call.data["growspace_id"])
+    except Exception as err:
+        _LOGGER.error("Failed to update growspace: %s", err)
+        create_notification(
+            hass,
+            f"Failed to update growspace: {err!s}",
+            title="Growspace Manager Error",
+        )
+        raise
+
+
 async def handle_remove_growspace(
     hass: HomeAssistant,
     coordinator: GrowspaceCoordinator,
-    strain_library: StrainLibrary,  # Keep for consistency
     call: ServiceCall,
 ) -> None:
     """Handle remove growspace service call."""

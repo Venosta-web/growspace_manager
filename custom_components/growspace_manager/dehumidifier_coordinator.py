@@ -67,7 +67,9 @@ class DehumidifierCoordinator:
         # Load configuration
         self.growspace = self.main_coordinator.growspaces.get(growspace_id)
         if not self.growspace:
-            _LOGGER.error("Growspace %s not found for DehumidifierCoordinator", growspace_id)
+            _LOGGER.error(
+                "Growspace %s not found for DehumidifierCoordinator", growspace_id
+            )
             return
 
         self.env_config = self.growspace.environment_config or {}
@@ -93,7 +95,7 @@ class DehumidifierCoordinator:
                 self.dehumidifier_entity,
             )
         elif not self.control_dehumidifier:
-             _LOGGER.info(
+            _LOGGER.info(
                 "DehumidifierCoordinator disabled for %s (control_dehumidifier is False)",
                 self.growspace.name,
             )
@@ -138,10 +140,13 @@ class DehumidifierCoordinator:
         stage_name = self._get_growth_stage()
 
         # Determine Day/Night
-        is_day = True # Default to day if no sensor
+        is_day = True  # Default to day if no sensor
         if self.light_sensor:
             light_state = self.hass.states.get(self.light_sensor)
-            if light_state and light_state.state not in (STATE_UNKNOWN, STATE_UNAVAILABLE):
+            if light_state and light_state.state not in (
+                STATE_UNKNOWN,
+                STATE_UNAVAILABLE,
+            ):
                 try:
                     # Assuming light sensor reports lux or similar numeric value
                     # Or it could be a binary sensor. The prompt says "Light > 0" vs "Light < 1"
@@ -193,8 +198,12 @@ class DehumidifierCoordinator:
         max_flower_days = 0
 
         for plant in plants:
-            v_days = self.main_coordinator.calculate_days_in_stage(plant, "veg")
-            f_days = self.main_coordinator.calculate_days_in_stage(plant, "flower")
+            v_days = self.main_coordinator.serializer.calculate_days_in_stage(
+                plant, "veg"
+            )
+            f_days = self.main_coordinator.serializer.calculate_days_in_stage(
+                plant, "flower"
+            )
 
             max_veg_days = max(max_veg_days, v_days)
             max_flower_days = max(max_flower_days, f_days)
@@ -214,17 +223,14 @@ class DehumidifierCoordinator:
         if max_veg_days > 0:
             return "veg"
 
-        return "veg" # Default
+        return "veg"  # Default
 
     def _get_current_thresholds(self, stage: str, is_day: bool) -> dict[str, float]:
         """Get the ON/OFF thresholds for the current state."""
         day_key = "day" if is_day else "night"
 
         # Check user overrides first
-        if (
-            stage in self.user_thresholds
-            and day_key in self.user_thresholds[stage]
-        ):
+        if stage in self.user_thresholds and day_key in self.user_thresholds[stage]:
             return self.user_thresholds[stage][day_key]
 
         # Fallback to defaults
