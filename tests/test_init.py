@@ -57,6 +57,7 @@ from custom_components.growspace_manager.const import (
     TRANSITION_PLANT_SCHEMA,
     UPDATE_PLANT_SCHEMA,
     UPDATE_STRAIN_META_SCHEMA,
+    UPDATE_GROWSPACE_SCHEMA,
 )
 
 
@@ -164,6 +165,7 @@ async def test_register_services(mock_hass, mock_strain_library_for_services) ->
     await register_services(mock_hass, mock_strain_library_for_services)
     expected_services = {
         "add_growspace": ADD_GROWSPACE_SCHEMA,
+        "update_growspace": UPDATE_GROWSPACE_SCHEMA,
         "remove_growspace": REMOVE_GROWSPACE_SCHEMA,
         "add_plant": ADD_PLANT_SCHEMA,
         "update_plant": UPDATE_PLANT_SCHEMA,

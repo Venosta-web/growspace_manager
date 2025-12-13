@@ -54,6 +54,8 @@ def mock_main_coordinator():
     coordinator.growspaces = {}
     coordinator.get_growspace_plants = MagicMock(return_value=[])
     coordinator.calculate_days_in_stage = MagicMock(return_value=0)
+    coordinator.serializer = MagicMock()
+    coordinator.serializer.calculate_days_in_stage = MagicMock(return_value=0)
     return coordinator
 
 
@@ -204,31 +206,39 @@ async def test_growth_stage_detection(coordinator, mock_main_coordinator):
     mock_main_coordinator.get_growspace_plants.return_value = [plant1, plant2]
 
     # Case 1: Veg
-    mock_main_coordinator.calculate_days_in_stage.side_effect = lambda p, stage: {
-        "veg": 10,
-        "flower": 0,
-    }.get(stage, 0)
+    mock_main_coordinator.serializer.calculate_days_in_stage.side_effect = (
+        lambda p, stage: {
+            "veg": 10,
+            "flower": 0,
+        }.get(stage, 0)
+    )
     assert coordinator._get_growth_stage() == "veg"
 
     # Case 2: Early Flower
-    mock_main_coordinator.calculate_days_in_stage.side_effect = lambda p, stage: {
-        "veg": 30,
-        "flower": 10,
-    }.get(stage, 0)
+    mock_main_coordinator.serializer.calculate_days_in_stage.side_effect = (
+        lambda p, stage: {
+            "veg": 30,
+            "flower": 10,
+        }.get(stage, 0)
+    )
     assert coordinator._get_growth_stage() == "early_flower"
 
     # Case 3: Mid Flower
-    mock_main_coordinator.calculate_days_in_stage.side_effect = lambda p, stage: {
-        "veg": 30,
-        "flower": 30,
-    }.get(stage, 0)
+    mock_main_coordinator.serializer.calculate_days_in_stage.side_effect = (
+        lambda p, stage: {
+            "veg": 30,
+            "flower": 30,
+        }.get(stage, 0)
+    )
     assert coordinator._get_growth_stage() == "mid_flower"
 
     # Case 4: Late Flower
-    mock_main_coordinator.calculate_days_in_stage.side_effect = lambda p, stage: {
-        "veg": 30,
-        "flower": 60,
-    }.get(stage, 0)
+    mock_main_coordinator.serializer.calculate_days_in_stage.side_effect = (
+        lambda p, stage: {
+            "veg": 30,
+            "flower": 60,
+        }.get(stage, 0)
+    )
     assert coordinator._get_growth_stage() == "late_flower"
 
 

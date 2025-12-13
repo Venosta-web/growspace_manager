@@ -162,9 +162,7 @@ async def test_handle_remove_growspace(
     """Test handle_remove_growspace service."""
     mock_call.data = {"growspace_id": "gs1"}
 
-    await handle_remove_growspace(
-        mock_hass, mock_coordinator, mock_strain_library, mock_call
-    )
+    await handle_remove_growspace(mock_hass, mock_coordinator, mock_call)
 
     mock_coordinator.async_remove_growspace.assert_awaited_once_with("gs1")
     mock_hass.bus.async_fire.assert_called_once_with(
@@ -186,9 +184,7 @@ async def test_handle_remove_growspace_exception(
     mock_coordinator.async_remove_growspace.side_effect = Exception("Remove failed")
 
     with pytest.raises(Exception, match="Remove failed"):
-        await handle_remove_growspace(
-            mock_hass, mock_coordinator, mock_strain_library, mock_call
-        )
+        await handle_remove_growspace(mock_hass, mock_coordinator, mock_call)
 
     mock_create_notification.assert_called_once()
 
