@@ -102,6 +102,38 @@ async def test_handle_add_growspace(
 
 
 @pytest.mark.asyncio
+async def test_handle_update_growspace(
+    mock_hass,
+    mock_coordinator,
+    mock_strain_library,
+    mock_call,
+):
+    """Test handle_update_growspace service."""
+    mock_call.data = {
+        "growspace_id": "gs1",
+        "name": "Updated GS",
+        "rows": 5,
+        "plants_per_row": 5,
+    }
+
+    from custom_components.growspace_manager.services.growspace import (
+        handle_update_growspace,
+    )
+
+    await handle_update_growspace(
+        mock_hass, mock_coordinator, mock_strain_library, mock_call
+    )
+
+    mock_coordinator.async_update_growspace.assert_awaited_once_with(
+        growspace_id="gs1",
+        name="Updated GS",
+        rows=5,
+        plants_per_row=5,
+        notification_target=None,
+    )
+
+
+@pytest.mark.asyncio
 @patch("homeassistant.helpers.device_registry.async_get")
 async def test_handle_add_growspace_no_mobile_app_notification(
     mock_async_get,

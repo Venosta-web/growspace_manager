@@ -37,3 +37,11 @@ repos:
     hooks:
       - id: mypy
         additional_dependencies: []
+  - repo: local
+    hooks:
+      - id: pytest
+        name: pytest
+        entry: ./venv/bin/pytest
+        language: system
+        types: [python]
+        pass_filenames: false

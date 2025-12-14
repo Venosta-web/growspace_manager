@@ -59,6 +59,7 @@ async def handle_add_growspace(
 async def handle_update_growspace(
     hass: HomeAssistant,
     coordinator: GrowspaceCoordinator,
+    strain_library: StrainLibrary,
     call: ServiceCall,
 ) -> None:
     """Handle update growspace service call."""
