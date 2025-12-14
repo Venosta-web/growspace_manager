@@ -34,16 +34,6 @@ class EnvironmentConfigHandler:
         env_config = growspace_options.copy()
         env_config.update(user_input)
 
-        # Clear disabled features
-        if not env_config.get("configure_light"):
-            env_config["light_sensor"] = None
-        if not env_config.get("configure_fan"):
-            env_config["circulation_fan"] = None
-        if not env_config.get("configure_co2"):
-            env_config["co2_sensor"] = None
-        if not env_config.get("configure_dehumidifier"):
-            env_config["dehumidifier_entity"] = None
-
         return env_config
 
     def get_environment_schema_step1(
@@ -146,22 +136,8 @@ class EnvironmentConfigHandler:
         """Add optional features (light, co2, fan) to the schema."""
         for feature in ["light", "co2", "fan"]:
             # Check if feature is already configured (different keys for different features)
-            if feature == "fan":
-                existing_config = growspace_options.get("circulation_fan")
-            else:
-                existing_config = growspace_options.get(f"{feature}_sensor")
-
-            enabled = growspace_options.get(
-                f"configure_{feature}",
-                bool(existing_config),
-            )
-            schema_dict[vol.Optional(f"configure_{feature}", default=enabled)] = (
-                selector.BooleanSelector()
-            )
-            if enabled:
-                self._add_feature_entity_selector(
-                    schema_dict, feature, growspace_options
-                )
+            # Removed the configure_ feature checkboxes and their conditional logic
+            self._add_feature_entity_selector(schema_dict, feature, growspace_options)
 
     def _add_feature_entity_selector(
         self, schema_dict: dict, feature: str, growspace_options: dict[str, Any]
@@ -252,37 +228,29 @@ class EnvironmentConfigHandler:
         self, schema_dict: dict, growspace_options: dict[str, Any]
     ) -> None:
         """Add dehumidifier to the schema."""
-        configure_dehumidifier = growspace_options.get(
-            "configure_dehumidifier", bool(growspace_options.get("dehumidifier_entity"))
+        # Removed configure_dehumidifier checkbox and its conditional logic
+        schema_dict[
+            vol.Optional(
+                "dehumidifier_entity",
+                default=growspace_options.get("dehumidifier_entity") or vol.UNDEFINED,
+            )
+        ] = selector.EntitySelector(
+            selector.EntitySelectorConfig(
+                domain=[
+                    "switch",
+                    "humidifier",
+                    "sensor",
+                    "binary_sensor",
+                    "input_boolean",
+                ]
+            )
         )
         schema_dict[
-            vol.Optional("configure_dehumidifier", default=configure_dehumidifier)
-        ] = selector.BooleanSelector()
-
-        if configure_dehumidifier:
-            schema_dict[
-                vol.Optional(
-                    "dehumidifier_entity",
-                    default=growspace_options.get("dehumidifier_entity")
-                    or vol.UNDEFINED,
-                )
-            ] = selector.EntitySelector(
-                selector.EntitySelectorConfig(
-                    domain=[
-                        "switch",
-                        "humidifier",
-                        "sensor",
-                        "binary_sensor",
-                        "input_boolean",
-                    ]
-                )
+            vol.Optional(
+                "control_dehumidifier",
+                default=growspace_options.get("control_dehumidifier", False),
             )
-            schema_dict[
-                vol.Optional(
-                    "control_dehumidifier",
-                    default=growspace_options.get("control_dehumidifier", False),
-                )
-            ] = selector.BooleanSelector()
+        ] = selector.BooleanSelector()
         for key, default in [("stress_threshold", 0.70), ("mold_threshold", 0.75)]:
             schema_dict[
                 vol.Optional(key, default=growspace_options.get(key, default))

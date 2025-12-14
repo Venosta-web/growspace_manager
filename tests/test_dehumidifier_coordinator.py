@@ -1,5 +1,6 @@
 """Tests for the Dehumidifier Coordinator."""
 
+import time
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -286,3 +287,95 @@ async def test_unload(coordinator):
 
     remove_mock.assert_called_once()
     assert len(coordinator._remove_listeners) == 0
+
+
+async def test_min_runtime_prevents_early_turnoff(coordinator, mock_hass):
+    """Test that min runtime prevents turning off too early."""
+    # Simulate: Dehumidifier is ON, was turned on 60 seconds ago
+    coordinator._last_turn_on_time = time.monotonic() - 60  # 60s ago, min is 300s
+
+    mock_hass.states.get.side_effect = lambda entity_id: {
+        "sensor.vpd": MagicMock(state="0.9"),  # High VPD, should turn OFF
+        "sensor.light": MagicMock(state="100"),
+        "switch.dehumidifier": MagicMock(state=STATE_ON),
+    }.get(entity_id)
+
+    await coordinator.async_check_and_control()
+
+    # Should NOT turn off because min runtime (300s) not elapsed
+    mock_hass.services.async_call.assert_not_called()
+
+
+async def test_min_offtime_prevents_early_turnon(coordinator, mock_hass):
+    """Test that min offtime prevents turning on too early."""
+    # Simulate: Dehumidifier is OFF, was turned off 60 seconds ago
+    coordinator._last_turn_off_time = time.monotonic() - 60  # 60s ago, min is 300s
+
+    mock_hass.states.get.side_effect = lambda entity_id: {
+        "sensor.vpd": MagicMock(state="0.5"),  # Low VPD, should turn ON
+        "sensor.light": MagicMock(state="100"),
+        "switch.dehumidifier": MagicMock(state=STATE_OFF),
+    }.get(entity_id)
+
+    await coordinator.async_check_and_control()
+
+    # Should NOT turn on because min offtime (300s) not elapsed
+    mock_hass.services.async_call.assert_not_called()
+
+
+async def test_timer_allows_action_after_min_duration(coordinator, mock_hass):
+    """Test that actions are allowed after minimum duration has elapsed."""
+    # Simulate: Dehumidifier was turned off 400 seconds ago (> 300s min)
+    coordinator._last_turn_off_time = time.monotonic() - 400
+
+    mock_hass.states.get.side_effect = lambda entity_id: {
+        "sensor.vpd": MagicMock(state="0.5"),  # Low VPD, should turn ON
+        "sensor.light": MagicMock(state="100"),
+        "switch.dehumidifier": MagicMock(state=STATE_OFF),
+    }.get(entity_id)
+
+    await coordinator.async_check_and_control()
+
+    # Should turn on because min offtime has elapsed
+    mock_hass.services.async_call.assert_called_once_with(
+        "switch", SERVICE_TURN_ON, {ATTR_ENTITY_ID: "switch.dehumidifier"}
+    )
+
+
+async def test_timestamps_updated_on_control(coordinator, mock_hass):
+    """Test that timestamps are updated when control actions occur."""
+    # Initial timestamps should be 0
+    assert coordinator._last_turn_on_time == 0.0
+    assert coordinator._last_turn_off_time == 0.0
+
+    mock_hass.states.get.side_effect = lambda entity_id: {
+        "sensor.vpd": MagicMock(state="0.5"),  # Low VPD
+        "sensor.light": MagicMock(state="100"),
+        "switch.dehumidifier": MagicMock(state=STATE_OFF),
+    }.get(entity_id)
+
+    before = time.monotonic()
+    await coordinator.async_check_and_control()
+    after = time.monotonic()
+
+    # Turn on timestamp should be updated
+    assert coordinator._last_turn_on_time >= before
+    assert coordinator._last_turn_on_time <= after
+    assert coordinator._last_turn_off_time == 0.0  # Still 0
+
+
+async def test_timer_guard_bypassed_on_first_action(coordinator, mock_hass):
+    """Test that timer guards don't block the very first action."""
+    # Timestamps are 0.0, so guard should not apply
+    mock_hass.states.get.side_effect = lambda entity_id: {
+        "sensor.vpd": MagicMock(state="0.5"),  # Low VPD
+        "sensor.light": MagicMock(state="100"),
+        "switch.dehumidifier": MagicMock(state=STATE_OFF),
+    }.get(entity_id)
+
+    await coordinator.async_check_and_control()
+
+    # Should turn on even though we haven't tracked any previous actions
+    mock_hass.services.async_call.assert_called_once_with(
+        "switch", SERVICE_TURN_ON, {ATTR_ENTITY_ID: "switch.dehumidifier"}
+    )

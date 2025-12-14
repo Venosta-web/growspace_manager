@@ -16,6 +16,11 @@ PLATFORMS: list[str] = [
 
 PARALLEL_UPDATES = 0
 
+# Dehumidifier Control Timing Defaults
+DEFAULT_DEHUMIDIFIER_MIN_RUNTIME = 300  # 5 minutes in seconds
+DEFAULT_DEHUMIDIFIER_MIN_OFFTIME = 300  # 5 minutes in seconds
+DEFAULT_VPD_HYSTERESIS = 0.2  # kPa (fallback if not using stage thresholds)
+
 DEFAULT_NAME = "Growspace Manager"
 ATTR_TOTAL_DAYS = "total_days"
 

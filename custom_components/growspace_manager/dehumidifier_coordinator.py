@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import time
 from typing import Any
 
 from homeassistant.const import (
@@ -13,8 +14,13 @@ from homeassistant.const import (
     STATE_UNAVAILABLE,
     STATE_UNKNOWN,
 )
-from homeassistant.core import HomeAssistant, callback
+from homeassistant.core import HomeAssistant
 from homeassistant.helpers.event import async_track_state_change_event
+
+from .const import (
+    DEFAULT_DEHUMIDIFIER_MIN_OFFTIME,
+    DEFAULT_DEHUMIDIFIER_MIN_RUNTIME,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -62,7 +68,11 @@ class DehumidifierCoordinator:
         self.config_entry = config_entry
         self.growspace_id = growspace_id
         self.main_coordinator = main_coordinator
-        self._remove_listeners = []
+        self._remove_listeners: list = []
+
+        # Timing state for short-cycling prevention
+        self._last_turn_on_time: float = 0.0
+        self._last_turn_off_time: float = 0.0
 
         # Load configuration
         self.growspace = self.main_coordinator.growspaces.get(growspace_id)
@@ -117,7 +127,6 @@ class DehumidifierCoordinator:
             )
         )
 
-    @callback
     async def _on_sensor_change(self, event: Any) -> None:
         """Handle sensor state changes."""
         await self.async_check_and_control()
@@ -169,9 +178,14 @@ class DehumidifierCoordinator:
         dehum_state = self.hass.states.get(self.dehumidifier_entity)
         is_on = dehum_state and dehum_state.state == STATE_ON
 
+        # Check timing guards to prevent short-cycling
+        if self._is_locked_by_timer(is_on):
+            return
+
+        # Evaluate VPD thresholds with hysteresis
         if current_vpd < on_threshold and not is_on:
             _LOGGER.info(
-                "VPD %.2f < %.2f (%s, %s): Turning ON dehumidifier %s",
+                "VPD Trigger: Current %.2f < Target %.2f (%s, %s) -> Turning ON %s",
                 current_vpd,
                 on_threshold,
                 stage_name,
@@ -181,7 +195,7 @@ class DehumidifierCoordinator:
             await self._control_dehumidifier(True)
         elif current_vpd > off_threshold and is_on:
             _LOGGER.info(
-                "VPD %.2f > %.2f (%s, %s): Turning OFF dehumidifier %s",
+                "VPD Trigger: Current %.2f > Threshold %.2f (%s, %s) -> Turning OFF %s",
                 current_vpd,
                 off_threshold,
                 stage_name,
@@ -189,6 +203,48 @@ class DehumidifierCoordinator:
                 self.dehumidifier_entity,
             )
             await self._control_dehumidifier(False)
+
+    def _is_locked_by_timer(self, is_on: bool) -> bool:
+        """Check if state change is blocked by minimum run/off timers.
+
+        Args:
+            is_on: Whether the dehumidifier is currently on.
+
+        Returns:
+            True if a state change should be blocked, False otherwise.
+        """
+        now = time.monotonic()
+
+        if is_on:
+            # Guard: Minimum Runtime (must stay ON for min duration)
+            elapsed_on = now - self._last_turn_on_time
+            min_runtime = self.dehumidifier_config.get(
+                "min_runtime", DEFAULT_DEHUMIDIFIER_MIN_RUNTIME
+            )
+            if self._last_turn_on_time > 0 and elapsed_on < min_runtime:
+                remaining = min_runtime - elapsed_on
+                _LOGGER.debug(
+                    "Locked by Min Runtime (remaining: %.0fs) for %s",
+                    remaining,
+                    self.dehumidifier_entity,
+                )
+                return True
+        else:
+            # Guard: Minimum Offtime (must stay OFF for min duration)
+            elapsed_off = now - self._last_turn_off_time
+            min_offtime = self.dehumidifier_config.get(
+                "min_offtime", DEFAULT_DEHUMIDIFIER_MIN_OFFTIME
+            )
+            if self._last_turn_off_time > 0 and elapsed_off < min_offtime:
+                remaining = min_offtime - elapsed_off
+                _LOGGER.debug(
+                    "Locked by Min Offtime (remaining: %.0fs) for %s",
+                    remaining,
+                    self.dehumidifier_entity,
+                )
+                return True
+
+        return False
 
     def _get_growth_stage(self) -> str:
         """Determine the current growth stage for threshold selection."""
@@ -250,6 +306,12 @@ class DehumidifierCoordinator:
             service,
             {ATTR_ENTITY_ID: self.dehumidifier_entity},
         )
+
+        # Update timestamps for short-cycling prevention
+        if turn_on:
+            self._last_turn_on_time = time.monotonic()
+        else:
+            self._last_turn_off_time = time.monotonic()
 
     def unload(self) -> None:
         """Unload the coordinator and remove listeners."""
