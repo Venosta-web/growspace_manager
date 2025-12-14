@@ -572,49 +572,58 @@ class StrainLibrary:
         for strain_name, strain_data in library_data.items():
             meta = strain_data.get("meta", {})
             phenotypes = strain_data.get("phenotypes", {})
-            await self.add_strain(
-                strain=strain_name,
-                breeder=meta.get("breeder"),
-                strain_type=meta.get("type"),
-                lineage=meta.get("lineage"),
-                sex=meta.get("sex"),
-                sativa_percentage=meta.get("sativa_percentage"),
-                indica_percentage=meta.get("indica_percentage"),
-            )
-            for pheno_name, pheno_data in phenotypes.items():
-                image_path = pheno_data.get("image_path")
-                if image_path and image_path.startswith("images/"):
-                    filename = os.path.basename(image_path)
-                    image_path = f"/local/growspace_manager/strains/{filename}"
-                await self.add_strain(
-                    strain=strain_name,
-                    phenotype=pheno_name,
-                    flower_days_min=pheno_data.get("flower_days_min"),
-                    flower_days_max=pheno_data.get("flower_days_max"),
-                    description=pheno_data.get("description"),
-                    image_path=image_path,
-                    image_crop_meta=pheno_data.get("image_crop_meta"),
-                )
-                phenotype_id = await self._ensure_strain_and_phenotype_exist(
-                    strain_name, pheno_name
-                )
-                for harvest in pheno_data.get("harvests", []):
-                    await self._db.execute(
-                        """
-                        INSERT INTO harvests (phenotype_id, veg_days, flower_days, harvest_date)
-                        VALUES (?, ?, ?, ?)
-                        ON CONFLICT DO NOTHING
-                        """,
-                        (
-                            phenotype_id,
-                            harvest.get("veg_days"),
-                            harvest.get("flower_days"),
-                            harvest.get(
-                                "harvest_date", datetime.datetime.now().isoformat()
-                            ),
-                        ),
+            # Prepare metadata kwargs once
+            meta_kwargs = {
+                "breeder": meta.get("breeder"),
+                "strain_type": meta.get("type"),
+                "lineage": meta.get("lineage"),
+                "sex": meta.get("sex"),
+                "sativa_percentage": meta.get("sativa_percentage"),
+                "indica_percentage": meta.get("indica_percentage"),
+            }
+
+            if not phenotypes:
+                # No specific phenotypes, create default with meta
+                await self.add_strain(strain=strain_name, **meta_kwargs)
+            else:
+                # Has phenotypes, add each one.
+                # Pass meta_kwargs to ensure strain is updated/created correctly.
+                for pheno_name, pheno_data in phenotypes.items():
+                    image_path = pheno_data.get("image_path")
+                    if image_path and image_path.startswith("images/"):
+                        filename = os.path.basename(image_path)
+                        image_path = f"/local/growspace_manager/strains/{filename}"
+
+                    await self.add_strain(
+                        strain=strain_name,
+                        phenotype=pheno_name,
+                        flower_days_min=pheno_data.get("flower_days_min"),
+                        flower_days_max=pheno_data.get("flower_days_max"),
+                        description=pheno_data.get("description"),
+                        image_path=image_path,
+                        image_crop_meta=pheno_data.get("image_crop_meta"),
+                        **meta_kwargs,  # Include meta here
                     )
-                await self._db.commit()
+                    phenotype_id = await self._ensure_strain_and_phenotype_exist(
+                        strain_name, pheno_name
+                    )
+                    for harvest in pheno_data.get("harvests", []):
+                        await self._db.execute(
+                            """
+                            INSERT INTO harvests (phenotype_id, veg_days, flower_days, harvest_date)
+                            VALUES (?, ?, ?, ?)
+                            ON CONFLICT DO NOTHING
+                            """,
+                            (
+                                phenotype_id,
+                                harvest.get("veg_days"),
+                                harvest.get("flower_days"),
+                                harvest.get(
+                                    "harvest_date", datetime.datetime.now().isoformat()
+                                ),
+                            ),
+                        )
+                    await self._db.commit()
         # Invalidate analytics cache and reload
         self._analytics_cache = None
         await self.load()

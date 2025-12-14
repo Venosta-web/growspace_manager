@@ -768,9 +768,18 @@ class StrainLibrarySensor(CoordinatorEntity[GrowspaceCoordinator], SensorEntity)
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
-        """Return the calculated strain analytics as state attributes."""
-        # Use the cached analytics from StrainLibrary to avoid heavy computation on the main loop.
-        return self.coordinator.strain_library.get_analytics()
+        """Return summary analytics as state attributes.
+
+        Note: Full library data should be fetched via the
+        growspace_manager.get_strain_library service.
+        """
+        strains = self.coordinator.strain_library.get_all()
+        total_phenotypes = sum(len(s.get("phenotypes", {})) for s in strains.values())
+
+        return {
+            "strain_count": len(strains),
+            "phenotype_count": total_phenotypes,
+        }
 
 
 class GrowspaceListSensor(SensorEntity):
