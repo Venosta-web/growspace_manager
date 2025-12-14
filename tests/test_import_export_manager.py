@@ -27,7 +27,7 @@ def mock_hass() -> MagicMock:
 
     # Mock config.path
     hass.config = MagicMock()
-    hass.config.path = MagicMock(side_effect=lambda p: f"/config/{p}")
+    hass.config.path = MagicMock(side_effect=lambda *args: f"/config/{'/'.join(args)}")
 
     return hass
 
@@ -66,7 +66,7 @@ async def test_export_library_success(
 
         # Verify image was added to zip
         mock_zip.write.assert_called_with(
-            "/config/images/strain1.jpg", "images/strain1.jpg"
+            "/config/www/images/strain1.jpg", "images/strain1.jpg"
         )
 
         # Verify JSON was written

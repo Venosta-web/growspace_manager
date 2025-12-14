@@ -26,7 +26,9 @@ class ImportExportManager:
         """
         self.hass = hass
 
-    async def export_library(self, library_data: dict[str, Any], output_dir: str) -> str:
+    async def export_library(
+        self, library_data: dict[str, Any], output_dir: str
+    ) -> str:
         """Export the library data and images to a ZIP file.
 
         Args:
@@ -58,7 +60,7 @@ class ImportExportManager:
                             img_path = pheno_data["image_path"]
                             if img_path and img_path.startswith("/local/"):
                                 rel = img_path.replace("/local/", "", 1)
-                                fs_path = self.hass.config.path(rel)
+                                fs_path = self.hass.config.path("www", rel)
                                 if os.path.exists(fs_path):
                                     zip_name = f"images/{os.path.basename(fs_path)}"
                                     zipf.write(fs_path, zip_name)
@@ -69,7 +71,9 @@ class ImportExportManager:
         _LOGGER.info("Exported strain library to %s", zip_path)
         return zip_path
 
-    async def import_library(self, zip_path: str, target_image_dir: str) -> dict[str, Any]:
+    async def import_library(
+        self, zip_path: str, target_image_dir: str
+    ) -> dict[str, Any]:
         """Import a library from a ZIP archive.
 
         Args:
@@ -102,7 +106,9 @@ class ImportExportManager:
             for info in zipf.infolist():
                 if info.filename.startswith("images/") and not info.is_dir():
                     # Extract image
-                    dest = os.path.join(target_image_dir, os.path.basename(info.filename))
+                    dest = os.path.join(
+                        target_image_dir, os.path.basename(info.filename)
+                    )
                     with zipf.open(info) as src, open(dest, "wb") as dst:
                         shutil.copyfileobj(src, dst)
 
