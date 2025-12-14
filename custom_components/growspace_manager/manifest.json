@@ -5,6 +5,7 @@
     "@Venosta-web"
   ],
   "config_flow": true,
+  "single_config_entry": true,
   "dependencies": [
     "recorder",
     "conversation",
