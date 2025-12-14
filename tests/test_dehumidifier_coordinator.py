@@ -292,7 +292,7 @@ async def test_unload(coordinator):
 async def test_min_runtime_prevents_early_turnoff(coordinator, mock_hass):
     """Test that min runtime prevents turning off too early."""
     # Simulate: Dehumidifier is ON, was turned on 60 seconds ago
-    coordinator._last_turn_on_time = time.time() - 60  # 60s ago, min is 300s
+    coordinator._last_turn_on_time = time.monotonic() - 60  # 60s ago, min is 300s
 
     mock_hass.states.get.side_effect = lambda entity_id: {
         "sensor.vpd": MagicMock(state="0.9"),  # High VPD, should turn OFF
@@ -309,7 +309,7 @@ async def test_min_runtime_prevents_early_turnoff(coordinator, mock_hass):
 async def test_min_offtime_prevents_early_turnon(coordinator, mock_hass):
     """Test that min offtime prevents turning on too early."""
     # Simulate: Dehumidifier is OFF, was turned off 60 seconds ago
-    coordinator._last_turn_off_time = time.time() - 60  # 60s ago, min is 300s
+    coordinator._last_turn_off_time = time.monotonic() - 60  # 60s ago, min is 300s
 
     mock_hass.states.get.side_effect = lambda entity_id: {
         "sensor.vpd": MagicMock(state="0.5"),  # Low VPD, should turn ON
@@ -326,7 +326,7 @@ async def test_min_offtime_prevents_early_turnon(coordinator, mock_hass):
 async def test_timer_allows_action_after_min_duration(coordinator, mock_hass):
     """Test that actions are allowed after minimum duration has elapsed."""
     # Simulate: Dehumidifier was turned off 400 seconds ago (> 300s min)
-    coordinator._last_turn_off_time = time.time() - 400
+    coordinator._last_turn_off_time = time.monotonic() - 400
 
     mock_hass.states.get.side_effect = lambda entity_id: {
         "sensor.vpd": MagicMock(state="0.5"),  # Low VPD, should turn ON
@@ -354,9 +354,9 @@ async def test_timestamps_updated_on_control(coordinator, mock_hass):
         "switch.dehumidifier": MagicMock(state=STATE_OFF),
     }.get(entity_id)
 
-    before = time.time()
+    before = time.monotonic()
     await coordinator.async_check_and_control()
-    after = time.time()
+    after = time.monotonic()
 
     # Turn on timestamp should be updated
     assert coordinator._last_turn_on_time >= before

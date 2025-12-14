@@ -213,7 +213,7 @@ class DehumidifierCoordinator:
         Returns:
             True if a state change should be blocked, False otherwise.
         """
-        now = time.time()
+        now = time.monotonic()
 
         if is_on:
             # Guard: Minimum Runtime (must stay ON for min duration)
@@ -309,9 +309,9 @@ class DehumidifierCoordinator:
 
         # Update timestamps for short-cycling prevention
         if turn_on:
-            self._last_turn_on_time = time.time()
+            self._last_turn_on_time = time.monotonic()
         else:
-            self._last_turn_off_time = time.time()
+            self._last_turn_off_time = time.monotonic()
 
     def unload(self) -> None:
         """Unload the coordinator and remove listeners."""
