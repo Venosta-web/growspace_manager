@@ -1207,13 +1207,10 @@ async def test_options_flow_add_timed_notification_success(
 
     result = await flow.async_step_add_timed_notification(user_input=user_input)
 
-    assert result.get("type") == FlowResultType.FORM
-    assert result.get("step_id") == "manage_timed_notifications"
-    assert "timed_notifications" in config_entry.options
-    assert len(config_entry.options["timed_notifications"]) == 1
-    assert (
-        config_entry.options["timed_notifications"][0]["message"] == "Test notification"
-    )
+    assert result.get("type") == FlowResultType.CREATE_ENTRY
+    assert "timed_notifications" in result["data"]
+    assert len(result["data"]["timed_notifications"]) == 1
+    assert result["data"]["timed_notifications"][0]["message"] == "Test notification"
 
 
 @pytest.mark.asyncio
@@ -1296,12 +1293,11 @@ async def test_options_flow_edit_timed_notification_success(
 
     result = await flow.async_step_edit_timed_notification(user_input=user_input)
 
-    assert result.get("type") == FlowResultType.FORM
-    assert result.get("step_id") == "manage_timed_notifications"
-    assert "timed_notifications" in config_entry.options
-    assert len(config_entry.options["timed_notifications"]) == 1
-    assert config_entry.options["timed_notifications"][0]["message"] == "New message"
-    assert config_entry.options["timed_notifications"][0]["day"] == 20
+    assert result.get("type") == FlowResultType.CREATE_ENTRY
+    assert "timed_notifications" in result["data"]
+    assert len(result["data"]["timed_notifications"]) == 1
+    assert result["data"]["timed_notifications"][0]["message"] == "New message"
+    assert result["data"]["timed_notifications"][0]["day"] == 20
 
 
 @pytest.mark.asyncio
@@ -1338,10 +1334,9 @@ async def test_options_flow_manage_timed_notifications_delete(
         user_input={"action": "delete", "notification_id": "123"}
     )
 
-    assert result.get("type") == FlowResultType.FORM
-    assert result.get("step_id") == "manage_timed_notifications"
-    assert "timed_notifications" in config_entry.options
-    assert len(config_entry.options["timed_notifications"]) == 0
+    assert result.get("type") == FlowResultType.CREATE_ENTRY
+    assert "timed_notifications" in result["data"]
+    assert len(result["data"]["timed_notifications"]) == 0
 
 
 # ============================================================================
@@ -1517,8 +1512,10 @@ async def test_options_flow_configure_environment_submit(
     result = await flow.async_step_configure_environment(user_input=user_input)
 
     assert result.get("type") == FlowResultType.CREATE_ENTRY
-    assert "gs1" in config_entry.options
-    assert config_entry.options["gs1"]["temperature_sensor"] == "sensor.temp"
+
+    # Check that environment_config was updated on the growspace object
+    assert mock_growspace.environment_config["temperature_sensor"] == "sensor.temp"
+    mock_coordinator.async_save.assert_called_once()
 
 
 @pytest.mark.asyncio
@@ -1604,8 +1601,10 @@ async def test_options_flow_configure_advanced_bayesian_submit(
     result = await flow.async_step_configure_advanced_bayesian(user_input=user_input)
 
     assert result.get("type") == FlowResultType.CREATE_ENTRY
-    assert "gs1" in config_entry.options
-    assert config_entry.options["gs1"]["prob_temp_extreme_heat"] == (0.9, 0.1)
+
+    # Check that environment_config was updated
+    assert mock_growspace.environment_config["prob_temp_extreme_heat"] == (0.9, 0.1)
+    mock_coordinator.async_save.assert_called_once()
 
 
 @pytest.mark.asyncio
@@ -1714,8 +1713,8 @@ async def test_options_flow_configure_global_submit(
     result = await flow.async_step_configure_global(user_input=user_input)
 
     assert result.get("type") == FlowResultType.CREATE_ENTRY
-    assert "global_settings" in config_entry.options
-    assert config_entry.options["global_settings"]["weather_entity"] == "weather.home"
+    assert "global_settings" in result["data"]
+    assert result["data"]["global_settings"]["weather_entity"] == "weather.home"
 
 
 @pytest.mark.asyncio
@@ -1777,8 +1776,10 @@ async def test_options_flow_configure_advanced_bayesian_non_string_value(
     result = await flow.async_step_configure_advanced_bayesian(user_input=user_input)
 
     assert result.get("type") == FlowResultType.CREATE_ENTRY
-    assert "gs1" in config_entry.options
-    assert config_entry.options["gs1"]["prob_temp_extreme_heat"] == 0.9
+
+    # Check updated config
+    assert mock_growspace.environment_config["prob_temp_extreme_heat"] == 0.9
+    mock_coordinator.async_save.assert_called_once()
 
 
 @pytest.mark.asyncio
@@ -1803,3 +1804,1395 @@ async def test_ensure_default_growspaces_already_exist(mock_coordinator):
 
     # Should not save if all exist
     mock_coordinator.async_save.assert_not_called()
+
+
+# ============================================================================
+# Test ensure_default_growspaces Error Handling
+# ============================================================================
+
+
+@pytest.mark.asyncio
+async def test_ensure_default_growspaces_error_handling(mock_coordinator):
+    """Test that errors in ensure_default_growspaces are handled gracefully.
+
+    Args:
+        mock_coordinator: The mock GrowspaceCoordinator.
+    """
+    # Make _ensure_special_growspace raise an error
+    mock_coordinator._ensure_special_growspace = Mock(
+        side_effect=ValueError("Test error")
+    )
+
+    # Should not raise, just log the error
+    await ensure_default_growspaces(mock_coordinator)
+
+    # async_save should not be called if there's an error
+    mock_coordinator.async_save.assert_not_called()
+
+
+# ============================================================================
+# Test Options Flow - AI Settings
+# ============================================================================
+
+
+@pytest.mark.asyncio
+async def test_options_flow_configure_ai_show_form(
+    hass: HomeAssistant, mock_coordinator, enable_custom_integrations
+):
+    """Test that the AI configuration step shows the form.
+
+    Args:
+        hass: The HomeAssistant instance.
+        mock_coordinator: The mock GrowspaceCoordinator.
+        enable_custom_integrations: Fixture to enable custom integrations.
+    """
+    config_entry = MockConfigEntry(domain=DOMAIN, data={"name": "Test"}, options={})
+    config_entry.add_to_hass(hass)
+    hass.data[DOMAIN] = {config_entry.entry_id: {"coordinator": mock_coordinator}}
+
+    flow = OptionsFlowHandler(config_entry)
+    flow.hass = hass
+
+    result = await flow.async_step_configure_ai()
+
+    assert result.get("type") == FlowResultType.FORM
+    assert result.get("step_id") == "configure_ai"
+
+
+@pytest.mark.asyncio
+async def test_options_flow_configure_ai_enable(
+    hass: HomeAssistant, mock_coordinator, enable_custom_integrations
+):
+    """Test enabling AI features with valid settings.
+
+    Args:
+        hass: The HomeAssistant instance.
+        mock_coordinator: The mock GrowspaceCoordinator.
+        enable_custom_integrations: Fixture to enable custom integrations.
+    """
+    mock_coordinator.options = {}
+    config_entry = MockConfigEntry(domain=DOMAIN, data={"name": "Test"}, options={})
+    config_entry.add_to_hass(hass)
+    hass.data[DOMAIN] = {config_entry.entry_id: {"coordinator": mock_coordinator}}
+
+    flow = OptionsFlowHandler(config_entry)
+    flow.hass = hass
+
+    user_input = {
+        "ai_enabled": True,
+        "assistant_id": "conversation.openai",
+        "notification_personality": "Friendly",
+        "ai_notifications_enabled": True,
+    }
+
+    result = await flow.async_step_configure_ai(user_input=user_input)
+
+    assert result.get("type") == FlowResultType.CREATE_ENTRY
+    mock_coordinator.async_save.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_options_flow_configure_ai_missing_assistant(
+    hass: HomeAssistant, mock_coordinator, enable_custom_integrations
+):
+    """Test error when AI is enabled but no assistant selected.
+
+    Args:
+        hass: The HomeAssistant instance.
+        mock_coordinator: The mock GrowspaceCoordinator.
+        enable_custom_integrations: Fixture to enable custom integrations.
+    """
+    config_entry = MockConfigEntry(domain=DOMAIN, data={"name": "Test"}, options={})
+    config_entry.add_to_hass(hass)
+    hass.data[DOMAIN] = {config_entry.entry_id: {"coordinator": mock_coordinator}}
+
+    flow = OptionsFlowHandler(config_entry)
+    flow.hass = hass
+
+    user_input = {
+        "ai_enabled": True,
+        "assistant_id": None,  # Missing assistant
+    }
+
+    result = await flow.async_step_configure_ai(user_input=user_input)
+
+    assert result.get("type") == FlowResultType.FORM
+    assert result.get("errors") == {"base": "assistant_required"}
+
+
+@pytest.mark.asyncio
+async def test_options_flow_navigate_to_configure_ai(
+    hass: HomeAssistant, mock_coordinator, enable_custom_integrations
+):
+    """Test navigation from main menu to AI configuration.
+
+    Args:
+        hass: The HomeAssistant instance.
+        mock_coordinator: The mock GrowspaceCoordinator.
+        enable_custom_integrations: Fixture to enable custom integrations.
+    """
+    config_entry = MockConfigEntry(domain=DOMAIN, data={"name": "Test"}, options={})
+    config_entry.add_to_hass(hass)
+    hass.data[DOMAIN] = {config_entry.entry_id: {"coordinator": mock_coordinator}}
+
+    flow = OptionsFlowHandler(config_entry)
+    flow.hass = hass
+
+    result = await flow.async_step_init(user_input={"action": "configure_ai"})
+
+    assert result.get("type") == FlowResultType.FORM
+    assert result.get("step_id") == "configure_ai"
+
+
+@pytest.mark.asyncio
+async def test_options_flow_navigate_to_strain_library(
+    hass: HomeAssistant, mock_coordinator, enable_custom_integrations
+):
+    """Test navigation from main menu to strain library management.
+
+    Args:
+        hass: The HomeAssistant instance.
+        mock_coordinator: The mock GrowspaceCoordinator.
+        enable_custom_integrations: Fixture to enable custom integrations.
+    """
+    mock_coordinator.strains = MagicMock()
+    mock_coordinator.strains.get_all = Mock(return_value={})
+
+    config_entry = MockConfigEntry(domain=DOMAIN, data={"name": "Test"}, options={})
+    config_entry.add_to_hass(hass)
+    hass.data[DOMAIN] = {config_entry.entry_id: {"coordinator": mock_coordinator}}
+
+    flow = OptionsFlowHandler(config_entry)
+    flow.hass = hass
+
+    result = await flow.async_step_init(user_input={"action": "manage_strain_library"})
+
+    assert result.get("type") == FlowResultType.FORM
+    assert result.get("step_id") == "manage_strain_library"
+
+
+@pytest.mark.asyncio
+async def test_options_flow_navigate_to_irrigation(
+    hass: HomeAssistant, mock_coordinator, enable_custom_integrations
+):
+    """Test navigation from main menu to irrigation configuration.
+
+    Args:
+        hass: The HomeAssistant instance.
+        mock_coordinator: The mock GrowspaceCoordinator.
+        enable_custom_integrations: Fixture to enable custom integrations.
+    """
+    mock_growspace = MagicMock()
+    mock_growspace.name = "Test Growspace"
+    mock_coordinator.growspaces = {"gs1": mock_growspace}
+    mock_coordinator.get_sorted_growspace_options = Mock(
+        return_value=[("gs1", "Test Growspace")]
+    )
+
+    config_entry = MockConfigEntry(domain=DOMAIN, data={"name": "Test"}, options={})
+    config_entry.add_to_hass(hass)
+    hass.data[DOMAIN] = {config_entry.entry_id: {"coordinator": mock_coordinator}}
+
+    flow = OptionsFlowHandler(config_entry)
+    flow.hass = hass
+
+    result = await flow.async_step_init(user_input={"action": "configure_irrigation"})
+
+    assert result.get("type") == FlowResultType.FORM
+    assert result.get("step_id") == "select_growspace_for_irrigation"
+
+
+# ============================================================================
+# Test Options Flow - Irrigation Configuration
+# ============================================================================
+
+
+@pytest.mark.asyncio
+async def test_options_flow_select_growspace_for_irrigation_show_form(
+    hass: HomeAssistant, mock_coordinator, enable_custom_integrations
+):
+    """Test that the irrigation growspace selection shows the form.
+
+    Args:
+        hass: The HomeAssistant instance.
+        mock_coordinator: The mock GrowspaceCoordinator.
+        enable_custom_integrations: Fixture to enable custom integrations.
+    """
+    mock_growspace = MagicMock()
+    mock_growspace.name = "Test Growspace"
+    mock_coordinator.growspaces = {"gs1": mock_growspace}
+    mock_coordinator.get_sorted_growspace_options = Mock(
+        return_value=[("gs1", "Test Growspace")]
+    )
+
+    config_entry = MockConfigEntry(domain=DOMAIN, data={"name": "Test"}, options={})
+    config_entry.add_to_hass(hass)
+    hass.data[DOMAIN] = {config_entry.entry_id: {"coordinator": mock_coordinator}}
+
+    flow = OptionsFlowHandler(config_entry)
+    flow.hass = hass
+
+    result = await flow.async_step_select_growspace_for_irrigation()
+
+    assert result.get("type") == FlowResultType.FORM
+    assert result.get("step_id") == "select_growspace_for_irrigation"
+
+
+@pytest.mark.asyncio
+async def test_options_flow_select_growspace_for_irrigation_no_growspaces(
+    hass: HomeAssistant, mock_coordinator, enable_custom_integrations
+):
+    """Test that irrigation flow aborts when no growspaces exist.
+
+    Args:
+        hass: The HomeAssistant instance.
+        mock_coordinator: The mock GrowspaceCoordinator.
+        enable_custom_integrations: Fixture to enable custom integrations.
+    """
+    mock_coordinator.growspaces = {}
+    mock_coordinator.get_sorted_growspace_options = Mock(return_value=[])
+
+    config_entry = MockConfigEntry(domain=DOMAIN, data={"name": "Test"}, options={})
+    config_entry.add_to_hass(hass)
+    hass.data[DOMAIN] = {config_entry.entry_id: {"coordinator": mock_coordinator}}
+
+    flow = OptionsFlowHandler(config_entry)
+    flow.hass = hass
+
+    result = await flow.async_step_select_growspace_for_irrigation()
+
+    assert result.get("type") == FlowResultType.ABORT
+    assert result.get("reason") == "no_growspaces"
+
+
+@pytest.mark.asyncio
+async def test_options_flow_select_growspace_for_irrigation_submit(
+    hass: HomeAssistant, mock_coordinator, enable_custom_integrations
+):
+    """Test selecting a growspace for irrigation configuration.
+
+    Args:
+        hass: The HomeAssistant instance.
+        mock_coordinator: The mock GrowspaceCoordinator.
+        enable_custom_integrations: Fixture to enable custom integrations.
+    """
+    mock_growspace = MagicMock()
+    mock_growspace.name = "Test Growspace"
+    mock_growspace.irrigation_config = {}
+    mock_coordinator.growspaces = {"gs1": mock_growspace}
+    mock_coordinator.get_sorted_growspace_options = Mock(
+        return_value=[("gs1", "Test Growspace")]
+    )
+
+    config_entry = MockConfigEntry(domain=DOMAIN, data={"name": "Test"}, options={})
+    config_entry.add_to_hass(hass)
+    hass.data[DOMAIN] = {config_entry.entry_id: {"coordinator": mock_coordinator}}
+
+    flow = OptionsFlowHandler(config_entry)
+    flow.hass = hass
+
+    result = await flow.async_step_select_growspace_for_irrigation(
+        user_input={"growspace_id": "gs1"}
+    )
+
+    # Should proceed to irrigation overview
+    assert result.get("type") == FlowResultType.FORM
+    assert result.get("step_id") == "irrigation_overview"
+
+
+@pytest.mark.asyncio
+async def test_options_flow_configure_irrigation_growspace_not_found(
+    hass: HomeAssistant, mock_coordinator, enable_custom_integrations
+):
+    """Test that irrigation config aborts if growspace not found.
+
+    Args:
+        hass: The HomeAssistant instance.
+        mock_coordinator: The mock GrowspaceCoordinator.
+        enable_custom_integrations: Fixture to enable custom integrations.
+    """
+    mock_coordinator.growspaces = {}
+
+    config_entry = MockConfigEntry(domain=DOMAIN, data={"name": "Test"}, options={})
+    config_entry.add_to_hass(hass)
+    hass.data[DOMAIN] = {config_entry.entry_id: {"coordinator": mock_coordinator}}
+
+    flow = OptionsFlowHandler(config_entry)
+    flow.hass = hass
+    flow._selected_growspace_id = "nonexistent"
+
+    result = await flow.async_step_configure_irrigation()
+
+    assert result.get("type") == FlowResultType.ABORT
+    assert result.get("reason") == "growspace_not_found"
+
+
+@pytest.mark.asyncio
+async def test_options_flow_irrigation_overview_show_form(
+    hass: HomeAssistant, mock_coordinator, enable_custom_integrations
+):
+    """Test that irrigation overview shows the full form.
+
+    Args:
+        hass: The HomeAssistant instance.
+        mock_coordinator: The mock GrowspaceCoordinator.
+        enable_custom_integrations: Fixture to enable custom integrations.
+    """
+    mock_growspace = MagicMock()
+    mock_growspace.name = "Test Growspace"
+    mock_growspace.irrigation_config = {
+        "irrigation_pump_entity": "switch.pump",
+        "drain_pump_entity": "switch.drain",
+        "irrigation_duration": 60,
+        "drain_duration": 30,
+        "irrigation_times": [],
+        "drain_times": [],
+    }
+    mock_coordinator.growspaces = {"gs1": mock_growspace}
+
+    config_entry = MockConfigEntry(domain=DOMAIN, data={"name": "Test"}, options={})
+    config_entry.add_to_hass(hass)
+    hass.data[DOMAIN] = {config_entry.entry_id: {"coordinator": mock_coordinator}}
+
+    flow = OptionsFlowHandler(config_entry)
+    flow.hass = hass
+    flow._selected_growspace_id = "gs1"
+
+    result = await flow.async_step_irrigation_overview()
+
+    assert result.get("type") == FlowResultType.FORM
+    assert result.get("step_id") == "irrigation_overview"
+
+
+# ============================================================================
+# Test Options Flow - Strain Library Management
+# ============================================================================
+
+
+@pytest.mark.asyncio
+async def test_options_flow_manage_strain_library_show_form(
+    hass: HomeAssistant, mock_coordinator, enable_custom_integrations
+):
+    """Test that strain library management shows the form.
+
+    Args:
+        hass: The HomeAssistant instance.
+        mock_coordinator: The mock GrowspaceCoordinator.
+        enable_custom_integrations: Fixture to enable custom integrations.
+    """
+    mock_coordinator.strains = MagicMock()
+    mock_coordinator.strains.get_all = Mock(return_value={})
+
+    config_entry = MockConfigEntry(domain=DOMAIN, data={"name": "Test"}, options={})
+    config_entry.add_to_hass(hass)
+    hass.data[DOMAIN] = {config_entry.entry_id: {"coordinator": mock_coordinator}}
+
+    flow = OptionsFlowHandler(config_entry)
+    flow.hass = hass
+
+    result = await flow.async_step_manage_strain_library()
+
+    assert result.get("type") == FlowResultType.FORM
+    assert result.get("step_id") == "manage_strain_library"
+
+
+@pytest.mark.asyncio
+async def test_options_flow_manage_strain_library_add_action(
+    hass: HomeAssistant, mock_coordinator, enable_custom_integrations
+):
+    """Test navigating to add strain form.
+
+    Args:
+        hass: The HomeAssistant instance.
+        mock_coordinator: The mock GrowspaceCoordinator.
+        enable_custom_integrations: Fixture to enable custom integrations.
+    """
+    mock_coordinator.strains = MagicMock()
+    mock_coordinator.strains.get_all = Mock(return_value={})
+
+    config_entry = MockConfigEntry(domain=DOMAIN, data={"name": "Test"}, options={})
+    config_entry.add_to_hass(hass)
+    hass.data[DOMAIN] = {config_entry.entry_id: {"coordinator": mock_coordinator}}
+
+    flow = OptionsFlowHandler(config_entry)
+    flow.hass = hass
+
+    result = await flow.async_step_manage_strain_library(user_input={"action": "add"})
+
+    assert result.get("type") == FlowResultType.FORM
+    assert result.get("step_id") == "add_strain"
+
+
+@pytest.mark.asyncio
+async def test_options_flow_manage_strain_library_remove_action(
+    hass: HomeAssistant, mock_coordinator, enable_custom_integrations
+):
+    """Test removing a strain from the library.
+
+    Args:
+        hass: The HomeAssistant instance.
+        mock_coordinator: The mock GrowspaceCoordinator.
+        enable_custom_integrations: Fixture to enable custom integrations.
+    """
+    mock_coordinator.strains = MagicMock()
+    mock_coordinator.strains.get_all = Mock(
+        return_value={"Blue Dream": {"phenotypes": {"default": {}}}}
+    )
+    mock_coordinator.strains.remove_strain_phenotype = AsyncMock()
+
+    config_entry = MockConfigEntry(domain=DOMAIN, data={"name": "Test"}, options={})
+    config_entry.add_to_hass(hass)
+    hass.data[DOMAIN] = {config_entry.entry_id: {"coordinator": mock_coordinator}}
+
+    flow = OptionsFlowHandler(config_entry)
+    flow.hass = hass
+
+    result = await flow.async_step_manage_strain_library(
+        user_input={"action": "remove", "strain_id": "Blue Dream|default"}
+    )
+
+    mock_coordinator.strains.remove_strain_phenotype.assert_called_once_with(
+        "Blue Dream", "default"
+    )
+    assert result.get("type") == FlowResultType.FORM
+    assert result.get("step_id") == "manage_strain_library"
+
+
+@pytest.mark.asyncio
+async def test_options_flow_manage_strain_library_back_action(
+    hass: HomeAssistant, mock_coordinator, enable_custom_integrations
+):
+    """Test going back to main menu from strain library.
+
+    Args:
+        hass: The HomeAssistant instance.
+        mock_coordinator: The mock GrowspaceCoordinator.
+        enable_custom_integrations: Fixture to enable custom integrations.
+    """
+    mock_coordinator.strains = MagicMock()
+    mock_coordinator.strains.get_all = Mock(return_value={})
+
+    config_entry = MockConfigEntry(domain=DOMAIN, data={"name": "Test"}, options={})
+    config_entry.add_to_hass(hass)
+    hass.data[DOMAIN] = {config_entry.entry_id: {"coordinator": mock_coordinator}}
+
+    flow = OptionsFlowHandler(config_entry)
+    flow.hass = hass
+
+    result = await flow.async_step_manage_strain_library(user_input={"action": "back"})
+
+    assert result.get("type") == FlowResultType.FORM
+    assert result.get("step_id") == "init"
+
+
+@pytest.mark.asyncio
+async def test_options_flow_add_strain_show_form(
+    hass: HomeAssistant, mock_coordinator, enable_custom_integrations
+):
+    """Test that add strain step shows the form.
+
+    Args:
+        hass: The HomeAssistant instance.
+        mock_coordinator: The mock GrowspaceCoordinator.
+        enable_custom_integrations: Fixture to enable custom integrations.
+    """
+    mock_coordinator.strains = MagicMock()
+    mock_coordinator.strains.get_all = Mock(return_value={})
+
+    config_entry = MockConfigEntry(domain=DOMAIN, data={"name": "Test"}, options={})
+    config_entry.add_to_hass(hass)
+    hass.data[DOMAIN] = {config_entry.entry_id: {"coordinator": mock_coordinator}}
+
+    flow = OptionsFlowHandler(config_entry)
+    flow.hass = hass
+
+    result = await flow.async_step_add_strain()
+
+    assert result.get("type") == FlowResultType.FORM
+    assert result.get("step_id") == "add_strain"
+
+
+@pytest.mark.asyncio
+async def test_options_flow_add_strain_submit(
+    hass: HomeAssistant, mock_coordinator, enable_custom_integrations
+):
+    """Test adding a new strain successfully.
+
+    Args:
+        hass: The HomeAssistant instance.
+        mock_coordinator: The mock GrowspaceCoordinator.
+        enable_custom_integrations: Fixture to enable custom integrations.
+    """
+    mock_coordinator.strains = MagicMock()
+    mock_coordinator.strains.get_all = Mock(return_value={})
+    mock_coordinator.strains.add_strain = AsyncMock()
+
+    config_entry = MockConfigEntry(domain=DOMAIN, data={"name": "Test"}, options={})
+    config_entry.add_to_hass(hass)
+    hass.data[DOMAIN] = {config_entry.entry_id: {"coordinator": mock_coordinator}}
+
+    flow = OptionsFlowHandler(config_entry)
+    flow.hass = hass
+
+    user_input = {
+        "strain": "Blue Dream",
+        "phenotype": "default",
+        "breeder": "DJ Short",
+        "type": "Hybrid",
+    }
+
+    result = await flow.async_step_add_strain(user_input=user_input)
+
+    mock_coordinator.strains.add_strain.assert_called_once()
+    assert result.get("type") == FlowResultType.FORM
+    assert result.get("step_id") == "manage_strain_library"
+
+
+@pytest.mark.asyncio
+async def test_options_flow_add_strain_error(
+    hass: HomeAssistant, mock_coordinator, enable_custom_integrations
+):
+    """Test error handling when adding a strain fails.
+
+    Args:
+        hass: The HomeAssistant instance.
+        mock_coordinator: The mock GrowspaceCoordinator.
+        enable_custom_integrations: Fixture to enable custom integrations.
+    """
+    mock_coordinator.strains = MagicMock()
+    mock_coordinator.strains.get_all = Mock(return_value={})
+    mock_coordinator.strains.add_strain = AsyncMock(
+        side_effect=Exception("Database error")
+    )
+
+    config_entry = MockConfigEntry(domain=DOMAIN, data={"name": "Test"}, options={})
+    config_entry.add_to_hass(hass)
+    hass.data[DOMAIN] = {config_entry.entry_id: {"coordinator": mock_coordinator}}
+
+    flow = OptionsFlowHandler(config_entry)
+    flow.hass = hass
+
+    user_input = {"strain": "Blue Dream"}
+
+    result = await flow.async_step_add_strain(user_input=user_input)
+
+    assert result.get("type") == FlowResultType.FORM
+    assert result.get("step_id") == "add_strain"
+    assert "base" in result.get("errors", {})
+
+
+# ============================================================================
+# Test AI Settings Schema Building
+# ============================================================================
+
+
+@pytest.mark.asyncio
+async def test_get_ai_settings_schema_with_assistants(
+    hass: HomeAssistant, mock_coordinator, enable_custom_integrations
+):
+    """Test AI settings schema when conversation agents are available.
+
+    Args:
+        hass: The HomeAssistant instance.
+        mock_coordinator: The mock GrowspaceCoordinator.
+        enable_custom_integrations: Fixture to enable custom integrations.
+    """
+    from homeassistant.components import conversation
+
+    config_entry = MockConfigEntry(domain=DOMAIN, data={"name": "Test"}, options={})
+    config_entry.add_to_hass(hass)
+    hass.data[DOMAIN] = {config_entry.entry_id: {"coordinator": mock_coordinator}}
+
+    flow = OptionsFlowHandler(config_entry)
+    flow.hass = hass
+
+    # Mock conversation agents
+    mock_agent = MagicMock()
+    mock_agent.name = "OpenAI"
+
+    with patch.object(
+        conversation,
+        "async_get_conversation_agents",
+        return_value={"conversation.openai": mock_agent},
+        create=True,
+    ):
+        schema = await flow._get_ai_settings_schema()
+
+    assert schema is not None
+
+
+@pytest.mark.asyncio
+async def test_get_ai_settings_schema_no_assistants(
+    hass: HomeAssistant, mock_coordinator, enable_custom_integrations
+):
+    """Test AI settings schema when no conversation agents are available.
+
+    Args:
+        hass: The HomeAssistant instance.
+        mock_coordinator: The mock GrowspaceCoordinator.
+        enable_custom_integrations: Fixture to enable custom integrations.
+    """
+    from homeassistant.components import conversation
+
+    config_entry = MockConfigEntry(domain=DOMAIN, data={"name": "Test"}, options={})
+    config_entry.add_to_hass(hass)
+    hass.data[DOMAIN] = {config_entry.entry_id: {"coordinator": mock_coordinator}}
+
+    flow = OptionsFlowHandler(config_entry)
+    flow.hass = hass
+
+    # Mock no agents - use patch.object with create=True for methods that may not exist
+    with (
+        patch.object(
+            conversation,
+            "async_get_conversation_agents",
+            return_value={},
+            create=True,
+        ),
+        patch.object(
+            conversation,
+            "async_get_agent",
+            side_effect=Exception("No default agent"),
+            create=True,
+        ),
+    ):
+        schema = await flow._get_ai_settings_schema()
+
+    # Should still return a schema with text selector fallback
+    assert schema is not None
+
+
+@pytest.mark.asyncio
+async def test_get_ai_settings_schema_agent_fetch_error(
+    hass: HomeAssistant, mock_coordinator, enable_custom_integrations
+):
+    """Test AI settings schema when agent fetching fails.
+
+    Args:
+        hass: The HomeAssistant instance.
+        mock_coordinator: The mock GrowspaceCoordinator.
+        enable_custom_integrations: Fixture to enable custom integrations.
+    """
+    from homeassistant.components import conversation
+
+    config_entry = MockConfigEntry(domain=DOMAIN, data={"name": "Test"}, options={})
+    config_entry.add_to_hass(hass)
+    hass.data[DOMAIN] = {config_entry.entry_id: {"coordinator": mock_coordinator}}
+
+    flow = OptionsFlowHandler(config_entry)
+    flow.hass = hass
+
+    # Mock agent fetch error - use patch.object with create=True
+    with (
+        patch.object(
+            conversation,
+            "async_get_conversation_agents",
+            side_effect=Exception("Network error"),
+            create=True,
+        ),
+        patch.object(
+            conversation,
+            "async_get_agent",
+            side_effect=Exception("No agent"),
+            create=True,
+        ),
+    ):
+        schema = await flow._get_ai_settings_schema()
+
+    # Should gracefully handle error and still return a schema
+    assert schema is not None
+
+
+# ============================================================================
+# Test Options Flow - Irrigation Flow Error Cases
+# ============================================================================
+
+
+@pytest.mark.asyncio
+async def test_options_flow_select_growspace_irrigation_coordinator_missing(
+    hass: HomeAssistant, enable_custom_integrations
+):
+    """Test irrigation flow when coordinator is missing.
+
+    Args:
+        hass: The HomeAssistant instance.
+        enable_custom_integrations: Fixture to enable custom integrations.
+    """
+    config_entry = MockConfigEntry(domain=DOMAIN, data={"name": "Test"}, options={})
+    config_entry.add_to_hass(hass)
+    # Don't set up coordinator in hass.data
+    hass.data[DOMAIN] = {}
+
+    flow = OptionsFlowHandler(config_entry)
+    flow.hass = hass
+
+    result = await flow.async_step_select_growspace_for_irrigation()
+
+    assert result.get("type") == FlowResultType.ABORT
+    assert result.get("reason") == "setup_error"
+
+
+# ============================================================================
+# Test Strain Management Schema
+# ============================================================================
+
+
+def test_get_strain_management_schema_with_strains(mock_coordinator):
+    """Test strain management schema with existing strains.
+
+    Args:
+        mock_coordinator: The mock GrowspaceCoordinator.
+    """
+    mock_coordinator.strains = MagicMock()
+    mock_coordinator.strains.get_all = Mock(
+        return_value={
+            "Blue Dream": {"phenotypes": {"default": {}, "purple": {}}},
+            "OG Kush": {"phenotypes": {"default": {}}},
+        }
+    )
+
+    config_entry = MockConfigEntry(domain=DOMAIN, data={"name": "Test"}, options={})
+    flow = OptionsFlowHandler(config_entry)
+
+    schema = flow._get_strain_management_schema(mock_coordinator)
+
+    assert schema is not None
+
+
+def test_get_strain_management_schema_empty(mock_coordinator):
+    """Test strain management schema with no strains.
+
+    Args:
+        mock_coordinator: The mock GrowspaceCoordinator.
+    """
+    mock_coordinator.strains = MagicMock()
+    mock_coordinator.strains.get_all = Mock(return_value={})
+
+    config_entry = MockConfigEntry(domain=DOMAIN, data={"name": "Test"}, options={})
+    flow = OptionsFlowHandler(config_entry)
+
+    schema = flow._get_strain_management_schema(mock_coordinator)
+
+    assert schema is not None
+
+
+# ============================================================================
+# Test Plant Management Schema
+# ============================================================================
+
+
+def test_get_plant_management_schema_with_plants(mock_coordinator):
+    """Test plant management schema with existing plants.
+
+    Args:
+        mock_coordinator: The mock GrowspaceCoordinator.
+    """
+    mock_plant = MagicMock()
+    mock_plant.strain = "Blue Dream"
+    mock_plant.growspace_id = "gs1"
+    mock_plant.row = 1
+    mock_plant.col = 2
+
+    mock_growspace = MagicMock()
+    mock_growspace.name = "Flower Tent"
+
+    mock_coordinator.plants = {"plant1": mock_plant}
+    mock_coordinator.growspaces = {"gs1": mock_growspace}
+
+    config_entry = MockConfigEntry(domain=DOMAIN, data={"name": "Test"}, options={})
+    flow = OptionsFlowHandler(config_entry)
+
+    schema = flow._get_plant_management_schema(mock_coordinator)
+
+    assert schema is not None
+
+
+# ============================================================================
+# Test Add Strain Schema
+# ============================================================================
+
+
+def test_get_add_strain_schema():
+    """Test add strain schema generation."""
+    config_entry = MockConfigEntry(domain=DOMAIN, data={"name": "Test"}, options={})
+    flow = OptionsFlowHandler(config_entry)
+
+    schema = flow._get_add_strain_schema()
+
+    assert schema is not None
+
+
+# ============================================================================
+# Additional Edge Case Tests for Coverage
+# ============================================================================
+
+
+@pytest.mark.asyncio
+async def test_options_flow_configure_environment_growspace_not_found(
+    hass: HomeAssistant, mock_coordinator, enable_custom_integrations
+):
+    """Test environment config aborts if growspace not found.
+
+    Args:
+        hass: The HomeAssistant instance.
+        mock_coordinator: The mock GrowspaceCoordinator.
+        enable_custom_integrations: Fixture to enable custom integrations.
+    """
+    mock_coordinator.growspaces = {}
+
+    config_entry = MockConfigEntry(domain=DOMAIN, data={"name": "Test"}, options={})
+    config_entry.add_to_hass(hass)
+    hass.data[DOMAIN] = {config_entry.entry_id: {"coordinator": mock_coordinator}}
+
+    flow = OptionsFlowHandler(config_entry)
+    flow.hass = hass
+    flow._selected_growspace_id = "nonexistent"
+
+    result = await flow.async_step_configure_environment()
+
+    assert result.get("type") == FlowResultType.ABORT
+    assert result.get("reason") == "growspace_not_found"
+
+
+@pytest.mark.asyncio
+async def test_options_flow_configure_environment_lst_offset_branch(
+    hass: HomeAssistant, mock_coordinator, enable_custom_integrations
+):
+    """Test environment config shows LST offset when temp/humidity set but not VPD.
+
+    Args:
+        hass: The HomeAssistant instance.
+        mock_coordinator: The mock GrowspaceCoordinator.
+        enable_custom_integrations: Fixture to enable custom integrations.
+    """
+    mock_growspace = MagicMock()
+    mock_growspace.name = "Test Growspace"
+    mock_growspace.environment_config = {
+        "temperature_sensor": "sensor.temp",
+        "humidity_sensor": "sensor.humidity",
+        # vpd_sensor intentionally not set
+    }
+    mock_coordinator.growspaces = {"gs1": mock_growspace}
+
+    config_entry = MockConfigEntry(domain=DOMAIN, data={"name": "Test"}, options={})
+    config_entry.add_to_hass(hass)
+    hass.data[DOMAIN] = {config_entry.entry_id: {"coordinator": mock_coordinator}}
+
+    flow = OptionsFlowHandler(config_entry)
+    flow.hass = hass
+    flow._selected_growspace_id = "gs1"
+
+    result = await flow.async_step_configure_environment()
+
+    assert result.get("type") == FlowResultType.FORM
+    assert result.get("step_id") == "configure_environment"
+
+
+@pytest.mark.asyncio
+async def test_options_flow_configure_advanced_bayesian_growspace_not_found(
+    hass: HomeAssistant, mock_coordinator, enable_custom_integrations
+):
+    """Test advanced Bayesian config aborts if growspace not found.
+
+    Args:
+        hass: The HomeAssistant instance.
+        mock_coordinator: The mock GrowspaceCoordinator.
+        enable_custom_integrations: Fixture to enable custom integrations.
+    """
+    mock_coordinator.growspaces = {}
+
+    config_entry = MockConfigEntry(domain=DOMAIN, data={"name": "Test"}, options={})
+    config_entry.add_to_hass(hass)
+    hass.data[DOMAIN] = {config_entry.entry_id: {"coordinator": mock_coordinator}}
+
+    flow = OptionsFlowHandler(config_entry)
+    flow.hass = hass
+    flow._selected_growspace_id = "nonexistent"
+    flow._env_config_step1 = {}
+
+    result = await flow.async_step_configure_advanced_bayesian()
+
+    assert result.get("type") == FlowResultType.ABORT
+    assert result.get("reason") == "growspace_not_found"
+
+
+@pytest.mark.asyncio
+async def test_options_flow_manage_plants_update_action(
+    hass: HomeAssistant, mock_coordinator, enable_custom_integrations
+):
+    """Test manage plants update action with plant selected.
+
+    Args:
+        hass: The HomeAssistant instance.
+        mock_coordinator: The mock GrowspaceCoordinator.
+        enable_custom_integrations: Fixture to enable custom integrations.
+    """
+    mock_plant = MagicMock()
+    mock_plant.strain = "Blue Dream"
+    mock_plant.growspace_id = "gs1"
+    mock_plant.row = 1
+    mock_plant.col = 1
+
+    mock_growspace = MagicMock()
+    mock_growspace.name = "Flower"
+
+    mock_coordinator.plants = {"plant1": mock_plant}
+    mock_coordinator.growspaces = {"gs1": mock_growspace}
+    mock_coordinator.get_sorted_growspace_options = Mock(
+        return_value=[("gs1", "Flower")]
+    )
+    mock_coordinator.get_strain_options = Mock(return_value=["Blue Dream"])
+
+    config_entry = MockConfigEntry(domain=DOMAIN, data={"name": "Test"}, options={})
+    config_entry.add_to_hass(hass)
+    hass.data[DOMAIN] = {config_entry.entry_id: {"coordinator": mock_coordinator}}
+
+    flow = OptionsFlowHandler(config_entry)
+    flow.hass = hass
+
+    result = await flow.async_step_manage_plants(
+        user_input={"action": "update", "plant_id": "plant1"}
+    )
+
+    assert result.get("type") == FlowResultType.FORM
+    assert result.get("step_id") == "update_plant"
+
+
+@pytest.mark.asyncio
+async def test_options_flow_manage_plants_back_action(
+    hass: HomeAssistant, mock_coordinator, enable_custom_integrations
+):
+    """Test manage plants back action returns to main menu.
+
+    Args:
+        hass: The HomeAssistant instance.
+        mock_coordinator: The mock GrowspaceCoordinator.
+        enable_custom_integrations: Fixture to enable custom integrations.
+    """
+    mock_coordinator.plants = {}
+    mock_coordinator.growspaces = {}
+
+    config_entry = MockConfigEntry(domain=DOMAIN, data={"name": "Test"}, options={})
+    config_entry.add_to_hass(hass)
+    hass.data[DOMAIN] = {config_entry.entry_id: {"coordinator": mock_coordinator}}
+
+    flow = OptionsFlowHandler(config_entry)
+    flow.hass = hass
+
+    result = await flow.async_step_manage_plants(user_input={"action": "back"})
+
+    assert result.get("type") == FlowResultType.FORM
+    assert result.get("step_id") == "init"
+
+
+@pytest.mark.asyncio
+async def test_options_flow_select_growspace_for_plant_no_devices(
+    hass: HomeAssistant, mock_coordinator, enable_custom_integrations
+):
+    """Test plant growspace selection shows error when no devices found.
+
+    Args:
+        hass: The HomeAssistant instance.
+        mock_coordinator: The mock GrowspaceCoordinator.
+        enable_custom_integrations: Fixture to enable custom integrations.
+    """
+    from homeassistant.helpers.storage import Store
+
+    mock_store = MagicMock(spec=Store)
+    mock_store.async_load = AsyncMock(return_value={"growspaces": {}, "plants": {}})
+
+    mock_coordinator.growspaces = {}
+    mock_coordinator.plants = {}
+    mock_coordinator.data = {"growspaces": {}, "plants": {}}
+    mock_coordinator._notifications_sent = {}
+
+    config_entry = MockConfigEntry(domain=DOMAIN, data={"name": "Test"}, options={})
+    config_entry.add_to_hass(hass)
+    hass.data[DOMAIN] = {
+        config_entry.entry_id: {
+            "coordinator": mock_coordinator,
+            "store": mock_store,
+        }
+    }
+
+    flow = OptionsFlowHandler(config_entry)
+    flow.hass = hass
+
+    result = await flow.async_step_select_growspace_for_plant()
+
+    assert result.get("type") == FlowResultType.FORM
+    assert "base" in result.get("errors", {})
+
+
+@pytest.mark.asyncio
+async def test_options_flow_select_growspace_for_plant_coordinator_error(
+    hass: HomeAssistant, enable_custom_integrations
+):
+    """Test plant growspace selection aborts on coordinator error.
+
+    Args:
+        hass: The HomeAssistant instance.
+        enable_custom_integrations: Fixture to enable custom integrations.
+    """
+    config_entry = MockConfigEntry(domain=DOMAIN, data={"name": "Test"}, options={})
+    config_entry.add_to_hass(hass)
+    hass.data[DOMAIN] = {}  # No coordinator
+
+    flow = OptionsFlowHandler(config_entry)
+    flow.hass = hass
+
+    result = await flow.async_step_select_growspace_for_plant()
+
+    assert result.get("type") == FlowResultType.ABORT
+    assert result.get("reason") == "setup_error"
+
+
+def test_get_timed_notification_schema_with_notifications(mock_coordinator, hass):
+    """Test timed notification schema with existing notifications.
+
+    Args:
+        mock_coordinator: The mock GrowspaceCoordinator.
+        hass: The HomeAssistant instance.
+    """
+    mock_coordinator.options = {
+        "timed_notifications": [
+            {"id": "notif1", "time": "08:00", "message": "Water plants"},
+            {"id": "notif2", "time": "20:00", "message": "Check lights"},
+        ]
+    }
+
+    config_entry = MockConfigEntry(domain=DOMAIN, data={"name": "Test"}, options={})
+    flow = OptionsFlowHandler(config_entry)
+    flow.hass = hass
+
+    schema = flow._get_timed_notification_schema(mock_coordinator)
+
+    assert schema is not None
+
+
+def test_get_add_growspace_schema(mock_coordinator, hass):
+    """Test add growspace schema generation.
+
+    Args:
+        mock_coordinator: The mock GrowspaceCoordinator.
+        hass: The HomeAssistant instance.
+    """
+    # Set up notify services for the branch
+    hass.services._services = {"notify": {"mobile_app_phone": MagicMock()}}
+
+    config_entry = MockConfigEntry(domain=DOMAIN, data={"name": "Test"}, options={})
+    flow = OptionsFlowHandler(config_entry)
+    flow.hass = hass
+
+    schema = flow._get_add_growspace_schema()
+
+    assert schema is not None
+
+
+def test_get_add_growspace_schema_no_notify_services(mock_coordinator, hass):
+    """Test add growspace schema when no notify services available.
+
+    Args:
+        mock_coordinator: The mock GrowspaceCoordinator.
+        hass: The HomeAssistant instance.
+    """
+    hass.services._services = {"notify": {}}
+
+    config_entry = MockConfigEntry(domain=DOMAIN, data={"name": "Test"}, options={})
+    flow = OptionsFlowHandler(config_entry)
+    flow.hass = hass
+
+    schema = flow._get_add_growspace_schema()
+
+    assert schema is not None
+
+
+def test_get_update_growspace_schema_no_growspace():
+    """Test update growspace schema returns empty when growspace is None."""
+    config_entry = MockConfigEntry(domain=DOMAIN, data={"name": "Test"}, options={})
+    flow = OptionsFlowHandler(config_entry)
+
+    schema = flow._get_update_growspace_schema(None)
+
+    assert schema is not None
+
+
+def test_get_update_growspace_schema_with_notify_services(mock_coordinator, hass):
+    """Test update growspace schema with notify services.
+
+    Args:
+        mock_coordinator: The mock GrowspaceCoordinator.
+        hass: The HomeAssistant instance.
+    """
+    hass.services._services = {"notify": {"mobile_app_phone": MagicMock()}}
+
+    mock_growspace = MagicMock()
+    mock_growspace.name = "Test Growspace"
+    mock_growspace.rows = 4
+    mock_growspace.plants_per_row = 4
+    mock_growspace.notification_target = "mobile_app_phone"
+
+    config_entry = MockConfigEntry(domain=DOMAIN, data={"name": "Test"}, options={})
+    flow = OptionsFlowHandler(config_entry)
+    flow.hass = hass
+
+    schema = flow._get_update_growspace_schema(mock_growspace)
+
+    assert schema is not None
+
+
+def test_get_update_growspace_schema_no_notify_services(mock_coordinator, hass):
+    """Test update growspace schema without notify services.
+
+    Args:
+        mock_coordinator: The mock GrowspaceCoordinator.
+        hass: The HomeAssistant instance.
+    """
+    hass.services._services = {"notify": {}}
+
+    mock_growspace = MagicMock()
+    mock_growspace.name = "Test Growspace"
+    mock_growspace.rows = 4
+    mock_growspace.plants_per_row = 4
+    mock_growspace.notification_target = None
+
+    config_entry = MockConfigEntry(domain=DOMAIN, data={"name": "Test"}, options={})
+    flow = OptionsFlowHandler(config_entry)
+    flow.hass = hass
+
+    schema = flow._get_update_growspace_schema(mock_growspace)
+
+    assert schema is not None
+
+
+def test_get_growspace_management_schema_with_growspaces(mock_coordinator):
+    """Test growspace management schema with existing growspaces.
+
+    Args:
+        mock_coordinator: The mock GrowspaceCoordinator.
+    """
+    mock_coordinator.get_sorted_growspace_options = Mock(
+        return_value=[("gs1", "Flower Tent"), ("gs2", "Veg Tent")]
+    )
+
+    config_entry = MockConfigEntry(domain=DOMAIN, data={"name": "Test"}, options={})
+    flow = OptionsFlowHandler(config_entry)
+
+    schema = flow._get_growspace_management_schema(mock_coordinator)
+
+    assert schema is not None
+
+
+@pytest.mark.asyncio
+async def test_options_flow_manage_growspaces_back_action(
+    hass: HomeAssistant, mock_coordinator, enable_custom_integrations
+):
+    """Test manage growspaces back action returns to main menu.
+
+    Args:
+        hass: The HomeAssistant instance.
+        mock_coordinator: The mock GrowspaceCoordinator.
+        enable_custom_integrations: Fixture to enable custom integrations.
+    """
+    mock_coordinator.get_sorted_growspace_options = Mock(return_value=[])
+
+    config_entry = MockConfigEntry(domain=DOMAIN, data={"name": "Test"}, options={})
+    config_entry.add_to_hass(hass)
+    hass.data[DOMAIN] = {config_entry.entry_id: {"coordinator": mock_coordinator}}
+
+    flow = OptionsFlowHandler(config_entry)
+    flow.hass = hass
+
+    result = await flow.async_step_manage_growspaces(user_input={"action": "back"})
+
+    assert result.get("type") == FlowResultType.FORM
+    assert result.get("step_id") == "init"
+
+
+@pytest.mark.asyncio
+async def test_options_flow_irrigation_overview_growspace_not_found(
+    hass: HomeAssistant, mock_coordinator, enable_custom_integrations
+):
+    """Test irrigation overview aborts when growspace not found.
+
+    Args:
+        hass: The HomeAssistant instance.
+        mock_coordinator: The mock GrowspaceCoordinator.
+        enable_custom_integrations: Fixture to enable custom integrations.
+    """
+    mock_coordinator.growspaces = {}
+
+    config_entry = MockConfigEntry(domain=DOMAIN, data={"name": "Test"}, options={})
+    config_entry.add_to_hass(hass)
+    hass.data[DOMAIN] = {config_entry.entry_id: {"coordinator": mock_coordinator}}
+
+    flow = OptionsFlowHandler(config_entry)
+    flow.hass = hass
+    flow._selected_growspace_id = "nonexistent"
+
+    result = await flow.async_step_irrigation_overview()
+
+    assert result.get("type") == FlowResultType.ABORT
+    assert result.get("reason") == "growspace_not_found"
+
+
+@pytest.mark.asyncio
+async def test_options_flow_configure_advanced_bayesian_non_tuple_result(
+    hass: HomeAssistant, mock_coordinator, enable_custom_integrations
+):
+    """Test advanced Bayesian config with non-tuple parsed value (TypeError branch).
+
+    Args:
+        hass: The HomeAssistant instance.
+        mock_coordinator: The mock GrowspaceCoordinator.
+        enable_custom_integrations: Fixture to enable custom integrations.
+    """
+    mock_growspace = MagicMock()
+    mock_growspace.name = "Test Growspace"
+    mock_growspace.environment_config = {}
+    mock_coordinator.growspaces = {"gs1": mock_growspace}
+
+    config_entry = MockConfigEntry(domain=DOMAIN, data={"name": "Test"}, options={})
+    config_entry.add_to_hass(hass)
+    hass.data[DOMAIN] = {config_entry.entry_id: {"coordinator": mock_coordinator}}
+
+    flow = OptionsFlowHandler(config_entry)
+    flow.hass = hass
+    flow._selected_growspace_id = "gs1"
+    flow._env_config_step1 = {}
+
+    # Provide a value that parses but is not a tuple (e.g., list)
+    user_input = {"prob_temp_extreme_heat": "[0.9, 0.1]"}
+    result = await flow.async_step_configure_advanced_bayesian(user_input=user_input)
+
+    assert result.get("type") == FlowResultType.FORM
+    assert result.get("step_id") == "configure_advanced_bayesian"
+    assert "base" in result.get("errors", {})
+
+
+@pytest.mark.asyncio
+async def test_options_flow_select_growspace_for_plant_with_devices(
+    hass: HomeAssistant, mock_coordinator, enable_custom_integrations
+):
+    """Test plant growspace selection with devices available and submission.
+
+    Args:
+        hass: The HomeAssistant instance.
+        mock_coordinator: The mock GrowspaceCoordinator.
+        enable_custom_integrations: Fixture to enable custom integrations.
+    """
+    from homeassistant.helpers.storage import Store
+    from homeassistant.helpers import device_registry as dr
+
+    mock_store = MagicMock(spec=Store)
+    mock_store.async_load = AsyncMock(
+        return_value={
+            "growspaces": {
+                "gs1": {"id": "gs1", "name": "Test", "rows": 4, "plants_per_row": 4}
+            },
+            "plants": {},
+        }
+    )
+
+    mock_growspace = MagicMock()
+    mock_growspace.name = "Test"
+    mock_growspace.rows = 4
+    mock_growspace.plants_per_row = 4
+
+    mock_coordinator.growspaces = {"gs1": mock_growspace}
+    mock_coordinator.plants = {}
+    mock_coordinator.data = {"growspaces": {"gs1": mock_growspace}, "plants": {}}
+    mock_coordinator._notifications_sent = {}
+    mock_coordinator.get_strain_options = Mock(return_value=["Blue Dream"])
+
+    config_entry = MockConfigEntry(domain=DOMAIN, data={"name": "Test"}, options={})
+    config_entry.add_to_hass(hass)
+    hass.data[DOMAIN] = {
+        config_entry.entry_id: {
+            "coordinator": mock_coordinator,
+            "store": mock_store,
+        }
+    }
+
+    # Create a mock device in the registry
+    dev_reg = dr.async_get(hass)
+    dev_reg.async_get_or_create(
+        config_entry_id=config_entry.entry_id,
+        identifiers={(DOMAIN, "gs1")},
+        name="Test Growspace",
+        model="Growspace",
+    )
+
+    flow = OptionsFlowHandler(config_entry)
+    flow.hass = hass
+
+    # Test with user input selecting a growspace
+    result = await flow.async_step_select_growspace_for_plant(
+        user_input={"growspace_id": "gs1"}
+    )
+
+    assert result.get("type") == FlowResultType.FORM
+    # Should proceed to add_plant step
+    assert result.get("step_id") == "add_plant"
+
+
+@pytest.mark.asyncio
+async def test_options_flow_select_growspace_for_plant_show_form(
+    hass: HomeAssistant, mock_coordinator, enable_custom_integrations
+):
+    """Test plant growspace selection shows form when devices exist.
+
+    Args:
+        hass: The HomeAssistant instance.
+        mock_coordinator: The mock GrowspaceCoordinator.
+        enable_custom_integrations: Fixture to enable custom integrations.
+    """
+    from homeassistant.helpers.storage import Store
+    from homeassistant.helpers import device_registry as dr
+
+    mock_store = MagicMock(spec=Store)
+    mock_store.async_load = AsyncMock(
+        return_value={
+            "growspaces": {
+                "gs1": {"id": "gs1", "name": "Test", "rows": 4, "plants_per_row": 4}
+            },
+            "plants": {},
+        }
+    )
+
+    mock_growspace = MagicMock()
+    mock_growspace.name = "Test"
+    mock_growspace.rows = 4
+    mock_growspace.plants_per_row = 4
+
+    mock_coordinator.growspaces = {"gs1": mock_growspace}
+    mock_coordinator.plants = {}
+    mock_coordinator.data = {"growspaces": {"gs1": mock_growspace}, "plants": {}}
+    mock_coordinator._notifications_sent = {}
+
+    config_entry = MockConfigEntry(domain=DOMAIN, data={"name": "Test"}, options={})
+    config_entry.add_to_hass(hass)
+    hass.data[DOMAIN] = {
+        config_entry.entry_id: {
+            "coordinator": mock_coordinator,
+            "store": mock_store,
+        }
+    }
+
+    # Create a mock device in the registry
+    dev_reg = dr.async_get(hass)
+    dev_reg.async_get_or_create(
+        config_entry_id=config_entry.entry_id,
+        identifiers={(DOMAIN, "gs1")},
+        name="Test Growspace",
+        model="Growspace",
+    )
+
+    flow = OptionsFlowHandler(config_entry)
+    flow.hass = hass
+
+    # Test without user input to get form
+    result = await flow.async_step_select_growspace_for_plant()
+
+    assert result.get("type") == FlowResultType.FORM
+    assert result.get("step_id") == "select_growspace_for_plant"

@@ -321,7 +321,9 @@ class OptionsFlowHandler(OptionsFlow):
             # Try to get agents from the conversation integration
             if hasattr(conversation, "async_get_conversation_agents"):
                 # Newer HA versions
-                agents_dict = await conversation.async_get_conversation_agents(self.hass)
+                agents_dict = await conversation.async_get_conversation_agents(
+                    self.hass
+                )
                 assistants = [
                     {"id": agent_id, "name": agent_info.name}
                     for agent_id, agent_info in agents_dict.items()
@@ -388,9 +390,7 @@ class OptionsFlowHandler(OptionsFlow):
         schema[
             vol.Optional(
                 CONF_NOTIFICATION_PERSONALITY,
-                default=current_settings.get(
-                    CONF_NOTIFICATION_PERSONALITY, "Standard"
-                ),
+                default=current_settings.get(CONF_NOTIFICATION_PERSONALITY, "Standard"),
             )
         ] = selector.SelectSelector(
             selector.SelectSelectorConfig(
@@ -429,7 +429,9 @@ class OptionsFlowHandler(OptionsFlow):
             ):
                 errors["base"] = "assistant_required"
             else:
-                coordinator = self.hass.data[DOMAIN][self._config_entry.entry_id]["coordinator"]
+                coordinator = self.hass.data[DOMAIN][self._config_entry.entry_id][
+                    "coordinator"
+                ]
                 new_options = self._config_entry.options.copy()
                 new_options["ai_settings"] = user_input
 
@@ -444,7 +446,11 @@ class OptionsFlowHandler(OptionsFlow):
                     title="",
                     data=new_options,
                     description="AI settings have been updated. "
-                    + ("AI features are now enabled. " if user_input.get(CONF_AI_ENABLED) else "AI features are disabled. ")
+                    + (
+                        "AI features are now enabled. "
+                        if user_input.get(CONF_AI_ENABLED)
+                        else "AI features are disabled. "
+                    )
                     + f"Assistant: {user_input.get(CONF_ASSISTANT_ID, 'None')}",
                 )
 
@@ -458,6 +464,7 @@ class OptionsFlowHandler(OptionsFlow):
                 "configured in Home Assistant for this to work."
             },
         )
+
     async def async_step_manage_timed_notifications(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
@@ -831,14 +838,12 @@ class OptionsFlowHandler(OptionsFlow):
             )
             return self.async_create_entry(title="", data={})
 
-
         schema_dict = {}
 
-        # Basic sensors - Use growspace_options for defaults
+        # Basic sensors - temperature and humidity (always shown)
         for key, device_class in [
             ("temperature_sensor", "temperature"),
             ("humidity_sensor", "humidity"),
-            ("vpd_sensor", "pressure"),
         ]:
             schema_dict[vol.Optional(key, default=growspace_options.get(key))] = (
                 selector.EntitySelector(
@@ -849,15 +854,26 @@ class OptionsFlowHandler(OptionsFlow):
                 )
             )
 
-        # VPD sensor - optional
-        schema_dict[vol.Optional("vpd_sensor", default=growspace_options.get("vpd_sensor"))] = (
-            selector.EntitySelector(
-                selector.EntitySelectorConfig(
-                    domain=["sensor", "input_number"],
-                    device_class="pressure",
+        # Helper function to create optional entity selector without None default
+        def optional_entity(key: str, domains: list[str], device_class=None):
+            """Create an optional entity selector schema entry."""
+            current_val = growspace_options.get(key)
+            config_args = {"domain": domains}
+            if device_class:
+                config_args["device_class"] = device_class
+
+            if current_val:
+                return vol.Optional(key, default=current_val), selector.EntitySelector(
+                    selector.EntitySelectorConfig(**config_args)
                 )
-            )
-        )
+            else:
+                return vol.Optional(key), selector.EntitySelector(
+                    selector.EntitySelectorConfig(**config_args)
+                )
+
+        # VPD sensor - optional (if not set, calculated VPD sensor will be created)
+        key, sel = optional_entity("vpd_sensor", ["sensor", "input_number"], "pressure")
+        schema_dict[key] = sel
 
         # LST offset - only show if temp and humidity are set but VPD is not
         has_temp = bool(growspace_options.get("temperature_sensor"))
@@ -880,85 +896,43 @@ class OptionsFlowHandler(OptionsFlow):
                 )
             )
 
-        # Optional features with toggles
-        for feature in ["light", "co2", "fan"]:
-            # Use growspace_options for defaults
-            enabled = growspace_options.get(
-                f"configure_{feature}", bool(growspace_options.get(f"{feature}_sensor"))
-            )
-            schema_dict[vol.Optional(f"configure_{feature}", default=enabled)] = (
-                selector.BooleanSelector()
-            )
-            if enabled:
-                if feature == "light":
-                    entity_key = "light_sensor"
-                    domain = ["switch", "light", "input_boolean", "sensor"]
-                    device_class = None
-                elif feature == "fan":
-                    entity_key = "circulation_fan"
-                    domain = ["fan", "switch", "input_boolean"]
-                    device_class = None
-                else:  # co2
-                    entity_key = f"{feature}_sensor"
-                    domain = ["sensor", "input_number"]
-                    device_class = ["carbon_dioxide"]
-
-                entity_selector_config_args: dict[str, Any] = {}
-                entity_selector_config_args["domain"] = domain
-                if device_class is not None:
-                    entity_selector_config_args["device_class"] = device_class
-
-                schema_dict[
-                    vol.Optional(entity_key, default=growspace_options.get(entity_key))
-                ] = selector.EntitySelector(
-                    selector.EntitySelectorConfig(**entity_selector_config_args)
-                )
-                schema_dict[
-                    vol.Optional(entity_key, default=growspace_options.get(entity_key))
-                ] = selector.EntitySelector(
-                    selector.EntitySelectorConfig(**entity_selector_config_args)
-                )
-
-        # Exhaust and Humidifier (0-10 sensors)
-        for feature in ["exhaust", "humidifier"]:
-            enabled = growspace_options.get(
-                f"configure_{feature}", bool(growspace_options.get(f"{feature}_sensor"))
-            )
-            schema_dict[vol.Optional(f"configure_{feature}", default=enabled)] = (
-                selector.BooleanSelector()
-            )
-            if enabled:
-                schema_dict[
-                    vol.Optional(
-                        f"{feature}_sensor",
-                        default=growspace_options.get(f"{feature}_sensor"),
-                    )
-                ] = selector.EntitySelector(
-                    selector.EntitySelectorConfig(
-                        domain=["sensor", "input_number"],
-                        device_class="power_factor",
-                    )
-                )
-
-        # Dehumidifier / Switch configuration
-        configure_dehumidifier = growspace_options.get(
-            "configure_dehumidifier", bool(growspace_options.get("dehumidifier_entity"))
+        # Light sensor - optional, always visible
+        key, sel = optional_entity(
+            "light_sensor", ["switch", "light", "input_boolean", "sensor"]
         )
-        schema_dict[
-            vol.Optional("configure_dehumidifier", default=configure_dehumidifier)
-        ] = selector.BooleanSelector()
+        schema_dict[key] = sel
 
-        if configure_dehumidifier:
-            schema_dict[
-                vol.Optional(
-                    "dehumidifier_entity",
-                    default=growspace_options.get("dehumidifier_entity"),
-                )
-            ] = selector.EntitySelector(
-                selector.EntitySelectorConfig(
-                    domain=["switch", "humidifier", "sensor", "binary_sensor"]
-                )
-            )
+        # CO2 sensor - optional, always visible
+        key, sel = optional_entity(
+            "co2_sensor", ["sensor", "input_number"], ["carbon_dioxide"]
+        )
+        schema_dict[key] = sel
+
+        # Circulation fan - optional, always visible
+        key, sel = optional_entity(
+            "circulation_fan", ["fan", "switch", "input_boolean", "sensor"]
+        )
+        schema_dict[key] = sel
+
+        # Exhaust sensor - optional, always visible
+        key, sel = optional_entity(
+            "exhaust_sensor", ["sensor", "input_number"], "power_factor"
+        )
+        schema_dict[key] = sel
+
+        # Humidifier sensor - optional, always visible
+        key, sel = optional_entity(
+            "humidifier_sensor", ["sensor", "input_number"], "power_factor"
+        )
+        schema_dict[key] = sel
+
+        # Dehumidifier entity - optional, always visible
+        key, sel = optional_entity(
+            "dehumidifier_entity", ["switch", "humidifier", "sensor", "binary_sensor"]
+        )
+        schema_dict[key] = sel
+
+        # Threshold settings
         for key, default in [("stress_threshold", 0.70), ("mold_threshold", 0.75)]:
             schema_dict[
                 vol.Optional(key, default=growspace_options.get(key, default))
@@ -1301,7 +1275,7 @@ class OptionsFlowHandler(OptionsFlow):
                 return self.async_show_form(
                     step_id="init",
                     data_schema=self.add_suggested_values_to_schema(
-                        coordinator, self._config_entry.options
+                        self._get_main_menu_schema(), self._config_entry.options
                     ),
                 )
 
@@ -1740,18 +1714,26 @@ class OptionsFlowHandler(OptionsFlow):
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
         """Show a form to select a growspace before configuring its irrigation."""
-        try: 
-            coordinator = self.hass.data[DOMAIN][self._config_entry.entry_id]["coordinator"]
+        try:
+            coordinator = self.hass.data[DOMAIN][self._config_entry.entry_id][
+                "coordinator"
+            ]
         except KeyError:
             _LOGGER.error("Coordinator not found for irrigation config flow.")
             return self.async_abort(reason="setup_error")
         growspace_options = coordinator.get_sorted_growspace_options()
 
         if not growspace_options:
-            _LOGGER.error("IRRIGATION FLOW ABORT: No growspaces available to configure.")   
+            _LOGGER.error(
+                "IRRIGATION FLOW ABORT: No growspaces available to configure."
+            )
             return self.async_abort(reason="no_growspaces")
 
-        _LOGGER.debug("IRRIGATION FLOW: Found %d growspaces: %s", len(growspace_options), growspace_options)
+        _LOGGER.debug(
+            "IRRIGATION FLOW: Found %d growspaces: %s",
+            len(growspace_options),
+            growspace_options,
+        )
         if user_input is not None:
             self._selected_growspace_id = user_input["growspace_id"]
             return await self.async_step_configure_irrigation()
@@ -1786,7 +1768,6 @@ class OptionsFlowHandler(OptionsFlow):
         # [MODIFIED]: Route directly to the unified overview step
         return await self.async_step_irrigation_overview()
 
-
     async def async_step_irrigation_overview(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
@@ -1812,12 +1793,18 @@ class OptionsFlowHandler(OptionsFlow):
 
         if user_input is not None:
             # 1. Update the Growspace object directly
-            
+
             # CRITICAL FIX: Only update the R/W fields (pump entities and durations)
             # Filter out the read-only fields that were passed for display purposes
             updated_settings = {
-                k: v for k, v in user_input.items() 
-                if k not in ["current_irrigation_times", "current_drain_times", "growspace_id_read_only"]
+                k: v
+                for k, v in user_input.items()
+                if k
+                not in [
+                    "current_irrigation_times",
+                    "current_drain_times",
+                    "growspace_id_read_only",
+                ]
             }
 
             # Explicitly handle pump entities to allow clearing them (setting to None)
@@ -1832,64 +1819,70 @@ class OptionsFlowHandler(OptionsFlow):
 
             # Save via coordinator
             await coordinator.async_save()
-            
+
             # Notify listeners (including IrrigationCoordinator)
             coordinator.async_set_updated_data(coordinator.data)
 
             # This triggers async_update_listener in __init__.py, reloading the IrrigationCoordinator
             return self.async_create_entry(
                 title="",
-                data=self._current_options, # No changes to ConfigEntry options
+                data=self._current_options,  # No changes to ConfigEntry options
                 description="Irrigation settings have been updated.",
             )
 
         # 2. Define schema to pass ALL data to the Lovelace component
-        schema = vol.Schema({
-            # R/W Fields: Pump Settings (User edits and submits these)
-            vol.Optional(
-                "irrigation_pump_entity",
-                default=irrigation_pump_default,
-            ): selector.EntitySelector(
-                selector.EntitySelectorConfig(domain="switch")
-            ),
-            vol.Optional(
-                "drain_pump_entity",
-                default=drain_pump_default,
-            ): selector.EntitySelector(
-                selector.EntitySelectorConfig(domain="switch")
-            ),
-            vol.Optional(
-                "irrigation_duration",
-                default=irrigation_options.get("irrigation_duration", 30),
-            ): selector.NumberSelector(
-                selector.NumberSelectorConfig(min=1, mode=selector.NumberSelectorMode.BOX)
-            ),
-            vol.Optional(
-                "drain_duration",
-                default=irrigation_options.get("drain_duration", 30),
-            ): selector.NumberSelector(
-                selector.NumberSelectorConfig(min=1, mode=selector.NumberSelectorMode.BOX)
-            ),
-
-            # Read-only Fields: Schedules and ID (Passed to frontend for visual use/service calls)
-            # Must be stringified to pass complex objects through schema inputs
-            vol.Optional("current_irrigation_times",
-                default=json.dumps(irrigation_options.get("irrigation_times", []))
-            ): selector.TextSelector(),
-            vol.Optional("current_drain_times",
-                default=json.dumps(irrigation_options.get("drain_times", []))
-            ): selector.TextSelector(),
-            vol.Optional("growspace_id_read_only",
-                default=self._selected_growspace_id
-            ): selector.TextSelector(),
-        })
+        schema = vol.Schema(
+            {
+                # R/W Fields: Pump Settings (User edits and submits these)
+                vol.Optional(
+                    "irrigation_pump_entity",
+                    default=irrigation_pump_default,
+                ): selector.EntitySelector(
+                    selector.EntitySelectorConfig(domain="switch")
+                ),
+                vol.Optional(
+                    "drain_pump_entity",
+                    default=drain_pump_default,
+                ): selector.EntitySelector(
+                    selector.EntitySelectorConfig(domain="switch")
+                ),
+                vol.Optional(
+                    "irrigation_duration",
+                    default=irrigation_options.get("irrigation_duration", 30),
+                ): selector.NumberSelector(
+                    selector.NumberSelectorConfig(
+                        min=1, mode=selector.NumberSelectorMode.BOX
+                    )
+                ),
+                vol.Optional(
+                    "drain_duration",
+                    default=irrigation_options.get("drain_duration", 30),
+                ): selector.NumberSelector(
+                    selector.NumberSelectorConfig(
+                        min=1, mode=selector.NumberSelectorMode.BOX
+                    )
+                ),
+                # Read-only Fields: Schedules and ID (Passed to frontend for visual use/service calls)
+                # Must be stringified to pass complex objects through schema inputs
+                vol.Optional(
+                    "current_irrigation_times",
+                    default=json.dumps(irrigation_options.get("irrigation_times", [])),
+                ): selector.TextSelector(),
+                vol.Optional(
+                    "current_drain_times",
+                    default=json.dumps(irrigation_options.get("drain_times", [])),
+                ): selector.TextSelector(),
+                vol.Optional(
+                    "growspace_id_read_only", default=self._selected_growspace_id
+                ): selector.TextSelector(),
+            }
+        )
 
         return self.async_show_form(
             step_id="irrigation_overview",
             data_schema=schema,
             description_placeholders={"growspace_name": growspace.name},
         )
-
 
     def _get_plant_management_schema(self, coordinator) -> vol.Schema:
         """Build the schema for the plant management menu.
@@ -2088,12 +2081,16 @@ class OptionsFlowHandler(OptionsFlow):
                 vol.Optional(
                     "phenotype", default=plant.phenotype if plant else ""
                 ): selector.TextSelector(),
-                vol.Optional("row", default=plant.row if plant else 1): selector.NumberSelector(
+                vol.Optional(
+                    "row", default=plant.row if plant else 1
+                ): selector.NumberSelector(
                     selector.NumberSelectorConfig(
                         min=1, max=max_row, mode=selector.NumberSelectorMode.BOX
                     )
                 ),
-                vol.Optional("col", default=plant.col if plant else 1): selector.NumberSelector(
+                vol.Optional(
+                    "col", default=plant.col if plant else 1
+                ): selector.NumberSelector(
                     selector.NumberSelectorConfig(
                         min=1, max=max_col, mode=selector.NumberSelectorMode.BOX
                     )
@@ -2107,9 +2104,7 @@ class OptionsFlowHandler(OptionsFlow):
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
         """Show the menu for managing the strain library."""
-        coordinator = self.hass.data[DOMAIN][self._config_entry.entry_id][
-            "coordinator"
-        ]
+        coordinator = self.hass.data[DOMAIN][self._config_entry.entry_id]["coordinator"]
 
         if user_input is not None:
             action = user_input.get("action")
@@ -2142,9 +2137,7 @@ class OptionsFlowHandler(OptionsFlow):
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
         """Show the form for adding a new strain."""
-        coordinator = self.hass.data[DOMAIN][self._config_entry.entry_id][
-            "coordinator"
-        ]
+        coordinator = self.hass.data[DOMAIN][self._config_entry.entry_id]["coordinator"]
 
         if user_input is not None:
             try:
@@ -2203,8 +2196,12 @@ class OptionsFlowHandler(OptionsFlow):
                 selector.SelectSelectorConfig(
                     options=[
                         selector.SelectOptionDict(value="add", label="Add New Strain"),
-                        selector.SelectOptionDict(value="remove", label="Remove Strain/Phenotype"),
-                        selector.SelectOptionDict(value="back", label="← Back to Main Menu"),
+                        selector.SelectOptionDict(
+                            value="remove", label="Remove Strain/Phenotype"
+                        ),
+                        selector.SelectOptionDict(
+                            value="back", label="← Back to Main Menu"
+                        ),
                     ],
                     mode=selector.SelectSelectorMode.DROPDOWN,
                 )
@@ -2234,7 +2231,9 @@ class OptionsFlowHandler(OptionsFlow):
                             selector.SelectOptionDict(value="Sativa", label="Sativa"),
                             selector.SelectOptionDict(value="Indica", label="Indica"),
                             selector.SelectOptionDict(value="Hybrid", label="Hybrid"),
-                            selector.SelectOptionDict(value="Ruderalis", label="Ruderalis"),
+                            selector.SelectOptionDict(
+                                value="Ruderalis", label="Ruderalis"
+                            ),
                         ],
                         custom_value=True,
                         mode=selector.SelectSelectorMode.DROPDOWN,
@@ -2243,9 +2242,13 @@ class OptionsFlowHandler(OptionsFlow):
                 vol.Optional("sex"): selector.SelectSelector(
                     selector.SelectSelectorConfig(
                         options=[
-                            selector.SelectOptionDict(value="Feminized", label="Feminized"),
+                            selector.SelectOptionDict(
+                                value="Feminized", label="Feminized"
+                            ),
                             selector.SelectOptionDict(value="Regular", label="Regular"),
-                            selector.SelectOptionDict(value="Autoflower", label="Autoflower"),
+                            selector.SelectOptionDict(
+                                value="Autoflower", label="Autoflower"
+                            ),
                         ],
                         custom_value=True,
                         mode=selector.SelectSelectorMode.DROPDOWN,
@@ -2254,19 +2257,29 @@ class OptionsFlowHandler(OptionsFlow):
                 vol.Optional("lineage"): selector.TextSelector(),
                 vol.Optional("sativa_percentage"): selector.NumberSelector(
                     selector.NumberSelectorConfig(
-                        min=0, max=100, mode=selector.NumberSelectorMode.BOX, unit_of_measurement="%"
+                        min=0,
+                        max=100,
+                        mode=selector.NumberSelectorMode.BOX,
+                        unit_of_measurement="%",
                     )
                 ),
                 vol.Optional("indica_percentage"): selector.NumberSelector(
                     selector.NumberSelectorConfig(
-                        min=0, max=100, mode=selector.NumberSelectorMode.BOX, unit_of_measurement="%"
+                        min=0,
+                        max=100,
+                        mode=selector.NumberSelectorMode.BOX,
+                        unit_of_measurement="%",
                     )
                 ),
                 vol.Optional("flower_days_min"): selector.NumberSelector(
-                    selector.NumberSelectorConfig(min=0, mode=selector.NumberSelectorMode.BOX)
+                    selector.NumberSelectorConfig(
+                        min=0, mode=selector.NumberSelectorMode.BOX
+                    )
                 ),
                 vol.Optional("flower_days_max"): selector.NumberSelector(
-                    selector.NumberSelectorConfig(min=0, mode=selector.NumberSelectorMode.BOX)
+                    selector.NumberSelectorConfig(
+                        min=0, mode=selector.NumberSelectorMode.BOX
+                    )
                 ),
                 vol.Optional("description"): selector.TextSelector(
                     selector.TextSelectorConfig(multiline=True)

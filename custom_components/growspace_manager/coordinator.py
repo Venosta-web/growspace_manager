@@ -516,9 +516,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
             _LOGGER.warning("Failed to parse date %s: %s", date_value, e)
         return None
 
-    def calculate_days(
-        self, start_date: DateInput, end_date: DateInput = None
-    ) -> int:
+    def calculate_days(self, start_date: DateInput, end_date: DateInput = None) -> int:
         """Calculate the number of days that have passed since a given date.
 
         If an end_date is provided and is valid (i.e., not in the future relative
@@ -593,9 +591,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
 
         # Create or update the canonical growspace
         if canonical_id not in self.growspaces:
-            self._create_special_growspace(
-                canonical_id, name, rows, plants_per_row
-            )
+            self._create_special_growspace(canonical_id, name, rows, plants_per_row)
             # ✅ Enable notifications by default for new special growspace
             self._notifications_enabled[canonical_id] = True
         else:
@@ -763,8 +759,6 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
         for growspace_id in self.growspaces:
             if growspace_id not in self._notifications_enabled:
                 self._notifications_enabled[growspace_id] = True
-
-
 
         # Migrate legacy growspace aliases
         self._migrate_legacy_growspaces()
@@ -1104,9 +1098,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
                 growspace_id,
             )
             try:
-                final_row, final_col = self._find_first_available_position(
-                    growspace_id
-                )
+                final_row, final_col = self._find_first_available_position(growspace_id)
                 _LOGGER.info(
                     "Found available position at (%d, %d)", final_row, final_col
                 )
@@ -2017,8 +2009,6 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
             A list of all strain names.
         """
         return self.get_strain_options()
-
-
 
     async def clear_strains(self) -> int:
         """Remove all strains from the library.

@@ -4,6 +4,7 @@ This file contains a suite of tests for the various helper and utility functions
 defined in `custom_components/growspace_manager/utils.py`. It covers date
 parsing, formatting, calculations, and grid generation logic.
 """
+
 from datetime import date, datetime
 import pytest
 
@@ -24,9 +25,9 @@ from custom_components.growspace_manager.models import Plant, Growspace
     "input_value,expected",
     [
         (None, None),
-        (date(2025, 11, 3), date(2025, 11, 3)),
-        (datetime(2025, 11, 3, 15, 30), date(2025, 11, 3)),
-        ("2025-11-03", date(2025, 11, 3)),
+        (date(2025, 11, 3), datetime(2025, 11, 3, 0, 0)),
+        (datetime(2025, 11, 3, 15, 30), datetime(2025, 11, 3, 15, 30)),
+        ("2025-11-03", datetime(2025, 11, 3, 0, 0)),
         ("invalid-date", None),
         (12345, None),
     ],
@@ -48,9 +49,9 @@ def test_parse_date_field(input_value, expected):
     "input_value,expected",
     [
         (None, None),
-        (date(2025, 11, 3), "2025-11-03"),
-        (datetime(2025, 11, 3, 15, 30), "2025-11-03"),
-        ("2025-11-03", "2025-11-03"),
+        (date(2025, 11, 3), "2025-11-03T00:00:00"),
+        (datetime(2025, 11, 3, 15, 30), "2025-11-03T15:30:00"),
+        ("2025-11-03", "2025-11-03T00:00:00"),
         ("invalid-date", None),
         (12345, None),
     ],

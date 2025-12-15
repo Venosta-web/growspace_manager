@@ -77,7 +77,7 @@ def test_move_plant_schema_valid():
 
 
 def test_switch_plant_schema_valid():
-    data = {"plant_id_1": "p1", "plant_id_2": "p2"}
+    data = {"plant1_id": "p1", "plant2_id": "p2"}
     assert SWITCH_PLANT_SCHEMA(data) == data
 
 
@@ -97,7 +97,7 @@ def test_export_strain_library_schema_valid():
 
 
 def test_import_strain_library_schema_valid():
-    data = {"strains": ["A", "B"], "replace": True}
+    data = {"file_path": "/tmp/test.zip", "replace": True}
     validated = IMPORT_STRAIN_LIBRARY_SCHEMA(data)
     assert validated["replace"] is True
 

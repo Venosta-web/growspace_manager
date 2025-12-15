@@ -1,10 +1,13 @@
 """Utility functions for date parsing, formatting, and calculations in growspace_manager."""
 
 from __future__ import annotations
+
 import math
 from datetime import date, datetime
+
 from dateutil import parser
-from .models import Plant, Growspace
+
+from .models import Growspace, Plant
 
 DateInput = str | datetime | date | None
 
@@ -102,9 +105,7 @@ class VPDCalculator:
             return None
 
         # Magnus formula to calculate saturation vapor pressure (SVP) in kPa
-        svp = 0.61094 * math.exp(
-            (17.625 * temperature_c) / (243.04 + temperature_c)
-        )
+        svp = 0.61094 * math.exp((17.625 * temperature_c) / (243.04 + temperature_c))
 
         # Calculate actual vapor pressure (AVP)
         avp = svp * (humidity_rh / 100)

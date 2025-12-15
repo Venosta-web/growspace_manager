@@ -135,9 +135,9 @@ def valid_date_or_none(value):
         return value
     if isinstance(value, date):
         return value
-    
+
     value_str = str(value).replace("Z", "")
-    
+
     # Try parsing as datetime first (most specific)
     try:
         return datetime.fromisoformat(value_str)
@@ -151,6 +151,7 @@ def valid_date_or_none(value):
         raise vol.Invalid(
             f"'{value}' is not a valid date or ISO format string"
         ) from None
+
 
 def valid_growspace_id(value):
     """Validate that a value is a non-empty string for a growspace ID.
@@ -344,8 +345,12 @@ ADD_STRAIN_SCHEMA = vol.Schema(
         vol.Optional("image"): str,
         vol.Optional("image_path"): str,
         vol.Optional("image_crop_meta"): dict,
-        vol.Optional("sativa_percentage"): vol.All(vol.Coerce(int), vol.Range(min=0, max=100)),
-        vol.Optional("indica_percentage"): vol.All(vol.Coerce(int), vol.Range(min=0, max=100)),
+        vol.Optional("sativa_percentage"): vol.All(
+            vol.Coerce(int), vol.Range(min=0, max=100)
+        ),
+        vol.Optional("indica_percentage"): vol.All(
+            vol.Coerce(int), vol.Range(min=0, max=100)
+        ),
     }
 )
 
@@ -373,8 +378,12 @@ UPDATE_STRAIN_META_SCHEMA = vol.Schema(
         vol.Optional("image"): str,
         vol.Optional("image_path"): str,
         vol.Optional("image_crop_meta"): dict,
-        vol.Optional("sativa_percentage"): vol.All(vol.Coerce(int), vol.Range(min=0, max=100)),
-        vol.Optional("indica_percentage"): vol.All(vol.Coerce(int), vol.Range(min=0, max=100)),
+        vol.Optional("sativa_percentage"): vol.All(
+            vol.Coerce(int), vol.Range(min=0, max=100)
+        ),
+        vol.Optional("indica_percentage"): vol.All(
+            vol.Coerce(int), vol.Range(min=0, max=100)
+        ),
     }
 )
 
@@ -465,7 +474,7 @@ SET_IRRIGATION_SETTINGS_SCHEMA = vol.Schema(
 
 _ADD_SCHEDULE_TIME_BASE = {
     vol.Required("growspace_id"): vol.All(str, valid_growspace_id),
-    vol.Required("time"): str, # Use string for HH:MM:SS format
+    vol.Required("time"): str,  # Use string for HH:MM:SS format
     vol.Optional("duration"): vol.All(vol.Coerce(int), vol.Range(min=1)),
 }
 

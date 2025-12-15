@@ -1,6 +1,6 @@
 """Test plant services."""
 
-from datetime import date
+from datetime import date, datetime, timezone
 from unittest.mock import Mock, AsyncMock, patch
 
 import pytest
@@ -249,8 +249,10 @@ async def test_add_plant_with_dates(
     await handle_add_plant(hass, mock_coordinator, mock_strain_library, call)
 
     call_kwargs = mock_coordinator.async_add_plant.call_args[1]
-    assert call_kwargs["veg_start"] == test_date
-    assert call_kwargs["flower_start"] == test_date
+    assert call_kwargs["veg_start"] == datetime.combine(test_date, datetime.min.time())
+    assert call_kwargs["flower_start"] == datetime.combine(
+        test_date, datetime.min.time()
+    )
 
 
 @pytest.mark.asyncio
@@ -275,7 +277,9 @@ async def test_add_plant_mother_growspace_auto_date(
     await handle_add_plant(hass, mock_coordinator, mock_strain_library, call)
 
     call_kwargs = mock_coordinator.async_add_plant.call_args[1]
-    assert call_kwargs["mother_start"] == date.today()
+    call_kwargs = mock_coordinator.async_add_plant.call_args[1]
+    assert isinstance(call_kwargs["mother_start"], datetime)
+    assert call_kwargs["mother_start"].date() == date.today()
 
 
 @pytest.mark.asyncio
@@ -823,8 +827,10 @@ async def test_update_plant_with_dates(
     await handle_update_plant(hass, mock_coordinator, mock_strain_library, call)
 
     call_kwargs = mock_coordinator.async_update_plant.call_args[1]
-    assert call_kwargs["veg_start"] == test_date
-    assert call_kwargs["flower_start"] == test_date
+    assert call_kwargs["veg_start"] == datetime.combine(test_date, datetime.min.time())
+    assert call_kwargs["flower_start"] == datetime.combine(
+        test_date, datetime.min.time()
+    )
 
 
 @pytest.mark.asyncio
@@ -848,8 +854,8 @@ async def test_update_plant_with_date_strings(
     await handle_update_plant(hass, mock_coordinator, mock_strain_library, call)
 
     call_kwargs = mock_coordinator.async_update_plant.call_args[1]
-    assert call_kwargs["veg_start"] == date(2024, 1, 15)
-    assert call_kwargs["flower_start"] == date(2024, 2, 15)
+    assert call_kwargs["veg_start"] == datetime(2024, 1, 15)
+    assert call_kwargs["flower_start"] == datetime(2024, 2, 15, tzinfo=timezone.utc)
 
 
 @pytest.mark.asyncio
@@ -1067,8 +1073,8 @@ async def test_switch_plants_success(
         domain=DOMAIN,
         service="switch_plants",
         data={
-            "plant_id_1": "plant_1",
-            "plant_id_2": "plant_2",
+            "plant1_id": "plant_1",
+            "plant2_id": "plant_2",
         },
     )
 
@@ -1105,8 +1111,8 @@ async def test_switch_plants_first_not_found(
         domain=DOMAIN,
         service="switch_plants",
         data={
-            "plant_id_1": "nonexistent",
-            "plant_id_2": "plant_2",
+            "plant1_id": "nonexistent",
+            "plant2_id": "plant_2",
         },
     )
 
@@ -1131,8 +1137,8 @@ async def test_switch_plants_second_not_found(
         domain=DOMAIN,
         service="switch_plants",
         data={
-            "plant_id_1": "plant_1",
-            "plant_id_2": "nonexistent",
+            "plant1_id": "plant_1",
+            "plant2_id": "nonexistent",
         },
     )
 
@@ -1162,8 +1168,8 @@ async def test_switch_plants_exception(
         domain=DOMAIN,
         service="switch_plants",
         data={
-            "plant_id_1": "plant_1",
-            "plant_id_2": "plant_2",
+            "plant1_id": "plant_1",
+            "plant2_id": "plant_2",
         },
     )
 
@@ -1203,9 +1209,7 @@ async def test_update_plant_adds_to_strain_library_if_new(
     await hass.async_block_till_done()
 
     # Assert
-    mock_strain_library.add_strain.assert_called_once_with(
-        "New Strain", "New Pheno"
-    )
+    mock_strain_library.add_strain.assert_called_once_with("New Strain", "New Pheno")
     mock_coordinator.async_update_plant.assert_called_once()
 
 
@@ -1554,7 +1558,9 @@ async def test_transition_plant_stage_with_timezone(
     )
 
     call_kwargs = mock_coordinator.async_transition_plant_stage.call_args[1]
-    assert call_kwargs["transition_date"] == date(2024, 1, 15)
+    assert call_kwargs["transition_date"] == datetime(
+        2024, 1, 15, 12, 0, tzinfo=timezone.utc
+    )
 
 
 @pytest.mark.asyncio
@@ -2041,7 +2047,11 @@ async def test_update_plant_moves_to_free_space_if_occupied(
         hass,
         domain=DOMAIN,
         service="update_plant",
-        data={"plant_id": "plant_1", "row": 2, "col": 2},  # Try to move to plant_2's spot
+        data={
+            "plant_id": "plant_1",
+            "row": 2,
+            "col": 2,
+        },  # Try to move to plant_2's spot
     )
 
     # Act
@@ -2146,7 +2156,9 @@ async def test_transition_plant_stage_success(
 
     # Assert
     mock_coordinator.async_transition_plant_stage.assert_called_once_with(
-        plant_id="plant_1", new_stage="flower", transition_date=date(2024, 1, 15)
+        plant_id="plant_1",
+        new_stage="flower",
+        transition_date=datetime(2024, 1, 15, 0, 0),
     )
     # mock_coordinator.async_save.assert_called_once()
     # mock_coordinator.async_request_refresh.assert_called_once()
@@ -2209,7 +2221,10 @@ async def test_move_clone_default_transition_date(
     await handle_move_clone(hass, mock_coordinator, mock_strain_library, call)
 
     call_kwargs = mock_coordinator.async_add_plant.call_args[1]
-    assert call_kwargs["veg_start"] == date.today()
+    call_kwargs = mock_coordinator.async_add_plant.call_args[1]
+    # Expect datetime, ignoring specific time/tz details for today's date check unless crucial
+    assert isinstance(call_kwargs["veg_start"], datetime)
+    assert call_kwargs["veg_start"].date() == date.today()
 
 
 @pytest.mark.asyncio

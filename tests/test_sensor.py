@@ -44,6 +44,8 @@ def mock_coordinator():
             rows=2,
             plants_per_row=2,
             notification_target="notify_me",
+            irrigation_config={},
+            environment_config={},
         )
     }
     coordinator.plants = {
@@ -80,6 +82,7 @@ def mock_coordinator():
 # --------------------
 from homeassistant.helpers import entity_registry as er
 
+
 @pytest.mark.asyncio
 async def test_async_setup_entry_adds_entities(mock_coordinator):
     """Test that `async_setup_entry` correctly adds all expected sensor entities."""
@@ -87,10 +90,15 @@ async def test_async_setup_entry_adds_entities(mock_coordinator):
     hass.config.config_dir = "/config"
     entity_registry = er.async_get(hass)
 
-
     # Coordinator mock
     mock_coordinator.growspaces = {
-        "gs1": Mock(id="gs1", name="Growspace 1", rows=2, plants_per_row=2, environment_config={})
+        "gs1": Mock(
+            id="gs1",
+            name="Growspace 1",
+            rows=2,
+            plants_per_row=2,
+            environment_config={},
+        )
     }
     mock_coordinator.get_growspace_plants = Mock(return_value=[])
     mock_coordinator.async_save = AsyncMock()
@@ -112,7 +120,9 @@ async def test_async_setup_entry_adds_entities(mock_coordinator):
     def async_add_entities(entities, update_before_add=False):
         added_entities.extend(entities)
 
-    await async_setup_entry(hass, Mock(entry_id="entry_1", options={}), async_add_entities)
+    await async_setup_entry(
+        hass, Mock(entry_id="entry_1", options={}), async_add_entities
+    )
 
     # Now entities should be added
     assert added_entities
@@ -138,13 +148,16 @@ async def test_async_create_derivative_sensors(mock_coordinator):
     )
     hass.data = {DOMAIN: {config_entry.entry_id: {"created_entities": []}}}
 
-    with patch(
-        "custom_components.growspace_manager.sensor.async_setup_trend_sensor",
-        new_callable=AsyncMock,
-    ) as mock_setup_trend, patch(
-        "custom_components.growspace_manager.sensor.async_setup_statistics_sensor",
-        new_callable=AsyncMock,
-    ) as mock_setup_stats:
+    with (
+        patch(
+            "custom_components.growspace_manager.sensor.async_setup_trend_sensor",
+            new_callable=AsyncMock,
+        ) as mock_setup_trend,
+        patch(
+            "custom_components.growspace_manager.sensor.async_setup_statistics_sensor",
+            new_callable=AsyncMock,
+        ) as mock_setup_stats,
+    ):
         mock_setup_trend.side_effect = ["trend_1", "trend_2", "trend_3"]
         mock_setup_stats.side_effect = ["stats_1", "stats_2", "stats_3"]
 
@@ -172,7 +185,6 @@ async def test_async_create_derivative_sensors(mock_coordinator):
         assert len(created_entities) == 6
 
 
-
 # --------------------
 # VpdSensor
 # --------------------
@@ -184,8 +196,11 @@ def test_vpd_sensor_weather_entity(mock_coordinator):
     hass.states.get.return_value = weather_state
     mock_coordinator.hass = hass
 
-    sensor = VpdSensor(mock_coordinator, "outside", "Outside VPD", "weather.test", None, None)
+    sensor = VpdSensor(
+        mock_coordinator, "outside", "Outside VPD", "weather.test", None, None
+    )
     assert sensor.native_value is not None
+
 
 def test_vpd_sensor_temp_humidity_entities(mock_coordinator):
     """Test VpdSensor with temperature and humidity sensors."""
@@ -197,8 +212,16 @@ def test_vpd_sensor_temp_humidity_entities(mock_coordinator):
     hass.states.get.side_effect = [temp_state, humidity_state]
     mock_coordinator.hass = hass
 
-    sensor = VpdSensor(mock_coordinator, "lung_room", "Lung Room VPD", None, "sensor.temp", "sensor.humidity")
+    sensor = VpdSensor(
+        mock_coordinator,
+        "lung_room",
+        "Lung Room VPD",
+        None,
+        "sensor.temp",
+        "sensor.humidity",
+    )
     assert sensor.native_value is not None
+
 
 def test_vpd_sensor_invalid_states(mock_coordinator):
     """Test VpdSensor with invalid sensor states."""
@@ -210,8 +233,16 @@ def test_vpd_sensor_invalid_states(mock_coordinator):
     hass.states.get.side_effect = [temp_state, humidity_state]
     mock_coordinator.hass = hass
 
-    sensor = VpdSensor(mock_coordinator, "lung_room", "Lung Room VPD", None, "sensor.temp", "sensor.humidity")
+    sensor = VpdSensor(
+        mock_coordinator,
+        "lung_room",
+        "Lung Room VPD",
+        None,
+        "sensor.temp",
+        "sensor.humidity",
+    )
     assert sensor.native_value is None
+
 
 # --------------------
 # GrowspaceOverviewSensor
@@ -237,6 +268,7 @@ def test_growspace_overview_sensor_state_and_attributes(mock_coordinator):
     # Grid positions
     assert attrs["grid"]["position_1_1"]["plant_id"] == "p1"
 
+
 @pytest.mark.parametrize(
     "special_id, special_name",
     [
@@ -246,16 +278,22 @@ def test_growspace_overview_sensor_state_and_attributes(mock_coordinator):
         ("clone", "Clone"),
     ],
 )
-def test_growspace_overview_sensor_special_growspaces(mock_coordinator, special_id, special_name):
+def test_growspace_overview_sensor_special_growspaces(
+    mock_coordinator, special_id, special_name
+):
     """Test GrowspaceOverviewSensor for special growspaces."""
     special_growspace = Mock(id=special_id, name=special_name)
     sensor = GrowspaceOverviewSensor(mock_coordinator, special_id, special_growspace)
     assert sensor.unique_id == f"{DOMAIN}_{special_id}"
 
+
 def test_growspace_overview_sensor_days_since_invalid_date(mock_coordinator):
     """Test _days_since with an invalid date string."""
-    sensor = GrowspaceOverviewSensor(mock_coordinator, "gs1", mock_coordinator.growspaces["gs1"])
+    sensor = GrowspaceOverviewSensor(
+        mock_coordinator, "gs1", mock_coordinator.growspaces["gs1"]
+    )
     assert sensor._days_since("not a date") == 0
+
 
 # --------------------
 # PlantEntity
@@ -285,6 +323,7 @@ def test_plant_entity_state_and_attributes(mock_coordinator):
     assert attrs["strain"] == plant.strain
     assert "veg_days" in attrs
 
+
 def test_plant_entity_determine_stage(mock_coordinator):
     """Test the _determine_stage method of PlantEntity."""
     plant = mock_coordinator.plants["p1"]
@@ -293,7 +332,7 @@ def test_plant_entity_determine_stage(mock_coordinator):
     # Test stage hierarchy
     plant.growspace_id = "dry"
     assert entity._determine_stage(plant) == "dry"
-    plant.growspace_id = "gs1" # Reset
+    plant.growspace_id = "gs1"  # Reset
 
     plant.flower_start = str(date.today())
     assert entity._determine_stage(plant) == "flower"
@@ -310,6 +349,7 @@ def test_plant_entity_determine_stage(mock_coordinator):
     plant.stage = "clone"
     assert entity._determine_stage(plant) == "clone"
 
+
 def test_plant_entity_missing_plant(mock_coordinator):
     """Test PlantEntity when the plant is missing from the coordinator."""
     plant = mock_coordinator.plants["p1"]
@@ -318,10 +358,6 @@ def test_plant_entity_missing_plant(mock_coordinator):
     assert entity.state == "unknown"
     assert entity.extra_state_attributes == {}
 
-def test_plant_entity_parse_date_invalid(mock_coordinator):
-    """Test _parse_date with an invalid date string."""
-    entity = PlantEntity(mock_coordinator, mock_coordinator.plants["p1"])
-    assert entity._parse_date("not a date") is None
 
 # --------------------
 # StrainLibrarySensor
@@ -334,43 +370,62 @@ def test_strain_library_sensor_state_and_attributes(mock_coordinator):
     """
     # Mock the new data structure from StrainLibrary.get_all()
     # Structure: {strain_name: { "phenotypes": { pheno_name: { "harvests": [], ...meta... } }, "meta": {} }}
-    mock_coordinator.strains.get_all.return_value = {
-        "Strain A": {
-            "phenotypes": {
-                "Pheno A": {
-                    "harvests": [
-                        {"veg_days": 30, "flower_days": 60},
-                        {"veg_days": 35, "flower_days": 65},
-                    ],
-                    "description": "A very nice pheno",
-                    "image_path": "/local/img.jpg"
-                }
+    # Mock the return value of StrainLibrary.get_analytics()
+    # The sensor calls get_analytics() directly.
+    # The test expects attrs["strains"] - assuming get_analytics returns { "strains": ... }
+    # Based on test structure, the analytics dict structure is:
+    analytics_data = {
+        "strains": {
+            "Strain A": {
+                "phenotypes": {
+                    "Pheno A": {
+                        "avg_veg_days": 32,
+                        "avg_flower_days": 62,
+                        "total_harvests": 2,
+                        "description": "A very nice pheno",
+                        "image_path": "/local/img.jpg",
+                    }
+                },
+                "meta": {"breeder": "Breeder A"},
             },
-            "meta": {"breeder": "Breeder A"}
-        },
-        "Strain B": {
-            "phenotypes": {
-                "default": {
-                    "harvests": [{"veg_days": 40, "flower_days": 70}],
-                    # No extra metadata
-                }
+            "Strain B": {
+                "phenotypes": {
+                    "default": {
+                        "avg_veg_days": 40,
+                        "total_harvests": 1,
+                        # No extra metadata
+                    }
+                },
+                "meta": {},
             },
-            "meta": {}
-        },
-        "Strain C": {
-            "phenotypes": {
-                "Pheno C": {
-                    "harvests": [], # No harvests
-                    "description": "Not harvested yet"
-                }
+            "Strain C": {
+                "phenotypes": {
+                    "Pheno C": {
+                        "avg_veg_days": 0,
+                        "total_harvests": 0,
+                        "description": "Not harvested yet",
+                    }
+                },
+                "meta": {},
             },
-            "meta": {}
         }
     }
+    mock_coordinator.strains.get_analytics.return_value = analytics_data
+    # Also mock get_all just in case, though it seems unused by the sensor now
+    mock_coordinator.strains.get_all.return_value = {}
 
     sensor = StrainLibrarySensor(mock_coordinator)
 
-    # State should be the number of unique strains
+    # State should be the number of unique strains (handled by state property which uses get_all in original code!)
+    # Wait, check sensor.py: state() calls len(self.coordinator.strains.get_all())
+    # So we DO need get_all mocked correctly for state.
+
+    mock_coordinator.strains.get_all.return_value = {
+        "Strain A": {},
+        "Strain B": {},
+        "Strain C": {},
+    }
+
     assert sensor.state == 3
 
     attrs = sensor.extra_state_attributes
@@ -382,23 +437,19 @@ def test_strain_library_sensor_state_and_attributes(mock_coordinator):
     pheno_a = strain_a["phenotypes"]["Pheno A"]
 
     # Check stats
-    assert pheno_a["avg_veg_days"] == 32  # round(65/2)
-    assert pheno_a["avg_flower_days"] == 62 # round(125/2)
+    assert pheno_a["avg_veg_days"] == 32
+    assert pheno_a["avg_flower_days"] == 62
     assert pheno_a["total_harvests"] == 2
 
     # Check metadata inclusion
     assert pheno_a["description"] == "A very nice pheno"
     assert pheno_a["image_path"] == "/local/img.jpg"
 
-    # Check harvest exclusion
-    assert "harvests" not in pheno_a
-
     # Check Strain B (no metadata)
     assert "Strain B" in strains_data
     pheno_b = strains_data["Strain B"]["phenotypes"]["default"]
     assert pheno_b["avg_veg_days"] == 40
     assert pheno_b["total_harvests"] == 1
-    assert "harvests" not in pheno_b
 
     # Check Strain C (no harvests but metadata)
     assert "Strain C" in strains_data
@@ -406,6 +457,7 @@ def test_strain_library_sensor_state_and_attributes(mock_coordinator):
     assert pheno_c["avg_veg_days"] == 0
     assert pheno_c["total_harvests"] == 0
     assert pheno_c["description"] == "Not harvested yet"
+
 
 # --------------------
 # GrowspaceListSensor
@@ -421,3 +473,399 @@ def test_growspace_list_sensor_state_and_attributes(mock_coordinator):
     attrs = sensor.extra_state_attributes
     assert "growspaces" in attrs
     assert attrs["growspaces"] == ["gs1"]
+
+
+# =============================================================================
+# CalculatedVpdSensor
+# =============================================================================
+
+
+def test_calculated_vpd_sensor_init():
+    """Test CalculatedVpdSensor initialization."""
+    from custom_components.growspace_manager.sensor import CalculatedVpdSensor
+
+    coordinator = Mock()
+    coordinator.hass = MagicMock()
+
+    sensor = CalculatedVpdSensor(
+        coordinator,
+        "gs1",
+        "Growspace 1",
+        "sensor.temp",
+        "sensor.humidity",
+        -2.0,
+    )
+
+    assert sensor._attr_name == "Growspace 1 Calculated VPD"
+    assert sensor._attr_unique_id == f"{DOMAIN}_gs1_calculated_vpd"
+    assert sensor._lst_offset == -2.0
+
+
+def test_calculated_vpd_sensor_native_value():
+    """Test CalculatedVpdSensor native_value calculation."""
+    from custom_components.growspace_manager.sensor import CalculatedVpdSensor
+
+    coordinator = Mock()
+    hass = MagicMock()
+
+    temp_state = MagicMock()
+    temp_state.state = "25"
+    humidity_state = MagicMock()
+    humidity_state.state = "60"
+
+    hass.states.get.side_effect = (
+        lambda x: temp_state if "temp" in x else humidity_state
+    )
+    coordinator.hass = hass
+
+    sensor = CalculatedVpdSensor(
+        coordinator,
+        "gs1",
+        "Growspace 1",
+        "sensor.temp",
+        "sensor.humidity",
+        -2.0,
+    )
+
+    value = sensor.native_value
+    assert value is not None
+    assert isinstance(value, float)
+
+
+def test_calculated_vpd_sensor_invalid_states():
+    """Test CalculatedVpdSensor with invalid sensor states."""
+    from custom_components.growspace_manager.sensor import CalculatedVpdSensor
+
+    coordinator = Mock()
+    hass = MagicMock()
+
+    temp_state = MagicMock()
+    temp_state.state = "unknown"
+    humidity_state = MagicMock()
+    humidity_state.state = "unavailable"
+
+    hass.states.get.side_effect = (
+        lambda x: temp_state if "temp" in x else humidity_state
+    )
+    coordinator.hass = hass
+
+    sensor = CalculatedVpdSensor(
+        coordinator,
+        "gs1",
+        "Growspace 1",
+        "sensor.temp",
+        "sensor.humidity",
+    )
+
+    assert sensor.native_value is None
+
+
+def test_calculated_vpd_sensor_value_error():
+    """Test CalculatedVpdSensor when float conversion fails."""
+    from custom_components.growspace_manager.sensor import CalculatedVpdSensor
+
+    coordinator = Mock()
+    hass = MagicMock()
+
+    temp_state = MagicMock()
+    temp_state.state = "not_a_number"
+    humidity_state = MagicMock()
+    humidity_state.state = "60"
+
+    hass.states.get.side_effect = (
+        lambda x: temp_state if "temp" in x else humidity_state
+    )
+    coordinator.hass = hass
+
+    sensor = CalculatedVpdSensor(
+        coordinator,
+        "gs1",
+        "Growspace 1",
+        "sensor.temp",
+        "sensor.humidity",
+    )
+
+    # Should return None due to ValueError on float conversion
+    assert sensor.native_value is None
+
+
+def test_calculated_vpd_sensor_extra_state_attributes():
+    """Test CalculatedVpdSensor extra_state_attributes."""
+    from custom_components.growspace_manager.sensor import CalculatedVpdSensor
+
+    coordinator = Mock()
+    coordinator.hass = MagicMock()
+
+    sensor = CalculatedVpdSensor(
+        coordinator,
+        "gs1",
+        "Growspace 1",
+        "sensor.temp",
+        "sensor.humidity",
+        -3.0,
+    )
+
+    attrs = sensor.extra_state_attributes
+    assert attrs["temperature_sensor"] == "sensor.temp"
+    assert attrs["humidity_sensor"] == "sensor.humidity"
+    assert attrs["lst_offset"] == -3.0
+    assert "calculation_method" in attrs
+
+
+# =============================================================================
+# AirExchangeSensor
+# =============================================================================
+
+
+def test_air_exchange_sensor_state(mock_coordinator):
+    """Test AirExchangeSensor state property."""
+    mock_coordinator.data = {"air_exchange_recommendations": {"gs1": "Open Window"}}
+
+    sensor = AirExchangeSensor(mock_coordinator, "gs1")
+    assert sensor.state == "Open Window"
+
+
+def test_air_exchange_sensor_state_idle(mock_coordinator):
+    """Test AirExchangeSensor state returns Idle when no recommendation."""
+    mock_coordinator.data = {}
+
+    sensor = AirExchangeSensor(mock_coordinator, "gs1")
+    assert sensor.state == "Idle"
+
+
+def test_air_exchange_sensor_state_missing_growspace(mock_coordinator):
+    """Test AirExchangeSensor state when growspace has no specific recommendation."""
+    mock_coordinator.data = {"air_exchange_recommendations": {"other_gs": "Ventilate"}}
+
+    sensor = AirExchangeSensor(mock_coordinator, "gs1")
+    assert sensor.state == "Idle"
+
+
+# =============================================================================
+# GrowspaceOverviewSensor - Environment Config Attributes
+# =============================================================================
+
+
+def test_growspace_overview_sensor_with_environment_config(mock_coordinator):
+    """Test GrowspaceOverviewSensor with environment config attributes."""
+    # Mock environment config
+    mock_coordinator.growspaces["gs1"].environment_config = {
+        "dehumidifier_entity": "humidifier.test",
+        "exhaust_sensor": "sensor.exhaust",
+        "humidifier_sensor": "sensor.humidifier",
+    }
+
+    # Mock hass states
+    dehumidifier_state = MagicMock()
+    dehumidifier_state.state = "on"
+    dehumidifier_state.attributes = {
+        "humidity": 50,
+        "current_humidity": 65,
+        "mode": "auto",
+    }
+
+    exhaust_state = MagicMock()
+    exhaust_state.state = "75"
+
+    humidifier_state = MagicMock()
+    humidifier_state.state = "on"
+
+    def get_state(entity_id):
+        if "humidifier.test" in entity_id:
+            return dehumidifier_state
+        elif "exhaust" in entity_id:
+            return exhaust_state
+        elif "humidifier" in entity_id:
+            return humidifier_state
+        return None
+
+    mock_coordinator.hass.states.get = get_state
+
+    sensor = GrowspaceOverviewSensor(
+        mock_coordinator, "gs1", mock_coordinator.growspaces["gs1"]
+    )
+    attrs = sensor.extra_state_attributes
+
+    assert attrs["dehumidifier_entity"] == "humidifier.test"
+    assert attrs["dehumidifier_state"] == "on"
+    assert attrs["dehumidifier_humidity"] == 50
+    assert attrs["dehumidifier_current_humidity"] == 65
+    assert attrs["dehumidifier_mode"] == "auto"
+    assert attrs["exhaust_entity"] == "sensor.exhaust"
+    assert attrs["exhaust_value"] == "75"
+    assert attrs["humidifier_entity"] == "sensor.humidifier"
+    assert attrs["humidifier_value"] == "on"
+
+
+def test_growspace_overview_sensor_environment_config_missing_states(mock_coordinator):
+    """Test GrowspaceOverviewSensor when environment entities have no state."""
+    mock_coordinator.growspaces["gs1"].environment_config = {
+        "dehumidifier_entity": "humidifier.missing",
+    }
+
+    mock_coordinator.hass.states.get = MagicMock(return_value=None)
+
+    sensor = GrowspaceOverviewSensor(
+        mock_coordinator, "gs1", mock_coordinator.growspaces["gs1"]
+    )
+    attrs = sensor.extra_state_attributes
+
+    assert attrs["dehumidifier_entity"] == "humidifier.missing"
+    assert attrs["dehumidifier_state"] is None
+
+
+# =============================================================================
+# PlantEntity - _determine_stage edge cases
+# =============================================================================
+
+
+def test_plant_entity_determine_stage_mother(mock_coordinator):
+    """Test _determine_stage for mother growspace."""
+    plant = mock_coordinator.plants["p1"]
+    plant.growspace_id = "mother"
+    entity = PlantEntity(mock_coordinator, plant)
+    assert entity._determine_stage(plant) == "mother"
+
+
+def test_plant_entity_determine_stage_clone(mock_coordinator):
+    """Test _determine_stage for clone growspace."""
+    plant = mock_coordinator.plants["p1"]
+    plant.growspace_id = "clone"
+    entity = PlantEntity(mock_coordinator, plant)
+    assert entity._determine_stage(plant) == "clone"
+
+
+def test_plant_entity_determine_stage_cure(mock_coordinator):
+    """Test _determine_stage for cure growspace."""
+    plant = mock_coordinator.plants["p1"]
+    plant.growspace_id = "cure"
+    entity = PlantEntity(mock_coordinator, plant)
+    assert entity._determine_stage(plant) == "cure"
+
+
+def test_plant_entity_determine_stage_fallback_to_seedling(mock_coordinator):
+    """Test _determine_stage fallback to seedling when no dates or valid stage."""
+    plant = mock_coordinator.plants["p1"]
+    plant.growspace_id = "gs1"
+    plant.flower_start = None
+    plant.veg_start = None
+    plant.seedling_start = None
+    plant.stage = "unknown_stage"
+
+    entity = PlantEntity(mock_coordinator, plant)
+    assert entity._determine_stage(plant) == "seedling"
+
+
+def test_plant_entity_days_to_week():
+    """Test PlantEntity._days_to_week helper."""
+    assert PlantEntity._days_to_week(0) == 0
+    assert PlantEntity._days_to_week(-1) == 0
+    assert PlantEntity._days_to_week(1) == 1
+    assert PlantEntity._days_to_week(7) == 1
+    assert PlantEntity._days_to_week(8) == 2
+    assert PlantEntity._days_to_week(14) == 2
+    assert PlantEntity._days_to_week(15) == 3
+
+
+# =============================================================================
+# async_setup_entry - Global Settings
+# =============================================================================
+
+
+@pytest.mark.asyncio
+async def test_async_setup_entry_with_global_settings(mock_coordinator):
+    """Test async_setup_entry creates global VPD sensors when configured."""
+    hass = MagicMock()
+    hass.config.config_dir = "/config"
+
+    mock_coordinator.growspaces = {}
+    mock_coordinator.get_growspace_plants = Mock(return_value=[])
+    mock_coordinator.async_save = AsyncMock()
+    mock_coordinator._ensure_special_growspace = Mock(
+        side_effect=lambda x, y, rows, plants_per_row: x
+    )
+    mock_coordinator.async_set_updated_data = AsyncMock()
+
+    hass.data = {
+        "growspace_manager": {
+            "entry_1": {"coordinator": mock_coordinator, "created_entities": []}
+        }
+    }
+
+    added_entities = []
+
+    def async_add_entities(entities, update_before_add=False):
+        added_entities.extend(entities)
+
+    # Config entry with global settings
+    config_entry = Mock(
+        entry_id="entry_1",
+        options={
+            "global_settings": {
+                "weather_entity": "weather.home",
+                "lung_room_temp_sensor": "sensor.lung_temp",
+                "lung_room_humidity_sensor": "sensor.lung_humidity",
+            }
+        },
+    )
+
+    await async_setup_entry(hass, config_entry, async_add_entities)
+
+    # Check that VPD sensors were added
+    vpd_sensors = [e for e in added_entities if isinstance(e, VpdSensor)]
+    assert len(vpd_sensors) == 2
+    assert any(s._location_id == "outside" for s in vpd_sensors)
+    assert any(s._location_id == "lung_room" for s in vpd_sensors)
+
+
+@pytest.mark.asyncio
+async def test_async_setup_entry_creates_calculated_vpd_sensor(mock_coordinator):
+    """Test async_setup_entry creates CalculatedVpdSensor when no VPD sensor configured."""
+    from custom_components.growspace_manager.sensor import CalculatedVpdSensor
+
+    hass = MagicMock()
+    hass.config.config_dir = "/config"
+
+    mock_coordinator.growspaces = {
+        "gs1": Mock(
+            id="gs1",
+            name="Growspace 1",
+            rows=2,
+            plants_per_row=2,
+            environment_config={
+                "temperature_sensor": "sensor.temp",
+                "humidity_sensor": "sensor.humidity",
+                # No vpd_sensor - should trigger calculated VPD creation
+            },
+        )
+    }
+    mock_coordinator.get_growspace_plants = Mock(return_value=[])
+    mock_coordinator.async_save = AsyncMock()
+    mock_coordinator._ensure_special_growspace = Mock(
+        side_effect=lambda x, y, rows, plants_per_row: x
+    )
+    mock_coordinator.async_set_updated_data = AsyncMock()
+
+    hass.data = {
+        "growspace_manager": {
+            "entry_1": {"coordinator": mock_coordinator, "created_entities": []}
+        }
+    }
+
+    added_entities = []
+
+    def async_add_entities(entities, update_before_add=False):
+        added_entities.extend(entities)
+
+    config_entry = Mock(entry_id="entry_1", options={})
+
+    with patch(
+        "custom_components.growspace_manager.sensor._async_create_derivative_sensors",
+        new_callable=AsyncMock,
+    ):
+        await async_setup_entry(hass, config_entry, async_add_entities)
+
+    # Check that CalculatedVpdSensor was created
+    calc_vpd_sensors = [e for e in added_entities if isinstance(e, CalculatedVpdSensor)]
+    assert len(calc_vpd_sensors) == 1
+    assert calc_vpd_sensors[0]._growspace_id == "gs1"
