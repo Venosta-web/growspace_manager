@@ -389,9 +389,13 @@ async def test_async_setup():
     from custom_components.growspace_manager import async_setup
 
     hass = MagicMock(spec=HomeAssistant)
+    hass.data = {}  # websocket_api.async_register_command needs hass.data
     config = {}
 
-    result = await async_setup(hass, config)
+    with patch(
+        "custom_components.growspace_manager.websocket_api.async_register_command"
+    ):
+        result = await async_setup(hass, config)
     assert result is True
 
 

@@ -18,6 +18,7 @@ from custom_components.growspace_manager.sensor import (
     GrowspaceListSensor,
     VpdSensor,
     AirExchangeSensor,
+    CalculatedVpdSensor,
     async_setup_entry,
 )
 from custom_components.growspace_manager import sensor as sensor_module
@@ -869,3 +870,162 @@ async def test_async_setup_entry_creates_calculated_vpd_sensor(mock_coordinator)
     calc_vpd_sensors = [e for e in added_entities if isinstance(e, CalculatedVpdSensor)]
     assert len(calc_vpd_sensors) == 1
     assert calc_vpd_sensors[0]._growspace_id == "gs1"
+
+
+@pytest.mark.asyncio
+async def test_async_setup_entry_recreates_calculated_vpd_sensor_on_restart(
+    mock_coordinator,
+):
+    """Test that CalculatedVpdSensor is recreated if the config already points to it (restart scenario)."""
+    hass = MagicMock()
+    hass.config.config_dir = "/config"
+    hass.data = {
+        DOMAIN: {
+            "entry_id": {
+                "coordinator": mock_coordinator,
+                "created_entities": [],
+            }
+        }
+    }
+
+    # Setup growspace with:
+    # 1. Temp and Humidity sensors present
+    # 2. VPD sensor configured as the EXPECTED calculated ID (simulating a restart)
+    # The expected ID is now based on NAME, not ID
+    gs_id = "gs_restart"
+    gs_name = "Restart Growspace"
+    # slugify("Restart Growspace Calculated VPD") -> "restart_growspace_calculated_vpd"
+    calculated_id = "sensor.restart_growspace_calculated_vpd"
+
+    # Create valid mock environment config
+    env_config = {
+        "temperature_sensor": "sensor.temp",
+        "humidity_sensor": "sensor.hum",
+        "vpd_sensor": calculated_id,
+        "lst_offset": -2.0,
+    }
+
+    # Create mock growspace and ensure name is a string, not a Mock object
+    gs_mock = Mock(id=gs_id)
+    gs_mock.environment_config = env_config
+    # Must assign name explicitly because Mock(name=...) is special
+    gs_mock.name = gs_name
+
+    mock_coordinator.growspaces = {gs_id: gs_mock}
+    mock_coordinator.get_growspace_plants.return_value = []
+    mock_coordinator.async_save = AsyncMock()
+    mock_coordinator._ensure_special_growspace = Mock(return_value="mock_id")
+
+    config_entry = Mock(entry_id="entry_id")
+    async_add_entities = Mock()
+
+    # Mock the helper functions to verify call order and execution
+    with (
+        patch(
+            "custom_components.growspace_manager.sensor.async_setup_trend_sensor",
+            new_callable=AsyncMock,
+        ) as mock_trend,
+        patch(
+            "custom_components.growspace_manager.sensor.async_setup_statistics_sensor",
+            new_callable=AsyncMock,
+        ) as mock_stats,
+    ):
+        await async_setup_entry(hass, config_entry, async_add_entities)
+
+        # Verify CalculatedVpdSensor was added to entities
+        # async_add_entities is called multiple times (initial, global, air exchange), so we need to inspect all calls
+        all_added_entities = []
+        for call in async_add_entities.call_args_list:
+            all_added_entities.extend(call[0][0])
+
+        calculated_sensors = [
+            e for e in all_added_entities if isinstance(e, CalculatedVpdSensor)
+        ]
+        assert len(calculated_sensors) == 1
+        assert calculated_sensors[0].unique_id == f"{DOMAIN}_{gs_id}_calculated_vpd"
+
+        # Verify derivative sensors were created for VPD (which confirms setup_derivative called AFTER creation)
+        # Check that setup_trend/stats was called with our calculated ID
+        expected_calls = [
+            (hass, "sensor.temp", gs_id, "Restart Growspace", "temperature"),
+            (hass, "sensor.hum", gs_id, "Restart Growspace", "humidity"),
+            (hass, calculated_id, gs_id, "Restart Growspace", "vpd"),
+        ]
+
+        # Check call args for trend sensor
+        trend_call_args = [call.args for call in mock_trend.call_args_list]
+        for expected in expected_calls:
+            assert expected in trend_call_args, (
+                f"Expected call {expected} not found in trend setup calls"
+            )
+
+
+@pytest.mark.asyncio
+async def test_async_setup_entry_migrates_legacy_uuid_vpd_sensor(
+    mock_coordinator,
+):
+    """Test that CalculatedVpdSensor is recreated and config migrated if pointing to legacy UUID ID."""
+    hass = MagicMock()
+    hass.config.config_dir = "/config"
+    hass.data = {
+        DOMAIN: {
+            "entry_id": {
+                "coordinator": mock_coordinator,
+                "created_entities": [],
+            }
+        }
+    }
+
+    # Setup growspace with legacy UUID-based VPD sensor configured
+    gs_id = "gs_legacy"
+    gs_name = "Legacy Growspace"
+    old_uuid_id = f"sensor.{gs_id}_calculated_vpd"
+
+    # Create valid mock environment config with the OLD ID
+    env_config = {
+        "temperature_sensor": "sensor.temp",
+        "humidity_sensor": "sensor.hum",
+        "vpd_sensor": old_uuid_id,
+        "lst_offset": -2.0,
+    }
+
+    # Mock growspace
+    gs_mock = Mock(id=gs_id)
+    gs_mock.environment_config = env_config
+    gs_mock.name = gs_name
+
+    mock_coordinator.growspaces = {gs_id: gs_mock}
+    mock_coordinator.get_growspace_plants.return_value = []
+    mock_coordinator.async_save = AsyncMock()
+    mock_coordinator._ensure_special_growspace = Mock(return_value="mock_id")
+
+    config_entry = Mock(entry_id="entry_id")
+    async_add_entities = Mock()
+
+    with (
+        patch(
+            "custom_components.growspace_manager.sensor.async_setup_trend_sensor",
+            new_callable=AsyncMock,
+        ) as mock_trend,
+        patch(
+            "custom_components.growspace_manager.sensor.async_setup_statistics_sensor",
+            new_callable=AsyncMock,
+        ) as mock_stats,
+    ):
+        await async_setup_entry(hass, config_entry, async_add_entities)
+
+        # Verify CalculatedVpdSensor was created
+        all_added_entities = []
+        for call in async_add_entities.call_args_list:
+            all_added_entities.extend(call[0][0])
+
+        calculated_sensors = [
+            e for e in all_added_entities if isinstance(e, CalculatedVpdSensor)
+        ]
+        assert len(calculated_sensors) == 1
+
+        # Verify config was updated to the NEW Name-based ID
+        from homeassistant.util import slugify
+
+        expected_new_id = f"sensor.{slugify('Legacy Growspace Calculated VPD')}"
+        assert gs_mock.environment_config["vpd_sensor"] == expected_new_id

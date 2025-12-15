@@ -122,13 +122,13 @@ async def async_setup_entry(
 
 def _validate_env_config(config: dict) -> bool:
     """Validate that the required environment sensor entities are configured.
-    
+
     VPD sensor can be either directly configured or calculated from temp and humidity.
     """
     has_temp = bool(config.get("temperature_sensor"))
     has_humidity = bool(config.get("humidity_sensor"))
     has_vpd = bool(config.get("vpd_sensor"))
-    
+
     # Valid if we have temp, humidity, and either a VPD sensor or ability to calculate it
     return has_temp and has_humidity and (has_vpd or (has_temp and has_humidity))
 
@@ -334,13 +334,20 @@ class BayesianEnvironmentSensor(BinarySensorEntity):
             )
 
             states = history_list.get(sensor_id, [])
-            numeric_states = [
-                (s.last_updated, float(s.state))
-                for s in states
-                if isinstance(s, State)
-                and s.state not in [STATE_UNKNOWN, STATE_UNAVAILABLE]
-                and s.state is not None
-            ]
+            numeric_states = []
+            for s in states:
+                if (
+                    not isinstance(s, State)
+                    or s.state in [STATE_UNKNOWN, STATE_UNAVAILABLE]
+                    or s.state is None
+                ):
+                    continue
+                try:
+                    # Handle empty strings or non-numeric values gracefully
+                    val = float(s.state)
+                    numeric_states.append((s.last_updated, val))
+                except (ValueError, TypeError):
+                    continue
 
             if len(numeric_states) < 2:
                 return {"trend": "stable", "crossed_threshold": False}
@@ -483,18 +490,14 @@ class BayesianEnvironmentSensor(BinarySensorEntity):
                     # Validate the response isn't too long
                     if len(rewritten) < 250:  # Reasonable notification length
                         final_message = rewritten
-                        _LOGGER.info(
-                            "AI rewrote notification in %s style", personality
-                        )
+                        _LOGGER.info("AI rewrote notification in %s style", personality)
                     else:
                         _LOGGER.warning(
                             "AI response too long (%d chars), using default",
                             len(rewritten),
                         )
                 else:
-                    _LOGGER.warning(
-                        "AI returned empty response, using default message"
-                    )
+                    _LOGGER.warning("AI returned empty response, using default message")
 
             except Exception as err:
                 _LOGGER.error("Failed to process AI notification: %s", err)
@@ -645,7 +648,7 @@ class BayesianStressSensor(BayesianEnvironmentSensor):
         if state.dehumidifier_on:
             is_dry = state.humidity is not None and state.humidity < 40
             is_high_vpd = state.vpd is not None and state.vpd > 1.5
-            
+
             if is_dry or is_high_vpd:
                 prob = (0.99, 0.01)
                 observations.append(prob)
@@ -987,7 +990,9 @@ class BayesianMoldRiskSensor(BayesianEnvironmentSensor):
         if state.dehumidifier_on and state.humidity is not None and state.humidity > 60:
             prob = (0.95, 0.1)
             observations.append(prob)
-            self._reasons.append((prob[0], f"Dehumidifier Ineffective (ON + Hum {state.humidity}%)"))
+            self._reasons.append(
+                (prob[0], f"Dehumidifier Ineffective (ON + Hum {state.humidity}%)")
+            )
 
         self._probability = self._calculate_bayesian_probability(
             self.prior, observations

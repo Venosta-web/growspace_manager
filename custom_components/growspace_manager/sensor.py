@@ -108,16 +108,32 @@ async def async_setup_entry(
         growspace_entities[growspace_id] = gs_entity
         initial_entities.append(gs_entity)
 
-        await _async_create_derivative_sensors(hass, config_entry, growspace)
-
         # Check if we need to create a calculated VPD sensor
         env_config = growspace.environment_config or {}
         temp_sensor = env_config.get("temperature_sensor")
         humidity_sensor = env_config.get("humidity_sensor")
         vpd_sensor = env_config.get("vpd_sensor")
 
-        # Create calculated VPD if temp and humidity exist but no VPD sensor
-        if temp_sensor and humidity_sensor and not vpd_sensor:
+        # Determine if the configured VPD sensor is actually our calculated one
+        from homeassistant.util import slugify
+
+        expected_calculated_id = f"sensor.{slugify(f'{growspace.name} Calculated VPD')}"
+        old_uuid_calculated_id = f"sensor.{growspace_id}_calculated_vpd"
+
+        # We create it if:
+        # 1. We have temp and humidity AND no VPD sensor is configured
+        # 2. OR the configured VPD sensor appears to be the calculated one we manage (either new or old ID)
+        should_create_calculated_vpd = (
+            temp_sensor
+            and humidity_sensor
+            and (
+                not vpd_sensor
+                or vpd_sensor == expected_calculated_id
+                or vpd_sensor == old_uuid_calculated_id
+            )
+        )
+
+        if should_create_calculated_vpd:
             lst_offset = env_config.get("lst_offset", -2.0)
             calc_vpd_sensor = CalculatedVpdSensor(
                 coordinator,
@@ -131,14 +147,18 @@ async def async_setup_entry(
             initial_entities.append(calc_vpd_sensor)
 
             # Auto-populate the vpd_sensor in env_config with the calculated sensor
-            env_config["vpd_sensor"] = f"sensor.{growspace_id}_calculated_vpd"
-            growspace.environment_config = env_config
+            if vpd_sensor != expected_calculated_id:
+                env_config["vpd_sensor"] = expected_calculated_id
+                growspace.environment_config = env_config
 
             _LOGGER.info(
                 "Created calculated VPD sensor for %s (LST offset: %.1f°C)",
                 growspace.name,
                 lst_offset,
             )
+
+        # Create derivative sensors (trend/stats) AFTER ensuring the source sensors exist
+        await _async_create_derivative_sensors(hass, config_entry, growspace)
 
         for plant in coordinator.get_growspace_plants(growspace_id):
             pe = PlantEntity(coordinator, plant)
@@ -428,15 +448,24 @@ class CalculatedVpdSensor(CoordinatorEntity[GrowspaceCoordinator], SensorEntity)
             )
         return None
 
-    @property
-    def extra_state_attributes(self) -> dict[str, Any]:
-        """Return additional state attributes."""
-        return {
-            "temperature_sensor": self._temp_sensor,
-            "humidity_sensor": self._humidity_sensor,
-            "lst_offset": self._lst_offset,
-            "calculation_method": "Calculated from temperature and humidity",
-        }
+    async def async_added_to_hass(self) -> None:
+        """Register callbacks."""
+        await super().async_added_to_hass()
+
+        if self._temp_sensor and self._humidity_sensor:
+            from homeassistant.helpers.event import async_track_state_change_event
+
+            async def _async_sensor_changed(event):
+                """Handle sensor state changes."""
+                self.async_write_ha_state()
+
+            self.async_on_remove(
+                async_track_state_change_event(
+                    self.hass,
+                    [self._temp_sensor, self._humidity_sensor],
+                    _async_sensor_changed,
+                )
+            )
 
 
 class AirExchangeSensor(CoordinatorEntity[GrowspaceCoordinator], SensorEntity):
@@ -564,14 +593,14 @@ class GrowspaceOverviewSensor(CoordinatorEntity[GrowspaceCoordinator], SensorEnt
         # Calculate weeks from days
         veg_week = self._days_to_week(max_veg)
         flower_week = self._days_to_week(max_flower)
-        
+
         # Get irrigation settings from growspace object
         irrigation_options = growspace.irrigation_config
 
         _LOGGER.debug(
             "GrowspaceOverviewSensor attributes update for %s. Irrigation items: %d",
             self.growspace_id,
-            len(irrigation_options.get("irrigation_times", []))
+            len(irrigation_options.get("irrigation_times", [])),
         )
 
         # Create grid representation
@@ -624,16 +653,22 @@ class GrowspaceOverviewSensor(CoordinatorEntity[GrowspaceCoordinator], SensorEnt
         # Add dehumidifier state if configured
         if growspace.environment_config:
             env_config = growspace.environment_config
-            
+
             # Dehumidifier
             dehumidifier_entity = env_config.get("dehumidifier_entity")
             if dehumidifier_entity:
                 state_obj = self.coordinator.hass.states.get(dehumidifier_entity)
                 attributes["dehumidifier_entity"] = dehumidifier_entity
-                attributes["dehumidifier_state"] = state_obj.state if state_obj else None
+                attributes["dehumidifier_state"] = (
+                    state_obj.state if state_obj else None
+                )
                 if state_obj:
-                    attributes["dehumidifier_humidity"] = state_obj.attributes.get("humidity")
-                    attributes["dehumidifier_current_humidity"] = state_obj.attributes.get("current_humidity")
+                    attributes["dehumidifier_humidity"] = state_obj.attributes.get(
+                        "humidity"
+                    )
+                    attributes["dehumidifier_current_humidity"] = (
+                        state_obj.attributes.get("current_humidity")
+                    )
                     attributes["dehumidifier_mode"] = state_obj.attributes.get("mode")
 
             # Exhaust Sensor
@@ -683,8 +718,6 @@ class PlantEntity(SensorEntity):
             model="Growspace",
             manufacturer="Growspace Manager",
         )
-
-
 
     def _determine_stage(self, plant: Plant) -> str:
         """Determine the current growth stage of the plant.

@@ -862,6 +862,19 @@ class OptionsFlowHandler(OptionsFlow):
             if device_class:
                 config_args["device_class"] = device_class
 
+            # Validate that the current value is a valid entity ID (no dashes in ID part)
+            if current_val:
+                try:
+                    # Basic check for valid entity ID format: domain.object_id
+                    # and object_id should not contain dashes if it's strictly validated by selector
+                    if "." in current_val:
+                        object_id = current_val.split(".", 1)[1]
+                        # If object_id looks like a raw UUID (contains dashes), ignore it
+                        if "-" in object_id:
+                            current_val = None
+                except Exception:  # pylint: disable=broad-except
+                    current_val = None
+
             if current_val:
                 return vol.Optional(key, default=current_val), selector.EntitySelector(
                     selector.EntitySelectorConfig(**config_args)

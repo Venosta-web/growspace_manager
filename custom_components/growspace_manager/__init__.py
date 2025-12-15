@@ -7,11 +7,13 @@ import os
 import tempfile
 
 from aiohttp import web
+import voluptuous as vol
 import homeassistant.helpers.config_validation as cv
 from homeassistant.components.http import HomeAssistantView
 from homeassistant.components.persistent_notification import (
     async_create as create_notification,
 )
+from homeassistant.components import websocket_api
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, ServiceCall, SupportsResponse
 from homeassistant.helpers import entity_registry as er
@@ -81,10 +83,145 @@ async def _async_update_listener(hass: HomeAssistant, entry: ConfigEntry) -> Non
     await hass.config_entries.async_reload(entry.entry_id)
 
 
-async def async_setup(_hass: HomeAssistant, _config: dict):
+async def async_setup(hass: HomeAssistant, _config: dict):
     """Set up the integration via YAML (optional)."""
     _LOGGER.debug("Running async_setup for %s", DOMAIN)
+    # Register websocket commands
+    websocket_api.async_register_command(hass, websocket_get_data)
     return True
+
+
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): "growspace_manager/get_data",
+        vol.Optional("growspace_id"): str,
+    }
+)
+@websocket_api.async_response
+async def websocket_get_data(
+    hass: HomeAssistant,
+    connection: websocket_api.ActiveConnection,
+    msg: dict,
+) -> None:
+    """Handle get_data websocket command.
+
+    Returns growspace data including grid, environment config, and irrigation settings.
+    """
+    entries = hass.config_entries.async_entries(DOMAIN)
+    if not entries:
+        connection.send_error(msg["id"], "no_entry", "No config entry found")
+        return
+
+    entry_id = entries[0].entry_id
+    domain_data = hass.data.get(DOMAIN, {}).get(entry_id)
+    if not domain_data:
+        connection.send_error(msg["id"], "no_data", "Integration not fully loaded")
+        return
+
+    coordinator = domain_data.get("coordinator")
+    if not coordinator:
+        connection.send_error(msg["id"], "no_coordinator", "Coordinator not found")
+        return
+
+    try:
+        result = {}
+        requested_id = msg.get("growspace_id")
+
+        for gs_id, gs in coordinator.growspaces.items():
+            if requested_id and gs_id != requested_id:
+                continue
+
+            # Build grid representation
+            grid = {}
+            plants = coordinator.get_growspace_plants(gs_id)
+            # FIX: Ensure dimensions are integers (handle potential floats from storage)
+            rows = int(gs.rows)
+            cols = int(gs.plants_per_row)
+
+            for row in range(1, rows + 1):
+                for col in range(1, cols + 1):
+                    grid[f"position_{row}_{col}"] = None
+
+            for plant in plants:
+                position_key = f"position_{plant.row}_{plant.col}"
+                grid[position_key] = {
+                    "plant_id": plant.plant_id,
+                    "entity_id": f"sensor.{DOMAIN}_{plant.plant_id}",
+                    "strain": plant.strain,
+                    "phenotype": plant.phenotype,
+                    "stage": plant.stage,
+                    "row": plant.row,
+                    "col": plant.col,
+                    "veg_days": coordinator.calculate_days_in_stage(plant, "veg"),
+                    "flower_days": coordinator.calculate_days_in_stage(plant, "flower"),
+                }
+
+            # Environment config
+            env_config = gs.environment_config or {}
+
+            # Irrigation config from options
+            # Prioritize irrigation config from the Growspace object (updated via services)
+            # Fallback to coordinator options (legacy/initial load) if empty
+            irrigation_config = gs.irrigation_config or {}
+            irrigation_options = (
+                irrigation_config
+                if irrigation_config
+                else coordinator.options.get("irrigation", {}).get(gs_id, {})
+            )
+
+            # Build biological metrics
+            # These are calculated dynamically in the sensor, so we replicate here
+            max_veg = 0
+            max_flower = 0
+            for plant in plants:
+                veg_days = coordinator.calculate_days_in_stage(plant, "veg") or 0
+                flower_days = coordinator.calculate_days_in_stage(plant, "flower") or 0
+                max_veg = max(max_veg, veg_days)
+                max_flower = max(max_flower, flower_days)
+
+            result[gs_id] = {
+                "grid": grid,
+                # Environment sensors
+                "temperature_sensor": env_config.get("temperature_sensor"),
+                "humidity_sensor": env_config.get("humidity_sensor"),
+                "vpd_sensor": env_config.get("vpd_sensor"),
+                "co2_sensor": env_config.get("co2_sensor"),
+                "light_sensor": env_config.get("light_sensor"),
+                "soil_moisture_sensor": env_config.get("soil_moisture_sensor"),
+                "dehumidifier_entity": env_config.get("dehumidifier_entity"),
+                "humidifier_entity": env_config.get("humidifier_sensor"),
+                "humidifier_sensor": env_config.get("humidifier_sensor"),
+                "exhaust_entity": env_config.get("exhaust_sensor"),
+                "exhaust_sensor": env_config.get("exhaust_sensor"),
+                "circulation_fan_entity": env_config.get("circulation_fan"),
+                "dehumidifier_control_enabled": env_config.get(
+                    "dehumidifier_control_enabled", False
+                ),
+                # Irrigation
+                "irrigation_config": {
+                    "irrigation_pump_entity": irrigation_options.get(
+                        "irrigation_pump_entity"
+                    ),
+                    "drain_pump_entity": irrigation_options.get("drain_pump_entity"),
+                    "irrigation_duration": irrigation_options.get(
+                        "irrigation_duration"
+                    ),
+                    "drain_duration": irrigation_options.get("drain_duration"),
+                    "irrigation_times": irrigation_options.get("irrigation_times", []),
+                    "drain_times": irrigation_options.get("drain_times", []),
+                },
+                "irrigation_strategy": irrigation_options.get("strategy"),
+                # Biological metrics
+                "max_veg_days": max_veg,
+                "max_flower_days": max_flower,
+                "total_plants": len(plants),
+                "max_stage_summary": f"Veg: {max_veg}d (W{max_veg // 7}), Flower: {max_flower}d (W{max_flower // 7})",
+            }
+
+        connection.send_result(msg["id"], result)
+    except Exception as err:  # pylint: disable=broad-except
+        _LOGGER.exception("Error in websocket_get_data: %s", err)
+        connection.send_error(msg["id"], "unknown_error", str(err))
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
@@ -126,14 +263,16 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         _LOGGER.debug(
             "IRRIGATION INIT - Growspace: %s, Config: %s",
             growspace_id,
-            irrigation_config
+            irrigation_config,
         )
-        
-        irrigation_coordinator = IrrigationCoordinator(hass, entry, growspace_id, coordinator)
+
+        irrigation_coordinator = IrrigationCoordinator(
+            hass, entry, growspace_id, coordinator
+        )
         await irrigation_coordinator.async_setup()
-        hass.data[DOMAIN][entry.entry_id]["irrigation_coordinators"][
-            growspace_id
-        ] = irrigation_coordinator
+        hass.data[DOMAIN][entry.entry_id]["irrigation_coordinators"][growspace_id] = (
+            irrigation_coordinator
+        )
 
     entry.add_update_listener(_async_update_listener)
 
@@ -314,45 +453,47 @@ async def _register_services(
     async def ask_grow_advice_wrapper(
         call: ServiceCall, _handler=ai_assistant.handle_ask_grow_advice
     ):
-         return await _handler(hass, coordinator, strain_library_instance, call)
+        return await _handler(hass, coordinator, strain_library_instance, call)
 
     hass.services.async_register(
-        DOMAIN, 
-        "ask_grow_advice", 
-        ask_grow_advice_wrapper, 
-        schema=ASK_GROW_ADVICE_SCHEMA, 
-        supports_response=SupportsResponse.ONLY
+        DOMAIN,
+        "ask_grow_advice",
+        ask_grow_advice_wrapper,
+        schema=ASK_GROW_ADVICE_SCHEMA,
+        supports_response=SupportsResponse.ONLY,
     )
 
     # 2. Analyze All Growspaces (New)
     async def analyze_all_wrapper(
         call: ServiceCall, _handler=ai_assistant.handle_analyze_all_growspaces
     ):
-         return await _handler(hass, coordinator, strain_library_instance, call)
+        return await _handler(hass, coordinator, strain_library_instance, call)
 
     hass.services.async_register(
-        DOMAIN, 
-        "analyze_all_growspaces", 
-        analyze_all_wrapper, 
-        schema=ANALYZE_ALL_GROWSPACES_SCHEMA, 
-        supports_response=SupportsResponse.ONLY
+        DOMAIN,
+        "analyze_all_growspaces",
+        analyze_all_wrapper,
+        schema=ANALYZE_ALL_GROWSPACES_SCHEMA,
+        supports_response=SupportsResponse.ONLY,
     )
 
     # 3. Strain Recommendation (New)
     async def strain_rec_wrapper(
         call: ServiceCall, _handler=ai_assistant.handle_strain_recommendation
     ):
-         return await _handler(hass, coordinator, strain_library_instance, call)
+        return await _handler(hass, coordinator, strain_library_instance, call)
 
     hass.services.async_register(
-        DOMAIN, 
-        "strain_recommendation", 
-        strain_rec_wrapper, 
-        schema=STRAIN_RECOMMENDATION_SCHEMA, 
-        supports_response=SupportsResponse.ONLY
+        DOMAIN,
+        "strain_recommendation",
+        strain_rec_wrapper,
+        schema=STRAIN_RECOMMENDATION_SCHEMA,
+        supports_response=SupportsResponse.ONLY,
     )
 
-    _LOGGER.debug("Registered AI services: ask_grow_advice, analyze_all_growspaces, strain_recommendation")
+    _LOGGER.debug(
+        "Registered AI services: ask_grow_advice, analyze_all_growspaces, strain_recommendation"
+    )
 
     # Register the standalone 'get_strain_library' service
     async def get_strain_library_wrapper(
