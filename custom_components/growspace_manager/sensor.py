@@ -23,7 +23,23 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.event import async_track_state_change_event
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .const import DOMAIN, PLANT_STAGES
+from .const import (
+    ATTR_COL,
+    ATTR_GROWSPACE_ID,
+    ATTR_PHENOTYPE,
+    ATTR_PLANT_ID,
+    ATTR_ROW,
+    ATTR_STAGE,
+    ATTR_STRAIN,
+    DOMAIN,
+    ICON_AIR_EXCHANGE,
+    ICON_CALCULATED_VPD,
+    ICON_CANNABIS,
+    ICON_GROWSPACE,
+    ICON_STRAIN_LIBRARY,
+    ICON_VPD,
+    PLANT_STAGES,
+)
 
 # Local / relative imports
 from .coordinator import GrowspaceCoordinator
@@ -347,7 +363,7 @@ class VpdSensor(SensorEntity):
         self._humidity_sensor = humidity_sensor
         self._attr_state_class = SensorStateClass.MEASUREMENT
         self._attr_native_unit_of_measurement = "kPa"
-        self._attr_icon = "mdi:cloud-check-variant"
+        self._attr_icon = ICON_VPD
 
     async def async_added_to_hass(self) -> None:
         """Register callbacks when the entity is added to Home Assistant."""
@@ -445,7 +461,7 @@ class CalculatedVpdSensor(SensorEntity):
         self._lst_offset = lst_offset
         self._attr_state_class = SensorStateClass.MEASUREMENT
         self._attr_native_unit_of_measurement = "kPa"
-        self._attr_icon = "mdi:cloud-percent"
+        self._attr_icon = ICON_CALCULATED_VPD
 
         self._attr_device_info = DeviceInfo(
             identifiers={(DOMAIN, growspace_id)},
@@ -525,7 +541,7 @@ class AirExchangeSensor(CoordinatorEntity[GrowspaceCoordinator], SensorEntity):
         self.growspace = coordinator.growspaces[growspace_id]
         self._attr_name = f"{self.growspace.name} Air Exchange"
         self._attr_unique_id = f"{DOMAIN}_{self.growspace_id}_air_exchange"
-        self._attr_icon = "mdi:air-filter"
+        self._attr_icon = ICON_AIR_EXCHANGE
 
         self._attr_device_info = DeviceInfo(
             identifiers={(DOMAIN, self.growspace_id)},
@@ -624,7 +640,7 @@ class PlantEntity(SensorEntity):
         self._plant = plant
         self._attr_unique_id = f"{DOMAIN}_{plant.plant_id}"
         self._attr_name = f"{plant.strain} ({plant.row},{plant.col})"
-        self._attr_icon = "mdi:cannabis"
+        self._attr_icon = ICON_CANNABIS
 
         # Set up device info - plant belongs to growspace device
         growspace_id = plant.growspace_id
@@ -660,13 +676,13 @@ class PlantEntity(SensorEntity):
 
         stage = calculate_plant_stage(plant)
         attributes = {
-            "stage": stage,
-            "growspace_id": plant.growspace_id,
-            "plant_id": plant.plant_id,
-            "strain": plant.strain,
-            "phenotype": plant.phenotype,
-            "row": plant.row,
-            "col": plant.col,
+            ATTR_STAGE: stage,
+            ATTR_GROWSPACE_ID: plant.growspace_id,
+            ATTR_PLANT_ID: plant.plant_id,
+            ATTR_STRAIN: plant.strain,
+            ATTR_PHENOTYPE: plant.phenotype,
+            ATTR_ROW: plant.row,
+            ATTR_COL: plant.col,
             "position": f"({int(plant.row)},{int(plant.col)})",
         }
 
@@ -716,7 +732,7 @@ class StrainLibrarySensor(CoordinatorEntity[GrowspaceCoordinator], SensorEntity)
         super().__init__(coordinator)
         self._attr_name = "Growspace Strain Library"
         self._attr_unique_id = f"{DOMAIN}_strain_library"
-        self._attr_icon = "mdi:leaf"
+        self._attr_icon = ICON_STRAIN_LIBRARY
 
     @property
     def native_value(self) -> int:
@@ -743,7 +759,7 @@ class GrowspaceListSensor(SensorEntity):
         self.coordinator = coordinator
         self._attr_name = "Growspaces List"
         self._attr_unique_id = f"{DOMAIN}_growspaces_list"
-        self._attr_icon = "mdi:home-group"
+        self._attr_icon = ICON_GROWSPACE
         self._update_growspaces()
 
     def _update_growspaces(self):

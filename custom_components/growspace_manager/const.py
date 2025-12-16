@@ -22,7 +22,40 @@ DEFAULT_DEHUMIDIFIER_MIN_OFFTIME = 300  # 5 minutes in seconds
 DEFAULT_VPD_HYSTERESIS = 0.2  # kPa (fallback if not using stage thresholds)
 
 DEFAULT_NAME = "Growspace Manager"
+
+# Attributes
+ATTR_GROWSPACE_ID = "growspace_id"
+ATTR_PLANT_ID = "plant_id"
+ATTR_STRAIN = "strain"
+ATTR_PHENOTYPE = "phenotype"
+ATTR_ROW = "row"
+ATTR_COL = "col"
+ATTR_STAGE = "stage"
+ATTR_TRANSITION_DATE = "transition_date"
+ATTR_MOTHER_PLANT_ID = "mother_plant_id"
+ATTR_TARGET_GROWSPACE_ID = "target_growspace_id"
+ATTR_NUM_CLONES = "num_clones"
+
 ATTR_TOTAL_DAYS = "total_days"
+
+# Events
+EVENT_GROWSPACE_UPDATED = f"{DOMAIN}_updated"
+EVENT_PLANT_ADDED = f"{DOMAIN}_plant_added"
+EVENT_PLANT_UPDATED = f"{DOMAIN}_plant_updated"
+EVENT_PLANT_REMOVED = f"{DOMAIN}_plant_removed"
+EVENT_PLANT_MOVED = f"{DOMAIN}_plant_moved"
+EVENT_PLANT_SWITCHED = f"{DOMAIN}_plant_switched"
+EVENT_PLANT_TRANSITIONED = f"{DOMAIN}_plant_transitioned"
+EVENT_PLANT_HARVESTED = f"{DOMAIN}_plant_harvested"
+EVENT_CLONES_TAKEN = f"{DOMAIN}_clones_taken"
+
+# Icons
+ICON_CANNABIS = "mdi:cannabis"
+ICON_GROWSPACE = "mdi:home-group"
+ICON_VPD = "mdi:cloud-check-variant"
+ICON_CALCULATED_VPD = "mdi:cloud-percent"
+ICON_AIR_EXCHANGE = "mdi:air-filter"
+ICON_STRAIN_LIBRARY = "mdi:leaf"
 
 # Default Photoperiods (Hours of Light)
 DEFAULT_VEG_DAY_HOURS = 18
@@ -220,14 +253,14 @@ ADD_GROWSPACE_SCHEMA = vol.Schema(
 # Remove Growspace
 REMOVE_GROWSPACE_SCHEMA = vol.Schema(
     {
-        vol.Required("growspace_id"): vol.All(str, valid_growspace_id),
+        vol.Required(ATTR_GROWSPACE_ID): vol.All(str, valid_growspace_id),
     }
 )
 
 # Update Growspace
 UPDATE_GROWSPACE_SCHEMA = vol.Schema(
     {
-        vol.Required("growspace_id"): vol.All(str, valid_growspace_id),
+        vol.Required(ATTR_GROWSPACE_ID): vol.All(str, valid_growspace_id),
         vol.Optional("name"): str,
         vol.Optional("rows"): vol.All(int, vol.Range(min=1)),
         vol.Optional("plants_per_row"): vol.All(int, vol.Range(min=1)),
@@ -238,11 +271,11 @@ UPDATE_GROWSPACE_SCHEMA = vol.Schema(
 # Add Plant
 ADD_PLANT_SCHEMA = vol.Schema(
     {
-        vol.Required("growspace_id"): vol.All(str, valid_growspace_id),
-        vol.Required("strain"): str,
-        vol.Required("row"): vol.All(int, vol.Range(min=1)),
-        vol.Required("col"): vol.All(int, vol.Range(min=1)),
-        vol.Optional("phenotype"): str,
+        vol.Required(ATTR_GROWSPACE_ID): vol.All(str, valid_growspace_id),
+        vol.Required(ATTR_STRAIN): str,
+        vol.Required(ATTR_ROW): vol.All(int, vol.Range(min=1)),
+        vol.Required(ATTR_COL): vol.All(int, vol.Range(min=1)),
+        vol.Optional(ATTR_PHENOTYPE): str,
         **_PLANT_DATE_FIELDS,
     }
 )
@@ -250,14 +283,14 @@ ADD_PLANT_SCHEMA = vol.Schema(
 # Update Plant
 UPDATE_PLANT_SCHEMA = vol.Schema(
     {
-        vol.Required("plant_id"): str,
-        vol.Optional("growspace_id"): str,
-        vol.Optional("strain"): str,
-        vol.Optional("phenotype"): str,
+        vol.Required(ATTR_PLANT_ID): str,
+        vol.Optional(ATTR_GROWSPACE_ID): str,
+        vol.Optional(ATTR_STRAIN): str,
+        vol.Optional(ATTR_PHENOTYPE): str,
         vol.Optional("position"): str,
-        vol.Optional("row"): vol.All(int, vol.Range(min=1)),
-        vol.Optional("col"): vol.All(int, vol.Range(min=1)),
-        vol.Optional("stage"): str,  # Assuming stage can be updated
+        vol.Optional(ATTR_ROW): vol.All(int, vol.Range(min=1)),
+        vol.Optional(ATTR_COL): vol.All(int, vol.Range(min=1)),
+        vol.Optional(ATTR_STAGE): str,  # Assuming stage can be updated
         **_PLANT_DATE_FIELDS,
         **_PLANT_DAYS_FIELDS,
     },
@@ -268,14 +301,14 @@ UPDATE_PLANT_SCHEMA = vol.Schema(
 # Remove Plant
 REMOVE_PLANT_SCHEMA = vol.Schema(
     {
-        vol.Required("plant_id"): str,
+        vol.Required(ATTR_PLANT_ID): str,
     }
 )
 
 # Move Plant
 MOVE_PLANT_SCHEMA = vol.Schema(
     {
-        vol.Required("plant_id"): str,
+        vol.Required(ATTR_PLANT_ID): str,
         vol.Required("new_row"): vol.All(int, vol.Range(min=1)),
         vol.Required("new_col"): vol.All(int, vol.Range(min=1)),
     }
@@ -292,9 +325,9 @@ SWITCH_PLANT_SCHEMA = vol.Schema(
 # Transition Plant Stage
 TRANSITION_PLANT_SCHEMA = vol.Schema(
     {
-        vol.Required("plant_id"): str,
+        vol.Required(ATTR_PLANT_ID): str,
         vol.Required("new_stage"): str,
-        vol.Optional("transition_date"): valid_date_or_none,
+        vol.Optional(ATTR_TRANSITION_DATE): valid_date_or_none,
     }
 )
 

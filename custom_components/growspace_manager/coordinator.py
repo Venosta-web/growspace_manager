@@ -21,6 +21,7 @@ if TYPE_CHECKING:
 
 from .const import (
     DOMAIN,
+    EVENT_GROWSPACE_UPDATED,
     PlantStage,
 )
 from .environment_analyzer import EnvironmentAnalyzer
@@ -44,10 +45,10 @@ _LOGGER = logging.getLogger(__name__)
 
 
 # Type aliases for better readability
-PlantDict = dict[str, Any]
-GrowspaceDict = dict[str, Any]
-NotificationDict = dict[str, Any]
-DateInput = str | datetime | date | None
+type PlantDict = dict[str, Any]
+type GrowspaceDict = dict[str, Any]
+type NotificationDict = dict[str, Any]
+type DateInput = str | datetime | date | None
 
 
 class GrowspaceCoordinator(DataUpdateCoordinator):
@@ -456,8 +457,8 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
                 )
 
     def async_fire_growspace_updated(self) -> None:
-        """Fire event to notify frontend that growspace data has changed."""
-        self.hass.bus.async_fire(f"{DOMAIN}_updated", {})
+        """Fire an event when the growspace configuration is updated."""
+        self.hass.bus.async_fire(EVENT_GROWSPACE_UPDATED, {})
 
     async def async_save(self) -> None:
         """Save data to storage (Alias for async_commit)."""
@@ -482,9 +483,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
         created_count = 0
         for growspace_id, name, rows, plants_per_row in default_growspaces:
             # Use the coordinator's method to ensure special growspaces
-            canonical_id = self.ensure_special_growspace(
-                growspace_id, name, rows, plants_per_row
-            )
+            self.ensure_special_growspace(growspace_id, name, rows, plants_per_row)
             # ensure_special_growspace adds to self.growspaces
             # We can check if it was newly created if needed, but the method
             # handles key existence.
