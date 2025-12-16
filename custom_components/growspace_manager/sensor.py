@@ -287,8 +287,15 @@ def _check_calculated_vpd_sensor(
     vpd_sensor = env_config.get("vpd_sensor")
 
     # Create calculated VPD if temp and humidity exist but no VPD sensor
-    # OR if the set sensor is the one we generated
-    if temp_sensor and humidity_sensor and (not vpd_sensor):
+    # OR if the configured sensor appears to be one we generated (contains calculated_vpd)
+    should_create = False
+    if temp_sensor and humidity_sensor:
+        if not vpd_sensor:
+            should_create = True
+        elif "calculated_vpd" in vpd_sensor:
+            should_create = True
+
+    if should_create:
         lst_offset = env_config.get("lst_offset", -2.0)
         calc_vpd_sensor = CalculatedVpdSensor(
             coordinator,

@@ -900,3 +900,65 @@ def test_air_exchange_sensor(mock_coordinator) -> None:
 
     assert sensor.state == "Open Window"
     assert sensor.unique_id == f"{DOMAIN}_gs1_air_exchange"
+
+
+@pytest.mark.asyncio
+async def test_async_setup_entry_recreates_calculated_vpd(mock_coordinator) -> None:
+    """Test that `async_setup_entry` recreates calculated VPD sensor even if configured."""
+    hass = MagicMock()
+    hass.config.config_dir = "/config"
+
+    # Growspace with temp/humidity and EXISTING calculated VPD sensor config
+    # This simulates the state after a restart where coordinator has persisted the ID
+    gs_mock = Mock(
+        id="gs1",
+        rows=2,
+        plants_per_row=2,
+        environment_config={
+            "temperature_sensor": "sensor.temp",
+            "humidity_sensor": "sensor.humidity",
+            "vpd_sensor": "sensor.growspace_1_calculated_vpd",  # Matches expected ID format
+            "lst_offset": -1.5,
+        },
+    )
+    gs_mock.name = "Growspace 1"
+    mock_coordinator.growspaces = {"gs1": gs_mock}
+    mock_coordinator.get_growspace_plants = Mock(return_value=[])
+    mock_coordinator.async_save = AsyncMock()
+    mock_coordinator.ensure_special_growspace = Mock(
+        side_effect=lambda x, y, rows, plants_per_row: x
+    )
+    mock_coordinator.async_set_updated_data = AsyncMock()
+    mock_coordinator.options = {}
+
+    added_entities = []
+
+    def async_add_entities(entities, update_before_add=False):
+        added_entities.extend(entities)
+
+    with (
+        patch(
+            "custom_components.growspace_manager.sensor.async_setup_trend_sensor",
+            new_callable=AsyncMock,
+        ),
+        patch(
+            "custom_components.growspace_manager.sensor.async_setup_statistics_sensor",
+            new_callable=AsyncMock,
+        ),
+    ):
+        await async_setup_entry(
+            hass,
+            Mock(
+                entry_id="entry_1",
+                options={},
+                runtime_data=mock_coordinator,
+            ),
+            async_add_entities,
+        )
+
+    # Check for CalculatedVpdSensor
+    # This SHOULD pass if we fix the bug, currently it should fail
+    calc_vpd = next(
+        (e for e in added_entities if isinstance(e, CalculatedVpdSensor)), None
+    )
+    assert calc_vpd is not None, "Calculated VPD sensor was not recreated on restart"

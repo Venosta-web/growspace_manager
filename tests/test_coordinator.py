@@ -1914,15 +1914,28 @@ async def test_harvest_to_explicit_target_no_position(
 
     caplog.set_level("WARNING")
     coordinator = GrowspaceCoordinator(hass, data={})
-    plant = MagicMock()
+    plant = Plant(
+        plant_id="p1",
+        growspace_id="gs1",
+        strain="strain1",
+        phenotype="pheno1",
+        row=1,
+        col=1,
+        stage="veg",
+        created_at="2025-01-01",
+        updated_at="2025-01-01",
+    )
     setattr(
         coordinator.validator,
         "find_first_available_position",
         MagicMock(side_effect=ValueError("No position")),
     )
     coordinator.growspaces = {"gs1": MagicMock()}
+    coordinator.plants["p1"] = plant  # Ensure plant exists
 
-    with patch.object(coordinator, "async_update_plant", new_callable=AsyncMock):
+    with patch.object(
+        coordinator.lifecycle_manager, "async_update_plant", new_callable=AsyncMock
+    ):
         await coordinator.lifecycle_manager._harvest_to_explicit_target(
             "p1", plant, "gs1", "gs1_name", "2025-01-01"
         )
@@ -1935,7 +1948,17 @@ async def test_harvest_to_explicit_target_cure(hass: HomeAssistant) -> None:
     """Test _harvest_to_explicit_target to cure growspace."""
 
     coordinator = GrowspaceCoordinator(hass, data={})
-    plant = MagicMock()
+    plant = Plant(
+        plant_id="p1",
+        growspace_id="gs1",
+        strain="strain1",
+        phenotype="pheno1",
+        row=1,
+        col=1,
+        stage="veg",
+        created_at="2025-01-01",
+        updated_at="2025-01-01",
+    )
     setattr(
         coordinator.validator,
         "find_first_available_position",
@@ -1943,14 +1966,23 @@ async def test_harvest_to_explicit_target_cure(hass: HomeAssistant) -> None:
     )
     coordinator.growspaces = {"cure": MagicMock()}
 
+    coordinator.plants["p1"] = plant  # Ensure plant exists in coordinator
+
     with patch.object(
-        coordinator, "async_update_plant", new_callable=AsyncMock
+        coordinator.lifecycle_manager, "async_update_plant", new_callable=AsyncMock
     ) as mock_update:
         await coordinator.lifecycle_manager._harvest_to_explicit_target(
             "p1", plant, "cure", "cure", "2025-01-01"
         )
 
-        mock_update.assert_called_with("p1", stage="cure", cure_start="2025-01-01")
+        mock_update.assert_called_with(
+            "p1",
+            growspace_id="cure",
+            row=1,
+            col=1,
+            stage="cure",
+            cure_start="2025-01-01",
+        )
 
 
 @pytest.mark.asyncio
@@ -1958,7 +1990,17 @@ async def test_harvest_to_explicit_target_clone(hass: HomeAssistant) -> None:
     """Test _harvest_to_explicit_target to clone growspace."""
 
     coordinator = GrowspaceCoordinator(hass, data={})
-    plant = MagicMock()
+    plant = Plant(
+        plant_id="p1",
+        growspace_id="gs1",
+        strain="strain1",
+        phenotype="pheno1",
+        row=1,
+        col=1,
+        stage="veg",
+        created_at="2025-01-01",
+        updated_at="2025-01-01",
+    )
     setattr(
         coordinator.validator,
         "find_first_available_position",
@@ -1966,14 +2008,23 @@ async def test_harvest_to_explicit_target_clone(hass: HomeAssistant) -> None:
     )
     coordinator.growspaces = {"clone": MagicMock()}
 
+    coordinator.plants["p1"] = plant  # Ensure plant exists in coordinator
+
     with patch.object(
-        coordinator, "async_update_plant", new_callable=AsyncMock
+        coordinator.lifecycle_manager, "async_update_plant", new_callable=AsyncMock
     ) as mock_update:
         await coordinator.lifecycle_manager._harvest_to_explicit_target(
             "p1", plant, "clone", "clone", "2025-01-01"
         )
 
-        mock_update.assert_called_with("p1", stage="clone", clone_start="2025-01-01")
+        mock_update.assert_called_with(
+            "p1",
+            growspace_id="clone",
+            row=1,
+            col=1,
+            stage="clone",
+            clone_start="2025-01-01",
+        )
 
 
 @pytest.mark.asyncio
@@ -1981,7 +2032,17 @@ async def test_harvest_to_explicit_target_mother(hass: HomeAssistant) -> None:
     """Test _harvest_to_explicit_target to mother growspace."""
 
     coordinator = GrowspaceCoordinator(hass, data={})
-    plant = MagicMock()
+    plant = Plant(
+        plant_id="p1",
+        growspace_id="gs1",
+        strain="strain1",
+        phenotype="pheno1",
+        row=1,
+        col=1,
+        stage="veg",
+        created_at="2025-01-01",
+        updated_at="2025-01-01",
+    )
     setattr(
         coordinator.validator,
         "find_first_available_position",
@@ -1989,15 +2050,22 @@ async def test_harvest_to_explicit_target_mother(hass: HomeAssistant) -> None:
     )
     coordinator.growspaces = {"mother": MagicMock()}
 
+    coordinator.plants["p1"] = plant  # Ensure plant exists in coordinator
+
     with patch.object(
-        coordinator, "async_update_plant", new_callable=AsyncMock
+        coordinator.lifecycle_manager, "async_update_plant", new_callable=AsyncMock
     ) as mock_update:
         await coordinator.lifecycle_manager._harvest_to_explicit_target(
             "p1", plant, "mother", "mother", "2025-01-01"
         )
 
         mock_update.assert_called_with(
-            "p1", stage=PlantStage.MOTHER, mother_start="2025-01-01"
+            "p1",
+            growspace_id="mother",
+            row=1,
+            col=1,
+            stage=PlantStage.MOTHER,
+            mother_start="2025-01-01",
         )
 
 
@@ -2008,7 +2076,17 @@ async def test_move_to_clone_growspace_no_position(
     """Test _move_to_clone_growspace when no position is available."""
     caplog.set_level("WARNING")
     coordinator = GrowspaceCoordinator(hass, data={})
-    plant = MagicMock()
+    plant = Plant(
+        plant_id="p1",
+        growspace_id="gs1",
+        strain="strain1",
+        phenotype="pheno1",
+        row=1,
+        col=1,
+        stage="veg",
+        created_at="2025-01-01",
+        updated_at="2025-01-01",
+    )
     setattr(coordinator, "ensure_special_growspace", MagicMock(return_value="clone"))
     setattr(
         coordinator.validator,
@@ -2016,12 +2094,16 @@ async def test_move_to_clone_growspace_no_position(
         MagicMock(side_effect=ValueError("No position")),
     )
     coordinator.growspaces = {"clone": MagicMock()}
+    coordinator.plants["p1"] = plant  # Ensure plant exists in coordinator
 
-    await coordinator.lifecycle_manager.move_to_clone_growspace(
-        "p1", plant, "2025-01-01"
-    )
+    with patch.object(
+        coordinator.lifecycle_manager, "async_update_plant", new_callable=AsyncMock
+    ):
+        await coordinator.lifecycle_manager.move_to_clone_growspace(
+            "p1", plant, "2025-01-01"
+        )
 
-    assert "Failed to assign position in clone growspace" in caplog.text
+    assert "Failed to find position in clone growspace" in caplog.text
 
 
 @pytest.mark.asyncio

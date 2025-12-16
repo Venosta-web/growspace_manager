@@ -20,7 +20,6 @@ if TYPE_CHECKING:
     from .vwc_irrigation_coordinator import VWCIrrigationCoordinator
 
 from .const import (
-    DATE_FIELDS,
     DOMAIN,
     PlantStage,
 )
@@ -36,7 +35,6 @@ from .storage_manager import StorageManager
 from .strain_library import StrainLibrary
 from .utils import (
     calculate_plant_stage,
-    format_date,
     generate_growspace_grid,
     generate_growspace_overview_unique_id,
     parse_date_field,
@@ -849,63 +847,26 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
         cure_start: date | None = None,
         source_mother: str = "",
     ) -> Plant:
-        """Add a new plant to the coordinator."""
-        async with self._lock:
-            try:
-                self.validator.validate_position_not_occupied(growspace_id, row, col)
-                final_row, final_col = row, col
-            except ValueError:
-                _LOGGER.info(
-                    "Position (%d, %d) in growspace %s is occupied. Finding first available spot",
-                    row,
-                    col,
-                    growspace_id,
-                )
-                try:
-                    final_row, final_col = self.validator.find_first_available_position(
-                        growspace_id
-                    )
-                    _LOGGER.info(
-                        "Found available position at (%d, %d)", final_row, final_col
-                    )
-                except ValueError as e:
-                    # This happens if the growspace is full
-                    _LOGGER.error("Could not add plant: %s", e)
-                    raise
-
-            # Create plant object
-            # Ensure dates are stored as strings to match Plant model
-            plant = Plant(
-                plant_id=plant_id or str(uuid.uuid4()),
-                growspace_id=growspace_id,
-                strain=strain,
-                phenotype=phenotype,
-                row=final_row,
-                col=final_col,
-                stage=stage or "",
-                type=type,
-                device_id=device_id,
-                seedling_start=format_date(seedling_start),
-                mother_start=format_date(mother_start),
-                clone_start=format_date(clone_start),
-                veg_start=format_date(veg_start),
-                flower_start=format_date(flower_start),
-                dry_start=format_date(dry_start),
-                cure_start=format_date(cure_start),
-                created_at=datetime.now().isoformat(),
-                updated_at=datetime.now().isoformat(),
-                source_mother=source_mother,
-            )
-
-            # Calculate stage if not explicitly provided
-            if not stage:
-                plant.stage = calculate_plant_stage(plant)
-
-            self.plants[plant.plant_id] = plant
-
-            await self.async_commit()
-
-            return plant
+        """Add a new plant to the coordinator via lifecycle manager."""
+        return await self.lifecycle_manager.async_add_plant(
+            growspace_id=growspace_id,
+            strain=strain,
+            plant_id=plant_id,
+            phenotype=phenotype,
+            row=row,
+            col=col,
+            stage=stage,
+            plant_type=type,
+            device_id=device_id,
+            seedling_start=seedling_start,
+            mother_start=mother_start,
+            clone_start=clone_start,
+            veg_start=veg_start,
+            flower_start=flower_start,
+            dry_start=dry_start,
+            cure_start=cure_start,
+            source_mother=source_mother,
+        )
 
     async def async_add_mother_plant(
         self,
@@ -1025,39 +986,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
 
     async def async_update_plant(self, plant_id: str, **updates) -> Plant:
         """Update the attributes of an existing plant."""
-        async with self._lock:
-            plant = self.plants.get(plant_id)
-            if not plant:
-                raise ValueError(f"Plant {plant_id} does not exist")
-
-            _LOGGER.debug("COORDINATOR: Updating plant %s", plant_id)
-            for key, value in updates.items():
-                _LOGGER.debug(
-                    "COORDINATOR: Field %s = %s (type: %s, id: %s)",
-                    key,
-                    value,
-                    type(value),
-                    id(value),
-                )
-
-                # Enforce string format for date fields
-                if key in DATE_FIELDS:
-                    value = format_date(value)
-                    updates[key] = value  # Update the value in 'updates' dict as well
-
-            for key, value in updates.items():
-                if hasattr(plant, key):
-                    old_value = getattr(plant, key)
-                    setattr(plant, key, value)
-                    _LOGGER.debug(
-                        "COORDINATOR: Updated %s: %s -> %s", key, old_value, value
-                    )
-                else:
-                    _LOGGER.warning("COORDINATOR: Invalid field %s", key)
-
-            plant.updated_at = date.today().isoformat()
-            await self.async_commit()
-            return plant
+        return await self.lifecycle_manager.async_update_plant(plant_id, **updates)
 
     def _handle_position_update(
         self,
@@ -1092,58 +1021,12 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
             )
 
     async def async_move_plant(self, plant_id: str, new_row: int, new_col: int) -> None:
-        """Move a plant to a new position within its current growspace.
-
-        Args:
-            plant_id: The ID of the plant to move.
-            new_row: The new row number.
-            new_col: The new column number.
-        """
-        await self.async_update_plant(plant_id, row=new_row, col=new_col)
+        """Move a plant to a new position via lifecycle manager."""
+        await self.lifecycle_manager.async_move_plant(plant_id, new_row, new_col)
 
     async def async_switch_plants(self, plant1_id: str, plant2_id: str) -> None:
-        """Switch the positions of two plants within the same growspace."""
-        async with self._lock:
-            self.validator.validate_plant_exists(plant1_id)
-            self.validator.validate_plant_exists(plant2_id)
-
-            plant1 = self.plants[plant1_id]
-            plant2 = self.plants[plant2_id]
-
-            # Ensure both plants are in the same growspace
-            if plant1.growspace_id != plant2.growspace_id:
-                raise ValueError("Cannot switch plants in different growspaces")
-
-            # Store and swap positions
-            plant1_row, plant1_col = plant1.row, plant1.col
-            plant2_row, plant2_col = plant2.row, plant2.col
-
-            plant1.row, plant1.col = plant2_row, plant2_col
-            plant2.row, plant2.col = plant1_row, plant1_col
-
-            # Update timestamps
-            update_time = date.today().isoformat()
-
-            plant1.updated_at = update_time
-            plant2.updated_at = update_time
-
-            await self.async_commit()
-
-            _LOGGER.info(
-                "Switched positions: %s (%s) moved from (%d,%d) to (%d,%d), %s (%s) moved from (%d,%d) to (%d,%d)",
-                plant1_id,
-                plant1.strain,
-                plant1_col,
-                plant1_row,
-                plant2_col,
-                plant2_row,
-                plant2_id,
-                plant2.strain,
-                plant2_row,
-                plant2_col,
-                plant1_row,
-                plant1_col,
-            )
+        """Switch the positions of two plants via lifecycle manager."""
+        await self.lifecycle_manager.async_switch_plants(plant1_id, plant2_id)
 
     async def switch_plants_service(self, plant1_id: str, plant2_id: str) -> None:
         """Service call wrapper for switching the positions of two plants.
@@ -1260,13 +1143,8 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
         )
 
     async def async_remove_plant(self, plant_id: str) -> bool:
-        """Remove a plant from the coordinator."""
-        async with self._lock:
-            if plant_id in self.plants:
-                del self.plants[plant_id]
-                await self.async_commit()
-                return True
-            return False
+        """Remove a plant via lifecycle manager."""
+        return await self.lifecycle_manager.async_remove_plant(plant_id)
 
     async def _remove_plant_entities(self, plant_id: str) -> None:
         """Remove all Home Assistant entities associated with a specific plant.
