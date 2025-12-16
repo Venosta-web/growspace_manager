@@ -58,3 +58,21 @@ def async_fire_plant_event(
         payload.update(changes)
 
     hass.bus.async_fire(event_type, payload)
+
+
+def async_fire_clones_taken_event(
+    hass: HomeAssistant,
+    mother_plant: Plant,
+    num_clones: int,
+    target_growspace_id: str,
+) -> None:
+    """Fire the clones taken event."""
+    hass.bus.async_fire(
+        EVENT_CLONES_TAKEN,
+        {
+            "mother_plant_id": mother_plant.plant_id,
+            "num_clones": num_clones,
+            "growspace_id": target_growspace_id,
+            "device_id": mother_plant.device_id,
+        },
+    )

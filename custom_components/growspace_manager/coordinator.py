@@ -32,9 +32,11 @@ from .events import (
     EVENT_PLANT_ADDED,
     EVENT_PLANT_HARVESTED,
     EVENT_PLANT_MOVED,
+    EVENT_PLANT_REMOVED,
     EVENT_PLANT_SWITCHED,
     EVENT_PLANT_TRANSITIONED,
     EVENT_PLANT_UPDATED,
+    async_fire_clones_taken_event,
     async_fire_growspace_event,
     async_fire_plant_event,
 )
@@ -1014,14 +1016,8 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
 
         # Fire clones taken event
         if new_plants:
-            self.hass.bus.async_fire(
-                EVENT_CLONES_TAKEN,
-                {
-                    "mother_plant_id": mother_plant_id,
-                    "num_clones": len(new_plants),
-                    "growspace_id": "clone",
-                    "device_id": mother.device_id,
-                },
+            async_fire_clones_taken_event(
+                self.hass, mother, len(new_plants), clone_gs_id
             )
 
         return new_plants
@@ -1260,15 +1256,15 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
 
     async def async_remove_plant(self, plant_id: str) -> bool:
         """Remove a plant via lifecycle manager."""
+        # Cache plant data before removal so we can fire the event
+        plant = self.plants.get(plant_id)
+        if not plant:
+            return False
+
         removed = await self.lifecycle_manager.async_remove_plant(plant_id)
         if removed:
-            # Can't fire with object if it's removed?
-            # Lifecycle manager probably removed it from dictionary.
-            # I should probably store it before removing if I want to pass it.
-            # Or lifecycle manager returns it? It returns bool.
-            # Accessing it via get_plant handles None.
-            # We should probably get it BEFORE calling lifecycle manager.
-            pass
+            # Fire event with cached plant data
+            async_fire_plant_event(self.hass, EVENT_PLANT_REMOVED, plant)
         return removed
 
     async def _remove_plant_entities(self, plant_id: str) -> None:
