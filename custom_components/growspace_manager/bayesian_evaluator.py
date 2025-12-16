@@ -67,7 +67,9 @@ async def async_evaluate_stress_trend(
     observations: ObservationList = []
     reasons: ReasonList = []
     trend_states: dict[str, str] = {}
-    env_config = sensor_instance.env_config
+    # Handle both dict and EnvironmentConfig objects
+    raw_config = sensor_instance.env_config
+    env_config = raw_config if isinstance(raw_config, dict) else raw_config.to_dict()
 
     trend_states["temperature_trend"] = "stable"
     trend_states["humidity_trend"] = "stable"
@@ -223,7 +225,7 @@ async def async_evaluate_mold_risk_trend(
     observations: ObservationList = []
     reasons: ReasonList = []
     trend_states: dict[str, str] = {}
-    env_config = sensor_instance.env_config
+    env_config = sensor_instance.env_config.to_dict()
 
     trend_states["humidity_trend"] = "stable"
     trend_states["vpd_trend"] = "stable"
@@ -598,4 +600,65 @@ def evaluate_optimal_co2(
                 observations.append(prob_out_of_range)
                 reason_detail = "CO2 Low" if co2 < 400 else "CO2 High"
                 reasons.append((prob_out_of_range[1], f"{reason_detail} ({co2})"))
+    return observations, reasons
+
+
+def evaluate_active_desiccation(
+    state: EnvironmentState, env_config: dict
+) -> tuple[ObservationList, ReasonList]:
+    """Evaluate active desiccation (Dehumidifier ON + Low Humidity or High VPD)."""
+    observations: ObservationList = []
+    reasons: ReasonList = []
+
+    if state.dehumidifier_on:
+        # High probability of stress if dehumidifier is running while already dry
+        if state.humidity is not None and state.humidity < 40:
+            prob = (0.95, 0.05)
+            observations.append(prob)
+            reasons.append(
+                (prob[0], "Active Desiccation (Dehumidifier on with low humidity)")
+            )
+        elif state.vpd is not None and state.vpd > 1.6:
+            prob = (0.95, 0.05)
+            observations.append(prob)
+            reasons.append(
+                (prob[0], "Active Desiccation (Dehumidifier on with high VPD)")
+            )
+
+    return observations, reasons
+
+
+def evaluate_active_saturation(
+    state: EnvironmentState, env_config: dict
+) -> tuple[ObservationList, ReasonList]:
+    """Evaluate active saturation (Humidifier ON + High Humidity)."""
+    observations: ObservationList = []
+    reasons: ReasonList = []
+
+    # Check if humidifier is active (value > 0 implies it's running/consuming power)
+    if state.humidifier_value is not None and state.humidifier_value > 0:
+        if state.humidity is None:
+            return observations, reasons
+
+        hum = state.humidity
+        is_saturated = False
+
+        veg_early = state.flower_days == 0 and state.veg_days < 14
+        veg_late = state.flower_days == 0 and state.veg_days >= 14
+        flower = state.flower_days > 0
+
+        if veg_early and hum > 80:
+            is_saturated = True
+        elif veg_late and hum > 70:
+            is_saturated = True
+        elif flower and hum > 60:
+            is_saturated = True
+
+        if is_saturated:
+            prob = (0.85, 0.15)
+            observations.append(prob)
+            reasons.append(
+                (prob[0], "Active Saturation (Humidifier on with high humidity)")
+            )
+
     return observations, reasons

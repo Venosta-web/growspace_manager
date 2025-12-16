@@ -3,7 +3,10 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from custom_components.growspace_manager.binary_sensor import BayesianStressSensor
+from custom_components.growspace_manager.binary_sensor import (
+    SENSOR_TYPES,
+    BayesianStressSensor,
+)
 
 
 @pytest.fixture
@@ -11,12 +14,33 @@ def mock_growspace():
     """Fixture for a mock growspace with environment config."""
     growspace = MagicMock()
     growspace.name = "Test Growspace"
-    growspace.environment_config = {
+
+    # Create env_config as MagicMock with proper attribute access
+    env_config = MagicMock()
+    env_config.temperature_sensor = "sensor.temp"
+    env_config.humidity_sensor = "sensor.humidity"
+    env_config.vpd_sensor = "sensor.vpd"
+    env_config.co2_sensor = "sensor.co2"
+    env_config.circulation_fan_entity = None
+    env_config.light_sensor = None
+    env_config.soil_moisture_sensor = None
+    env_config.dehumidifier_entity = None
+    env_config.exhaust_fan_entity = None
+    env_config.humidifier_entity = None
+    env_config.bayesian_options = MagicMock()
+    env_config.bayesian_options.stress_threshold = 0.7
+    env_config.bayesian_options.mold_threshold = 0.75
+    env_config.bayesian_options.optimal_threshold = 0.8
+    env_config.bayesian_options.prior_stress = 0.15
+    env_config.bayesian_options.prior_mold_risk = 0.10
+    env_config.bayesian_options.prior_optimal = 0.40
+    env_config.to_dict.return_value = {
         "temperature_sensor": "sensor.temp",
         "humidity_sensor": "sensor.humidity",
         "vpd_sensor": "sensor.vpd",
         "co2_sensor": "sensor.co2",
     }
+    growspace.environment_config = env_config
     return growspace
 
 
@@ -59,10 +83,12 @@ def mock_coordinator(mock_growspace):
 def test_get_growth_stage_info_dry_growspace(mock_coordinator) -> None:
     """Test _get_growth_stage_info for 'dry' growspace."""
     # Create sensor for 'dry' growspace
+    description = next(d for d in SENSOR_TYPES if d.sensor_type == "stress")
     sensor = BayesianStressSensor(
         mock_coordinator,
         "dry",
         mock_coordinator.growspaces["dry"].environment_config,
+        description,
     )
 
     # This calls _get_growth_stage_info internally relies on coordinator.get_growspace_plants
@@ -86,10 +112,12 @@ def test_get_growth_stage_info_cure_growspace(mock_coordinator) -> None:
     ].environment_config.copy()
     mock_coordinator.growspaces["cure"] = cure_growspace
 
+    description = next(d for d in SENSOR_TYPES if d.sensor_type == "stress")
     sensor = BayesianStressSensor(
         mock_coordinator,
         "cure",
         mock_coordinator.growspaces["cure"].environment_config,
+        description,
     )
 
     info = sensor._get_growth_stage_info()

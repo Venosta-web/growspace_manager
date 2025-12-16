@@ -748,11 +748,6 @@ async def test_async_remove_growspace(coordinator: GrowspaceCoordinator) -> None
     config_entry.add_to_hass(coordinator.hass)
 
     dev_reg = dr.async_get(coordinator.hass)
-    device_entry = dev_reg.async_get_or_create(
-        config_entry_id=config_entry.entry_id,
-        identifiers={(DOMAIN, gs.id)},
-        name="Test GS Device",
-    )
 
     plant1 = await coordinator.async_add_plant(gs.id, "StrainA", row=1, col=1)
     plant2 = await coordinator.async_add_plant(gs.id, "StrainB", row=2, col=2)

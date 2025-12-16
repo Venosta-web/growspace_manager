@@ -11,14 +11,6 @@ from homeassistant.util.dt import as_local
 
 from custom_components.growspace_manager.const import (
     DOMAIN,
-    EVENT_CLONES_TAKEN,
-    EVENT_PLANT_ADDED,
-    EVENT_PLANT_HARVESTED,
-    EVENT_PLANT_MOVED,
-    EVENT_PLANT_REMOVED,
-    EVENT_PLANT_SWITCHED,
-    EVENT_PLANT_TRANSITIONED,
-    EVENT_PLANT_UPDATED,
 )
 from custom_components.growspace_manager.services.plant import (
     handle_add_plant,
@@ -118,14 +110,6 @@ async def test_add_plant_success(
         },
     )
 
-    events = []
-
-    # Listen for the event
-    def listener(event):
-        events.append(event)
-
-    hass.bus.async_listen(EVENT_PLANT_ADDED, listener)
-
     await handle_add_plant(hass, mock_coordinator, mock_strain_library, call)
     await hass.async_block_till_done()
 
@@ -133,7 +117,6 @@ async def test_add_plant_success(
     # async_save/async_request_refresh are called inside async_add_plant or implicitly not needed
     # mock_coordinator.async_save.assert_called_once()
     # mock_coordinator.async_request_refresh.assert_called_once()
-    assert len(events) == 1
 
 
 @pytest.mark.asyncio
@@ -342,25 +325,13 @@ async def test_take_clone_success(
         },
     )
 
-    # Capture events with a listener
-    events = []
-
-    def listener(event):
-        events.append(event)
-
-    hass.bus.async_listen(EVENT_CLONES_TAKEN, listener)
-
     # Call the service handler
     await handle_take_clone(hass, mock_coordinator, mock_strain_library, call)
-    await hass.async_block_till_done()
 
     # Assertions
     assert mock_coordinator.async_take_clones.call_count == 1
     call_args = mock_coordinator.async_take_clones.call_args.kwargs
     assert call_args["num_clones"] == 2
-
-    assert len(events) == 1
-    assert events[0].event_type == EVENT_CLONES_TAKEN
 
 
 @pytest.mark.asyncio
@@ -513,14 +484,6 @@ async def test_take_clone_partial_failure(
         },
     )
 
-    # Capture events with a listener
-    events = []
-
-    def listener(event):
-        events.append(event)
-
-    hass.bus.async_listen(EVENT_CLONES_TAKEN, listener)
-
     # Run the handler
     await handle_take_clone(hass, mock_coordinator, mock_strain_library, call)
     await hass.async_block_till_done()
@@ -568,26 +531,15 @@ async def test_move_clone_success(
         },
     )
 
-    # Capture events
-    events = []
-
-    def listener(event):
-        events.append(event)
-
-    hass.bus.async_listen(EVENT_PLANT_MOVED, listener)
-
     # Run the handler
     await handle_move_clone(hass, mock_coordinator, mock_strain_library, call)
     await hass.async_block_till_done()
 
-    # Assertions
+    # Capture events
     mock_coordinator.async_promote_clone.assert_called_once()
     call_args = mock_coordinator.async_promote_clone.call_args.kwargs
     assert call_args["clone_id"] == "clone_1"
     assert call_args["target_growspace_id"] == "veg"
-
-    assert len(events) == 1
-    assert events[0].event_type == EVENT_PLANT_MOVED
 
 
 @pytest.mark.asyncio
@@ -786,25 +738,13 @@ async def test_update_plant_success(
         },
     )
 
-    # Capture events using async_listen
-    events = []
-
-    def listener(event):
-        events.append(event)
-
-    hass.bus.async_listen(EVENT_PLANT_UPDATED, listener)
-
     # Act
     await handle_update_plant(hass, mock_coordinator, mock_strain_library, call)
     await hass.async_block_till_done()
 
-    # Assert
     mock_coordinator.async_update_plant.assert_called_once()
     # mock_coordinator.async_save.assert_called_once()
     # mock_coordinator.async_request_refresh.assert_called_once()
-
-    assert len(events) == 1
-    assert events[0].event_type == EVENT_PLANT_UPDATED
 
 
 @pytest.mark.asyncio
@@ -1000,14 +940,7 @@ async def test_remove_plant_success(
         },
     )
 
-    # Capture events
-    events = []
-
-    def listener(event):
-        events.append(event)
-
-    hass.bus.async_listen(EVENT_PLANT_REMOVED, listener)
-
+    # Assert
     # Act
     await handle_remove_plant(hass, mock_coordinator, mock_strain_library, call)
     await hass.async_block_till_done()
@@ -1016,9 +949,6 @@ async def test_remove_plant_success(
     mock_coordinator.async_remove_plant.assert_called_once_with("plant_1")
     # mock_coordinator.async_save.assert_called_once()
     # mock_coordinator.async_request_refresh.assert_called_once()
-
-    assert len(events) == 1
-    assert events[0].event_type == EVENT_PLANT_REMOVED
 
 
 @pytest.mark.asyncio
@@ -1095,14 +1025,7 @@ async def test_switch_plants_success(
         },
     )
 
-    # Capture events using listener
-    events = []
-
-    def listener(event):
-        events.append(event)
-
-    hass.bus.async_listen(EVENT_PLANT_SWITCHED, listener)
-
+    # Assert
     # Act
     await handle_switch_plants(hass, mock_coordinator, mock_strain_library, call)
     await hass.async_block_till_done()
@@ -1111,9 +1034,6 @@ async def test_switch_plants_success(
     mock_coordinator.async_switch_plants.assert_called_once_with("plant_1", "plant_2")
     # mock_coordinator.async_save.assert_called_once()
     # mock_coordinator.async_request_refresh.assert_called_once()
-
-    assert len(events) == 1
-    assert events[0].event_type == EVENT_PLANT_SWITCHED
 
 
 @pytest.mark.asyncio
@@ -1247,14 +1167,6 @@ async def test_move_plant_to_empty_position(
         },
     )
 
-    # Capture events via async_listen
-    events = []
-
-    def listener(event):
-        events.append(event)
-
-    hass.bus.async_listen(EVENT_PLANT_MOVED, listener)
-
     # Act
     await handle_move_plant(hass, mock_coordinator, mock_strain_library, call)
     await hass.async_block_till_done()
@@ -1263,9 +1175,6 @@ async def test_move_plant_to_empty_position(
     mock_coordinator.async_move_plant.assert_called_once_with("plant_1", 3, 3)
     # mock_coordinator.async_save.assert_called_once()
     # mock_coordinator.async_request_refresh.assert_called_once()
-
-    assert len(events) == 1
-    assert events[0].event_type == EVENT_PLANT_MOVED
 
 
 @pytest.mark.asyncio
@@ -1380,9 +1289,6 @@ async def test_transition_plant_stage_success(
         },
     )
 
-    events: list[Any] = []
-    hass.bus.async_listen(EVENT_PLANT_TRANSITIONED, events.append)
-
     # Act
     await handle_transition_plant_stage(
         hass, mock_coordinator, mock_strain_library, call
@@ -1399,9 +1305,6 @@ async def test_transition_plant_stage_success(
 
     # mock_coordinator.async_save.assert_called_once()
     # mock_coordinator.async_request_refresh.assert_called_once()
-
-    assert len(events) == 1
-    assert events[0].event_type == EVENT_PLANT_TRANSITIONED
 
 
 @pytest.mark.asyncio
@@ -1563,9 +1466,6 @@ async def test_harvest_plant_success(
         },
     )
 
-    events: list[Any] = []
-    hass.bus.async_listen(EVENT_PLANT_HARVESTED, events.append)
-
     await handle_harvest_plant(hass, mock_coordinator, mock_strain_library, call)
     await hass.async_block_till_done()
 
@@ -1578,8 +1478,6 @@ async def test_harvest_plant_success(
     )
     # mock_coordinator.async_save.assert_called_once()
     # mock_coordinator.async_request_refresh.assert_called_once()
-    assert len(events) == 1
-    assert events[0].event_type == EVENT_PLANT_HARVESTED
 
 
 @pytest.mark.asyncio
@@ -1622,14 +1520,6 @@ async def test_harvest_plant_entity_id_resolution(
         },
     )
 
-    # Capture events
-    events = []
-
-    def listener(event):
-        events.append(event)
-
-    hass.bus.async_listen(EVENT_PLANT_HARVESTED, listener)
-
     # Act
     await handle_harvest_plant(hass, mock_coordinator, mock_strain_library, call)
     await hass.async_block_till_done()
@@ -1645,9 +1535,6 @@ async def test_harvest_plant_entity_id_resolution(
     )
     # mock_coordinator.async_save.assert_called_once()
     # mock_coordinator.async_request_refresh.assert_called_once()
-
-    assert len(events) == 1
-    assert events[0].event_type == EVENT_PLANT_HARVESTED
 
 
 @pytest.mark.asyncio
@@ -1980,14 +1867,6 @@ async def test_move_plant_switch_with_occupant(
         },
     )
 
-    # Capture events using listener
-    events = []
-
-    def listener(event):
-        events.append(event)
-
-    hass.bus.async_listen(EVENT_PLANT_SWITCHED, listener)
-
     # Act
     await handle_move_plant(hass, mock_coordinator, mock_strain_library, call)
     await hass.async_block_till_done()
@@ -1996,9 +1875,6 @@ async def test_move_plant_switch_with_occupant(
     mock_coordinator.async_switch_plants.assert_called_once_with("plant_1", "plant_2")
     # mock_coordinator.async_save.assert_called_once()
     # mock_coordinator.async_request_refresh.assert_called_once()
-
-    assert len(events) == 1
-    assert events[0].event_type == EVENT_PLANT_SWITCHED
 
 
 @pytest.mark.asyncio

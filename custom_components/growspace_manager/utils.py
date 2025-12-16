@@ -4,11 +4,10 @@ from __future__ import annotations
 
 import math
 from datetime import date, datetime
+from typing import TYPE_CHECKING
 
 from dateutil import parser
 from homeassistant.util.dt import as_local, now
-
-from typing import TYPE_CHECKING
 
 from .const import DOMAIN, PlantStage
 

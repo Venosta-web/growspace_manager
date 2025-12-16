@@ -9,14 +9,13 @@ from __future__ import annotations
 
 from dataclasses import asdict, dataclass, field, fields
 from datetime import datetime
-from typing import Any, TypedDict
+from typing import TYPE_CHECKING, Any, TypedDict
 
-from typing import TYPE_CHECKING
-from .const import DOMAIN, PlantStage
+from .const import PlantStage
 from .utils import calculate_days_since, days_to_week
 
 if TYPE_CHECKING:
-    from .models import Growspace, Plante_days_since, days_to_week
+    from .models import Growspace, days_to_week
 
 
 @dataclass

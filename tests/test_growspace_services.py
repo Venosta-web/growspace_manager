@@ -9,7 +9,6 @@ from homeassistant.exceptions import ServiceValidationError
 from custom_components.growspace_manager.const import (
     CONF_AI_ENABLED,
     CONF_ASSISTANT_ID,
-    DOMAIN,
 )
 from custom_components.growspace_manager.coordinator import GrowspaceCoordinator
 from custom_components.growspace_manager.services.ai_assistant import (
@@ -97,9 +96,7 @@ async def test_handle_add_growspace(
     mock_coordinator.async_add_growspace.assert_awaited_once_with(
         name="Test GS", rows=2, plants_per_row=3, notification_target="mobile_app_test"
     )
-    mock_hass.bus.async_fire.assert_called_once_with(
-        f"{DOMAIN}_growspace_added", {"growspace_id": "gs1", "name": "Test GS"}
-    )
+    mock_hass.bus.async_fire.assert_not_called()
 
 
 @pytest.mark.asyncio
@@ -155,9 +152,10 @@ async def test_handle_add_growspace_no_mobile_app_notification(
     mock_coordinator.async_add_growspace.assert_awaited_once_with(
         name="Test GS", rows=2, plants_per_row=3, notification_target=None
     )
-    mock_hass.bus.async_fire.assert_called_once_with(
-        f"{DOMAIN}_growspace_added", {"growspace_id": "gs1", "name": "Test GS"}
+    mock_coordinator.async_add_growspace.assert_awaited_once_with(
+        name="Test GS", rows=2, plants_per_row=3, notification_target=None
     )
+    mock_hass.bus.async_fire.assert_not_called()
 
 
 @pytest.mark.asyncio
@@ -193,9 +191,8 @@ async def test_handle_remove_growspace(
     await handle_remove_growspace(mock_hass, mock_coordinator, mock_call)
 
     mock_coordinator.async_remove_growspace.assert_awaited_once_with("gs1")
-    mock_hass.bus.async_fire.assert_called_once_with(
-        f"{DOMAIN}_growspace_removed", {"growspace_id": "gs1"}
-    )
+    mock_coordinator.async_remove_growspace.assert_awaited_once_with("gs1")
+    mock_hass.bus.async_fire.assert_not_called()
 
 
 @pytest.mark.asyncio

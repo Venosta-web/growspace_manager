@@ -77,18 +77,6 @@ ATTR_PLANTS_PER_ROW = "plants_per_row"
 ATTR_NOTIFICATION_TARGET = "notification_target"
 
 # Events
-EVENT_GROWSPACE_UPDATED = f"{DOMAIN}_updated"
-EVENT_GROWSPACE_ADDED = f"{DOMAIN}_growspace_added"
-EVENT_GROWSPACE_REMOVED = f"{DOMAIN}_growspace_removed"
-EVENT_PLANT_ADDED = f"{DOMAIN}_plant_added"
-EVENT_PLANT_UPDATED = f"{DOMAIN}_plant_updated"
-EVENT_PLANT_REMOVED = f"{DOMAIN}_plant_removed"
-EVENT_PLANT_MOVED = f"{DOMAIN}_plant_moved"
-EVENT_PLANT_SWITCHED = f"{DOMAIN}_plant_switched"
-EVENT_PLANT_TRANSITIONED = f"{DOMAIN}_plant_transitioned"
-EVENT_PLANT_HARVESTED = f"{DOMAIN}_plant_harvested"
-EVENT_CLONES_TAKEN = f"{DOMAIN}_clones_taken"
-
 # Icons
 ICON_CANNABIS = "mdi:cannabis"
 ICON_GROWSPACE = "mdi:home-group"

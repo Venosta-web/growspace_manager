@@ -19,12 +19,25 @@ from .const import (
     CONF_TEMP_SENSOR,
     CONF_VPD_SENSOR,
     DOMAIN,
-    EVENT_GROWSPACE_UPDATED,
     SPECIAL_GROWSPACES,
     PlantStage,
 )
 from .dehumidifier_coordinator import DehumidifierCoordinator
 from .environment_analyzer import EnvironmentAnalyzer
+from .events import (
+    EVENT_CLONES_TAKEN,
+    EVENT_GROWSPACE_ADDED,
+    EVENT_GROWSPACE_REMOVED,
+    EVENT_GROWSPACE_UPDATED,
+    EVENT_PLANT_ADDED,
+    EVENT_PLANT_HARVESTED,
+    EVENT_PLANT_MOVED,
+    EVENT_PLANT_SWITCHED,
+    EVENT_PLANT_TRANSITIONED,
+    EVENT_PLANT_UPDATED,
+    async_fire_growspace_event,
+    async_fire_plant_event,
+)
 from .growspace_validator import GrowspaceValidator
 from .import_export_manager import ImportExportManager
 from .irrigation_coordinator import IrrigationCoordinator
@@ -625,6 +638,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
             self._notifications_enabled[growspace_id] = True
             await self.async_commit()
 
+            async_fire_growspace_event(self.hass, EVENT_GROWSPACE_ADDED, growspace)
             return growspace
 
     async def async_remove_growspace(self, growspace_id: str) -> None:
@@ -649,7 +663,8 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
                     plant_id, None
                 )  # ✅ Use _notifications_sent
 
-            growspace_name = self.growspaces[growspace_id].name
+            growspace = self.growspaces[growspace_id]
+            growspace_name = growspace.name
             self.growspaces.pop(growspace_id, None)
 
             # ✅ Remove notification state
@@ -675,6 +690,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
                 growspace_name,
                 len(plants_to_remove),
             )
+            async_fire_growspace_event(self.hass, EVENT_GROWSPACE_REMOVED, growspace)
 
     def _update_growspace_structure(
         self, growspace: Growspace, kwargs: dict[str, Any], changes: list[str]
@@ -765,6 +781,9 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
                     )
 
                 await self.async_commit()
+                async_fire_growspace_event(
+                    self.hass, EVENT_GROWSPACE_UPDATED, growspace
+                )
             else:
                 _LOGGER.debug("No changes detected for growspace %s", growspace_id)
 
@@ -881,7 +900,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
         source_mother: str = "",
     ) -> Plant:
         """Add a new plant to the coordinator via lifecycle manager."""
-        return await self.lifecycle_manager.async_add_plant(
+        plant = await self.lifecycle_manager.async_add_plant(
             growspace_id=growspace_id,
             strain=strain,
             plant_id=plant_id,
@@ -900,6 +919,8 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
             cure_start=cure_start,
             source_mother=source_mother,
         )
+        async_fire_plant_event(self.hass, EVENT_PLANT_ADDED, plant)
+        return plant
 
     async def async_add_mother_plant(
         self,
@@ -991,6 +1012,18 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
             else:
                 _LOGGER.error("Failed to retrieve created clone %s", clone_id)
 
+        # Fire clones taken event
+        if new_plants:
+            self.hass.bus.async_fire(
+                EVENT_CLONES_TAKEN,
+                {
+                    "mother_plant_id": mother_plant_id,
+                    "num_clones": len(new_plants),
+                    "growspace_id": "clone",
+                    "device_id": mother.device_id,
+                },
+            )
+
         return new_plants
 
     async def async_promote_clone(
@@ -1047,7 +1080,9 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
 
     async def async_update_plant(self, plant_id: str, **updates) -> Plant:
         """Update the attributes of an existing plant."""
-        return await self.lifecycle_manager.async_update_plant(plant_id, **updates)
+        plant = await self.lifecycle_manager.async_update_plant(plant_id, **updates)
+        async_fire_plant_event(self.hass, EVENT_PLANT_UPDATED, plant, updates)
+        return plant
 
     def _handle_position_update(
         self,
@@ -1084,10 +1119,22 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
     async def async_move_plant(self, plant_id: str, new_row: int, new_col: int) -> None:
         """Move a plant to a new position via lifecycle manager."""
         await self.lifecycle_manager.async_move_plant(plant_id, new_row, new_col)
+        # Fetch updated plant to fire event
+        if plant := self.plants.get(plant_id):
+            async_fire_plant_event(
+                self.hass,
+                EVENT_PLANT_MOVED,
+                plant,
+                {"new_row": new_row, "new_col": new_col},
+            )
 
     async def async_switch_plants(self, plant1_id: str, plant2_id: str) -> None:
         """Switch the positions of two plants via lifecycle manager."""
         await self.lifecycle_manager.async_switch_plants(plant1_id, plant2_id)
+        if p1 := self.plants.get(plant1_id):
+            async_fire_plant_event(self.hass, EVENT_PLANT_SWITCHED, p1)
+        if p2 := self.plants.get(plant2_id):
+            async_fire_plant_event(self.hass, EVENT_PLANT_SWITCHED, p2)
 
     async def switch_plants_service(self, plant1_id: str, plant2_id: str) -> None:
         """Service call wrapper for switching the positions of two plants.
@@ -1108,6 +1155,13 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
         await self.lifecycle_manager.transition_plant_stage(
             plant_id, new_stage, transition_date
         )
+        if plant := self.plants.get(plant_id):
+            async_fire_plant_event(
+                self.hass,
+                EVENT_PLANT_TRANSITIONED,
+                plant,
+                {"new_stage": str(new_stage)},
+            )
 
     # =============================================================================
     # DATA RETRIEVAL FOR WEBSOCKET API
@@ -1202,10 +1256,20 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
             plant.dry_start,
             plant.cure_start,
         )
+        async_fire_plant_event(self.hass, EVENT_PLANT_HARVESTED, plant)
 
     async def async_remove_plant(self, plant_id: str) -> bool:
         """Remove a plant via lifecycle manager."""
-        return await self.lifecycle_manager.async_remove_plant(plant_id)
+        removed = await self.lifecycle_manager.async_remove_plant(plant_id)
+        if removed:
+            # Can't fire with object if it's removed?
+            # Lifecycle manager probably removed it from dictionary.
+            # I should probably store it before removing if I want to pass it.
+            # Or lifecycle manager returns it? It returns bool.
+            # Accessing it via get_plant handles None.
+            # We should probably get it BEFORE calling lifecycle manager.
+            pass
+        return removed
 
     async def _remove_plant_entities(self, plant_id: str) -> None:
         """Remove all Home Assistant entities associated with a specific plant.

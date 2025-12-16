@@ -11,6 +11,7 @@ from homeassistant.util.dt import utcnow
 from custom_components.growspace_manager.binary_sensor import (
     BayesianMoldRiskSensor,
     BayesianStressSensor,
+    SENSOR_TYPES,
 )
 
 
@@ -20,15 +21,34 @@ def mock_growspace():
     growspace = MagicMock()
     growspace.name = "Test Growspace"
     growspace.notification_target = "notify.test"
-    growspace.environment_config = {
+
+    # Create env_config as MagicMock with proper attribute access
+    env_config = MagicMock()
+    env_config.temperature_sensor = "sensor.temp"
+    env_config.humidity_sensor = "sensor.humidity"
+    env_config.vpd_sensor = "sensor.vpd"
+    env_config.co2_sensor = "sensor.co2"
+    env_config.light_sensor = "light.grow_light"
+    env_config.circulation_fan_entity = None
+    env_config.soil_moisture_sensor = None
+    env_config.dehumidifier_entity = None
+    env_config.exhaust_fan_entity = None
+    env_config.humidifier_entity = None
+    env_config.bayesian_options = MagicMock()
+    env_config.bayesian_options.stress_threshold = 0.7
+    env_config.bayesian_options.mold_threshold = 0.75
+    env_config.bayesian_options.optimal_threshold = 0.8
+    env_config.bayesian_options.prior_stress = 0.15
+    env_config.bayesian_options.prior_mold_risk = 0.10
+    env_config.bayesian_options.prior_optimal = 0.40
+    env_config.to_dict.return_value = {
         "temperature_sensor": "sensor.temp",
         "humidity_sensor": "sensor.humidity",
         "vpd_sensor": "sensor.vpd",
         "co2_sensor": "sensor.co2",
         "light_sensor": "light.grow_light",
-        "stress_threshold": 0.7,
-        "prior_stress": 0.15,
     }
+    growspace.environment_config = env_config
     return growspace
 
 
@@ -63,10 +83,12 @@ async def test_unavailable_light_sensor_no_night_stress(
     """Test that unavailable light sensor does not trigger Night Temp High stress."""
 
     # Setup sensor
+    description = next(d for d in SENSOR_TYPES if d.sensor_type == "stress")
     sensor = BayesianStressSensor(
         mock_coordinator,
         "gs1",
         mock_coordinator.growspaces["gs1"].environment_config,
+        description,
     )
     sensor.hass = hass
     sensor.entity_id = "binary_sensor.test_stress_unavailable_light"
@@ -144,10 +166,12 @@ async def test_unavailable_additional_sensors(
     """Test that unavailable fan/dehumidifier do not trigger false alerts."""
 
     # Setup sensor
+    description = next(d for d in SENSOR_TYPES if d.sensor_type == "stress")
     sensor = BayesianStressSensor(
         mock_coordinator,
         "gs1",
         mock_coordinator.growspaces["gs1"].environment_config,
+        description,
     )
     sensor.hass = hass
     sensor.entity_id = "binary_sensor.test_stress_unavailable_others"
@@ -200,10 +224,12 @@ async def test_unavailable_additional_sensors(
     )
 
     # Also verify Mold Risk Sensor for Fan Off
+    mold_description = next(d for d in SENSOR_TYPES if d.sensor_type == "mold")
     mold_sensor = BayesianMoldRiskSensor(
         mock_coordinator,
         "gs1",
         mock_coordinator.growspaces["gs1"].environment_config,
+        mold_description,
     )
     mold_sensor.hass = hass
     mold_sensor.entity_id = "binary_sensor.test_mold_unavailable_fan"

@@ -23,14 +23,6 @@ from ..const import (
     ATTR_TARGET_GROWSPACE_ID,
     ATTR_TRANSITION_DATE,
     DATE_FIELDS,
-    EVENT_CLONES_TAKEN,
-    EVENT_PLANT_ADDED,
-    EVENT_PLANT_HARVESTED,
-    EVENT_PLANT_MOVED,
-    EVENT_PLANT_REMOVED,
-    EVENT_PLANT_SWITCHED,
-    EVENT_PLANT_TRANSITIONED,
-    EVENT_PLANT_UPDATED,
 )
 from ..coordinator import GrowspaceCoordinator
 from ..growspace_validator import GrowspaceValidator
@@ -227,16 +219,6 @@ async def handle_add_plant(
             col,
         )
 
-        hass.bus.async_fire(
-            EVENT_PLANT_ADDED,
-            {
-                ATTR_PLANT_ID: plant_id,
-                ATTR_GROWSPACE_ID: growspace_id,
-                ATTR_STRAIN: call.data[ATTR_STRAIN],
-                "position": f"({row},{col})",
-            },
-        )
-
     except Exception as err:
         _LOGGER.exception("Failed to add plant: %s", err)
         raise
@@ -284,14 +266,6 @@ async def handle_take_clone(
         _LOGGER.error("Failed to take clones from %s: %s", mother_plant_id, err)
         raise ServiceValidationError(str(err)) from err
 
-    hass.bus.async_fire(
-        EVENT_CLONES_TAKEN,
-        {
-            ATTR_MOTHER_PLANT_ID: mother_plant_id,
-            ATTR_NUM_CLONES: clones_added_count,
-            ATTR_GROWSPACE_ID: "clone",  # Implied by async_take_clones
-        },
-    )
     _LOGGER.info(
         "Successfully took %d clones from %s", clones_added_count, mother_plant_id
     )
@@ -331,16 +305,6 @@ async def handle_move_clone(
             "Moved clone %s to growspace %s (PROMOTED)",
             plant_id,
             target_growspace_id,
-        )
-
-        hass.bus.async_fire(
-            EVENT_PLANT_MOVED,
-            {
-                ATTR_PLANT_ID: plant_id,  # Plant ID is preserved now
-                "new_growspace_id": target_growspace_id,
-                "is_clone_move": True,
-                ATTR_TRANSITION_DATE: transition_date.isoformat(),
-            },
         )
     except Exception as e:
         _LOGGER.exception("Failed to promote clone %s: %s", plant_id, e)
@@ -410,11 +374,6 @@ async def handle_update_plant(
         await coordinator.async_update_plant(plant_id, **update_data)
         _LOGGER.info("Updated plant %s with data: %s", plant_id, update_data)
 
-        hass.bus.async_fire(
-            EVENT_PLANT_UPDATED,
-            {ATTR_PLANT_ID: plant_id, "updated_fields": list(update_data.keys())},
-        )
-
     except Exception as err:
         _LOGGER.exception("Failed to update plant: %s", err)
         raise
@@ -442,11 +401,6 @@ async def handle_remove_plant(
             plant_info.growspace_id,
         )
 
-        hass.bus.async_fire(
-            EVENT_PLANT_REMOVED,
-            {ATTR_PLANT_ID: plant_id, ATTR_GROWSPACE_ID: plant_info.growspace_id},
-        )
-
     except Exception as err:
         _LOGGER.exception("Failed to remove plant %s: %s", plant_id, err)
         raise
@@ -471,23 +425,8 @@ async def handle_switch_plants(
             _LOGGER.error("Plant %s does not exist for switch_plants", plant_id_2)
             raise ServiceValidationError(f"Plant {plant_id_2} does not exist.")
 
-        plant1_data = coordinator.plants[plant_id_1]
-        plant2_data = coordinator.plants[plant_id_2]
-
         await coordinator.async_switch_plants(plant_id_1, plant_id_2)
         _LOGGER.info("Plants %s and %s switched successfully", plant_id_1, plant_id_2)
-
-        hass.bus.async_fire(
-            EVENT_PLANT_SWITCHED,
-            {
-                "plant1_id": plant_id_1,
-                "plant1_strain": plant1_data.strain,
-                "plant1_old_position": f"({plant1_data.row},{plant1_data.col})",
-                "plant2_id": plant_id_2,
-                "plant2_strain": plant2_data.strain,
-                "plant2_old_position": f"({plant2_data.row},{plant2_data.col})",
-            },
-        )
 
     except Exception as err:
         _LOGGER.exception(
@@ -556,20 +495,6 @@ async def handle_move_plant(
             # Use the dedicated switch method
             await coordinator.async_switch_plants(plant_id, occupying_plant_id)
 
-            # Fire event for both plants
-            hass.bus.async_fire(
-                EVENT_PLANT_SWITCHED,
-                {
-                    "plant1_id": plant_id,
-                    "plant1_strain": plant.strain,
-                    "plant1_old_position": f"({old_row},{old_col})",
-                    "plant1_new_position": f"({new_row},{new_col})",
-                    "plant2_id": occupying_plant_id,
-                    "plant2_strain": occupying_plant.strain,
-                    "plant2_old_position": f"({new_row},{new_col})",
-                    "plant2_new_position": f"({old_row},{old_col})",
-                },
-            )
             _LOGGER.info(
                 "Successfully switched positions for %s and %s",
                 plant_id,
@@ -584,16 +509,6 @@ async def handle_move_plant(
                 new_row,
                 new_col,
                 plant.growspace_id,
-            )
-            hass.bus.async_fire(
-                EVENT_PLANT_MOVED,
-                {
-                    ATTR_PLANT_ID: plant_id,
-                    ATTR_STRAIN: plant.strain,
-                    "old_position": f"({old_row},{old_col})",
-                    "new_position": f"({new_row},{new_col})",
-                    ATTR_GROWSPACE_ID: plant.growspace_id,
-                },
             )
 
     except ValueError as err:
@@ -639,17 +554,6 @@ async def handle_transition_plant_stage(
             transition_date=transition_date.isoformat() if transition_date else None,
         )
         _LOGGER.info("Plant %s transitioned to %s stage", plant_id, new_stage)
-
-        hass.bus.async_fire(
-            EVENT_PLANT_TRANSITIONED,
-            {
-                ATTR_PLANT_ID: plant_id,
-                "new_stage": new_stage,
-                ATTR_TRANSITION_DATE: transition_date.isoformat()
-                if transition_date
-                else None,
-            },
-        )
 
     except Exception as err:
         _LOGGER.exception("Failed to transition plant stage for %s: %s", plant_id, err)
@@ -704,7 +608,6 @@ async def handle_harvest_plant(
             "harvest_date": transition_date.isoformat() if transition_date else None,
         }
 
-        hass.bus.async_fire(EVENT_PLANT_HARVESTED, result)
         return result
 
     except Exception as err:

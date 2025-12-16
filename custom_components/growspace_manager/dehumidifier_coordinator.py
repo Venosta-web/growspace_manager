@@ -85,14 +85,16 @@ class DehumidifierCoordinator:
         self.env_config = self.growspace.environment_config or {}
         self.dehumidifier_config = getattr(self.growspace, "dehumidifier_config", {})
 
-        # Entity IDs
-        self.vpd_sensor = self.env_config.get("vpd_sensor")
-        self.light_sensor = self.env_config.get("light_sensor")
-        self.dehumidifier_entity = self.env_config.get("dehumidifier_entity")
-        self.control_dehumidifier = self.env_config.get("control_dehumidifier", False)
+        # Entity IDs - env_config is an EnvironmentConfig object, use attribute access
+        self.vpd_sensor = getattr(self.env_config, "vpd_sensor", None)
+        self.light_sensor = getattr(self.env_config, "light_sensor", None)
+        self.dehumidifier_entity = getattr(self.env_config, "dehumidifier_entity", None)
+        self.control_dehumidifier = getattr(
+            self.env_config, "control_dehumidifier", False
+        )
 
         # User Thresholds (optional override)
-        self.user_thresholds = self.env_config.get("dehumidifier_thresholds", {})
+        self.user_thresholds = getattr(self.env_config, "dehumidifier_thresholds", {})
 
         if self.vpd_sensor and self.dehumidifier_entity and self.control_dehumidifier:
             self._setup_listeners()

@@ -66,12 +66,16 @@ def mock_growspace():
     growspace = MagicMock(spec=Growspace)
     growspace.id = "gs1"
     growspace.name = "Test Growspace"
-    growspace.environment_config = {
-        "vpd_sensor": "sensor.vpd",
-        "light_sensor": "sensor.light",
-        "dehumidifier_entity": "switch.dehumidifier",
-        "control_dehumidifier": True,
-    }
+
+    # Create env_config as MagicMock with proper attribute access
+    env_config = MagicMock()
+    env_config.vpd_sensor = "sensor.vpd"
+    env_config.light_sensor = "sensor.light"
+    env_config.dehumidifier_entity = "switch.dehumidifier"
+    env_config.control_dehumidifier = True
+    env_config.dehumidifier_thresholds = {}
+
+    growspace.environment_config = env_config
     growspace.dehumidifier_config = {}
     return growspace
 
@@ -104,7 +108,7 @@ async def test_initialization_disabled(
     mock_hass, mock_main_coordinator, mock_growspace, mock_track_state_change_event
 ):
     """Test initialization when control is disabled."""
-    mock_growspace.environment_config["control_dehumidifier"] = False
+    mock_growspace.environment_config.control_dehumidifier = False
     mock_main_coordinator.growspaces = {"gs1": mock_growspace}
 
     coord = DehumidifierCoordinator(
@@ -122,7 +126,7 @@ async def test_initialization_missing_entities(
     mock_hass, mock_main_coordinator, mock_growspace, mock_track_state_change_event
 ):
     """Test initialization with missing required entities."""
-    mock_growspace.environment_config["vpd_sensor"] = None
+    mock_growspace.environment_config.vpd_sensor = None
     mock_main_coordinator.growspaces = {"gs1": mock_growspace}
 
     coord = DehumidifierCoordinator(
