@@ -444,8 +444,10 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
     async def async_commit(self) -> None:
         """Commit changes to storage and notify listeners."""
         self.update_data_property()
-        await self.async_save()
+        await self.storage_manager.async_save()
+        self.async_set_updated_data(self.data)
         self.async_fire_growspace_updated()
+
         for gs_id in self.growspaces:
             if gs_id in self.irrigation_coordinators:
                 self.hass.async_create_task(
@@ -457,10 +459,8 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
         self.hass.bus.async_fire(f"{DOMAIN}_updated", {})
 
     async def async_save(self) -> None:
-        """Save data to storage."""
-        await self.storage_manager.async_save()
-        self.async_set_updated_data(self.data)
-        self.async_fire_growspace_updated()
+        """Save data to storage (Alias for async_commit)."""
+        await self.async_commit()
 
     async def async_load(self) -> None:
         """Load data from persistent storage and handle migrations."""
@@ -1131,59 +1131,24 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
 
     async def async_start_flowering(self, plant_id: str) -> Plant:
         """Transition a plant to the 'flower' stage, starting today."""
-        async with self._lock:
-            plant = self.plants.get(plant_id)
-            if not plant:
-                raise ValueError(f"Plant {plant_id} not found")
-
-            plant.stage = PlantStage.FLOWER
-            plant.flower_start = date.today().isoformat()
-            plant.updated_at = plant.flower_start
-            await self.async_commit()
-            return plant
+        await self.async_transition_plant_stage(
+            plant_id, PlantStage.FLOWER, date.today()
+        )
+        return self.plants[plant_id]
 
     async def async_start_drying(self, plant_id: str) -> Plant:
         """Transition a plant to the 'drying' stage, starting today."""
-        async with self._lock:
-            plant = self.plants.get(plant_id)
-            if not plant:
-                raise ValueError(f"Plant {plant_id} not found")
-
-            plant.stage = PlantStage.DRY
-            plant.dry_start = date.today().isoformat()
-            plant.updated_at = plant.dry_start
-            await self.async_save()
-            self.update_data_property()
-            self.async_set_updated_data(self.data)
-            return plant
+        await self.async_transition_plant_stage(plant_id, PlantStage.DRY, date.today())
+        return self.plants[plant_id]
 
     async def async_start_curing(self, plant_id: str) -> Plant:
         """Transition a plant to the 'curing' stage, starting today."""
-        async with self._lock:
-            plant = self.plants.get(plant_id)
-            if not plant:
-                raise ValueError(f"Plant {plant_id} not found")
-
-            plant.stage = PlantStage.CURE
-            plant.cure_start = date.today().isoformat()
-            plant.updated_at = plant.cure_start
-            await self.async_commit()
-            return plant
+        await self.async_transition_plant_stage(plant_id, PlantStage.CURE, date.today())
+        return self.plants[plant_id]
 
     async def async_harvest(self, plant_id: str) -> Plant:
         """Mark a plant as harvested, transitioning it to the 'dry' stage today."""
-        async with self._lock:
-            plant = self.plants.get(plant_id)
-            if not plant:
-                raise ValueError(f"Plant {plant_id} not found")
-
-            plant.stage = PlantStage.DRY
-            plant.dry_start = date.today().isoformat()
-            plant.updated_at = plant.dry_start
-            await self.async_save()
-            self.update_data_property()
-            self.async_set_updated_data(self.data)
-            return plant
+        return await self.async_start_drying(plant_id)
 
     async def async_harvest_plant(
         self,

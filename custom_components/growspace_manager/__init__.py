@@ -186,6 +186,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: GrowspaceConfigEntry) ->
             dehumidifier_coordinator
         )
 
+    entry.async_on_unload(lambda: _async_cancel_coordinators(entry.runtime_data))
     entry.add_update_listener(_async_update_listener)
 
     # Handle pending growspace if initiated before entry setup completion
@@ -246,7 +247,6 @@ async def async_unload_entry(hass: HomeAssistant, entry: GrowspaceConfigEntry) -
     _LOGGER.debug("Unloading config entry %s for Growspace Manager", entry.entry_id)
 
     # Clean up dynamically created entities before unloading platforms
-    _async_cancel_coordinators(entry.runtime_data)
     # _async_remove_dynamic_entities(hass, entry.runtime_data) # Removed per request
 
     unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)

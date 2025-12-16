@@ -747,16 +747,16 @@ async def test_async_remove_growspace(coordinator: GrowspaceCoordinator) -> None
     coordinator._notifications_sent[plant2.plant_id] = ["alert2"]
     coordinator._notifications_enabled[gs.id] = True
 
-    # Mock async_save and async_set_updated_data
+    # Mock async_commit and async_set_updated_data
     with (
-        patch.object(coordinator, "async_save", new_callable=AsyncMock),
+        patch.object(coordinator, "async_commit", new_callable=AsyncMock),
         patch.object(coordinator, "async_set_updated_data", MagicMock()),
     ):
         # Call async_remove_growspace
         await coordinator.async_remove_growspace(gs.id)
 
         # Data update methods called
-        coordinator.async_save.assert_awaited_once()
+        coordinator.async_commit.assert_awaited_once()
 
     # Assertions: growspace removed
     assert gs.id not in coordinator.growspaces
@@ -782,9 +782,9 @@ async def test_async_update_growspace(coordinator: GrowspaceCoordinator) -> None
     # Setup: create a growspace
     gs = await coordinator.async_add_growspace("Old Name", 2, 2)
 
-    # Mock async_save and async_set_updated_data
+    # Mock async_commit and async_set_updated_data
     with (
-        patch.object(coordinator, "async_save", new_callable=AsyncMock),
+        patch.object(coordinator, "async_commit", new_callable=AsyncMock),
         patch.object(coordinator, "async_set_updated_data", MagicMock()),
     ):
         # Update name, rows, plants_per_row, notification_target
@@ -796,8 +796,8 @@ async def test_async_update_growspace(coordinator: GrowspaceCoordinator) -> None
             notification_target="notify@example.com",
         )
 
-        # Ensure async_save and async_set_updated_data were called
-        coordinator.async_save.assert_awaited_once()
+        # Ensure async_commit and async_set_updated_data were called
+        coordinator.async_commit.assert_awaited_once()
 
     updated_gs = coordinator.growspaces[gs.id]
 
@@ -822,8 +822,8 @@ async def test_async_update_growspace_no_changes(
         "Same Name", 2, 2, notification_target=""
     )
 
-    # Mock async_save and async_set_updated_data
-    coordinator.async_save = AsyncMock()
+    # Mock async_commit and async_set_updated_data
+    coordinator.async_commit = AsyncMock()
     coordinator.async_set_updated_data = AsyncMock()
 
     # Call update with the same values
@@ -835,8 +835,8 @@ async def test_async_update_growspace_no_changes(
         notification_target="",  # matches existing exactly
     )
 
-    # async_save and async_set_updated_data should NOT be called
-    coordinator.async_save.assert_not_called()
+    # async_commit and async_set_updated_data should NOT be called
+    coordinator.async_commit.assert_not_called()
     coordinator.async_set_updated_data.assert_not_called()
 
 
@@ -913,8 +913,8 @@ async def test_set_notifications_enabled(coordinator: GrowspaceCoordinator) -> N
     # Create a growspace
     gs = await coordinator.async_add_growspace("Notify GS", 2, 2)
 
-    # Mock async_save and async_set_updated_data
-    coordinator.async_save = AsyncMock()
+    # Mock async_commit and async_set_updated_data
+    coordinator.async_commit = AsyncMock()
     coordinator.async_set_updated_data = MagicMock()
 
     # Initialize self.data so set_notifications_enabled doesn't fail
@@ -923,20 +923,20 @@ async def test_set_notifications_enabled(coordinator: GrowspaceCoordinator) -> N
     # Disable notifications
     await coordinator.set_notifications_enabled(gs.id, False)
     assert coordinator.is_notifications_enabled(gs.id) is False
-    coordinator.async_save.assert_awaited_once()
+    coordinator.async_commit.assert_awaited_once()
 
     # Enable notifications
-    coordinator.async_save.reset_mock()
+    coordinator.async_commit.reset_mock()
     coordinator.async_set_updated_data.reset_mock()
     await coordinator.set_notifications_enabled(gs.id, True)
     assert coordinator.is_notifications_enabled(gs.id) is True
-    coordinator.async_save.assert_awaited_once()
+    coordinator.async_commit.assert_awaited_once()
 
     # Non-existent growspace
-    coordinator.async_save.reset_mock()
+    coordinator.async_commit.reset_mock()
     coordinator.async_set_updated_data.reset_mock()
     await coordinator.set_notifications_enabled("nonexistent", True)
-    coordinator.async_save.assert_not_awaited()
+    coordinator.async_commit.assert_not_awaited()
     coordinator.async_set_updated_data.assert_not_called()
 
 
@@ -953,8 +953,8 @@ async def test_handle_clone_creation(coordinator: GrowspaceCoordinator) -> None:
     mother.stage = PlantStage.MOTHER
     coordinator.update_data_property()
 
-    # Mock async_save and async_set_updated_data
-    coordinator.async_save = AsyncMock()
+    # Mock async_commit and async_set_updated_data
+    coordinator.async_commit = AsyncMock()
     coordinator.async_set_updated_data = MagicMock()
     coordinator.update_data_property()  # ensure self.data is initialized
 
@@ -979,8 +979,8 @@ async def test_handle_clone_creation(coordinator: GrowspaceCoordinator) -> None:
     assert clone_plant.row == 1
     assert clone_plant.col == 2
 
-    # Ensure async_save and async_set_updated_data were called
-    coordinator.async_save.assert_awaited_once()
+    # Ensure async_commit and async_set_updated_data were called
+    coordinator.async_commit.assert_awaited_once()
 
 
 @pytest.mark.asyncio
@@ -997,7 +997,7 @@ async def test_async_transition_clone_to_veg(coordinator: GrowspaceCoordinator) 
     clone_id = "clone123"
     fixed_time = "2025-11-03 16:44:40"
 
-    coordinator.async_save = AsyncMock()
+    coordinator.async_commit = AsyncMock()
     coordinator.async_set_updated_data = MagicMock()
     coordinator.update_data_property()
 
@@ -1020,7 +1020,7 @@ async def test_async_transition_clone_to_veg(coordinator: GrowspaceCoordinator) 
     assert clone.growspace_id == "veg"
     assert clone.veg_start == "2025-11-03"
 
-    coordinator.async_save.assert_awaited()
+    coordinator.async_commit.assert_awaited()
 
 
 @pytest.mark.asyncio

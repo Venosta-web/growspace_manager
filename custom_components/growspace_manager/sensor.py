@@ -24,7 +24,7 @@ from homeassistant.helpers.event import async_track_state_change_event
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from homeassistant.util import slugify
 
-from .const import DOMAIN
+from .const import DOMAIN, PLANT_STAGES
 
 # Local / relative imports
 from .coordinator import GrowspaceCoordinator
@@ -695,25 +695,7 @@ class PlantEntity(SensorEntity):
             return {}
 
         stage = calculate_plant_stage(plant)
-        seedling_days = self.coordinator.serializer.calculate_days_in_stage(
-            plant, "seedling"
-        )
-        mother_days = self.coordinator.serializer.calculate_days_in_stage(
-            plant, "mother"
-        )
-        clone_days = self.coordinator.serializer.calculate_days_in_stage(plant, "clone")
-        veg_days = self.coordinator.serializer.calculate_days_in_stage(plant, "veg")
-        flower_days = self.coordinator.serializer.calculate_days_in_stage(
-            plant, "flower"
-        )
-        dry_days = self.coordinator.serializer.calculate_days_in_stage(plant, "dry")
-        cure_days = self.coordinator.serializer.calculate_days_in_stage(plant, "cure")
-
-        # Calculate weeks
-        veg_week = days_to_week(veg_days or 0)
-        flower_week = days_to_week(flower_days or 0)
-
-        return {
+        attributes = {
             "stage": stage,
             "growspace_id": plant.growspace_id,
             "plant_id": plant.plant_id,
@@ -722,23 +704,29 @@ class PlantEntity(SensorEntity):
             "row": plant.row,
             "col": plant.col,
             "position": f"({int(plant.row)},{int(plant.col)})",
-            "seedling_start": plant.seedling_start,
-            "mother_start": plant.mother_start,
-            "clone_start": plant.clone_start,
-            "veg_start": plant.veg_start,
-            "flower_start": plant.flower_start,
-            "dry_start": plant.dry_start,
-            "cure_start": plant.cure_start,
-            "seedling_days": seedling_days or 0,
-            "mother_days": mother_days or 0,
-            "clone_days": clone_days or 0,
-            "veg_days": veg_days or 0,
-            "flower_days": flower_days or 0,
-            "dry_days": dry_days or 0,
-            "cure_days": cure_days or 0,
-            "veg_week": veg_week,
-            "flower_week": flower_week,
         }
+
+        # Dynamic Stage Attributes
+        for stage_name in PLANT_STAGES:
+            # Start dates
+            start_key = f"{stage_name}_start"
+            if hasattr(plant, start_key):
+                attributes[start_key] = getattr(plant, start_key)
+
+            # Days in stage
+            days = self.coordinator.serializer.calculate_days_in_stage(
+                plant, stage_name
+            )
+            attributes[f"{stage_name}_days"] = days or 0
+
+        # Calculate weeks
+        veg_week = days_to_week(attributes.get("veg_days", 0))
+        flower_week = days_to_week(attributes.get("flower_days", 0))
+
+        attributes["veg_week"] = veg_week
+        attributes["flower_week"] = flower_week
+
+        return attributes
 
     async def async_added_to_hass(self) -> None:
         """Register callbacks when the entity is added to Home Assistant."""

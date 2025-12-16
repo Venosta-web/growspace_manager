@@ -193,9 +193,18 @@ def valid_growspace_id(value):
     Raises:
         vol.Invalid: If the value is not a valid growspace ID.
     """
+
     if not isinstance(value, str) or not value:
         raise vol.Invalid("Growspace ID cannot be empty")
     return value
+
+
+# Shared Schema Dictionaries
+_PLANT_DATE_FIELDS = {vol.Optional(field): valid_date_or_none for field in DATE_FIELDS}
+
+_PLANT_DAYS_FIELDS = {
+    vol.Optional(f"{stage}_days"): vol.All(vol.Coerce(int)) for stage in PLANT_STAGES
+}
 
 
 # Add Growspace
@@ -234,13 +243,7 @@ ADD_PLANT_SCHEMA = vol.Schema(
         vol.Required("row"): vol.All(int, vol.Range(min=1)),
         vol.Required("col"): vol.All(int, vol.Range(min=1)),
         vol.Optional("phenotype"): str,
-        vol.Optional("seedling_start"): valid_date_or_none,
-        vol.Optional("mother_start"): valid_date_or_none,
-        vol.Optional("clone_start"): valid_date_or_none,
-        vol.Optional("veg_start"): valid_date_or_none,
-        vol.Optional("flower_start"): valid_date_or_none,
-        vol.Optional("dry_start"): valid_date_or_none,
-        vol.Optional("cure_start"): valid_date_or_none,
+        **_PLANT_DATE_FIELDS,
     }
 )
 
@@ -255,20 +258,8 @@ UPDATE_PLANT_SCHEMA = vol.Schema(
         vol.Optional("row"): vol.All(int, vol.Range(min=1)),
         vol.Optional("col"): vol.All(int, vol.Range(min=1)),
         vol.Optional("stage"): str,  # Assuming stage can be updated
-        vol.Optional("seedling_start"): valid_date_or_none,
-        vol.Optional("mother_start"): valid_date_or_none,
-        vol.Optional("clone_start"): valid_date_or_none,
-        vol.Optional("veg_start"): valid_date_or_none,
-        vol.Optional("flower_start"): valid_date_or_none,
-        vol.Optional("dry_start"): valid_date_or_none,
-        vol.Optional("cure_start"): valid_date_or_none,
-        vol.Optional("seedling_days"): vol.All(vol.Coerce(int)),
-        vol.Optional("veg_days"): vol.All(vol.Coerce(int)),
-        vol.Optional("flower_days"): vol.All(vol.Coerce(int)),
-        vol.Optional("dry_days"): vol.All(vol.Coerce(int)),
-        vol.Optional("cure_days"): vol.All(vol.Coerce(int)),
-        vol.Optional("mother_days"): vol.All(vol.Coerce(int)),
-        vol.Optional("clone_days"): vol.All(vol.Coerce(int)),
+        **_PLANT_DATE_FIELDS,
+        **_PLANT_DAYS_FIELDS,
     },
     extra=vol.ALLOW_EXTRA,
 )
