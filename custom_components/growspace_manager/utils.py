@@ -8,8 +8,12 @@ from datetime import date, datetime
 from dateutil import parser
 from homeassistant.util.dt import as_local, now
 
+from typing import TYPE_CHECKING
+
 from .const import DOMAIN, PlantStage
-from .models import Growspace, Plant
+
+if TYPE_CHECKING:
+    from .models import Growspace, Plant
 
 DateInput = str | datetime | date | None
 

@@ -23,6 +23,31 @@ DEFAULT_VPD_HYSTERESIS = 0.2  # kPa (fallback if not using stage thresholds)
 
 DEFAULT_NAME = "Growspace Manager"
 
+# Configuration Keys
+CONF_TEMP_SENSOR = "temperature_sensor"
+CONF_HUMIDITY_SENSOR = "humidity_sensor"
+CONF_VPD_SENSOR = "vpd_sensor"
+CONF_CO2_SENSOR = "co2_sensor"
+CONF_DEHUMIDIFIER_ENTITY = "dehumidifier_entity"
+CONF_CIRCULATION_FAN = "circulation_fan"
+CONF_LIGHT_SENSOR = "light_sensor"
+CONF_STRESS_THRESHOLD = "stress_threshold"
+CONF_MOLD_THRESHOLD = "mold_threshold"
+CONF_DEHUMIDIFIER_THRESHOLDS = "dehumidifier_thresholds"
+CONF_AI_ENABLED = "ai_enabled"
+CONF_ASSISTANT_ID = "assistant_id"
+CONF_GROWSPACE = "growspace"
+
+# Metric Names
+METRIC_STRESS = "stress"
+METRIC_MOLD_RISK = "mold_risk"
+METRIC_OPTIMAL = "optimal"
+METRIC_DRYING = "drying"
+METRIC_CURING = "curing"
+METRIC_LIGHT_MANAGEMENT = "light_management"
+METRIC_AIR_EXCHANGE = "air_exchange"
+METRIC_VPD = "vpd"
+
 # Attributes
 ATTR_GROWSPACE_ID = "growspace_id"
 ATTR_PLANT_ID = "plant_id"
@@ -489,17 +514,17 @@ DEBUG_CONSOLIDATE_DUPLICATE_SPECIAL_SCHEMA = vol.Schema({})  # No parameters
 CONFIGURE_ENVIRONMENT_SCHEMA = vol.Schema(
     {
         vol.Required("growspace_id"): str,
-        vol.Required("temperature_sensor"): str,
-        vol.Required("humidity_sensor"): str,
-        vol.Optional("vpd_sensor"): str,
-        vol.Optional("co2_sensor"): str,
-        vol.Optional("dehumidifier_entity"): str,
-        vol.Optional("circulation_fan"): str,
-        vol.Optional("light_sensor"): str,
-        vol.Optional("stress_threshold", default=0.70): vol.All(
+        vol.Required(CONF_TEMP_SENSOR): str,
+        vol.Required(CONF_HUMIDITY_SENSOR): str,
+        vol.Optional(CONF_VPD_SENSOR): str,
+        vol.Optional(CONF_CO2_SENSOR): str,
+        vol.Optional(CONF_DEHUMIDIFIER_ENTITY): str,
+        vol.Optional(CONF_CIRCULATION_FAN): str,
+        vol.Optional(CONF_LIGHT_SENSOR): str,
+        vol.Optional(CONF_STRESS_THRESHOLD, default=0.70): vol.All(
             vol.Coerce(float), vol.Range(min=0.0, max=1.0)
         ),
-        vol.Optional("mold_threshold", default=0.75): vol.All(
+        vol.Optional(CONF_MOLD_THRESHOLD, default=0.75): vol.All(
             vol.Coerce(float), vol.Range(min=0.0, max=1.0)
         ),
     }

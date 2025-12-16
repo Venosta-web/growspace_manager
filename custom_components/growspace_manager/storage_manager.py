@@ -9,7 +9,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.storage import Store
 
 from .const import STORAGE_KEY, STORAGE_VERSION
-from .models import Growspace, GrowspaceEvent, Plant
+from .models import EnvironmentConfig, Growspace, GrowspaceEvent, Plant
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -123,7 +123,14 @@ class StorageManager:
         )
         for growspace_id, growspace in self.coordinator.growspaces.items():
             if growspace_id in self.coordinator.options:
-                growspace.environment_config = self.coordinator.options[growspace_id]
+                options = self.coordinator.options[growspace_id]
+                # Ensure we are assigning an EnvironmentConfig object
+                if isinstance(options, dict):
+                    growspace.environment_config = EnvironmentConfig.from_dict(options)
+                else:
+                    # Assume it's already an object if not a dict (though likely it's a dict from config_entry options)
+                    growspace.environment_config = options
+
                 _LOGGER.debug(
                     "--- SUCCESS: Applied env_config to '%s': %s ---",
                     growspace.name,

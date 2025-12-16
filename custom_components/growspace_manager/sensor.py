@@ -31,6 +31,9 @@ from .const import (
     ATTR_ROW,
     ATTR_STAGE,
     ATTR_STRAIN,
+    CONF_HUMIDITY_SENSOR,
+    CONF_TEMP_SENSOR,
+    CONF_VPD_SENSOR,
     DOMAIN,
     ICON_AIR_EXCHANGE,
     ICON_CALCULATED_VPD,
@@ -85,8 +88,19 @@ async def _async_create_derivative_sensors(
             if entity_key not in created_entity_ids:
                 created_entity_ids.append(entity_key)
 
-    for sensor_type in ["temperature", "humidity", "vpd"]:
-        source_sensor = growspace.environment_config.get(f"{sensor_type}_sensor")
+    metric_map = {
+        "temperature": CONF_TEMP_SENSOR,
+        "humidity": CONF_HUMIDITY_SENSOR,
+        "vpd": CONF_VPD_SENSOR,
+    }
+
+    for sensor_type, conf_key in metric_map.items():
+        # Support both dict (legacy/mock) and dataclass
+        if isinstance(growspace.environment_config, dict):
+            source_sensor = growspace.environment_config.get(conf_key)
+        else:
+            source_sensor = getattr(growspace.environment_config, conf_key, None)
+
         if not source_sensor:
             continue
 
@@ -304,10 +318,18 @@ def _check_calculated_vpd_sensor(
     growspace: Growspace,
 ) -> CalculatedVpdSensor | None:
     """Create calculated VPD sensor if needed."""
-    env_config = growspace.environment_config or {}
-    temp_sensor = env_config.get("temperature_sensor")
-    humidity_sensor = env_config.get("humidity_sensor")
-    vpd_sensor = env_config.get("vpd_sensor")
+    env_config = growspace.environment_config
+    if not env_config:
+        return None
+
+    def get_val(key):
+        if isinstance(env_config, dict):
+            return env_config.get(key)
+        return getattr(env_config, key, None)
+
+    temp_sensor = get_val(CONF_TEMP_SENSOR)
+    humidity_sensor = get_val(CONF_HUMIDITY_SENSOR)
+    vpd_sensor = get_val(CONF_VPD_SENSOR)
 
     # Create calculated VPD if temp and humidity exist but no VPD sensor
     # OR if the configured sensor appears to be one we generated (contains calculated_vpd)
@@ -319,7 +341,9 @@ def _check_calculated_vpd_sensor(
             should_create = True
 
     if should_create:
-        lst_offset = env_config.get("lst_offset", -2.0)
+        lst_offset = get_val("lst_offset")
+        if lst_offset is None:
+            lst_offset = -2.0
         calc_vpd_sensor = CalculatedVpdSensor(
             coordinator,
             growspace.id,
@@ -485,8 +509,8 @@ class CalculatedVpdSensor(BaseVpdSensor):
     def extra_state_attributes(self) -> dict[str, Any]:
         """Return additional state attributes."""
         return {
-            "temperature_sensor": self._temp_sensor,
-            "humidity_sensor": self._humidity_sensor,
+            CONF_TEMP_SENSOR: self._temp_sensor,
+            CONF_HUMIDITY_SENSOR: self._humidity_sensor,
             "lst_offset": self._lst_offset,
             "calculation_method": "Calculated from temperature and humidity",
         }

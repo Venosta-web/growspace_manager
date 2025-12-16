@@ -34,6 +34,10 @@ from custom_components.growspace_manager.const import (
     DOMAIN,
 )
 from custom_components.growspace_manager.coordinator import GrowspaceCoordinator
+from custom_components.growspace_manager.models import (
+    EnvironmentConfig,
+    IrrigationConfig,
+)
 
 
 @pytest.fixture
@@ -429,7 +433,13 @@ async def test_options_flow_manage_growspaces_update(
     """
     config_entry = MockConfigEntry(domain=DOMAIN, data={"name": "Test"})
     config_entry.add_to_hass(hass)
-    mock_coordinator.growspaces = {"gs1": Mock(name="Growspace 1")}
+    mock_coordinator.growspaces = {
+        "gs1": Mock(
+            name="Growspace 1",
+            environment_config=EnvironmentConfig(),
+            irrigation_config=IrrigationConfig(),
+        )
+    }
     config_entry.runtime_data = mock_coordinator
 
     flow = OptionsFlowHandler(config_entry)
@@ -1516,7 +1526,13 @@ async def test_options_flow_select_growspace_for_env_submit(
     """
     config_entry = MockConfigEntry(domain=DOMAIN, data={"name": "Test"}, options={})
     config_entry.add_to_hass(hass)
-    mock_coordinator.growspaces = {"gs1": Mock(name="Growspace 1")}
+    mock_coordinator.growspaces = {
+        "gs1": Mock(
+            name="Growspace 1",
+            environment_config=EnvironmentConfig(),
+            irrigation_config=IrrigationConfig(),
+        )
+    }
     mock_coordinator.get_sorted_growspace_options = Mock(
         return_value=[("gs1", "Growspace 1")]
     )
@@ -1547,7 +1563,13 @@ async def test_options_flow_configure_environment_show_form(
     """
     config_entry = MockConfigEntry(domain=DOMAIN, data={"name": "Test"}, options={})
     config_entry.add_to_hass(hass)
-    mock_coordinator.growspaces = {"gs1": Mock(name="Growspace 1")}
+    mock_coordinator.growspaces = {
+        "gs1": Mock(
+            name="Growspace 1",
+            environment_config=EnvironmentConfig(),
+            irrigation_config=IrrigationConfig(),
+        )
+    }
     config_entry.runtime_data = mock_coordinator
 
     flow = OptionsFlowHandler(config_entry)
@@ -1572,7 +1594,7 @@ async def test_options_flow_configure_environment_submit(
     """
     config_entry = MockConfigEntry(domain=DOMAIN, data={"name": "Test"}, options={})
     config_entry.add_to_hass(hass)
-    mock_growspace = Mock(name="Growspace 1", environment_config={})
+    mock_growspace = Mock(name="Growspace 1", environment_config=EnvironmentConfig())
     mock_coordinator.growspaces = {"gs1": mock_growspace}
     config_entry.runtime_data = mock_coordinator
 
@@ -1589,7 +1611,7 @@ async def test_options_flow_configure_environment_submit(
 
     assert result.get("type") == FlowResultType.CREATE_ENTRY
     # Environment config is saved to the growspace object, not config_entry options
-    assert mock_growspace.environment_config["temperature_sensor"] == "sensor.temp"
+    assert mock_growspace.environment_config.temperature_sensor == "sensor.temp"
     mock_coordinator.async_save.assert_called_once()
 
 
@@ -1605,7 +1627,7 @@ async def test_options_flow_configure_environment_advanced(
     """
     config_entry = MockConfigEntry(domain=DOMAIN, data={"name": "Test"}, options={})
     config_entry.add_to_hass(hass)
-    mock_growspace = Mock(name="Growspace 1", environment_config={})
+    mock_growspace = Mock(name="Growspace 1", environment_config=EnvironmentConfig())
     mock_coordinator.growspaces = {"gs1": mock_growspace}
     config_entry.runtime_data = mock_coordinator
 
@@ -1637,7 +1659,13 @@ async def test_options_flow_configure_advanced_bayesian_show_form(
     """
     config_entry = MockConfigEntry(domain=DOMAIN, data={"name": "Test"}, options={})
     config_entry.add_to_hass(hass)
-    mock_coordinator.growspaces = {"gs1": Mock(name="Growspace 1")}
+    mock_coordinator.growspaces = {
+        "gs1": Mock(
+            name="Growspace 1",
+            environment_config=EnvironmentConfig(),
+            irrigation_config=IrrigationConfig(),
+        )
+    }
     config_entry.runtime_data = mock_coordinator
 
     flow = OptionsFlowHandler(config_entry)
@@ -1663,7 +1691,7 @@ async def test_options_flow_configure_advanced_bayesian_submit(
     """
     config_entry = MockConfigEntry(domain=DOMAIN, data={"name": "Test"}, options={})
     config_entry.add_to_hass(hass)
-    mock_growspace = Mock(name="Growspace 1", environment_config={})
+    mock_growspace = Mock(name="Growspace 1", environment_config=EnvironmentConfig())
     mock_coordinator.growspaces = {"gs1": mock_growspace}
     config_entry.runtime_data = mock_coordinator
 
@@ -1677,8 +1705,12 @@ async def test_options_flow_configure_advanced_bayesian_submit(
 
     assert result.get("type") == FlowResultType.CREATE_ENTRY
     # Bayesian config is saved to the growspace object
-    assert "prob_temp_extreme_heat" in mock_growspace.environment_config
-    assert mock_growspace.environment_config["prob_temp_extreme_heat"] == (0.9, 0.1)
+    assert (
+        "prob_temp_extreme_heat" in mock_growspace.environment_config.bayesian_options
+    )
+    assert mock_growspace.environment_config.bayesian_options[
+        "prob_temp_extreme_heat"
+    ] == (0.9, 0.1)
     mock_coordinator.async_save.assert_called_once()
 
 
@@ -1696,7 +1728,7 @@ async def test_options_flow_configure_advanced_bayesian_invalid_tuple(
     """
     config_entry = MockConfigEntry(domain=DOMAIN, data={"name": "Test"}, options={})
     config_entry.add_to_hass(hass)
-    mock_growspace = Mock(name="Growspace 1", environment_config={})
+    mock_growspace = Mock(name="Growspace 1", environment_config=EnvironmentConfig())
     mock_coordinator.growspaces = {"gs1": mock_growspace}
     config_entry.runtime_data = mock_coordinator
 
@@ -1806,7 +1838,7 @@ async def test_options_flow_configure_advanced_bayesian_non_tuple_parsed_value(
     """
     config_entry = MockConfigEntry(domain=DOMAIN, data={"name": "Test"}, options={})
     config_entry.add_to_hass(hass)
-    mock_growspace = Mock(name="Growspace 1", environment_config={})
+    mock_growspace = Mock(name="Growspace 1", environment_config=EnvironmentConfig())
     mock_coordinator.growspaces = {"gs1": mock_growspace}
     config_entry.runtime_data = mock_coordinator
     flow = OptionsFlowHandler(config_entry)
@@ -1840,7 +1872,7 @@ async def test_options_flow_configure_advanced_bayesian_non_string_value(
     """
     config_entry = MockConfigEntry(domain=DOMAIN, data={"name": "Test"}, options={})
     config_entry.add_to_hass(hass)
-    mock_growspace = Mock(name="Growspace 1", environment_config={})
+    mock_growspace = Mock(name="Growspace 1", environment_config=EnvironmentConfig())
     mock_coordinator.growspaces = {"gs1": mock_growspace}
     config_entry.runtime_data = mock_coordinator
 
@@ -1855,7 +1887,10 @@ async def test_options_flow_configure_advanced_bayesian_non_string_value(
 
     assert result.get("type") == FlowResultType.CREATE_ENTRY
     # The flow updates the growspace object directly
-    assert mock_growspace.environment_config["prob_temp_extreme_heat"] == 0.9
+    assert (
+        mock_growspace.environment_config.bayesian_options["prob_temp_extreme_heat"]
+        == 0.9
+    )
 
 
 # ============================================================================
@@ -1870,7 +1905,7 @@ async def test_options_flow_configure_dehumidifier_show_form(
     """Test that the 'configure_dehumidifier' step shows the correct form."""
     config_entry = MockConfigEntry(domain=DOMAIN, data={"name": "Test"}, options={})
     config_entry.add_to_hass(hass)
-    mock_growspace = Mock(name="Growspace 1", environment_config={})
+    mock_growspace = Mock(name="Growspace 1", environment_config=EnvironmentConfig())
     mock_coordinator.growspaces = {"gs1": mock_growspace}
     config_entry.runtime_data = mock_coordinator
 
@@ -1892,7 +1927,7 @@ async def test_options_flow_configure_dehumidifier_submit(
     """Test the successful submission of the dehumidifier configuration form."""
     config_entry = MockConfigEntry(domain=DOMAIN, data={"name": "Test"}, options={})
     config_entry.add_to_hass(hass)
-    mock_growspace = Mock(name="Growspace 1", environment_config={})
+    mock_growspace = Mock(name="Growspace 1", environment_config=EnvironmentConfig())
     mock_coordinator.growspaces = {"gs1": mock_growspace}
     config_entry.runtime_data = mock_coordinator
 
@@ -1924,7 +1959,7 @@ async def test_options_flow_configure_dehumidifier_submit(
 
     assert result.get("type") == FlowResultType.CREATE_ENTRY
     assert (
-        mock_growspace.environment_config["dehumidifier_thresholds"]["veg"]["day"]["on"]
+        mock_growspace.environment_config.dehumidifier_thresholds["veg"]["day"]["on"]
         == 1.0
     )
     mock_coordinator.async_save.assert_called_once()
@@ -1984,8 +2019,12 @@ async def test_options_flow_select_growspace_for_irrigation_submit(
     """Test submitting the 'select_growspace_for_irrigation' form."""
     config_entry = MockConfigEntry(domain=DOMAIN, data={"name": "Test"}, options={})
     config_entry.add_to_hass(hass)
-    mock_gs = Mock(name="Growspace 1")
-    mock_gs.irrigation_config = {}
+    mock_gs = Mock(
+        name="Growspace 1",
+        environment_config=EnvironmentConfig(),
+        irrigation_config=IrrigationConfig(),
+    )
+    # mock_gs.irrigation_config = {} # REMOVED: Must use dataclass
     mock_coordinator.growspaces = {"gs1": mock_gs}
     mock_coordinator.get_sorted_growspace_options = Mock(
         return_value=[("gs1", "Growspace 1")]
@@ -2011,7 +2050,7 @@ async def test_options_flow_configure_irrigation_show_form(
     """Test that the 'configure_irrigation' step shows the correct form."""
     config_entry = MockConfigEntry(domain=DOMAIN, data={"name": "Test"}, options={})
     config_entry.add_to_hass(hass)
-    mock_growspace = Mock(name="Growspace 1", irrigation_config={})
+    mock_growspace = Mock(name="Growspace 1", irrigation_config=IrrigationConfig())
     mock_coordinator.growspaces = {"gs1": mock_growspace}
     config_entry.runtime_data = mock_coordinator
 
@@ -2032,7 +2071,7 @@ async def test_options_flow_configure_irrigation_submit(
     """Test the successful submission of the irrigation configuration form."""
     config_entry = MockConfigEntry(domain=DOMAIN, data={"name": "Test"}, options={})
     config_entry.add_to_hass(hass)
-    mock_growspace = Mock(name="Growspace 1", irrigation_config={})
+    mock_growspace = Mock(name="Growspace 1", irrigation_config=IrrigationConfig())
     mock_coordinator.growspaces = {"gs1": mock_growspace}
     config_entry.runtime_data = mock_coordinator
 
@@ -2049,7 +2088,7 @@ async def test_options_flow_configure_irrigation_submit(
     result = await flow.async_step_irrigation_overview(user_input=user_input)
 
     assert result.get("type") == FlowResultType.CREATE_ENTRY
-    assert mock_growspace.irrigation_config["irrigation_pump_entity"] == "switch.pump"
+    assert mock_growspace.irrigation_config.irrigation_pump_entity == "switch.pump"
     mock_coordinator.async_save.assert_called_once()
 
 
@@ -2376,7 +2415,7 @@ async def test_options_flow_configure_environment_jump_to_dehumidifier(
     config_entry = MockConfigEntry(domain=DOMAIN, data={"name": "Test"})
     config_entry.add_to_hass(hass)
 
-    mock_gs = Mock(name="GS1", environment_config={})
+    mock_gs = Mock(name="GS1", environment_config=EnvironmentConfig())
     mock_coordinator.growspaces = {"gs1": mock_gs}
     config_entry.runtime_data = mock_coordinator
 
@@ -2413,7 +2452,7 @@ async def test_options_flow_configure_environment_jump_to_advanced(
     config_entry = MockConfigEntry(domain=DOMAIN, data={"name": "Test"})
     config_entry.add_to_hass(hass)
 
-    mock_gs = Mock(name="GS1", environment_config={})
+    mock_gs = Mock(name="GS1", environment_config=EnvironmentConfig())
     mock_coordinator.growspaces = {"gs1": mock_gs}
     config_entry.runtime_data = mock_coordinator
 
@@ -2462,7 +2501,7 @@ async def test_options_flow_configure_dehumidifier_save_success(
     config_entry = MockConfigEntry(domain=DOMAIN, data={"name": "Test"})
     config_entry.add_to_hass(hass)
 
-    mock_gs = Mock(name="GS1", environment_config={})
+    mock_gs = Mock(name="GS1", environment_config=EnvironmentConfig())
     mock_coordinator.growspaces = {"gs1": mock_gs}
     config_entry.runtime_data = mock_coordinator
 
@@ -2584,11 +2623,15 @@ async def test_options_flow_irrigation_save_clears_pumps(
     config_entry = MockConfigEntry(domain=DOMAIN, data={"name": "Test"})
     config_entry.add_to_hass(hass)
 
-    mock_irrigation_config = {
-        "irrigation_pump_entity": "switch.original_pump",
-        "drain_pump_entity": "switch.original_drain",
-    }
-    mock_gs = Mock(name="GS1", irrigation_config=mock_irrigation_config)
+    mock_irrigation_config = IrrigationConfig(
+        irrigation_pump_entity="switch.original_pump",
+        drain_pump_entity="switch.original_drain",
+    )
+    mock_gs = Mock(
+        name="GS1",
+        irrigation_config=mock_irrigation_config,
+        environment_config=EnvironmentConfig(),
+    )
     mock_coordinator.growspaces = {"gs1": mock_gs}
     config_entry.runtime_data = mock_coordinator
 
@@ -2858,7 +2901,7 @@ async def test_options_flow_dehumidifier_jump_to_advanced(
     config_entry = MockConfigEntry(domain=DOMAIN, data={"name": "Test"})
     config_entry.add_to_hass(hass)
 
-    mock_gs = Mock(name="GS1", environment_config={})
+    mock_gs = Mock(name="GS1", environment_config=EnvironmentConfig())
     mock_coordinator.growspaces = {"gs1": mock_gs}
     config_entry.runtime_data = mock_coordinator
 

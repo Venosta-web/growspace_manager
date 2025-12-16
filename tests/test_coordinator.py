@@ -25,7 +25,11 @@ from custom_components.growspace_manager.const import (
     PlantStage,
 )
 from custom_components.growspace_manager.coordinator import GrowspaceCoordinator
-from custom_components.growspace_manager.models import Growspace, Plant
+from custom_components.growspace_manager.models import (
+    EnvironmentConfig,
+    Growspace,
+    Plant,
+)
 from custom_components.growspace_manager.utils import calculate_plant_stage
 
 
@@ -1342,7 +1346,7 @@ async def test_async_update_air_exchange_recommendations(hass: HomeAssistant) ->
     stress_sensor_entity_id = "binary_sensor.stress_gs_plants_under_stress"
     vpd_sensor_entity_id = "sensor.stress_gs_vpd"
 
-    gs.environment_config = {"vpd_sensor": vpd_sensor_entity_id}
+    gs.environment_config = EnvironmentConfig(vpd_sensor=vpd_sensor_entity_id)
     coordinator.data = {"bayesian_sensors_reason": {gs.id: {"target_vpd": 1.2}}}
 
     # Mock the entity registry to return the correct entity ID
@@ -2133,7 +2137,7 @@ async def test_async_update_air_exchange_recommendations_no_vpd(
     """Test _async_update_air_exchange_recommendations when VPD is not available."""
     coordinator = GrowspaceCoordinator(hass, data={})
     gs = await coordinator.async_add_growspace("Test GS")
-    gs.environment_config = {"vpd_sensor": "sensor.vpd"}
+    gs.environment_config = EnvironmentConfig(vpd_sensor="sensor.vpd")
     coordinator.data = {"bayesian_sensors_reason": {gs.id: {"target_vpd": None}}}
 
     with patch(

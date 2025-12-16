@@ -15,6 +15,9 @@ from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 from homeassistant.util import slugify
 
 from .const import (
+    CONF_HUMIDITY_SENSOR,
+    CONF_TEMP_SENSOR,
+    CONF_VPD_SENSOR,
     DOMAIN,
     EVENT_GROWSPACE_UPDATED,
     SPECIAL_GROWSPACES,
@@ -534,18 +537,20 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
     def _ensure_calculated_sensors(self) -> None:
         """Ensure default calculated sensors are configured in growspace config."""
         for growspace in self.growspaces.values():
-            env_config = growspace.environment_config or {}
-            temp_sensor = env_config.get("temperature_sensor")
-            humidity_sensor = env_config.get("humidity_sensor")
-            vpd_sensor = env_config.get("vpd_sensor")
+            env_config = growspace.environment_config
+            if not env_config:
+                continue
+
+            temp_sensor = getattr(env_config, CONF_TEMP_SENSOR, None)
+            humidity_sensor = getattr(env_config, CONF_HUMIDITY_SENSOR, None)
+            vpd_sensor = getattr(env_config, CONF_VPD_SENSOR, None)
 
             if temp_sensor and humidity_sensor and not vpd_sensor:
                 calc_name = f"{growspace.name} Calculated VPD"
                 expected_id = f"sensor.{slugify(calc_name)}"
 
                 # Patch config
-                env_config["vpd_sensor"] = expected_id
-                growspace.environment_config = env_config
+                setattr(env_config, CONF_VPD_SENSOR, expected_id)
                 _LOGGER.info("Configured default calculated VPD for %s", growspace.name)
 
     def update_data_property(self) -> None:

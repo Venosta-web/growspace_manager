@@ -1,4 +1,5 @@
 """Environment analyzer for air exchange recommendations."""
+
 from __future__ import annotations
 
 import logging
@@ -20,9 +21,7 @@ _LOGGER = logging.getLogger(__name__)
 class EnvironmentAnalyzer:
     """Analyzes environmental conditions and provides air exchange recommendations."""
 
-    def __init__(
-        self, hass: HomeAssistant, coordinator: GrowspaceCoordinator
-    ) -> None:
+    def __init__(self, hass: HomeAssistant, coordinator: GrowspaceCoordinator) -> None:
         """Initialize the environment analyzer.
 
         Args:
@@ -136,7 +135,7 @@ class EnvironmentAnalyzer:
         if not growspace:
             return "Idle"
 
-        min_temp = growspace.environment_config.get("minimum_source_air_temperature", 18)
+        min_temp = growspace.environment_config.minimum_source_air_temperature
         current_diff = abs(current_vpd - target_vpd)
         best_option = "Idle"
         best_diff = current_diff
@@ -204,7 +203,7 @@ class EnvironmentAnalyzer:
                 continue
 
             current_vpd = self._get_sensor_value(
-                growspace.environment_config.get("vpd_sensor")
+                growspace.environment_config.vpd_sensor
             )
             target_vpd = (
                 self.coordinator.data.get("bayesian_sensors_reason", {})

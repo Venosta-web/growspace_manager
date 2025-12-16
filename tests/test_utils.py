@@ -36,7 +36,7 @@ from custom_components.growspace_manager.utils import (
         (12345, None),
     ],
 )
-def test_parse_date_field(input_value, expected):
+def test_parse_date_field(input_value, expected) -> None:
     """Test the `parse_date_field` function with various input types.
 
     Args:
@@ -60,7 +60,7 @@ def test_parse_date_field(input_value, expected):
         (12345, None),
     ],
 )
-def test_format_date(input_value, expected):
+def test_format_date(input_value, expected) -> None:
     """Test the `format_date` function to ensure correct string formatting.
 
     Args:
@@ -73,7 +73,7 @@ def test_format_date(input_value, expected):
 # ----------------------------
 # calculate_days_since tests
 # ----------------------------
-def test_calculate_days_since():
+def test_calculate_days_since() -> None:
     """Test the `calculate_days_since` function."""
     start = date(2025, 11, 1)
     end = date(2025, 11, 3)
@@ -87,7 +87,7 @@ def test_calculate_days_since():
 # ----------------------------
 # find_first_free_position tests
 # ----------------------------
-def test_find_first_free_position():
+def test_find_first_free_position() -> None:
     """Test the `find_first_free_position` function in various scenarios."""
     growspace = Growspace(
         id="test",
@@ -109,7 +109,7 @@ def test_find_first_free_position():
 # ----------------------------
 # generate_growspace_grid tests
 # ----------------------------
-def test_generate_growspace_grid_basic():
+def test_generate_growspace_grid_basic() -> None:
     """Test the basic functionality of `generate_growspace_grid`."""
     plants = [
         Plant(plant_id="p1", row=1, col=1, strain="A", growspace_id="g1"),
@@ -122,7 +122,7 @@ def test_generate_growspace_grid_basic():
     ]
 
 
-def test_generate_growspace_grid_empty():
+def test_generate_growspace_grid_empty() -> None:
     """Test that `generate_growspace_grid` creates an empty grid correctly."""
     grid = generate_growspace_grid(2, 2, [])
     assert grid == [
@@ -146,7 +146,7 @@ def test_generate_growspace_grid_empty():
         (15, 3),
     ],
 )
-def test_days_to_week(days, expected):
+def test_days_to_week(days, expected) -> None:
     """Test the `days_to_week` function."""
     assert days_to_week(days) == expected
 
@@ -154,7 +154,7 @@ def test_days_to_week(days, expected):
 # ----------------------------
 # calculate_plant_stage tests
 # ----------------------------
-def test_calculate_plant_stage():
+def test_calculate_plant_stage() -> None:
     """Test the `calculate_plant_stage` function."""
     # 1. Special growspaces
     p = Plant(plant_id="p1", growspace_id="mother", strain="A")

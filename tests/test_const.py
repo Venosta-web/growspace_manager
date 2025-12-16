@@ -17,23 +17,23 @@ from custom_components.growspace_manager.const import (
 # --------------------
 
 
-def test_valid_date_or_none_with_valid_date():
+def test_valid_date_or_none_with_valid_date() -> None:
     """Test valid_date_or_none with a valid date object."""
     today = date.today()
     assert valid_date_or_none(today) == today
 
 
-def test_valid_date_or_none_with_none():
+def test_valid_date_or_none_with_none() -> None:
     """Test valid_date_or_none with None."""
     assert valid_date_or_none(None) is None
 
 
-def test_valid_date_or_none_with_empty_string():
+def test_valid_date_or_none_with_empty_string() -> None:
     """Test valid_date_or_none with an empty string."""
     assert valid_date_or_none("") is None
 
 
-def test_valid_date_or_none_with_iso_string():
+def test_valid_date_or_none_with_iso_string() -> None:
     """Test valid_date_or_none with a valid ISO date string."""
     today = date.today()
     iso_date = today.isoformat()
@@ -42,7 +42,7 @@ def test_valid_date_or_none_with_iso_string():
     assert valid_date_or_none(iso_date) == expected
 
 
-def test_valid_date_or_none_with_iso_string_with_z():
+def test_valid_date_or_none_with_iso_string_with_z() -> None:
     """Test valid_date_or_none with a valid ISO date string ending in Z."""
     today = date.today()
     iso_date = today.isoformat() + "Z"
@@ -51,7 +51,7 @@ def test_valid_date_or_none_with_iso_string_with_z():
     assert valid_date_or_none(iso_date) == expected
 
 
-def test_valid_date_or_none_with_invalid_string():
+def test_valid_date_or_none_with_invalid_string() -> None:
     """Test valid_date_or_none with an invalid date string."""
     with pytest.raises(vol.Invalid):
         valid_date_or_none("not a date")
@@ -62,18 +62,18 @@ def test_valid_date_or_none_with_invalid_string():
 # --------------------
 
 
-def test_valid_growspace_id_with_valid_id():
+def test_valid_growspace_id_with_valid_id() -> None:
     """Test valid_growspace_id with a valid ID."""
     assert valid_growspace_id("gs1") == "gs1"
 
 
-def test_valid_growspace_id_with_empty_string():
+def test_valid_growspace_id_with_empty_string() -> None:
     """Test valid_growspace_id with an empty string."""
     with pytest.raises(vol.Invalid):
         valid_growspace_id("")
 
 
-def test_valid_growspace_id_with_non_string():
+def test_valid_growspace_id_with_non_string() -> None:
     """Test valid_growspace_id with a non-string value."""
     with pytest.raises(vol.Invalid):
         valid_growspace_id(123)
@@ -84,7 +84,7 @@ def test_valid_growspace_id_with_non_string():
 # --------------------
 
 
-def test_add_plant_schema_with_optional_fields():
+def test_add_plant_schema_with_optional_fields() -> None:
     """Test ADD_PLANT_SCHEMA with all optional fields."""
     today = date.today()
     data = {
@@ -105,7 +105,7 @@ def test_add_plant_schema_with_optional_fields():
     assert validated == data
 
 
-def test_update_plant_schema_valid():
+def test_update_plant_schema_valid() -> None:
     """Test UPDATE_PLANT_SCHEMA with valid data."""
     data = {"plant_id": "p1", "seedling_days": "10", "veg_start": "2023-02-01"}
     # Schema coerces string dates to datetime objects if valid and days to integers

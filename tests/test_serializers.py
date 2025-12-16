@@ -8,7 +8,9 @@ from homeassistant.util import dt as dt_util
 
 from custom_components.growspace_manager.const import PlantStage
 from custom_components.growspace_manager.models import (
+    EnvironmentConfig,
     Growspace,
+    IrrigationConfig,
     IrrigationStrategy,
     Plant,
 )
@@ -30,20 +32,26 @@ def mock_growspace():
     gs.rows = 2
     gs.plants_per_row = 2
     gs.notification_target = "notify.mobile_app"
-    gs.irrigation_config = {}
+    gs.irrigation_config = IrrigationConfig()
+    # Ensure to_dict works or use attributes
+    # The serializer expects objects now? The serializer uses getattr/properties?
+    # Serializer code:
+    # env_config = growspace.environment_config
+    # dehumidifier_entity = env_config.dehumidifier_entity
+    # So it expects objects.
 
     strategy = MagicMock(spec=IrrigationStrategy)
     strategy.to_dict.return_value = {"enabled": False}
     strategy.enabled = False
     gs.irrigation_strategy = strategy
 
-    gs.environment_config = {
-        "temperature_sensor": "sensor.temp",
-        "humidity_sensor": "sensor.hum",
-        "vpd_sensor": "sensor.vpd",
-        "light_sensor": "binary_sensor.light",
-        "soil_moisture_sensor": "sensor.moisture",
-    }
+    gs.environment_config = EnvironmentConfig(
+        temperature_sensor="sensor.temp",
+        humidity_sensor="sensor.hum",
+        vpd_sensor="sensor.vpd",
+        light_sensor="binary_sensor.light",
+        soil_moisture_sensor="sensor.moisture",
+    )
     return gs
 
 
@@ -107,11 +115,13 @@ def test_calculate_days_in_stage(serializer, mock_plant):
 def test_determine_is_day(hass, serializer, mock_growspace):
     """Test is_day determination."""
     # Non-existent sensor -> default True
-    mock_growspace.environment_config = {}
+    mock_growspace.environment_config = EnvironmentConfig()
     assert serializer._determine_is_day(mock_growspace) is True
 
     # Binary Sensor On
-    mock_growspace.environment_config = {"light_sensor": "binary_sensor.light"}
+    mock_growspace.environment_config = EnvironmentConfig(
+        light_sensor="binary_sensor.light"
+    )
     hass.states.async_set("binary_sensor.light", "on")
     assert serializer._determine_is_day(mock_growspace) is True
 
@@ -120,7 +130,7 @@ def test_determine_is_day(hass, serializer, mock_growspace):
     assert serializer._determine_is_day(mock_growspace) is False
 
     # Numeric Sensor > 0
-    mock_growspace.environment_config = {"light_sensor": "sensor.lux"}
+    mock_growspace.environment_config = EnvironmentConfig(light_sensor="sensor.lux")
     hass.states.async_set("sensor.lux", "100")
     assert serializer._determine_is_day(mock_growspace) is True
 
@@ -156,8 +166,8 @@ def test_get_environment_attributes(hass, serializer, mock_growspace):
         "on",
         attributes={"humidity": 50, "current_humidity": 60, "mode": "auto"},
     )
-    mock_growspace.environment_config["dehumidifier_entity"] = "switch.dehum"
-    mock_growspace.environment_config["control_dehumidifier"] = True
+    mock_growspace.environment_config.dehumidifier_entity = "switch.dehum"
+    mock_growspace.environment_config.control_dehumidifier = True
 
     attrs = serializer._get_environment_attributes(mock_growspace)
 

@@ -49,11 +49,24 @@ from .const import (
     ATTR_REASONS,
     ATTR_THRESHOLD,
     ATTR_TIME_IN_CURRENT_STATE,
+    CONF_CIRCULATION_FAN,
+    CONF_CO2_SENSOR,
+    CONF_DEHUMIDIFIER_ENTITY,
+    CONF_HUMIDITY_SENSOR,
+    CONF_LIGHT_SENSOR,
+    CONF_STRESS_THRESHOLD,
+    CONF_TEMP_SENSOR,
+    CONF_VPD_SENSOR,
     DEFAULT_BAYESIAN_PRIORS,
     DEFAULT_BAYESIAN_THRESHOLDS,
     DEFAULT_FLOWER_DAY_HOURS,
     DEFAULT_VEG_DAY_HOURS,
     DOMAIN,
+    METRIC_CURING,
+    METRIC_DRYING,
+    METRIC_MOLD_RISK,
+    METRIC_OPTIMAL,
+    METRIC_STRESS,
     PlantStage,
 )
 from .coordinator import GrowspaceCoordinator
@@ -101,7 +114,7 @@ async def async_setup_entry(
 def _process_growspace_sensors(
     coordinator: GrowspaceCoordinator,
     growspace_id: str,
-    env_config: dict[str, Any],
+    env_config: Any,  # Should be EnvironmentConfig
     initialized_sensors: set[str],
     new_entities: list[BinarySensorEntity],
 ) -> None:
@@ -113,7 +126,7 @@ def _process_growspace_sensors(
             coordinator,
             growspace_id,
             env_config,
-            "drying",
+            METRIC_DRYING,
             BayesianDryingSensor,
             initialized_sensors,
             sensors_to_add,
@@ -133,7 +146,7 @@ def _process_growspace_sensors(
             coordinator,
             growspace_id,
             env_config,
-            "curing",
+            METRIC_CURING,
             BayesianCuringSensor,
             initialized_sensors,
             sensors_to_add,
@@ -153,7 +166,7 @@ def _process_growspace_sensors(
             coordinator,
             growspace_id,
             env_config,
-            "stress",
+            METRIC_STRESS,
             BayesianStressSensor,
             initialized_sensors,
             sensors_to_add,
@@ -171,14 +184,16 @@ def _process_growspace_sensors(
             coordinator,
             growspace_id,
             env_config,
-            "optimal",
+            METRIC_OPTIMAL,
             BayesianOptimalConditionsSensor,
             initialized_sensors,
             sensors_to_add,
         )
 
     # Light Cycle Verification (applies to all if light sensor exists)
-    if env_config.get("light_sensor"):
+    if getattr(env_config, "light_sensor", None) or (
+        isinstance(env_config, dict) and env_config.get(CONF_LIGHT_SENSOR)
+    ):
         _add_sensor_if_needed(
             coordinator,
             growspace_id,
@@ -195,7 +210,7 @@ def _process_growspace_sensors(
 def _add_sensor_if_needed(
     coordinator: GrowspaceCoordinator,
     growspace_id: str,
-    env_config: dict[str, Any],
+    env_config: Any,
     sensor_type: str,
     sensor_class: Any,
     initialized_sensors: set[str],
@@ -208,14 +223,21 @@ def _add_sensor_if_needed(
         initialized_sensors.add(key)
 
 
-def _validate_env_config(config: dict) -> bool:
+def _validate_env_config(config: Any) -> bool:
     """Validate that the required environment sensor entities are configured.
 
     VPD sensor can be either directly configured or calculated from temp and humidity.
     """
-    has_temp = bool(config.get("temperature_sensor"))
-    has_humidity = bool(config.get("humidity_sensor"))
-    has_vpd = bool(config.get("vpd_sensor"))
+    if isinstance(config, dict):
+        # Fallback for legacy dicts if any exist
+        has_temp = bool(config.get(CONF_TEMP_SENSOR))
+        has_humidity = bool(config.get(CONF_HUMIDITY_SENSOR))
+        has_vpd = bool(config.get(CONF_VPD_SENSOR))
+    else:
+        # Dataclass access
+        has_temp = bool(config.temperature_sensor)
+        has_humidity = bool(config.humidity_sensor)
+        has_vpd = bool(config.vpd_sensor)
 
     # Valid if we have temp, humidity, and either a VPD sensor or ability to calculate it
     return has_temp and has_humidity and (has_vpd or (has_temp and has_humidity))
@@ -245,8 +267,16 @@ class BayesianEnvironmentSensor(BinarySensorEntity):
         self._attr_name = f"{growspace.name} {name_suffix}"
         self._attr_unique_id = f"{DOMAIN}_{growspace_id}_{sensor_type}"
 
-        self.prior = env_config.get(prior_key, DEFAULT_BAYESIAN_PRIORS.get(sensor_type))
-        self.threshold = env_config.get(
+        # Access bayesian_options for these specific keys
+        bayesian_options = getattr(env_config, "bayesian_options", {})
+        # If env_config is a dict (legacy/mock), use it directly
+        if isinstance(env_config, dict):
+            bayesian_options = env_config
+
+        self.prior = bayesian_options.get(
+            prior_key, DEFAULT_BAYESIAN_PRIORS.get(sensor_type)
+        )
+        self.threshold = bayesian_options.get(
             threshold_key, DEFAULT_BAYESIAN_THRESHOLDS.get(sensor_type)
         )
 
@@ -274,24 +304,34 @@ class BayesianEnvironmentSensor(BinarySensorEntity):
         if growspace and growspace.environment_config:
             self.env_config = growspace.environment_config
 
-        temp = self._get_sensor_value(self.env_config.get("temperature_sensor"))
-        humidity = self._get_sensor_value(self.env_config.get("humidity_sensor"))
-        vpd = self._get_sensor_value(self.env_config.get("vpd_sensor"))
-        co2 = self._get_sensor_value(self.env_config.get("co2_sensor"))
+        # Helper to get attribute safely whether dict or object
+        def get_cfg(obj, key):
+            if isinstance(obj, dict):
+                return obj.get(key)
+            return getattr(obj, key, None)
+
+        temp = self._get_sensor_value(get_cfg(self.env_config, CONF_TEMP_SENSOR))
+        humidity = self._get_sensor_value(
+            get_cfg(self.env_config, CONF_HUMIDITY_SENSOR)
+        )
+        vpd = self._get_sensor_value(get_cfg(self.env_config, CONF_VPD_SENSOR))
+        co2 = self._get_sensor_value(get_cfg(self.env_config, CONF_CO2_SENSOR))
         stage_info = self._get_growth_stage_info()
         veg_days = stage_info["veg_days"]
         flower_days = stage_info["flower_days"]
 
         is_lights_on = self._determine_light_state()
 
-        fan_entity = self.env_config.get("circulation_fan")
+        fan_entity = get_cfg(self.env_config, "circulation_fan_entity") or get_cfg(
+            self.env_config, CONF_CIRCULATION_FAN
+        )
         fan_off = None
         if fan_entity:
             fan_state = self.hass.states.get(fan_entity)
             if fan_state and fan_state.state not in (STATE_UNAVAILABLE, STATE_UNKNOWN):
                 fan_off = fan_state.state == "off"
 
-        dehumidifier_entity = self.env_config.get("dehumidifier_entity")
+        dehumidifier_entity = get_cfg(self.env_config, CONF_DEHUMIDIFIER_ENTITY)
         dehumidifier_on = None
         if dehumidifier_entity:
             dehum_state = self.hass.states.get(dehumidifier_entity)
@@ -301,13 +341,17 @@ class BayesianEnvironmentSensor(BinarySensorEntity):
             ):
                 dehumidifier_on = dehum_state.state == "on"
 
-        exhaust_sensor = self.env_config.get("exhaust_sensor")
+        exhaust_sensor = get_cfg(self.env_config, "exhaust_fan_entity") or get_cfg(
+            self.env_config, "exhaust_sensor"
+        )
         exhaust_value = self._get_sensor_value(exhaust_sensor)
 
-        humidifier_sensor = self.env_config.get("humidifier_sensor")
+        humidifier_sensor = get_cfg(self.env_config, "humidifier_entity") or get_cfg(
+            self.env_config, "humidifier_sensor"
+        )
         humidifier_value = self._get_sensor_value(humidifier_sensor)
 
-        soil_moisture_sensor = self.env_config.get("soil_moisture_sensor")
+        soil_moisture_sensor = get_cfg(self.env_config, "soil_moisture_sensor")
         soil_moisture = self._get_sensor_value(soil_moisture_sensor)
 
         self._sensor_states = {
@@ -342,7 +386,10 @@ class BayesianEnvironmentSensor(BinarySensorEntity):
 
     def _determine_light_state(self) -> bool | None:
         """Determine the light state and trigger cooldown on switch."""
-        light_sensor = self.env_config.get("light_sensor")
+        if isinstance(self.env_config, dict):
+            light_sensor = self.env_config.get(CONF_LIGHT_SENSOR)
+        else:
+            light_sensor = getattr(self.env_config, CONF_LIGHT_SENSOR, None)
         current_lights_on = None
 
         if light_sensor:
@@ -378,17 +425,34 @@ class BayesianEnvironmentSensor(BinarySensorEntity):
         """Register callbacks when the entity is added to Home Assistant."""
         self.coordinator.async_add_listener(self._handle_coordinator_update)
 
-        sensors = [
-            self.env_config.get("temperature_sensor"),
-            self.env_config.get("humidity_sensor"),
-            self.env_config.get("vpd_sensor"),
-            self.env_config.get("co2_sensor"),
-            self.env_config.get("circulation_fan"),
-            self.env_config.get("dehumidifier_entity"),
-            self.env_config.get("exhaust_sensor"),
-            self.env_config.get("humidifier_sensor"),
-            self.env_config.get("soil_moisture_sensor"),
-        ]
+        if isinstance(self.env_config, dict):
+            # Legacy/Mock support
+            get = self.env_config.get
+            sensors = [
+                get(CONF_TEMP_SENSOR),
+                get(CONF_HUMIDITY_SENSOR),
+                get(CONF_VPD_SENSOR),
+                get(CONF_CO2_SENSOR),
+                get(CONF_CIRCULATION_FAN),
+                get(CONF_DEHUMIDIFIER_ENTITY),
+                get("exhaust_sensor"),
+                get("humidifier_sensor"),
+                get("soil_moisture_sensor"),
+            ]
+        else:
+            # Dataclass access
+            c = self.env_config
+            sensors = [
+                c.temperature_sensor,
+                c.humidity_sensor,
+                c.vpd_sensor,
+                c.co2_sensor,
+                getattr(c, "circulation_fan_entity", None),  # Handle migration naming
+                c.dehumidifier_entity,
+                c.exhaust_fan_entity,
+                c.humidifier_entity,
+                c.soil_moisture_sensor,
+            ]
 
         sensors_filtered: list[str] = [s for s in sensors if s]
 
@@ -585,10 +649,10 @@ class BayesianStressSensor(BayesianEnvironmentSensor):
             coordinator,
             growspace_id,
             env_config,
-            sensor_type="stress",
+            sensor_type=METRIC_STRESS,
             name_suffix="Plants Under Stress",
             prior_key="prior_stress",
-            threshold_key="stress_threshold",
+            threshold_key=CONF_STRESS_THRESHOLD,
         )
 
     def get_notification_title_message(
@@ -708,7 +772,7 @@ class LightCycleVerificationSensor(BinarySensorEntity):
             manufacturer="Growspace Manager",
         )
 
-        self.light_entity_id = self.env_config.get("light_sensor")
+        self.light_entity_id = self.env_config.get(CONF_LIGHT_SENSOR)
         self._is_correct = False
         self._last_checked: datetime | None = None
         self._time_in_current_state: timedelta = timedelta(0)
@@ -797,7 +861,12 @@ class LightCycleVerificationSensor(BinarySensorEntity):
 
         # Get configured day hours for the current stage
         if stage_key == PlantStage.VEG:
-            day_hours = self.env_config.get("veg_day_hours", DEFAULT_VEG_DAY_HOURS)
+            if isinstance(self.env_config, dict):
+                day_hours = self.env_config.get("veg_day_hours", DEFAULT_VEG_DAY_HOURS)
+            else:
+                day_hours = getattr(
+                    self.env_config, "veg_day_hours", DEFAULT_VEG_DAY_HOURS
+                )
         else:
             day_hours = self.env_config.get(
                 f"{stage_key}_day_hours", DEFAULT_FLOWER_DAY_HOURS

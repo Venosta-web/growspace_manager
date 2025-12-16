@@ -11,6 +11,13 @@ from homeassistant.helpers import entity_registry as er
 
 from .bayesian_data import VPD_STRESS_THRESHOLDS
 from .const import (
+    CONF_CIRCULATION_FAN,
+    CONF_CO2_SENSOR,
+    CONF_DEHUMIDIFIER_ENTITY,
+    CONF_HUMIDITY_SENSOR,
+    CONF_LIGHT_SENSOR,
+    CONF_TEMP_SENSOR,
+    CONF_VPD_SENSOR,
     DEFAULT_FLOWER_EARLY_DAYS,
     DEFAULT_VEG_EARLY_DAYS,
     DOMAIN,
@@ -65,7 +72,8 @@ class GrowspaceSerializer:
         )
 
         # Get irrigation settings
-        irrigation_options = growspace.irrigation_config
+        # Get irrigation settings
+        irrigation_options = growspace.irrigation_config.to_dict()
         irrigation_strategy_dict = (
             growspace.irrigation_strategy.to_dict()
             if growspace.irrigation_strategy
@@ -203,8 +211,7 @@ class GrowspaceSerializer:
         danger_min, danger_max = cycle_data.get("stress", (0.6, 1.4))
 
         vpd_status = "unknown"
-        vpd_sensor_id = growspace.environment_config.get("vpd_sensor")
-
+        vpd_sensor_id = growspace.environment_config.vpd_sensor
         if vpd_sensor_id:
             current_vpd = self._get_sensor_value(vpd_sensor_id)
             if current_vpd is not None:
@@ -247,7 +254,7 @@ class GrowspaceSerializer:
 
     def _determine_is_day(self, growspace: Growspace) -> bool:
         """Determine if it is currently day or night in the growspace."""
-        light_sensor = growspace.environment_config.get("light_sensor")
+        light_sensor = growspace.environment_config.light_sensor
         if light_sensor:
             light_state = self.hass.states.get(light_sensor)
             if light_state and light_state.state not in (
@@ -276,17 +283,17 @@ class GrowspaceSerializer:
         except (ValueError, TypeError):
             return None
 
-    def _get_environment_attributes(self, growspace: Growspace) -> dict[str, Any]:
+    def _get_environment_attributes(self, growspace: Growspace) -> dict[str, Any]:  # noqa: C901
         """Get environment-related attributes."""
         attributes = {}
         if growspace.environment_config:
             env_config = growspace.environment_config
 
             # Dehumidifier
-            dehumidifier_entity = env_config.get("dehumidifier_entity")
+            dehumidifier_entity = env_config.dehumidifier_entity
             if dehumidifier_entity:
                 state_obj = self.hass.states.get(dehumidifier_entity)
-                attributes["dehumidifier_entity"] = dehumidifier_entity
+                attributes[CONF_DEHUMIDIFIER_ENTITY] = dehumidifier_entity
                 attributes["dehumidifier_state"] = (
                     state_obj.state if state_obj else None
                 )
@@ -298,37 +305,33 @@ class GrowspaceSerializer:
                         state_obj.attributes.get("current_humidity")
                     )
                     attributes["dehumidifier_mode"] = state_obj.attributes.get("mode")
-                    attributes["dehumidifier_control_enabled"] = env_config.get(
-                        "control_dehumidifier", False
+                    attributes["dehumidifier_control_enabled"] = (
+                        env_config.control_dehumidifier
                     )
 
-            # Exhaust Sensor (check both exhaust_entity and exhaust_sensor keys)
-            exhaust_entity = env_config.get("exhaust_entity") or env_config.get(
-                "exhaust_sensor"
-            )
+            # Exhaust Sensor
+            exhaust_entity = env_config.exhaust_fan_entity
             if exhaust_entity:
                 state_obj = self.hass.states.get(exhaust_entity)
                 attributes["exhaust_entity"] = exhaust_entity
                 attributes["exhaust_state"] = state_obj.state if state_obj else None
 
-            # Humidifier Sensor (check both humidifier_entity and humidifier_sensor keys)
-            humidifier_entity = env_config.get("humidifier_entity") or env_config.get(
-                "humidifier_sensor"
-            )
+            # Humidifier Sensor
+            humidifier_entity = env_config.humidifier_entity
             if humidifier_entity:
                 state_obj = self.hass.states.get(humidifier_entity)
                 attributes["humidifier_entity"] = humidifier_entity
                 attributes["humidifier_state"] = state_obj.state if state_obj else None
 
             # VPD Sensor
-            vpd_entity = env_config.get("vpd_sensor")
+            vpd_entity = env_config.vpd_sensor
             if vpd_entity:
                 state_obj = self.hass.states.get(vpd_entity)
-                attributes["vpd_sensor"] = vpd_entity
+                attributes[CONF_VPD_SENSOR] = vpd_entity
                 attributes["vpd"] = state_obj.state if state_obj else None
 
             # Soil Moisture Sensor
-            soil_moisture_entity = env_config.get("soil_moisture_sensor")
+            soil_moisture_entity = env_config.soil_moisture_sensor
             if soil_moisture_entity:
                 state_obj = self.hass.states.get(soil_moisture_entity)
                 attributes["soil_moisture_sensor"] = soil_moisture_entity
@@ -336,23 +339,25 @@ class GrowspaceSerializer:
                     state_obj.state if state_obj else None
                 )
 
-            # Map other simple keys that don't need state lookups or were already mapped
-            keys_to_map = {
-                "temperature_sensor": "temperature_sensor",
-                "humidity_sensor": "humidity_sensor",
-                "co2_sensor": "co2_sensor",
-                "light_sensor": "light_sensor",
-            }
+            # Map other simple keys
+            keys_to_map = [
+                CONF_TEMP_SENSOR,
+                CONF_HUMIDITY_SENSOR,
+                CONF_CO2_SENSOR,
+                CONF_LIGHT_SENSOR,
+            ]
 
-            for config_key, output_key in keys_to_map.items():
-                if val := env_config.get(config_key):
-                    attributes[output_key] = val
+            for key in keys_to_map:
+                if val := getattr(env_config, key):
+                    attributes[key] = val
 
-            # Circulation fan (check both circulation_fan_entity and circulation_fan keys)
-            circulation_fan = env_config.get(
-                "circulation_fan_entity"
-            ) or env_config.get("circulation_fan")
-            if circulation_fan:
-                attributes["circulation_fan_entity"] = circulation_fan
+            # Circulation fan
+            circulation_fan_entity = env_config.circulation_fan_entity
+            if circulation_fan_entity:
+                state_obj = self.hass.states.get(circulation_fan_entity)
+                attributes[CONF_CIRCULATION_FAN] = circulation_fan_entity
+                attributes["circulation_fan_state"] = (
+                    state_obj.state if state_obj else None
+                )
 
         return attributes

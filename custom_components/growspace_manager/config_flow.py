@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import logging
 import uuid
+from dataclasses import asdict
 from typing import Any
 
 import homeassistant.helpers.config_validation as cv
@@ -31,6 +32,7 @@ from .const import (
     DEFAULT_NAME,
     DOMAIN,
 )
+from .models import EnvironmentConfig
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -625,7 +627,11 @@ class OptionsFlowHandler(OptionsFlow):
         if not growspace:
             return self.async_abort(reason="growspace_not_found")
 
-        growspace_options = growspace.environment_config or {}
+        # Prepare defaults using dataclass
+        if growspace.environment_config:
+            growspace_options = asdict(growspace.environment_config)
+        else:
+            growspace_options = {}
 
         _LOGGER.debug(
             "Loading environment config for growspace %s: %s",
@@ -654,7 +660,7 @@ class OptionsFlowHandler(OptionsFlow):
             if self._env_config_step1.get("configure_advanced"):
                 return await self.async_step_configure_advanced_bayesian()
 
-            growspace.environment_config = env_config
+            growspace.environment_config = EnvironmentConfig.from_dict(env_config)
             await coordinator.async_save()
             await coordinator.async_refresh()
 
@@ -692,7 +698,9 @@ class OptionsFlowHandler(OptionsFlow):
 
         # Load existing thresholds or defaults
         current_thresholds = (
-            growspace.environment_config.get("dehumidifier_thresholds") or {}
+            growspace.environment_config.dehumidifier_thresholds
+            if growspace.environment_config
+            else {}
         )
 
         if user_input is not None:
@@ -717,7 +725,9 @@ class OptionsFlowHandler(OptionsFlow):
 
             # Save and finish
             env_config.pop("configure_advanced", None)
-            growspace.environment_config = env_config
+            # Save and finish
+            env_config.pop("configure_advanced", None)
+            growspace.environment_config = EnvironmentConfig.from_dict(env_config)
             await coordinator.async_save()
             await coordinator.async_refresh()
             return self.async_create_entry(title="", data={})
@@ -768,7 +778,7 @@ class OptionsFlowHandler(OptionsFlow):
                     description_placeholders={"growspace_name": growspace.name},
                 )
 
-            growspace.environment_config = env_config
+            growspace.environment_config = EnvironmentConfig.from_dict(env_config)
             await coordinator.async_save()
             await coordinator.async_refresh()
 
@@ -944,7 +954,7 @@ class OptionsFlowHandler(OptionsFlow):
             return self.async_abort(reason="growspace_not_found")
 
         # Load ALL current irrigation options for the growspace from the Growspace object
-        irrigation_options = growspace.irrigation_config
+        irrigation_options = asdict(growspace.irrigation_config)
 
         if user_input is not None:
             # 1. Update the Growspace object directly
@@ -970,7 +980,9 @@ class OptionsFlowHandler(OptionsFlow):
                 updated_settings["drain_pump_entity"] = None
 
             # Update the config in the growspace object
-            growspace.irrigation_config.update(updated_settings)
+            for k, v in updated_settings.items():
+                if hasattr(growspace.irrigation_config, k):
+                    setattr(growspace.irrigation_config, k, v)
 
             # Save via coordinator
             await coordinator.async_save()
