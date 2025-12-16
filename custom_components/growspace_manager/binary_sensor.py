@@ -13,7 +13,6 @@ from datetime import date, datetime, timedelta
 from typing import Any
 
 from homeassistant.components.binary_sensor import BinarySensorEntity
-from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import STATE_UNAVAILABLE, STATE_UNKNOWN
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.device_registry import DeviceInfo
@@ -21,6 +20,7 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.event import async_track_state_change_event
 from homeassistant.util.dt import utcnow
 
+from . import GrowspaceConfigEntry
 from .bayesian_data import (
     CURING_THRESHOLDS,
     DRYING_THRESHOLDS,
@@ -42,6 +42,13 @@ from .bayesian_evaluator import (
     evaluate_soil_moisture_stress,
 )
 from .const import (
+    ATTR_EXPECTED_SCHEDULE,
+    ATTR_LIGHT_ENTITY_ID,
+    ATTR_OBSERVATIONS,
+    ATTR_PROBABILITY,
+    ATTR_REASONS,
+    ATTR_THRESHOLD,
+    ATTR_TIME_IN_CURRENT_STATE,
     DEFAULT_BAYESIAN_PRIORS,
     DEFAULT_BAYESIAN_THRESHOLDS,
     DEFAULT_FLOWER_DAY_HOURS,
@@ -58,11 +65,11 @@ _LOGGER = logging.getLogger(__name__)
 
 async def async_setup_entry(
     hass: HomeAssistant,
-    config_entry: ConfigEntry,
+    entry: GrowspaceConfigEntry,
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     """Set up the Growspace Manager Bayesian binary sensors from a config entry."""
-    coordinator = config_entry.runtime_data
+    coordinator = entry.runtime_data
 
     # Track initialized growspace IDs to prevent duplicates
     # We store the SET of created sensor types for each growspace to be robust
@@ -158,7 +165,7 @@ async def async_setup_entry(
     await _update_binary_sensors()
 
     # Listen for coordinator updates to add new sensors dynamically
-    config_entry.async_on_unload(
+    entry.async_on_unload(
         coordinator.async_add_listener(
             lambda: hass.async_create_task(_update_binary_sensors())
         )
@@ -526,10 +533,10 @@ class BayesianEnvironmentSensor(BinarySensorEntity):
     def extra_state_attributes(self) -> dict[str, Any]:
         """Return the state attributes for the entity."""
         return {
-            "probability": round(self._probability, 3),
-            "threshold": self.threshold,
-            "observations": self._sensor_states,
-            "reasons": [r[1] for r in sorted(self._reasons, reverse=True)],
+            ATTR_PROBABILITY: round(self._probability, 3),
+            ATTR_THRESHOLD: self.threshold,
+            ATTR_OBSERVATIONS: self._sensor_states,
+            ATTR_REASONS: [r[1] for r in sorted(self._reasons, reverse=True)],
         }
 
 
@@ -794,9 +801,9 @@ class LightCycleVerificationSensor(BinarySensorEntity):
         expected_schedule = f"{day_hours}/{24 - day_hours}"
 
         return {
-            "expected_schedule": expected_schedule,
-            "light_entity_id": self.light_entity_id,
-            "time_in_current_state": str(self._time_in_current_state),
+            ATTR_EXPECTED_SCHEDULE: expected_schedule,
+            ATTR_LIGHT_ENTITY_ID: self.light_entity_id,
+            ATTR_TIME_IN_CURRENT_STATE: str(self._time_in_current_state),
         }
 
 

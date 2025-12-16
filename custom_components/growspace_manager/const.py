@@ -38,8 +38,23 @@ ATTR_NUM_CLONES = "num_clones"
 
 ATTR_TOTAL_DAYS = "total_days"
 
+ATTR_PROBABILITY = "probability"
+ATTR_THRESHOLD = "threshold"
+ATTR_OBSERVATIONS = "observations"
+ATTR_REASONS = "reasons"
+ATTR_EXPECTED_SCHEDULE = "expected_schedule"
+ATTR_LIGHT_ENTITY_ID = "light_entity_id"
+ATTR_TIME_IN_CURRENT_STATE = "time_in_current_state"
+
+ATTR_NAME = "name"
+ATTR_ROWS = "rows"
+ATTR_PLANTS_PER_ROW = "plants_per_row"
+ATTR_NOTIFICATION_TARGET = "notification_target"
+
 # Events
 EVENT_GROWSPACE_UPDATED = f"{DOMAIN}_updated"
+EVENT_GROWSPACE_ADDED = f"{DOMAIN}_growspace_added"
+EVENT_GROWSPACE_REMOVED = f"{DOMAIN}_growspace_removed"
 EVENT_PLANT_ADDED = f"{DOMAIN}_plant_added"
 EVENT_PLANT_UPDATED = f"{DOMAIN}_plant_updated"
 EVENT_PLANT_REMOVED = f"{DOMAIN}_plant_removed"
@@ -56,6 +71,7 @@ ICON_VPD = "mdi:cloud-check-variant"
 ICON_CALCULATED_VPD = "mdi:cloud-percent"
 ICON_AIR_EXCHANGE = "mdi:air-filter"
 ICON_STRAIN_LIBRARY = "mdi:leaf"
+ICON_NOTIFICATION = "mdi:bell"
 
 # Default Photoperiods (Hours of Light)
 DEFAULT_VEG_DAY_HOURS = 18

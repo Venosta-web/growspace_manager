@@ -11,12 +11,12 @@ import logging
 from typing import Any
 
 from homeassistant.components.switch import SwitchEntity
-from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
-from .const import DOMAIN
+from . import GrowspaceConfigEntry
+from .const import DOMAIN, ICON_NOTIFICATION
 from .models import Growspace
 
 _LOGGER = logging.getLogger(__name__)
@@ -24,11 +24,11 @@ _LOGGER = logging.getLogger(__name__)
 
 async def async_setup_entry(
     hass: HomeAssistant,
-    config_entry: ConfigEntry,
+    entry: GrowspaceConfigEntry,
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     """Set up the Growspace Manager switch platform from a config entry."""
-    coordinator = config_entry.runtime_data
+    coordinator = entry.runtime_data
     entities = []
 
     # Create notification switches for each growspace
@@ -63,7 +63,7 @@ class GrowspaceNotificationSwitch(SwitchEntity):
         self._growspace = growspace
         self._attr_unique_id = f"{DOMAIN}_{growspace_id}_notifications"
         self._attr_name = f"{growspace.name} Notifications"
-        self._attr_icon = "mdi:bell"
+        self._attr_icon = ICON_NOTIFICATION
 
         # Set up device info
         self._attr_device_info = DeviceInfo(

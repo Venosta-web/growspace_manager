@@ -50,7 +50,7 @@ class PlantLifecycleManager:
                 final_row, final_col = row, col
             except ValueError:
                 _LOGGER.info(
-                    "Position (%d, %d) in growspace %s is occupied. Finding first available.",
+                    "Position (%d, %d) in growspace %s is occupied. Finding first available",
                     row,
                     col,
                     growspace_id,
