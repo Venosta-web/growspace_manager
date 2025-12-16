@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import itertools
 import logging
 from datetime import timedelta
 from typing import Any
@@ -55,25 +56,31 @@ class TrendAnalyzer:
                     # Skip states that cannot be converted to float
                     continue
 
-            if len(numeric_states) < 2:
-                return {"trend": "stable", "crossed_threshold": False}
-
-            # Trend calculation (simplified: change between first and last value)
-            start_value = numeric_states[0][1]
-            end_value = numeric_states[-1][1]
-            change = end_value - start_value
-
-            trend = "stable"
-            if change > 0.01:
-                trend = "rising"
-            elif change < -0.01:
-                trend = "falling"
+            values = [val for _, val in numeric_states]
+            trend = self._calculate_trend_direction(values)
 
             # Check if value was consistently above threshold
-            crossed_threshold = all(value > threshold for _, value in numeric_states)
+            crossed_threshold = all(value > threshold for value in values)
 
             return {"trend": trend, "crossed_threshold": crossed_threshold}
 
         except (AttributeError, TypeError, ValueError) as e:
             _LOGGER.error("Error analyzing sensor history for %s: %s", sensor_id, e)
             return {"trend": "unknown", "crossed_threshold": False}
+
+    def _calculate_trend_direction(self, values: list[float]) -> str:
+        """Calculate trend direction using pairwise comparison."""
+        if len(values) < 2:
+            return "stable"
+
+        # Calculate deltas between consecutive points
+        deltas = [y - x for x, y in itertools.pairwise(values)]
+        net_change = sum(deltas)
+
+        match net_change:
+            case x if x > 0.01:
+                return "rising"
+            case x if x < -0.01:
+                return "falling"
+            case _:
+                return "stable"

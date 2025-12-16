@@ -7,8 +7,7 @@ import logging
 from typing import Any
 
 import voluptuous as vol
-from homeassistant.config_entries import ConfigEntry
-from homeassistant.core import HomeAssistant
+
 from homeassistant.helpers import selector
 
 from ..const import (
@@ -26,27 +25,13 @@ from ..const import (
 )
 from ..dehumidifier_coordinator import DEFAULT_THRESHOLDS
 
+from . import BaseConfigHandler
+
 _LOGGER = logging.getLogger(__name__)
 
 
-class EnvironmentConfigHandler:
+class EnvironmentConfigHandler(BaseConfigHandler[dict[str, Any]]):
     """Handle environment configuration steps."""
-
-    def __init__(self, hass: HomeAssistant, config_entry: ConfigEntry) -> None:
-        """Initialize the handler."""
-        self.hass = hass
-        self.config_entry = config_entry
-
-    def process_environment_input(
-        self, user_input: dict[str, Any], growspace_options: dict[str, Any]
-    ) -> dict[str, Any]:
-        """Process user input and merge with existing options."""
-        user_input = {k: v for k, v in user_input.items() if v is not None and v != ""}
-
-        env_config = growspace_options.copy()
-        env_config.update(user_input)
-
-        return env_config
 
     def get_environment_schema_step1(
         self, growspace_options: dict[str, Any]

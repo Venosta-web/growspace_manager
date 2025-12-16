@@ -2423,17 +2423,14 @@ async def test_options_flow_configure_environment_jump_to_dehumidifier(
     flow.hass = hass
     flow._selected_growspace_id = "gs1"
 
-    # Mock handler
-    flow.env_handler.process_environment_input = Mock(
-        return_value={
+    # Submit Step 1 with keys that trigger the jump
+    result = await flow.async_step_configure_environment(
+        user_input={
             "configure_dehumidifier": True,
             "control_dehumidifier": True,
             "temp_sensor": "sensor.temp",
         }
     )
-
-    # Submit Step 1
-    result = await flow.async_step_configure_environment(user_input={})
 
     # Should transition to configure_dehumidifier
     # Since we didn't implement the form logic for that step in this test setup,
@@ -2461,13 +2458,9 @@ async def test_options_flow_configure_environment_jump_to_advanced(
     flow._selected_growspace_id = "gs1"
 
     # Mock handler
-    flow.env_handler.process_environment_input = Mock(
-        return_value={
-            "configure_advanced": True,
-        }
+    result = await flow.async_step_configure_environment(
+        user_input={"configure_advanced": True}
     )
-
-    result = await flow.async_step_configure_environment(user_input={})
 
     # Expect jump to advanced bayesian
     assert result["type"] == FlowResultType.FORM

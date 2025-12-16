@@ -7,20 +7,16 @@ import logging
 from typing import Any
 
 import voluptuous as vol
-from homeassistant.config_entries import ConfigEntry
-from homeassistant.core import HomeAssistant
+
 from homeassistant.helpers import selector
+
+from . import BaseConfigHandler
 
 _LOGGER = logging.getLogger(__name__)
 
 
-class IrrigationConfigHandler:
+class IrrigationConfigHandler(BaseConfigHandler[dict[str, Any]]):
     """Handle irrigation configuration steps."""
-
-    def __init__(self, hass: HomeAssistant, config_entry: ConfigEntry) -> None:
-        """Initialize the handler."""
-        self.hass = hass
-        self.config_entry = config_entry
 
     def get_irrigation_overview_schema(
         self, irrigation_options: dict[str, Any], growspace_id: str

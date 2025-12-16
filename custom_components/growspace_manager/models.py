@@ -23,7 +23,7 @@ type DehumidifierThresholds = dict[str, Any]
 type BayesianOptions = dict[str, Any]
 
 
-@dataclass
+@dataclass(slots=True)
 class BaseModel:
     """Base class providing generic serialization methods."""
 
@@ -82,7 +82,7 @@ class BaseModel:
         return cls(**filtered_data)
 
 
-@dataclass
+@dataclass(slots=True)
 class IrrigationStrategy(BaseModel):
     """Configuration for VWC-based crop steering strategy.
 
@@ -107,7 +107,7 @@ class IrrigationStrategy(BaseModel):
     shot_interval_minutes: int = 15
 
 
-@dataclass
+@dataclass(slots=True)
 class EnvironmentConfig(BaseModel):
     """Configuration for environment sensors and devices."""
 
@@ -139,7 +139,7 @@ class EnvironmentConfig(BaseModel):
     }
 
 
-@dataclass
+@dataclass(slots=True)
 class IrrigationConfig(BaseModel):
     """Configuration for irrigation and drain pumps and schedules."""
 
@@ -152,7 +152,7 @@ class IrrigationConfig(BaseModel):
     veg_day_hours: int = 12
 
 
-@dataclass
+@dataclass(slots=True)
 class Growspace(BaseModel):
     """Represents a single growspace area.
 
@@ -190,7 +190,7 @@ class Growspace(BaseModel):
     }
 
 
-@dataclass
+@dataclass(slots=True)
 class Plant(BaseModel):
     """Represents a single plant.
 
@@ -259,7 +259,7 @@ class Plant(BaseModel):
         return days_to_week(days)
 
 
-@dataclass
+@dataclass(slots=True)
 class EnvironmentState:
     """Represents a snapshot of the current environment state in a growspace.
 
@@ -292,7 +292,7 @@ class EnvironmentState:
     soil_moisture: float | None = None
 
 
-@dataclass
+@dataclass(slots=True)
 class GrowspaceEvent(BaseModel):
     """Represents a historical significant event in a growspace.
 

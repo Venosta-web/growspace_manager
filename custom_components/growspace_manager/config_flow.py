@@ -640,8 +640,9 @@ class OptionsFlowHandler(OptionsFlow):
         )
 
         if user_input is not None:
-            self._env_config_step1 = self.env_handler.process_environment_input(
-                user_input, growspace_options
+            cleaned_input = self.env_handler.clean_input(user_input)
+            self._env_config_step1 = self.env_handler.merge_options(
+                growspace_options, cleaned_input
             )
 
             # Already filtered above, but keep this as a safety check
