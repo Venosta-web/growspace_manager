@@ -580,7 +580,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
         for growspace_id, growspace in self.growspaces.items():
             plants = self.get_growspace_plants(growspace_id)
             serialized_growspaces[growspace_id] = self.serializer.serialize_growspace(
-                growspace, plants
+                growspace, plants, self.environment_analyzer
             )
 
         self.data: GrowspaceCoordinatorData = {
@@ -1177,7 +1177,9 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
         """Build the full JSON payload for a single growspace."""
         growspace = self.growspaces[growspace_id]
         plants = self.get_growspace_plants(growspace_id)
-        return self.serializer.serialize_growspace(growspace, plants)
+        return self.serializer.serialize_growspace(
+            growspace, plants, self.environment_analyzer
+        )
 
     async def async_start_flowering(self, plant_id: str) -> Plant:
         """Transition a plant to the 'flower' stage, starting today."""

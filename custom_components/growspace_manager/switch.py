@@ -8,9 +8,10 @@ notifications for that specific area.
 from __future__ import annotations
 
 import logging
+from dataclasses import dataclass
 from typing import Any
 
-from homeassistant.components.switch import SwitchEntity
+from homeassistant.components.switch import SwitchEntity, SwitchEntityDescription
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
@@ -22,6 +23,23 @@ from .models import Growspace
 _LOGGER = logging.getLogger(__name__)
 
 
+@dataclass(frozen=True, kw_only=True)
+class GrowspaceSwitchDescription(SwitchEntityDescription):
+    """Class describing Growspace Manager switch entities."""
+
+    has_entity_name: bool = True
+
+
+NOTIFICATION_SWITCH = GrowspaceSwitchDescription(
+    key="notifications",
+    translation_key="notifications",
+    icon=ICON_NOTIFICATION,
+    name="Notifications",
+)
+
+SWITCH_TYPES: tuple[GrowspaceSwitchDescription, ...] = (NOTIFICATION_SWITCH,)
+
+
 async def async_setup_entry(
     hass: HomeAssistant,
     entry: GrowspaceConfigEntry,
@@ -29,43 +47,45 @@ async def async_setup_entry(
 ) -> None:
     """Set up the Growspace Manager switch platform from a config entry."""
     coordinator = entry.runtime_data
-    entities = []
+    entities: list[GrowspaceNotificationSwitch] = []
 
-    # Create notification switches for each growspace
+    # Create switches for each growspace
     for growspace_id, growspace in coordinator.growspaces.items():
+        # Notifications switch
         if growspace.notification_target:
             entities.append(
-                GrowspaceNotificationSwitch(coordinator, growspace_id, growspace)
+                GrowspaceNotificationSwitch(
+                    coordinator, growspace_id, growspace, NOTIFICATION_SWITCH
+                )
             )
 
     if entities:
         async_add_entities(entities)
-        _LOGGER.debug("Added %d notification switches", len(entities))
+        _LOGGER.debug("Added %d switches", len(entities))
 
 
 class GrowspaceNotificationSwitch(SwitchEntity):
-    """A switch entity to control notifications for a specific growspace.
+    """A switch entity to control notifications for a specific growspace."""
 
-    This switch allows the user to easily enable or disable all notifications
-    originating from a particular growspace.
-    """
+    entity_description: GrowspaceSwitchDescription
+    _attr_has_entity_name = True
 
-    def __init__(self, coordinator, growspace_id: str, growspace: Growspace) -> None:
-        """Initialize the GrowspaceNotificationSwitch.
-
-        Args:
-            coordinator: The data update coordinator.
-            growspace_id: The ID of the growspace this switch controls.
-            growspace: The Growspace data object.
-        """
+    def __init__(
+        self,
+        coordinator,
+        growspace_id: str,
+        growspace: Growspace,
+        description: GrowspaceSwitchDescription,
+    ) -> None:
+        """Initialize the GrowspaceNotificationSwitch."""
+        self.entity_description = description
         self._coordinator = coordinator
         self._growspace_id = growspace_id
         self._growspace = growspace
-        self._attr_unique_id = f"{DOMAIN}_{growspace_id}_notifications"
-        self._attr_name = f"{growspace.name} Notifications"
-        self._attr_icon = ICON_NOTIFICATION
 
-        # Set up device info
+        self._attr_unique_id = f"{DOMAIN}_{growspace_id}_{description.key}"
+
+        # Set up device info using dot notation from typed model
         self._attr_device_info = DeviceInfo(
             identifiers={(DOMAIN, growspace_id)},
             name=growspace.name,

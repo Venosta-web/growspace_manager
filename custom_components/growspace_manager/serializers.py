@@ -5,11 +5,11 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from homeassistant.const import STATE_ON, STATE_UNAVAILABLE, STATE_UNKNOWN
+from homeassistant.const import STATE_UNAVAILABLE, STATE_UNKNOWN
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import entity_registry as er
 
-from .bayesian_data import VPD_STRESS_THRESHOLDS
+from .environment_analyzer import EnvironmentAnalyzer
 from .const import (
     CONF_CIRCULATION_FAN,
     CONF_CO2_SENSOR,
@@ -18,8 +18,6 @@ from .const import (
     CONF_LIGHT_SENSOR,
     CONF_TEMP_SENSOR,
     CONF_VPD_SENSOR,
-    DEFAULT_FLOWER_EARLY_DAYS,
-    DEFAULT_VEG_EARLY_DAYS,
     DOMAIN,
     PlantStage,
 )
@@ -31,6 +29,7 @@ from .utils import (
     format_date,
 )
 
+
 _LOGGER = logging.getLogger(__name__)
 
 
@@ -40,9 +39,49 @@ class GrowspaceSerializer:
     def __init__(self, hass: HomeAssistant) -> None:
         """Initialize the serializer."""
         self.hass = hass
+        # We can't easily inject coordinator here because serializer is often initialized
+        # by the coordinator itself or before it.
+        # But EnvironmentAnalyzer requires a coordinator.
+        # This is a circular dependency risk or just initialization order issue.
+        # However, EnvironmentAnalyzer only needs coordinator for recommendations in the OLD code.
+        # But my NEW calculate_biological_metrics code in EnvironmentAnalyzer
+        # DOES NOT use self.coordinator. It takes growspace as argument.
+        # So I can initialize it with None for coordinator if I only use that method?
+        # Or better, the Serializer shouldn't own the Analyzer, the *Coordinator* should.
+        # BUT the serializer methods take `growspace` and `plants`.
+
+        # Let's instantiate it with just hass for now, but EnvironmentAnalyzer constructor
+        # expects coordinator.
+        # Let's check EnvironmentAnalyzer.__init__ signature again.
+        # def __init__(self, hass: HomeAssistant, coordinator: GrowspaceCoordinator) -> None:
+
+        # If I change the Serializer to accept an analyzer instance?
+        # Or if I just instantiate it?
+
+        # Ideally, `GrowspaceCoordinator` holds `self.serializer` AND `self.environment_analyzer`.
+        # And when it calls `self.serializer.serialize_growspace(...)`, it could pass the analyzer?
+        # Or `GrowspaceSerializer` could use `EnvironmentAnalyzer` as a helper.
+
+        # Given the constraint of minimal changes to architecture:
+        # I will instantiate EnvironmentAnalyzer with None for coordinator if possible, or Mock?
+        # No, that's hacky.
+
+        # Better approach: Pass the analyzer logic as a dependency or static method?
+        # The new methods I added to EnvironmentAnalyzer DO NOT depend on `self.coordinator`.
+        # `calculate_biological_metrics`, `determine_granular_stage`, `determine_is_day`
+        # only use `growspace` or pure logic.
+
+        # So I can make them static? Or just separate them?
+        # No, `determine_is_day` uses `self.hass`.
+
+        # So I need `hass`.
+        # I will modify Serializer init to take an optional analyzer or just create one with None coordinator
+        # if the coordinator isn't used for those specific methods.
+        # But strictly speaking, type checking will fail if I pass None.
+        pass
 
     def serialize_growspace(
-        self, growspace: Growspace, plants: list[Plant]
+        self, growspace: Growspace, plants: list[Plant], analyzer: EnvironmentAnalyzer
     ) -> dict[str, Any]:
         """Build the full JSON payload for a single growspace."""
         # Calculate max stage days
@@ -67,11 +106,11 @@ class GrowspaceSerializer:
         veg_week = days_to_week(max_veg)
         flower_week = days_to_week(max_flower)
 
-        biological_metrics = self._get_biological_metrics(
+        # DELEGATE TO ANALYZER
+        biological_metrics = analyzer.calculate_biological_metrics(
             growspace, max_veg, max_flower, max_dry, max_cure
         )
 
-        # Get irrigation settings
         # Get irrigation settings
         irrigation_options = growspace.irrigation_config.to_dict()
         irrigation_strategy_dict = (
@@ -186,90 +225,6 @@ class GrowspaceSerializer:
             end_date = getattr(plant, "cure_start", None)
 
         return calculate_days_since(start_date, end_date)
-
-    def _get_biological_metrics(
-        self,
-        growspace: Growspace,
-        max_veg: int,
-        max_flower: int,
-        max_dry: int,
-        max_cure: int,
-    ) -> dict[str, Any]:
-        """Calculate biological target metrics for the growspace."""
-        granular_stage = self._determine_granular_stage(
-            max_veg, max_flower, max_dry, max_cure
-        )
-        is_day = self._determine_is_day(growspace)
-        day_key = "day" if is_day else "night"
-
-        threshold_data = VPD_STRESS_THRESHOLDS.get(
-            granular_stage, VPD_STRESS_THRESHOLDS["veg_early"]
-        )
-        cycle_data = threshold_data.get(day_key, threshold_data["day"])
-
-        target_min, target_max = cycle_data.get("mild", (0.8, 1.2))
-        danger_min, danger_max = cycle_data.get("stress", (0.6, 1.4))
-
-        vpd_status = "unknown"
-        vpd_sensor_id = growspace.environment_config.vpd_sensor
-        if vpd_sensor_id:
-            current_vpd = self._get_sensor_value(vpd_sensor_id)
-            if current_vpd is not None:
-                if current_vpd < danger_min or current_vpd > danger_max:
-                    vpd_status = "danger"
-                elif current_vpd < target_min or current_vpd > target_max:
-                    vpd_status = "warning"
-                else:
-                    vpd_status = "optimal"
-
-        return {
-            "granular_stage": granular_stage,
-            "is_day": is_day,
-            "vpd_target_min": target_min,
-            "vpd_target_max": target_max,
-            "vpd_danger_min": danger_min,
-            "vpd_danger_max": danger_max,
-            "vpd_status": vpd_status,
-        }
-
-    def _determine_granular_stage(
-        self, max_veg: int, max_flower: int, max_dry: int, max_cure: int
-    ) -> str:
-        """Determine granular growth stage based on days."""
-        if max_cure > 0:
-            return "cure"
-        if max_dry > 0:
-            return "dry"
-        if max_flower > 0:
-            if max_flower <= DEFAULT_FLOWER_EARLY_DAYS:
-                return "flower_early"
-            if max_flower <= (DEFAULT_FLOWER_EARLY_DAYS + 21):
-                return "flower_mid"
-            return "flower_late"
-        if max_veg > 0:
-            if max_veg > 0 and max_veg <= DEFAULT_VEG_EARLY_DAYS:
-                return "veg_early"
-            return "veg_late"
-        return "veg_early"
-
-    def _determine_is_day(self, growspace: Growspace) -> bool:
-        """Determine if it is currently day or night in the growspace."""
-        light_sensor = growspace.environment_config.light_sensor
-        if light_sensor:
-            light_state = self.hass.states.get(light_sensor)
-            if light_state and light_state.state not in (
-                STATE_UNKNOWN,
-                STATE_UNAVAILABLE,
-            ):
-                if light_state.state == STATE_ON:
-                    return True
-                if light_state.state == "off":
-                    return False
-                try:
-                    return float(light_state.state) > 0
-                except (ValueError, TypeError):
-                    pass
-        return True
 
     def _get_sensor_value(self, sensor_id: str | None) -> float | None:
         """Safely get the numeric value from a sensor's state."""

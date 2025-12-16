@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from datetime import datetime, timedelta
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
@@ -14,12 +14,13 @@ from homeassistant.util.dt import now, utcnow
 
 if TYPE_CHECKING:
     from .coordinator import GrowspaceCoordinator
+from .irrigation_coordinator import BaseIrrigationCoordinator
 from .models import GrowspaceEvent, IrrigationStrategy
 
 _LOGGER = logging.getLogger(__name__)
 
 
-class VWCIrrigationCoordinator:
+class VWCIrrigationCoordinator(BaseIrrigationCoordinator):
     """Manages VWC-based crop steering irrigation for a growspace."""
 
     def __init__(
@@ -30,10 +31,7 @@ class VWCIrrigationCoordinator:
         main_coordinator: GrowspaceCoordinator,
     ) -> None:
         """Initialize the VWC irrigation coordinator."""
-        self.hass = hass
-        self._config_entry = config_entry
-        self._growspace_id = growspace_id
-        self._main_coordinator = main_coordinator
+        super().__init__(hass, config_entry, growspace_id, main_coordinator)
         self._remove_update_listener = None
 
         # State tracking
@@ -56,35 +54,24 @@ class VWCIrrigationCoordinator:
 
     async def async_unload(self):
         """Unload the coordinator and stop listeners."""
-        if self._remove_update_listener:
-            self._remove_update_listener()
-            self._remove_update_listener = None
+        # Call base implementation to clean up any base listeners (if added in future)
+        await super().async_unload()
         _LOGGER.info(
             "Unloaded VWC Irrigation Coordinator for growspace %s", self._growspace_id
         )
 
     @callback
     def async_cancel_listeners(self):
-        """Alias for unload to match interface of standard coordinator."""
-        # We don't need to await here because _remove_update_listener is synchronous callback removal
+        """Cancel all scheduled listeners."""
+        super().async_cancel_listeners()
         if self._remove_update_listener:
             self._remove_update_listener()
             self._remove_update_listener = None
 
-    async def async_request_refresh(self) -> None:
-        """Satisfy the interface expected by main coordinator.
-
-        VWC coordinator uses an active time interval loop, so explicit refresh
-        isn't strictly required, but this method prevents AttributeError.
-        """
-        # We could force an immediate check here if desired:
-        # await self._update_loop(now())
-        pass
-
     async def _update_loop(self, _now: datetime):
         """Main update loop triggered every minute."""
         try:
-            growspace = self._main_coordinator.growspaces[self._growspace_id]
+            growspace = self.growspace
             strategy = growspace.irrigation_strategy
 
             if not strategy.enabled:
@@ -144,19 +131,6 @@ class VWCIrrigationCoordinator:
         # Let's check stage to decide hours.
         # For simplicity, if we lack stage info, we assume 12 hours for flowering.
 
-        # Wait, the growspace model doesn't strictly track "stage" on the growspace itself,
-        # but environment_config has 'veg_day_hours' etc.
-        # And plants have stages. This is tricky.
-        # Let's verify environment_config keys from handler.
-        # 'veg_day_hours', 'flower_early_day_hours', etc.
-        # To determine which one to use, we might need to look at the plants or just use a default?
-        # A simpler approach for Phase 1: Use a config on the strategy itself? No, user requirement said "Lights On Time"
-        # and "P2 Stop before Lights Off". It implies we know Lights Off.
-        # Let's attempt to calculate Lights Off from 'lights_on_time' + 12 hours as a safe default for flowering,
-        # or 18 for veg.
-        # BETTER: Let's assume 12 hours duration if we can't find better info, to be safe.
-        # OR: Check if we can get 'lights_off_time' from somewhere? No.
-
         # Let's check environment config for day lengths.
         day_hours = 12  # Default
         if growspace.environment_config:
@@ -189,12 +163,10 @@ class VWCIrrigationCoordinator:
 
         if current_dt < today_start_dt:
             # Before lights on -> P3 (Dry Back) from yesterday
-
             return "P3"
 
         if current_dt < p1_start_dt:
             # P0 Activation
-
             return "P0"
 
         if current_dt < p2_stop_dt:
@@ -325,19 +297,9 @@ class VWCIrrigationCoordinator:
         )
         self._main_coordinator.add_event(self._growspace_id, event)
 
-    def _get_sensor_value(self, entity_id: str) -> float | None:
-        """Get float value from sensor state."""
-        state = self.hass.states.get(entity_id)
-        if not state or state.state in ("unknown", "unavailable"):
-            return None
-        try:
-            return float(state.state)
-        except ValueError:
-            return None
-
     def _get_pump_entity(self) -> str | None:
         """Get configured irrigation pump entity."""
-        growspace = self._main_coordinator.growspaces[self._growspace_id]
+        growspace = self.growspace
         return growspace.irrigation_config.get("irrigation_pump_entity")
 
     def _set_phase(self, phase: str):

@@ -1,25 +1,32 @@
-"""Environment analyzer for air exchange recommendations."""
+"""Environment analyzer for air exchange recommendations and biological metrics."""
 
 from __future__ import annotations
 
 import logging
 from typing import TYPE_CHECKING, Any
 
+from homeassistant.const import STATE_ON, STATE_UNAVAILABLE, STATE_UNKNOWN
 from homeassistant.helpers import entity_registry as er
 
-from .const import DOMAIN
+from .bayesian_data import VPD_STRESS_THRESHOLDS
+from .const import (
+    DEFAULT_FLOWER_EARLY_DAYS,
+    DEFAULT_VEG_EARLY_DAYS,
+    DOMAIN,
+)
 from .utils import VPDCalculator
 
 if TYPE_CHECKING:
     from homeassistant.core import HomeAssistant
 
     from .coordinator import GrowspaceCoordinator
+    from .models import Growspace
 
 _LOGGER = logging.getLogger(__name__)
 
 
 class EnvironmentAnalyzer:
-    """Analyzes environmental conditions and provides air exchange recommendations."""
+    """Analyzes environmental conditions, stage progression, and biological targets."""
 
     def __init__(self, hass: HomeAssistant, coordinator: GrowspaceCoordinator) -> None:
         """Initialize the environment analyzer.
@@ -30,6 +37,119 @@ class EnvironmentAnalyzer:
         """
         self.hass = hass
         self.coordinator = coordinator
+
+    def calculate_biological_metrics(
+        self,
+        growspace: Growspace,
+        max_veg: int,
+        max_flower: int,
+        max_dry: int,
+        max_cure: int,
+    ) -> dict[str, Any]:
+        """Calculate biological target metrics for the growspace.
+
+        Args:
+             growspace: The growspace object.
+             max_veg: Max days in veg stage.
+             max_flower: Max days in flower stage.
+             max_dry: Max days in dry stage.
+             max_cure: Max days in cure stage.
+
+        Returns:
+            Dictionary containing stage-specific VPD targets and status.
+        """
+        granular_stage = self.determine_granular_stage(
+            max_veg, max_flower, max_dry, max_cure
+        )
+        is_day = self.determine_is_day(growspace)
+        day_key = "day" if is_day else "night"
+
+        threshold_data = VPD_STRESS_THRESHOLDS.get(
+            granular_stage, VPD_STRESS_THRESHOLDS["veg_early"]
+        )
+        cycle_data = threshold_data.get(day_key, threshold_data["day"])
+
+        target_min, target_max = cycle_data.get("mild", (0.8, 1.2))
+        danger_min, danger_max = cycle_data.get("stress", (0.6, 1.4))
+
+        vpd_status = "unknown"
+        vpd_sensor_id = growspace.environment_config.vpd_sensor
+        if vpd_sensor_id:
+            current_vpd = self._get_sensor_value(vpd_sensor_id)
+            if current_vpd is not None:
+                if current_vpd < danger_min or current_vpd > danger_max:
+                    vpd_status = "danger"
+                elif current_vpd < target_min or current_vpd > target_max:
+                    vpd_status = "warning"
+                else:
+                    vpd_status = "optimal"
+
+        return {
+            "granular_stage": granular_stage,
+            "is_day": is_day,
+            "vpd_target_min": target_min,
+            "vpd_target_max": target_max,
+            "vpd_danger_min": danger_min,
+            "vpd_danger_max": danger_max,
+            "vpd_status": vpd_status,
+        }
+
+    def determine_granular_stage(
+        self, max_veg: int, max_flower: int, max_dry: int, max_cure: int
+    ) -> str:
+        """Determine granular growth stage based on days using pattern matching.
+
+        Args:
+            max_veg: Max days in veg stage.
+            max_flower: Max days in flower stage.
+            max_dry: Max days in dry stage.
+            max_cure: Max days in cure stage.
+
+        Returns:
+            Detailed stage string (e.g. 'veg_early', 'flower_late').
+        """
+        match (max_cure > 0, max_dry > 0, max_flower > 0):
+            case (True, _, _):
+                return "cure"
+            case (False, True, _):
+                return "dry"
+            case (False, False, True):
+                if max_flower <= DEFAULT_FLOWER_EARLY_DAYS:
+                    return "flower_early"
+                if max_flower <= (DEFAULT_FLOWER_EARLY_DAYS + 21):
+                    return "flower_mid"
+                return "flower_late"
+            case _:
+                # Veg logic
+                if max_veg <= DEFAULT_VEG_EARLY_DAYS:
+                    return "veg_early"
+                return "veg_late"
+
+    def determine_is_day(self, growspace: Growspace) -> bool:
+        """Determine if it is currently day or night in the growspace.
+
+        Args:
+            growspace: The growspace object.
+
+        Returns:
+            True if lights are on (day), False otherwise.
+        """
+        light_sensor = growspace.environment_config.light_sensor
+        if light_sensor:
+            light_state = self.hass.states.get(light_sensor)
+            if light_state and light_state.state not in (
+                STATE_UNKNOWN,
+                STATE_UNAVAILABLE,
+            ):
+                if light_state.state == STATE_ON:
+                    return True
+                if light_state.state == "off":
+                    return False
+                try:
+                    return float(light_state.state) > 0
+                except (ValueError, TypeError):
+                    pass
+        return True
 
     def _get_sensor_value(self, entity_id: str | None) -> float | None:
         """Safely get the numeric state of a sensor entity from Home Assistant.

@@ -79,27 +79,6 @@ def mock_plant():
     return plant
 
 
-def test_determine_granular_stage(serializer):
-    """Test granular stage determination."""
-    # Veg Early
-    assert serializer._determine_granular_stage(10, 0, 0, 0) == "veg_early"
-    # Veg Late (assuming default early is 14 days)
-    assert serializer._determine_granular_stage(20, 0, 0, 0) == "veg_late"
-
-    # Flower Early
-    assert serializer._determine_granular_stage(30, 10, 0, 0) == "flower_early"
-    # Flower Mid (assuming early is 21, so < 21+21 = 42)
-    assert serializer._determine_granular_stage(40, 30, 0, 0) == "flower_mid"
-    # Flower Late
-    assert serializer._determine_granular_stage(80, 60, 0, 0) == "flower_late"
-
-    # Dry
-    assert serializer._determine_granular_stage(80, 60, 5, 0) == "dry"
-
-    # Cure
-    assert serializer._determine_granular_stage(80, 60, 5, 5) == "cure"
-
-
 def test_calculate_days_in_stage(serializer, mock_plant):
     """Test days in stage calculation."""
     # Veg
@@ -110,33 +89,6 @@ def test_calculate_days_in_stage(serializer, mock_plant):
     # seedling start -20, veg start -10 -> 10 days duration
     seedling_days = serializer.calculate_days_in_stage(mock_plant, PlantStage.SEEDLING)
     assert seedling_days == 10
-
-
-def test_determine_is_day(hass, serializer, mock_growspace):
-    """Test is_day determination."""
-    # Non-existent sensor -> default True
-    mock_growspace.environment_config = EnvironmentConfig()
-    assert serializer._determine_is_day(mock_growspace) is True
-
-    # Binary Sensor On
-    mock_growspace.environment_config = EnvironmentConfig(
-        light_sensor="binary_sensor.light"
-    )
-    hass.states.async_set("binary_sensor.light", "on")
-    assert serializer._determine_is_day(mock_growspace) is True
-
-    # Binary Sensor Off
-    hass.states.async_set("binary_sensor.light", "off")
-    assert serializer._determine_is_day(mock_growspace) is False
-
-    # Numeric Sensor > 0
-    mock_growspace.environment_config = EnvironmentConfig(light_sensor="sensor.lux")
-    hass.states.async_set("sensor.lux", "100")
-    assert serializer._determine_is_day(mock_growspace) is True
-
-    # Numeric Sensor 0
-    hass.states.async_set("sensor.lux", "0")
-    assert serializer._determine_is_day(mock_growspace) is False
 
 
 def test_get_sensor_value(hass, serializer):
@@ -181,9 +133,18 @@ def test_get_environment_attributes(hass, serializer, mock_growspace):
 def test_serialize_growspace(hass, serializer, mock_growspace, mock_plant):
     """Test full serialization."""
     # Setup dependencies
-    hass.states.async_set("sensor.vpd", "1.0")
-
     plants = [mock_plant]
+
+    mock_analyzer = MagicMock()
+    mock_analyzer.calculate_biological_metrics.return_value = {
+        "granular_stage": "veg_early",
+        "is_day": True,
+        "vpd_target_min": 0.8,
+        "vpd_target_max": 1.2,
+        "vpd_danger_min": 0.6,
+        "vpd_danger_max": 1.4,
+        "vpd_status": "optimal",
+    }
 
     with patch("homeassistant.helpers.entity_registry.async_get") as mock_registry_get:
         mock_registry = MagicMock()
@@ -192,11 +153,14 @@ def test_serialize_growspace(hass, serializer, mock_growspace, mock_plant):
         )
         mock_registry_get.return_value = mock_registry
 
-        data = serializer.serialize_growspace(mock_growspace, plants)
+        data = serializer.serialize_growspace(mock_growspace, plants, mock_analyzer)
 
         assert data["growspace_id"] == "gs1"
         assert data["total_plants"] == 1
         assert data["veg_week"] >= 1
         assert "grid" in data
         assert data["grid"]["position_1_1"]["plant_id"] == "plant1"
-        assert data["vpd_status"] in ["optimal", "warning", "danger"]
+        assert data["vpd_status"] == "optimal"
+
+        # Verify analyzer call
+        mock_analyzer.calculate_biological_metrics.assert_called_once()
