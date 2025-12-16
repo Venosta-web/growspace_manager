@@ -8,7 +8,7 @@ from abc import ABC
 from collections.abc import Callable
 from datetime import datetime
 from functools import partial
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, override
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
@@ -109,6 +109,7 @@ class IrrigationCoordinator(BaseIrrigationCoordinator):
         except (KeyError, AttributeError):
             return None
 
+    @override
     async def async_request_refresh(self) -> None:
         """Refresh listeners when configuration changes."""
         await self.async_update_listeners()
@@ -252,6 +253,7 @@ class IrrigationCoordinator(BaseIrrigationCoordinator):
                 self._growspace_id,
             )
 
+    @override
     async def async_setup(self):
         """Set up the irrigation schedules."""
         # MIGRATION: Check if we have legacy options in config entry but empty growspace config

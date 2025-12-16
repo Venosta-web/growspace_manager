@@ -11,7 +11,7 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
-from typing import Any
+from typing import Any, override
 
 from homeassistant.components.binary_sensor import (
     BinarySensorEntity,
@@ -295,11 +295,13 @@ class BayesianEnvironmentSensor(BinarySensorEntity):
         self.notification_manager = self.coordinator.notification_manager
 
     @property
+    @override
     def is_on(self) -> bool:
         """Return true if the sensor is on (probability > threshold)."""
         return self._probability >= self.threshold
 
     @property
+    @override
     def extra_state_attributes(self) -> dict[str, Any]:
         """Return the state attributes."""
         attrs = {
@@ -423,6 +425,7 @@ class BayesianEnvironmentSensor(BinarySensorEntity):
         self._last_light_state = current_lights_on
         return current_lights_on
 
+    @override
     async def async_added_to_hass(self) -> None:
         """Register callbacks when the entity is added to Home Assistant."""
         self.coordinator.async_add_listener(self._handle_coordinator_update)

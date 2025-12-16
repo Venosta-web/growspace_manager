@@ -6,7 +6,7 @@ import asyncio
 import logging
 import uuid
 from datetime import date, datetime, timedelta
-from typing import Any
+from typing import Any, override
 
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import device_registry as dr
@@ -189,33 +189,42 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
 
     async def async_initialize_sub_coordinators(self, entry: Any) -> None:
         """Initialize sub-coordinators for irrigation and dehumidifier."""
-
-        for growspace_id, gs in self.growspaces.items():
-            if gs.irrigation_strategy.enabled:
-                _LOGGER.info(
-                    "Initializing VWC Irrigation Coordinator for growspace %s",
-                    growspace_id,
-                )
-                irrigation_coordinator = VWCIrrigationCoordinator(
-                    self.hass, entry, growspace_id, self
-                )
-            else:
-                _LOGGER.debug(
-                    "Initializing Standard Irrigation Coordinator for growspace %s",
-                    growspace_id,
-                )
-                irrigation_coordinator = IrrigationCoordinator(
-                    self.hass, entry, growspace_id, self
+        async with asyncio.TaskGroup() as tg:
+            for growspace_id, gs in self.growspaces.items():
+                tg.create_task(
+                    self._setup_growspace_sub_coordinators(entry, growspace_id, gs)
                 )
 
-            await irrigation_coordinator.async_setup()
-            self.irrigation_coordinators[growspace_id] = irrigation_coordinator
-
-            dehumidifier_coordinator = DehumidifierCoordinator(
+    async def _setup_growspace_sub_coordinators(
+        self, entry: Any, growspace_id: str, gs: Growspace
+    ) -> None:
+        """Setup sub-coordinators for a single growspace."""
+        if gs.irrigation_strategy.enabled:
+            _LOGGER.info(
+                "Initializing VWC Irrigation Coordinator for growspace %s",
+                growspace_id,
+            )
+            irrigation_coordinator = VWCIrrigationCoordinator(
+                self.hass, entry, growspace_id, self
+            )
+        else:
+            _LOGGER.debug(
+                "Initializing Standard Irrigation Coordinator for growspace %s",
+                growspace_id,
+            )
+            irrigation_coordinator = IrrigationCoordinator(
                 self.hass, entry, growspace_id, self
             )
 
-            self.dehumidifier_coordinators[growspace_id] = dehumidifier_coordinator
+        await irrigation_coordinator.async_setup()
+        self.irrigation_coordinators[growspace_id] = irrigation_coordinator
+
+        # Dehumidifier coordinator setup (currently synchronous init but triggers async tasks)
+        dehumidifier_coordinator = DehumidifierCoordinator(
+            self.hass, entry, growspace_id, self
+        )
+
+        self.dehumidifier_coordinators[growspace_id] = dehumidifier_coordinator
 
     def get_growspace_options(self) -> dict[str, str]:
         """Return growspaces for dropdown selection in the editor.
@@ -475,6 +484,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
     # DATA UPDATE COORDINATOR OVERRIDE
     # =============================================================================
 
+    @override
     async def _async_update_data(self) -> dict[str, Any]:
         """Refresh data, called periodically by the DataUpdateCoordinator.
 

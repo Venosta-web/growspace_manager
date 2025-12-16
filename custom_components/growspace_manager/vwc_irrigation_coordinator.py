@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from datetime import datetime, timedelta
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, override
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
@@ -42,6 +42,7 @@ class VWCIrrigationCoordinator(BaseIrrigationCoordinator):
         # We track if we have logged a "sensor missing" warning recently to avoid spam
         self._sensor_warning_logged = False
 
+    @override
     async def async_setup(self):
         """Set up the coordinator and start the update loop."""
         _LOGGER.info(
@@ -52,6 +53,7 @@ class VWCIrrigationCoordinator(BaseIrrigationCoordinator):
             self.hass, self._update_loop, timedelta(minutes=1)
         )
 
+    @override
     async def async_unload(self):
         """Unload the coordinator and stop listeners."""
         # Call base implementation to clean up any base listeners (if added in future)
@@ -61,6 +63,7 @@ class VWCIrrigationCoordinator(BaseIrrigationCoordinator):
         )
 
     @callback
+    @override
     def async_cancel_listeners(self):
         """Cancel all scheduled listeners."""
         super().async_cancel_listeners()

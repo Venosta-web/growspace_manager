@@ -18,6 +18,11 @@ if TYPE_CHECKING:
     from .models import Growspace, days_to_week
 
 
+type IrrigationScheduleItem = dict[str, Any]
+type DehumidifierThresholds = dict[str, Any]
+type BayesianOptions = dict[str, Any]
+
+
 @dataclass
 class BaseModel:
     """Base class providing generic serialization methods."""
@@ -118,11 +123,11 @@ class EnvironmentConfig(BaseModel):
     dehumidifier_entity: str | None = None
     lst_offset: float = -2.0
     control_dehumidifier: bool = False
-    dehumidifier_thresholds: dict[str, Any] = field(default_factory=dict)
+    dehumidifier_thresholds: DehumidifierThresholds = field(default_factory=dict)
     minimum_source_air_temperature: float = 18.0
     stress_threshold: float = 0.70
     mold_threshold: float = 0.75
-    bayesian_options: dict[str, Any] = field(default_factory=dict)
+    bayesian_options: BayesianOptions = field(default_factory=dict)
 
     _CATCH_ALL_FIELD = "bayesian_options"
 
@@ -142,8 +147,8 @@ class IrrigationConfig(BaseModel):
     drain_pump_entity: str | None = None
     irrigation_duration: int | None = None
     drain_duration: int | None = None
-    irrigation_times: list[dict[str, Any]] = field(default_factory=list)
-    drain_times: list[dict[str, Any]] = field(default_factory=list)
+    irrigation_times: list[IrrigationScheduleItem] = field(default_factory=list)
+    drain_times: list[IrrigationScheduleItem] = field(default_factory=list)
     veg_day_hours: int = 12
 
 

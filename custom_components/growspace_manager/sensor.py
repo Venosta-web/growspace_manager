@@ -9,7 +9,7 @@ from __future__ import annotations
 
 # Standard library
 import logging
-from typing import Any
+from typing import Any, override
 
 # Third-party / external
 # Home Assistant
@@ -363,6 +363,7 @@ class BaseVpdSensor(SensorEntity):
     _attr_state_class = SensorStateClass.MEASUREMENT
     _attr_native_unit_of_measurement = "kPa"
 
+    @override
     async def async_added_to_hass(self) -> None:
         """Register callbacks when the entity is added to Home Assistant."""
         if self.entities_to_track:
@@ -423,6 +424,7 @@ class VpdSensor(BaseVpdSensor):
         self._attr_icon = ICON_VPD
 
     @property
+    @override
     def entities_to_track(self) -> list[str]:
         """Return a list of entity IDs to track."""
         tracking = []
@@ -435,6 +437,7 @@ class VpdSensor(BaseVpdSensor):
         return tracking
 
     @property
+    @override
     def native_value(self) -> float | None:
         """Return the calculated VPD value in kPa."""
         temp = None
@@ -489,11 +492,13 @@ class CalculatedVpdSensor(BaseVpdSensor):
         )
 
     @property
+    @override
     def entities_to_track(self) -> list[str]:
         """Return a list of entity IDs to track."""
         return [self._temp_sensor, self._humidity_sensor]
 
     @property
+    @override
     def native_value(self) -> float | None:
         """Return the calculated VPD value in kPa."""
         temp = self._get_float_state(self._temp_sensor)
@@ -506,6 +511,7 @@ class CalculatedVpdSensor(BaseVpdSensor):
         return None
 
     @property
+    @override
     def extra_state_attributes(self) -> dict[str, Any]:
         """Return additional state attributes."""
         return {
@@ -546,6 +552,7 @@ class AirExchangeSensor(CoordinatorEntity[GrowspaceCoordinator], SensorEntity):
         )
 
     @property
+    @override
     def native_value(self) -> str:
         """Return the current recommended air exchange action."""
         # The actual state is calculated in the coordinator and stored.
@@ -590,12 +597,14 @@ class GrowspaceOverviewSensor(CoordinatorEntity[GrowspaceCoordinator], SensorEnt
         )
 
     @property
+    @override
     def native_value(self) -> int:
         """Return the number of plants in the growspace."""
         plants = self.coordinator.get_growspace_plants(self.growspace_id)
         return len(plants)
 
     @property
+    @override
     def extra_state_attributes(self) -> dict[str, Any]:
         """Return the detailed state attributes for the growspace."""
         # Fetch pre-calculated serialization from coordinator
@@ -648,6 +657,7 @@ class PlantEntity(SensorEntity):
         )
 
     @property
+    @override
     def native_value(self) -> str:
         """Return the current growth stage of the plant."""
         # Get updated plant data
@@ -663,6 +673,7 @@ class PlantEntity(SensorEntity):
         return stage
 
     @property
+    @override
     def extra_state_attributes(self) -> dict[str, Any]:
         """Return the detailed state attributes for the plant."""
         plant = self.coordinator.plants.get(self._plant.plant_id)
@@ -697,6 +708,7 @@ class PlantEntity(SensorEntity):
 
         return attributes
 
+    @override
     async def async_added_to_hass(self) -> None:
         """Register callbacks when the entity is added to Home Assistant."""
         self.coordinator.async_add_listener(self.async_write_ha_state)
@@ -719,11 +731,13 @@ class StrainLibrarySensor(CoordinatorEntity[GrowspaceCoordinator], SensorEntity)
         self._attr_icon = ICON_STRAIN_LIBRARY
 
     @property
+    @override
     def native_value(self) -> int:
         """Return the number of unique strains in the library."""
         return len(self.coordinator.strain_library.get_all())
 
     @property
+    @override
     def extra_state_attributes(self) -> dict[str, Any]:
         """Return the calculated strain analytics as state attributes."""
         # Use the cached analytics from StrainLibrary to avoid heavy computation on the main loop.
@@ -751,12 +765,14 @@ class GrowspaceListSensor(SensorEntity):
         self._growspaces = self.coordinator.get_growspace_options()
 
     @property
+    @override
     def native_value(self):
         """Return the total number of growspaces."""
         self._update_growspaces()
         return len(self._growspaces)
 
     @property
+    @override
     def extra_state_attributes(self):
         """Return the list of growspaces as a state attribute."""
         return {"growspaces": self._growspaces}

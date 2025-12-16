@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, override
 
 from homeassistant.components.switch import SwitchEntity, SwitchEntityDescription
 from homeassistant.core import HomeAssistant
@@ -94,10 +94,12 @@ class GrowspaceNotificationSwitch(SwitchEntity):
         )
 
     @property
+    @override
     def is_on(self) -> bool:
         """Return true if notifications are enabled for the growspace."""
         return self._coordinator.is_notifications_enabled(self._growspace_id)
 
+    @override
     async def async_turn_on(self, **kwargs: Any) -> None:
         """Enable notifications for the growspace."""
         await self._coordinator.set_notifications_enabled(self._growspace_id, True)
@@ -108,6 +110,7 @@ class GrowspaceNotificationSwitch(SwitchEntity):
             self._growspace.name,
         )
 
+    @override
     async def async_turn_off(self, **kwargs: Any) -> None:
         """Disable notifications for the growspace."""
         await self._coordinator.set_notifications_enabled(self._growspace_id, False)
@@ -118,6 +121,7 @@ class GrowspaceNotificationSwitch(SwitchEntity):
             self._growspace.name,
         )
 
+    @override
     async def async_added_to_hass(self) -> None:
         """Register a listener when the entity is added to Home Assistant."""
         self._coordinator.async_add_listener(self.async_write_ha_state)
