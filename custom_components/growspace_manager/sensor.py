@@ -48,7 +48,6 @@ from .models import Growspace, Plant
 from .utils import (
     VPDCalculator,
     calculate_plant_stage,
-    days_to_week,
     generate_growspace_overview_unique_id,
     generate_vpd_sensor_unique_id,
 )
@@ -666,22 +665,11 @@ class PlantEntity(SensorEntity):
                 attributes[start_key] = getattr(plant, start_key)
 
             # Days in stage
-            days = self.coordinator.serializer.calculate_days_in_stage(
-                plant, stage_name
-            )
-            attributes[f"{stage_name}_days"] = days or 0
+            attributes[f"{stage_name}_days"] = plant.get_days_in_stage(stage_name)
 
-        # Calculate weeks
-        # Calculate weeks
-        # Ensure strict int casting for safe potential division in days_to_week
-        veg_days = int(attributes.get("veg_days", 0))
-        flower_days = int(attributes.get("flower_days", 0))
-
-        veg_week = days_to_week(veg_days)
-        flower_week = days_to_week(flower_days)
-
-        attributes["veg_week"] = veg_week
-        attributes["flower_week"] = flower_week
+        # Calculate weeks using domain logic
+        attributes["veg_week"] = plant.get_week_in_stage("veg")
+        attributes["flower_week"] = plant.get_week_in_stage("flower")
 
         return attributes
 

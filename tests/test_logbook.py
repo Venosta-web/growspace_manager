@@ -53,6 +53,7 @@ async def test_coordinator_rolling_buffer(hass: HomeAssistant) -> None:
 
     coordinator = GrowspaceCoordinator(hass)
     coordinator.storage_manager = MagicMock()
+    coordinator.storage_manager.async_save = AsyncMock()
     coordinator.async_save = AsyncMock()  # Mock save to avoid internal logic
 
     # Test adding 55 events

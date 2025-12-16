@@ -23,15 +23,14 @@ class BaseModel:
         return asdict(self)
 
     @classmethod
-    def from_dict(
-        cls,
-        data: dict,
-        migrations: dict[str, str] | None = None,
-        nested_handlers: dict[str, Any] | None = None,
-        defaults: dict[str, Any] | None = None,
-    ) -> Any:
+    def from_dict(cls, data: dict) -> Any:
         """Create from dictionary with optional migrations and nested handlers."""
         data = data.copy()
+
+        # Get configuration from class attributes
+        migrations: dict[str, str] | None = getattr(cls, "_MIGRATIONS", None)
+        nested_handlers: dict[str, Any] | None = getattr(cls, "_NESTED_HANDLERS", None)
+        defaults: dict[str, Any] | None = getattr(cls, "_DEFAULTS", None)
 
         # Apply migrations
         if migrations:
@@ -116,14 +115,10 @@ class Growspace(BaseModel):
     dehumidifier_config: dict[str, Any] = field(default_factory=dict)
     irrigation_strategy: IrrigationStrategy = field(default_factory=IrrigationStrategy)
 
-    @classmethod
-    def from_dict(cls, data: dict) -> Growspace:
-        """Create a Growspace instance from a dictionary."""
-        return super().from_dict(
-            data,
-            migrations={"created": "created_at", "updated": "updated_at"},
-            nested_handlers={"irrigation_strategy": IrrigationStrategy.from_dict},
-        )
+    irrigation_strategy: IrrigationStrategy = field(default_factory=IrrigationStrategy)
+
+    _MIGRATIONS = {"created": "created_at", "updated": "updated_at"}
+    _NESTED_HANDLERS = {"irrigation_strategy": IrrigationStrategy.from_dict}
 
 
 @dataclass
@@ -174,13 +169,27 @@ class Plant(BaseModel):
     transition_date: str | None = None
     source_mother: str | None = None
 
-    @classmethod
-    def from_dict(cls, data: dict) -> Plant:
-        """Create a Plant instance from a dictionary."""
-        return super().from_dict(
-            data,
-            migrations={"created": "created_at", "updated": "updated_at"},
-        )
+    source_mother: str | None = None
+
+    _MIGRATIONS = {"created": "created_at", "updated": "updated_at"}
+
+    def get_days_in_stage(self, stage_name: str) -> int:
+        """Calculate days spent in a specific stage."""
+        from .utils import calculate_days_since
+
+        start_date_attr = f"{stage_name}_start"
+        if hasattr(self, start_date_attr):
+            start_date = getattr(self, start_date_attr)
+            if start_date:
+                return calculate_days_since(start_date)
+        return 0
+
+    def get_week_in_stage(self, stage_name: str) -> int:
+        """Calculate the week number in a specific stage."""
+        from .utils import days_to_week
+
+        days = self.get_days_in_stage(stage_name)
+        return days_to_week(days)
 
 
 @dataclass
@@ -240,14 +249,8 @@ class GrowspaceEvent(BaseModel):
     category: str
     reasons: list[str] = field(default_factory=list)
 
-    @classmethod
-    def from_dict(cls, data: dict) -> GrowspaceEvent:
-        """Create a GrowspaceEvent instance from a dictionary."""
-        return super().from_dict(
-            data,
-            migrations={"max_probability": "severity"},
-            defaults={"category": "alert"},
-        )
+    _MIGRATIONS = {"max_probability": "severity"}
+    _DEFAULTS = {"category": "alert"}
 
 
 class GrowspaceCoordinatorData(TypedDict):

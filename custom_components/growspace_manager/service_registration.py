@@ -74,17 +74,20 @@ def get_coordinator_for_call(
         if entry.state == ConfigEntryState.LOADED and hasattr(entry, "runtime_data")
     ]
 
-    # 1. Try growspace_id
-    if growspace_id := (data.get("growspace_id") or data.get("target_growspace_id")):
-        for coordinator in coordinators:
-            if growspace_id in coordinator.growspaces:
-                return coordinator
+    # Prioritize specific ID keys
+    # Map key name to the coordinator attribute to check against
+    id_lookups = [
+        ("growspace_id", "growspaces"),
+        ("target_growspace_id", "growspaces"),
+        ("plant_id", "plants"),
+        ("mother_plant_id", "plants"),
+    ]
 
-    # 2. Try plant_id
-    if plant_id := (data.get("plant_id") or data.get("mother_plant_id")):
-        for coordinator in coordinators:
-            if plant_id in coordinator.plants:
-                return coordinator
+    for key, attr in id_lookups:
+        if val := data.get(key):
+            for coordinator in coordinators:
+                if val in getattr(coordinator, attr):
+                    return coordinator
 
     # 3. Fallback: If only one config entry exists, use it.
     if len(coordinators) == 1:
