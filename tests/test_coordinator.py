@@ -1024,7 +1024,7 @@ async def test_async_transition_clone_to_veg(coordinator: GrowspaceCoordinator) 
         )
 
         # Step 3: transition the clone to veg
-        await coordinator.async_transition_clone_to_veg(clone_id)
+        await coordinator.async_promote_clone(clone_id)
 
     clone = coordinator.plants[clone_id]
     assert clone.stage == PlantStage.VEG

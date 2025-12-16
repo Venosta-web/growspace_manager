@@ -370,7 +370,7 @@ class PlantLifecycleManager:
             col=int(col),
             stage=PlantStage.CLONE,
             plant_type=PlantStage.CLONE,
-            clone_start=date.today(),
+            clone_start=kwargs.pop("clone_start", date.today()),
             source_mother=source_mother_id,
             **kwargs,
         )

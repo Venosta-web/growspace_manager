@@ -914,18 +914,18 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
         self,
         mother_plant_id: str,
         num_clones: int,
-        target_growspace_id: str | None,
-        target_growspace_name: str | None,
-        transition_date: str | None,
+        target_growspace_id: str | None = None,
+        target_growspace_name: str | None = None,
+        transition_date: date | None = None,
     ) -> list[Plant]:
         """Create multiple clones from a mother plant and place them in the clone growspace.
 
         Args:
             mother_plant_id: The ID of the source mother plant.
             num_clones: The number of clones to create.
-            target_growspace_id: The target growspace ID (ignored, uses 'clone').
-            target_growspace_name: The target growspace name (ignored).
-            transition_date: The date the clones were taken (ignored, uses today).
+            target_growspace_id: Ignored, defaults to 'clone'.
+            target_growspace_name: Ignored.
+            transition_date: The date the clones were taken (defaults to today).
 
         Returns:
             A list of the newly created clone Plant objects.
@@ -935,6 +935,10 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
         mother = self.plants[mother_plant_id]
         clone_gs_id = self.ensure_special_growspace(PlantStage.CLONE, "clone", 5, 5)
         new_plants: list[Plant] = []
+
+        # Ensure transition_date is a date object
+        if transition_date is None:
+            transition_date = date.today()
 
         for _ in range(num_clones):
             row, col = self.validator.find_first_available_position(clone_gs_id)
@@ -946,6 +950,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
                 source_mother_id=mother_plant_id,
                 mother_plant=mother,
                 phenotype=mother.phenotype,
+                clone_start=transition_date,
             )
 
             if new_plant := self.plants.get(clone_id):
@@ -955,33 +960,56 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
 
         return new_plants
 
-    async def async_transition_clone_to_veg(self, clone_id: str) -> None:
-        """Transition a plant from the clone stage to the veg stage.
+    async def async_promote_clone(
+        self,
+        clone_id: str,
+        target_growspace_id: str = "veg",
+        transition_date: date | None = None,
+    ) -> None:
+        """Promote a clone to the vegetative stage, moving it to a new growspace.
 
-        The plant will be moved to the 'veg' special growspace.
+        This updates the EXISTING plant record, preserving its ID and history.
 
         Args:
-            clone_id: The ID of the clone to transition.
-
-        Raises:
-            ValueError: If the plant is not in the clone stage.
+            clone_id: The ID of the clone to promote.
+            target_growspace_id: The ID of the target growspace (defaults to 'veg').
+            transition_date: The date of the transition (defaults to today).
         """
         self.validator.validate_plant_exists(clone_id)
-
         clone = self.plants[clone_id]
+
         if clone.stage != PlantStage.CLONE:
-            raise ValueError("Plant is not in clone stage")
+            raise ValueError(
+                f"Plant {clone_id} is not in clone stage (current: {clone.stage})"
+            )
 
-        veg_gs_id = self.ensure_special_growspace(PlantStage.VEG, "veg", 5, 5)
-        row, col = self.validator.find_first_available_position(veg_gs_id)
+        # Resolve target growspace ID (handle aliases like 'veg')
+        if target_growspace_id == "veg":
+            target_gs_id = self.ensure_special_growspace(PlantStage.VEG, "veg", 5, 5)
+        else:
+            # Ensure custom growspace exists
+            if target_growspace_id not in self.growspaces:
+                raise ValueError(
+                    f"Target growspace {target_growspace_id} does not exist"
+                )
+            target_gs_id = target_growspace_id
 
+        # Find position
+        row, col = self.validator.find_first_available_position(target_gs_id)
+
+        # Default transition date
+        if transition_date is None:
+            transition_date = date.today()
+
+        # Update the existing plant
+        # We explicitly set stage to VEG and update veg_start.
         await self.async_update_plant(
             clone_id,
-            growspace_id=veg_gs_id,
+            growspace_id=target_gs_id,
             row=row,
             col=col,
             stage=PlantStage.VEG,
-            veg_start=datetime.today().isoformat(),
+            veg_start=transition_date,
         )
 
     async def async_update_plant(self, plant_id: str, **updates) -> Plant:

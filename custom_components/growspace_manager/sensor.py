@@ -384,13 +384,17 @@ class VpdSensor(SensorEntity):
                 humidity = weather_state.attributes.get("humidity")
         elif self._temp_sensor and self._humidity_sensor:
             temp_state = self.hass.states.get(self._temp_sensor)
-            if temp_state and temp_state.state not in ["unknown", "unavailable"]:
+            if temp_state is not None and temp_state.state not in [
+                "unknown",
+                "unavailable",
+            ]:
                 try:
                     temp = float(temp_state.state)
                 except (ValueError, TypeError):
                     temp = None
+
             humidity_state = self.hass.states.get(self._humidity_sensor)
-            if humidity_state and humidity_state.state not in [
+            if humidity_state is not None and humidity_state.state not in [
                 "unknown",
                 "unavailable",
             ]:
@@ -680,8 +684,13 @@ class PlantEntity(SensorEntity):
             attributes[f"{stage_name}_days"] = days or 0
 
         # Calculate weeks
-        veg_week = days_to_week(attributes.get("veg_days", 0))
-        flower_week = days_to_week(attributes.get("flower_days", 0))
+        # Calculate weeks
+        # Ensure strict int casting for safe potential division in days_to_week
+        veg_days = int(attributes.get("veg_days", 0))
+        flower_days = int(attributes.get("flower_days", 0))
+
+        veg_week = days_to_week(veg_days)
+        flower_week = days_to_week(flower_days)
 
         attributes["veg_week"] = veg_week
         attributes["flower_week"] = flower_week
