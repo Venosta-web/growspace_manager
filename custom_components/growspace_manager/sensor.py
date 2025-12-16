@@ -72,31 +72,39 @@ async def _async_create_derivative_sensors(
         config_entry: The configuration entry.
         growspace: The Growspace object for which to create sensors.
     """
-    if growspace.environment_config:
-        created_entity_ids = config_entry.runtime_data.created_entity_ids
-        for sensor_type in ["temperature", "humidity", "vpd"]:
-            source_sensor = growspace.environment_config.get(f"{sensor_type}_sensor")
-            if source_sensor:
-                trend_unique_id = await async_setup_trend_sensor(
-                    hass, source_sensor, growspace.id, growspace.name, sensor_type
-                )
-                if (
-                    trend_unique_id
-                    and ("binary_sensor", "trend", trend_unique_id)
-                    not in created_entity_ids
-                ):
-                    created_entity_ids.append(
-                        ("binary_sensor", "trend", trend_unique_id)
-                    )
-                stats_unique_id = await async_setup_statistics_sensor(
-                    hass, source_sensor, growspace.id, growspace.name, sensor_type
-                )
-                if (
-                    stats_unique_id
-                    and ("sensor", "statistics", stats_unique_id)
-                    not in created_entity_ids
-                ):
-                    created_entity_ids.append(("sensor", "statistics", stats_unique_id))
+    if not growspace.environment_config:
+        return
+
+    created_entity_ids = config_entry.runtime_data.created_entity_ids
+
+    async def _create_and_track(sensor_cls_setup, platform, domain, s_type, s_source):
+        unique_id = await sensor_cls_setup(
+            hass, s_source, growspace.id, growspace.name, s_type
+        )
+        if unique_id:
+            entity_key = (platform, domain, unique_id)
+            if entity_key not in created_entity_ids:
+                created_entity_ids.append(entity_key)
+
+    for sensor_type in ["temperature", "humidity", "vpd"]:
+        source_sensor = growspace.environment_config.get(f"{sensor_type}_sensor")
+        if not source_sensor:
+            continue
+
+        await _create_and_track(
+            async_setup_trend_sensor,
+            "binary_sensor",
+            "trend",
+            sensor_type,
+            source_sensor,
+        )
+        await _create_and_track(
+            async_setup_statistics_sensor,
+            "sensor",
+            "statistics",
+            sensor_type,
+            source_sensor,
+        )
 
 
 async def async_setup_entry(
@@ -326,7 +334,45 @@ def _check_calculated_vpd_sensor(
     return None
 
 
-class VpdSensor(SensorEntity):
+class BaseVpdSensor(SensorEntity):
+    """Base class for VPD sensors providing common functionality."""
+
+    _attr_state_class = SensorStateClass.MEASUREMENT
+    _attr_native_unit_of_measurement = "kPa"
+
+    async def async_added_to_hass(self) -> None:
+        """Register callbacks when the entity is added to Home Assistant."""
+        if self.entities_to_track:
+            self.async_on_remove(
+                async_track_state_change_event(
+                    self.hass, self.entities_to_track, self._handle_source_update
+                )
+            )
+
+    async def _handle_source_update(self, event) -> None:
+        """Handle updates from source sensors."""
+        self.async_write_ha_state()
+
+    @property
+    def entities_to_track(self) -> list[str]:
+        """Return a list of entity IDs to track."""
+        raise NotImplementedError
+
+    def _get_float_state(self, entity_id: str | None) -> float | None:
+        """Helper to safely get float state of an entity."""
+        if not entity_id:
+            return None
+
+        state = self.hass.states.get(entity_id)
+        if state and state.state not in ["unknown", "unavailable"]:
+            try:
+                return float(state.state)
+            except (ValueError, TypeError):
+                pass
+        return None
+
+
+class VpdSensor(BaseVpdSensor):
     """A sensor that calculates Vapor Pressure Deficit (VPD).
 
     This sensor can calculate VPD from either a weather entity (for outside
@@ -343,17 +389,7 @@ class VpdSensor(SensorEntity):
         temp_sensor: str | None,
         humidity_sensor: str | None,
     ) -> None:
-        """Initialize the VPD sensor.
-
-        Args:
-            coordinator: The data update coordinator (kept for consistency).
-            location_id: A unique identifier for the location (e.g., 'outside').
-            name: The display name for the sensor.
-            weather_entity: The entity ID of a weather entity (optional).
-            temp_sensor: The entity ID of a temperature sensor (optional).
-            humidity_sensor: The entity ID of a humidity sensor (optional).
-        """
-        # We handle coordinator manually if needed, or just use it for initial context
+        """Initialize the VPD sensor."""
         self._coordinator = coordinator
         self._location_id = location_id
         self._attr_name = name
@@ -361,31 +397,19 @@ class VpdSensor(SensorEntity):
         self._weather_entity = weather_entity
         self._temp_sensor = temp_sensor
         self._humidity_sensor = humidity_sensor
-        self._attr_state_class = SensorStateClass.MEASUREMENT
-        self._attr_native_unit_of_measurement = "kPa"
         self._attr_icon = ICON_VPD
 
-    async def async_added_to_hass(self) -> None:
-        """Register callbacks when the entity is added to Home Assistant."""
-        # Listen for state changes on source entities
-        entities_to_track = []
+    @property
+    def entities_to_track(self) -> list[str]:
+        """Return a list of entity IDs to track."""
+        tracking = []
         if self._weather_entity:
-            entities_to_track.append(self._weather_entity)
+            tracking.append(self._weather_entity)
         if self._temp_sensor:
-            entities_to_track.append(self._temp_sensor)
+            tracking.append(self._temp_sensor)
         if self._humidity_sensor:
-            entities_to_track.append(self._humidity_sensor)
-
-        if entities_to_track:
-            self.async_on_remove(
-                async_track_state_change_event(
-                    self.hass, entities_to_track, self._handle_source_update
-                )
-            )
-
-    async def _handle_source_update(self, event) -> None:
-        """Handle updates from source sensors."""
-        self.async_write_ha_state()
+            tracking.append(self._humidity_sensor)
+        return tracking
 
     @property
     def native_value(self) -> float | None:
@@ -399,32 +423,15 @@ class VpdSensor(SensorEntity):
                 temp = weather_state.attributes.get("temperature")
                 humidity = weather_state.attributes.get("humidity")
         elif self._temp_sensor and self._humidity_sensor:
-            temp_state = self.hass.states.get(self._temp_sensor)
-            if temp_state is not None and temp_state.state not in [
-                "unknown",
-                "unavailable",
-            ]:
-                try:
-                    temp = float(temp_state.state)
-                except (ValueError, TypeError):
-                    temp = None
-
-            humidity_state = self.hass.states.get(self._humidity_sensor)
-            if humidity_state is not None and humidity_state.state not in [
-                "unknown",
-                "unavailable",
-            ]:
-                try:
-                    humidity = float(humidity_state.state)
-                except (ValueError, TypeError):
-                    humidity = None
+            temp = self._get_float_state(self._temp_sensor)
+            humidity = self._get_float_state(self._humidity_sensor)
 
         if temp is not None and humidity is not None:
             return VPDCalculator.calculate_vpd(temp, humidity)
         return None
 
 
-class CalculatedVpdSensor(SensorEntity):
+class CalculatedVpdSensor(BaseVpdSensor):
     """A sensor that calculates VPD from temperature and humidity with LST offset.
 
     This sensor is automatically created when a growspace has temperature and
@@ -441,17 +448,7 @@ class CalculatedVpdSensor(SensorEntity):
         humidity_sensor: str,
         lst_offset: float = -2.0,
     ) -> None:
-        """Initialize the calculated VPD sensor.
-
-        Args:
-            coordinator: The data update coordinator.
-            growspace_id: The ID of the growspace.
-            growspace_name: The name of the growspace.
-            temp_sensor: The entity ID of the temperature sensor.
-            humidity_sensor: The entity ID of the humidity sensor.
-            lst_offset: The leaf surface temperature offset in °C (default: -2.0).
-        """
-        # We manually store coordinator if needed, but depend on self.hass for state
+        """Initialize the calculated VPD sensor."""
         self._coordinator = coordinator
         self._growspace_id = growspace_id
         self._attr_name = f"{growspace_name} Calculated VPD"
@@ -459,8 +456,6 @@ class CalculatedVpdSensor(SensorEntity):
         self._temp_sensor = temp_sensor
         self._humidity_sensor = humidity_sensor
         self._lst_offset = lst_offset
-        self._attr_state_class = SensorStateClass.MEASUREMENT
-        self._attr_native_unit_of_measurement = "kPa"
         self._attr_icon = ICON_CALCULATED_VPD
 
         self._attr_device_info = DeviceInfo(
@@ -470,39 +465,16 @@ class CalculatedVpdSensor(SensorEntity):
             manufacturer="Growspace Manager",
         )
 
-    async def async_added_to_hass(self) -> None:
-        """Register callbacks when the entity is added to Home Assistant."""
-        # Listen for state changes on source entities
-        entities_to_track = [self._temp_sensor, self._humidity_sensor]
-        self.async_on_remove(
-            async_track_state_change_event(
-                self.hass, entities_to_track, self._handle_source_update
-            )
-        )
-
-    async def _handle_source_update(self, event) -> None:
-        """Handle updates from source sensors."""
-        self.async_write_ha_state()
+    @property
+    def entities_to_track(self) -> list[str]:
+        """Return a list of entity IDs to track."""
+        return [self._temp_sensor, self._humidity_sensor]
 
     @property
     def native_value(self) -> float | None:
         """Return the calculated VPD value in kPa."""
-        temp = None
-        humidity = None
-
-        temp_state = self.hass.states.get(self._temp_sensor)
-        if temp_state and temp_state.state not in ["unknown", "unavailable"]:
-            try:
-                temp = float(temp_state.state)
-            except (ValueError, TypeError):
-                temp = None
-
-        humidity_state = self.hass.states.get(self._humidity_sensor)
-        if humidity_state and humidity_state.state not in ["unknown", "unavailable"]:
-            try:
-                humidity = float(humidity_state.state)
-            except (ValueError, TypeError):
-                humidity = None
+        temp = self._get_float_state(self._temp_sensor)
+        humidity = self._get_float_state(self._humidity_sensor)
 
         if temp is not None and humidity is not None:
             return VPDCalculator.calculate_vpd_with_lst_offset(

@@ -15,7 +15,54 @@ from .const import PlantStage
 
 
 @dataclass
-class IrrigationStrategy:
+class BaseModel:
+    """Base class providing generic serialization methods."""
+
+    def to_dict(self) -> dict:
+        """Convert to dictionary."""
+        return asdict(self)
+
+    @classmethod
+    def from_dict(
+        cls,
+        data: dict,
+        migrations: dict[str, str] | None = None,
+        nested_handlers: dict[str, Any] | None = None,
+        defaults: dict[str, Any] | None = None,
+    ) -> Any:
+        """Create from dictionary with optional migrations and nested handlers."""
+        data = data.copy()
+
+        # Apply migrations
+        if migrations:
+            for old_key, new_key in migrations.items():
+                if old_key in data and new_key not in data:
+                    data[new_key] = data.pop(old_key)
+
+        # Apply defaults
+        if defaults:
+            for key, value in defaults.items():
+                if key not in data:
+                    data[key] = value
+
+        # specific hack for IrrigationStrategy which isn't always dict in some contexts?
+        # Actually usually it is. But just in case.
+        if nested_handlers:
+            for key, handler in nested_handlers.items():
+                if key in data and isinstance(data[key], dict):
+                    data[key] = handler(data[key])
+                elif key in data and data[key] is None:
+                    # Handle None if handler allows it, or let it pass if field allows None
+                    pass
+
+        allowed_keys = {f.name for f in fields(cls)}
+        filtered_data = {k: v for k, v in data.items() if k in allowed_keys}
+
+        return cls(**filtered_data)
+
+
+@dataclass
+class IrrigationStrategy(BaseModel):
     """Configuration for VWC-based crop steering strategy.
 
     Attributes:
@@ -38,21 +85,9 @@ class IrrigationStrategy:
     shot_duration_seconds: int = 10
     shot_interval_minutes: int = 15
 
-    def to_dict(self) -> dict:
-        """Convert to dictionary."""
-        return asdict(self)
-
-    @staticmethod
-    def from_dict(data: dict) -> IrrigationStrategy:
-        """Create from dictionary."""
-        data = data.copy()
-        allowed_keys = {f.name for f in fields(IrrigationStrategy)}
-        filtered_data = {k: v for k, v in data.items() if k in allowed_keys}
-        return IrrigationStrategy(**filtered_data)
-
 
 @dataclass
-class Growspace:
+class Growspace(BaseModel):
     """Represents a single growspace area.
 
     Attributes:
@@ -81,55 +116,18 @@ class Growspace:
     dehumidifier_config: dict[str, Any] = field(default_factory=dict)
     irrigation_strategy: IrrigationStrategy = field(default_factory=IrrigationStrategy)
 
-    def to_dict(self) -> dict:
-        """Convert the dataclass instance to a dictionary.
-
-        Returns:
-            A dictionary representation of the Growspace.
-        """
-
-        return asdict(self)
-
-    @staticmethod
-    def from_dict(data: dict) -> Growspace:
-        """Create a Growspace instance from a dictionary.
-
-        This factory method handles the migration of legacy field names
-        and filters out any keys that do not correspond to dataclass fields,
-        making it robust against data from older versions.
-
-        Args:
-            data: A dictionary containing the growspace data.
-
-        Returns:
-            A new instance of the Growspace class.
-        """
-        data = data.copy()  # Don't modify original
-
-        # Migrate old field names
-        if "created" in data and "created_at" not in data:
-            data["created_at"] = data.pop("created")
-
-        if "updated" in data and "updated_at" not in data:
-            data["updated_at"] = data.pop("updated")
-
-        # Handle nested objects
-        if "irrigation_strategy" in data and isinstance(
-            data["irrigation_strategy"], dict
-        ):
-            data["irrigation_strategy"] = IrrigationStrategy.from_dict(
-                data["irrigation_strategy"]
-            )
-
-        # Only keep keys that match dataclass fields
-        allowed_keys = {f.name for f in fields(Growspace)}
-        filtered_data = {k: v for k, v in data.items() if k in allowed_keys}
-
-        return Growspace(**filtered_data)
+    @classmethod
+    def from_dict(cls, data: dict) -> Growspace:
+        """Create a Growspace instance from a dictionary."""
+        return super().from_dict(
+            data,
+            migrations={"created": "created_at", "updated": "updated_at"},
+            nested_handlers={"irrigation_strategy": IrrigationStrategy.from_dict},
+        )
 
 
 @dataclass
-class Plant:
+class Plant(BaseModel):
     """Represents a single plant.
 
     Attributes:
@@ -176,42 +174,13 @@ class Plant:
     transition_date: str | None = None
     source_mother: str | None = None
 
-    def to_dict(self) -> dict:
-        """Convert the dataclass instance to a dictionary.
-
-        Returns:
-            A dictionary representation of the Plant.
-        """
-        return asdict(self)
-
-    @staticmethod
-    def from_dict(data: dict) -> Plant:
-        """Create a Plant instance from a dictionary.
-
-        This factory method handles the migration of legacy field names
-        and filters out any keys that do not correspond to dataclass fields,
-        making it robust against data from older versions.
-
-        Args:
-            data: A dictionary containing the plant data.
-
-        Returns:
-            A new instance of the Plant class.
-        """
-        data = data.copy()  # Don't modify original
-
-        # Migrate old field names
-        if "created" in data and "created_at" not in data:
-            data["created_at"] = data.pop("created")
-
-        if "updated" in data and "updated_at" not in data:
-            data["updated_at"] = data.pop("updated")
-
-        # Only keep keys that match dataclass fields
-        allowed_keys = {f.name for f in fields(Plant)}
-        filtered_data = {k: v for k, v in data.items() if k in allowed_keys}
-
-        return Plant(**filtered_data)
+    @classmethod
+    def from_dict(cls, data: dict) -> Plant:
+        """Create a Plant instance from a dictionary."""
+        return super().from_dict(
+            data,
+            migrations={"created": "created_at", "updated": "updated_at"},
+        )
 
 
 @dataclass
@@ -248,7 +217,7 @@ class EnvironmentState:
 
 
 @dataclass
-class GrowspaceEvent:
+class GrowspaceEvent(BaseModel):
     """Represents a historical significant event in a growspace.
 
     Attributes:
@@ -271,28 +240,14 @@ class GrowspaceEvent:
     category: str
     reasons: list[str] = field(default_factory=list)
 
-    def to_dict(self) -> dict:
-        """Convert the dataclass instance to a dictionary."""
-        return asdict(self)
-
-    @staticmethod
-    def from_dict(data: dict) -> GrowspaceEvent:
+    @classmethod
+    def from_dict(cls, data: dict) -> GrowspaceEvent:
         """Create a GrowspaceEvent instance from a dictionary."""
-        data = data.copy()
-
-        # Backward compatibility for 'max_probability'
-        if "max_probability" in data and "severity" not in data:
-            data["severity"] = data.pop("max_probability")
-
-        # Default category if missing
-        if "category" not in data:
-            data["category"] = "alert"  # Default for legacy events
-
-        # Only keep keys that match dataclass fields
-        allowed_keys = {f.name for f in fields(GrowspaceEvent)}
-        filtered_data = {k: v for k, v in data.items() if k in allowed_keys}
-
-        return GrowspaceEvent(**filtered_data)
+        return super().from_dict(
+            data,
+            migrations={"max_probability": "severity"},
+            defaults={"category": "alert"},
+        )
 
 
 class GrowspaceCoordinatorData(TypedDict):

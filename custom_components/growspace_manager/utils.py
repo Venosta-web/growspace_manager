@@ -21,15 +21,18 @@ def parse_date_field(date_value: DateInput) -> datetime | None:
 
     dt: datetime | None = None
 
-    if isinstance(date_value, datetime):
-        dt = date_value
-    elif isinstance(date_value, date):
-        dt = datetime.combine(date_value, datetime.min.time())
-    elif isinstance(date_value, str):
-        try:
-            # Attempt to parse ISO format
-            dt = parser.isoparse(date_value)
-        except (ValueError, TypeError):
+    match date_value:
+        case datetime():
+            dt = date_value
+        case date():
+            dt = datetime.combine(date_value, datetime.min.time())
+        case str():
+            try:
+                # Attempt to parse ISO format
+                dt = parser.isoparse(date_value)
+            except (ValueError, TypeError):
+                return None
+        case _:
             return None
 
     if dt is not None:
@@ -113,6 +116,18 @@ class VPDCalculator:
     """A utility class for calculating Vapor Pressure Deficit (VPD)."""
 
     @staticmethod
+    def _calculate_svp(temperature_c: float) -> float:
+        """Calculate Saturation Vapor Pressure (SVP) using the Magnus formula.
+
+        Args:
+            temperature_c: Temperature in degrees Celsius.
+
+        Returns:
+            SVP in kilopascals (kPa).
+        """
+        return 0.61094 * math.exp((17.625 * temperature_c) / (243.04 + temperature_c))
+
+    @staticmethod
     def calculate_vpd(temperature_c: float, humidity_rh: float) -> float | None:
         """Calculate Vapor Pressure Deficit (VPD) in kPa.
 
@@ -128,8 +143,8 @@ class VPDCalculator:
         ):
             return None
 
-        # Magnus formula to calculate saturation vapor pressure (SVP) in kPa
-        svp = 0.61094 * math.exp((17.625 * temperature_c) / (243.04 + temperature_c))
+        # Calculate saturation vapor pressure (SVP)
+        svp = VPDCalculator._calculate_svp(temperature_c)
 
         # Calculate actual vapor pressure (AVP)
         avp = svp * (humidity_rh / 100)
@@ -160,21 +175,25 @@ class VPDCalculator:
         # Calculate leaf temperature
         leaf_temperature_c = air_temperature_c + lst_offset
 
-        # Magnus formula for saturation vapor pressure at leaf temperature
-        svp_leaf = 0.61094 * math.exp(
-            (17.625 * leaf_temperature_c) / (243.04 + leaf_temperature_c)
-        )
+        # Calculate SVP at leaf temperature (Leaf SVP) represents the saturated vapor pressure
+        # within the leaf stomata.
+        leaf_svp = VPDCalculator._calculate_svp(leaf_temperature_c)
 
-        # Magnus formula for saturation vapor pressure at air temperature
-        svp_air = 0.61094 * math.exp(
-            (17.625 * air_temperature_c) / (243.04 + air_temperature_c)
-        )
+        # Calculate SVP at air temperature (Air SVP)
+        # Note: While simple VPD uses Air SVP to find AVP, for leaf-to-air VPD
+        # we strictly compare Leaf SVP to Air AVP.
 
-        # Calculate actual vapor pressure from air
-        avp = svp_air * (humidity_rh / 100)
+        # We need Air SVP only to calculate Air AVP from RH
+        air_svp = VPDCalculator._calculate_svp(air_temperature_c)
 
-        # VPD is the difference between leaf SVP and air AVP
-        vpd = svp_leaf - avp
+        # Actual Vapor Pressure of the air (AVP) derived from Air SVP and RH
+        air_avp = air_svp * (humidity_rh / 100)
+
+        # Leaf-to-Air VPD = Leaf SVP - Air AVP
+        vpd = leaf_svp - air_avp
+
+        # VPD cannot be negative physically (implies condensation/dew point reached on leaf)
+        # but returning 0.0 or negative is fine for tracking.
         return round(vpd, 2)
 
 
