@@ -14,7 +14,8 @@ from unittest.mock import AsyncMock, MagicMock, Mock, patch
 import pytest
 from freezegun import freeze_time
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers import entity_registry as er, device_registry as dr
+from homeassistant.helpers import device_registry as dr
+from homeassistant.helpers import entity_registry as er
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.growspace_manager.const import (
@@ -706,7 +707,17 @@ async def test_async_load(coordinator: GrowspaceCoordinator) -> None:
     coordinator.async_save = AsyncMock()
     coordinator.strain_library.import_strains = AsyncMock()
     coordinator.storage_manager.async_save = AsyncMock()
-    await coordinator.async_load()
+
+    # Patch the ensure methods to avoid side effects (creating default growspaces)
+    with (
+        patch.object(
+            coordinator, "_ensure_default_growspaces", new_callable=AsyncMock
+        ) as mock_ensure_defaults,
+        patch.object(coordinator, "_ensure_calculated_sensors") as mock_ensure_calc,
+    ):
+        await coordinator.async_load()
+        mock_ensure_defaults.assert_awaited_once()
+        mock_ensure_calc.assert_called_once()
 
     # Assertions
     assert "p1" in coordinator.plants

@@ -22,7 +22,6 @@ from homeassistant.helpers.entity import Entity
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.event import async_track_state_change_event
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
-from homeassistant.util import slugify
 
 from .const import DOMAIN, PLANT_STAGES
 
@@ -34,6 +33,8 @@ from .utils import (
     VPDCalculator,
     calculate_plant_stage,
     days_to_week,
+    generate_growspace_overview_unique_id,
+    generate_vpd_sensor_unique_id,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -114,9 +115,6 @@ async def async_setup_entry(
             "Added %d initial entities (growspaces/plants/strain library)",
             len(initial_entities),
         )
-
-    # Ensure dry and cure growspaces exist after coordinator setup
-    await ensure_special_growspaces(coordinator)
 
     # Create global VPD sensors
     global_entities = []
@@ -288,21 +286,9 @@ def _check_calculated_vpd_sensor(
     humidity_sensor = env_config.get("humidity_sensor")
     vpd_sensor = env_config.get("vpd_sensor")
 
-    calc_name = f"{growspace.name} Calculated VPD"
-    expected_generated_id = f"sensor.{slugify(calc_name)}"
-    uuid_generated_id = f"sensor.{growspace.id}_calculated_vpd"
-
     # Create calculated VPD if temp and humidity exist but no VPD sensor
     # OR if the set sensor is the one we generated
-    if (
-        temp_sensor
-        and humidity_sensor
-        and (
-            not vpd_sensor
-            or vpd_sensor == expected_generated_id
-            or vpd_sensor == uuid_generated_id
-        )
-    ):
+    if temp_sensor and humidity_sensor and (not vpd_sensor):
         lst_offset = env_config.get("lst_offset", -2.0)
         calc_vpd_sensor = CalculatedVpdSensor(
             coordinator,
@@ -313,41 +299,8 @@ def _check_calculated_vpd_sensor(
             lst_offset,
         )
 
-        if not vpd_sensor or vpd_sensor == uuid_generated_id:
-            env_config["vpd_sensor"] = expected_generated_id
-            growspace.environment_config = env_config
-            _LOGGER.info(
-                "Created and linked calculated VPD sensor for %s", growspace.name
-            )
-
         return calc_vpd_sensor
     return None
-
-
-async def ensure_special_growspaces(coordinator: GrowspaceCoordinator) -> None:
-    """Ensure special growspaces exist."""
-    dry_id = coordinator.ensure_special_growspace(
-        "dry", "dry", rows=3, plants_per_row=3
-    )
-    cure_id = coordinator.ensure_special_growspace(
-        "cure", "cure", rows=3, plants_per_row=3
-    )
-    clone_id = coordinator.ensure_special_growspace(
-        "clone", "clone", rows=3, plants_per_row=3
-    )
-    mother_id = coordinator.ensure_special_growspace(
-        "mother", "mother", rows=3, plants_per_row=3
-    )
-
-    await coordinator.async_save()
-
-    _LOGGER.info(
-        "Ensured special growspaces exist: dry=%s, cure=%s clone=%s mother=%s",
-        dry_id,
-        cure_id,
-        clone_id,
-        mother_id,
-    )
 
 
 class VpdSensor(SensorEntity):
@@ -475,7 +428,7 @@ class CalculatedVpdSensor(SensorEntity):
         self._coordinator = coordinator
         self._growspace_id = growspace_id
         self._attr_name = f"{growspace_name} Calculated VPD"
-        self._attr_unique_id = f"{DOMAIN}_{growspace_id}_calculated_vpd"
+        self._attr_unique_id = generate_vpd_sensor_unique_id(growspace_id)
         self._temp_sensor = temp_sensor
         self._humidity_sensor = humidity_sensor
         self._lst_offset = lst_offset
@@ -604,7 +557,7 @@ class GrowspaceOverviewSensor(CoordinatorEntity[GrowspaceCoordinator], SensorEnt
         # We don't store self.growspace anymore to ensure we always get the latest
         # object from the coordinator.
         self._attr_name = growspace.name
-        self._attr_unique_id = f"{DOMAIN}_{growspace_id}"
+        self._attr_unique_id = generate_growspace_overview_unique_id(growspace_id)
 
         # Set up device info
         self._attr_device_info = DeviceInfo(

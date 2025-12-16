@@ -7,6 +7,7 @@ import voluptuous as vol
 
 from custom_components.growspace_manager.const import (
     ADD_PLANT_SCHEMA,
+    UPDATE_PLANT_SCHEMA,
     valid_date_or_none,
     valid_growspace_id,
 )
@@ -102,3 +103,15 @@ def test_add_plant_schema_with_optional_fields():
     }
     validated = ADD_PLANT_SCHEMA(data)
     assert validated == data
+
+
+def test_update_plant_schema_valid():
+    """Test UPDATE_PLANT_SCHEMA with valid data."""
+    data = {"plant_id": "p1", "seedling_days": "10", "veg_start": "2023-02-01"}
+    # Schema coerces string dates to datetime objects if valid and days to integers
+    expected = data.copy()
+    expected["veg_start"] = datetime.combine(date(2023, 2, 1), datetime.min.time())
+    expected["seedling_days"] = 10
+
+    validated = UPDATE_PLANT_SCHEMA(data)
+    assert validated == expected

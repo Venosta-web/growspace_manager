@@ -223,11 +223,10 @@ async def test_async_setup_entry_calculated_vpd(mock_coordinator) -> None:
     assert calc_vpd._temp_sensor == "sensor.temp"
     assert calc_vpd._humidity_sensor == "sensor.humidity"
 
-    # Check that environment_config was updated
-    assert (
-        mock_coordinator.growspaces["gs1"].environment_config["vpd_sensor"]
-        == "sensor.growspace_1_calculated_vpd"
-    )
+    assert calc_vpd._humidity_sensor == "sensor.humidity"
+
+    # Note: Config patching was moved to coordinator._ensure_calculated_sensors,
+    # so environment_config is NOT updated by async_setup_entry.
 
 
 @pytest.mark.asyncio

@@ -47,47 +47,6 @@ STEP_USER_DATA_SCHEMA = vol.Schema(
 )
 
 
-async def ensure_default_growspaces(coordinator):
-    """Ensure that the default special growspaces (dry, cure, etc.) exist.
-
-    This function is called during setup to create the logical growspaces
-    used for specific stages of cultivation if they haven't been created yet.
-
-    Args:
-        coordinator: The Growspace Manager data update coordinator.
-    """
-    try:
-        # Create special growspaces with their canonical IDs
-        default_growspaces = [
-            ("dry", "dry", 3, 3),
-            ("cure", "cure", 3, 3),
-            ("mother", "mother", 3, 3),
-            ("clone", "clone", 5, 5),
-            ("veg", "veg", 5, 5),
-        ]
-
-        created_count = 0
-        for growspace_id, name, rows, plants_per_row in default_growspaces:
-            # Use the coordinator's method to ensure special growspaces
-            canonical_id = coordinator.ensure_special_growspace(
-                growspace_id, name, rows, plants_per_row
-            )
-            if canonical_id not in coordinator.growspaces:
-                created_count += 1
-
-        if created_count > 0:
-            # Save the updated data
-            await coordinator.async_save()
-            # Notify listeners of the changes
-            coordinator.async_set_updated_data(coordinator.data)
-            _LOGGER.info("Created %s default growspaces", created_count)
-        else:
-            _LOGGER.info("All default growspaces already exist")
-
-    except (ValueError, KeyError, AttributeError) as err:
-        _LOGGER.error("Error creating default growspaces: %s", err)
-
-
 class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     """Handle the initial configuration flow for Growspace Manager.
 

@@ -9,8 +9,10 @@ from datetime import date, datetime, timedelta
 from typing import TYPE_CHECKING, Any
 
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers import device_registry as dr, entity_registry as er
+from homeassistant.helpers import device_registry as dr
+from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
+from homeassistant.util import slugify
 
 if TYPE_CHECKING:
     from .dehumidifier_coordinator import DehumidifierCoordinator
@@ -36,6 +38,7 @@ from .utils import (
     calculate_plant_stage,
     format_date,
     generate_growspace_grid,
+    generate_growspace_overview_unique_id,
     parse_date_field,
 )
 
@@ -465,6 +468,59 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
     async def async_load(self) -> None:
         """Load data from persistent storage and handle migrations."""
         await self.storage_manager.async_load()
+        self._ensure_calculated_sensors()
+        await self._ensure_default_growspaces()
+
+    async def _ensure_default_growspaces(self) -> None:
+        """Ensure that the default special growspaces (dry, cure, etc.) exist."""
+        default_growspaces = [
+            ("dry", "dry", 3, 3),
+            ("cure", "cure", 3, 3),
+            ("mother", "mother", 3, 3),
+            ("clone", "clone", 5, 5),
+            ("veg", "veg", 5, 5),
+        ]
+
+        created_count = 0
+        for growspace_id, name, rows, plants_per_row in default_growspaces:
+            # Use the coordinator's method to ensure special growspaces
+            canonical_id = self.ensure_special_growspace(
+                growspace_id, name, rows, plants_per_row
+            )
+            # ensure_special_growspace adds to self.growspaces
+            # We can check if it was newly created if needed, but the method
+            # handles key existence.
+            pass
+
+        # Ensure changes are persisted if any
+        if created_count > 0:  # Logic to detect creation?
+            # ensure_special_growspace calls update_data_property but not async_save
+            # unless new (but note: my reading of ensure_special_growspace line 357
+            # says it calls _create... then update... but NOT save?
+            # Wait, ensure_special_growspace docstring: "This method also handles migration...".
+            # Line 342 in sensor.py called coordinator.async_save() explicitly!
+            # coordinator.ensure_special_growspace DOES NOT SAVE by default (it creates in memory).
+            # So I MUST save here.
+            pass
+
+        await self.async_save()
+
+    def _ensure_calculated_sensors(self) -> None:
+        """Ensure default calculated sensors are configured in growspace config."""
+        for growspace in self.growspaces.values():
+            env_config = growspace.environment_config or {}
+            temp_sensor = env_config.get("temperature_sensor")
+            humidity_sensor = env_config.get("humidity_sensor")
+            vpd_sensor = env_config.get("vpd_sensor")
+
+            if temp_sensor and humidity_sensor and not vpd_sensor:
+                calc_name = f"{growspace.name} Calculated VPD"
+                expected_id = f"sensor.{slugify(calc_name)}"
+
+                # Patch config
+                env_config["vpd_sensor"] = expected_id
+                growspace.environment_config = env_config
+                _LOGGER.info("Configured default calculated VPD for %s", growspace.name)
 
     def update_data_property(self) -> None:
         """Update the central `self.data` property to reflect the current coordinator state."""
@@ -1300,16 +1356,48 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
         Returns:
             The guessed entity ID string.
         """
-        # Handle special cases first
+        # Try to look up via Entity Registry using consistent unique_id
+        unique_id = generate_growspace_overview_unique_id(growspace_id)
+        registry = er.async_get(self.hass)
+        entity_id = registry.async_get_entity_id("sensor", DOMAIN, unique_id)
+        if entity_id:
+            return entity_id
+
+        # Fallback: Handle special cases logic (legacy behavior)
         if growspace_id in (PlantStage.DRY, "dry_overview"):
+            # Try getting canonical ID for dry
+            dry_id = getattr(PlantStage.DRY, "value", "dry")
+            dry_uid = generate_growspace_overview_unique_id(dry_id)
+            eid = registry.async_get_entity_id("sensor", DOMAIN, dry_uid)
+            if eid:
+                return eid
             return f"sensor.{PlantStage.DRY}"
+
         if growspace_id in (PlantStage.CURE, "cure_overview"):
+            cure_id = getattr(PlantStage.CURE, "value", "cure")
+            cure_uid = generate_growspace_overview_unique_id(cure_id)
+            eid = registry.async_get_entity_id("sensor", DOMAIN, cure_uid)
+            if eid:
+                return eid
             return f"sensor.{PlantStage.CURE}"
+
         if growspace_id in (PlantStage.MOTHER, "mother_overview"):
+            mother_id = getattr(PlantStage.MOTHER, "value", "mother")
+            mother_uid = generate_growspace_overview_unique_id(mother_id)
+            eid = registry.async_get_entity_id("sensor", DOMAIN, mother_uid)
+            if eid:
+                return eid
             return f"sensor.{PlantStage.MOTHER}"
+
         if growspace_id in (PlantStage.CLONE, "clone_overview"):
+            clone_id = getattr(PlantStage.CLONE, "value", "clone")
+            clone_uid = generate_growspace_overview_unique_id(clone_id)
+            eid = registry.async_get_entity_id("sensor", DOMAIN, clone_uid)
+            if eid:
+                return eid
             return f"sensor.{PlantStage.CLONE}"
-        # General case
+
+        # General fallback: guess based on name
         growspace = self.growspaces.get(growspace_id)
         name = getattr(growspace, "name", growspace_id) if growspace else growspace_id
 
@@ -1318,6 +1406,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
             ch if ch.isalnum() or ch == "_" else "_"
             for ch in str(name).lower().replace(" ", "_")
         )
+        return f"sensor.{slug}"
 
         # Collapse repeated underscores
         while "__" in slug:

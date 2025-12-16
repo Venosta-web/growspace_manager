@@ -7,7 +7,7 @@ from datetime import date, datetime
 
 from dateutil import parser
 
-from .const import PlantStage
+from .const import DOMAIN, PlantStage
 from .models import Growspace, Plant
 
 DateInput = str | datetime | date | None
@@ -231,3 +231,13 @@ def _get_stage_fallback(plant: Plant) -> str | None:
     if plant.stage in valid_stages:
         return plant.stage
     return None
+
+
+def generate_vpd_sensor_unique_id(growspace_id: str) -> str:
+    """Generate a consistent unique ID for a calculated VPD sensor."""
+    return f"{DOMAIN}_{growspace_id}_calculated_vpd"
+
+
+def generate_growspace_overview_unique_id(growspace_id: str) -> str:
+    """Generate a consistent unique ID for a growspace overview sensor."""
+    return f"{DOMAIN}_{growspace_id}"
