@@ -295,8 +295,7 @@ async def test_async_setup_entry_with_growspaces(mock_hass) -> None:
     mock_gs1 = MagicMock()
     mock_gs1.irrigation_strategy.enabled = False
     coordinator_mock.growspaces = {"gs1": mock_gs1}
-    coordinator_mock.irrigation_coordinators = {}
-    coordinator_mock.dehumidifier_coordinators = {}
+    coordinator_mock.async_initialize_sub_coordinators = AsyncMock()
 
     with (
         patch("custom_components.growspace_manager.Store", return_value=AsyncMock()),
@@ -304,23 +303,13 @@ async def test_async_setup_entry_with_growspaces(mock_hass) -> None:
             "custom_components.growspace_manager.GrowspaceCoordinator",
             return_value=coordinator_mock,
         ),
-        patch(
-            "custom_components.growspace_manager.IrrigationCoordinator"
-        ) as mock_irrigation,
-        patch(
-            "custom_components.growspace_manager.DehumidifierCoordinator"
-        ) as mock_dehumidifier,
     ):
-        mock_irrigation.return_value.async_setup = AsyncMock()
-
         assert await async_setup_entry(mock_hass, entry)
 
-        mock_irrigation.assert_called_once()
-        mock_dehumidifier.assert_called_once()
-        assert entry.runtime_data.irrigation_coordinators
-        assert "gs1" in entry.runtime_data.irrigation_coordinators
-        assert entry.runtime_data.dehumidifier_coordinators
-        assert "gs1" in entry.runtime_data.dehumidifier_coordinators
+        # Verify delegation
+        coordinator_mock.async_initialize_sub_coordinators.assert_called_once_with(
+            entry
+        )
 
         # Verify unload listener registered
         # assert len(entry.async_on_unload.call_args_list) > 0  # Since MockConfigEntry uses a real list for callbacks? No, it's a mock method or list.

@@ -6,6 +6,7 @@ import math
 from datetime import date, datetime
 
 from dateutil import parser
+from homeassistant.util.dt import as_local, now
 
 from .const import DOMAIN, PlantStage
 from .models import Growspace, Plant
@@ -14,19 +15,28 @@ DateInput = str | datetime | date | None
 
 
 def parse_date_field(date_value: DateInput) -> datetime | None:
-    """Parse various date inputs into a datetime object."""
+    """Parse various date inputs into a timezone-aware datetime object."""
     if date_value is None:
         return None
+
+    dt: datetime | None = None
+
     if isinstance(date_value, datetime):
-        return date_value
-    if isinstance(date_value, date):
-        return datetime.combine(date_value, datetime.min.time())
-    if isinstance(date_value, str):
+        dt = date_value
+    elif isinstance(date_value, date):
+        dt = datetime.combine(date_value, datetime.min.time())
+    elif isinstance(date_value, str):
         try:
             # Attempt to parse ISO format
-            return parser.isoparse(date_value)
+            dt = parser.isoparse(date_value)
         except (ValueError, TypeError):
             return None
+
+    if dt is not None:
+        if dt.tzinfo is None:
+            return as_local(dt)
+        return dt
+
     return None
 
 
@@ -46,7 +56,7 @@ def calculate_days_since(
     If end_date is None, uses current time.
     """
     start = parse_date_field(start_date)
-    end = parse_date_field(end_date) if end_date else datetime.now()
+    end = parse_date_field(end_date) if end_date else now()
     if start is None or end is None:
         return 0
     return (end - start).days
@@ -208,7 +218,7 @@ def _get_stage_from_growspace(plant: Plant) -> str | None:
 
 def _get_stage_from_dates(plant: Plant) -> str | None:
     """Determine stage based on start dates, prioritizing the most advanced stage."""
-    now = datetime.now()
+    current_time = now()
     # Check in reverse order of progression (most advanced first)
     dates = [
         (plant.cure_start, PlantStage.CURE),
@@ -220,7 +230,7 @@ def _get_stage_from_dates(plant: Plant) -> str | None:
         (plant.seedling_start, PlantStage.SEEDLING),
     ]
     for date_val, stage in dates:
-        if (dt := parse_date_field(date_val)) and dt <= now:
+        if (dt := parse_date_field(date_val)) and dt <= current_time:
             return stage
     return None
 

@@ -20,12 +20,9 @@ from homeassistant.helpers.typing import ConfigType
 
 from .const import DOMAIN, PLATFORMS, STORAGE_KEY, STORAGE_VERSION
 from .coordinator import GrowspaceCoordinator
-from .dehumidifier_coordinator import DehumidifierCoordinator
 from .intent import async_setup_intents
-from .irrigation_coordinator import IrrigationCoordinator
 from .service_registration import get_coordinator_for_call, register_services
 from .services.strain_library import StrainLibrary
-from .vwc_irrigation_coordinator import VWCIrrigationCoordinator
 
 CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 
@@ -148,43 +145,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: GrowspaceConfigEntry) ->
 
     entry.runtime_data = coordinator
 
-    for growspace_id, gs in coordinator.growspaces.items():
-        # ADD THIS DEBUG LOGGING
-        irrigation_config = entry.options.get("irrigation", {}).get(growspace_id, {})
-        _LOGGER.debug(
-            "IRRIGATION INIT - Growspace: %s, Config: %s",
-            growspace_id,
-            irrigation_config,
-        )
-
-        if gs.irrigation_strategy.enabled:
-            _LOGGER.info(
-                "Initializing VWC Irrigation Coordinator for growspace %s", growspace_id
-            )
-            irrigation_coordinator = VWCIrrigationCoordinator(
-                hass, entry, growspace_id, coordinator
-            )
-        else:
-            _LOGGER.debug(
-                "Initializing Standard Irrigation Coordinator for growspace %s",
-                growspace_id,
-            )
-            irrigation_coordinator = IrrigationCoordinator(
-                hass, entry, growspace_id, coordinator
-            )
-
-        await irrigation_coordinator.async_setup()
-        entry.runtime_data.irrigation_coordinators[growspace_id] = (
-            irrigation_coordinator
-        )
-
-        dehumidifier_coordinator = DehumidifierCoordinator(
-            hass, entry, growspace_id, coordinator
-        )
-
-        entry.runtime_data.dehumidifier_coordinators[growspace_id] = (
-            dehumidifier_coordinator
-        )
+    # Initialize sub-coordinators
+    await coordinator.async_initialize_sub_coordinators(entry)
 
     entry.async_on_unload(lambda: _async_cancel_coordinators(entry.runtime_data))
     entry.add_update_listener(_async_update_listener)

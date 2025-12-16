@@ -18,6 +18,7 @@ from custom_components.growspace_manager.services.ai_assistant import (
 from custom_components.growspace_manager.services.growspace import (
     handle_add_growspace,
     handle_remove_growspace,
+    handle_update_growspace,
 )
 from custom_components.growspace_manager.strain_library import StrainLibrary
 
@@ -115,10 +116,6 @@ async def test_handle_update_growspace(
         "rows": 5,
         "plants_per_row": 5,
     }
-
-    from custom_components.growspace_manager.services.growspace import (
-        handle_update_growspace,
-    )
 
     await handle_update_growspace(
         mock_hass, mock_coordinator, mock_strain_library, mock_call

@@ -6,7 +6,7 @@ import asyncio
 import logging
 import uuid
 from datetime import date, datetime, timedelta
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import device_registry as dr
@@ -14,19 +14,17 @@ from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 from homeassistant.util import slugify
 
-if TYPE_CHECKING:
-    from .dehumidifier_coordinator import DehumidifierCoordinator
-    from .irrigation_coordinator import IrrigationCoordinator
-    from .vwc_irrigation_coordinator import VWCIrrigationCoordinator
-
 from .const import (
     DOMAIN,
     EVENT_GROWSPACE_UPDATED,
+    SPECIAL_GROWSPACES,
     PlantStage,
 )
+from .dehumidifier_coordinator import DehumidifierCoordinator
 from .environment_analyzer import EnvironmentAnalyzer
 from .growspace_validator import GrowspaceValidator
 from .import_export_manager import ImportExportManager
+from .irrigation_coordinator import IrrigationCoordinator
 from .migration_manager import MigrationManager
 from .models import Growspace, GrowspaceCoordinatorData, GrowspaceEvent, Plant
 from .notification_manager import NotificationManager
@@ -40,6 +38,7 @@ from .utils import (
     generate_growspace_overview_unique_id,
     parse_date_field,
 )
+from .vwc_irrigation_coordinator import VWCIrrigationCoordinator
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -169,6 +168,36 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
         raise TypeError(f"Invalid data type for growspace {gid}: {type(gdata)}")
 
     # -----------------------------
+
+    async def async_initialize_sub_coordinators(self, entry: Any) -> None:
+        """Initialize sub-coordinators for irrigation and dehumidifier."""
+
+        for growspace_id, gs in self.growspaces.items():
+            if gs.irrigation_strategy.enabled:
+                _LOGGER.info(
+                    "Initializing VWC Irrigation Coordinator for growspace %s",
+                    growspace_id,
+                )
+                irrigation_coordinator = VWCIrrigationCoordinator(
+                    self.hass, entry, growspace_id, self
+                )
+            else:
+                _LOGGER.debug(
+                    "Initializing Standard Irrigation Coordinator for growspace %s",
+                    growspace_id,
+                )
+                irrigation_coordinator = IrrigationCoordinator(
+                    self.hass, entry, growspace_id, self
+                )
+
+            await irrigation_coordinator.async_setup()
+            self.irrigation_coordinators[growspace_id] = irrigation_coordinator
+
+            dehumidifier_coordinator = DehumidifierCoordinator(
+                self.hass, entry, growspace_id, self
+            )
+
+            self.dehumidifier_coordinators[growspace_id] = dehumidifier_coordinator
 
     def get_growspace_options(self) -> dict[str, str]:
         """Return growspaces for dropdown selection in the editor.
@@ -1268,55 +1297,26 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
         if entity_id:
             return entity_id
 
-        # Fallback: Handle special cases logic (legacy behavior)
-        if growspace_id in (PlantStage.DRY, "dry_overview"):
-            # Try getting canonical ID for dry
-            dry_id = getattr(PlantStage.DRY, "value", "dry")
-            dry_uid = generate_growspace_overview_unique_id(dry_id)
-            eid = registry.async_get_entity_id("sensor", DOMAIN, dry_uid)
-            if eid:
-                return eid
-            return f"sensor.{PlantStage.DRY}"
+        # Fallback: Handle special cases logic data-driven
+        for special_def in SPECIAL_GROWSPACES.values():
+            canonical_id = special_def["canonical_id"]
+            if growspace_id == canonical_id or growspace_id in special_def.get(
+                "aliases", []
+            ):
+                canonical_uid = generate_growspace_overview_unique_id(canonical_id)
+                eid = registry.async_get_entity_id("sensor", DOMAIN, canonical_uid)
+                if eid:
+                    return eid
+                return f"sensor.{canonical_id}"
 
-        if growspace_id in (PlantStage.CURE, "cure_overview"):
-            cure_id = getattr(PlantStage.CURE, "value", "cure")
-            cure_uid = generate_growspace_overview_unique_id(cure_id)
-            eid = registry.async_get_entity_id("sensor", DOMAIN, cure_uid)
-            if eid:
-                return eid
-            return f"sensor.{PlantStage.CURE}"
-
-        if growspace_id in (PlantStage.MOTHER, "mother_overview"):
-            mother_id = getattr(PlantStage.MOTHER, "value", "mother")
-            mother_uid = generate_growspace_overview_unique_id(mother_id)
-            eid = registry.async_get_entity_id("sensor", DOMAIN, mother_uid)
-            if eid:
-                return eid
-            return f"sensor.{PlantStage.MOTHER}"
-
-        if growspace_id in (PlantStage.CLONE, "clone_overview"):
-            clone_id = getattr(PlantStage.CLONE, "value", "clone")
-            clone_uid = generate_growspace_overview_unique_id(clone_id)
-            eid = registry.async_get_entity_id("sensor", DOMAIN, clone_uid)
-            if eid:
-                return eid
-            return f"sensor.{PlantStage.CLONE}"
-
-        # General fallback: guess based on name
+        # Standard Fallback
+        # Try to guess based on name if available
         growspace = self.growspaces.get(growspace_id)
         name = getattr(growspace, "name", growspace_id) if growspace else growspace_id
 
-        # Simple slugify: lowercase, spaces->underscore, keep alnum/underscore only
-        slug = "".join(
-            ch if ch.isalnum() or ch == "_" else "_"
-            for ch in str(name).lower().replace(" ", "_")
-        )
-        return f"sensor.{slug}"
-
-        # Collapse repeated underscores
-        while "__" in slug:
-            slug = slug.replace("__", "_")
-
+        slug = slugify(str(name).replace(" ", "_"))
+        # If it wasn't a special case, the old logic returned sensor.{slug}
+        # But wait, looking at the test expectation: "sensor.my_growspace"
         return f"sensor.{slug}"
 
     # =============================================================================

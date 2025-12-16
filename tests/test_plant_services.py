@@ -1,12 +1,13 @@
 """Test plant services."""
 
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 from typing import Any, cast
 from unittest.mock import AsyncMock, Mock
 
 import pytest
 from homeassistant.core import HomeAssistant, ServiceCall
 from homeassistant.exceptions import ServiceValidationError
+from homeassistant.util.dt import as_local
 
 from custom_components.growspace_manager.const import (
     DOMAIN,
@@ -259,8 +260,8 @@ async def test_add_plant_with_dates(
     await handle_add_plant(hass, mock_coordinator, mock_strain_library, call)
 
     call_kwargs = mock_coordinator.async_add_plant.call_args.kwargs
-    assert call_kwargs["veg_start"] == datetime(2024, 1, 15, 0, 0)
-    assert call_kwargs["flower_start"] == datetime(2024, 1, 15, 0, 0)
+    assert call_kwargs["veg_start"] == as_local(datetime(2024, 1, 15, 0, 0))
+    assert call_kwargs["flower_start"] == as_local(datetime(2024, 1, 15, 0, 0))
 
 
 @pytest.mark.asyncio
@@ -851,8 +852,8 @@ async def test_update_plant_with_dates(
     await handle_update_plant(hass, mock_coordinator, mock_strain_library, call)
 
     call_kwargs = mock_coordinator.async_update_plant.call_args.kwargs
-    assert call_kwargs["veg_start"] == datetime(2024, 1, 15, 0, 0)
-    assert call_kwargs["flower_start"] == datetime(2024, 1, 15, 0, 0)
+    assert call_kwargs["veg_start"] == as_local(datetime(2024, 1, 15, 0, 0))
+    assert call_kwargs["flower_start"] == as_local(datetime(2024, 1, 15, 0, 0))
 
 
 @pytest.mark.asyncio
@@ -876,11 +877,13 @@ async def test_update_plant_with_date_strings(
     await handle_update_plant(hass, mock_coordinator, mock_strain_library, call)
 
     call_kwargs = mock_coordinator.async_update_plant.call_args.kwargs
-    # Date strings are parsed to datetime objects
-    assert call_kwargs["veg_start"] == datetime(2024, 1, 15, 0, 0)
-    # ISO datetime with timezone is parsed with tzinfo, compare without tz
-    assert call_kwargs["flower_start"].replace(tzinfo=None) == datetime(
-        2024, 2, 15, 0, 0
+    # Date strings are parsed to datetime objects with local timezone
+    assert call_kwargs["veg_start"] == as_local(datetime(2024, 1, 15, 0, 0))
+    # ISO datetime with timezone is parsed with tzinfo
+    # "2024-02-15T00:00:00Z" -> UTC
+
+    assert call_kwargs["flower_start"] == datetime(
+        2024, 2, 15, 0, 0, tzinfo=timezone.utc
     )
 
 
@@ -1387,11 +1390,13 @@ async def test_transition_plant_stage_success(
     await hass.async_block_till_done()
 
     # Assert
-    mock_coordinator.async_transition_plant_stage.assert_called_once_with(
-        plant_id="plant_1",
-        new_stage="flower",
-        transition_date="2024-01-15T00:00:00",
-    )
+    args, kwargs = mock_coordinator.async_transition_plant_stage.call_args
+    assert kwargs["plant_id"] == "plant_1"
+    assert kwargs["new_stage"] == "flower"
+    # Compare dates with tolerance or just timezone equality
+    expected_dt = as_local(datetime(2024, 1, 15, 0, 0))
+    assert kwargs["transition_date"] == expected_dt.isoformat()
+
     # mock_coordinator.async_save.assert_called_once()
     # mock_coordinator.async_request_refresh.assert_called_once()
 

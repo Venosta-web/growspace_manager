@@ -1273,7 +1273,7 @@ def test_guess_overview_entity_id(coordinator: GrowspaceCoordinator) -> None:
     coordinator.growspaces["gs2"] = Growspace(
         id="gs2", name="4x4 Tent!", rows=1, plants_per_row=1
     )
-    assert coordinator._guess_overview_entity_id("gs2") == "sensor.4x4_tent_"
+    assert coordinator._guess_overview_entity_id("gs2") == "sensor.4x4_tent"
 
 
 @pytest.mark.asyncio
@@ -2146,3 +2146,53 @@ async def test_async_update_air_exchange_recommendations_no_vpd(
         )
 
     assert coordinator.data["air_exchange_recommendations"][gs.id] == "Idle"
+
+
+@pytest.mark.asyncio
+async def test_async_initialize_sub_coordinators(
+    coordinator: GrowspaceCoordinator,
+) -> None:
+    """Test sub-coordinator initialization."""
+    coordinator.growspaces = {}
+
+    # 1. Add growspace with irrigation enabled
+    gs1 = await coordinator.async_add_growspace("GS1")
+    gs1.irrigation_strategy.enabled = True
+
+    # 2. Add growspace with irrigation disabled
+    gs2 = await coordinator.async_add_growspace("GS2")
+    gs2.irrigation_strategy.enabled = False
+
+    entry = MagicMock()
+
+    with (
+        patch(
+            "custom_components.growspace_manager.coordinator.VWCIrrigationCoordinator"
+        ) as mock_vwc,
+        patch(
+            "custom_components.growspace_manager.coordinator.IrrigationCoordinator"
+        ) as mock_irrigation,
+        patch(
+            "custom_components.growspace_manager.coordinator.DehumidifierCoordinator"
+        ) as mock_dehumidifier,
+    ):
+        mock_vwc.return_value.async_setup = AsyncMock()
+        mock_irrigation.return_value.async_setup = AsyncMock()
+
+        await coordinator.async_initialize_sub_coordinators(entry)
+
+        # Verify GS1 getting VWC
+        mock_vwc.assert_called_with(coordinator.hass, entry, gs1.id, coordinator)
+        mock_vwc.return_value.async_setup.assert_called_once()
+        assert coordinator.irrigation_coordinators[gs1.id] == mock_vwc.return_value
+
+        # Verify GS2 getting Standard
+        mock_irrigation.assert_called_with(coordinator.hass, entry, gs2.id, coordinator)
+        mock_irrigation.return_value.async_setup.assert_called_once()
+        assert (
+            coordinator.irrigation_coordinators[gs2.id] == mock_irrigation.return_value
+        )
+
+        # Verify Dehumidifiers
+        assert mock_dehumidifier.call_count == 2
+        assert len(coordinator.dehumidifier_coordinators) == 2

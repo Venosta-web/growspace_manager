@@ -257,24 +257,25 @@ class OptionsFlowHandler(OptionsFlow):
             A ConfigFlowResult directing to the next step.
         """
         if user_input is not None:
-            action = user_input.get("action")
-            if action == "manage_growspaces":
-                return await self.async_step_manage_growspaces(user_input)
-            if action == "manage_plants":
-                return await self.async_step_manage_plants()
-            if action == "configure_environment":
-                return await self.async_step_select_growspace_for_env()
-            if action == "configure_global":
-                return await self.async_step_configure_global()
-            if action == "configure_ai":
-                return await self.async_step_configure_ai()
-            if action == "manage_timed_notifications":
-                return await self.async_step_manage_timed_notifications()
-            if action == "manage_strain_library":
-                return await self.async_step_manage_strain_library()
-            if action == "configure_irrigation":
-                return await self.async_step_select_growspace_for_irrigation()
-            return self.async_create_entry(title="", data=user_input)
+            match user_input.get("action"):
+                case "manage_growspaces":
+                    return await self.async_step_manage_growspaces(user_input)
+                case "manage_plants":
+                    return await self.async_step_manage_plants()
+                case "configure_environment":
+                    return await self.async_step_select_growspace_for_env()
+                case "configure_global":
+                    return await self.async_step_configure_global()
+                case "configure_ai":
+                    return await self.async_step_configure_ai()
+                case "manage_timed_notifications":
+                    return await self.async_step_manage_timed_notifications()
+                case "manage_strain_library":
+                    return await self.async_step_manage_strain_library()
+                case "configure_irrigation":
+                    return await self.async_step_select_growspace_for_irrigation()
+                case _:
+                    return self.async_create_entry(title="", data=user_input)
 
         return self.async_show_form(
             step_id="init",
@@ -455,35 +456,48 @@ class OptionsFlowHandler(OptionsFlow):
             return self.async_abort(reason="setup_error")
 
         if user_input is not None:
-            action = user_input.get("action")
-
-            if action == "add":
-                return await self.async_step_add_growspace()
-            if action == "update" and user_input.get("growspace_id"):
-                self._selected_growspace_id = user_input["growspace_id"]
-                return await self.async_step_update_growspace()
-            if action == "remove" and user_input.get("growspace_id"):
-                try:
-                    await self.growspace_handler.async_remove_growspace(
-                        user_input["growspace_id"]
+            match user_input.get("action"):
+                case "add":
+                    return await self.async_step_add_growspace()
+                case "update" if user_input.get("growspace_id"):
+                    self._selected_growspace_id = user_input["growspace_id"]
+                    return await self.async_step_update_growspace()
+                case "remove" if user_input.get("growspace_id"):
+                    return await self._handle_remove_growspace(
+                        user_input["growspace_id"], coordinator
                     )
-                except Exception:
-                    _LOGGER.exception("Error removing growspace")
+                case "back":
                     return self.async_show_form(
-                        step_id="manage_growspaces",
-                        data_schema=self.growspace_handler.get_growspace_management_schema(
-                            coordinator
+                        step_id="init",
+                        data_schema=self.add_suggested_values_to_schema(
+                            self._get_main_menu_schema(), self._config_entry.options
                         ),
-                        errors={"base": "remove_failed"},
                     )
-            if action == "back":
-                return self.async_show_form(
-                    step_id="init",
-                    data_schema=self.add_suggested_values_to_schema(
-                        self._get_main_menu_schema(), self._config_entry.options
-                    ),
-                )
 
+        return self.async_show_form(
+            step_id="manage_growspaces",
+            data_schema=self.growspace_handler.get_growspace_management_schema(
+                coordinator
+            ),
+        )
+
+    async def _handle_remove_growspace(
+        self, growspace_id: str, coordinator: Any
+    ) -> ConfigFlowResult:
+        """Handle the removal of a growspace."""
+        try:
+            await self.growspace_handler.async_remove_growspace(growspace_id)
+        except Exception:
+            _LOGGER.exception("Error removing growspace")
+            return self.async_show_form(
+                step_id="manage_growspaces",
+                data_schema=self.growspace_handler.get_growspace_management_schema(
+                    coordinator
+                ),
+                errors={"base": "remove_failed"},
+            )
+
+        # Stay on the management screen after removal
         return self.async_show_form(
             step_id="manage_growspaces",
             data_schema=self.growspace_handler.get_growspace_management_schema(

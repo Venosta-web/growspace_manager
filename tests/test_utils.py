@@ -8,6 +8,7 @@ parsing, formatting, calculations, and grid generation logic.
 from datetime import date, datetime
 
 import pytest
+from homeassistant.util.dt import as_local
 
 from custom_components.growspace_manager.models import Growspace, Plant
 from custom_components.growspace_manager.utils import (
@@ -28,9 +29,9 @@ from custom_components.growspace_manager.utils import (
     "input_value,expected",
     [
         (None, None),
-        (date(2025, 11, 3), datetime(2025, 11, 3, 0, 0)),
-        (datetime(2025, 11, 3, 15, 30), datetime(2025, 11, 3, 15, 30)),
-        ("2025-11-03", datetime(2025, 11, 3, 0, 0)),
+        (date(2025, 11, 3), as_local(datetime(2025, 11, 3, 0, 0))),
+        (datetime(2025, 11, 3, 15, 30), as_local(datetime(2025, 11, 3, 15, 30))),
+        ("2025-11-03", as_local(datetime(2025, 11, 3, 0, 0))),
         ("invalid-date", None),
         (12345, None),
     ],
