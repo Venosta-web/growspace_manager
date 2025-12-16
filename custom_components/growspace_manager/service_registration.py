@@ -66,9 +66,11 @@ def get_coordinator_for_call(
     data = call.data if isinstance(call, ServiceCall) else call
 
     # Get all potential coordinators from loaded entries
+    entries = hass.config_entries.async_entries(DOMAIN)
+
     coordinators = [
         entry.runtime_data
-        for entry in hass.config_entries.async_entries(DOMAIN)
+        for entry in entries
         if entry.state == ConfigEntryState.LOADED and hasattr(entry, "runtime_data")
     ]
 
