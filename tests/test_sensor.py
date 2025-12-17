@@ -912,9 +912,7 @@ def test_air_exchange_sensor(mock_coordinator) -> None:
     mock_coordinator.data = {"air_exchange_recommendations": {"gs1": "Open Window"}}
 
     sensor = AirExchangeSensor(mock_coordinator, "gs1")
-    sensor.platform = Mock()
-    sensor.platform.platform_name = "growspace_manager"
-    sensor.platform.domain = "sensor"
+    sensor.platform = Mock(platform_name="growspace_manager", domain="sensor")
 
     assert sensor.state == "Open Window"
     assert sensor.unique_id == f"{DOMAIN}_gs1_air_exchange"
