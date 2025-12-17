@@ -14,6 +14,7 @@ from ..const import (
     ATTR_ROWS,
 )
 from ..coordinator import GrowspaceCoordinator
+from ..exceptions import GrowspaceError
 from ..strain_library import StrainLibrary
 
 _LOGGER = logging.getLogger(__name__)
@@ -50,6 +51,8 @@ async def handle_add_growspace(
 
         _LOGGER.info("Growspace %s added successfully via service call", growspace_id)
 
+    except GrowspaceError as err:
+        raise ServiceValidationError(str(err)) from err
     except Exception as err:
         _LOGGER.error("Failed to add growspace: %s", err)
         raise ServiceValidationError(f"Failed to add growspace: {err!s}") from err
@@ -72,6 +75,8 @@ async def handle_update_growspace(
             notification_target=call.data.get(ATTR_NOTIFICATION_TARGET),
         )
         _LOGGER.info("Growspace %s updated successfully", growspace_id)
+    except GrowspaceError as err:
+        raise ServiceValidationError(str(err)) from err
     except Exception as err:
         _LOGGER.error("Failed to update growspace: %s", err)
         raise ServiceValidationError(f"Failed to update growspace: {err!s}") from err
@@ -87,6 +92,8 @@ async def handle_remove_growspace(
         growspace_id = call.data[ATTR_GROWSPACE_ID]
         await coordinator.async_remove_growspace(growspace_id)
         _LOGGER.info("Growspace %s removed successfully", growspace_id)
+    except GrowspaceError as err:
+        raise ServiceValidationError(str(err)) from err
     except Exception as err:
         _LOGGER.error("Failed to remove growspace: %s", err)
         raise ServiceValidationError(f"Failed to remove growspace: {err!s}") from err

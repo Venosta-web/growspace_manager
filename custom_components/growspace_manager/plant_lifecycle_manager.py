@@ -8,6 +8,11 @@ from datetime import date, datetime
 from typing import TYPE_CHECKING, Any
 
 from .const import DATE_FIELDS, PLANT_STAGES, SPECIAL_GROWSPACES, PlantStage
+from .exceptions import (
+    GrowspaceNotFoundError,
+    PlantNotFoundError,
+    ValidationChangeError,
+)
 from .models import Plant
 from .utils import calculate_plant_stage, format_date
 
@@ -48,7 +53,7 @@ class PlantLifecycleManager:
                     growspace_id, row, col
                 )
                 final_row, final_col = row, col
-            except ValueError:
+            except ValidationChangeError:
                 _LOGGER.info(
                     "Position (%d, %d) in growspace %s is occupied. Finding first available",
                     row,
@@ -95,7 +100,7 @@ class PlantLifecycleManager:
         async with self.coordinator._lock:
             plant = self.coordinator.plants.get(plant_id)
             if not plant:
-                raise ValueError(f"Plant {plant_id} does not exist")
+                raise PlantNotFoundError(f"Plant {plant_id} does not exist")
 
             for key in DATE_FIELDS:
                 if key in updates:
@@ -134,7 +139,9 @@ class PlantLifecycleManager:
             plant2 = self.coordinator.plants[plant2_id]
 
             if plant1.growspace_id != plant2.growspace_id:
-                raise ValueError("Cannot switch plants in different growspaces")
+                raise ValidationChangeError(
+                    "Cannot switch plants in different growspaces"
+                )
 
             p1_row, p1_col = plant1.row, plant1.col
             p2_row, p2_col = plant2.row, plant2.col
@@ -163,7 +170,9 @@ class PlantLifecycleManager:
         """Determine harvest workflow and execute it."""
         if target_growspace_id:
             if target_growspace_id not in self.coordinator.growspaces:
-                raise ValueError(f"Target growspace {target_growspace_id} not found")
+                raise GrowspaceNotFoundError(
+                    f"Target growspace {target_growspace_id} not found"
+                )
             return await self._harvest_to_explicit_target(
                 plant_id,
                 plant,
@@ -387,7 +396,7 @@ class PlantLifecycleManager:
             new_stage = new_stage.value
 
         if new_stage not in PLANT_STAGES:
-            raise ValueError(f"Invalid stage: {new_stage}")
+            raise ValidationChangeError(f"Invalid stage: {new_stage}")
 
         transition_date = transition_date or date.today()
         trans_date_str = (

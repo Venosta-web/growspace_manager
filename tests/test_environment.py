@@ -6,12 +6,12 @@ import pytest
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ServiceValidationError
 
+from custom_components.growspace_manager.models import EnvironmentConfig
 from custom_components.growspace_manager.services.environment import (
     handle_configure_environment,
     handle_remove_environment,
     handle_set_dehumidifier_control,
 )
-from custom_components.growspace_manager.models import EnvironmentConfig
 
 
 @pytest.fixture

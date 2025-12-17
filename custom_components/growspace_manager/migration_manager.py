@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 import logging
+from typing import Any
 
 from .const import SPECIAL_GROWSPACES
-from .models import Growspace
+from .models import Growspace, GrowspaceType
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -35,6 +36,25 @@ class MigrationManager:
                     )
         except ValueError as e:
             _LOGGER.debug("Special growspace migration skipped: %s", e)
+
+    def normalize_growspace_data(
+        self, growspace_id: str, data: dict[str, Any]
+    ) -> dict[str, Any]:
+        """Normalize growspace data, inferring type if missing."""
+        if "growspace_type" not in data:
+            if growspace_id in ["dry", "drying"]:
+                data["growspace_type"] = GrowspaceType.DRY
+            elif growspace_id in ["cure", "curing"]:
+                data["growspace_type"] = GrowspaceType.CURE
+            elif growspace_id == "mother":
+                data["growspace_type"] = GrowspaceType.MOTHER
+            elif growspace_id == "veg":
+                data["growspace_type"] = GrowspaceType.VEG
+            elif growspace_id == "clone":
+                data["growspace_type"] = GrowspaceType.CLONE
+            else:
+                data["growspace_type"] = GrowspaceType.FLOWER
+        return data
 
     def _migrate_special_alias_if_needed(
         self, alias_id: str, canonical_id: str, canonical_name: str

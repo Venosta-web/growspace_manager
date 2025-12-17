@@ -39,6 +39,10 @@ from .events import (
     async_fire_growspace_event,
     async_fire_plant_event,
 )
+from .exceptions import (
+    GrowspaceNotFoundError,
+    ValidationChangeError,
+)
 from .growspace_validator import GrowspaceValidator
 from .import_export_manager import ImportExportManager
 from .irrigation_coordinator import IrrigationCoordinator
@@ -170,19 +174,8 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
             try:
                 if isinstance(gdata, dict):
                     # Data Mapping / Migration logic before creating object
-                    if "growspace_type" not in gdata:
-                        if gid in ["dry", "drying"]:
-                            gdata["growspace_type"] = GrowspaceType.DRY
-                        elif gid in ["cure", "curing"]:
-                            gdata["growspace_type"] = GrowspaceType.CURE
-                        elif gid == "mother":
-                            gdata["growspace_type"] = GrowspaceType.MOTHER
-                        elif gid == "veg":
-                            gdata["growspace_type"] = GrowspaceType.VEG
-                        elif gid == "clone":
-                            gdata["growspace_type"] = GrowspaceType.CLONE
-                        else:
-                            gdata["growspace_type"] = GrowspaceType.FLOWER
+                    # Data Mapping / Migration logic before creating object
+                    gdata = self.migration_manager.normalize_growspace_data(gid, gdata)
 
                     self.growspaces[gid] = Growspace.from_dict(gdata)
                 elif isinstance(gdata, Growspace):
@@ -672,7 +665,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
         """
         growspace = self.growspaces.get(growspace_id)
         if not growspace:
-            raise ValueError(f"Growspace {growspace_id} not found")
+            raise GrowspaceNotFoundError(f"Growspace {growspace_id} not found")
 
         # CRITICAL FIX: Only update the R/W fields (pump entities and durations)
         # Filter out the read-only fields that were passed for display purposes
@@ -863,7 +856,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
         """Update a growspace."""
         async with self._lock:
             if growspace_id not in self.growspaces:
-                raise ValueError(f"Growspace {growspace_id} not found")
+                raise GrowspaceNotFoundError(f"Growspace {growspace_id} not found")
 
             growspace = self.growspaces[growspace_id]
             changes: list[str] = []
@@ -1152,7 +1145,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
         clone = self.plants[clone_id]
 
         if clone.stage != PlantStage.CLONE:
-            raise ValueError(
+            raise ValidationChangeError(
                 f"Plant {clone_id} is not in clone stage (current: {clone.stage})"
             )
 
@@ -1162,7 +1155,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
         else:
             # Ensure custom growspace exists
             if target_growspace_id not in self.growspaces:
-                raise ValueError(
+                raise GrowspaceNotFoundError(
                     f"Target growspace {target_growspace_id} does not exist"
                 )
             target_gs_id = target_growspace_id

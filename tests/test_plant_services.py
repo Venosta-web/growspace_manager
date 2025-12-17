@@ -1,6 +1,6 @@
 """Test plant services."""
 
-from datetime import date, datetime, timezone
+from datetime import UTC, date, datetime
 from typing import Any, cast
 from unittest.mock import AsyncMock, Mock
 
@@ -11,6 +11,12 @@ from homeassistant.util.dt import as_local
 
 from custom_components.growspace_manager.const import (
     DOMAIN,
+)
+from custom_components.growspace_manager.exceptions import (
+    GrowspaceError,
+    GrowspaceNotFoundError,
+    PlantNotFoundError,
+    ValidationChangeError,
 )
 from custom_components.growspace_manager.services.plant import (
     handle_add_plant,
@@ -169,8 +175,8 @@ async def test_add_plant_position_out_of_bounds(
         },
     )
 
-    # Configure mock to raise ValueError (simulating coordinator validation)
-    mock_coordinator.async_add_plant.side_effect = ValueError(
+    # Configure mock to raise ValidationChangeError (simulating coordinator validation)
+    mock_coordinator.async_add_plant.side_effect = ValidationChangeError(
         "Position (10,10) is outside growspace 'gs1' bounds."
     )
 
@@ -207,8 +213,8 @@ async def test_add_plant_position_occupied(
         },
     )
 
-    # Configure mock to raise ValueError (simulating occupied position)
-    mock_coordinator.async_add_plant.side_effect = ValueError(
+    # Configure mock to raise ValidationChangeError (simulating occupied position)
+    mock_coordinator.async_add_plant.side_effect = ValidationChangeError(
         "Position (2,3) in growspace 'gs1' is already occupied."
     )
 
@@ -350,8 +356,8 @@ async def test_take_clone_mother_not_found(
         },
     )
 
-    # Configure mock to raise ValueError
-    mock_coordinator.async_take_clones.side_effect = ValueError(
+    # Configure mock to raise GrowspaceNotFoundError
+    mock_coordinator.async_take_clones.side_effect = GrowspaceNotFoundError(
         "Mother plant nonexistent not found"
     )
 
@@ -383,8 +389,8 @@ async def test_take_clone_no_space(
         },
     )
 
-    # Configure mock to raise ValueError (simulating no space)
-    mock_coordinator.async_take_clones.side_effect = ValueError(
+    # Configure mock to raise GrowspaceError (simulating no space)
+    mock_coordinator.async_take_clones.side_effect = GrowspaceError(
         "Failed to add any clones"
     )
 
@@ -577,8 +583,8 @@ async def test_move_clone_plant_not_found(
         },
     )
 
-    # Configure mock to raise ValueError
-    mock_coordinator.async_promote_clone.side_effect = ValueError(
+    # Configure mock to raise PlantNotFoundError
+    mock_coordinator.async_promote_clone.side_effect = PlantNotFoundError(
         "Plant nonexistent does not exist"
     )
 
@@ -609,8 +615,8 @@ async def test_move_clone_no_space(
         },
     )
 
-    # Configure mock to raise ValueError
-    mock_coordinator.async_promote_clone.side_effect = ValueError(
+    # Configure mock to raise ValidationChangeError
+    mock_coordinator.async_promote_clone.side_effect = ValidationChangeError(
         "Could not find position"
     )
 
@@ -679,7 +685,7 @@ async def test_move_clone_exception_finding_position(
     )
 
     # We simulate the failure directly on the coordinator method.
-    mock_coordinator.async_promote_clone.side_effect = ValueError(
+    mock_coordinator.async_promote_clone.side_effect = ValidationChangeError(
         "Could not find position"
     )
 
@@ -764,8 +770,8 @@ async def test_update_plant_not_found(
         },
     )
 
-    # The service should catch the ValueError and send a notification
-    with pytest.raises(ValueError):
+    # The service should catch the PlantNotFoundError and re-raise as ServiceValidationError
+    with pytest.raises(ServiceValidationError, match="does not exist"):
         await handle_update_plant(hass, mock_coordinator, mock_strain_library, call)
         mock_coordinator.async_update_plant.assert_not_called()
 
@@ -822,9 +828,7 @@ async def test_update_plant_with_date_strings(
     # ISO datetime with timezone is parsed with tzinfo
     # "2024-02-15T00:00:00Z" -> UTC
 
-    assert call_kwargs["flower_start"] == datetime(
-        2024, 2, 15, 0, 0, tzinfo=timezone.utc
-    )
+    assert call_kwargs["flower_start"] == datetime(2024, 2, 15, 0, 0, tzinfo=UTC)
 
 
 @pytest.mark.asyncio
@@ -1210,8 +1214,10 @@ async def test_move_plant_out_of_bounds(
     """Test moving plant to out-of-bounds position."""
     mock_coordinator.plants = {"plant_1": mock_plant}
     mock_coordinator.growspaces = {"gs1": mock_growspace}
-    # Simulate validator behavior which raises ValueError for out of bounds
-    mock_coordinator.async_move_plant.side_effect = ValueError("outside growspace")
+    # Simulate validator behavior which raises ValidationChangeError for out of bounds
+    mock_coordinator.async_move_plant.side_effect = ValidationChangeError(
+        "outside growspace"
+    )
 
     call = ServiceCall(
         hass,

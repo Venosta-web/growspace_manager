@@ -5,6 +5,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from custom_components.growspace_manager.const import PlantStage
+from custom_components.growspace_manager.exceptions import GrowspaceNotFoundError
 from custom_components.growspace_manager.models import Plant
 from custom_components.growspace_manager.plant_lifecycle_manager import (
     PlantLifecycleManager,
@@ -207,8 +208,10 @@ async def test_handle_harvest_logic_fallthrough(manager, coordinator_mock) -> No
     coordinator_mock.growspaces = {"valid_gs": MagicMock()}
 
     # Currently code falls through to auto-flow.
-    # We expect it to raise ValueError.
-    with pytest.raises(ValueError, match="Target growspace invalid_gs not found"):
+    # We expect it to raise GrowspaceNotFoundError.
+    with pytest.raises(
+        GrowspaceNotFoundError, match="Target growspace invalid_gs not found"
+    ):
         await manager.handle_harvest_logic(
             "p1", plant, "invalid_gs", "Invalid Name", "2023-01-01"
         )

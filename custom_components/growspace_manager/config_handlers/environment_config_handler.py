@@ -7,7 +7,6 @@ import logging
 from typing import Any
 
 import voluptuous as vol
-
 from homeassistant.helpers import selector
 
 from ..const import (
@@ -24,7 +23,6 @@ from ..const import (
     DEFAULT_VEG_DAY_HOURS,
 )
 from ..dehumidifier_coordinator import DEFAULT_THRESHOLDS
-
 from . import BaseConfigHandler
 
 _LOGGER = logging.getLogger(__name__)

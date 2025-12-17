@@ -25,6 +25,11 @@ from custom_components.growspace_manager.const import (
     PlantStage,
 )
 from custom_components.growspace_manager.coordinator import GrowspaceCoordinator
+from custom_components.growspace_manager.exceptions import (
+    GrowspaceNotFoundError,
+    PlantNotFoundError,
+    ValidationChangeError,
+)
 from custom_components.growspace_manager.models import (
     EnvironmentConfig,
     Growspace,
@@ -518,8 +523,10 @@ async def test_validate_growspace_exists(coordinator: GrowspaceCoordinator) -> N
     # Existing growspace should not raise
     coordinator.validator.validate_growspace_exists(gs.id)
 
-    # Nonexistent growspace should raise ValueError
-    with pytest.raises(ValueError, match="Growspace nonexistent does not exist"):
+    # Nonexistent growspace should raise GrowspaceNotFoundError
+    with pytest.raises(
+        GrowspaceNotFoundError, match="Growspace nonexistent does not exist"
+    ):
         coordinator.validator.validate_growspace_exists("nonexistent")
 
 
@@ -538,8 +545,8 @@ async def test_validate_plant_exists(coordinator: GrowspaceCoordinator) -> None:
     # Existing plant should not raise
     coordinator.validator.validate_plant_exists(plant.plant_id)
 
-    # Nonexistent plant should raise ValueError
-    with pytest.raises(ValueError, match="Plant nonexistent does not exist"):
+    # Nonexistent plant should raise PlantNotFoundError
+    with pytest.raises(PlantNotFoundError, match="Plant nonexistent does not exist"):
         coordinator.validator.validate_plant_exists("nonexistent")
 
 
@@ -559,15 +566,23 @@ async def test_validate_position_bounds(coordinator: GrowspaceCoordinator) -> No
     coordinator.validator.validate_position_bounds(gs.id, row=3, col=3)
 
     # Row out of bounds
-    with pytest.raises(ValueError, match="Row 0 is outside growspace bounds"):
+    with pytest.raises(
+        ValidationChangeError, match="Row 0 is outside growspace bounds"
+    ):
         coordinator.validator.validate_position_bounds(gs.id, row=0, col=1)
-    with pytest.raises(ValueError, match="Row 4 is outside growspace bounds"):
+    with pytest.raises(
+        ValidationChangeError, match="Row 4 is outside growspace bounds"
+    ):
         coordinator.validator.validate_position_bounds(gs.id, row=4, col=1)
 
     # Column out of bounds
-    with pytest.raises(ValueError, match="Column 0 is outside growspace bounds"):
+    with pytest.raises(
+        ValidationChangeError, match="Column 0 is outside growspace bounds"
+    ):
         coordinator.validator.validate_position_bounds(gs.id, row=1, col=0)
-    with pytest.raises(ValueError, match="Column 4 is outside growspace bounds"):
+    with pytest.raises(
+        ValidationChangeError, match="Column 4 is outside growspace bounds"
+    ):
         coordinator.validator.validate_position_bounds(gs.id, row=1, col=4)
 
 
@@ -592,7 +607,7 @@ async def test_validate_position_not_occupied(
 
     # Invalid: occupied position
     with pytest.raises(
-        ValueError, match=r"Position \(1,1\) is already occupied by Strain1"
+        ValidationChangeError, match=r"Position \(1,1\) is already occupied by Strain1"
     ):
         coordinator.validator.validate_position_not_occupied(gs.id, row=1, col=1)
 
@@ -884,7 +899,7 @@ async def test_async_update_growspace_invalid_id(
     Args:
         coordinator: The mock GrowspaceCoordinator.
     """
-    with pytest.raises(ValueError, match="Growspace invalid_id not found"):
+    with pytest.raises(GrowspaceNotFoundError, match="Growspace invalid_id not found"):
         await coordinator.async_update_growspace("invalid_id", name="Test")
 
 
@@ -1094,8 +1109,8 @@ async def test_handle_position_update_force_position(
     coordinator._handle_position_update(
         plant2.plant_id, plant2, True, {"row": 1, "col": 1}
     )
-    # Test without force, should raise ValueError
-    with pytest.raises(ValueError):
+    # Test without force, should raise ValidationChangeError
+    with pytest.raises(ValidationChangeError):
         coordinator._handle_position_update(
             plant2.plant_id, plant2, False, {"row": 1, "col": 1}
         )
@@ -1169,7 +1184,7 @@ async def test_async_start_flowering_no_plant(
     Args:
         coordinator: The mock GrowspaceCoordinator.
     """
-    with pytest.raises(ValueError):
+    with pytest.raises(PlantNotFoundError):
         await coordinator.async_start_flowering("non-existent-plant")
 
 
@@ -1179,7 +1194,7 @@ async def test_async_start_drying_no_plant(coordinator: GrowspaceCoordinator) ->
     Args:
         coordinator: The mock GrowspaceCoordinator.
     """
-    with pytest.raises(ValueError):
+    with pytest.raises(PlantNotFoundError):
         await coordinator.async_start_drying("non-existent-plant")
 
 
@@ -1189,7 +1204,7 @@ async def test_async_start_curing_no_plant(coordinator: GrowspaceCoordinator) ->
     Args:
         coordinator: The mock GrowspaceCoordinator.
     """
-    with pytest.raises(ValueError):
+    with pytest.raises(PlantNotFoundError):
         await coordinator.async_start_curing("non-existent-plant")
 
 
@@ -1199,7 +1214,7 @@ async def test_async_harvest_no_plant(coordinator: GrowspaceCoordinator) -> None
     Args:
         coordinator: The mock GrowspaceCoordinator.
     """
-    with pytest.raises(ValueError):
+    with pytest.raises(PlantNotFoundError):
         await coordinator.async_harvest("non-existent-plant")
 
 
@@ -1274,45 +1289,8 @@ async def test_async_switch_plants_different_growspaces(
     gs2 = await coordinator.async_add_growspace("GS2")
     plant1 = await coordinator.async_add_plant(gs1.id, "Strain A")
     plant2 = await coordinator.async_add_plant(gs2.id, "Strain B")
-    with pytest.raises(ValueError):
+    with pytest.raises(ValidationChangeError):
         await coordinator.async_switch_plants(plant1.plant_id, plant2.plant_id)
-
-
-def test_guess_overview_entity_id(coordinator: GrowspaceCoordinator) -> None:
-    """Test the _guess_overview_entity_id method.
-    Args:
-        coordinator: The mock GrowspaceCoordinator.
-    """
-    # Special cases
-    assert coordinator._guess_overview_entity_id("dry") == "sensor.dry"
-    assert coordinator._guess_overview_entity_id("cure") == "sensor.cure"
-    assert coordinator._guess_overview_entity_id("mother") == "sensor.mother"
-    assert coordinator._guess_overview_entity_id("clone") == "sensor.clone"
-    # General case with space
-    coordinator.growspaces["gs1"] = Growspace(
-        id="gs1", name="My Growspace", rows=1, plants_per_row=1
-    )
-    assert coordinator._guess_overview_entity_id("gs1") == "sensor.my_growspace"
-    # General case with special characters
-    coordinator.growspaces["gs2"] = Growspace(
-        id="gs2", name="4x4 Tent!", rows=1, plants_per_row=1
-    )
-    assert coordinator._guess_overview_entity_id("gs2") == "sensor.4x4_tent"
-
-
-@pytest.mark.asyncio
-async def test_should_send_notification(coordinator: GrowspaceCoordinator) -> None:
-    """Test the should_send_notification method.
-    Args:
-        coordinator: The mock GrowspaceCoordinator.
-    """
-    plant_id = "plant1"
-    stage = PlantStage.VEG
-    days = 10
-    assert coordinator.should_send_notification(plant_id, stage, days) is True
-    # Mark as sent
-    await coordinator.mark_notification_sent(plant_id, stage, days)
-    assert coordinator.should_send_notification(plant_id, stage, days) is False
 
 
 @pytest.mark.asyncio
@@ -1449,21 +1427,6 @@ def test_calculate_days_in_stage(coordinator: GrowspaceCoordinator) -> None:
     )
     days = coordinator.serializer.calculate_days_in_stage(plant, PlantStage.VEG)
     assert days == 10
-
-
-@pytest.mark.asyncio
-async def test_get_growspace_grid(coordinator: GrowspaceCoordinator) -> None:
-    """Test generating the grid representation of a growspace.
-    Args:
-        coordinator: The mock GrowspaceCoordinator.
-    """
-    gs = await coordinator.async_add_growspace("Grid GS", 2, 2)
-    plant = await coordinator.async_add_plant(gs.id, "Strain A", row=1, col=2)
-    grid = coordinator.get_growspace_grid(gs.id)
-    assert grid[0][0] is None
-    assert grid[0][1] == plant.plant_id
-    assert grid[1][0] is None
-    assert grid[1][1] is None
 
 
 @pytest.fixture
@@ -1814,7 +1777,7 @@ async def test_async_transition_plant_stage_invalid_stage(hass: HomeAssistant) -
     gs = await coordinator.async_add_growspace("Test GS")
     plant = await coordinator.async_add_plant(gs.id, "Test Plant")
 
-    with pytest.raises(ValueError, match="Invalid stage"):
+    with pytest.raises(ValidationChangeError, match="Invalid stage"):
         await coordinator.async_transition_plant_stage(
             plant.plant_id, "invalid_stage", None
         )
@@ -2360,8 +2323,8 @@ async def test_async_update_irrigation_config(
 
     assert gs.irrigation_config.irrigation_pump_entity == "switch.pump2"
 
-    # 2. Calling with non-existent GS raises ValueError
-    with pytest.raises(ValueError):
+    # 2. Calling with non-existent GS raises GrowspaceNotFoundError
+    with pytest.raises(GrowspaceNotFoundError):
         await mock_coordinator.async_update_irrigation_config("missing", {})
 
 
@@ -2416,7 +2379,7 @@ async def test_async_promote_clone_error_checks(
 ) -> None:
     """Test async_promote_clone error conditions."""
     # 1. Promote non-existent plant
-    with pytest.raises(ValueError):
+    with pytest.raises(PlantNotFoundError):
         await mock_coordinator.async_promote_clone("missing")
 
     # 2. Promote plant in wrong stage
@@ -2424,12 +2387,14 @@ async def test_async_promote_clone_error_checks(
     plant = await mock_coordinator.async_add_plant(
         gs.id, "Strain", stage=PlantStage.VEG
     )
-    with pytest.raises(ValueError, match="not in clone stage"):
+    with pytest.raises(ValidationChangeError, match="not in clone stage"):
         await mock_coordinator.async_promote_clone(plant.plant_id)
 
     # 3. Promote to non-existent target growspace
     plant.stage = PlantStage.CLONE
-    with pytest.raises(ValueError, match="Target growspace missing_gs does not exist"):
+    with pytest.raises(
+        GrowspaceNotFoundError, match="Target growspace missing_gs does not exist"
+    ):
         await mock_coordinator.async_promote_clone(
             plant.plant_id, target_growspace_id="missing_gs"
         )

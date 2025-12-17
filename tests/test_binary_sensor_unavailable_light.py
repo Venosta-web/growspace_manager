@@ -9,9 +9,9 @@ from homeassistant.core import HomeAssistant
 from homeassistant.util.dt import utcnow
 
 from custom_components.growspace_manager.binary_sensor import (
+    SENSOR_TYPES,
     BayesianMoldRiskSensor,
     BayesianStressSensor,
-    SENSOR_TYPES,
 )
 
 

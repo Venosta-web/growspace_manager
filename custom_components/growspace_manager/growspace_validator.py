@@ -3,6 +3,11 @@
 from __future__ import annotations
 
 from .const import PlantStage
+from .exceptions import (
+    GrowspaceNotFoundError,
+    PlantNotFoundError,
+    ValidationChangeError,
+)
 from .utils import find_first_free_position
 
 
@@ -20,12 +25,12 @@ class GrowspaceValidator:
     def validate_growspace_exists(self, growspace_id: str) -> None:
         """Validate that a growspace exists in the coordinator."""
         if growspace_id not in self.coordinator.growspaces:
-            raise ValueError(f"Growspace {growspace_id} does not exist")
+            raise GrowspaceNotFoundError(f"Growspace {growspace_id} does not exist")
 
     def validate_plant_exists(self, plant_id: str) -> None:
         """Validate that a plant exists in the coordinator."""
         if plant_id not in self.coordinator.plants:
-            raise ValueError(f"Plant {plant_id} does not exist")
+            raise PlantNotFoundError(f"Plant {plant_id} does not exist")
 
     def validate_position_bounds(self, growspace_id: str, row: int, col: int) -> None:
         """Validate that a position is within the bounds of a growspace grid."""
@@ -44,9 +49,13 @@ class GrowspaceValidator:
         max_cols = int(growspace.plants_per_row)
 
         if row < 1 or row > max_rows:
-            raise ValueError(f"Row {row} is outside growspace bounds (1-{max_rows})")
+            raise ValidationChangeError(
+                f"Row {row} is outside growspace bounds (1-{max_rows})"
+            )
         if col < 1 or col > max_cols:
-            raise ValueError(f"Column {col} is outside growspace bounds (1-{max_cols})")
+            raise ValidationChangeError(
+                f"Column {col} is outside growspace bounds (1-{max_cols})"
+            )
 
     def validate_position_not_occupied(
         self,
@@ -72,7 +81,7 @@ class GrowspaceValidator:
                 and existing_plant.row == row
                 and existing_plant.col == col
             ):
-                raise ValueError(
+                raise ValidationChangeError(
                     f"Position ({row},{col}) is already occupied by {existing_plant.strain}"
                 )
 

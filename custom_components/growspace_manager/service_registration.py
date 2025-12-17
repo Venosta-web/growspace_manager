@@ -20,6 +20,7 @@ from .const import (
     GrowspaceService,
 )
 from .coordinator import GrowspaceCoordinator
+from .exceptions import GrowspaceError
 from .services import (
     ADD_DRAIN_TIME_SCHEMA,
     ADD_GROWSPACE_SCHEMA,
@@ -119,10 +120,13 @@ async def register_services(
         needs_strain_lib: bool,
         call: ServiceCall,
     ) -> Any:
-        coordinator = get_coordinator_for_call(hass, call)
-        if needs_strain_lib:
-            return await handler(hass, coordinator, strain_lib, call)
-        return await handler(hass, coordinator, call)
+        try:
+            coordinator = get_coordinator_for_call(hass, call)
+            if needs_strain_lib:
+                return await handler(hass, coordinator, strain_lib, call)
+            return await handler(hass, coordinator, call)
+        except GrowspaceError as err:
+            raise ServiceValidationError(str(err)) from err
 
     # Helper to create the wrapper
     def wrap(

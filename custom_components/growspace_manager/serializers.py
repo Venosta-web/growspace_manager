@@ -9,7 +9,6 @@ from homeassistant.const import STATE_UNAVAILABLE, STATE_UNKNOWN
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import entity_registry as er
 
-from .environment_analyzer import EnvironmentAnalyzer
 from .const import (
     CONF_CIRCULATION_FAN,
     CONF_CO2_SENSOR,
@@ -21,6 +20,7 @@ from .const import (
     DOMAIN,
     PlantStage,
 )
+from .environment_analyzer import EnvironmentAnalyzer
 from .models import Growspace, Plant
 from .utils import (
     calculate_days_since,
@@ -28,7 +28,6 @@ from .utils import (
     days_to_week,
     format_date,
 )
-
 
 _LOGGER = logging.getLogger(__name__)
 

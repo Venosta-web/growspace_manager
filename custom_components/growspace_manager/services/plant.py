@@ -25,6 +25,7 @@ from ..const import (
     DATE_FIELDS,
 )
 from ..coordinator import GrowspaceCoordinator
+from ..exceptions import GrowspaceError
 from ..growspace_validator import GrowspaceValidator
 from ..strain_library import StrainLibrary
 from ..utils import parse_date_field
@@ -208,7 +209,7 @@ async def handle_add_plant(
                 dry_start=dry_start,
                 cure_start=cure_start,
             )
-        except ValueError as err:
+        except GrowspaceError as err:
             raise ServiceValidationError(str(err)) from err
 
         _LOGGER.info(
@@ -262,7 +263,7 @@ async def handle_take_clone(
             transition_date=transition_date,
         )
         clones_added_count = len(clones)
-    except ValueError as err:
+    except GrowspaceError as err:
         _LOGGER.error("Failed to take clones from %s: %s", mother_plant_id, err)
         raise ServiceValidationError(str(err)) from err
 
@@ -374,6 +375,9 @@ async def handle_update_plant(
         await coordinator.async_update_plant(plant_id, **update_data)
         _LOGGER.info("Updated plant %s with data: %s", plant_id, update_data)
 
+    except GrowspaceError as err:
+        raise ServiceValidationError(str(err)) from err
+
     except Exception as err:
         _LOGGER.exception("Failed to update plant: %s", err)
         raise
@@ -401,6 +405,9 @@ async def handle_remove_plant(
             plant_info.growspace_id,
         )
 
+    except GrowspaceError as err:
+        raise ServiceValidationError(str(err)) from err
+
     except Exception as err:
         _LOGGER.exception("Failed to remove plant %s: %s", plant_id, err)
         raise
@@ -427,6 +434,9 @@ async def handle_switch_plants(
 
         await coordinator.async_switch_plants(plant_id_1, plant_id_2)
         _LOGGER.info("Plants %s and %s switched successfully", plant_id_1, plant_id_2)
+
+    except GrowspaceError as err:
+        raise ServiceValidationError(str(err)) from err
 
     except Exception as err:
         _LOGGER.exception(
@@ -511,7 +521,7 @@ async def handle_move_plant(
                 plant.growspace_id,
             )
 
-    except ValueError as err:
+    except GrowspaceError as err:
         _LOGGER.warning("Validation error moving plant %s: %s", plant_id, err)
         raise ServiceValidationError(str(err)) from err
 
@@ -554,6 +564,9 @@ async def handle_transition_plant_stage(
             transition_date=transition_date.isoformat() if transition_date else None,
         )
         _LOGGER.info("Plant %s transitioned to %s stage", plant_id, new_stage)
+
+    except GrowspaceError as err:
+        raise ServiceValidationError(str(err)) from err
 
     except Exception as err:
         _LOGGER.exception("Failed to transition plant stage for %s: %s", plant_id, err)
@@ -609,6 +622,9 @@ async def handle_harvest_plant(
         }
 
         return result
+
+    except GrowspaceError as err:
+        raise ServiceValidationError(str(err)) from err
 
     except Exception as err:
         _LOGGER.exception("Failed to harvest plant %s: %s", plant_id, err)

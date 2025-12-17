@@ -1,18 +1,14 @@
 """Tests for the EnvironmentAnalyzer."""
 
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 from homeassistant.const import STATE_ON
 from homeassistant.core import HomeAssistant
 
 from custom_components.growspace_manager.const import (
-    CONF_LIGHT_SENSOR,
-    CONF_VPD_SENSOR,
     DEFAULT_FLOWER_EARLY_DAYS,
     DEFAULT_VEG_EARLY_DAYS,
-    DOMAIN,
-    PlantStage,
 )
 from custom_components.growspace_manager.environment_analyzer import EnvironmentAnalyzer
 from custom_components.growspace_manager.models import EnvironmentConfig, Growspace
