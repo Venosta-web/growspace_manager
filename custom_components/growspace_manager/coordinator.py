@@ -43,7 +43,7 @@ from .growspace_validator import GrowspaceValidator
 from .import_export_manager import ImportExportManager
 from .irrigation_coordinator import IrrigationCoordinator
 from .migration_manager import MigrationManager
-from .models import Growspace, GrowspaceCoordinatorData, GrowspaceEvent, Plant
+from .models import Growspace, GrowspaceEvent, Plant
 from .notification_manager import NotificationManager
 from .plant_lifecycle_manager import PlantLifecycleManager
 from .serializers import GrowspaceSerializer
@@ -83,6 +83,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
     def __init__(
         self,
         hass: HomeAssistant,
+        entry: Any,
         data: dict | None = None,
         options: dict | None = None,
         strain_library: StrainLibrary | None = None,
@@ -91,6 +92,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
 
         Args:
             hass: The Home Assistant instance.
+            entry: The config entry.
             data: Initial raw data, typically from storage (optional).
             options: Configuration options from the config entry (optional).
         """
@@ -102,6 +104,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
         )
 
         self.hass = hass
+        self.config_entry = entry
         self._lock = asyncio.Lock()
         self.serializer = GrowspaceSerializer(hass)
         self.growspaces: dict[str, Growspace] = {}
@@ -287,7 +290,9 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
             self.events[growspace_id].pop(0)
 
         # Persist changes
-        self.hass.async_create_task(self.async_commit())
+        self.config_entry.async_create_background_task(
+            self.hass, self.async_commit(), "growspace_commit_event"
+        )
 
     # =============================================================================
     # UTILITY AND HELPER METHODS
@@ -515,8 +520,10 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
 
         for gs_id in self.growspaces:
             if gs_id in self.irrigation_coordinators:
-                self.hass.async_create_task(
-                    self.irrigation_coordinators[gs_id].async_request_refresh()
+                self.config_entry.async_create_background_task(
+                    self.hass,
+                    self.irrigation_coordinators[gs_id].async_request_refresh(),
+                    f"irrigation_refresh_{gs_id}",
                 )
 
     def async_fire_growspace_updated(self) -> None:
@@ -599,7 +606,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
                 growspace, plants, self.environment_analyzer
             )
 
-        self.data: GrowspaceCoordinatorData = {
+        self.data = {
             "growspaces": self.growspaces,
             "plants": self.plants,
             "notifications_sent": self._notifications_sent,
@@ -608,6 +615,49 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
             "serialized_growspaces": serialized_growspaces,
             "air_exchange_recommendations": recs,
         }
+
+    async def async_update_irrigation_config(
+        self, growspace_id: str, user_input: dict[str, Any]
+    ) -> None:
+        """Update irrigation configuration for a growspace.
+
+        Args:
+            growspace_id: The ID of the growspace to update.
+            user_input: The user input dictionary containing new settings.
+        """
+        growspace = self.growspaces.get(growspace_id)
+        if not growspace:
+            raise ValueError(f"Growspace {growspace_id} not found")
+
+        # CRITICAL FIX: Only update the R/W fields (pump entities and durations)
+        # Filter out the read-only fields that were passed for display purposes
+        updated_settings = {
+            k: v
+            for k, v in user_input.items()
+            if k
+            not in [
+                "current_irrigation_times",
+                "current_drain_times",
+                "growspace_id_read_only",
+            ]
+        }
+
+        # Explicitly handle pump entities to allow clearing them (setting to None)
+        if "irrigation_pump_entity" not in updated_settings:
+            updated_settings["irrigation_pump_entity"] = None
+        if "drain_pump_entity" not in updated_settings:
+            updated_settings["drain_pump_entity"] = None
+
+        # Update the config in the growspace object
+        for k, v in updated_settings.items():
+            if hasattr(growspace.irrigation_config, k):
+                setattr(growspace.irrigation_config, k, v)
+
+        # Save via coordinator
+        await self.async_save()
+
+        # Notify listeners
+        self.async_set_updated_data(self.data)
 
     # =============================================================================
     # GROWSPACE MANAGEMENT METHODS

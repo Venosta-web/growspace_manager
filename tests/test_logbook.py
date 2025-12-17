@@ -6,6 +6,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from homeassistant.core import HomeAssistant
 from homeassistant.util import dt as dt_util
+from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.growspace_manager.binary_sensor import (
     SENSOR_TYPES,
@@ -48,13 +49,14 @@ def test_growspace_event_model() -> None:
 
 # --- 2. Test Coordinator Rolling Buffer ---
 async def test_coordinator_rolling_buffer(hass: HomeAssistant) -> None:
-    # Setup real coordinator partially or mock add_event if complex,
-    # but we want to test the add_event logic so lets use a real-ish coordinator
-    # However instantiating full coordinator is heavy.
-    # Let's mock the class but use the real add_event method unbound?
-    # Or proper instantiation with mocks.
+    # Setup mock entry
+    entry = MockConfigEntry()
+    entry.add_to_hass(hass)
+    entry.async_create_background_task = AsyncMock()
 
-    coordinator = GrowspaceCoordinator(hass)
+    coordinator = GrowspaceCoordinator(
+        hass, data={}, options={}, strain_library=AsyncMock(), entry=entry
+    )
     coordinator.storage_manager = MagicMock()
     coordinator.storage_manager.async_save = AsyncMock()
     coordinator.async_save = AsyncMock()  # Mock save to avoid internal logic

@@ -1,14 +1,15 @@
 from unittest.mock import AsyncMock, patch
 
 import pytest
+from homeassistant.core import HomeAssistant
 
 from custom_components.growspace_manager.coordinator import GrowspaceCoordinator
 
 
 @pytest.mark.asyncio
-async def test_ghost_plant_bug(hass):
+async def test_ghost_plant_bug(hass: HomeAssistant) -> None:
     """Test that deleted plants do not reappear after refresh."""
-    coordinator = GrowspaceCoordinator(hass)
+    coordinator = GrowspaceCoordinator(hass, {}, {}, AsyncMock(), AsyncMock())
 
     # Mock the async_refresh method properly to avoid "Cannot assign to a method" error
     with patch.object(coordinator, "async_refresh", new_callable=AsyncMock):

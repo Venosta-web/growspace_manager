@@ -33,6 +33,22 @@ from custom_components.growspace_manager.models import (
 from custom_components.growspace_manager.utils import calculate_plant_stage
 
 
+def create_test_coordinator(
+    hass: HomeAssistant, data=None, options=None, strain_library=None
+) -> GrowspaceCoordinator:
+    """Helper to create a coordinator with a mock config entry."""
+    entry = MockConfigEntry(domain=DOMAIN, data={}, options=options or {})
+    entry.add_to_hass(hass)
+    entry.async_create_background_task = MagicMock()
+    return GrowspaceCoordinator(
+        hass,
+        entry,
+        data=data or {},
+        options=options,
+        strain_library=strain_library,
+    )
+
+
 @pytest.fixture
 def mock_coordinator(hass: HomeAssistant) -> GrowspaceCoordinator:
     """Provide a fresh `GrowspaceCoordinator` instance for each test.
@@ -45,7 +61,13 @@ def mock_coordinator(hass: HomeAssistant) -> GrowspaceCoordinator:
     """
     strain_library = MagicMock()
     strain_library.record_harvest = AsyncMock()
-    coordinator = GrowspaceCoordinator(hass, data={}, strain_library=strain_library)
+    mock_entry = MockConfigEntry(domain=DOMAIN, data={}, options={})
+    # Add async_create_background_task mock to entry
+    mock_entry.async_create_background_task = MagicMock()
+
+    coordinator = GrowspaceCoordinator(
+        hass, mock_entry, data={}, strain_library=strain_library
+    )
     setattr(coordinator, "async_set_updated_data", MagicMock())
     return coordinator
 
@@ -1333,7 +1355,7 @@ async def test_async_update_air_exchange_recommendations(hass: HomeAssistant) ->
     Args:
         hass: The Home Assistant instance.
     """
-    coordinator = GrowspaceCoordinator(hass, data={})
+    coordinator = create_test_coordinator(hass, data={})
     gs = await coordinator.async_add_growspace("Stress GS")
 
     # Define valid, slugified entity IDs for the test
@@ -1444,7 +1466,7 @@ async def test_get_growspace_grid(coordinator: GrowspaceCoordinator) -> None:
 @pytest.fixture
 def coordinator(hass: HomeAssistant):
     """Provide a fresh `GrowspaceCoordinator` instance for each test."""
-    coordinator = GrowspaceCoordinator(hass, data={})
+    coordinator = create_test_coordinator(hass, data={})
     setattr(coordinator, "async_set_updated_data", MagicMock())
     return coordinator
 
@@ -1460,7 +1482,7 @@ async def test_init_with_invalid_growspace_data(
         "growspaces": {"gs1": "not_a_growspace_object"},
     }
 
-    GrowspaceCoordinator(hass, data=invalid_data)
+    create_test_coordinator(hass, data=invalid_data)
 
     errors = [r.message for r in caplog.records if r.levelname == "ERROR"]
     assert any("Failed to load growspace gs1" in e for e in errors)
@@ -1480,7 +1502,7 @@ async def test_init_with_invalid_plant_data(
         "plants": {"p1": "not_a_plant_object"},
     }
 
-    GrowspaceCoordinator(hass, data=invalid_data)
+    create_test_coordinator(hass, data=invalid_data)
 
     errors = [r.message for r in caplog.records if r.levelname == "ERROR"]
     assert any("Failed to load plant p1" in e for e in errors)
@@ -1493,7 +1515,7 @@ async def test_init_with_plant_object(hass: HomeAssistant) -> None:
     plant_obj = Plant(plant_id="p1", strain="Test Strain", growspace_id="gs1")
     data = {"plants": {"p1": plant_obj}}
 
-    coordinator = GrowspaceCoordinator(hass, data=data)
+    coordinator = create_test_coordinator(hass, data=data)
 
     assert "p1" in coordinator.plants
     assert coordinator.plants["p1"] == plant_obj
@@ -1505,7 +1527,7 @@ async def test_migrate_legacy_growspaces_error_handling(
 ) -> None:
     """Test error handling in _migrate_legacy_growspaces."""
     caplog.set_level("DEBUG")
-    coordinator = GrowspaceCoordinator(hass, data={})
+    coordinator = create_test_coordinator(hass, data={})
 
     with patch.object(
         coordinator.migration_manager,
@@ -1522,7 +1544,7 @@ async def test_migrate_legacy_growspaces_error_handling(
 @pytest.mark.asyncio
 async def test_migrate_special_alias_if_needed_no_op(hass: HomeAssistant) -> None:
     """Test that no migration happens if alias and canonical IDs are the same."""
-    coordinator = GrowspaceCoordinator(hass, data={})
+    coordinator = create_test_coordinator(hass, data={})
     with (
         patch.object(
             coordinator.migration_manager, "_create_canonical_from_alias"
@@ -1543,7 +1565,7 @@ async def test_migrate_special_alias_if_needed_create_canonical(
     hass: HomeAssistant,
 ) -> None:
     """Test that a new canonical growspace is created from an alias."""
-    coordinator = GrowspaceCoordinator(hass, data={})
+    coordinator = create_test_coordinator(hass, data={})
     coordinator.growspaces["alias"] = Growspace(id="alias", name="Alias")
     with (
         patch.object(
@@ -1563,7 +1585,7 @@ async def test_migrate_special_alias_if_needed_create_canonical(
 @pytest.mark.asyncio
 async def test_migrate_special_alias_if_needed_consolidate(hass: HomeAssistant) -> None:
     """Test that an existing alias is consolidated into a canonical growspace."""
-    coordinator = GrowspaceCoordinator(hass, data={})
+    coordinator = create_test_coordinator(hass, data={})
     coordinator.growspaces["alias"] = Growspace(id="alias", name="Alias")
     coordinator.growspaces["canonical"] = Growspace(id="canonical", name="Canonical")
     with (
@@ -1619,7 +1641,7 @@ async def test_get_plant_stage_fallback(hass: HomeAssistant) -> None:
 @pytest.mark.asyncio
 async def test_canonical_special_not_found(hass: HomeAssistant) -> None:
     """Test _canonical_special when the growspace is not found."""
-    coordinator = GrowspaceCoordinator(hass, data={})
+    coordinator = create_test_coordinator(hass, data={})
     canonical_id, canonical_name = coordinator._canonical_special("nonexistent")
     assert canonical_id == "nonexistent"
     assert canonical_name == "nonexistent"
@@ -1632,7 +1654,7 @@ async def test_async_load_error_handling(
     """Test error handling in async_load."""
 
     caplog.set_level("ERROR")
-    coordinator = GrowspaceCoordinator(hass, data={})
+    coordinator = create_test_coordinator(hass, data={})
     invalid_data = {
         "plants": {"p1": "not_a_plant_object"},
         "growspaces": {"gs1": "not_a_growspace_object"},
@@ -1658,7 +1680,7 @@ async def test_async_load_with_options(
 
     caplog.set_level("DEBUG")
     options = {"gs1": {"vpd_sensor": "sensor.vpd"}}
-    coordinator = GrowspaceCoordinator(hass, data={}, options=options)
+    coordinator = create_test_coordinator(hass, data={}, options=options)
     data = {
         "growspaces": {
             "gs1": {
@@ -1685,7 +1707,7 @@ async def test_async_load_with_options(
 async def test_async_load_ensures_notifications_enabled(hass: HomeAssistant) -> None:
     """Test that async_load ensures all growspaces are in the notifications_enabled dict."""
 
-    coordinator = GrowspaceCoordinator(hass, data={})
+    coordinator = create_test_coordinator(hass, data={})
     data = {
         "growspaces": {
             "gs1": {
@@ -1716,7 +1738,7 @@ async def test_ensure_special_growspace_updates_name(
     """Test that _ensure_special_growspace updates the name of an existing growspace."""
 
     caplog.set_level("INFO")
-    coordinator = GrowspaceCoordinator(hass, data={})
+    coordinator = create_test_coordinator(hass, data={})
     coordinator.growspaces["dry"] = Growspace(
         id="dry", name="Old Dry Name", rows=1, plants_per_row=1
     )
@@ -1734,7 +1756,7 @@ async def test_cleanup_legacy_aliases(
     """Test that _cleanup_legacy_aliases removes legacy aliases and migrates plants."""
 
     caplog.set_level("INFO")
-    coordinator = GrowspaceCoordinator(hass, data={})
+    coordinator = create_test_coordinator(hass, data={})
 
     # Add a canonical growspace and a legacy alias with a plant
     coordinator.growspaces["dry"] = Growspace(
@@ -1756,7 +1778,7 @@ async def test_cleanup_legacy_aliases(
 @pytest.mark.asyncio
 async def test_async_move_plant(hass: HomeAssistant) -> None:
     """Test the async_move_plant method."""
-    coordinator = GrowspaceCoordinator(hass, data={})
+    coordinator = create_test_coordinator(hass, data={})
     gs = await coordinator.async_add_growspace("Test GS", rows=2, plants_per_row=2)
     plant = await coordinator.async_add_plant(gs.id, "Test Plant", row=1, col=1)
 
@@ -1769,7 +1791,7 @@ async def test_async_move_plant(hass: HomeAssistant) -> None:
 @pytest.mark.asyncio
 async def test_async_switch_plants_service(hass: HomeAssistant) -> None:
     """Test the async_switch_plants_service method."""
-    coordinator = GrowspaceCoordinator(hass, data={})
+    coordinator = create_test_coordinator(hass, data={})
     gs = await coordinator.async_add_growspace("Test GS", rows=2, plants_per_row=2)
     plant1 = await coordinator.async_add_plant(gs.id, "Test Plant 1", row=1, col=1)
     plant2 = await coordinator.async_add_plant(gs.id, "Test Plant 2", row=2, col=2)
@@ -1785,7 +1807,7 @@ async def test_async_switch_plants_service(hass: HomeAssistant) -> None:
 @pytest.mark.asyncio
 async def test_async_transition_plant_stage_invalid_stage(hass: HomeAssistant) -> None:
     """Test that async_transition_plant_stage raises ValueError for an invalid stage."""
-    coordinator = GrowspaceCoordinator(hass, data={})
+    coordinator = create_test_coordinator(hass, data={})
     gs = await coordinator.async_add_growspace("Test GS")
     plant = await coordinator.async_add_plant(gs.id, "Test Plant")
 
@@ -1799,7 +1821,7 @@ async def test_async_transition_plant_stage_invalid_stage(hass: HomeAssistant) -
 async def test_handle_harvest_logic_explicit_target(hass: HomeAssistant) -> None:
     """Test _handle_harvest_logic with an explicit target."""
 
-    coordinator = GrowspaceCoordinator(hass, data={})
+    coordinator = create_test_coordinator(hass, data={})
     plant = MagicMock()
     coordinator.growspaces["gs1"] = Growspace(id="gs1", name="gs1_name")
 
@@ -1823,7 +1845,7 @@ async def test_handle_harvest_logic_explicit_target(hass: HomeAssistant) -> None
 async def test_handle_harvest_logic_auto_flow(hass: HomeAssistant) -> None:
     """Test _handle_harvest_logic with auto-flow."""
 
-    coordinator = GrowspaceCoordinator(hass, data={})
+    coordinator = create_test_coordinator(hass, data={})
     plant = MagicMock()
 
     with patch.object(
@@ -1842,7 +1864,7 @@ async def test_handle_harvest_logic_auto_flow(hass: HomeAssistant) -> None:
 async def test_harvest_auto_flow_with_target_name_hint(hass: HomeAssistant) -> None:
     """Test _harvest_auto_flow with a target name hint."""
 
-    coordinator = GrowspaceCoordinator(hass, data={})
+    coordinator = create_test_coordinator(hass, data={})
     plant = MagicMock()
 
     with patch.object(
@@ -1861,7 +1883,7 @@ async def test_harvest_auto_flow_with_target_name_hint(hass: HomeAssistant) -> N
 async def test_harvest_auto_flow_mother_to_clone(hass: HomeAssistant) -> None:
     """Test _harvest_auto_flow for a mother plant."""
 
-    coordinator = GrowspaceCoordinator(hass, data={})
+    coordinator = create_test_coordinator(hass, data={})
     plant = MagicMock()
     plant.stage = "mother"
 
@@ -1881,7 +1903,7 @@ async def test_harvest_auto_flow_mother_to_clone(hass: HomeAssistant) -> None:
 async def test_harvest_auto_flow_fallback_to_dry(hass: HomeAssistant) -> None:
     """Test _harvest_auto_flow fallback to dry."""
 
-    coordinator = GrowspaceCoordinator(hass, data={})
+    coordinator = create_test_coordinator(hass, data={})
     plant = MagicMock()
 
     with (
@@ -1912,7 +1934,7 @@ async def test_harvest_to_explicit_target_no_position(
     """Test _harvest_to_explicit_target when no position is available."""
 
     caplog.set_level("WARNING")
-    coordinator = GrowspaceCoordinator(hass, data={})
+    coordinator = create_test_coordinator(hass, data={})
     plant = Plant(
         plant_id="p1",
         growspace_id="gs1",
@@ -1946,7 +1968,7 @@ async def test_harvest_to_explicit_target_no_position(
 async def test_harvest_to_explicit_target_cure(hass: HomeAssistant) -> None:
     """Test _harvest_to_explicit_target to cure growspace."""
 
-    coordinator = GrowspaceCoordinator(hass, data={})
+    coordinator = create_test_coordinator(hass, data={})
     plant = Plant(
         plant_id="p1",
         growspace_id="gs1",
@@ -1988,7 +2010,7 @@ async def test_harvest_to_explicit_target_cure(hass: HomeAssistant) -> None:
 async def test_harvest_to_explicit_target_clone(hass: HomeAssistant) -> None:
     """Test _harvest_to_explicit_target to clone growspace."""
 
-    coordinator = GrowspaceCoordinator(hass, data={})
+    coordinator = create_test_coordinator(hass, data={})
     plant = Plant(
         plant_id="p1",
         growspace_id="gs1",
@@ -2030,7 +2052,7 @@ async def test_harvest_to_explicit_target_clone(hass: HomeAssistant) -> None:
 async def test_harvest_to_explicit_target_mother(hass: HomeAssistant) -> None:
     """Test _harvest_to_explicit_target to mother growspace."""
 
-    coordinator = GrowspaceCoordinator(hass, data={})
+    coordinator = create_test_coordinator(hass, data={})
     plant = Plant(
         plant_id="p1",
         growspace_id="gs1",
@@ -2074,7 +2096,7 @@ async def test_move_to_clone_growspace_no_position(
 ) -> None:
     """Test _move_to_clone_growspace when no position is available."""
     caplog.set_level("WARNING")
-    coordinator = GrowspaceCoordinator(hass, data={})
+    coordinator = create_test_coordinator(hass, data={})
     plant = Plant(
         plant_id="p1",
         growspace_id="gs1",
@@ -2110,7 +2132,7 @@ async def test_async_update_air_exchange_recommendations_no_stress_sensor(
     hass: HomeAssistant,
 ) -> None:
     """Test _async_update_air_exchange_recommendations when stress sensor is not found."""
-    coordinator = GrowspaceCoordinator(hass, data={})
+    coordinator = create_test_coordinator(hass, data={})
     gs = await coordinator.async_add_growspace("Test GS")
     coordinator.data = {}
 
@@ -2130,7 +2152,7 @@ async def test_async_update_air_exchange_recommendations_no_vpd(
     hass: HomeAssistant,
 ) -> None:
     """Test _async_update_air_exchange_recommendations when VPD is not available."""
-    coordinator = GrowspaceCoordinator(hass, data={})
+    coordinator = create_test_coordinator(hass, data={})
     gs = await coordinator.async_add_growspace("Test GS")
     gs.environment_config = EnvironmentConfig(vpd_sensor="sensor.vpd")
     coordinator.data = {"bayesian_sensors_reason": {gs.id: {"target_vpd": None}}}

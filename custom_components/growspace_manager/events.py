@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, TypedDict
 
 from .const import DOMAIN
 
@@ -25,18 +25,47 @@ EVENT_PLANT_HARVESTED = f"{DOMAIN}_plant_harvested"
 EVENT_CLONES_TAKEN = f"{DOMAIN}_clones_taken"
 
 
+class GrowspaceEventPayload(TypedDict):
+    """Payload for growspace events."""
+
+    growspace_id: str
+    name: str
+    device_id: str | None
+
+
+class PlantEventPayload(TypedDict, total=False):
+    """Payload for plant events."""
+
+    plant_id: str
+    growspace_id: str
+    strain: str
+    stage: str
+    device_id: str | None
+    # Optional changes
+    new_row: int
+    new_col: int
+    new_stage: str
+
+
+class ClonesTakenEventPayload(TypedDict):
+    """Payload for clones taken event."""
+
+    mother_plant_id: str
+    num_clones: int
+    growspace_id: str
+    device_id: str | None
+
+
 def async_fire_growspace_event(
     hass: HomeAssistant, event_type: str, growspace: Growspace
 ) -> None:
     """Fire a growspace-related event."""
-    hass.bus.async_fire(
-        event_type,
-        {
-            "growspace_id": growspace.id,
-            "name": growspace.name,
-            "device_id": growspace.device_id,
-        },
-    )
+    payload: GrowspaceEventPayload = {
+        "growspace_id": growspace.id,
+        "name": growspace.name,
+        "device_id": growspace.device_id,
+    }
+    hass.bus.async_fire(event_type, payload)
 
 
 def async_fire_plant_event(
@@ -46,7 +75,7 @@ def async_fire_plant_event(
     changes: dict[str, Any] | None = None,
 ) -> None:
     """Fire a plant-related event."""
-    payload = {
+    payload: PlantEventPayload = {
         "plant_id": plant.plant_id,
         "growspace_id": plant.growspace_id,
         "strain": plant.strain,
@@ -55,7 +84,7 @@ def async_fire_plant_event(
     }
 
     if changes:
-        payload.update(changes)
+        payload.update(changes)  # type: ignore[arg-type]
 
     hass.bus.async_fire(event_type, payload)
 
@@ -67,12 +96,10 @@ def async_fire_clones_taken_event(
     target_growspace_id: str,
 ) -> None:
     """Fire the clones taken event."""
-    hass.bus.async_fire(
-        EVENT_CLONES_TAKEN,
-        {
-            "mother_plant_id": mother_plant.plant_id,
-            "num_clones": num_clones,
-            "growspace_id": target_growspace_id,
-            "device_id": mother_plant.device_id,
-        },
-    )
+    payload: ClonesTakenEventPayload = {
+        "mother_plant_id": mother_plant.plant_id,
+        "num_clones": num_clones,
+        "growspace_id": target_growspace_id,
+        "device_id": mother_plant.device_id,
+    }
+    hass.bus.async_fire(event_type=EVENT_CLONES_TAKEN, event_data=payload)

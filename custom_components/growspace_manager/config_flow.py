@@ -48,6 +48,63 @@ STEP_USER_DATA_SCHEMA = vol.Schema(
     }
 )
 
+ADD_STRAIN_SCHEMA = vol.Schema(
+    {
+        vol.Required("strain"): selector.TextSelector(),
+        vol.Optional("phenotype"): selector.TextSelector(),
+        vol.Optional("breeder"): selector.TextSelector(),
+        vol.Optional("type"): selector.SelectSelector(
+            selector.SelectSelectorConfig(
+                options=[
+                    selector.SelectOptionDict(value="Sativa", label="Sativa"),
+                    selector.SelectOptionDict(value="Indica", label="Indica"),
+                    selector.SelectOptionDict(value="Hybrid", label="Hybrid"),
+                    selector.SelectOptionDict(value="Ruderalis", label="Ruderalis"),
+                ],
+                custom_value=True,
+                mode=selector.SelectSelectorMode.DROPDOWN,
+            )
+        ),
+        vol.Optional("sex"): selector.SelectSelector(
+            selector.SelectSelectorConfig(
+                options=[
+                    selector.SelectOptionDict(value="Feminized", label="Feminized"),
+                    selector.SelectOptionDict(value="Regular", label="Regular"),
+                    selector.SelectOptionDict(value="Autoflower", label="Autoflower"),
+                ],
+                custom_value=True,
+                mode=selector.SelectSelectorMode.DROPDOWN,
+            )
+        ),
+        vol.Optional("lineage"): selector.TextSelector(),
+        vol.Optional("sativa_percentage"): selector.NumberSelector(
+            selector.NumberSelectorConfig(
+                min=0,
+                max=100,
+                mode=selector.NumberSelectorMode.BOX,
+                unit_of_measurement="%",
+            )
+        ),
+        vol.Optional("indica_percentage"): selector.NumberSelector(
+            selector.NumberSelectorConfig(
+                min=0,
+                max=100,
+                mode=selector.NumberSelectorMode.BOX,
+                unit_of_measurement="%",
+            )
+        ),
+        vol.Optional("flower_days_min"): selector.NumberSelector(
+            selector.NumberSelectorConfig(min=0, mode=selector.NumberSelectorMode.BOX)
+        ),
+        vol.Optional("flower_days_max"): selector.NumberSelector(
+            selector.NumberSelectorConfig(min=0, mode=selector.NumberSelectorMode.BOX)
+        ),
+        vol.Optional("description"): selector.TextSelector(
+            selector.TextSelectorConfig(multiline=True)
+        ),
+    }
+)
+
 
 class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     """Handle the initial configuration flow for Growspace Manager.
@@ -958,38 +1015,10 @@ class OptionsFlowHandler(OptionsFlow):
         irrigation_options = asdict(growspace.irrigation_config)
 
         if user_input is not None:
-            # 1. Update the Growspace object directly
-
-            # CRITICAL FIX: Only update the R/W fields (pump entities and durations)
-            # Filter out the read-only fields that were passed for display purposes
-            updated_settings = {
-                k: v
-                for k, v in user_input.items()
-                if k
-                not in [
-                    "current_irrigation_times",
-                    "current_drain_times",
-                    "growspace_id_read_only",
-                ]
-            }
-
-            # Explicitly handle pump entities to allow clearing them (setting to None)
-            # If they are missing from user_input (e.g. cleared in UI), set them to None
-            if "irrigation_pump_entity" not in updated_settings:
-                updated_settings["irrigation_pump_entity"] = None
-            if "drain_pump_entity" not in updated_settings:
-                updated_settings["drain_pump_entity"] = None
-
-            # Update the config in the growspace object
-            for k, v in updated_settings.items():
-                if hasattr(growspace.irrigation_config, k):
-                    setattr(growspace.irrigation_config, k, v)
-
-            # Save via coordinator
-            await coordinator.async_save()
-
-            # Notify listeners (including IrrigationCoordinator)
-            coordinator.async_set_updated_data(coordinator.data)
+            # Delegate update logic to coordinator
+            await coordinator.async_update_irrigation_config(
+                self._selected_growspace_id, user_input
+            )
 
             # This triggers async_update_listener in __init__.py, reloading the IrrigationCoordinator
             return self.async_create_entry(
@@ -1286,72 +1315,7 @@ class OptionsFlowHandler(OptionsFlow):
 
     def _get_add_strain_schema(self) -> vol.Schema:
         """Build the schema for adding a new strain."""
-        return vol.Schema(
-            {
-                vol.Required("strain"): selector.TextSelector(),
-                vol.Optional("phenotype"): selector.TextSelector(),
-                vol.Optional("breeder"): selector.TextSelector(),
-                vol.Optional("type"): selector.SelectSelector(
-                    selector.SelectSelectorConfig(
-                        options=[
-                            selector.SelectOptionDict(value="Sativa", label="Sativa"),
-                            selector.SelectOptionDict(value="Indica", label="Indica"),
-                            selector.SelectOptionDict(value="Hybrid", label="Hybrid"),
-                            selector.SelectOptionDict(
-                                value="Ruderalis", label="Ruderalis"
-                            ),
-                        ],
-                        custom_value=True,
-                        mode=selector.SelectSelectorMode.DROPDOWN,
-                    )
-                ),
-                vol.Optional("sex"): selector.SelectSelector(
-                    selector.SelectSelectorConfig(
-                        options=[
-                            selector.SelectOptionDict(
-                                value="Feminized", label="Feminized"
-                            ),
-                            selector.SelectOptionDict(value="Regular", label="Regular"),
-                            selector.SelectOptionDict(
-                                value="Autoflower", label="Autoflower"
-                            ),
-                        ],
-                        custom_value=True,
-                        mode=selector.SelectSelectorMode.DROPDOWN,
-                    )
-                ),
-                vol.Optional("lineage"): selector.TextSelector(),
-                vol.Optional("sativa_percentage"): selector.NumberSelector(
-                    selector.NumberSelectorConfig(
-                        min=0,
-                        max=100,
-                        mode=selector.NumberSelectorMode.BOX,
-                        unit_of_measurement="%",
-                    )
-                ),
-                vol.Optional("indica_percentage"): selector.NumberSelector(
-                    selector.NumberSelectorConfig(
-                        min=0,
-                        max=100,
-                        mode=selector.NumberSelectorMode.BOX,
-                        unit_of_measurement="%",
-                    )
-                ),
-                vol.Optional("flower_days_min"): selector.NumberSelector(
-                    selector.NumberSelectorConfig(
-                        min=0, mode=selector.NumberSelectorMode.BOX
-                    )
-                ),
-                vol.Optional("flower_days_max"): selector.NumberSelector(
-                    selector.NumberSelectorConfig(
-                        min=0, mode=selector.NumberSelectorMode.BOX
-                    )
-                ),
-                vol.Optional("description"): selector.TextSelector(
-                    selector.TextSelectorConfig(multiline=True)
-                ),
-            }
-        )
+        return ADD_STRAIN_SCHEMA
 
     async def async_step_import_strain_library(self, user_input=None):
         """Import strain library from ZIP."""

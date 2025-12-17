@@ -2085,11 +2085,13 @@ async def test_options_flow_configure_irrigation_submit(
         "irrigation_duration": 30,
         "drain_duration": 30,
     }
+    mock_coordinator.async_update_irrigation_config = AsyncMock()
     result = await flow.async_step_irrigation_overview(user_input=user_input)
 
     assert result.get("type") == FlowResultType.CREATE_ENTRY
-    assert mock_growspace.irrigation_config.irrigation_pump_entity == "switch.pump"
-    mock_coordinator.async_save.assert_called_once()
+    mock_coordinator.async_update_irrigation_config.assert_called_once_with(
+        "gs1", user_input
+    )
 
 
 # ============================================================================
