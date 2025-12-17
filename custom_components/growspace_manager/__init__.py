@@ -18,10 +18,10 @@ from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.storage import Store
 from homeassistant.helpers.typing import ConfigType
 
+from . import service_registration
 from .const import DOMAIN, PLATFORMS, STORAGE_KEY, STORAGE_VERSION
 from .coordinator import GrowspaceCoordinator
 from .intent import async_setup_intents
-from .service_registration import get_coordinator_for_call, register_services
 from .services.strain_library import StrainLibrary
 
 CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
@@ -59,7 +59,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: GrowspaceConfigEntry) ->
 
         # Register all custom services
         _LOGGER.debug("Registering services for domain %s", DOMAIN)
-        await register_services(hass, strain_library_instance)
+        await service_registration.register_services(hass, strain_library_instance)
 
         # Register WebSocket API
         _async_register_websocket_api(hass)
@@ -275,28 +275,32 @@ def create_notification(
     )
 
 
-def _async_register_websocket_api(hass: HomeAssistant) -> None:
-    """Register WebSocket API commands."""
-    _LOGGER.debug("Registering WebSocket API for %s", DOMAIN)
+WS_TYPE_GET_LOG = f"{DOMAIN}/get_log"
+SCHEMA_WS_GET_LOG = websocket_api.BASE_COMMAND_MESSAGE_SCHEMA.extend(
+    {
+        vol.Required("type"): WS_TYPE_GET_LOG,
+        vol.Optional("growspace_id"): str,
+    }
+)
 
-    # Growspace Event Log
-    WS_TYPE_GET_LOG = f"{DOMAIN}/get_log"
-    SCHEMA_WS_GET_LOG = websocket_api.BASE_COMMAND_MESSAGE_SCHEMA.extend(
-        {
-            vol.Required("type"): WS_TYPE_GET_LOG,
-            vol.Optional("growspace_id"): str,
-        }
-    )
+WS_TYPE_GET_DATA = f"{DOMAIN}/get_data"
+SCHEMA_WS_GET_DATA = websocket_api.BASE_COMMAND_MESSAGE_SCHEMA.extend(
+    {
+        vol.Required("type"): WS_TYPE_GET_DATA,
+        vol.Optional("growspace_id"): str,
+    }
+)
 
-    @websocket_api.async_response
-    async def websocket_get_event_log(hass: HomeAssistant, connection, msg):
-        """Handle get event log command."""
-        growspace_id = msg.get("growspace_id")
-        events_data = {}
 
+async def websocket_get_event_log(hass: HomeAssistant, connection, msg):
+    """Handle get event log command."""
+    growspace_id = msg.get("growspace_id")
+    events_data = {}
+
+    try:
         if growspace_id:
             try:
-                coordinator = get_coordinator_for_call(hass, msg)
+                coordinator = service_registration.get_coordinator_for_call(hass, msg)
                 events = coordinator.events.get(growspace_id, [])
                 events_data[growspace_id] = [e.to_dict() for e in events]
             except (
@@ -316,33 +320,38 @@ def _async_register_websocket_api(hass: HomeAssistant) -> None:
                         events_data[gid] = [e.to_dict() for e in evts]
 
         connection.send_result(msg["id"], events_data)
+    except Exception as err:
+        _LOGGER.exception("Error handling websocket_get_event_log")
+        connection.send_error(msg["id"], "unknown_error", str(err))
+
+
+async def websocket_get_growspace_data(hass: HomeAssistant, connection, msg):
+    """Handle get growspace data command."""
+    growspace_id = msg.get("growspace_id")
+    try:
+        coordinator = service_registration.get_coordinator_for_call(hass, msg)
+        data = coordinator.get_growspace_data(growspace_id)
+        connection.send_result(msg["id"], data)
+    except ServiceValidationError as err:
+        connection.send_error(msg["id"], "invalid_args", str(err))
+    except Exception as e:
+        connection.send_error(msg["id"], "unknown_error", str(e))
+
+
+def _async_register_websocket_api(hass: HomeAssistant) -> None:
+    """Register WebSocket API commands."""
+    _LOGGER.debug("Registering WebSocket API for %s", DOMAIN)
 
     websocket_api.async_register_command(
-        hass, WS_TYPE_GET_LOG, websocket_get_event_log, SCHEMA_WS_GET_LOG
+        hass,
+        WS_TYPE_GET_LOG,
+        websocket_api.async_response(websocket_get_event_log),
+        SCHEMA_WS_GET_LOG,
     )
-
-    # Growspace Data
-    WS_TYPE_GET_DATA = f"{DOMAIN}/get_data"
-    SCHEMA_WS_GET_DATA = websocket_api.BASE_COMMAND_MESSAGE_SCHEMA.extend(
-        {
-            vol.Required("type"): WS_TYPE_GET_DATA,
-            vol.Optional("growspace_id"): str,
-        }
-    )
-
-    @websocket_api.async_response
-    async def websocket_get_growspace_data(hass: HomeAssistant, connection, msg):
-        """Handle get growspace data command."""
-        growspace_id = msg.get("growspace_id")
-        try:
-            coordinator = get_coordinator_for_call(hass, msg)
-            data = coordinator.get_growspace_data(growspace_id)
-            connection.send_result(msg["id"], data)
-        except ServiceValidationError as err:
-            connection.send_error(msg["id"], "invalid_args", str(err))
-        except Exception as e:
-            connection.send_error(msg["id"], "unknown_error", str(e))
 
     websocket_api.async_register_command(
-        hass, WS_TYPE_GET_DATA, websocket_get_growspace_data, SCHEMA_WS_GET_DATA
+        hass,
+        WS_TYPE_GET_DATA,
+        websocket_api.async_response(websocket_get_growspace_data),
+        SCHEMA_WS_GET_DATA,
     )

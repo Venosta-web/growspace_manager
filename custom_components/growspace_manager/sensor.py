@@ -41,6 +41,9 @@ from .const import (
     ICON_GROWSPACE,
     ICON_STRAIN_LIBRARY,
     ICON_VPD,
+    METRIC_HUMIDITY,
+    METRIC_TEMPERATURE,
+    METRIC_VPD,
     PLANT_STAGES,
 )
 
@@ -89,9 +92,9 @@ async def _async_create_derivative_sensors(
                 created_entity_ids.append(entity_key)
 
     metric_map = {
-        "temperature": CONF_TEMP_SENSOR,
-        "humidity": CONF_HUMIDITY_SENSOR,
-        "vpd": CONF_VPD_SENSOR,
+        METRIC_TEMPERATURE: CONF_TEMP_SENSOR,
+        METRIC_HUMIDITY: CONF_HUMIDITY_SENSOR,
+        METRIC_VPD: CONF_VPD_SENSOR,
     }
 
     for sensor_type, conf_key in metric_map.items():
@@ -530,6 +533,10 @@ class AirExchangeSensor(CoordinatorEntity[GrowspaceCoordinator], SensorEntity):
     alleviate environmental stress.
     """
 
+    _attr_has_entity_name = True
+    _attr_translation_key = "air_exchange"
+    _attr_icon = ICON_AIR_EXCHANGE
+
     def __init__(self, coordinator: GrowspaceCoordinator, growspace_id: str) -> None:
         """Initialize the air exchange sensor.
 
@@ -540,9 +547,7 @@ class AirExchangeSensor(CoordinatorEntity[GrowspaceCoordinator], SensorEntity):
         super().__init__(coordinator)
         self.growspace_id = growspace_id
         self.growspace = coordinator.growspaces[growspace_id]
-        self._attr_name = f"{self.growspace.name} Air Exchange"
         self._attr_unique_id = f"{DOMAIN}_{self.growspace_id}_air_exchange"
-        self._attr_icon = ICON_AIR_EXCHANGE
 
         self._attr_device_info = DeviceInfo(
             identifiers={(DOMAIN, self.growspace_id)},
@@ -571,6 +576,9 @@ class GrowspaceOverviewSensor(CoordinatorEntity[GrowspaceCoordinator], SensorEnt
     entity for the companion Lovelace card.
     """
 
+    _attr_has_entity_name = True
+    _attr_translation_key = "overview"
+
     def __init__(
         self, coordinator: GrowspaceCoordinator, growspace_id: str, growspace: Growspace
     ) -> None:
@@ -585,7 +593,7 @@ class GrowspaceOverviewSensor(CoordinatorEntity[GrowspaceCoordinator], SensorEnt
         self.growspace_id = growspace_id
         # We don't store self.growspace anymore to ensure we always get the latest
         # object from the coordinator.
-        self._attr_name = growspace.name
+        # self._attr_name removed to rely on translation_key
         self._attr_unique_id = generate_growspace_overview_unique_id(growspace_id)
 
         # Set up device info
@@ -723,12 +731,14 @@ class StrainLibrarySensor(CoordinatorEntity[GrowspaceCoordinator], SensorEntity)
     based on recorded harvest data.
     """
 
+    _attr_has_entity_name = True
+    _attr_translation_key = "strain_library"
+    _attr_icon = ICON_STRAIN_LIBRARY
+
     def __init__(self, coordinator: GrowspaceCoordinator) -> None:
         """Initialize the Strain Library sensor."""
         super().__init__(coordinator)
-        self._attr_name = "Growspace Strain Library"
         self._attr_unique_id = f"{DOMAIN}_strain_library"
-        self._attr_icon = ICON_STRAIN_LIBRARY
 
     @property
     @override

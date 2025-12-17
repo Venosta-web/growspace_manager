@@ -34,7 +34,6 @@ NOTIFICATION_SWITCH = GrowspaceSwitchDescription(
     key="notifications",
     translation_key="notifications",
     icon=ICON_NOTIFICATION,
-    name="Notifications",
 )
 
 SWITCH_TYPES: tuple[GrowspaceSwitchDescription, ...] = (NOTIFICATION_SWITCH,)

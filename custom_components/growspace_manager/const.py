@@ -47,6 +47,8 @@ METRIC_CURING = "curing"
 METRIC_LIGHT_MANAGEMENT = "light_management"
 METRIC_AIR_EXCHANGE = "air_exchange"
 METRIC_VPD = "vpd"
+METRIC_TEMPERATURE = "temperature"
+METRIC_HUMIDITY = "humidity"
 
 # Attributes
 ATTR_GROWSPACE_ID = "growspace_id"
@@ -137,6 +139,54 @@ class PlantStage(StrEnum):
     FLOWER = "flower"
     DRY = "dry"
     CURE = "cure"
+
+
+class GrowspaceSensorType(StrEnum):
+    STRESS = "stress"
+    MOLD = "mold"
+    OPTIMAL = "optimal"
+    DRYING = "drying"
+    CURING = "curing"
+
+
+class GrowspaceService(StrEnum):
+    """Growspace Manager Services."""
+
+    ADD_GROWSPACE = "add_growspace"
+    REMOVE_GROWSPACE = "remove_growspace"
+    UPDATE_GROWSPACE = "update_growspace"
+    ADD_PLANT = "add_plant"
+    REMOVE_PLANT = "remove_plant"
+    UPDATE_PLANT = "update_plant"
+    MOVE_PLANT = "move_plant"
+    SWITCH_PLANTS = "switch_plants"
+    TAKE_CLONE = "take_clone"
+    MOVE_CLONE = "move_clone"
+    TRANSITION_PLANT_STAGE = "transition_plant_stage"
+    HARVEST_PLANT = "harvest_plant"
+    ADD_STRAIN = "add_strain"
+    REMOVE_STRAIN = "remove_strain"
+    UPDATE_STRAIN_META = "update_strain_meta"
+    IMPORT_STRAIN_LIBRARY = "import_strain_library"
+    EXPORT_STRAIN_LIBRARY = "export_strain_library"
+    CLEAR_STRAIN_LIBRARY = "clear_strain_library"
+    STRAIN_RECOMMENDATION = "strain_recommendation"
+    ASK_GROW_ADVICE = "ask_grow_advice"
+    ANALYZE_ALL_GROWSPACES = "analyze_all_growspaces"
+    CONFIGURE_ENVIRONMENT = "configure_environment"
+    REMOVE_ENVIRONMENT = "remove_environment"
+    SET_DEHUMIDIFIER_CONTROL = "set_dehumidifier_control"
+    SET_IRRIGATION_SETTINGS = "set_irrigation_settings"
+    ADD_IRRIGATION_TIME = "add_irrigation_time"
+    REMOVE_IRRIGATION_TIME = "remove_irrigation_time"
+    ADD_DRAIN_TIME = "add_drain_time"
+    REMOVE_DRAIN_TIME = "remove_drain_time"
+    DEBUG_LIST_GROWSPACES = "debug_list_growspaces"
+    DEBUG_RESET_SPECIAL_GROWSPACES = "debug_reset_special_growspaces"
+    DEBUG_CONSOLIDATE_DUPLICATE_SPECIAL = "debug_consolidate_duplicate_special"
+    DEBUG_CLEANUP_LEGACY = "debug_cleanup_legacy"
+    TEST_NOTIFICATION = "test_notification"
+    GET_STRAIN_LIBRARY = "get_strain_library"
 
 
 # Plant stages

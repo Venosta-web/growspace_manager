@@ -19,6 +19,7 @@ from custom_components.growspace_manager.binary_sensor import (
     BayesianMoldRiskSensor,
     BayesianOptimalConditionsSensor,
     BayesianStressSensor,
+    GrowspaceSensorType,
     LightCycleVerificationSensor,
     async_setup_entry,
 )
@@ -195,7 +196,9 @@ async def test_async_setup_entry_no_env_config(
 
 def test_get_growth_stage_info(mock_coordinator) -> None:
     """Test _get_growth_stage_info calculates days correctly."""
-    description = next(d for d in SENSOR_TYPES if d.sensor_type == "stress")
+    description = next(
+        d for d in SENSOR_TYPES if d.sensor_type == GrowspaceSensorType.STRESS
+    )
     sensor = BayesianStressSensor(
         mock_coordinator,
         "gs1",
@@ -217,7 +220,9 @@ async def test_notification_sending(
 
     mock_recorder.return_value.async_add_executor_job = AsyncMock(return_value={})
     # Corrected instantiation
-    description = next(d for d in SENSOR_TYPES if d.sensor_type == "stress")
+    description = next(
+        d for d in SENSOR_TYPES if d.sensor_type == GrowspaceSensorType.STRESS
+    )
     sensor = BayesianStressSensor(
         mock_coordinator,
         "gs1",
@@ -279,7 +284,9 @@ async def test_send_notification_anti_spam(
 ) -> None:
     """Test that notifications are not sent if within the cooldown period."""
 
-    description = next(d for d in SENSOR_TYPES if d.sensor_type == "stress")
+    description = next(
+        d for d in SENSOR_TYPES if d.sensor_type == GrowspaceSensorType.STRESS
+    )
     sensor = BayesianStressSensor(
         mock_coordinator,
         "gs1",
@@ -309,7 +316,9 @@ async def test_send_notification_no_target(
 
     mock_coordinator.growspaces["gs1"].notification_target = None
     # Corrected instantiation
-    description = next(d for d in SENSOR_TYPES if d.sensor_type == "stress")
+    description = next(
+        d for d in SENSOR_TYPES if d.sensor_type == GrowspaceSensorType.STRESS
+    )
     sensor = BayesianStressSensor(
         mock_coordinator,
         "gs1",
@@ -332,7 +341,9 @@ async def test_stress_sensor_notification_on_state_change(
     """Test stress sensor sends notification when state changes to on."""
 
     # Corrected instantiation
-    description = next(d for d in SENSOR_TYPES if d.sensor_type == "stress")
+    description = next(
+        d for d in SENSOR_TYPES if d.sensor_type == GrowspaceSensorType.STRESS
+    )
     sensor = BayesianStressSensor(
         mock_coordinator,
         "gs1",
@@ -370,7 +381,9 @@ async def test_optimal_conditions_notification_on_state_change(
     """Test optimal sensor sends notification when state changes to off."""
 
     # Corrected instantiation
-    description = next(d for d in SENSOR_TYPES if d.sensor_type == "optimal")
+    description = next(
+        d for d in SENSOR_TYPES if d.sensor_type == GrowspaceSensorType.OPTIMAL
+    )
     sensor = BayesianOptimalConditionsSensor(
         mock_coordinator,
         "gs1",
@@ -400,7 +413,9 @@ def test_generate_notification_message_truncation(
 ) -> None:
     """Test that the notification message is correctly truncated."""
     # Corrected instantiation
-    description = next(d for d in SENSOR_TYPES if d.sensor_type == "stress")
+    description = next(
+        d for d in SENSOR_TYPES if d.sensor_type == GrowspaceSensorType.STRESS
+    )
     sensor = BayesianStressSensor(
         mock_coordinator,
         "gs1",
@@ -427,7 +442,9 @@ def test_stress_sensor_notification_returns_none_when_off(
     mock_coordinator, env_config
 ) -> None:
     """Test that the stress sensor does not generate a notification when turning off."""
-    description = next(d for d in SENSOR_TYPES if d.sensor_type == "stress")
+    description = next(
+        d for d in SENSOR_TYPES if d.sensor_type == GrowspaceSensorType.STRESS
+    )
     sensor = BayesianStressSensor(
         mock_coordinator,
         "gs1",
@@ -442,7 +459,9 @@ def test_mold_risk_sensor_notification_returns_none_when_off(
     mock_coordinator, env_config
 ) -> None:
     """Test that the mold risk sensor does not generate a notification when turning off."""
-    description = next(d for d in SENSOR_TYPES if d.sensor_type == "mold")
+    description = next(
+        d for d in SENSOR_TYPES if d.sensor_type == GrowspaceSensorType.MOLD
+    )
     sensor = BayesianMoldRiskSensor(
         mock_coordinator,
         "gs1",
@@ -457,7 +476,9 @@ def test_optimal_conditions_notification_returns_none_when_on(
     mock_coordinator, env_config
 ) -> None:
     """Test that the optimal conditions sensor does not generate a notification when turning on."""
-    description = next(d for d in SENSOR_TYPES if d.sensor_type == "optimal")
+    description = next(
+        d for d in SENSOR_TYPES if d.sensor_type == GrowspaceSensorType.OPTIMAL
+    )
     sensor = BayesianOptimalConditionsSensor(
         mock_coordinator,
         "gs1",
@@ -472,7 +493,9 @@ def test_mold_risk_sensor_notification_returns_tuple_when_on_and_growspace_exist
     mock_coordinator, env_config
 ) -> None:
     """Test that the mold risk sensor generates a notification when turning on and growspace exists."""
-    description = next(d for d in SENSOR_TYPES if d.sensor_type == "mold")
+    description = next(
+        d for d in SENSOR_TYPES if d.sensor_type == GrowspaceSensorType.MOLD
+    )
     sensor = BayesianMoldRiskSensor(
         mock_coordinator,
         "gs1",
@@ -500,7 +523,9 @@ def test_mold_risk_sensor_notification_returns_none_when_on_and_growspace_does_n
     mock_coordinator, env_config
 ) -> None:
     """Test that the mold risk sensor does not generate a notification when turning on and growspace does not exist."""
-    description = next(d for d in SENSOR_TYPES if d.sensor_type == "mold")
+    description = next(
+        d for d in SENSOR_TYPES if d.sensor_type == GrowspaceSensorType.MOLD
+    )
     sensor = BayesianMoldRiskSensor(
         mock_coordinator,
         "gs1",
@@ -550,7 +575,9 @@ async def test_bayesian_stress_sensor_granular(
     """Test BayesianStressSensor triggers for specific individual conditions."""
 
     # Corrected instantiation
-    description = next(d for d in SENSOR_TYPES if d.sensor_type == "stress")
+    description = next(
+        d for d in SENSOR_TYPES if d.sensor_type == GrowspaceSensorType.STRESS
+    )
     sensor = BayesianStressSensor(
         mock_coordinator,
         "gs1",
@@ -641,7 +668,9 @@ async def test_get_sensor_value_edge_cases(
     """Test the _get_sensor_value helper with various invalid states."""
 
     # Corrected instantiation
-    description = next(d for d in SENSOR_TYPES if d.sensor_type == "stress")
+    description = next(
+        d for d in SENSOR_TYPES if d.sensor_type == GrowspaceSensorType.STRESS
+    )
     sensor = BayesianStressSensor(
         mock_coordinator,
         "gs1",
@@ -738,7 +767,9 @@ async def test_async_analyze_sensor_trend(
     )
 
     # Corrected instantiation
-    description = next(d for d in SENSOR_TYPES if d.sensor_type == "stress")
+    description = next(
+        d for d in SENSOR_TYPES if d.sensor_type == GrowspaceSensorType.STRESS
+    )
     sensor = BayesianStressSensor(
         mock_coordinator,
         "gs1",
@@ -1069,13 +1100,13 @@ async def test_dry_cure_sensors_off_states(
 
     # Corrected instantiation
     if issubclass(sensor_class, BayesianMoldRiskSensor):
-        sensor_type = "mold"
+        sensor_type = GrowspaceSensorType.MOLD
     elif issubclass(sensor_class, BayesianDryingSensor):
-        sensor_type = "drying"
+        sensor_type = GrowspaceSensorType.DRYING
     elif issubclass(sensor_class, BayesianCuringSensor):
-        sensor_type = "curing"
+        sensor_type = GrowspaceSensorType.CURING
     else:
-        sensor_type = "stress"
+        sensor_type = GrowspaceSensorType.STRESS
 
     description = next(d for d in SENSOR_TYPES if d.sensor_type == sensor_type)
     sensor = sensor_class(
@@ -1115,7 +1146,9 @@ async def test_curing_sensor_skips_if_not_cure_growspace(
 ) -> None:
     """Test that the Curing sensor skips probability calculation if growspace_id is not 'cure'."""
     # Create a Curing sensor for a non-cure growspace
-    description = next(d for d in SENSOR_TYPES if d.sensor_type == "curing")
+    description = next(
+        d for d in SENSOR_TYPES if d.sensor_type == GrowspaceSensorType.CURING
+    )
     sensor = BayesianCuringSensor(mock_coordinator, "gs1", env_config, description)
     sensor.hass = MagicMock()
     sensor.entity_id = "binary_sensor.test_curing_non_cure"
@@ -1137,7 +1170,9 @@ async def test_drying_sensor_skips_if_not_dry_growspace(
 ) -> None:
     """Test that the Drying sensor skips probability calculation if growspace_id is not 'dry'."""
     # Create a Drying sensor for a non-dry growspace
-    description = next(d for d in SENSOR_TYPES if d.sensor_type == "drying")
+    description = next(
+        d for d in SENSOR_TYPES if d.sensor_type == GrowspaceSensorType.DRYING
+    )
     sensor = BayesianDryingSensor(mock_coordinator, "gs1", env_config, description)
     sensor.hass = MagicMock()
     sensor.entity_id = "binary_sensor.test_drying_non_dry"
@@ -1416,15 +1451,16 @@ class TestBayesianEnvironmentSensor:
             "custom_components.growspace_manager.binary_sensor.BayesianEnvironmentSensor.__init__",
             return_value=None,
         ):
+            description = next(
+                d for d in SENSOR_TYPES if d.sensor_type == GrowspaceSensorType.STRESS
+            )
             sensor = BayesianEnvironmentSensor(  # Corrected instantiation
                 mock_coordinator,
                 "gs1",
                 env_config,
-                "test_type",
-                "Test Sensor",
-                "prior_test",
-                "threshold_test",
+                description,
             )
+            sensor.entity_description = description
             sensor.coordinator = mock_coordinator
             sensor.coordinator.options = {}  # Disable AI by default
             sensor.growspace_id = "gs1"

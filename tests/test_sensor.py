@@ -566,6 +566,9 @@ def test_growspace_overview_sensor_state_and_attributes(mock_coordinator) -> Non
         growspace_id="gs1",
         growspace=gs_mock,
     )
+    gs.platform = Mock()
+    gs.platform.platform_name = "growspace_manager"
+    gs.platform.domain = "sensor"
 
     # State should return number of plants
     assert gs.state == 1
@@ -604,6 +607,9 @@ def test_growspace_overview_sensor_environment_attributes(mock_coordinator) -> N
         growspace_id="gs1",
         growspace=gs_mock,
     )
+    gs.platform = Mock()
+    gs.platform.platform_name = "growspace_manager"
+    gs.platform.domain = "sensor"
 
     attrs = gs.extra_state_attributes
 
@@ -636,6 +642,9 @@ def test_growspace_overview_sensor_special_growspaces(
     """Test GrowspaceOverviewSensor for special growspaces."""
     special_growspace = Mock(id=special_id, name=special_name)
     sensor = GrowspaceOverviewSensor(mock_coordinator, special_id, special_growspace)
+    sensor.platform = Mock()
+    sensor.platform.platform_name = "growspace_manager"
+    sensor.platform.domain = "sensor"
     assert sensor.unique_id == f"{DOMAIN}_{special_id}"
 
 
@@ -771,6 +780,9 @@ def test_strain_library_sensor_state_and_attributes(mock_coordinator) -> None:
     }
 
     sensor = StrainLibrarySensor(mock_coordinator)
+    sensor.platform = Mock()
+    sensor.platform.platform_name = "growspace_manager"
+    sensor.platform.domain = "sensor"
 
     # State should be the number of unique strains
     assert sensor.state == 3
@@ -897,6 +909,9 @@ def test_air_exchange_sensor(mock_coordinator) -> None:
     mock_coordinator.data = {"air_exchange_recommendations": {"gs1": "Open Window"}}
 
     sensor = AirExchangeSensor(mock_coordinator, "gs1")
+    sensor.platform = Mock()
+    sensor.platform.platform_name = "growspace_manager"
+    sensor.platform.domain = "sensor"
 
     assert sensor.state == "Open Window"
     assert sensor.unique_id == f"{DOMAIN}_gs1_air_exchange"

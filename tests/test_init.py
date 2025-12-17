@@ -13,19 +13,18 @@ from aiohttp import BodyPartReader
 from homeassistant.config_entries import ConfigEntryState
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ServiceValidationError
-from homeassistant.setup import async_setup_component
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.growspace_manager import (
     StrainLibraryUploadView,
     _async_cancel_coordinators,
-    _async_register_websocket_api,
     _async_update_listener,
     async_reload_entry,
     async_setup,
     async_setup_entry,
     async_unload_entry,
-    register_services,
+    websocket_get_event_log,
+    websocket_get_growspace_data,
 )
 from custom_components.growspace_manager.const import (
     ADD_DRAIN_TIME_SCHEMA,
@@ -65,6 +64,7 @@ from custom_components.growspace_manager.const import (
 )
 from custom_components.growspace_manager.coordinator import GrowspaceCoordinator
 from custom_components.growspace_manager.models import GrowspaceEvent
+from custom_components.growspace_manager.service_registration import register_services
 
 
 @pytest.fixture
@@ -144,8 +144,8 @@ async def test_async_setup_entry(mock_hass) -> None:
             return_value=AsyncMock(),
         ) as mock_lib_cls,
         patch(
-            "custom_components.growspace_manager.register_services",
-            return_value=AsyncMock(),
+            "custom_components.growspace_manager.service_registration.register_services",
+            new_callable=AsyncMock,
         ) as mock_reg,
         patch(
             "custom_components.growspace_manager._async_register_websocket_api"
@@ -324,7 +324,7 @@ async def test_async_setup_entry_with_growspaces(mock_hass) -> None:
             return_value=AsyncMock(),
         ),
         patch(
-            "custom_components.growspace_manager.register_services",
+            "custom_components.growspace_manager.service_registration.register_services",
             return_value=AsyncMock(),
         ),
         patch(
@@ -449,22 +449,18 @@ async def test_strain_library_upload_view(mock_hass) -> None:
 
 
 @pytest.mark.asyncio
-async def test_websocket_get_event_log(
-    hass: HomeAssistant, hass_ws_client, mock_coordinator
-) -> None:
+async def test_websocket_get_event_log(hass: HomeAssistant, mock_coordinator) -> None:
     """Test websocket get event log."""
-    await async_setup_component(hass, "websocket_api", {})
-    await async_setup(hass, {})
-
-    _async_register_websocket_api(hass)
+    # Mock connection
+    mock_connection = MagicMock()
+    mock_connection.send_result = MagicMock()
+    mock_connection.send_error = MagicMock()
 
     # Mock get_coordinator_for_call to return our mock coordinator
     with patch(
-        "custom_components.growspace_manager.get_coordinator_for_call",
+        "custom_components.growspace_manager.service_registration.get_coordinator_for_call",
         return_value=mock_coordinator,
     ):
-        client = await hass_ws_client(hass)
-
         # 1. Specific growspace
         mock_coordinator.events = {
             "gs1": [
@@ -480,113 +476,128 @@ async def test_websocket_get_event_log(
                 )
             ]
         }
+        msg = {
+            "id": 1,
+            "type": f"{DOMAIN}/get_log",
+            "growspace_id": "gs1",
+        }
+        await websocket_get_event_log(hass, mock_connection, msg)
 
-        await client.send_json(
+        mock_connection.send_result.assert_called_with(
+            1,
             {
-                "id": 1,
-                "type": f"{DOMAIN}/get_log",
-                "growspace_id": "gs1",
-            }
+                "gs1": [
+                    {
+                        "sensor_type": "mold",
+                        "growspace_id": "gs1",
+                        "start_time": "2023-01-01T00:00:00",
+                        "end_time": "2023-01-01T00:05:00",
+                        "duration_sec": 300,
+                        "severity": 0.8,
+                        "category": "alert",
+                        "reasons": [],
+                    }
+                ]
+            },
         )
-        msg = await client.receive_json()
-        assert msg["success"], f"WebSocket request failed: {msg}"
-        assert "gs1" in msg["result"]
-        assert len(msg["result"]["gs1"]) == 1
-        assert msg["result"]["gs1"][0]["sensor_type"] == "mold"
 
         # 2. Invalid growspace (ServiceValidationError)
         with patch(
-            "custom_components.growspace_manager.get_coordinator_for_call",
+            "custom_components.growspace_manager.service_registration.get_coordinator_for_call",
             side_effect=ServiceValidationError("Invalid ID"),
         ):
-            await client.send_json(
-                {
-                    "id": 2,
-                    "type": f"{DOMAIN}/get_log",
-                    "growspace_id": "invalid",
-                }
-            )
-            msg = await client.receive_json()
-            assert msg["success"]
-            assert msg["result"] == {}
+            msg = {
+                "id": 2,
+                "type": f"{DOMAIN}/get_log",
+                "growspace_id": "invalid",
+            }
+            await websocket_get_event_log(hass, mock_connection, msg)
+            mock_connection.send_result.assert_called_with(2, {})
+            # Logic: except ServiceValidationError: logger.warning... then send_result with events_data (empty)
+
+            # Let's verify what success logic does
+            # If exception is caught, events_data is empty (initialized {}).
+            # events_data["invalid"] is NOT set.
 
         # 3. Global (no ID) - aggregates from all entries
         mock_entry = MockConfigEntry(domain=DOMAIN, state=ConfigEntryState.LOADED)
         mock_entry.runtime_data = mock_coordinator
         mock_entry.add_to_hass(hass)
 
-        await client.send_json(
+        msg = {
+            "id": 3,
+            "type": f"{DOMAIN}/get_log",
+        }
+        await websocket_get_event_log(hass, mock_connection, msg)
+        mock_connection.send_result.assert_called_with(
+            3,
             {
-                "id": 3,
-                "type": f"{DOMAIN}/get_log",
-            }
+                "gs1": [
+                    {
+                        "sensor_type": "mold",
+                        "growspace_id": "gs1",
+                        "start_time": "2023-01-01T00:00:00",
+                        "end_time": "2023-01-01T00:05:00",
+                        "duration_sec": 300,
+                        "severity": 0.8,
+                        "category": "alert",
+                        "reasons": [],
+                    }
+                ]
+            },
         )
-        msg = await client.receive_json()
-        assert msg["success"]
-        assert "gs1" in msg["result"]
 
 
 @pytest.mark.asyncio
 async def test_websocket_get_growspace_data(
-    hass: HomeAssistant, hass_ws_client, mock_coordinator
+    hass: HomeAssistant, mock_coordinator
 ) -> None:
     """Test websocket get growspace data."""
-    await async_setup_component(hass, "websocket_api", {})
-    await async_setup(hass, {})
-
-    _async_register_websocket_api(hass)
-
-    client = await hass_ws_client(hass)
+    # Mock connection
+    mock_connection = MagicMock()
+    mock_connection.send_result = MagicMock()
+    mock_connection.send_error = MagicMock()
 
     # 1. Success
     with patch(
-        "custom_components.growspace_manager.get_coordinator_for_call",
+        "custom_components.growspace_manager.service_registration.get_coordinator_for_call",
         return_value=mock_coordinator,
     ):
         mock_coordinator.get_growspace_data.return_value = {"name": "Test space"}
 
-        await client.send_json(
-            {
-                "id": 1,
-                "type": f"{DOMAIN}/get_data",
-                "growspace_id": "gs1",
-            }
-        )
-        msg = await client.receive_json()
-        assert msg["success"]
-        assert msg["result"] == {"name": "Test space"}
+        msg = {
+            "id": 1,
+            "type": f"{DOMAIN}/get_data",
+            "growspace_id": "gs1",
+        }
+        await websocket_get_growspace_data(hass, mock_connection, msg)
+        mock_connection.send_result.assert_called_with(1, {"name": "Test space"})
 
     # 2. Error (ServiceValidationError)
     with patch(
-        "custom_components.growspace_manager.get_coordinator_for_call",
+        "custom_components.growspace_manager.service_registration.get_coordinator_for_call",
         side_effect=ServiceValidationError("Invalid ID"),
     ):
-        await client.send_json(
-            {
-                "id": 2,
-                "type": f"{DOMAIN}/get_data",
-                "growspace_id": "invalid",
-            }
-        )
-        msg = await client.receive_json()
-        assert not msg["success"]
-        assert msg["error"]["code"] == "invalid_args"
+        msg = {
+            "id": 2,
+            "type": f"{DOMAIN}/get_data",
+            "growspace_id": "invalid",
+        }
+        await websocket_get_growspace_data(hass, mock_connection, msg)
+        mock_connection.send_error.assert_called_with(2, "invalid_args", "Invalid ID")
 
     # 3. Unknown Error
     with patch(
-        "custom_components.growspace_manager.get_coordinator_for_call",
+        "custom_components.growspace_manager.service_registration.get_coordinator_for_call",
         side_effect=Exception("Boom"),
     ):
-        await client.send_json(
-            {
-                "id": 3,
-                "type": f"{DOMAIN}/get_data",
-                "growspace_id": "gs1",
-            }
-        )
-        msg = await client.receive_json()
-        assert not msg["success"]
-        assert msg["error"]["code"] == "unknown_error"
+        msg = {
+            "id": 3,
+            "type": f"{DOMAIN}/get_data",
+            "growspace_id": "gs1",
+        }
+        await websocket_get_growspace_data(hass, mock_connection, msg)
+        mock_connection.send_error.assert_called_with(3, "unknown_error", "Boom")
 
 
 @pytest.mark.asyncio
@@ -611,7 +622,9 @@ async def test_pending_growspace_error(hass: HomeAssistant) -> None:
 
     with (
         patch("custom_components.growspace_manager.StrainLibrary") as mock_sl_cls,
-        patch("custom_components.growspace_manager.register_services"),
+        patch(
+            "custom_components.growspace_manager.service_registration.register_services"
+        ),
         patch("custom_components.growspace_manager._async_register_websocket_api"),
         patch("custom_components.growspace_manager.async_setup_intents"),
         patch("custom_components.growspace_manager.create_notification") as mock_notify,

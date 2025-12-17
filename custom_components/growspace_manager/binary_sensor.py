@@ -58,10 +58,7 @@ from .const import (
     DEFAULT_BAYESIAN_PRIORS,
     DEFAULT_BAYESIAN_THRESHOLDS,
     DOMAIN,
-    METRIC_CURING,
-    METRIC_DRYING,
-    METRIC_OPTIMAL,
-    METRIC_STRESS,
+    GrowspaceSensorType,
     PlantStage,
 )
 from .coordinator import GrowspaceCoordinator
@@ -76,48 +73,47 @@ class GrowspaceBinarySensorDescription(BinarySensorEntityDescription):
     """Class describing Growspace binary sensors."""
 
     sensor_type: str
-    name_suffix: str
-    prior_key: str | None = None
+    prior_key: str
     threshold_key: str | None = None
 
 
 SENSOR_TYPES: tuple[GrowspaceBinarySensorDescription, ...] = (
     GrowspaceBinarySensorDescription(
-        key=METRIC_STRESS,
-        sensor_type=METRIC_STRESS,
-        name_suffix="Stress",
+        key=GrowspaceSensorType.STRESS,
+        translation_key=GrowspaceSensorType.STRESS,
+        sensor_type=GrowspaceSensorType.STRESS,
         prior_key="prior_stress",
         threshold_key="threshold_stress",
         icon="mdi:alert-circle",
     ),
     GrowspaceBinarySensorDescription(
-        key="mold",
-        sensor_type="mold",
-        name_suffix="Mold Risk",
+        key=GrowspaceSensorType.MOLD,
+        translation_key=GrowspaceSensorType.MOLD,
+        sensor_type=GrowspaceSensorType.MOLD,
         prior_key="prior_mold_risk",
         threshold_key="threshold_mold",
         icon="mdi:bacteria",
     ),
     GrowspaceBinarySensorDescription(
-        key=METRIC_OPTIMAL,
-        sensor_type=METRIC_OPTIMAL,
-        name_suffix="Optimal Conditions",
+        key=GrowspaceSensorType.OPTIMAL,
+        translation_key=GrowspaceSensorType.OPTIMAL,
+        sensor_type=GrowspaceSensorType.OPTIMAL,
         prior_key="prior_optimal",
         threshold_key="threshold_optimal",
         icon="mdi:check-circle",
     ),
     GrowspaceBinarySensorDescription(
-        key=METRIC_DRYING,
-        sensor_type=METRIC_DRYING,
-        name_suffix="Drying",
+        key=GrowspaceSensorType.DRYING,
+        translation_key=GrowspaceSensorType.DRYING,
+        sensor_type=GrowspaceSensorType.DRYING,
         prior_key="prior_drying",
         threshold_key="threshold_drying",
         icon="mdi:weather-windy",
     ),
     GrowspaceBinarySensorDescription(
-        key=METRIC_CURING,
-        sensor_type=METRIC_CURING,
-        name_suffix="Curing",
+        key=GrowspaceSensorType.CURING,
+        translation_key=GrowspaceSensorType.CURING,
+        sensor_type=GrowspaceSensorType.CURING,
         prior_key="prior_curing",
         threshold_key="threshold_curing",
         icon="mdi:glass-jar",
@@ -181,16 +177,16 @@ def _process_growspace_sensors(
     # 1. Determine which sensor types are valid for this growspace
     allowed_types = set()
     if growspace_id == "dry":
-        allowed_types.add(METRIC_DRYING)
-        allowed_types.add("mold")
+        allowed_types.add(GrowspaceSensorType.DRYING)
+        allowed_types.add(GrowspaceSensorType.MOLD)
     elif growspace_id == "cure":
-        allowed_types.add(METRIC_CURING)
-        allowed_types.add("mold")
+        allowed_types.add(GrowspaceSensorType.CURING)
+        allowed_types.add(GrowspaceSensorType.MOLD)
     else:
         # Normal growspace
-        allowed_types.add(METRIC_STRESS)
-        allowed_types.add("mold")
-        allowed_types.add(METRIC_OPTIMAL)
+        allowed_types.add(GrowspaceSensorType.STRESS)
+        allowed_types.add(GrowspaceSensorType.MOLD)
+        allowed_types.add(GrowspaceSensorType.OPTIMAL)
 
     # 2. Iterate descriptions and add if allowed
     for description in SENSOR_TYPES:
@@ -217,15 +213,15 @@ def _process_growspace_sensors(
 
 def _get_sensor_class(sensor_type: str) -> type[BayesianEnvironmentSensor]:
     """Map sensor type to class."""
-    if sensor_type == METRIC_STRESS:
+    if sensor_type == GrowspaceSensorType.STRESS:
         return BayesianStressSensor
-    elif sensor_type == "mold":
+    elif sensor_type == GrowspaceSensorType.MOLD:
         return BayesianMoldRiskSensor
-    elif sensor_type == METRIC_OPTIMAL:
+    elif sensor_type == GrowspaceSensorType.OPTIMAL:
         return BayesianOptimalConditionsSensor
-    elif sensor_type == METRIC_DRYING:
+    elif sensor_type == GrowspaceSensorType.DRYING:
         return BayesianDryingSensor
-    elif sensor_type == METRIC_CURING:
+    elif sensor_type == GrowspaceSensorType.CURING:
         return BayesianCuringSensor
     return BayesianEnvironmentSensor  # Fallback
 
@@ -244,6 +240,7 @@ class BayesianEnvironmentSensor(BinarySensorEntity):
     """Base class for Bayesian environment monitoring binary sensors."""
 
     entity_description: GrowspaceBinarySensorDescription
+    _attr_has_entity_name = True
 
     def __init__(
         self,
@@ -260,7 +257,6 @@ class BayesianEnvironmentSensor(BinarySensorEntity):
         self._attr_should_poll = False
 
         growspace = coordinator.growspaces[growspace_id]
-        self._attr_name = f"{growspace.name} {description.name_suffix}"
         self._attr_unique_id = f"{DOMAIN}_{growspace_id}_{description.sensor_type}"
 
         # Access bayesian_options from EnvironmentConfig object
@@ -626,16 +622,6 @@ class BayesianEnvironmentSensor(BinarySensorEntity):
 class BayesianStressSensor(BayesianEnvironmentSensor):
     """Sensor that calculates the probability of plant stress."""
 
-    def __init__(
-        self,
-        coordinator: GrowspaceCoordinator,
-        growspace_id: str,
-        env_config: EnvironmentConfig,
-        description: GrowspaceBinarySensorDescription,
-    ) -> None:
-        """Initialize the plant stress sensor."""
-        super().__init__(coordinator, growspace_id, env_config, description)
-
     async def _async_update_probability(self) -> None:
         """Calculate the probability of stress based on Bayesian inference."""
         env_state = self._get_base_environment_state()
@@ -709,16 +695,6 @@ class BayesianStressSensor(BayesianEnvironmentSensor):
 
 class BayesianMoldRiskSensor(BayesianEnvironmentSensor):
     """Sensor that calculates the probability of mold growth."""
-
-    def __init__(
-        self,
-        coordinator: GrowspaceCoordinator,
-        growspace_id: str,
-        env_config: EnvironmentConfig,
-        description: GrowspaceBinarySensorDescription,
-    ) -> None:
-        """Initialize the mold risk sensor."""
-        super().__init__(coordinator, growspace_id, env_config, description)
 
     async def _async_update_probability(self) -> None:
         """Calculate the probability of mold risk."""
@@ -802,16 +778,6 @@ class BayesianMoldRiskSensor(BayesianEnvironmentSensor):
 class BayesianOptimalConditionsSensor(BayesianEnvironmentSensor):
     """Sensor that calculates probability of optimal VPD/Temp/CO2."""
 
-    def __init__(
-        self,
-        coordinator: GrowspaceCoordinator,
-        growspace_id: str,
-        env_config: EnvironmentConfig,
-        description: GrowspaceBinarySensorDescription,
-    ) -> None:
-        """Initialize the optimal conditions sensor."""
-        super().__init__(coordinator, growspace_id, env_config, description)
-
     async def _async_update_probability(self) -> None:
         """Calculate probability of optimal conditions."""
         env_state = self._get_base_environment_state()
@@ -858,16 +824,6 @@ class BayesianOptimalConditionsSensor(BayesianEnvironmentSensor):
 
 class BayesianDryingSensor(BayesianEnvironmentSensor):
     """Sensor for monitoring drying conditions (Temp ~60F, Hum ~60%)."""
-
-    def __init__(
-        self,
-        coordinator: GrowspaceCoordinator,
-        growspace_id: str,
-        env_config: EnvironmentConfig,
-        description: GrowspaceBinarySensorDescription,
-    ) -> None:
-        """Initialize the optimal drying sensor."""
-        super().__init__(coordinator, growspace_id, env_config, description)
 
     async def _async_update_probability(self) -> None:
         """Calculate probability of optimal drying conditions."""
@@ -918,16 +874,6 @@ class BayesianDryingSensor(BayesianEnvironmentSensor):
 
 class BayesianCuringSensor(BayesianEnvironmentSensor):
     """Sensor for monitoring curing conditions."""
-
-    def __init__(
-        self,
-        coordinator: GrowspaceCoordinator,
-        growspace_id: str,
-        env_config: EnvironmentConfig,
-        description: GrowspaceBinarySensorDescription,
-    ) -> None:
-        """Initialize the optimal curing sensor."""
-        super().__init__(coordinator, growspace_id, env_config, description)
 
     async def _async_update_probability(self) -> None:
         """Calculate probability of optimal curing conditions."""
@@ -995,7 +941,6 @@ class LightCycleVerificationSensor(BinarySensorEntity):
 
         growspace = coordinator.growspaces.get(growspace_id)
         name = growspace.name if growspace else growspace_id
-        self._attr_name = f"{name} Light Cycle Verified"
         self._attr_unique_id = f"{DOMAIN}_{growspace_id}_light_verification"
         self._attr_device_info = DeviceInfo(
             identifiers={(DOMAIN, growspace_id)},
