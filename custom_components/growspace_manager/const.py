@@ -77,12 +77,6 @@ ATTR_NOTIFICATION_TARGET = "notification_target"
 
 # Events
 # Icons
-ICON_CANNABIS = "mdi:cannabis"
-ICON_GROWSPACE = "mdi:home-group"
-ICON_VPD = "mdi:cloud-check-variant"
-ICON_CALCULATED_VPD = "mdi:cloud-percent"
-ICON_AIR_EXCHANGE = "mdi:air-filter"
-ICON_STRAIN_LIBRARY = "mdi:leaf"
 ICON_NOTIFICATION = "mdi:bell"
 
 # Default Photoperiods (Hours of Light)

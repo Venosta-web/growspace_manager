@@ -659,6 +659,7 @@ def test_plant_entity_state_and_attributes(mock_coordinator) -> None:
     """
     plant = list(mock_coordinator.plants.values())[0]
     entity = PlantEntity(mock_coordinator, plant)
+    entity.platform = MagicMock()
     state = entity.state
     assert state in [
         "veg",
@@ -681,6 +682,7 @@ def test_plant_entity_missing_plant(mock_coordinator) -> None:
     """Test PlantEntity when the plant is missing from the coordinator."""
     plant = mock_coordinator.plants["p1"]
     entity = PlantEntity(mock_coordinator, plant)
+    entity.platform = MagicMock()
     mock_coordinator.plants = {}
     assert entity.state == "unknown"
     assert entity.extra_state_attributes == {}
@@ -828,6 +830,7 @@ def test_growspace_list_sensor_state_and_attributes(mock_coordinator) -> None:
         mock_coordinator: The mock coordinator fixture.
     """
     sensor = GrowspaceListSensor(mock_coordinator)
+    sensor.platform = MagicMock()
     assert sensor.state == 1
     attrs = sensor.extra_state_attributes
     assert "growspaces" in attrs

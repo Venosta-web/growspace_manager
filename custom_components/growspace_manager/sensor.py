@@ -22,6 +22,7 @@ from homeassistant.helpers.entity import Entity
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.event import async_track_state_change_event
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
+from homeassistant.const import EntityCategory
 
 from .const import (
     ATTR_COL,
@@ -35,12 +36,6 @@ from .const import (
     CONF_TEMP_SENSOR,
     CONF_VPD_SENSOR,
     DOMAIN,
-    ICON_AIR_EXCHANGE,
-    ICON_CALCULATED_VPD,
-    ICON_CANNABIS,
-    ICON_GROWSPACE,
-    ICON_STRAIN_LIBRARY,
-    ICON_VPD,
     METRIC_HUMIDITY,
     METRIC_TEMPERATURE,
     METRIC_VPD,
@@ -424,7 +419,7 @@ class VpdSensor(BaseVpdSensor):
         self._weather_entity = weather_entity
         self._temp_sensor = temp_sensor
         self._humidity_sensor = humidity_sensor
-        self._attr_icon = ICON_VPD
+        self._attr_translation_key = "vpd"
 
     @property
     @override
@@ -485,7 +480,7 @@ class CalculatedVpdSensor(BaseVpdSensor):
         self._temp_sensor = temp_sensor
         self._humidity_sensor = humidity_sensor
         self._lst_offset = lst_offset
-        self._attr_icon = ICON_CALCULATED_VPD
+        self._attr_translation_key = "calculated_vpd"
 
         self._attr_device_info = DeviceInfo(
             identifiers={(DOMAIN, growspace_id)},
@@ -535,7 +530,6 @@ class AirExchangeSensor(CoordinatorEntity[GrowspaceCoordinator], SensorEntity):
 
     _attr_has_entity_name = True
     _attr_translation_key = "air_exchange"
-    _attr_icon = ICON_AIR_EXCHANGE
 
     def __init__(self, coordinator: GrowspaceCoordinator, growspace_id: str) -> None:
         """Initialize the air exchange sensor.
@@ -652,7 +646,7 @@ class PlantEntity(SensorEntity):
         self._plant = plant
         self._attr_unique_id = f"{DOMAIN}_{plant.plant_id}"
         self._attr_name = f"{plant.strain} ({plant.row},{plant.col})"
-        self._attr_icon = ICON_CANNABIS
+        self._attr_translation_key = "plant"
 
         # Set up device info - plant belongs to growspace device
         growspace_id = plant.growspace_id
@@ -733,7 +727,7 @@ class StrainLibrarySensor(CoordinatorEntity[GrowspaceCoordinator], SensorEntity)
 
     _attr_has_entity_name = True
     _attr_translation_key = "strain_library"
-    _attr_icon = ICON_STRAIN_LIBRARY
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
 
     def __init__(self, coordinator: GrowspaceCoordinator) -> None:
         """Initialize the Strain Library sensor."""
@@ -759,15 +753,16 @@ class GrowspaceListSensor(SensorEntity):
 
     The state of this sensor is the total number of growspaces. Its attributes
     contain a dictionary mapping growspace IDs to their names, which is useful
-    for populating dynamic dropdowns in the UI.
     """
+
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
 
     def __init__(self, coordinator: GrowspaceCoordinator) -> None:
         """Initialize the growspace list sensor."""
         self.coordinator = coordinator
         self._attr_name = "Growspaces List"
         self._attr_unique_id = f"{DOMAIN}_growspaces_list"
-        self._attr_icon = ICON_GROWSPACE
+        self._attr_translation_key = "growspaces_list"
         self._update_growspaces()
 
     def _update_growspaces(self):

@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import logging
 
-from homeassistant.const import CONF_PLATFORM
+from homeassistant.const import CONF_PLATFORM, EntityCategory
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.discovery import async_load_platform
@@ -74,6 +74,34 @@ async def async_setup_trend_sensor(
         {},
         {"binary_sensor": [config]},
     )
+
+    # Force entity category to diagnostic
+    # We need to wait for the entity to be registered?
+    # Actually, async_load_platform doesn't return the entity.
+    # But usually it's fast. Or we can just try to update it if it exists.
+    # However, if it doesn't exist yet, we can't update it.
+    # But we know the unique_id.
+
+    # Since we can't easily hook into the creation, we might accept that it might fail
+    # if not immediate. But let's try to look it up.
+    # A better way might be to pre-create the registry entry?
+    # "If you use unique_id, you can create the entry in the registry before you add the entity."
+
+    if not entity_registry.async_get_entity_id("binary_sensor", "trend", unique_id):
+        entity_registry.async_get_or_create(
+            "binary_sensor",
+            "trend",
+            unique_id,
+            suggested_object_id=f"{growspace_name.lower().replace(' ', '_')}_{sensor_type}_trend",
+            original_name=name,
+        )
+
+    entity_id = entity_registry.async_get_entity_id("binary_sensor", "trend", unique_id)
+    if entity_id:
+        entity_registry.async_update_entity(
+            entity_id, entity_category=EntityCategory.DIAGNOSTIC
+        )
+
     _LOGGER.info("Setting up trend sensor: %s", name)
     return unique_id
 
@@ -134,4 +162,21 @@ async def async_setup_statistics_sensor(
         {DOMAIN: config},
     )
     _LOGGER.info("Setting up statistics sensor: %s", name)
+
+    # Force entity category to diagnostic
+    if not entity_registry.async_get_entity_id("sensor", "statistics", unique_id):
+        entity_registry.async_get_or_create(
+            "sensor",
+            "statistics",
+            unique_id,
+            suggested_object_id=f"{growspace_name.lower().replace(' ', '_')}_{sensor_type}_stats",
+            original_name=name,
+        )
+
+    entity_id = entity_registry.async_get_entity_id("sensor", "statistics", unique_id)
+    if entity_id:
+        entity_registry.async_update_entity(
+            entity_id, entity_category=EntityCategory.DIAGNOSTIC
+        )
+
     return unique_id
