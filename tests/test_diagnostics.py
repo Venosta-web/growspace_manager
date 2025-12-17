@@ -1,6 +1,6 @@
 """Test the Growspace Manager diagnostics."""
 
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import MagicMock
 
 import pytest
 from homeassistant.core import HomeAssistant

@@ -24,7 +24,6 @@ from custom_components.growspace_manager import (
     async_setup,
     async_setup_entry,
     async_unload_entry,
-    create_notification,
     websocket_get_event_log,
     websocket_get_growspace_data,
 )
@@ -631,7 +630,7 @@ async def test_pending_growspace_error(hass: HomeAssistant) -> None:
         ),
         patch("custom_components.growspace_manager._async_register_websocket_api"),
         patch("custom_components.growspace_manager.async_setup_intents"),
-        patch("custom_components.growspace_manager.create_notification") as mock_notify,
+        patch("custom_components.growspace_manager.async_create_issue") as mock_issue,
         patch("custom_components.growspace_manager.Store") as mock_store_cls,
     ):
         # Ensure StrainLibrary().async_setup() is awaitable
@@ -657,9 +656,13 @@ async def test_pending_growspace_error(hass: HomeAssistant) -> None:
         ):
             await async_setup_entry(hass, entry)
 
-            # Verify notification was called
-            mock_notify.assert_called_once()
-            assert "Failed to create pending growspace" in mock_notify.call_args[0][1]
+            # Verify issue was created
+            mock_issue.assert_called_once()
+            args = mock_issue.call_args
+            assert args[0][0] == hass
+            assert args[0][1] == DOMAIN
+            assert "pending_growspace_fail_Pending" in args[0][2]
+            assert "pending_growspace_fail" in args[1]["translation_key"]
 
 
 @pytest.mark.asyncio
@@ -781,21 +784,6 @@ async def test_strain_library_upload_view_validation(mock_hass) -> None:
     assert not view._is_valid_upload_field("not a field")
     # None
     assert not view._is_valid_upload_field(None)
-
-
-@pytest.mark.asyncio
-async def test_create_notification(mock_hass) -> None:
-    """Test create_notification helper."""
-    # We need to mock hass.components.persistent_notification.create
-    mock_hass.components = MagicMock()
-    mock_hass.components.persistent_notification = MagicMock()
-    mock_hass.components.persistent_notification.create = MagicMock()
-
-    create_notification(mock_hass, "Test message", "Test title")
-
-    mock_hass.components.persistent_notification.create.assert_called_once_with(
-        "Test message", title="Test title", notification_id=f"{DOMAIN}_notification"
-    )
 
 
 @pytest.mark.asyncio

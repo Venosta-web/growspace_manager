@@ -15,6 +15,7 @@ from homeassistant.config_entries import ConfigEntry, ConfigEntryState
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ServiceValidationError
 from homeassistant.helpers import config_validation as cv
+from homeassistant.helpers.issue_registry import IssueSeverity, async_create_issue
 from homeassistant.helpers.storage import Store
 from homeassistant.helpers.typing import ConfigType
 
@@ -111,12 +112,17 @@ async def async_setup_entry(hass: HomeAssistant, entry: GrowspaceConfigEntry) ->
                 "Failed to create pending growspace %s",
                 pending.get("name", "unknown"),
             )
-            create_notification(
+            async_create_issue(
                 hass,
-                (
-                    f"Failed to create pending growspace '{pending.get('name', 'unknown')}'"
-                ),
-                title="Growspace Manager Error",
+                DOMAIN,
+                f"pending_growspace_fail_{pending.get('name', 'unknown')}",
+                is_fixable=False,
+                severity=IssueSeverity.ERROR,
+                translation_key="pending_growspace_fail",
+                translation_placeholders={
+                    "name": pending.get("name", "unknown"),
+                    "error": "Failed to create pending growspace",
+                },
             )
 
     # Forward entry setup to platforms (e.g., sensors, switches)
@@ -264,15 +270,6 @@ class StrainLibraryUploadView(HomeAssistantView):
             # Cleanup
             if temp_path.exists():
                 await self.hass.async_add_executor_job(temp_path.unlink)
-
-
-def create_notification(
-    hass: HomeAssistant, message: str, title: str = "Growspace Manager"
-) -> None:
-    """Create a persistent notification."""
-    hass.components.persistent_notification.create(
-        message, title=title, notification_id=f"{DOMAIN}_notification"
-    )
 
 
 WS_TYPE_GET_LOG = f"{DOMAIN}/get_log"

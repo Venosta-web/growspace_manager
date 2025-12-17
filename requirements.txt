@@ -1,7 +1,7 @@
 # Home Assistant Core (Minimal)
 homeassistant
-aiosqlite
-Pillow
+aiosqlite>=0.17.0
+Pillow>=11.0.0
 python-dateutil
 voluptuous
 
