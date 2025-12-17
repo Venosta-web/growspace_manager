@@ -568,6 +568,7 @@ def test_growspace_overview_sensor_state_and_attributes(mock_coordinator) -> Non
     )
     gs.platform = Mock()
     gs.platform.platform_name = "growspace_manager"
+    gs.platform_data = gs.platform
     gs.platform.domain = "sensor"
 
     # State should return number of plants
@@ -609,6 +610,7 @@ def test_growspace_overview_sensor_environment_attributes(mock_coordinator) -> N
     )
     gs.platform = Mock()
     gs.platform.platform_name = "growspace_manager"
+    gs.platform_data = gs.platform
     gs.platform.domain = "sensor"
 
     attrs = gs.extra_state_attributes
@@ -644,6 +646,7 @@ def test_growspace_overview_sensor_special_growspaces(
     sensor = GrowspaceOverviewSensor(mock_coordinator, special_id, special_growspace)
     sensor.platform = Mock()
     sensor.platform.platform_name = "growspace_manager"
+    sensor.platform_data = sensor.platform
     sensor.platform.domain = "sensor"
     assert sensor.unique_id == f"{DOMAIN}_{special_id}"
 
@@ -660,6 +663,7 @@ def test_plant_entity_state_and_attributes(mock_coordinator) -> None:
     plant = list(mock_coordinator.plants.values())[0]
     entity = PlantEntity(mock_coordinator, plant)
     entity.platform = MagicMock()
+    entity.platform_data = entity.platform
     state = entity.state
     assert state in [
         "veg",
@@ -683,6 +687,7 @@ def test_plant_entity_missing_plant(mock_coordinator) -> None:
     plant = mock_coordinator.plants["p1"]
     entity = PlantEntity(mock_coordinator, plant)
     entity.platform = MagicMock()
+    entity.platform_data = entity.platform
     mock_coordinator.plants = {}
     assert entity.state == "unknown"
     assert entity.extra_state_attributes == {}
@@ -784,6 +789,7 @@ def test_strain_library_sensor_state_and_attributes(mock_coordinator) -> None:
     sensor = StrainLibrarySensor(mock_coordinator)
     sensor.platform = Mock()
     sensor.platform.platform_name = "growspace_manager"
+    sensor.platform_data = sensor.platform
     sensor.platform.domain = "sensor"
 
     # State should be the number of unique strains
@@ -831,6 +837,7 @@ def test_growspace_list_sensor_state_and_attributes(mock_coordinator) -> None:
     """
     sensor = GrowspaceListSensor(mock_coordinator)
     sensor.platform = MagicMock()
+    sensor.platform_data = sensor.platform
     assert sensor.state == 1
     attrs = sensor.extra_state_attributes
     assert "growspaces" in attrs
@@ -913,6 +920,7 @@ def test_air_exchange_sensor(mock_coordinator) -> None:
 
     sensor = AirExchangeSensor(mock_coordinator, "gs1")
     sensor.platform = Mock(platform_name="growspace_manager", domain="sensor")
+    sensor.platform_data = sensor.platform
 
     assert sensor.state == "Open Window"
     assert sensor.unique_id == f"{DOMAIN}_gs1_air_exchange"
