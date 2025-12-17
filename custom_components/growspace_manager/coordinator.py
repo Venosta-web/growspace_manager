@@ -43,7 +43,7 @@ from .growspace_validator import GrowspaceValidator
 from .import_export_manager import ImportExportManager
 from .irrigation_coordinator import IrrigationCoordinator
 from .migration_manager import MigrationManager
-from .models import Growspace, GrowspaceEvent, Plant
+from .models import Growspace, GrowspaceEvent, GrowspaceType, Plant
 from .notification_manager import NotificationManager
 from .plant_lifecycle_manager import PlantLifecycleManager
 from .serializers import GrowspaceSerializer
@@ -169,6 +169,21 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
         for gid, gdata in raw_growspaces.items():
             try:
                 if isinstance(gdata, dict):
+                    # Data Mapping / Migration logic before creating object
+                    if "growspace_type" not in gdata:
+                        if gid in ["dry", "drying"]:
+                            gdata["growspace_type"] = GrowspaceType.DRY
+                        elif gid in ["cure", "curing"]:
+                            gdata["growspace_type"] = GrowspaceType.CURE
+                        elif gid == "mother":
+                            gdata["growspace_type"] = GrowspaceType.MOTHER
+                        elif gid == "veg":
+                            gdata["growspace_type"] = GrowspaceType.VEG
+                        elif gid == "clone":
+                            gdata["growspace_type"] = GrowspaceType.CLONE
+                        else:
+                            gdata["growspace_type"] = GrowspaceType.FLOWER
+
                     self.growspaces[gid] = Growspace.from_dict(gdata)
                 elif isinstance(gdata, Growspace):
                     self.growspaces[gid] = gdata
@@ -400,7 +415,12 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
     # =============================================================================
 
     def ensure_special_growspace(
-        self, growspace_id: str, name: str, rows: int = 3, plants_per_row: int = 3
+        self,
+        growspace_id: str,
+        name: str,
+        rows: int = 3,
+        plants_per_row: int = 3,
+        growspace_type: GrowspaceType = GrowspaceType.FLOWER,
     ) -> str:
         """Ensure a special growspace (e.g., 'dry', 'cure') exists.
 
@@ -412,6 +432,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
             name: The canonical name for the special growspace.
             rows: The number of rows for the grid (if created).
             plants_per_row: The number of plants per row (if created).
+            growspace_type: The type of growspace.
 
         Returns:
             The canonical ID of the special growspace.
@@ -424,11 +445,16 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
 
         # Create or update the canonical growspace
         if canonical_id not in self.growspaces:
-            self._create_special_growspace(canonical_id, name, rows, plants_per_row)
+            self._create_special_growspace(
+                canonical_id, name, rows, plants_per_row, growspace_type
+            )
             # ✅ Enable notifications by default for new special growspace
             self._notifications_enabled[canonical_id] = True
         else:
             self._update_special_growspace_name(canonical_id, name)
+            # Ensure type is correct even if existing (for migration)
+            if self.growspaces[canonical_id].growspace_type != growspace_type:
+                self.growspaces[canonical_id].growspace_type = growspace_type
 
         # self.update_data_property() - Handled by async_commit via async_add_growspace or manual call if needed
         # NOTE: ensure_special_growspace effectively just prepares the structure.
@@ -443,7 +469,12 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
         return canonical_id
 
     def _create_special_growspace(
-        self, canonical_id: str, canonical_name: str, rows: int, plants_per_row: int
+        self,
+        canonical_id: str,
+        canonical_name: str,
+        rows: int,
+        plants_per_row: int,
+        growspace_type: GrowspaceType,
     ) -> None:
         """Create a new special growspace with the given parameters.
 
@@ -452,12 +483,14 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
             canonical_name: The display name for the new growspace.
             rows: The number of rows in the grid.
             plants_per_row: The number of plants per row in the grid.
+            growspace_type: The type of growspace.
         """
         self.growspaces[canonical_id] = Growspace(
             id=canonical_id,
             name=canonical_name,
             rows=rows,
             plants_per_row=plants_per_row,
+            growspace_type=growspace_type,
         )
         _LOGGER.info(
             "Created canonical growspace: %s with name '%s'",
@@ -488,7 +521,11 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
             The ID of the mother growspace.
         """
         return self.ensure_special_growspace(
-            PlantStage.MOTHER, "mother", rows=3, plants_per_row=3
+            PlantStage.MOTHER,
+            "mother",
+            rows=3,
+            plants_per_row=3,
+            growspace_type=GrowspaceType.MOTHER,
         )
 
     # =============================================================================
@@ -543,17 +580,25 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
     async def _ensure_default_growspaces(self) -> None:
         """Ensure that the default special growspaces (dry, cure, etc.) exist."""
         default_growspaces = [
-            ("dry", "dry", 3, 3),
-            ("cure", "cure", 3, 3),
-            ("mother", "mother", 3, 3),
-            ("clone", "clone", 5, 5),
-            ("veg", "veg", 5, 5),
+            ("dry", "dry", 3, 3, GrowspaceType.DRY),
+            ("cure", "cure", 3, 3, GrowspaceType.CURE),
+            ("mother", "mother", 3, 3, GrowspaceType.MOTHER),
+            ("clone", "clone", 5, 5, GrowspaceType.CLONE),
+            ("veg", "veg", 5, 5, GrowspaceType.VEG),
         ]
 
         created_count = 0
-        for growspace_id, name, rows, plants_per_row in default_growspaces:
+        for (
+            growspace_id,
+            name,
+            rows,
+            plants_per_row,
+            gs_type,
+        ) in default_growspaces:
             # Use the coordinator's method to ensure special growspaces
-            self.ensure_special_growspace(growspace_id, name, rows, plants_per_row)
+            self.ensure_special_growspace(
+                growspace_id, name, rows, plants_per_row, growspace_type=gs_type
+            )
             # ensure_special_growspace adds to self.growspaces
             # We can check if it was newly created if needed, but the method
             # handles key existence.
@@ -670,6 +715,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
         plants_per_row: int = 3,
         notification_target: str | None = None,
         device_id: str | None = None,
+        growspace_type: GrowspaceType = GrowspaceType.FLOWER,
     ) -> Growspace:
         """Add a new growspace to the coordinator.
 
@@ -679,9 +725,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
             plants_per_row: The number of plants per row.
             notification_target: The notification service to use (optional).
             device_id: The device ID to associate with the growspace (optional).
-
-        Returns:
-            The newly created Growspace object.
+            growspace_type: The type of growspace.
         """
         async with self._lock:  # Added
             # Normalize notification target
@@ -699,6 +743,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
                 plants_per_row=plants_per_row,
                 notification_target=notification_target,
                 device_id=device_id,
+                growspace_type=growspace_type,
             )
             self.growspaces[growspace_id] = growspace
 

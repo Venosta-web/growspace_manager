@@ -7,6 +7,7 @@ from custom_components.growspace_manager.binary_sensor import (
     SENSOR_TYPES,
     BayesianStressSensor,
 )
+from custom_components.growspace_manager.models import GrowspaceType
 
 
 @pytest.fixture
@@ -14,6 +15,7 @@ def mock_growspace():
     """Fixture for a mock growspace with environment config."""
     growspace = MagicMock()
     growspace.name = "Test Growspace"
+    growspace.growspace_type = GrowspaceType.FLOWER
 
     # Create env_config as MagicMock with proper attribute access
     env_config = MagicMock()
@@ -55,6 +57,7 @@ def mock_coordinator(mock_growspace):
     # Setup dry growspace
     dry_growspace = MagicMock()
     dry_growspace.name = "Drying Tent"
+    dry_growspace.growspace_type = GrowspaceType.DRY
     dry_growspace.environment_config = mock_growspace.environment_config.copy()
     coordinator.growspaces["dry"] = dry_growspace
 
@@ -107,6 +110,7 @@ def test_get_growth_stage_info_cure_growspace(mock_coordinator) -> None:
     # Setup cure growspace
     cure_growspace = MagicMock()
     cure_growspace.name = "Curing Jars"
+    cure_growspace.growspace_type = GrowspaceType.CURE
     cure_growspace.environment_config = mock_coordinator.growspaces[
         "gs1"
     ].environment_config.copy()

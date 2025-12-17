@@ -62,7 +62,12 @@ from .const import (
     PlantStage,
 )
 from .coordinator import GrowspaceCoordinator
-from .models import EnvironmentConfig, EnvironmentState, GrowspaceEvent
+from .models import (
+    EnvironmentConfig,
+    EnvironmentState,
+    GrowspaceEvent,
+    GrowspaceType,
+)
 from .trend_analyzer import TrendAnalyzer
 
 _LOGGER = logging.getLogger(__name__)
@@ -175,11 +180,15 @@ def _process_growspace_sensors(
     """Process and add sensors for a single growspace using definitions."""
 
     # 1. Determine which sensor types are valid for this growspace
+    growspace = coordinator.growspaces.get(growspace_id)
+    if not growspace:
+        return
+
     allowed_types = set()
-    if growspace_id == "dry":
+    if growspace.growspace_type == GrowspaceType.DRY:
         allowed_types.add(GrowspaceSensorType.DRYING)
         allowed_types.add(GrowspaceSensorType.MOLD)
-    elif growspace_id == "cure":
+    elif growspace.growspace_type == GrowspaceType.CURE:
         allowed_types.add(GrowspaceSensorType.CURING)
         allowed_types.add(GrowspaceSensorType.MOLD)
     else:
@@ -487,7 +496,11 @@ class BayesianEnvironmentSensor(BinarySensorEntity):
 
     def _get_growth_stage_info(self) -> dict[str, int]:
         """Get the current growth stage duration (veg and flower days) for the growspace."""
-        if self.growspace_id in ("dry", "cure"):
+        growspace = self.coordinator.growspaces.get(self.growspace_id)
+        if growspace and growspace.growspace_type in (
+            GrowspaceType.DRY,
+            GrowspaceType.CURE,
+        ):
             return {"veg_days": 0, "flower_days": 0}
 
         plants = self.coordinator.get_growspace_plants(self.growspace_id)

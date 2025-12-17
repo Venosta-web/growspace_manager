@@ -28,6 +28,8 @@ from custom_components.growspace_manager.coordinator import GrowspaceCoordinator
 from custom_components.growspace_manager.models import (
     EnvironmentConfig,
     Growspace,
+    GrowspaceType,
+    IrrigationConfig,
     Plant,
 )
 from custom_components.growspace_manager.utils import calculate_plant_stage
@@ -68,6 +70,7 @@ def mock_coordinator(hass: HomeAssistant) -> GrowspaceCoordinator:
     coordinator = GrowspaceCoordinator(
         hass, mock_entry, data={}, strain_library=strain_library
     )
+    coordinator.async_save = AsyncMock()
     setattr(coordinator, "async_set_updated_data", MagicMock())
     return coordinator
 
@@ -2217,3 +2220,695 @@ async def test_async_initialize_sub_coordinators(
         # Verify Dehumidifiers
         assert mock_dehumidifier.call_count == 2
         assert len(coordinator.dehumidifier_coordinators) == 2
+
+
+# Tests merged from test_coordinator_coverage.py
+@pytest.mark.asyncio
+async def test_load_growspaces_legacy_migration(
+    mock_coordinator: GrowspaceCoordinator,
+) -> None:
+    """Test loading legacy growspace data without growspace_type."""
+    raw_growspaces = {
+        "dry": {"id": "dry", "name": "Dry Room", "rows": 3, "plants_per_row": 3},
+        "cure": {"id": "cure", "name": "Curing", "rows": 3, "plants_per_row": 3},
+        "mother": {"id": "mother", "name": "Mothers", "rows": 3, "plants_per_row": 3},
+        "veg": {"id": "veg", "name": "Veg", "rows": 3, "plants_per_row": 3},
+        "clone": {"id": "clone", "name": "Clones", "rows": 3, "plants_per_row": 3},
+        "gs1": {"id": "gs1", "name": "Flower 1", "rows": 3, "plants_per_row": 3},
+        "custom": {"id": "custom", "name": "Custom", "rows": 3, "plants_per_row": 3},
+        "drying": {
+            "id": "drying",
+            "name": "Dry Alias",
+            "rows": 3,
+            "plants_per_row": 3,
+        },  # alias check
+    }
+
+    mock_coordinator._load_growspaces(raw_growspaces)
+
+    assert mock_coordinator.growspaces["dry"].growspace_type == GrowspaceType.DRY
+    assert mock_coordinator.growspaces["cure"].growspace_type == GrowspaceType.CURE
+    assert mock_coordinator.growspaces["mother"].growspace_type == GrowspaceType.MOTHER
+    assert mock_coordinator.growspaces["veg"].growspace_type == GrowspaceType.VEG
+    assert mock_coordinator.growspaces["clone"].growspace_type == GrowspaceType.CLONE
+    assert mock_coordinator.growspaces["gs1"].growspace_type == GrowspaceType.FLOWER
+    assert mock_coordinator.growspaces["custom"].growspace_type == GrowspaceType.FLOWER
+    assert mock_coordinator.growspaces["drying"].growspace_type == GrowspaceType.DRY
+
+
+@pytest.mark.asyncio
+async def test_load_growspaces_invalid_data(
+    mock_coordinator: GrowspaceCoordinator,
+) -> None:
+    """Test loading invalid growspace data."""
+    raw_growspaces = {
+        "valid": {
+            "id": "valid",
+            "name": "Valid",
+            "rows": 3,
+            "plants_per_row": 3,
+            "growspace_type": "flower",
+        },
+        "invalid": "this is not a dict",
+    }
+
+    with patch(
+        "custom_components.growspace_manager.coordinator._LOGGER"
+    ) as mock_logger:
+        mock_coordinator._load_growspaces(raw_growspaces)
+
+        assert "valid" in mock_coordinator.growspaces
+        assert "invalid" not in mock_coordinator.growspaces
+        # The exception handler calls logger.exception
+        assert mock_logger.exception.call_count >= 1
+
+
+@pytest.mark.asyncio
+async def test_load_plants_invalid_data_logging(
+    mock_coordinator: GrowspaceCoordinator,
+) -> None:
+    """Test loading invalid plant data logs exception."""
+    raw_plants = {"p1": "invalid_string_data"}
+    with patch(
+        "custom_components.growspace_manager.coordinator._LOGGER"
+    ) as mock_logger:
+        mock_coordinator._load_plants(raw_plants)
+        assert mock_logger.exception.call_count == 1
+
+
+@pytest.mark.asyncio
+async def test_calculate_days_caps(mock_coordinator: GrowspaceCoordinator) -> None:
+    """Test calculate_days with end_date capping and various inputs."""
+    today = date.today()
+    start = today - timedelta(days=10)
+
+    # 1. No end date
+    assert mock_coordinator.calculate_days(start) == 10
+
+    # 2. Future end date
+    future = today + timedelta(days=5)
+    assert mock_coordinator.calculate_days(start, future) == 10
+
+    # 3. Past end date (should cap)
+    past_end = today - timedelta(days=5)
+    assert mock_coordinator.calculate_days(start, past_end) == 5
+
+    # 4. Invalid start date
+    assert mock_coordinator.calculate_days(None) == 0
+
+
+@pytest.mark.asyncio
+async def test_ensure_calculated_sensors_logic(
+    mock_coordinator: GrowspaceCoordinator,
+) -> None:
+    """Test _ensure_calculated_sensors patches missing VPD sensor."""
+    gs = Growspace(
+        id="gs_test",
+        name="Test Room",
+        growspace_type=GrowspaceType.FLOWER,
+        environment_config=EnvironmentConfig(
+            temperature_sensor="sensor.temp",
+            humidity_sensor="sensor.humidity",
+            vpd_sensor=None,  # Missing
+        ),
+    )
+    mock_coordinator.growspaces["gs_test"] = gs
+
+    mock_coordinator._ensure_calculated_sensors()
+
+    assert gs.environment_config.vpd_sensor == "sensor.test_room_calculated_vpd"
+
+
+@pytest.mark.asyncio
+async def test_async_update_irrigation_config(
+    mock_coordinator: GrowspaceCoordinator,
+) -> None:
+    """Test async_update_irrigation_config."""
+    # Setup growspace with initial config
+    gs = Growspace(id="gs1", name="GS1", growspace_type=GrowspaceType.FLOWER)
+    gs.irrigation_config.irrigation_pump_entity = "switch.pump1"
+    mock_coordinator.growspaces["gs1"] = gs
+
+    # 1. Update with read-only fields (should be ignored) and valid fields
+    user_input = {
+        "irrigation_pump_entity": "switch.pump2",
+        "current_irrigation_times": "ignored",
+        "growspace_id_read_only": "ignored",
+    }
+
+    await mock_coordinator.async_update_irrigation_config("gs1", user_input)
+
+    assert gs.irrigation_config.irrigation_pump_entity == "switch.pump2"
+
+    # 2. Calling with non-existent GS raises ValueError
+    with pytest.raises(ValueError):
+        await mock_coordinator.async_update_irrigation_config("missing", {})
+
+
+@pytest.mark.asyncio
+async def test_async_remove_growspace_device_removal_error(
+    mock_coordinator: GrowspaceCoordinator,
+) -> None:
+    """Test async_remove_growspace handles device removal errors."""
+    gs = await mock_coordinator.async_add_growspace("Test GS")
+
+    # Mock device registry
+    mock_dr = MagicMock()
+    # Raise exception when getting device
+    mock_dr.async_get_device.side_effect = Exception("Registry Error")
+
+    with (
+        patch("homeassistant.helpers.device_registry.async_get", return_value=mock_dr),
+        patch("custom_components.growspace_manager.coordinator._LOGGER") as mock_logger,
+    ):
+        await mock_coordinator.async_remove_growspace(gs.id)
+
+        # Should have logged the exception but not crashed
+        assert mock_logger.exception.call_count >= 1
+        assert gs.id not in mock_coordinator.growspaces
+
+
+@pytest.mark.asyncio
+async def test_clone_creation_retrieval_failure(
+    mock_coordinator: GrowspaceCoordinator,
+) -> None:
+    """Test async_take_clones handling when clone retrieval fails from plants dict."""
+    mother = await mock_coordinator.async_add_mother_plant("Pheno", "Strain", 1, 1)
+
+    with (
+        patch.object(
+            mock_coordinator.lifecycle_manager,
+            "handle_clone_creation",
+            return_value="ghost_clone_id",
+        ),
+        patch("custom_components.growspace_manager.coordinator._LOGGER") as mock_logger,
+    ):
+        # Clone not in plants dict
+        clones = await mock_coordinator.async_take_clones(mother.plant_id, 1)
+
+        assert len(clones) == 0
+        assert mock_logger.error.call_count >= 1
+
+
+@pytest.mark.asyncio
+async def test_async_promote_clone_error_checks(
+    mock_coordinator: GrowspaceCoordinator,
+) -> None:
+    """Test async_promote_clone error conditions."""
+    # 1. Promote non-existent plant
+    with pytest.raises(ValueError):
+        await mock_coordinator.async_promote_clone("missing")
+
+    # 2. Promote plant in wrong stage
+    gs = await mock_coordinator.async_add_growspace("Veg")
+    plant = await mock_coordinator.async_add_plant(
+        gs.id, "Strain", stage=PlantStage.VEG
+    )
+    with pytest.raises(ValueError, match="not in clone stage"):
+        await mock_coordinator.async_promote_clone(plant.plant_id)
+
+    # 3. Promote to non-existent target growspace
+    plant.stage = PlantStage.CLONE
+    with pytest.raises(ValueError, match="Target growspace missing_gs does not exist"):
+        await mock_coordinator.async_promote_clone(
+            plant.plant_id, target_growspace_id="missing_gs"
+        )
+
+
+@pytest.mark.asyncio
+async def test_guess_overview_entity_id(mock_coordinator: GrowspaceCoordinator) -> None:
+    """Test _guess_overview_entity_id fallback logic."""
+    # 1. Registry lookup (mocked) returning ID
+    mock_registry = MagicMock()
+    mock_registry.async_get_entity_id.return_value = "sensor.found_id"
+
+    with patch(
+        "homeassistant.helpers.entity_registry.async_get", return_value=mock_registry
+    ):
+        eid = mock_coordinator._guess_overview_entity_id("some_gs")
+        assert eid == "sensor.found_id"
+
+    # 2. Registry returns None, Special growspace ID
+    mock_registry.async_get_entity_id.return_value = None
+    with patch(
+        "homeassistant.helpers.entity_registry.async_get", return_value=mock_registry
+    ):
+        eid = mock_coordinator._guess_overview_entity_id(
+            "mother"
+        )  # 'mother' is special
+        # Should fallback to canonical ID if not found in registry
+        assert eid == "sensor.mother"
+
+    # 3. Standard fallback with slugify
+    # Use a growspace that is in the coordinator map
+    gs = Growspace(id="complex_id", name="My Complex Name")
+    mock_coordinator.growspaces["complex_id"] = gs
+
+    with patch(
+        "homeassistant.helpers.entity_registry.async_get", return_value=mock_registry
+    ):
+        eid = mock_coordinator._guess_overview_entity_id("complex_id")
+        assert eid == "sensor.my_complex_name"
+
+
+@pytest.mark.asyncio
+async def test_initialization_failure_exception_group(
+    mock_coordinator: GrowspaceCoordinator,
+) -> None:
+    """Test async_initialize_sub_coordinators handling ExceptionGroup from TaskGroup."""
+    gs = Growspace(id="gs1", name="GS1")
+    mock_coordinator.growspaces["gs1"] = gs
+
+    with (
+        patch.object(
+            mock_coordinator,
+            "_setup_growspace_sub_coordinators",
+            side_effect=ValueError("Init Fail"),
+        ),
+        patch("custom_components.growspace_manager.coordinator._LOGGER") as mock_logger,
+    ):
+        await mock_coordinator.async_initialize_sub_coordinators(None)
+
+        # Should have logged error
+        assert mock_logger.error.call_count >= 1
+        assert (
+            "Failed to initialize sub-coordinator" in mock_logger.error.call_args[0][0]
+        )
+
+
+@pytest.mark.asyncio
+async def test_should_send_notification(mock_coordinator: GrowspaceCoordinator) -> None:
+    """Test should_send_notification logic."""
+    plant_id = "p1"
+    stage = "flower"
+    day = 10
+
+    # Initially should be True
+    assert mock_coordinator.should_send_notification(plant_id, stage, day) is True
+
+    # Mark sent
+    await mock_coordinator.mark_notification_sent(plant_id, stage, day)
+
+    # Now should be False
+    assert mock_coordinator.should_send_notification(plant_id, stage, day) is False
+
+
+@pytest.mark.asyncio
+async def test_async_update_growspace_full(
+    mock_coordinator: GrowspaceCoordinator,
+) -> None:
+    """Test full coverage of async_update_growspace including structure and config updates."""
+    # 1. Setup Growspace
+    gs = await mock_coordinator.async_add_growspace("Update GS", 3, 3)
+
+    # 2. Update structure only
+    with patch(
+        "custom_components.growspace_manager.coordinator.async_fire_growspace_event"
+    ) as mock_fire:
+        await mock_coordinator.async_update_growspace(gs.id, rows=4, plants_per_row=4)
+        mock_fire.assert_called_once()  # Should fire event
+
+    assert gs.rows == 4
+    assert gs.plants_per_row == 4
+
+    # 3. Update config (name)
+    await mock_coordinator.async_update_growspace(gs.id, name="New Name")
+    assert gs.name == "New Name"
+
+    # 4. Update notification target
+    await mock_coordinator.async_update_growspace(
+        gs.id, notification_target="mobile_app_test"
+    )
+    assert gs.notification_target == "mobile_app_test"
+
+    # 5. Update environment config
+    new_env_config = EnvironmentConfig(temperature_sensor="sensor.new_temp")
+    await mock_coordinator.async_update_growspace(
+        gs.id, environment_config=new_env_config
+    )
+    assert gs.environment_config == new_env_config
+
+    # 6. Update irrigation config
+    irr_config_obj = IrrigationConfig(irrigation_pump_entity="switch.new_pump")
+    await mock_coordinator.async_update_growspace(
+        gs.id, irrigation_config=irr_config_obj
+    )
+    assert gs.irrigation_config == irr_config_obj
+
+    # 7. No changes
+    with patch(
+        "custom_components.growspace_manager.coordinator.async_fire_growspace_event"
+    ) as mock_fire:
+        await mock_coordinator.async_update_growspace(gs.id)  # no kwargs
+        mock_fire.assert_not_called()
+
+    # 8. Validation after resize warnings
+    # Add a plant at 4,4
+    await mock_coordinator.async_add_plant(gs.id, "Strain", row=4, col=4)
+
+    # Resize to 3x3 (plant now out of bounds)
+    with patch(
+        "custom_components.growspace_manager.coordinator._LOGGER"
+    ) as mock_logger:
+        await mock_coordinator.async_update_growspace(gs.id, rows=3, plants_per_row=3)
+        assert (
+            mock_logger.warning.call_count >= 1
+        )  # Should warn about plants outside grid
+
+
+@pytest.mark.asyncio
+async def test_async_harvest_plant_full_flow(
+    mock_coordinator: GrowspaceCoordinator,
+) -> None:
+    """Test async_harvest_plant including moving to target growspace."""
+    # 1. Setup Flowering plant
+    gs_flower = await mock_coordinator.async_add_growspace("Flower Room")
+    plant = await mock_coordinator.async_add_plant(
+        gs_flower.id, "Strain", stage="flower", flower_start=date.today().isoformat()
+    )
+
+    # 2. Setup Dry Room
+    gs_dry = await mock_coordinator.async_add_growspace(
+        "Dry Room"
+    )  # ID logic? Default "Dry Room" -> "Dry Room". Special "dry" exists.
+    # In test env, standard add creates "Dry Room" id="dry_room" slugified usually or unique.
+
+    # Check manual movement
+    await mock_coordinator.async_harvest_plant(
+        plant.plant_id,
+        target_growspace_id=gs_dry.id,
+        target_growspace_name="Dry Room",
+        transition_date=None,
+    )
+
+    assert plant.stage == PlantStage.DRY
+    assert plant.growspace_id == gs_dry.id
+    assert plant.dry_start is not None
+
+
+@pytest.mark.asyncio
+async def test_ensure_default_growspaces_logic(
+    mock_coordinator: GrowspaceCoordinator,
+) -> None:
+    """Test _ensure_default_growspaces creation logic."""
+    # Verify defaults are NOT present initially if we clear them (carefully)
+    mock_coordinator.growspaces.clear()
+
+    await mock_coordinator._ensure_default_growspaces()
+
+    # Check if 'mother', 'clone', 'veg', 'dry', 'cure' exist
+    defaults = ["mother", "clone", "veg", "dry", "cure"]
+    for gid in defaults:
+        assert gid in mock_coordinator.growspaces
+        assert (
+            mock_coordinator.growspaces[gid].growspace_type.value == gid
+        )  # Map 1:1 in enum
+
+
+@pytest.mark.asyncio
+async def test_notifications_logic_full(mock_coordinator: GrowspaceCoordinator) -> None:
+    """Test notification enable/disable logic."""
+    gs = await mock_coordinator.async_add_growspace("Notify GS")
+
+    # Default is enabled
+    assert mock_coordinator.is_notifications_enabled(gs.id) is True
+
+    # Disable
+    await mock_coordinator.set_notifications_enabled(gs.id, False)
+    assert mock_coordinator.is_notifications_enabled(gs.id) is False
+    assert mock_coordinator._notifications_enabled[gs.id] is False
+
+    # Enable
+    await mock_coordinator.set_notifications_enabled(gs.id, True)
+    assert mock_coordinator.is_notifications_enabled(gs.id) is True
+
+    # Non-existent GS
+    with patch(
+        "custom_components.growspace_manager.coordinator._LOGGER"
+    ) as mock_logger:
+        await mock_coordinator.set_notifications_enabled("missing", False)
+        mock_logger.warning.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_remove_plant_entities(mock_coordinator: GrowspaceCoordinator) -> None:
+    """Test _remove_plant_entities."""
+    # 1. Mock Entity Registry
+    mock_registry = MagicMock()
+    # Mock entities dict
+    entry_match = MagicMock()
+    entry_match.unique_id = "p1_sensor_temp"
+
+    entry_no_match = MagicMock()
+    entry_no_match.unique_id = "other_sensor"
+
+    mock_registry.entities = {
+        "sensor.p1_temp": entry_match,
+        "sensor.other": entry_no_match,
+    }
+
+    with patch(
+        "homeassistant.helpers.entity_registry.async_get", return_value=mock_registry
+    ):
+        await mock_coordinator._remove_plant_entities("p1")
+
+        # Verify match removal
+        mock_registry.async_remove.assert_called_once_with("sensor.p1_temp")
+
+
+@pytest.mark.asyncio
+async def test_setup_sub_coordinators(mock_coordinator: GrowspaceCoordinator) -> None:
+    """Test _setup_growspace_sub_coordinators with different configurations."""
+    gs_normal = Growspace(id="gs1", name="Normal")
+    gs_vwc = Growspace(id="gs2", name="VWC")
+    gs_vwc.irrigation_strategy.enabled = True
+
+    mock_entry = MagicMock()
+
+    with (
+        patch(
+            "custom_components.growspace_manager.coordinator.IrrigationCoordinator"
+        ) as mock_irr,
+        patch(
+            "custom_components.growspace_manager.coordinator.VWCIrrigationCoordinator"
+        ) as mock_vwc,
+        patch(
+            "custom_components.growspace_manager.coordinator.DehumidifierCoordinator"
+        ) as mock_dehum,
+    ):
+        # Setup standard
+        mock_irr_instance = AsyncMock()
+        mock_irr.return_value = mock_irr_instance
+
+        await mock_coordinator._setup_growspace_sub_coordinators(
+            mock_entry, "gs1", gs_normal
+        )
+
+        mock_irr.assert_called_once()
+        mock_vwc.assert_not_called()
+        mock_irr_instance.async_setup.assert_awaited_once()
+        assert "gs1" in mock_coordinator.irrigation_coordinators
+
+        mock_dehum.assert_called_once()
+        assert "gs1" in mock_coordinator.dehumidifier_coordinators
+
+    # Setup VWC
+    with (
+        patch(
+            "custom_components.growspace_manager.coordinator.IrrigationCoordinator"
+        ) as mock_irr,
+        patch(
+            "custom_components.growspace_manager.coordinator.VWCIrrigationCoordinator"
+        ) as mock_vwc,
+        patch(
+            "custom_components.growspace_manager.coordinator.DehumidifierCoordinator"
+        ) as mock_dehum,
+    ):
+        mock_vwc_instance = AsyncMock()
+        mock_vwc.return_value = mock_vwc_instance
+
+        await mock_coordinator._setup_growspace_sub_coordinators(
+            mock_entry, "gs2", gs_vwc
+        )
+
+        mock_vwc.assert_called_once()
+        mock_irr.assert_not_called()
+        mock_vwc_instance.async_setup.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_get_growspace_data(mock_coordinator: GrowspaceCoordinator) -> None:
+    """Test get_growspace_data for specific ID and all IDs."""
+    gs1 = Growspace(id="gs1", name="GS1")
+    gs2 = Growspace(id="gs2", name="GS2")
+
+    mock_coordinator.growspaces = {"gs1": gs1, "gs2": gs2}
+
+    # Needs serializer mock usually, but we can rely on real one if it doesn't fail.
+    # The coordinator creates `GrowspaceSerializer` in init.
+    # serializer.serialize_growspace needs plants list and environment analyzer.
+
+    # Mock serializer to keep it simple and avoid dependencies
+    mock_coordinator.serializer = MagicMock()
+    mock_coordinator.serializer.serialize_growspace.return_value = {"id": "serialized"}
+
+    # 1. Specific valid ID
+    data = mock_coordinator.get_growspace_data("gs1")
+    assert data == {"id": "serialized"}
+    mock_coordinator.serializer.serialize_growspace.assert_called()
+
+    # 2. Specific invalid ID
+    data = mock_coordinator.get_growspace_data("missing")
+    assert data == {}
+
+    # 3. All (None)
+    mock_coordinator.serializer.serialize_growspace.reset_mock()
+    data = mock_coordinator.get_growspace_data(None)
+    assert len(data) == 2
+    assert "gs1" in data
+    assert "gs2" in data
+    assert mock_coordinator.serializer.serialize_growspace.call_count == 2
+
+
+@pytest.mark.asyncio
+async def test_async_remove_plant_event(mock_coordinator: GrowspaceCoordinator) -> None:
+    """Test async_remove_plant fires event."""
+    plant = await mock_coordinator.async_add_plant("gs1", "Strain")
+
+    with patch(
+        "custom_components.growspace_manager.coordinator.async_fire_plant_event"
+    ) as mock_fire:
+        # success
+        result = await mock_coordinator.async_remove_plant(plant.plant_id)
+        assert result is True
+        mock_fire.assert_called_with(
+            mock_coordinator.hass, "growspace_manager_plant_removed", plant
+        )
+
+    # Fail (already removed)
+    result = await mock_coordinator.async_remove_plant(plant.plant_id)
+    assert result is False
+
+
+@pytest.mark.asyncio
+async def test_coordinator_wrapper_methods_sweeper(
+    mock_coordinator: GrowspaceCoordinator,
+) -> None:
+    """Test various wrapper methods to ensure 100% coverage."""
+    # 1. Strain Library Options
+    # Mock strain library get_all to return a dict
+    # Mock return value to be a dict, avoiding MagicMock iteration issue
+    mock_coordinator.strain_library.get_all = MagicMock(return_value={"S1": "Strain 1"})
+    assert mock_coordinator.get_strain_options() == ["S1"]
+
+    # Export / Clear
+    mock_coordinator.strain_library.export_library = MagicMock(return_value="data")
+    assert mock_coordinator.export_strain_library() == ["S1"]
+
+    mock_coordinator.strain_library.clear = AsyncMock()
+    await mock_coordinator.clear_strains()
+    mock_coordinator.strain_library.clear.assert_awaited()
+
+    # 2. Plant Lifecycle Wrappers
+    # Create a plant
+    gs = await mock_coordinator.async_add_growspace("Wrappers")
+    plant = await mock_coordinator.async_add_plant(gs.id, "Strain")
+
+    # async_start_flowering(plant_id) -> calls transition with today
+    with patch.object(
+        mock_coordinator,
+        "async_transition_plant_stage",
+        new_callable=AsyncMock,
+    ) as mock_trans:
+        await mock_coordinator.async_start_flowering(plant.plant_id)
+        mock_trans.assert_awaited_with(plant.plant_id, PlantStage.FLOWER, date.today())
+
+    # async_start_drying -> calls transition with today (NOT harvest_plant directly in this implementation)
+    with patch.object(
+        mock_coordinator,
+        "async_transition_plant_stage",
+        new_callable=AsyncMock,
+    ) as mock_trans:
+        await mock_coordinator.async_start_drying(plant.plant_id)
+        mock_trans.assert_awaited_with(plant.plant_id, PlantStage.DRY, date.today())
+
+    # async_start_curing -> calls transition with today
+    with patch.object(
+        mock_coordinator,
+        "async_transition_plant_stage",
+        new_callable=AsyncMock,
+    ) as mock_trans:
+        await mock_coordinator.async_start_curing(plant.plant_id)
+        mock_trans.assert_awaited_with(plant.plant_id, PlantStage.CURE, date.today())
+
+    # async_harvest(plant_id) -> calls async_start_drying
+    with patch.object(
+        mock_coordinator,
+        "async_start_drying",
+        new_callable=AsyncMock,
+    ) as mock_start_drying:
+        await mock_coordinator.async_harvest(plant.plant_id)
+        mock_start_drying.assert_awaited_with(plant.plant_id)
+
+    # 3. get_growspace_options
+    options = mock_coordinator.get_growspace_options()
+    assert gs.id in options
+    assert options[gs.id] == "Wrappers"
+
+
+@pytest.mark.asyncio
+async def test_ensure_special_growspace_branches(
+    mock_coordinator: GrowspaceCoordinator,
+) -> None:
+    """Test branches in ensure_special_growspace."""
+    # 1. Create fresh (Synchronous method!)
+    # Need to patch _create_special_growspace to avoid actual creation logic if it's complex,
+    # but actual logic is fine if dependencies are mocked.
+    # We need to mock migration_manager too.
+    mock_coordinator.migration_manager = MagicMock()
+
+    # ensure_special_growspace(id, name, type)
+    gs_id = mock_coordinator.ensure_special_growspace(
+        "mother", "Mother Room", growspace_type=GrowspaceType.MOTHER
+    )
+    assert "mother" in gs_id
+    assert "mother" in mock_coordinator.growspaces
+    assert mock_coordinator.growspaces["mother"].growspace_type == GrowspaceType.MOTHER
+
+    # 2. Retrieve existing
+    gs_id2 = mock_coordinator.ensure_special_growspace(
+        "mother", "Mother Room New Name", growspace_type=GrowspaceType.MOTHER
+    )
+    assert gs_id2 == "mother"
+    assert (
+        mock_coordinator.growspaces["mother"].name == "Mother Room New Name"
+    )  # Updates name
+
+    # 3. Create another type
+    mock_coordinator.ensure_special_growspace(
+        "dry", "Dry Room", growspace_type=GrowspaceType.DRY
+    )
+    assert mock_coordinator.growspaces["dry"].growspace_type == GrowspaceType.DRY
+
+
+@pytest.mark.asyncio
+async def test_get_growspace_grid(mock_coordinator: GrowspaceCoordinator) -> None:
+    """Test get_growspace_grid."""
+    gs = await mock_coordinator.async_add_growspace(
+        "Grid Test", rows=2, plants_per_row=2
+    )
+    p1 = await mock_coordinator.async_add_plant(gs.id, "Strain", row=1, col=1)
+
+    # Test valid GS
+    grid = mock_coordinator.get_growspace_grid(gs.id)
+    # Grid should be a list of lists.
+    # row 1 col 1 (1-indexed for user) -> depends on implementation.
+    # Usually grid[row_idx][col_idx].
+    # If 2 rows, len(grid) == 2.
+    assert len(grid) == 2
+    # Verify plant presence.
+    found = False
+    for row in grid:
+        if p1.plant_id in row or p1 in row:  # Grid might contain IDs or Objects
+            found = True
+    assert found

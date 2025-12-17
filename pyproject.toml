@@ -106,7 +106,7 @@ asyncio_default_fixture_loop_scope = "function"
 skip = "custom_components/growspace_manager/translations/*"
 
 [tool.mypy]
-python_version = "3.14"
+python_version = "3.13"
 explicit_package_bases = true
 ignore_missing_imports = true
 check_untyped_defs = true

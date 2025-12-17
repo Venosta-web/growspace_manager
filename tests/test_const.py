@@ -5,9 +5,11 @@ from datetime import date, datetime
 import pytest
 import voluptuous as vol
 
-from custom_components.growspace_manager.const import (
+from custom_components.growspace_manager.schemas import (
     ADD_PLANT_SCHEMA,
     UPDATE_PLANT_SCHEMA,
+)
+from custom_components.growspace_manager.validation import (
     valid_date_or_none,
     valid_growspace_id,
 )

@@ -23,7 +23,7 @@ from custom_components.growspace_manager.binary_sensor import (
     LightCycleVerificationSensor,
     async_setup_entry,
 )
-from custom_components.growspace_manager.models import EnvironmentConfig
+from custom_components.growspace_manager.models import EnvironmentConfig, GrowspaceType
 from custom_components.growspace_manager.notification_manager import NotificationManager
 
 MOCK_CONFIG_ENTRY_ID = "test_entry"
@@ -34,6 +34,7 @@ def mock_growspace():
     """Fixture for a mock growspace with environment config."""
     growspace = MagicMock()
     growspace.name = "Test Growspace"
+    growspace.growspace_type = GrowspaceType.FLOWER
     growspace.notification_target = "notify.test"
     growspace.environment_config = EnvironmentConfig(
         temperature_sensor="sensor.temp",
@@ -69,6 +70,7 @@ def mock_coordinator(mock_growspace):
     drying_growspace = MagicMock()
     drying_growspace.name = "Drying Tent"
     drying_growspace.notification_target = None
+    drying_growspace.growspace_type = GrowspaceType.DRY
     # Create a new EnvironmentConfig based on the original
     dry_config = EnvironmentConfig(**mock_growspace.environment_config.to_dict())
     dry_config.temperature_sensor = "sensor.drying_temp"
@@ -80,6 +82,7 @@ def mock_coordinator(mock_growspace):
     curing_growspace = MagicMock()
     curing_growspace.name = "Curing Jars"
     curing_growspace.notification_target = None
+    curing_growspace.growspace_type = GrowspaceType.CURE
     cure_config = EnvironmentConfig(**mock_growspace.environment_config.to_dict())
     cure_config.temperature_sensor = "sensor.curing_temp"
     cure_config.humidity_sensor = "sensor.curing_humidity"

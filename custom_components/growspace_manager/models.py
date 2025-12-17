@@ -9,13 +9,14 @@ from __future__ import annotations
 
 from dataclasses import asdict, dataclass, field, fields
 from datetime import datetime
+from enum import StrEnum
 from typing import TYPE_CHECKING, Any, TypedDict
 
 from .const import PlantStage
 from .utils import calculate_days_since, days_to_week
 
 if TYPE_CHECKING:
-    from .models import Growspace, days_to_week
+    pass
 
 
 type IrrigationScheduleItem = dict[str, Any]
@@ -152,6 +153,15 @@ class IrrigationConfig(BaseModel):
     veg_day_hours: int = 12
 
 
+class GrowspaceType(StrEnum):
+    FLOWER = "flower"
+    VEG = "veg"
+    MOTHER = "mother"
+    DRY = "dry"
+    CURE = "cure"
+    CLONE = "clone"
+
+
 @dataclass(slots=True)
 class Growspace(BaseModel):
     """Represents a single growspace area.
@@ -168,6 +178,7 @@ class Growspace(BaseModel):
         irrigation_config: A dictionary of basic pump configurations and schedules.
         dehumidifier_config: A dictionary of dehumidifier settings.
         irrigation_strategy: The VWC crop steering strategy configuration.
+        growspace_type: The type of growspace.
     """
 
     id: str
@@ -181,6 +192,7 @@ class Growspace(BaseModel):
     irrigation_config: IrrigationConfig = field(default_factory=IrrigationConfig)
     dehumidifier_config: dict[str, Any] = field(default_factory=dict)
     irrigation_strategy: IrrigationStrategy = field(default_factory=IrrigationStrategy)
+    growspace_type: GrowspaceType = field(default=GrowspaceType.FLOWER)
 
     _MIGRATIONS = {"created": "created_at", "updated": "updated_at"}
     _NESTED_HANDLERS = {
