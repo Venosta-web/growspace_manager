@@ -25,7 +25,6 @@ from .const import (
 from .dehumidifier_coordinator import DehumidifierCoordinator
 from .environment_analyzer import EnvironmentAnalyzer
 from .events import (
-    EVENT_CLONES_TAKEN,
     EVENT_GROWSPACE_ADDED,
     EVENT_GROWSPACE_REMOVED,
     EVENT_GROWSPACE_UPDATED,
@@ -189,11 +188,18 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
 
     async def async_initialize_sub_coordinators(self, entry: Any) -> None:
         """Initialize sub-coordinators for irrigation and dehumidifier."""
-        async with asyncio.TaskGroup() as tg:
-            for growspace_id, gs in self.growspaces.items():
-                tg.create_task(
-                    self._setup_growspace_sub_coordinators(entry, growspace_id, gs)
-                )
+        try:
+            async with asyncio.TaskGroup() as tg:
+                for growspace_id, gs in self.growspaces.items():
+                    tg.create_task(
+                        self._setup_growspace_sub_coordinators(entry, growspace_id, gs)
+                    )
+        except ExceptionGroup as eg:
+            for err in eg.exceptions:
+                _LOGGER.error("Failed to initialize sub-coordinator: %s", err)
+            _LOGGER.warning(
+                "Some sub-coordinators failed to initialize, continuing with available services"
+            )
 
     async def _setup_growspace_sub_coordinators(
         self, entry: Any, growspace_id: str, gs: Growspace

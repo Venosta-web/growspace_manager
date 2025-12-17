@@ -223,12 +223,14 @@ async def async_unload_entry(hass: HomeAssistant, entry: GrowspaceConfigEntry) -
     return False
 
 
-async def _async_update_listener(hass: HomeAssistant, entry: ConfigEntry) -> None:
+async def _async_update_listener(
+    hass: HomeAssistant, entry: GrowspaceConfigEntry
+) -> None:
     """Handle options update."""
     await hass.config_entries.async_reload(entry.entry_id)
 
 
-async def async_reload_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
+async def async_reload_entry(hass: HomeAssistant, entry: GrowspaceConfigEntry) -> None:
     """Reload a config entry."""
     _LOGGER.debug(
         "Reloading Growspace Manager integration for entry %s", entry.entry_id
