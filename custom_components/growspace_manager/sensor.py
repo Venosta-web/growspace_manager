@@ -530,6 +530,7 @@ class AirExchangeSensor(CoordinatorEntity[GrowspaceCoordinator], SensorEntity):
 
     _attr_has_entity_name = True
     _attr_translation_key = "air_exchange"
+    _attr_native_unit_of_measurement = None
 
     def __init__(self, coordinator: GrowspaceCoordinator, growspace_id: str) -> None:
         """Initialize the air exchange sensor.
@@ -572,6 +573,7 @@ class GrowspaceOverviewSensor(CoordinatorEntity[GrowspaceCoordinator], SensorEnt
 
     _attr_has_entity_name = True
     _attr_translation_key = "overview"
+    _attr_native_unit_of_measurement = None
 
     def __init__(
         self, coordinator: GrowspaceCoordinator, growspace_id: str, growspace: Growspace
@@ -647,6 +649,7 @@ class PlantEntity(SensorEntity):
         self._attr_unique_id = f"{DOMAIN}_{plant.plant_id}"
         self._attr_name = f"{plant.strain} ({plant.row},{plant.col})"
         self._attr_translation_key = "plant"
+        self._attr_native_unit_of_measurement = None
 
         # Set up device info - plant belongs to growspace device
         growspace_id = plant.growspace_id
@@ -728,6 +731,7 @@ class StrainLibrarySensor(CoordinatorEntity[GrowspaceCoordinator], SensorEntity)
     _attr_has_entity_name = True
     _attr_translation_key = "strain_library"
     _attr_entity_category = EntityCategory.DIAGNOSTIC
+    _attr_native_unit_of_measurement = None
 
     def __init__(self, coordinator: GrowspaceCoordinator) -> None:
         """Initialize the Strain Library sensor."""
@@ -756,6 +760,7 @@ class GrowspaceListSensor(SensorEntity):
     """
 
     _attr_entity_category = EntityCategory.DIAGNOSTIC
+    _attr_native_unit_of_measurement = None
 
     def __init__(self, coordinator: GrowspaceCoordinator) -> None:
         """Initialize the growspace list sensor."""
