@@ -309,7 +309,7 @@ class GrowspaceSerializer:
             circulation_fan_entity = env_config.circulation_fan_entity
             if circulation_fan_entity:
                 state_obj = self.hass.states.get(circulation_fan_entity)
-                attributes[CONF_CIRCULATION_FAN] = circulation_fan_entity
+                attributes["circulation_fan_entity"] = circulation_fan_entity
                 attributes["circulation_fan_state"] = (
                     state_obj.state if state_obj else None
                 )
