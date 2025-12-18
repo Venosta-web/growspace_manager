@@ -8,7 +8,7 @@ from homeassistant.core import HomeAssistant, ServiceCall
 from homeassistant.exceptions import ServiceValidationError
 
 from ..const import (
-    CONF_CIRCULATION_FAN,
+    CONF_CIRCULATION_FAN_ENTITY,
     CONF_CO2_SENSOR,
     CONF_HUMIDITY_SENSOR,
     CONF_MOLD_THRESHOLD,
@@ -43,7 +43,7 @@ async def handle_configure_environment(
         humidity_sensor=call.data.get(CONF_HUMIDITY_SENSOR),
         vpd_sensor=call.data.get(CONF_VPD_SENSOR),
         co2_sensor=call.data.get(CONF_CO2_SENSOR),
-        circulation_fan_entity=call.data.get(CONF_CIRCULATION_FAN),
+        circulation_fan_entity=call.data.get(CONF_CIRCULATION_FAN_ENTITY),
         stress_threshold=call.data.get(CONF_STRESS_THRESHOLD, 0.70),
         mold_threshold=call.data.get(CONF_MOLD_THRESHOLD, 0.75),
     )

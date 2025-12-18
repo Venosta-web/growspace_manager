@@ -10,7 +10,7 @@ import voluptuous as vol
 from homeassistant.helpers import selector
 
 from ..const import (
-    CONF_CIRCULATION_FAN,
+    CONF_CIRCULATION_FAN_ENTITY,
     CONF_CO2_SENSOR,
     CONF_DEHUMIDIFIER_ENTITY,
     CONF_HUMIDITY_SENSOR,
@@ -143,7 +143,7 @@ class EnvironmentConfigHandler(BaseConfigHandler[dict[str, Any]]):
             domain = ["switch", "light", "input_boolean", "sensor"]
             device_class = None
         elif feature == "fan":
-            entity_key = CONF_CIRCULATION_FAN
+            entity_key = CONF_CIRCULATION_FAN_ENTITY
             domain = [
                 "fan",
                 "switch",

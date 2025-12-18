@@ -47,7 +47,7 @@ async def test_handle_configure_environment_success(
         "humidity_sensor": "sensor.hum",
         "vpd_sensor": "sensor.vpd",
         "co2_sensor": "sensor.co2",
-        "circulation_fan": "switch.fan",
+        "circulation_fan_entity": "switch.fan",
         "stress_threshold": 0.8,
         "mold_threshold": 0.85,
     }

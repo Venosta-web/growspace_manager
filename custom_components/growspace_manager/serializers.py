@@ -111,7 +111,18 @@ class GrowspaceSerializer:
         )
 
         # Get irrigation settings
-        irrigation_options = growspace.irrigation_config.to_dict()
+        # Explicit serialization to ensure all keys are present for frontend
+        irrigation_config = growspace.irrigation_config
+        irrigation_options = {
+            "irrigation_pump_entity": irrigation_config.irrigation_pump_entity,
+            "drain_pump_entity": irrigation_config.drain_pump_entity,
+            "irrigation_duration": irrigation_config.irrigation_duration,
+            "drain_duration": irrigation_config.drain_duration,
+            "irrigation_times": irrigation_config.irrigation_times,
+            "drain_times": irrigation_config.drain_times,
+            "veg_day_hours": irrigation_config.veg_day_hours,
+        }
+
         irrigation_strategy_dict = (
             growspace.irrigation_strategy.to_dict()
             if growspace.irrigation_strategy
