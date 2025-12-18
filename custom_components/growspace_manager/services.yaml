@@ -486,6 +486,55 @@ configure_environment:
           max: 0.95
           step: 0.05
 
+    light_sensor:
+      name: Light Sensor / Switch
+      description: Sensor or switch indicating if lights are on
+      required: false
+      selector:
+        entity:
+          domain: [light, switch, binary_sensor, sensor, input_boolean]
+
+    exhaust_entity:
+      name: Exhaust Fan
+      description: Fan or switch controlling exhaust
+      required: false
+      selector:
+        entity:
+          domain: [fan, switch, input_boolean]
+
+    humidifier_entity:
+      name: Humidifier
+      description: Humidifier device or switch
+      required: false
+      selector:
+        entity:
+          domain: [humidifier, switch, input_boolean]
+
+    dehumidifier_entity:
+      name: Dehumidifier
+      description: Dehumidifier device or switch
+      required: false
+      selector:
+        entity:
+          domain: [humidifier, switch, input_boolean]
+
+    soil_moisture_sensor:
+      name: Soil Moisture Sensor
+      description: Sensor for soil VWC/moisture
+      required: false
+      selector:
+        entity:
+          domain: [sensor]
+          device_class: moisture
+
+    control_dehumidifier:
+      name: Control Dehumidifier
+      description: Enable automated control of the dehumidifier
+      required: false
+      default: false
+      selector:
+        boolean:
+
 remove_environment:
   description: Remove environment configuration for a growspace
   fields:

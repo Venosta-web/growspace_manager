@@ -34,6 +34,10 @@ CONF_DEHUMIDIFIER_THRESHOLDS = "dehumidifier_thresholds"
 CONF_AI_ENABLED = "ai_enabled"
 CONF_ASSISTANT_ID = "assistant_id"
 CONF_GROWSPACE = "growspace"
+CONF_EXHAUST_ENTITY = "exhaust_entity"
+CONF_HUMIDIFIER_ENTITY = "humidifier_entity"
+CONF_SOIL_MOISTURE_SENSOR = "soil_moisture_sensor"
+CONF_CONTROL_DEHUMIDIFIER = "control_dehumidifier"
 
 # Metric Names
 METRIC_STRESS = "stress"
