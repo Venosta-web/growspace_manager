@@ -8,7 +8,6 @@ from homeassistant.core import HomeAssistant
 
 from custom_components.growspace_manager.const import (
     DEFAULT_FLOWER_EARLY_DAYS,
-    DEFAULT_VEG_EARLY_DAYS,
 )
 from custom_components.growspace_manager.environment_analyzer import EnvironmentAnalyzer
 from custom_components.growspace_manager.models import EnvironmentConfig, Growspace
@@ -63,17 +62,11 @@ def test_determine_granular_stage(analyzer: EnvironmentAnalyzer):
         == "flower_late"
     )
     # Veg Early
-    assert (
-        analyzer.determine_granular_stage(DEFAULT_VEG_EARLY_DAYS, 0, 0, 0)
-        == "veg_early"
-    )
+    assert analyzer.determine_granular_stage(10, 0, 0, 0) == "veg"
     # Veg Late
-    assert (
-        analyzer.determine_granular_stage(DEFAULT_VEG_EARLY_DAYS + 5, 0, 0, 0)
-        == "veg_late"
-    )
+    assert analyzer.determine_granular_stage(30, 0, 0, 0) == "veg"
     # Default Veg Early (all 0)
-    assert analyzer.determine_granular_stage(0, 0, 0, 0) == "veg_early"
+    assert analyzer.determine_granular_stage(0, 0, 0, 0) == "veg"
 
 
 def test_determine_is_day(
@@ -108,7 +101,7 @@ def test_calculate_biological_metrics(
 
     # Veg Early Day
     metrics = analyzer.calculate_biological_metrics(mock_growspace, 5, 0, 0, 0)
-    assert metrics["granular_stage"] == "veg_early"
+    assert metrics["granular_stage"] == "veg"
     assert metrics["is_day"] is True
     # veg_early day mild is (0.4, 0.8), stress is (0.3, 1.0).
     # 1.0 is > 0.8 (target max) but <= 1.0 (danger max). So warning.

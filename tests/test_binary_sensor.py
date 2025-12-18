@@ -560,7 +560,7 @@ def test_mold_risk_sensor_notification_returns_none_when_on_and_growspace_does_n
         ({"temp": 14}, "Extreme Cold"),
         ({"temp": 25, "is_lights_on": False}, "Night Temp High"),
         ({"humidity": 30}, "Humidity Dry"),
-        ({"humidity": 75, "veg_days": 20, "flower_days": 0}, "Humidity High"),
+        ({"humidity": 85, "veg_days": 20, "flower_days": 0}, "Humidity High"),
         ({"vpd": 0.2, "veg_days": 10, "flower_days": 0}, "VPD out of range"),
         ({"vpd": 1.7, "flower_days": 10}, "VPD out of range"),
         ({"co2": 350}, "CO2 Low"),

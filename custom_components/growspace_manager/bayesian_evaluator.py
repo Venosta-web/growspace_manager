@@ -42,10 +42,8 @@ ReasonList = list[Reason]
 
 def _determine_stage_key(state: EnvironmentState) -> str | None:
     """Determine the current grow stage key."""
-    if state.flower_days == 0 and state.veg_days < 14:
-        return "veg_early"
-    if state.flower_days == 0 and state.veg_days >= 14:
-        return "veg_late"
+    if state.flower_days == 0:
+        return "veg"
     if 0 < state.flower_days < 21:
         return "flower_early"
     if 21 <= state.flower_days < 42:
@@ -328,18 +326,13 @@ def evaluate_direct_humidity_stress(
         reasons.append((prob[0], f"Humidity Dry ({hum})"))
 
     # Stage-specific high humidity/out-of-range checks
-    veg_early = state.flower_days == 0 and state.veg_days < 14
-    veg_late = state.flower_days == 0 and state.veg_days >= 14
+    veg = state.flower_days == 0
     flower_early = 0 < state.flower_days < 42
     flower_late = state.flower_days >= 42
 
     # Use elif for mutually exclusive stage checks
-    if veg_early and hum > 80:
-        prob = env_config.get("prob_humidity_high_veg_early", (0.80, 0.20))
-        observations.append(prob)
-        reasons.append((prob[0], f"Humidity High ({hum})"))
-    elif veg_late and hum > 70:
-        prob = env_config.get("prob_humidity_high_veg_late", (0.85, 0.15))
+    if veg and hum > 80:
+        prob = env_config.get("prob_humidity_high_veg", (0.80, 0.20))
         observations.append(prob)
         reasons.append((prob[0], f"Humidity High ({hum})"))
     elif flower_early and (hum > 60 or hum < 45):
@@ -643,13 +636,10 @@ def evaluate_active_saturation(
         hum = state.humidity
         is_saturated = False
 
-        veg_early = state.flower_days == 0 and state.veg_days < 14
-        veg_late = state.flower_days == 0 and state.veg_days >= 14
+        veg = state.flower_days == 0
         flower = state.flower_days > 0
 
-        if veg_early and hum > 80:
-            is_saturated = True
-        elif veg_late and hum > 70:
+        if veg and hum > 80:
             is_saturated = True
         elif flower and hum > 60:
             is_saturated = True

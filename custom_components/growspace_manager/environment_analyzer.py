@@ -11,7 +11,6 @@ from homeassistant.helpers import entity_registry as er
 from .bayesian_data import VPD_STRESS_THRESHOLDS
 from .const import (
     DEFAULT_FLOWER_EARLY_DAYS,
-    DEFAULT_VEG_EARLY_DAYS,
     DOMAIN,
 )
 from .utils import VPDCalculator
@@ -65,7 +64,7 @@ class EnvironmentAnalyzer:
         day_key = "day" if is_day else "night"
 
         threshold_data = VPD_STRESS_THRESHOLDS.get(
-            granular_stage, VPD_STRESS_THRESHOLDS["veg_early"]
+            granular_stage, VPD_STRESS_THRESHOLDS["veg"]
         )
         cycle_data = threshold_data.get(day_key, threshold_data["day"])
 
@@ -120,10 +119,7 @@ class EnvironmentAnalyzer:
                     return "flower_mid"
                 return "flower_late"
             case _:
-                # Veg logic
-                if max_veg <= DEFAULT_VEG_EARLY_DAYS:
-                    return "veg_early"
-                return "veg_late"
+                return "veg"
 
     def determine_is_day(self, growspace: Growspace) -> bool:
         """Determine if it is currently day or night in the growspace.
