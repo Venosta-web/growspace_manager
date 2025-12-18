@@ -9,7 +9,7 @@ from .const import (
     ATTR_STAGE,
     ATTR_STRAIN,
     ATTR_TRANSITION_DATE,
-    CONF_CIRCULATION_FAN,
+    CONF_CIRCULATION_FAN_ENTITY,
     CONF_CO2_SENSOR,
     CONF_DEHUMIDIFIER_ENTITY,
     CONF_HUMIDITY_SENSOR,
@@ -269,7 +269,7 @@ CONFIGURE_ENVIRONMENT_SCHEMA = vol.Schema(
         vol.Optional(CONF_VPD_SENSOR): str,
         vol.Optional(CONF_CO2_SENSOR): str,
         vol.Optional(CONF_DEHUMIDIFIER_ENTITY): str,
-        vol.Optional(CONF_CIRCULATION_FAN): str,
+        vol.Optional(CONF_CIRCULATION_FAN_ENTITY): str,
         vol.Optional(CONF_LIGHT_SENSOR): str,
         vol.Optional(CONF_STRESS_THRESHOLD, default=0.70): vol.All(
             vol.Coerce(float), vol.Range(min=0.0, max=1.0)

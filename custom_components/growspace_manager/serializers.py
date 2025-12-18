@@ -10,7 +10,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers import entity_registry as er
 
 from .const import (
-    CONF_CIRCULATION_FAN,
+    CONF_CIRCULATION_FAN_ENTITY,
     CONF_CO2_SENSOR,
     CONF_DEHUMIDIFIER_ENTITY,
     CONF_HUMIDITY_SENSOR,
@@ -309,7 +309,7 @@ class GrowspaceSerializer:
             circulation_fan_entity = env_config.circulation_fan_entity
             if circulation_fan_entity:
                 state_obj = self.hass.states.get(circulation_fan_entity)
-                attributes["circulation_fan_entity"] = circulation_fan_entity
+                attributes[CONF_CIRCULATION_FAN_ENTITY] = circulation_fan_entity
                 attributes["circulation_fan_state"] = (
                     state_obj.state if state_obj else None
                 )
