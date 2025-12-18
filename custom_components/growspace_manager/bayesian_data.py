@@ -38,13 +38,13 @@ DryingCuringThresholds = dict[
 # =========================================================================
 
 VPD_STRESS_THRESHOLDS: Final[VpdThresholdsDict] = {
-    "veg_early": {
+    "veg": {
         "day": {
             "stress": (0.3, 1.0),
             "mild": (0.4, 0.8),
             "prob_keys": (
-                "prob_vpd_stress_veg_early",
-                "prob_vpd_mild_stress_veg_early",
+                "prob_vpd_stress_veg",
+                "prob_vpd_mild_stress_veg",
             ),
             "prob_defaults": ((0.85, 0.15), (0.60, 0.30)),
         },
@@ -52,24 +52,10 @@ VPD_STRESS_THRESHOLDS: Final[VpdThresholdsDict] = {
             "stress": (0.3, 1.0),
             "mild": (0.4, 0.8),
             "prob_keys": (
-                "prob_vpd_stress_veg_early",
-                "prob_vpd_mild_stress_veg_early",
+                "prob_vpd_stress_veg",
+                "prob_vpd_mild_stress_veg",
             ),
             "prob_defaults": ((0.85, 0.15), (0.60, 0.30)),
-        },
-    },
-    "veg_late": {
-        "day": {
-            "stress": (0.6, 1.4),
-            "mild": (0.8, 1.2),
-            "prob_keys": ("prob_vpd_stress_veg_late", "prob_vpd_mild_stress_veg_late"),
-            "prob_defaults": ((0.80, 0.18), (0.55, 0.35)),
-        },
-        "night": {
-            "stress": (0.3, 1.0),
-            "mild": (0.5, 0.8),
-            "prob_keys": ("prob_vpd_stress_veg_late", "prob_vpd_mild_stress_veg_late"),
-            "prob_defaults": ((0.80, 0.18), (0.55, 0.35)),
         },
     },
     "flower_early": {
@@ -186,13 +172,9 @@ CURING_THRESHOLDS: Final[DryingCuringThresholds] = {
 VPD_OPTIMAL_THRESHOLDS: Final[
     dict[str, dict[str, list[tuple[float, float, tuple[float, float]]]]]
 ] = {
-    "veg_early": {
+    "veg": {
         "day": [(0.5, 0.9, (0.95, 0.18)), (0.4, 0.8, (0.80, 0.28))],
         "night": [(0.4, 0.8, (0.90, 0.20))],
-    },
-    "veg_late": {
-        "day": [(0.8, 1.2, (0.95, 0.18)), (0.8, 1.2, (0.85, 0.25))],
-        "night": [(0.6, 1.1, (0.90, 0.20))],
     },
     "flower_early": {
         "day": [(0.9, 1.4, (0.95, 0.18)), (1.0, 1.5, (0.85, 0.25))],

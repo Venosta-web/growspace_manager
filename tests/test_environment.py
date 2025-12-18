@@ -6,6 +6,7 @@ import pytest
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ServiceValidationError
 
+from custom_components.growspace_manager.models import EnvironmentConfig
 from custom_components.growspace_manager.services.environment import (
     handle_configure_environment,
     handle_remove_environment,
@@ -36,7 +37,7 @@ async def test_handle_configure_environment_success(
     """Test successful environment configuration."""
     growspace = Mock()
     growspace.name = "Test Growspace"
-    growspace.environment_config = {}
+    growspace.environment_config = EnvironmentConfig()
     mock_coordinator.growspaces = {"gs1": growspace}
 
     call = Mock()
@@ -46,22 +47,22 @@ async def test_handle_configure_environment_success(
         "humidity_sensor": "sensor.hum",
         "vpd_sensor": "sensor.vpd",
         "co2_sensor": "sensor.co2",
-        "circulation_fan": "switch.fan",
+        "circulation_fan_entity": "switch.fan",
         "stress_threshold": 0.8,
         "mold_threshold": 0.85,
     }
 
     await handle_configure_environment(hass, mock_coordinator, call)
 
-    assert growspace.environment_config == {
-        "temperature_sensor": "sensor.temp",
-        "humidity_sensor": "sensor.hum",
-        "vpd_sensor": "sensor.vpd",
-        "co2_sensor": "sensor.co2",
-        "circulation_fan": "switch.fan",
-        "stress_threshold": 0.8,
-        "mold_threshold": 0.85,
-    }
+    assert growspace.environment_config == EnvironmentConfig(
+        temperature_sensor="sensor.temp",
+        humidity_sensor="sensor.hum",
+        vpd_sensor="sensor.vpd",
+        co2_sensor="sensor.co2",
+        circulation_fan_entity="switch.fan",
+        stress_threshold=0.8,
+        mold_threshold=0.85,
+    )
     mock_coordinator.async_save.assert_called_once()
     mock_coordinator.async_refresh.assert_called_once()
 
@@ -89,7 +90,7 @@ async def test_handle_remove_environment_success(
     """Test successful environment removal."""
     growspace = Mock()
     growspace.name = "Test Growspace"
-    growspace.environment_config = {"some": "config"}
+    growspace.environment_config = EnvironmentConfig(temperature_sensor="sensor.temp")
     mock_coordinator.growspaces = {"gs1": growspace}
 
     call = Mock()
@@ -97,7 +98,7 @@ async def test_handle_remove_environment_success(
 
     await handle_remove_environment(hass, mock_coordinator, call)
 
-    assert growspace.environment_config == {}
+    assert growspace.environment_config == EnvironmentConfig()
     mock_coordinator.async_save.assert_called_once()
     mock_coordinator.async_refresh.assert_called_once()
 
@@ -125,7 +126,7 @@ async def test_handle_set_dehumidifier_control_success(
     """Test setting dehumidifier control."""
     growspace = Mock()
     growspace.name = "Test Growspace"
-    growspace.environment_config = {}
+    growspace.environment_config = EnvironmentConfig()
     mock_coordinator.growspaces = {"gs1": growspace}
 
     call = Mock()
@@ -133,28 +134,9 @@ async def test_handle_set_dehumidifier_control_success(
 
     await handle_set_dehumidifier_control(hass, mock_coordinator, call)
 
-    assert growspace.environment_config["control_dehumidifier"] is True
+    assert growspace.environment_config.control_dehumidifier is True
     mock_coordinator.async_save.assert_called_once()
     mock_coordinator.async_refresh.assert_called_once()
-
-
-@pytest.mark.asyncio
-async def test_handle_set_dehumidifier_control_init_config(
-    hass: HomeAssistant, mock_coordinator, mock_strain_library
-):
-    """Test setting dehumidifier control initializes config if None."""
-    growspace = Mock()
-    growspace.name = "Test Growspace"
-    growspace.environment_config = None
-    mock_coordinator.growspaces = {"gs1": growspace}
-
-    call = Mock()
-    call.data = {"growspace_id": "gs1", "enabled": True}
-
-    await handle_set_dehumidifier_control(hass, mock_coordinator, call)
-
-    assert growspace.environment_config == {"control_dehumidifier": True}
-    mock_coordinator.async_save.assert_called_once()
 
 
 @pytest.mark.asyncio

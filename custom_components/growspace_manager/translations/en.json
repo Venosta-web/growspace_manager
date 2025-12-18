@@ -10,6 +10,41 @@
       }
     }
   },
+  "entity": {
+    "binary_sensor": {
+      "stress": {
+        "name": "Stress"
+      },
+      "mold": {
+        "name": "Mold Risk"
+      },
+      "optimal": {
+        "name": "Optimal Conditions"
+      },
+      "drying": {
+        "name": "Drying"
+      },
+      "curing": {
+        "name": "Curing"
+      }
+    },
+    "switch": {
+      "notifications": {
+        "name": "Notifications"
+      }
+    },
+    "sensor": {
+      "air_exchange": {
+        "name": "Air Exchange"
+      },
+      "overview": {
+        "name": "Overview"
+      },
+      "strain_library": {
+        "name": "Growspace Strain Library"
+      }
+    }
+  },
   "services": {
     "add_growspace": {
       "name": "Add Growspace",

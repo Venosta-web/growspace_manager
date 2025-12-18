@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import logging
 import uuid
+from dataclasses import asdict
 from typing import Any
 
 import homeassistant.helpers.config_validation as cv
@@ -31,6 +32,7 @@ from .const import (
     DEFAULT_NAME,
     DOMAIN,
 )
+from .models import EnvironmentConfig
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -46,46 +48,62 @@ STEP_USER_DATA_SCHEMA = vol.Schema(
     }
 )
 
-
-async def ensure_default_growspaces(coordinator):
-    """Ensure that the default special growspaces (dry, cure, etc.) exist.
-
-    This function is called during setup to create the logical growspaces
-    used for specific stages of cultivation if they haven't been created yet.
-
-    Args:
-        coordinator: The Growspace Manager data update coordinator.
-    """
-    try:
-        # Create special growspaces with their canonical IDs
-        default_growspaces = [
-            ("dry", "dry", 3, 3),
-            ("cure", "cure", 3, 3),
-            ("mother", "mother", 3, 3),
-            ("clone", "clone", 5, 5),
-            ("veg", "veg", 5, 5),
-        ]
-
-        created_count = 0
-        for growspace_id, name, rows, plants_per_row in default_growspaces:
-            # Use the coordinator's method to ensure special growspaces
-            canonical_id = coordinator.ensure_special_growspace(
-                growspace_id, name, rows, plants_per_row
+ADD_STRAIN_SCHEMA = vol.Schema(
+    {
+        vol.Required("strain"): selector.TextSelector(),
+        vol.Optional("phenotype"): selector.TextSelector(),
+        vol.Optional("breeder"): selector.TextSelector(),
+        vol.Optional("type"): selector.SelectSelector(
+            selector.SelectSelectorConfig(
+                options=[
+                    selector.SelectOptionDict(value="Sativa", label="Sativa"),
+                    selector.SelectOptionDict(value="Indica", label="Indica"),
+                    selector.SelectOptionDict(value="Hybrid", label="Hybrid"),
+                    selector.SelectOptionDict(value="Ruderalis", label="Ruderalis"),
+                ],
+                custom_value=True,
+                mode=selector.SelectSelectorMode.DROPDOWN,
             )
-            if canonical_id not in coordinator.growspaces:
-                created_count += 1
-
-        if created_count > 0:
-            # Save the updated data
-            await coordinator.async_save()
-            # Notify listeners of the changes
-            coordinator.async_set_updated_data(coordinator.data)
-            _LOGGER.info("Created %s default growspaces", created_count)
-        else:
-            _LOGGER.info("All default growspaces already exist")
-
-    except (ValueError, KeyError, AttributeError) as err:
-        _LOGGER.error("Error creating default growspaces: %s", err)
+        ),
+        vol.Optional("sex"): selector.SelectSelector(
+            selector.SelectSelectorConfig(
+                options=[
+                    selector.SelectOptionDict(value="Feminized", label="Feminized"),
+                    selector.SelectOptionDict(value="Regular", label="Regular"),
+                    selector.SelectOptionDict(value="Autoflower", label="Autoflower"),
+                ],
+                custom_value=True,
+                mode=selector.SelectSelectorMode.DROPDOWN,
+            )
+        ),
+        vol.Optional("lineage"): selector.TextSelector(),
+        vol.Optional("sativa_percentage"): selector.NumberSelector(
+            selector.NumberSelectorConfig(
+                min=0,
+                max=100,
+                mode=selector.NumberSelectorMode.BOX,
+                unit_of_measurement="%",
+            )
+        ),
+        vol.Optional("indica_percentage"): selector.NumberSelector(
+            selector.NumberSelectorConfig(
+                min=0,
+                max=100,
+                mode=selector.NumberSelectorMode.BOX,
+                unit_of_measurement="%",
+            )
+        ),
+        vol.Optional("flower_days_min"): selector.NumberSelector(
+            selector.NumberSelectorConfig(min=0, mode=selector.NumberSelectorMode.BOX)
+        ),
+        vol.Optional("flower_days_max"): selector.NumberSelector(
+            selector.NumberSelectorConfig(min=0, mode=selector.NumberSelectorMode.BOX)
+        ),
+        vol.Optional("description"): selector.TextSelector(
+            selector.TextSelectorConfig(multiline=True)
+        ),
+    }
+)
 
 
 class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
@@ -298,24 +316,25 @@ class OptionsFlowHandler(OptionsFlow):
             A ConfigFlowResult directing to the next step.
         """
         if user_input is not None:
-            action = user_input.get("action")
-            if action == "manage_growspaces":
-                return await self.async_step_manage_growspaces(user_input)
-            if action == "manage_plants":
-                return await self.async_step_manage_plants()
-            if action == "configure_environment":
-                return await self.async_step_select_growspace_for_env()
-            if action == "configure_global":
-                return await self.async_step_configure_global()
-            if action == "configure_ai":
-                return await self.async_step_configure_ai()
-            if action == "manage_timed_notifications":
-                return await self.async_step_manage_timed_notifications()
-            if action == "manage_strain_library":
-                return await self.async_step_manage_strain_library()
-            if action == "configure_irrigation":
-                return await self.async_step_select_growspace_for_irrigation()
-            return self.async_create_entry(title="", data=user_input)
+            match user_input.get("action"):
+                case "manage_growspaces":
+                    return await self.async_step_manage_growspaces(user_input)
+                case "manage_plants":
+                    return await self.async_step_manage_plants()
+                case "configure_environment":
+                    return await self.async_step_select_growspace_for_env()
+                case "configure_global":
+                    return await self.async_step_configure_global()
+                case "configure_ai":
+                    return await self.async_step_configure_ai()
+                case "manage_timed_notifications":
+                    return await self.async_step_manage_timed_notifications()
+                case "manage_strain_library":
+                    return await self.async_step_manage_strain_library()
+                case "configure_irrigation":
+                    return await self.async_step_select_growspace_for_irrigation()
+                case _:
+                    return self.async_create_entry(title="", data=user_input)
 
         return self.async_show_form(
             step_id="init",
@@ -496,35 +515,48 @@ class OptionsFlowHandler(OptionsFlow):
             return self.async_abort(reason="setup_error")
 
         if user_input is not None:
-            action = user_input.get("action")
-
-            if action == "add":
-                return await self.async_step_add_growspace()
-            if action == "update" and user_input.get("growspace_id"):
-                self._selected_growspace_id = user_input["growspace_id"]
-                return await self.async_step_update_growspace()
-            if action == "remove" and user_input.get("growspace_id"):
-                try:
-                    await self.growspace_handler.async_remove_growspace(
-                        user_input["growspace_id"]
+            match user_input.get("action"):
+                case "add":
+                    return await self.async_step_add_growspace()
+                case "update" if user_input.get("growspace_id"):
+                    self._selected_growspace_id = user_input["growspace_id"]
+                    return await self.async_step_update_growspace()
+                case "remove" if user_input.get("growspace_id"):
+                    return await self._handle_remove_growspace(
+                        user_input["growspace_id"], coordinator
                     )
-                except Exception:
-                    _LOGGER.exception("Error removing growspace")
+                case "back":
                     return self.async_show_form(
-                        step_id="manage_growspaces",
-                        data_schema=self.growspace_handler.get_growspace_management_schema(
-                            coordinator
+                        step_id="init",
+                        data_schema=self.add_suggested_values_to_schema(
+                            self._get_main_menu_schema(), self._config_entry.options
                         ),
-                        errors={"base": "remove_failed"},
                     )
-            if action == "back":
-                return self.async_show_form(
-                    step_id="init",
-                    data_schema=self.add_suggested_values_to_schema(
-                        self._get_main_menu_schema(), self._config_entry.options
-                    ),
-                )
 
+        return self.async_show_form(
+            step_id="manage_growspaces",
+            data_schema=self.growspace_handler.get_growspace_management_schema(
+                coordinator
+            ),
+        )
+
+    async def _handle_remove_growspace(
+        self, growspace_id: str, coordinator: Any
+    ) -> ConfigFlowResult:
+        """Handle the removal of a growspace."""
+        try:
+            await self.growspace_handler.async_remove_growspace(growspace_id)
+        except Exception:
+            _LOGGER.exception("Error removing growspace")
+            return self.async_show_form(
+                step_id="manage_growspaces",
+                data_schema=self.growspace_handler.get_growspace_management_schema(
+                    coordinator
+                ),
+                errors={"base": "remove_failed"},
+            )
+
+        # Stay on the management screen after removal
         return self.async_show_form(
             step_id="manage_growspaces",
             data_schema=self.growspace_handler.get_growspace_management_schema(
@@ -652,7 +684,11 @@ class OptionsFlowHandler(OptionsFlow):
         if not growspace:
             return self.async_abort(reason="growspace_not_found")
 
-        growspace_options = growspace.environment_config or {}
+        # Prepare defaults using dataclass
+        if growspace.environment_config:
+            growspace_options = asdict(growspace.environment_config)
+        else:
+            growspace_options = {}
 
         _LOGGER.debug(
             "Loading environment config for growspace %s: %s",
@@ -661,8 +697,9 @@ class OptionsFlowHandler(OptionsFlow):
         )
 
         if user_input is not None:
-            self._env_config_step1 = self.env_handler.process_environment_input(
-                user_input, growspace_options
+            cleaned_input = self.env_handler.clean_input(user_input)
+            self._env_config_step1 = self.env_handler.merge_options(
+                growspace_options, cleaned_input
             )
 
             # Already filtered above, but keep this as a safety check
@@ -681,7 +718,7 @@ class OptionsFlowHandler(OptionsFlow):
             if self._env_config_step1.get("configure_advanced"):
                 return await self.async_step_configure_advanced_bayesian()
 
-            growspace.environment_config = env_config
+            growspace.environment_config = EnvironmentConfig.from_dict(env_config)
             await coordinator.async_save()
             await coordinator.async_refresh()
 
@@ -719,7 +756,9 @@ class OptionsFlowHandler(OptionsFlow):
 
         # Load existing thresholds or defaults
         current_thresholds = (
-            growspace.environment_config.get("dehumidifier_thresholds") or {}
+            growspace.environment_config.dehumidifier_thresholds
+            if growspace.environment_config
+            else {}
         )
 
         if user_input is not None:
@@ -744,7 +783,9 @@ class OptionsFlowHandler(OptionsFlow):
 
             # Save and finish
             env_config.pop("configure_advanced", None)
-            growspace.environment_config = env_config
+            # Save and finish
+            env_config.pop("configure_advanced", None)
+            growspace.environment_config = EnvironmentConfig.from_dict(env_config)
             await coordinator.async_save()
             await coordinator.async_refresh()
             return self.async_create_entry(title="", data={})
@@ -795,7 +836,7 @@ class OptionsFlowHandler(OptionsFlow):
                     description_placeholders={"growspace_name": growspace.name},
                 )
 
-            growspace.environment_config = env_config
+            growspace.environment_config = EnvironmentConfig.from_dict(env_config)
             await coordinator.async_save()
             await coordinator.async_refresh()
 
@@ -971,39 +1012,13 @@ class OptionsFlowHandler(OptionsFlow):
             return self.async_abort(reason="growspace_not_found")
 
         # Load ALL current irrigation options for the growspace from the Growspace object
-        irrigation_options = growspace.irrigation_config
+        irrigation_options = asdict(growspace.irrigation_config)
 
         if user_input is not None:
-            # 1. Update the Growspace object directly
-
-            # CRITICAL FIX: Only update the R/W fields (pump entities and durations)
-            # Filter out the read-only fields that were passed for display purposes
-            updated_settings = {
-                k: v
-                for k, v in user_input.items()
-                if k
-                not in [
-                    "current_irrigation_times",
-                    "current_drain_times",
-                    "growspace_id_read_only",
-                ]
-            }
-
-            # Explicitly handle pump entities to allow clearing them (setting to None)
-            # If they are missing from user_input (e.g. cleared in UI), set them to None
-            if "irrigation_pump_entity" not in updated_settings:
-                updated_settings["irrigation_pump_entity"] = None
-            if "drain_pump_entity" not in updated_settings:
-                updated_settings["drain_pump_entity"] = None
-
-            # Update the config in the growspace object
-            growspace.irrigation_config.update(updated_settings)
-
-            # Save via coordinator
-            await coordinator.async_save()
-
-            # Notify listeners (including IrrigationCoordinator)
-            coordinator.async_set_updated_data(coordinator.data)
+            # Delegate update logic to coordinator
+            await coordinator.async_update_irrigation_config(
+                self._selected_growspace_id, user_input
+            )
 
             # This triggers async_update_listener in __init__.py, reloading the IrrigationCoordinator
             return self.async_create_entry(
@@ -1300,72 +1315,7 @@ class OptionsFlowHandler(OptionsFlow):
 
     def _get_add_strain_schema(self) -> vol.Schema:
         """Build the schema for adding a new strain."""
-        return vol.Schema(
-            {
-                vol.Required("strain"): selector.TextSelector(),
-                vol.Optional("phenotype"): selector.TextSelector(),
-                vol.Optional("breeder"): selector.TextSelector(),
-                vol.Optional("type"): selector.SelectSelector(
-                    selector.SelectSelectorConfig(
-                        options=[
-                            selector.SelectOptionDict(value="Sativa", label="Sativa"),
-                            selector.SelectOptionDict(value="Indica", label="Indica"),
-                            selector.SelectOptionDict(value="Hybrid", label="Hybrid"),
-                            selector.SelectOptionDict(
-                                value="Ruderalis", label="Ruderalis"
-                            ),
-                        ],
-                        custom_value=True,
-                        mode=selector.SelectSelectorMode.DROPDOWN,
-                    )
-                ),
-                vol.Optional("sex"): selector.SelectSelector(
-                    selector.SelectSelectorConfig(
-                        options=[
-                            selector.SelectOptionDict(
-                                value="Feminized", label="Feminized"
-                            ),
-                            selector.SelectOptionDict(value="Regular", label="Regular"),
-                            selector.SelectOptionDict(
-                                value="Autoflower", label="Autoflower"
-                            ),
-                        ],
-                        custom_value=True,
-                        mode=selector.SelectSelectorMode.DROPDOWN,
-                    )
-                ),
-                vol.Optional("lineage"): selector.TextSelector(),
-                vol.Optional("sativa_percentage"): selector.NumberSelector(
-                    selector.NumberSelectorConfig(
-                        min=0,
-                        max=100,
-                        mode=selector.NumberSelectorMode.BOX,
-                        unit_of_measurement="%",
-                    )
-                ),
-                vol.Optional("indica_percentage"): selector.NumberSelector(
-                    selector.NumberSelectorConfig(
-                        min=0,
-                        max=100,
-                        mode=selector.NumberSelectorMode.BOX,
-                        unit_of_measurement="%",
-                    )
-                ),
-                vol.Optional("flower_days_min"): selector.NumberSelector(
-                    selector.NumberSelectorConfig(
-                        min=0, mode=selector.NumberSelectorMode.BOX
-                    )
-                ),
-                vol.Optional("flower_days_max"): selector.NumberSelector(
-                    selector.NumberSelectorConfig(
-                        min=0, mode=selector.NumberSelectorMode.BOX
-                    )
-                ),
-                vol.Optional("description"): selector.TextSelector(
-                    selector.TextSelectorConfig(multiline=True)
-                ),
-            }
-        )
+        return ADD_STRAIN_SCHEMA
 
     async def async_step_import_strain_library(self, user_input=None):
         """Import strain library from ZIP."""

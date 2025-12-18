@@ -42,10 +42,8 @@ ReasonList = list[Reason]
 
 def _determine_stage_key(state: EnvironmentState) -> str | None:
     """Determine the current grow stage key."""
-    if state.flower_days == 0 and state.veg_days < 14:
-        return "veg_early"
-    if state.flower_days == 0 and state.veg_days >= 14:
-        return "veg_late"
+    if state.flower_days == 0:
+        return "veg"
     if 0 < state.flower_days < 21:
         return "flower_early"
     if 21 <= state.flower_days < 42:
@@ -67,7 +65,9 @@ async def async_evaluate_stress_trend(
     observations: ObservationList = []
     reasons: ReasonList = []
     trend_states: dict[str, str] = {}
-    env_config = sensor_instance.env_config
+    # Handle both dict and EnvironmentConfig objects
+    raw_config = sensor_instance.env_config
+    env_config = raw_config if isinstance(raw_config, dict) else raw_config.to_dict()
 
     trend_states["temperature_trend"] = "stable"
     trend_states["humidity_trend"] = "stable"
@@ -223,7 +223,7 @@ async def async_evaluate_mold_risk_trend(
     observations: ObservationList = []
     reasons: ReasonList = []
     trend_states: dict[str, str] = {}
-    env_config = sensor_instance.env_config
+    env_config = sensor_instance.env_config.to_dict()
 
     trend_states["humidity_trend"] = "stable"
     trend_states["vpd_trend"] = "stable"
@@ -326,18 +326,13 @@ def evaluate_direct_humidity_stress(
         reasons.append((prob[0], f"Humidity Dry ({hum})"))
 
     # Stage-specific high humidity/out-of-range checks
-    veg_early = state.flower_days == 0 and state.veg_days < 14
-    veg_late = state.flower_days == 0 and state.veg_days >= 14
+    veg = state.flower_days == 0
     flower_early = 0 < state.flower_days < 42
     flower_late = state.flower_days >= 42
 
     # Use elif for mutually exclusive stage checks
-    if veg_early and hum > 80:
-        prob = env_config.get("prob_humidity_high_veg_early", (0.80, 0.20))
-        observations.append(prob)
-        reasons.append((prob[0], f"Humidity High ({hum})"))
-    elif veg_late and hum > 70:
-        prob = env_config.get("prob_humidity_high_veg_late", (0.85, 0.15))
+    if veg and hum > 80:
+        prob = env_config.get("prob_humidity_high_veg", (0.80, 0.20))
         observations.append(prob)
         reasons.append((prob[0], f"Humidity High ({hum})"))
     elif flower_early and (hum > 60 or hum < 45):
@@ -598,4 +593,62 @@ def evaluate_optimal_co2(
                 observations.append(prob_out_of_range)
                 reason_detail = "CO2 Low" if co2 < 400 else "CO2 High"
                 reasons.append((prob_out_of_range[1], f"{reason_detail} ({co2})"))
+    return observations, reasons
+
+
+def evaluate_active_desiccation(
+    state: EnvironmentState, env_config: dict
+) -> tuple[ObservationList, ReasonList]:
+    """Evaluate active desiccation (Dehumidifier ON + Low Humidity or High VPD)."""
+    observations: ObservationList = []
+    reasons: ReasonList = []
+
+    if state.dehumidifier_on:
+        # High probability of stress if dehumidifier is running while already dry
+        if state.humidity is not None and state.humidity < 40:
+            prob = (0.95, 0.05)
+            observations.append(prob)
+            reasons.append(
+                (prob[0], "Active Desiccation (Dehumidifier on with low humidity)")
+            )
+        elif state.vpd is not None and state.vpd > 1.6:
+            prob = (0.95, 0.05)
+            observations.append(prob)
+            reasons.append(
+                (prob[0], "Active Desiccation (Dehumidifier on with high VPD)")
+            )
+
+    return observations, reasons
+
+
+def evaluate_active_saturation(
+    state: EnvironmentState, env_config: dict
+) -> tuple[ObservationList, ReasonList]:
+    """Evaluate active saturation (Humidifier ON + High Humidity)."""
+    observations: ObservationList = []
+    reasons: ReasonList = []
+
+    # Check if humidifier is active (value > 0 implies it's running/consuming power)
+    if state.humidifier_value is not None and state.humidifier_value > 0:
+        if state.humidity is None:
+            return observations, reasons
+
+        hum = state.humidity
+        is_saturated = False
+
+        veg = state.flower_days == 0
+        flower = state.flower_days > 0
+
+        if veg and hum > 80:
+            is_saturated = True
+        elif flower and hum > 60:
+            is_saturated = True
+
+        if is_saturated:
+            prob = (0.85, 0.15)
+            observations.append(prob)
+            reasons.append(
+                (prob[0], "Active Saturation (Humidifier on with high humidity)")
+            )
+
     return observations, reasons

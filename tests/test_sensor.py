@@ -223,11 +223,10 @@ async def test_async_setup_entry_calculated_vpd(mock_coordinator) -> None:
     assert calc_vpd._temp_sensor == "sensor.temp"
     assert calc_vpd._humidity_sensor == "sensor.humidity"
 
-    # Check that environment_config was updated
-    assert (
-        mock_coordinator.growspaces["gs1"].environment_config["vpd_sensor"]
-        == "sensor.growspace_1_calculated_vpd"
-    )
+    assert calc_vpd._humidity_sensor == "sensor.humidity"
+
+    # Note: Config patching was moved to coordinator._ensure_calculated_sensors,
+    # so environment_config is NOT updated by async_setup_entry.
 
 
 @pytest.mark.asyncio
@@ -567,6 +566,10 @@ def test_growspace_overview_sensor_state_and_attributes(mock_coordinator) -> Non
         growspace_id="gs1",
         growspace=gs_mock,
     )
+    gs.platform = Mock()
+    gs.platform.platform_name = "growspace_manager"
+    gs.platform_data = gs.platform
+    gs.platform.domain = "sensor"
 
     # State should return number of plants
     assert gs.state == 1
@@ -605,6 +608,10 @@ def test_growspace_overview_sensor_environment_attributes(mock_coordinator) -> N
         growspace_id="gs1",
         growspace=gs_mock,
     )
+    gs.platform = Mock()
+    gs.platform.platform_name = "growspace_manager"
+    gs.platform_data = gs.platform
+    gs.platform.domain = "sensor"
 
     attrs = gs.extra_state_attributes
 
@@ -637,6 +644,10 @@ def test_growspace_overview_sensor_special_growspaces(
     """Test GrowspaceOverviewSensor for special growspaces."""
     special_growspace = Mock(id=special_id, name=special_name)
     sensor = GrowspaceOverviewSensor(mock_coordinator, special_id, special_growspace)
+    sensor.platform = Mock()
+    sensor.platform.platform_name = "growspace_manager"
+    sensor.platform_data = sensor.platform
+    sensor.platform.domain = "sensor"
     assert sensor.unique_id == f"{DOMAIN}_{special_id}"
 
 
@@ -651,6 +662,8 @@ def test_plant_entity_state_and_attributes(mock_coordinator) -> None:
     """
     plant = list(mock_coordinator.plants.values())[0]
     entity = PlantEntity(mock_coordinator, plant)
+    entity.platform = MagicMock()
+    entity.platform_data = entity.platform
     state = entity.state
     assert state in [
         "veg",
@@ -673,6 +686,8 @@ def test_plant_entity_missing_plant(mock_coordinator) -> None:
     """Test PlantEntity when the plant is missing from the coordinator."""
     plant = mock_coordinator.plants["p1"]
     entity = PlantEntity(mock_coordinator, plant)
+    entity.platform = MagicMock()
+    entity.platform_data = entity.platform
     mock_coordinator.plants = {}
     assert entity.state == "unknown"
     assert entity.extra_state_attributes == {}
@@ -772,6 +787,10 @@ def test_strain_library_sensor_state_and_attributes(mock_coordinator) -> None:
     }
 
     sensor = StrainLibrarySensor(mock_coordinator)
+    sensor.platform = Mock()
+    sensor.platform.platform_name = "growspace_manager"
+    sensor.platform_data = sensor.platform
+    sensor.platform.domain = "sensor"
 
     # State should be the number of unique strains
     assert sensor.state == 3
@@ -817,6 +836,8 @@ def test_growspace_list_sensor_state_and_attributes(mock_coordinator) -> None:
         mock_coordinator: The mock coordinator fixture.
     """
     sensor = GrowspaceListSensor(mock_coordinator)
+    sensor.platform = MagicMock()
+    sensor.platform_data = sensor.platform
     assert sensor.state == 1
     attrs = sensor.extra_state_attributes
     assert "growspaces" in attrs
@@ -898,6 +919,70 @@ def test_air_exchange_sensor(mock_coordinator) -> None:
     mock_coordinator.data = {"air_exchange_recommendations": {"gs1": "Open Window"}}
 
     sensor = AirExchangeSensor(mock_coordinator, "gs1")
+    sensor.platform = Mock(platform_name="growspace_manager", domain="sensor")
+    sensor.platform_data = sensor.platform
 
     assert sensor.state == "Open Window"
     assert sensor.unique_id == f"{DOMAIN}_gs1_air_exchange"
+
+
+@pytest.mark.asyncio
+async def test_async_setup_entry_recreates_calculated_vpd(mock_coordinator) -> None:
+    """Test that `async_setup_entry` recreates calculated VPD sensor even if configured."""
+    hass = MagicMock()
+    hass.config.config_dir = "/config"
+
+    # Growspace with temp/humidity and EXISTING calculated VPD sensor config
+    # This simulates the state after a restart where coordinator has persisted the ID
+    gs_mock = Mock(
+        id="gs1",
+        rows=2,
+        plants_per_row=2,
+        environment_config={
+            "temperature_sensor": "sensor.temp",
+            "humidity_sensor": "sensor.humidity",
+            "vpd_sensor": "sensor.growspace_1_calculated_vpd",  # Matches expected ID format
+            "lst_offset": -1.5,
+        },
+    )
+    gs_mock.name = "Growspace 1"
+    mock_coordinator.growspaces = {"gs1": gs_mock}
+    mock_coordinator.get_growspace_plants = Mock(return_value=[])
+    mock_coordinator.async_save = AsyncMock()
+    mock_coordinator.ensure_special_growspace = Mock(
+        side_effect=lambda x, y, rows, plants_per_row: x
+    )
+    mock_coordinator.async_set_updated_data = AsyncMock()
+    mock_coordinator.options = {}
+
+    added_entities = []
+
+    def async_add_entities(entities, update_before_add=False):
+        added_entities.extend(entities)
+
+    with (
+        patch(
+            "custom_components.growspace_manager.sensor.async_setup_trend_sensor",
+            new_callable=AsyncMock,
+        ),
+        patch(
+            "custom_components.growspace_manager.sensor.async_setup_statistics_sensor",
+            new_callable=AsyncMock,
+        ),
+    ):
+        await async_setup_entry(
+            hass,
+            Mock(
+                entry_id="entry_1",
+                options={},
+                runtime_data=mock_coordinator,
+            ),
+            async_add_entities,
+        )
+
+    # Check for CalculatedVpdSensor
+    # This SHOULD pass if we fix the bug, currently it should fail
+    calc_vpd = next(
+        (e for e in added_entities if isinstance(e, CalculatedVpdSensor)), None
+    )
+    assert calc_vpd is not None, "Calculated VPD sensor was not recreated on restart"

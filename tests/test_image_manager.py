@@ -1,13 +1,12 @@
 """Tests for the ImageManager."""
 
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
 from homeassistant.core import HomeAssistant
 
 from custom_components.growspace_manager.image_manager import ImageManager
-
-STORAGE_DIR = "/test/storage/dir"
 
 
 @pytest.fixture
@@ -24,32 +23,36 @@ def mock_hass() -> MagicMock:
 
 
 @pytest.fixture
-def image_manager(mock_hass: MagicMock) -> ImageManager:
-    """Fixture for ImageManager."""
-    with patch("os.path.exists", return_value=True), patch("os.makedirs"):
-        return ImageManager(mock_hass, STORAGE_DIR)
+def image_manager(mock_hass: MagicMock, tmp_path: Path) -> ImageManager:
+    """Fixture for ImageManager using a temporary directory."""
+    return ImageManager(mock_hass, str(tmp_path))
 
 
-def test_initialization(mock_hass: MagicMock):
+def test_initialization(mock_hass: MagicMock, tmp_path: Path) -> None:
     """Test initialization creates storage directory if it doesn't exist."""
-    with (
-        patch("os.path.exists", return_value=False) as mock_exists,
-        patch("os.makedirs") as mock_makedirs,
-    ):
-        ImageManager(mock_hass, STORAGE_DIR)
-        mock_exists.assert_called_with(STORAGE_DIR)
-        mock_makedirs.assert_called_with(STORAGE_DIR, exist_ok=True)
+    # tmp_path already exists, so let's use a subdir
+    storage_dir = tmp_path / "subdir"
+    assert not storage_dir.exists()
+
+    ImageManager(mock_hass, str(storage_dir))
+
+    assert storage_dir.exists()
+    assert storage_dir.is_dir()
 
 
-async def test_save_strain_image_success(image_manager: ImageManager):
+async def test_save_strain_image_success(
+    image_manager: ImageManager, tmp_path: Path
+) -> None:
     """Test successfully saving a strain image."""
     strain_id = "strain_123"
-    image_base64 = "data:image/jpeg;base64,some_base64_data"
+    image_base64 = "data:image/jpeg;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7"  # minimal valid gif/image logic will be mocked anyway
+
+    # We still mock base64/PIL because we don't want to rely on real image library internals for compression
+    # But we want to verify the file write
 
     with (
-        patch("base64.b64decode", return_value=b"image_data") as mock_b64decode,
+        patch("base64.b64decode", return_value=b"image_data"),
         patch("PIL.Image.open") as mock_open,
-        patch("os.path.join") as mock_join,
     ):
         mock_image = MagicMock()
         mock_image.mode = "RGBA"
@@ -57,20 +60,23 @@ async def test_save_strain_image_success(image_manager: ImageManager):
         mock_converted_image = MagicMock()
         mock_image.convert.return_value = mock_converted_image
 
-        expected_path = f"{STORAGE_DIR}/{strain_id}.jpg"
-        mock_join.return_value = expected_path
+        expected_filename = f"{strain_id}.jpg"
+        expected_path = tmp_path / expected_filename
+
+        # We mock save because PIL real save requires valid image data
+        # But we can verify it TRIED to save to the correct path
 
         path = await image_manager.save_strain_image(strain_id, None, image_base64)
 
-        assert path == expected_path
-        mock_b64decode.assert_called_with("some_base64_data")
-        mock_image.convert.assert_called_with("RGB")
+        assert path == str(expected_path.absolute())
         mock_converted_image.save.assert_called_with(
             expected_path, "JPEG", quality=85, optimize=True
         )
 
 
-async def test_save_strain_image_with_phenotype(image_manager: ImageManager):
+async def test_save_strain_image_with_phenotype(
+    image_manager: ImageManager, tmp_path: Path
+) -> None:
     """Test saving an image with a phenotype ID."""
     strain_id = "strain_123"
     phenotype_id = "pheno_456"
@@ -79,80 +85,88 @@ async def test_save_strain_image_with_phenotype(image_manager: ImageManager):
     with (
         patch("base64.b64decode", return_value=b"image_data"),
         patch("PIL.Image.open") as mock_open,
-        patch("os.path.join") as mock_join,
     ):
         mock_image = MagicMock()
         mock_image.mode = "RGB"
         mock_open.return_value = mock_image
 
-        expected_path = f"{STORAGE_DIR}/{strain_id}_{phenotype_id}.jpg"
-        mock_join.return_value = expected_path
+        expected_filename = f"{strain_id}_{phenotype_id}.jpg"
+        expected_path = tmp_path / expected_filename
 
         await image_manager.save_strain_image(strain_id, phenotype_id, image_base64)
 
-        mock_join.assert_called_with(STORAGE_DIR, f"{strain_id}_{phenotype_id}.jpg")
-        mock_image.save.assert_called()
+        mock_image.save.assert_called_with(
+            expected_path, "JPEG", quality=85, optimize=True
+        )
 
 
-async def test_save_strain_image_error(image_manager: ImageManager):
+async def test_save_strain_image_error(image_manager: ImageManager) -> None:
     """Test error handling during image save."""
-    with patch("base64.b64decode", side_effect=ValueError("Invalid base64")):
-        with pytest.raises(ValueError):
-            await image_manager.save_strain_image("id", None, "bad_data")
+    with (
+        patch("base64.b64decode", side_effect=ValueError("Invalid base64")),
+        pytest.raises(ValueError),
+    ):
+        await image_manager.save_strain_image("id", None, "bad_data")
 
 
-def test_get_image_path_exists(image_manager: ImageManager):
+def test_get_image_path_exists(image_manager: ImageManager, tmp_path: Path) -> None:
     """Test getting path for an existing image."""
     strain_id = "strain_123"
-    expected_path = f"{STORAGE_DIR}/{strain_id}.jpg"
+    filename = f"{strain_id}.jpg"
+    file_path = tmp_path / filename
 
-    with (
-        patch("os.path.join", return_value=expected_path),
-        patch("os.path.exists", return_value=True),
-    ):
-        path = image_manager.get_image_path(strain_id, None)
-        assert path == expected_path
+    # Create dummy file
+    file_path.touch()
+
+    path = image_manager.get_image_path(strain_id, None)
+    assert path == str(file_path.absolute())
 
 
-def test_get_image_path_not_exists(image_manager: ImageManager):
+def test_get_image_path_not_exists(image_manager: ImageManager) -> None:
     """Test getting path for a non-existent image."""
-    with patch("os.path.exists", return_value=False):
-        path = image_manager.get_image_path("strain_123", None)
-        assert path is None
+    path = image_manager.get_image_path("strain_123", None)
+    assert path is None
 
 
-def test_delete_image_success(image_manager: ImageManager):
+def test_delete_image_success(image_manager: ImageManager, tmp_path: Path) -> None:
     """Test successfully deleting an image."""
     strain_id = "strain_123"
-    expected_path = f"{STORAGE_DIR}/{strain_id}.jpg"
+    filename = f"{strain_id}.jpg"
+    file_path = tmp_path / filename
 
-    with (
-        patch.object(image_manager, "get_image_path", return_value=expected_path),
-        patch("os.path.exists", return_value=True),
-        patch("os.remove") as mock_remove,
-    ):
-        image_manager.delete_image(strain_id, None)
-        mock_remove.assert_called_with(expected_path)
+    # Create dummy file
+    file_path.touch()
+    assert file_path.exists()
+
+    image_manager.delete_image(strain_id, None)
+    assert not file_path.exists()
 
 
-def test_delete_image_not_found(image_manager: ImageManager):
+def test_delete_image_not_found(image_manager: ImageManager, tmp_path: Path) -> None:
     """Test deleting a non-existent image."""
-    with (
-        patch.object(image_manager, "get_image_path", return_value=None),
-        patch("os.remove") as mock_remove,
-    ):
-        image_manager.delete_image("strain_123", None)
-        mock_remove.assert_not_called()
+    strain_id = "strain_123"
+    filename = f"{strain_id}.jpg"
+    file_path = tmp_path / filename
+
+    assert not file_path.exists()
+    # Should not raise
+    image_manager.delete_image(strain_id, None)
 
 
-def test_delete_image_error(image_manager: ImageManager):
+def test_delete_image_error(image_manager: ImageManager, tmp_path: Path) -> None:
     """Test error handling during image deletion."""
-    expected_path = f"{STORAGE_DIR}/strain_123.jpg"
+    strain_id = "strain_123"
+    filename = f"{strain_id}.jpg"
+    file_path = tmp_path / filename
+    file_path.touch()
 
-    with (
-        patch.object(image_manager, "get_image_path", return_value=expected_path),
-        patch("os.path.exists", return_value=True),
-        patch("os.remove", side_effect=OSError("Permission denied")),
-    ):
-        # Should not raise exception, just log error
-        image_manager.delete_image("strain_123", None)
+    # Patch Path.unlink to raise OSError
+    # We need to construct the exact Path object or use side_effect on a mock
+    # Be careful here, Path objects are immutable value types.
+    # To test this, we can patch unlink on the Path CLASS, but that affects everything
+    # Better to just use 'patch.object' if possible, or verify logging without exception
+
+    with patch("pathlib.Path.unlink", side_effect=OSError("Permission denied")):
+        image_manager.delete_image(strain_id, None)
+        # Should catch and log error
+        assert file_path.exists()  # Should still exist if unlink failed

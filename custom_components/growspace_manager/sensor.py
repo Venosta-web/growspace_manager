@@ -9,12 +9,13 @@ from __future__ import annotations
 
 # Standard library
 import logging
-from typing import Any
+from typing import Any, override
 
 # Third-party / external
 # Home Assistant
 from homeassistant.components.sensor import SensorEntity, SensorStateClass
 from homeassistant.config_entries import ConfigEntry
+from homeassistant.const import EntityCategory
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.device_registry import DeviceInfo
@@ -22,9 +23,24 @@ from homeassistant.helpers.entity import Entity
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.event import async_track_state_change_event
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
-from homeassistant.util import slugify
 
-from .const import DOMAIN
+from .const import (
+    ATTR_COL,
+    ATTR_GROWSPACE_ID,
+    ATTR_PHENOTYPE,
+    ATTR_PLANT_ID,
+    ATTR_ROW,
+    ATTR_STAGE,
+    ATTR_STRAIN,
+    CONF_HUMIDITY_SENSOR,
+    CONF_TEMP_SENSOR,
+    CONF_VPD_SENSOR,
+    DOMAIN,
+    METRIC_HUMIDITY,
+    METRIC_TEMPERATURE,
+    METRIC_VPD,
+    PLANT_STAGES,
+)
 
 # Local / relative imports
 from .coordinator import GrowspaceCoordinator
@@ -33,7 +49,8 @@ from .models import Growspace, Plant
 from .utils import (
     VPDCalculator,
     calculate_plant_stage,
-    days_to_week,
+    generate_growspace_overview_unique_id,
+    generate_vpd_sensor_unique_id,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -55,31 +72,50 @@ async def _async_create_derivative_sensors(
         config_entry: The configuration entry.
         growspace: The Growspace object for which to create sensors.
     """
-    if growspace.environment_config:
-        created_entity_ids = config_entry.runtime_data.created_entity_ids
-        for sensor_type in ["temperature", "humidity", "vpd"]:
-            source_sensor = growspace.environment_config.get(f"{sensor_type}_sensor")
-            if source_sensor:
-                trend_unique_id = await async_setup_trend_sensor(
-                    hass, source_sensor, growspace.id, growspace.name, sensor_type
-                )
-                if (
-                    trend_unique_id
-                    and ("binary_sensor", "trend", trend_unique_id)
-                    not in created_entity_ids
-                ):
-                    created_entity_ids.append(
-                        ("binary_sensor", "trend", trend_unique_id)
-                    )
-                stats_unique_id = await async_setup_statistics_sensor(
-                    hass, source_sensor, growspace.id, growspace.name, sensor_type
-                )
-                if (
-                    stats_unique_id
-                    and ("sensor", "statistics", stats_unique_id)
-                    not in created_entity_ids
-                ):
-                    created_entity_ids.append(("sensor", "statistics", stats_unique_id))
+    if not growspace.environment_config:
+        return
+
+    created_entity_ids = config_entry.runtime_data.created_entity_ids
+
+    async def _create_and_track(sensor_cls_setup, platform, domain, s_type, s_source):
+        unique_id = await sensor_cls_setup(
+            hass, s_source, growspace.id, growspace.name, s_type
+        )
+        if unique_id:
+            entity_key = (platform, domain, unique_id)
+            if entity_key not in created_entity_ids:
+                created_entity_ids.append(entity_key)
+
+    metric_map = {
+        METRIC_TEMPERATURE: CONF_TEMP_SENSOR,
+        METRIC_HUMIDITY: CONF_HUMIDITY_SENSOR,
+        METRIC_VPD: CONF_VPD_SENSOR,
+    }
+
+    for sensor_type, conf_key in metric_map.items():
+        # Support both dict (legacy/mock) and dataclass
+        if isinstance(growspace.environment_config, dict):
+            source_sensor = growspace.environment_config.get(conf_key)
+        else:
+            source_sensor = getattr(growspace.environment_config, conf_key, None)
+
+        if not source_sensor:
+            continue
+
+        await _create_and_track(
+            async_setup_trend_sensor,
+            "binary_sensor",
+            "trend",
+            sensor_type,
+            source_sensor,
+        )
+        await _create_and_track(
+            async_setup_statistics_sensor,
+            "sensor",
+            "statistics",
+            sensor_type,
+            source_sensor,
+        )
 
 
 async def async_setup_entry(
@@ -114,9 +150,6 @@ async def async_setup_entry(
             "Added %d initial entities (growspaces/plants/strain library)",
             len(initial_entities),
         )
-
-    # Ensure dry and cure growspaces exist after coordinator setup
-    await ensure_special_growspaces(coordinator)
 
     # Create global VPD sensors
     global_entities = []
@@ -283,27 +316,32 @@ def _check_calculated_vpd_sensor(
     growspace: Growspace,
 ) -> CalculatedVpdSensor | None:
     """Create calculated VPD sensor if needed."""
-    env_config = growspace.environment_config or {}
-    temp_sensor = env_config.get("temperature_sensor")
-    humidity_sensor = env_config.get("humidity_sensor")
-    vpd_sensor = env_config.get("vpd_sensor")
+    env_config = growspace.environment_config
+    if not env_config:
+        return None
 
-    calc_name = f"{growspace.name} Calculated VPD"
-    expected_generated_id = f"sensor.{slugify(calc_name)}"
-    uuid_generated_id = f"sensor.{growspace.id}_calculated_vpd"
+    def get_val(key):
+        if isinstance(env_config, dict):
+            return env_config.get(key)
+        return getattr(env_config, key, None)
+
+    temp_sensor = get_val(CONF_TEMP_SENSOR)
+    humidity_sensor = get_val(CONF_HUMIDITY_SENSOR)
+    vpd_sensor = get_val(CONF_VPD_SENSOR)
 
     # Create calculated VPD if temp and humidity exist but no VPD sensor
-    # OR if the set sensor is the one we generated
-    if (
-        temp_sensor
-        and humidity_sensor
-        and (
-            not vpd_sensor
-            or vpd_sensor == expected_generated_id
-            or vpd_sensor == uuid_generated_id
-        )
-    ):
-        lst_offset = env_config.get("lst_offset", -2.0)
+    # OR if the configured sensor appears to be one we generated (contains calculated_vpd)
+    should_create = False
+    if temp_sensor and humidity_sensor:
+        if not vpd_sensor:
+            should_create = True
+        elif "calculated_vpd" in vpd_sensor:
+            should_create = True
+
+    if should_create:
+        lst_offset = get_val("lst_offset")
+        if lst_offset is None:
+            lst_offset = -2.0
         calc_vpd_sensor = CalculatedVpdSensor(
             coordinator,
             growspace.id,
@@ -313,44 +351,50 @@ def _check_calculated_vpd_sensor(
             lst_offset,
         )
 
-        if not vpd_sensor or vpd_sensor == uuid_generated_id:
-            env_config["vpd_sensor"] = expected_generated_id
-            growspace.environment_config = env_config
-            _LOGGER.info(
-                "Created and linked calculated VPD sensor for %s", growspace.name
-            )
-
         return calc_vpd_sensor
     return None
 
 
-async def ensure_special_growspaces(coordinator: GrowspaceCoordinator) -> None:
-    """Ensure special growspaces exist."""
-    dry_id = coordinator.ensure_special_growspace(
-        "dry", "dry", rows=3, plants_per_row=3
-    )
-    cure_id = coordinator.ensure_special_growspace(
-        "cure", "cure", rows=3, plants_per_row=3
-    )
-    clone_id = coordinator.ensure_special_growspace(
-        "clone", "clone", rows=3, plants_per_row=3
-    )
-    mother_id = coordinator.ensure_special_growspace(
-        "mother", "mother", rows=3, plants_per_row=3
-    )
+class BaseVpdSensor(SensorEntity):
+    """Base class for VPD sensors providing common functionality."""
 
-    await coordinator.async_save()
+    _attr_state_class = SensorStateClass.MEASUREMENT
+    _attr_native_unit_of_measurement = "kPa"
 
-    _LOGGER.info(
-        "Ensured special growspaces exist: dry=%s, cure=%s clone=%s mother=%s",
-        dry_id,
-        cure_id,
-        clone_id,
-        mother_id,
-    )
+    @override
+    async def async_added_to_hass(self) -> None:
+        """Register callbacks when the entity is added to Home Assistant."""
+        if self.entities_to_track:
+            self.async_on_remove(
+                async_track_state_change_event(
+                    self.hass, self.entities_to_track, self._handle_source_update
+                )
+            )
+
+    async def _handle_source_update(self, event) -> None:
+        """Handle updates from source sensors."""
+        self.async_write_ha_state()
+
+    @property
+    def entities_to_track(self) -> list[str]:
+        """Return a list of entity IDs to track."""
+        raise NotImplementedError
+
+    def _get_float_state(self, entity_id: str | None) -> float | None:
+        """Helper to safely get float state of an entity."""
+        if not entity_id:
+            return None
+
+        state = self.hass.states.get(entity_id)
+        if state and state.state not in ["unknown", "unavailable"]:
+            try:
+                return float(state.state)
+            except (ValueError, TypeError):
+                pass
+        return None
 
 
-class VpdSensor(SensorEntity):
+class VpdSensor(BaseVpdSensor):
     """A sensor that calculates Vapor Pressure Deficit (VPD).
 
     This sensor can calculate VPD from either a weather entity (for outside
@@ -367,17 +411,7 @@ class VpdSensor(SensorEntity):
         temp_sensor: str | None,
         humidity_sensor: str | None,
     ) -> None:
-        """Initialize the VPD sensor.
-
-        Args:
-            coordinator: The data update coordinator (kept for consistency).
-            location_id: A unique identifier for the location (e.g., 'outside').
-            name: The display name for the sensor.
-            weather_entity: The entity ID of a weather entity (optional).
-            temp_sensor: The entity ID of a temperature sensor (optional).
-            humidity_sensor: The entity ID of a humidity sensor (optional).
-        """
-        # We handle coordinator manually if needed, or just use it for initial context
+        """Initialize the VPD sensor."""
         self._coordinator = coordinator
         self._location_id = location_id
         self._attr_name = name
@@ -385,33 +419,23 @@ class VpdSensor(SensorEntity):
         self._weather_entity = weather_entity
         self._temp_sensor = temp_sensor
         self._humidity_sensor = humidity_sensor
-        self._attr_state_class = SensorStateClass.MEASUREMENT
-        self._attr_native_unit_of_measurement = "kPa"
-        self._attr_icon = "mdi:cloud-check-variant"
-
-    async def async_added_to_hass(self) -> None:
-        """Register callbacks when the entity is added to Home Assistant."""
-        # Listen for state changes on source entities
-        entities_to_track = []
-        if self._weather_entity:
-            entities_to_track.append(self._weather_entity)
-        if self._temp_sensor:
-            entities_to_track.append(self._temp_sensor)
-        if self._humidity_sensor:
-            entities_to_track.append(self._humidity_sensor)
-
-        if entities_to_track:
-            self.async_on_remove(
-                async_track_state_change_event(
-                    self.hass, entities_to_track, self._handle_source_update
-                )
-            )
-
-    async def _handle_source_update(self, event) -> None:
-        """Handle updates from source sensors."""
-        self.async_write_ha_state()
+        self._attr_translation_key = "vpd"
 
     @property
+    @override
+    def entities_to_track(self) -> list[str]:
+        """Return a list of entity IDs to track."""
+        tracking = []
+        if self._weather_entity:
+            tracking.append(self._weather_entity)
+        if self._temp_sensor:
+            tracking.append(self._temp_sensor)
+        if self._humidity_sensor:
+            tracking.append(self._humidity_sensor)
+        return tracking
+
+    @property
+    @override
     def native_value(self) -> float | None:
         """Return the calculated VPD value in kPa."""
         temp = None
@@ -423,28 +447,15 @@ class VpdSensor(SensorEntity):
                 temp = weather_state.attributes.get("temperature")
                 humidity = weather_state.attributes.get("humidity")
         elif self._temp_sensor and self._humidity_sensor:
-            temp_state = self.hass.states.get(self._temp_sensor)
-            if temp_state and temp_state.state not in ["unknown", "unavailable"]:
-                try:
-                    temp = float(temp_state.state)
-                except (ValueError, TypeError):
-                    temp = None
-            humidity_state = self.hass.states.get(self._humidity_sensor)
-            if humidity_state and humidity_state.state not in [
-                "unknown",
-                "unavailable",
-            ]:
-                try:
-                    humidity = float(humidity_state.state)
-                except (ValueError, TypeError):
-                    humidity = None
+            temp = self._get_float_state(self._temp_sensor)
+            humidity = self._get_float_state(self._humidity_sensor)
 
         if temp is not None and humidity is not None:
             return VPDCalculator.calculate_vpd(temp, humidity)
         return None
 
 
-class CalculatedVpdSensor(SensorEntity):
+class CalculatedVpdSensor(BaseVpdSensor):
     """A sensor that calculates VPD from temperature and humidity with LST offset.
 
     This sensor is automatically created when a growspace has temperature and
@@ -461,27 +472,15 @@ class CalculatedVpdSensor(SensorEntity):
         humidity_sensor: str,
         lst_offset: float = -2.0,
     ) -> None:
-        """Initialize the calculated VPD sensor.
-
-        Args:
-            coordinator: The data update coordinator.
-            growspace_id: The ID of the growspace.
-            growspace_name: The name of the growspace.
-            temp_sensor: The entity ID of the temperature sensor.
-            humidity_sensor: The entity ID of the humidity sensor.
-            lst_offset: The leaf surface temperature offset in °C (default: -2.0).
-        """
-        # We manually store coordinator if needed, but depend on self.hass for state
+        """Initialize the calculated VPD sensor."""
         self._coordinator = coordinator
         self._growspace_id = growspace_id
         self._attr_name = f"{growspace_name} Calculated VPD"
-        self._attr_unique_id = f"{DOMAIN}_{growspace_id}_calculated_vpd"
+        self._attr_unique_id = generate_vpd_sensor_unique_id(growspace_id)
         self._temp_sensor = temp_sensor
         self._humidity_sensor = humidity_sensor
         self._lst_offset = lst_offset
-        self._attr_state_class = SensorStateClass.MEASUREMENT
-        self._attr_native_unit_of_measurement = "kPa"
-        self._attr_icon = "mdi:cloud-percent"
+        self._attr_translation_key = "calculated_vpd"
 
         self._attr_device_info = DeviceInfo(
             identifiers={(DOMAIN, growspace_id)},
@@ -490,39 +489,18 @@ class CalculatedVpdSensor(SensorEntity):
             manufacturer="Growspace Manager",
         )
 
-    async def async_added_to_hass(self) -> None:
-        """Register callbacks when the entity is added to Home Assistant."""
-        # Listen for state changes on source entities
-        entities_to_track = [self._temp_sensor, self._humidity_sensor]
-        self.async_on_remove(
-            async_track_state_change_event(
-                self.hass, entities_to_track, self._handle_source_update
-            )
-        )
-
-    async def _handle_source_update(self, event) -> None:
-        """Handle updates from source sensors."""
-        self.async_write_ha_state()
+    @property
+    @override
+    def entities_to_track(self) -> list[str]:
+        """Return a list of entity IDs to track."""
+        return [self._temp_sensor, self._humidity_sensor]
 
     @property
+    @override
     def native_value(self) -> float | None:
         """Return the calculated VPD value in kPa."""
-        temp = None
-        humidity = None
-
-        temp_state = self.hass.states.get(self._temp_sensor)
-        if temp_state and temp_state.state not in ["unknown", "unavailable"]:
-            try:
-                temp = float(temp_state.state)
-            except (ValueError, TypeError):
-                temp = None
-
-        humidity_state = self.hass.states.get(self._humidity_sensor)
-        if humidity_state and humidity_state.state not in ["unknown", "unavailable"]:
-            try:
-                humidity = float(humidity_state.state)
-            except (ValueError, TypeError):
-                humidity = None
+        temp = self._get_float_state(self._temp_sensor)
+        humidity = self._get_float_state(self._humidity_sensor)
 
         if temp is not None and humidity is not None:
             return VPDCalculator.calculate_vpd_with_lst_offset(
@@ -531,11 +509,12 @@ class CalculatedVpdSensor(SensorEntity):
         return None
 
     @property
+    @override
     def extra_state_attributes(self) -> dict[str, Any]:
         """Return additional state attributes."""
         return {
-            "temperature_sensor": self._temp_sensor,
-            "humidity_sensor": self._humidity_sensor,
+            CONF_TEMP_SENSOR: self._temp_sensor,
+            CONF_HUMIDITY_SENSOR: self._humidity_sensor,
             "lst_offset": self._lst_offset,
             "calculation_method": "Calculated from temperature and humidity",
         }
@@ -549,6 +528,10 @@ class AirExchangeSensor(CoordinatorEntity[GrowspaceCoordinator], SensorEntity):
     alleviate environmental stress.
     """
 
+    _attr_has_entity_name = True
+    _attr_translation_key = "air_exchange"
+    _attr_native_unit_of_measurement = None
+
     def __init__(self, coordinator: GrowspaceCoordinator, growspace_id: str) -> None:
         """Initialize the air exchange sensor.
 
@@ -559,9 +542,7 @@ class AirExchangeSensor(CoordinatorEntity[GrowspaceCoordinator], SensorEntity):
         super().__init__(coordinator)
         self.growspace_id = growspace_id
         self.growspace = coordinator.growspaces[growspace_id]
-        self._attr_name = f"{self.growspace.name} Air Exchange"
         self._attr_unique_id = f"{DOMAIN}_{self.growspace_id}_air_exchange"
-        self._attr_icon = "mdi:air-filter"
 
         self._attr_device_info = DeviceInfo(
             identifiers={(DOMAIN, self.growspace_id)},
@@ -571,6 +552,7 @@ class AirExchangeSensor(CoordinatorEntity[GrowspaceCoordinator], SensorEntity):
         )
 
     @property
+    @override
     def native_value(self) -> str:
         """Return the current recommended air exchange action."""
         # The actual state is calculated in the coordinator and stored.
@@ -589,6 +571,10 @@ class GrowspaceOverviewSensor(CoordinatorEntity[GrowspaceCoordinator], SensorEnt
     entity for the companion Lovelace card.
     """
 
+    _attr_has_entity_name = True
+    _attr_translation_key = "overview"
+    _attr_native_unit_of_measurement = None
+
     def __init__(
         self, coordinator: GrowspaceCoordinator, growspace_id: str, growspace: Growspace
     ) -> None:
@@ -603,8 +589,8 @@ class GrowspaceOverviewSensor(CoordinatorEntity[GrowspaceCoordinator], SensorEnt
         self.growspace_id = growspace_id
         # We don't store self.growspace anymore to ensure we always get the latest
         # object from the coordinator.
-        self._attr_name = growspace.name
-        self._attr_unique_id = f"{DOMAIN}_{growspace_id}"
+        # self._attr_name removed to rely on translation_key
+        self._attr_unique_id = generate_growspace_overview_unique_id(growspace_id)
 
         # Set up device info
         self._attr_device_info = DeviceInfo(
@@ -615,12 +601,14 @@ class GrowspaceOverviewSensor(CoordinatorEntity[GrowspaceCoordinator], SensorEnt
         )
 
     @property
+    @override
     def native_value(self) -> int:
         """Return the number of plants in the growspace."""
         plants = self.coordinator.get_growspace_plants(self.growspace_id)
         return len(plants)
 
     @property
+    @override
     def extra_state_attributes(self) -> dict[str, Any]:
         """Return the detailed state attributes for the growspace."""
         # Fetch pre-calculated serialization from coordinator
@@ -660,7 +648,8 @@ class PlantEntity(SensorEntity):
         self._plant = plant
         self._attr_unique_id = f"{DOMAIN}_{plant.plant_id}"
         self._attr_name = f"{plant.strain} ({plant.row},{plant.col})"
-        self._attr_icon = "mdi:cannabis"
+        self._attr_translation_key = "plant"
+        self._attr_native_unit_of_measurement = None
 
         # Set up device info - plant belongs to growspace device
         growspace_id = plant.growspace_id
@@ -673,6 +662,7 @@ class PlantEntity(SensorEntity):
         )
 
     @property
+    @override
     def native_value(self) -> str:
         """Return the current growth stage of the plant."""
         # Get updated plant data
@@ -688,6 +678,7 @@ class PlantEntity(SensorEntity):
         return stage
 
     @property
+    @override
     def extra_state_attributes(self) -> dict[str, Any]:
         """Return the detailed state attributes for the plant."""
         plant = self.coordinator.plants.get(self._plant.plant_id)
@@ -695,51 +686,34 @@ class PlantEntity(SensorEntity):
             return {}
 
         stage = calculate_plant_stage(plant)
-        seedling_days = self.coordinator.serializer.calculate_days_in_stage(
-            plant, "seedling"
-        )
-        mother_days = self.coordinator.serializer.calculate_days_in_stage(
-            plant, "mother"
-        )
-        clone_days = self.coordinator.serializer.calculate_days_in_stage(plant, "clone")
-        veg_days = self.coordinator.serializer.calculate_days_in_stage(plant, "veg")
-        flower_days = self.coordinator.serializer.calculate_days_in_stage(
-            plant, "flower"
-        )
-        dry_days = self.coordinator.serializer.calculate_days_in_stage(plant, "dry")
-        cure_days = self.coordinator.serializer.calculate_days_in_stage(plant, "cure")
-
-        # Calculate weeks
-        veg_week = days_to_week(veg_days or 0)
-        flower_week = days_to_week(flower_days or 0)
-
-        return {
-            "stage": stage,
-            "growspace_id": plant.growspace_id,
-            "plant_id": plant.plant_id,
-            "strain": plant.strain,
-            "phenotype": plant.phenotype,
-            "row": plant.row,
-            "col": plant.col,
+        attributes = {
+            ATTR_STAGE: stage,
+            ATTR_GROWSPACE_ID: plant.growspace_id,
+            ATTR_PLANT_ID: plant.plant_id,
+            ATTR_STRAIN: plant.strain,
+            ATTR_PHENOTYPE: plant.phenotype,
+            ATTR_ROW: plant.row,
+            ATTR_COL: plant.col,
             "position": f"({int(plant.row)},{int(plant.col)})",
-            "seedling_start": plant.seedling_start,
-            "mother_start": plant.mother_start,
-            "clone_start": plant.clone_start,
-            "veg_start": plant.veg_start,
-            "flower_start": plant.flower_start,
-            "dry_start": plant.dry_start,
-            "cure_start": plant.cure_start,
-            "seedling_days": seedling_days or 0,
-            "mother_days": mother_days or 0,
-            "clone_days": clone_days or 0,
-            "veg_days": veg_days or 0,
-            "flower_days": flower_days or 0,
-            "dry_days": dry_days or 0,
-            "cure_days": cure_days or 0,
-            "veg_week": veg_week,
-            "flower_week": flower_week,
         }
 
+        # Dynamic Stage Attributes
+        for stage_name in PLANT_STAGES:
+            # Start dates
+            start_key = f"{stage_name}_start"
+            if hasattr(plant, start_key):
+                attributes[start_key] = getattr(plant, start_key)
+
+            # Days in stage
+            attributes[f"{stage_name}_days"] = plant.get_days_in_stage(stage_name)
+
+        # Calculate weeks using domain logic
+        attributes["veg_week"] = plant.get_week_in_stage("veg")
+        attributes["flower_week"] = plant.get_week_in_stage("flower")
+
+        return attributes
+
+    @override
     async def async_added_to_hass(self) -> None:
         """Register callbacks when the entity is added to Home Assistant."""
         self.coordinator.async_add_listener(self.async_write_ha_state)
@@ -754,19 +728,24 @@ class StrainLibrarySensor(CoordinatorEntity[GrowspaceCoordinator], SensorEntity)
     based on recorded harvest data.
     """
 
+    _attr_has_entity_name = True
+    _attr_translation_key = "strain_library"
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+    _attr_native_unit_of_measurement = None
+
     def __init__(self, coordinator: GrowspaceCoordinator) -> None:
         """Initialize the Strain Library sensor."""
         super().__init__(coordinator)
-        self._attr_name = "Growspace Strain Library"
         self._attr_unique_id = f"{DOMAIN}_strain_library"
-        self._attr_icon = "mdi:leaf"
 
     @property
+    @override
     def native_value(self) -> int:
         """Return the number of unique strains in the library."""
         return len(self.coordinator.strain_library.get_all())
 
     @property
+    @override
     def extra_state_attributes(self) -> dict[str, Any]:
         """Return the calculated strain analytics as state attributes."""
         # Use the cached analytics from StrainLibrary to avoid heavy computation on the main loop.
@@ -778,15 +757,17 @@ class GrowspaceListSensor(SensorEntity):
 
     The state of this sensor is the total number of growspaces. Its attributes
     contain a dictionary mapping growspace IDs to their names, which is useful
-    for populating dynamic dropdowns in the UI.
     """
+
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+    _attr_native_unit_of_measurement = None
 
     def __init__(self, coordinator: GrowspaceCoordinator) -> None:
         """Initialize the growspace list sensor."""
         self.coordinator = coordinator
         self._attr_name = "Growspaces List"
         self._attr_unique_id = f"{DOMAIN}_growspaces_list"
-        self._attr_icon = "mdi:home-group"
+        self._attr_translation_key = "growspaces_list"
         self._update_growspaces()
 
     def _update_growspaces(self):
@@ -794,12 +775,14 @@ class GrowspaceListSensor(SensorEntity):
         self._growspaces = self.coordinator.get_growspace_options()
 
     @property
+    @override
     def native_value(self):
         """Return the total number of growspaces."""
         self._update_growspaces()
         return len(self._growspaces)
 
     @property
+    @override
     def extra_state_attributes(self):
         """Return the list of growspaces as a state attribute."""
         return {"growspaces": self._growspaces}

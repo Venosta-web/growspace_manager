@@ -18,6 +18,10 @@ INTENT_ASK_GROW_ADVICE = "GrowspaceManagerAskAdvice"
 
 async def async_setup_intents(hass: HomeAssistant) -> None:
     """Set up the Growspace Manager intents."""
+    # Skip if intent is already registered (e.g., during reload)
+    if hass.data.get(f"{DOMAIN}_intent_registered"):
+        return
+    hass.data[f"{DOMAIN}_intent_registered"] = True
     intent.async_register(hass, AskGrowAdviceIntent(hass))
 
 

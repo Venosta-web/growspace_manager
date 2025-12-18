@@ -5,7 +5,11 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from homeassistant.core import HomeAssistant
 
-from custom_components.growspace_manager.models import Growspace, Plant
+from custom_components.growspace_manager.models import (
+    EnvironmentConfig,
+    Growspace,
+    Plant,
+)
 from custom_components.growspace_manager.storage_manager import StorageManager
 
 GROWSPACE_ID = "test_growspace"
@@ -151,13 +155,13 @@ async def test_async_load_with_options(
     }
     mock_store.async_load.return_value = data
 
-    mock_coordinator.options = {GROWSPACE_ID: {"temp_min": 20}}
+    mock_coordinator.options = {GROWSPACE_ID: {"minimum_source_air_temperature": 20}}
 
     await storage_manager.async_load()
 
-    assert mock_coordinator.growspaces[GROWSPACE_ID].environment_config == {
-        "temp_min": 20
-    }
+    assert mock_coordinator.growspaces[
+        GROWSPACE_ID
+    ].environment_config == EnvironmentConfig(minimum_source_air_temperature=20)
 
 
 async def test_async_load_corrupted_data(

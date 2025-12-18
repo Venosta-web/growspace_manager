@@ -5,17 +5,22 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from homeassistant.const import STATE_ON, STATE_UNAVAILABLE, STATE_UNKNOWN
+from homeassistant.const import STATE_UNAVAILABLE, STATE_UNKNOWN
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import entity_registry as er
 
-from .bayesian_data import VPD_STRESS_THRESHOLDS
 from .const import (
-    DEFAULT_FLOWER_EARLY_DAYS,
-    DEFAULT_VEG_EARLY_DAYS,
+    CONF_CIRCULATION_FAN_ENTITY,
+    CONF_CO2_SENSOR,
+    CONF_DEHUMIDIFIER_ENTITY,
+    CONF_HUMIDITY_SENSOR,
+    CONF_LIGHT_SENSOR,
+    CONF_TEMP_SENSOR,
+    CONF_VPD_SENSOR,
     DOMAIN,
     PlantStage,
 )
+from .environment_analyzer import EnvironmentAnalyzer
 from .models import Growspace, Plant
 from .utils import (
     calculate_days_since,
@@ -33,9 +38,49 @@ class GrowspaceSerializer:
     def __init__(self, hass: HomeAssistant) -> None:
         """Initialize the serializer."""
         self.hass = hass
+        # We can't easily inject coordinator here because serializer is often initialized
+        # by the coordinator itself or before it.
+        # But EnvironmentAnalyzer requires a coordinator.
+        # This is a circular dependency risk or just initialization order issue.
+        # However, EnvironmentAnalyzer only needs coordinator for recommendations in the OLD code.
+        # But my NEW calculate_biological_metrics code in EnvironmentAnalyzer
+        # DOES NOT use self.coordinator. It takes growspace as argument.
+        # So I can initialize it with None for coordinator if I only use that method?
+        # Or better, the Serializer shouldn't own the Analyzer, the *Coordinator* should.
+        # BUT the serializer methods take `growspace` and `plants`.
+
+        # Let's instantiate it with just hass for now, but EnvironmentAnalyzer constructor
+        # expects coordinator.
+        # Let's check EnvironmentAnalyzer.__init__ signature again.
+        # def __init__(self, hass: HomeAssistant, coordinator: GrowspaceCoordinator) -> None:
+
+        # If I change the Serializer to accept an analyzer instance?
+        # Or if I just instantiate it?
+
+        # Ideally, `GrowspaceCoordinator` holds `self.serializer` AND `self.environment_analyzer`.
+        # And when it calls `self.serializer.serialize_growspace(...)`, it could pass the analyzer?
+        # Or `GrowspaceSerializer` could use `EnvironmentAnalyzer` as a helper.
+
+        # Given the constraint of minimal changes to architecture:
+        # I will instantiate EnvironmentAnalyzer with None for coordinator if possible, or Mock?
+        # No, that's hacky.
+
+        # Better approach: Pass the analyzer logic as a dependency or static method?
+        # The new methods I added to EnvironmentAnalyzer DO NOT depend on `self.coordinator`.
+        # `calculate_biological_metrics`, `determine_granular_stage`, `determine_is_day`
+        # only use `growspace` or pure logic.
+
+        # So I can make them static? Or just separate them?
+        # No, `determine_is_day` uses `self.hass`.
+
+        # So I need `hass`.
+        # I will modify Serializer init to take an optional analyzer or just create one with None coordinator
+        # if the coordinator isn't used for those specific methods.
+        # But strictly speaking, type checking will fail if I pass None.
+        pass
 
     def serialize_growspace(
-        self, growspace: Growspace, plants: list[Plant]
+        self, growspace: Growspace, plants: list[Plant], analyzer: EnvironmentAnalyzer
     ) -> dict[str, Any]:
         """Build the full JSON payload for a single growspace."""
         # Calculate max stage days
@@ -60,12 +105,24 @@ class GrowspaceSerializer:
         veg_week = days_to_week(max_veg)
         flower_week = days_to_week(max_flower)
 
-        biological_metrics = self._get_biological_metrics(
+        # DELEGATE TO ANALYZER
+        biological_metrics = analyzer.calculate_biological_metrics(
             growspace, max_veg, max_flower, max_dry, max_cure
         )
 
         # Get irrigation settings
-        irrigation_options = growspace.irrigation_config
+        # Explicit serialization to ensure all keys are present for frontend
+        irrigation_config = growspace.irrigation_config
+        irrigation_options = {
+            "irrigation_pump_entity": irrigation_config.irrigation_pump_entity,
+            "drain_pump_entity": irrigation_config.drain_pump_entity,
+            "irrigation_duration": irrigation_config.irrigation_duration,
+            "drain_duration": irrigation_config.drain_duration,
+            "irrigation_times": irrigation_config.irrigation_times,
+            "drain_times": irrigation_config.drain_times,
+            "veg_day_hours": irrigation_config.veg_day_hours,
+        }
+
         irrigation_strategy_dict = (
             growspace.irrigation_strategy.to_dict()
             if growspace.irrigation_strategy
@@ -179,91 +236,6 @@ class GrowspaceSerializer:
 
         return calculate_days_since(start_date, end_date)
 
-    def _get_biological_metrics(
-        self,
-        growspace: Growspace,
-        max_veg: int,
-        max_flower: int,
-        max_dry: int,
-        max_cure: int,
-    ) -> dict[str, Any]:
-        """Calculate biological target metrics for the growspace."""
-        granular_stage = self._determine_granular_stage(
-            max_veg, max_flower, max_dry, max_cure
-        )
-        is_day = self._determine_is_day(growspace)
-        day_key = "day" if is_day else "night"
-
-        threshold_data = VPD_STRESS_THRESHOLDS.get(
-            granular_stage, VPD_STRESS_THRESHOLDS["veg_early"]
-        )
-        cycle_data = threshold_data.get(day_key, threshold_data["day"])
-
-        target_min, target_max = cycle_data.get("mild", (0.8, 1.2))
-        danger_min, danger_max = cycle_data.get("stress", (0.6, 1.4))
-
-        vpd_status = "unknown"
-        vpd_sensor_id = growspace.environment_config.get("vpd_sensor")
-
-        if vpd_sensor_id:
-            current_vpd = self._get_sensor_value(vpd_sensor_id)
-            if current_vpd is not None:
-                if current_vpd < danger_min or current_vpd > danger_max:
-                    vpd_status = "danger"
-                elif current_vpd < target_min or current_vpd > target_max:
-                    vpd_status = "warning"
-                else:
-                    vpd_status = "optimal"
-
-        return {
-            "granular_stage": granular_stage,
-            "is_day": is_day,
-            "vpd_target_min": target_min,
-            "vpd_target_max": target_max,
-            "vpd_danger_min": danger_min,
-            "vpd_danger_max": danger_max,
-            "vpd_status": vpd_status,
-        }
-
-    def _determine_granular_stage(
-        self, max_veg: int, max_flower: int, max_dry: int, max_cure: int
-    ) -> str:
-        """Determine granular growth stage based on days."""
-        if max_cure > 0:
-            return "cure"
-        if max_dry > 0:
-            return "dry"
-        if max_flower > 0:
-            if max_flower <= DEFAULT_FLOWER_EARLY_DAYS:
-                return "flower_early"
-            if max_flower <= (DEFAULT_FLOWER_EARLY_DAYS + 21):
-                return "flower_mid"
-            return "flower_late"
-        if max_veg > 0:
-            if max_veg > 0 and max_veg <= DEFAULT_VEG_EARLY_DAYS:
-                return "veg_early"
-            return "veg_late"
-        return "veg_early"
-
-    def _determine_is_day(self, growspace: Growspace) -> bool:
-        """Determine if it is currently day or night in the growspace."""
-        light_sensor = growspace.environment_config.get("light_sensor")
-        if light_sensor:
-            light_state = self.hass.states.get(light_sensor)
-            if light_state and light_state.state not in (
-                STATE_UNKNOWN,
-                STATE_UNAVAILABLE,
-            ):
-                if light_state.state == STATE_ON:
-                    return True
-                if light_state.state == "off":
-                    return False
-                try:
-                    return float(light_state.state) > 0
-                except (ValueError, TypeError):
-                    pass
-        return True
-
     def _get_sensor_value(self, sensor_id: str | None) -> float | None:
         """Safely get the numeric value from a sensor's state."""
         if not sensor_id:
@@ -276,17 +248,17 @@ class GrowspaceSerializer:
         except (ValueError, TypeError):
             return None
 
-    def _get_environment_attributes(self, growspace: Growspace) -> dict[str, Any]:
+    def _get_environment_attributes(self, growspace: Growspace) -> dict[str, Any]:  # noqa: C901
         """Get environment-related attributes."""
         attributes = {}
         if growspace.environment_config:
             env_config = growspace.environment_config
 
             # Dehumidifier
-            dehumidifier_entity = env_config.get("dehumidifier_entity")
+            dehumidifier_entity = env_config.dehumidifier_entity
             if dehumidifier_entity:
                 state_obj = self.hass.states.get(dehumidifier_entity)
-                attributes["dehumidifier_entity"] = dehumidifier_entity
+                attributes[CONF_DEHUMIDIFIER_ENTITY] = dehumidifier_entity
                 attributes["dehumidifier_state"] = (
                     state_obj.state if state_obj else None
                 )
@@ -298,37 +270,33 @@ class GrowspaceSerializer:
                         state_obj.attributes.get("current_humidity")
                     )
                     attributes["dehumidifier_mode"] = state_obj.attributes.get("mode")
-                    attributes["dehumidifier_control_enabled"] = env_config.get(
-                        "control_dehumidifier", False
+                    attributes["dehumidifier_control_enabled"] = (
+                        env_config.control_dehumidifier
                     )
 
-            # Exhaust Sensor (check both exhaust_entity and exhaust_sensor keys)
-            exhaust_entity = env_config.get("exhaust_entity") or env_config.get(
-                "exhaust_sensor"
-            )
+            # Exhaust Sensor
+            exhaust_entity = env_config.exhaust_fan_entity
             if exhaust_entity:
                 state_obj = self.hass.states.get(exhaust_entity)
                 attributes["exhaust_entity"] = exhaust_entity
                 attributes["exhaust_state"] = state_obj.state if state_obj else None
 
-            # Humidifier Sensor (check both humidifier_entity and humidifier_sensor keys)
-            humidifier_entity = env_config.get("humidifier_entity") or env_config.get(
-                "humidifier_sensor"
-            )
+            # Humidifier Sensor
+            humidifier_entity = env_config.humidifier_entity
             if humidifier_entity:
                 state_obj = self.hass.states.get(humidifier_entity)
                 attributes["humidifier_entity"] = humidifier_entity
                 attributes["humidifier_state"] = state_obj.state if state_obj else None
 
             # VPD Sensor
-            vpd_entity = env_config.get("vpd_sensor")
+            vpd_entity = env_config.vpd_sensor
             if vpd_entity:
                 state_obj = self.hass.states.get(vpd_entity)
-                attributes["vpd_sensor"] = vpd_entity
+                attributes[CONF_VPD_SENSOR] = vpd_entity
                 attributes["vpd"] = state_obj.state if state_obj else None
 
             # Soil Moisture Sensor
-            soil_moisture_entity = env_config.get("soil_moisture_sensor")
+            soil_moisture_entity = env_config.soil_moisture_sensor
             if soil_moisture_entity:
                 state_obj = self.hass.states.get(soil_moisture_entity)
                 attributes["soil_moisture_sensor"] = soil_moisture_entity
@@ -336,23 +304,25 @@ class GrowspaceSerializer:
                     state_obj.state if state_obj else None
                 )
 
-            # Map other simple keys that don't need state lookups or were already mapped
-            keys_to_map = {
-                "temperature_sensor": "temperature_sensor",
-                "humidity_sensor": "humidity_sensor",
-                "co2_sensor": "co2_sensor",
-                "light_sensor": "light_sensor",
-            }
+            # Map other simple keys
+            keys_to_map = [
+                CONF_TEMP_SENSOR,
+                CONF_HUMIDITY_SENSOR,
+                CONF_CO2_SENSOR,
+                CONF_LIGHT_SENSOR,
+            ]
 
-            for config_key, output_key in keys_to_map.items():
-                if val := env_config.get(config_key):
-                    attributes[output_key] = val
+            for key in keys_to_map:
+                if val := getattr(env_config, key):
+                    attributes[key] = val
 
-            # Circulation fan (check both circulation_fan_entity and circulation_fan keys)
-            circulation_fan = env_config.get(
-                "circulation_fan_entity"
-            ) or env_config.get("circulation_fan")
-            if circulation_fan:
-                attributes["circulation_fan_entity"] = circulation_fan
+            # Circulation fan
+            circulation_fan_entity = env_config.circulation_fan_entity
+            if circulation_fan_entity:
+                state_obj = self.hass.states.get(circulation_fan_entity)
+                attributes[CONF_CIRCULATION_FAN_ENTITY] = circulation_fan_entity
+                attributes["circulation_fan_state"] = (
+                    state_obj.state if state_obj else None
+                )
 
         return attributes

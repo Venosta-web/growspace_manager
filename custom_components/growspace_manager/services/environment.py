@@ -7,7 +7,23 @@ import logging
 from homeassistant.core import HomeAssistant, ServiceCall
 from homeassistant.exceptions import ServiceValidationError
 
+from ..const import (
+    CONF_CIRCULATION_FAN_ENTITY,
+    CONF_CO2_SENSOR,
+    CONF_CONTROL_DEHUMIDIFIER,
+    CONF_DEHUMIDIFIER_ENTITY,
+    CONF_EXHAUST_ENTITY,
+    CONF_HUMIDIFIER_ENTITY,
+    CONF_HUMIDITY_SENSOR,
+    CONF_LIGHT_SENSOR,
+    CONF_MOLD_THRESHOLD,
+    CONF_SOIL_MOISTURE_SENSOR,
+    CONF_STRESS_THRESHOLD,
+    CONF_TEMP_SENSOR,
+    CONF_VPD_SENSOR,
+)
 from ..coordinator import GrowspaceCoordinator
+from ..models import EnvironmentConfig
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -28,22 +44,21 @@ async def handle_configure_environment(
     growspace = coordinator.growspaces[growspace_id]
 
     # Build environment config from service call
-    env_config = {
-        "temperature_sensor": call.data.get("temperature_sensor"),
-        "humidity_sensor": call.data.get("humidity_sensor"),
-        "vpd_sensor": call.data.get("vpd_sensor"),
-    }
-
-    # Add optional sensors if provided
-    if call.data.get("co2_sensor"):
-        env_config["co2_sensor"] = call.data.get("co2_sensor")
-
-    if call.data.get("circulation_fan"):
-        env_config["circulation_fan"] = call.data.get("circulation_fan")
-
-    # Add thresholds
-    env_config["stress_threshold"] = call.data.get("stress_threshold", 0.70)
-    env_config["mold_threshold"] = call.data.get("mold_threshold", 0.75)
+    env_config = EnvironmentConfig(
+        temperature_sensor=call.data.get(CONF_TEMP_SENSOR),
+        humidity_sensor=call.data.get(CONF_HUMIDITY_SENSOR),
+        vpd_sensor=call.data.get(CONF_VPD_SENSOR),
+        co2_sensor=call.data.get(CONF_CO2_SENSOR),
+        circulation_fan_entity=call.data.get(CONF_CIRCULATION_FAN_ENTITY),
+        light_sensor=call.data.get(CONF_LIGHT_SENSOR),
+        exhaust_fan_entity=call.data.get(CONF_EXHAUST_ENTITY),
+        humidifier_entity=call.data.get(CONF_HUMIDIFIER_ENTITY),
+        dehumidifier_entity=call.data.get(CONF_DEHUMIDIFIER_ENTITY),
+        soil_moisture_sensor=call.data.get(CONF_SOIL_MOISTURE_SENSOR),
+        control_dehumidifier=call.data.get(CONF_CONTROL_DEHUMIDIFIER, False),
+        stress_threshold=call.data.get(CONF_STRESS_THRESHOLD, 0.70),
+        mold_threshold=call.data.get(CONF_MOLD_THRESHOLD, 0.75),
+    )
 
     # Store in growspace
     growspace.environment_config = env_config
@@ -74,7 +89,7 @@ async def handle_remove_environment(
     growspace = coordinator.growspaces[growspace_id]
 
     # Remove environment config
-    growspace.environment_config = {}
+    growspace.environment_config = EnvironmentConfig()
 
     # Save to storage
     await coordinator.async_save()
@@ -102,11 +117,8 @@ async def handle_set_dehumidifier_control(
 
     growspace = coordinator.growspaces[growspace_id]
 
-    if not growspace.environment_config:
-        growspace.environment_config = {}
-
     # Update configuration
-    growspace.environment_config["control_dehumidifier"] = enabled
+    growspace.environment_config.control_dehumidifier = enabled
 
     # Save to storage
     await coordinator.async_save()

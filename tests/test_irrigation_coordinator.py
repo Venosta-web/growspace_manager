@@ -13,7 +13,7 @@ from custom_components.growspace_manager.const import DOMAIN
 from custom_components.growspace_manager.irrigation_coordinator import (
     IrrigationCoordinator,
 )
-from custom_components.growspace_manager.models import Growspace
+from custom_components.growspace_manager.models import Growspace, IrrigationConfig
 
 GROWSPACE_ID = "test_growspace"
 ENTRY_ID = "test_entry_id"
@@ -28,17 +28,17 @@ def mock_main_coordinator() -> MagicMock:
             id=GROWSPACE_ID,
             name="Test Growspace",
             notification_target="notify.test",
-            irrigation_config={
-                "irrigation_pump_entity": "switch.irrigation_pump",
-                "drain_pump_entity": "switch.drain_pump",
-                "irrigation_duration": 30,
-                "drain_duration": 60,
-                "irrigation_times": [
+            irrigation_config=IrrigationConfig(
+                irrigation_pump_entity="switch.irrigation_pump",
+                drain_pump_entity="switch.drain_pump",
+                irrigation_duration=30,
+                drain_duration=60,
+                irrigation_times=[
                     {"time": "10:00:00"},
                     {"time": "20:00:00", "duration": 45},
                 ],
-                "drain_times": [{"time": "12:00:00"}],
-            },
+                drain_times=[{"time": "12:00:00"}],
+            ),
         )
     }
     coordinator.async_save = AsyncMock()
@@ -249,10 +249,8 @@ async def test_async_set_settings(
         await coordinator.async_set_settings(new_settings)
 
         growspace = coordinator._main_coordinator.growspaces[GROWSPACE_ID]
-        assert growspace.irrigation_config["irrigation_duration"] == 45
-        assert (
-            growspace.irrigation_config["drain_pump_entity"] == "switch.new_drain_pump"
-        )
+        assert growspace.irrigation_config.irrigation_duration == 45
+        assert growspace.irrigation_config.drain_pump_entity == "switch.new_drain_pump"
 
         mock_main_coordinator.async_save.assert_awaited_once()
         mock_update.assert_awaited_once()
@@ -273,7 +271,7 @@ async def test_async_add_schedule_item(
         await coordinator.async_add_schedule_item("irrigation_times", "08:00", 20)
 
         growspace = coordinator._main_coordinator.growspaces[GROWSPACE_ID]
-        items = growspace.irrigation_config["irrigation_times"]
+        items = growspace.irrigation_config.irrigation_times
         new_item = next((i for i in items if i["time"] == "08:00:00"), None)
         assert new_item is not None
         assert new_item["duration"] == 20
@@ -303,7 +301,7 @@ async def test_async_remove_schedule_item(
         await coordinator.async_remove_schedule_item("irrigation_times", "10:00:00")
 
         growspace = coordinator._main_coordinator.growspaces[GROWSPACE_ID]
-        items = growspace.irrigation_config["irrigation_times"]
+        items = growspace.irrigation_config.irrigation_times
         removed_item = next((i for i in items if i["time"] == "10:00:00"), None)
         assert removed_item is None
 
@@ -363,7 +361,9 @@ async def test_async_setup_migration(
 ) -> None:
     """Test migration of legacy irrigation settings."""
     # Setup growspace with empty irrigation config
-    mock_main_coordinator.growspaces[GROWSPACE_ID].irrigation_config = {}
+    mock_main_coordinator.growspaces[
+        GROWSPACE_ID
+    ].irrigation_config = IrrigationConfig()
 
     # Setup legacy options in config entry
     mock_config_entry.options = {
@@ -385,8 +385,8 @@ async def test_async_setup_migration(
         await coordinator.async_setup()
 
         growspace = mock_main_coordinator.growspaces[GROWSPACE_ID]
-        assert growspace.irrigation_config["irrigation_duration"] == 99
-        assert growspace.irrigation_config["irrigation_times"] == [{"time": "09:00:00"}]
+        assert growspace.irrigation_config.irrigation_duration == 99
+        assert growspace.irrigation_config.irrigation_times == [{"time": "09:00:00"}]
 
         mock_main_coordinator.async_save.assert_awaited_once()
         mock_update.assert_awaited_once()
@@ -476,7 +476,9 @@ async def test_async_setup_migration_empty_legacy(
     mock_hass: MagicMock, mock_config_entry: MagicMock, mock_main_coordinator: MagicMock
 ) -> None:
     """Test setup with no legacy options."""
-    mock_main_coordinator.growspaces[GROWSPACE_ID].irrigation_config = {}
+    mock_main_coordinator.growspaces[
+        GROWSPACE_ID
+    ].irrigation_config = IrrigationConfig()
     mock_config_entry.options = {}
 
     coordinator = IrrigationCoordinator(
@@ -489,41 +491,6 @@ async def test_async_setup_migration_empty_legacy(
     mock_main_coordinator.async_save.assert_not_awaited()
 
 
-async def test_async_add_schedule_item_new_key(
-    mock_hass: MagicMock, mock_config_entry: MagicMock, mock_main_coordinator: MagicMock
-) -> None:
-    """Test adding item to a new schedule key."""
-    coordinator = IrrigationCoordinator(
-        mock_hass, mock_config_entry, GROWSPACE_ID, mock_main_coordinator
-    )
-
-    # Ensure key doesn't exist
-    if (
-        "new_schedule"
-        in mock_main_coordinator.growspaces[GROWSPACE_ID].irrigation_config
-    ):
-        del mock_main_coordinator.growspaces[GROWSPACE_ID].irrigation_config[
-            "new_schedule"
-        ]
-
-    await coordinator.async_add_schedule_item("new_schedule", "12:00", 10)
-
-    assert (
-        "new_schedule"
-        in mock_main_coordinator.growspaces[GROWSPACE_ID].irrigation_config
-    )
-    assert (
-        len(
-            mock_main_coordinator.growspaces[GROWSPACE_ID].irrigation_config[
-                "new_schedule"
-            ]
-        )
-        == 1
-    )
-
-    coordinator.async_cancel_listeners()
-
-
 async def test_async_remove_schedule_item_key_error(
     mock_hass: MagicMock, mock_config_entry: MagicMock, mock_main_coordinator: MagicMock
 ) -> None:
@@ -533,9 +500,9 @@ async def test_async_remove_schedule_item_key_error(
     )
 
     # Ensure key doesn't exist
-    if (
-        "missing_schedule"
-        in mock_main_coordinator.growspaces[GROWSPACE_ID].irrigation_config
+    if hasattr(
+        mock_main_coordinator.growspaces[GROWSPACE_ID].irrigation_config,
+        "missing_schedule",
     ):
         del mock_main_coordinator.growspaces[GROWSPACE_ID].irrigation_config[
             "missing_schedule"

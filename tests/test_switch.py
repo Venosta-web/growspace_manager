@@ -6,6 +6,7 @@ import pytest
 from custom_components.growspace_manager.const import DOMAIN
 from custom_components.growspace_manager.coordinator import GrowspaceCoordinator
 from custom_components.growspace_manager.switch import (
+    NOTIFICATION_SWITCH,
     GrowspaceNotificationSwitch,
     async_setup_entry,
 )
@@ -54,7 +55,7 @@ async def test_async_setup_entry_creates_entities(mock_hass, mock_coordinator) -
     def fake_add_entities(new_entities, update_before_add=False):
         added_entities.extend(new_entities)
 
-    # Mock coordinator growspaces
+    # Mock coordinator growspaces - use objects with attributes for typed access compatibility
     gs1 = Mock()
     gs1.name = "Growspace 1"
     gs1.notification_target = "notify_target_1"
@@ -82,7 +83,9 @@ async def test_async_setup_entry_creates_entities(mock_hass, mock_coordinator) -
     assert isinstance(switch, GrowspaceNotificationSwitch)
     assert switch._growspace_id == "gs1"
     assert switch.is_on is True
-    assert switch._attr_name == "Growspace 1 Notifications"
+    # The name may be None if has_entity_name is True, as HA constructs the full name from device name + entity name
+    # But let's check the logic inside
+    assert switch.entity_description == NOTIFICATION_SWITCH
 
 
 @pytest.mark.asyncio
@@ -96,7 +99,9 @@ async def test_growspace_notification_switch_on_off(mock_coordinator) -> None:
     mock_coordinator.async_set_growspace_notification = AsyncMock()
     mock_coordinator.is_notifications_enabled = Mock(return_value=True)
 
-    switch = GrowspaceNotificationSwitch(mock_coordinator, "gs1", growspace)
+    switch = GrowspaceNotificationSwitch(
+        mock_coordinator, "gs1", growspace, NOTIFICATION_SWITCH
+    )
 
     # Patch async_write_ha_state so HA internals are not invoked
     switch.hass = Mock()
@@ -120,7 +125,9 @@ async def test_async_added_to_hass_calls_add_listener(mock_coordinator) -> None:
     growspace = SimpleNamespace(
         id="gs1", name="Growspace 1", notification_target="notify_me"
     )
-    switch = GrowspaceNotificationSwitch(mock_coordinator, "gs1", growspace)
+    switch = GrowspaceNotificationSwitch(
+        mock_coordinator, "gs1", growspace, NOTIFICATION_SWITCH
+    )
 
     await switch.async_added_to_hass()
     # async_add_listener should be called once with async_write_ha_state

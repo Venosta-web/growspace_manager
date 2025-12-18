@@ -1,12 +1,14 @@
 """Service handlers for irrigation-related services."""
 
+from __future__ import annotations
+
 import logging
 from typing import TYPE_CHECKING
 
 from homeassistant.core import HomeAssistant, ServiceCall
 from homeassistant.exceptions import ServiceValidationError
 
-from ..const import DOMAIN
+from ..const import ATTR_GROWSPACE_ID, DOMAIN
 
 if TYPE_CHECKING:
     from ..coordinator import GrowspaceCoordinator
@@ -17,7 +19,7 @@ _LOGGER = logging.getLogger(__name__)
 
 async def _get_irrigation_coordinator(
     hass: HomeAssistant, growspace_id: str
-) -> "IrrigationCoordinator":
+) -> IrrigationCoordinator:
     """Get the irrigation coordinator for a specific growspace, raising on failure."""
     # This integration assumes a single config entry.
     entries = hass.config_entries.async_entries(DOMAIN)
@@ -42,14 +44,16 @@ async def _get_irrigation_coordinator(
 
 async def handle_set_irrigation_settings(
     hass: HomeAssistant,
-    coordinator: "GrowspaceCoordinator",
+    coordinator: GrowspaceCoordinator,
     call: ServiceCall,
 ) -> None:
     """Handle the service call to set irrigation settings for a growspace."""
-    growspace_id = call.data["growspace_id"]
+    growspace_id = call.data[ATTR_GROWSPACE_ID]
     irrigation_coord = await _get_irrigation_coordinator(hass, growspace_id)
 
-    settings = {key: value for key, value in call.data.items() if key != "growspace_id"}
+    settings = {
+        key: value for key, value in call.data.items() if key != ATTR_GROWSPACE_ID
+    }
 
     await irrigation_coord.async_set_settings(settings)
     _LOGGER.info("Set irrigation settings for growspace '%s'", growspace_id)
@@ -57,11 +61,11 @@ async def handle_set_irrigation_settings(
 
 async def handle_add_irrigation_time(
     hass: HomeAssistant,
-    coordinator: "GrowspaceCoordinator",
+    coordinator: GrowspaceCoordinator,
     call: ServiceCall,
 ) -> None:
     """Handle the service call to add an irrigation time to a schedule."""
-    growspace_id = call.data["growspace_id"]
+    growspace_id = call.data[ATTR_GROWSPACE_ID]
     irrigation_coord = await _get_irrigation_coordinator(hass, growspace_id)
 
     duration = call.data.get("duration")
@@ -75,11 +79,11 @@ async def handle_add_irrigation_time(
 
 async def handle_remove_irrigation_time(
     hass: HomeAssistant,
-    coordinator: "GrowspaceCoordinator",
+    coordinator: GrowspaceCoordinator,
     call: ServiceCall,
 ) -> None:
     """Handle the service call to remove an irrigation time from a schedule."""
-    growspace_id = call.data["growspace_id"]
+    growspace_id = call.data[ATTR_GROWSPACE_ID]
     irrigation_coord = await _get_irrigation_coordinator(hass, growspace_id)
     await irrigation_coord.async_remove_schedule_item(
         "irrigation_times", call.data["time"]
@@ -88,11 +92,11 @@ async def handle_remove_irrigation_time(
 
 async def handle_add_drain_time(
     hass: HomeAssistant,
-    coordinator: "GrowspaceCoordinator",
+    coordinator: GrowspaceCoordinator,
     call: ServiceCall,
 ) -> None:
     """Handle the service call to add a drain time to a schedule."""
-    growspace_id = call.data["growspace_id"]
+    growspace_id = call.data[ATTR_GROWSPACE_ID]
     irrigation_coord = await _get_irrigation_coordinator(hass, growspace_id)
 
     duration = call.data.get("duration")
@@ -106,10 +110,10 @@ async def handle_add_drain_time(
 
 async def handle_remove_drain_time(
     hass: HomeAssistant,
-    coordinator: "GrowspaceCoordinator",
+    coordinator: GrowspaceCoordinator,
     call: ServiceCall,
 ) -> None:
     """Handle the service call to remove a drain time from a schedule."""
-    growspace_id = call.data["growspace_id"]
+    growspace_id = call.data[ATTR_GROWSPACE_ID]
     irrigation_coord = await _get_irrigation_coordinator(hass, growspace_id)
     await irrigation_coord.async_remove_schedule_item("drain_times", call.data["time"])

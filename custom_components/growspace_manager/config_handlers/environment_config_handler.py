@@ -7,34 +7,29 @@ import logging
 from typing import Any
 
 import voluptuous as vol
-from homeassistant.config_entries import ConfigEntry
-from homeassistant.core import HomeAssistant
 from homeassistant.helpers import selector
 
-from ..const import DEFAULT_FLOWER_DAY_HOURS, DEFAULT_VEG_DAY_HOURS
+from ..const import (
+    CONF_CIRCULATION_FAN_ENTITY,
+    CONF_CO2_SENSOR,
+    CONF_DEHUMIDIFIER_ENTITY,
+    CONF_HUMIDITY_SENSOR,
+    CONF_LIGHT_SENSOR,
+    CONF_MOLD_THRESHOLD,
+    CONF_STRESS_THRESHOLD,
+    CONF_TEMP_SENSOR,
+    CONF_VPD_SENSOR,
+    DEFAULT_FLOWER_DAY_HOURS,
+    DEFAULT_VEG_DAY_HOURS,
+)
 from ..dehumidifier_coordinator import DEFAULT_THRESHOLDS
+from . import BaseConfigHandler
 
 _LOGGER = logging.getLogger(__name__)
 
 
-class EnvironmentConfigHandler:
+class EnvironmentConfigHandler(BaseConfigHandler[dict[str, Any]]):
     """Handle environment configuration steps."""
-
-    def __init__(self, hass: HomeAssistant, config_entry: ConfigEntry) -> None:
-        """Initialize the handler."""
-        self.hass = hass
-        self.config_entry = config_entry
-
-    def process_environment_input(
-        self, user_input: dict[str, Any], growspace_options: dict[str, Any]
-    ) -> dict[str, Any]:
-        """Process user input and merge with existing options."""
-        user_input = {k: v for k, v in user_input.items() if v is not None and v != ""}
-
-        env_config = growspace_options.copy()
-        env_config.update(user_input)
-
-        return env_config
 
     def get_environment_schema_step1(
         self, growspace_options: dict[str, Any]
@@ -56,8 +51,8 @@ class EnvironmentConfigHandler:
         """Add basic sensors (temp, humidity, vpd) to the schema."""
         # Basic sensors
         for key, device_class in [
-            ("temperature_sensor", "temperature"),
-            ("humidity_sensor", "humidity"),
+            (CONF_TEMP_SENSOR, "temperature"),
+            (CONF_HUMIDITY_SENSOR, "humidity"),
         ]:
             # Use vol.Required if it's a new entry, strictly speaking the user prompt implies optionality *in general*,
             # but usually key sensors are required. The original code used vol.Optional(key, default=...).
@@ -96,8 +91,8 @@ class EnvironmentConfigHandler:
         # VPD sensor - optional
         schema_dict[
             vol.Optional(
-                "vpd_sensor",
-                default=growspace_options.get("vpd_sensor") or vol.UNDEFINED,
+                CONF_VPD_SENSOR,
+                default=growspace_options.get(CONF_VPD_SENSOR) or vol.UNDEFINED,
             )
         ] = selector.EntitySelector(
             selector.EntitySelectorConfig(
@@ -110,9 +105,9 @@ class EnvironmentConfigHandler:
         self, schema_dict: dict, growspace_options: dict[str, Any]
     ) -> None:
         """Add LST offset to the schema if applicable."""
-        has_temp = bool(growspace_options.get("temperature_sensor"))
-        has_humidity = bool(growspace_options.get("humidity_sensor"))
-        has_vpd = bool(growspace_options.get("vpd_sensor"))
+        has_temp = bool(growspace_options.get(CONF_TEMP_SENSOR))
+        has_humidity = bool(growspace_options.get(CONF_HUMIDITY_SENSOR))
+        has_vpd = bool(growspace_options.get(CONF_VPD_SENSOR))
 
         if has_temp and has_humidity and not has_vpd:
             schema_dict[
@@ -144,11 +139,11 @@ class EnvironmentConfigHandler:
     ) -> None:
         """Add the entity selector for a specific feature."""
         if feature == "light":
-            entity_key = "light_sensor"
+            entity_key = CONF_LIGHT_SENSOR
             domain = ["switch", "light", "input_boolean", "sensor"]
             device_class = None
         elif feature == "fan":
-            entity_key = "circulation_fan"
+            entity_key = CONF_CIRCULATION_FAN_ENTITY
             domain = [
                 "fan",
                 "switch",
@@ -158,7 +153,7 @@ class EnvironmentConfigHandler:
             ]
             device_class = None
         else:  # co2
-            entity_key = f"{feature}_sensor"
+            entity_key = CONF_CO2_SENSOR
             domain = ["sensor", "input_number"]
             device_class = ["carbon_dioxide"]
 
@@ -231,8 +226,9 @@ class EnvironmentConfigHandler:
         # Removed configure_dehumidifier checkbox and its conditional logic
         schema_dict[
             vol.Optional(
-                "dehumidifier_entity",
-                default=growspace_options.get("dehumidifier_entity") or vol.UNDEFINED,
+                CONF_DEHUMIDIFIER_ENTITY,
+                default=growspace_options.get(CONF_DEHUMIDIFIER_ENTITY)
+                or vol.UNDEFINED,
             )
         ] = selector.EntitySelector(
             selector.EntitySelectorConfig(
@@ -251,7 +247,10 @@ class EnvironmentConfigHandler:
                 default=growspace_options.get("control_dehumidifier", False),
             )
         ] = selector.BooleanSelector()
-        for key, default in [("stress_threshold", 0.70), ("mold_threshold", 0.75)]:
+        for key, default in [
+            (CONF_STRESS_THRESHOLD, 0.70),
+            (CONF_MOLD_THRESHOLD, 0.75),
+        ]:
             schema_dict[
                 vol.Optional(key, default=growspace_options.get(key, default))
             ] = selector.NumberSelector(

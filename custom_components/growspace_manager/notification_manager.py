@@ -238,7 +238,7 @@ class NotificationManager:
             trigger_type = notification["trigger_type"]  # 'veg' or 'flower'
             day_to_trigger = int(notification["day"])
             message = notification["message"]
-            growspace_ids = notification["growspace_ids"]
+            growspace_ids = notification.get("growspace_ids", [])
             notification_id = notification["id"]
 
             for gs_id in growspace_ids:

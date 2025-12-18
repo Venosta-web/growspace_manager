@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable, Coroutine
 from functools import partial
 from typing import Any, cast
 
@@ -10,12 +11,19 @@ from homeassistant.config_entries import ConfigEntryState
 from homeassistant.core import HomeAssistant, ServiceCall, SupportsResponse
 from homeassistant.exceptions import ServiceValidationError
 
-from .const import DOMAIN
+from .const import (
+    ATTR_GROWSPACE_ID,
+    ATTR_MOTHER_PLANT_ID,
+    ATTR_PLANT_ID,
+    ATTR_TARGET_GROWSPACE_ID,
+    DOMAIN,
+    GrowspaceService,
+)
 from .coordinator import GrowspaceCoordinator
+from .exceptions import GrowspaceError
 from .services import (
     ADD_DRAIN_TIME_SCHEMA,
     ADD_GROWSPACE_SCHEMA,
-    UPDATE_GROWSPACE_SCHEMA,
     ADD_IRRIGATION_TIME_SCHEMA,
     ADD_PLANT_SCHEMA,
     ADD_STRAIN_SCHEMA,
@@ -44,6 +52,7 @@ from .services import (
     SWITCH_PLANT_SCHEMA,
     TAKE_CLONE_SCHEMA,
     TRANSITION_PLANT_SCHEMA,
+    UPDATE_GROWSPACE_SCHEMA,
     UPDATE_PLANT_SCHEMA,
     UPDATE_STRAIN_META_SCHEMA,
     ai_assistant,
@@ -66,23 +75,29 @@ def get_coordinator_for_call(
     data = call.data if isinstance(call, ServiceCall) else call
 
     # Get all potential coordinators from loaded entries
+    entries = hass.config_entries.async_entries(DOMAIN)
+
     coordinators = [
         entry.runtime_data
-        for entry in hass.config_entries.async_entries(DOMAIN)
+        for entry in entries
         if entry.state == ConfigEntryState.LOADED and hasattr(entry, "runtime_data")
     ]
 
-    # 1. Try growspace_id
-    if growspace_id := (data.get("growspace_id") or data.get("target_growspace_id")):
-        for coordinator in coordinators:
-            if growspace_id in coordinator.growspaces:
-                return coordinator
+    # Prioritize specific ID keys
+    # Map key name to the coordinator attribute to check against
+    # Map key name to the coordinator attribute to check against
+    id_lookups = [
+        (ATTR_GROWSPACE_ID, "growspaces"),
+        (ATTR_TARGET_GROWSPACE_ID, "growspaces"),
+        (ATTR_PLANT_ID, "plants"),
+        (ATTR_MOTHER_PLANT_ID, "plants"),
+    ]
 
-    # 2. Try plant_id
-    if plant_id := (data.get("plant_id") or data.get("mother_plant_id")):
-        for coordinator in coordinators:
-            if plant_id in coordinator.plants:
-                return coordinator
+    for key, attr in id_lookups:
+        if val := data.get(key):
+            for coordinator in coordinators:
+                if val in getattr(coordinator, attr):
+                    return coordinator
 
     # 3. Fallback: If only one config entry exists, use it.
     if len(coordinators) == 1:
@@ -101,192 +116,197 @@ async def register_services(
     """Register services for the Growspace Manager integration."""
 
     async def _wrap_dynamic(
-        handler: Any,
+        handler: Callable[..., Coroutine[Any, Any, Any]],
         needs_strain_lib: bool,
         call: ServiceCall,
     ) -> Any:
-        coordinator = get_coordinator_for_call(hass, call)
-        if needs_strain_lib:
-            return await handler(hass, coordinator, strain_lib, call)
-        return await handler(hass, coordinator, call)
+        try:
+            coordinator = get_coordinator_for_call(hass, call)
+            if needs_strain_lib:
+                return await handler(hass, coordinator, strain_lib, call)
+            return await handler(hass, coordinator, call)
+        except GrowspaceError as err:
+            raise ServiceValidationError(str(err)) from err
 
     # Helper to create the wrapper
-    def wrap(handler: Any, needs_strain_lib: bool = True) -> Any:
+    def wrap(
+        handler: Callable[..., Coroutine[Any, Any, Any]], needs_strain_lib: bool = True
+    ) -> Any:
         return partial(_wrap_dynamic, handler, needs_strain_lib)
 
     services = [
         (
-            "add_growspace",
+            GrowspaceService.ADD_GROWSPACE,
             wrap(growspace.handle_add_growspace, True),
             ADD_GROWSPACE_SCHEMA,
         ),
         (
-            "remove_growspace",
+            GrowspaceService.REMOVE_GROWSPACE,
             wrap(growspace.handle_remove_growspace, False),
             REMOVE_GROWSPACE_SCHEMA,
         ),
         (
-            "update_growspace",
+            GrowspaceService.UPDATE_GROWSPACE,
             wrap(growspace.handle_update_growspace, True),
             UPDATE_GROWSPACE_SCHEMA,
         ),
         (
-            "add_plant",
+            GrowspaceService.ADD_PLANT,
             wrap(plant.handle_add_plant, True),
             ADD_PLANT_SCHEMA,
         ),
         (
-            "remove_plant",
+            GrowspaceService.REMOVE_PLANT,
             wrap(plant.handle_remove_plant, True),
             REMOVE_PLANT_SCHEMA,
         ),
         (
-            "update_plant",
+            GrowspaceService.UPDATE_PLANT,
             wrap(plant.handle_update_plant, True),
             UPDATE_PLANT_SCHEMA,
         ),
         (
-            "move_plant",
+            GrowspaceService.MOVE_PLANT,
             wrap(plant.handle_move_plant, True),
             MOVE_PLANT_SCHEMA,
         ),
         (
-            "switch_plants",
+            GrowspaceService.SWITCH_PLANTS,
             wrap(plant.handle_switch_plants, True),
             SWITCH_PLANT_SCHEMA,
         ),
         (
-            "take_clone",
+            GrowspaceService.TAKE_CLONE,
             wrap(plant.handle_take_clone, True),
             TAKE_CLONE_SCHEMA,
         ),
         (
-            "move_clone",
+            GrowspaceService.MOVE_CLONE,
             wrap(plant.handle_move_clone, True),
             MOVE_CLONE_SCHEMA,
         ),
         (
-            "transition_plant_stage",
+            GrowspaceService.TRANSITION_PLANT_STAGE,
             wrap(plant.handle_transition_plant_stage, True),
             TRANSITION_PLANT_SCHEMA,
         ),
         (
-            "harvest_plant",
+            GrowspaceService.HARVEST_PLANT,
             wrap(plant.handle_harvest_plant, True),
             HARVEST_PLANT_SCHEMA,
         ),
         (
-            "add_strain",
+            GrowspaceService.ADD_STRAIN,
             wrap(strain_library.handle_add_strain, True),
             ADD_STRAIN_SCHEMA,
         ),
         (
-            "remove_strain",
+            GrowspaceService.REMOVE_STRAIN,
             wrap(strain_library.handle_remove_strain, True),
             REMOVE_STRAIN_SCHEMA,
         ),
         (
-            "update_strain_meta",
+            GrowspaceService.UPDATE_STRAIN_META,
             wrap(strain_library.handle_update_strain_meta, True),
             UPDATE_STRAIN_META_SCHEMA,
         ),
         (
-            "import_strain_library",
+            GrowspaceService.IMPORT_STRAIN_LIBRARY,
             wrap(strain_library.handle_import_strain_library, True),
             IMPORT_STRAIN_LIBRARY_SCHEMA,
         ),
         (
-            "export_strain_library",
+            GrowspaceService.EXPORT_STRAIN_LIBRARY,
             wrap(strain_library.handle_export_strain_library, True),
             EXPORT_STRAIN_LIBRARY_SCHEMA,
         ),
         (
-            "clear_strain_library",
+            GrowspaceService.CLEAR_STRAIN_LIBRARY,
             wrap(strain_library.handle_clear_strain_library, True),
             CLEAR_STRAIN_LIBRARY_SCHEMA,
         ),
         (
-            "strain_recommendation",
+            GrowspaceService.STRAIN_RECOMMENDATION,
             wrap(ai_assistant.handle_strain_recommendation, True),
             STRAIN_RECOMMENDATION_SCHEMA,
         ),
         (
-            "ask_grow_advice",
+            GrowspaceService.ASK_GROW_ADVICE,
             wrap(ai_assistant.handle_ask_grow_advice, True),
             ASK_GROW_ADVICE_SCHEMA,
         ),
         (
-            "analyze_all_growspaces",
+            GrowspaceService.ANALYZE_ALL_GROWSPACES,
             wrap(ai_assistant.handle_analyze_all_growspaces, True),
             ANALYZE_ALL_GROWSPACES_SCHEMA,
         ),
         (
-            "configure_environment",
+            GrowspaceService.CONFIGURE_ENVIRONMENT,
             wrap(environment.handle_configure_environment, False),
             CONFIGURE_ENVIRONMENT_SCHEMA,
         ),
         (
-            "remove_environment",
+            GrowspaceService.REMOVE_ENVIRONMENT,
             wrap(environment.handle_remove_environment, False),
             REMOVE_ENVIRONMENT_SCHEMA,
         ),
         (
-            "set_dehumidifier_control",
+            GrowspaceService.SET_DEHUMIDIFIER_CONTROL,
             wrap(environment.handle_set_dehumidifier_control, False),
             SET_DEHUMIDIFIER_CONTROL_SCHEMA,
         ),
         (
-            "set_irrigation_settings",
+            GrowspaceService.SET_IRRIGATION_SETTINGS,
             wrap(irrigation.handle_set_irrigation_settings, False),
             SET_IRRIGATION_SETTINGS_SCHEMA,
         ),
         (
-            "add_irrigation_time",
+            GrowspaceService.ADD_IRRIGATION_TIME,
             wrap(irrigation.handle_add_irrigation_time, False),
             ADD_IRRIGATION_TIME_SCHEMA,
         ),
         (
-            "remove_irrigation_time",
+            GrowspaceService.REMOVE_IRRIGATION_TIME,
             wrap(irrigation.handle_remove_irrigation_time, False),
             REMOVE_IRRIGATION_TIME_SCHEMA,
         ),
         (
-            "add_drain_time",
+            GrowspaceService.ADD_DRAIN_TIME,
             wrap(irrigation.handle_add_drain_time, False),
             ADD_DRAIN_TIME_SCHEMA,
         ),
         (
-            "remove_drain_time",
+            GrowspaceService.REMOVE_DRAIN_TIME,
             wrap(irrigation.handle_remove_drain_time, False),
             REMOVE_DRAIN_TIME_SCHEMA,
         ),
         (
-            "debug_list_growspaces",
+            GrowspaceService.DEBUG_LIST_GROWSPACES,
             wrap(debug.handle_debug_list_growspaces, False),
             DEBUG_LIST_GROWSPACES_SCHEMA,
         ),
         (
-            "debug_reset_special_growspaces",
+            GrowspaceService.DEBUG_RESET_SPECIAL_GROWSPACES,
             wrap(debug.handle_debug_reset_special_growspaces, False),
             DEBUG_RESET_SPECIAL_GROWSPACES_SCHEMA,
         ),
         (
-            "debug_consolidate_duplicate_special",
+            GrowspaceService.DEBUG_CONSOLIDATE_DUPLICATE_SPECIAL,
             wrap(debug.handle_debug_consolidate_duplicate_special, False),
             DEBUG_CONSOLIDATE_DUPLICATE_SPECIAL_SCHEMA,
         ),
         (
-            "debug_cleanup_legacy",
+            GrowspaceService.DEBUG_CLEANUP_LEGACY,
             wrap(debug.handle_debug_cleanup_legacy, False),
             DEBUG_CLEANUP_LEGACY_SCHEMA,
         ),
         (
-            "test_notification",
+            GrowspaceService.TEST_NOTIFICATION,
             wrap(debug.handle_test_notification, True),
             None,
         ),
         (
-            "get_strain_library",
+            GrowspaceService.GET_STRAIN_LIBRARY,
             wrap(strain_library.handle_get_strain_library, True),
             None,
         ),
@@ -294,10 +314,10 @@ async def register_services(
 
     for service_name, handler, schema in services:
         if service_name in [
-            "get_strain_library",
-            "strain_recommendation",
-            "ask_grow_advice",
-            "analyze_all_growspaces",
+            GrowspaceService.GET_STRAIN_LIBRARY,
+            GrowspaceService.STRAIN_RECOMMENDATION,
+            GrowspaceService.ASK_GROW_ADVICE,
+            GrowspaceService.ANALYZE_ALL_GROWSPACES,
         ]:
             hass.services.async_register(
                 DOMAIN,

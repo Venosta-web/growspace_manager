@@ -9,7 +9,6 @@ from homeassistant.exceptions import ServiceValidationError
 from custom_components.growspace_manager.const import (
     CONF_AI_ENABLED,
     CONF_ASSISTANT_ID,
-    DOMAIN,
 )
 from custom_components.growspace_manager.coordinator import GrowspaceCoordinator
 from custom_components.growspace_manager.services.ai_assistant import (
@@ -18,6 +17,7 @@ from custom_components.growspace_manager.services.ai_assistant import (
 from custom_components.growspace_manager.services.growspace import (
     handle_add_growspace,
     handle_remove_growspace,
+    handle_update_growspace,
 )
 from custom_components.growspace_manager.strain_library import StrainLibrary
 
@@ -96,9 +96,7 @@ async def test_handle_add_growspace(
     mock_coordinator.async_add_growspace.assert_awaited_once_with(
         name="Test GS", rows=2, plants_per_row=3, notification_target="mobile_app_test"
     )
-    mock_hass.bus.async_fire.assert_called_once_with(
-        f"{DOMAIN}_growspace_added", {"growspace_id": "gs1", "name": "Test GS"}
-    )
+    mock_hass.bus.async_fire.assert_not_called()
 
 
 @pytest.mark.asyncio
@@ -115,10 +113,6 @@ async def test_handle_update_growspace(
         "rows": 5,
         "plants_per_row": 5,
     }
-
-    from custom_components.growspace_manager.services.growspace import (
-        handle_update_growspace,
-    )
 
     await handle_update_growspace(
         mock_hass, mock_coordinator, mock_strain_library, mock_call
@@ -158,17 +152,17 @@ async def test_handle_add_growspace_no_mobile_app_notification(
     mock_coordinator.async_add_growspace.assert_awaited_once_with(
         name="Test GS", rows=2, plants_per_row=3, notification_target=None
     )
-    mock_hass.bus.async_fire.assert_called_once_with(
-        f"{DOMAIN}_growspace_added", {"growspace_id": "gs1", "name": "Test GS"}
+    mock_coordinator.async_add_growspace.assert_awaited_once_with(
+        name="Test GS", rows=2, plants_per_row=3, notification_target=None
     )
+    mock_hass.bus.async_fire.assert_not_called()
 
 
 @pytest.mark.asyncio
-@patch("custom_components.growspace_manager.services.growspace.create_notification")
+@pytest.mark.asyncio
 @patch("homeassistant.helpers.device_registry.async_get")
 async def test_handle_add_growspace_exception(
     mock_async_get,
-    mock_create_notification,
     mock_hass,
     mock_coordinator,
     mock_strain_library,
@@ -179,12 +173,12 @@ async def test_handle_add_growspace_exception(
     mock_coordinator.async_add_growspace.side_effect = Exception("Add failed")
     mock_async_get.return_value.devices = {}
 
-    with pytest.raises(Exception, match="Add failed"):
+    with pytest.raises(
+        ServiceValidationError, match="Failed to add growspace: Add failed"
+    ):
         await handle_add_growspace(
             mock_hass, mock_coordinator, mock_strain_library, mock_call
         )
-
-    mock_create_notification.assert_called_once()
 
 
 @pytest.mark.asyncio
@@ -197,15 +191,12 @@ async def test_handle_remove_growspace(
     await handle_remove_growspace(mock_hass, mock_coordinator, mock_call)
 
     mock_coordinator.async_remove_growspace.assert_awaited_once_with("gs1")
-    mock_hass.bus.async_fire.assert_called_once_with(
-        f"{DOMAIN}_growspace_removed", {"growspace_id": "gs1"}
-    )
+    mock_coordinator.async_remove_growspace.assert_awaited_once_with("gs1")
+    mock_hass.bus.async_fire.assert_not_called()
 
 
 @pytest.mark.asyncio
-@patch("custom_components.growspace_manager.services.growspace.create_notification")
 async def test_handle_remove_growspace_exception(
-    mock_create_notification,
     mock_hass,
     mock_coordinator,
     mock_strain_library,
@@ -215,10 +206,10 @@ async def test_handle_remove_growspace_exception(
     mock_call.data = {"growspace_id": "gs1"}
     mock_coordinator.async_remove_growspace.side_effect = Exception("Remove failed")
 
-    with pytest.raises(Exception, match="Remove failed"):
+    with pytest.raises(
+        ServiceValidationError, match="Failed to remove growspace: Remove failed"
+    ):
         await handle_remove_growspace(mock_hass, mock_coordinator, mock_call)
-
-    mock_create_notification.assert_called_once()
 
 
 @pytest.mark.asyncio

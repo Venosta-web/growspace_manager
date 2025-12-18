@@ -2,7 +2,7 @@ from datetime import date
 
 import pytest
 
-from custom_components.growspace_manager.const import (
+from custom_components.growspace_manager.schemas import (
     ADD_GROWSPACE_SCHEMA,
     ADD_PLANT_SCHEMA,
     CLEAR_STRAIN_LIBRARY_SCHEMA,
@@ -24,24 +24,24 @@ from custom_components.growspace_manager.const import (
 )
 
 
-def test_add_growspace_schema_valid():
+def test_add_growspace_schema_valid() -> None:
     data = {"name": "Test GS", "rows": 3, "plants_per_row": 3}
     validated = ADD_GROWSPACE_SCHEMA(data)
     assert validated == data
 
 
-def test_add_growspace_schema_invalid():
+def test_add_growspace_schema_invalid() -> None:
     data = {"name": "Test GS", "rows": -1, "plants_per_row": 3}
     with pytest.raises(Exception):
         ADD_GROWSPACE_SCHEMA(data)
 
 
-def test_remove_growspace_schema_valid():
+def test_remove_growspace_schema_valid() -> None:
     data = {"growspace_id": "gs1"}
     assert REMOVE_GROWSPACE_SCHEMA(data) == data
 
 
-def test_add_plant_schema_valid():
+def test_add_plant_schema_valid() -> None:
     data = {
         "growspace_id": "gs1",
         "strain": "OG",
@@ -54,29 +54,29 @@ def test_add_plant_schema_valid():
     assert validated == data
 
 
-def test_add_plant_schema_invalid():
+def test_add_plant_schema_invalid() -> None:
     data = {"growspace_id": "gs1", "strain": "OG", "row": -1, "col": 1}
     with pytest.raises(Exception):
         ADD_PLANT_SCHEMA(data)
 
 
-def test_update_plant_schema_valid():
+def test_update_plant_schema_valid() -> None:
     data = {"plant_id": "p1", "strain": "OG"}
     validated = UPDATE_PLANT_SCHEMA(data)
     assert validated["plant_id"] == "p1"
 
 
-def test_remove_plant_schema_valid():
+def test_remove_plant_schema_valid() -> None:
     data = {"plant_id": "p1"}
     assert REMOVE_PLANT_SCHEMA(data) == data
 
 
-def test_move_plant_schema_valid():
+def test_move_plant_schema_valid() -> None:
     data = {"plant_id": "p1", "new_row": 2, "new_col": 3}
     assert MOVE_PLANT_SCHEMA(data) == data
 
 
-def test_switch_plant_schema_valid():
+def test_switch_plant_schema_valid() -> None:
     """Test that the switch_plants service schema is valid."""
     data = {
         "plant1_id": "plant_1",
@@ -85,33 +85,33 @@ def test_switch_plant_schema_valid():
     SWITCH_PLANT_SCHEMA(data) == data
 
 
-def test_transition_plant_schema_valid():
+def test_transition_plant_schema_valid() -> None:
     data = {"plant_id": "p1", "new_stage": "veg", "transition_date": date.today()}
     assert TRANSITION_PLANT_SCHEMA(data) == data
 
 
-def test_move_clone_schema_valid():
+def test_move_clone_schema_valid() -> None:
     data = {"plant_id": "p1", "target_growspace_id": "gs2"}
     assert MOVE_CLONE_SCHEMA(data) == data
 
 
-def test_export_strain_library_schema_valid():
+def test_export_strain_library_schema_valid() -> None:
     data = {}
     assert EXPORT_STRAIN_LIBRARY_SCHEMA(data) == data
 
 
-def test_import_strain_library_schema_valid():
+def test_import_strain_library_schema_valid() -> None:
     data = {}
     validated = IMPORT_STRAIN_LIBRARY_SCHEMA(data)
     assert validated["replace"] is False  # Schema adds default
 
 
-def test_clear_strain_library_schema_valid():
+def test_clear_strain_library_schema_valid() -> None:
     data = {}
     assert CLEAR_STRAIN_LIBRARY_SCHEMA(data) == data
 
 
-def test_harvest_plant_schema_valid():
+def test_harvest_plant_schema_valid() -> None:
     data = {
         "plant_id": "p1",
         "target_growspace_id": "gs2",
@@ -120,27 +120,27 @@ def test_harvest_plant_schema_valid():
     assert HARVEST_PLANT_SCHEMA(data) == data
 
 
-def test_take_clone_schema_valid():
+def test_take_clone_schema_valid() -> None:
     data = {"mother_plant_id": "p1", "num_clones": 2}
     validated = TAKE_CLONE_SCHEMA(data)
     assert validated["num_clones"] == 2
 
 
-def test_debug_cleanup_legacy_schema_valid():
+def test_debug_cleanup_legacy_schema_valid() -> None:
     data = {"dry_only": True, "cure_only": False}
     validated = DEBUG_CLEANUP_LEGACY_SCHEMA(data)
     assert validated["dry_only"] is True
 
 
-def test_debug_list_growspaces_schema_valid():
+def test_debug_list_growspaces_schema_valid() -> None:
     assert DEBUG_LIST_GROWSPACES_SCHEMA({}) == {}
 
 
-def test_debug_reset_special_growspaces_schema_valid():
+def test_debug_reset_special_growspaces_schema_valid() -> None:
     data = {"reset_dry": True, "reset_cure": False, "preserve_plants": True}
     validated = DEBUG_RESET_SPECIAL_GROWSPACES_SCHEMA(data)
     assert validated["reset_cure"] is False
 
 
-def test_debug_consolidate_duplicate_special_schema_valid():
+def test_debug_consolidate_duplicate_special_schema_valid() -> None:
     assert DEBUG_CONSOLIDATE_DUPLICATE_SPECIAL_SCHEMA({}) == {}

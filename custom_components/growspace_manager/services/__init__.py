@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from ..const import (
+from ..schemas import (
     ADD_DRAIN_TIME_SCHEMA,
     ADD_GROWSPACE_SCHEMA,
     ADD_IRRIGATION_TIME_SCHEMA,
@@ -33,9 +33,9 @@ from ..const import (
     SWITCH_PLANT_SCHEMA,
     TAKE_CLONE_SCHEMA,
     TRANSITION_PLANT_SCHEMA,
+    UPDATE_GROWSPACE_SCHEMA,
     UPDATE_PLANT_SCHEMA,
     UPDATE_STRAIN_META_SCHEMA,
-    UPDATE_GROWSPACE_SCHEMA,
 )
 from . import debug, plant, strain_library
 

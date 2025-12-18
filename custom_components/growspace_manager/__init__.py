@@ -15,17 +15,15 @@ from homeassistant.config_entries import ConfigEntry, ConfigEntryState
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ServiceValidationError
 from homeassistant.helpers import config_validation as cv
+from homeassistant.helpers.issue_registry import IssueSeverity, async_create_issue
 from homeassistant.helpers.storage import Store
 from homeassistant.helpers.typing import ConfigType
 
+from . import service_registration
 from .const import DOMAIN, PLATFORMS, STORAGE_KEY, STORAGE_VERSION
 from .coordinator import GrowspaceCoordinator
-from .dehumidifier_coordinator import DehumidifierCoordinator
 from .intent import async_setup_intents
-from .irrigation_coordinator import IrrigationCoordinator
-from .service_registration import get_coordinator_for_call, register_services
 from .services.strain_library import StrainLibrary
-from .vwc_irrigation_coordinator import VWCIrrigationCoordinator
 
 CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 
@@ -38,90 +36,6 @@ type GrowspaceConfigEntry = ConfigEntry[GrowspaceCoordinator]
 async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
     """Set up the Growspace Manager component."""
     hass.data.setdefault(DOMAIN, {})
-
-    # Initialize and load Strain Library (global instance)
-    strain_library_instance = StrainLibrary(hass)
-    await strain_library_instance.async_setup()
-    hass.data[DOMAIN]["strain_library"] = strain_library_instance
-
-    # Register View
-    hass.http.register_view(StrainLibraryUploadView(hass, strain_library_instance))
-
-    # Register all custom services
-    _LOGGER.debug("Registering services for domain %s", DOMAIN)
-    await register_services(hass, strain_library_instance)
-
-    # Register WebSocket API
-    WS_TYPE_GET_LOG = f"{DOMAIN}/get_log"
-    SCHEMA_WS_GET_LOG = websocket_api.BASE_COMMAND_MESSAGE_SCHEMA.extend(
-        {
-            vol.Required("type"): WS_TYPE_GET_LOG,
-            vol.Optional("growspace_id"): str,
-        }
-    )
-
-    @websocket_api.async_response
-    async def websocket_get_event_log(hass: HomeAssistant, connection, msg):
-        """Handle get event log command."""
-        growspace_id = msg.get("growspace_id")
-        events_data = {}
-
-        if growspace_id:
-            try:
-                coordinator = get_coordinator_for_call(hass, msg)
-                events = coordinator.events.get(growspace_id, [])
-                events_data[growspace_id] = [e.to_dict() for e in events]
-            except (
-                ServiceValidationError
-            ):  # invalid growspace_id or no coordinator found
-                _LOGGER.warning(
-                    "Could not find coordinator for growspace %s", growspace_id
-                )
-        else:
-            # Aggregate from all coordinators
-            for entry in hass.config_entries.async_entries(DOMAIN):
-                if entry.state == ConfigEntryState.LOADED and hasattr(
-                    entry, "runtime_data"
-                ):
-                    coord = entry.runtime_data
-                    for gid, evts in coord.events.items():
-                        events_data[gid] = [e.to_dict() for e in evts]
-
-        connection.send_result(msg["id"], events_data)
-
-    websocket_api.async_register_command(
-        hass, WS_TYPE_GET_LOG, websocket_get_event_log, SCHEMA_WS_GET_LOG
-    )
-
-    # Growspace Data
-    WS_TYPE_GET_DATA = f"{DOMAIN}/get_data"
-    SCHEMA_WS_GET_DATA = websocket_api.BASE_COMMAND_MESSAGE_SCHEMA.extend(
-        {
-            vol.Required("type"): WS_TYPE_GET_DATA,
-            vol.Optional("growspace_id"): str,
-        }
-    )
-
-    @websocket_api.async_response
-    async def websocket_get_growspace_data(hass: HomeAssistant, connection, msg):
-        """Handle get growspace data command."""
-        growspace_id = msg.get("growspace_id")
-        try:
-            coordinator = get_coordinator_for_call(hass, msg)
-            data = coordinator.get_growspace_data(growspace_id)
-            connection.send_result(msg["id"], data)
-        except ServiceValidationError as err:
-            connection.send_error(msg["id"], "invalid_args", str(err))
-        except Exception as e:
-            connection.send_error(msg["id"], "unknown_error", str(e))
-
-    websocket_api.async_register_command(
-        hass, WS_TYPE_GET_DATA, websocket_get_growspace_data, SCHEMA_WS_GET_DATA
-    )
-
-    # Set up intents
-    await async_setup_intents(hass)
-
     return True
 
 
@@ -135,11 +49,31 @@ async def async_setup_entry(hass: HomeAssistant, entry: GrowspaceConfigEntry) ->
     store: Store = Store(hass, STORAGE_VERSION, STORAGE_KEY)
     data = await store.async_load() or {}
 
+    # Initialize and load Strain Library (global instance)
+    if "strain_library" not in hass.data[DOMAIN]:
+        strain_library_instance = StrainLibrary(hass)
+        await strain_library_instance.async_setup()
+        hass.data[DOMAIN]["strain_library"] = strain_library_instance
+
+        # Register View
+        hass.http.register_view(StrainLibraryUploadView(hass, strain_library_instance))
+
+        # Register all custom services
+        _LOGGER.debug("Registering services for domain %s", DOMAIN)
+        await service_registration.register_services(hass, strain_library_instance)
+
+        # Register WebSocket API
+        _async_register_websocket_api(hass)
+
+        # Set up intents
+        await async_setup_intents(hass)
+
     # Retrieve global Strain Library
     strain_library_instance = hass.data[DOMAIN]["strain_library"]
 
     coordinator = GrowspaceCoordinator(
         hass,
+        entry,
         data,
         options=dict(entry.options),
         strain_library=strain_library_instance,
@@ -148,44 +82,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: GrowspaceConfigEntry) ->
 
     entry.runtime_data = coordinator
 
-    for growspace_id, gs in coordinator.growspaces.items():
-        # ADD THIS DEBUG LOGGING
-        irrigation_config = entry.options.get("irrigation", {}).get(growspace_id, {})
-        _LOGGER.debug(
-            "IRRIGATION INIT - Growspace: %s, Config: %s",
-            growspace_id,
-            irrigation_config,
-        )
+    # Initialize sub-coordinators
+    await coordinator.async_initialize_sub_coordinators(entry)
 
-        if gs.irrigation_strategy.enabled:
-            _LOGGER.info(
-                "Initializing VWC Irrigation Coordinator for growspace %s", growspace_id
-            )
-            irrigation_coordinator = VWCIrrigationCoordinator(
-                hass, entry, growspace_id, coordinator
-            )
-        else:
-            _LOGGER.debug(
-                "Initializing Standard Irrigation Coordinator for growspace %s",
-                growspace_id,
-            )
-            irrigation_coordinator = IrrigationCoordinator(
-                hass, entry, growspace_id, coordinator
-            )
-
-        await irrigation_coordinator.async_setup()
-        entry.runtime_data.irrigation_coordinators[growspace_id] = (
-            irrigation_coordinator
-        )
-
-        dehumidifier_coordinator = DehumidifierCoordinator(
-            hass, entry, growspace_id, coordinator
-        )
-
-        entry.runtime_data.dehumidifier_coordinators[growspace_id] = (
-            dehumidifier_coordinator
-        )
-
+    entry.async_on_unload(lambda: _async_cancel_coordinators(entry.runtime_data))
     entry.add_update_listener(_async_update_listener)
 
     # Handle pending growspace if initiated before entry setup completion
@@ -212,12 +112,17 @@ async def async_setup_entry(hass: HomeAssistant, entry: GrowspaceConfigEntry) ->
                 "Failed to create pending growspace %s",
                 pending.get("name", "unknown"),
             )
-            create_notification(
+            async_create_issue(
                 hass,
-                (
-                    f"Failed to create pending growspace '{pending.get('name', 'unknown')}'"
-                ),
-                title="Growspace Manager Error",
+                DOMAIN,
+                f"pending_growspace_fail_{pending.get('name', 'unknown')}",
+                is_fixable=False,
+                severity=IssueSeverity.ERROR,
+                translation_key="pending_growspace_fail",
+                translation_placeholders={
+                    "name": pending.get("name", "unknown"),
+                    "error": "Failed to create pending growspace",
+                },
             )
 
     # Forward entry setup to platforms (e.g., sensors, switches)
@@ -246,7 +151,6 @@ async def async_unload_entry(hass: HomeAssistant, entry: GrowspaceConfigEntry) -
     _LOGGER.debug("Unloading config entry %s for Growspace Manager", entry.entry_id)
 
     # Clean up dynamically created entities before unloading platforms
-    _async_cancel_coordinators(entry.runtime_data)
     # _async_remove_dynamic_entities(hass, entry.runtime_data) # Removed per request
 
     unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
@@ -261,12 +165,14 @@ async def async_unload_entry(hass: HomeAssistant, entry: GrowspaceConfigEntry) -
     return False
 
 
-async def _async_update_listener(hass: HomeAssistant, entry: ConfigEntry) -> None:
+async def _async_update_listener(
+    hass: HomeAssistant, entry: GrowspaceConfigEntry
+) -> None:
     """Handle options update."""
     await hass.config_entries.async_reload(entry.entry_id)
 
 
-async def async_reload_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
+async def async_reload_entry(hass: HomeAssistant, entry: GrowspaceConfigEntry) -> None:
     """Reload a config entry."""
     _LOGGER.debug(
         "Reloading Growspace Manager integration for entry %s", entry.entry_id
@@ -366,10 +272,83 @@ class StrainLibraryUploadView(HomeAssistantView):
                 await self.hass.async_add_executor_job(temp_path.unlink)
 
 
-def create_notification(
-    hass: HomeAssistant, message: str, title: str = "Growspace Manager"
-) -> None:
-    """Create a persistent notification."""
-    hass.components.persistent_notification.create(
-        message, title=title, notification_id=f"{DOMAIN}_notification"
+WS_TYPE_GET_LOG = f"{DOMAIN}/get_log"
+SCHEMA_WS_GET_LOG = websocket_api.BASE_COMMAND_MESSAGE_SCHEMA.extend(
+    {
+        vol.Required("type"): WS_TYPE_GET_LOG,
+        vol.Optional("growspace_id"): str,
+    }
+)
+
+WS_TYPE_GET_DATA = f"{DOMAIN}/get_data"
+SCHEMA_WS_GET_DATA = websocket_api.BASE_COMMAND_MESSAGE_SCHEMA.extend(
+    {
+        vol.Required("type"): WS_TYPE_GET_DATA,
+        vol.Optional("growspace_id"): str,
+    }
+)
+
+
+async def websocket_get_event_log(hass: HomeAssistant, connection, msg):
+    """Handle get event log command."""
+    growspace_id = msg.get("growspace_id")
+    events_data = {}
+
+    try:
+        if growspace_id:
+            try:
+                coordinator = service_registration.get_coordinator_for_call(hass, msg)
+                events = coordinator.events.get(growspace_id, [])
+                events_data[growspace_id] = [e.to_dict() for e in events]
+            except (
+                ServiceValidationError
+            ):  # invalid growspace_id or no coordinator found
+                _LOGGER.warning(
+                    "Could not find coordinator for growspace %s", growspace_id
+                )
+        else:
+            # Aggregate from all coordinators
+            for entry in hass.config_entries.async_entries(DOMAIN):
+                if entry.state == ConfigEntryState.LOADED and hasattr(
+                    entry, "runtime_data"
+                ):
+                    coord = entry.runtime_data
+                    for gid, evts in coord.events.items():
+                        events_data[gid] = [e.to_dict() for e in evts]
+
+        connection.send_result(msg["id"], events_data)
+    except Exception as err:
+        _LOGGER.exception("Error handling websocket_get_event_log")
+        connection.send_error(msg["id"], "unknown_error", str(err))
+
+
+async def websocket_get_growspace_data(hass: HomeAssistant, connection, msg):
+    """Handle get growspace data command."""
+    growspace_id = msg.get("growspace_id")
+    try:
+        coordinator = service_registration.get_coordinator_for_call(hass, msg)
+        data = coordinator.get_growspace_data(growspace_id)
+        connection.send_result(msg["id"], data)
+    except ServiceValidationError as err:
+        connection.send_error(msg["id"], "invalid_args", str(err))
+    except Exception as e:
+        connection.send_error(msg["id"], "unknown_error", str(e))
+
+
+def _async_register_websocket_api(hass: HomeAssistant) -> None:
+    """Register WebSocket API commands."""
+    _LOGGER.debug("Registering WebSocket API for %s", DOMAIN)
+
+    websocket_api.async_register_command(
+        hass,
+        WS_TYPE_GET_LOG,
+        websocket_api.async_response(websocket_get_event_log),
+        SCHEMA_WS_GET_LOG,
+    )
+
+    websocket_api.async_register_command(
+        hass,
+        WS_TYPE_GET_DATA,
+        websocket_api.async_response(websocket_get_growspace_data),
+        SCHEMA_WS_GET_DATA,
     )

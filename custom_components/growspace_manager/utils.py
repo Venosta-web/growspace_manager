@@ -4,29 +4,45 @@ from __future__ import annotations
 
 import math
 from datetime import date, datetime
+from typing import TYPE_CHECKING
 
 from dateutil import parser
+from homeassistant.util.dt import as_local, now
 
-from .const import PlantStage
-from .models import Growspace, Plant
+from .const import DOMAIN, PlantStage
+
+if TYPE_CHECKING:
+    from .models import Growspace, Plant
 
 DateInput = str | datetime | date | None
 
 
 def parse_date_field(date_value: DateInput) -> datetime | None:
-    """Parse various date inputs into a datetime object."""
+    """Parse various date inputs into a timezone-aware datetime object."""
     if date_value is None:
         return None
-    if isinstance(date_value, datetime):
-        return date_value
-    if isinstance(date_value, date):
-        return datetime.combine(date_value, datetime.min.time())
-    if isinstance(date_value, str):
-        try:
-            # Attempt to parse ISO format
-            return parser.isoparse(date_value)
-        except (ValueError, TypeError):
+
+    dt: datetime | None = None
+
+    match date_value:
+        case datetime():
+            dt = date_value
+        case date():
+            dt = datetime.combine(date_value, datetime.min.time())
+        case str():
+            try:
+                # Attempt to parse ISO format
+                dt = parser.isoparse(date_value)
+            except (ValueError, TypeError):
+                return None
+        case _:
             return None
+
+    if dt is not None:
+        if dt.tzinfo is None:
+            return as_local(dt)
+        return dt
+
     return None
 
 
@@ -46,7 +62,7 @@ def calculate_days_since(
     If end_date is None, uses current time.
     """
     start = parse_date_field(start_date)
-    end = parse_date_field(end_date) if end_date else datetime.now()
+    end = parse_date_field(end_date) if end_date else now()
     if start is None or end is None:
         return 0
     return (end - start).days
@@ -103,6 +119,18 @@ class VPDCalculator:
     """A utility class for calculating Vapor Pressure Deficit (VPD)."""
 
     @staticmethod
+    def _calculate_svp(temperature_c: float) -> float:
+        """Calculate Saturation Vapor Pressure (SVP) using the Magnus formula.
+
+        Args:
+            temperature_c: Temperature in degrees Celsius.
+
+        Returns:
+            SVP in kilopascals (kPa).
+        """
+        return 0.61094 * math.exp((17.625 * temperature_c) / (243.04 + temperature_c))
+
+    @staticmethod
     def calculate_vpd(temperature_c: float, humidity_rh: float) -> float | None:
         """Calculate Vapor Pressure Deficit (VPD) in kPa.
 
@@ -118,8 +146,8 @@ class VPDCalculator:
         ):
             return None
 
-        # Magnus formula to calculate saturation vapor pressure (SVP) in kPa
-        svp = 0.61094 * math.exp((17.625 * temperature_c) / (243.04 + temperature_c))
+        # Calculate saturation vapor pressure (SVP)
+        svp = VPDCalculator._calculate_svp(temperature_c)
 
         # Calculate actual vapor pressure (AVP)
         avp = svp * (humidity_rh / 100)
@@ -150,21 +178,25 @@ class VPDCalculator:
         # Calculate leaf temperature
         leaf_temperature_c = air_temperature_c + lst_offset
 
-        # Magnus formula for saturation vapor pressure at leaf temperature
-        svp_leaf = 0.61094 * math.exp(
-            (17.625 * leaf_temperature_c) / (243.04 + leaf_temperature_c)
-        )
+        # Calculate SVP at leaf temperature (Leaf SVP) represents the saturated vapor pressure
+        # within the leaf stomata.
+        leaf_svp = VPDCalculator._calculate_svp(leaf_temperature_c)
 
-        # Magnus formula for saturation vapor pressure at air temperature
-        svp_air = 0.61094 * math.exp(
-            (17.625 * air_temperature_c) / (243.04 + air_temperature_c)
-        )
+        # Calculate SVP at air temperature (Air SVP)
+        # Note: While simple VPD uses Air SVP to find AVP, for leaf-to-air VPD
+        # we strictly compare Leaf SVP to Air AVP.
 
-        # Calculate actual vapor pressure from air
-        avp = svp_air * (humidity_rh / 100)
+        # We need Air SVP only to calculate Air AVP from RH
+        air_svp = VPDCalculator._calculate_svp(air_temperature_c)
 
-        # VPD is the difference between leaf SVP and air AVP
-        vpd = svp_leaf - avp
+        # Actual Vapor Pressure of the air (AVP) derived from Air SVP and RH
+        air_avp = air_svp * (humidity_rh / 100)
+
+        # Leaf-to-Air VPD = Leaf SVP - Air AVP
+        vpd = leaf_svp - air_avp
+
+        # VPD cannot be negative physically (implies condensation/dew point reached on leaf)
+        # but returning 0.0 or negative is fine for tracking.
         return round(vpd, 2)
 
 
@@ -208,7 +240,7 @@ def _get_stage_from_growspace(plant: Plant) -> str | None:
 
 def _get_stage_from_dates(plant: Plant) -> str | None:
     """Determine stage based on start dates, prioritizing the most advanced stage."""
-    now = datetime.now()
+    current_time = now()
     # Check in reverse order of progression (most advanced first)
     dates = [
         (plant.cure_start, PlantStage.CURE),
@@ -220,7 +252,7 @@ def _get_stage_from_dates(plant: Plant) -> str | None:
         (plant.seedling_start, PlantStage.SEEDLING),
     ]
     for date_val, stage in dates:
-        if (dt := parse_date_field(date_val)) and dt <= now:
+        if (dt := parse_date_field(date_val)) and dt <= current_time:
             return stage
     return None
 
@@ -231,3 +263,13 @@ def _get_stage_fallback(plant: Plant) -> str | None:
     if plant.stage in valid_stages:
         return plant.stage
     return None
+
+
+def generate_vpd_sensor_unique_id(growspace_id: str) -> str:
+    """Generate a consistent unique ID for a calculated VPD sensor."""
+    return f"{DOMAIN}_{growspace_id}_calculated_vpd"
+
+
+def generate_growspace_overview_unique_id(growspace_id: str) -> str:
+    """Generate a consistent unique ID for a growspace overview sensor."""
+    return f"{DOMAIN}_{growspace_id}"

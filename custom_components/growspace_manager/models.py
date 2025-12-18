@@ -9,13 +9,82 @@ from __future__ import annotations
 
 from dataclasses import asdict, dataclass, field, fields
 from datetime import datetime
-from typing import Any, TypedDict
+from enum import StrEnum
+from typing import TYPE_CHECKING, Any, TypedDict
 
 from .const import PlantStage
+from .utils import calculate_days_since, days_to_week
+
+if TYPE_CHECKING:
+    pass
 
 
-@dataclass
-class IrrigationStrategy:
+type IrrigationScheduleItem = dict[str, Any]
+type DehumidifierThresholds = dict[str, Any]
+type BayesianOptions = dict[str, Any]
+
+
+@dataclass(slots=True)
+class BaseModel:
+    """Base class providing generic serialization methods."""
+
+    def to_dict(self) -> dict:
+        """Convert to dictionary."""
+        return asdict(self)
+
+    @classmethod
+    def from_dict(cls, data: dict) -> Any:  # noqa: C901
+        """Create from dictionary with optional migrations and nested handlers."""
+        data = data.copy()
+
+        # Get configuration from class attributes
+        migrations: dict[str, str] | None = getattr(cls, "_MIGRATIONS", None)
+        nested_handlers: dict[str, Any] | None = getattr(cls, "_NESTED_HANDLERS", None)
+        defaults: dict[str, Any] | None = getattr(cls, "_DEFAULTS", None)
+
+        # Apply migrations
+        if migrations:
+            for old_key, new_key in migrations.items():
+                if old_key in data and new_key not in data:
+                    data[new_key] = data.pop(old_key)
+
+        # Apply defaults
+        if defaults:
+            for key, value in defaults.items():
+                if key not in data:
+                    data[key] = value
+
+        # specific hack for IrrigationStrategy which isn't always dict in some contexts?
+        # Actually usually it is. But just in case.
+        if nested_handlers:
+            for key, handler in nested_handlers.items():
+                if key in data and isinstance(data[key], dict):
+                    data[key] = handler(data[key])
+                elif key in data and data[key] is None:
+                    # Handle None if handler allows it, or let it pass if field allows None
+                    pass
+
+        catch_all_field = getattr(cls, "_CATCH_ALL_FIELD", None)
+        allowed_keys = {f.name for f in fields(cls)}
+        filtered_data = {k: v for k, v in data.items() if k in allowed_keys}
+
+        if catch_all_field:
+            extras = {k: v for k, v in data.items() if k not in allowed_keys}
+            # Merge with existing data in the catch-all field if present
+            existing_catch_all = filtered_data.get(catch_all_field, {})
+            if existing_catch_all is None:
+                existing_catch_all = {}
+            if not isinstance(existing_catch_all, dict):
+                existing_catch_all = {}  # Should not happen if typed correctly but safe
+
+            existing_catch_all.update(extras)
+            filtered_data[catch_all_field] = existing_catch_all
+
+        return cls(**filtered_data)
+
+
+@dataclass(slots=True)
+class IrrigationStrategy(BaseModel):
     """Configuration for VWC-based crop steering strategy.
 
     Attributes:
@@ -38,21 +107,63 @@ class IrrigationStrategy:
     shot_duration_seconds: int = 10
     shot_interval_minutes: int = 15
 
-    def to_dict(self) -> dict:
-        """Convert to dictionary."""
-        return asdict(self)
 
-    @staticmethod
-    def from_dict(data: dict) -> IrrigationStrategy:
-        """Create from dictionary."""
-        data = data.copy()
-        allowed_keys = {f.name for f in fields(IrrigationStrategy)}
-        filtered_data = {k: v for k, v in data.items() if k in allowed_keys}
-        return IrrigationStrategy(**filtered_data)
+@dataclass(slots=True)
+class EnvironmentConfig(BaseModel):
+    """Configuration for environment sensors and devices."""
+
+    temperature_sensor: str | None = None
+    humidity_sensor: str | None = None
+    vpd_sensor: str | None = None
+    co2_sensor: str | None = None
+    light_sensor: str | None = None
+    soil_moisture_sensor: str | None = None
+    exhaust_fan_entity: str | None = None
+    circulation_fan_entity: str | None = None
+    humidifier_entity: str | None = None
+    dehumidifier_entity: str | None = None
+    lst_offset: float = -2.0
+    control_dehumidifier: bool = False
+    dehumidifier_thresholds: DehumidifierThresholds = field(default_factory=dict)
+    minimum_source_air_temperature: float = 18.0
+    stress_threshold: float = 0.70
+    mold_threshold: float = 0.75
+    bayesian_options: BayesianOptions = field(default_factory=dict)
+
+    _CATCH_ALL_FIELD = "bayesian_options"
+
+    _MIGRATIONS = {
+        "exhaust_sensor": "exhaust_fan_entity",
+        "humidifier_sensor": "humidifier_entity",
+        "circulation_fan": "circulation_fan_entity",
+        "exhaust_entity": "exhaust_fan_entity",  # normalizing diverse naming
+    }
 
 
-@dataclass
-class Growspace:
+@dataclass(slots=True)
+class IrrigationConfig(BaseModel):
+    """Configuration for irrigation and drain pumps and schedules."""
+
+    irrigation_pump_entity: str | None = None
+    drain_pump_entity: str | None = None
+    irrigation_duration: int | None = None
+    drain_duration: int | None = None
+    irrigation_times: list[IrrigationScheduleItem] = field(default_factory=list)
+    drain_times: list[IrrigationScheduleItem] = field(default_factory=list)
+    veg_day_hours: int = 12
+
+
+class GrowspaceType(StrEnum):
+    FLOWER = "flower"
+    VEG = "veg"
+    MOTHER = "mother"
+    DRY = "dry"
+    CURE = "cure"
+    CLONE = "clone"
+
+
+@dataclass(slots=True)
+class Growspace(BaseModel):
     """Represents a single growspace area.
 
     Attributes:
@@ -67,6 +178,7 @@ class Growspace:
         irrigation_config: A dictionary of basic pump configurations and schedules.
         dehumidifier_config: A dictionary of dehumidifier settings.
         irrigation_strategy: The VWC crop steering strategy configuration.
+        growspace_type: The type of growspace.
     """
 
     id: str
@@ -76,60 +188,22 @@ class Growspace:
     notification_target: str | None = None
     created_at: str = field(default_factory=lambda: datetime.now().isoformat())
     device_id: str | None = None
-    environment_config: dict[str, Any] = field(default_factory=dict)
-    irrigation_config: dict[str, Any] = field(default_factory=dict)
+    environment_config: EnvironmentConfig = field(default_factory=EnvironmentConfig)
+    irrigation_config: IrrigationConfig = field(default_factory=IrrigationConfig)
     dehumidifier_config: dict[str, Any] = field(default_factory=dict)
     irrigation_strategy: IrrigationStrategy = field(default_factory=IrrigationStrategy)
+    growspace_type: GrowspaceType = field(default=GrowspaceType.FLOWER)
 
-    def to_dict(self) -> dict:
-        """Convert the dataclass instance to a dictionary.
-
-        Returns:
-            A dictionary representation of the Growspace.
-        """
-
-        return asdict(self)
-
-    @staticmethod
-    def from_dict(data: dict) -> Growspace:
-        """Create a Growspace instance from a dictionary.
-
-        This factory method handles the migration of legacy field names
-        and filters out any keys that do not correspond to dataclass fields,
-        making it robust against data from older versions.
-
-        Args:
-            data: A dictionary containing the growspace data.
-
-        Returns:
-            A new instance of the Growspace class.
-        """
-        data = data.copy()  # Don't modify original
-
-        # Migrate old field names
-        if "created" in data and "created_at" not in data:
-            data["created_at"] = data.pop("created")
-
-        if "updated" in data and "updated_at" not in data:
-            data["updated_at"] = data.pop("updated")
-
-        # Handle nested objects
-        if "irrigation_strategy" in data and isinstance(
-            data["irrigation_strategy"], dict
-        ):
-            data["irrigation_strategy"] = IrrigationStrategy.from_dict(
-                data["irrigation_strategy"]
-            )
-
-        # Only keep keys that match dataclass fields
-        allowed_keys = {f.name for f in fields(Growspace)}
-        filtered_data = {k: v for k, v in data.items() if k in allowed_keys}
-
-        return Growspace(**filtered_data)
+    _MIGRATIONS = {"created": "created_at", "updated": "updated_at"}
+    _NESTED_HANDLERS = {
+        "irrigation_strategy": IrrigationStrategy.from_dict,
+        "environment_config": EnvironmentConfig.from_dict,
+        "irrigation_config": IrrigationConfig.from_dict,
+    }
 
 
-@dataclass
-class Plant:
+@dataclass(slots=True)
+class Plant(BaseModel):
     """Represents a single plant.
 
     Attributes:
@@ -176,45 +250,28 @@ class Plant:
     transition_date: str | None = None
     source_mother: str | None = None
 
-    def to_dict(self) -> dict:
-        """Convert the dataclass instance to a dictionary.
+    source_mother: str | None = None
 
-        Returns:
-            A dictionary representation of the Plant.
-        """
-        return asdict(self)
+    _MIGRATIONS = {"created": "created_at", "updated": "updated_at"}
 
-    @staticmethod
-    def from_dict(data: dict) -> Plant:
-        """Create a Plant instance from a dictionary.
+    def get_days_in_stage(self, stage_name: str) -> int:
+        """Calculate days spent in a specific stage."""
 
-        This factory method handles the migration of legacy field names
-        and filters out any keys that do not correspond to dataclass fields,
-        making it robust against data from older versions.
+        start_date_attr = f"{stage_name}_start"
+        if hasattr(self, start_date_attr):
+            start_date = getattr(self, start_date_attr)
+            if start_date:
+                return calculate_days_since(start_date)
+        return 0
 
-        Args:
-            data: A dictionary containing the plant data.
+    def get_week_in_stage(self, stage_name: str) -> int:
+        """Calculate the week number in a specific stage."""
 
-        Returns:
-            A new instance of the Plant class.
-        """
-        data = data.copy()  # Don't modify original
-
-        # Migrate old field names
-        if "created" in data and "created_at" not in data:
-            data["created_at"] = data.pop("created")
-
-        if "updated" in data and "updated_at" not in data:
-            data["updated_at"] = data.pop("updated")
-
-        # Only keep keys that match dataclass fields
-        allowed_keys = {f.name for f in fields(Plant)}
-        filtered_data = {k: v for k, v in data.items() if k in allowed_keys}
-
-        return Plant(**filtered_data)
+        days = self.get_days_in_stage(stage_name)
+        return days_to_week(days)
 
 
-@dataclass
+@dataclass(slots=True)
 class EnvironmentState:
     """Represents a snapshot of the current environment state in a growspace.
 
@@ -247,8 +304,8 @@ class EnvironmentState:
     soil_moisture: float | None = None
 
 
-@dataclass
-class GrowspaceEvent:
+@dataclass(slots=True)
+class GrowspaceEvent(BaseModel):
     """Represents a historical significant event in a growspace.
 
     Attributes:
@@ -271,28 +328,8 @@ class GrowspaceEvent:
     category: str
     reasons: list[str] = field(default_factory=list)
 
-    def to_dict(self) -> dict:
-        """Convert the dataclass instance to a dictionary."""
-        return asdict(self)
-
-    @staticmethod
-    def from_dict(data: dict) -> GrowspaceEvent:
-        """Create a GrowspaceEvent instance from a dictionary."""
-        data = data.copy()
-
-        # Backward compatibility for 'max_probability'
-        if "max_probability" in data and "severity" not in data:
-            data["severity"] = data.pop("max_probability")
-
-        # Default category if missing
-        if "category" not in data:
-            data["category"] = "alert"  # Default for legacy events
-
-        # Only keep keys that match dataclass fields
-        allowed_keys = {f.name for f in fields(GrowspaceEvent)}
-        filtered_data = {k: v for k, v in data.items() if k in allowed_keys}
-
-        return GrowspaceEvent(**filtered_data)
+    _MIGRATIONS = {"max_probability": "severity"}
+    _DEFAULTS = {"category": "alert"}
 
 
 class GrowspaceCoordinatorData(TypedDict):

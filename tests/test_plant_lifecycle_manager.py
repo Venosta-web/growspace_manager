@@ -5,6 +5,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from custom_components.growspace_manager.const import PlantStage
+from custom_components.growspace_manager.exceptions import GrowspaceNotFoundError
 from custom_components.growspace_manager.models import Plant
 from custom_components.growspace_manager.plant_lifecycle_manager import (
     PlantLifecycleManager,
@@ -24,8 +25,12 @@ def coordinator_mock():
     mock.plants = {}
     mock.strain_library = MagicMock()
     mock.strain_library.record_harvest = AsyncMock()
+    mock.async_commit = AsyncMock()
     mock.serializer = MagicMock()
     mock.serializer.calculate_days_in_stage = MagicMock(return_value=10)
+    mock._lock = MagicMock()
+    mock._lock.__aenter__ = AsyncMock(return_value=None)
+    mock._lock.__aexit__ = AsyncMock(return_value=None)
     return mock
 
 
@@ -37,13 +42,7 @@ def manager(coordinator_mock):
 
 @pytest.mark.asyncio
 async def test_handle_clone_creation(manager, coordinator_mock) -> None:
-    """Test handle_clone_creation calls async_add_plant correctly."""
-
-    # Setup mock return for async_add_plant
-    mock_plant = MagicMock(spec=Plant)
-    mock_plant.plant_id = "new_clone_id"
-    coordinator_mock.async_add_plant.return_value = mock_plant
-
+    """Test handle_clone_creation adds plant to coordinator."""
     mother_plant = MagicMock(spec=Plant)
     mother_plant.phenotype = "Pheno1"
 
@@ -57,23 +56,24 @@ async def test_handle_clone_creation(manager, coordinator_mock) -> None:
         extra_param="extra_value",
     )
 
-    assert plant_id == "new_clone_id"
+    assert plant_id is not None
+    # Check that a plant was added to coordinator.plants
+    assert len(coordinator_mock.plants) == 1
+    added_plant = list(coordinator_mock.plants.values())[0]
 
-    # Verify async_add_plant was called with correct args
-    coordinator_mock.async_add_plant.assert_awaited_once()
-    call_kwargs = coordinator_mock.async_add_plant.call_args.kwargs
+    assert added_plant.growspace_id == "clone_tent"
+    assert added_plant.strain == "OG Kush"
+    assert added_plant.phenotype == "Pheno1"
+    assert added_plant.row == 1
+    assert added_plant.col == 2
+    assert added_plant.stage == PlantStage.CLONE
+    assert added_plant.type == PlantStage.CLONE
+    assert added_plant.source_mother == "mother_id"
 
-    assert call_kwargs["growspace_id"] == "clone_tent"
-    assert call_kwargs["strain"] == "OG Kush"
-    assert call_kwargs["phenotype"] == "Pheno1"
-    assert call_kwargs["row"] == 1
-    assert call_kwargs["col"] == 2
-    assert call_kwargs["stage"] == PlantStage.CLONE
-    assert call_kwargs["source_mother"] == "mother_id"
-    assert call_kwargs["extra_param"] == "extra_value"
-    assert (
-        "start_date" not in call_kwargs
-    )  # Check that we aren't passing unexpected args if not defined check
+    coordinator_mock.async_commit.assert_awaited_once()
+    # The Plant model doesn't support arbitrary kwargs, so we just check standard fields.
+
+    coordinator_mock.async_commit.assert_awaited_once()
 
 
 @pytest.mark.asyncio
@@ -144,20 +144,26 @@ async def test_harvest_auto_flow_strict_matching_audreys_garden(
 
 
 @pytest.mark.asyncio
-async def test_harvest_auto_flow_explicit_dry(manager) -> None:
+async def test_harvest_auto_flow_explicit_dry(manager, coordinator_mock) -> None:
     """Test explicit 'dry' match."""
     plant = MagicMock()
     plant.stage = PlantStage.VEG
     plant.growspace_id = "initial_gs"
     plant.strain = "Test Strain"
     plant.phenotype = "Test Pheno"
+    plant.plant_id = "p1"
+    coordinator_mock.plants = {"p1": plant}  # Ensure plant exists
+
     with patch.object(
-        manager, "move_to_dry_growspace", new_callable=AsyncMock
-    ) as mock_move_dry:
-        mock_move_dry.return_value = True
+        manager, "_move_to_special_growspace", new_callable=AsyncMock
+    ) as mock_move_special:
+        mock_move_special.return_value = True
 
         await manager._harvest_auto_flow("p1", plant, "dry", "2023-01-01")
-        mock_move_dry.assert_awaited()
+
+        mock_move_special.assert_awaited_once_with(
+            "p1", plant, PlantStage.DRY, "2023-01-01"
+        )
 
 
 @pytest.mark.asyncio
@@ -177,6 +183,8 @@ async def test_move_to_dry_growspace_device_id_ghosting(
     mock_dry_gs = MagicMock()
     mock_dry_gs.device_id = None  # Crucial: destination has no device
     coordinator_mock.growspaces = {"dry_gs": mock_dry_gs}
+    # Ensure plant in coordinator
+    coordinator_mock.plants = {"p1": plant}
 
     # Mock update to inspect call args
     coordinator_mock.async_update_plant = AsyncMock()
@@ -200,8 +208,10 @@ async def test_handle_harvest_logic_fallthrough(manager, coordinator_mock) -> No
     coordinator_mock.growspaces = {"valid_gs": MagicMock()}
 
     # Currently code falls through to auto-flow.
-    # We expect it to raise ValueError.
-    with pytest.raises(ValueError, match="Target growspace invalid_gs not found"):
+    # We expect it to raise GrowspaceNotFoundError.
+    with pytest.raises(
+        GrowspaceNotFoundError, match="Target growspace invalid_gs not found"
+    ):
         await manager.handle_harvest_logic(
             "p1", plant, "invalid_gs", "Invalid Name", "2023-01-01"
         )
