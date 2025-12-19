@@ -65,7 +65,7 @@ def calculate_days_since(
     end = parse_date_field(end_date) if end_date else now()
     if start is None or end is None:
         return 0
-    return (end - start).days
+    return (end.date() - start.date()).days
 
 
 def days_to_week(days: int) -> int:

@@ -182,6 +182,7 @@ async def test_async_check_timed_notifications(
         growspace_id=GROWSPACE_ID,
         strain="Strain A",
     )
+    mock_coordinator.plants = {"plant_1": plant}
     mock_coordinator.get_growspace_plants.return_value = [plant]
     mock_coordinator.serializer = MagicMock()
     mock_coordinator.serializer.calculate_days_in_stage.return_value = 10

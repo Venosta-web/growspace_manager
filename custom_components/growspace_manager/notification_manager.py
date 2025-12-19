@@ -234,6 +234,12 @@ class NotificationManager:
         if not notifications:
             return
 
+        plants_by_growspace = {}
+        for plant in self.coordinator.plants.values():
+            if plant.growspace_id not in plants_by_growspace:
+                plants_by_growspace[plant.growspace_id] = []
+            plants_by_growspace[plant.growspace_id].append(plant)
+
         for notification in notifications:
             trigger_type = notification["trigger_type"]  # 'veg' or 'flower'
             day_to_trigger = int(notification["day"])
@@ -246,7 +252,7 @@ class NotificationManager:
                 if not growspace:
                     continue
 
-                plants = self.coordinator.get_growspace_plants(gs_id)
+                plants = plants_by_growspace.get(gs_id, [])
                 for plant in plants:
                     days_in_stage = self.coordinator.serializer.calculate_days_in_stage(
                         plant, trigger_type
