@@ -702,12 +702,8 @@ class OptionsFlowHandler(OptionsFlow):
                 growspace_options, cleaned_input
             )
 
-            # Already filtered above, but keep this as a safety check
-            env_config = {
-                k: v
-                for k, v in self._env_config_step1.items()
-                if v is not None and v != ""
-            }
+            # Already filtered by handler, do not filter again to preserve None values for clearing
+            env_config = self._env_config_step1.copy()
 
             # Check for next steps
             if self._env_config_step1.get(
