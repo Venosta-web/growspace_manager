@@ -1616,6 +1616,49 @@ async def test_options_flow_configure_environment_submit(
 
 
 @pytest.mark.asyncio
+async def test_options_flow_configure_environment_remove_vpd_sensor(
+    hass: HomeAssistant, mock_coordinator
+) -> None:
+    """Test removing the VPD sensor configuration.
+
+    Args:
+        hass: The Home Assistant instance.
+        mock_coordinator: The mock GrowspaceCoordinator.
+    """
+    config_entry = MockConfigEntry(domain=DOMAIN, data={"name": "Test"}, options={})
+    config_entry.add_to_hass(hass)
+    mock_growspace = Mock(
+        name="Growspace 1",
+        environment_config=EnvironmentConfig(
+            vpd_sensor="sensor.vpd",
+            temperature_sensor="sensor.temp",
+            humidity_sensor="sensor.humidity",
+        ),
+    )
+    mock_coordinator.growspaces = {"gs1": mock_growspace}
+    config_entry.runtime_data = mock_coordinator
+
+    flow = OptionsFlowHandler(config_entry)
+    flow.hass = hass
+    flow._selected_growspace_id = "gs1"
+
+    # Simulate user clearing the VPD sensor (sending None)
+    # Note: Selector might send None or empty string depending on UI, usually None for cleared entity selector
+    user_input = {
+        "temperature_sensor": "sensor.temp",
+        "humidity_sensor": "sensor.humidity",
+        "vpd_sensor": None,
+    }
+    result = await flow.async_step_configure_environment(user_input=user_input)
+
+    assert result.get("type") == FlowResultType.CREATE_ENTRY
+    # Ensure vpd_sensor is None
+    assert mock_growspace.environment_config.vpd_sensor is None
+    assert mock_growspace.environment_config.temperature_sensor == "sensor.temp"
+    mock_coordinator.async_save.assert_called_once()
+
+
+@pytest.mark.asyncio
 async def test_options_flow_configure_environment_advanced(
     hass: HomeAssistant, mock_coordinator
 ) -> None:

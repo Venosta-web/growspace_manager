@@ -13,9 +13,12 @@ from ..const import (
     CONF_CIRCULATION_FAN_ENTITY,
     CONF_CO2_SENSOR,
     CONF_DEHUMIDIFIER_ENTITY,
+    CONF_EXHAUST_ENTITY,
+    CONF_HUMIDIFIER_ENTITY,
     CONF_HUMIDITY_SENSOR,
     CONF_LIGHT_SENSOR,
     CONF_MOLD_THRESHOLD,
+    CONF_SOIL_MOISTURE_SENSOR,
     CONF_STRESS_THRESHOLD,
     CONF_TEMP_SENSOR,
     CONF_VPD_SENSOR,
@@ -44,6 +47,31 @@ class EnvironmentConfigHandler(BaseConfigHandler[dict[str, Any]]):
         self._add_dehumidifier_to_schema(schema_dict, growspace_options)
 
         return vol.Schema(schema_dict)
+
+    def clean_input(self, user_input: dict[str, Any]) -> dict[str, Any]:
+        """Override clean_input to explicitly allow clearing specific fields."""
+        cleaned = super().clean_input(user_input)
+
+        # Explicitly check for specific optional sensors and preserve None/empty if present in user_input
+        # This allows clearing them by overwriting existing values with None.
+        optional_fields = [
+            CONF_VPD_SENSOR,
+            CONF_SOIL_MOISTURE_SENSOR,
+            CONF_EXHAUST_ENTITY,
+            CONF_HUMIDIFIER_ENTITY,
+            CONF_DEHUMIDIFIER_ENTITY,
+            CONF_LIGHT_SENSOR,
+            CONF_CO2_SENSOR,
+            CONF_CIRCULATION_FAN_ENTITY,
+        ]
+
+        for field in optional_fields:
+            if field in user_input and (
+                user_input[field] is None or user_input[field] == ""
+            ):
+                cleaned[field] = None
+
+        return cleaned
 
     def _add_basic_sensors_to_schema(
         self, schema_dict: dict, growspace_options: dict[str, Any]
