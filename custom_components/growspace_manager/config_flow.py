@@ -703,7 +703,11 @@ class OptionsFlowHandler(OptionsFlow):
             )
 
             # Already filtered by handler, do not filter again to preserve None values for clearing
-            env_config = self._env_config_step1.copy()
+            env_config = {
+                k: v
+                for k, v in self._env_config_step1.items()
+                if k not in ("configure_dehumidifier", "configure_advanced")
+            }
 
             # Check for next steps
             if self._env_config_step1.get(
