@@ -114,6 +114,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
         self.growspaces: dict[str, Growspace] = {}
         self.plants: dict[str, Plant] = {}
         self.events: dict[str, list[GrowspaceEvent]] = {}
+        self._serialized_cache: dict[str, Any] = {}
 
         self.options = options or {}
         _LOGGER.info("--- COORDINATOR INITIALIZED WITH OPTIONS: %s ---", self.options)
@@ -148,6 +149,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
         # Load data
         if data is None:
             data = {}
+        self._serialized_cache = {}  # Clear cache on load
         self._load_plants(data.get("plants", {}))
         self._load_growspaces(data.get("growspaces", {}))
 
@@ -639,10 +641,19 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
         # Serialize growspaces for frontend and sensors
         serialized_growspaces = {}
         for growspace_id, growspace in self.growspaces.items():
+            # Use cached serialization if available
+            if growspace_id in self._serialized_cache:
+                serialized_growspaces[growspace_id] = self._serialized_cache[
+                    growspace_id
+                ]
+                continue
+
             plants = self.get_growspace_plants(growspace_id)
-            serialized_growspaces[growspace_id] = self.serializer.serialize_growspace(
+            serialized = self.serializer.serialize_growspace(
                 growspace, plants, self.environment_analyzer
             )
+            self._serialized_cache[growspace_id] = serialized
+            serialized_growspaces[growspace_id] = serialized
 
         self.data = {
             "growspaces": self.growspaces,
@@ -653,6 +664,11 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
             "serialized_growspaces": serialized_growspaces,
             "air_exchange_recommendations": recs,
         }
+
+    def _invalidate_cache(self, growspace_id: str | None) -> None:
+        """Invalidate the serialization cache for a specific growspace."""
+        if growspace_id and growspace_id in self._serialized_cache:
+            self._serialized_cache.pop(growspace_id)
 
     async def async_update_irrigation_config(
         self, growspace_id: str, user_input: dict[str, Any]
@@ -690,6 +706,8 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
         for k, v in updated_settings.items():
             if hasattr(growspace.irrigation_config, k):
                 setattr(growspace.irrigation_config, k, v)
+
+        self._invalidate_cache(growspace_id)
 
         # Save via coordinator
         await self.async_save()
@@ -829,6 +847,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
                 changes.append(f"name: {growspace.name} -> {name}")
                 growspace.name = name
                 updated = True
+                self._invalidate_cache(growspace.id)
 
         if "notification_target" in kwargs:
             nt = kwargs["notification_target"]
@@ -848,6 +867,9 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
             growspace.irrigation_config = kwargs["irrigation_config"]
             changes.append("irrigation_config updated")
             updated = True
+
+        if updated:
+            self._invalidate_cache(growspace.id)
         return updated
 
     async def async_update_growspace(
@@ -970,6 +992,9 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
         # Notify listeners (updates switch state)
         # Update data dictionary
         self.data["notifications_enabled"] = self._notifications_enabled
+        # Notification settings don't affect serialization (currently), so no cache invalidation needed.
+        # But if they did (e.g. exposed in growspace payload), we would call:
+        # self._invalidate_cache(growspace_id)
 
         await self.async_commit()
 
@@ -1024,6 +1049,10 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
             dry_start=dry_start,
             cure_start=cure_start,
             source_mother=source_mother,
+        )
+        self._invalidate_cache(growspace_id)
+        self._fire_event(
+            "plant_added", {"plant": self.serializer.serialize_plant(plant)}
         )
         async_fire_plant_event(self.hass, EVENT_PLANT_ADDED, plant)
         return plant
@@ -1113,6 +1142,13 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
                 clone_start=transition_date,
             )
 
+            self._invalidate_cache(clone_gs_id)
+            self._invalidate_cache(
+                mother_plant_id
+            )  # In case mother changes (not likely here but safe)
+            if mother_gs_id := mother.growspace_id:
+                self._invalidate_cache(mother_gs_id)
+
             if new_plant := self.plants.get(clone_id):
                 new_plants.append(new_plant)
             else:
@@ -1177,10 +1213,28 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
             stage=PlantStage.VEG,
             veg_start=transition_date,
         )
+        self._invalidate_cache(target_gs_id)
+        # Note: clone_id points to existing plant which was moved. update_plant handles its own invalidation logic?
+        # async_update_plant calls lifecycle_manager which updates memory.
+        # But we need to ensure Source growspace is invalidated if it moved.
+        # The underlying update/move logic should handle it, let's verify async_update_plant.
 
     async def async_update_plant(self, plant_id: str, **updates) -> Plant:
         """Update the attributes of an existing plant."""
+        # Get old growspace to invalidate
+        old_gs = self.plants[plant_id].growspace_id if plant_id in self.plants else None
+
         plant = await self.lifecycle_manager.async_update_plant(plant_id, **updates)
+
+        if old_gs:
+            self._invalidate_cache(old_gs)
+        if plant.growspace_id:
+            self._invalidate_cache(plant.growspace_id)
+
+        self._fire_event(
+            "plant_updated",
+            {"plant": self.serializer.serialize_plant(plant)},
+        )
         async_fire_plant_event(self.hass, EVENT_PLANT_UPDATED, plant, updates)
         return plant
 
@@ -1218,7 +1272,16 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
 
     async def async_move_plant(self, plant_id: str, new_row: int, new_col: int) -> None:
         """Move a plant to a new position via lifecycle manager."""
+        plant = self.plants.get(plant_id)
+        if plant:
+            self._invalidate_cache(plant.growspace_id)
+
         await self.lifecycle_manager.async_move_plant(plant_id, new_row, new_col)
+
+        # Invalidate again (if growspace somehow changed, though move_plant usually stays in same GS)
+        if plant:
+            self._invalidate_cache(plant.growspace_id)
+
         # Fetch updated plant to fire event
         if plant := self.plants.get(plant_id):
             async_fire_plant_event(
@@ -1230,6 +1293,13 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
 
     async def async_switch_plants(self, plant1_id: str, plant2_id: str) -> None:
         """Switch the positions of two plants via lifecycle manager."""
+        p1 = self.plants.get(plant1_id)
+        p2 = self.plants.get(plant2_id)
+        if p1:
+            self._invalidate_cache(p1.growspace_id)
+        if p2:
+            self._invalidate_cache(p2.growspace_id)
+
         await self.lifecycle_manager.async_switch_plants(plant1_id, plant2_id)
         if p1 := self.plants.get(plant1_id):
             async_fire_plant_event(self.hass, EVENT_PLANT_SWITCHED, p1)
@@ -1256,6 +1326,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
             plant_id, new_stage, transition_date
         )
         if plant := self.plants.get(plant_id):
+            self._invalidate_cache(plant.growspace_id)
             async_fire_plant_event(
                 self.hass,
                 EVENT_PLANT_TRANSITIONED,
@@ -1345,6 +1416,15 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
             plant_id, plant, target_growspace_id, target_growspace_name, transition_date
         )
 
+        # Invalidate source and target
+        self._invalidate_cache(plant.growspace_id)
+        if target_growspace_id:
+            self._invalidate_cache(target_growspace_id)
+        # Also invalidate default drying/curing spaces if they were used implicitly
+        # (Optimization: simple broad validation better than missing one)
+        self._invalidate_cache("dry")
+        self._invalidate_cache("cure")
+
         await self.async_commit()
 
         _LOGGER.info(
@@ -1369,6 +1449,11 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
 
         removed = await self.lifecycle_manager.async_remove_plant(plant_id)
         if removed:
+            self._invalidate_cache(plant.growspace_id)
+            self._fire_event(
+                "plant_removed",
+                {"plant_id": plant.plant_id, "growspace_id": plant.growspace_id},
+            )
             # Fire event with cached plant data
             async_fire_plant_event(self.hass, EVENT_PLANT_REMOVED, plant)
         return removed
@@ -1523,8 +1608,14 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
         """
         if plant_id not in self._notifications_sent:
             self._notifications_sent[plant_id] = {}
+
         if stage not in self._notifications_sent[plant_id]:
             self._notifications_sent[plant_id][stage] = {}
 
         self._notifications_sent[plant_id][stage][str(days)] = True
         await self.async_commit()
+
+    def _fire_event(self, event_type: str, data: dict[str, Any]) -> None:
+        """Fire a growspace manager event."""
+        payload = {"event_type": event_type, "data": data}
+        self.hass.bus.async_fire("growspace_manager_updated", payload)
