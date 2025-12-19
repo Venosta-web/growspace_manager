@@ -1652,8 +1652,10 @@ async def test_options_flow_configure_environment_remove_vpd_sensor(
     result = await flow.async_step_configure_environment(user_input=user_input)
 
     assert result.get("type") == FlowResultType.CREATE_ENTRY
-    # Ensure vpd_sensor is None
+    # Ensure vpd_sensor is strictly None (not just missing if that was the case)
+    # The fix ensures Nones are preserved in the flow.
     assert mock_growspace.environment_config.vpd_sensor is None
+    # Ensure other sensors remain
     assert mock_growspace.environment_config.temperature_sensor == "sensor.temp"
     mock_coordinator.async_save.assert_called_once()
 
