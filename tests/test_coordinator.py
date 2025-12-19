@@ -16,6 +16,7 @@ from freezegun import freeze_time
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
+from homeassistant.util.dt import now
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.growspace_manager.const import (
@@ -1303,7 +1304,7 @@ async def test_async_check_timed_notifications(
     """
     gs = await coordinator.async_add_growspace("Notify GS", notification_target="test")
     await coordinator.async_add_plant(
-        gs.id, "Strain A", veg_start=date.today() - timedelta(days=5)
+        gs.id, "Strain A", veg_start=now().date() - timedelta(days=5)
     )
     coordinator.options = {
         "timed_notifications": [
@@ -1423,7 +1424,7 @@ def test_calculate_days_in_stage(coordinator: GrowspaceCoordinator) -> None:
         plant_id="p1",
         strain="Test",
         growspace_id="gs1",
-        veg_start=(date.today() - timedelta(days=10)).isoformat(),
+        veg_start=(now().date() - timedelta(days=10)).isoformat(),
     )
     days = coordinator.serializer.calculate_days_in_stage(plant, PlantStage.VEG)
     assert days == 10
