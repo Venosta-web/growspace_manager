@@ -70,6 +70,8 @@ class EnvironmentConfigHandler(BaseConfigHandler[dict[str, Any]]):
                 user_input[field] is None or user_input[field] == ""
             ):
                 cleaned[field] = None
+            elif field not in user_input:
+                cleaned[field] = None
 
         return cleaned
 
@@ -94,20 +96,22 @@ class EnvironmentConfigHandler(BaseConfigHandler[dict[str, Any]]):
             # The requested change implies it shouldn't be forced or it should be clear it's optional.
             # Making it default to UNDEFINED if not present makes it "clean" optional.
 
-            schema_dict[vol.Optional(key, default=growspace_options.get(key))] = (
-                selector.EntitySelector(
-                    selector.EntitySelectorConfig(
-                        domain=["sensor", "input_number"],
-                        device_class=device_class,
-                    )
+            suggested_value = growspace_options.get(key)
+            schema_dict[
+                vol.Optional(key, description={"suggested_value": suggested_value})
+            ] = selector.EntitySelector(
+                selector.EntitySelectorConfig(
+                    domain=["sensor", "input_number"],
+                    device_class=device_class,
                 )
             )
 
         # Soil moisture sensor - optional
+        suggested_moisture = growspace_options.get("soil_moisture_sensor")
         schema_dict[
             vol.Optional(
                 "soil_moisture_sensor",
-                default=growspace_options.get("soil_moisture_sensor") or vol.UNDEFINED,
+                description={"suggested_value": suggested_moisture},
             )
         ] = selector.EntitySelector(
             selector.EntitySelectorConfig(
@@ -117,10 +121,11 @@ class EnvironmentConfigHandler(BaseConfigHandler[dict[str, Any]]):
         )
 
         # VPD sensor - optional
+        suggested_vpd = growspace_options.get(CONF_VPD_SENSOR)
         schema_dict[
             vol.Optional(
                 CONF_VPD_SENSOR,
-                default=growspace_options.get(CONF_VPD_SENSOR) or vol.UNDEFINED,
+                description={"suggested_value": suggested_vpd},
             )
         ] = selector.EntitySelector(
             selector.EntitySelectorConfig(
@@ -193,10 +198,11 @@ class EnvironmentConfigHandler(BaseConfigHandler[dict[str, Any]]):
                 device_class=device_class,
             )
 
+        suggested_val = growspace_options.get(entity_key)
         schema_dict[
             vol.Optional(
                 entity_key,
-                default=growspace_options.get(entity_key) or vol.UNDEFINED,
+                description={"suggested_value": suggested_val},
             )
         ] = selector.EntitySelector(selector_config)
 
@@ -205,13 +211,15 @@ class EnvironmentConfigHandler(BaseConfigHandler[dict[str, Any]]):
     ) -> None:
         """Add exhaust and humidifier to the schema."""
         # Exhaust Entity (Merged: Fan/Switch/Sensor)
+        suggested_exhaust = (
+            growspace_options.get("exhaust_entity")
+            or growspace_options.get("exhaust_fan_entity")
+            or growspace_options.get("exhaust_sensor")
+        )
         schema_dict[
             vol.Optional(
                 "exhaust_entity",
-                default=growspace_options.get("exhaust_entity")
-                or growspace_options.get("exhaust_fan_entity")
-                or growspace_options.get("exhaust_sensor")
-                or vol.UNDEFINED,
+                description={"suggested_value": suggested_exhaust},
             )
         ] = selector.EntitySelector(
             selector.EntitySelectorConfig(
@@ -227,12 +235,13 @@ class EnvironmentConfigHandler(BaseConfigHandler[dict[str, Any]]):
         )
 
         # Humidifier Entity (Merged: Humidifier/Switch/Sensor)
+        suggested_humidifier = growspace_options.get(
+            "humidifier_entity"
+        ) or growspace_options.get("humidifier_sensor")
         schema_dict[
             vol.Optional(
                 "humidifier_entity",
-                default=growspace_options.get("humidifier_entity")
-                or growspace_options.get("humidifier_sensor")
-                or vol.UNDEFINED,
+                description={"suggested_value": suggested_humidifier},
             )
         ] = selector.EntitySelector(
             selector.EntitySelectorConfig(
@@ -252,11 +261,11 @@ class EnvironmentConfigHandler(BaseConfigHandler[dict[str, Any]]):
     ) -> None:
         """Add dehumidifier to the schema."""
         # Removed configure_dehumidifier checkbox and its conditional logic
+        suggested_dehumidifier = growspace_options.get(CONF_DEHUMIDIFIER_ENTITY)
         schema_dict[
             vol.Optional(
                 CONF_DEHUMIDIFIER_ENTITY,
-                default=growspace_options.get(CONF_DEHUMIDIFIER_ENTITY)
-                or vol.UNDEFINED,
+                description={"suggested_value": suggested_dehumidifier},
             )
         ] = selector.EntitySelector(
             selector.EntitySelectorConfig(

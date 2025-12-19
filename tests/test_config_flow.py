@@ -1642,12 +1642,13 @@ async def test_options_flow_configure_environment_remove_vpd_sensor(
     flow.hass = hass
     flow._selected_growspace_id = "gs1"
 
-    # Simulate user clearing the VPD sensor (sending None)
-    # Note: Selector might send None or empty string depending on UI, usually None for cleared entity selector
+    # Simulate user clearing the VPD sensor (sending missing key or None)
+    # When default=... is used in schema, clearing often results in missing key or default being re-injected.
+    # We want to test that missing key (cleared) results in None.
     user_input = {
         "temperature_sensor": "sensor.temp",
         "humidity_sensor": "sensor.humidity",
-        "vpd_sensor": None,
+        # "vpd_sensor": None,  <-- Omitted effectively
     }
     result = await flow.async_step_configure_environment(user_input=user_input)
 
