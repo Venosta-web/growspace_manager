@@ -1,9 +1,6 @@
+from unittest.mock import patch
+
 import pytest
-from unittest.mock import MagicMock, AsyncMock, patch
-from datetime import timedelta
-from custom_components.growspace_manager.coordinator import GrowspaceCoordinator
-from custom_components.growspace_manager.models import Growspace, Plant
-from homeassistant.core import HomeAssistant
 
 
 @pytest.fixture
