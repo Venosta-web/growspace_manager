@@ -164,3 +164,24 @@ def test_serialize_growspace(hass, serializer, mock_growspace, mock_plant):
 
         # Verify analyzer call
         mock_analyzer.calculate_biological_metrics.assert_called_once()
+
+
+def test_get_environment_attributes_with_thresholds(hass, serializer, mock_growspace):
+    """Test fetching environment attributes with dehumidifier thresholds."""
+    # Mock Dehumidifier with attributes including thresholds
+    thresholds = {"veg": {"day": {"on": 1.2, "off": 1.5}}}
+
+    hass.states.async_set(
+        "switch.dehum",
+        "on",
+        attributes={"dehumidifier_control_enabled": True},
+    )
+    mock_growspace.environment_config.dehumidifier_entity = "switch.dehum"
+    mock_growspace.environment_config.control_dehumidifier = True
+    mock_growspace.environment_config.dehumidifier_thresholds = thresholds
+
+    attrs = serializer._get_environment_attributes(mock_growspace)
+
+    # Serializer code reads 'dehumidifier_thresholds' attribute from the environment_config property
+    assert "dehumidifier_thresholds" in attrs
+    assert attrs["dehumidifier_thresholds"] == thresholds

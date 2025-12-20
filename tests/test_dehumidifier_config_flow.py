@@ -4,8 +4,12 @@ import pytest
 from homeassistant.data_entry_flow import FlowResultType
 from pytest_homeassistant_custom_component.common import MockConfigEntry, mock_component
 
+from custom_components.growspace_manager.config_handlers.environment_config_handler import (
+    EnvironmentConfigHandler,
+)
 from custom_components.growspace_manager.const import DOMAIN
 from custom_components.growspace_manager.models import EnvironmentConfig, Growspace
+from homeassistant.core import HomeAssistant
 
 
 @pytest.fixture
@@ -17,8 +21,8 @@ def mock_setup_entry():
 
 
 async def test_configure_dehumidifier_thresholds(
-    hass, mock_setup_entry, enable_custom_integrations
-):
+    hass: HomeAssistant, mock_setup_entry, enable_custom_integrations
+) -> None:
     """Test configuring detailed dehumidifier thresholds via options flow."""
     # Mock recorder dependency
     mock_component(hass, "recorder")
@@ -113,14 +117,10 @@ async def test_configure_dehumidifier_thresholds(
 
     # 6. Verify Persistence: Re-open flow, checkbox should be True
     # We simulate this by checking what the schema default would be
-    from custom_components.growspace_manager.config_handlers.environment_config_handler import (
-        EnvironmentConfigHandler,
-    )
-
     handler = EnvironmentConfigHandler(hass, entry)
     # Growspace object has the thresholds now
     options = mock_growspace.environment_config.to_dict()
-    schema = handler.get_environment_schema_step1(options)
+    handler.get_environment_schema_step1(options)
 
     # Check default value of configure_dehumidifier
     # It's a bit tricky to inspect voluptuous schema defaults directly without internal knowledge

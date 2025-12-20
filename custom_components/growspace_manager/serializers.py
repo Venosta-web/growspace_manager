@@ -308,6 +308,9 @@ class GrowspaceSerializer:
                     attributes["dehumidifier_control_enabled"] = (
                         env_config.control_dehumidifier
                     )
+                    attributes["dehumidifier_thresholds"] = (
+                        env_config.dehumidifier_thresholds
+                    )
 
             # Exhaust Sensor
             exhaust_entity = env_config.exhaust_fan_entity
