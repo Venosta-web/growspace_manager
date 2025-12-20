@@ -225,3 +225,52 @@ async def test_async_analyze_sensor_trend_crossed_threshold(
     )
 
     assert result_mixed["crossed_threshold"] is False
+
+
+@patch("custom_components.growspace_manager.trend_analyzer.get_recorder_instance")
+@pytest.mark.asyncio
+async def test_async_analyze_sensors_trends_bulk(
+    mock_get_recorder, trend_analyzer, mock_hass
+):
+    """Test bulk trend analysis."""
+    now = utcnow()
+
+    # History for sensor 1 (Rising)
+    h1 = [
+        (now - timedelta(minutes=15), 20.0),
+        (now, 23.0),
+    ]
+    # History for sensor 2 (Falling)
+    h2 = [
+        (now - timedelta(minutes=15), 25.0),
+        (now, 20.0),
+    ]
+
+    mock_states_1 = []
+    for dt, val in h1:
+        mock_states_1.append(State("sensor.one", str(val), last_updated=dt))
+
+    mock_states_2 = []
+    for dt, val in h2:
+        mock_states_2.append(State("sensor.two", str(val), last_updated=dt))
+
+    mock_history_dict = {
+        "sensor.one": mock_states_1,
+        "sensor.two": mock_states_2,
+    }
+
+    mock_recorder_instance = MagicMock()
+    mock_get_recorder.return_value = mock_recorder_instance
+    mock_recorder_instance.async_add_executor_job = AsyncMock(
+        return_value=mock_history_dict
+    )
+
+    result = await trend_analyzer.async_analyze_sensors_trends(
+        ["sensor.one", "sensor.two"], duration_minutes=15, threshold=22.0
+    )
+
+    assert result["sensor.one"]["trend"] == "rising"
+    assert result["sensor.one"]["crossed_threshold"] is False  # 20 < 22
+
+    assert result["sensor.two"]["trend"] == "falling"
+    assert result["sensor.two"]["crossed_threshold"] is False  # 20 < 22
