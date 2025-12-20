@@ -1301,9 +1301,20 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
             self._invalidate_cache(p2.growspace_id)
 
         await self.lifecycle_manager.async_switch_plants(plant1_id, plant2_id)
+
+        # Fire events for both plants to update frontend
         if p1 := self.plants.get(plant1_id):
+            self._fire_event(
+                "plant_updated",
+                {"plant": self.serializer.serialize_plant(p1)},
+            )
             async_fire_plant_event(self.hass, EVENT_PLANT_SWITCHED, p1)
+
         if p2 := self.plants.get(plant2_id):
+            self._fire_event(
+                "plant_updated",
+                {"plant": self.serializer.serialize_plant(p2)},
+            )
             async_fire_plant_event(self.hass, EVENT_PLANT_SWITCHED, p2)
 
     async def switch_plants_service(self, plant1_id: str, plant2_id: str) -> None:

@@ -229,6 +229,7 @@ class GrowspaceSerializer:
 
         return {
             "plant_id": plant.plant_id,
+            "growspace_id": plant.growspace_id,  # Include for frontend cache updates
             "entity_id": entity_id,  # Stable entity ID
             "strain": plant.strain,
             "phenotype": plant.phenotype,
