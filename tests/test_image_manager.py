@@ -117,6 +117,8 @@ def test_get_image_path_exists(image_manager: ImageManager, tmp_path: Path) -> N
 
     # Create dummy file
     file_path.touch()
+    # Manually update cache since we bypassed save_strain_image
+    image_manager._image_cache.add(filename)
 
     path = image_manager.get_image_path(strain_id, None)
     assert path == str(file_path.absolute())
@@ -136,6 +138,9 @@ def test_delete_image_success(image_manager: ImageManager, tmp_path: Path) -> No
 
     # Create dummy file
     file_path.touch()
+    # Manually update cache since we bypassed save_strain_image
+    image_manager._image_cache.add(filename)
+
     assert file_path.exists()
 
     image_manager.delete_image(strain_id, None)

@@ -148,6 +148,9 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
         # Load data
         if data is None:
             data = {}
+        if data is None:
+            data = {}
+        # self._serialized_cache = {}  # Removed cache
         self._load_plants(data.get("plants", {}))
         self._load_growspaces(data.get("growspaces", {}))
 
@@ -640,9 +643,10 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
         serialized_growspaces = {}
         for growspace_id, growspace in self.growspaces.items():
             plants = self.get_growspace_plants(growspace_id)
-            serialized_growspaces[growspace_id] = self.serializer.serialize_growspace(
+            serialized = self.serializer.serialize_growspace(
                 growspace, plants, self.environment_analyzer
             )
+            serialized_growspaces[growspace_id] = serialized
 
         self.data = {
             "growspaces": self.growspaces,
@@ -848,6 +852,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
             growspace.irrigation_config = kwargs["irrigation_config"]
             changes.append("irrigation_config updated")
             updated = True
+
         return updated
 
     async def async_update_growspace(
@@ -970,6 +975,9 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
         # Notify listeners (updates switch state)
         # Update data dictionary
         self.data["notifications_enabled"] = self._notifications_enabled
+        # Notification settings don't affect serialization (currently), so no cache invalidation needed.
+        # But if they did (e.g. exposed in growspace payload), we would call:
+        # self._invalidate_cache(growspace_id)
 
         await self.async_commit()
 
@@ -1024,6 +1032,10 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
             dry_start=dry_start,
             cure_start=cure_start,
             source_mother=source_mother,
+        )
+
+        self._fire_event(
+            "plant_added", {"plant": self.serializer.serialize_plant(plant)}
         )
         async_fire_plant_event(self.hass, EVENT_PLANT_ADDED, plant)
         return plant
@@ -1178,9 +1190,20 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
             veg_start=transition_date,
         )
 
+        # Note: clone_id points to existing plant which was moved. update_plant handles its own invalidation logic?
+        # async_update_plant calls lifecycle_manager which updates memory.
+        # But we need to ensure Source growspace is invalidated if it moved.
+        # The underlying update/move logic should handle it, let's verify async_update_plant.
+
     async def async_update_plant(self, plant_id: str, **updates) -> Plant:
         """Update the attributes of an existing plant."""
+
         plant = await self.lifecycle_manager.async_update_plant(plant_id, **updates)
+
+        self._fire_event(
+            "plant_updated",
+            {"plant": self.serializer.serialize_plant(plant)},
+        )
         async_fire_plant_event(self.hass, EVENT_PLANT_UPDATED, plant, updates)
         return plant
 
@@ -1218,7 +1241,9 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
 
     async def async_move_plant(self, plant_id: str, new_row: int, new_col: int) -> None:
         """Move a plant to a new position via lifecycle manager."""
+
         await self.lifecycle_manager.async_move_plant(plant_id, new_row, new_col)
+
         # Fetch updated plant to fire event
         if plant := self.plants.get(plant_id):
             async_fire_plant_event(
@@ -1230,10 +1255,24 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
 
     async def async_switch_plants(self, plant1_id: str, plant2_id: str) -> None:
         """Switch the positions of two plants via lifecycle manager."""
+        p1 = self.plants.get(plant1_id)
+        p2 = self.plants.get(plant2_id)
+
         await self.lifecycle_manager.async_switch_plants(plant1_id, plant2_id)
+
+        # Fire events for both plants to update frontend
         if p1 := self.plants.get(plant1_id):
+            self._fire_event(
+                "plant_updated",
+                {"plant": self.serializer.serialize_plant(p1)},
+            )
             async_fire_plant_event(self.hass, EVENT_PLANT_SWITCHED, p1)
+
         if p2 := self.plants.get(plant2_id):
+            self._fire_event(
+                "plant_updated",
+                {"plant": self.serializer.serialize_plant(p2)},
+            )
             async_fire_plant_event(self.hass, EVENT_PLANT_SWITCHED, p2)
 
     async def switch_plants_service(self, plant1_id: str, plant2_id: str) -> None:
@@ -1345,6 +1384,13 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
             plant_id, plant, target_growspace_id, target_growspace_name, transition_date
         )
 
+        # Invalidate source and target are auto-refreshed via update_data_property loop
+        # self._invalidate_cache(plant.growspace_id)
+        # if target_growspace_id:
+        #    self._invalidate_cache(target_growspace_id)
+        # self._invalidate_cache("dry")
+        # self._invalidate_cache("cure")
+
         await self.async_commit()
 
         _LOGGER.info(
@@ -1369,6 +1415,10 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
 
         removed = await self.lifecycle_manager.async_remove_plant(plant_id)
         if removed:
+            self._fire_event(
+                "plant_removed",
+                {"plant_id": plant.plant_id, "growspace_id": plant.growspace_id},
+            )
             # Fire event with cached plant data
             async_fire_plant_event(self.hass, EVENT_PLANT_REMOVED, plant)
         return removed
@@ -1523,8 +1573,14 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
         """
         if plant_id not in self._notifications_sent:
             self._notifications_sent[plant_id] = {}
+
         if stage not in self._notifications_sent[plant_id]:
             self._notifications_sent[plant_id][stage] = {}
 
         self._notifications_sent[plant_id][stage][str(days)] = True
         await self.async_commit()
+
+    def _fire_event(self, event_type: str, data: dict[str, Any]) -> None:
+        """Fire a growspace manager event."""
+        payload = {"event_type": event_type, "data": data}
+        self.hass.bus.async_fire("growspace_manager_updated", payload)

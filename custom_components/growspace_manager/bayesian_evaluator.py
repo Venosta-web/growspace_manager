@@ -6,6 +6,7 @@ including trend analysis and stress detection.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from collections.abc import Awaitable, Callable
 from typing import TYPE_CHECKING
@@ -35,28 +36,6 @@ Reason = tuple[float, str]
 ObservationList = list[Obs]
 ReasonList = list[Reason]
 
-# =========================================================================
-# HELPER: VPD STAGE THRESHOLD LOOKUP
-# =========================================================================
-
-
-def _determine_stage_key(state: EnvironmentState) -> str | None:
-    """Determine the current grow stage key."""
-    if state.flower_days == 0:
-        return "veg"
-    if 0 < state.flower_days < 21:
-        return "flower_early"
-    if 21 <= state.flower_days < 42:
-        return "flower_mid"
-    if state.flower_days >= 42:
-        return "flower_late"
-    return None
-
-
-# =========================================================================
-# STRESS SENSOR EVALUATION
-# =========================================================================
-
 
 async def async_evaluate_stress_trend(
     sensor_instance: BayesianEnvironmentSensor, state: EnvironmentState
@@ -78,12 +57,13 @@ async def async_evaluate_stress_trend(
         sensor_instance.async_analyze_sensor_trend
     )
 
-    # --- Trend Analysis Logic (Moved from BayesianStressSensor) ---
-    for sensor_key, trend_key in [
-        ("temperature", "temperature_trend"),
-        ("humidity", "humidity_trend"),
-        ("vpd", "vpd_trend"),
-    ]:
+    async def _evaluate_single(
+        sensor_key: str, trend_key: str
+    ) -> tuple[ObservationList, ReasonList, dict[str, str]]:
+        local_obs: ObservationList = []
+        local_reasons: ReasonList = []
+        local_trends: dict[str, str] = {}
+
         trend_sensor_id = env_config.get(f"{sensor_key}_trend_sensor")
         stats_sensor_id = env_config.get(f"{sensor_key}_stats_sensor")
 
@@ -91,16 +71,16 @@ async def async_evaluate_stress_trend(
         if trend_sensor_id:
             trend_state: State | None = sensor_instance.hass.states.get(trend_sensor_id)
             if trend_state and trend_state.state == "on":  # Rising trend
-                trend_states[trend_key] = "rising"
+                local_trends[trend_key] = "rising"
                 gradient = trend_state.attributes.get("gradient", 0)
                 prob = (
                     env_config.get("prob_trend_fast_rise", (0.95, 0.15))
                     if gradient > 0.1
                     else env_config.get("prob_trend_slow_rise", (0.75, 0.30))
                 )
-                observations.append(prob)
+                local_obs.append(prob)
                 reason_suffix = " fast" if gradient > 0.1 else ""
-                reasons.append(
+                local_reasons.append(
                     (prob[0], f"{sensor_key.capitalize()} rising{reason_suffix}")
                 )
 
@@ -112,10 +92,10 @@ async def async_evaluate_stress_trend(
             ):
                 threshold = 0.2 if sensor_key == "vpd" else 1.0
                 if change > threshold:
-                    trend_states[trend_key] = "rising"
+                    local_trends[trend_key] = "rising"
                     prob = (0.85, 0.25)
-                    observations.append(prob)
-                    reasons.append((prob[0], f"{sensor_key.capitalize()} rising"))
+                    local_obs.append(prob)
+                    local_reasons.append((prob[0], f"{sensor_key.capitalize()} rising"))
 
         else:  # Fallback to manual analysis (Requires await)
             duration = env_config.get(f"{sensor_key}_trend_duration", 30)
@@ -125,13 +105,28 @@ async def async_evaluate_stress_trend(
                 analysis = await analyze_trend(
                     env_config[f"{sensor_key}_sensor"], duration, threshold
                 )
-                trend_states[trend_key] = analysis["trend"]
+                local_trends[trend_key] = analysis["trend"]
                 if analysis["trend"] == "rising" and analysis["crossed_threshold"]:
                     p_true = 0.5 + (sensitivity * 0.45)
                     p_false = 0.5 - (sensitivity * 0.4)
                     prob = (p_true, p_false)
-                    observations.append(prob)
-                    reasons.append((prob[0], f"{sensor_key.capitalize()} rising"))
+                    local_obs.append(prob)
+                    local_reasons.append((prob[0], f"{sensor_key.capitalize()} rising"))
+
+        return local_obs, local_reasons, local_trends
+
+    tasks = [
+        _evaluate_single("temperature", "temperature_trend"),
+        _evaluate_single("humidity", "humidity_trend"),
+        _evaluate_single("vpd", "vpd_trend"),
+    ]
+
+    results = await asyncio.gather(*tasks)
+
+    for res_obs, res_reasons, res_trends in results:
+        observations.extend(res_obs)
+        reasons.extend(res_reasons)
+        trend_states.update(res_trends)
 
     return observations, reasons, trend_states
 
@@ -232,31 +227,74 @@ async def async_evaluate_mold_risk_trend(
         sensor_instance.async_analyze_sensor_trend
     )
 
-    for sensor_key, trend_key in [
-        ("humidity", "humidity_trend"),
-        ("vpd", "vpd_trend"),
-    ]:
+    async def _evaluate_single_mold(
+        sensor_key: str, trend_key: str
+    ) -> tuple[ObservationList, ReasonList, dict[str, str]]:
+        local_obs: ObservationList = []
+        local_reasons: ReasonList = []
+        local_trends: dict[str, str] = {}
+
+        # We need to reuse the existing helper logic but adapted for local return
+        # Since _async_evaluate_external_mold_trend_sensor and _async_evaluate_fallback_mold_trend_analysis
+        # modify lists in-place, we pass local lists.
+
         await _async_evaluate_external_mold_trend_sensor(
             sensor_instance,
             env_config,
             sensor_key,
             trend_key,
-            observations,
-            reasons,
-            trend_states,
+            local_obs,
+            local_reasons,
+            local_trends,
         )
         await _async_evaluate_fallback_mold_trend_analysis(
             sensor_instance,
             env_config,
             sensor_key,
             trend_key,
-            observations,
-            reasons,
-            trend_states,
+            local_obs,
+            local_reasons,
+            local_trends,
             analyze_trend,
         )
+        return local_obs, local_reasons, local_trends
+
+    tasks = [
+        _evaluate_single_mold("humidity", "humidity_trend"),
+        _evaluate_single_mold("vpd", "vpd_trend"),
+    ]
+
+    results = await asyncio.gather(*tasks)
+
+    for res_obs, res_reasons, res_trends in results:
+        observations.extend(res_obs)
+        reasons.extend(res_reasons)
+        trend_states.update(res_trends)
 
     return observations, reasons, trend_states
+
+
+# =========================================================================
+# HELPER: VPD STAGE THRESHOLD LOOKUP
+# =========================================================================
+
+
+def _determine_stage_key(state: EnvironmentState) -> str | None:
+    """Determine the current grow stage key."""
+    if state.flower_days == 0:
+        return "veg"
+    if 0 < state.flower_days < 21:
+        return "flower_early"
+    if 21 <= state.flower_days < 42:
+        return "flower_mid"
+    if state.flower_days >= 42:
+        return "flower_late"
+    return None
+
+
+# =========================================================================
+# STRESS SENSOR EVALUATION
+# =========================================================================
 
 
 def evaluate_direct_temp_stress(

@@ -12,6 +12,7 @@ from ..const import (
     CONF_CO2_SENSOR,
     CONF_CONTROL_DEHUMIDIFIER,
     CONF_DEHUMIDIFIER_ENTITY,
+    CONF_DEHUMIDIFIER_THRESHOLDS,
     CONF_EXHAUST_ENTITY,
     CONF_HUMIDIFIER_ENTITY,
     CONF_HUMIDITY_SENSOR,
@@ -56,6 +57,7 @@ async def handle_configure_environment(
         dehumidifier_entity=call.data.get(CONF_DEHUMIDIFIER_ENTITY),
         soil_moisture_sensor=call.data.get(CONF_SOIL_MOISTURE_SENSOR),
         control_dehumidifier=call.data.get(CONF_CONTROL_DEHUMIDIFIER, False),
+        dehumidifier_thresholds=call.data.get(CONF_DEHUMIDIFIER_THRESHOLDS, {}),
         stress_threshold=call.data.get(CONF_STRESS_THRESHOLD, 0.70),
         mold_threshold=call.data.get(CONF_MOLD_THRESHOLD, 0.75),
     )

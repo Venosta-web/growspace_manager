@@ -715,6 +715,10 @@ class OptionsFlowHandler(OptionsFlow):
             ) and self._env_config_step1.get("control_dehumidifier"):
                 return await self.async_step_configure_dehumidifier()
 
+            # If user unchecked configure_dehumidifier, clear any existing thresholds
+            if not self._env_config_step1.get("configure_dehumidifier"):
+                env_config["dehumidifier_thresholds"] = {}
+
             if self._env_config_step1.get("configure_advanced"):
                 return await self.async_step_configure_advanced_bayesian()
 

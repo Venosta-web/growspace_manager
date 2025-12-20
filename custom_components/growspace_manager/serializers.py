@@ -20,6 +20,7 @@ from .const import (
     DOMAIN,
     PlantStage,
 )
+from homeassistant.util import slugify
 from .environment_analyzer import EnvironmentAnalyzer
 from .models import Growspace, Plant
 from .utils import (
@@ -27,6 +28,7 @@ from .utils import (
     calculate_plant_stage,
     days_to_week,
     format_date,
+    generate_growspace_overview_unique_id,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -144,9 +146,27 @@ class GrowspaceSerializer:
             .get(growspace.id)
         )
 
+        # Determine overview entity ID
+        # Logic duplicated/simplified from coordinator._guess_overview_entity_id
+        # Ideally we use the registry lookup
+        unique_id = generate_growspace_overview_unique_id(growspace.id)
+        registry = er.async_get(self.hass)
+        overview_entity_id = registry.async_get_entity_id("sensor", DOMAIN, unique_id)
+
+        # Fallback for special growspaces if standard lookup fails (legacy support)
+        if not overview_entity_id:
+            # Just provide a best guess formatted ID which frontend might use OR null
+            # If null, frontend GrowspaceAdapter will handle it (loading/unknown)
+            # But let's try to match the slug pattern
+            from homeassistant.util import slugify
+
+            slug = slugify(growspace.name or growspace.id)
+            overview_entity_id = f"sensor.{slug}"
+
         # Build complete dict
         data = {
             "growspace_id": growspace.id,
+            "overview_entity_id": overview_entity_id,
             "name": growspace.name,
             "type": gs_type,
             "rows": growspace.rows,
@@ -191,34 +211,50 @@ class GrowspaceSerializer:
                 "sensor", DOMAIN, f"{DOMAIN}_{plant.plant_id}"
             )
 
-            grid[position_key] = {
-                "plant_id": plant.plant_id,
-                "entity_id": entity_id,  # Stable entity ID
-                "strain": plant.strain,
-                "phenotype": plant.phenotype,
-                # Days in stage
-                "seedling_days": self.calculate_days_in_stage(plant, "seedling"),
-                "mother_days": self.calculate_days_in_stage(plant, "mother"),
-                "clone_days": self.calculate_days_in_stage(plant, "clone"),
-                "veg_days": self.calculate_days_in_stage(plant, "veg"),
-                "flower_days": self.calculate_days_in_stage(plant, "flower"),
-                "dry_days": self.calculate_days_in_stage(plant, "dry"),
-                "cure_days": self.calculate_days_in_stage(plant, "cure"),
-                # Start dates
-                "seedling_start": format_date(plant.seedling_start),
-                "mother_start": format_date(plant.mother_start),
-                "clone_start": format_date(plant.clone_start),
-                "veg_start": format_date(plant.veg_start),
-                "flower_start": format_date(plant.flower_start),
-                "dry_start": format_date(plant.dry_start),
-                "cure_start": format_date(plant.cure_start),
-                # Location & Stage
-                "row": row_i,
-                "col": col_i,
-                "position": f"({row_i},{col_i})",
-                "stage": calculate_plant_stage(plant),
-            }
+            grid[position_key] = self.serialize_plant(plant, entity_id=entity_id)
         return grid
+
+    def serialize_plant(
+        self, plant: Plant, entity_id: str | None = None
+    ) -> dict[str, Any]:
+        """Serialize a single plant with all calculated fields."""
+        if not entity_id:
+            registry = er.async_get(self.hass)
+            entity_id = registry.async_get_entity_id(
+                "sensor", DOMAIN, f"{DOMAIN}_{plant.plant_id}"
+            )
+
+        row_i = int(plant.row)
+        col_i = int(plant.col)
+
+        return {
+            "plant_id": plant.plant_id,
+            "growspace_id": plant.growspace_id,  # Include for frontend cache updates
+            "entity_id": entity_id,  # Stable entity ID
+            "strain": plant.strain,
+            "phenotype": plant.phenotype,
+            # Days in stage
+            "seedling_days": self.calculate_days_in_stage(plant, "seedling"),
+            "mother_days": self.calculate_days_in_stage(plant, "mother"),
+            "clone_days": self.calculate_days_in_stage(plant, "clone"),
+            "veg_days": self.calculate_days_in_stage(plant, "veg"),
+            "flower_days": self.calculate_days_in_stage(plant, "flower"),
+            "dry_days": self.calculate_days_in_stage(plant, "dry"),
+            "cure_days": self.calculate_days_in_stage(plant, "cure"),
+            # Start dates
+            "seedling_start": format_date(plant.seedling_start),
+            "mother_start": format_date(plant.mother_start),
+            "clone_start": format_date(plant.clone_start),
+            "veg_start": format_date(plant.veg_start),
+            "flower_start": format_date(plant.flower_start),
+            "dry_start": format_date(plant.dry_start),
+            "cure_start": format_date(plant.cure_start),
+            # Location & Stage
+            "row": row_i,
+            "col": col_i,
+            "position": f"({row_i},{col_i})",
+            "stage": calculate_plant_stage(plant),
+        }
 
     def calculate_days_in_stage(self, plant: Plant, stage: str) -> int:
         """Calculate how many days a plant has been in a specific growth stage."""
@@ -272,6 +308,9 @@ class GrowspaceSerializer:
                     attributes["dehumidifier_mode"] = state_obj.attributes.get("mode")
                     attributes["dehumidifier_control_enabled"] = (
                         env_config.control_dehumidifier
+                    )
+                    attributes["dehumidifier_thresholds"] = (
+                        env_config.dehumidifier_thresholds
                     )
 
             # Exhaust Sensor
