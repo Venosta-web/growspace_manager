@@ -116,6 +116,20 @@ class TestGetIrrigationCoordinator:
         result = await _get_irrigation_coordinator(mock_hass, "gs1")
         assert result == mock_irrigation_coordinator
 
+    @pytest.mark.asyncio
+    async def test_irrigation_coordinators_attribute_error(
+        self, mock_hass, mock_config_entry
+    ):
+        """Test error when irrigation_coordinators attribute is missing from runtime_data."""
+        mock_hass.config_entries.async_entries.return_value = [mock_config_entry]
+        # Simulate missing attribute by using a plain object or configuring the mock
+        mock_config_entry.runtime_data = object()
+
+        with pytest.raises(
+            ServiceValidationError, match="Irrigation coordinators not found"
+        ):
+            await _get_irrigation_coordinator(mock_hass, "gs1")
+
 
 class TestHandleSetIrrigationSettings:
     """Tests for handle_set_irrigation_settings service handler."""

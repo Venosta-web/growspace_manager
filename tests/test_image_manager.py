@@ -171,7 +171,49 @@ def test_delete_image_error(image_manager: ImageManager, tmp_path: Path) -> None
     # To test this, we can patch unlink on the Path CLASS, but that affects everything
     # Better to just use 'patch.object' if possible, or verify logging without exception
 
+    image_manager._image_cache.add(filename)  # Prerequisite for delete_image to proceed
+
     with patch("pathlib.Path.unlink", side_effect=OSError("Permission denied")):
         image_manager.delete_image(strain_id, None)
         # Should catch and log error
         assert file_path.exists()  # Should still exist if unlink failed
+
+
+def test_build_cache_error(mock_hass: MagicMock, tmp_path: Path) -> None:
+    """Test error handling during cache build."""
+    with patch("pathlib.Path.glob", side_effect=OSError("Disk error")):
+        # Should not raise
+        manager = ImageManager(mock_hass, str(tmp_path))
+        assert manager._image_cache == set()
+
+
+def test_get_image_path_with_phenotype(
+    image_manager: ImageManager, tmp_path: Path
+) -> None:
+    """Test getting path for an existing image with phenotype."""
+    strain_id = "strain_123"
+    phenotype_id = "pheno_456"
+    filename = f"{strain_id}_{phenotype_id}.jpg"
+    file_path = tmp_path / filename
+
+    file_path.touch()
+    image_manager._image_cache.add(filename)
+
+    path = image_manager.get_image_path(strain_id, phenotype_id)
+    assert path == str(file_path.absolute())
+
+
+def test_delete_image_with_phenotype(
+    image_manager: ImageManager, tmp_path: Path
+) -> None:
+    """Test deleting an image with phenotype."""
+    strain_id = "strain_123"
+    phenotype_id = "pheno_456"
+    filename = f"{strain_id}_{phenotype_id}.jpg"
+    file_path = tmp_path / filename
+
+    file_path.touch()
+    image_manager._image_cache.add(filename)
+
+    image_manager.delete_image(strain_id, phenotype_id)
+    assert not file_path.exists()

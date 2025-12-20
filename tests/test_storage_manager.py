@@ -55,7 +55,7 @@ def storage_manager(mock_coordinator, mock_hass, mock_store) -> StorageManager:
 
 async def test_initialization(
     storage_manager: StorageManager, mock_coordinator, mock_hass
-):
+) -> None:
     """Test initialization."""
     assert storage_manager.coordinator == mock_coordinator
     assert storage_manager.hass == mock_hass
@@ -64,7 +64,7 @@ async def test_initialization(
 
 async def test_async_save(
     storage_manager: StorageManager, mock_coordinator, mock_store
-):
+) -> None:
     """Test saving data."""
     # Setup data
     growspace = Growspace(id=GROWSPACE_ID, name="Test GS")
@@ -88,7 +88,7 @@ async def test_async_save(
 
 async def test_async_load_no_data(
     storage_manager: StorageManager, mock_store, mock_coordinator
-):
+) -> None:
     """Test loading when no data exists."""
     mock_store.async_load.return_value = None
 
@@ -100,7 +100,7 @@ async def test_async_load_no_data(
 
 async def test_async_load_success(
     storage_manager: StorageManager, mock_store, mock_coordinator
-):
+) -> None:
     """Test successful data loading."""
     data = {
         "growspaces": {
@@ -143,7 +143,7 @@ async def test_async_load_success(
 
 async def test_async_load_with_options(
     storage_manager: StorageManager, mock_store, mock_coordinator
-):
+) -> None:
     """Test loading data and applying options."""
     data = {
         "growspaces": {
@@ -166,7 +166,7 @@ async def test_async_load_with_options(
 
 async def test_async_load_corrupted_data(
     storage_manager: StorageManager, mock_store, mock_coordinator
-):
+) -> None:
     """Test loading corrupted data."""
     # Corrupted plants
     mock_store.async_load.return_value = {
@@ -187,3 +187,72 @@ async def test_async_load_corrupted_data(
     await storage_manager.async_load()
 
     assert mock_coordinator.growspaces == {}
+
+
+async def test_async_load_migration_manager_missing(
+    storage_manager: StorageManager, mock_store, mock_coordinator
+) -> None:
+    """Test loading when migration manager is missing."""
+    mock_store.async_load.return_value = {"growspaces": {}}
+    del mock_coordinator.migration_manager  # Remove it
+
+    # Should log warning but not crash
+    await storage_manager.async_load()
+    assert mock_coordinator.growspaces == {}
+
+
+async def test_apply_options_branches(
+    storage_manager: StorageManager, mock_store, mock_coordinator
+) -> None:
+    """Test branches in _apply_options_to_growspaces."""
+    data = {
+        "growspaces": {
+            "gs1": {"id": "gs1", "name": "GS1"},
+            "gs2": {"id": "gs2", "name": "GS2"},
+        }
+    }
+    mock_store.async_load.return_value = data
+
+    # gs1 has EnvConfig object as option (not dict)
+    # gs2 has no option
+    env_config_obj = EnvironmentConfig(minimum_source_air_temperature=15)
+    mock_coordinator.options = {"gs1": env_config_obj}
+
+    await storage_manager.async_load()
+
+    # Verify gs1 applied
+    assert mock_coordinator.growspaces["gs1"].environment_config == env_config_obj
+    # Verify gs2 default
+    assert mock_coordinator.growspaces["gs2"].environment_config == EnvironmentConfig()
+
+
+async def test_load_events_error(
+    storage_manager: StorageManager, mock_store, mock_coordinator
+) -> None:
+    """Test error loading events."""
+    mock_store.async_load.return_value = {
+        "events": {"gs1": [{"invalid": "data"}]}  # triggers from_dict error?
+        # GrowspaceEvent.from_dict likely expects specific keys.
+        # If not, let's inject a direct type error in the data structure
+    }
+
+    # We can mock GrowspaceEvent.from_dict to raise exception
+    with patch(
+        "custom_components.growspace_manager.storage_manager.GrowspaceEvent.from_dict",
+        side_effect=ValueError("Invalid event"),
+    ):
+        await storage_manager.async_load()
+        assert mock_coordinator.events == {}
+
+    # Test success path for events too while we are at it
+    mock_store.async_load.return_value = {
+        "events": {"gs1": [{"event_type": "test", "timestamp": 123, "data": {}}]}
+    }
+    # Clean mock needed? No, separate call.
+    with patch(
+        "custom_components.growspace_manager.storage_manager.GrowspaceEvent.from_dict",
+        return_value=MagicMock(),
+    ) as mock_from_dict:
+        await storage_manager.async_load()
+        assert "gs1" in mock_coordinator.events
+        assert len(mock_coordinator.events["gs1"]) == 1

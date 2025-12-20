@@ -11,6 +11,7 @@ from custom_components.growspace_manager.const import (
     CONF_ASSISTANT_ID,
 )
 from custom_components.growspace_manager.coordinator import GrowspaceCoordinator
+from custom_components.growspace_manager.exceptions import GrowspaceError
 from custom_components.growspace_manager.services.ai_assistant import (
     handle_ask_grow_advice,
 )
@@ -76,7 +77,7 @@ async def test_handle_add_growspace(
     mock_coordinator,
     mock_strain_library,
     mock_call,
-):
+) -> None:
     """Test handle_add_growspace service."""
     mock_call.data = {
         "name": "Test GS",
@@ -105,7 +106,7 @@ async def test_handle_update_growspace(
     mock_coordinator,
     mock_strain_library,
     mock_call,
-):
+) -> None:
     """Test handle_update_growspace service."""
     mock_call.data = {
         "growspace_id": "gs1",
@@ -135,7 +136,7 @@ async def test_handle_add_growspace_no_mobile_app_notification(
     mock_coordinator,
     mock_strain_library,
     mock_call,
-):
+) -> None:
     """Test handle_add_growspace when notification_target is not a mobile app."""
     mock_call.data = {
         "name": "Test GS",
@@ -167,7 +168,7 @@ async def test_handle_add_growspace_exception(
     mock_coordinator,
     mock_strain_library,
     mock_call,
-):
+) -> None:
     """Test handle_add_growspace with an exception."""
     mock_call.data = {"name": "Test GS", "rows": 2, "plants_per_row": 3}
     mock_coordinator.async_add_growspace.side_effect = Exception("Add failed")
@@ -184,7 +185,7 @@ async def test_handle_add_growspace_exception(
 @pytest.mark.asyncio
 async def test_handle_remove_growspace(
     mock_hass, mock_coordinator, mock_strain_library, mock_call
-):
+) -> None:
     """Test handle_remove_growspace service."""
     mock_call.data = {"growspace_id": "gs1"}
 
@@ -201,7 +202,7 @@ async def test_handle_remove_growspace_exception(
     mock_coordinator,
     mock_strain_library,
     mock_call,
-):
+) -> None:
     """Test handle_remove_growspace with an exception."""
     mock_call.data = {"growspace_id": "gs1"}
     mock_coordinator.async_remove_growspace.side_effect = Exception("Remove failed")
@@ -224,7 +225,7 @@ async def test_handle_ask_grow_advice_success(
     mock_coordinator,
     mock_strain_library,
     mock_call,
-):
+) -> None:
     """Test handle_ask_grow_advice with successful response."""
     mock_call.data = {"growspace_id": "gs1", "user_query": "How are things?"}
 
@@ -268,7 +269,7 @@ async def test_handle_ask_grow_advice_ai_disabled(
     mock_coordinator,
     mock_strain_library,
     mock_call,
-):
+) -> None:
     """Test handle_ask_grow_advice when AI is disabled."""
     mock_call.data = {"growspace_id": "gs1"}
     mock_coordinator.options["ai_settings"][CONF_AI_ENABLED] = False
@@ -288,7 +289,7 @@ async def test_handle_ask_grow_advice_growspace_not_found(
     mock_coordinator,
     mock_strain_library,
     mock_call,
-):
+) -> None:
     """Test handle_ask_grow_advice for non-existent growspace."""
     mock_call.data = {"growspace_id": "gs_invalid"}
 
@@ -310,7 +311,7 @@ async def test_handle_ask_grow_advice_llm_failure(
     mock_coordinator,
     mock_strain_library,
     mock_call,
-):
+) -> None:
     """Test handle_ask_grow_advice when LLM returns no response."""
     mock_call.data = {"growspace_id": "gs1"}
 
@@ -322,3 +323,74 @@ async def test_handle_ask_grow_advice_llm_failure(
     )
 
     assert result["response"].startswith("AI Assistant Error:")
+
+
+@pytest.mark.asyncio
+@patch("homeassistant.helpers.device_registry.async_get")
+async def test_handle_add_growspace_growspace_error(
+    mock_async_get,
+    mock_hass,
+    mock_coordinator,
+    mock_strain_library,
+    mock_call,
+) -> None:
+    """Test handle_add_growspace with a GrowspaceError."""
+    mock_call.data = {"name": "Test GS", "rows": 2, "plants_per_row": 3}
+    mock_coordinator.async_add_growspace.side_effect = GrowspaceError("Specific error")
+    mock_async_get.return_value.devices = {}
+
+    with pytest.raises(ServiceValidationError, match="Specific error"):
+        await handle_add_growspace(
+            mock_hass, mock_coordinator, mock_strain_library, mock_call
+        )
+
+
+@pytest.mark.asyncio
+async def test_handle_update_growspace_exception(
+    mock_hass,
+    mock_coordinator,
+    mock_strain_library,
+    mock_call,
+) -> None:
+    """Test handle_update_growspace with an exception."""
+    mock_call.data = {"growspace_id": "gs1", "name": "Test GS"}
+    mock_coordinator.async_update_growspace.side_effect = Exception("Update failed")
+
+    with pytest.raises(
+        ServiceValidationError, match="Failed to update growspace: Update failed"
+    ):
+        await handle_update_growspace(
+            mock_hass, mock_coordinator, mock_strain_library, mock_call
+        )
+
+
+@pytest.mark.asyncio
+async def test_handle_update_growspace_growspace_error(
+    mock_hass,
+    mock_coordinator,
+    mock_strain_library,
+    mock_call,
+) -> None:
+    """Test handle_update_growspace with a GrowspaceError."""
+    mock_call.data = {"growspace_id": "gs1", "name": "Test GS"}
+    mock_coordinator.async_update_growspace.side_effect = GrowspaceError("Update error")
+
+    with pytest.raises(ServiceValidationError, match="Update error"):
+        await handle_update_growspace(
+            mock_hass, mock_coordinator, mock_strain_library, mock_call
+        )
+
+
+@pytest.mark.asyncio
+async def test_handle_remove_growspace_growspace_error(
+    mock_hass,
+    mock_coordinator,
+    mock_strain_library,
+    mock_call,
+) -> None:
+    """Test handle_remove_growspace with a GrowspaceError."""
+    mock_call.data = {"growspace_id": "gs1"}
+    mock_coordinator.async_remove_growspace.side_effect = GrowspaceError("Remove error")
+
+    with pytest.raises(ServiceValidationError, match="Remove error"):
+        await handle_remove_growspace(mock_hass, mock_coordinator, mock_call)
