@@ -4,6 +4,7 @@ from datetime import timedelta
 from unittest.mock import MagicMock, patch
 
 import pytest
+from homeassistant.core import HomeAssistant
 from homeassistant.util import dt as dt_util
 
 from custom_components.growspace_manager.const import PlantStage
@@ -18,13 +19,13 @@ from custom_components.growspace_manager.serializers import GrowspaceSerializer
 
 
 @pytest.fixture
-def serializer(hass):
+def serializer(hass: HomeAssistant):
     """Return a serializer instance."""
     return GrowspaceSerializer(hass)
 
 
 @pytest.fixture
-def mock_growspace():
+def mock_growspace(hass: HomeAssistant):
     """Return a mock growspace."""
     gs = MagicMock(spec=Growspace)
     gs.id = "gs1"
@@ -79,7 +80,7 @@ def mock_plant():
     return plant
 
 
-def test_calculate_days_in_stage(serializer, mock_plant):
+def test_calculate_days_in_stage(serializer, mock_plant) -> None:
     """Test days in stage calculation."""
     # Veg
     days = serializer.calculate_days_in_stage(mock_plant, PlantStage.VEG)
@@ -91,7 +92,7 @@ def test_calculate_days_in_stage(serializer, mock_plant):
     assert seedling_days == 10
 
 
-def test_get_sensor_value(hass, serializer):
+def test_get_sensor_value(hass, serializer) -> None:
     """Test getting numeric sensor value."""
     assert serializer._get_sensor_value(None) is None
     assert serializer._get_sensor_value("sensor.missing") is None
@@ -106,7 +107,7 @@ def test_get_sensor_value(hass, serializer):
     assert serializer._get_sensor_value("sensor.test") is None
 
 
-def test_get_environment_attributes(hass, serializer, mock_growspace):
+def test_get_environment_attributes(hass, serializer, mock_growspace) -> None:
     """Test fetching environment attributes."""
     hass.states.async_set("sensor.temp", "25")
     hass.states.async_set("sensor.hum", "60")
@@ -130,7 +131,7 @@ def test_get_environment_attributes(hass, serializer, mock_growspace):
     assert attrs["dehumidifier_control_enabled"] is True
 
 
-def test_serialize_growspace(hass, serializer, mock_growspace, mock_plant):
+def test_serialize_growspace(hass, serializer, mock_growspace, mock_plant) -> None:
     """Test full serialization."""
     # Setup dependencies
     plants = [mock_plant]
@@ -166,7 +167,9 @@ def test_serialize_growspace(hass, serializer, mock_growspace, mock_plant):
         mock_analyzer.calculate_biological_metrics.assert_called_once()
 
 
-def test_get_environment_attributes_with_thresholds(hass, serializer, mock_growspace):
+def test_get_environment_attributes_with_thresholds(
+    hass, serializer, mock_growspace
+) -> None:
     """Test fetching environment attributes with dehumidifier thresholds."""
     # Mock Dehumidifier with attributes including thresholds
     thresholds = {"veg": {"day": {"on": 1.2, "off": 1.5}}}
@@ -192,7 +195,7 @@ def test_get_environment_attributes_with_thresholds(hass, serializer, mock_grows
 # --------------------
 
 
-def test_get_environment_attributes_extended(hass, serializer, mock_growspace):
+def test_get_environment_attributes_extended(hass, serializer, mock_growspace) -> None:
     """Test environment attributes with exhaust, humidifier, and circulation fan."""
     # Setup Entity IDs
     mock_growspace.environment_config.exhaust_fan_entity = "fan.exhaust"

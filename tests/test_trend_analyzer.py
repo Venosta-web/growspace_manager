@@ -39,7 +39,7 @@ def create_mock_history(
 @pytest.mark.asyncio
 async def test_async_analyze_sensor_trend_rising(
     mock_get_recorder, trend_analyzer, mock_hass
-):
+) -> None:
     """Test detecting a rising trend."""
     now = utcnow()
     history_data = [
@@ -67,7 +67,7 @@ async def test_async_analyze_sensor_trend_rising(
 @pytest.mark.asyncio
 async def test_async_analyze_sensor_trend_falling(
     mock_get_recorder, trend_analyzer, mock_hass
-):
+) -> None:
     """Test detecting a falling trend."""
     now = utcnow()
     history_data = [
@@ -94,7 +94,7 @@ async def test_async_analyze_sensor_trend_falling(
 @pytest.mark.asyncio
 async def test_async_analyze_sensor_trend_stable(
     mock_get_recorder, trend_analyzer, mock_hass
-):
+) -> None:
     """Test detecting a stable trend."""
     now = utcnow()
     history_data = [
@@ -118,7 +118,7 @@ async def test_async_analyze_sensor_trend_stable(
 @pytest.mark.asyncio
 async def test_async_analyze_sensor_trend_insufficient_data(
     mock_get_recorder, trend_analyzer, mock_hass
-):
+) -> None:
     """Test handling insufficient data."""
     now = utcnow()
     history_data = [
@@ -142,7 +142,7 @@ async def test_async_analyze_sensor_trend_insufficient_data(
 @pytest.mark.asyncio
 async def test_async_analyze_sensor_trend_invalid_states(
     mock_get_recorder, trend_analyzer, mock_hass
-):
+) -> None:
     """Test handling invalid states (unavailable/unknown)."""
     now = utcnow()
     history_data = [
@@ -169,7 +169,7 @@ async def test_async_analyze_sensor_trend_invalid_states(
 @pytest.mark.asyncio
 async def test_async_analyze_sensor_trend_error_handling(
     mock_get_recorder, trend_analyzer, mock_hass
-):
+) -> None:
     """Test error handling during history retrieval."""
     mock_recorder_instance = MagicMock()
     mock_get_recorder.return_value = mock_recorder_instance
@@ -190,7 +190,7 @@ async def test_async_analyze_sensor_trend_error_handling(
 @pytest.mark.asyncio
 async def test_async_analyze_sensor_trend_crossed_threshold(
     mock_get_recorder, trend_analyzer, mock_hass
-):
+) -> None:
     """Test crossed_threshold logic."""
     now = utcnow()
     # All values above 20.0
