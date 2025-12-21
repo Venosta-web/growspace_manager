@@ -1,6 +1,8 @@
 """Tests for the Dehumidifier Coordinator."""
 
 import time
+import logging
+
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -382,4 +384,112 @@ async def test_timer_guard_bypassed_on_first_action(coordinator, mock_hass):
     # Should turn on even though we haven't tracked any previous actions
     mock_hass.services.async_call.assert_called_once_with(
         "switch", SERVICE_TURN_ON, {ATTR_ENTITY_ID: "switch.dehumidifier"}
+    )
+
+
+def test_init_missing_growspace(mock_hass, mock_main_coordinator, caplog):
+    """Test initialization when growspace does not exist (lines 80-83)."""
+    mock_main_coordinator.growspaces = {}
+
+    with caplog.at_level(logging.ERROR):
+        DehumidifierCoordinator(
+            mock_hass, MagicMock(), "nonexistent", mock_main_coordinator
+        )
+
+    assert "Growspace nonexistent not found" in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_on_sensor_change(
+    mock_hass, mock_main_coordinator, mock_growspace, mock_track_state_change_event
+):
+    """Test _on_sensor_change triggers check (line 134)."""
+    mock_main_coordinator.growspaces = {"gs1": mock_growspace}
+    coordinator = DehumidifierCoordinator(
+        mock_hass, mock_track_state_change_event, "gs1", mock_main_coordinator
+    )
+
+    # Mock async_check_and_control to verify it's awaited
+    coordinator.async_check_and_control = AsyncMock()
+
+    await coordinator._on_sensor_change(None)
+
+    coordinator.async_check_and_control.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_check_and_control_missing_entities(
+    mock_hass, mock_main_coordinator, mock_growspace, mock_track_state_change_event
+):
+    """Test async_check_and_control with missing entities (line 138-139)."""
+    mock_main_coordinator.growspaces = {"gs1": mock_growspace}
+    coordinator = DehumidifierCoordinator(
+        mock_hass, mock_track_state_change_event, "gs1", mock_main_coordinator
+    )
+
+    # Force vpd_sensor to None after init
+    coordinator.vpd_sensor = None
+
+    # Should yield early without error
+    await coordinator.async_check_and_control()
+
+
+@pytest.mark.asyncio
+async def test_binary_light_sensor(
+    mock_hass, mock_main_coordinator, mock_growspace, mock_track_state_change_event
+):
+    """Test light sensor with binary state (lines 167-169)."""
+    mock_growspace.environment_config.light_sensor = "binary_sensor.light"
+    mock_main_coordinator.growspaces = {"gs1": mock_growspace}
+
+    coordinator = DehumidifierCoordinator(
+        mock_hass, mock_track_state_change_event, "gs1", mock_main_coordinator
+    )
+
+    # Setup states
+    mock_hass.states.get.side_effect = lambda entity_id: MagicMock(
+        state="1.5" if entity_id == "sensor.vpd" else STATE_ON
+    )
+
+    # Mock internal methods to isolate logic
+    coordinator._get_growth_stage = MagicMock(return_value="veg")
+    coordinator._get_current_thresholds = MagicMock(
+        return_value={"on": 1.0, "off": 2.0}
+    )
+    coordinator._control_dehumidifier = AsyncMock()
+
+    await coordinator.async_check_and_control()
+
+    # Verify is_day was calculated as True (STATE_ON)
+    # logic: is_day = light_state.state == STATE_ON
+    # We can check if _get_current_thresholds was called with is_day=True
+    coordinator._get_current_thresholds.assert_called_with("veg", True)
+
+    # Now test with "off"
+    mock_hass.states.get.side_effect = lambda entity_id: MagicMock(
+        state="1.5" if entity_id == "sensor.vpd" else STATE_OFF
+    )
+
+    await coordinator.async_check_and_control()
+    coordinator._get_current_thresholds.assert_called_with("veg", False)
+
+
+@pytest.mark.asyncio
+async def test_generic_domain_control(
+    mock_hass, mock_main_coordinator, mock_growspace, mock_track_state_change_event
+):
+    """Test controlling an entity from a generic domain (line 304)."""
+    mock_growspace.environment_config.dehumidifier_entity = "input_boolean.dehumidifier"
+    mock_main_coordinator.growspaces = {"gs1": mock_growspace}
+
+    coordinator = DehumidifierCoordinator(
+        mock_hass, mock_track_state_change_event, "gs1", mock_main_coordinator
+    )
+
+    # Manually invoke control
+    await coordinator._control_dehumidifier(True)
+
+    # Should call homeassistant.turn_on
+    mock_hass.services.async_call.assert_awaited_with(
+        "homeassistant", "turn_on", {"entity_id": "input_boolean.dehumidifier"}
     )

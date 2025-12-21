@@ -80,26 +80,42 @@ class IrrigationConfigHandler(BaseConfigHandler[dict[str, Any]]):
                         default=irrigation_options.get("target_vwc_percent", 55.0),
                     ): selector.NumberSelector(
                         selector.NumberSelectorConfig(
-                            min=0, max=100, step=0.1, unit_of_measurement="%"
+                            min=0,
+                            max=100,
+                            step=0.1,
+                            unit_of_measurement="%",
+                            mode=selector.NumberSelectorMode.BOX,
                         )
                     ),
                     vol.Optional(
                         "p0_duration_minutes",
                         default=irrigation_options.get("p0_duration_minutes", 60),
                     ): selector.NumberSelector(
-                        selector.NumberSelectorConfig(min=0, unit_of_measurement="min")
+                        selector.NumberSelectorConfig(
+                            min=0,
+                            unit_of_measurement="min",
+                            mode=selector.NumberSelectorMode.BOX,
+                        )
                     ),
                     vol.Optional(
                         "shot_duration_seconds",
                         default=irrigation_options.get("shot_duration_seconds", 10),
                     ): selector.NumberSelector(
-                        selector.NumberSelectorConfig(min=1, unit_of_measurement="sec")
+                        selector.NumberSelectorConfig(
+                            min=1,
+                            unit_of_measurement="sec",
+                            mode=selector.NumberSelectorMode.BOX,
+                        )
                     ),
                     vol.Optional(
                         "shot_interval_minutes",
                         default=irrigation_options.get("shot_interval_minutes", 15),
                     ): selector.NumberSelector(
-                        selector.NumberSelectorConfig(min=1, unit_of_measurement="min")
+                        selector.NumberSelectorConfig(
+                            min=1,
+                            unit_of_measurement="min",
+                            mode=selector.NumberSelectorMode.BOX,
+                        )
                     ),
                     vol.Optional(
                         "maintenance_dryback_percent",
@@ -108,7 +124,10 @@ class IrrigationConfigHandler(BaseConfigHandler[dict[str, Any]]):
                         ),
                     ): selector.NumberSelector(
                         selector.NumberSelectorConfig(
-                            min=0.1, step=0.1, unit_of_measurement="%"
+                            min=0.1,
+                            step=0.1,
+                            unit_of_measurement="%",
+                            mode=selector.NumberSelectorMode.BOX,
                         )
                     ),
                     vol.Optional(
@@ -117,7 +136,11 @@ class IrrigationConfigHandler(BaseConfigHandler[dict[str, Any]]):
                             "p2_stop_before_lights_off_minutes", 120
                         ),
                     ): selector.NumberSelector(
-                        selector.NumberSelectorConfig(min=0, unit_of_measurement="min")
+                        selector.NumberSelectorConfig(
+                            min=0,
+                            unit_of_measurement="min",
+                            mode=selector.NumberSelectorMode.BOX,
+                        )
                     ),
                 }
             )
