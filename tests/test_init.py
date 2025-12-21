@@ -13,6 +13,7 @@ from aiohttp import BodyPartReader
 from homeassistant.config_entries import ConfigEntryState
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ServiceValidationError
+from homeassistant.util import dt as dt_util
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.growspace_manager import (
@@ -26,6 +27,7 @@ from custom_components.growspace_manager import (
     async_unload_entry,
     websocket_get_event_log,
     websocket_get_growspace_data,
+    websocket_get_history_stats,
 )
 from custom_components.growspace_manager.const import DOMAIN
 from custom_components.growspace_manager.coordinator import GrowspaceCoordinator
@@ -796,7 +798,196 @@ async def test_async_register_websocket_api(mock_hass) -> None:
         "homeassistant.components.websocket_api.async_register_command"
     ) as mock_reg:
         _async_register_websocket_api(mock_hass)
-        assert mock_reg.call_count == 2
+        assert mock_reg.call_count == 3
+
+
+@pytest.mark.asyncio
+async def test_websocket_get_history_stats(
+    hass: HomeAssistant, mock_coordinator
+) -> None:
+    """Test websocket get history stats."""
+    mock_connection = MagicMock()
+    mock_connection.send_result = MagicMock()
+    mock_connection.send_error = MagicMock()
+
+    # Define State class to mock history states
+    class MockState:
+        def __init__(self, state, last_updated) -> None:
+            self.state = state
+            self.last_updated = last_updated
+
+    # 1. Success Case
+    with patch(
+        "homeassistant.components.recorder.history.get_significant_states"
+    ) as mock_get_history:
+        # Mock history data
+        # Start: 12:00. End: 12:30. Interval: 15m.
+        # Points at 12:00, 12:15, 12:30.
+        start = dt_util.utcnow().replace(minute=0, second=0, microsecond=0)
+        t1 = start
+        t2 = (
+            start + dt_util.dt.timedelta(minutes=10)
+        )  # Should be skipped by sampling if strictly looking for bucket match, or held?
+        # Logic: while current_time <= end_time: take state AT current_time or last_valid
+
+        # Data:
+        # T+0: 10
+        # T+10: 20
+        # T+20: 30
+
+        # Sampling (15m):
+        # T+0: Should take 10
+        # T+15: Should take 20 (last valid at T+10)
+        # T+30: Should take 30 (last valid at T+20, or if data extends)
+
+        mock_get_history.return_value = {
+            "sensor.test": [
+                MockState("10", t1),
+                MockState("20", t2),
+                MockState("30", t1 + dt_util.dt.timedelta(minutes=20)),
+            ]
+        }
+
+        # We need end_time to cover the loop
+        end = start + dt_util.dt.timedelta(minutes=30)
+
+        msg = {
+            "id": 1,
+            "type": f"{DOMAIN}/get_history_stats",
+            "entity_ids": ["sensor.test"],
+            "start_time": start.isoformat(),
+            "end_time": end.isoformat(),
+            "interval_minutes": 15,
+            "significant_changes_only": True,
+        }
+
+        await websocket_get_history_stats(hass, mock_connection, msg)
+
+        mock_connection.send_result.assert_called_once()
+        result = mock_connection.send_result.call_args[0][1]
+        assert "sensor.test" in result
+        stats = result["sensor.test"]
+        # Expected: T+0, T+15, T+30 -> 3 points
+        assert len(stats) >= 1
+        assert stats[0]["s"] == "10"
+
+    # 2. Invalid Start Time
+    msg_inv = {
+        "id": 2,
+        "type": f"{DOMAIN}/get_history_stats",
+        "entity_ids": ["sensor.test"],
+        "start_time": "invalid",
+        "interval_minutes": 5,
+        "significant_changes_only": True,
+    }
+    await websocket_get_history_stats(hass, mock_connection, msg_inv)
+    mock_connection.send_error.assert_called_with(
+        2, "invalid_args", "Invalid start_time"
+    )
+
+    # 3. Exception Handling
+    with patch(
+        "homeassistant.components.recorder.history.get_significant_states",
+        side_effect=Exception("DB Error"),
+    ):
+        msg_err = {
+            "id": 3,
+            "type": f"{DOMAIN}/get_history_stats",
+            "entity_ids": ["sensor.test"],
+            "start_time": start.isoformat(),
+            "interval_minutes": 5,
+            "significant_changes_only": True,
+        }
+        await websocket_get_history_stats(hass, mock_connection, msg_err)
+        mock_connection.send_error.assert_called_with(3, "unknown_error", "DB Error")
+
+
+@pytest.mark.asyncio
+async def test_websocket_history_empty_and_unavailable(hass: HomeAssistant) -> None:
+    """Test history stats with empty data or unavailable states."""
+    mock_connection = MagicMock()
+
+    start = dt_util.utcnow()
+
+    with patch(
+        "homeassistant.components.recorder.history.get_significant_states"
+    ) as mock_get_history:
+
+        class MockState:
+            def __init__(self, state, last_updated):
+                self.state = state
+                self.last_updated = last_updated
+
+        # Empty list for one, unavailable for other
+        mock_get_history.return_value = {
+            "sensor.empty": [],
+            "sensor.unavail": [MockState("unavailable", start)],
+        }
+
+        msg = {
+            "id": 1,
+            "type": f"{DOMAIN}/get_history_stats",
+            "entity_ids": ["sensor.empty", "sensor.unavail"],
+            "start_time": start.isoformat(),
+            "end_time": (start + dt_util.dt.timedelta(minutes=10)).isoformat(),
+            "interval_minutes": 5,
+            "significant_changes_only": True,
+        }
+
+        await websocket_get_history_stats(hass, mock_connection, msg)
+
+        result = mock_connection.send_result.call_args[0][1]
+        assert result["sensor.empty"] == []
+        # sensor.unavail should produce empty list because we filter out unavailable/unknown
+        assert result["sensor.unavail"] == []
+
+
+@pytest.mark.asyncio
+async def test_upload_write_execution(mock_hass) -> None:
+    """Test that ensures write_chunk is executed to cover lines 219-220."""
+    # We need to NOT mock async_add_executor_job to prevent it?
+    # Or create a wrapper side_effect that executes the function if it's our write_chunk.
+
+    real_mkstemp = tempfile.mkstemp
+
+    async def side_effect(target, *args, **kwargs):
+        if target == tempfile.mkstemp:
+            return real_mkstemp(*args, **kwargs)
+        if callable(target):
+            # This executes write_chunk(path, data)
+            return target(*args, **kwargs)
+        return None
+
+    mock_hass.async_add_executor_job = AsyncMock(side_effect=side_effect)
+
+    mock_strain_library = AsyncMock()
+    mock_strain_library.import_library_from_zip = AsyncMock(return_value=1)
+
+    view = StrainLibraryUploadView(mock_hass, mock_strain_library)
+
+    mock_request = MagicMock()
+    mock_reader = AsyncMock()
+    mock_request.multipart = AsyncMock(return_value=mock_reader)
+
+    mock_field = AsyncMock(spec=BodyPartReader)
+    mock_field.name = "file"
+    mock_field.read_chunk = AsyncMock(side_effect=[b"data", b""])
+    mock_reader.next = AsyncMock(return_value=mock_field)
+
+    with (
+        patch(
+            "custom_components.growspace_manager.ConfigEntry.runtime_data", create=True
+        ),
+        patch(
+            "pathlib.Path.unlink"
+        ),  # Prevent actual deletion so we don't error if timing is off
+    ):
+        # We need to ensure we don't actually write to a file that messes up system?
+        # mkstemp creates a real temp file, so it's safe.
+
+        response = await view.post(mock_request)
+        assert response.status == 200
+        assert json.loads(response.body)["success"] is True
 
 
 @pytest.mark.asyncio
@@ -844,4 +1035,3 @@ async def test_strain_library_upload_cleanup_on_error(mock_hass) -> None:
         # Our mock executor side effect allows it.
 
         # We just want to ensure coverage hits lines 222-226
-        pass

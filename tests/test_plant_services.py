@@ -2,11 +2,12 @@
 
 from datetime import UTC, date, datetime
 from typing import Any, cast
-from unittest.mock import AsyncMock, Mock
+from unittest.mock import AsyncMock, MagicMock, Mock
 
 import pytest
 from homeassistant.core import HomeAssistant, ServiceCall
 from homeassistant.exceptions import ServiceValidationError
+from homeassistant.helpers import entity_registry as er
 from homeassistant.util.dt import as_local
 
 from custom_components.growspace_manager.const import (
@@ -1973,3 +1974,164 @@ async def test_take_clone_zero_clones(
     # Should default to 1
     mock_coordinator.async_take_clones.assert_called_once()
     assert mock_coordinator.async_take_clones.call_args.kwargs["num_clones"] == 1
+
+
+# ============================================================================
+# Additional Coverage Tests
+# ============================================================================
+
+
+@pytest.mark.asyncio
+async def test_resolve_position_conflict_no_space(
+    hass: HomeAssistant,
+    mock_coordinator,
+    mock_strain_library,
+    mock_growspace,
+    mock_plant,
+) -> None:
+    """Test position conflict resolution when no space is available."""
+    # Setup occupied growspace
+    mock_coordinator.growspaces = {"gs1": mock_growspace}
+    mock_plant.row = 2
+    mock_plant.col = 3
+    mock_coordinator.get_growspace_plants = Mock(return_value=[mock_plant])
+
+    # Mock find_first_available_position to return None (full)
+    mock_coordinator.validator.find_first_available_position = Mock(
+        return_value=(None, None)
+    )
+
+    call = ServiceCall(
+        hass,
+        domain=DOMAIN,
+        service="update_plant",
+        data={
+            "plant_id": "plant_2",  # Different plant
+            "row": 2,
+            "col": 3,
+            "notes": "Test notes",  # Extra field to ensure update proceeds
+        },
+    )
+
+    # We need to manually call _resolve_position_conflict or trigger it via update/add
+    # Let's use handle_update_plant but we need plant_2 to exist
+    plant_2 = Mock()
+    plant_2.plant_id = "plant_2"
+    plant_2.growspace_id = "gs1"
+    plant_2.row = 1
+    plant_2.col = 1
+    mock_coordinator.plants = {
+        "plant_2": plant_2,
+        "plant_1": mock_plant,
+    }  # plant_1 occupies 2,3
+
+    await handle_update_plant(hass, mock_coordinator, mock_strain_library, call)
+
+    # Verify row/col were popped from update data (not updated)
+    update_call_args = mock_coordinator.async_update_plant.call_args.kwargs
+    assert "row" not in update_call_args
+    assert "col" not in update_call_args
+    assert update_call_args["notes"] == "Test notes"
+
+
+@pytest.mark.asyncio
+async def test_resolve_plant_id_entity(
+    hass: HomeAssistant, mock_coordinator, mock_strain_library
+) -> None:
+    """Test resolving plant ID from entity ID."""
+    mock_coordinator.plants = {"plant_123": Mock(plant_id="plant_123")}
+
+    # Mock Entity Registry and State
+    mock_registry = MagicMock()
+    hass.data[er.DATA_REGISTRY] = mock_registry
+
+    hass.states.async_set("sensor.my_plant", "active", {"plant_id": "plant_123"})
+
+    call = ServiceCall(
+        hass,
+        domain=DOMAIN,
+        service="harvest_plant",
+        data={"plant_id": "sensor.my_plant", "target_growspace_id": "drying_room"},
+    )
+
+    await handle_harvest_plant(hass, mock_coordinator, mock_strain_library, call)
+
+    # Verify it resolved to plant_123
+    mock_coordinator.async_harvest_plant.assert_called_once()
+    assert (
+        mock_coordinator.async_harvest_plant.call_args.kwargs["plant_id"] == "plant_123"
+    )
+
+
+@pytest.mark.asyncio
+async def test_remove_plant_growspace_error(
+    hass: HomeAssistant, mock_coordinator, mock_strain_library, mock_plant
+) -> None:
+    """Test error handling in remove plant."""
+    mock_coordinator.plants = {"plant_1": mock_plant}
+    mock_coordinator.async_remove_plant.side_effect = GrowspaceError("Remove failed")
+
+    call = ServiceCall(
+        hass, domain=DOMAIN, service="remove_plant", data={"plant_id": "plant_1"}
+    )
+
+    with pytest.raises(ServiceValidationError, match="Remove failed"):
+        await handle_remove_plant(hass, mock_coordinator, mock_strain_library, call)
+
+
+@pytest.mark.asyncio
+async def test_switch_plants_growspace_error(
+    hass: HomeAssistant, mock_coordinator, mock_strain_library, mock_plant
+) -> None:
+    """Test error handling in switch plants."""
+    mock_coordinator.plants = {"plant_1": mock_plant, "plant_2": Mock()}
+    mock_coordinator.async_switch_plants.side_effect = GrowspaceError("Switch failed")
+
+    call = ServiceCall(
+        hass,
+        domain=DOMAIN,
+        service="switch_plants",
+        data={"plant1_id": "plant_1", "plant2_id": "plant_2"},
+    )
+
+    with pytest.raises(ServiceValidationError, match="Switch failed"):
+        await handle_switch_plants(hass, mock_coordinator, mock_strain_library, call)
+
+
+@pytest.mark.asyncio
+async def test_transition_plant_stage_growspace_error(
+    hass: HomeAssistant, mock_coordinator, mock_strain_library, mock_plant
+) -> None:
+    """Test error handling in transition plant stage."""
+    mock_coordinator.plants = {"plant_1": mock_plant}
+    mock_coordinator.async_transition_plant_stage.side_effect = GrowspaceError(
+        "Transition failed"
+    )
+
+    call = ServiceCall(
+        hass,
+        domain=DOMAIN,
+        service="transition_plant_stage",
+        data={"plant_id": "plant_1", "new_stage": "flower"},
+    )
+
+    with pytest.raises(ServiceValidationError, match="Transition failed"):
+        await handle_transition_plant_stage(
+            hass, mock_coordinator, mock_strain_library, call
+        )
+
+
+@pytest.mark.asyncio
+async def test_harvest_plant_growspace_error(
+    hass: HomeAssistant, mock_coordinator, mock_strain_library, mock_plant
+) -> None:
+    """Test error handling in harvest plant."""
+    mock_coordinator.plants = {"plant_1": mock_plant}
+    mock_coordinator.async_harvest_plant.side_effect = GrowspaceError("Harvest failed")
+
+    call = ServiceCall(
+        hass, domain=DOMAIN, service="harvest_plant", data={"plant_id": "plant_1"}
+    )
+
+    with pytest.raises(ServiceValidationError, match="Harvest failed"):
+        await handle_harvest_plant(hass, mock_coordinator, mock_strain_library, call)
