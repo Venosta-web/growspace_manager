@@ -5,6 +5,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 from homeassistant.core import HomeAssistant
+from PIL import Image
 
 from custom_components.growspace_manager.image_manager import ImageManager
 
@@ -45,33 +46,30 @@ async def test_save_strain_image_success(
 ) -> None:
     """Test successfully saving a strain image."""
     strain_id = "strain_123"
-    image_base64 = "data:image/jpeg;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7"  # minimal valid gif/image logic will be mocked anyway
+    # Minimal 1x1 pixel PNG as base64 (works with PIL)
+    image_base64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
 
-    # We still mock base64/PIL because we don't want to rely on real image library internals for compression
-    # But we want to verify the file write
+    path = await image_manager.save_strain_image(strain_id, None, image_base64)
 
-    with (
-        patch("base64.b64decode", return_value=b"image_data"),
-        patch("PIL.Image.open") as mock_open,
-    ):
-        mock_image = MagicMock()
-        mock_image.mode = "RGBA"
-        mock_open.return_value = mock_image
-        mock_converted_image = MagicMock()
-        mock_image.convert.return_value = mock_converted_image
+    expected_filename = f"{strain_id}.webp"
+    expected_path = tmp_path / expected_filename
+    expected_small_path = tmp_path / f"{strain_id}_small.webp"
 
-        expected_filename = f"{strain_id}.jpg"
-        expected_path = tmp_path / expected_filename
+    # Verify return path
+    assert path == str(expected_path.absolute())
 
-        # We mock save because PIL real save requires valid image data
-        # But we can verify it TRIED to save to the correct path
+    # Verify both files were created
+    assert expected_path.exists()
+    assert expected_small_path.exists()
 
-        path = await image_manager.save_strain_image(strain_id, None, image_base64)
-
-        assert path == str(expected_path.absolute())
-        mock_converted_image.save.assert_called_with(
-            expected_path, "JPEG", quality=85, optimize=True
-        )
+    # Verify they're valid WebP files
+    with Image.open(expected_path) as img:
+        assert img.format == "WEBP"
+    with Image.open(expected_small_path) as img:
+        assert img.format == "WEBP"
+        # Thumbnail should be small
+        assert img.width <= 320
+        assert img.height <= 320
 
 
 async def test_save_strain_image_with_phenotype(
@@ -80,24 +78,24 @@ async def test_save_strain_image_with_phenotype(
     """Test saving an image with a phenotype ID."""
     strain_id = "strain_123"
     phenotype_id = "pheno_456"
-    image_base64 = "raw_base64_data"
+    # Minimal 1x1 pixel PNG as base64
+    image_base64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
 
-    with (
-        patch("base64.b64decode", return_value=b"image_data"),
-        patch("PIL.Image.open") as mock_open,
-    ):
-        mock_image = MagicMock()
-        mock_image.mode = "RGB"
-        mock_open.return_value = mock_image
+    await image_manager.save_strain_image(strain_id, phenotype_id, image_base64)
 
-        expected_filename = f"{strain_id}_{phenotype_id}.jpg"
-        expected_path = tmp_path / expected_filename
+    expected_filename = f"{strain_id}_{phenotype_id}.webp"
+    expected_path = tmp_path / expected_filename
+    expected_small_path = tmp_path / f"{strain_id}_{phenotype_id}_small.webp"
 
-        await image_manager.save_strain_image(strain_id, phenotype_id, image_base64)
+    # Verify both files were created
+    assert expected_path.exists()
+    assert expected_small_path.exists()
 
-        mock_image.save.assert_called_with(
-            expected_path, "JPEG", quality=85, optimize=True
-        )
+    # Verify they're valid WebP files
+    with Image.open(expected_path) as img:
+        assert img.format == "WEBP"
+    with Image.open(expected_small_path) as img:
+        assert img.format == "WEBP"
 
 
 async def test_save_strain_image_error(image_manager: ImageManager) -> None:
