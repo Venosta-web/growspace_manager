@@ -576,7 +576,7 @@ class StrainLibrary:
     ) -> int:
         """Import a library dictionary into the database."""
         if not isinstance(library_data, dict):
-            _LOGGER.warning("Import failed: data must be a dictionary.")
+            _LOGGER.warning("Import failed: data must be a dictionary")
             return len(self.strains)
         if replace:
             await self.clear()
@@ -634,7 +634,7 @@ class StrainLibrary:
     async def import_strains(self, strains: list[str], replace: bool = False) -> int:
         """Import a list of strain names, creating default entries."""
         if not isinstance(strains, list):
-            _LOGGER.warning("Import failed: strains must be a list.")
+            _LOGGER.warning("Import failed: strains must be a list")
             return len(self.strains)
         if replace:
             await self.clear()

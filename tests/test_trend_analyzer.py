@@ -231,7 +231,7 @@ async def test_async_analyze_sensor_trend_crossed_threshold(
 @pytest.mark.asyncio
 async def test_async_analyze_sensors_trends_bulk(
     mock_get_recorder, trend_analyzer, mock_hass
-):
+) -> None:
     """Test bulk trend analysis."""
     now = utcnow()
 
@@ -274,3 +274,80 @@ async def test_async_analyze_sensors_trends_bulk(
 
     assert result["sensor.two"]["trend"] == "falling"
     assert result["sensor.two"]["crossed_threshold"] is False  # 20 < 22
+
+
+@patch("custom_components.growspace_manager.trend_analyzer.get_recorder_instance")
+@pytest.mark.asyncio
+async def test_async_analyze_sensors_trends_empty_ids(
+    mock_get_recorder, trend_analyzer: TrendAnalyzer
+) -> None:
+    """Test analyzing with empty sensor IDs list (line 31)."""
+    result = await trend_analyzer.async_analyze_sensors_trends(
+        [], duration_minutes=15, threshold=25.0
+    )
+    assert result == {}
+    # Ensure no DB call was made
+    mock_get_recorder.assert_not_called()
+
+
+@patch("custom_components.growspace_manager.trend_analyzer.get_recorder_instance")
+@pytest.mark.asyncio
+async def test_async_analyze_sensors_trends_invalid_objects(
+    mock_get_recorder, trend_analyzer: TrendAnalyzer
+) -> None:
+    """Test handling non-State objects in history (line 58)."""
+    mock_recorder_instance = MagicMock()
+    mock_get_recorder.return_value = mock_recorder_instance
+
+    # Return a mix of valid State and invalid object (e.g. dict or string)
+    # The code expects a dict of {sensor_id: [states]}
+    # We inject a non-State object into the list
+    mock_history = {
+        "sensor.test": [
+            State("sensor.test", "20.0"),
+            "not a state object",  # This should be skipped
+            State("sensor.test", "22.0"),
+        ]
+    }
+
+    mock_recorder_instance.async_add_executor_job = AsyncMock(return_value=mock_history)
+
+    result = await trend_analyzer.async_analyze_sensors_trends(
+        ["sensor.test"], duration_minutes=15, threshold=25.0
+    )
+
+    # Should calculate trend based on 20.0 and 22.0 (rising)
+    # If "not a state object" caused a crash, test would fail.
+    assert result["sensor.test"]["trend"] == "rising"
+
+
+@patch("custom_components.growspace_manager.trend_analyzer.get_recorder_instance")
+@pytest.mark.asyncio
+async def test_async_analyze_sensors_trends_value_error(
+    mock_get_recorder, trend_analyzer: TrendAnalyzer
+) -> None:
+    """Test handling ValueError during float conversion (lines 63-64)."""
+    mock_recorder_instance = MagicMock()
+    mock_get_recorder.return_value = mock_recorder_instance
+
+    # "unknown state" strings are likely skipped by explicit check,
+    # but "some_random_text" that is NOT in [STATE_UNKNOWN, STATE_UNAVAILABLE, None, ""]
+    # will proceed to float() conversion and raise ValueError.
+    mock_history = {
+        "sensor.test": [
+            State("sensor.test", "20.0"),
+            State(
+                "sensor.test", "not_a_number"
+            ),  # Should raise ValueError and continue
+            State("sensor.test", "22.0"),
+        ]
+    }
+
+    mock_recorder_instance.async_add_executor_job = AsyncMock(return_value=mock_history)
+
+    result = await trend_analyzer.async_analyze_sensors_trends(
+        ["sensor.test"], duration_minutes=15, threshold=25.0
+    )
+
+    # Should skip the middle invalid value and see 20->22 (rising)
+    assert result["sensor.test"]["trend"] == "rising"

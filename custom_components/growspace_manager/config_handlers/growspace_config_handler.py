@@ -138,10 +138,11 @@ class GrowspaceConfigHandler:
             if service.startswith("mobile_app_")
         ]
 
-        # Add "None" option to allow clearing notification target
-        notification_options.insert(
-            0, selector.SelectOptionDict(value="", label="None (No notifications)")
-        )
+        # Add "None" option if we found any mobile apps
+        if notification_options:
+            notification_options.insert(
+                0, selector.SelectOptionDict(value="", label="None (No notifications)")
+            )
 
         current_notification = getattr(growspace, "notification_target", None) or ""
 

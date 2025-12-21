@@ -480,7 +480,8 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
         else:
             self._update_special_growspace_name(canonical_id, name)
             # Ensure type is correct even if existing (for migration)
-            if self.growspaces[canonical_id].growspace_type != growspace_type:
+            start_type = self.growspaces[canonical_id].growspace_type
+            if start_type != growspace_type:
                 self.growspaces[canonical_id].growspace_type = growspace_type
             # Name or Type changed -> Invalidate
             self._invalidate_cache(canonical_id)

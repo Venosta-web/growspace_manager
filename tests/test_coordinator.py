@@ -34,6 +34,7 @@ from custom_components.growspace_manager.exceptions import (
 from custom_components.growspace_manager.models import (
     EnvironmentConfig,
     Growspace,
+    GrowspaceEvent,
     GrowspaceType,
     IrrigationConfig,
     Plant,
@@ -2880,3 +2881,232 @@ async def test_get_growspace_grid(mock_coordinator: GrowspaceCoordinator) -> Non
         if p1.plant_id in row or p1 in row:  # Grid might contain IDs or Objects
             found = True
     assert found
+
+async def test_coverage_init_with_empty_data(hass):
+    """Test initialization with None data (line 153)."""
+    entry = MockConfigEntry(domain=DOMAIN, data={})
+    entry.add_to_hass(hass)
+    entry.async_create_background_task = MagicMock()
+    
+    with (
+        patch("custom_components.growspace_manager.coordinator.StorageManager"),
+        patch("custom_components.growspace_manager.coordinator.MigrationManager"),
+        patch("custom_components.growspace_manager.coordinator.StrainLibrary"),
+    ):
+        # Initialize with no data
+        coord = GrowspaceCoordinator(hass, entry, data=None)
+
+        # Should initialize empty dicts
+        assert coord.plants == {}
+        assert coord.growspaces == {}
+
+
+async def test_coverage_load_plant_object_directly(coordinator):
+    """Test loading a Plant object directly (line 196)."""
+    plant = Plant(
+        plant_id="test_plant",
+        growspace_id="gs1",
+        strain="Test Strain",
+        phenotype="Original",
+        veg_start="2024-01-01",
+    )
+
+    coordinator._load_plants({"test_plant": plant})
+
+    assert "test_plant" in coordinator.plants
+    assert coordinator.plants["test_plant"] == plant
+
+
+async def test_coverage_load_growspace_object_directly(coordinator):
+    """Test loading a Growspace object directly (line 214)."""
+    growspace = Growspace(
+        id="test_gs",
+        name="Test GS",
+        rows=3,
+        plants_per_row=3,
+    )
+
+    coordinator._load_growspaces({"test_gs": growspace})
+
+    assert "test_gs" in coordinator.growspaces
+    assert coordinator.growspaces["test_gs"] == growspace
+
+
+async def test_coverage_event_rolling_buffer_limit(coordinator):
+    """Test event buffer enforces 50 event limit (lines 323-335)."""
+    growspace_id = "test_gs"
+
+    # Add 55 events (should trigger rolling buffer at 50)
+    for i in range(55):
+        event = GrowspaceEvent(
+            sensor_type="test_sensor",
+            growspace_id=growspace_id,
+            start_time=f"2024-01-01T12:{i:02d}:00",
+            end_time=f"2024-01-01T12:{i:02d}:01",
+            duration_sec=1,
+            severity=0.5,
+            category="test",
+            reasons=[f"reason {i}"],
+        )
+        coordinator.add_event(growspace_id, event)
+
+    # Should only keep last 50
+    assert len(coordinator.events[growspace_id]) == 50
+
+    # First event should be reason 5 (0-4 were removed)
+    assert coordinator.events[growspace_id][0].reasons == ["reason 5"]
+
+    # Last event should be reason 54
+    assert coordinator.events[growspace_id][-1].reasons == ["reason 54"]
+
+
+async def test_coverage_migrate_plant_image_paths(coordinator):
+    """Test migrate_plant_image_paths method (lines 599-622)."""
+    # Create plant with .jpg image path
+    plant_with_jpg = Plant(
+        plant_id="plant1",
+        growspace_id="gs1",
+        strain="Strain1",
+        phenotype="Pheno1",
+        veg_start="2024-01-01",
+    )
+    # Manually set phenotype as dict with image_path
+    plant_with_jpg.phenotype = {"image_path": "/local/test.jpg"}
+
+    # Create plant with .jpeg path
+    plant_with_jpeg = Plant(
+        plant_id="plant2",
+        growspace_id="gs1",
+        strain="Strain2",
+        phenotype="Pheno2",
+        veg_start="2024-01-01",
+    )
+    plant_with_jpeg.phenotype = {"image_path": "/local/test2.jpeg"}
+
+    # Create plant without image_path
+    plant_no_image = Plant(
+        plant_id="plant3",
+        growspace_id="gs1",
+        strain="Strain3",
+        phenotype="Pheno3",
+        veg_start="2024-01-01",
+    )
+    plant_no_image.phenotype = {}
+
+    # Create plant without image_path but with other data (for line 609)
+    plant_other_data = Plant(
+        plant_id="plant4",
+        growspace_id="gs1",
+        strain="Strain4",
+        phenotype="Pheno4",
+        veg_start="2024-01-01",
+    )
+    plant_other_data.phenotype = {"other": "value"}
+
+    coordinator.plants = {
+        "plant1": plant_with_jpg,
+        "plant2": plant_with_jpeg,
+        "plant3": plant_no_image,
+        "plant4": plant_other_data,
+    }
+
+    # Run migration
+    updated = coordinator.migrate_plant_image_paths()
+
+    # Should update 2 paths
+    assert updated == 2
+    assert coordinator.plants["plant1"].phenotype["image_path"] == "/local/test.webp"
+    assert coordinator.plants["plant2"].phenotype["image_path"] == "/local/test2.webp"
+    assert coordinator.plants["plant3"].phenotype == {}
+    assert coordinator.plants["plant4"].phenotype.get("image_path") is None
+
+
+async def test_coverage_load_plants_from_dict(coordinator):
+    """Test loading plants from dictionary (line 196)."""
+    plant_data = {
+        "test_plant": {
+            "plant_id": "test_plant",
+            "name": "Test",
+            "growspace_id": "gs1",
+            "strain": "Test Strain",
+            "phenotype": "Original",
+            "veg_start": "2024-01-01",
+            "stage": "vegetative",  # Ensure stage is calculated or preserved
+        }
+    }
+
+    coordinator._load_plants(plant_data)
+
+    assert "test_plant" in coordinator.plants
+    assert coordinator.plants["test_plant"].plant_id == "test_plant"
+
+
+async def test_coverage_ensure_special_growspace_type_update(coordinator):
+    """Test growspace type change (line 484)."""
+    # Create a growspace with wrong type
+    growspace = Growspace(
+        id="dry",
+        name="Dry",
+        rows=3,
+        plants_per_row=3,
+        growspace_type=GrowspaceType.FLOWER,  # Wrong type for dry room
+    )
+    coordinator.growspaces["dry"] = growspace
+
+    # Mock the cache invalidation
+    coordinator._serialized_cache = {"dry": "cached_data"}
+
+    # Ensure special growspace (should update type)
+    # Note: ensure_special_growspace is synchronous
+    result = coordinator.ensure_special_growspace(
+        "dry", "Dry", growspace_type=GrowspaceType.DRY
+    )
+
+    # Should update type
+    assert coordinator.growspaces["dry"].growspace_type == GrowspaceType.DRY
+    assert result == "dry"
+
+
+async def test_coverage_async_commit_with_irrigation_coordinators(coordinator):
+    """Test async_commit refreshes irrigation coordinators (lines 569-575)."""
+    # Setup growspaces
+    coordinator.growspaces = {
+        "gs1": Growspace(
+            id="gs1",
+            name="GS1",
+            rows=3,
+            plants_per_row=3,
+        )
+    }
+
+    # Setup mock irrigation coordinator
+    mock_irrigation = MagicMock()
+    mock_irrigation.async_request_refresh = AsyncMock()
+    coordinator.irrigation_coordinators = {"gs1": mock_irrigation}
+
+    # Mock storage manager (if not already mocked by fixture, but coordinator fixture usually has real one)
+    # However, create_test_coordinator creates a real StorageManager. 
+    # We should mock async_save to avoid file IO.
+    coordinator.storage_manager.async_save = AsyncMock()
+
+    # Run commit
+    await coordinator.async_commit()
+
+    # Should create background task for irrigation refresh
+    coordinator.config_entry.async_create_background_task.assert_called()
+
+
+async def test_coverage_ensure_calculated_sensors_no_env_config(coordinator):
+    """Test ensure_calculated_sensors with no env_config (line 654)."""
+    # Create growspace without environment_config
+    growspace = Growspace(
+        id="test_gs",
+        name="Test",
+        rows=3,
+        plants_per_row=3,
+    )
+    growspace.environment_config = None
+    coordinator.growspaces = {"test_gs": growspace}
+
+    # Should not raise error
+    coordinator._ensure_calculated_sensors()
