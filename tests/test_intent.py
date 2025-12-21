@@ -1,6 +1,6 @@
 """Tests for the Growspace Manager intents."""
 
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from homeassistant.core import Context, HomeAssistant
@@ -10,6 +10,7 @@ from custom_components.growspace_manager.const import DOMAIN
 from custom_components.growspace_manager.intent import (
     INTENT_ASK_GROW_ADVICE,
     AskGrowAdviceIntent,
+    async_setup_intents,
 )
 from custom_components.growspace_manager.models import Growspace
 
@@ -155,3 +156,21 @@ async def test_handle_intent_no_response(
         response.speech["plain"]["speech"]
         == "I couldn't get a response from the grow assistant."
     )
+
+
+async def test_setup_intents(mock_hass: MagicMock) -> None:
+    """Test setting up intents."""
+
+    mock_hass.data = {}
+
+    with patch("homeassistant.helpers.intent.async_register") as mock_register:
+        # First setup
+        await async_setup_intents(mock_hass)
+        mock_register.assert_called_once()
+        assert mock_hass.data[f"{DOMAIN}_intent_registered"] is True
+
+        mock_register.reset_mock()
+
+        # Second setup (should skip)
+        await async_setup_intents(mock_hass)
+        mock_register.assert_not_called()

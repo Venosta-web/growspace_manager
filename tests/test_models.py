@@ -1,11 +1,14 @@
 """Tests for the data models in models.py."""
 
 from datetime import date
+from unittest.mock import patch
 
 from custom_components.growspace_manager.models import (
+    EnvironmentConfig,
     EnvironmentState,
     Growspace,
     GrowspaceEvent,
+    IrrigationStrategy,
     Plant,
 )
 
@@ -229,6 +232,7 @@ def test_growspace_event_from_dict_legacy() -> None:
     assert event.severity == 0.95  # Mapped to severity
     assert event.category == "alert"  # Default category
 
+
 def test_growspace_event_from_dict_with_extra_fields() -> None:
     """Test GrowspaceEvent from_dict with extra, unrecognized fields."""
     data = {
@@ -245,3 +249,128 @@ def test_growspace_event_from_dict_with_extra_fields() -> None:
     event = GrowspaceEvent.from_dict(data)
     assert event.severity == 0.8
     assert "extra_field" not in event.to_dict()
+
+
+# --------------------
+# Coverage Gaps
+# --------------------
+
+
+def test_environment_config_catch_all() -> None:
+    """Test EnvironmentConfig catch-all field (bayesian_options)."""
+    # Create from dict with extra fields, which should go into bayesian_options
+    data = {
+        "temperature_sensor": "sensor.temp",
+        "extra_option_1": "value1",
+        "extra_option_2": 123,
+    }
+
+    config = EnvironmentConfig.from_dict(data)
+
+    assert config.temperature_sensor == "sensor.temp"
+    # Verify extra fields ended up in bayesian_options
+    assert "extra_option_1" in config.bayesian_options
+    assert config.bayesian_options["extra_option_1"] == "value1"
+    assert config.bayesian_options["extra_option_2"] == 123
+
+    # Test when catch-all field is already present in input
+    data_with_existing = {
+        "temperature_sensor": "sensor.temp",
+        "bayesian_options": {"existing_opt": True},
+        "extra_option_1": "value1",
+    }
+    config_existing = EnvironmentConfig.from_dict(data_with_existing)
+    assert config_existing.bayesian_options["existing_opt"] is True
+    assert config_existing.bayesian_options["extra_option_1"] == "value1"
+
+    # Test when catch-all field is None in input
+    data_none = {
+        "temperature_sensor": "sensor.temp",
+        "bayesian_options": None,
+        "extra_option_1": "value1",
+    }
+    config_none = EnvironmentConfig.from_dict(data_none)
+    assert config_none.bayesian_options["extra_option_1"] == "value1"
+
+    # Test when catch-all field is invalid type in input
+    data_invalid = {
+        "temperature_sensor": "sensor.temp",
+        "bayesian_options": "invalid_string",
+        "extra_option_1": "value1",
+    }
+    config_invalid = EnvironmentConfig.from_dict(data_invalid)
+    assert config_invalid.bayesian_options["extra_option_1"] == "value1"
+    assert isinstance(config_invalid.bayesian_options, dict)
+
+
+def test_growspace_nested_handlers() -> None:
+    """Test nested handlers in Growspace.from_dict."""
+    # 1. Test dictionary conversion for nested field
+    data = {
+        "id": "gs1",
+        "name": "GS",
+        "irrigation_strategy": {"enabled": True, "target_vwc_percent": 60.0},
+    }
+    gs = Growspace.from_dict(data)
+    assert isinstance(gs.irrigation_strategy, IrrigationStrategy)
+    assert gs.irrigation_strategy.enabled is True
+    assert gs.irrigation_strategy.target_vwc_percent == 60.0
+
+    # 2. Test None value (pass-through)
+    # Note: default factory usually handles missing keys, but if key exists and is None:
+    data_none = {"id": "gs1", "name": "GS", "irrigation_strategy": None}
+    gs_none = Growspace.from_dict(data_none)
+    # Since None was passed and the handler skipped it, it might remain None
+    # or rely on dataclass behavior if field doesn't accept None.
+    # In Growspace model: irrigation_strategy: IrrigationStrategy = field(default_factory...)
+    # If from_dict passes None to cls(), it might fail if type checking is strict,
+    # but let's check what the valid behavior is for coverage.
+    # The code says: elif key in data and data[key] is None: pass
+    # So data['irrigation_strategy'] remains None.
+    # The dataclass init will then receive None for that field.
+    assert gs_none.irrigation_strategy is None
+
+
+def test_plant_days_and_weeks_in_stage() -> None:
+    """Test Plant get_days_in_stage and get_week_in_stage."""
+
+    # Mock utils.calculate_days_since to control time
+    with patch(
+        "custom_components.growspace_manager.models.calculate_days_since"
+    ) as mock_calc:
+        plant = Plant(
+            plant_id="p1",
+            growspace_id="gs1",
+            strain="Strain",
+            veg_start="2023-01-01T12:00:00",
+        )
+
+        # 1. Test stage that exists
+        mock_calc.return_value = 14
+        assert plant.get_days_in_stage("veg") == 14
+        mock_calc.assert_called_with("2023-01-01T12:00:00")
+
+        # 14 days = 2 weeks
+        # Implementation of days_to_week usually: days // 7 + 1 or similar logic
+        # models.py imports days_to_week from utils. Let's assume standard behavior.
+        # If models.py calls utils.days_to_week(14), we implicitly test integration.
+        # But we mocked calculate_days_since, not days_to_week.
+
+        # We need to control days_to_week return if we want to isolate models.py logic fully,
+        # but models.py just delegates. Let's trust utils or patch it too if needed.
+        # Actually simplest is just to verify the call flow.
+
+        # Test get_week_in_stage
+        with patch(
+            "custom_components.growspace_manager.models.days_to_week"
+        ) as mock_week:
+            mock_week.return_value = 3
+            assert plant.get_week_in_stage("veg") == 3
+            mock_week.assert_called_with(14)  # Passed result from get_days_in_stage
+
+        # 2. Test stage that does not exist (date is None)
+        assert plant.get_days_in_stage("flower") == 0
+
+        # 3. Test stage that exists but value is None/Empty (just in case)
+        plant.veg_start = None
+        assert plant.get_days_in_stage("veg") == 0

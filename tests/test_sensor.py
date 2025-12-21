@@ -14,6 +14,7 @@ import pytest
 
 from custom_components.growspace_manager import sensor as sensor_module
 from custom_components.growspace_manager.const import DOMAIN
+from custom_components.growspace_manager.models import EnvironmentConfig
 from custom_components.growspace_manager.sensor import (
     AirExchangeSensor,
     CalculatedVpdSensor,
@@ -827,6 +828,149 @@ def test_strain_library_sensor_state_and_attributes(mock_coordinator) -> None:
 
 
 # --------------------
+# Coverage Gaps
+# --------------------
+
+
+@pytest.mark.asyncio
+async def test_sensor_coverage_gaps(mock_coordinator) -> None:
+    """Test specific coverage gaps identified in sensor.py."""
+    hass = MagicMock()
+    config_entry = Mock(entry_id="entry_1")
+    config_entry.runtime_data = mock_coordinator
+    mock_coordinator.hass = hass
+
+    # 1. Test BaseVpdSensor abstract methods and helpers
+    class ConcreteVpdSensor(sensor_module.BaseVpdSensor):
+        @property
+        def native_value(self):
+            return 0.0
+
+        @property
+        def entities_to_track(self):
+            return super().entities_to_track
+
+    base_sensor = ConcreteVpdSensor()
+    base_sensor.hass = hass
+
+    # Test NotImplementedError for entities_to_track
+    with pytest.raises(NotImplementedError):
+        _ = base_sensor.entities_to_track
+
+    # Test _get_float_state with None entity
+    assert base_sensor._get_float_state(None) is None
+
+    # Test _handle_source_update
+    base_sensor.async_write_ha_state = Mock()
+    await base_sensor._handle_source_update(None)
+    base_sensor.async_write_ha_state.assert_called_once()
+
+    # 2. Test GrowspaceOverviewSensor with missing coordinator data
+    gs_mock = Mock(id="gs_empty", name="Empty GS", environment_config={})
+    sensor = GrowspaceOverviewSensor(mock_coordinator, "gs_empty", gs_mock)
+    mock_coordinator.data = None
+    assert sensor.extra_state_attributes == {}
+
+    # 3. Test CalculatedVpdSensor creation logic fallback and defaults
+
+    # Test object-based environment config (vs dict)
+    env_config_obj = EnvironmentConfig(
+        temperature_sensor="sensor.t",
+        humidity_sensor="sensor.h",
+        vpd_sensor=None,  # Trigger creation
+        lst_offset=None,  # Trigger default -2.0
+    )
+    gs_obj_config = Mock(id="gs_obj", name="GS Obj", environment_config=env_config_obj)
+
+    calc_sensor = sensor_module._check_calculated_vpd_sensor(
+        mock_coordinator, gs_obj_config
+    )
+    assert calc_sensor is not None
+    assert calc_sensor._lst_offset == -2.0  # Default value
+    assert calc_sensor.entities_to_track == ["sensor.t", "sensor.h"]
+
+    # Test creation failure (return None) if sensors missing
+    gs_missing = Mock(id="gs_miss", environment_config={"temperature_sensor": None})
+    assert (
+        sensor_module._check_calculated_vpd_sensor(mock_coordinator, gs_missing) is None
+    )
+
+    # 4. Test VpdSensor.entities_to_track with all entities
+    vpd_sensor = VpdSensor(
+        mock_coordinator, "loc", "Name", "weather.x", "sensor.t", "sensor.h"
+    )
+    assert "weather.x" in vpd_sensor.entities_to_track
+    assert "sensor.t" in vpd_sensor.entities_to_track
+    assert "sensor.h" in vpd_sensor.entities_to_track
+
+
+@pytest.mark.asyncio
+async def test_update_growspace_entities_removal_registry(mock_coordinator):
+    """Test removal of entities from registry in _update_growspace_entities."""
+    hass = MagicMock()
+    config_entry = Mock()
+
+    # Mock entity registry
+    registry = MagicMock()
+    with patch(
+        "homeassistant.helpers.entity_registry.async_get", return_value=registry
+    ):
+        # Setup existing entity
+        gs_id = "gs_deleted"
+        entity = MagicMock()
+        entity.registry_entry = Mock(entity_id="sensor.gs_deleted_overview")
+        entity.async_remove = AsyncMock()
+
+        entities = {gs_id: entity}
+
+        # Coordinator has NO growspaces, triggering removal
+        mock_coordinator.growspaces = {}
+
+        await sensor_module._update_growspace_entities(
+            hass, mock_coordinator, config_entry, entities, Mock(), set()
+        )
+
+        # Verify removal
+        registry.async_remove.assert_called_with("sensor.gs_deleted_overview")
+        entity.async_remove.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_async_create_derivative_sensors_object_config(mock_coordinator):
+    """Test _async_create_derivative_sensors with object-based config."""
+    hass = MagicMock()
+    config_entry = Mock()
+    config_entry.runtime_data = mock_coordinator
+    mock_coordinator.created_entity_ids = []
+
+    env_config = EnvironmentConfig(
+        temperature_sensor="sensor.t", humidity_sensor="sensor.h", vpd_sensor="sensor.v"
+    )
+    growspace = Mock(id="gs_obj", name="GS Obj", environment_config=env_config)
+
+    with (
+        patch(
+            "custom_components.growspace_manager.sensor.async_setup_trend_sensor",
+            new_callable=AsyncMock,
+        ) as mock_trend,
+        patch(
+            "custom_components.growspace_manager.sensor.async_setup_statistics_sensor",
+            new_callable=AsyncMock,
+        ) as mock_stats,
+    ):
+        mock_trend.return_value = "unique_id"
+        mock_stats.return_value = "unique_id"
+
+        await sensor_module._async_create_derivative_sensors(
+            hass, config_entry, growspace
+        )
+
+        # Should be called for t, h, v (3 times each)
+        assert mock_trend.call_count == 3
+        assert mock_stats.call_count == 3
+
+
+# --------------------
 # GrowspaceListSensor
 # --------------------
 def test_growspace_list_sensor_state_and_attributes(mock_coordinator) -> None:
@@ -986,3 +1130,8 @@ async def test_async_setup_entry_recreates_calculated_vpd(mock_coordinator) -> N
         (e for e in added_entities if isinstance(e, CalculatedVpdSensor)), None
     )
     assert calc_vpd is not None, "Calculated VPD sensor was not recreated on restart"
+
+
+# --------------------
+# Coverage Gaps
+# --------------------

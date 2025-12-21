@@ -23,7 +23,7 @@ _LOGGER = logging.getLogger(__name__)
 async def handle_add_growspace(
     hass: HomeAssistant,
     coordinator: GrowspaceCoordinator,
-    strain_library: StrainLibrary,  # Keep for consistency
+    strain_library: StrainLibrary,
     call: ServiceCall,
 ) -> None:
     """Handle add growspace service call."""

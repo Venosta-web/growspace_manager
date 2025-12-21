@@ -23,50 +23,73 @@ class TrendAnalyzer:
         """Initialize the trend analyzer."""
         self.hass = hass
 
-    async def async_analyze_sensor_trend(
-        self, sensor_id: str, duration_minutes: int, threshold: float
-    ) -> dict[str, Any]:
-        """Analyze the trend of a sensor's history to detect rising or falling patterns."""
+    async def async_analyze_sensors_trends(
+        self, sensor_ids: list[str], duration_minutes: int, threshold: float
+    ) -> dict[str, dict[str, Any]]:
+        """Analyze the trend of multiple sensors' history in a single DB query."""
+        if not sensor_ids:
+            return {}
+
         start_time = utcnow() - timedelta(minutes=duration_minutes)
         end_time = utcnow()
+        results = {}
 
         try:
-            history_list = await get_recorder_instance(
+            # OPTIMIZATION: Fetch ALL sensors in ONE executor job (Single DB Query)
+            history_dict = await get_recorder_instance(
                 self.hass
             ).async_add_executor_job(
                 lambda: history.get_significant_states(
                     self.hass,
                     start_time,
                     end_time,
-                    [sensor_id],
+                    sensor_ids,
                     include_start_time_state=True,
                 )
             )
 
-            states = history_list.get(sensor_id, [])
-            numeric_states = []
-            for s in states:
-                if not isinstance(s, State):
-                    continue
-                if s.state in [STATE_UNKNOWN, STATE_UNAVAILABLE, None, ""]:
-                    continue
-                try:
-                    numeric_states.append((s.last_updated, float(s.state)))
-                except (ValueError, TypeError):
-                    # Skip states that cannot be converted to float
-                    continue
+            # Process results in memory (CPU bound, fast)
+            for sensor_id in sensor_ids:
+                states = history_dict.get(sensor_id, [])
+                numeric_states = []
 
-            values = [val for _, val in numeric_states]
-            trend = self._calculate_trend_direction(values)
+                for s in states:
+                    if not isinstance(s, State):
+                        continue
+                    if s.state in [STATE_UNKNOWN, STATE_UNAVAILABLE, None, ""]:
+                        continue
+                    try:
+                        numeric_states.append(float(s.state))
+                    except (ValueError, TypeError):
+                        continue
 
-            # Check if value was consistently above threshold
-            crossed_threshold = all(value > threshold for value in values)
+                # Calculate trend
+                trend = self._calculate_trend_direction(numeric_states)
+                crossed = (
+                    all(val > threshold for val in numeric_states)
+                    if numeric_states
+                    else False
+                )
 
-            return {"trend": trend, "crossed_threshold": crossed_threshold}
+                results[sensor_id] = {"trend": trend, "crossed_threshold": crossed}
 
-        except (AttributeError, TypeError, ValueError) as e:
-            _LOGGER.error("Error analyzing sensor history for %s: %s", sensor_id, e)
-            return {"trend": "unknown", "crossed_threshold": False}
+            return results
+
+        except Exception as e:
+            _LOGGER.error("Error analyzing bulk sensor history: %s", e)
+            return {
+                sid: {"trend": "unknown", "crossed_threshold": False}
+                for sid in sensor_ids
+            }
+
+    async def async_analyze_sensor_trend(
+        self, sensor_id: str, duration_minutes: int, threshold: float
+    ) -> dict[str, Any]:
+        """Analyze the trend of a sensor's history to detect rising or falling patterns."""
+        result = await self.async_analyze_sensors_trends(
+            [sensor_id], duration_minutes, threshold
+        )
+        return result.get(sensor_id, {"trend": "unknown", "crossed_threshold": False})
 
     def _calculate_trend_direction(self, values: list[float]) -> str:
         """Calculate trend direction using pairwise comparison."""

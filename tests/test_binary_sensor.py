@@ -21,8 +21,11 @@ from custom_components.growspace_manager.binary_sensor import (
     BayesianStressSensor,
     GrowspaceSensorType,
     LightCycleVerificationSensor,
+    _get_sensor_class,
+    _process_growspace_sensors,
     async_setup_entry,
 )
+from custom_components.growspace_manager.const import PlantStage
 from custom_components.growspace_manager.models import EnvironmentConfig, GrowspaceType
 from custom_components.growspace_manager.notification_manager import NotificationManager
 
@@ -786,9 +789,326 @@ async def test_async_analyze_sensor_trend(
     analysis = await sensor.async_analyze_sensor_trend(
         "sensor.temp", duration, threshold
     )
-
     assert analysis["trend"] == expected_trend
     assert analysis["crossed_threshold"] == expected_crossed
+
+
+@pytest.mark.asyncio
+async def test_schedule_update_coverage(hass: HomeAssistant, mock_coordinator) -> None:
+    """Test the _schedule_update wrapper function implicitly."""
+    # This is tricky because it's defined inside async_setup_entry.
+    # We can fetch the listener passed to async_on_unload or async_add_listener?
+    # Or just rely on the fact that coordinator update triggers it.
+
+    # Let's trigger a coordinator update which calls _handle_coordinator_update -> _schedule_update?
+    # No, _handle_coordinator_update calls async_update_and_notify directly on instances.
+    # _schedule_update is only used for "future updates" of CONFIG ENTRY reloads? No, for new growspaces.
+
+    # Calling async_setup_entry adds a listener to coordinator.
+    async_add_entities = MagicMock()
+    config_entry = MagicMock()
+    config_entry.entry_id = "test"
+    config_entry.runtime_data = mock_coordinator
+
+    mock_coordinator.async_add_listener = MagicMock()
+
+    await async_setup_entry(hass, config_entry, async_add_entities)
+
+    # Get the listener callback
+    listener = mock_coordinator.async_add_listener.call_args[0][0]
+
+    # reset mock to clear initial add
+    async_add_entities.reset_mock()
+
+    # Call it (it's _schedule_update)
+    listener()
+    await hass.async_block_till_done()
+    # It should have run _update_binary_sensors again.
+    # We can check if async_add_entities was called again?
+    # Only if new entities found. Let's add a new growspace.
+
+    new_gs = MagicMock()
+    # Fix: Provide valid config (temp + humidity required)
+    new_gs.environment_config = EnvironmentConfig(
+        temperature_sensor="sensor.new_temp", humidity_sensor="sensor.new_hum"
+    )
+    new_gs.growspace_type = GrowspaceType.FLOWER
+    mock_coordinator.growspaces["new_gs"] = new_gs
+
+    listener()
+    await hass.async_block_till_done()
+
+    # Should have added entities for new_gs
+    assert async_add_entities.call_count >= 1
+    # Verify new call args has new entities
+    calls = async_add_entities.call_args_list
+    for call in calls:
+        if any(e.growspace_id == "new_gs" for e in call.args[0]):
+            found = True
+            break
+    assert found
+
+
+def test_process_growspace_sensors_invalid_id(mock_coordinator) -> None:
+    """Test _process_growspace_sensors returns if growspace not found."""
+
+    _process_growspace_sensors(mock_coordinator, "invalid_id", MagicMock(), set(), [])
+    # Should just return without error
+
+
+def test_get_sensor_class_fallback() -> None:
+    """Test _get_sensor_class fallback."""
+
+    cls = _get_sensor_class("unknown_type")
+    assert cls == BayesianEnvironmentSensor
+
+
+@pytest.mark.asyncio
+async def test_falling_edge_event_creation(
+    hass: HomeAssistant, mock_coordinator, env_config
+) -> None:
+    """Test that a falling edge creates an event."""
+    description = next(
+        d for d in SENSOR_TYPES if d.sensor_type == GrowspaceSensorType.STRESS
+    )
+    sensor = BayesianStressSensor(mock_coordinator, "gs1", env_config, description)
+    sensor.hass = hass
+    sensor.entity_id = "binary_sensor.test_stress_falling"  # Fix: Set entity ID
+    sensor.platform = MagicMock()
+
+    # 1. Rising edge
+    # Fix: Mock _async_update_probability to keep probability high
+    with patch.object(
+        sensor,
+        "_async_update_probability",
+        side_effect=lambda: setattr(sensor, "_probability", 0.9),
+    ):
+        await sensor.async_update_and_notify()
+    assert sensor._event_start_time is not None
+    start_time = sensor._event_start_time
+
+    # 2. Falling edge
+    # Fix: Mock to set low probability
+
+    future = start_time + timedelta(minutes=10)
+    with (
+        patch(
+            "custom_components.growspace_manager.binary_sensor.utcnow",
+            return_value=future,
+        ),
+        patch.object(
+            sensor,
+            "_async_update_probability",
+            side_effect=lambda: setattr(sensor, "_probability", 0.1),
+        ),
+    ):
+        await sensor.async_update_and_notify()
+
+    # Check if event was added to coordinator
+    # mock_coordinator.add_event is called
+    mock_coordinator.add_event.assert_called_once()
+    event = mock_coordinator.add_event.call_args[0][1]
+    assert event.duration_sec == 600
+    assert event.sensor_type == GrowspaceSensorType.STRESS
+
+
+@pytest.mark.asyncio
+async def test_early_returns_missing_sensors(
+    hass: HomeAssistant, mock_coordinator, env_config
+) -> None:
+    """Test early returns when required sensors are None."""
+
+    # STRESS
+    desc_stress = next(
+        d for d in SENSOR_TYPES if d.sensor_type == GrowspaceSensorType.STRESS
+    )
+    sensor_stress = BayesianStressSensor(
+        mock_coordinator, "gs1", env_config, desc_stress
+    )
+    sensor_stress.hass = hass
+    # Force _get_sensor_value to return None (so env_state.temp is None)
+    with patch.object(sensor_stress, "_get_sensor_value", return_value=None):
+        await sensor_stress._async_update_probability()
+        assert sensor_stress._probability == 0.0
+
+    # MOLD
+    desc_mold = next(
+        d for d in SENSOR_TYPES if d.sensor_type == GrowspaceSensorType.MOLD
+    )
+    sensor_mold = BayesianMoldRiskSensor(mock_coordinator, "gs1", env_config, desc_mold)
+    sensor_mold.hass = hass
+    with patch.object(sensor_mold, "_get_sensor_value", return_value=None):
+        await sensor_mold._async_update_probability()
+        assert sensor_mold._probability == 0.0
+
+    # OPTIMAL
+    desc_opt = next(
+        d for d in SENSOR_TYPES if d.sensor_type == GrowspaceSensorType.OPTIMAL
+    )
+    sensor_opt = BayesianOptimalConditionsSensor(
+        mock_coordinator, "gs1", env_config, desc_opt
+    )
+    sensor_opt.hass = hass
+    with patch.object(sensor_opt, "_get_sensor_value", return_value=None):
+        await sensor_opt._async_update_probability()
+        assert sensor_opt._probability == 0.0
+
+    # DRYING
+    desc_dry = next(
+        d for d in SENSOR_TYPES if d.sensor_type == GrowspaceSensorType.DRYING
+    )
+    # Use drying tent config
+    dry_config = mock_coordinator.growspaces["dry"].environment_config
+    sensor_dry = BayesianDryingSensor(mock_coordinator, "dry", dry_config, desc_dry)
+    sensor_dry.hass = hass
+    with patch.object(sensor_dry, "_get_sensor_value", return_value=None):
+        await sensor_dry._async_update_probability()
+        assert sensor_dry._probability == 0.0
+
+    # CURING
+    desc_cure = next(
+        d for d in SENSOR_TYPES if d.sensor_type == GrowspaceSensorType.CURING
+    )
+    cure_config = mock_coordinator.growspaces["cure"].environment_config
+    sensor_cure = BayesianCuringSensor(mock_coordinator, "cure", cure_config, desc_cure)
+    sensor_cure.hass = hass
+    with patch.object(sensor_cure, "_get_sensor_value", return_value=None):
+        await sensor_cure._async_update_probability()
+        assert sensor_cure._probability == 0.0
+
+
+@pytest.mark.asyncio
+async def test_mold_risk_specifics(
+    hass: HomeAssistant, mock_coordinator, env_config
+) -> None:
+    """Test mold risk specific branches like humidifier."""
+    desc_mold = next(
+        d for d in SENSOR_TYPES if d.sensor_type == GrowspaceSensorType.MOLD
+    )
+    sensor = BayesianMoldRiskSensor(mock_coordinator, "gs1", env_config, desc_mold)
+    sensor.hass = hass
+
+    # 1. Humidifier On
+    # Mock state so humidifier_value > 0
+    # env_state.humidifier_value comes from _get_sensor_value(humidifier_entity)
+    env_config.humidifier_entity = "sensor.humidifier"
+
+    with patch.object(sensor, "_get_sensor_value") as mock_get_val:
+
+        def get_val_side_effect(entity_id):
+            if entity_id == "sensor.humidifier":
+                return 1.0  # On
+            if entity_id == env_config.temperature_sensor:
+                return 25.0
+            if entity_id == env_config.humidity_sensor:
+                return 50.0  # Normal humidity
+            return 0.0
+
+        mock_get_val.side_effect = get_val_side_effect
+
+        await sensor._async_update_probability()
+        # Should have "Humidifier On" in reasons
+        reasons = [r[1] for r in sensor._reasons]
+        assert "Humidifier On" in reasons
+
+    # 2. High Humidity (>70)
+    with patch.object(sensor, "_get_sensor_value") as mock_get_val:
+
+        def get_val_side_effect(entity_id):
+            if entity_id == "sensor.humidifier":
+                return 0.0
+            if entity_id == env_config.temperature_sensor:
+                return 25.0
+            if entity_id == env_config.humidity_sensor:
+                return 75.0  # High
+            return 0.0
+
+        mock_get_val.side_effect = get_val_side_effect
+
+        await sensor._async_update_probability()
+        reasons = [r[1] for r in sensor._reasons]
+        assert "High Humidity" in reasons
+
+
+@pytest.mark.asyncio
+async def test_light_cycle_verification_sensor_logic(
+    hass: HomeAssistant, mock_coordinator, env_config
+) -> None:
+    """Test LightCycleVerificationSensor logic."""
+
+    env_config.light_sensor = "light.grow_light"
+    sensor = LightCycleVerificationSensor(mock_coordinator, "gs1", env_config)
+    sensor.hass = hass
+    sensor.platform = MagicMock()
+    sensor.entity_id = "binary_sensor.light_verification"
+
+    # 1. Missing/Unavailable Light
+    # Use async_remove to ensure it's None
+    hass.states.async_remove("light.grow_light")
+    await sensor.async_update()
+    assert sensor._is_schedule_matched is False
+
+    # 2. Veg Stage (18/6), Light ON for 10 hours -> OK
+    with patch.object(sensor, "_get_current_stage_key", return_value=PlantStage.VEG):
+        set_sensor_state(hass, "light.grow_light", "on")
+        # Simulate 10 hours passed since update (last_changed is roughly now)
+        # We need to make sure utcnow() returns now + 10h
+        future = utcnow() + timedelta(hours=10)
+        with patch(
+            "custom_components.growspace_manager.binary_sensor.utcnow",
+            return_value=future,
+        ):
+            await sensor.async_update()
+        assert sensor.is_on  # is_correct = True
+
+    # 3. Veg Stage (18/6), Light ON for 20 hours -> Bad
+    with patch.object(sensor, "_get_current_stage_key", return_value=PlantStage.VEG):
+        set_sensor_state(hass, "light.grow_light", "on")
+        future = utcnow() + timedelta(hours=20)
+        with patch(
+            "custom_components.growspace_manager.binary_sensor.utcnow",
+            return_value=future,
+        ):
+            await sensor.async_update()
+        assert not sensor.is_on  # is_correct = False
+
+    # 4. Flower Stage (12/12), Light OFF for 10 hours -> OK (limit 12)
+    with patch.object(sensor, "_get_current_stage_key", return_value="flower_mid"):
+        set_sensor_state(hass, "light.grow_light", "off")
+        future = utcnow() + timedelta(hours=10)
+        with patch(
+            "custom_components.growspace_manager.binary_sensor.utcnow",
+            return_value=future,
+        ):
+            await sensor.async_update()
+        assert sensor.is_on
+
+    # 5. Flower Stage (12/12), Light OFF for 13 hours -> Bad
+    with patch.object(sensor, "_get_current_stage_key", return_value="flower_mid"):
+        set_sensor_state(hass, "light.grow_light", "off")
+        future = utcnow() + timedelta(hours=13)
+        with patch(
+            "custom_components.growspace_manager.binary_sensor.utcnow",
+            return_value=future,
+        ):
+            await sensor.async_update()
+        assert not sensor.is_on
+
+
+def test_determine_light_state_unavailable(
+    hass: HomeAssistant, mock_coordinator, env_config
+) -> None:
+    """Test _determine_light_state when sensor is unavailable."""
+    description = next(
+        d for d in SENSOR_TYPES if d.sensor_type == GrowspaceSensorType.STRESS
+    )
+    sensor = BayesianStressSensor(mock_coordinator, "gs1", env_config, description)
+    sensor.hass = hass
+
+    env_config.light_sensor = "sensor.light"
+    set_sensor_state(hass, "sensor.light", STATE_UNAVAILABLE)
+
+    assert sensor._determine_light_state() is None
 
 
 @patch(
