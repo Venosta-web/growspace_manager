@@ -77,14 +77,25 @@ class StrainLibrary:
         )
         self.import_export_manager = ImportExportManager(hass)
 
-    async def async_setup(self) -> None:
-        """Set up the database connection and schema."""
+    async def async_setup(self) -> bool:
+        """Set up the database connection and schema.
+
+        Returns:
+            True if WebP migration ran and updated paths, False otherwise.
+        """
         _LOGGER.debug("Setting up StrainLibrary DB at %s", self._db_path)
         self._db = await aiosqlite.connect(self._db_path)
         self._db.row_factory = aiosqlite.Row
         await self._db.executescript(STRAIN_LIBRARY_SCHEMA)
         await self._db.commit()
         await self.load()
+        # Asynchronously migrate any existing JPG images to WebP
+        migrated = await self.image_manager.async_migrate_to_webp(self._db)
+        # Reload to pick up updated WebP paths if migration happened
+        if migrated:
+            await self.load()
+            return True
+        return False
 
     async def async_close(self) -> None:
         """Close the database connection."""

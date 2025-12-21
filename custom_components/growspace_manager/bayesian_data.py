@@ -8,7 +8,7 @@ from typing import Any, Final
 # GENERAL PROBABILITY CONSTANTS (P(Obs|True), P(Obs|False))
 # =========================================================================
 
-# Used by Optimal Sensor (if implemented here)
+# Used by Optimal Sensor
 PROB_PERFECT: Final = (0.95, 0.20)
 PROB_GOOD: Final = (0.85, 0.30)
 PROB_ACCEPTABLE: Final = (0.65, 0.45)
