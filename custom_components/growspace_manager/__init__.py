@@ -433,9 +433,17 @@ async def websocket_get_history_stats(hass: HomeAssistant, connection, msg):
                     while state_idx < total_states:
                         curr_s = states[state_idx]
                         if isinstance(curr_s, dict):
-                            curr_lu = curr_s.get(
+                            curr_lu_raw = curr_s.get(
                                 "last_updated", curr_s.get("last_changed")
                             )
+                            # Parse ISO string to datetime if needed
+                            if isinstance(curr_lu_raw, str):
+                                try:
+                                    curr_lu = dt_util.parse_datetime(curr_lu_raw)
+                                except (ValueError, TypeError):
+                                    curr_lu = None
+                            else:
+                                curr_lu = curr_lu_raw
                         else:
                             curr_lu = curr_s.last_updated
 
@@ -451,9 +459,17 @@ async def websocket_get_history_stats(hass: HomeAssistant, connection, msg):
                     if state_idx < total_states:
                         curr_s = states[state_idx]
                         if isinstance(curr_s, dict):
-                            curr_lu = curr_s.get(
+                            curr_lu_raw = curr_s.get(
                                 "last_updated", curr_s.get("last_changed")
                             )
+                            # Parse ISO string to datetime if needed
+                            if isinstance(curr_lu_raw, str):
+                                try:
+                                    curr_lu = dt_util.parse_datetime(curr_lu_raw)
+                                except (ValueError, TypeError):
+                                    curr_lu = None
+                            else:
+                                curr_lu = curr_lu_raw
                         else:
                             curr_lu = curr_s.last_updated
 
@@ -466,9 +482,17 @@ async def websocket_get_history_stats(hass: HomeAssistant, connection, msg):
                     if current_val:
                         if isinstance(current_val, dict):
                             val_state = current_val.get("state")
-                            val_lu = current_val.get(
+                            val_lu_raw = current_val.get(
                                 "last_updated", current_val.get("last_changed")
                             )
+                            # Parse ISO string to datetime if needed
+                            if isinstance(val_lu_raw, str):
+                                try:
+                                    val_lu = dt_util.parse_datetime(val_lu_raw)
+                                except (ValueError, TypeError):
+                                    val_lu = None
+                            else:
+                                val_lu = val_lu_raw
                         else:
                             val_state = current_val.state
                             val_lu = current_val.last_updated
