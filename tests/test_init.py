@@ -817,9 +817,13 @@ async def test_websocket_get_history_stats(
             self.last_updated = last_updated
 
     # 1. Success Case
-    with patch(
-        "homeassistant.components.recorder.history.get_significant_states"
-    ) as mock_get_history:
+    with (
+        patch(
+            "homeassistant.components.recorder.history.get_significant_states"
+        ) as mock_get_history,
+        patch("custom_components.growspace_manager.get_instance") as mock_get_rec,
+    ):
+        mock_get_rec.return_value.async_add_executor_job = hass.async_add_executor_job
         # Mock history data
         # Start: 12:00. End: 12:30. Interval: 15m.
         # Points at 12:00, 12:15, 12:30.
@@ -886,10 +890,14 @@ async def test_websocket_get_history_stats(
     )
 
     # 3. Exception Handling
-    with patch(
-        "homeassistant.components.recorder.history.get_significant_states",
-        side_effect=Exception("DB Error"),
+    with (
+        patch(
+            "homeassistant.components.recorder.history.get_significant_states",
+            side_effect=Exception("DB Error"),
+        ),
+        patch("custom_components.growspace_manager.get_instance") as mock_get_rec,
     ):
+        mock_get_rec.return_value.async_add_executor_job = hass.async_add_executor_job
         msg_err = {
             "id": 3,
             "type": f"{DOMAIN}/get_history_stats",
@@ -909,12 +917,16 @@ async def test_websocket_history_empty_and_unavailable(hass: HomeAssistant) -> N
 
     start = dt_util.utcnow()
 
-    with patch(
-        "homeassistant.components.recorder.history.get_significant_states"
-    ) as mock_get_history:
+    with (
+        patch(
+            "homeassistant.components.recorder.history.get_significant_states"
+        ) as mock_get_history,
+        patch("custom_components.growspace_manager.get_instance") as mock_get_rec,
+    ):
+        mock_get_rec.return_value.async_add_executor_job = hass.async_add_executor_job
 
         class MockState:
-            def __init__(self, state, last_updated):
+            def __init__(self, state, last_updated) -> None:
                 self.state = state
                 self.last_updated = last_updated
 

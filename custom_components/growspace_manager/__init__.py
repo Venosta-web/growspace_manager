@@ -12,7 +12,7 @@ import voluptuous as vol
 from aiohttp import BodyPartReader, web
 from homeassistant.components import websocket_api
 from homeassistant.components.http import HomeAssistantView
-from homeassistant.components.recorder import history
+from homeassistant.components.recorder import get_instance, history
 from homeassistant.config_entries import ConfigEntry, ConfigEntryState
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ServiceValidationError
@@ -406,8 +406,8 @@ async def websocket_get_history_stats(hass: HomeAssistant, connection, msg):
         )
 
     try:
-        # 1. Fetch Raw Data (in executor)
-        history_data = await hass.async_add_executor_job(_get_history)
+        # 1. Fetch Raw Data (in database executor)
+        history_data = await get_instance(hass).async_add_executor_job(_get_history)
 
         # 2. Downsample (in executor to avoid blocking loop with large lists)
         def _downsample():
@@ -432,12 +432,14 @@ async def websocket_get_history_stats(hass: HomeAssistant, connection, msg):
                     # Advance state_idx to current_time
                     while state_idx < total_states:
                         curr_s = states[state_idx]
-                        curr_lu = (
-                            curr_s["last_updated"]
-                            if isinstance(curr_s, dict)
-                            else curr_s.last_updated
-                        )
-                        if curr_lu < current_time:
+                        if isinstance(curr_s, dict):
+                            curr_lu = curr_s.get(
+                                "last_updated", curr_s.get("last_changed")
+                            )
+                        else:
+                            curr_lu = curr_s.last_updated
+
+                        if curr_lu and curr_lu < current_time:
                             last_valid_state = curr_s
                             state_idx += 1
                         else:
@@ -448,11 +450,13 @@ async def websocket_get_history_stats(hass: HomeAssistant, connection, msg):
                     current_val = None
                     if state_idx < total_states:
                         curr_s = states[state_idx]
-                        curr_lu = (
-                            curr_s["last_updated"]
-                            if isinstance(curr_s, dict)
-                            else curr_s.last_updated
-                        )
+                        if isinstance(curr_s, dict):
+                            curr_lu = curr_s.get(
+                                "last_updated", curr_s.get("last_changed")
+                            )
+                        else:
+                            curr_lu = curr_s.last_updated
+
                         if curr_lu == current_time:
                             current_val = curr_s
 
@@ -460,18 +464,20 @@ async def websocket_get_history_stats(hass: HomeAssistant, connection, msg):
                         current_val = last_valid_state
 
                     if current_val:
-                        val_state = (
-                            current_val["state"]
-                            if isinstance(current_val, dict)
-                            else current_val.state
-                        )
-                        val_lu = (
-                            current_val["last_updated"]
-                            if isinstance(current_val, dict)
-                            else current_val.last_updated
-                        )
+                        if isinstance(current_val, dict):
+                            val_state = current_val.get("state")
+                            val_lu = current_val.get(
+                                "last_updated", current_val.get("last_changed")
+                            )
+                        else:
+                            val_state = current_val.state
+                            val_lu = current_val.last_updated
 
-                        if val_state not in ("unknown", "unavailable"):
+                        if (
+                            val_state
+                            and val_state not in ("unknown", "unavailable")
+                            and val_lu
+                        ):
                             downsampled.append(
                                 {
                                     "s": val_state,
