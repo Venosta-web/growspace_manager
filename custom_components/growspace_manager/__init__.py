@@ -7,10 +7,12 @@ import pathlib
 import tempfile
 from typing import Any
 
+import homeassistant.util.dt as dt_util
 import voluptuous as vol
 from aiohttp import BodyPartReader, web
 from homeassistant.components import websocket_api
 from homeassistant.components.http import HomeAssistantView
+from homeassistant.components.recorder import history
 from homeassistant.config_entries import ConfigEntry, ConfigEntryState
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ServiceValidationError
@@ -352,3 +354,123 @@ def _async_register_websocket_api(hass: HomeAssistant) -> None:
         websocket_api.async_response(websocket_get_growspace_data),
         SCHEMA_WS_GET_DATA,
     )
+
+    websocket_api.async_register_command(
+        hass,
+        WS_TYPE_GET_HISTORY_STATS,
+        websocket_api.async_response(websocket_get_history_stats),
+        SCHEMA_WS_GET_HISTORY_STATS,
+    )
+
+
+WS_TYPE_GET_HISTORY_STATS = f"{DOMAIN}/get_history_stats"
+SCHEMA_WS_GET_HISTORY_STATS = websocket_api.BASE_COMMAND_MESSAGE_SCHEMA.extend(
+    {
+        vol.Required("type"): WS_TYPE_GET_HISTORY_STATS,
+        vol.Required("entity_ids"): [str],
+        vol.Required("start_time"): str,
+        vol.Optional("end_time"): str,
+        vol.Optional("interval_minutes", default=5): int,
+        vol.Optional("significant_changes_only", default=True): bool,
+    }
+)
+
+
+async def websocket_get_history_stats(hass: HomeAssistant, connection, msg):
+    """Handle get history stats command with server-side downsampling."""
+    entity_ids = msg["entity_ids"]
+    start_time_str = msg["start_time"]
+    end_time_str = msg.get("end_time")
+    interval = msg["interval_minutes"]
+    sig_changes = msg["significant_changes_only"]
+
+    start_time = dt_util.parse_datetime(start_time_str)
+    end_time = (
+        dt_util.parse_datetime(end_time_str) if end_time_str else dt_util.utcnow()
+    )
+
+    if not start_time:
+        connection.send_error(msg["id"], "invalid_args", "Invalid start_time")
+        return
+
+    def _get_history():
+        # returns dict: { entity_id: [State] }
+        return history.get_significant_states(
+            hass,
+            start_time,
+            end_time,
+            entity_ids,
+            significant_changes_only=sig_changes,
+            minimal_response=True,
+            no_attributes=True,
+        )
+
+    try:
+        # 1. Fetch Raw Data (in executor)
+        history_data = await hass.async_add_executor_job(_get_history)
+
+        # 2. Downsample (in executor to avoid blocking loop with large lists)
+        def _downsample():
+            result = {}
+            for entity_id, states in history_data.items():
+                if not states:
+                    result[entity_id] = []
+                    continue
+
+                downsampled = []
+                current_time = start_time
+                state_idx = 0
+                total_states = len(states)
+
+                # Ensure we have a sorted list of relevant states
+                # (history.get_significant_states usually returns sorted)
+
+                last_valid_state = None
+
+                # Iterate through time buckets
+                while current_time <= end_time:
+                    # Advance state_idx to current_time
+                    while (
+                        state_idx < total_states
+                        and states[state_idx].last_updated < current_time
+                    ):
+                        last_valid_state = states[state_idx]
+                        state_idx += 1
+
+                    # Capture the state at this timestamp (sample hold)
+                    # If we have a state at exactly current_time (handled by loop), or previous
+                    current_val = (
+                        states[state_idx]
+                        if state_idx < total_states
+                        and states[state_idx].last_updated == current_time
+                        else last_valid_state
+                    )
+
+                    if current_val and current_val.state not in (
+                        "unknown",
+                        "unavailable",
+                    ):
+                        # Basic numeric conversion check maybe?
+                        # For sparklines we keep strings usually, but numbers are better.
+                        # Let's keep raw state string to match existing API, or convert?
+                        # Existing frontend expects objects with `state`, `last_changed`.
+
+                        # Construct minimal object
+                        downsampled.append(
+                            {
+                                "s": current_val.state,
+                                "lu": current_val.last_updated.isoformat(),
+                            }
+                        )
+
+                    current_time += dt_util.dt.timedelta(minutes=interval)
+
+                result[entity_id] = downsampled
+            return result
+
+        stats = await hass.async_add_executor_job(_downsample)
+        connection.send_result(msg["id"], stats)
+
+    except Exception as err:
+        _LOGGER.exception("Error handling websocket_get_history_stats")
+        connection.send_error(msg["id"], "unknown_error", str(err))
