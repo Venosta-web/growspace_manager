@@ -188,6 +188,7 @@ async def _async_evaluate_fallback_mold_trend_analysis(
     reasons: ReasonList,
     trend_states: dict[str, str],
     analyze_trend: Callable[[str, int, float], Awaitable[dict]],
+    state: EnvironmentState,
 ) -> None:
     """Perform fallback manual trend analysis for mold risk."""
     if not env_config.get(f"{sensor_key}_trend_sensor") and not env_config.get(
@@ -201,9 +202,20 @@ async def _async_evaluate_fallback_mold_trend_analysis(
                 env_config[f"{sensor_key}_sensor"], duration, threshold
             )
             trend_states[f"{sensor_key}_trend"] = analysis["trend"]
-            if (sensor_key == "humidity" and analysis["trend"] == "rising") or (
-                sensor_key == "vpd" and analysis["trend"] == "falling"
-            ):
+
+            # Gate humidity trend penalties based on stage-aware safe zones
+            if sensor_key == "humidity" and analysis["trend"] == "rising":
+                # Determine safe limit based on stage
+                safe_limit = 55 if state.flower_days > 40 else 65
+
+                # Only penalize if we are actually approaching the danger zone
+                if state.humidity is not None and state.humidity > safe_limit:
+                    p_true = 0.5 + (sensitivity * 0.45)
+                    p_false = 0.5 - (sensitivity * 0.4)
+                    prob = (p_true, p_false)
+                    observations.append(prob)
+                    reasons.append((prob[0], f"{sensor_key.capitalize()} trend"))
+            elif sensor_key == "vpd" and analysis["trend"] == "falling":
                 p_true = 0.5 + (sensitivity * 0.45)
                 p_false = 0.5 - (sensitivity * 0.4)
                 prob = (p_true, p_false)
@@ -256,6 +268,7 @@ async def async_evaluate_mold_risk_trend(
             local_reasons,
             local_trends,
             analyze_trend,
+            state,
         )
         return local_obs, local_reasons, local_trends
 

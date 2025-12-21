@@ -36,6 +36,9 @@ async def test_async_evaluate_fallback_mold_trend_analysis_rising() -> None:
     trend_states = {}
     analyze_trend = AsyncMock(return_value={"trend": "rising"})
 
+    # Create mock state with unsafe humidity (above safe_limit of 65 for Veg)
+    state = MagicMock(spec=EnvironmentState, flower_days=0, humidity=68)
+
     await _async_evaluate_fallback_mold_trend_analysis(
         sensor_instance,
         env_config,
@@ -45,6 +48,7 @@ async def test_async_evaluate_fallback_mold_trend_analysis_rising() -> None:
         reasons,
         trend_states,
         analyze_trend,
+        state,
     )
 
     assert len(observations) == 1
@@ -70,6 +74,9 @@ async def test_async_evaluate_fallback_mold_trend_analysis_falling() -> None:
     trend_states = {}
     analyze_trend = AsyncMock(return_value={"trend": "falling"})
 
+    # Create mock state (VPD trends are not gated)
+    state = MagicMock(spec=EnvironmentState, flower_days=0, humidity=50)
+
     await _async_evaluate_fallback_mold_trend_analysis(
         sensor_instance,
         env_config,
@@ -79,6 +86,7 @@ async def test_async_evaluate_fallback_mold_trend_analysis_falling() -> None:
         reasons,
         trend_states,
         analyze_trend,
+        state,
     )
 
     assert len(observations) == 1
@@ -495,3 +503,76 @@ def test_evaluate_optimal_temperature_all_branches(
         assert expected_reason_substring in reasons[0][1]
     else:
         assert len(reasons) == 0
+
+
+@pytest.mark.asyncio
+async def test_async_evaluate_fallback_mold_trend_analysis_veg_safe_zone() -> None:
+    """Test that rising humidity in Veg safe zone does not trigger alert."""
+    sensor_instance = MagicMock()
+    env_config = {
+        "humidity_sensor": "sensor.humidity",
+        "humidity_trend_sensitivity": 0.5,
+    }
+    observations = []
+    reasons = []
+    trend_states = {}
+    analyze_trend = AsyncMock(return_value={"trend": "rising"})
+
+    # Create mock state with Veg stage and humidity in safe zone (< 65)
+    state = MagicMock(spec=EnvironmentState, flower_days=0, humidity=61)
+
+    await _async_evaluate_fallback_mold_trend_analysis(
+        sensor_instance,
+        env_config,
+        "humidity",
+        "humidity_trend",
+        observations,
+        reasons,
+        trend_states,
+        analyze_trend,
+        state,
+    )
+
+    # No observation should be added because humidity is in safe zone
+    assert len(observations) == 0
+    assert len(reasons) == 0
+    assert trend_states["humidity_trend"] == "rising"
+
+
+@pytest.mark.asyncio
+async def test_async_evaluate_fallback_mold_trend_analysis_late_flower_unsafe() -> None:
+    """Test that rising humidity in Late Flower unsafe zone triggers alert."""
+    sensor_instance = MagicMock()
+    env_config = {
+        "humidity_sensor": "sensor.humidity",
+        "humidity_trend_sensitivity": 0.5,
+    }
+    observations = []
+    reasons = []
+    trend_states = {}
+    analyze_trend = AsyncMock(return_value={"trend": "rising"})
+
+    # Create mock state with Late Flower stage and humidity approaching danger zone (> 55)
+    state = MagicMock(spec=EnvironmentState, flower_days=45, humidity=58)
+
+    await _async_evaluate_fallback_mold_trend_analysis(
+        sensor_instance,
+        env_config,
+        "humidity",
+        "humidity_trend",
+        observations,
+        reasons,
+        trend_states,
+        analyze_trend,
+        state,
+    )
+
+    # Observation should be added because humidity is approaching danger zone
+    assert len(observations) == 1
+    assert len(reasons) == 1
+    assert trend_states["humidity_trend"] == "rising"
+    assert reasons[0][1] == "Humidity trend"
+    # p_true = 0.5 + (0.5 * 0.45) = 0.725
+    assert observations[0][0] == pytest.approx(0.725)
+    # p_false = 0.5 - (0.5 * 0.4) = 0.3
+    assert observations[0][1] == pytest.approx(0.3)
