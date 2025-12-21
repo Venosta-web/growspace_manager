@@ -430,38 +430,54 @@ async def websocket_get_history_stats(hass: HomeAssistant, connection, msg):
                 # Iterate through time buckets
                 while current_time <= end_time:
                     # Advance state_idx to current_time
-                    while (
-                        state_idx < total_states
-                        and states[state_idx].last_updated < current_time
-                    ):
-                        last_valid_state = states[state_idx]
-                        state_idx += 1
+                    while state_idx < total_states:
+                        curr_s = states[state_idx]
+                        curr_lu = (
+                            curr_s["last_updated"]
+                            if isinstance(curr_s, dict)
+                            else curr_s.last_updated
+                        )
+                        if curr_lu < current_time:
+                            last_valid_state = curr_s
+                            state_idx += 1
+                        else:
+                            break
 
                     # Capture the state at this timestamp (sample hold)
                     # If we have a state at exactly current_time (handled by loop), or previous
-                    current_val = (
-                        states[state_idx]
-                        if state_idx < total_states
-                        and states[state_idx].last_updated == current_time
-                        else last_valid_state
-                    )
-
-                    if current_val and current_val.state not in (
-                        "unknown",
-                        "unavailable",
-                    ):
-                        # Basic numeric conversion check maybe?
-                        # For sparklines we keep strings usually, but numbers are better.
-                        # Let's keep raw state string to match existing API, or convert?
-                        # Existing frontend expects objects with `state`, `last_changed`.
-
-                        # Construct minimal object
-                        downsampled.append(
-                            {
-                                "s": current_val.state,
-                                "lu": current_val.last_updated.isoformat(),
-                            }
+                    current_val = None
+                    if state_idx < total_states:
+                        curr_s = states[state_idx]
+                        curr_lu = (
+                            curr_s["last_updated"]
+                            if isinstance(curr_s, dict)
+                            else curr_s.last_updated
                         )
+                        if curr_lu == current_time:
+                            current_val = curr_s
+
+                    if not current_val:
+                        current_val = last_valid_state
+
+                    if current_val:
+                        val_state = (
+                            current_val["state"]
+                            if isinstance(current_val, dict)
+                            else current_val.state
+                        )
+                        val_lu = (
+                            current_val["last_updated"]
+                            if isinstance(current_val, dict)
+                            else current_val.last_updated
+                        )
+
+                        if val_state not in ("unknown", "unavailable"):
+                            downsampled.append(
+                                {
+                                    "s": val_state,
+                                    "lu": val_lu.isoformat(),
+                                }
+                            )
 
                     current_time += dt_util.dt.timedelta(minutes=interval)
 
