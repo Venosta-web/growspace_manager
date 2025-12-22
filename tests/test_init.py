@@ -129,17 +129,19 @@ async def test_async_setup(mock_hass) -> None:
 
 
 @pytest.mark.asyncio
-async def test_async_setup_entry(mock_hass) -> None:
+async def test_async_setup_entry(hass: HomeAssistant) -> None:
     """Test a successful setup of the integration entry."""
     entry = MockConfigEntry(domain=DOMAIN, data={}, options={})
-    entry.add_to_hass(mock_hass)
-    mock_hass.data[DOMAIN] = {}
+    entry.add_to_hass(hass)
+    hass.data[DOMAIN] = {}
+    hass.http = MagicMock()
+    hass.config_entries.async_forward_entry_setups = AsyncMock()
 
     coordinator_mock = AsyncMock()
     coordinator_mock.growspaces = {}
 
     with (
-        patch("custom_components.growspace_manager.Store", return_value=AsyncMock()),
+        patch("homeassistant.helpers.storage.Store") as mock_store_cls,
         patch(
             "custom_components.growspace_manager.GrowspaceCoordinator",
             return_value=coordinator_mock,
@@ -157,25 +159,30 @@ async def test_async_setup_entry(mock_hass) -> None:
         ) as mock_ws_reg,
         patch(
             "custom_components.growspace_manager.async_setup_intents",
-            return_value=AsyncMock(),
+            new_callable=AsyncMock,
         ),
     ):
+        # Mock Store instance and its async_load method
+        mock_store_instance = AsyncMock()
+        mock_store_instance.async_load = AsyncMock(return_value={})
+        mock_store_cls.return_value = mock_store_instance
+
         mock_lib = mock_lib_cls.return_value
-        assert await async_setup_entry(mock_hass, entry)
+        assert await async_setup_entry(hass, entry)
 
         # Verify Global setup happens in setup_entry
-        mock_lib_cls.assert_called_once_with(mock_hass)
+        mock_lib_cls.assert_called_once_with(hass)
         mock_lib.async_setup.assert_called_once()
-        assert mock_hass.data[DOMAIN]["strain_library"] == mock_lib
+        assert hass.data[DOMAIN]["strain_library"] == mock_lib
 
         # Verify View registration
-        mock_hass.http.register_view.assert_called_once()
+        hass.http.register_view.assert_called_once()
 
         # Verify Services
-        mock_reg.assert_called_once_with(mock_hass, mock_lib)
+        mock_reg.assert_called_once_with(hass, mock_lib)
 
         # Verify WebSocket
-        mock_ws_reg.assert_called_once_with(mock_hass)
+        mock_ws_reg.assert_called_once_with(hass)
 
 
 @pytest.mark.asyncio
@@ -254,7 +261,7 @@ async def test_async_unload_entry(mock_hass) -> None:
     entry.runtime_data.irrigation_coordinators = {}
     entry.runtime_data.dehumidifier_coordinators = {}
     mock_hass.config_entries.async_unload_platforms = AsyncMock(return_value=True)
-    # mock_hass.config_entries.async_entries.return_value = [] # Simulate no other entries
+    # hass.config_entries.async_entries.return_value = [] # Simulate no other entries
 
     assert await async_unload_entry(mock_hass, entry)
     # Service removal is no longer guaranteed on single entry unload as it's global
@@ -300,7 +307,7 @@ async def test_async_update_listener(mock_hass) -> None:
 
 
 @pytest.mark.asyncio
-async def test_async_setup_entry_with_growspaces(mock_hass) -> None:
+async def test_async_setup_entry_with_growspaces(hass: HomeAssistant) -> None:
     """Test setup with existing growspaces to trigger coordinator creation."""
     entry = MockConfigEntry(
         domain=DOMAIN,
@@ -308,9 +315,11 @@ async def test_async_setup_entry_with_growspaces(mock_hass) -> None:
         options={"irrigation": {"gs1": {"some": "config"}}},
         entry_id="test_entry",
     )
-    entry.add_to_hass(mock_hass)
+    entry.add_to_hass(hass)
 
-    mock_hass.data[DOMAIN] = {}  # Empty domain data initially
+    hass.data[DOMAIN] = {}  # Empty domain data initially
+    hass.http = MagicMock()
+    hass.config_entries.async_forward_entry_setups = AsyncMock()
 
     coordinator_mock = AsyncMock()
     mock_gs1 = MagicMock()
@@ -319,7 +328,7 @@ async def test_async_setup_entry_with_growspaces(mock_hass) -> None:
     coordinator_mock.async_initialize_sub_coordinators = AsyncMock()
 
     with (
-        patch("custom_components.growspace_manager.Store", return_value=AsyncMock()),
+        patch("homeassistant.helpers.storage.Store") as mock_store_cls,
         patch(
             "custom_components.growspace_manager.GrowspaceCoordinator",
             return_value=coordinator_mock,
@@ -330,17 +339,22 @@ async def test_async_setup_entry_with_growspaces(mock_hass) -> None:
         ),
         patch(
             "custom_components.growspace_manager.service_registration.register_services",
-            return_value=AsyncMock(),
+            new_callable=AsyncMock,
         ),
         patch(
             "custom_components.growspace_manager._async_register_websocket_api",
         ),
         patch(
             "custom_components.growspace_manager.async_setup_intents",
-            return_value=AsyncMock(),
+            new_callable=AsyncMock,
         ),
     ):
-        assert await async_setup_entry(mock_hass, entry)
+        # Mock Store instance
+        mock_store_instance = AsyncMock()
+        mock_store_instance.async_load = AsyncMock(return_value={})
+        mock_store_cls.return_value = mock_store_instance
+
+        assert await async_setup_entry(hass, entry)
 
         # Verify delegation
         coordinator_mock.async_initialize_sub_coordinators.assert_called_once_with(
@@ -628,20 +642,25 @@ async def test_pending_growspace_error(hass: HomeAssistant) -> None:
     with (
         patch("custom_components.growspace_manager.StrainLibrary") as mock_sl_cls,
         patch(
-            "custom_components.growspace_manager.service_registration.register_services"
+            "custom_components.growspace_manager.service_registration.register_services",
+            new_callable=AsyncMock,
         ),
         patch("custom_components.growspace_manager._async_register_websocket_api"),
-        patch("custom_components.growspace_manager.async_setup_intents"),
+        patch(
+            "custom_components.growspace_manager.async_setup_intents",
+            new_callable=AsyncMock,
+        ),
         patch("custom_components.growspace_manager.async_create_issue") as mock_issue,
-        patch("custom_components.growspace_manager.Store") as mock_store_cls,
+        patch("homeassistant.helpers.storage.Store") as mock_store_cls,
     ):
         # Ensure StrainLibrary().async_setup() is awaitable
         mock_sl_instance = mock_sl_cls.return_value
         mock_sl_instance.async_setup = AsyncMock()
 
         # Ensure Store().async_load() is awaitable and returns {}
-        mock_store_instance = mock_store_cls.return_value
+        mock_store_instance = AsyncMock()
         mock_store_instance.async_load = AsyncMock(return_value={})
+        mock_store_cls.return_value = mock_store_instance
 
         coordinator_mock = MagicMock(spec=GrowspaceCoordinator)
         coordinator_mock.async_load = AsyncMock()
@@ -690,16 +709,22 @@ async def test_pending_growspace_success(hass: HomeAssistant) -> None:
     with (
         patch("custom_components.growspace_manager.StrainLibrary") as mock_sl_cls,
         patch(
-            "custom_components.growspace_manager.service_registration.register_services"
+            "custom_components.growspace_manager.service_registration.register_services",
+            new_callable=AsyncMock,
         ),
         patch("custom_components.growspace_manager._async_register_websocket_api"),
-        patch("custom_components.growspace_manager.async_setup_intents"),
-        patch("custom_components.growspace_manager.Store") as mock_store_cls,
+        patch(
+            "custom_components.growspace_manager.async_setup_intents",
+            new_callable=AsyncMock,
+        ),
+        patch("homeassistant.helpers.storage.Store") as mock_store_cls,
     ):
         mock_sl_instance = mock_sl_cls.return_value
         mock_sl_instance.async_setup = AsyncMock()
-        mock_store_instance = mock_store_cls.return_value
+
+        mock_store_instance = AsyncMock()
         mock_store_instance.async_load = AsyncMock(return_value={})
+        mock_store_cls.return_value = mock_store_instance
 
         coordinator_mock = MagicMock(spec=GrowspaceCoordinator)
         coordinator_mock.async_load = AsyncMock()
