@@ -1,26 +1,32 @@
-"""Data models for the Growspace Manager integration.
-
-This file defines the dataclasses that represent the core objects used throughout
-the integration, such as Growspace, Plant, and EnvironmentState. These models
-provide a structured way to handle and pass around data.
-"""
+"""Data models for the Growspace Manager integration."""
 
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass, field, fields
 from datetime import datetime
 from enum import StrEnum
-from typing import TYPE_CHECKING, Any, TypedDict
+from typing import Any, Self, TypedDict
 
 from .const import PlantStage
 from .utils import calculate_days_since, days_to_week
 
-if TYPE_CHECKING:
-    pass
+
+class IrrigationScheduleItem(TypedDict):
+    """Irrigation schedule item definition."""
+
+    start_time: str
+    duration_seconds: int
+    # Add other keys as required by your logic
 
 
-type IrrigationScheduleItem = dict[str, Any]
-type DehumidifierThresholds = dict[str, Any]
+class DehumidifierRange(TypedDict):
+    """Dehumidifier on/off range."""
+
+    on: float
+    off: float
+
+
+type DehumidifierThresholds = dict[str, dict[str, DehumidifierRange]]
 type BayesianOptions = dict[str, Any]
 
 
@@ -28,13 +34,14 @@ type BayesianOptions = dict[str, Any]
 class BaseModel:
     """Base class providing generic serialization methods."""
 
-    def to_dict(self) -> dict:
+    def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary."""
         return asdict(self)
 
     @classmethod
-    def from_dict(cls, data: dict) -> Any:  # noqa: C901
+    def from_dict(cls, data: dict[str, Any]) -> Self:
         """Create from dictionary with optional migrations and nested handlers."""
+        # Use a copy to avoid mutating the original
         data = data.copy()
 
         # Get configuration from class attributes
@@ -54,16 +61,14 @@ class BaseModel:
                 if key not in data:
                     data[key] = value
 
-        # specific hack for IrrigationStrategy which isn't always dict in some contexts?
-        # Actually usually it is. But just in case.
+        # Apply nested handlers
         if nested_handlers:
             for key, handler in nested_handlers.items():
-                if key in data and isinstance(data[key], dict):
-                    data[key] = handler(data[key])
-                elif key in data and data[key] is None:
-                    # Handle None if handler allows it, or let it pass if field allows None
-                    pass
+                val = data.get(key)
+                if val is not None and isinstance(val, dict):
+                    data[key] = handler(val)
 
+        # Filter fields
         catch_all_field = getattr(cls, "_CATCH_ALL_FIELD", None)
         allowed_keys = {f.name for f in fields(cls)}
         filtered_data = {k: v for k, v in data.items() if k in allowed_keys}
@@ -72,11 +77,9 @@ class BaseModel:
             extras = {k: v for k, v in data.items() if k not in allowed_keys}
             # Merge with existing data in the catch-all field if present
             existing_catch_all = filtered_data.get(catch_all_field, {})
-            if existing_catch_all is None:
-                existing_catch_all = {}
+            # Ensure it's a dict - if None or invalid type, start fresh
             if not isinstance(existing_catch_all, dict):
-                existing_catch_all = {}  # Should not happen if typed correctly but safe
-
+                existing_catch_all = {}
             existing_catch_all.update(extras)
             filtered_data[catch_all_field] = existing_catch_all
 
@@ -85,18 +88,7 @@ class BaseModel:
 
 @dataclass(slots=True)
 class IrrigationStrategy(BaseModel):
-    """Configuration for VWC-based crop steering strategy.
-
-    Attributes:
-        enabled: Whether VWC steering is enabled.
-        lights_on_time: Time of day (HH:MM:SS) when lights turn on.
-        p0_duration_minutes: Duration of P0 (Activation) phase.
-        p2_stop_before_lights_off_minutes: Minutes before lights off to stop P2.
-        target_vwc_percent: Target VWC percentage for P1/P2.
-        maintenance_dryback_percent: Allowed dryback from target before re-watering in P2.
-        shot_duration_seconds: Duration of each irrigation shot in seconds.
-        shot_interval_minutes: Minutes between shots in P1.
-    """
+    """Configuration for VWC-based crop steering strategy."""
 
     enabled: bool = False
     lights_on_time: str = "06:00:00"
@@ -136,7 +128,7 @@ class EnvironmentConfig(BaseModel):
         "exhaust_sensor": "exhaust_fan_entity",
         "humidifier_sensor": "humidifier_entity",
         "circulation_fan": "circulation_fan_entity",
-        "exhaust_entity": "exhaust_fan_entity",  # normalizing diverse naming
+        "exhaust_entity": "exhaust_fan_entity",
     }
 
 
@@ -154,6 +146,8 @@ class IrrigationConfig(BaseModel):
 
 
 class GrowspaceType(StrEnum):
+    """Enumeration of growspace types."""
+
     FLOWER = "flower"
     VEG = "veg"
     MOTHER = "mother"
@@ -164,22 +158,7 @@ class GrowspaceType(StrEnum):
 
 @dataclass(slots=True)
 class Growspace(BaseModel):
-    """Represents a single growspace area.
-
-    Attributes:
-        id: A unique identifier for the growspace.
-        name: The display name of the growspace.
-        rows: The number of rows in the growspace grid.
-        plants_per_row: The number of plants per row in the grid.
-        notification_target: The notification service to use for this growspace.
-        created_at: The ISO-formatted date when the growspace was created.
-        device_id: The Home Assistant device ID associated with this growspace.
-        environment_config: A dictionary of environment sensor configurations.
-        irrigation_config: A dictionary of basic pump configurations and schedules.
-        dehumidifier_config: A dictionary of dehumidifier settings.
-        irrigation_strategy: The VWC crop steering strategy configuration.
-        growspace_type: The type of growspace.
-    """
+    """Represents a single growspace area."""
 
     id: str
     name: str
@@ -204,30 +183,7 @@ class Growspace(BaseModel):
 
 @dataclass(slots=True)
 class Plant(BaseModel):
-    """Represents a single plant.
-
-    Attributes:
-        plant_id: A unique identifier for the plant.
-        growspace_id: The ID of the growspace this plant belongs to.
-        strain: The strain name of the plant.
-        phenotype: The phenotype of the strain.
-        row: The row position of the plant in the growspace grid.
-        col: The column position of the plant in the growspace grid.
-        stage: The current growth stage of the plant.
-        type: The type of plant (e.g., 'normal', 'clone', 'mother').
-        device_id: The Home Assistant device ID associated with the plant.
-        seedling_start: The ISO-formatted date the seedling stage started.
-        mother_start: The ISO-formatted date the mother stage started.
-        clone_start: The ISO-formatted date the clone stage started.
-        veg_start: The ISO-formatted date the vegetative stage started.
-        flower_start: The ISO-formatted date the flowering stage started.
-        dry_start: The ISO-formatted date the drying stage started.
-        cure_start: The ISO-formatted date the curing stage started.
-        created_at: The ISO-formatted date the plant was created.
-        updated_at: The ISO-formatted date the plant was last updated.
-        transition_date: The date of the last stage transition.
-        source_mother: The ID of the mother plant this plant was cloned from.
-    """
+    """Represents a single plant."""
 
     plant_id: str
     growspace_id: str
@@ -250,13 +206,10 @@ class Plant(BaseModel):
     transition_date: str | None = None
     source_mother: str | None = None
 
-    source_mother: str | None = None
-
     _MIGRATIONS = {"created": "created_at", "updated": "updated_at"}
 
     def get_days_in_stage(self, stage_name: str) -> int:
         """Calculate days spent in a specific stage."""
-
         start_date_attr = f"{stage_name}_start"
         if hasattr(self, start_date_attr):
             start_date = getattr(self, start_date_attr)
@@ -266,28 +219,13 @@ class Plant(BaseModel):
 
     def get_week_in_stage(self, stage_name: str) -> int:
         """Calculate the week number in a specific stage."""
-
         days = self.get_days_in_stage(stage_name)
         return days_to_week(days)
 
 
 @dataclass(slots=True)
 class EnvironmentState:
-    """Represents a snapshot of the current environment state in a growspace.
-
-    This dataclass is used to pass around a consistent set of environmental
-    readings for use in calculations, particularly for the Bayesian sensors.
-
-    Attributes:
-        temp: The current temperature.
-        humidity: The current relative humidity.
-        vpd: The current Vapor Pressure Deficit.
-        co2: The current CO2 level.
-        veg_days: The number of days the growspace has been in the vegetative stage.
-        flower_days: The number of days the growspace has been in the flowering stage.
-        is_lights_on: A boolean indicating if the lights are currently on.
-        fan_off: A boolean indicating if the circulation fan is currently off.
-    """
+    """Represents a snapshot of the current environment state in a growspace."""
 
     temp: float | None
     humidity: float | None
@@ -299,25 +237,13 @@ class EnvironmentState:
     fan_off: bool | None
     dehumidifier_on: bool | None = None
     exhaust_value: float | None = None
-
     humidifier_value: float | None = None
     soil_moisture: float | None = None
 
 
 @dataclass(slots=True)
 class GrowspaceEvent(BaseModel):
-    """Represents a historical significant event in a growspace.
-
-    Attributes:
-        sensor_type: The type of sensor or source (e.g., 'mold_risk', 'irrigation').
-        growspace_id: The ID of the growspace where the event occurred.
-        start_time: The ISO-formatted start time of the event.
-        end_time: The ISO-formatted end time of the event.
-        duration_sec: The duration of the event in seconds.
-        severity: The severity or intensity of the event (0.0 to 1.0).
-        category: The category of the event (e.g., 'alert', 'irrigation').
-        reasons: A list of contributing factors or details.
-    """
+    """Represents a historical significant event in a growspace."""
 
     sensor_type: str
     growspace_id: str
@@ -333,10 +259,7 @@ class GrowspaceEvent(BaseModel):
 
 
 class GrowspaceCoordinatorData(TypedDict):
-    """Data contract for the Growspace Coordinator.
-
-    This ensures strict typing for the data exposed to the frontend.
-    """
+    """Data contract for the Growspace Coordinator."""
 
     growspaces: dict[str, Growspace]
     plants: dict[str, Plant]

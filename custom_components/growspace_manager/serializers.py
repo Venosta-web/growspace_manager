@@ -8,6 +8,7 @@ from typing import Any
 from homeassistant.const import STATE_UNAVAILABLE, STATE_UNKNOWN
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import entity_registry as er
+from homeassistant.util import slugify
 
 from .const import (
     CONF_CIRCULATION_FAN_ENTITY,
@@ -20,7 +21,6 @@ from .const import (
     DOMAIN,
     PlantStage,
 )
-from homeassistant.util import slugify
 from .environment_analyzer import EnvironmentAnalyzer
 from .models import Growspace, Plant
 from .utils import (
@@ -158,7 +158,6 @@ class GrowspaceSerializer:
             # Just provide a best guess formatted ID which frontend might use OR null
             # If null, frontend GrowspaceAdapter will handle it (loading/unknown)
             # But let's try to match the slug pattern
-            from homeassistant.util import slugify
 
             slug = slugify(growspace.name or growspace.id)
             overview_entity_id = f"sensor.{slug}"
