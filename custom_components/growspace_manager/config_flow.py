@@ -11,7 +11,7 @@ from __future__ import annotations
 import logging
 import uuid
 from dataclasses import asdict
-from typing import Any
+from typing import Any, override
 
 import homeassistant.helpers.config_validation as cv
 import voluptuous as vol
@@ -117,6 +117,7 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     MINOR_VERSION = 1
     integration_name = "Growspace Manager"
 
+    @override
     async def async_step_user(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
@@ -304,6 +305,7 @@ class OptionsFlowHandler(OptionsFlow):
             )
         return self._notify_handler
 
+    @override
     async def async_step_init(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:

@@ -5,7 +5,8 @@ from __future__ import annotations
 import logging
 import pathlib
 import tempfile
-from typing import Any
+from collections.abc import Awaitable, Callable
+from typing import Any, override
 
 import homeassistant.util.dt as dt_util
 import voluptuous as vol
@@ -14,7 +15,7 @@ from homeassistant.components import websocket_api
 from homeassistant.components.http import HomeAssistantView
 from homeassistant.components.recorder import get_instance, history
 from homeassistant.config_entries import ConfigEntry, ConfigEntryState
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, ServiceCall, callback
 from homeassistant.exceptions import ServiceValidationError
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.issue_registry import IssueSeverity, async_create_issue
@@ -48,7 +49,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: GrowspaceConfigEntry) ->
     )
 
     # Initialize Storage and Coordinator
-    store: Store = Store(hass, STORAGE_VERSION, STORAGE_KEY)
+    store = Store[dict[str, Any]](hass, STORAGE_VERSION, STORAGE_KEY)
     data = await store.async_load() or {}
 
     # Initialize and load Strain Library (global instance)
@@ -137,6 +138,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: GrowspaceConfigEntry) ->
     return True
 
 
+@callback
 def _async_cancel_coordinators(coordinator: GrowspaceCoordinator) -> None:
     """Cancel irrigation and dehumidifier listeners."""
     for irr_coordinator in coordinator.irrigation_coordinators.values():
@@ -233,6 +235,7 @@ class StrainLibraryUploadView(HomeAssistantView):
                 await self.hass.async_add_executor_job(temp_path.unlink)
             raise
 
+    @override
     async def post(self, request: web.Request) -> web.Response:
         """Handle the POST request for file upload."""
         # 1. Read the multipart data (file)
