@@ -61,13 +61,28 @@ class EnvironmentAnalyzer:
             max_veg, max_flower, max_dry, max_cure
         )
         is_day = self.determine_is_day(growspace)
-        day_key = "day" if is_day else "night"
 
         threshold_data = VPD_STRESS_THRESHOLDS.get(
             granular_stage, VPD_STRESS_THRESHOLDS["veg"]
         )
-        cycle_data = threshold_data.get(day_key, threshold_data["day"])
+        threshold_data = VPD_STRESS_THRESHOLDS.get(
+            granular_stage, VPD_STRESS_THRESHOLDS["veg"]
+        )
 
+        # Get Day Targets
+        day_data = threshold_data.get("day", threshold_data["day"])
+        day_target_min, day_target_max = day_data.get("mild", (0.8, 1.2))
+        day_danger_min, day_danger_max = day_data.get("stress", (0.6, 1.4))
+
+        # Get Night Targets
+        night_data = threshold_data.get(
+            "night", threshold_data["day"]
+        )  # Fallback to day if no night config
+        night_target_min, night_target_max = night_data.get("mild", (0.8, 1.2))
+        night_danger_min, night_danger_max = night_data.get("stress", (0.6, 1.4))
+
+        # Determine current active targets based on is_day
+        cycle_data = day_data if is_day else night_data
         target_min, target_max = cycle_data.get("mild", (0.8, 1.2))
         danger_min, danger_max = cycle_data.get("stress", (0.6, 1.4))
 
@@ -91,6 +106,15 @@ class EnvironmentAnalyzer:
             "vpd_danger_min": danger_min,
             "vpd_danger_max": danger_max,
             "vpd_status": vpd_status,
+            # Expose specific day/night targets for frontend graphs
+            "day_vpd_target_min": day_target_min,
+            "day_vpd_target_max": day_target_max,
+            "day_vpd_danger_min": day_danger_min,
+            "day_vpd_danger_max": day_danger_max,
+            "night_vpd_target_min": night_target_min,
+            "night_vpd_target_max": night_target_max,
+            "night_vpd_danger_min": night_danger_min,
+            "night_vpd_danger_max": night_danger_max,
         }
 
     def determine_granular_stage(

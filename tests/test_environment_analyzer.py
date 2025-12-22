@@ -107,6 +107,15 @@ def test_calculate_biological_metrics(
     # 1.0 is > 0.8 (target max) but <= 1.0 (danger max). So warning.
     assert metrics["vpd_status"] == "warning"
 
+    # Verify Day/Night targets are exposed
+    assert "day_vpd_target_min" in metrics
+    assert "day_vpd_target_max" in metrics
+    assert "night_vpd_target_min" in metrics
+    assert "night_vpd_target_max" in metrics
+    # Default values check (assuming default config)
+    assert metrics["day_vpd_target_min"] == 0.4  # veg mild min
+    assert metrics["day_vpd_target_max"] == 0.8  # veg mild max
+
     # Test Danger
     hass.states.async_set("sensor.vpd", "1.5")  # > 1.0
     metrics = analyzer.calculate_biological_metrics(mock_growspace, 5, 0, 0, 0)
