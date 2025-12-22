@@ -485,30 +485,14 @@ async def websocket_get_history_stats(hass: HomeAssistant, connection, msg):
                     if current_val:
                         if isinstance(current_val, dict):
                             val_state = current_val.get("state")
-                            val_lu_raw = current_val.get(
-                                "last_updated", current_val.get("last_changed")
-                            )
-                            # Parse ISO string to datetime if needed
-                            if isinstance(val_lu_raw, str):
-                                try:
-                                    val_lu = dt_util.parse_datetime(val_lu_raw)
-                                except (ValueError, TypeError):
-                                    val_lu = None
-                            else:
-                                val_lu = val_lu_raw
                         else:
                             val_state = current_val.state
-                            val_lu = current_val.last_updated
 
-                        if (
-                            val_state
-                            and val_state not in ("unknown", "unavailable")
-                            and val_lu
-                        ):
+                        if val_state and val_state not in ("unknown", "unavailable"):
                             downsampled.append(
                                 {
                                     "s": val_state,
-                                    "lu": val_lu.isoformat(),
+                                    "lu": current_time.isoformat(),
                                 }
                             )
 
