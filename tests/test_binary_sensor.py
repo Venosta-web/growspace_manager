@@ -1127,7 +1127,7 @@ def test_determine_light_state_unavailable(
         ),
         # Case 2: High humidity in late veg
         (
-            {"temp": 25, "humidity": 90, "vpd": 1.0, "light": "on"},
+            {"temp": 25, "humidity": 90, "vpd": 1.3, "light": "on"},
             {"veg_days": 20, "flower_days": 0},
             "Humidity High",
         ),
