@@ -50,7 +50,7 @@ VPD_STRESS_THRESHOLDS: Final[VpdThresholdsDict] = {
         },
         "night": {
             "stress": (0.6, 1.2),
-            "mild": (0.8, 1.0),
+            "mild": (0.8, 1.1),
             "prob_keys": (
                 "prob_vpd_stress_veg",
                 "prob_vpd_mild_stress_veg",

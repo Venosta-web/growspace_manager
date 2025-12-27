@@ -96,15 +96,15 @@ def test_calculate_biological_metrics(
 ) -> None:
     """Test calculating biological metrics."""
     # Mock sensor values
-    hass.states.async_set("sensor.vpd", "1.0")
+    hass.states.async_set("sensor.vpd", "1.3")
     hass.states.async_set("sensor.light", "on")  # Day
 
     # Veg Early Day
     metrics = analyzer.calculate_biological_metrics(mock_growspace, 5, 0, 0, 0)
     assert metrics["granular_stage"] == "veg"
     assert metrics["is_day"] is True
-    # veg_early day mild is (0.4, 0.8), stress is (0.3, 1.0).
-    # 1.0 is > 0.8 (target max) but <= 1.0 (danger max). So warning.
+    # veg_early day mild is (0.6, 1.2), stress is (0.4, 1.4).
+    # 1.3 is > 1.2 (mild max) but <= 1.4 (stress max). So warning.
     assert metrics["vpd_status"] == "warning"
 
     # Verify Day/Night targets are exposed
@@ -113,8 +113,8 @@ def test_calculate_biological_metrics(
     assert "night_vpd_target_min" in metrics
     assert "night_vpd_target_max" in metrics
     # Default values check (assuming default config)
-    assert metrics["day_vpd_target_min"] == 0.4  # veg mild min
-    assert metrics["day_vpd_target_max"] == 0.8  # veg mild max
+    assert metrics["day_vpd_target_min"] == 0.6  # veg mild min
+    assert metrics["day_vpd_target_max"] == 1.2  # veg mild max
 
     # Test Danger
     hass.states.async_set("sensor.vpd", "1.5")  # > 1.0
