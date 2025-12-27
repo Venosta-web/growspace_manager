@@ -40,8 +40,8 @@ DryingCuringThresholds = dict[
 VPD_STRESS_THRESHOLDS: Final[VpdThresholdsDict] = {
     "veg": {
         "day": {
-            "stress": (0.3, 1.0),
-            "mild": (0.4, 0.8),
+            "stress": (0.4, 1.4),
+            "mild": (0.6, 1.2),
             "prob_keys": (
                 "prob_vpd_stress_veg",
                 "prob_vpd_mild_stress_veg",
@@ -49,8 +49,8 @@ VPD_STRESS_THRESHOLDS: Final[VpdThresholdsDict] = {
             "prob_defaults": ((0.85, 0.15), (0.60, 0.30)),
         },
         "night": {
-            "stress": (0.3, 1.0),
-            "mild": (0.4, 0.8),
+            "stress": (0.6, 1.2),
+            "mild": (0.8, 1.0),
             "prob_keys": (
                 "prob_vpd_stress_veg",
                 "prob_vpd_mild_stress_veg",
