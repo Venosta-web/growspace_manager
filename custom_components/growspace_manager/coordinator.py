@@ -174,13 +174,25 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
         else:
             self._serialized_cache.pop(growspace_id, None)
 
-    def _get_serialized_growspace(self, growspace_id: str) -> dict[str, Any]:
-        """Get serialized growspace data, using cache if available."""
+    def _get_serialized_growspace(
+        self, growspace_id: str, preloaded_plants: list[Plant] | None = None
+    ) -> dict[str, Any]:
+        """Get serialized growspace data, using cache if available.
+
+        Args:
+            growspace_id: The ID of the growspace to serialize.
+            preloaded_plants: Optional list of plants in this growspace.
+                              If provided, avoids a full scan of self.plants.
+        """
         if growspace_id in self._serialized_cache:
             return self._serialized_cache[growspace_id]
 
         growspace = self.growspaces[growspace_id]
-        plants = self.get_growspace_plants(growspace_id)
+        # Optimization: Use preloaded plants if available, else fetch them
+        if preloaded_plants is not None:
+            plants = preloaded_plants
+        else:
+            plants = self.get_growspace_plants(growspace_id)
 
         serialized = self.serializer.serialize_growspace(
             growspace, plants, self.environment_analyzer
@@ -632,7 +644,6 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
             ("veg", "veg", 5, 5, GrowspaceType.VEG),
         ]
 
-        created_count = 0
         for (
             growspace_id,
             name,
@@ -677,10 +688,29 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
 
         # Optimized: Serialize growspaces using cache
         serialized_growspaces = {}
-        for growspace_id, growspace in self.growspaces.items():
-            # Use cached serialization if available
+
+        # 1. Pre-calculate plant distribution to avoid O(N*M) lookups
+        # Only do this if we actually need to serialize (cache miss)
+        # However, to know if we have a cache miss, we iterate.
+        # It's cleaner to build the map once if ANY cache is missing.
+        # But `_get_serialized_growspace` checks the cache internally.
+        # So we can just build the map. O(Plants) is cheap compared to repeated scans.
+
+        plants_by_growspace: dict[str, list[Plant]] = {}
+        # Only build this index if we have work to do
+        # Check if all caches are valid? No, too complex.
+        # Just build it. It's O(N).
+        for plant in self.plants.values():
+            if plant.growspace_id not in plants_by_growspace:
+                plants_by_growspace[plant.growspace_id] = []
+            plants_by_growspace[plant.growspace_id].append(plant)
+
+        for growspace_id in self.growspaces:
+            # Pass the pre-filtered list to the serializer
+            # Use empty list if no plants found for this growspace
+            plants = plants_by_growspace.get(growspace_id, [])
             serialized_growspaces[growspace_id] = self._get_serialized_growspace(
-                growspace_id
+                growspace_id, preloaded_plants=plants
             )
 
         self.data = {

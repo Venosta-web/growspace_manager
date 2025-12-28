@@ -31,10 +31,14 @@ def parse_date_field(date_value: DateInput) -> datetime | None:
             dt = datetime.combine(date_value, datetime.min.time())
         case str():
             try:
-                # Attempt to parse ISO format
-                dt = parser.isoparse(date_value)
-            except (ValueError, TypeError):
-                return None
+                # Optimization: Try standard library parsing first (significantly faster)
+                dt = datetime.fromisoformat(date_value)
+            except ValueError:
+                try:
+                    # Fallback to slower, more robust parser
+                    dt = parser.isoparse(date_value)
+                except (ValueError, TypeError):
+                    return None
         case _:
             return None
 
