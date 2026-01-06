@@ -123,9 +123,13 @@ def mock_coordinator(hass: HomeAssistant):
 @pytest.mark.asyncio
 async def test_async_setup(mock_hass) -> None:
     """Test async_setup registers global components."""
-    # It should simply return True and init domain data
-    assert await async_setup(mock_hass, {})
-    assert DOMAIN in mock_hass.data
+    with patch(
+        "custom_components.growspace_manager._async_register_websocket_api"
+    ) as mock_ws_reg:
+        assert await async_setup(mock_hass, {})
+        assert DOMAIN in mock_hass.data
+        # Verify WebSocket API is registered globally in async_setup
+        mock_ws_reg.assert_called_once_with(mock_hass)
 
 
 @pytest.mark.asyncio
@@ -181,8 +185,8 @@ async def test_async_setup_entry(hass: HomeAssistant) -> None:
         # Verify Services
         mock_reg.assert_called_once_with(hass, mock_lib)
 
-        # Verify WebSocket
-        mock_ws_reg.assert_called_once_with(hass)
+        # WebSocket API is now registered in async_setup, not async_setup_entry
+        mock_ws_reg.assert_not_called()
 
 
 @pytest.mark.asyncio

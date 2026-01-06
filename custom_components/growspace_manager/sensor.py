@@ -8,6 +8,7 @@ and environmental calculations like VPD.
 from __future__ import annotations
 
 # Standard library
+import asyncio
 import logging
 from typing import Any, override
 
@@ -189,19 +190,23 @@ async def async_setup_entry(
     ]
     async_add_entities(air_exchange_sensors)
 
+    # Lock to prevent race conditions during dynamic entity updates
+    update_lock = asyncio.Lock()
+
     async def _handle_coordinator_update_async() -> None:
         """Add new entities and remove missing ones when coordinator changes."""
-        await _update_growspace_entities(
-            hass,
-            coordinator,
-            config_entry,
-            growspace_entities,
-            async_add_entities,
-            calculated_vpd_growspace_ids,
-        )
-        await _update_plant_entities(
-            hass, coordinator, plant_entities, async_add_entities
-        )
+        async with update_lock:
+            await _update_growspace_entities(
+                hass,
+                coordinator,
+                config_entry,
+                growspace_entities,
+                async_add_entities,
+                calculated_vpd_growspace_ids,
+            )
+            await _update_plant_entities(
+                hass, coordinator, plant_entities, async_add_entities
+            )
 
     def _listener_callback() -> None:
         """Handle coordinator updates."""
@@ -599,6 +604,53 @@ class GrowspaceOverviewSensor(CoordinatorEntity[GrowspaceCoordinator], SensorEnt
             model="Growspace",
             manufacturer="Growspace Manager",
         )
+
+    @override
+    async def async_added_to_hass(self) -> None:
+        """Register callbacks when the entity is added to Home Assistant."""
+        await super().async_added_to_hass()
+
+        # Track environment sensors for real-time updates
+        entities_to_track = self._get_trackable_sensors()
+        if entities_to_track:
+            self.async_on_remove(
+                async_track_state_change_event(
+                    self.hass, entities_to_track, self._handle_sensor_update
+                )
+            )
+
+    def _get_trackable_sensors(self) -> list[str]:
+        """Return list of environment sensors to track for real-time updates."""
+        growspace = self.coordinator.growspaces.get(self.growspace_id)
+        if not growspace or not growspace.environment_config:
+            return []
+
+        env_config = growspace.environment_config
+        sensors: list[str] = []
+
+        # Add all configured sensors that have dynamic values we display
+        trackable_attrs = [
+            "soil_moisture_sensor",
+            "vpd_sensor",
+            "dehumidifier_entity",
+            "exhaust_fan_entity",
+            "humidifier_entity",
+            "circulation_fan_entity",
+        ]
+        for attr in trackable_attrs:
+            if sensor_id := getattr(env_config, attr, None):
+                sensors.append(sensor_id)
+
+        return sensors
+
+    async def _handle_sensor_update(self, event) -> None:
+        """Handle updates from tracked environment sensors."""
+        # Invalidate cache for this growspace only
+        self.coordinator._invalidate_cache(self.growspace_id)
+        # Force re-serialization
+        self.coordinator.update_data_property()
+        # Update our state
+        self.async_write_ha_state()
 
     @property
     @override
