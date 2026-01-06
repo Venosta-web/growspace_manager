@@ -5,7 +5,6 @@ from __future__ import annotations
 import logging
 import pathlib
 import tempfile
-from collections.abc import Awaitable, Callable
 from typing import Any, override
 
 import homeassistant.util.dt as dt_util
@@ -15,7 +14,7 @@ from homeassistant.components import websocket_api
 from homeassistant.components.http import HomeAssistantView
 from homeassistant.components.recorder import get_instance, history
 from homeassistant.config_entries import ConfigEntry, ConfigEntryState
-from homeassistant.core import HomeAssistant, ServiceCall, callback
+from homeassistant.core import HomeAssistant, callback
 from homeassistant.exceptions import ServiceValidationError
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.issue_registry import IssueSeverity, async_create_issue
@@ -39,6 +38,8 @@ type GrowspaceConfigEntry = ConfigEntry[GrowspaceCoordinator]
 async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
     """Set up the Growspace Manager component."""
     hass.data.setdefault(DOMAIN, {})
+    # Register WebSocket API commands globally (once per HA instance)
+    _async_register_websocket_api(hass)
     return True
 
 
@@ -64,9 +65,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: GrowspaceConfigEntry) ->
         # Register all custom services
         _LOGGER.debug("Registering services for domain %s", DOMAIN)
         await service_registration.register_services(hass, strain_library_instance)
-
-        # Register WebSocket API
-        _async_register_websocket_api(hass)
 
         # Set up intents
         await async_setup_intents(hass)
