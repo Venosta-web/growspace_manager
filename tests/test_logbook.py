@@ -52,7 +52,15 @@ async def test_coordinator_rolling_buffer(hass: HomeAssistant) -> None:
     # Setup mock entry
     entry = MockConfigEntry()
     entry.add_to_hass(hass)
-    entry.async_create_background_task = AsyncMock()
+
+    def mock_create_background_task(hass: HomeAssistant, target, name):
+        if target:
+            target.close()
+        return MagicMock()
+
+    entry.async_create_background_task = MagicMock(
+        side_effect=mock_create_background_task
+    )
 
     coordinator = GrowspaceCoordinator(
         hass, data={}, options={}, strain_library=AsyncMock(), entry=entry

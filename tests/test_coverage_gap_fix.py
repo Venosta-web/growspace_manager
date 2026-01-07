@@ -533,7 +533,6 @@ async def test_coordinator_update_missing_pump_keys(hass: HomeAssistant) -> None
     gs = Growspace(id="gs1", name="GS1", irrigation_config=config)
     coord.growspaces = {"gs1": gs}
     coord.async_save = AsyncMock()
-    coord.async_commit = AsyncMock()
 
     await coord.async_update_irrigation_config("gs1", {"some_other_key": "val"})
 
