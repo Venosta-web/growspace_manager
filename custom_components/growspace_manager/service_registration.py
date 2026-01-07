@@ -44,8 +44,10 @@ from .services import (
     REMOVE_ENVIRONMENT_SCHEMA,
     REMOVE_GROWSPACE_SCHEMA,
     REMOVE_IRRIGATION_TIME_SCHEMA,
+    REMOVE_NUTRIENT_PRESET_SCHEMA,
     REMOVE_PLANT_SCHEMA,
     REMOVE_STRAIN_SCHEMA,
+    SAVE_NUTRIENT_PRESET_SCHEMA,
     SET_DEHUMIDIFIER_CONTROL_SCHEMA,
     SET_IRRIGATION_SETTINGS_SCHEMA,
     STRAIN_RECOMMENDATION_SCHEMA,
@@ -63,6 +65,7 @@ from .services import (
     growspace,
     irrigation,
     irrigation_watering,
+    nutrient_presets,
     plant,
     strain_library,
 )
@@ -322,6 +325,16 @@ async def register_services(
             GrowspaceService.WATER_GROWSPACE,
             wrap(irrigation_watering.handle_water_growspace, False),
             WATER_GROWSPACE_SCHEMA,
+        ),
+        (
+            GrowspaceService.SAVE_NUTRIENT_PRESET,
+            wrap(nutrient_presets.handle_save_nutrient_preset, False),
+            SAVE_NUTRIENT_PRESET_SCHEMA,
+        ),
+        (
+            GrowspaceService.REMOVE_NUTRIENT_PRESET,
+            wrap(nutrient_presets.handle_remove_nutrient_preset, False),
+            REMOVE_NUTRIENT_PRESET_SCHEMA,
         ),
     ]
 

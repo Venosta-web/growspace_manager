@@ -83,6 +83,9 @@ ATTR_NOTIFICATION_TARGET = "notification_target"
 ATTR_WATER_AMOUNT = "amount"
 ATTR_NUTRIENTS = "nutrients"
 ATTR_AMOUNT_PER_PLANT = "amount_per_plant"
+ATTR_PRESET_ID = "preset_id"
+ATTR_PRESET_NAME = "preset_name"
+ATTR_MIN_DAYS_IN_STAGE = "min_days_in_stage"
 
 # Events
 # Icons
@@ -190,6 +193,9 @@ class GrowspaceService(StrEnum):
     # Watering Services
     WATER_PLANT = "water_plant"
     WATER_GROWSPACE = "water_growspace"
+    # Nutrient Preset Services
+    SAVE_NUTRIENT_PRESET = "save_nutrient_preset"
+    REMOVE_NUTRIENT_PRESET = "remove_nutrient_preset"
 
 
 # Plant stages

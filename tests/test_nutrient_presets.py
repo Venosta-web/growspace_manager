@@ -1,0 +1,588 @@
+"""Tests for the Nutrient Presets feature.
+
+This module contains tests for adding, removing, and using nutrient presets,
+including stage-based applicability filtering and merging with manual inputs.
+"""
+
+from dataclasses import dataclass
+from datetime import datetime, timedelta
+from unittest.mock import AsyncMock, MagicMock
+
+import pytest
+from homeassistant.config_entries import ConfigEntry
+from homeassistant.core import HomeAssistant
+from pytest_homeassistant_custom_component.common import MockConfigEntry
+
+from custom_components.growspace_manager.const import (
+    ATTR_MIN_DAYS_IN_STAGE,
+    ATTR_PRESET_ID,
+    ATTR_PRESET_NAME,
+    ATTR_STAGE,
+    DOMAIN,
+)
+from custom_components.growspace_manager.coordinator import GrowspaceCoordinator
+from custom_components.growspace_manager.models import (
+    BaseModel,
+    Growspace,
+    NutrientPreset,
+    Plant,
+    PlantStage,
+)
+from custom_components.growspace_manager.sensor import NutrientPresetSensor
+from custom_components.growspace_manager.services.nutrient_presets import (
+    handle_remove_nutrient_preset,
+    handle_save_nutrient_preset,
+)
+
+
+def create_test_coordinator(hass: HomeAssistant) -> GrowspaceCoordinator:
+    """Create a test coordinator with mocked config entry."""
+    entry = MockConfigEntry(domain=DOMAIN, data={}, options={})
+    entry.add_to_hass(hass)
+    entry.async_create_background_task = MagicMock(
+        side_effect=lambda hass_obj, coro, name: hass.async_create_task(coro)
+    )
+
+    coordinator = GrowspaceCoordinator(hass, entry, data={})
+    coordinator.async_save = AsyncMock()
+    coordinator.async_commit = AsyncMock()
+    coordinator.async_set_updated_data = MagicMock()
+    return coordinator
+
+
+@pytest.fixture
+def preset_coordinator(hass: HomeAssistant) -> GrowspaceCoordinator:
+    """Provide a coordinator for nutrient preset tests."""
+    coordinator = create_test_coordinator(hass)
+
+    # Add a growspace and a plant
+    coordinator.growspaces["test_gs"] = Growspace(
+        id="test_gs",
+        name="Test Growspace",
+        rows=1,
+        plants_per_row=1,
+    )
+
+    coordinator.plants["test_plant"] = Plant(
+        plant_id="test_plant",
+        growspace_id="test_gs",
+        strain="Test Strain",
+        stage=PlantStage.VEG,
+        veg_start=(datetime.now() - timedelta(days=10)).isoformat(),
+        row=1,
+        col=1,
+    )
+
+    return coordinator
+
+
+class TestNutrientPresetCoordinator:
+    """Tests for nutrient preset logic within the coordinator."""
+
+    @pytest.mark.asyncio
+    async def test_save_nutrient_preset(
+        self, preset_coordinator: GrowspaceCoordinator
+    ) -> None:
+        """Test creating a new nutrient preset."""
+        name = "Veg Mix"
+        nutrients = [
+            {"name": "Grow A", "amount_per_liter": 2.0},
+            {"name": "Grow B", "amount_per_liter": 1.5},
+        ]
+
+        preset = await preset_coordinator.async_save_nutrient_preset(
+            name=name, nutrients=nutrients, stage=PlantStage.VEG, min_days_in_stage=5
+        )
+
+        assert preset.name == name
+        assert len(preset.nutrients) == 2
+        assert preset.stage == PlantStage.VEG
+        assert preset.min_days_in_stage == 5
+        assert preset.id in preset_coordinator.nutrient_presets
+        preset_coordinator.async_save.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_remove_nutrient_preset(
+        self, preset_coordinator: GrowspaceCoordinator
+    ) -> None:
+        """Test removing a nutrient preset."""
+        # First save a preset
+        preset = await preset_coordinator.async_save_nutrient_preset(
+            name="To Remove", nutrients=[{"name": "Nutrient", "amount_per_liter": 1.0}]
+        )
+        preset_id = preset.id
+
+        # Remove it
+        await preset_coordinator.async_remove_nutrient_preset(preset_id)
+
+        assert preset_id not in preset_coordinator.nutrient_presets
+        assert preset_coordinator.async_save.call_count == 2
+
+    @pytest.mark.asyncio
+    async def test_remove_nonexistent_preset_raises(
+        self, preset_coordinator: GrowspaceCoordinator
+    ) -> None:
+        """Test removing a nonexistent preset raises KeyError."""
+        with pytest.raises(KeyError):
+            await preset_coordinator.async_remove_nutrient_preset("nonexistent")
+
+    @pytest.mark.asyncio
+    async def test_get_applicable_presets(
+        self, preset_coordinator: GrowspaceCoordinator
+    ) -> None:
+        """Test filtering presets based on plant stage and days."""
+        # 1. Preset for VEG, min 5 days (Plant is VEG, 10 days) -> Should match
+        await preset_coordinator.async_save_nutrient_preset(
+            name="Veg Applicable",
+            nutrients=[{"name": "A", "amount_per_liter": 1.0}],
+            stage=PlantStage.VEG,
+            min_days_in_stage=5,
+        )
+
+        # 2. Preset for FLOWER (Plant is VEG) -> Should NOT match
+        await preset_coordinator.async_save_nutrient_preset(
+            name="Bloom Not Applicable",
+            nutrients=[{"name": "B", "amount_per_liter": 1.0}],
+            stage=PlantStage.FLOWER,
+        )
+
+        # 3. Preset for VEG, min 15 days (Plant is VEG, 10 days) -> Should NOT match
+        await preset_coordinator.async_save_nutrient_preset(
+            name="Veg Too Soon",
+            nutrients=[{"name": "C", "amount_per_liter": 1.0}],
+            stage=PlantStage.VEG,
+            min_days_in_stage=15,
+        )
+
+        # 4. Global preset (no stage) -> Should match
+        await preset_coordinator.async_save_nutrient_preset(
+            name="Global", nutrients=[{"name": "D", "amount_per_liter": 1.0}]
+        )
+
+        applicable = preset_coordinator.get_applicable_presets("test_plant")
+
+        assert len(applicable) == 2
+        names = [p.name for p in applicable]
+        assert "Veg Applicable" in names
+        assert "Global" in names
+        assert "Bloom Not Applicable" not in names
+        assert "Veg Too Soon" not in names
+
+    @pytest.mark.asyncio
+    async def test_resolve_preset_nutrients(
+        self, preset_coordinator: GrowspaceCoordinator
+    ) -> None:
+        """Test resolving preset ID to nutrient map."""
+        preset = await preset_coordinator.async_save_nutrient_preset(
+            name="Test Preset",
+            nutrients=[
+                {"name": "NutriA", "amount_per_liter": 2.5},
+                {"name": "NutriB", "amount_per_liter": 0.5},
+            ],
+        )
+
+        nutrient_map = preset_coordinator._resolve_preset_nutrients(preset.id)
+
+        assert nutrient_map == {"NutriA": 2.5, "NutriB": 0.5}
+
+    @pytest.mark.asyncio
+    async def test_resolve_nonexistent_preset_raises(
+        self, preset_coordinator: GrowspaceCoordinator
+    ) -> None:
+        """Test resolving nonexistent preset raises KeyError."""
+        with pytest.raises(KeyError):
+            preset_coordinator._resolve_preset_nutrients("nonexistent")
+
+    def test_update_data_property_includes_presets(
+        self, preset_coordinator: GrowspaceCoordinator
+    ) -> None:
+        """Test that update_data_property includes nutrient presets in the data dict."""
+        preset_coordinator.nutrient_presets = {
+            "test_id": MagicMock(spec=NutrientPreset)
+        }
+        # Call the real update_data_property (avoiding the mock async_commit if it were called)
+        preset_coordinator.update_data_property()
+
+        assert "nutrient_presets" in preset_coordinator.data
+        assert (
+            preset_coordinator.data["nutrient_presets"]
+            == preset_coordinator.nutrient_presets
+        )
+        assert "serialized_growspaces" in preset_coordinator.data
+
+    @pytest.mark.asyncio
+    async def test_get_applicable_presets_no_stage_but_min_days(
+        self, preset_coordinator: GrowspaceCoordinator
+    ) -> None:
+        """Test a preset with no stage but with min_days_in_stage."""
+        # Plant is VEG, 10 days
+        await preset_coordinator.async_save_nutrient_preset(
+            name="Days Match",
+            nutrients=[{"name": "A", "amount_per_liter": 1.0}],
+            min_days_in_stage=5,  # No stage
+        )
+
+        await preset_coordinator.async_save_nutrient_preset(
+            name="Days No Match",
+            nutrients=[{"name": "A", "amount_per_liter": 1.0}],
+            min_days_in_stage=15,  # Too many days
+        )
+
+        applicable = preset_coordinator.get_applicable_presets("test_plant")
+        names = [p.name for p in applicable]
+        assert "Days Match" in names
+        assert "Days No Match" not in names
+
+
+class TestWateringWithPresets:
+    """Tests for watering functionality using presets."""
+
+    @pytest.mark.asyncio
+    async def test_water_plant_with_preset(
+        self, preset_coordinator: GrowspaceCoordinator
+    ) -> None:
+        """Test watering a plant using a nutrient preset."""
+        preset = await preset_coordinator.async_save_nutrient_preset(
+            name="Test Preset", nutrients=[{"name": "CalMag", "amount_per_liter": 2.0}]
+        )
+
+        preset_coordinator.events = {}
+
+        # Water with 2.0L using preset (should result in 4.0ml CalMag)
+        await preset_coordinator.async_water_plant(
+            "test_plant", amount=2.0, preset_id=preset.id
+        )
+
+        # Verify event logbook entry
+        event = preset_coordinator.events["test_gs"][0]
+        reasons = "".join(event.reasons)
+        assert f"Preset: {preset.name}" in reasons
+        assert "CalMag: 2.0ml/L" in reasons
+        assert "Total: 4.0ml" in reasons
+
+    @pytest.mark.asyncio
+    async def test_preset_manual_merge_override(
+        self, preset_coordinator: GrowspaceCoordinator
+    ) -> None:
+        """Test that manual nutrients override preset nutrients of the same name."""
+        preset = await preset_coordinator.async_save_nutrient_preset(
+            name="Test Preset",
+            nutrients=[
+                {"name": "A", "amount_per_liter": 1.0},
+                {"name": "B", "amount_per_liter": 2.0},
+            ],
+        )
+
+        preset_coordinator.events = {}
+
+        # Water with preset A=1, B=2, but manually override B=5 and add C=10
+        manual = {"B": 5.0, "C": 10.0}
+        await preset_coordinator.async_water_plant(
+            "test_plant", amount=1.0, nutrients=manual, preset_id=preset.id
+        )
+
+        # Result should be A=1, B=5, C=10
+        event = preset_coordinator.events["test_gs"][0]
+        reasons = "".join(event.reasons)
+
+        assert "A: 1.0ml/L" in reasons
+        assert "B: 5.0ml/L" in reasons
+        assert "C: 10.0ml/L" in reasons
+        # Verify preset name is still mentioned
+        assert f"Preset: {preset.name}" in reasons
+
+    @pytest.mark.asyncio
+    async def test_water_growspace_with_preset(
+        self, preset_coordinator: GrowspaceCoordinator
+    ) -> None:
+        """Test watering an entire growspace using a preset."""
+        preset = await preset_coordinator.async_save_nutrient_preset(
+            name="Gs Preset", nutrients=[{"name": "Bloom", "amount_per_liter": 4.0}]
+        )
+
+        # Water growspace
+        await preset_coordinator.async_water_growspace(
+            "test_gs", amount_per_plant=1.0, preset_id=preset.id
+        )
+
+        # Verify event for the plant
+        event = preset_coordinator.events["test_gs"][0]
+        reasons = "".join(event.reasons)
+        assert "Bloom: 4.0ml/L" in reasons
+        assert "Total: 4.0ml" in reasons
+        assert f"Preset: {preset.name}" in reasons
+
+    @pytest.mark.asyncio
+    async def test_water_plant_missing_preset_raises(
+        self, preset_coordinator: GrowspaceCoordinator
+    ) -> None:
+        """Test watering with a nonexistent preset_id raises KeyError."""
+        with pytest.raises(KeyError, match="Nutrient preset 'missing' not found"):
+            await preset_coordinator.async_water_plant(
+                "test_plant", amount=1.0, preset_id="missing"
+            )
+
+
+class TestServiceHandlersPresets:
+    """Tests for the preset service handlers."""
+
+    @pytest.mark.asyncio
+    async def test_handle_save_nutrient_preset_service(
+        self, hass: HomeAssistant, preset_coordinator: GrowspaceCoordinator
+    ) -> None:
+        """Test the handle_save_nutrient_preset service handler."""
+
+        call = MagicMock()
+        call.data = {
+            ATTR_PRESET_NAME: "Service Preset",
+            "nutrients": [{"name": "Grow", "amount_per_liter": 3.0}],
+            ATTR_STAGE: PlantStage.FLOWER,
+            ATTR_MIN_DAYS_IN_STAGE: 10,
+        }
+
+        await handle_save_nutrient_preset(hass, preset_coordinator, call)
+
+        # Verify preset was saved
+        presets = [
+            p
+            for p in preset_coordinator.nutrient_presets.values()
+            if p.name == "Service Preset"
+        ]
+        assert len(presets) == 1
+        assert presets[0].stage == PlantStage.FLOWER
+        assert presets[0].min_days_in_stage == 10
+
+    @pytest.mark.asyncio
+    async def test_handle_remove_nutrient_preset_service(
+        self, hass: HomeAssistant, preset_coordinator: GrowspaceCoordinator
+    ) -> None:
+        """Test the handle_remove_nutrient_preset service handler."""
+
+        # Save one first
+        preset = await preset_coordinator.async_save_nutrient_preset("To Remove", [])
+
+        call = MagicMock()
+        call.data = {ATTR_PRESET_ID: preset.id}
+
+        await handle_remove_nutrient_preset(hass, preset_coordinator, call)
+
+        assert preset.id not in preset_coordinator.nutrient_presets
+
+
+class TestNutrientPresetSensor:
+    """Tests for the NutrientPresetSensor."""
+
+    @pytest.mark.asyncio
+    async def test_nutrient_preset_sensor_attributes(
+        self, preset_coordinator: GrowspaceCoordinator
+    ) -> None:
+        """Test that NutrientPresetSensor exposes presets in attributes."""
+
+        # Save a preset
+        preset = await preset_coordinator.async_save_nutrient_preset(
+            "Sensor Test", [{"name": "N", "amount_per_liter": 1.0}]
+        )
+
+        entity = NutrientPresetSensor(preset_coordinator)
+
+        assert entity.native_value == 1
+
+        attributes = entity.extra_state_attributes
+        assert "presets" in attributes
+        assert preset.id in attributes["presets"]
+        assert attributes["presets"][preset.id]["name"] == "Sensor Test"
+
+
+class TestNutrientPresetSerialization:
+    """Tests for NutrientPreset to/from dict serialization."""
+
+    def test_nutrient_preset_serialization_roundtrip(self) -> None:
+        """Test that NutrientPreset can be serialized and deserialized."""
+        now = datetime.now().isoformat()
+        data = {
+            "id": "preset-123",
+            "name": "Full Recipe",
+            "nutrients": [
+                {"name": "Part A", "amount_per_liter": 2.0},
+                {"name": "Part B", "amount_per_liter": 2.0},
+            ],
+            "stage": "veg",
+            "min_days_in_stage": 7,
+            "created_at": now,
+        }
+
+        preset = NutrientPreset.from_dict(data)
+        assert preset.id == "preset-123"
+        assert preset.name == "Full Recipe"
+        assert len(preset.nutrients) == 2
+        assert preset.stage == "veg"
+        assert preset.min_days_in_stage == 7
+
+        # Roundtrip via to_dict
+        serialized = preset.to_dict()
+        assert serialized["id"] == "preset-123"
+        assert serialized["name"] == "Full Recipe"
+        assert serialized["stage"] == "veg"
+        # BaseModel.from_dict filters unknown keys, let's verify
+        data["unknown_key"] = "ignore me"
+        preset_with_extra = NutrientPreset.from_dict(data)
+        assert not hasattr(preset_with_extra, "unknown_key")
+
+    def test_basemodel_advanced_features(self) -> None:
+        """Test migrations, defaults, and nested handlers in BaseModel."""
+
+        # Define a mock dataclass inheriting from BaseModel
+        @dataclass(slots=True)
+        class Nested(BaseModel):
+            val: int
+
+        @dataclass(slots=True)
+        class TestModel(BaseModel):
+            new_key: str
+            a_nested: Nested
+            with_default: str = "default_val"
+
+            _MIGRATIONS = {"old_key": "new_key"}
+            _NESTED_HANDLERS = {"a_nested": Nested.from_dict}
+
+        # 1. Test migration
+        data = {"old_key": "migrated", "a_nested": {"val": 10}}
+        obj = TestModel.from_dict(data)
+        assert obj.new_key == "migrated"
+        assert obj.a_nested.val == 10
+        assert obj.with_default == "default_val"
+
+        # 2. Test to_dict
+        d = obj.to_dict()
+        assert d["new_key"] == "migrated"
+        assert d["a_nested"]["val"] == 10
+        assert d["with_default"] == "default_val"
+
+    def test_environment_config_catch_all(self) -> None:
+        """Test the _CATCH_ALL_FIELD logic in EnvironmentConfig."""
+        from custom_components.growspace_manager.models import EnvironmentConfig
+
+        data = {
+            "temperature_sensor": "sensor.temp",
+            "extra_key": "some_value",
+            "another_extra": 123,
+        }
+
+        config = EnvironmentConfig.from_dict(data)
+        assert config.temperature_sensor == "sensor.temp"
+        assert config.bayesian_options["extra_key"] == "some_value"
+        assert config.bayesian_options["another_extra"] == 123
+
+    def test_basemodel_defaults_and_invalid_catchall(self) -> None:
+        """Test defaults and invalid catch-all types in BaseModel."""
+        from custom_components.growspace_manager.models import EnvironmentConfig
+
+        # 1. Defaults (EnvironmentConfig has default values for many fields)
+        config = EnvironmentConfig.from_dict({})
+        assert config.lst_offset == -2.0
+        assert config.stress_threshold == 0.70
+
+        # 2. Invalid catch-all type (should reset to empty dict)
+        data = {"bayesian_options": "not-a-dict", "extra_key": "some_value"}
+        config = EnvironmentConfig.from_dict(data)
+        assert isinstance(config.bayesian_options, dict)
+        assert config.bayesian_options["extra_key"] == "some_value"
+
+
+class TestPlantCoverage:
+    """Tests for missing branches in Plant model."""
+
+    def test_plant_days_since_watering(self) -> None:
+        """Test get_days_since_watering with and without last_watered."""
+        plant = Plant(plant_id="p1", growspace_id="g1", strain="S")
+        assert plant.get_days_since_watering() is None
+
+        plant.last_watered = (datetime.now() - timedelta(days=2)).isoformat()
+        assert plant.get_days_since_watering() == 2
+
+    def test_plant_stage_missing_start_date(self) -> None:
+        """Test get_days_in_stage returns 0 if start date attribute is missing or None."""
+        plant = Plant(plant_id="p1", growspace_id="g1", strain="S")
+        # Stage is empty, and start dates are None
+        assert plant.get_days_in_stage("veg") == 0
+
+        # Test get_week_in_stage
+        plant.veg_start = (datetime.now() - timedelta(days=14)).isoformat()
+        assert plant.get_week_in_stage("veg") == 2
+
+
+class TestSensorRegistrationCoverage:
+    """Tests for sensor registration logic."""
+
+    @pytest.mark.asyncio
+    async def test_create_initial_entities_includes_presets(
+        self, hass: HomeAssistant, preset_coordinator: GrowspaceCoordinator
+    ) -> None:
+        """Test that _create_initial_entities includes NutrientPresetSensor."""
+        from custom_components.growspace_manager.sensor import (
+            NutrientPresetSensor,
+            _create_initial_entities,
+        )
+
+        initial_entities = []
+        growspace_entities = {}
+        plant_entities = {}
+        calculated_vpd_growspace_ids = set()
+
+        # We need a mock config entry
+        mock_entry = MagicMock(spec=ConfigEntry)
+        mock_entry.runtime_data = preset_coordinator
+
+        await _create_initial_entities(
+            hass,
+            preset_coordinator,
+            mock_entry,
+            initial_entities,
+            growspace_entities,
+            plant_entities,
+            calculated_vpd_growspace_ids,
+        )
+
+        assert any(isinstance(e, NutrientPresetSensor) for e in initial_entities)
+
+
+class TestNutrientPresetStorageLoading:
+    """Tests for storage loading edge cases."""
+
+    def test_load_nutrient_presets_malformed_data(
+        self, preset_coordinator: GrowspaceCoordinator
+    ) -> None:
+        """Test that malformed storage data is handled gracefully."""
+        # Malformed data (e.g., nutrients is not a list)
+        malformed_data = {
+            "nutrient_presets": {
+                "p1": {"name": "Bad Preset", "nutrients": "not-a-list"}
+            }
+        }
+
+        # This should trigger the exception block in storage_manager
+        preset_coordinator.storage_manager._load_nutrient_presets(malformed_data)
+
+        # Verify it reset to empty dict instead of crashing
+        assert preset_coordinator.nutrient_presets == {}
+
+    def test_load_nutrient_presets_success(
+        self, preset_coordinator: GrowspaceCoordinator
+    ) -> None:
+        """Test successful loading of presets from storage data."""
+        data = {
+            "nutrient_presets": {
+                "p1": {
+                    "id": "p1",
+                    "name": "Stored Preset",
+                    "nutrients": [{"name": "A", "amount_per_liter": 1.0}],
+                    "stage": "flower",
+                }
+            }
+        }
+
+        preset_coordinator.storage_manager._load_nutrient_presets(data)
+
+        assert "p1" in preset_coordinator.nutrient_presets
+        assert preset_coordinator.nutrient_presets["p1"].name == "Stored Preset"
+        assert preset_coordinator.nutrient_presets["p1"].stage == "flower"

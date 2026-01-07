@@ -55,8 +55,10 @@ from custom_components.growspace_manager.schemas import (
     REMOVE_ENVIRONMENT_SCHEMA,
     REMOVE_GROWSPACE_SCHEMA,
     REMOVE_IRRIGATION_TIME_SCHEMA,
+    REMOVE_NUTRIENT_PRESET_SCHEMA,
     REMOVE_PLANT_SCHEMA,
     REMOVE_STRAIN_SCHEMA,
+    SAVE_NUTRIENT_PRESET_SCHEMA,
     SET_DEHUMIDIFIER_CONTROL_SCHEMA,
     SET_IRRIGATION_SETTINGS_SCHEMA,
     STRAIN_RECOMMENDATION_SCHEMA,
@@ -238,6 +240,8 @@ async def test_register_services(mock_hass, mock_strain_library_for_services) ->
         "strain_recommendation": STRAIN_RECOMMENDATION_SCHEMA,
         "water_plant": WATER_PLANT_SCHEMA,
         "water_growspace": WATER_GROWSPACE_SCHEMA,
+        "save_nutrient_preset": SAVE_NUTRIENT_PRESET_SCHEMA,
+        "remove_nutrient_preset": REMOVE_NUTRIENT_PRESET_SCHEMA,
     }
 
     # Verify call count

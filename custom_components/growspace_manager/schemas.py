@@ -3,8 +3,11 @@ import voluptuous as vol
 from .const import (
     ATTR_COL,
     ATTR_GROWSPACE_ID,
+    ATTR_MIN_DAYS_IN_STAGE,
     ATTR_PHENOTYPE,
     ATTR_PLANT_ID,
+    ATTR_PRESET_ID,
+    ATTR_PRESET_NAME,
     ATTR_ROW,
     ATTR_STAGE,
     ATTR_STRAIN,
@@ -367,6 +370,7 @@ WATER_PLANT_SCHEMA = vol.Schema(
         vol.Required(ATTR_PLANT_ID): str,
         vol.Required("amount"): vol.All(vol.Coerce(float), vol.Range(min=0.0)),
         vol.Optional("nutrients"): vol.Schema({str: vol.Coerce(float)}),
+        vol.Optional(ATTR_PRESET_ID): str,
     }
 )
 
@@ -377,5 +381,32 @@ WATER_GROWSPACE_SCHEMA = vol.Schema(
             vol.Coerce(float), vol.Range(min=0.0)
         ),
         vol.Optional("nutrients"): vol.Schema({str: vol.Coerce(float)}),
+        vol.Optional(ATTR_PRESET_ID): str,
+    }
+)
+
+# --- Nutrient Preset Schemas ---
+
+NUTRIENT_ITEM_SCHEMA = vol.Schema(
+    {
+        vol.Required("name"): str,
+        vol.Required("amount_per_liter"): vol.All(
+            vol.Coerce(float), vol.Range(min=0.0)
+        ),
+    }
+)
+
+SAVE_NUTRIENT_PRESET_SCHEMA = vol.Schema(
+    {
+        vol.Required(ATTR_PRESET_NAME): str,
+        vol.Required("nutrients"): vol.All([NUTRIENT_ITEM_SCHEMA], vol.Length(min=1)),
+        vol.Optional(ATTR_STAGE): vol.Any(vol.In(PLANT_STAGES), None),
+        vol.Optional(ATTR_MIN_DAYS_IN_STAGE): vol.All(int, vol.Range(min=0)),
+    }
+)
+
+REMOVE_NUTRIENT_PRESET_SCHEMA = vol.Schema(
+    {
+        vol.Required(ATTR_PRESET_ID): str,
     }
 )

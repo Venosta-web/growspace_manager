@@ -22,10 +22,15 @@ def create_test_coordinator(hass: HomeAssistant) -> GrowspaceCoordinator:
     """Create a test coordinator with mocked config entry."""
     entry = MockConfigEntry(domain=DOMAIN, data={}, options={})
     entry.add_to_hass(hass)
-    entry.async_create_background_task = MagicMock()
+
+    # Mock background task create to actually schedule the coroutine to avoid unawaited coroutines
+    entry.async_create_background_task = MagicMock(
+        side_effect=lambda _hass, coroutine, name: hass.async_create_task(coroutine)
+    )
 
     coordinator = GrowspaceCoordinator(hass, entry, data={})
     coordinator.async_save = AsyncMock()
+    coordinator.async_commit = AsyncMock()
     coordinator.async_set_updated_data = MagicMock()
     return coordinator
 
