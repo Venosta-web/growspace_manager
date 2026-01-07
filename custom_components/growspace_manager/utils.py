@@ -47,7 +47,7 @@ def parse_date_field(date_value: DateInput) -> datetime | None:
             return as_local(dt)
         return dt
 
-    return None
+    return None  # pragma: no cover
 
 
 def format_date(date_value: DateInput) -> str | None:

@@ -8,6 +8,7 @@ from homeassistant.core import HomeAssistant, ServiceCall
 from homeassistant.exceptions import ServiceValidationError
 
 from custom_components.growspace_manager.const import DOMAIN
+from custom_components.growspace_manager.exceptions import GrowspaceError
 from custom_components.growspace_manager.service_registration import (
     get_coordinator_for_call,
     register_services,
@@ -35,7 +36,7 @@ def mock_config_entry(mock_coordinator):
 
 async def test_get_coordinator_for_call_by_growspace_id(
     hass: HomeAssistant, mock_config_entry, mock_coordinator
-):
+) -> None:
     """Test getting coordinator by growspace ID."""
     mock_coordinator.growspaces = {"gs1": {}}
 
@@ -50,7 +51,7 @@ async def test_get_coordinator_for_call_by_growspace_id(
 
 async def test_get_coordinator_for_call_aliases(
     hass: HomeAssistant, mock_config_entry, mock_coordinator
-):
+) -> None:
     """Test getting coordinator by alias IDs (target_growspace_id, mother_plant_id)."""
     # Create a second idle coordinator to prevent fallback logic from succeeding
     mock_coordinator_2 = MagicMock()
@@ -85,7 +86,7 @@ async def test_get_coordinator_for_call_aliases(
 
 async def test_get_coordinator_for_call_by_plant_id(
     hass: HomeAssistant, mock_config_entry, mock_coordinator
-):
+) -> None:
     """Test getting coordinator by plant ID."""
     mock_coordinator.plants = {"plant1": {}}
 
@@ -100,7 +101,7 @@ async def test_get_coordinator_for_call_by_plant_id(
 
 async def test_get_coordinator_for_call_fallback(
     hass: HomeAssistant, mock_config_entry, mock_coordinator
-):
+) -> None:
     """Test getting coordinator fallback (single entry)."""
     with patch(
         "homeassistant.config_entries.ConfigEntries.async_entries",
@@ -111,7 +112,9 @@ async def test_get_coordinator_for_call_fallback(
         assert coordinator == mock_coordinator
 
 
-async def test_get_coordinator_for_call_failure(hass: HomeAssistant, mock_config_entry):
+async def test_get_coordinator_for_call_failure(
+    hass: HomeAssistant, mock_config_entry
+) -> None:
     """Test failure when multiple coordinators and no ID."""
     entry2 = MagicMock()
     entry2.domain = DOMAIN
@@ -127,7 +130,7 @@ async def test_get_coordinator_for_call_failure(hass: HomeAssistant, mock_config
             get_coordinator_for_call(hass, call)
 
 
-async def test_register_services(hass: HomeAssistant):
+async def test_register_services(hass: HomeAssistant) -> None:
     """Test service registration."""
     strain_lib = MagicMock()
 
@@ -147,7 +150,7 @@ async def test_register_services(hass: HomeAssistant):
 
 async def test_service_wrapper_execution_with_strain_lib(
     mock_config_entry, mock_coordinator
-):
+) -> None:
     """Test that the registered service wrapper calls the underlying handler correctly."""
     # Use a pure Mock for hass to avoid read-only restrictions on ServiceRegistry
     hass = MagicMock(spec=HomeAssistant)
@@ -201,7 +204,7 @@ async def test_service_wrapper_execution_with_strain_lib(
 
 async def test_service_wrapper_execution_no_strain_lib(
     mock_config_entry, mock_coordinator
-):
+) -> None:
     """Test wrapper for services that do not need strain library."""
     # Use a pure Mock for hass
     hass = MagicMock(spec=HomeAssistant)
@@ -238,3 +241,41 @@ async def test_service_wrapper_execution_no_strain_lib(
 
         # Verify called with (hass, coordinator, call) - NO strain_lib
         mock_handle_remove.assert_called_once_with(hass, mock_coordinator, call)
+
+
+async def test_service_wrapper_error_handling(
+    mock_config_entry, mock_coordinator
+) -> None:
+    """Test that GrowspaceError is caught and raised as ServiceValidationError."""
+    # Use a pure Mock for hass
+    hass = MagicMock(spec=HomeAssistant)
+    hass.services = MagicMock()
+    hass.config_entries.async_entries.return_value = [mock_config_entry]
+
+    strain_lib = MagicMock()
+    captured_wrapper = None
+
+    def capture_register(domain, service, handler, schema=None, supports_response=None):
+        nonlocal captured_wrapper
+        if service == "remove_growspace":
+            captured_wrapper = handler
+
+    hass.services.async_register.side_effect = capture_register
+
+    with (
+        patch(
+            "custom_components.growspace_manager.services.growspace.handle_remove_growspace",
+            side_effect=GrowspaceError("Test error"),
+        ) as mock_handle_remove,
+        patch(
+            "homeassistant.config_entries.ConfigEntries.async_entries",
+            return_value=[mock_config_entry],
+        ),
+    ):
+        await register_services(hass, strain_lib)
+
+        assert captured_wrapper is not None
+
+        call = ServiceCall(DOMAIN, "remove_growspace", {})
+        with pytest.raises(ServiceValidationError, match="Test error"):
+            await captured_wrapper(call)

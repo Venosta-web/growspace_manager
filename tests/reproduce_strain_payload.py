@@ -7,7 +7,7 @@ from custom_components.growspace_manager.strain_library import StrainLibrary
 
 
 @pytest.mark.asyncio
-async def test_get_all_excludes_base64(hass: HomeAssistant):
+async def test_get_all_excludes_base64(hass: HomeAssistant) -> None:
     """Test that get_all does not return image_base64."""
     library = StrainLibrary(hass)
 

@@ -909,3 +909,55 @@ async def test_debug_consolidate_duplicate_special_exception(
         await handle_debug_consolidate_duplicate_special(
             mock_hass, mock_coordinator, mock_strain_library, mock_call
         )
+
+
+@pytest.mark.asyncio
+async def test_debug_list_growspaces_zero_plants(
+    mock_hass, mock_coordinator, mock_strain_library, mock_call
+) -> None:
+    """Test handle_debug_list_growspaces with a growspace that has 0 plants (covers line 217)."""
+    mock_growspace = MagicMock()
+    mock_growspace.name = "Empty GS"
+    mock_growspace.rows = 2
+    mock_growspace.plants_per_row = 2
+    mock_coordinator.growspaces = {"gs_empty": mock_growspace}
+    mock_coordinator.get_growspace_plants.return_value = []
+
+    with patch(
+        "custom_components.growspace_manager.services.debug._LOGGER.debug"
+    ) as mock_debug:
+        await handle_debug_list_growspaces(
+            mock_hass, mock_coordinator, mock_strain_library, mock_call
+        )
+        mock_debug.assert_any_call("%s has 0 plants", "gs_empty")
+
+
+@pytest.mark.asyncio
+async def test_consolidate_plants_to_canonical_growspace_true_success(
+    mock_coordinator,
+) -> None:
+    """Test _consolidate_plants_to_canonical_growspace success (covers lines 460-463)."""
+    duplicate_ids = ["dry_1"]
+    canonical_id = "dry"
+    log_prefix = "dry"
+
+    mock_plant = MagicMock(
+        spec=Plant,
+        plant_id="p1",
+        growspace_id="dry_1",
+        strain="Test Strain",
+        row=1,
+        col=1,
+    )
+    mock_coordinator.plants = {"p1": mock_plant}
+    mock_coordinator.get_growspace_plants.return_value = [mock_plant]
+    mock_coordinator.find_first_available_position.return_value = (2, 2)
+
+    await _consolidate_plants_to_canonical_growspace(
+        mock_coordinator, duplicate_ids, canonical_id, log_prefix
+    )
+
+    assert mock_plant.growspace_id == canonical_id
+    assert mock_plant.row == 2
+    assert mock_plant.col == 2
+    assert "dry_1" not in mock_coordinator.growspaces
