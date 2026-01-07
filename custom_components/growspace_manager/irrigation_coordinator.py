@@ -116,6 +116,9 @@ class IrrigationCoordinator(BaseIrrigationCoordinator):
 
     async def _save_and_reload(self, reload_listeners: bool = True) -> None:
         """Save changes to storage and reload listeners."""
+        # Refresh the growspace data (invalidates cache and updates data property)
+        await self._main_coordinator.async_refresh_growspace_data(self._growspace_id)
+
         # Save to custom storage via main coordinator
         await self._main_coordinator.async_save()
 

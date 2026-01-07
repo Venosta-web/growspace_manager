@@ -174,6 +174,20 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
         else:
             self._serialized_cache.pop(growspace_id, None)
 
+    async def async_refresh_growspace_data(self, growspace_id: str) -> None:
+        """Thread-safe method to refresh data for a specific growspace.
+
+        This method acquires the coordinator lock, invalidates the cache for the
+        specified growspace, and updates the data property. External classes should
+        use this method instead of directly accessing _lock and _invalidate_cache.
+
+        Args:
+            growspace_id: The ID of the growspace to refresh.
+        """
+        async with self._lock:
+            self._invalidate_cache(growspace_id)
+            self.update_data_property()
+
     def _get_serialized_growspace(
         self, growspace_id: str, preloaded_plants: list[Plant] | None = None
     ) -> dict[str, Any]:
