@@ -82,7 +82,9 @@ def assistant(mock_hass, mock_coordinator, mock_strain_library) -> GrowAssistant
     return GrowAssistant(mock_hass, mock_coordinator, mock_strain_library)
 
 
-async def test_get_grow_advice_success(assistant: GrowAssistant, mock_hass: MagicMock):
+async def test_get_grow_advice_success(
+    assistant: GrowAssistant, mock_hass: MagicMock
+) -> None:
     """Test getting grow advice successfully."""
     with patch("homeassistant.components.conversation.async_converse") as mock_converse:
         mock_result = MagicMock()
@@ -97,7 +99,7 @@ async def test_get_grow_advice_success(assistant: GrowAssistant, mock_hass: Magi
 
 async def test_get_grow_advice_no_ai_config(
     assistant: GrowAssistant, mock_coordinator: MagicMock
-):
+) -> None:
     """Test getting advice with AI disabled."""
     mock_coordinator.options = {}
 
@@ -107,7 +109,7 @@ async def test_get_grow_advice_no_ai_config(
 
 async def test_get_grow_advice_empty_response(
     assistant: GrowAssistant, mock_hass: MagicMock
-):
+) -> None:
     """Test getting empty response from AI."""
     with patch("homeassistant.components.conversation.async_converse") as mock_converse:
         mock_result = MagicMock()
@@ -121,7 +123,9 @@ async def test_get_grow_advice_empty_response(
             await assistant.get_grow_advice(GROWSPACE_ID, "Query")
 
 
-async def test_handle_ask_grow_advice(mock_hass, mock_coordinator, mock_strain_library):
+async def test_handle_ask_grow_advice(
+    mock_hass, mock_coordinator, mock_strain_library
+) -> None:
     """Test handle_ask_grow_advice service."""
     call = ServiceCall(
         mock_hass,
@@ -145,7 +149,7 @@ async def test_handle_ask_grow_advice(mock_hass, mock_coordinator, mock_strain_l
 
 async def test_handle_analyze_all_growspaces(
     mock_hass, mock_coordinator, mock_strain_library
-):
+) -> None:
     """Test handle_analyze_all_growspaces service."""
     call = ServiceCall(
         mock_hass,
@@ -170,7 +174,7 @@ async def test_handle_analyze_all_growspaces(
 
 async def test_handle_strain_recommendation(
     mock_hass, mock_coordinator, mock_strain_library
-):
+) -> None:
     """Test handle_strain_recommendation service."""
     call = ServiceCall(
         mock_hass,
@@ -193,7 +197,7 @@ async def test_handle_strain_recommendation(
         assert response["strains_analyzed"] == 1
 
 
-def test_format_context_data(assistant: GrowAssistant):
+def test_format_context_data(assistant: GrowAssistant) -> None:
     """Test formatting context data."""
     data = {
         "growspace": {
@@ -233,7 +237,7 @@ def test_format_context_data(assistant: GrowAssistant):
 
 def test_get_ai_settings_missing_agent(
     assistant: GrowAssistant, mock_coordinator: MagicMock
-):
+) -> None:
     """Test getting AI settings with missing agent ID."""
     mock_coordinator.options = {
         "ai_settings": {
@@ -244,13 +248,13 @@ def test_get_ai_settings_missing_agent(
     assert assistant._get_ai_settings() is None
 
 
-def test_gather_growspace_data_missing(assistant: GrowAssistant):
+def test_gather_growspace_data_missing(assistant: GrowAssistant) -> None:
     """Test gathering data for missing growspace."""
     with pytest.raises(ServiceValidationError):
         assistant._gather_growspace_data("missing_id")
 
 
-def test_format_context_data_extended(assistant: GrowAssistant):
+def test_format_context_data_extended(assistant: GrowAssistant) -> None:
     """Test formatting context data with more details."""
     data = {
         "growspace": {
@@ -287,7 +291,7 @@ def test_format_context_data_extended(assistant: GrowAssistant):
 
 async def test_get_grow_advice_truncation(
     assistant: GrowAssistant, mock_hass: MagicMock
-):
+) -> None:
     """Test truncation of grow advice."""
     with patch("homeassistant.components.conversation.async_converse") as mock_converse:
         mock_result = MagicMock()
@@ -304,7 +308,7 @@ async def test_get_grow_advice_truncation(
 
 async def test_handle_analyze_all_growspaces_extended(
     mock_hass, mock_coordinator, mock_strain_library
-):
+) -> None:
     """Test analyze all growspaces with issues and truncation."""
     # Setup mock data with issues
     mock_coordinator.growspaces = {
@@ -360,7 +364,7 @@ async def test_handle_analyze_all_growspaces_extended(
 
 async def test_handle_strain_recommendation_extended(
     mock_hass, mock_coordinator, mock_strain_library
-):
+) -> None:
     """Test strain recommendation with extended data."""
     call = ServiceCall(
         mock_hass,
@@ -404,7 +408,7 @@ async def test_handle_strain_recommendation_extended(
 
 async def test_handle_analyze_all_growspaces_no_agent(
     mock_hass, mock_coordinator, mock_strain_library
-):
+) -> None:
     """Test analyze all growspaces with no agent configured."""
     mock_coordinator.options = {}  # No AI settings
 
@@ -427,7 +431,7 @@ async def test_handle_analyze_all_growspaces_no_agent(
 
 async def test_handle_strain_recommendation_no_agent(
     assistant: GrowAssistant, mock_hass, mock_coordinator, mock_strain_library
-):
+) -> None:
     """Test strain recommendation with no agent configured."""
     mock_coordinator.options = {}  # No AI settings
 
@@ -451,7 +455,7 @@ async def test_gather_growspace_data_with_plants(
     assistant: GrowAssistant,
     mock_coordinator: MagicMock,
     mock_strain_library: MagicMock,
-):
+) -> None:
     """Test gathering data with plants and strain analytics."""
     # Mock plants
     plant1 = MagicMock()
@@ -487,7 +491,7 @@ async def test_gather_growspace_data_with_plants(
 
 async def test_handle_analyze_all_growspaces_optimal(
     mock_hass, mock_coordinator, mock_strain_library
-):
+) -> None:
     """Test analyze all growspaces with optimal conditions."""
     mock_coordinator.growspaces = {
         "gs1": Growspace(
@@ -534,7 +538,7 @@ async def test_handle_analyze_all_growspaces_optimal(
 
 async def test_handle_analyze_all_growspaces_exceptions(
     mock_hass, mock_coordinator, mock_strain_library
-):
+) -> None:
     """Test exceptions in analyze all growspaces."""
     mock_coordinator.growspaces = {
         "gs1": Growspace(
@@ -586,7 +590,7 @@ async def test_handle_analyze_all_growspaces_exceptions(
 
 async def test_handle_strain_recommendation_exceptions(
     mock_hass, mock_coordinator, mock_strain_library
-):
+) -> None:
     """Test exceptions in strain recommendation."""
     call = ServiceCall(
         mock_hass,
@@ -620,3 +624,46 @@ async def test_handle_strain_recommendation_exceptions(
 
         assert "Error getting recommendations" in response["response"]
         assert "AI assistant returned an empty response" in response["response"]
+
+
+async def test_get_grow_advice_exception_fallback(
+    assistant: GrowAssistant, mock_hass: MagicMock
+) -> None:
+    """Test get_grow_advice fallback on exception (covers lines 379-382)."""
+    with patch(
+        "homeassistant.components.conversation.async_converse",
+        side_effect=Exception("API Error"),
+    ):
+        response = await assistant.get_grow_advice(GROWSPACE_ID, "Query")
+        assert "AI Assistant Error: API Error" in response
+
+
+async def test_validate_ai_settings_missing_id(
+    assistant: GrowAssistant, mock_coordinator: MagicMock
+) -> None:
+    """Test _validate_ai_settings with AI enabled but no ID (covers lines 393-396)."""
+    mock_coordinator.options = {"ai_settings": {CONF_AI_ENABLED: True}}
+    # No CONF_ASSISTANT_ID
+    with pytest.raises(
+        ServiceValidationError,
+        match="AI assistant enabled but no assistant ID selected",
+    ):
+        assistant._validate_ai_settings(None)
+
+
+async def test_validate_ai_settings_incomplete(
+    assistant: GrowAssistant, mock_coordinator: MagicMock
+) -> None:
+    """Test _validate_ai_settings with incomplete settings (covers lines 397-398)."""
+    # Both are truthy in raw_settings, but ai_settings (the argument) is None
+    mock_coordinator.options = {
+        "ai_settings": {CONF_AI_ENABLED: True, CONF_ASSISTANT_ID: "agent"}
+    }
+    with pytest.raises(ServiceValidationError, match="AI settings are invalid"):
+        assistant._validate_ai_settings(None)
+
+
+async def test_execute_conversation_no_agent(assistant: GrowAssistant) -> None:
+    """Test _execute_conversation with missing agent_id (covers line 406)."""
+    with pytest.raises(ServiceValidationError, match="AI assistant is not enabled"):
+        await assistant._execute_conversation("Prompt", "", 100, "gs1")

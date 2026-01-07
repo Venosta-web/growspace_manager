@@ -720,17 +720,6 @@ class BayesianMoldRiskSensor(BayesianEnvironmentSensor):
 
         prob = self.prior
 
-        if self.env_config.humidity_sensor:
-            obs, rsn, _ = await async_evaluate_mold_risk_trend(self, env_state)
-            # Obs is a list of tuples, handle it
-            if obs:
-                # Add observation to manual calc?
-                # Wait, async_evaluate_mold_risk_trend returns observations list.
-                # But logic aboves uses implicit prob update.
-                # We should convert existing logic to observations list or convert trend to old style?
-                # Better to convert WHOLE function to observations style.
-                pass
-
         # Refactoring Mold Sensor to use ObservationList
         all_observations: ObservationList = []
         all_reasons: ReasonList = []

@@ -10,14 +10,18 @@ from datetime import date, datetime
 import pytest
 from homeassistant.util.dt import as_local
 
+from custom_components.growspace_manager.const import DOMAIN
 from custom_components.growspace_manager.models import Growspace, Plant
 from custom_components.growspace_manager.utils import (
+    VPDCalculator,
     calculate_days_since,
     calculate_plant_stage,
     days_to_week,
     find_first_free_position,
     format_date,
     generate_growspace_grid,
+    generate_growspace_overview_unique_id,
+    generate_vpd_sensor_unique_id,
     parse_date_field,
 )
 
@@ -188,3 +192,51 @@ def test_calculate_plant_stage() -> None:
     # Default
     p = Plant(plant_id="p1", growspace_id="g1", strain="A")
     assert calculate_plant_stage(p) == "seedling"
+
+
+# ----------------------------
+# VPDCalculator tests
+# ----------------------------
+def test_calculate_vpd() -> None:
+    """Test the Simple VPD calculation."""
+    # Standard values
+    assert VPDCalculator.calculate_vpd(25.0, 60.0) == 1.26
+    assert VPDCalculator.calculate_vpd(30.0, 50.0) == 2.12
+
+    # Invalid inputs (covers line 151)
+    assert VPDCalculator.calculate_vpd("25", 60.0) is None
+    assert VPDCalculator.calculate_vpd(25.0, "60") is None
+
+
+def test_calculate_vpd_with_lst_offset() -> None:
+    """Test the VPD calculation with leaf temperature offset."""
+    # Standard values
+    # Air 25C, 60% RH, Leaf 23C (-2 offset)
+    # Air SVP at 25C = 3.169 kPa
+    # Air AVP at 60% = 1.901 kPa
+    # Leaf SVP at 23C = 2.810 kPa
+    # VPD = 2.810 - 1.901 = 0.91 kPa
+    assert VPDCalculator.calculate_vpd_with_lst_offset(25.0, 60.0, -2.0) == 0.91
+
+    # Invalid inputs (covers line 180)
+    assert VPDCalculator.calculate_vpd_with_lst_offset("25", 60.0) is None
+    assert VPDCalculator.calculate_vpd_with_lst_offset(25.0, "60") is None
+
+
+def test_parse_date_field_with_tz() -> None:
+    """Test parse_date_field with a timezone-aware datetime (covers line 48)."""
+    dt = datetime(2025, 1, 1, tzinfo=datetime.now().astimezone().tzinfo)
+    assert parse_date_field(dt) == dt
+
+
+def test_calculate_days_since_invalid() -> None:
+    """Test calculate_days_since with invalid inputs (covers line 71)."""
+    assert calculate_days_since(None, "2025-01-01") == 0
+    assert calculate_days_since("2025-01-01", "invalid") == 0
+
+
+def test_generate_unique_ids() -> None:
+    """Test unique ID generation functions (covers lines 274, 279)."""
+
+    assert generate_vpd_sensor_unique_id("g1") == f"{DOMAIN}_g1_calculated_vpd"
+    assert generate_growspace_overview_unique_id("g1") == f"{DOMAIN}_g1"

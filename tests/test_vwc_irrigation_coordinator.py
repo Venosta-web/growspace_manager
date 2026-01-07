@@ -418,3 +418,35 @@ async def test_loop_exception_handling(vwc_coordinator, mock_hass) -> None:
 
     # Should not raise exception
     await vwc_coordinator._update_loop(dt_util.utcnow())
+
+
+async def test_determine_time_period_night(vwc_coordinator, mock_growspace) -> None:
+    """Test _determine_time_period for deep night (covers line 186)."""
+    # Lights On 08:00, Off 20:00. Current 22:00
+    now = datetime(2023, 1, 1, 22, 0, 0, tzinfo=dt_util.UTC)
+    with patch(
+        "custom_components.growspace_manager.vwc_irrigation_coordinator.now",
+        return_value=now,
+    ):
+        period = vwc_coordinator._determine_time_period(
+            mock_growspace.irrigation_strategy, mock_growspace
+        )
+        assert period == "P3"
+
+
+async def test_run_pump_cycle_cancelled(vwc_coordinator, mock_hass) -> None:
+    """Test _run_pump_cycle handles CancelledError (covers lines 276-277)."""
+    with (
+        patch("asyncio.sleep", side_effect=asyncio.CancelledError),
+        patch(
+            "custom_components.growspace_manager.vwc_irrigation_coordinator.utcnow",
+            return_value=datetime(2023, 1, 1, 12, 0, 0, tzinfo=dt_util.UTC),
+        ),
+    ):
+        # Should not raise or crash
+        await vwc_coordinator._run_pump_cycle("switch.pump", 10, "P1")
+
+        # Verify turn_off was still called in finally block
+        mock_hass.services.async_call.assert_any_call(
+            "switch", "turn_off", {"entity_id": "switch.pump"}, blocking=True
+        )

@@ -1,2 +1,13 @@
 [run]
-omit = tests/*
+source = custom_components/growspace_manager
+omit = 
+    tests/*
+    custom_components/growspace_manager/translations/*
+
+[report]
+exclude_lines =
+    pragma: no cover
+    if TYPE_CHECKING:
+    @overload
+    def __repr__
+    raise NotImplementedError
