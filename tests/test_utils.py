@@ -10,7 +10,7 @@ from datetime import date, datetime
 import pytest
 from homeassistant.util.dt import as_local
 
-from custom_components.growspace_manager.const import DOMAIN, PlantStage
+from custom_components.growspace_manager.const import DOMAIN
 from custom_components.growspace_manager.models import Growspace, Plant
 from custom_components.growspace_manager.utils import (
     VPDCalculator,
@@ -20,6 +20,8 @@ from custom_components.growspace_manager.utils import (
     find_first_free_position,
     format_date,
     generate_growspace_grid,
+    generate_growspace_overview_unique_id,
+    generate_vpd_sensor_unique_id,
     parse_date_field,
 )
 
@@ -235,10 +237,6 @@ def test_calculate_days_since_invalid() -> None:
 
 def test_generate_unique_ids() -> None:
     """Test unique ID generation functions (covers lines 274, 279)."""
-    from custom_components.growspace_manager.utils import (
-        generate_growspace_overview_unique_id,
-        generate_vpd_sensor_unique_id,
-    )
 
     assert generate_vpd_sensor_unique_id("g1") == f"{DOMAIN}_g1_calculated_vpd"
     assert generate_growspace_overview_unique_id("g1") == f"{DOMAIN}_g1"

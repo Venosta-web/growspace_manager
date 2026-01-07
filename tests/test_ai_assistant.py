@@ -82,7 +82,9 @@ def assistant(mock_hass, mock_coordinator, mock_strain_library) -> GrowAssistant
     return GrowAssistant(mock_hass, mock_coordinator, mock_strain_library)
 
 
-async def test_get_grow_advice_success(assistant: GrowAssistant, mock_hass: MagicMock):
+async def test_get_grow_advice_success(
+    assistant: GrowAssistant, mock_hass: MagicMock
+) -> None:
     """Test getting grow advice successfully."""
     with patch("homeassistant.components.conversation.async_converse") as mock_converse:
         mock_result = MagicMock()

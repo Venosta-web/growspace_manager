@@ -266,7 +266,7 @@ async def test_service_wrapper_error_handling(
         patch(
             "custom_components.growspace_manager.services.growspace.handle_remove_growspace",
             side_effect=GrowspaceError("Test error"),
-        ) as mock_handle_remove,
+        ) as mock_handle_remove,  # noqa: F841
         patch(
             "homeassistant.config_entries.ConfigEntries.async_entries",
             return_value=[mock_config_entry],
