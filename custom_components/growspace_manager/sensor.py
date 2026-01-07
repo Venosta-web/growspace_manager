@@ -647,11 +647,8 @@ class GrowspaceOverviewSensor(CoordinatorEntity[GrowspaceCoordinator], SensorEnt
 
     async def _handle_sensor_update(self, event) -> None:
         """Handle updates from tracked environment sensors."""
-        async with self.coordinator._lock:
-            # Invalidate cache for this growspace only
-            self.coordinator._invalidate_cache(self.growspace_id)
-            # Force re-serialization
-            self.coordinator.update_data_property()
+        # Use the public thread-safe method to refresh growspace data
+        await self.coordinator.async_refresh_growspace_data(self.growspace_id)
         # Update our state
         self.async_write_ha_state()
 
