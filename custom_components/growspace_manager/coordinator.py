@@ -1505,7 +1505,15 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
         self._invalidate_cache(plant.growspace_id)
 
         # Build reasons for the event
-        reasons = [f"Watered with {amount}L"]
+        reasons = []
+
+        # Add Plant ID info
+        plant_info = f"Plant: {plant.strain}"
+        if plant.phenotype:
+            plant_info += f" ({plant.phenotype})"
+        reasons.append(plant_info)
+
+        reasons.append(f"Watered with {amount}L")
         if preset_name:
             reasons.append(f"Preset: {preset_name}")
 

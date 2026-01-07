@@ -130,6 +130,7 @@ class TestAsyncWaterPlant:
         event = watering_coordinator.events["test_gs"][0]
         assert event.sensor_type == "irrigation"
         assert event.category == "environmental"
+        assert "Plant: Test Strain (Phenotype A)" in event.reasons
         assert "Watered with 1.0L" in event.reasons
 
     @pytest.mark.asyncio
