@@ -359,3 +359,23 @@ SET_DEHUMIDIFIER_CONTROL_SCHEMA = vol.Schema(
         vol.Required("enabled"): bool,
     }
 )
+
+# --- Manual Watering Service Schemas ---
+
+WATER_PLANT_SCHEMA = vol.Schema(
+    {
+        vol.Required(ATTR_PLANT_ID): str,
+        vol.Required("amount"): vol.All(vol.Coerce(float), vol.Range(min=0.0)),
+        vol.Optional("nutrients"): vol.Schema({str: vol.Coerce(float)}),
+    }
+)
+
+WATER_GROWSPACE_SCHEMA = vol.Schema(
+    {
+        vol.Required(ATTR_GROWSPACE_ID): vol.All(str, valid_growspace_id),
+        vol.Required("amount_per_plant"): vol.All(
+            vol.Coerce(float), vol.Range(min=0.0)
+        ),
+        vol.Optional("nutrients"): vol.Schema({str: vol.Coerce(float)}),
+    }
+)

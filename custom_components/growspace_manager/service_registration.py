@@ -55,11 +55,14 @@ from .services import (
     UPDATE_GROWSPACE_SCHEMA,
     UPDATE_PLANT_SCHEMA,
     UPDATE_STRAIN_META_SCHEMA,
+    WATER_GROWSPACE_SCHEMA,
+    WATER_PLANT_SCHEMA,
     ai_assistant,
     debug,
     environment,
     growspace,
     irrigation,
+    irrigation_watering,
     plant,
     strain_library,
 )
@@ -309,6 +312,16 @@ async def register_services(
             GrowspaceService.GET_STRAIN_LIBRARY,
             wrap(strain_library.handle_get_strain_library, True),
             None,
+        ),
+        (
+            GrowspaceService.WATER_PLANT,
+            wrap(irrigation_watering.handle_water_plant, False),
+            WATER_PLANT_SCHEMA,
+        ),
+        (
+            GrowspaceService.WATER_GROWSPACE,
+            wrap(irrigation_watering.handle_water_growspace, False),
+            WATER_GROWSPACE_SCHEMA,
         ),
     ]
 

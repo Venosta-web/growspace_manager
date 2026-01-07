@@ -36,8 +36,10 @@ from ..schemas import (
     UPDATE_GROWSPACE_SCHEMA,
     UPDATE_PLANT_SCHEMA,
     UPDATE_STRAIN_META_SCHEMA,
+    WATER_GROWSPACE_SCHEMA,
+    WATER_PLANT_SCHEMA,
 )
-from . import debug, plant, strain_library
+from . import debug, irrigation_watering, plant, strain_library
 
 __all__ = [
     "ADD_DRAIN_TIME_SCHEMA",
@@ -73,7 +75,10 @@ __all__ = [
     "UPDATE_PLANT_SCHEMA",
     "UPDATE_STRAIN_META_SCHEMA",
     "UPDATE_GROWSPACE_SCHEMA",
+    "WATER_GROWSPACE_SCHEMA",
+    "WATER_PLANT_SCHEMA",
     "debug",
+    "irrigation_watering",
     "plant",
     "strain_library",
 ]

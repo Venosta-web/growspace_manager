@@ -28,6 +28,15 @@ class DehumidifierRange(TypedDict):
 
 type DehumidifierThresholds = dict[str, dict[str, DehumidifierRange]]
 type BayesianOptions = dict[str, Any]
+type NutrientMap = dict[str, float]
+
+
+class NutrientEntry(TypedDict):
+    """A single nutrient entry with concentration info."""
+
+    name: str
+    amount_per_liter: float
+    total_amount: float
 
 
 @dataclass(slots=True)
@@ -205,8 +214,19 @@ class Plant(BaseModel):
     updated_at: str | None = None
     transition_date: str | None = None
     source_mother: str | None = None
+    last_watered: str | None = None
 
     _MIGRATIONS = {"created": "created_at", "updated": "updated_at"}
+
+    def get_days_since_watering(self) -> int | None:
+        """Calculate days since last watering.
+
+        Returns:
+            Number of days since last watered, or None if never watered.
+        """
+        if self.last_watered:
+            return calculate_days_since(self.last_watered)
+        return None
 
     def get_days_in_stage(self, stage_name: str) -> int:
         """Calculate days spent in a specific stage."""

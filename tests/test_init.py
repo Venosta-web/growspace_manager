@@ -66,6 +66,8 @@ from custom_components.growspace_manager.schemas import (
     UPDATE_GROWSPACE_SCHEMA,
     UPDATE_PLANT_SCHEMA,
     UPDATE_STRAIN_META_SCHEMA,
+    WATER_GROWSPACE_SCHEMA,
+    WATER_PLANT_SCHEMA,
 )
 from custom_components.growspace_manager.service_registration import register_services
 
@@ -234,6 +236,8 @@ async def test_register_services(mock_hass, mock_strain_library_for_services) ->
         "ask_grow_advice": ASK_GROW_ADVICE_SCHEMA,
         "analyze_all_growspaces": ANALYZE_ALL_GROWSPACES_SCHEMA,
         "strain_recommendation": STRAIN_RECOMMENDATION_SCHEMA,
+        "water_plant": WATER_PLANT_SCHEMA,
+        "water_growspace": WATER_GROWSPACE_SCHEMA,
     }
 
     # Verify call count

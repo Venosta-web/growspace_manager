@@ -79,6 +79,11 @@ ATTR_ROWS = "rows"
 ATTR_PLANTS_PER_ROW = "plants_per_row"
 ATTR_NOTIFICATION_TARGET = "notification_target"
 
+# Watering Attributes
+ATTR_WATER_AMOUNT = "amount"
+ATTR_NUTRIENTS = "nutrients"
+ATTR_AMOUNT_PER_PLANT = "amount_per_plant"
+
 # Events
 # Icons
 ICON_NOTIFICATION = "mdi:bell"
@@ -182,6 +187,9 @@ class GrowspaceService(StrEnum):
     DEBUG_CLEANUP_LEGACY = "debug_cleanup_legacy"
     TEST_NOTIFICATION = "test_notification"
     GET_STRAIN_LIBRARY = "get_strain_library"
+    # Watering Services
+    WATER_PLANT = "water_plant"
+    WATER_GROWSPACE = "water_growspace"
 
 
 # Plant stages

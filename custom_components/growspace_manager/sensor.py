@@ -763,6 +763,10 @@ class PlantEntity(SensorEntity):
         attributes["veg_week"] = plant.get_week_in_stage("veg")
         attributes["flower_week"] = plant.get_week_in_stage("flower")
 
+        # Watering attributes
+        attributes["last_watered"] = plant.last_watered
+        attributes["days_since_last_watering"] = plant.get_days_since_watering()
+
         return attributes
 
     @override

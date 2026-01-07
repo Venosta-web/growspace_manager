@@ -1449,6 +1449,98 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
         await self.async_transition_plant_stage(plant_id, PlantStage.CURE, date.today())
         return self.plants[plant_id]
 
+    # =============================================================================
+    # MANUAL WATERING METHODS
+    # =============================================================================
+
+    async def async_water_plant(
+        self,
+        plant_id: str,
+        amount: float,
+        nutrients: dict[str, float] | None = None,
+    ) -> Plant:
+        """Record a watering event for a single plant.
+
+        Args:
+            plant_id: The ID of the plant to water.
+            amount: The amount of water in liters.
+            nutrients: Optional dict of nutrient name to concentration (ml/L).
+
+        Returns:
+            The updated Plant object.
+        """
+        self.validator.validate_plant_exists(plant_id)
+        plant = self.plants[plant_id]
+
+        # Update plant's last_watered timestamp
+        now_iso = datetime.now().isoformat()
+        plant.last_watered = now_iso
+
+        # Invalidate cache for the growspace
+        self._invalidate_cache(plant.growspace_id)
+
+        # Build reasons for the event
+        reasons = [f"Watered with {amount}L"]
+        if nutrients:
+            nutrient_str = ", ".join(
+                f"{name}: {conc}ml/L" for name, conc in nutrients.items()
+            )
+            reasons.append(f"Nutrients: {nutrient_str}")
+
+        # Create a GrowspaceEvent for the logbook
+        event = GrowspaceEvent(
+            sensor_type="irrigation",
+            growspace_id=plant.growspace_id,
+            start_time=now_iso,
+            end_time=now_iso,
+            duration_sec=0,
+            severity=0.0,
+            category="environmental",
+            reasons=reasons,
+        )
+        self.add_event(plant.growspace_id, event)
+
+        _LOGGER.info(
+            "Watered plant %s (%s) with %sL%s",
+            plant_id,
+            plant.strain,
+            amount,
+            f" + nutrients: {nutrients}" if nutrients else "",
+        )
+
+        return plant
+
+    async def async_water_growspace(
+        self,
+        growspace_id: str,
+        amount_per_plant: float,
+        nutrients: dict[str, float] | None = None,
+    ) -> int:
+        """Record a watering event for all plants in a growspace.
+
+        Args:
+            growspace_id: The ID of the growspace to water.
+            amount_per_plant: The amount of water per plant in liters.
+            nutrients: Optional dict of nutrient name to concentration (ml/L).
+
+        Returns:
+            The number of plants watered.
+        """
+        self.validator.validate_growspace_exists(growspace_id)
+        plants = self.get_growspace_plants(growspace_id)
+
+        for plant in plants:
+            await self.async_water_plant(plant.plant_id, amount_per_plant, nutrients)
+
+        _LOGGER.info(
+            "Watered %d plants in growspace %s with %sL each",
+            len(plants),
+            growspace_id,
+            amount_per_plant,
+        )
+
+        return len(plants)
+
     async def async_harvest(self, plant_id: str) -> Plant:
         """Mark a plant as harvested, transitioning it to the 'dry' stage today."""
         return await self.async_start_drying(plant_id)
