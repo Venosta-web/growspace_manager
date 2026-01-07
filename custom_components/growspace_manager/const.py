@@ -196,6 +196,26 @@ class GrowspaceService(StrEnum):
     # Nutrient Preset Services
     SAVE_NUTRIENT_PRESET = "save_nutrient_preset"
     REMOVE_NUTRIENT_PRESET = "remove_nutrient_preset"
+    # Training Services
+    LOG_TRAINING_EVENT = "log_training_event"
+
+
+class TrainingTechnique(StrEnum):
+    """Horticultural training techniques."""
+
+    TOPPING = "topping"
+    FIM = "fim"
+    LST = "lst"
+    SUPER_CROPPING = "super_cropping"
+    SCROG = "scrog"
+    DEFOLIATING = "defoliating"
+    LOLLIPOPPING = "lollipopping"
+
+
+# Training Attributes
+ATTR_TECHNIQUE = "technique"
+ATTR_NOTES = "notes"
+CATEGORY_TRAINING = "training"
 
 
 # Plant stages

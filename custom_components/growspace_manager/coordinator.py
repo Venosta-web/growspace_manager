@@ -21,6 +21,7 @@ from .const import (
     CONF_VPD_SENSOR,
     DOMAIN,
     SPECIAL_GROWSPACES,
+    CATEGORY_TRAINING,
     PlantStage,
 )
 from .dehumidifier_coordinator import DehumidifierCoordinator
@@ -1549,6 +1550,87 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
         )
 
         return plant
+
+    async def async_log_training_event(
+        self,
+        growspace_id: str | None,
+        technique: str,
+        notes: str | None = None,
+        plant_ids: list[str] | None = None,
+    ) -> None:
+        """Log a training event for specific plants or an entire growspace."""
+        _LOGGER.error(
+            "DEBUG: async_log_training_event called with gid=%s (%s), pids=%s (%s), technique=%s, notes=%s",
+            growspace_id,
+            type(growspace_id),
+            plant_ids,
+            type(plant_ids),
+            technique,
+            notes,
+        )
+        if plant_ids:
+            _LOGGER.error("DEBUG: plant_ids[0] type: %s", type(plant_ids[0]))
+
+        # Determine target plants
+        target_plants: list[Plant] = []
+
+        if plant_ids:
+            # Filter valid plants by ID
+            for pid in plant_ids:
+                if pid in self.plants:
+                    target_plants.append(self.plants[pid])
+        elif growspace_id:
+            # All plants in the growspace
+            target_plants = self.get_growspace_plants(growspace_id)
+        else:
+            raise ValueError("Either growspace_id or plant_ids must be provided.")
+
+        now = dt_util.now().isoformat()
+
+        # DEBUG: Check likely culprit
+        try:
+            growspace_ids = {p.growspace_id for p in target_plants}
+        except TypeError as e:
+            _LOGGER.error(
+                "DEBUG: Error creating growspace_ids set from target_plants: %s", e
+            )
+            raise
+
+        # Update plants
+        for plant in target_plants:
+            plant.last_training_technique = technique
+            plant.last_trained = now
+
+        # Create event(s)
+        if not target_plants and growspace_id:
+            growspace_ids = {growspace_id}
+
+        for gid in growspace_ids:
+            reasons = [f"Technique: {technique.replace('_', ' ').title()}"]
+            if notes:
+                reasons.append(f"Notes: {notes}")
+
+            # List affected plants in reasons if subset
+            if plant_ids and len(plant_ids) < len(self.get_growspace_plants(gid)):
+                affected_names = [
+                    p.strain for p in target_plants if p.growspace_id == gid
+                ]
+                if affected_names:
+                    reasons.append(f"Plants: {', '.join(affected_names)}")
+
+            event = GrowspaceEvent(
+                sensor_type=technique,
+                growspace_id=gid,
+                start_time=now,
+                end_time=now,
+                duration_sec=0,
+                severity=0.5,  # Moderate severity for training
+                category=CATEGORY_TRAINING,
+                reasons=reasons,
+            )
+            self.add_event(gid, event)
+
+        await self.async_save()
 
     async def async_water_growspace(
         self,

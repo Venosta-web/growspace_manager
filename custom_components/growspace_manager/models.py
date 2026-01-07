@@ -225,6 +225,8 @@ class Plant(BaseModel):
     transition_date: str | None = None
     source_mother: str | None = None
     last_watered: str | None = None
+    last_trained: str | None = None
+    last_training_technique: str | None = None
 
     _MIGRATIONS = {"created": "created_at", "updated": "updated_at"}
 

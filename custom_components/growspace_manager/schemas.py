@@ -1,4 +1,5 @@
 import voluptuous as vol
+from homeassistant.helpers import config_validation as cv
 
 from .const import (
     ATTR_COL,
@@ -8,6 +9,8 @@ from .const import (
     ATTR_PHENOTYPE,
     ATTR_PLANT_ID,
     ATTR_PRESET_ID,
+    ATTR_TECHNIQUE,
+    ATTR_NOTES,
     ATTR_ROW,
     ATTR_STAGE,
     ATTR_STRAIN,
@@ -76,6 +79,15 @@ ADD_PLANT_SCHEMA = vol.Schema(
         vol.Required(ATTR_COL): vol.All(int, vol.Range(min=1)),
         vol.Optional(ATTR_PHENOTYPE): str,
         **_PLANT_DATE_FIELDS,
+    }
+)
+
+LOG_TRAINING_EVENT_SCHEMA = vol.Schema(
+    {
+        vol.Required(ATTR_TECHNIQUE): cv.string,
+        vol.Optional(ATTR_GROWSPACE_ID): cv.string,
+        vol.Optional(ATTR_PLANT_ID): vol.All(cv.ensure_list, [cv.string]),
+        vol.Optional(ATTR_NOTES): cv.string,
     }
 )
 

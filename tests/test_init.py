@@ -58,6 +58,7 @@ from custom_components.growspace_manager.schemas import (
     REMOVE_NUTRIENT_PRESET_SCHEMA,
     REMOVE_PLANT_SCHEMA,
     REMOVE_STRAIN_SCHEMA,
+    LOG_TRAINING_EVENT_SCHEMA,
     SAVE_NUTRIENT_PRESET_SCHEMA,
     SET_DEHUMIDIFIER_CONTROL_SCHEMA,
     SET_IRRIGATION_SETTINGS_SCHEMA,
@@ -242,6 +243,7 @@ async def test_register_services(mock_hass, mock_strain_library_for_services) ->
         "water_growspace": WATER_GROWSPACE_SCHEMA,
         "save_nutrient_preset": SAVE_NUTRIENT_PRESET_SCHEMA,
         "remove_nutrient_preset": REMOVE_NUTRIENT_PRESET_SCHEMA,
+        "log_training_event": LOG_TRAINING_EVENT_SCHEMA,
     }
 
     # Verify call count

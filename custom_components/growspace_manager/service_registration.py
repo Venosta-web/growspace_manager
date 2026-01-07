@@ -21,6 +21,9 @@ from .const import (
 )
 from .coordinator import GrowspaceCoordinator
 from .exceptions import GrowspaceError
+from .schemas import (
+    LOG_TRAINING_EVENT_SCHEMA,
+)
 from .services import (
     ADD_DRAIN_TIME_SCHEMA,
     ADD_GROWSPACE_SCHEMA,
@@ -68,6 +71,7 @@ from .services import (
     nutrient_presets,
     plant,
     strain_library,
+    training,
 )
 from .services.strain_library import StrainLibrary
 
@@ -102,7 +106,17 @@ def get_coordinator_for_call(
     for key, attr in id_lookups:
         if val := data.get(key):
             for coordinator in coordinators:
-                if val in getattr(coordinator, attr):
+                target_collection = getattr(coordinator, attr)
+                # Handle list of IDs (e.g. plant_ids)
+                if isinstance(val, list):
+                    # Check if ANY of the IDs in the list belong to this coordinator.
+                    # This assumes that a request with multiple IDs is intended for a single coordinator
+                    # or that we just need to find *one* valid coordinator to handle it.
+                    # Since coordinators are usually per-entry/config, normally plants are in one place.
+                    if any(item in target_collection for item in val):
+                        return coordinator
+                # Handle single ID
+                elif val in target_collection:
                     return coordinator
 
     # 3. Fallback: If only one config entry exists, use it.
@@ -335,6 +349,11 @@ async def register_services(
             GrowspaceService.REMOVE_NUTRIENT_PRESET,
             wrap(nutrient_presets.handle_remove_nutrient_preset, False),
             REMOVE_NUTRIENT_PRESET_SCHEMA,
+        ),
+        (
+            GrowspaceService.LOG_TRAINING_EVENT,
+            wrap(training.handle_log_training_event, False),
+            LOG_TRAINING_EVENT_SCHEMA,
         ),
     ]
 

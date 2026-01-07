@@ -279,3 +279,24 @@ async def test_service_wrapper_error_handling(
         call = ServiceCall(DOMAIN, "remove_growspace", {})
         with pytest.raises(ServiceValidationError, match="Test error"):
             await captured_wrapper(call)
+
+
+async def test_get_coordinator_for_call_by_plant_id_list(
+    hass: HomeAssistant, mock_config_entry, mock_coordinator
+) -> None:
+    """Test getting coordinator by a list of plant IDs."""
+    mock_coordinator.plants = {"plant1": {}, "plant2": {}}
+
+    with patch(
+        "homeassistant.config_entries.ConfigEntries.async_entries",
+        return_value=[mock_config_entry],
+    ):
+        # Case 1: List with all valid IDs
+        call = ServiceCall(DOMAIN, "test", {"plant_id": ["plant1", "plant2"]})
+        coordinator = get_coordinator_for_call(hass, call)
+        assert coordinator == mock_coordinator
+
+        # Case 2: List with subset valid IDs
+        call = ServiceCall(DOMAIN, "test", {"plant_id": ["plant1", "non_existent"]})
+        coordinator = get_coordinator_for_call(hass, call)
+        assert coordinator == mock_coordinator

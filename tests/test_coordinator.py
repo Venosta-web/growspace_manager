@@ -2721,7 +2721,7 @@ async def test_get_growspace_data(mock_coordinator: GrowspaceCoordinator) -> Non
 
     # 1. Specific valid ID
     data = mock_coordinator.get_growspace_data("gs1")
-    assert data == {"id": "serialized"}
+    assert data == {"id": "serialized", "nutrient_presets": {}}
     mock_coordinator.serializer.serialize_growspace.assert_called()
 
     # 2. Specific invalid ID

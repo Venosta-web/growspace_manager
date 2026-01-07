@@ -45,6 +45,7 @@ from . import (
     debug,
     irrigation_watering,
     nutrient_presets,
+    training,
     plant,
     strain_library,
 )
@@ -92,4 +93,6 @@ __all__ = [
     "nutrient_presets",
     "plant",
     "strain_library",
+    "handle_log_training_event",
+    "training",
 ]
