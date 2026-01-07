@@ -580,6 +580,16 @@ class GrowspaceOverviewSensor(CoordinatorEntity[GrowspaceCoordinator], SensorEnt
     _attr_translation_key = "overview"
     _attr_native_unit_of_measurement = None
 
+    # Environment sensor attributes to track for real-time updates
+    TRACKABLE_ENVIRONMENT_ATTRS: tuple[str, ...] = (
+        "soil_moisture_sensor",
+        "vpd_sensor",
+        "dehumidifier_entity",
+        "exhaust_fan_entity",
+        "humidifier_entity",
+        "circulation_fan_entity",
+    )
+
     def __init__(
         self, coordinator: GrowspaceCoordinator, growspace_id: str, growspace: Growspace
     ) -> None:
@@ -629,15 +639,7 @@ class GrowspaceOverviewSensor(CoordinatorEntity[GrowspaceCoordinator], SensorEnt
         sensors: list[str] = []
 
         # Add all configured sensors that have dynamic values we display
-        trackable_attrs = [
-            "soil_moisture_sensor",
-            "vpd_sensor",
-            "dehumidifier_entity",
-            "exhaust_fan_entity",
-            "humidifier_entity",
-            "circulation_fan_entity",
-        ]
-        for attr in trackable_attrs:
+        for attr in self.TRACKABLE_ENVIRONMENT_ATTRS:
             if sensor_id := getattr(env_config, attr, None):
                 sensors.append(sensor_id)
 
@@ -645,10 +647,11 @@ class GrowspaceOverviewSensor(CoordinatorEntity[GrowspaceCoordinator], SensorEnt
 
     async def _handle_sensor_update(self, event) -> None:
         """Handle updates from tracked environment sensors."""
-        # Invalidate cache for this growspace only
-        self.coordinator._invalidate_cache(self.growspace_id)
-        # Force re-serialization
-        self.coordinator.update_data_property()
+        async with self.coordinator._lock:
+            # Invalidate cache for this growspace only
+            self.coordinator._invalidate_cache(self.growspace_id)
+            # Force re-serialization
+            self.coordinator.update_data_property()
         # Update our state
         self.async_write_ha_state()
 
