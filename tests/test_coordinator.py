@@ -2883,7 +2883,7 @@ async def test_get_growspace_grid(mock_coordinator: GrowspaceCoordinator) -> Non
     assert found
 
 
-async def test_coverage_init_with_empty_data(hass):
+async def test_coverage_init_with_empty_data(hass: HomeAssistant) -> None:
     """Test initialization with None data (line 153)."""
     entry = MockConfigEntry(domain=DOMAIN, data={})
     entry.add_to_hass(hass)
@@ -2902,7 +2902,7 @@ async def test_coverage_init_with_empty_data(hass):
         assert coord.growspaces == {}
 
 
-async def test_coverage_load_plant_object_directly(coordinator):
+async def test_coverage_load_plant_object_directly(coordinator) -> None:
     """Test loading a Plant object directly (line 196)."""
     plant = Plant(
         plant_id="test_plant",
@@ -2918,7 +2918,7 @@ async def test_coverage_load_plant_object_directly(coordinator):
     assert coordinator.plants["test_plant"] == plant
 
 
-async def test_coverage_load_growspace_object_directly(coordinator):
+async def test_coverage_load_growspace_object_directly(coordinator) -> None:
     """Test loading a Growspace object directly (line 214)."""
     growspace = Growspace(
         id="test_gs",
@@ -2933,7 +2933,7 @@ async def test_coverage_load_growspace_object_directly(coordinator):
     assert coordinator.growspaces["test_gs"] == growspace
 
 
-async def test_coverage_event_rolling_buffer_limit(coordinator):
+async def test_coverage_event_rolling_buffer_limit(coordinator) -> None:
     """Test event buffer enforces 50 event limit (lines 323-335)."""
     growspace_id = "test_gs"
 
@@ -2961,7 +2961,7 @@ async def test_coverage_event_rolling_buffer_limit(coordinator):
     assert coordinator.events[growspace_id][-1].reasons == ["reason 54"]
 
 
-async def test_coverage_migrate_plant_image_paths(coordinator):
+async def test_coverage_migrate_plant_image_paths(coordinator) -> None:
     """Test migrate_plant_image_paths method (lines 599-622)."""
     # Create plant with .jpg image path
     plant_with_jpg = Plant(
@@ -3022,7 +3022,7 @@ async def test_coverage_migrate_plant_image_paths(coordinator):
     assert coordinator.plants["plant4"].phenotype.get("image_path") is None
 
 
-async def test_coverage_load_plants_from_dict(coordinator):
+async def test_coverage_load_plants_from_dict(coordinator) -> None:
     """Test loading plants from dictionary (line 196)."""
     plant_data = {
         "test_plant": {
@@ -3042,7 +3042,7 @@ async def test_coverage_load_plants_from_dict(coordinator):
     assert coordinator.plants["test_plant"].plant_id == "test_plant"
 
 
-async def test_coverage_ensure_special_growspace_type_update(coordinator):
+async def test_coverage_ensure_special_growspace_type_update(coordinator) -> None:
     """Test growspace type change (line 484)."""
     # Create a growspace with wrong type
     growspace = Growspace(
@@ -3068,7 +3068,7 @@ async def test_coverage_ensure_special_growspace_type_update(coordinator):
     assert result == "dry"
 
 
-async def test_coverage_async_commit_with_irrigation_coordinators(coordinator):
+async def test_coverage_async_commit_with_irrigation_coordinators(coordinator) -> None:
     """Test async_commit refreshes irrigation coordinators (lines 569-575)."""
     # Setup growspaces
     coordinator.growspaces = {
@@ -3097,7 +3097,7 @@ async def test_coverage_async_commit_with_irrigation_coordinators(coordinator):
     coordinator.config_entry.async_create_background_task.assert_called()
 
 
-async def test_coverage_ensure_calculated_sensors_no_env_config(coordinator):
+async def test_coverage_ensure_calculated_sensors_no_env_config(coordinator) -> None:
     """Test ensure_calculated_sensors with no env_config (line 654)."""
     # Create growspace without environment_config
     growspace = Growspace(

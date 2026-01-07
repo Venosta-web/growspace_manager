@@ -459,16 +459,26 @@ async def _get_statistics_data(
         for entity_id in entity_ids:
             if entity_id in stats_data:
                 points = stats_data[entity_id]
-                result[entity_id] = [
-                    {
-                        "s": str(p.get("mean") or p.get("state", "")),
-                        "lu": dt_util.utc_from_timestamp(p["start"]).isoformat()
-                        if isinstance(p["start"], (int, float))
-                        else p["start"],
-                    }
-                    for p in points
-                    if p.get("mean") is not None or p.get("state") is not None
-                ]
+                # Fix: Use explicit None check to correctly handle mean=0
+                # (0 is falsy in Python, so `mean or state` would incorrectly
+                # fall back when mean is zero)
+                result[entity_id] = []
+                for p in points:
+                    val = p.get("mean")
+                    if val is None:
+                        val = p.get("state")
+
+                    if val is not None:
+                        result[entity_id].append(
+                            {
+                                "s": str(val),
+                                "lu": (
+                                    dt_util.utc_from_timestamp(p["start"]).isoformat()
+                                    if isinstance(p["start"], (int, float))
+                                    else p["start"]
+                                ),
+                            }
+                        )
             else:
                 result[entity_id] = []
 

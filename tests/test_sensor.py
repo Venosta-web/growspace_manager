@@ -905,7 +905,7 @@ async def test_sensor_coverage_gaps(mock_coordinator) -> None:
 
 
 @pytest.mark.asyncio
-async def test_update_growspace_entities_removal_registry(mock_coordinator):
+async def test_update_growspace_entities_removal_registry(mock_coordinator) -> None:
     """Test removal of entities from registry in _update_growspace_entities."""
     hass = MagicMock()
     config_entry = Mock()
@@ -936,7 +936,7 @@ async def test_update_growspace_entities_removal_registry(mock_coordinator):
 
 
 @pytest.mark.asyncio
-async def test_async_create_derivative_sensors_object_config(mock_coordinator):
+async def test_async_create_derivative_sensors_object_config(mock_coordinator) -> None:
     """Test _async_create_derivative_sensors with object-based config."""
     hass = MagicMock()
     config_entry = Mock()
@@ -1219,7 +1219,7 @@ def test_growspace_overview_sensor_trackable_attrs_constant() -> None:
     )
 
     assert hasattr(GrowspaceOverviewSensor, "TRACKABLE_ENVIRONMENT_ATTRS")
-    assert GrowspaceOverviewSensor.TRACKABLE_ENVIRONMENT_ATTRS == expected_attrs
+    assert expected_attrs == GrowspaceOverviewSensor.TRACKABLE_ENVIRONMENT_ATTRS
 
 
 def test_growspace_overview_sensor_get_trackable_sensors_missing_growspace(
