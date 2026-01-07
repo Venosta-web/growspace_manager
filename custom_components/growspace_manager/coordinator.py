@@ -2,37 +2,38 @@
 
 from __future__ import annotations
 
-from dataclasses import asdict
-from .models import Plant, Growspace
-from .utils import (
-    format_date,
-    find_first_free_position,
-    generate_growspace_grid,
-    VPDCalculator,
-    parse_date_field as util_parse_date_field,
-)
-from .strain_library import StrainLibrary
-from .const import (
-    STORAGE_KEY,
-    PLANT_STAGES,
-    DATE_FIELDS,
-    DOMAIN,
-    STORAGE_VERSION,
-    SPECIAL_GROWSPACES,
-)
 import logging
 import uuid
-from datetime import datetime, date
-from typing import TYPE_CHECKING, Any, Optional
+from dataclasses import asdict
+from datetime import date, datetime
+from typing import Any
 
 from dateutil import parser
 from homeassistant.helpers import (
-    device_registry as dr,
     entity_registry as er,
 )
 from homeassistant.helpers.storage import Store
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 
+from .const import (
+    DATE_FIELDS,
+    DOMAIN,
+    PLANT_STAGES,
+    SPECIAL_GROWSPACES,
+    STORAGE_KEY,
+    STORAGE_VERSION,
+)
+from .models import Growspace, Plant
+from .strain_library import StrainLibrary
+from .utils import (
+    VPDCalculator,
+    find_first_free_position,
+    format_date,
+    generate_growspace_grid,
+)
+from .utils import (
+    parse_date_field as util_parse_date_field,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -417,7 +418,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
             ValueError: If the row or column is outside the defined grid size.
         """
         growspace = self.growspaces[growspace_id]
-        
+
         # Skip boundary check for special growspaces
         if growspace_id in ["mother", "clone", "dry", "cure"]:
             return
@@ -759,7 +760,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
         self._notifications_enabled = data.get("notifications_enabled", {})
 
         # Ensure all growspaces have a notification enabled state (default True)
-        for growspace_id in self.growspaces.keys():
+        for growspace_id in self.growspaces:
             if growspace_id not in self._notifications_enabled:
                 self._notifications_enabled[growspace_id] = True
 
@@ -2059,7 +2060,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
         start_date = getattr(plant, f"{stage}_start", None)
 
         end_date = None
-        if stage == "seedling" or stage == "clone":
+        if stage in {"seedling", "clone"}:
             end_date = getattr(plant, "veg_start", None)
         elif stage == "veg":
             end_date = getattr(plant, "flower_start", None)
@@ -2169,6 +2170,16 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
         if not notifications:
             return
 
+        # ⚡ Bolt Optimization: Pre-group plants by growspace to avoid repeatedly iterating
+        # over all plants in self.get_growspace_plants() inside the nested loops.
+        # This reduces complexity from O(Notifications * Growspaces * Total_Plants)
+        # to O(Total_Plants + Notifications * Growspaces * Plants_In_Growspace).
+        plants_by_growspace = {}
+        for plant in self.plants.values():
+            if plant.growspace_id not in plants_by_growspace:
+                plants_by_growspace[plant.growspace_id] = []
+            plants_by_growspace[plant.growspace_id].append(plant)
+
         for notification in notifications:
             trigger_type = notification["trigger_type"]  # 'veg' or 'flower'
             day_to_trigger = int(notification["day"])
@@ -2181,7 +2192,8 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
                 if not growspace:
                     continue
 
-                plants = self.get_growspace_plants(gs_id)
+                # Use pre-calculated list or empty list if no plants in growspace
+                plants = plants_by_growspace.get(gs_id, [])
                 for plant in plants:
                     days_in_stage = self.calculate_days_in_stage(plant, trigger_type)
 
