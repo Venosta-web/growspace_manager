@@ -439,9 +439,8 @@ async def _get_statistics_data(
         return None  # Statistics API doesn't support sub-hourly
 
     try:
-        # Fetch statistics from the recorder (runs in executor automatically)
-        stats_data = await get_instance(hass).async_add_executor_job(
-            recorder_stats.statistics_during_period,
+        # Fetch statistics from the recorder (native async method)
+        stats_data = await recorder_stats.async_statistics_during_period(
             hass,
             start_time,
             end_time,

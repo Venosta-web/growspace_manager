@@ -1108,8 +1108,10 @@ async def test_websocket_history_stats_uses_statistics_api_for_long_intervals(
 
     with (
         patch(
-            "custom_components.growspace_manager.recorder_stats.statistics_during_period",
+            "custom_components.growspace_manager.recorder_stats.async_statistics_during_period",
+            new_callable=AsyncMock,
             return_value=stats_data,
+            create=True,
         ) as mock_stats,
         patch("custom_components.growspace_manager.get_instance") as mock_get_rec,
     ):
@@ -1155,8 +1157,10 @@ async def test_websocket_history_stats_falls_back_when_statistics_fails(
 
     with (
         patch(
-            "custom_components.growspace_manager.recorder_stats.statistics_during_period",
+            "custom_components.growspace_manager.recorder_stats.async_statistics_during_period",
+            new_callable=AsyncMock,
             side_effect=Exception("Statistics unavailable"),
+            create=True,
         ),
         patch(
             "homeassistant.components.recorder.history.get_significant_states",
@@ -1207,7 +1211,9 @@ async def test_websocket_history_stats_short_interval_uses_binary_search(
 
     with (
         patch(
-            "custom_components.growspace_manager.recorder_stats.statistics_during_period"
+            "custom_components.growspace_manager.recorder_stats.async_statistics_during_period",
+            new_callable=AsyncMock,
+            create=True,
         ) as mock_stats,
         patch(
             "homeassistant.components.recorder.history.get_significant_states",
@@ -1258,8 +1264,10 @@ async def test_websocket_history_stats_uses_daily_period_for_large_intervals(
 
     with (
         patch(
-            "custom_components.growspace_manager.recorder_stats.statistics_during_period",
+            "custom_components.growspace_manager.recorder_stats.async_statistics_during_period",
+            new_callable=AsyncMock,
             return_value=stats_data,
+            create=True,
         ) as mock_stats,
         patch("custom_components.growspace_manager.get_instance") as mock_get_rec,
     ):
@@ -1303,8 +1311,10 @@ async def test_websocket_history_stats_statistics_with_state_instead_of_mean(
 
     with (
         patch(
-            "custom_components.growspace_manager.recorder_stats.statistics_during_period",
+            "custom_components.growspace_manager.recorder_stats.async_statistics_during_period",
+            new_callable=AsyncMock,
             return_value=stats_data,
+            create=True,
         ),
         patch("custom_components.growspace_manager.get_instance") as mock_get_rec,
     ):
@@ -1337,8 +1347,10 @@ async def test_websocket_history_stats_empty_statistics(hass: HomeAssistant) -> 
 
     with (
         patch(
-            "custom_components.growspace_manager.recorder_stats.statistics_during_period",
+            "custom_components.growspace_manager.recorder_stats.async_statistics_during_period",
+            new_callable=AsyncMock,
             return_value={},  # Empty result
+            create=True,
         ),
         patch(
             "homeassistant.components.recorder.history.get_significant_states",
