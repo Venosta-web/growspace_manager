@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import bisect
 import logging
 import pathlib
 import tempfile
@@ -13,6 +14,7 @@ from aiohttp import BodyPartReader, web
 from homeassistant.components import websocket_api
 from homeassistant.components.http import HomeAssistantView
 from homeassistant.components.recorder import get_instance, history
+from homeassistant.components.recorder import statistics as recorder_stats
 from homeassistant.config_entries import ConfigEntry, ConfigEntryState
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.exceptions import ServiceValidationError
@@ -378,12 +380,15 @@ SCHEMA_WS_GET_HISTORY_STATS = websocket_api.BASE_COMMAND_MESSAGE_SCHEMA.extend(
 
 
 async def websocket_get_history_stats(hass: HomeAssistant, connection, msg):
-    """Handle get history stats command with server-side downsampling."""
+    """Handle get history stats command with server-side optimization.
+
+    Uses Recorder Statistics API for long periods (pre-aggregated hourly data)
+    with fallback to optimized binary search downsampling for shorter periods.
+    """
     entity_ids = msg["entity_ids"]
     start_time_str = msg["start_time"]
     end_time_str = msg.get("end_time")
     interval = msg["interval_minutes"]
-    sig_changes = msg["significant_changes_only"]
 
     start_time = dt_util.parse_datetime(start_time_str)
     end_time = (
@@ -394,114 +399,164 @@ async def websocket_get_history_stats(hass: HomeAssistant, connection, msg):
         connection.send_error(msg["id"], "invalid_args", "Invalid start_time")
         return
 
+    try:
+        # For long intervals (>=60 min), use Recorder Statistics API (pre-aggregated)
+        # This is orders of magnitude faster than raw history + downsampling
+        if interval >= 60:
+            stats_result = await _get_statistics_data(
+                hass, entity_ids, start_time, end_time, interval
+            )
+            if stats_result:
+                connection.send_result(msg["id"], stats_result)
+                return
+
+        # Fallback: Use optimized binary search downsampling for short intervals
+        # or entities without statistics
+        result = await _get_history_with_binary_search_downsample(
+            hass, entity_ids, start_time, end_time, interval
+        )
+        connection.send_result(msg["id"], result)
+
+    except Exception as err:
+        _LOGGER.exception("Error handling websocket_get_history_stats")
+        connection.send_error(msg["id"], "unknown_error", str(err))
+
+
+async def _get_statistics_data(
+    hass: HomeAssistant,
+    entity_ids: list[str],
+    start_time,
+    end_time,
+    interval: int,
+) -> dict[str, list[dict]] | None:
+    """Fetch data using Recorder Statistics API (pre-aggregated hourly data)."""
+    # Determine the appropriate period based on interval
+    if interval >= 1440:  # 24 hours or more
+        period = "day"
+    elif interval >= 60:  # 1 hour or more
+        period = "hour"
+    else:
+        return None  # Statistics API doesn't support sub-hourly
+
+    try:
+        # Fetch statistics from the recorder (runs in executor automatically)
+        stats_data = await get_instance(hass).async_add_executor_job(
+            recorder_stats.statistics_during_period,
+            hass,
+            start_time,
+            end_time,
+            set(entity_ids),
+            period,
+            None,  # units (use default)
+            {"mean", "state"},  # types to fetch
+        )
+
+        if not stats_data:
+            return None
+
+        # Convert statistics format to our expected output format
+        result: dict[str, list[dict]] = {}
+        for entity_id in entity_ids:
+            if entity_id in stats_data:
+                points = stats_data[entity_id]
+                result[entity_id] = [
+                    {
+                        "s": str(p.get("mean") or p.get("state", "")),
+                        "lu": dt_util.utc_from_timestamp(p["start"]).isoformat()
+                        if isinstance(p["start"], (int, float))
+                        else p["start"],
+                    }
+                    for p in points
+                    if p.get("mean") is not None or p.get("state") is not None
+                ]
+            else:
+                result[entity_id] = []
+
+        return result
+
+    except Exception as err:
+        _LOGGER.debug("Statistics API failed, falling back to raw history: %s", err)
+        return None
+
+
+async def _get_history_with_binary_search_downsample(
+    hass: HomeAssistant,
+    entity_ids: list[str],
+    start_time,
+    end_time,
+    interval: int,
+) -> dict[str, list[dict]]:
+    """Fetch raw history and downsample using optimized binary search."""
+
     def _get_history():
-        # returns dict: { entity_id: [State] }
         return history.get_significant_states(
             hass,
             start_time,
             end_time,
             entity_ids,
-            significant_changes_only=sig_changes,
+            significant_changes_only=True,
             minimal_response=True,
             no_attributes=True,
         )
 
-    try:
-        # 1. Fetch Raw Data (in database executor)
-        history_data = await get_instance(hass).async_add_executor_job(_get_history)
+    # Fetch raw history data
+    history_data = await get_instance(hass).async_add_executor_job(_get_history)
 
-        # 2. Downsample (in executor to avoid blocking loop with large lists)
-        def _downsample():
-            result = {}
-            for entity_id, states in history_data.items():
-                if not states:
-                    result[entity_id] = []
-                    continue
+    def _downsample_with_binary_search():
+        result = {}
+        interval_delta = dt_util.dt.timedelta(minutes=interval)
 
-                downsampled = []
-                current_time = start_time
-                state_idx = 0
-                total_states = len(states)
+        for entity_id, states in history_data.items():
+            if not states:
+                result[entity_id] = []
+                continue
 
-                # Ensure we have a sorted list of relevant states
-                # (history.get_significant_states usually returns sorted)
+            # Pre-parse all timestamps once (O(n))
+            timestamps = []
+            parsed_states = []
+            for s in states:
+                if isinstance(s, dict):
+                    ts_raw = s.get("last_updated", s.get("last_changed"))
+                    ts = (
+                        dt_util.parse_datetime(ts_raw)
+                        if isinstance(ts_raw, str)
+                        else ts_raw
+                    )
+                    state_val = s.get("state")
+                else:
+                    ts = s.last_updated
+                    state_val = s.state
 
-                last_valid_state = None
+                if ts is not None:
+                    timestamps.append(ts)
+                    parsed_states.append(state_val)
 
-                # Iterate through time buckets
-                while current_time <= end_time:
-                    # Advance state_idx to current_time
-                    while state_idx < total_states:
-                        curr_s = states[state_idx]
-                        if isinstance(curr_s, dict):
-                            curr_lu_raw = curr_s.get(
-                                "last_updated", curr_s.get("last_changed")
-                            )
-                            # Parse ISO string to datetime if needed
-                            if isinstance(curr_lu_raw, str):
-                                try:
-                                    curr_lu = dt_util.parse_datetime(curr_lu_raw)
-                                except (ValueError, TypeError):
-                                    curr_lu = None
-                            else:
-                                curr_lu = curr_lu_raw
-                        else:
-                            curr_lu = curr_s.last_updated
+            if not timestamps:
+                result[entity_id] = []
+                continue
 
-                        if curr_lu and curr_lu < current_time:
-                            last_valid_state = curr_s
-                            state_idx += 1
-                        else:
-                            break
+            # Use binary search to find states at each time bucket (O(m log n))
+            downsampled = []
+            current_time = start_time
 
-                    # Capture the state at this timestamp (sample hold)
-                    # If we have a state at exactly current_time (handled by loop), or previous
-                    current_val = None
-                    if state_idx < total_states:
-                        curr_s = states[state_idx]
-                        if isinstance(curr_s, dict):
-                            curr_lu_raw = curr_s.get(
-                                "last_updated", curr_s.get("last_changed")
-                            )
-                            # Parse ISO string to datetime if needed
-                            if isinstance(curr_lu_raw, str):
-                                try:
-                                    curr_lu = dt_util.parse_datetime(curr_lu_raw)
-                                except (ValueError, TypeError):
-                                    curr_lu = None
-                            else:
-                                curr_lu = curr_lu_raw
-                        else:
-                            curr_lu = curr_s.last_updated
+            while current_time <= end_time:
+                # Binary search: find rightmost state at or before current_time
+                idx = bisect.bisect_right(timestamps, current_time) - 1
 
-                        if curr_lu == current_time:
-                            current_val = curr_s
+                if idx >= 0:
+                    state_val = parsed_states[idx]
+                    if state_val and state_val not in ("unknown", "unavailable"):
+                        downsampled.append(
+                            {
+                                "s": state_val,
+                                "lu": current_time.isoformat(),
+                            }
+                        )
 
-                    if not current_val:
-                        current_val = last_valid_state
+                current_time += interval_delta
 
-                    if current_val:
-                        if isinstance(current_val, dict):
-                            val_state = current_val.get("state")
-                        else:
-                            val_state = current_val.state
+            result[entity_id] = downsampled
 
-                        if val_state and val_state not in ("unknown", "unavailable"):
-                            downsampled.append(
-                                {
-                                    "s": val_state,
-                                    "lu": current_time.isoformat(),
-                                }
-                            )
+        return result
 
-                    current_time += dt_util.dt.timedelta(minutes=interval)
-
-                result[entity_id] = downsampled
-            return result
-
-        stats = await hass.async_add_executor_job(_downsample)
-        connection.send_result(msg["id"], stats)
-
-    except Exception as err:
-        _LOGGER.exception("Error handling websocket_get_history_stats")
-        connection.send_error(msg["id"], "unknown_error", str(err))
+    return await hass.async_add_executor_job(_downsample_with_binary_search)

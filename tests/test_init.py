@@ -1076,3 +1076,291 @@ async def test_strain_library_upload_cleanup_on_error(mock_hass) -> None:
         # Our mock executor side effect allows it.
 
         # We just want to ensure coverage hits lines 222-226
+
+
+# -----------------------------------------
+# Tests for Statistics API / History Optimization
+# -----------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_websocket_history_stats_uses_statistics_api_for_long_intervals(
+    hass: HomeAssistant,
+) -> None:
+    """Test that interval >= 60 uses the Statistics API instead of raw history."""
+    mock_connection = MagicMock()
+    mock_connection.send_result = MagicMock()
+    mock_connection.send_error = MagicMock()
+
+    start = dt_util.utcnow().replace(minute=0, second=0, microsecond=0)
+    end = start + dt_util.dt.timedelta(hours=6)
+
+    # Mock statistics data
+    stats_data = {
+        "sensor.test": [
+            {"start": start.timestamp(), "mean": 22.5},
+            {
+                "start": (start + dt_util.dt.timedelta(hours=1)).timestamp(),
+                "mean": 23.0,
+            },
+        ]
+    }
+
+    with (
+        patch(
+            "custom_components.growspace_manager.recorder_stats.statistics_during_period",
+            return_value=stats_data,
+        ) as mock_stats,
+        patch("custom_components.growspace_manager.get_instance") as mock_get_rec,
+    ):
+        mock_get_rec.return_value.async_add_executor_job = hass.async_add_executor_job
+
+        msg = {
+            "id": 1,
+            "type": f"{DOMAIN}/get_history_stats",
+            "entity_ids": ["sensor.test"],
+            "start_time": start.isoformat(),
+            "end_time": end.isoformat(),
+            "interval_minutes": 60,  # >= 60, should use stats API
+            "significant_changes_only": True,
+        }
+
+        await websocket_get_history_stats(hass, mock_connection, msg)
+
+        # Should use statistics API
+        mock_stats.assert_called_once()
+        mock_connection.send_result.assert_called_once()
+
+        result = mock_connection.send_result.call_args[0][1]
+        assert "sensor.test" in result
+        assert len(result["sensor.test"]) == 2
+        assert result["sensor.test"][0]["s"] == "22.5"
+
+
+@pytest.mark.asyncio
+async def test_websocket_history_stats_falls_back_when_statistics_fails(
+    hass: HomeAssistant,
+) -> None:
+    """Test fallback to binary search when Statistics API fails."""
+    mock_connection = MagicMock()
+    mock_connection.send_result = MagicMock()
+
+    start = dt_util.utcnow().replace(minute=0, second=0, microsecond=0)
+    end = start + dt_util.dt.timedelta(hours=2)
+
+    class MockState:
+        def __init__(self, state, last_updated) -> None:
+            self.state = state
+            self.last_updated = last_updated
+
+    with (
+        patch(
+            "custom_components.growspace_manager.recorder_stats.statistics_during_period",
+            side_effect=Exception("Statistics unavailable"),
+        ),
+        patch(
+            "homeassistant.components.recorder.history.get_significant_states",
+            return_value={
+                "sensor.test": [
+                    MockState("10", start),
+                    MockState("20", start + dt_util.dt.timedelta(minutes=30)),
+                ]
+            },
+        ),
+        patch("custom_components.growspace_manager.get_instance") as mock_get_rec,
+    ):
+        mock_get_rec.return_value.async_add_executor_job = hass.async_add_executor_job
+
+        msg = {
+            "id": 1,
+            "type": f"{DOMAIN}/get_history_stats",
+            "entity_ids": ["sensor.test"],
+            "start_time": start.isoformat(),
+            "end_time": end.isoformat(),
+            "interval_minutes": 60,
+            "significant_changes_only": True,
+        }
+
+        await websocket_get_history_stats(hass, mock_connection, msg)
+
+        # Should fallback and still succeed
+        mock_connection.send_result.assert_called_once()
+        result = mock_connection.send_result.call_args[0][1]
+        assert "sensor.test" in result
+
+
+@pytest.mark.asyncio
+async def test_websocket_history_stats_short_interval_uses_binary_search(
+    hass: HomeAssistant,
+) -> None:
+    """Test that short intervals (< 60 min) use the binary search fallback directly."""
+    mock_connection = MagicMock()
+    mock_connection.send_result = MagicMock()
+
+    start = dt_util.utcnow().replace(minute=0, second=0, microsecond=0)
+    end = start + dt_util.dt.timedelta(minutes=30)
+
+    class MockState:
+        def __init__(self, state, last_updated) -> None:
+            self.state = state
+            self.last_updated = last_updated
+
+    with (
+        patch(
+            "custom_components.growspace_manager.recorder_stats.statistics_during_period"
+        ) as mock_stats,
+        patch(
+            "homeassistant.components.recorder.history.get_significant_states",
+            return_value={
+                "sensor.test": [
+                    MockState("10", start),
+                    MockState("20", start + dt_util.dt.timedelta(minutes=10)),
+                ]
+            },
+        ),
+        patch("custom_components.growspace_manager.get_instance") as mock_get_rec,
+    ):
+        mock_get_rec.return_value.async_add_executor_job = hass.async_add_executor_job
+
+        msg = {
+            "id": 1,
+            "type": f"{DOMAIN}/get_history_stats",
+            "entity_ids": ["sensor.test"],
+            "start_time": start.isoformat(),
+            "end_time": end.isoformat(),
+            "interval_minutes": 15,  # < 60, should NOT use stats API
+            "significant_changes_only": True,
+        }
+
+        await websocket_get_history_stats(hass, mock_connection, msg)
+
+        # Should NOT call statistics API for short intervals
+        mock_stats.assert_not_called()
+        mock_connection.send_result.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_websocket_history_stats_uses_daily_period_for_large_intervals(
+    hass: HomeAssistant,
+) -> None:
+    """Test that interval >= 1440 (24 hours) uses daily period."""
+    mock_connection = MagicMock()
+    mock_connection.send_result = MagicMock()
+
+    start = dt_util.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+    end = start + dt_util.dt.timedelta(days=7)
+
+    stats_data = {
+        "sensor.test": [
+            {"start": start.timestamp(), "mean": 22.0},
+        ]
+    }
+
+    with (
+        patch(
+            "custom_components.growspace_manager.recorder_stats.statistics_during_period",
+            return_value=stats_data,
+        ) as mock_stats,
+        patch("custom_components.growspace_manager.get_instance") as mock_get_rec,
+    ):
+        mock_get_rec.return_value.async_add_executor_job = hass.async_add_executor_job
+
+        msg = {
+            "id": 1,
+            "type": f"{DOMAIN}/get_history_stats",
+            "entity_ids": ["sensor.test"],
+            "start_time": start.isoformat(),
+            "end_time": end.isoformat(),
+            "interval_minutes": 1440,  # 24 hours
+            "significant_changes_only": True,
+        }
+
+        await websocket_get_history_stats(hass, mock_connection, msg)
+
+        # Verify daily period was used
+        mock_stats.assert_called_once()
+        call_args = mock_stats.call_args[0]
+        assert call_args[4] == "day"  # period argument
+
+
+@pytest.mark.asyncio
+async def test_websocket_history_stats_statistics_with_state_instead_of_mean(
+    hass: HomeAssistant,
+) -> None:
+    """Test statistics API fallback to 'state' when 'mean' is not available."""
+    mock_connection = MagicMock()
+    mock_connection.send_result = MagicMock()
+
+    start = dt_util.utcnow().replace(minute=0, second=0, microsecond=0)
+    end = start + dt_util.dt.timedelta(hours=2)
+
+    # Statistics with 'state' instead of 'mean' (e.g., for binary sensors)
+    stats_data = {
+        "sensor.test": [
+            {"start": start.timestamp(), "state": "on"},
+        ]
+    }
+
+    with (
+        patch(
+            "custom_components.growspace_manager.recorder_stats.statistics_during_period",
+            return_value=stats_data,
+        ),
+        patch("custom_components.growspace_manager.get_instance") as mock_get_rec,
+    ):
+        mock_get_rec.return_value.async_add_executor_job = hass.async_add_executor_job
+
+        msg = {
+            "id": 1,
+            "type": f"{DOMAIN}/get_history_stats",
+            "entity_ids": ["sensor.test"],
+            "start_time": start.isoformat(),
+            "end_time": end.isoformat(),
+            "interval_minutes": 60,
+            "significant_changes_only": True,
+        }
+
+        await websocket_get_history_stats(hass, mock_connection, msg)
+
+        result = mock_connection.send_result.call_args[0][1]
+        assert result["sensor.test"][0]["s"] == "on"
+
+
+@pytest.mark.asyncio
+async def test_websocket_history_stats_empty_statistics(hass: HomeAssistant) -> None:
+    """Test handling of empty statistics data."""
+    mock_connection = MagicMock()
+    mock_connection.send_result = MagicMock()
+
+    start = dt_util.utcnow().replace(minute=0, second=0, microsecond=0)
+    end = start + dt_util.dt.timedelta(hours=2)
+
+    with (
+        patch(
+            "custom_components.growspace_manager.recorder_stats.statistics_during_period",
+            return_value={},  # Empty result
+        ),
+        patch(
+            "homeassistant.components.recorder.history.get_significant_states",
+            return_value={"sensor.test": []},
+        ),
+        patch("custom_components.growspace_manager.get_instance") as mock_get_rec,
+    ):
+        mock_get_rec.return_value.async_add_executor_job = hass.async_add_executor_job
+
+        msg = {
+            "id": 1,
+            "type": f"{DOMAIN}/get_history_stats",
+            "entity_ids": ["sensor.test"],
+            "start_time": start.isoformat(),
+            "end_time": end.isoformat(),
+            "interval_minutes": 60,
+            "significant_changes_only": True,
+        }
+
+        await websocket_get_history_stats(hass, mock_connection, msg)
+
+        # Should fallback to binary search when stats are empty
+        mock_connection.send_result.assert_called_once()
+        result = mock_connection.send_result.call_args[0][1]
+        assert "sensor.test" in result
