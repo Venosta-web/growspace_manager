@@ -1135,3 +1135,107 @@ async def test_async_setup_entry_recreates_calculated_vpd(mock_coordinator) -> N
 # --------------------
 # Coverage Gaps
 # --------------------
+
+
+@pytest.mark.asyncio
+async def test_growspace_overview_sensor_handle_sensor_update(mock_coordinator) -> None:
+    """Test GrowspaceOverviewSensor._handle_sensor_update method.
+
+    This method should call async_refresh_growspace_data on the coordinator
+    and then update the entity state.
+    """
+    gs_mock = mock_coordinator.growspaces["gs1"]
+    gs_mock.environment_config = None
+
+    sensor = GrowspaceOverviewSensor(
+        coordinator=mock_coordinator,
+        growspace_id="gs1",
+        growspace=gs_mock,
+    )
+    sensor.async_write_ha_state = Mock()
+
+    # Mock the coordinator's async_refresh_growspace_data method
+    mock_coordinator.async_refresh_growspace_data = AsyncMock()
+
+    # Mock event
+    mock_event = Mock()
+
+    # Call the handler
+    await sensor._handle_sensor_update(mock_event)
+
+    # Verify coordinator method was called with correct growspace_id
+    mock_coordinator.async_refresh_growspace_data.assert_awaited_once_with("gs1")
+
+    # Verify state update was triggered
+    sensor.async_write_ha_state.assert_called_once()
+
+
+def test_growspace_overview_sensor_get_trackable_sensors(mock_coordinator) -> None:
+    """Test GrowspaceOverviewSensor._get_trackable_sensors method."""
+    gs_mock = mock_coordinator.growspaces["gs1"]
+
+    # Test with no environment config
+    gs_mock.environment_config = None
+    sensor = GrowspaceOverviewSensor(
+        coordinator=mock_coordinator,
+        growspace_id="gs1",
+        growspace=gs_mock,
+    )
+    assert sensor._get_trackable_sensors() == []
+
+    # Test with environment config containing sensors
+    env_config = EnvironmentConfig(
+        soil_moisture_sensor="sensor.moisture",
+        vpd_sensor="sensor.vpd",
+        dehumidifier_entity="switch.dehumidifier",
+        exhaust_fan_entity="fan.exhaust",
+        humidifier_entity=None,  # Not configured
+        circulation_fan_entity="fan.circulation",
+    )
+    gs_mock.environment_config = env_config
+
+    sensors = sensor._get_trackable_sensors()
+
+    # Should include all configured sensors
+    assert "sensor.moisture" in sensors
+    assert "sensor.vpd" in sensors
+    assert "switch.dehumidifier" in sensors
+    assert "fan.exhaust" in sensors
+    assert "fan.circulation" in sensors
+    # Should not include None values
+    assert len(sensors) == 5
+
+
+def test_growspace_overview_sensor_trackable_attrs_constant() -> None:
+    """Test that TRACKABLE_ENVIRONMENT_ATTRS is defined as a class constant."""
+    # Verify the constant exists and contains expected attributes
+    expected_attrs = (
+        "soil_moisture_sensor",
+        "vpd_sensor",
+        "dehumidifier_entity",
+        "exhaust_fan_entity",
+        "humidifier_entity",
+        "circulation_fan_entity",
+    )
+
+    assert hasattr(GrowspaceOverviewSensor, "TRACKABLE_ENVIRONMENT_ATTRS")
+    assert GrowspaceOverviewSensor.TRACKABLE_ENVIRONMENT_ATTRS == expected_attrs
+
+
+def test_growspace_overview_sensor_get_trackable_sensors_missing_growspace(
+    mock_coordinator,
+) -> None:
+    """Test _get_trackable_sensors when growspace is missing."""
+    gs_mock = mock_coordinator.growspaces["gs1"]
+
+    sensor = GrowspaceOverviewSensor(
+        coordinator=mock_coordinator,
+        growspace_id="gs1",
+        growspace=gs_mock,
+    )
+
+    # Remove the growspace from coordinator
+    mock_coordinator.growspaces = {}
+
+    # Should return empty list
+    assert sensor._get_trackable_sensors() == []

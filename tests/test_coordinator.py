@@ -2882,12 +2882,13 @@ async def test_get_growspace_grid(mock_coordinator: GrowspaceCoordinator) -> Non
             found = True
     assert found
 
+
 async def test_coverage_init_with_empty_data(hass):
     """Test initialization with None data (line 153)."""
     entry = MockConfigEntry(domain=DOMAIN, data={})
     entry.add_to_hass(hass)
     entry.async_create_background_task = MagicMock()
-    
+
     with (
         patch("custom_components.growspace_manager.coordinator.StorageManager"),
         patch("custom_components.growspace_manager.coordinator.MigrationManager"),
@@ -3085,7 +3086,7 @@ async def test_coverage_async_commit_with_irrigation_coordinators(coordinator):
     coordinator.irrigation_coordinators = {"gs1": mock_irrigation}
 
     # Mock storage manager (if not already mocked by fixture, but coordinator fixture usually has real one)
-    # However, create_test_coordinator creates a real StorageManager. 
+    # However, create_test_coordinator creates a real StorageManager.
     # We should mock async_save to avoid file IO.
     coordinator.storage_manager.async_save = AsyncMock()
 
@@ -3110,3 +3111,42 @@ async def test_coverage_ensure_calculated_sensors_no_env_config(coordinator):
 
     # Should not raise error
     coordinator._ensure_calculated_sensors()
+
+
+@pytest.mark.asyncio
+async def test_async_refresh_growspace_data(coordinator: GrowspaceCoordinator) -> None:
+    """Test the async_refresh_growspace_data public method.
+
+    This method should acquire the lock, invalidate the cache for the
+    specified growspace, and update the data property.
+
+    Args:
+        coordinator: The mock GrowspaceCoordinator.
+    """
+    # Setup: add a growspace
+    gs = await coordinator.async_add_growspace("Test GS", rows=3, plants_per_row=3)
+
+    # Pre-populate the cache with old data
+    old_cached_data = {"cached": "old_data", "version": 1}
+    coordinator._serialized_cache[gs.id] = old_cached_data
+
+    # Track if update_data_property was called
+    update_called = False
+    original_update = coordinator.update_data_property
+
+    def spy_update():
+        nonlocal update_called
+        update_called = True
+        original_update()
+
+    coordinator.update_data_property = spy_update
+
+    # Call the public method
+    await coordinator.async_refresh_growspace_data(gs.id)
+
+    # Assertions
+    assert update_called, "update_data_property should be called"
+    # After refresh, the cache should contain new serialized data (not the old data)
+    assert coordinator._serialized_cache.get(gs.id) != old_cached_data, (
+        "Cache should have been refreshed with new data"
+    )
