@@ -15,8 +15,8 @@ from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.growspace_manager.const import (
     ATTR_MIN_DAYS_IN_STAGE,
-    ATTR_PRESET_ID,
     ATTR_NAME,
+    ATTR_PRESET_ID,
     ATTR_STAGE,
     DOMAIN,
 )

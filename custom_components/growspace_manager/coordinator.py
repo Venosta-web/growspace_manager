@@ -13,15 +13,16 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
-from homeassistant.util import dt as dt_util, slugify
+from homeassistant.util import dt as dt_util
+from homeassistant.util import slugify
 
 from .const import (
+    CATEGORY_TRAINING,
     CONF_HUMIDITY_SENSOR,
     CONF_TEMP_SENSOR,
     CONF_VPD_SENSOR,
     DOMAIN,
     SPECIAL_GROWSPACES,
-    CATEGORY_TRAINING,
     PlantStage,
 )
 from .dehumidifier_coordinator import DehumidifierCoordinator
