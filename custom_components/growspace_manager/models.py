@@ -35,7 +35,7 @@ class NutrientEntry(TypedDict):
     """A single nutrient entry with concentration info."""
 
     name: str
-    amount_per_liter: float
+    dose_ml_l: float
     total_amount: float
 
 
@@ -43,7 +43,7 @@ class NutrientPresetItem(TypedDict):
     """A single nutrient in a preset recipe."""
 
     name: str
-    amount_per_liter: float  # ml per liter of solution
+    dose_ml_l: float  # ml per liter of solution
 
 
 # Note: NutrientPreset is defined after BaseModel to inherit from it
@@ -310,7 +310,7 @@ class NutrientPreset(BaseModel):
 
     def get_nutrient_map(self) -> NutrientMap:
         """Convert nutrients list to a dict[str, float] for watering services."""
-        return {n["name"]: n["amount_per_liter"] for n in self.nutrients}
+        return {n["name"]: n["dose_ml_l"] for n in self.nutrients}
 
 
 class GrowspaceCoordinatorData(TypedDict):

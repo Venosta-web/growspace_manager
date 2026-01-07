@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import uuid
+from dataclasses import asdict
 from datetime import date, datetime, timedelta
 from typing import Any, override
 
@@ -12,7 +13,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
-from homeassistant.util import slugify
+from homeassistant.util import dt as dt_util, slugify
 
 from .const import (
     CONF_HUMIDITY_SENSOR,
@@ -212,6 +213,11 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
         serialized = self.serializer.serialize_growspace(
             growspace, plants, self.environment_analyzer
         )
+        # Inject global nutrient presets
+        serialized["nutrient_presets"] = {
+            pid: asdict(preset) for pid, preset in self.nutrient_presets.items()
+        }
+
         self._serialized_cache[growspace_id] = serialized
         return serialized
 
@@ -734,7 +740,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
             "nutrient_presets": self.nutrient_presets,
             "notifications_sent": self._notifications_sent,
             "notifications_enabled": self._notifications_enabled,
-            "_version": datetime.now().isoformat(),
+            "_version": dt_util.now().isoformat(),
             "serialized_growspaces": serialized_growspaces,
             "air_exchange_recommendations": recs,
         }
@@ -1492,7 +1498,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
             final_nutrients.update(nutrients)
 
         # Update plant's last_watered timestamp
-        now_iso = datetime.now().isoformat()
+        now_iso = dt_util.now().isoformat()
         plant.last_watered = now_iso
 
         # Invalidate cache for the growspace
@@ -1582,32 +1588,39 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
         nutrients: list[dict[str, Any]],
         stage: str | None = None,
         min_days_in_stage: int | None = None,
+        preset_id: str | None = None,
     ) -> NutrientPreset:
         """Create or update a nutrient preset.
 
         Args:
             name: Human-readable name for the preset.
-            nutrients: List of nutrient items with 'name' and 'amount_per_liter'.
+            nutrients: List of nutrient items with 'name' and 'dose_ml_l'.
             stage: Optional plant stage this preset applies to.
             min_days_in_stage: Optional minimum days in stage for this preset.
+            preset_id: Optional ID of the preset to update. If not provided, a new one will be created.
 
         Returns:
-            The created NutrientPreset object.
+            The saved NutrientPreset object.
         """
-
-        preset_id = str(uuid.uuid4())
-        now_iso = datetime.now().isoformat()
-
-        preset = NutrientPreset(
-            id=preset_id,
-            name=name,
-            nutrients=nutrients,  # type: ignore[arg-type]
-            stage=stage,
-            min_days_in_stage=min_days_in_stage,
-            created_at=now_iso,
-        )
-
-        self.nutrient_presets[preset_id] = preset
+        if preset_id and preset_id in self.nutrient_presets:
+            preset = self.nutrient_presets[preset_id]
+            preset.name = name
+            preset.nutrients = nutrients  # type: ignore[arg-type]
+            preset.stage = stage
+            preset.min_days_in_stage = min_days_in_stage
+            # ID and created_at remain unchanged
+        else:
+            # Create new
+            pid = preset_id or str(uuid.uuid4())
+            preset = NutrientPreset(
+                id=pid,
+                name=name,
+                nutrients=nutrients,  # type: ignore[arg-type]
+                stage=stage,
+                min_days_in_stage=min_days_in_stage,
+                created_at=dt_util.now().isoformat(),
+            )
+            self.nutrient_presets[pid] = preset
         await self.async_save()
 
         _LOGGER.info(
@@ -1616,6 +1629,9 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
             len(nutrients),
             preset_id,
         )
+
+        # Invalidate cache for all growspaces as presets are global
+        self._serialized_cache.clear()
 
         return preset
 
@@ -1634,6 +1650,9 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
         preset_name = self.nutrient_presets[preset_id].name
         del self.nutrient_presets[preset_id]
         await self.async_save()
+
+        # Invalidate cache for all growspaces as presets are global
+        self._serialized_cache.clear()
 
         _LOGGER.info("Removed nutrient preset '%s' (id=%s)", preset_name, preset_id)
 

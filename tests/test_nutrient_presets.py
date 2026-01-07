@@ -16,7 +16,7 @@ from pytest_homeassistant_custom_component.common import MockConfigEntry
 from custom_components.growspace_manager.const import (
     ATTR_MIN_DAYS_IN_STAGE,
     ATTR_PRESET_ID,
-    ATTR_PRESET_NAME,
+    ATTR_NAME,
     ATTR_STAGE,
     DOMAIN,
 )
@@ -86,8 +86,8 @@ class TestNutrientPresetCoordinator:
         """Test creating a new nutrient preset."""
         name = "Veg Mix"
         nutrients = [
-            {"name": "Grow A", "amount_per_liter": 2.0},
-            {"name": "Grow B", "amount_per_liter": 1.5},
+            {"name": "Grow A", "dose_ml_l": 2.0},
+            {"name": "Grow B", "dose_ml_l": 1.5},
         ]
 
         preset = await preset_coordinator.async_save_nutrient_preset(
@@ -108,7 +108,7 @@ class TestNutrientPresetCoordinator:
         """Test removing a nutrient preset."""
         # First save a preset
         preset = await preset_coordinator.async_save_nutrient_preset(
-            name="To Remove", nutrients=[{"name": "Nutrient", "amount_per_liter": 1.0}]
+            name="To Remove", nutrients=[{"name": "Nutrient", "dose_ml_l": 1.0}]
         )
         preset_id = preset.id
 
@@ -134,7 +134,7 @@ class TestNutrientPresetCoordinator:
         # 1. Preset for VEG, min 5 days (Plant is VEG, 10 days) -> Should match
         await preset_coordinator.async_save_nutrient_preset(
             name="Veg Applicable",
-            nutrients=[{"name": "A", "amount_per_liter": 1.0}],
+            nutrients=[{"name": "A", "dose_ml_l": 1.0}],
             stage=PlantStage.VEG,
             min_days_in_stage=5,
         )
@@ -142,21 +142,21 @@ class TestNutrientPresetCoordinator:
         # 2. Preset for FLOWER (Plant is VEG) -> Should NOT match
         await preset_coordinator.async_save_nutrient_preset(
             name="Bloom Not Applicable",
-            nutrients=[{"name": "B", "amount_per_liter": 1.0}],
+            nutrients=[{"name": "B", "dose_ml_l": 1.0}],
             stage=PlantStage.FLOWER,
         )
 
         # 3. Preset for VEG, min 15 days (Plant is VEG, 10 days) -> Should NOT match
         await preset_coordinator.async_save_nutrient_preset(
             name="Veg Too Soon",
-            nutrients=[{"name": "C", "amount_per_liter": 1.0}],
+            nutrients=[{"name": "C", "dose_ml_l": 1.0}],
             stage=PlantStage.VEG,
             min_days_in_stage=15,
         )
 
         # 4. Global preset (no stage) -> Should match
         await preset_coordinator.async_save_nutrient_preset(
-            name="Global", nutrients=[{"name": "D", "amount_per_liter": 1.0}]
+            name="Global", nutrients=[{"name": "D", "dose_ml_l": 1.0}]
         )
 
         applicable = preset_coordinator.get_applicable_presets("test_plant")
@@ -176,8 +176,8 @@ class TestNutrientPresetCoordinator:
         preset = await preset_coordinator.async_save_nutrient_preset(
             name="Test Preset",
             nutrients=[
-                {"name": "NutriA", "amount_per_liter": 2.5},
-                {"name": "NutriB", "amount_per_liter": 0.5},
+                {"name": "NutriA", "dose_ml_l": 2.5},
+                {"name": "NutriB", "dose_ml_l": 0.5},
             ],
         )
 
@@ -198,7 +198,11 @@ class TestNutrientPresetCoordinator:
     ) -> None:
         """Test that update_data_property includes nutrient presets in the data dict."""
         preset_coordinator.nutrient_presets = {
-            "test_id": MagicMock(spec=NutrientPreset)
+            "test_id": NutrientPreset(
+                id="test_id",
+                name="Test",
+                nutrients=[{"name": "A", "dose_ml_l": 1.0}],
+            )
         }
         # Call the real update_data_property (avoiding the mock async_commit if it were called)
         preset_coordinator.update_data_property()
@@ -218,13 +222,13 @@ class TestNutrientPresetCoordinator:
         # Plant is VEG, 10 days
         await preset_coordinator.async_save_nutrient_preset(
             name="Days Match",
-            nutrients=[{"name": "A", "amount_per_liter": 1.0}],
+            nutrients=[{"name": "A", "dose_ml_l": 1.0}],
             min_days_in_stage=5,  # No stage
         )
 
         await preset_coordinator.async_save_nutrient_preset(
             name="Days No Match",
-            nutrients=[{"name": "A", "amount_per_liter": 1.0}],
+            nutrients=[{"name": "A", "dose_ml_l": 1.0}],
             min_days_in_stage=15,  # Too many days
         )
 
@@ -243,7 +247,7 @@ class TestWateringWithPresets:
     ) -> None:
         """Test watering a plant using a nutrient preset."""
         preset = await preset_coordinator.async_save_nutrient_preset(
-            name="Test Preset", nutrients=[{"name": "CalMag", "amount_per_liter": 2.0}]
+            name="Test Preset", nutrients=[{"name": "CalMag", "dose_ml_l": 2.0}]
         )
 
         preset_coordinator.events = {}
@@ -268,8 +272,8 @@ class TestWateringWithPresets:
         preset = await preset_coordinator.async_save_nutrient_preset(
             name="Test Preset",
             nutrients=[
-                {"name": "A", "amount_per_liter": 1.0},
-                {"name": "B", "amount_per_liter": 2.0},
+                {"name": "A", "dose_ml_l": 1.0},
+                {"name": "B", "dose_ml_l": 2.0},
             ],
         )
 
@@ -297,7 +301,7 @@ class TestWateringWithPresets:
     ) -> None:
         """Test watering an entire growspace using a preset."""
         preset = await preset_coordinator.async_save_nutrient_preset(
-            name="Gs Preset", nutrients=[{"name": "Bloom", "amount_per_liter": 4.0}]
+            name="Gs Preset", nutrients=[{"name": "Bloom", "dose_ml_l": 4.0}]
         )
 
         # Water growspace
@@ -334,8 +338,8 @@ class TestServiceHandlersPresets:
 
         call = MagicMock()
         call.data = {
-            ATTR_PRESET_NAME: "Service Preset",
-            "nutrients": [{"name": "Grow", "amount_per_liter": 3.0}],
+            ATTR_NAME: "Service Preset",
+            "nutrients": [{"name": "Grow", "dose_ml_l": 3.0}],
             ATTR_STAGE: PlantStage.FLOWER,
             ATTR_MIN_DAYS_IN_STAGE: 10,
         }
@@ -351,6 +355,35 @@ class TestServiceHandlersPresets:
         assert len(presets) == 1
         assert presets[0].stage == PlantStage.FLOWER
         assert presets[0].min_days_in_stage == 10
+
+    @pytest.mark.asyncio
+    async def test_handle_update_nutrient_preset_service(
+        self, hass: HomeAssistant, preset_coordinator: GrowspaceCoordinator
+    ) -> None:
+        """Test updating an existing nutrient preset via service handler."""
+
+        # 1. Save initial preset
+        preset = await preset_coordinator.async_save_nutrient_preset(
+            name="Initial Name",
+            nutrients=[{"name": "Base", "dose_ml_l": 1.0}],
+        )
+        initial_id = preset.id
+
+        # 2. Update via service
+        call = MagicMock()
+        call.data = {
+            ATTR_PRESET_ID: initial_id,
+            ATTR_NAME: "Updated Name",
+            "nutrients": [{"name": "Base", "dose_ml_l": 2.0}],
+        }
+
+        await handle_save_nutrient_preset(hass, preset_coordinator, call)
+
+        # 3. Verify update
+        updated = preset_coordinator.nutrient_presets[initial_id]
+        assert updated.name == "Updated Name"
+        assert updated.nutrients[0]["dose_ml_l"] == 2.0
+        assert updated.id == initial_id
 
     @pytest.mark.asyncio
     async def test_handle_remove_nutrient_preset_service(
@@ -380,7 +413,7 @@ class TestNutrientPresetSensor:
 
         # Save a preset
         preset = await preset_coordinator.async_save_nutrient_preset(
-            "Sensor Test", [{"name": "N", "amount_per_liter": 1.0}]
+            "Sensor Test", [{"name": "N", "dose_ml_l": 1.0}]
         )
 
         entity = NutrientPresetSensor(preset_coordinator)
@@ -403,8 +436,8 @@ class TestNutrientPresetSerialization:
             "id": "preset-123",
             "name": "Full Recipe",
             "nutrients": [
-                {"name": "Part A", "amount_per_liter": 2.0},
-                {"name": "Part B", "amount_per_liter": 2.0},
+                {"name": "Part A", "dose_ml_l": 2.0},
+                {"name": "Part B", "dose_ml_l": 2.0},
             ],
             "stage": "veg",
             "min_days_in_stage": 7,
@@ -575,7 +608,7 @@ class TestNutrientPresetStorageLoading:
                 "p1": {
                     "id": "p1",
                     "name": "Stored Preset",
-                    "nutrients": [{"name": "A", "amount_per_liter": 1.0}],
+                    "nutrients": [{"name": "A", "dose_ml_l": 1.0}],
                     "stage": "flower",
                 }
             }

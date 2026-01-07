@@ -9,8 +9,8 @@ from homeassistant.core import HomeAssistant, ServiceCall
 
 from ..const import (
     ATTR_MIN_DAYS_IN_STAGE,
+    ATTR_NAME,
     ATTR_PRESET_ID,
-    ATTR_PRESET_NAME,
     ATTR_STAGE,
 )
 
@@ -24,8 +24,9 @@ async def handle_save_nutrient_preset(
     hass: HomeAssistant, coordinator: GrowspaceCoordinator, call: ServiceCall
 ) -> None:
     """Handle saving a nutrient preset."""
-    name = call.data[ATTR_PRESET_NAME]
+    name = call.data[ATTR_NAME]
     nutrients = call.data["nutrients"]
+    preset_id = call.data.get(ATTR_PRESET_ID)
     stage = call.data.get(ATTR_STAGE)
     min_days_in_stage = call.data.get(ATTR_MIN_DAYS_IN_STAGE)
 
@@ -34,6 +35,7 @@ async def handle_save_nutrient_preset(
         nutrients=nutrients,
         stage=stage,
         min_days_in_stage=min_days_in_stage,
+        preset_id=preset_id,
     )
 
 
