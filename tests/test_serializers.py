@@ -34,12 +34,6 @@ def mock_growspace(hass: HomeAssistant):
     gs.plants_per_row = 2
     gs.notification_target = "notify.mobile_app"
     gs.irrigation_config = IrrigationConfig()
-    # Ensure to_dict works or use attributes
-    # The serializer expects objects now? The serializer uses getattr/properties?
-    # Serializer code:
-    # env_config = growspace.environment_config
-    # dehumidifier_entity = env_config.dehumidifier_entity
-    # So it expects objects.
 
     strategy = MagicMock(spec=IrrigationStrategy)
     strategy.to_dict.return_value = {"enabled": False}
@@ -92,7 +86,7 @@ def test_calculate_days_in_stage(serializer, mock_plant) -> None:
     assert seedling_days == 10
 
 
-def test_get_sensor_value(hass, serializer) -> None:
+def test_get_sensor_value(hass: HomeAssistant, serializer: GrowspaceSerializer) -> None:
     """Test getting numeric sensor value."""
     assert serializer._get_sensor_value(None) is None
     assert serializer._get_sensor_value("sensor.missing") is None
@@ -107,7 +101,9 @@ def test_get_sensor_value(hass, serializer) -> None:
     assert serializer._get_sensor_value("sensor.test") is None
 
 
-def test_get_environment_attributes(hass, serializer, mock_growspace) -> None:
+def test_get_environment_attributes(
+    hass: HomeAssistant, serializer: GrowspaceSerializer, mock_growspace: Growspace
+) -> None:
     """Test fetching environment attributes."""
     hass.states.async_set("sensor.temp", "25")
     hass.states.async_set("sensor.hum", "60")
@@ -131,7 +127,9 @@ def test_get_environment_attributes(hass, serializer, mock_growspace) -> None:
     assert attrs["dehumidifier_control_enabled"] is True
 
 
-def test_serialize_growspace(hass, serializer, mock_growspace, mock_plant) -> None:
+def test_serialize_growspace(
+    hass: HomeAssistant, serializer, mock_growspace, mock_plant
+) -> None:
     """Test full serialization."""
     # Setup dependencies
     plants = [mock_plant]
@@ -168,7 +166,7 @@ def test_serialize_growspace(hass, serializer, mock_growspace, mock_plant) -> No
 
 
 def test_get_environment_attributes_with_thresholds(
-    hass, serializer, mock_growspace
+    hass: HomeAssistant, serializer: GrowspaceSerializer, mock_growspace: Growspace
 ) -> None:
     """Test fetching environment attributes with dehumidifier thresholds."""
     # Mock Dehumidifier with attributes including thresholds
@@ -195,7 +193,9 @@ def test_get_environment_attributes_with_thresholds(
 # --------------------
 
 
-def test_get_environment_attributes_extended(hass, serializer, mock_growspace) -> None:
+def test_get_environment_attributes_extended(
+    hass: HomeAssistant, serializer: GrowspaceSerializer, mock_growspace: Growspace
+) -> None:
     """Test environment attributes with exhaust, humidifier, and circulation fan."""
     # Setup Entity IDs
     mock_growspace.environment_config.exhaust_fan_entity = "fan.exhaust"
@@ -228,7 +228,9 @@ def test_get_environment_attributes_extended(hass, serializer, mock_growspace) -
     assert attrs["soil_moisture_value"] == "45"
 
 
-def test_get_environment_attributes_missing_states(hass, serializer, mock_growspace):
+def test_get_environment_attributes_missing_states(
+    hass: HomeAssistant, serializer, mock_growspace
+) -> None:
     """Test environment attributes when entities are missing states."""
     # Setup Entity IDs
     mock_growspace.environment_config.exhaust_fan_entity = "fan.exhaust_missing"
@@ -257,7 +259,9 @@ def test_get_environment_attributes_missing_states(hass, serializer, mock_growsp
     assert attrs["soil_moisture_value"] is None
 
 
-def test_serialize_special_growspace_types(hass, serializer, mock_growspace):
+def test_serialize_special_growspace_types(
+    hass: HomeAssistant, serializer, mock_growspace
+) -> None:
     """Test serialization of special growspace types."""
     special_types = ["mother", "clone", "dry", "cure"]
     plants = []
@@ -273,7 +277,9 @@ def test_serialize_special_growspace_types(hass, serializer, mock_growspace):
             assert data["type"] == gs_type
 
 
-def test_serialize_growspace_legacy_entity_id(hass, serializer, mock_growspace):
+def test_serialize_growspace_legacy_entity_id(
+    hass: HomeAssistant, serializer, mock_growspace
+) -> None:
     """Test legacy entity ID generation fallback."""
     plants = []
     analyzer = MagicMock()
@@ -292,7 +298,9 @@ def test_serialize_growspace_legacy_entity_id(hass, serializer, mock_growspace):
         assert data["overview_entity_id"] == "sensor.my_grow_room"
 
 
-def test_serialize_plant_lookup_entity_id(hass, serializer, mock_plant):
+def test_serialize_plant_lookup_entity_id(
+    hass: HomeAssistant, serializer, mock_plant
+) -> None:
     """Test serialize_plant looking up entity ID when not provided."""
     with patch("homeassistant.helpers.entity_registry.async_get") as mock_reg_get:
         mock_reg = MagicMock()
@@ -305,3 +313,22 @@ def test_serialize_plant_lookup_entity_id(hass, serializer, mock_plant):
         mock_reg.async_get_entity_id.assert_called_with(
             "sensor", "growspace_manager", "growspace_manager_plant1"
         )
+
+
+def test_serialize_plant_with_training_and_watering(
+    serializer: GrowspaceSerializer, mock_plant: Plant
+) -> None:
+    """Test that serialize_plant includes training and watering fields."""
+    timestamp = dt_util.now().isoformat()
+    mock_plant.last_watered = timestamp
+    mock_plant.last_trained = timestamp
+    mock_plant.last_training_technique = "Topping"
+    mock_plant.get_days_since_watering.return_value = 5
+
+    data = serializer.serialize_plant(mock_plant, entity_id="sensor.plant1")
+
+    # format_date returns only the date part
+    assert data["last_watered"] == timestamp.split("T")[0]
+    assert data["last_trained"] == timestamp.split("T")[0]
+    assert data["last_training_technique"] == "Topping"
+    assert data["days_since_last_watering"] == 5

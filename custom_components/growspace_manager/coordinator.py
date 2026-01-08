@@ -1560,8 +1560,8 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
         plant_ids: list[str] | None = None,
     ) -> None:
         """Log a training event for specific plants or an entire growspace."""
-        _LOGGER.error(
-            "DEBUG: async_log_training_event called with gid=%s (%s), pids=%s (%s), technique=%s, notes=%s",
+        _LOGGER.debug(
+            "async_log_training_event called with gid=%s (%s), pids=%s (%s), technique=%s, notes=%s",
             growspace_id,
             type(growspace_id),
             plant_ids,
@@ -1570,7 +1570,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
             notes,
         )
         if plant_ids:
-            _LOGGER.error("DEBUG: plant_ids[0] type: %s", type(plant_ids[0]))
+            _LOGGER.debug("plant_ids[0] type: %s", type(plant_ids[0]))
 
         # Determine target plants
         target_plants: list[Plant] = []

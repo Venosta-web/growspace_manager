@@ -223,9 +223,6 @@ class GrowspaceSerializer:
                 "sensor", DOMAIN, f"{DOMAIN}_{plant.plant_id}"
             )
 
-        row_i = int(plant.row)
-        col_i = int(plant.col)
-
         return {
             "plant_id": plant.plant_id,
             "growspace_id": plant.growspace_id,  # Include for frontend cache updates
@@ -249,10 +246,15 @@ class GrowspaceSerializer:
             "dry_start": format_date(plant.dry_start),
             "cure_start": format_date(plant.cure_start),
             # Location & Stage
-            "row": row_i,
-            "col": col_i,
-            "position": f"({row_i},{col_i})",
+            "row": int(plant.row),
+            "col": int(plant.col),
+            "position": f"({int(plant.row)},{int(plant.col)})",
             "stage": calculate_plant_stage(plant),
+            # Watering & Training
+            "last_watered": format_date(plant.last_watered),
+            "last_trained": format_date(plant.last_trained),
+            "last_training_technique": plant.last_training_technique,
+            "days_since_last_watering": plant.get_days_since_watering(),
         }
 
     def calculate_days_in_stage(self, plant: Plant, stage: str) -> int:
