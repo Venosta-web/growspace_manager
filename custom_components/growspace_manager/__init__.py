@@ -282,6 +282,7 @@ SCHEMA_WS_GET_LOG = websocket_api.BASE_COMMAND_MESSAGE_SCHEMA.extend(
     {
         vol.Required("type"): WS_TYPE_GET_LOG,
         vol.Optional("growspace_id"): str,
+        vol.Optional("limit"): vol.Any(int, None),
     }
 )
 
@@ -297,6 +298,7 @@ SCHEMA_WS_GET_DATA = websocket_api.BASE_COMMAND_MESSAGE_SCHEMA.extend(
 async def websocket_get_event_log(hass: HomeAssistant, connection, msg):
     """Handle get event log command."""
     growspace_id = msg.get("growspace_id")
+    limit = msg.get("limit")
     events_data = {}
 
     try:
@@ -304,6 +306,9 @@ async def websocket_get_event_log(hass: HomeAssistant, connection, msg):
             try:
                 coordinator = service_registration.get_coordinator_for_call(hass, msg)
                 events = coordinator.events.get(growspace_id, [])
+                # Apply limit if provided (get last N events)
+                if limit and len(events) > limit:
+                    events = events[-limit:]
                 events_data[growspace_id] = [e.to_dict() for e in events]
             except (
                 ServiceValidationError
@@ -319,6 +324,9 @@ async def websocket_get_event_log(hass: HomeAssistant, connection, msg):
                 ):
                     coord = entry.runtime_data
                     for gid, evts in coord.events.items():
+                        # Apply limit if provided (get last N events)
+                        if limit and len(evts) > limit:
+                            evts = evts[-limit:]
                         events_data[gid] = [e.to_dict() for e in evts]
 
         connection.send_result(msg["id"], events_data)

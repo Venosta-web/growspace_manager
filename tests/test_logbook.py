@@ -52,7 +52,15 @@ async def test_coordinator_rolling_buffer(hass: HomeAssistant) -> None:
     # Setup mock entry
     entry = MockConfigEntry()
     entry.add_to_hass(hass)
-    entry.async_create_background_task = AsyncMock()
+
+    def mock_create_background_task(hass: HomeAssistant, target, name):
+        if target:
+            target.close()
+        return MagicMock()
+
+    entry.async_create_background_task = MagicMock(
+        side_effect=mock_create_background_task
+    )
 
     coordinator = GrowspaceCoordinator(
         hass, data={}, options={}, strain_library=AsyncMock(), entry=entry
@@ -61,9 +69,9 @@ async def test_coordinator_rolling_buffer(hass: HomeAssistant) -> None:
     coordinator.storage_manager.async_save = AsyncMock()
     coordinator.async_save = AsyncMock()  # Mock save to avoid internal logic
 
-    # Test adding 55 events
+    # Test adding 1005 events
     gid = "gs1"
-    for i in range(55):
+    for i in range(1005):
         event = GrowspaceEvent(
             sensor_type="stress",
             growspace_id=gid,
@@ -76,7 +84,7 @@ async def test_coordinator_rolling_buffer(hass: HomeAssistant) -> None:
         )
         coordinator.add_event(gid, event)
 
-    assert len(coordinator.events[gid]) == 50
+    assert len(coordinator.events[gid]) == 1000
     # The first 5 should be gone (0-4), so the first one should be index 5
     assert coordinator.events[gid][0].start_time == "2023-01-01T05:00:00"
 

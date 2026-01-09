@@ -9,7 +9,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.storage import Store
 
 from .const import STORAGE_KEY, STORAGE_VERSION
-from .models import EnvironmentConfig, Growspace, GrowspaceEvent, Plant
+from .models import EnvironmentConfig, Growspace, GrowspaceEvent, NutrientPreset, Plant
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -38,6 +38,10 @@ class StorageManager:
                 "growspaces": {
                     gid: asdict(g) for gid, g in self.coordinator.growspaces.items()
                 },
+                "nutrient_presets": {
+                    pid: asdict(p)
+                    for pid, p in self.coordinator.nutrient_presets.items()
+                },
                 "notifications_sent": self.coordinator._notifications_sent,
                 "notifications_enabled": self.coordinator._notifications_enabled,
                 "events": {
@@ -64,6 +68,7 @@ class StorageManager:
         self._load_plants(data)
         self._load_growspaces(data)
         self._load_events(data)
+        self._load_nutrient_presets(data)
 
         # Load notification tracking
         self.coordinator._notifications_sent = data.get("notifications_sent", {})
@@ -156,3 +161,17 @@ class StorageManager:
         except Exception as e:
             _LOGGER.exception("Error loading events: %s", e)
             self.coordinator.events = {}
+
+    def _load_nutrient_presets(self, data: dict) -> None:
+        """Load nutrient presets from storage data."""
+        try:
+            self.coordinator.nutrient_presets = {
+                pid: NutrientPreset.from_dict(p)
+                for pid, p in data.get("nutrient_presets", {}).items()
+            }
+            _LOGGER.info(
+                "Loaded %d nutrient presets", len(self.coordinator.nutrient_presets)
+            )
+        except Exception as e:
+            _LOGGER.exception("Error loading nutrient presets: %s", e)
+            self.coordinator.nutrient_presets = {}

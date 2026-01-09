@@ -1,10 +1,16 @@
 import voluptuous as vol
+from homeassistant.helpers import config_validation as cv
 
 from .const import (
     ATTR_COL,
     ATTR_GROWSPACE_ID,
+    ATTR_MIN_DAYS_IN_STAGE,
+    ATTR_NAME,
     ATTR_PHENOTYPE,
     ATTR_PLANT_ID,
+    ATTR_PRESET_ID,
+    ATTR_TECHNIQUE,
+    ATTR_NOTES,
     ATTR_ROW,
     ATTR_STAGE,
     ATTR_STRAIN,
@@ -73,6 +79,15 @@ ADD_PLANT_SCHEMA = vol.Schema(
         vol.Required(ATTR_COL): vol.All(int, vol.Range(min=1)),
         vol.Optional(ATTR_PHENOTYPE): str,
         **_PLANT_DATE_FIELDS,
+    }
+)
+
+LOG_TRAINING_EVENT_SCHEMA = vol.Schema(
+    {
+        vol.Required(ATTR_TECHNIQUE): cv.string,
+        vol.Optional(ATTR_GROWSPACE_ID): cv.string,
+        vol.Optional(ATTR_PLANT_ID): vol.All(cv.ensure_list, [cv.string]),
+        vol.Optional(ATTR_NOTES): cv.string,
     }
 )
 
@@ -357,5 +372,52 @@ SET_DEHUMIDIFIER_CONTROL_SCHEMA = vol.Schema(
     {
         vol.Required("growspace_id"): vol.All(str, valid_growspace_id),
         vol.Required("enabled"): bool,
+    }
+)
+
+# --- Manual Watering Service Schemas ---
+
+WATER_PLANT_SCHEMA = vol.Schema(
+    {
+        vol.Required(ATTR_PLANT_ID): str,
+        vol.Required("amount"): vol.All(vol.Coerce(float), vol.Range(min=0.0)),
+        vol.Optional("nutrients"): vol.Schema({str: vol.Coerce(float)}),
+        vol.Optional(ATTR_PRESET_ID): str,
+    }
+)
+
+WATER_GROWSPACE_SCHEMA = vol.Schema(
+    {
+        vol.Required(ATTR_GROWSPACE_ID): vol.All(str, valid_growspace_id),
+        vol.Required("amount_per_plant"): vol.All(
+            vol.Coerce(float), vol.Range(min=0.0)
+        ),
+        vol.Optional("nutrients"): vol.Schema({str: vol.Coerce(float)}),
+        vol.Optional(ATTR_PRESET_ID): str,
+    }
+)
+
+# --- Nutrient Preset Schemas ---
+
+NUTRIENT_ITEM_SCHEMA = vol.Schema(
+    {
+        vol.Required("name"): str,
+        vol.Required("dose_ml_l"): vol.All(vol.Coerce(float), vol.Range(min=0.0)),
+    }
+)
+
+SAVE_NUTRIENT_PRESET_SCHEMA = vol.Schema(
+    {
+        vol.Required(ATTR_NAME): str,
+        vol.Required("nutrients"): vol.All([NUTRIENT_ITEM_SCHEMA], vol.Length(min=1)),
+        vol.Optional(ATTR_PRESET_ID): str,
+        vol.Optional(ATTR_STAGE): vol.Any(vol.In(PLANT_STAGES), None),
+        vol.Optional(ATTR_MIN_DAYS_IN_STAGE): vol.All(int, vol.Range(min=0)),
+    }
+)
+
+REMOVE_NUTRIENT_PRESET_SCHEMA = vol.Schema(
+    {
+        vol.Required(ATTR_PRESET_ID): str,
     }
 )

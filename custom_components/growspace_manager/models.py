@@ -28,6 +28,25 @@ class DehumidifierRange(TypedDict):
 
 type DehumidifierThresholds = dict[str, dict[str, DehumidifierRange]]
 type BayesianOptions = dict[str, Any]
+type NutrientMap = dict[str, float]
+
+
+class NutrientEntry(TypedDict):
+    """A single nutrient entry with concentration info."""
+
+    name: str
+    dose_ml_l: float
+    total_amount: float
+
+
+class NutrientPresetItem(TypedDict):
+    """A single nutrient in a preset recipe."""
+
+    name: str
+    dose_ml_l: float  # ml per liter of solution
+
+
+# Note: NutrientPreset is defined after BaseModel to inherit from it
 
 
 @dataclass(slots=True)
@@ -205,8 +224,21 @@ class Plant(BaseModel):
     updated_at: str | None = None
     transition_date: str | None = None
     source_mother: str | None = None
+    last_watered: str | None = None
+    last_trained: str | None = None
+    last_training_technique: str | None = None
 
     _MIGRATIONS = {"created": "created_at", "updated": "updated_at"}
+
+    def get_days_since_watering(self) -> int | None:
+        """Calculate days since last watering.
+
+        Returns:
+            Number of days since last watered, or None if never watered.
+        """
+        if self.last_watered:
+            return calculate_days_since(self.last_watered)
+        return None
 
     def get_days_in_stage(self, stage_name: str) -> int:
         """Calculate days spent in a specific stage."""
@@ -258,11 +290,37 @@ class GrowspaceEvent(BaseModel):
     _DEFAULTS = {"category": "alert"}
 
 
+@dataclass(slots=True)
+class NutrientPreset(BaseModel):
+    """A reusable nutrient recipe with optional stage conditions.
+
+    Attributes:
+        id: Unique identifier for the preset.
+        name: Human-readable name for the preset (e.g., "Late Bloom Mix").
+        nutrients: List of nutrients with their concentrations.
+        stage: Optional plant stage this preset applies to.
+        min_days_in_stage: Optional minimum days in stage before this preset applies.
+        created_at: Timestamp when the preset was created.
+    """
+
+    id: str
+    name: str
+    nutrients: list[NutrientPresetItem]
+    stage: PlantStage | str | None = None
+    min_days_in_stage: int | None = None
+    created_at: str = field(default_factory=lambda: datetime.now().isoformat())
+
+    def get_nutrient_map(self) -> NutrientMap:
+        """Convert nutrients list to a dict[str, float] for watering services."""
+        return {n["name"]: n["dose_ml_l"] for n in self.nutrients}
+
+
 class GrowspaceCoordinatorData(TypedDict):
     """Data contract for the Growspace Coordinator."""
 
     growspaces: dict[str, Growspace]
     plants: dict[str, Plant]
+    nutrient_presets: dict[str, NutrientPreset]
     notifications_sent: dict[str, dict[str, dict[str, bool]]]
     notifications_enabled: dict[str, bool]
     _version: str

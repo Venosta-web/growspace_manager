@@ -10,6 +10,7 @@ from __future__ import annotations
 # Standard library
 import asyncio
 import logging
+from dataclasses import asdict
 from typing import Any, override
 
 # Third-party / external
@@ -227,6 +228,7 @@ async def _create_initial_entities(
     """Create initial entities for the platform."""
     # Strain Library
     initial_entities.append(StrainLibrarySensor(coordinator))
+    initial_entities.append(NutrientPresetSensor(coordinator))
 
     # Growspaces and Plants
     for growspace_id, growspace in coordinator.growspaces.items():
@@ -763,6 +765,10 @@ class PlantEntity(SensorEntity):
         attributes["veg_week"] = plant.get_week_in_stage("veg")
         attributes["flower_week"] = plant.get_week_in_stage("flower")
 
+        # Watering attributes
+        attributes["last_watered"] = plant.last_watered
+        attributes["days_since_last_watering"] = plant.get_days_since_watering()
+
         return attributes
 
     @override
@@ -802,6 +808,41 @@ class StrainLibrarySensor(CoordinatorEntity[GrowspaceCoordinator], SensorEntity)
         """Return the calculated strain analytics as state attributes."""
         # Use the cached analytics from StrainLibrary to avoid heavy computation on the main loop.
         return self.coordinator.strain_library.get_analytics()
+
+
+class NutrientPresetSensor(CoordinatorEntity[GrowspaceCoordinator], SensorEntity):
+    """A sensor that provides the nutrient presets library.
+
+    The state of this sensor is the total number of nutrient presets.
+    Its attributes contain the serialized preset data.
+    """
+
+    _attr_has_entity_name = True
+    _attr_translation_key = "nutrient_presets"
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+    _attr_native_unit_of_measurement = None
+
+    def __init__(self, coordinator: GrowspaceCoordinator) -> None:
+        """Initialize the Nutrient Preset sensor."""
+        super().__init__(coordinator)
+        self._attr_unique_id = f"{DOMAIN}_nutrient_presets"
+
+    @property
+    @override
+    def native_value(self) -> int:
+        """Return the number of nutrient presets."""
+        return len(self.coordinator.nutrient_presets)
+
+    @property
+    @override
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Return the nutrient presets as state attributes."""
+        # Use a dictionary to store presets as attributes
+        return {
+            "presets": {
+                pid: asdict(p) for pid, p in self.coordinator.nutrient_presets.items()
+            }
+        }
 
 
 class GrowspaceListSensor(SensorEntity):

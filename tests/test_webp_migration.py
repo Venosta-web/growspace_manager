@@ -3,7 +3,6 @@
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock
 
-import pytest
 from PIL import Image as PILImage
 
 from custom_components.growspace_manager.image_manager import ImageManager
@@ -28,7 +27,7 @@ async def test_webp_migration(tmp_path: Path) -> None:
     image_manager = ImageManager(mock_hass, str(tmp_path))
 
     # Create a mock database connection
-    mock_db = AsyncMock()
+    mock_db = MagicMock()
     mock_cursor = AsyncMock()
     mock_cursor.__aiter__.return_value = [
         {

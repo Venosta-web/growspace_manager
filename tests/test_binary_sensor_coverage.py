@@ -28,6 +28,8 @@ def mock_coordinator():
     coordinator.get_growspace_plants = MagicMock(return_value=[])
     coordinator.calculate_days = MagicMock(return_value=0)
     coordinator.async_add_listener = MagicMock()
+    # Explicitly mock async_commit as MagicMock to prevent "coroutine never awaited" warnings
+    coordinator.async_commit = MagicMock()
     return coordinator
 
 
@@ -36,7 +38,14 @@ def mock_hass():
     """Mock Home Assistant."""
     hass = MagicMock(spec=HomeAssistant)
     hass.states = MagicMock()
-    hass.async_create_task = MagicMock()
+
+    def async_create_task(coro):
+        """Mock async_create_task that closes the coroutine to avoid warnings."""
+        if coro:
+            coro.close()
+        return MagicMock()
+
+    hass.async_create_task = MagicMock(side_effect=async_create_task)
     return hass
 
 
@@ -52,7 +61,7 @@ def env_config():
 
 async def test_light_cycle_sensor_no_light_entity(
     mock_hass, mock_coordinator, env_config
-):
+) -> None:
     """Test LightCycleVerificationSensor with no light entity configured."""
     # Remove light sensor from config
     env_config.light_sensor = None
@@ -73,14 +82,13 @@ async def test_light_cycle_sensor_no_light_entity(
 
 async def test_light_cycle_sensor_coordinator_update_callback(
     mock_hass, mock_coordinator, env_config
-):
+) -> None:
     """Test _handle_coordinator_update callback."""
     sensor = LightCycleVerificationSensor(
         mock_coordinator, "test_growspace", env_config
     )
     sensor.hass = mock_hass
 
-    # This should hit line 1018
     sensor._handle_coordinator_update()
 
     mock_hass.async_create_task.assert_called_once()
@@ -88,7 +96,7 @@ async def test_light_cycle_sensor_coordinator_update_callback(
 
 async def test_light_cycle_sensor_light_sensor_changed_callback(
     mock_hass, mock_coordinator, env_config
-):
+) -> None:
     """Test _async_light_sensor_changed callback."""
     sensor = LightCycleVerificationSensor(
         mock_coordinator, "test_growspace", env_config
@@ -103,7 +111,7 @@ async def test_light_cycle_sensor_light_sensor_changed_callback(
 
 async def test_light_cycle_sensor_flower_stage_early(
     mock_hass, mock_coordinator, env_config
-):
+) -> None:
     """Test _get_current_stage_key with early flower stage."""
     sensor = LightCycleVerificationSensor(
         mock_coordinator, "test_growspace", env_config
@@ -125,13 +133,12 @@ async def test_light_cycle_sensor_flower_stage_early(
     stage_info = sensor._get_growth_stage_info()
     stage_key = sensor._get_current_stage_key(stage_info)
 
-    # This should hit line 1068
     assert stage_key == "flower_early"
 
 
 async def test_light_cycle_sensor_flower_stage_mid(
     mock_hass, mock_coordinator, env_config
-):
+) -> None:
     """Test _get_current_stage_key with mid flower stage."""
     sensor = LightCycleVerificationSensor(
         mock_coordinator, "test_growspace", env_config
@@ -153,13 +160,12 @@ async def test_light_cycle_sensor_flower_stage_mid(
     stage_info = sensor._get_growth_stage_info()
     stage_key = sensor._get_current_stage_key(stage_info)
 
-    # This should hit line 1070
     assert stage_key == "flower_mid"
 
 
 async def test_light_cycle_sensor_flower_stage_late(
     mock_hass, mock_coordinator, env_config
-):
+) -> None:
     """Test _get_current_stage_key with late flower stage."""
     sensor = LightCycleVerificationSensor(
         mock_coordinator, "test_growspace", env_config
@@ -181,13 +187,12 @@ async def test_light_cycle_sensor_flower_stage_late(
     stage_info = sensor._get_growth_stage_info()
     stage_key = sensor._get_current_stage_key(stage_info)
 
-    # This should hit lines 1071-1072
     assert stage_key == "flower_late"
 
 
 async def test_light_cycle_sensor_update_state_with_light(
     mock_hass, mock_coordinator, env_config
-):
+) -> None:
     """Test _update_state with light sensor configured."""
     sensor = LightCycleVerificationSensor(
         mock_coordinator, "test_growspace", env_config
@@ -199,7 +204,6 @@ async def test_light_cycle_sensor_update_state_with_light(
     mock_light_state.state = "on"
     mock_hass.states.get.return_value = mock_light_state
 
-    # This should hit line 1033 (pass statement)
     sensor._update_state()
 
     assert sensor._is_schedule_matched is True

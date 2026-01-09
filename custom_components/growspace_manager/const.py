@@ -79,6 +79,14 @@ ATTR_ROWS = "rows"
 ATTR_PLANTS_PER_ROW = "plants_per_row"
 ATTR_NOTIFICATION_TARGET = "notification_target"
 
+# Watering Attributes
+ATTR_WATER_AMOUNT = "amount"
+ATTR_NUTRIENTS = "nutrients"
+ATTR_AMOUNT_PER_PLANT = "amount_per_plant"
+ATTR_PRESET_ID = "preset_id"
+ATTR_PRESET_NAME = "preset_name"
+ATTR_MIN_DAYS_IN_STAGE = "min_days_in_stage"
+
 # Events
 # Icons
 ICON_NOTIFICATION = "mdi:bell"
@@ -182,6 +190,32 @@ class GrowspaceService(StrEnum):
     DEBUG_CLEANUP_LEGACY = "debug_cleanup_legacy"
     TEST_NOTIFICATION = "test_notification"
     GET_STRAIN_LIBRARY = "get_strain_library"
+    # Watering Services
+    WATER_PLANT = "water_plant"
+    WATER_GROWSPACE = "water_growspace"
+    # Nutrient Preset Services
+    SAVE_NUTRIENT_PRESET = "save_nutrient_preset"
+    REMOVE_NUTRIENT_PRESET = "remove_nutrient_preset"
+    # Training Services
+    LOG_TRAINING_EVENT = "log_training_event"
+
+
+class TrainingTechnique(StrEnum):
+    """Horticultural training techniques."""
+
+    TOPPING = "topping"
+    FIM = "fim"
+    LST = "lst"
+    SUPER_CROPPING = "super_cropping"
+    SCROG = "scrog"
+    DEFOLIATING = "defoliating"
+    LOLLIPOPPING = "lollipopping"
+
+
+# Training Attributes
+ATTR_TECHNIQUE = "technique"
+ATTR_NOTES = "notes"
+CATEGORY_TRAINING = "training"
 
 
 # Plant stages
@@ -240,9 +274,9 @@ DEFAULT_BAYESIAN_PRIORS = {
 }
 
 DEFAULT_BAYESIAN_THRESHOLDS = {
-    "stress": 0.70,
-    "mold_risk": 0.75,
-    "optimal": 0.80,
+    "stress": 0.80,
+    "mold_risk": 0.80,
+    "optimal": 0.90,
     "drying": 0.80,
     "curing": 0.80,
 }

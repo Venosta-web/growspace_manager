@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import uuid
+from dataclasses import asdict
 from datetime import date, datetime, timedelta
 from typing import Any, override
 
@@ -12,9 +13,11 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
+from homeassistant.util import dt as dt_util
 from homeassistant.util import slugify
 
 from .const import (
+    CATEGORY_TRAINING,
     CONF_HUMIDITY_SENSOR,
     CONF_TEMP_SENSOR,
     CONF_VPD_SENSOR,
@@ -47,7 +50,7 @@ from .growspace_validator import GrowspaceValidator
 from .import_export_manager import ImportExportManager
 from .irrigation_coordinator import IrrigationCoordinator
 from .migration_manager import MigrationManager
-from .models import Growspace, GrowspaceEvent, GrowspaceType, Plant
+from .models import Growspace, GrowspaceEvent, GrowspaceType, NutrientPreset, Plant
 from .notification_manager import NotificationManager
 from .plant_lifecycle_manager import PlantLifecycleManager
 from .serializers import GrowspaceSerializer
@@ -114,6 +117,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
         self.growspaces: dict[str, Growspace] = {}
         self.plants: dict[str, Plant] = {}
         self.events: dict[str, list[GrowspaceEvent]] = {}
+        self.nutrient_presets: dict[str, NutrientPreset] = {}
 
         # Optimization: Cache for serialized growspace data
         self._serialized_cache: dict[str, dict[str, Any]] = {}
@@ -211,6 +215,11 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
         serialized = self.serializer.serialize_growspace(
             growspace, plants, self.environment_analyzer
         )
+        # Inject global nutrient presets
+        serialized["nutrient_presets"] = {
+            pid: asdict(preset) for pid, preset in self.nutrient_presets.items()
+        }
+
         self._serialized_cache[growspace_id] = serialized
         return serialized
 
@@ -351,8 +360,8 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
 
         self.events[growspace_id].append(event)
 
-        # Enforce rolling buffer limit (max 50 events per growspace)
-        if len(self.events[growspace_id]) > 50:
+        # Enforce rolling buffer limit (max 1000 events per growspace)
+        if len(self.events[growspace_id]) > 1000:
             self.events[growspace_id].pop(0)
 
         # Persist changes
@@ -730,9 +739,10 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
         self.data = {
             "growspaces": self.growspaces,
             "plants": self.plants,
+            "nutrient_presets": self.nutrient_presets,
             "notifications_sent": self._notifications_sent,
             "notifications_enabled": self._notifications_enabled,
-            "_version": datetime.now().isoformat(),
+            "_version": dt_util.now().isoformat(),
             "serialized_growspaces": serialized_growspaces,
             "air_exchange_recommendations": recs,
         }
@@ -1448,6 +1458,352 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
         """Transition a plant to the 'curing' stage, starting today."""
         await self.async_transition_plant_stage(plant_id, PlantStage.CURE, date.today())
         return self.plants[plant_id]
+
+    # =============================================================================
+    # MANUAL WATERING METHODS
+    # =============================================================================
+
+    async def async_water_plant(
+        self,
+        plant_id: str,
+        amount: float,
+        nutrients: dict[str, float] | None = None,
+        preset_id: str | None = None,
+    ) -> Plant:
+        """Record a watering event for a single plant.
+
+        Args:
+            plant_id: The ID of the plant to water.
+            amount: The amount of water in liters.
+            nutrients: Optional dict of nutrient name to concentration (ml/L).
+            preset_id: Optional ID of a nutrient preset to apply.
+
+        Returns:
+            The updated Plant object.
+        """
+        self.validator.validate_plant_exists(plant_id)
+        plant = self.plants[plant_id]
+
+        final_nutrients: dict[str, float] = {}
+        preset_name: str | None = None
+
+        # 1. Apply preset nutrients if provided
+        if preset_id:
+            if preset_id not in self.nutrient_presets:
+                raise KeyError(f"Nutrient preset '{preset_id}' not found")
+            preset = self.nutrient_presets[preset_id]
+            preset_name = preset.name
+            final_nutrients.update(preset.get_nutrient_map())
+
+        # 2. Merge with manual nutrients (manual overrides preset)
+        if nutrients:
+            final_nutrients.update(nutrients)
+
+        # Update plant's last_watered timestamp
+        now_iso = dt_util.now().isoformat()
+        plant.last_watered = now_iso
+
+        # Invalidate cache for the growspace
+        self._invalidate_cache(plant.growspace_id)
+
+        # Build reasons for the event
+        reasons = []
+
+        # Add Plant ID for filtering (prefixed for easy parsing)
+        reasons.append(f"plant_id:{plant_id}")
+
+        # Add Plant display info
+        plant_info = f"Plant: {plant.strain}"
+        if plant.phenotype:
+            plant_info += f" ({plant.phenotype})"
+        reasons.append(plant_info)
+
+        reasons.append(f"Watered with {amount}L")
+        if preset_name:
+            reasons.append(f"Preset: {preset_name}")
+
+        if final_nutrients:
+            # Calculate total ml for each nutrient and format strings
+            nutrient_details = []
+            for name, conc in final_nutrients.items():
+                total_ml = round(amount * conc, 2)
+                nutrient_details.append(f"{name}: {conc}ml/L (Total: {total_ml}ml)")
+
+            reasons.append(f"Nutrients: {', '.join(nutrient_details)}")
+
+        # Create a GrowspaceEvent for the logbook
+        event = GrowspaceEvent(
+            sensor_type="irrigation",
+            growspace_id=plant.growspace_id,
+            start_time=now_iso,
+            end_time=now_iso,
+            duration_sec=0,
+            severity=0.0,
+            category="environmental",
+            reasons=reasons,
+        )
+        self.add_event(plant.growspace_id, event)
+
+        _LOGGER.info(
+            "Watered plant %s (%s) with %sL%s%s",
+            plant_id,
+            plant.strain,
+            amount,
+            f" using preset '{preset_name}'" if preset_name else "",
+            f" + manual nutrients: {nutrients}" if nutrients else "",
+        )
+
+        return plant
+
+    async def async_log_training_event(
+        self,
+        growspace_id: str | None,
+        technique: str,
+        notes: str | None = None,
+        plant_ids: list[str] | None = None,
+    ) -> None:
+        """Log a training event for specific plants or an entire growspace."""
+        _LOGGER.debug(
+            "async_log_training_event called with gid=%s (%s), pids=%s (%s), technique=%s, notes=%s",
+            growspace_id,
+            type(growspace_id),
+            plant_ids,
+            type(plant_ids),
+            technique,
+            notes,
+        )
+        if plant_ids:
+            _LOGGER.debug("plant_ids[0] type: %s", type(plant_ids[0]))
+
+        # Determine target plants
+        target_plants: list[Plant] = []
+
+        if plant_ids:
+            # Filter valid plants by ID
+            for pid in plant_ids:
+                if pid in self.plants:
+                    target_plants.append(self.plants[pid])
+        elif growspace_id:
+            # All plants in the growspace
+            target_plants = self.get_growspace_plants(growspace_id)
+        else:
+            raise ValueError("Either growspace_id or plant_ids must be provided.")
+
+        now = dt_util.now().isoformat()
+
+        # DEBUG: Check likely culprit
+        try:
+            growspace_ids = {p.growspace_id for p in target_plants}
+        except TypeError as e:
+            _LOGGER.error(
+                "DEBUG: Error creating growspace_ids set from target_plants: %s", e
+            )
+            raise
+
+        # Update plants
+        for plant in target_plants:
+            plant.last_training_technique = technique
+            plant.last_trained = now
+
+        # Create event(s)
+        if not target_plants and growspace_id:
+            growspace_ids = {growspace_id}
+
+        for gid in growspace_ids:
+            # Add plant IDs for filtering (prefixed for easy parsing)
+            affected_plants_in_gid = [p for p in target_plants if p.growspace_id == gid]
+            plant_id_reasons = [
+                f"plant_id:{p.plant_id}" for p in affected_plants_in_gid
+            ]
+
+            reasons = plant_id_reasons + [
+                f"Technique: {technique.replace('_', ' ').title()}"
+            ]
+            if notes:
+                reasons.append(f"Notes: {notes}")
+
+            # List affected plants in reasons if subset
+            if plant_ids and len(plant_ids) < len(self.get_growspace_plants(gid)):
+                affected_names = [p.strain for p in affected_plants_in_gid]
+                if affected_names:
+                    reasons.append(f"Plants: {', '.join(affected_names)}")
+
+            event = GrowspaceEvent(
+                sensor_type=technique,
+                growspace_id=gid,
+                start_time=now,
+                end_time=now,
+                duration_sec=0,
+                severity=0.5,  # Moderate severity for training
+                category=CATEGORY_TRAINING,
+                reasons=reasons,
+            )
+            self.add_event(gid, event)
+
+        await self.async_save()
+
+    async def async_water_growspace(
+        self,
+        growspace_id: str,
+        amount_per_plant: float,
+        nutrients: dict[str, float] | None = None,
+        preset_id: str | None = None,
+    ) -> int:
+        """Record a watering event for all plants in a growspace.
+
+        Args:
+            growspace_id: The ID of the growspace to water.
+            amount_per_plant: The amount of water per plant in liters.
+            nutrients: Optional dict of nutrient name to concentration (ml/L).
+            preset_id: Optional ID of a nutrient preset to apply.
+
+        Returns:
+            The number of plants watered.
+        """
+        self.validator.validate_growspace_exists(growspace_id)
+        plants = self.get_growspace_plants(growspace_id)
+
+        for plant in plants:
+            await self.async_water_plant(
+                plant.plant_id, amount_per_plant, nutrients, preset_id
+            )
+
+        _LOGGER.info(
+            "Watered %d plants in growspace %s with %sL each%s",
+            len(plants),
+            growspace_id,
+            amount_per_plant,
+            f" using preset '{preset_id}'" if preset_id else "",
+        )
+
+        return len(plants)
+
+    # =============================================================================
+    # NUTRIENT PRESET METHODS
+    # =============================================================================
+
+    async def async_save_nutrient_preset(
+        self,
+        name: str,
+        nutrients: list[dict[str, Any]],
+        stage: str | None = None,
+        min_days_in_stage: int | None = None,
+        preset_id: str | None = None,
+    ) -> NutrientPreset:
+        """Create or update a nutrient preset.
+
+        Args:
+            name: Human-readable name for the preset.
+            nutrients: List of nutrient items with 'name' and 'dose_ml_l'.
+            stage: Optional plant stage this preset applies to.
+            min_days_in_stage: Optional minimum days in stage for this preset.
+            preset_id: Optional ID of the preset to update. If not provided, a new one will be created.
+
+        Returns:
+            The saved NutrientPreset object.
+        """
+        if preset_id and preset_id in self.nutrient_presets:
+            preset = self.nutrient_presets[preset_id]
+            preset.name = name
+            preset.nutrients = nutrients  # type: ignore[arg-type]
+            preset.stage = stage
+            preset.min_days_in_stage = min_days_in_stage
+            # ID and created_at remain unchanged
+        else:
+            # Create new
+            pid = preset_id or str(uuid.uuid4())
+            preset = NutrientPreset(
+                id=pid,
+                name=name,
+                nutrients=nutrients,  # type: ignore[arg-type]
+                stage=stage,
+                min_days_in_stage=min_days_in_stage,
+                created_at=dt_util.now().isoformat(),
+            )
+            self.nutrient_presets[pid] = preset
+        await self.async_save()
+
+        _LOGGER.info(
+            "Saved nutrient preset '%s' with %d nutrients (id=%s)",
+            name,
+            len(nutrients),
+            preset_id,
+        )
+
+        # Invalidate cache for all growspaces as presets are global
+        self._serialized_cache.clear()
+
+        return preset
+
+    async def async_remove_nutrient_preset(self, preset_id: str) -> None:
+        """Remove a nutrient preset.
+
+        Args:
+            preset_id: The ID of the preset to remove.
+
+        Raises:
+            KeyError: If the preset does not exist.
+        """
+        if preset_id not in self.nutrient_presets:
+            raise KeyError(f"Nutrient preset '{preset_id}' not found")
+
+        preset_name = self.nutrient_presets[preset_id].name
+        del self.nutrient_presets[preset_id]
+        await self.async_save()
+
+        # Invalidate cache for all growspaces as presets are global
+        self._serialized_cache.clear()
+
+        _LOGGER.info("Removed nutrient preset '%s' (id=%s)", preset_name, preset_id)
+
+    def get_applicable_presets(self, plant_id: str) -> list[NutrientPreset]:
+        """Get all presets applicable to a plant based on its current stage and days.
+
+        Args:
+            plant_id: The ID of the plant to check.
+
+        Returns:
+            List of applicable NutrientPreset objects.
+        """
+        self.validator.validate_plant_exists(plant_id)
+        plant = self.plants[plant_id]
+
+        applicable: list[NutrientPreset] = []
+
+        for preset in self.nutrient_presets.values():
+            # If preset has no stage filter, it applies to all stages
+            if preset.stage is not None:
+                # Check if plant's current stage matches preset stage
+                if str(plant.stage).lower() != str(preset.stage).lower():
+                    continue
+
+            # If preset has min_days_in_stage, check if plant meets it
+            if preset.min_days_in_stage is not None:
+                current_stage = str(plant.stage).lower()
+                days_in_stage = plant.get_days_in_stage(current_stage)
+                if days_in_stage < preset.min_days_in_stage:
+                    continue
+
+            applicable.append(preset)
+
+        return applicable
+
+    def _resolve_preset_nutrients(self, preset_id: str) -> dict[str, float]:
+        """Resolve a preset ID to its nutrient map.
+
+        Args:
+            preset_id: The ID of the preset to resolve.
+
+        Returns:
+            Dict mapping nutrient name to concentration (ml/L).
+
+        Raises:
+            KeyError: If the preset does not exist.
+        """
+        if preset_id not in self.nutrient_presets:
+            raise KeyError(f"Nutrient preset '{preset_id}' not found")
+
+        return self.nutrient_presets[preset_id].get_nutrient_map()
 
     async def async_harvest(self, plant_id: str) -> Plant:
         """Mark a plant as harvested, transitioning it to the 'dry' stage today."""
