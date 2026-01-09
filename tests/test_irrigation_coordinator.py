@@ -638,3 +638,47 @@ async def test_run_pump_cycle_cleanup(
 
     # Verify task is removed
     assert "irrigation" not in coordinator._running_tasks
+
+
+async def test_run_pump_cycle_with_moisture_logging(
+    mock_hass: MagicMock, mock_config_entry: MagicMock, mock_main_coordinator: MagicMock
+) -> None:
+    """Test pump cycle with moisture logging."""
+    coordinator = IrrigationCoordinator(
+        mock_hass, mock_config_entry, GROWSPACE_ID, mock_main_coordinator
+    )
+
+    # Configure moisture sensor
+    mock_main_coordinator.growspaces[GROWSPACE_ID].environment_config = MagicMock()
+    mock_main_coordinator.growspaces[
+        GROWSPACE_ID
+    ].environment_config.soil_moisture_sensor = "sensor.moisture"
+
+    # Mock states
+    mock_hass.states = MagicMock()
+
+    # Mock sensor states (before=45.2, after=55.8)
+    mock_before_state = MagicMock()
+    mock_before_state.state = "45.2"
+
+    mock_after_state = MagicMock()
+    mock_after_state.state = "55.8"
+
+    def get_state(entity_id):
+        if entity_id == "sensor.moisture":
+            # Return first value then second value?
+            # side_effect is better but mocked hass object is reused.
+            # We can use a simpler approach or side_effect on the mock instance directly.
+            pass
+
+    mock_hass.states.get.side_effect = [mock_before_state, mock_after_state]
+
+    with patch("asyncio.sleep", new_callable=AsyncMock):
+        await coordinator._run_pump_cycle("irrigation", "switch.pump", 30, {})
+
+        mock_main_coordinator.add_event.assert_called_once()
+        args, _ = mock_main_coordinator.add_event.call_args
+        event = args[1]
+
+        # Verify moisture is in reasons
+        assert any("Moisture: 45.2% -> 55.8%" in r for r in event.reasons)

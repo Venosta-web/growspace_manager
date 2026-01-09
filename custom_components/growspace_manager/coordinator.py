@@ -360,8 +360,8 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
 
         self.events[growspace_id].append(event)
 
-        # Enforce rolling buffer limit (max 50 events per growspace)
-        if len(self.events[growspace_id]) > 50:
+        # Enforce rolling buffer limit (max 1000 events per growspace)
+        if len(self.events[growspace_id]) > 1000:
             self.events[growspace_id].pop(0)
 
         # Persist changes
@@ -1509,7 +1509,10 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
         # Build reasons for the event
         reasons = []
 
-        # Add Plant ID info
+        # Add Plant ID for filtering (prefixed for easy parsing)
+        reasons.append(f"plant_id:{plant_id}")
+
+        # Add Plant display info
         plant_info = f"Plant: {plant.strain}"
         if plant.phenotype:
             plant_info += f" ({plant.phenotype})"
@@ -1607,15 +1610,21 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
             growspace_ids = {growspace_id}
 
         for gid in growspace_ids:
-            reasons = [f"Technique: {technique.replace('_', ' ').title()}"]
+            # Add plant IDs for filtering (prefixed for easy parsing)
+            affected_plants_in_gid = [p for p in target_plants if p.growspace_id == gid]
+            plant_id_reasons = [
+                f"plant_id:{p.plant_id}" for p in affected_plants_in_gid
+            ]
+
+            reasons = plant_id_reasons + [
+                f"Technique: {technique.replace('_', ' ').title()}"
+            ]
             if notes:
                 reasons.append(f"Notes: {notes}")
 
             # List affected plants in reasons if subset
             if plant_ids and len(plant_ids) < len(self.get_growspace_plants(gid)):
-                affected_names = [
-                    p.strain for p in target_plants if p.growspace_id == gid
-                ]
+                affected_names = [p.strain for p in affected_plants_in_gid]
                 if affected_names:
                     reasons.append(f"Plants: {', '.join(affected_names)}")
 

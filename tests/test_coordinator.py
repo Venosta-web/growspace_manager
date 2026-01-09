@@ -2934,16 +2934,16 @@ async def test_coverage_load_growspace_object_directly(coordinator) -> None:
 
 
 async def test_coverage_event_rolling_buffer_limit(coordinator) -> None:
-    """Test event buffer enforces 50 event limit (lines 323-335)."""
+    """Test event buffer enforces 1000 event limit."""
     growspace_id = "test_gs"
 
-    # Add 55 events (should trigger rolling buffer at 50)
-    for i in range(55):
+    # Add 1005 events (should trigger rolling buffer at 1000)
+    for i in range(1005):
         event = GrowspaceEvent(
             sensor_type="test_sensor",
             growspace_id=growspace_id,
-            start_time=f"2024-01-01T12:{i:02d}:00",
-            end_time=f"2024-01-01T12:{i:02d}:01",
+            start_time=f"2024-01-01T12:{i:04d}:00",  # Use 4 digits just in case, though 1000 seconds logic is fine
+            end_time=f"2024-01-01T12:{i:04d}:01",
             duration_sec=1,
             severity=0.5,
             category="test",
@@ -2951,14 +2951,14 @@ async def test_coverage_event_rolling_buffer_limit(coordinator) -> None:
         )
         coordinator.add_event(growspace_id, event)
 
-    # Should only keep last 50
-    assert len(coordinator.events[growspace_id]) == 50
+    # Should only keep last 1000
+    assert len(coordinator.events[growspace_id]) == 1000
 
     # First event should be reason 5 (0-4 were removed)
     assert coordinator.events[growspace_id][0].reasons == ["reason 5"]
 
-    # Last event should be reason 54
-    assert coordinator.events[growspace_id][-1].reasons == ["reason 54"]
+    # Last event should be reason 1004
+    assert coordinator.events[growspace_id][-1].reasons == ["reason 1004"]
 
 
 async def test_coverage_migrate_plant_image_paths(coordinator) -> None:

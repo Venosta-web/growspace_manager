@@ -274,9 +274,9 @@ DEFAULT_BAYESIAN_PRIORS = {
 }
 
 DEFAULT_BAYESIAN_THRESHOLDS = {
-    "stress": 0.70,
-    "mold_risk": 0.75,
-    "optimal": 0.80,
+    "stress": 0.80,
+    "mold_risk": 0.80,
+    "optimal": 0.90,
     "drying": 0.80,
     "curing": 0.80,
 }

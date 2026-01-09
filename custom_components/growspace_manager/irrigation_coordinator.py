@@ -408,7 +408,15 @@ class IrrigationCoordinator(BaseIrrigationCoordinator):
     ):
         """Run the on-off cycle for a pump and send notifications."""
         start_dt = None
+        moisture_before = None
+
         try:
+            # Capture moisture before starting
+            if self.growspace.environment_config.soil_moisture_sensor:
+                moisture_before = self._get_sensor_value(
+                    self.growspace.environment_config.soil_moisture_sensor
+                )
+
             start_dt = utcnow()
             _LOGGER.info(
                 "Starting %s for %s (entity: %s), running for %s seconds",
@@ -459,6 +467,28 @@ class IrrigationCoordinator(BaseIrrigationCoordinator):
                 # Ensure start_dt is defined
                 if start_dt:
                     duration_sec = (end_dt - start_dt).total_seconds()
+
+                    # Capture moisture after
+                    moisture_after = None
+                    if self.growspace.environment_config.soil_moisture_sensor:
+                        moisture_after = self._get_sensor_value(
+                            self.growspace.environment_config.soil_moisture_sensor
+                        )
+
+                    # Build reasons
+                    reasons = [f"{event_type.capitalize()} cycle completed"]
+
+                    # Add Duration
+                    reasons.append(f"Duration: {int(duration_sec)}s")
+
+                    # Add Moisture Data
+                    if moisture_before is not None and moisture_after is not None:
+                        reasons.append(
+                            f"Moisture: {moisture_before:.1f}% -> {moisture_after:.1f}%"
+                        )
+                    elif moisture_after is not None:
+                        reasons.append(f"Moisture: {moisture_after:.1f}%")
+
                     # Create and add the event
                     event = GrowspaceEvent(
                         sensor_type="irrigation"
@@ -470,7 +500,7 @@ class IrrigationCoordinator(BaseIrrigationCoordinator):
                         duration_sec=int(duration_sec),
                         severity=1.0,
                         category="irrigation",
-                        reasons=[f"{event_type.capitalize()} cycle completed"],
+                        reasons=reasons,
                     )
                     self._main_coordinator.add_event(self._growspace_id, event)
             except Exception as e:

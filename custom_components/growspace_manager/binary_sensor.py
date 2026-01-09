@@ -605,6 +605,11 @@ class BayesianEnvironmentSensor(BinarySensorEntity):
             end_time = utcnow()
             duration = (end_time - self._event_start_time).total_seconds()
 
+            # Determine category
+            category = "alert"
+            if self.entity_description.sensor_type == GrowspaceSensorType.OPTIMAL:
+                category = "environment"
+
             # Create the event object
             event = GrowspaceEvent(
                 sensor_type=self.entity_description.sensor_type,
@@ -613,7 +618,7 @@ class BayesianEnvironmentSensor(BinarySensorEntity):
                 end_time=end_time.isoformat(),
                 duration_sec=int(duration),
                 severity=self._event_max_prob,
-                category="alert",
+                category=category,
                 reasons=[r[1] for r in sorted(self._reasons, reverse=True)[:5]],
             )
 
