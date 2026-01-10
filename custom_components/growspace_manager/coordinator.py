@@ -50,7 +50,6 @@ from .exceptions import (
 from .growspace_validator import GrowspaceValidator
 from .import_export_manager import ImportExportManager
 from .irrigation_coordinator import IrrigationCoordinator
-from .migration_manager import MigrationManager
 from .models import (
     Growspace,
     GrowspaceEvent,
@@ -141,7 +140,6 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
         else:
             self.strain_library = strain_library
 
-        self.migration_manager = MigrationManager(self)
         self.validator = GrowspaceValidator(self)
         self.storage_manager = StorageManager(self, hass)
         self.environment_analyzer = EnvironmentAnalyzer(hass, self)
@@ -253,9 +251,6 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
         for gid, gdata in raw_growspaces.items():
             try:
                 if isinstance(gdata, dict):
-                    # Data Mapping / Migration logic before creating object
-                    gdata = self.migration_manager.normalize_growspace_data(gid, gdata)
-
                     self.growspaces[gid] = Growspace.from_dict(gdata)
                 elif isinstance(gdata, Growspace):
                     self.growspaces[gid] = gdata
@@ -352,10 +347,6 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
     # INITIALIZATION AND MIGRATION METHODS
     # =============================================================================
 
-    def _migrate_legacy_growspaces(self) -> None:
-        """Migrate legacy special growspace aliases to their canonical forms."""
-        self.migration_manager.migrate_legacy_growspaces()
-
     # =============================================================================
     # EVENT LOGBOOK MANAGEMENT
     # =============================================================================
@@ -407,7 +398,6 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
         Returns:
             A tuple containing the canonical ID and canonical name.
         """
-        self.migration_manager.migrate_legacy_growspaces()
 
         growspace = self.growspaces.get(gs_id)
         if growspace:
@@ -511,9 +501,6 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
         """
         # Get canonical form
         canonical_id, _ = self._canonical_special(growspace_id)
-
-        # Clean up any legacy aliases
-        self.migration_manager.cleanup_legacy_aliases(canonical_id)
 
         # Create or update the canonical growspace
         if canonical_id not in self.growspaces:
@@ -1603,14 +1590,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
 
         now = dt_util.now().isoformat()
 
-        # DEBUG: Check likely culprit
-        try:
-            growspace_ids = {p.growspace_id for p in target_plants}
-        except TypeError as e:
-            _LOGGER.error(
-                "DEBUG: Error creating growspace_ids set from target_plants: %s", e
-            )
-            raise
+        growspace_ids = {p.growspace_id for p in target_plants}
 
         # Update plants
         for plant in target_plants:

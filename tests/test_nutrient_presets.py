@@ -23,12 +23,16 @@ from custom_components.growspace_manager.const import (
 from custom_components.growspace_manager.coordinator import GrowspaceCoordinator
 from custom_components.growspace_manager.models import (
     BaseModel,
+    EnvironmentConfig,
     Growspace,
     NutrientPreset,
     Plant,
     PlantStage,
 )
-from custom_components.growspace_manager.sensor import NutrientPresetSensor
+from custom_components.growspace_manager.sensor import (
+    NutrientPresetSensor,
+    _create_initial_entities,
+)
 from custom_components.growspace_manager.services.nutrient_presets import (
     handle_remove_nutrient_preset,
     handle_save_nutrient_preset,
@@ -475,26 +479,23 @@ class TestNutrientPresetSerialization:
             a_nested: Nested
             with_default: str = "default_val"
 
-            _MIGRATIONS = {"old_key": "new_key"}
+            # _MIGRATIONS removed
             _NESTED_HANDLERS = {"a_nested": Nested.from_dict}
 
-        # 1. Test migration
-        data = {"old_key": "migrated", "a_nested": {"val": 10}}
+        # 1. Test nested handlers and defaults (migration removed)
+        data = {"new_key": "explicit_val", "a_nested": {"val": 10}}
         obj = TestModel.from_dict(data)
-        assert obj.new_key == "migrated"
+        assert obj.new_key == "explicit_val"
         assert obj.a_nested.val == 10
         assert obj.with_default == "default_val"
 
-        # 2. Test to_dict
         d = obj.to_dict()
-        assert d["new_key"] == "migrated"
+        assert d["new_key"] == "explicit_val"
         assert d["a_nested"]["val"] == 10
         assert d["with_default"] == "default_val"
 
     def test_environment_config_catch_all(self) -> None:
         """Test the _CATCH_ALL_FIELD logic in EnvironmentConfig."""
-        from custom_components.growspace_manager.models import EnvironmentConfig
-
         data = {
             "temperature_sensor": "sensor.temp",
             "extra_key": "some_value",
@@ -508,8 +509,6 @@ class TestNutrientPresetSerialization:
 
     def test_basemodel_defaults_and_invalid_catchall(self) -> None:
         """Test defaults and invalid catch-all types in BaseModel."""
-        from custom_components.growspace_manager.models import EnvironmentConfig
-
         # 1. Defaults (EnvironmentConfig has default values for many fields)
         config = EnvironmentConfig.from_dict({})
         assert config.lst_offset == -2.0
@@ -552,10 +551,6 @@ class TestSensorRegistrationCoverage:
         self, hass: HomeAssistant, preset_coordinator: GrowspaceCoordinator
     ) -> None:
         """Test that _create_initial_entities includes NutrientPresetSensor."""
-        from custom_components.growspace_manager.sensor import (
-            NutrientPresetSensor,
-            _create_initial_entities,
-        )
 
         initial_entities = []
         growspace_entities = {}

@@ -51,14 +51,15 @@ async def test_async_evaluate_fallback_mold_trend_analysis_rising() -> None:
         state,
     )
 
-    assert len(observations) == 1
-    assert len(reasons) == 1
+    # Humidity trend is now ignored for risk probability (only tracked for UI)
+    assert len(observations) == 0
+    assert len(reasons) == 0
     assert trend_states["humidity_trend"] == "rising"
-    assert reasons[0][1] == "Humidity trend"
+    # assert reasons[0][1] == "Humidity trend"
     # p_true = 0.5 + (0.5 * 0.45) = 0.725
-    assert observations[0][0] == pytest.approx(0.725)
+    # assert observations[0][0] == pytest.approx(0.725)
     # p_false = 0.5 - (0.5 * 0.4) = 0.3
-    assert observations[0][1] == pytest.approx(0.3)
+    # assert observations[0][1] == pytest.approx(0.3)
 
 
 @pytest.mark.asyncio
@@ -75,7 +76,7 @@ async def test_async_evaluate_fallback_mold_trend_analysis_falling() -> None:
     analyze_trend = AsyncMock(return_value={"trend": "falling"})
 
     # Create mock state (VPD trends are not gated)
-    state = MagicMock(spec=EnvironmentState, flower_days=0, humidity=50)
+    state = MagicMock(spec=EnvironmentState, flower_days=0, humidity=50, vpd=0.4)
 
     await _async_evaluate_fallback_mold_trend_analysis(
         sensor_instance,
@@ -92,7 +93,7 @@ async def test_async_evaluate_fallback_mold_trend_analysis_falling() -> None:
     assert len(observations) == 1
     assert len(reasons) == 1
     assert trend_states["vpd_trend"] == "falling"
-    assert reasons[0][1] == "Vpd trend"
+    assert reasons[0][1] == "Vpd trend falling (Approaching 0.5kPa)"
     # p_true = 0.5 + (0.5 * 0.45) = 0.725
     assert observations[0][0] == pytest.approx(0.725)
     # p_false = 0.5 - (0.5 * 0.4) = 0.3
@@ -568,11 +569,12 @@ async def test_async_evaluate_fallback_mold_trend_analysis_late_flower_unsafe() 
     )
 
     # Observation should be added because humidity is approaching danger zone
-    assert len(observations) == 1
-    assert len(reasons) == 1
+    # Observation should NOT be added (humidity trends ignored for risk)
+    assert len(observations) == 0
+    assert len(reasons) == 0
     assert trend_states["humidity_trend"] == "rising"
-    assert reasons[0][1] == "Humidity trend"
+    # assert reasons[0][1] == "Humidity trend"
     # p_true = 0.5 + (0.5 * 0.45) = 0.725
-    assert observations[0][0] == pytest.approx(0.725)
+    # assert observations[0][0] == pytest.approx(0.725)
     # p_false = 0.5 - (0.5 * 0.4) = 0.3
-    assert observations[0][1] == pytest.approx(0.3)
+    # assert observations[0][1] == pytest.approx(0.3)

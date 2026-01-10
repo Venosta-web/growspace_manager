@@ -8,14 +8,10 @@ from homeassistant.core import HomeAssistant, ServiceCall
 from custom_components.growspace_manager.coordinator import GrowspaceCoordinator
 from custom_components.growspace_manager.models import Plant
 from custom_components.growspace_manager.services.debug import (
-    _cleanup_cure_legacy_growspaces,
-    _cleanup_dry_legacy_growspaces,
     _consolidate_plants_to_canonical_growspace,
     _handle_reset_cure_growspace,
     _handle_reset_dry_growspace,
-    _migrate_plants_from_legacy_growspace,
     _restore_plants_to_canonical_growspace,
-    handle_debug_cleanup_legacy,
     handle_debug_consolidate_duplicate_special,
     handle_debug_list_growspaces,
     handle_debug_reset_special_growspaces,
@@ -96,84 +92,6 @@ async def test_handle_test_notification(
     mock_create_notification.assert_called_once_with(
         mock_hass, "Test Message", title="Growspace Manager Test"
     )
-
-
-@pytest.mark.asyncio
-async def test_debug_cleanup_legacy(
-    mock_hass, mock_coordinator, mock_strain_library, mock_call
-) -> None:
-    """Test handle_debug_cleanup_legacy service."""
-    mock_coordinator.growspaces = {
-        "dry_overview_1": {},
-        "cure_overview_1": {},
-        "regular_gs": {},
-    }
-    mock_coordinator.plants = {
-        "p1": Plant(plant_id="p1", growspace_id="dry_overview_1", strain="test")
-    }
-    mock_coordinator.find_first_available_position = MagicMock(return_value=(1, 1))
-
-    await handle_debug_cleanup_legacy(
-        mock_hass, mock_coordinator, mock_strain_library, mock_call
-    )
-
-    assert "dry_overview_1" not in mock_coordinator.growspaces
-    assert "cure_overview_1" not in mock_coordinator.growspaces
-    mock_coordinator.async_save.assert_awaited_once()
-
-
-@pytest.mark.asyncio
-async def test_debug_cleanup_legacy_dry_only(
-    mock_hass, mock_coordinator, mock_strain_library, mock_call
-) -> None:
-    """Test handle_debug_cleanup_legacy service with dry_only flag."""
-    mock_call.data = {"dry_only": True}
-    mock_coordinator.growspaces = {
-        "dry_overview_1": {},
-        "cure_overview_1": {},
-        "regular_gs": {},
-    }
-    mock_coordinator.ensure_special_growspace = MagicMock(side_effect=["dry"])
-    mock_coordinator.get_growspace_plants.return_value = [MagicMock(plant_id="p1")]
-    mock_coordinator.plants = {
-        "p1": Plant(plant_id="p1", growspace_id="dry_overview_1", strain="test")
-    }
-    mock_coordinator.find_first_available_position = MagicMock(return_value=(1, 1))
-
-    await handle_debug_cleanup_legacy(
-        mock_hass, mock_coordinator, mock_strain_library, mock_call
-    )
-
-    assert "dry_overview_1" not in mock_coordinator.growspaces
-    assert "cure_overview_1" in mock_coordinator.growspaces
-    mock_coordinator.async_save.assert_awaited_once()
-
-
-@pytest.mark.asyncio
-async def test_debug_cleanup_legacy_cure_only(
-    mock_hass, mock_coordinator, mock_strain_library, mock_call
-) -> None:
-    """Test handle_debug_cleanup_legacy service with cure_only flag."""
-    mock_call.data = {"cure_only": True}
-    mock_coordinator.growspaces = {
-        "dry_overview_1": {},
-        "cure_overview_1": {},
-        "regular_gs": {},
-    }
-    mock_coordinator.ensure_special_growspace = MagicMock(side_effect=["cure"])
-    mock_coordinator.get_growspace_plants.return_value = [MagicMock(plant_id="p1")]
-    mock_coordinator.plants = {
-        "p1": Plant(plant_id="p1", growspace_id="cure_overview_1", strain="test")
-    }
-    mock_coordinator.find_first_available_position = MagicMock(return_value=(1, 1))
-
-    await handle_debug_cleanup_legacy(
-        mock_hass, mock_coordinator, mock_strain_library, mock_call
-    )
-
-    assert "dry_overview_1" in mock_coordinator.growspaces
-    assert "cure_overview_1" not in mock_coordinator.growspaces
-    mock_coordinator.async_save.assert_awaited_once()
 
 
 @pytest.mark.asyncio
@@ -376,96 +294,6 @@ async def test_debug_consolidate_duplicate_special_with_missing_canonical_and_mu
             )
 
             mock_coordinator.async_save.assert_awaited_once()
-
-
-@pytest.mark.asyncio
-async def test_migrate_plants_from_legacy_growspace_find_position_exception(
-    mock_coordinator,
-) -> None:
-    """Test _migrate_plants_from_legacy_growspace when find_first_available_position raises an exception."""
-    legacy_id = "dry_overview_1"
-    canonical_id = "dry"
-    migrated_plants_info: list[str] = []
-
-    mock_coordinator.growspaces = {legacy_id: {}}
-    mock_coordinator.plants = {
-        "p1": Plant(plant_id="p1", growspace_id=legacy_id, strain="test")
-    }
-    mock_coordinator.get_growspace_plants.return_value = [
-        MagicMock(spec=Plant, plant_id="p1", strain="Test Strain", row=1, col=1)
-    ]
-    mock_coordinator.find_first_available_position.side_effect = ValueError(
-        "No position"
-    )
-
-    with patch(
-        "custom_components.growspace_manager.services.debug._LOGGER.warning"
-    ) as mock_warning:
-        await _migrate_plants_from_legacy_growspace(
-            mock_coordinator, legacy_id, canonical_id, migrated_plants_info
-        )
-        mock_warning.assert_called_once()
-        assert legacy_id not in mock_coordinator.growspaces
-        assert not migrated_plants_info
-
-
-@pytest.mark.asyncio
-async def test_migrate_plants_from_legacy_growspace_plant_not_in_coordinator(
-    mock_coordinator,
-) -> None:
-    """Test _migrate_plants_from_legacy_growspace when plant is not in coordinator.plants."""
-    legacy_id = "dry_overview_1"
-    canonical_id = "dry"
-    migrated_plants_info: list[str] = []
-
-    mock_coordinator.growspaces = {legacy_id: {}}
-    mock_coordinator.plants = {}  # Plant not in here
-    mock_coordinator.get_growspace_plants.return_value = [
-        MagicMock(spec=Plant, plant_id="p1", strain="Test Strain", row=1, col=1)
-    ]
-
-    with patch(
-        "custom_components.growspace_manager.services.debug._LOGGER.warning"
-    ) as mock_warning:
-        await _migrate_plants_from_legacy_growspace(
-            mock_coordinator, legacy_id, canonical_id, migrated_plants_info
-        )
-        mock_warning.assert_called_once()
-        assert legacy_id not in mock_coordinator.growspaces
-        assert not migrated_plants_info
-
-
-@pytest.mark.asyncio
-async def test_migrate_plants_from_legacy_growspace_success(
-    mock_coordinator,
-) -> None:
-    """Test _migrate_plants_from_legacy_growspace when a plant is successfully migrated."""
-    legacy_id = "dry_overview_1"
-    canonical_id = "dry"
-    migrated_plants_info: list[str] = []
-
-    mock_coordinator.growspaces = {legacy_id: {}}
-    mock_plant = MagicMock(
-        spec=Plant,
-        plant_id="p1",
-        growspace_id=legacy_id,
-        strain="Test Strain",
-        row=1,
-        col=1,
-    )
-    mock_coordinator.plants = {"p1": mock_plant}
-    mock_coordinator.get_growspace_plants.return_value = [mock_plant]
-    mock_coordinator.find_first_available_position.return_value = (2, 2)
-
-    await _migrate_plants_from_legacy_growspace(
-        mock_coordinator, legacy_id, canonical_id, migrated_plants_info
-    )
-
-    assert mock_plant.growspace_id == canonical_id
-    assert mock_plant.row == 2
-    assert mock_plant.col == 2
-    assert migrated_plants_info == ["Test Strain (p1) to dry at (2,2)"]
-    assert legacy_id not in mock_coordinator.growspaces
 
 
 @pytest.mark.asyncio
@@ -808,72 +636,6 @@ async def test_consolidate_plants_to_canonical_growspace_plant_not_in_coordinato
         mock_coordinator.growspaces.pop.assert_called_once_with(
             "dry_1", None
         )  # Should still remove duplicate
-
-
-@pytest.mark.asyncio
-async def test_cleanup_dry_legacy_growspaces(mock_hass, mock_coordinator) -> None:
-    """Test _cleanup_dry_legacy_growspaces function."""
-    migrated_plants_info: list[str] = []
-    removed_growspaces: list[str] = []
-    legacy_dry = ["dry_overview_1", "dry_overview_2"]
-
-    mock_coordinator.ensure_special_growspace.return_value = "dry"
-    with patch(
-        "custom_components.growspace_manager.services.debug._migrate_plants_from_legacy_growspace",
-        new_callable=AsyncMock,
-    ) as mock_migrate:
-        await _cleanup_dry_legacy_growspaces(
-            mock_hass,
-            mock_coordinator,
-            migrated_plants_info,
-            removed_growspaces,
-            legacy_dry,
-        )
-        assert mock_coordinator.ensure_special_growspace.call_count == len(legacy_dry)
-        assert mock_migrate.call_count == len(legacy_dry)
-        assert removed_growspaces == legacy_dry
-
-
-@pytest.mark.asyncio
-async def test_cleanup_cure_legacy_growspaces(mock_hass, mock_coordinator) -> None:
-    """Test _cleanup_cure_legacy_growspaces function."""
-    migrated_plants_info: list[str] = []
-    removed_growspaces: list[str] = []
-    legacy_cure = ["cure_overview_1", "cure_overview_2"]
-
-    mock_coordinator.ensure_special_growspace.return_value = "cure"
-    with patch(
-        "custom_components.growspace_manager.services.debug._migrate_plants_from_legacy_growspace",
-        new_callable=AsyncMock,
-    ) as mock_migrate:
-        await _cleanup_cure_legacy_growspaces(
-            mock_hass,
-            mock_coordinator,
-            migrated_plants_info,
-            removed_growspaces,
-            legacy_cure,
-        )
-        assert mock_coordinator.ensure_special_growspace.call_count == len(legacy_cure)
-        assert mock_migrate.call_count == len(legacy_cure)
-        assert removed_growspaces == legacy_cure
-
-
-@pytest.mark.asyncio
-async def test_debug_cleanup_legacy_exception(
-    mock_hass, mock_coordinator, mock_strain_library, mock_call
-) -> None:
-    """Test handle_debug_cleanup_legacy service with an exception."""
-    mock_coordinator.growspaces = {
-        "dry_overview_1": {},
-    }
-    mock_coordinator.ensure_special_growspace = MagicMock(
-        side_effect=Exception("Test Exception")
-    )
-
-    with pytest.raises(Exception):
-        await handle_debug_cleanup_legacy(
-            mock_hass, mock_coordinator, mock_strain_library, mock_call
-        )
 
 
 @pytest.mark.asyncio

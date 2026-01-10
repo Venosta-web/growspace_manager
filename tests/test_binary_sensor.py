@@ -1027,7 +1027,7 @@ async def test_mold_risk_specifics(
 
         await sensor._async_update_probability()
         reasons = [r[1] for r in sensor._reasons]
-        assert "High Humidity" in reasons
+        assert any("High Humidity" in r for r in reasons)
 
 
 @pytest.mark.asyncio

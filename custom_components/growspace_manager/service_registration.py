@@ -37,7 +37,6 @@ from .services import (
     ASK_GROW_ADVICE_SCHEMA,
     CLEAR_STRAIN_LIBRARY_SCHEMA,
     CONFIGURE_ENVIRONMENT_SCHEMA,
-    DEBUG_CLEANUP_LEGACY_SCHEMA,
     DEBUG_CONSOLIDATE_DUPLICATE_SPECIAL_SCHEMA,
     DEBUG_LIST_GROWSPACES_SCHEMA,
     DEBUG_RESET_SPECIAL_GROWSPACES_SCHEMA,
@@ -318,11 +317,6 @@ async def register_services(
             GrowspaceService.DEBUG_CONSOLIDATE_DUPLICATE_SPECIAL,
             wrap(debug.handle_debug_consolidate_duplicate_special, False),
             DEBUG_CONSOLIDATE_DUPLICATE_SPECIAL_SCHEMA,
-        ),
-        (
-            GrowspaceService.DEBUG_CLEANUP_LEGACY,
-            wrap(debug.handle_debug_cleanup_legacy, False),
-            DEBUG_CLEANUP_LEGACY_SCHEMA,
         ),
         (
             GrowspaceService.TEST_NOTIFICATION,

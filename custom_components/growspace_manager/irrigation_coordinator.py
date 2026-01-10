@@ -17,7 +17,7 @@ from homeassistant.util.dt import utcnow
 
 if TYPE_CHECKING:
     from .coordinator import GrowspaceCoordinator
-from .models import Growspace, GrowspaceEvent, IrrigationConfig
+from .models import Growspace, GrowspaceEvent
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -259,23 +259,6 @@ class IrrigationCoordinator(BaseIrrigationCoordinator):
     @override
     async def async_setup(self):
         """Set up the irrigation schedules."""
-        # MIGRATION: Check if we have legacy options in config entry but empty growspace config
-        # Check if irrigation settings are effectively empty (default)
-        if self.growspace.irrigation_config == IrrigationConfig():
-            legacy_options = self._config_entry.options.get("irrigation", {}).get(
-                self._growspace_id, {}
-            )
-            if legacy_options:
-                _LOGGER.info(
-                    "Migrating irrigation settings for %s from ConfigEntry to Storage",
-                    self._growspace_id,
-                )
-                # Use from_dict to migrate logic if needed, or simple direct mapping
-                # Since BaseModel handles from_dict, we use that.
-                self.growspace.irrigation_config = IrrigationConfig.from_dict(
-                    dict(legacy_options)
-                )
-                await self._main_coordinator.async_save()
 
         # Load schedules without triggering updates
         await self.async_update_listeners()

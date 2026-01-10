@@ -187,7 +187,7 @@ class GrowspaceService(StrEnum):
     DEBUG_LIST_GROWSPACES = "debug_list_growspaces"
     DEBUG_RESET_SPECIAL_GROWSPACES = "debug_reset_special_growspaces"
     DEBUG_CONSOLIDATE_DUPLICATE_SPECIAL = "debug_consolidate_duplicate_special"
-    DEBUG_CLEANUP_LEGACY = "debug_cleanup_legacy"
+
     TEST_NOTIFICATION = "test_notification"
     GET_STRAIN_LIBRARY = "get_strain_library"
     # Watering Services

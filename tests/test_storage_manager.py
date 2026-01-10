@@ -25,7 +25,7 @@ def mock_coordinator() -> MagicMock:
     coordinator._notifications_sent = {}
     coordinator._notifications_enabled = {}
     coordinator.options = {}
-    coordinator.migration_manager = MagicMock()
+
     return coordinator
 
 
@@ -134,12 +134,6 @@ async def test_async_load_success(
     assert mock_coordinator._notifications_sent == {"some_id": True}
     assert mock_coordinator._notifications_enabled == {GROWSPACE_ID: False}
 
-    # Verify migration called
-    mock_coordinator.migration_manager.migrate_legacy_growspaces.assert_called_once()
-
-    # Verify save called after migration
-    mock_store.async_save.assert_awaited()
-
 
 async def test_async_load_with_options(
     storage_manager: StorageManager, mock_store, mock_coordinator
@@ -186,18 +180,6 @@ async def test_async_load_corrupted_data(
 
     await storage_manager.async_load()
 
-    assert mock_coordinator.growspaces == {}
-
-
-async def test_async_load_migration_manager_missing(
-    storage_manager: StorageManager, mock_store, mock_coordinator
-) -> None:
-    """Test loading when migration manager is missing."""
-    mock_store.async_load.return_value = {"growspaces": {}}
-    del mock_coordinator.migration_manager  # Remove it
-
-    # Should log warning but not crash
-    await storage_manager.async_load()
     assert mock_coordinator.growspaces == {}
 
 
@@ -252,7 +234,16 @@ async def test_load_events_error(
     with patch(
         "custom_components.growspace_manager.storage_manager.GrowspaceEvent.from_dict",
         return_value=MagicMock(),
-    ) as mock_from_dict:
+    ):
         await storage_manager.async_load()
         assert "gs1" in mock_coordinator.events
         assert len(mock_coordinator.events["gs1"]) == 1
+
+
+async def test_load_ipm_presets_error(
+    storage_manager: StorageManager, mock_store, mock_coordinator
+) -> None:
+    """Test error loading IPM presets."""
+    mock_store.async_load.return_value = {"ipm_presets": {"invalid": "not a dict"}}
+    await storage_manager.async_load()
+    assert mock_coordinator.ipm_presets == {}
