@@ -22,7 +22,10 @@ from .const import (
 from .coordinator import GrowspaceCoordinator
 from .exceptions import GrowspaceError
 from .schemas import (
+    APPLY_IPM_SCHEMA,
     LOG_TRAINING_EVENT_SCHEMA,
+    REMOVE_IPM_PRESET_SCHEMA,
+    SAVE_IPM_PRESET_SCHEMA,
 )
 from .services import (
     ADD_DRAIN_TIME_SCHEMA,
@@ -66,6 +69,7 @@ from .services import (
     debug,
     environment,
     growspace,
+    ipm,
     irrigation,
     irrigation_watering,
     nutrient_presets,
@@ -354,6 +358,21 @@ async def register_services(
             GrowspaceService.LOG_TRAINING_EVENT,
             wrap(training.handle_log_training_event, False),
             LOG_TRAINING_EVENT_SCHEMA,
+        ),
+        (
+            GrowspaceService.SAVE_IPM_PRESET,
+            wrap(ipm.handle_save_ipm_preset, False),
+            SAVE_IPM_PRESET_SCHEMA,
+        ),
+        (
+            GrowspaceService.REMOVE_IPM_PRESET,
+            wrap(ipm.handle_remove_ipm_preset, False),
+            REMOVE_IPM_PRESET_SCHEMA,
+        ),
+        (
+            GrowspaceService.APPLY_IPM,
+            wrap(ipm.handle_apply_ipm, False),
+            APPLY_IPM_SCHEMA,
         ),
     ]
 

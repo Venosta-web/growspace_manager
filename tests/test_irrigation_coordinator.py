@@ -11,6 +11,7 @@ from homeassistant.core import HomeAssistant
 
 from custom_components.growspace_manager.const import DOMAIN
 from custom_components.growspace_manager.irrigation_coordinator import (
+    BaseIrrigationCoordinator,
     IrrigationCoordinator,
 )
 from custom_components.growspace_manager.models import Growspace, IrrigationConfig
@@ -730,39 +731,39 @@ async def test_irrigation_coordinator_coverage_gaps(
     # Ensure states attribute exists
     mock_hass.states = MagicMock()
 
-    # 1. Test _get_sensor_value with invalid float
-    mock_hass.states.get.return_value = MagicMock(state="invalid")
-    assert coordinator._get_sensor_value("sensor.test") is None  # Lines 85-86
+    with patch(
+        "custom_components.growspace_manager.irrigation_coordinator.async_track_time_change"
+    ):
+        # 1. Test _get_sensor_value with invalid float
+        mock_hass.states.get.return_value = MagicMock(state="invalid")
+        assert coordinator._get_sensor_value("sensor.test") is None  # Lines 85-86
 
-    # 2. Test async_set_settings with unknown key
-    await coordinator.async_set_settings(
-        {"unknown_key": "value"}
-    )  # Line 139 (warning logged)
+        # 2. Test async_set_settings with unknown key
+        await coordinator.async_set_settings(
+            {"unknown_key": "value"}
+        )  # Line 139 (warning logged)
 
-    # 3. Test async_add_schedule_item with invalid key
-    await coordinator.async_add_schedule_item(
-        "invalid_schedule", "12:00", 10
-    )  # Lines 161-162 (error logged)
+        # 3. Test async_add_schedule_item with invalid key
+        await coordinator.async_add_schedule_item(
+            "invalid_schedule", "12:00", 10
+        )  # Lines 161-162 (error logged)
 
-    # 4. Test async_request_refresh
-    coordinator.async_update_listeners = AsyncMock()
-    await coordinator.async_request_refresh()
-    coordinator.async_update_listeners.assert_called_once()  # Line 115
+        # 4. Test async_request_refresh
+        coordinator.async_update_listeners = AsyncMock()
+        await coordinator.async_request_refresh()
+        coordinator.async_update_listeners.assert_called_once()  # Line 115
 
-    # 5. Base class async_setup/unload (trivial but ensures execution)
-    from custom_components.growspace_manager.irrigation_coordinator import (
-        BaseIrrigationCoordinator,
-    )
+        # 5. Base class async_setup/unload (trivial but ensures execution)
 
-    await BaseIrrigationCoordinator.async_setup(coordinator)
-    await BaseIrrigationCoordinator.async_request_refresh(coordinator)
+        await BaseIrrigationCoordinator.async_setup(coordinator)
+        await BaseIrrigationCoordinator.async_request_refresh(coordinator)
 
-    # 6. Test _run_pump_cycle exception handling
-    mock_main_coordinator.add_event.side_effect = Exception("Test Error")
-    # Must mock states again as side_effect consumed
-    mock_hass.states.get.side_effect = None
-    mock_hass.states.get.return_value = MagicMock(state="50.0")
+        # 6. Test _run_pump_cycle exception handling
+        mock_main_coordinator.add_event.side_effect = Exception("Test Error")
+        # Must mock states again as side_effect consumed
+        mock_hass.states.get.side_effect = None
+        mock_hass.states.get.return_value = MagicMock(state="50.0")
 
-    with patch("asyncio.sleep", new_callable=AsyncMock):
-        await coordinator._run_pump_cycle("irrigation", "switch.pump", 30, {})
-    # Should catch exception and log error (covered)
+        with patch("asyncio.sleep", new_callable=AsyncMock):
+            await coordinator._run_pump_cycle("irrigation", "switch.pump", 30, {})
+        # Should catch exception and log error (covered)

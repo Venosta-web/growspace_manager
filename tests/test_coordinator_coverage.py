@@ -26,7 +26,7 @@ def mock_coordinator(hass: HomeAssistant) -> GrowspaceCoordinator:
 
 
 @pytest.mark.asyncio
-async def test_async_water_plant(mock_coordinator: GrowspaceCoordinator):
+async def test_async_water_plant(mock_coordinator: GrowspaceCoordinator) -> None:
     """Test async_water_plant success path."""
     # Setup
     gs = Growspace(id="gs1", name="Test GS")
@@ -57,7 +57,7 @@ async def test_async_water_plant(mock_coordinator: GrowspaceCoordinator):
 
 
 @pytest.mark.asyncio
-async def test_async_water_plant_preset(mock_coordinator: GrowspaceCoordinator):
+async def test_async_water_plant_preset(mock_coordinator: GrowspaceCoordinator) -> None:
     """Test async_water_plant with preset."""
     gs = Growspace(id="gs1", name="Test GS")
     mock_coordinator.growspaces["gs1"] = gs
@@ -84,7 +84,7 @@ async def test_async_water_plant_preset(mock_coordinator: GrowspaceCoordinator):
 @pytest.mark.asyncio
 async def test_async_water_plant_preset_not_found(
     mock_coordinator: GrowspaceCoordinator,
-):
+) -> None:
     """Test async_water_plant with missing preset."""
     gs = Growspace(id="gs1", name="Test GS")
     mock_coordinator.growspaces["gs1"] = gs
@@ -140,7 +140,7 @@ async def test_async_log_training_event(mock_coordinator: GrowspaceCoordinator) 
 
 
 @pytest.mark.asyncio
-async def test_async_water_growspace(mock_coordinator: GrowspaceCoordinator):
+async def test_async_water_growspace(mock_coordinator: GrowspaceCoordinator) -> None:
     """Test async_water_growspace."""
     gs = Growspace(id="gs1", name="Test GS")
     mock_coordinator.growspaces["gs1"] = gs
@@ -160,7 +160,9 @@ async def test_async_water_growspace(mock_coordinator: GrowspaceCoordinator):
 
 
 @pytest.mark.asyncio
-async def test_nutrient_preset_management(mock_coordinator: GrowspaceCoordinator):
+async def test_nutrient_preset_management(
+    mock_coordinator: GrowspaceCoordinator,
+) -> None:
     """Test save and remove nutrient presets."""
     # Test Create
     nutrients = [{"name": "A", "dose_ml_l": 1.0}]
@@ -188,7 +190,7 @@ async def test_nutrient_preset_management(mock_coordinator: GrowspaceCoordinator
 
 
 @pytest.mark.asyncio
-async def test_get_applicable_presets(mock_coordinator: GrowspaceCoordinator):
+async def test_get_applicable_presets(mock_coordinator: GrowspaceCoordinator) -> None:
     """Test get_applicable_presets filtering."""
     p1 = Plant(
         plant_id="p1",
@@ -225,7 +227,9 @@ async def test_get_applicable_presets(mock_coordinator: GrowspaceCoordinator):
 
 
 @pytest.mark.asyncio
-async def test_async_log_training_event_error(mock_coordinator: GrowspaceCoordinator):
+async def test_async_log_training_event_error(
+    mock_coordinator: GrowspaceCoordinator,
+) -> None:
     """Test async_log_training_event missing args."""
     with pytest.raises(
         ValueError, match="Either growspace_id or plant_ids must be provided"
@@ -238,7 +242,7 @@ async def test_async_log_training_event_error(mock_coordinator: GrowspaceCoordin
 @pytest.mark.asyncio
 async def test_async_log_training_event_empty_growspace(
     mock_coordinator: GrowspaceCoordinator,
-):
+) -> None:
     """Test async_log_training_event with empty growspace."""
     # Ensure logs still occur even if no plants found?
     # Logic: if not target_plants and growspace_id: growspace_ids = {growspace_id}
@@ -257,7 +261,7 @@ async def test_async_log_training_event_empty_growspace(
 
 
 @pytest.mark.asyncio
-async def test_resolve_preset_nutrients(mock_coordinator: GrowspaceCoordinator):
+async def test_resolve_preset_nutrients(mock_coordinator: GrowspaceCoordinator) -> None:
     """Test _resolve_preset_nutrients helper."""
     # It is private, but we can test it wrapper or directly
     # async_water_plant uses it? Or we call private method

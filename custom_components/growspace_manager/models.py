@@ -227,6 +227,8 @@ class Plant(BaseModel):
     last_watered: str | None = None
     last_trained: str | None = None
     last_training_technique: str | None = None
+    last_ipm: str | None = None
+    last_ipm_type: str | None = None
 
     _MIGRATIONS = {"created": "created_at", "updated": "updated_at"}
 
@@ -326,3 +328,34 @@ class GrowspaceCoordinatorData(TypedDict):
     _version: str
     serialized_growspaces: dict[str, dict[str, Any]]
     air_exchange_recommendations: dict[str, str]
+    ipm_presets: dict[str, IPMPreset]
+
+
+class IPMType(StrEnum):
+    """Types of IPM applications."""
+
+    FOLIAR = "foliar"
+    DRENCH = "drench"
+    SYSTEMIC = "systemic"
+    OTHER = "other"
+
+
+class IPMPresetItem(TypedDict):
+    """A single item in an IPM preset recipe."""
+
+    name: str
+    dose_amount: float
+    dose_unit: str  # e.g. "ml/L", "g/L", "tsp/gal"
+
+
+@dataclass(slots=True)
+class IPMPreset(BaseModel):
+    """A reusable IPM recipe with optional stage conditions."""
+
+    id: str
+    name: str
+    type: IPMType | str
+    items: list[IPMPresetItem]
+    stage: PlantStage | str | None = None
+    min_days_in_stage: int | None = None
+    created_at: str = field(default_factory=lambda: datetime.now().isoformat())
