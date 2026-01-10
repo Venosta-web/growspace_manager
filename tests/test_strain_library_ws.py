@@ -32,7 +32,8 @@ async def test_websocket_get_strain_library_success(mock_connection) -> None:
 
     msg = {"id": 1, "type": WS_TYPE_GET_STRAIN_LIBRARY}
 
-    await websocket_get_strain_library(hass, mock_connection, msg)
+    # Call synchronously as it is now a callback
+    websocket_get_strain_library(hass, mock_connection, msg)
 
     mock_connection.send_result.assert_called_once_with(1, expected_analytics)
 
@@ -45,7 +46,7 @@ async def test_websocket_get_strain_library_not_loaded(mock_connection) -> None:
 
     msg = {"id": 1, "type": WS_TYPE_GET_STRAIN_LIBRARY}
 
-    await websocket_get_strain_library(hass, mock_connection, msg)
+    websocket_get_strain_library(hass, mock_connection, msg)
 
     mock_connection.send_error.assert_called_once_with(
         1, "not_loaded", "Growspace Manager strain library not loaded"
@@ -64,7 +65,7 @@ async def test_websocket_get_strain_library_exception(mock_connection) -> None:
 
     msg = {"id": 1, "type": WS_TYPE_GET_STRAIN_LIBRARY}
 
-    await websocket_get_strain_library(hass, mock_connection, msg)
+    websocket_get_strain_library(hass, mock_connection, msg)
 
     mock_connection.send_error.assert_called_once_with(
         1, "unknown_error", "Unexpected error"

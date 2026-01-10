@@ -540,7 +540,8 @@ SCHEMA_WS_GET_STRAIN_LIBRARY = websocket_api.BASE_COMMAND_MESSAGE_SCHEMA.extend(
 )
 
 
-async def websocket_get_strain_library(
+@callback
+def websocket_get_strain_library(
     hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
 ) -> None:
     """Handle get strain library command via WebSocket."""
