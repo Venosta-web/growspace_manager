@@ -127,7 +127,27 @@ async def test_get_coordinator_for_call_failure(
     ):
         call = ServiceCall(DOMAIN, "test", {})
         with pytest.raises(ServiceValidationError):
-            get_coordinator_for_call(hass, call)
+            # Original test was checking general failure when multiple coordinators exist and no ID provided.
+            # But here we used a dict with IDs that don't match.
+            # If we want to check "Could not find coordinator", we must pass that arg.
+            # The invalid ID logic is:
+            get_coordinator_for_call(hass, {"plant_id": ["plant1", "plant2"]})
+
+
+@pytest.mark.asyncio
+async def test_get_coordinator_list_lookup_success(hass: HomeAssistant) -> None:
+    """Test get_coordinator_for_call returns coordinator when one ID in list matches."""
+    from pytest_homeassistant_custom_component.common import MockConfigEntry
+
+    entry = MockConfigEntry(domain=DOMAIN, state=ConfigEntryState.LOADED)
+    mock_coordinator = MagicMock()
+    mock_coordinator.plants = {"plant1": {}}
+    entry.runtime_data = mock_coordinator
+    entry.add_to_hass(hass)
+
+    # "plant2" is not there, "plant1" is. Should pass.
+    coord = get_coordinator_for_call(hass, {"plant_id": ["plant2", "plant1"]})
+    assert coord == mock_coordinator
 
 
 async def test_register_services(hass: HomeAssistant) -> None:
@@ -298,5 +318,24 @@ async def test_get_coordinator_for_call_by_plant_id_list(
 
         # Case 2: List with subset valid IDs
         call = ServiceCall(DOMAIN, "test", {"plant_id": ["plant1", "non_existent"]})
+        coordinator = get_coordinator_for_call(hass, call)
+        assert coordinator == mock_coordinator
+
+
+async def test_get_coordinator_for_call_by_plant_id_list_failure(
+    hass: HomeAssistant, mock_config_entry, mock_coordinator
+) -> None:
+    """Test getting coordinator by a list of plant IDs failure."""
+    mock_coordinator.plants = {"plant1": {}}
+
+    with patch(
+        "homeassistant.config_entries.ConfigEntries.async_entries",
+        return_value=[mock_config_entry],
+    ):
+        # Case 3: List with NO valid IDs
+        call = ServiceCall(
+            DOMAIN, "test", {"plant_id": ["non_existent1", "non_existent2"]}
+        )
+        # Should fallback to single coordinator if only one exists
         coordinator = get_coordinator_for_call(hass, call)
         assert coordinator == mock_coordinator

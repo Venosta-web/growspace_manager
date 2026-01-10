@@ -2721,7 +2721,11 @@ async def test_get_growspace_data(mock_coordinator: GrowspaceCoordinator) -> Non
 
     # 1. Specific valid ID
     data = mock_coordinator.get_growspace_data("gs1")
-    assert data == {"id": "serialized", "nutrient_presets": {}}
+    assert data == {
+        "id": "serialized",
+        "nutrient_presets": {},
+        "ipm_presets": {},
+    }
     mock_coordinator.serializer.serialize_growspace.assert_called()
 
     # 2. Specific invalid ID
@@ -3150,3 +3154,28 @@ async def test_async_refresh_growspace_data(coordinator: GrowspaceCoordinator) -
     assert coordinator._serialized_cache.get(gs.id) != old_cached_data, (
         "Cache should have been refreshed with new data"
     )
+
+
+@pytest.mark.asyncio
+async def test_update_irrigation_settings_missing_entities(
+    coordinator: GrowspaceCoordinator,
+) -> None:
+    """Test updating irrigation settings when pump entities are missing (clearing them)."""
+    gs = await coordinator.async_add_growspace("Irrigation GS")
+
+    # Set initial settings
+    initial_settings = {
+        "irrigation_pump_entity": "switch.pump1",
+        "drain_pump_entity": "switch.limit_switch",
+    }
+    await coordinator.async_update_irrigation_config(gs.id, initial_settings)
+
+    assert gs.irrigation_config.irrigation_pump_entity == "switch.pump1"
+
+    # Update without entities (should clear them to None)
+    new_settings = {"irrigation_duration": 60}
+    await coordinator.async_update_irrigation_config(gs.id, new_settings)
+
+    assert gs.irrigation_config.irrigation_duration == 60
+    assert gs.irrigation_config.irrigation_pump_entity is None
+    assert gs.irrigation_config.drain_pump_entity is None

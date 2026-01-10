@@ -71,6 +71,9 @@ from custom_components.growspace_manager.schemas import (
     UPDATE_STRAIN_META_SCHEMA,
     WATER_GROWSPACE_SCHEMA,
     WATER_PLANT_SCHEMA,
+    APPLY_IPM_SCHEMA,
+    REMOVE_IPM_PRESET_SCHEMA,
+    SAVE_IPM_PRESET_SCHEMA,
 )
 from custom_components.growspace_manager.service_registration import register_services
 
@@ -244,6 +247,9 @@ async def test_register_services(mock_hass, mock_strain_library_for_services) ->
         "save_nutrient_preset": SAVE_NUTRIENT_PRESET_SCHEMA,
         "remove_nutrient_preset": REMOVE_NUTRIENT_PRESET_SCHEMA,
         "log_training_event": LOG_TRAINING_EVENT_SCHEMA,
+        "save_ipm_preset": SAVE_IPM_PRESET_SCHEMA,
+        "remove_ipm_preset": REMOVE_IPM_PRESET_SCHEMA,
+        "apply_ipm": APPLY_IPM_SCHEMA,
     }
 
     # Verify call count

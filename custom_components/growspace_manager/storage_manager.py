@@ -9,7 +9,14 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.storage import Store
 
 from .const import STORAGE_KEY, STORAGE_VERSION
-from .models import EnvironmentConfig, Growspace, GrowspaceEvent, NutrientPreset, Plant
+from .models import (
+    EnvironmentConfig,
+    Growspace,
+    GrowspaceEvent,
+    IPMPreset,
+    NutrientPreset,
+    Plant,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -42,6 +49,9 @@ class StorageManager:
                     pid: asdict(p)
                     for pid, p in self.coordinator.nutrient_presets.items()
                 },
+                "ipm_presets": {
+                    pid: asdict(p) for pid, p in self.coordinator.ipm_presets.items()
+                },
                 "notifications_sent": self.coordinator._notifications_sent,
                 "notifications_enabled": self.coordinator._notifications_enabled,
                 "events": {
@@ -69,6 +79,7 @@ class StorageManager:
         self._load_growspaces(data)
         self._load_events(data)
         self._load_nutrient_presets(data)
+        self._load_ipm_presets(data)
 
         # Load notification tracking
         self.coordinator._notifications_sent = data.get("notifications_sent", {})
@@ -175,3 +186,15 @@ class StorageManager:
         except Exception as e:
             _LOGGER.exception("Error loading nutrient presets: %s", e)
             self.coordinator.nutrient_presets = {}
+
+    def _load_ipm_presets(self, data: dict) -> None:
+        """Load IPM presets from storage data."""
+        try:
+            self.coordinator.ipm_presets = {
+                pid: IPMPreset.from_dict(p)
+                for pid, p in data.get("ipm_presets", {}).items()
+            }
+            _LOGGER.info("Loaded %d IPM presets", len(self.coordinator.ipm_presets))
+        except Exception as e:
+            _LOGGER.exception("Error loading IPM presets: %s", e)
+            self.coordinator.ipm_presets = {}

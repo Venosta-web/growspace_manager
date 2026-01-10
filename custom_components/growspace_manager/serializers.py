@@ -254,6 +254,8 @@ class GrowspaceSerializer:
             "last_watered": format_date(plant.last_watered),
             "last_trained": format_date(plant.last_trained),
             "last_training_technique": plant.last_training_technique,
+            "last_ipm": format_date(plant.last_ipm),
+            "last_ipm_type": plant.last_ipm_type,
             "days_since_last_watering": plant.get_days_since_watering(),
         }
 

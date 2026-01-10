@@ -4,17 +4,19 @@ from homeassistant.helpers import config_validation as cv
 from .const import (
     ATTR_COL,
     ATTR_GROWSPACE_ID,
+    ATTR_ITEMS,
     ATTR_MIN_DAYS_IN_STAGE,
     ATTR_NAME,
+    ATTR_NOTES,
     ATTR_PHENOTYPE,
     ATTR_PLANT_ID,
     ATTR_PRESET_ID,
-    ATTR_TECHNIQUE,
-    ATTR_NOTES,
     ATTR_ROW,
     ATTR_STAGE,
     ATTR_STRAIN,
+    ATTR_TECHNIQUE,
     ATTR_TRANSITION_DATE,
+    ATTR_TYPE,
     CONF_CIRCULATION_FAN_ENTITY,
     CONF_CO2_SENSOR,
     CONF_CONTROL_DEHUMIDIFIER,
@@ -419,5 +421,41 @@ SAVE_NUTRIENT_PRESET_SCHEMA = vol.Schema(
 REMOVE_NUTRIENT_PRESET_SCHEMA = vol.Schema(
     {
         vol.Required(ATTR_PRESET_ID): str,
+    }
+)
+
+# --- IPM Preset Schemas ---
+
+IPM_ITEM_SCHEMA = vol.Schema(
+    {
+        vol.Required(ATTR_NAME): str,
+        vol.Required("dose_amount"): vol.All(vol.Coerce(float), vol.Range(min=0.0)),
+        vol.Required("dose_unit"): str,
+    }
+)
+
+SAVE_IPM_PRESET_SCHEMA = vol.Schema(
+    {
+        vol.Required(ATTR_NAME): str,
+        vol.Required(ATTR_TYPE): str,
+        vol.Required(ATTR_ITEMS): vol.All([IPM_ITEM_SCHEMA], vol.Length(min=1)),
+        vol.Optional(ATTR_PRESET_ID): str,
+        vol.Optional(ATTR_STAGE): vol.Any(vol.In(PLANT_STAGES), None),
+        vol.Optional(ATTR_MIN_DAYS_IN_STAGE): vol.All(int, vol.Range(min=0)),
+    }
+)
+
+REMOVE_IPM_PRESET_SCHEMA = vol.Schema(
+    {
+        vol.Required(ATTR_PRESET_ID): str,
+    }
+)
+
+APPLY_IPM_SCHEMA = vol.Schema(
+    {
+        vol.Required(ATTR_PRESET_ID): str,
+        vol.Optional(ATTR_GROWSPACE_ID): str,
+        vol.Optional(ATTR_PLANT_ID): vol.All(cv.ensure_list, [str]),
+        vol.Optional(ATTR_NOTES): str,
     }
 )

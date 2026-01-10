@@ -198,6 +198,10 @@ class GrowspaceService(StrEnum):
     REMOVE_NUTRIENT_PRESET = "remove_nutrient_preset"
     # Training Services
     LOG_TRAINING_EVENT = "log_training_event"
+    # IPM Services
+    SAVE_IPM_PRESET = "save_ipm_preset"
+    REMOVE_IPM_PRESET = "remove_ipm_preset"
+    APPLY_IPM = "apply_ipm"
 
 
 class TrainingTechnique(StrEnum):
@@ -215,7 +219,10 @@ class TrainingTechnique(StrEnum):
 # Training Attributes
 ATTR_TECHNIQUE = "technique"
 ATTR_NOTES = "notes"
+ATTR_ITEMS = "items"
+ATTR_TYPE = "type"
 CATEGORY_TRAINING = "training"
+CATEGORY_IPM = "ipm"
 
 
 # Plant stages

@@ -17,6 +17,7 @@ from homeassistant.util import dt as dt_util
 from homeassistant.util import slugify
 
 from .const import (
+    CATEGORY_IPM,
     CATEGORY_TRAINING,
     CONF_HUMIDITY_SENSOR,
     CONF_TEMP_SENSOR,
@@ -50,7 +51,14 @@ from .growspace_validator import GrowspaceValidator
 from .import_export_manager import ImportExportManager
 from .irrigation_coordinator import IrrigationCoordinator
 from .migration_manager import MigrationManager
-from .models import Growspace, GrowspaceEvent, GrowspaceType, NutrientPreset, Plant
+from .models import (
+    Growspace,
+    GrowspaceEvent,
+    GrowspaceType,
+    IPMPreset,
+    NutrientPreset,
+    Plant,
+)
 from .notification_manager import NotificationManager
 from .plant_lifecycle_manager import PlantLifecycleManager
 from .serializers import GrowspaceSerializer
@@ -118,6 +126,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
         self.plants: dict[str, Plant] = {}
         self.events: dict[str, list[GrowspaceEvent]] = {}
         self.nutrient_presets: dict[str, NutrientPreset] = {}
+        self.ipm_presets: dict[str, IPMPreset] = {}
 
         # Optimization: Cache for serialized growspace data
         self._serialized_cache: dict[str, dict[str, Any]] = {}
@@ -218,6 +227,9 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
         # Inject global nutrient presets
         serialized["nutrient_presets"] = {
             pid: asdict(preset) for pid, preset in self.nutrient_presets.items()
+        }
+        serialized["ipm_presets"] = {
+            pid: asdict(preset) for pid, preset in self.ipm_presets.items()
         }
 
         self._serialized_cache[growspace_id] = serialized
@@ -1804,6 +1816,186 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
             raise KeyError(f"Nutrient preset '{preset_id}' not found")
 
         return self.nutrient_presets[preset_id].get_nutrient_map()
+
+    # =============================================================================
+    # IPM METHODS
+    # =============================================================================
+
+    async def async_save_ipm_preset(
+        self,
+        name: str,
+        type: str,
+        items: list[dict[str, Any]],
+        stage: str | None = None,
+        min_days_in_stage: int | None = None,
+        preset_id: str | None = None,
+    ) -> IPMPreset:
+        """Create or update an IPM preset.
+
+        Args:
+            name: Name of the preset.
+            type: Type of application (foliar, drench, etc.).
+            items: List of IPM items with 'name', 'dose_amount', 'dose_unit'.
+            stage: Optional target plant stage.
+            min_days_in_stage: Optional minimum days in stage.
+            preset_id: Optional existing preset ID to update.
+
+        Returns:
+            The saved IPMPreset object.
+        """
+        if preset_id and preset_id in self.ipm_presets:
+            preset = self.ipm_presets[preset_id]
+            preset.name = name
+            preset.type = type
+            preset.items = items  # type: ignore[arg-type]
+            preset.stage = stage
+            preset.min_days_in_stage = min_days_in_stage
+        else:
+            pid = preset_id or str(uuid.uuid4())
+            preset = IPMPreset(
+                id=pid,
+                name=name,
+                type=type,
+                items=items,  # type: ignore[arg-type]
+                stage=stage,
+                min_days_in_stage=min_days_in_stage,
+                created_at=dt_util.now().isoformat(),
+            )
+            self.ipm_presets[pid] = preset
+
+        await self.async_save()
+        self._serialized_cache.clear()
+
+        _LOGGER.info("Saved IPM preset '%s' (%s) with %d items", name, type, len(items))
+        return preset
+
+    async def async_remove_ipm_preset(self, preset_id: str) -> None:
+        """Remove an IPM preset.
+
+        Args:
+            preset_id: The ID of the preset to remove.
+
+        Raises:
+            KeyError: If the preset does not exist.
+        """
+        if preset_id not in self.ipm_presets:
+            raise KeyError(f"IPM preset '{preset_id}' not found")
+
+        preset_name = self.ipm_presets[preset_id].name
+        del self.ipm_presets[preset_id]
+        await self.async_save()
+        self._serialized_cache.clear()
+        _LOGGER.info("Removed IPM preset '%s' (id=%s)", preset_name, preset_id)
+
+    async def async_apply_ipm(
+        self,
+        preset_id: str,
+        growspace_id: str | None = None,
+        plant_ids: list[str] | None = None,
+        notes: str | None = None,
+    ) -> list[str]:
+        """Log an IPM application event.
+
+        Args:
+            preset_id: ID of the IPM preset applied.
+            growspace_id: ID of the growspace (if applying to whole room).
+            plant_ids: List of specific plant IDs (if applying to specific plants).
+            notes: Optional user notes.
+
+        Returns:
+            List of affected entity IDs (plants or growspace sensors).
+
+        Raises:
+            ValueError: If neither growspace_id nor plant_ids are provided.
+            KeyError: If preset_id is not found.
+        """
+        if not growspace_id and not plant_ids:
+            raise ValueError("Must provide either growspace_id or plant_ids")
+
+        if preset_id not in self.ipm_presets:
+            raise KeyError(f"IPM preset '{preset_id}' not found")
+
+        preset = self.ipm_presets[preset_id]
+        now = dt_util.now().isoformat()
+
+        # Determine target plants
+        target_plants: list[Plant] = []
+        if plant_ids:
+            for pid in plant_ids:
+                if pid in self.plants:
+                    target_plants.append(self.plants[pid])
+        elif growspace_id:
+            target_plants = self.get_growspace_plants(growspace_id)
+
+        # Update plant state
+        for plant in target_plants:
+            plant.last_ipm = now
+            plant.last_ipm_type = preset.type
+            # Also update updated_at?
+            # plant.updated_at = now # Optional but good practice if tracked.
+            # However, looking at Plant model, updated_at is present.
+            # I will just set IPM fields for now to match specific requirements.
+
+            # Re-save plant to storage happens via async_save called later.
+
+        # Group by growspace for event logging
+        affected_growspace_ids = set()
+        if growspace_id:
+            affected_growspace_ids.add(growspace_id)
+        for plant in target_plants:
+            affected_growspace_ids.add(plant.growspace_id)
+
+        for gid in affected_growspace_ids:
+            preset_items_str = ", ".join(
+                [
+                    f"{i['name']} ({i['dose_amount']}{i['dose_unit']})"
+                    for i in preset.items
+                ]
+            )
+            reasons = [
+                f"IPM Treatment: {preset.name}",
+                f"Type: {preset.type}",
+                f"Recipe: {preset_items_str}",
+            ]
+
+            # Add plant context if subset
+            affected_in_gid = [p for p in target_plants if p.growspace_id == gid]
+
+            # Add Plant IDs for filtering
+            reasons.extend([f"plant_id:{p.plant_id}" for p in affected_in_gid])
+
+            if plant_ids and len(plant_ids) < len(self.get_growspace_plants(gid)):
+                affected_names = [p.strain for p in affected_in_gid]
+                if affected_names:
+                    reasons.append(f"Plants: {', '.join(affected_names)}")
+
+            if notes:
+                reasons.append(f"Notes: {notes}")
+
+            event = GrowspaceEvent(
+                sensor_type=f"ipm_{preset.type}",
+                growspace_id=gid,
+                start_time=now,
+                end_time=now,
+                duration_sec=0,
+                severity=0.5,
+                category=CATEGORY_IPM,
+                reasons=reasons,
+            )
+
+            if gid not in self.events:
+                self.events[gid] = []
+            self.events[gid].append(event)
+
+            _LOGGER.info("Logged IPM event for growspace %s: %s", gid, event.reasons[0])
+
+        await self.async_save()
+
+        # Invalidate cache for affected growspaces
+        for gid in affected_growspace_ids:
+            self._invalidate_cache(gid)
+
+        return [p.plant_id for p in target_plants]
 
     async def async_harvest(self, plant_id: str) -> Plant:
         """Mark a plant as harvested, transitioning it to the 'dry' stage today."""
