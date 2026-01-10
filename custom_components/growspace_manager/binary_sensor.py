@@ -729,13 +729,26 @@ class BayesianMoldRiskSensor(BayesianEnvironmentSensor):
         all_observations: ObservationList = []
         all_reasons: ReasonList = []
 
-        # 1. High Humidity
-        if env_state.humidity > 70 or (
-            env_state.flower_days > 40 and env_state.humidity > 60
-        ):
+        # 1. High Humidity (Stage-Aware)
+        hum = env_state.humidity
+        is_high_humidity = False
+
+        if env_state.flower_days == 0:  # Veg
+            # Powdery Mildew risk only at very high RH
+            if hum > 85:
+                is_high_humidity = True
+        elif env_state.flower_days > 40:  # Late Flower
+            # Botrytis risk
+            if hum > 60:
+                is_high_humidity = True
+        else:  # Early/Mid Flower
+            if hum > 70:
+                is_high_humidity = True
+
+        if is_high_humidity:
             prob = (0.8, 0.2)
             all_observations.append(prob)
-            all_reasons.append((prob[0], "High Humidity"))
+            all_reasons.append((prob[0], f"High Humidity ({hum}%)"))
 
         # 2. Low Circulation
         if env_state.fan_off:

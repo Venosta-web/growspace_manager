@@ -1,6 +1,5 @@
 """Tests for the data models in models.py."""
 
-from datetime import date
 from unittest.mock import patch
 
 from custom_components.growspace_manager.models import (
@@ -37,24 +36,6 @@ def test_growspace_from_dict_basic() -> None:
     assert growspace.plants_per_row == 2
 
 
-def test_growspace_from_dict_with_legacy_created_field() -> None:
-    """Test Growspace from_dict with legacy 'created' field."""
-    today_iso = date.today().isoformat()
-    data = {"id": "gs1", "name": "Test Growspace", "created": today_iso}
-    growspace = Growspace.from_dict(data)
-    assert growspace.created_at == today_iso
-    assert "created" not in growspace.to_dict()
-
-
-def test_growspace_from_dict_with_legacy_updated_field() -> None:
-    """Test Growspace from_dict with legacy 'updated' field."""
-    today_iso = date.today().isoformat()
-    data = {"id": "gs1", "name": "Test Growspace", "updated": today_iso}
-    growspace = Growspace.from_dict(data)
-    # 'updated_at' is not a field in Growspace, so it should be filtered out
-    assert "updated_at" not in growspace.to_dict()
-
-
 def test_growspace_from_dict_with_extra_fields() -> None:
     """Test Growspace from_dict with extra, unrecognized fields."""
     data = {"id": "gs1", "name": "Test Growspace", "extra_field": "value"}
@@ -84,34 +65,6 @@ def test_plant_from_dict_basic() -> None:
     assert plant.plant_id == "p1"
     assert plant.growspace_id == "gs1"
     assert plant.strain == "OG Kush"
-
-
-def test_plant_from_dict_with_legacy_created_field() -> None:
-    """Test Plant from_dict with legacy 'created' field."""
-    today_iso = date.today().isoformat()
-    data = {
-        "plant_id": "p1",
-        "growspace_id": "gs1",
-        "strain": "OG",
-        "created": today_iso,
-    }
-    plant = Plant.from_dict(data)
-    assert plant.created_at == today_iso
-    assert "created" not in plant.to_dict()
-
-
-def test_plant_from_dict_with_legacy_updated_field() -> None:
-    """Test Plant from_dict with legacy 'updated' field."""
-    today_iso = date.today().isoformat()
-    data = {
-        "plant_id": "p1",
-        "growspace_id": "gs1",
-        "strain": "OG",
-        "updated": today_iso,
-    }
-    plant = Plant.from_dict(data)
-    assert plant.updated_at == today_iso
-    assert "updated" not in plant.to_dict()
 
 
 def test_plant_from_dict_with_extra_fields() -> None:
@@ -216,21 +169,19 @@ def test_growspace_event_from_dict_basic() -> None:
     assert event.category == "alert"
 
 
-def test_growspace_event_from_dict_legacy() -> None:
-    """Test GrowspaceEvent from_dict handles legacy max_probability migration."""
+def test_growspace_event_defaults() -> None:
+    """Test GrowspaceEvent defaults are applied."""
     data = {
         "sensor_type": "test_sensor",
         "growspace_id": "gs1",
         "start_time": "2023-01-01T12:00:00",
         "end_time": "2023-01-01T12:05:00",
         "duration_sec": 300,
-        "max_probability": 0.95,  # Legacy field
-        "reasons": ["Reason 1"],
-        # Missing category
+        "severity": 0.5,
+        # "category" missing, should default to "alert"
     }
     event = GrowspaceEvent.from_dict(data)
-    assert event.severity == 0.95  # Mapped to severity
-    assert event.category == "alert"  # Default category
+    assert event.category == "alert"
 
 
 def test_growspace_event_from_dict_with_extra_fields() -> None:

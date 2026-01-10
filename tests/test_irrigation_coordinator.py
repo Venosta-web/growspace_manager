@@ -358,42 +358,6 @@ async def test_get_default_duration_error(
     assert coordinator.get_default_duration("irrigation") is None
 
 
-async def test_async_setup_migration(
-    mock_hass: MagicMock, mock_config_entry: MagicMock, mock_main_coordinator: MagicMock
-) -> None:
-    """Test migration of legacy irrigation settings."""
-    # Setup growspace with empty irrigation config
-    mock_main_coordinator.growspaces[
-        GROWSPACE_ID
-    ].irrigation_config = IrrigationConfig()
-
-    # Setup legacy options in config entry
-    mock_config_entry.options = {
-        "irrigation": {
-            GROWSPACE_ID: {
-                "irrigation_duration": 99,
-                "irrigation_times": [{"time": "09:00:00"}],
-            }
-        }
-    }
-
-    coordinator = IrrigationCoordinator(
-        mock_hass, mock_config_entry, GROWSPACE_ID, mock_main_coordinator
-    )
-
-    with patch.object(
-        coordinator, "async_update_listeners", new_callable=AsyncMock
-    ) as mock_update:
-        await coordinator.async_setup()
-
-        growspace = mock_main_coordinator.growspaces[GROWSPACE_ID]
-        assert growspace.irrigation_config.irrigation_duration == 99
-        assert growspace.irrigation_config.irrigation_times == [{"time": "09:00:00"}]
-
-        mock_main_coordinator.async_save.assert_awaited_once()
-        mock_update.assert_awaited_once()
-
-
 async def test_schedule_event_invalid_time(
     mock_hass: MagicMock, mock_config_entry: MagicMock, mock_main_coordinator: MagicMock
 ) -> None:
@@ -472,25 +436,6 @@ async def test_run_pump_cycle_error(
 
     # Verify task is removed from running_tasks
     assert "irrigation" not in coordinator._running_tasks
-
-
-async def test_async_setup_migration_empty_legacy(
-    mock_hass: MagicMock, mock_config_entry: MagicMock, mock_main_coordinator: MagicMock
-) -> None:
-    """Test setup with no legacy options."""
-    mock_main_coordinator.growspaces[
-        GROWSPACE_ID
-    ].irrigation_config = IrrigationConfig()
-    mock_config_entry.options = {}
-
-    coordinator = IrrigationCoordinator(
-        mock_hass, mock_config_entry, GROWSPACE_ID, mock_main_coordinator
-    )
-
-    await coordinator.async_setup()
-
-    # Should not save if no migration happened
-    mock_main_coordinator.async_save.assert_not_awaited()
 
 
 async def test_async_remove_schedule_item_key_error(

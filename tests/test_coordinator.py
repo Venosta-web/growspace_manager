@@ -9,7 +9,7 @@ data migration, validation, and helper methods.
 
 from datetime import date, datetime, timedelta
 from typing import Any
-from unittest.mock import AsyncMock, MagicMock, Mock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from freezegun import freeze_time
@@ -22,7 +22,6 @@ from pytest_homeassistant_custom_component.common import MockConfigEntry
 from custom_components.growspace_manager.const import (
     DOMAIN,
     PLANT_STAGES,
-    SPECIAL_GROWSPACES,
     PlantStage,
 )
 from custom_components.growspace_manager.coordinator import GrowspaceCoordinator
@@ -309,159 +308,6 @@ async def test_get_sorted_growspace_options(coordinator: GrowspaceCoordinator) -
     # Check the names match
     sorted_names = [item[1] for item in sorted_options]
     assert sorted_names == [gs.name for gs in expected_order]
-
-
-@pytest.mark.asyncio
-async def test_migrate_legacy_growspaces(coordinator: GrowspaceCoordinator) -> None:
-    """Test that legacy growspace aliases are correctly migrated.
-
-    Args:
-        coordinator: The mock GrowspaceCoordinator.
-    """
-
-    # Patch the _migrate_special_alias_if_needed method to track calls
-    with patch.object(
-        coordinator.migration_manager,
-        "_migrate_special_alias_if_needed",
-        wraps=coordinator.migration_manager._migrate_special_alias_if_needed,
-    ) as mock_migrate:
-        # Call the private migration method
-        coordinator._migrate_legacy_growspaces()
-
-        # Ensure it was called for each alias in SPECIAL_GROWSPACES
-        total_aliases = sum(
-            len(config["aliases"]) for config in SPECIAL_GROWSPACES.values()
-        )
-        assert mock_migrate.call_count == total_aliases
-
-        # Optionally, verify the first call arguments (example)
-        first_config = list(SPECIAL_GROWSPACES.values())[0]
-        first_alias = first_config["aliases"][0]
-        mock_migrate.assert_any_call(
-            first_alias, first_config["canonical_id"], first_config["canonical_name"]
-        )
-
-
-@pytest.mark.asyncio
-async def test_create_canonical_from_alias(coordinator: GrowspaceCoordinator) -> None:
-    """Test creating a new canonical growspace from a legacy alias.
-
-    Args:
-        coordinator: The mock GrowspaceCoordinator.
-    """
-
-    alias_id = "alias_gs"
-    canonical_id = "canonical_gs"
-    canonical_name = "Canonical GS"
-
-    coordinator.growspaces[alias_id] = Growspace(
-        id=alias_id,
-        name="Alias GS",
-        rows=4,
-        plants_per_row=5,
-        notification_target="notify_me",
-        device_id="device_1",
-    )
-
-    # Patch migrate_plants_to_growspace and update_data_property
-    coordinator.migration_manager.migrate_plants_to_growspace = Mock()
-    coordinator.update_data_property = Mock()
-
-    # Call the internal method
-    coordinator.migration_manager._create_canonical_from_alias(
-        alias_id, canonical_id, canonical_name
-    )
-
-    # Assert the canonical growspace exists
-    new_gs = coordinator.growspaces[canonical_id]
-    assert new_gs.id == canonical_id
-    assert new_gs.name == canonical_name
-    assert new_gs.rows == 4
-    assert new_gs.plants_per_row == 5
-    assert new_gs.notification_target == "notify_me"
-    assert new_gs.device_id == "device_1"  # Now preserves device_id from source
-
-    # Alias removed
-    assert alias_id not in coordinator.growspaces
-
-    # Helpers called
-    coordinator.migration_manager.migrate_plants_to_growspace.assert_called_once_with(
-        alias_id, canonical_id
-    )
-    coordinator.update_data_property.assert_called_once()
-
-
-@pytest.mark.asyncio
-async def test_consolidate_alias_into_canonical(
-    coordinator: GrowspaceCoordinator,
-) -> None:
-    """Test consolidating plants from an alias growspace into a canonical one.
-
-    Args:
-        coordinator: The mock GrowspaceCoordinator.
-    """
-
-    alias_id = "alias_gs"
-    canonical_id = "canonical_gs"
-
-    # Setup growspaces
-    # Setup growspaces
-    coordinator.growspaces[alias_id] = Growspace(id=alias_id, name="Alias GS")
-    coordinator.growspaces[canonical_id] = Growspace(
-        id=canonical_id, name="Canonical GS"
-    )
-
-    # Patch helpers
-    coordinator.migration_manager.migrate_plants_to_growspace = Mock()
-    coordinator.update_data_property = Mock()
-
-    # Call the method
-    coordinator.migration_manager._consolidate_alias_into_canonical(
-        alias_id, canonical_id
-    )
-
-    # Assert alias removed
-    assert alias_id not in coordinator.growspaces
-
-    # Assert canonical still exists
-    assert canonical_id in coordinator.growspaces
-
-    # Helpers called
-    coordinator.migration_manager.migrate_plants_to_growspace.assert_called_once_with(
-        alias_id, canonical_id
-    )
-    coordinator.update_data_property.assert_called_once()
-
-
-@pytest.mark.asyncio
-async def test_migrate_plants_to_growspace(coordinator: GrowspaceCoordinator) -> None:
-    """Test that `_migrate_plants_to_growspace` moves all plants correctly.
-
-    Args:
-        coordinator: The mock GrowspaceCoordinator.
-    """
-
-    # Use actual Growspace instances
-    coordinator.growspaces["gs1"] = Growspace(
-        id="gs1", name="Growspace 1", rows=3, plants_per_row=3
-    )
-    coordinator.growspaces["gs2"] = Growspace(
-        id="gs2", name="Growspace 2", rows=3, plants_per_row=3
-    )
-
-    # Add plants
-    plant1 = await coordinator.async_add_plant("gs1", "Strain1")
-    plant2 = await coordinator.async_add_plant("gs1", "Strain2")
-    plant3 = await coordinator.async_add_plant("gs2", "Strain3")  # Should remain
-
-    # Migrate plants
-    coordinator.migration_manager.migrate_plants_to_growspace("gs1", "gs2")
-
-    # Assert all plants from gs1 are now in gs2
-    assert coordinator.plants[plant1.plant_id].growspace_id == "gs2"
-    assert coordinator.plants[plant2.plant_id].growspace_id == "gs2"
-    # Plant already in gs2 remains
-    assert coordinator.plants[plant3.plant_id].growspace_id == "gs2"
 
 
 @pytest.mark.asyncio
@@ -770,9 +616,6 @@ async def test_async_load(coordinator: GrowspaceCoordinator) -> None:
     assert "gs1" in coordinator.growspaces
     assert coordinator._notifications_sent == {"gs1": []}
     assert coordinator._notifications_enabled == {"gs1": True}
-
-    # Ensure save called
-    coordinator.storage_manager.async_save.assert_called_once()
 
 
 @pytest.mark.asyncio
@@ -1490,88 +1333,6 @@ async def test_init_with_plant_object(hass: HomeAssistant) -> None:
 
 
 @pytest.mark.asyncio
-async def test_migrate_legacy_growspaces_error_handling(
-    hass: HomeAssistant, caplog: pytest.LogCaptureFixture
-) -> None:
-    """Test error handling in _migrate_legacy_growspaces."""
-    caplog.set_level("DEBUG")
-    coordinator = create_test_coordinator(hass, data={})
-
-    with patch.object(
-        coordinator.migration_manager,
-        "_migrate_special_alias_if_needed",
-        side_effect=ValueError("Test error"),
-    ):
-        coordinator.migration_manager.migrate_legacy_growspaces()
-
-    assert any(
-        "Special growspace migration skipped" in r.message for r in caplog.records
-    )
-
-
-@pytest.mark.asyncio
-async def test_migrate_special_alias_if_needed_no_op(hass: HomeAssistant) -> None:
-    """Test that no migration happens if alias and canonical IDs are the same."""
-    coordinator = create_test_coordinator(hass, data={})
-    with (
-        patch.object(
-            coordinator.migration_manager, "_create_canonical_from_alias"
-        ) as mock_create,
-        patch.object(
-            coordinator.migration_manager, "_consolidate_alias_into_canonical"
-        ) as mock_consolidate,
-    ):
-        coordinator.migration_manager._migrate_special_alias_if_needed(
-            "test", "test", "Test"
-        )
-        mock_create.assert_not_called()
-        mock_consolidate.assert_not_called()
-
-
-@pytest.mark.asyncio
-async def test_migrate_special_alias_if_needed_create_canonical(
-    hass: HomeAssistant,
-) -> None:
-    """Test that a new canonical growspace is created from an alias."""
-    coordinator = create_test_coordinator(hass, data={})
-    coordinator.growspaces["alias"] = Growspace(id="alias", name="Alias")
-    with (
-        patch.object(
-            coordinator.migration_manager, "_create_canonical_from_alias"
-        ) as mock_create,
-        patch.object(
-            coordinator.migration_manager, "_consolidate_alias_into_canonical"
-        ) as mock_consolidate,
-    ):
-        coordinator.migration_manager._migrate_special_alias_if_needed(
-            "alias", "canonical", "Canonical"
-        )
-        mock_create.assert_called_once_with("alias", "canonical", "Canonical")
-        mock_consolidate.assert_not_called()
-
-
-@pytest.mark.asyncio
-async def test_migrate_special_alias_if_needed_consolidate(hass: HomeAssistant) -> None:
-    """Test that an existing alias is consolidated into a canonical growspace."""
-    coordinator = create_test_coordinator(hass, data={})
-    coordinator.growspaces["alias"] = Growspace(id="alias", name="Alias")
-    coordinator.growspaces["canonical"] = Growspace(id="canonical", name="Canonical")
-    with (
-        patch.object(
-            coordinator.migration_manager, "_create_canonical_from_alias"
-        ) as mock_create,
-        patch.object(
-            coordinator.migration_manager, "_consolidate_alias_into_canonical"
-        ) as mock_consolidate,
-    ):
-        coordinator.migration_manager._migrate_special_alias_if_needed(
-            "alias", "canonical", "Canonical"
-        )
-        mock_create.assert_not_called()
-        mock_consolidate.assert_called_once_with("alias", "canonical")
-
-
-@pytest.mark.asyncio
 async def test_get_plant_stage_special_growspaces(hass: HomeAssistant) -> None:
     """Test _get_plant_stage for special growspaces."""
 
@@ -1715,32 +1476,6 @@ async def test_ensure_special_growspace_updates_name(
 
     assert coordinator.growspaces["dry"].name == "Dry"
     assert "Updated growspace name" in caplog.text
-
-
-@pytest.mark.asyncio
-async def test_cleanup_legacy_aliases(
-    hass: HomeAssistant, caplog: pytest.LogCaptureFixture
-) -> None:
-    """Test that _cleanup_legacy_aliases removes legacy aliases and migrates plants."""
-
-    caplog.set_level("INFO")
-    coordinator = create_test_coordinator(hass, data={})
-
-    # Add a canonical growspace and a legacy alias with a plant
-    coordinator.growspaces["dry"] = Growspace(
-        id="dry", name="Dry", rows=1, plants_per_row=1
-    )
-    coordinator.growspaces["drying"] = Growspace(
-        id="drying", name="Drying", rows=1, plants_per_row=1
-    )
-    plant = Plant(plant_id="p1", strain="Test", growspace_id="drying")
-    coordinator.plants[plant.plant_id] = plant
-
-    coordinator.migration_manager.cleanup_legacy_aliases("dry")
-
-    assert "drying" not in coordinator.growspaces
-    assert coordinator.plants["p1"].growspace_id == "dry"
-    assert "Removed legacy growspace: drying" in caplog.text
 
 
 @pytest.mark.asyncio
@@ -2188,37 +1923,6 @@ async def test_async_initialize_sub_coordinators(
 
 
 # Tests merged from test_coordinator_coverage.py
-@pytest.mark.asyncio
-async def test_load_growspaces_legacy_migration(
-    mock_coordinator: GrowspaceCoordinator,
-) -> None:
-    """Test loading legacy growspace data without growspace_type."""
-    raw_growspaces = {
-        "dry": {"id": "dry", "name": "Dry Room", "rows": 3, "plants_per_row": 3},
-        "cure": {"id": "cure", "name": "Curing", "rows": 3, "plants_per_row": 3},
-        "mother": {"id": "mother", "name": "Mothers", "rows": 3, "plants_per_row": 3},
-        "veg": {"id": "veg", "name": "Veg", "rows": 3, "plants_per_row": 3},
-        "clone": {"id": "clone", "name": "Clones", "rows": 3, "plants_per_row": 3},
-        "gs1": {"id": "gs1", "name": "Flower 1", "rows": 3, "plants_per_row": 3},
-        "custom": {"id": "custom", "name": "Custom", "rows": 3, "plants_per_row": 3},
-        "drying": {
-            "id": "drying",
-            "name": "Dry Alias",
-            "rows": 3,
-            "plants_per_row": 3,
-        },  # alias check
-    }
-
-    mock_coordinator._load_growspaces(raw_growspaces)
-
-    assert mock_coordinator.growspaces["dry"].growspace_type == GrowspaceType.DRY
-    assert mock_coordinator.growspaces["cure"].growspace_type == GrowspaceType.CURE
-    assert mock_coordinator.growspaces["mother"].growspace_type == GrowspaceType.MOTHER
-    assert mock_coordinator.growspaces["veg"].growspace_type == GrowspaceType.VEG
-    assert mock_coordinator.growspaces["clone"].growspace_type == GrowspaceType.CLONE
-    assert mock_coordinator.growspaces["gs1"].growspace_type == GrowspaceType.FLOWER
-    assert mock_coordinator.growspaces["custom"].growspace_type == GrowspaceType.FLOWER
-    assert mock_coordinator.growspaces["drying"].growspace_type == GrowspaceType.DRY
 
 
 @pytest.mark.asyncio
@@ -2895,7 +2599,6 @@ async def test_coverage_init_with_empty_data(hass: HomeAssistant) -> None:
 
     with (
         patch("custom_components.growspace_manager.coordinator.StorageManager"),
-        patch("custom_components.growspace_manager.coordinator.MigrationManager"),
         patch("custom_components.growspace_manager.coordinator.StrainLibrary"),
     ):
         # Initialize with no data

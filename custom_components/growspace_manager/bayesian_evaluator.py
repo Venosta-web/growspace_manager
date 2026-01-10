@@ -201,26 +201,26 @@ async def _async_evaluate_fallback_mold_trend_analysis(
             analysis = await analyze_trend(
                 env_config[f"{sensor_key}_sensor"], duration, threshold
             )
+            # Fallback analysis updates trend state
             trend_states[f"{sensor_key}_trend"] = analysis["trend"]
 
-            # Gate humidity trend penalties based on stage-aware safe zones
-            if sensor_key == "humidity" and analysis["trend"] == "rising":
-                # Determine safe limit based on stage
-                safe_limit = 55 if state.flower_days > 40 else 65
+            # VPD Falling Trend Logic (Professional Gating)
+            if sensor_key == "vpd" and analysis["trend"] == "falling":
+                # Danger Zone: Veg < 0.5, Flower < 0.8
+                danger_zone = 0.5 if state.flower_days == 0 else 0.8
 
-                # Only penalize if we are actually approaching the danger zone
-                if state.humidity is not None and state.humidity > safe_limit:
+                # Only penalize if we are already approaching the danger zone
+                if state.vpd is not None and state.vpd < danger_zone:
                     p_true = 0.5 + (sensitivity * 0.45)
                     p_false = 0.5 - (sensitivity * 0.4)
                     prob = (p_true, p_false)
                     observations.append(prob)
-                    reasons.append((prob[0], f"{sensor_key.capitalize()} trend"))
-            elif sensor_key == "vpd" and analysis["trend"] == "falling":
-                p_true = 0.5 + (sensitivity * 0.45)
-                p_false = 0.5 - (sensitivity * 0.4)
-                prob = (p_true, p_false)
-                observations.append(prob)
-                reasons.append((prob[0], f"{sensor_key.capitalize()} trend"))
+                    reasons.append(
+                        (
+                            prob[0],
+                            f"{sensor_key.capitalize()} trend falling (Approaching {danger_zone}kPa)",
+                        )
+                    )
 
 
 async def async_evaluate_mold_risk_trend(
@@ -247,16 +247,25 @@ async def async_evaluate_mold_risk_trend(
         local_trends: dict[str, str] = {}
 
         # We need to reuse the existing helper logic but adapted for local return
-        # Since _async_evaluate_external_mold_trend_sensor and _async_evaluate_fallback_mold_trend_analysis
-        # modify lists in-place, we pass local lists.
+        # INTERNAL LOGIC: Humidity trend is tracked for UI but IGNORED for risk calculation
+        # to prevent false positives in high-transpiration environments.
+        # Only VPD trend contributes to risk probability.
+
+        target_obs = local_obs
+        target_reasons = local_reasons
+
+        if sensor_key == "humidity":
+            # Use throwaway lists for humidity so it doesn't affect probability
+            target_obs = []
+            target_reasons = []
 
         await _async_evaluate_external_mold_trend_sensor(
             sensor_instance,
             env_config,
             sensor_key,
             trend_key,
-            local_obs,
-            local_reasons,
+            target_obs,
+            target_reasons,
             local_trends,
         )
         await _async_evaluate_fallback_mold_trend_analysis(
@@ -264,8 +273,8 @@ async def async_evaluate_mold_risk_trend(
             env_config,
             sensor_key,
             trend_key,
-            local_obs,
-            local_reasons,
+            target_obs,
+            target_reasons,
             local_trends,
             analyze_trend,
             state,

@@ -64,15 +64,9 @@ class BaseModel:
         data = data.copy()
 
         # Get configuration from class attributes
-        migrations: dict[str, str] | None = getattr(cls, "_MIGRATIONS", None)
+
         nested_handlers: dict[str, Any] | None = getattr(cls, "_NESTED_HANDLERS", None)
         defaults: dict[str, Any] | None = getattr(cls, "_DEFAULTS", None)
-
-        # Apply migrations
-        if migrations:
-            for old_key, new_key in migrations.items():
-                if old_key in data and new_key not in data:
-                    data[new_key] = data.pop(old_key)
 
         # Apply defaults
         if defaults:
@@ -143,13 +137,6 @@ class EnvironmentConfig(BaseModel):
 
     _CATCH_ALL_FIELD = "bayesian_options"
 
-    _MIGRATIONS = {
-        "exhaust_sensor": "exhaust_fan_entity",
-        "humidifier_sensor": "humidifier_entity",
-        "circulation_fan": "circulation_fan_entity",
-        "exhaust_entity": "exhaust_fan_entity",
-    }
-
 
 @dataclass(slots=True)
 class IrrigationConfig(BaseModel):
@@ -192,7 +179,6 @@ class Growspace(BaseModel):
     irrigation_strategy: IrrigationStrategy = field(default_factory=IrrigationStrategy)
     growspace_type: GrowspaceType = field(default=GrowspaceType.FLOWER)
 
-    _MIGRATIONS = {"created": "created_at", "updated": "updated_at"}
     _NESTED_HANDLERS = {
         "irrigation_strategy": IrrigationStrategy.from_dict,
         "environment_config": EnvironmentConfig.from_dict,
@@ -229,8 +215,6 @@ class Plant(BaseModel):
     last_training_technique: str | None = None
     last_ipm: str | None = None
     last_ipm_type: str | None = None
-
-    _MIGRATIONS = {"created": "created_at", "updated": "updated_at"}
 
     def get_days_since_watering(self) -> int | None:
         """Calculate days since last watering.
@@ -288,7 +272,6 @@ class GrowspaceEvent(BaseModel):
     category: str
     reasons: list[str] = field(default_factory=list)
 
-    _MIGRATIONS = {"max_probability": "severity"}
     _DEFAULTS = {"category": "alert"}
 
 

@@ -92,16 +92,6 @@ class StorageManager:
             if growspace_id not in self.coordinator._notifications_enabled:
                 self.coordinator._notifications_enabled[growspace_id] = True
 
-        # Migrate legacy growspace aliases
-        if hasattr(self.coordinator, "migration_manager"):
-            self.coordinator.migration_manager.migrate_legacy_growspaces()
-        else:
-            _LOGGER.warning("MigrationManager not found on coordinator during load")
-
-        # Save migrated data back to storage
-        await self.async_save()
-        _LOGGER.info("Saved migrated data to storage")
-
     def _load_plants(self, data: dict) -> None:
         """Load plants from storage data."""
         try:
