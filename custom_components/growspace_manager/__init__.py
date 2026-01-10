@@ -266,6 +266,11 @@ async def async_unload_entry(hass: HomeAssistant, entry: GrowspaceConfigEntry) -
     if unload_ok:
         # Services remain registered until HA shutdown
 
+        # Clean up global Strain Library
+        if DOMAIN in hass.data and "strain_library" in hass.data[DOMAIN]:
+            await hass.data[DOMAIN]["strain_library"].async_close()
+            del hass.data[DOMAIN]["strain_library"]
+
         _LOGGER.info("Unloaded Growspace Manager for entry %s", entry.entry_id)
         return True
 
