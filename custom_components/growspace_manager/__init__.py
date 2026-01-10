@@ -559,9 +559,13 @@ def websocket_get_strain_library(
             return
 
         strain_library: StrainLibrary = hass.data[DOMAIN]["strain_library"]
-        # Fetch the full analytics payload
-        analytics = strain_library.get_analytics()
-        connection.send_result(msg["id"], analytics)
+        # Return full strain data (including image_path) for frontend display
+        all_strains = strain_library.get_all()
+        response = {
+            "strains": all_strains,
+            "strain_list": list(all_strains.keys()),
+        }
+        connection.send_result(msg["id"], response)
     except Exception as err:
         _LOGGER.exception("Error handling websocket_get_strain_library")
         connection.send_error(msg["id"], "unknown_error", str(err))
