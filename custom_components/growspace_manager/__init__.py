@@ -569,13 +569,13 @@ def _async_register_websocket_api(hass: HomeAssistant) -> None:
     websocket_api.async_register_command(
         hass,
         WS_TYPE_GET_LOG,
-        websocket_get_event_log,
+        websocket_api.async_response(websocket_get_event_log),
         SCHEMA_WS_GET_LOG,
     )
     websocket_api.async_register_command(
         hass,
         WS_TYPE_GET_STRAIN_LIBRARY,
-        websocket_get_strain_library,
+        websocket_api.async_response(websocket_get_strain_library),
         SCHEMA_WS_GET_STRAIN_LIBRARY,
     )
 
