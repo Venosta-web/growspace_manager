@@ -459,3 +459,12 @@ APPLY_IPM_SCHEMA = vol.Schema(
         vol.Optional(ATTR_NOTES): str,
     }
 )
+
+
+BATCH_ACTION_SCHEMA = vol.Schema(
+    {
+        vol.Required("entity_ids"): cv.ensure_list,
+        vol.Required("action"): cv.string,
+        vol.Optional("data"): dict,
+    }
+)

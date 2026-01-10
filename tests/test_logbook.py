@@ -6,7 +6,6 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from homeassistant.core import HomeAssistant
 from homeassistant.util import dt as dt_util
-from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.growspace_manager.binary_sensor import (
     SENSOR_TYPES,
@@ -22,7 +21,6 @@ def mock_coordinator(hass: HomeAssistant):
     coord = MagicMock(spec=GrowspaceCoordinator)
     coord.hass = hass
     coord.growspaces = {"gs1": Growspace(id="gs1", name="Test Growspace")}
-    coord.events = {}
     coord.notification_manager = MagicMock()
     return coord
 
@@ -45,48 +43,6 @@ def test_growspace_event_model() -> None:
     assert event.severity == 0.95
     assert event.category == "alert"
     assert event.to_dict() == data
-
-
-# --- 2. Test Coordinator Rolling Buffer ---
-async def test_coordinator_rolling_buffer(hass: HomeAssistant) -> None:
-    # Setup mock entry
-    entry = MockConfigEntry()
-    entry.add_to_hass(hass)
-
-    def mock_create_background_task(hass: HomeAssistant, target, name):
-        if target:
-            target.close()
-        return MagicMock()
-
-    entry.async_create_background_task = MagicMock(
-        side_effect=mock_create_background_task
-    )
-
-    coordinator = GrowspaceCoordinator(
-        hass, data={}, options={}, strain_library=AsyncMock(), entry=entry
-    )
-    coordinator.storage_manager = MagicMock()
-    coordinator.storage_manager.async_save = AsyncMock()
-    coordinator.async_save = AsyncMock()  # Mock save to avoid internal logic
-
-    # Test adding 1005 events
-    gid = "gs1"
-    for i in range(1005):
-        event = GrowspaceEvent(
-            sensor_type="stress",
-            growspace_id=gid,
-            start_time=f"2023-01-01T{i:02}:00:00",
-            end_time="2023-01-01T00:00:00",
-            duration_sec=10,
-            severity=0.8,
-            category="alert",
-            reasons=[],
-        )
-        coordinator.add_event(gid, event)
-
-    assert len(coordinator.events[gid]) == 1000
-    # The first 5 should be gone (0-4), so the first one should be index 5
-    assert coordinator.events[gid][0].start_time == "2023-01-01T05:00:00"
 
 
 # --- 3. Test Sensor Event Capture ---

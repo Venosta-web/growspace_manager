@@ -6,11 +6,11 @@
 
 - **Detailed Plant Tracking**: Monitor individual plants from seed to cure, tracking their strain, phenotype, position, and key dates (veg, flower, etc.).
 - **Visual Growspace Layouts**: Organize your plants in a grid system for each growspace. Visualize your entire setup at a glance using the companion Lovelace card.
-- **Advanced Environmental Monitoring**: Utilizes a sophisticated Bayesian inference engine to provide intelligent binary sensors for:
-  - **Plant Stress**: Detects when conditions like temperature, humidity, or VPD are likely causing stress to your plants.
-  - **Mold Risk**: Proactively warns you of conditions favorable to mold growth, especially during the critical late-flowering stage.
-  - **Optimal Conditions**: Confirms when your environmental parameters are within the ideal range for the current growth stage.
-  - **Light-Aware Logic**: Uses an optional light sensor to apply more accurate day/night thresholds and verifies your light schedule is correct for the plant's growth stage.
+- **Smart Irrigation**: Automate simple daily watering or advanced "Crop Steering" strategies with support for multiple irrigation events and drainage control.
+- **Advanced Environmental Monitoring**: Utilizes a sophisticated Bayesian inference engine to provide intelligent binary sensors for Plant Stress, Mold Risk, and Optimal Conditions.
+- **Environment Control**: Automate dehumidifier operation based on dynamic VPD and humidity targets that adapt to the day/night cycle and growth stage.
+- **Strain Recommendations**: Get AI-powered strain suggestions based on your preferences and previous harvest data.
+- **Integrated Pest Management (IPM)**: Track pest prevention and treatment tasks directly within your growspace management workflow.
 - **Strain Analytics**: Automatically tracks harvest data to provide average veg and flower times for each strain.
 - **Task Calendar**: Generates a dedicated calendar for each growspace with scheduled tasks based on your timed notifications.
 - **Dynamic Entity Creation**: Automatically generates a rich set of sensors and controls for each growspace and plant.
@@ -20,18 +20,34 @@
 
 ## Advanced Features
 
-### Strain Analytics
+### Smart Irrigation & Crop Steering
+The integration includes a robust irrigation coordinator that can handle:
+- **Simple Schedules**: Set a daily duration for watering.
+- **Multi-Feed Events**: Configure specific times for irrigation events throughout the day.
+- **Crop Steering Strategies**:
+  - **Vegetative**: Focuses on building biomass with frequent, smaller waterings.
+  - **Generative**: Encourages flower production with larger dry-backs.
+  - **Balanced**: A middle-ground approach for general maintenance.
+- **Drainage Control**: Automatically triggers a drain pump after irrigation to manage runoff (waste).
 
+### Environment Control (VPD & Humidity)
+Go beyond monitoring with active control. The generic **Dehumidifier Integration** allows you to:
+- **Target VPD or Humidity**: Choose your preferred metric.
+- **Stage-Specific Targets**: Different targets for Veg, Early Flower, Mid Flower, and Late Flower (e.g., lower humidity in late flower to prevent mold).
+- **Day/Night Cycles**: Automatically adjusts targets when lights go off.
+- **Smart Hysteresis**: Prevents short-cycling of your equipment.
+
+### Strain Recommendations (AI)
+Leverage the power of LLMs (like Google Gemini or OpenAI) to get personalized strain recommendations.
+- **Context-Aware**: The AI knows your growspace setup (biomass, lighting).
+- **History-Based**: Takes into account strains you've successfully grown before.
+- **Goal-Oriented**: Ask for "high yield," "short flowering time," or specific terpene profiles.
+
+### Strain Analytics
 The `StrainLibrarySensor` does more than just list your strains; it automatically compiles harvest data to provide valuable insights. When a plant is moved to the "dry" growspace, its veg and flower durations are recorded. The sensor then calculates and exposes the average veg and flower times for each strain and phenotype, allowing you to refine your cultivation cycles and compare results over time.
 
-### Task Calendar
-
-For each growspace, the integration now creates a dedicated Home Assistant calendar entity. This calendar is automatically populated with tasks and reminders based on the timed notifications you configure. For example, if you set a reminder to "Check trichomes" on day 60 of flower, a corresponding all-day event will appear on the calendar, ensuring you never miss a critical task.
-
 ### Light-Aware Monitoring
-
 By configuring an optional light sensor for your growspace, you unlock more intelligent environmental monitoring:
-
 - **Day/Night Logic**: The Bayesian sensors will automatically switch between day and night thresholds for temperature and VPD, leading to more accurate stress and mold risk detection.
 - **Schedule Verification**: A `LightCycleVerificationSensor` is created to monitor your light's on/off cycles. It verifies that the light is running for the correct duration for the current growth stage (e.g., 18/6 for veg, 12/12 for flower) and will turn off if the schedule is incorrect, alerting you to potential timer malfunctions.
 
@@ -41,7 +57,7 @@ This integration requires two components: the main integration (installed via HA
 
 **Step 1: Install the Lovelace Card**
 
-1.  Navigate to **HACS** \> **Frontend**.
+1.  Navigate to **HACS** > **Frontend**.
 2.  Click the three dots in the top right and select **Custom repositories**.
 3.  Enter the repository URL: `https://github.com/Venosta-web/lovelace-growspace-manager-card` and select the category **Lovelace**.
 4.  Click **Add**.
@@ -49,7 +65,7 @@ This integration requires two components: the main integration (installed via HA
 
 **Step 2: Install the Growspace Manager Integration**
 
-1.  Navigate to **HACS** \> **Integrations**.
+1.  Navigate to **HACS** > **Integrations**.
 2.  Click the three dots in the top right and select **Custom repositories**.
 3.  Enter the repository URL: `https://github.com/Venosta-web/growspace_manager` and select the category **Integration**.
 4.  Click **Add**.
@@ -60,7 +76,7 @@ This integration requires two components: the main integration (installed via HA
 
 ### Step 1: Add the Growspace Manager Integration
 
-1.  Go to **Settings** \> **Devices & Services**.
+1.  Go to **Settings** > **Devices & Services**.
 2.  Click **+ Add Integration** and search for **Growspace Manager**.
 3.  Follow the initial prompt to add the integration.
 
@@ -90,27 +106,43 @@ The integration is managed through its configuration menu.
     - **Veg Start / Flower Start**: Set the date when the stage began.
 6.  Click **Submit**.
 
-### Step 4: Configure Environment Sensors
+### Step 4: Configure Environment Sensors & Control
 
-This is where the magic happens. By linking your existing sensors, you enable the intelligent Bayesian monitoring.
+This is where the magic happens. By linking your existing sensors and devices, you enable intelligent monitoring and control.
 
 1.  Go back to the integration's **Configure** menu.
 2.  Select **Configure Growspace Environment** and click **Submit**.
-3.  Select the growspace you want to configure and click **Submit**.
+3.  Select the growspace you want to configure.
 4.  Link your sensor entities:
     - **Required**: Temperature, Humidity, and VPD sensors.
-    - **Optional**: A light or switch to determine if the lights are on/off, a CO2 sensor, and a circulation fan switch. Linking a light sensor enables more accurate day/night logic and activates the `LightCycleVerificationSensor`.
-5.  Click **Submit** to save. The Bayesian binary sensors will be created automatically.
+    - **Optional (Monitoring)**: CO2 sensor, Mold Risk Fan (circulation fan), Light Sensor (for Day/Night logic).
+    - **Optional (Control)**: **Dehumidifier** entity (switch or humidifier domain). You can also enable **Control Dehumidifier** to let Growspace Manager automate it based on VPD targets.
+5.  (If Dehumidifier Control is enabled) Set your VPD or Humidity targets for each growth stage (Veg, Early Flower, Mid Flower, Late Flower) and for Day/Night cycles.
+6.  Click **Submit** to save.
 
-### Step 5: Add the Card to Your Dashboard
+### Step 5: Configure Irrigation (Optional)
+
+1.  Select **Configure Irrigation** from the main menu.
+2.  Choose your growspace.
+3.  Link your **Irrigation Pump** and **Drain Pump** entities.
+4.  Set a **Default Duration** for watering events.
+5.  Once configured, you can add specific watering times using the `growspace_manager.add_irrigation_time` service or manage them via the dashboard if supported.
+
+### Step 6: Configure AI Assistant (Optional)
+
+To enable the Virtual Grow Master and Strain Recommendations:
+1.  Select **Configure AI Settings** from the main menu.
+2.  Check **Enable AI Features**.
+3.  Select a Home Assistant **Conversation Agent** (e.g., Google Gemini, OpenAI).
+4.  Click **Submit**.
+
+### Step 7: Add the Card to Your Dashboard
 
 1.  Navigate to the dashboard where you want to display your growspace.
 2.  Click the three dots in the top right and select **Edit Dashboard**.
 3.  Click **+ Add Card** and search for the **Custom: Growspace Card**.
 4.  Select the **Growspace Overview Sensor** that corresponds to the growspace you created (e.g., `sensor.4x4_tent`).
 5.  Click **Save**.
-
-Your dashboard should now display a visual grid of your growspace\!
 
 ## Services
 
@@ -239,7 +271,7 @@ Moves a plant from the "clone" growspace to a new growspace (e.g., "veg") and se
 
 ---
 
-### Environment Services
+### Environment & Control Services
 
 #### `growspace_manager.configure_environment`
 
@@ -256,6 +288,8 @@ Sets up or updates the environment sensors for a growspace to enable Bayesian mo
 | `light_sensor`       | Light or switch entity ID for day/night logic | No       | `"light.grow_light"`     |
 | `stress_threshold`   | Probability threshold for stress (0.0-1.0)    | No       | `0.7`                    |
 | `mold_threshold`     | Probability threshold for mold (0.0-1.0)      | No       | `0.75`                   |
+| `control_dehumidifier`| Enable automated dehumidifier                 | No       | `true`                   |
+| `dehumidifier_entity`| Dehumidifier switch or device                 | No       | `"switch.dehumidifier"`  |
 
 #### `growspace_manager.remove_environment`
 
@@ -264,6 +298,64 @@ Removes the environment sensor configuration from a growspace.
 | Field          | Description                               | Required | Example        |
 | :------------- | :---------------------------------------- | :------- | :------------- |
 | `growspace_id` | ID of the growspace to remove config from | Yes      | `"uuid-12345"` |
+
+---
+
+### Irrigation Services
+
+#### `growspace_manager.set_irrigation_settings`
+
+Configures the irrigation and drain pumps, and default durations for a growspace.
+
+| Field                | Description                                   | Required | Example                  |
+| :------------------- | :-------------------------------------------- | :------- | :----------------------- |
+| `growspace_id`       | ID of the growspace                           | Yes      | `"uuid-12345"`           |
+| `irrigation_pump_entity` | Entity ID for the irrigation pump switch      | No       | `"switch.irrigation"`    |
+| `drain_pump_entity`  | Entity ID for the drain pump switch           | No       | `"switch.drain_pump"`    |
+| `irrigation_duration`| Default duration in seconds to water          | No       | `60`                     |
+| `drain_duration`     | Default duration in seconds to drain          | No       | `120`                    |
+
+#### `growspace_manager.add_irrigation_time`
+
+Schedules a daily irrigation event at a specific time.
+
+| Field                | Description                                   | Required | Example                  |
+| :------------------- | :-------------------------------------------- | :------- | :----------------------- |
+| `growspace_id`       | ID of the growspace                           | Yes      | `"uuid-12345"`           |
+| `time`               | Time of day to run (HH:MM:SS)                 | Yes      | `"08:00:00"`             |
+| `duration`           | Override default duration (seconds)           | No       | `30`                     |
+
+#### `growspace_manager.remove_irrigation_time`
+
+Removes a specific scheduled irrigation time.
+
+| Field                | Description                                   | Required | Example                  |
+| :------------------- | :-------------------------------------------- | :------- | :----------------------- |
+| `growspace_id`       | ID of the growspace                           | Yes      | `"uuid-12345"`           |
+| `time`               | Time of day to remove (HH:MM:SS)              | Yes      | `"08:00:00"`             |
+
+---
+
+### Intelligence & AI Services
+
+#### `growspace_manager.ask_grow_advice`
+
+Query the Virtual Grow Master about a specific growspace. It uses the current sensor data and plant stage to provide context-aware advice.
+
+| Field          | Description                               | Required | Example                  |
+| :------------- | :---------------------------------------- | :------- | :----------------------- |
+| `growspace_id` | ID of the growspace to analyze            | Yes      | `"uuid-12345"`           |
+| `user_query`   | Specific question (optional)              | No       | `"Is my VPD too high?"`  |
+
+#### `growspace_manager.strain_recommendation`
+
+Get AI-curated strain suggestions based on your preferences and previous harvest data.
+
+| Field          | Description                               | Required | Example                  |
+| :------------- | :---------------------------------------- | :------- | :----------------------- |
+| `user_query`   | Description of what you are looking for   | No       | `"Fruity sativa for day"`|
+| `preferences`  | Key-value pairs for specific goals        | No       | `{"yield": "high"}`      |
+| `growspace_id` | Target growspace for recommendation       | No       | `"uuid-12345"`           |
 
 ---
 

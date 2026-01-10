@@ -10,6 +10,7 @@ from ..schemas import (
     ADD_STRAIN_SCHEMA,
     ANALYZE_ALL_GROWSPACES_SCHEMA,
     ASK_GROW_ADVICE_SCHEMA,
+    BATCH_ACTION_SCHEMA,
     CLEAR_STRAIN_LIBRARY_SCHEMA,
     CONFIGURE_ENVIRONMENT_SCHEMA,
     DEBUG_CONSOLIDATE_DUPLICATE_SPECIAL_SCHEMA,
@@ -41,6 +42,7 @@ from ..schemas import (
     WATER_PLANT_SCHEMA,
 )
 from . import (
+    batch,
     debug,
     irrigation_watering,
     nutrient_presets,
@@ -57,6 +59,7 @@ __all__ = [
     "ADD_STRAIN_SCHEMA",
     "ANALYZE_ALL_GROWSPACES_SCHEMA",
     "ASK_GROW_ADVICE_SCHEMA",
+    "BATCH_ACTION_SCHEMA",
     "CLEAR_STRAIN_LIBRARY_SCHEMA",
     "CONFIGURE_ENVIRONMENT_SCHEMA",
     "DEBUG_CONSOLIDATE_DUPLICATE_SPECIAL_SCHEMA",
@@ -86,6 +89,7 @@ __all__ = [
     "WATER_PLANT_SCHEMA",
     "SAVE_NUTRIENT_PRESET_SCHEMA",
     "REMOVE_NUTRIENT_PRESET_SCHEMA",
+    "batch",
     "debug",
     "irrigation_watering",
     "nutrient_presets",

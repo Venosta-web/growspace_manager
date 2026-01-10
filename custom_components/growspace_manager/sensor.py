@@ -11,6 +11,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from dataclasses import asdict
+from datetime import datetime
 from typing import Any, override
 
 # Third-party / external
@@ -806,8 +807,16 @@ class StrainLibrarySensor(CoordinatorEntity[GrowspaceCoordinator], SensorEntity)
     @override
     def extra_state_attributes(self) -> dict[str, Any]:
         """Return the calculated strain analytics as state attributes."""
-        # Use the cached analytics from StrainLibrary to avoid heavy computation on the main loop.
-        return self.coordinator.strain_library.get_analytics()
+        # Get the full data but only extract what is strictly necessary for basic HA usage
+        # to avoid hitting the 16KB recorder limit.
+        analytics = self.coordinator.strain_library.get_analytics()
+
+        return {
+            "strain_count": len(analytics.get("strains", {})),
+            "strain_list": analytics.get("strain_list", []),
+            "last_updated": datetime.now().isoformat(),
+            "note": "Full analytics available via WebSocket API: growspace_manager/get_strain_library",
+        }
 
 
 class NutrientPresetSensor(CoordinatorEntity[GrowspaceCoordinator], SensorEntity):

@@ -784,7 +784,8 @@ def test_strain_library_sensor_state_and_attributes(mock_coordinator) -> None:
                     }
                 }
             },
-        }
+        },
+        "strain_list": ["Strain A", "Strain B", "Strain C"],
     }
 
     sensor = StrainLibrarySensor(mock_coordinator)
@@ -797,34 +798,17 @@ def test_strain_library_sensor_state_and_attributes(mock_coordinator) -> None:
     assert sensor.state == 3
 
     attrs = sensor.extra_state_attributes
-    strains_data = attrs["strains"]
 
-    # Check Strain A (with metadata)
-    assert "Strain A" in strains_data
-    strain_a = strains_data["Strain A"]
-    pheno_a = strain_a["phenotypes"]["Pheno A"]
+    # Verify summary attributes are present
+    assert attrs["strain_count"] == 3
+    assert "Strain A" in attrs["strain_list"]
+    assert "Strain B" in attrs["strain_list"]
+    assert "Strain C" in attrs["strain_list"]
+    assert "last_updated" in attrs
+    assert "note" in attrs
 
-    # Check stats
-    assert pheno_a["avg_veg_days"] == 32
-    assert pheno_a["avg_flower_days"] == 62
-    assert pheno_a["total_harvests"] == 2
-
-    # Check metadata inclusion
-    assert pheno_a["description"] == "A very nice pheno"
-    assert pheno_a["image_path"] == "/local/img.jpg"
-
-    # Check Strain B (no metadata)
-    assert "Strain B" in strains_data
-    pheno_b = strains_data["Strain B"]["phenotypes"]["default"]
-    assert pheno_b["avg_veg_days"] == 40
-    assert pheno_b["total_harvests"] == 1
-
-    # Check Strain C (no harvests but metadata)
-    assert "Strain C" in strains_data
-    pheno_c = strains_data["Strain C"]["phenotypes"]["Pheno C"]
-    assert pheno_c["avg_veg_days"] == 0
-    assert pheno_c["total_harvests"] == 0
-    assert pheno_c["description"] == "Not harvested yet"
+    # Verify large data is NOT present
+    assert "strains" not in attrs
 
 
 # --------------------

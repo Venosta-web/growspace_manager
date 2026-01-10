@@ -859,3 +859,27 @@ set_dehumidifier_control:
       required: true
       selector:
         boolean:
+
+batch_action:
+  description: Perform an action on multiple plants simultaneously
+  fields:
+    entity_ids:
+      description: List of plant IDs to act upon
+      required: true
+      selector:
+        object:
+    action:
+      description: The action to perform
+      required: true
+      selector:
+        select:
+          options:
+            - transition
+            - harvest
+            - remove
+            - take_clone
+    data:
+      description: Parameters for the action
+      required: false
+      selector:
+        object:

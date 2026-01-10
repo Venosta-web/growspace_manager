@@ -5,25 +5,25 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass, field, fields
 from datetime import datetime
 from enum import StrEnum
-from typing import Any, Self, TypedDict
+from typing import Any, Final, ReadOnly, Self, TypedDict
 
 from .const import PlantStage
 from .utils import calculate_days_since, days_to_week
 
 
 class IrrigationScheduleItem(TypedDict):
-    """Irrigation schedule item definition."""
+    """Irrigation schedule item definition (immutable)."""
 
-    start_time: str
-    duration_seconds: int
+    start_time: ReadOnly[str]
+    duration_seconds: ReadOnly[int]
     # Add other keys as required by your logic
 
 
 class DehumidifierRange(TypedDict):
-    """Dehumidifier on/off range."""
+    """Dehumidifier on/off range (immutable)."""
 
-    on: float
-    off: float
+    on: ReadOnly[float]
+    off: ReadOnly[float]
 
 
 type DehumidifierThresholds = dict[str, dict[str, DehumidifierRange]]
@@ -32,18 +32,18 @@ type NutrientMap = dict[str, float]
 
 
 class NutrientEntry(TypedDict):
-    """A single nutrient entry with concentration info."""
+    """A single nutrient entry with concentration info (immutable)."""
 
-    name: str
-    dose_ml_l: float
-    total_amount: float
+    name: ReadOnly[str]
+    dose_ml_l: ReadOnly[float]
+    total_amount: ReadOnly[float]
 
 
 class NutrientPresetItem(TypedDict):
-    """A single nutrient in a preset recipe."""
+    """A single nutrient in a preset recipe (immutable)."""
 
-    name: str
-    dose_ml_l: float  # ml per liter of solution
+    name: ReadOnly[str]
+    dose_ml_l: ReadOnly[float]  # ml per liter of solution
 
 
 # Note: NutrientPreset is defined after BaseModel to inherit from it
@@ -166,7 +166,7 @@ class GrowspaceType(StrEnum):
 class Growspace(BaseModel):
     """Represents a single growspace area."""
 
-    id: str
+    id: Final[str]
     name: str
     rows: int = 3
     plants_per_row: int = 3
@@ -190,8 +190,8 @@ class Growspace(BaseModel):
 class Plant(BaseModel):
     """Represents a single plant."""
 
-    plant_id: str
-    growspace_id: str
+    plant_id: Final[str]
+    growspace_id: Final[str]
     strain: str
     phenotype: str = ""
     row: int = 1

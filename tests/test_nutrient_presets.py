@@ -11,7 +11,10 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
-from pytest_homeassistant_custom_component.common import MockConfigEntry
+from pytest_homeassistant_custom_component.common import (
+    MockConfigEntry,
+    async_capture_events,
+)
 
 from custom_components.growspace_manager.const import (
     ATTR_MIN_DAYS_IN_STAGE,
@@ -19,6 +22,7 @@ from custom_components.growspace_manager.const import (
     ATTR_PRESET_ID,
     ATTR_STAGE,
     DOMAIN,
+    EVENT_GROWSPACE_LOG_ENTRY,
 )
 from custom_components.growspace_manager.coordinator import GrowspaceCoordinator
 from custom_components.growspace_manager.models import (
@@ -254,16 +258,19 @@ class TestWateringWithPresets:
             name="Test Preset", nutrients=[{"name": "CalMag", "dose_ml_l": 2.0}]
         )
 
-        preset_coordinator.events = {}
-
         # Water with 2.0L using preset (should result in 4.0ml CalMag)
+        events = async_capture_events(
+            preset_coordinator.hass, EVENT_GROWSPACE_LOG_ENTRY
+        )
         await preset_coordinator.async_water_plant(
             "test_plant", amount=2.0, preset_id=preset.id
         )
 
         # Verify event logbook entry
-        event = preset_coordinator.events["test_gs"][0]
-        reasons = "".join(event.reasons)
+        assert len(events) == 1
+        event_data = events[0].data
+        reasons = str(event_data.get("reasons", []))
+
         assert f"Preset: {preset.name}" in reasons
         assert "CalMag: 2.0ml/L" in reasons
         assert "Total: 4.0ml" in reasons
@@ -281,17 +288,20 @@ class TestWateringWithPresets:
             ],
         )
 
-        preset_coordinator.events = {}
-
         # Water with preset A=1, B=2, but manually override B=5 and add C=10
         manual = {"B": 5.0, "C": 10.0}
+
+        events = async_capture_events(
+            preset_coordinator.hass, EVENT_GROWSPACE_LOG_ENTRY
+        )
         await preset_coordinator.async_water_plant(
             "test_plant", amount=1.0, nutrients=manual, preset_id=preset.id
         )
 
         # Result should be A=1, B=5, C=10
-        event = preset_coordinator.events["test_gs"][0]
-        reasons = "".join(event.reasons)
+        assert len(events) == 1
+        event_data = events[0].data
+        reasons = str(event_data.get("reasons", []))
 
         assert "A: 1.0ml/L" in reasons
         assert "B: 5.0ml/L" in reasons
@@ -309,13 +319,20 @@ class TestWateringWithPresets:
         )
 
         # Water growspace
+        # Water growspace
+        events = async_capture_events(
+            preset_coordinator.hass, EVENT_GROWSPACE_LOG_ENTRY
+        )
         await preset_coordinator.async_water_growspace(
             "test_gs", amount_per_plant=1.0, preset_id=preset.id
         )
 
         # Verify event for the plant
-        event = preset_coordinator.events["test_gs"][0]
-        reasons = "".join(event.reasons)
+        # Growspace has 1 plant, so 1 event
+        assert len(events) == 1
+        event_data = events[0].data
+        reasons = str(event_data.get("reasons", []))
+
         assert "Bloom: 4.0ml/L" in reasons
         assert "Total: 4.0ml" in reasons
         assert f"Preset: {preset.name}" in reasons

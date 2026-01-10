@@ -723,32 +723,15 @@ class BayesianMoldRiskSensor(BayesianEnvironmentSensor):
             self._reasons = []
             return
 
-        prob = self.prior
-
         # Refactoring Mold Sensor to use ObservationList
         all_observations: ObservationList = []
         all_reasons: ReasonList = []
 
         # 1. High Humidity (Stage-Aware)
-        hum = env_state.humidity
-        is_high_humidity = False
-
-        if env_state.flower_days == 0:  # Veg
-            # Powdery Mildew risk only at very high RH
-            if hum > 85:
-                is_high_humidity = True
-        elif env_state.flower_days > 40:  # Late Flower
-            # Botrytis risk
-            if hum > 60:
-                is_high_humidity = True
-        else:  # Early/Mid Flower
-            if hum > 70:
-                is_high_humidity = True
-
-        if is_high_humidity:
-            prob = (0.8, 0.2)
-            all_observations.append(prob)
-            all_reasons.append((prob[0], f"High Humidity ({hum}%)"))
+        obs, rsn = self._evaluate_humidity_risk(env_state)
+        if obs:
+            all_observations.append(obs)
+            all_reasons.append(rsn)
 
         # 2. Low Circulation
         if env_state.fan_off:
@@ -772,14 +755,39 @@ class BayesianMoldRiskSensor(BayesianEnvironmentSensor):
 
         # 4. Trends
         if self.env_config.humidity_sensor:
-            obs, rsn, _ = await async_evaluate_mold_risk_trend(self, env_state)
-            all_observations.extend(obs)
-            all_reasons.extend(rsn)
+            obs_list, rsn_list, _ = await async_evaluate_mold_risk_trend(
+                self, env_state
+            )
+            all_observations.extend(obs_list)
+            all_reasons.extend(rsn_list)
 
         self._probability = self._calculate_bayesian_probability(
             self.prior, all_observations
         )
         self._reasons = all_reasons
+
+    def _evaluate_humidity_risk(
+        self, env_state: EnvironmentState
+    ) -> tuple[tuple[float, float], tuple[float, str]] | tuple[None, None]:
+        """Evaluate humidity risk based on growth stage."""
+        hum = env_state.humidity
+        is_high_humidity = False
+
+        if env_state.flower_days == 0:  # Veg
+            # Powdery Mildew risk only at very high RH
+            if hum > 85:
+                is_high_humidity = True
+        elif env_state.flower_days > 40:  # Late Flower
+            # Botrytis risk
+            if hum > 60:
+                is_high_humidity = True
+        elif hum > 70:  # Early/Mid Flower
+            is_high_humidity = True
+
+        if is_high_humidity:
+            prob = (0.8, 0.2)
+            return prob, (prob[0], f"High Humidity ({hum}%)")
+        return None, None
 
     def get_notification_title_message(
         self, new_state_on: bool

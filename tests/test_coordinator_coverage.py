@@ -2,11 +2,16 @@ from datetime import datetime
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+from homeassistant.config_entries import ConfigEntryState
 from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import ServiceValidationError
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.growspace_manager.const import DOMAIN
-from custom_components.growspace_manager.coordinator import GrowspaceCoordinator
+from custom_components.growspace_manager.coordinator import (
+    GrowspaceCoordinator,
+    invalidates_growspace_cache,
+)
 from custom_components.growspace_manager.models import (
     Growspace,
     NutrientPreset,
@@ -269,3 +274,117 @@ async def test_resolve_preset_nutrients(mock_coordinator: GrowspaceCoordinator) 
     # Test Missing
     with pytest.raises(KeyError):
         mock_coordinator._resolve_preset_nutrients("missing")
+
+
+@pytest.mark.asyncio
+async def test_get_for_service_call_with_list_plant_ids(hass: HomeAssistant) -> None:
+    """Test get_for_service_call with a list of plant_ids.
+
+    This covers lines 191-193 in coordinator.py.
+    """
+
+    entry = MockConfigEntry(domain=DOMAIN, data={}, options={})
+    entry.add_to_hass(hass)
+    entry._async_set_state(hass, ConfigEntryState.LOADED, None)
+
+    coord = GrowspaceCoordinator(hass, entry, data={}, strain_library=MagicMock())
+    coord.async_save = AsyncMock()
+    coord.plants = {
+        "p1": Plant(plant_id="p1", growspace_id="gs1", strain="Strain A"),
+        "p2": Plant(plant_id="p2", growspace_id="gs1", strain="Strain B"),
+    }
+    entry.runtime_data = coord
+
+    # Call with list of plant_ids
+    call_data = {"plant_id": ["p1", "p2"]}
+    result = GrowspaceCoordinator.get_for_service_call(hass, call_data)
+
+    assert result is coord
+
+
+@pytest.mark.asyncio
+async def test_get_for_service_call_with_single_plant_id(hass: HomeAssistant) -> None:
+    """Test get_for_service_call with a single plant_id (not a list).
+
+    This covers lines 194-195 in coordinator.py.
+    """
+
+    entry = MockConfigEntry(domain=DOMAIN, data={}, options={})
+    entry.add_to_hass(hass)
+    entry._async_set_state(hass, ConfigEntryState.LOADED, None)
+
+    coord = GrowspaceCoordinator(hass, entry, data={}, strain_library=MagicMock())
+    coord.async_save = AsyncMock()
+    coord.plants = {
+        "p1": Plant(plant_id="p1", growspace_id="gs1", strain="Strain A"),
+    }
+    entry.runtime_data = coord
+
+    # Call with single plant_id (not a list)
+    call_data = {"plant_id": "p1"}
+    result = GrowspaceCoordinator.get_for_service_call(hass, call_data)
+
+    assert result is coord
+
+
+@pytest.mark.asyncio
+async def test_get_for_service_call_no_match_raises(hass: HomeAssistant) -> None:
+    """Test get_for_service_call raises when no coordinator matches.
+
+    This covers line 200 in coordinator.py.
+    """
+
+    # Create two coordinators with different data
+    entry1 = MockConfigEntry(domain=DOMAIN, data={}, options={}, entry_id="entry1")
+    entry1.add_to_hass(hass)
+    entry1._async_set_state(hass, ConfigEntryState.LOADED, None)
+    coord1 = GrowspaceCoordinator(hass, entry1, data={}, strain_library=MagicMock())
+    coord1.async_save = AsyncMock()
+    coord1.plants = {"p1": Plant(plant_id="p1", growspace_id="gs1", strain="A")}
+    coord1.growspaces = {"gs1": Growspace(id="gs1", name="GS1")}
+    entry1.runtime_data = coord1
+
+    entry2 = MockConfigEntry(domain=DOMAIN, data={}, options={}, entry_id="entry2")
+    entry2.add_to_hass(hass)
+    entry2._async_set_state(hass, ConfigEntryState.LOADED, None)
+    coord2 = GrowspaceCoordinator(hass, entry2, data={}, strain_library=MagicMock())
+    coord2.async_save = AsyncMock()
+    coord2.plants = {"p2": Plant(plant_id="p2", growspace_id="gs2", strain="B")}
+    coord2.growspaces = {"gs2": Growspace(id="gs2", name="GS2")}
+    entry2.runtime_data = coord2
+
+    # Call with non-matching ID when multiple coordinators exist
+    with pytest.raises(ServiceValidationError, match="Could not determine"):
+        GrowspaceCoordinator.get_for_service_call(hass, {"plant_id": "unknown"})
+
+
+@pytest.mark.asyncio
+async def test_invalidates_cache_with_growspace_result(
+    mock_coordinator: GrowspaceCoordinator,
+) -> None:
+    """Test invalidates_growspace_cache decorator when method returns a Growspace object.
+
+    This covers lines 105-108 in coordinator.py.
+    """
+
+    # Create a growspace for the test
+    gs = Growspace(id="gs_new", name="New GS", plants_per_row=4)
+
+    # Create a mock function decorated with invalidates_growspace_cache
+    @invalidates_growspace_cache
+    async def mock_create_method(self):
+        return gs
+
+    # Mock the _invalidate_cache method
+    mock_coordinator._invalidate_cache = MagicMock()
+
+    # Call the decorated function
+    result = await mock_create_method(mock_coordinator)
+
+    # Verify result is the Growspace
+    assert result is gs
+    assert hasattr(result, "id")
+    assert hasattr(result, "plants_per_row")
+
+    # Verify cache was invalidated for the returned growspace ID
+    mock_coordinator._invalidate_cache.assert_called_once_with("gs_new")

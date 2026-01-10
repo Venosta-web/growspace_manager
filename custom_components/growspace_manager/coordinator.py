@@ -3,13 +3,16 @@
 from __future__ import annotations
 
 import asyncio
+import functools
 import logging
 import uuid
 from dataclasses import asdict
 from datetime import date, datetime, timedelta
 from typing import Any, override
 
+from homeassistant.config_entries import ConfigEntryState
 from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import ServiceValidationError
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
@@ -17,12 +20,17 @@ from homeassistant.util import dt as dt_util
 from homeassistant.util import slugify
 
 from .const import (
+    ATTR_GROWSPACE_ID,
+    ATTR_MOTHER_PLANT_ID,
+    ATTR_PLANT_ID,
+    ATTR_TARGET_GROWSPACE_ID,
     CATEGORY_IPM,
     CATEGORY_TRAINING,
     CONF_HUMIDITY_SENSOR,
     CONF_TEMP_SENSOR,
     CONF_VPD_SENSOR,
     DOMAIN,
+    EVENT_GROWSPACE_LOG_ENTRY,
     SPECIAL_GROWSPACES,
     PlantStage,
 )
@@ -81,6 +89,57 @@ type NotificationDict = dict[str, Any]
 type DateInput = str | datetime | date | None
 
 
+def invalidates_growspace_cache(func):
+    """Decorator to automatically invalidate growspace cache after modification."""
+
+    @functools.wraps(func)
+    async def wrapper(self, *args, **kwargs):
+        result = await func(self, *args, **kwargs)
+
+        growspace_ids = set()
+
+        # Strategy 1: Check return value (Growspace or Plant object)
+        if result:
+            if hasattr(result, "growspace_id") and result.growspace_id:
+                growspace_ids.add(result.growspace_id)
+            elif hasattr(result, "id") and hasattr(
+                result, "plants_per_row"
+            ):  # Growspace check
+                growspace_ids.add(result.id)
+
+        # Strategy 2: Check arguments for 'growspace_id'
+        if "growspace_id" in kwargs:
+            growspace_ids.add(kwargs["growspace_id"])
+        elif len(args) > 0 and isinstance(args[0], str):
+            # Heuristic: Check if arg is a known growspace or plant ID
+            # Note: This heuristic might need to be specific to method signature if IDs overlap
+            # But with UUIDs, overlap is negligible.
+            arg_id = args[0]
+            if hasattr(self, "growspaces") and arg_id in self.growspaces:
+                growspace_ids.add(arg_id)
+
+        # Strategy 3: Check for 'plant_id' and look up growspace
+        pid = kwargs.get("plant_id")
+        if not pid and len(args) > 0 and isinstance(args[0], str):
+            # Assume arg0 could be plant_id if not growspace_id
+            # Only if we verified it's not a growspace_id (which we did above)
+            # But if it IS a growspace_id, we added it.
+            # If it is NOT, we check matches plant.
+            if hasattr(self, "plants") and args[0] in self.plants:
+                pid = args[0]
+
+        if pid and hasattr(self, "plants") and (plant := self.plants.get(pid)):
+            growspace_ids.add(plant.growspace_id)
+
+        for gs_id in growspace_ids:
+            if gs_id:
+                self._invalidate_cache(gs_id)
+
+        return result
+
+    return wrapper
+
+
 class GrowspaceCoordinator(DataUpdateCoordinator):
     """Manages Growspace, Plant, and Strain data for the Growspace Manager integration.
 
@@ -93,6 +152,55 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
     growspaces: dict[str, Growspace] = {}
     plants: dict[str, Plant] = {}
     strain_library: StrainLibrary | None = None
+
+    @staticmethod
+    def get_for_service_call(hass: HomeAssistant, call: Any) -> GrowspaceCoordinator:
+        """Retrieve the correct coordinator based on service call data.
+
+        Args:
+            hass: The Home Assistant instance.
+            call: A ServiceCall or dict containing the service call data.
+
+        Returns:
+            The appropriate GrowspaceCoordinator for the request.
+
+        Raises:
+            ServiceValidationError: If no matching coordinator can be found.
+        """
+
+        data = call.data if hasattr(call, "data") else call
+
+        entries = hass.config_entries.async_entries(DOMAIN)
+        coordinators: list[GrowspaceCoordinator] = [
+            entry.runtime_data
+            for entry in entries
+            if entry.state == ConfigEntryState.LOADED and hasattr(entry, "runtime_data")
+        ]
+
+        id_lookups = [
+            (ATTR_GROWSPACE_ID, "growspaces"),
+            (ATTR_TARGET_GROWSPACE_ID, "growspaces"),
+            (ATTR_PLANT_ID, "plants"),
+            (ATTR_MOTHER_PLANT_ID, "plants"),
+        ]
+
+        for key, attr in id_lookups:
+            if val := data.get(key):
+                for coordinator in coordinators:
+                    target_collection = getattr(coordinator, attr)
+                    if isinstance(val, list):
+                        if any(item in target_collection for item in val):
+                            return coordinator
+                    elif val in target_collection:
+                        return coordinator
+
+        if len(coordinators) == 1:
+            return coordinators[0]
+
+        raise ServiceValidationError(
+            "Could not determine which Growspace Manager instance to use. "
+            "Please specify a valid growspace_id or plant_id."
+        )
 
     def __init__(
         self,
@@ -123,7 +231,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
         self.serializer = GrowspaceSerializer(hass)
         self.growspaces: dict[str, Growspace] = {}
         self.plants: dict[str, Plant] = {}
-        self.events: dict[str, list[GrowspaceEvent]] = {}
+        # self.events removed - using native HA Event Bus
         self.nutrient_presets: dict[str, NutrientPreset] = {}
         self.ipm_presets: dict[str, IPMPreset] = {}
 
@@ -352,25 +460,12 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
     # =============================================================================
 
     def add_event(self, growspace_id: str, event: GrowspaceEvent) -> None:
-        """Add a Growspace event to the logbook.
+        """Fire a Growspace event to the HA Event Bus (Native Event Sourcing)."""
+        event_data = asdict(event)
+        # Ensure primitive types for JSON serialization if needed, though asdict does most.
+        # Enforce event structure
 
-        Args:
-            growspace_id: The ID of the growspace where the event occurred.
-            event: The GrowspaceEvent object.
-        """
-        if growspace_id not in self.events:
-            self.events[growspace_id] = []
-
-        self.events[growspace_id].append(event)
-
-        # Enforce rolling buffer limit (max 1000 events per growspace)
-        if len(self.events[growspace_id]) > 1000:
-            self.events[growspace_id].pop(0)
-
-        # Persist changes
-        self.config_entry.async_create_background_task(
-            self.hass, self.async_commit(), "growspace_commit_event"
-        )
+        self.hass.bus.async_fire(EVENT_GROWSPACE_LOG_ENTRY, event_data)
 
     # =============================================================================
     # UTILITY AND HELPER METHODS
@@ -845,6 +940,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
             async_fire_growspace_event(self.hass, EVENT_GROWSPACE_ADDED, growspace)
             return growspace
 
+    @invalidates_growspace_cache
     async def async_remove_growspace(self, growspace_id: str) -> None:
         """Remove a growspace and all plants contained within it.
 
@@ -875,7 +971,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
             self._notifications_enabled.pop(growspace_id, None)
 
             # Cache: Remove from cache
-            self._invalidate_cache(growspace_id)
+            # Handled by decorator
 
             # ✅ Remove device from registry
             try:
@@ -952,6 +1048,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
 
         return updated
 
+    @invalidates_growspace_cache
     async def async_update_growspace(
         self, growspace_id: str, **kwargs: dict[str, Any]
     ) -> None:
@@ -980,8 +1077,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
                     ", ".join(changes),
                 )
 
-                # Invalidate cache for this growspace
-                self._invalidate_cache(growspace_id)
+                # Cache invalidation handled by decorator
 
                 # Validate plants if grid changed
                 if "rows" in kwargs or "plants_per_row" in kwargs:
@@ -1093,6 +1189,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
     # PLANT MANAGEMENT METHODS
     # =============================================================================
 
+    @invalidates_growspace_cache
     async def async_add_plant(
         self,
         growspace_id: str,
@@ -1114,8 +1211,6 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
         source_mother: str = "",
     ) -> Plant:
         """Add a new plant to the coordinator via lifecycle manager."""
-        # Pre-invalidate cache because lifecycle_manager might commit
-        self._invalidate_cache(growspace_id)
 
         plant = await self.lifecycle_manager.async_add_plant(
             growspace_id=growspace_id,
@@ -1301,15 +1396,18 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
             veg_start=transition_date,
         )
 
+    @invalidates_growspace_cache
     async def async_update_plant(self, plant_id: str, **updates) -> Plant:
         """Update the attributes of an existing plant."""
-        # Invalidate current growspace
+        # Invalidate current growspace (logic for move)
         if plant := self.plants.get(plant_id):
-            self._invalidate_cache(plant.growspace_id)
-
-        # If moving to new growspace, invalidate that too
-        if "growspace_id" in updates:
-            self._invalidate_cache(updates["growspace_id"])
+            # Only strictly needed if growspace_id changes, but harmless if redundant
+            # (Decorator handles the NEW state/growspace_id invalidation)
+            if (
+                "growspace_id" in updates
+                and updates["growspace_id"] != plant.growspace_id
+            ):
+                self._invalidate_cache(plant.growspace_id)
 
         plant = await self.lifecycle_manager.async_update_plant(plant_id, **updates)
 
@@ -1401,6 +1499,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
         """
         await self.async_switch_plants(plant1_id, plant2_id)
 
+    @invalidates_growspace_cache
     async def async_transition_plant_stage(
         self,
         plant_id: str,
@@ -1408,8 +1507,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
         transition_date: date | None = None,
     ) -> None:
         """Transition a plant to a new stage."""
-        if plant := self.plants.get(plant_id):
-            self._invalidate_cache(plant.growspace_id)
+        # Cache invalidation handled by decorator via plant_id lookup
 
         await self.lifecycle_manager.transition_plant_stage(
             plant_id, new_stage, transition_date
@@ -1553,86 +1651,6 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
         )
 
         return plant
-
-    async def async_log_training_event(
-        self,
-        growspace_id: str | None,
-        technique: str,
-        notes: str | None = None,
-        plant_ids: list[str] | None = None,
-    ) -> None:
-        """Log a training event for specific plants or an entire growspace."""
-        _LOGGER.debug(
-            "async_log_training_event called with gid=%s (%s), pids=%s (%s), technique=%s, notes=%s",
-            growspace_id,
-            type(growspace_id),
-            plant_ids,
-            type(plant_ids),
-            technique,
-            notes,
-        )
-        if plant_ids:
-            _LOGGER.debug("plant_ids[0] type: %s", type(plant_ids[0]))
-
-        # Determine target plants
-        target_plants: list[Plant] = []
-
-        if plant_ids:
-            # Filter valid plants by ID
-            for pid in plant_ids:
-                if pid in self.plants:
-                    target_plants.append(self.plants[pid])
-        elif growspace_id:
-            # All plants in the growspace
-            target_plants = self.get_growspace_plants(growspace_id)
-        else:
-            raise ValueError("Either growspace_id or plant_ids must be provided.")
-
-        now = dt_util.now().isoformat()
-
-        growspace_ids = {p.growspace_id for p in target_plants}
-
-        # Update plants
-        for plant in target_plants:
-            plant.last_training_technique = technique
-            plant.last_trained = now
-
-        # Create event(s)
-        if not target_plants and growspace_id:
-            growspace_ids = {growspace_id}
-
-        for gid in growspace_ids:
-            # Add plant IDs for filtering (prefixed for easy parsing)
-            affected_plants_in_gid = [p for p in target_plants if p.growspace_id == gid]
-            plant_id_reasons = [
-                f"plant_id:{p.plant_id}" for p in affected_plants_in_gid
-            ]
-
-            reasons = plant_id_reasons + [
-                f"Technique: {technique.replace('_', ' ').title()}"
-            ]
-            if notes:
-                reasons.append(f"Notes: {notes}")
-
-            # List affected plants in reasons if subset
-            if plant_ids and len(plant_ids) < len(self.get_growspace_plants(gid)):
-                affected_names = [p.strain for p in affected_plants_in_gid]
-                if affected_names:
-                    reasons.append(f"Plants: {', '.join(affected_names)}")
-
-            event = GrowspaceEvent(
-                sensor_type=technique,
-                growspace_id=gid,
-                start_time=now,
-                end_time=now,
-                duration_sec=0,
-                severity=0.5,  # Moderate severity for training
-                category=CATEGORY_TRAINING,
-                reasons=reasons,
-            )
-            self.add_event(gid, event)
-
-        await self.async_save()
 
     async def async_water_growspace(
         self,
@@ -1801,6 +1819,80 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
     # IPM METHODS
     # =============================================================================
 
+    async def async_log_training_event(
+        self,
+        growspace_id: str | None,
+        technique: str,
+        notes: str | None = None,
+        plant_ids: list[str] | None = None,
+    ) -> None:
+        """Log a training event for specific plants or an entire growspace."""
+        _LOGGER.debug(
+            "async_log_training_event called with gid=%s, pids=%s, technique=%s",
+            growspace_id,
+            plant_ids,
+            technique,
+        )
+
+        target_plants = self._get_target_plants(growspace_id, plant_ids)
+        now = dt_util.now().isoformat()
+
+        # Update plants
+        for plant in target_plants:
+            plant.last_training_technique = technique
+            plant.last_trained = now
+
+        # Group by growspace for event logging
+        affected_gids = {p.growspace_id for p in target_plants}
+        if not target_plants and growspace_id:
+            affected_gids = {growspace_id}
+
+        for gid in affected_gids:
+            affected_in_gid = [p for p in target_plants if p.growspace_id == gid]
+            reasons = self._create_training_reasons(
+                gid, technique, notes, plant_ids, affected_in_gid
+            )
+
+            event = GrowspaceEvent(
+                sensor_type=technique,
+                growspace_id=gid,
+                start_time=now,
+                end_time=now,
+                duration_sec=0,
+                severity=0.5,
+                category=CATEGORY_TRAINING,
+                reasons=reasons,
+            )
+            self.add_event(gid, event)
+
+        await self.async_save()
+
+    def _get_target_plants(
+        self, growspace_id: str | None, plant_ids: list[str] | None
+    ) -> list[Plant]:
+        """Resolve target plants from IDs or growspace ID."""
+        if plant_ids:
+            return [self.plants[pid] for pid in plant_ids if pid in self.plants]
+        if growspace_id:
+            return self.get_growspace_plants(growspace_id)
+        raise ValueError("Either growspace_id or plant_ids must be provided.")
+
+    def _create_training_reasons(
+        self, gid, technique, notes, plant_ids, affected_in_gid
+    ) -> list[str]:
+        """Generate reason strings for training events."""
+        reasons = [f"plant_id:{p.plant_id}" for p in affected_in_gid]
+        reasons.append(f"Technique: {technique.replace('_', ' ').title()}")
+
+        if notes:
+            reasons.append(f"Notes: {notes}")
+
+        if plant_ids and len(plant_ids) < len(self.get_growspace_plants(gid)):
+            affected_names = [p.strain for p in affected_in_gid]
+            if affected_names:
+                reasons.append(f"Plants: {', '.join(affected_names)}")
+        return reasons
+
     async def async_save_ipm_preset(
         self,
         name: str,
@@ -1889,23 +1981,12 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
             ValueError: If neither growspace_id nor plant_ids are provided.
             KeyError: If preset_id is not found.
         """
-        if not growspace_id and not plant_ids:
-            raise ValueError("Must provide either growspace_id or plant_ids")
-
         if preset_id not in self.ipm_presets:
             raise KeyError(f"IPM preset '{preset_id}' not found")
 
         preset = self.ipm_presets[preset_id]
         now = dt_util.now().isoformat()
-
-        # Determine target plants
-        target_plants: list[Plant] = []
-        if plant_ids:
-            for pid in plant_ids:
-                if pid in self.plants:
-                    target_plants.append(self.plants[pid])
-        elif growspace_id:
-            target_plants = self.get_growspace_plants(growspace_id)
+        target_plants = self._get_target_plants(growspace_id, plant_ids)
 
         # Update plant state
         for plant in target_plants:
@@ -1919,38 +2000,15 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
             # Re-save plant to storage happens via async_save called later.
 
         # Group by growspace for event logging
-        affected_growspace_ids = set()
+        affected_gids = {p.growspace_id for p in target_plants}
         if growspace_id:
-            affected_growspace_ids.add(growspace_id)
-        for plant in target_plants:
-            affected_growspace_ids.add(plant.growspace_id)
+            affected_gids.add(growspace_id)
 
-        for gid in affected_growspace_ids:
-            preset_items_str = ", ".join(
-                [
-                    f"{i['name']} ({i['dose_amount']}{i['dose_unit']})"
-                    for i in preset.items
-                ]
-            )
-            reasons = [
-                f"IPM Treatment: {preset.name}",
-                f"Type: {preset.type}",
-                f"Recipe: {preset_items_str}",
-            ]
-
-            # Add plant context if subset
+        for gid in affected_gids:
             affected_in_gid = [p for p in target_plants if p.growspace_id == gid]
-
-            # Add Plant IDs for filtering
-            reasons.extend([f"plant_id:{p.plant_id}" for p in affected_in_gid])
-
-            if plant_ids and len(plant_ids) < len(self.get_growspace_plants(gid)):
-                affected_names = [p.strain for p in affected_in_gid]
-                if affected_names:
-                    reasons.append(f"Plants: {', '.join(affected_names)}")
-
-            if notes:
-                reasons.append(f"Notes: {notes}")
+            reasons = self._create_ipm_reasons(
+                gid, preset, notes, plant_ids, affected_in_gid
+            )
 
             event = GrowspaceEvent(
                 sensor_type=f"ipm_{preset.type}",
@@ -1962,20 +2020,38 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
                 category=CATEGORY_IPM,
                 reasons=reasons,
             )
-
-            if gid not in self.events:
-                self.events[gid] = []
-            self.events[gid].append(event)
-
-            _LOGGER.info("Logged IPM event for growspace %s: %s", gid, event.reasons[0])
+            self.add_event(gid, event)
 
         await self.async_save()
 
         # Invalidate cache for affected growspaces
-        for gid in affected_growspace_ids:
+        for gid in affected_gids:
             self._invalidate_cache(gid)
 
         return [p.plant_id for p in target_plants]
+
+    def _create_ipm_reasons(
+        self, gid, preset, notes, plant_ids, affected_in_gid
+    ) -> list[str]:
+        """Generate reason strings for IPM events."""
+        recipe_str = ", ".join(
+            [f"{i['name']} ({i['dose_amount']}{i['dose_unit']})" for i in preset.items]
+        )
+        reasons = [
+            f"IPM Treatment: {preset.name}",
+            f"Type: {preset.type}",
+            f"Recipe: {recipe_str}",
+        ]
+        reasons.extend([f"plant_id:{p.plant_id}" for p in affected_in_gid])
+
+        if plant_ids and len(plant_ids) < len(self.get_growspace_plants(gid)):
+            affected_names = [p.strain for p in affected_in_gid]
+            if affected_names:
+                reasons.append(f"Plants: {', '.join(affected_names)}")
+
+        if notes:
+            reasons.append(f"Notes: {notes}")
+        return reasons
 
     async def async_harvest(self, plant_id: str) -> Plant:
         """Mark a plant as harvested, transitioning it to the 'dry' stage today."""

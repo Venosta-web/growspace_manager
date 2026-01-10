@@ -56,9 +56,17 @@ def mock_coordinator(hass: HomeAssistant, mock_plants):
     coordinator.async_save = AsyncMock()
     coordinator.add_event = MagicMock()
 
-    # Bind the method to test
+    # Bind the method to test and its helpers
     coordinator.async_log_training_event = (
         GrowspaceCoordinator.async_log_training_event.__get__(
+            coordinator, GrowspaceCoordinator
+        )
+    )
+    coordinator._get_target_plants = GrowspaceCoordinator._get_target_plants.__get__(
+        coordinator, GrowspaceCoordinator
+    )
+    coordinator._create_training_reasons = (
+        GrowspaceCoordinator._create_training_reasons.__get__(
             coordinator, GrowspaceCoordinator
         )
     )
