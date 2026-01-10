@@ -1609,86 +1609,6 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
 
         return plant
 
-    async def async_log_training_event(
-        self,
-        growspace_id: str | None,
-        technique: str,
-        notes: str | None = None,
-        plant_ids: list[str] | None = None,
-    ) -> None:
-        """Log a training event for specific plants or an entire growspace."""
-        _LOGGER.debug(
-            "async_log_training_event called with gid=%s (%s), pids=%s (%s), technique=%s, notes=%s",
-            growspace_id,
-            type(growspace_id),
-            plant_ids,
-            type(plant_ids),
-            technique,
-            notes,
-        )
-        if plant_ids:
-            _LOGGER.debug("plant_ids[0] type: %s", type(plant_ids[0]))
-
-        # Determine target plants
-        target_plants: list[Plant] = []
-
-        if plant_ids:
-            # Filter valid plants by ID
-            for pid in plant_ids:
-                if pid in self.plants:
-                    target_plants.append(self.plants[pid])
-        elif growspace_id:
-            # All plants in the growspace
-            target_plants = self.get_growspace_plants(growspace_id)
-        else:
-            raise ValueError("Either growspace_id or plant_ids must be provided.")
-
-        now = dt_util.now().isoformat()
-
-        growspace_ids = {p.growspace_id for p in target_plants}
-
-        # Update plants
-        for plant in target_plants:
-            plant.last_training_technique = technique
-            plant.last_trained = now
-
-        # Create event(s)
-        if not target_plants and growspace_id:
-            growspace_ids = {growspace_id}
-
-        for gid in growspace_ids:
-            # Add plant IDs for filtering (prefixed for easy parsing)
-            affected_plants_in_gid = [p for p in target_plants if p.growspace_id == gid]
-            plant_id_reasons = [
-                f"plant_id:{p.plant_id}" for p in affected_plants_in_gid
-            ]
-
-            reasons = plant_id_reasons + [
-                f"Technique: {technique.replace('_', ' ').title()}"
-            ]
-            if notes:
-                reasons.append(f"Notes: {notes}")
-
-            # List affected plants in reasons if subset
-            if plant_ids and len(plant_ids) < len(self.get_growspace_plants(gid)):
-                affected_names = [p.strain for p in affected_plants_in_gid]
-                if affected_names:
-                    reasons.append(f"Plants: {', '.join(affected_names)}")
-
-            event = GrowspaceEvent(
-                sensor_type=technique,
-                growspace_id=gid,
-                start_time=now,
-                end_time=now,
-                duration_sec=0,
-                severity=0.5,  # Moderate severity for training
-                category=CATEGORY_TRAINING,
-                reasons=reasons,
-            )
-            self.add_event(gid, event)
-
-        await self.async_save()
-
     async def async_water_growspace(
         self,
         growspace_id: str,
@@ -1856,6 +1776,80 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
     # IPM METHODS
     # =============================================================================
 
+    async def async_log_training_event(
+        self,
+        growspace_id: str | None,
+        technique: str,
+        notes: str | None = None,
+        plant_ids: list[str] | None = None,
+    ) -> None:
+        """Log a training event for specific plants or an entire growspace."""
+        _LOGGER.debug(
+            "async_log_training_event called with gid=%s, pids=%s, technique=%s",
+            growspace_id,
+            plant_ids,
+            technique,
+        )
+
+        target_plants = self._get_target_plants(growspace_id, plant_ids)
+        now = dt_util.now().isoformat()
+
+        # Update plants
+        for plant in target_plants:
+            plant.last_training_technique = technique
+            plant.last_trained = now
+
+        # Group by growspace for event logging
+        affected_gids = {p.growspace_id for p in target_plants}
+        if not target_plants and growspace_id:
+            affected_gids = {growspace_id}
+
+        for gid in affected_gids:
+            affected_in_gid = [p for p in target_plants if p.growspace_id == gid]
+            reasons = self._create_training_reasons(
+                gid, technique, notes, plant_ids, affected_in_gid
+            )
+
+            event = GrowspaceEvent(
+                sensor_type=technique,
+                growspace_id=gid,
+                start_time=now,
+                end_time=now,
+                duration_sec=0,
+                severity=0.5,
+                category=CATEGORY_TRAINING,
+                reasons=reasons,
+            )
+            self.add_event(gid, event)
+
+        await self.async_save()
+
+    def _get_target_plants(
+        self, growspace_id: str | None, plant_ids: list[str] | None
+    ) -> list[Plant]:
+        """Resolve target plants from IDs or growspace ID."""
+        if plant_ids:
+            return [self.plants[pid] for pid in plant_ids if pid in self.plants]
+        if growspace_id:
+            return self.get_growspace_plants(growspace_id)
+        raise ValueError("Either growspace_id or plant_ids must be provided.")
+
+    def _create_training_reasons(
+        self, gid, technique, notes, plant_ids, affected_in_gid
+    ) -> list[str]:
+        """Generate reason strings for training events."""
+        reasons = [f"plant_id:{p.plant_id}" for p in affected_in_gid]
+        reasons.append(f"Technique: {technique.replace('_', ' ').title()}")
+
+        if notes:
+            reasons.append(f"Notes: {notes}")
+
+        if plant_ids and len(plant_ids) < len(self.get_growspace_plants(gid)):
+            affected_names = [p.strain for p in affected_in_gid]
+            if affected_names:
+                reasons.append(f"Plants: {', '.join(affected_names)}")
+        return reasons
+
     async def async_save_ipm_preset(
         self,
         name: str,
@@ -1944,23 +1938,12 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
             ValueError: If neither growspace_id nor plant_ids are provided.
             KeyError: If preset_id is not found.
         """
-        if not growspace_id and not plant_ids:
-            raise ValueError("Must provide either growspace_id or plant_ids")
-
         if preset_id not in self.ipm_presets:
             raise KeyError(f"IPM preset '{preset_id}' not found")
 
         preset = self.ipm_presets[preset_id]
         now = dt_util.now().isoformat()
-
-        # Determine target plants
-        target_plants: list[Plant] = []
-        if plant_ids:
-            for pid in plant_ids:
-                if pid in self.plants:
-                    target_plants.append(self.plants[pid])
-        elif growspace_id:
-            target_plants = self.get_growspace_plants(growspace_id)
+        target_plants = self._get_target_plants(growspace_id, plant_ids)
 
         # Update plant state
         for plant in target_plants:
@@ -1974,38 +1957,15 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
             # Re-save plant to storage happens via async_save called later.
 
         # Group by growspace for event logging
-        affected_growspace_ids = set()
+        affected_gids = {p.growspace_id for p in target_plants}
         if growspace_id:
-            affected_growspace_ids.add(growspace_id)
-        for plant in target_plants:
-            affected_growspace_ids.add(plant.growspace_id)
+            affected_gids.add(growspace_id)
 
-        for gid in affected_growspace_ids:
-            preset_items_str = ", ".join(
-                [
-                    f"{i['name']} ({i['dose_amount']}{i['dose_unit']})"
-                    for i in preset.items
-                ]
-            )
-            reasons = [
-                f"IPM Treatment: {preset.name}",
-                f"Type: {preset.type}",
-                f"Recipe: {preset_items_str}",
-            ]
-
-            # Add plant context if subset
+        for gid in affected_gids:
             affected_in_gid = [p for p in target_plants if p.growspace_id == gid]
-
-            # Add Plant IDs for filtering
-            reasons.extend([f"plant_id:{p.plant_id}" for p in affected_in_gid])
-
-            if plant_ids and len(plant_ids) < len(self.get_growspace_plants(gid)):
-                affected_names = [p.strain for p in affected_in_gid]
-                if affected_names:
-                    reasons.append(f"Plants: {', '.join(affected_names)}")
-
-            if notes:
-                reasons.append(f"Notes: {notes}")
+            reasons = self._create_ipm_reasons(
+                gid, preset, notes, plant_ids, affected_in_gid
+            )
 
             event = GrowspaceEvent(
                 sensor_type=f"ipm_{preset.type}",
@@ -2017,20 +1977,38 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
                 category=CATEGORY_IPM,
                 reasons=reasons,
             )
-
-            if gid not in self.events:
-                self.events[gid] = []
-            self.events[gid].append(event)
-
-            _LOGGER.info("Logged IPM event for growspace %s: %s", gid, event.reasons[0])
+            self.add_event(gid, event)
 
         await self.async_save()
 
         # Invalidate cache for affected growspaces
-        for gid in affected_growspace_ids:
+        for gid in affected_gids:
             self._invalidate_cache(gid)
 
         return [p.plant_id for p in target_plants]
+
+    def _create_ipm_reasons(
+        self, gid, preset, notes, plant_ids, affected_in_gid
+    ) -> list[str]:
+        """Generate reason strings for IPM events."""
+        recipe_str = ", ".join(
+            [f"{i['name']} ({i['dose_amount']}{i['dose_unit']})" for i in preset.items]
+        )
+        reasons = [
+            f"IPM Treatment: {preset.name}",
+            f"Type: {preset.type}",
+            f"Recipe: {recipe_str}",
+        ]
+        reasons.extend([f"plant_id:{p.plant_id}" for p in affected_in_gid])
+
+        if plant_ids and len(plant_ids) < len(self.get_growspace_plants(gid)):
+            affected_names = [p.strain for p in affected_in_gid]
+            if affected_names:
+                reasons.append(f"Plants: {', '.join(affected_names)}")
+
+        if notes:
+            reasons.append(f"Notes: {notes}")
+        return reasons
 
     async def async_harvest(self, plant_id: str) -> Plant:
         """Mark a plant as harvested, transitioning it to the 'dry' stage today."""

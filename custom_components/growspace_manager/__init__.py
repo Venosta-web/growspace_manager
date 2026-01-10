@@ -519,6 +519,46 @@ async def _get_history_with_binary_search_downsample(
     # Fetch raw history data
     history_data = await get_instance(hass).async_add_executor_job(_get_history)
 
+    def _parse_entity_states(states):
+        """Pre-parse timestamps and states for a single entity."""
+        timestamps = []
+        parsed_states = []
+        for s in states:
+            if isinstance(s, dict):
+                ts_raw = s.get("last_updated", s.get("last_changed"))
+                ts = (
+                    dt_util.parse_datetime(ts_raw)
+                    if isinstance(ts_raw, str)
+                    else ts_raw
+                )
+                state_val = s.get("state")
+            else:
+                ts = s.last_updated
+                state_val = s.state
+
+            if ts is not None:
+                timestamps.append(ts)
+                parsed_states.append(state_val)
+        return timestamps, parsed_states
+
+    def _downsample_entity(timestamps, parsed_states, interval_delta):
+        """Downsample parsed states using binary search."""
+        downsampled = []
+        current_time = start_time
+        while current_time <= end_time:
+            idx = bisect.bisect_right(timestamps, current_time) - 1
+            if idx >= 0:
+                state_val = parsed_states[idx]
+                if state_val and state_val not in ("unknown", "unavailable"):
+                    downsampled.append(
+                        {
+                            "s": state_val,
+                            "lu": current_time.isoformat(),
+                        }
+                    )
+            current_time += interval_delta
+        return downsampled
+
     def _downsample_with_binary_search():
         result = {}
         interval_delta = dt_util.dt.timedelta(minutes=interval)
@@ -528,51 +568,14 @@ async def _get_history_with_binary_search_downsample(
                 result[entity_id] = []
                 continue
 
-            # Pre-parse all timestamps once (O(n))
-            timestamps = []
-            parsed_states = []
-            for s in states:
-                if isinstance(s, dict):
-                    ts_raw = s.get("last_updated", s.get("last_changed"))
-                    ts = (
-                        dt_util.parse_datetime(ts_raw)
-                        if isinstance(ts_raw, str)
-                        else ts_raw
-                    )
-                    state_val = s.get("state")
-                else:
-                    ts = s.last_updated
-                    state_val = s.state
-
-                if ts is not None:
-                    timestamps.append(ts)
-                    parsed_states.append(state_val)
-
+            timestamps, parsed_states = _parse_entity_states(states)
             if not timestamps:
                 result[entity_id] = []
                 continue
 
-            # Use binary search to find states at each time bucket (O(m log n))
-            downsampled = []
-            current_time = start_time
-
-            while current_time <= end_time:
-                # Binary search: find rightmost state at or before current_time
-                idx = bisect.bisect_right(timestamps, current_time) - 1
-
-                if idx >= 0:
-                    state_val = parsed_states[idx]
-                    if state_val and state_val not in ("unknown", "unavailable"):
-                        downsampled.append(
-                            {
-                                "s": state_val,
-                                "lu": current_time.isoformat(),
-                            }
-                        )
-
-                current_time += interval_delta
-
-            result[entity_id] = downsampled
+            result[entity_id] = _downsample_entity(
+                timestamps, parsed_states, interval_delta
+            )
 
         return result
 

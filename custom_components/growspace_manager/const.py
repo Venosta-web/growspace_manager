@@ -1,17 +1,18 @@
 """Constants for the Growspace Manager integration."""
 
 from enum import StrEnum
+from typing import Final
 
-DOMAIN = "growspace_manager"
-STORAGE_VERSION = 1
-STORAGE_KEY = f"{DOMAIN}_storage"
-PLATFORMS: list[str] = [
+DOMAIN: Final = "growspace_manager"
+STORAGE_VERSION: Final = 1
+STORAGE_KEY: Final = f"{DOMAIN}_storage"
+PLATFORMS: Final[list[str]] = [
     "binary_sensor",
     "sensor",
     "switch",
 ]
 
-PARALLEL_UPDATES = 0
+PARALLEL_UPDATES: Final = 0
 
 # Dehumidifier Control Timing Defaults
 DEFAULT_DEHUMIDIFIER_MIN_RUNTIME = 300  # 5 minutes in seconds

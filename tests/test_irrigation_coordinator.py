@@ -624,7 +624,7 @@ async def test_run_pump_cycle_with_moisture_logging(
 
         mock_main_coordinator.add_event.assert_called_once()
         args, _ = mock_main_coordinator.add_event.call_args
-        event = args[1]
+        # Removed unused event = args[1]
 
 
 async def test_run_pump_cycle_moisture_after_only(

@@ -60,6 +60,24 @@ class BaseIrrigationCoordinator(ABC):
         """Unload the coordinator and stop listeners."""
         self.async_cancel_listeners()
 
+    async def _async_send_cycle_notification(
+        self, event_type: str, duration: int, event_data: dict[str, Any]
+    ) -> None:
+        """Send a notification for the start of a pump cycle."""
+        coordinator = self._config_entry.runtime_data
+        growspace = coordinator.growspaces.get(self._growspace_id)
+        if growspace and growspace.notification_target:
+            time_str = event_data.get("time", "Unknown Time")
+            message = f"{event_type.capitalize()} Event Started at {time_str}, running for {duration} seconds."
+            title = f"Growspace: {growspace.name}"
+
+            await self.hass.services.async_call(
+                "notify",
+                growspace.notification_target,
+                {"message": message, "title": title},
+                blocking=False,
+            )
+
     @callback
     def async_cancel_listeners(self) -> None:
         """Cancel all scheduled listeners."""
@@ -89,15 +107,7 @@ class BaseIrrigationCoordinator(ABC):
 class IrrigationCoordinator(BaseIrrigationCoordinator):
     """Manages irrigation and drain schedules for a specific growspace."""
 
-    def __init__(
-        self,
-        hass: HomeAssistant,
-        config_entry: ConfigEntry,
-        growspace_id: str,
-        main_coordinator: GrowspaceCoordinator,
-    ) -> None:
-        """Initialize the irrigation coordinator."""
-        super().__init__(hass, config_entry, growspace_id, main_coordinator)
+    # Removed useless __init__ delegation
 
     def get_default_duration(self, event_type: str) -> int | None:
         """Get the default duration for a given event type."""
@@ -412,20 +422,7 @@ class IrrigationCoordinator(BaseIrrigationCoordinator):
                 "switch", "turn_on", {"entity_id": pump_entity}, blocking=True
             )
 
-            # Send notification
-            coordinator = self._config_entry.runtime_data
-            growspace = coordinator.growspaces.get(self._growspace_id)
-            if growspace and growspace.notification_target:
-                time_str = event_data.get("time", "Unknown Time")
-                message = f"{event_type.capitalize()} Event Started at {time_str}, running for {duration} seconds."
-                title = f"Growspace: {growspace.name}"
-
-                await self.hass.services.async_call(
-                    "notify",
-                    growspace.notification_target,
-                    {"message": message, "title": title},
-                    blocking=False,
-                )
+            await self._async_send_cycle_notification(event_type, duration, event_data)
 
             await asyncio.sleep(duration)
 
