@@ -304,7 +304,7 @@ async def websocket_get_event_log(hass: HomeAssistant, connection, msg):
     try:
         if growspace_id:
             try:
-                coordinator = service_registration.get_coordinator_for_call(hass, msg)
+                coordinator = GrowspaceCoordinator.get_for_service_call(hass, msg)
                 events = coordinator.events.get(growspace_id, [])
                 # Apply limit if provided (get last N events)
                 if limit and len(events) > limit:
@@ -339,7 +339,7 @@ async def websocket_get_growspace_data(hass: HomeAssistant, connection, msg):
     """Handle get growspace data command."""
     growspace_id = msg.get("growspace_id")
     try:
-        coordinator = service_registration.get_coordinator_for_call(hass, msg)
+        coordinator = GrowspaceCoordinator.get_for_service_call(hass, msg)
         data = coordinator.get_growspace_data(growspace_id)
         connection.send_result(msg["id"], data)
     except ServiceValidationError as err:

@@ -495,7 +495,7 @@ async def test_websocket_get_event_log(hass: HomeAssistant, mock_coordinator) ->
 
     # Mock get_coordinator_for_call to return our mock coordinator
     with patch(
-        "custom_components.growspace_manager.service_registration.get_coordinator_for_call",
+        "custom_components.growspace_manager.GrowspaceCoordinator.get_for_service_call",
         return_value=mock_coordinator,
     ):
         # 1. Specific growspace
@@ -540,7 +540,7 @@ async def test_websocket_get_event_log(hass: HomeAssistant, mock_coordinator) ->
 
         # 2. Invalid growspace (ServiceValidationError)
         with patch(
-            "custom_components.growspace_manager.service_registration.get_coordinator_for_call",
+            "custom_components.growspace_manager.GrowspaceCoordinator.get_for_service_call",
             side_effect=ServiceValidationError("Invalid ID"),
         ):
             msg = {
@@ -597,7 +597,7 @@ async def test_websocket_get_growspace_data(
 
     # 1. Success
     with patch(
-        "custom_components.growspace_manager.service_registration.get_coordinator_for_call",
+        "custom_components.growspace_manager.GrowspaceCoordinator.get_for_service_call",
         return_value=mock_coordinator,
     ):
         mock_coordinator.get_growspace_data.return_value = {"name": "Test space"}
@@ -612,7 +612,7 @@ async def test_websocket_get_growspace_data(
 
     # 2. Error (ServiceValidationError)
     with patch(
-        "custom_components.growspace_manager.service_registration.get_coordinator_for_call",
+        "custom_components.growspace_manager.GrowspaceCoordinator.get_for_service_call",
         side_effect=ServiceValidationError("Invalid ID"),
     ):
         msg = {
@@ -625,7 +625,7 @@ async def test_websocket_get_growspace_data(
 
     # 3. Unknown Error
     with patch(
-        "custom_components.growspace_manager.service_registration.get_coordinator_for_call",
+        "custom_components.growspace_manager.GrowspaceCoordinator.get_for_service_call",
         side_effect=Exception("Boom"),
     ):
         msg = {
@@ -805,7 +805,7 @@ async def test_websocket_get_event_log_unknown_error(hass: HomeAssistant) -> Non
 
     # Force an unknown exception
     with patch(
-        "custom_components.growspace_manager.service_registration.get_coordinator_for_call",
+        "custom_components.growspace_manager.GrowspaceCoordinator.get_for_service_call",
         side_effect=Exception("Unexpected Error"),
     ):
         msg = {

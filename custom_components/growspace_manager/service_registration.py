@@ -144,7 +144,7 @@ async def register_services(
         call: ServiceCall,
     ) -> Any:
         try:
-            coordinator = get_coordinator_for_call(hass, call)
+            coordinator = GrowspaceCoordinator.get_for_service_call(hass, call)
             if needs_strain_lib:
                 return await handler(hass, coordinator, strain_lib, call)
             return await handler(hass, coordinator, call)

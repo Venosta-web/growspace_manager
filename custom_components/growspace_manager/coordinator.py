@@ -9,7 +9,9 @@ from dataclasses import asdict
 from datetime import date, datetime, timedelta
 from typing import Any, override
 
+from homeassistant.config_entries import ConfigEntryState
 from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import ServiceValidationError
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
@@ -17,6 +19,10 @@ from homeassistant.util import dt as dt_util
 from homeassistant.util import slugify
 
 from .const import (
+    ATTR_GROWSPACE_ID,
+    ATTR_MOTHER_PLANT_ID,
+    ATTR_PLANT_ID,
+    ATTR_TARGET_GROWSPACE_ID,
     CATEGORY_IPM,
     CATEGORY_TRAINING,
     CONF_HUMIDITY_SENSOR,
@@ -93,6 +99,55 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
     growspaces: dict[str, Growspace] = {}
     plants: dict[str, Plant] = {}
     strain_library: StrainLibrary | None = None
+
+    @staticmethod
+    def get_for_service_call(hass: HomeAssistant, call: Any) -> GrowspaceCoordinator:
+        """Retrieve the correct coordinator based on service call data.
+
+        Args:
+            hass: The Home Assistant instance.
+            call: A ServiceCall or dict containing the service call data.
+
+        Returns:
+            The appropriate GrowspaceCoordinator for the request.
+
+        Raises:
+            ServiceValidationError: If no matching coordinator can be found.
+        """
+
+        data = call.data if hasattr(call, "data") else call
+
+        entries = hass.config_entries.async_entries(DOMAIN)
+        coordinators: list[GrowspaceCoordinator] = [
+            entry.runtime_data
+            for entry in entries
+            if entry.state == ConfigEntryState.LOADED and hasattr(entry, "runtime_data")
+        ]
+
+        id_lookups = [
+            (ATTR_GROWSPACE_ID, "growspaces"),
+            (ATTR_TARGET_GROWSPACE_ID, "growspaces"),
+            (ATTR_PLANT_ID, "plants"),
+            (ATTR_MOTHER_PLANT_ID, "plants"),
+        ]
+
+        for key, attr in id_lookups:
+            if val := data.get(key):
+                for coordinator in coordinators:
+                    target_collection = getattr(coordinator, attr)
+                    if isinstance(val, list):
+                        if any(item in target_collection for item in val):
+                            return coordinator
+                    elif val in target_collection:
+                        return coordinator
+
+        if len(coordinators) == 1:
+            return coordinators[0]
+
+        raise ServiceValidationError(
+            "Could not determine which Growspace Manager instance to use. "
+            "Please specify a valid growspace_id or plant_id."
+        )
 
     def __init__(
         self,

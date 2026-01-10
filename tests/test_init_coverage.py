@@ -98,7 +98,7 @@ async def test_websocket_get_event_log_limit(hass: HomeAssistant) -> None:
     mock_coordinator.events = {"gs1": events}
 
     with patch(
-        "custom_components.growspace_manager.service_registration.get_coordinator_for_call",
+        "custom_components.growspace_manager.GrowspaceCoordinator.get_for_service_call",
         return_value=mock_coordinator,
     ):
         # Limit 1
