@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import bisect
+import json  # Added for event data parsing
 import logging
 import pathlib
 import tempfile
+from datetime import datetime, timedelta
 from typing import Any, override
 
 import homeassistant.util.dt as dt_util
@@ -15,6 +17,12 @@ from homeassistant.components import websocket_api
 from homeassistant.components.http import HomeAssistantView
 from homeassistant.components.recorder import get_instance, history
 from homeassistant.components.recorder import statistics as recorder_stats
+from homeassistant.components.recorder.db_schema import (
+    EventData,
+    Events,
+    EventTypes,
+)
+from homeassistant.components.recorder.util import session_scope
 from homeassistant.config_entries import ConfigEntry, ConfigEntryState
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.exceptions import ServiceValidationError
@@ -24,7 +32,13 @@ from homeassistant.helpers.storage import Store
 from homeassistant.helpers.typing import ConfigType
 
 from . import service_registration
-from .const import DOMAIN, PLATFORMS, STORAGE_KEY, STORAGE_VERSION
+from .const import (
+    DOMAIN,
+    EVENT_GROWSPACE_LOG_ENTRY,
+    PLATFORMS,
+    STORAGE_KEY,
+    STORAGE_VERSION,
+)
 from .coordinator import GrowspaceCoordinator
 from .intent import async_setup_intents
 from .services.strain_library import StrainLibrary
@@ -32,6 +46,96 @@ from .services.strain_library import StrainLibrary
 CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 
 _LOGGER = logging.getLogger(__name__)
+
+# Sentinel for invalid timestamps
+_EPOCH_SENTINEL = dt_util.dt.datetime.min.replace(tzinfo=dt_util.dt.timezone.utc)
+
+
+def _extract_ts(state_obj: Any) -> datetime:
+    """Extract timestamp from state object or dict."""
+    if isinstance(state_obj, dict):
+        ts_raw = state_obj.get("last_updated", state_obj.get("last_changed"))
+    else:
+        ts_raw = state_obj.last_updated
+
+    if ts_raw is None:
+        return _EPOCH_SENTINEL
+    if isinstance(ts_raw, str):
+        parsed = dt_util.parse_datetime(ts_raw)
+        return parsed if parsed else _EPOCH_SENTINEL
+    return ts_raw
+
+
+def _query_recorder_events(
+    hass: HomeAssistant,
+    start_ts: float,
+    end_ts: float,
+    limit: int = 100,
+    growspace_id: str | None = None,
+) -> list[dict]:
+    """Query events from the recorder database using new schema."""
+    formatted_events = []
+    try:
+        with session_scope(hass=hass, read_only=True) as session:
+            # First, find the event_type_id for our event type
+            event_type_row = (
+                session.query(EventTypes.event_type_id)
+                .filter(EventTypes.event_type == EVENT_GROWSPACE_LOG_ENTRY)
+                .first()
+            )
+
+            if not event_type_row:
+                _LOGGER.debug(
+                    "Event type %s not found in recorder",
+                    EVENT_GROWSPACE_LOG_ENTRY,
+                )
+                return []
+
+            event_type_id = event_type_row[0]
+
+            # Query events with proper joins to EventData
+            query = (
+                session.query(Events, EventData)
+                .join(EventData, Events.data_id == EventData.data_id, isouter=True)
+                .filter(
+                    Events.event_type_id == event_type_id,
+                    Events.time_fired_ts >= start_ts,
+                    Events.time_fired_ts <= end_ts,
+                )
+                .order_by(Events.time_fired_ts.desc())
+            )
+
+            if limit:
+                query = query.limit(limit * 2)  # Get more to filter later
+
+            for event_row, event_data_row in query:
+                try:
+                    # Parse event data from the EventData table
+                    if event_data_row and event_data_row.shared_data:
+                        data = json.loads(event_data_row.shared_data)
+                    else:
+                        continue
+
+                    # Filter by growspace_id if specified
+                    if growspace_id and data.get("growspace_id") != growspace_id:
+                        continue
+
+                    # Ensure timestamp is present
+                    if "timestamp" not in data and event_row.time_fired_ts:
+                        data["timestamp"] = event_row.time_fired_ts
+
+                    formatted_events.append(data)
+
+                    # Stop if we have enough
+                    if limit and len(formatted_events) >= limit:
+                        break
+                except (json.JSONDecodeError, AttributeError) as err:
+                    _LOGGER.debug("Error parsing event data: %s", err)
+                    continue
+    except Exception as err:
+        _LOGGER.warning("Error querying recorder events: %s", err)
+
+    return formatted_events
 
 
 type GrowspaceConfigEntry = ConfigEntry[GrowspaceCoordinator]
@@ -296,40 +400,119 @@ SCHEMA_WS_GET_DATA = websocket_api.BASE_COMMAND_MESSAGE_SCHEMA.extend(
 
 
 async def websocket_get_event_log(hass: HomeAssistant, connection, msg):
-    """Handle get event log command."""
+    """Handle get event log command via Recorder.
+
+    Uses direct Recorder event query since logbook.async_get_events was removed.
+    """
     growspace_id = msg.get("growspace_id")
-    limit = msg.get("limit")
-    events_data = {}
+    limit = msg.get("limit", 100)  # Default limit 100
+
+    # Time window: last 7 days
+    end_time = dt_util.utcnow()
+    start_time = end_time - dt_util.dt.timedelta(days=7)
 
     try:
-        if growspace_id:
-            try:
-                coordinator = GrowspaceCoordinator.get_for_service_call(hass, msg)
-                events = coordinator.events.get(growspace_id, [])
-                # Apply limit if provided (get last N events)
-                if limit and len(events) > limit:
-                    events = events[-limit:]
-                events_data[growspace_id] = [e.to_dict() for e in events]
-            except (
-                ServiceValidationError
-            ):  # invalid growspace_id or no coordinator found
-                _LOGGER.warning(
-                    "Could not find coordinator for growspace %s", growspace_id
-                )
-        else:
-            # Aggregate from all coordinators
-            for entry in hass.config_entries.async_entries(DOMAIN):
-                if entry.state == ConfigEntryState.LOADED and hasattr(
-                    entry, "runtime_data"
-                ):
-                    coord = entry.runtime_data
-                    for gid, evts in coord.events.items():
-                        # Apply limit if provided (get last N events)
-                        if limit and len(evts) > limit:
-                            evts = evts[-limit:]
-                        events_data[gid] = [e.to_dict() for e in evts]
+        recorder = get_instance(hass)
 
-        connection.send_result(msg["id"], events_data)
+        # Convert times to timestamps for query
+        start_ts = start_time.timestamp()
+        end_ts = end_time.timestamp()
+
+        def _query_events():
+            """Query events from the recorder database using new schema."""
+            formatted_events = []
+            try:
+                with session_scope(hass=hass, read_only=True) as session:
+                    # First, find the event_type_id for our event type
+                    event_type_row = (
+                        session.query(EventTypes.event_type_id)
+                        .filter(EventTypes.event_type == EVENT_GROWSPACE_LOG_ENTRY)
+                        .first()
+                    )
+
+                    if not event_type_row:
+                        _LOGGER.debug(
+                            "Event type %s not found in recorder",
+                            EVENT_GROWSPACE_LOG_ENTRY,
+                        )
+                        return []
+
+                    event_type_id = event_type_row[0]
+
+                    # Query events with proper joins to EventData
+                    query = (
+                        session.query(Events, EventData)
+                        .join(
+                            EventData, Events.data_id == EventData.data_id, isouter=True
+                        )
+                        .filter(
+                            Events.event_type_id == event_type_id,
+                            Events.time_fired_ts >= start_ts,
+                            Events.time_fired_ts <= end_ts,
+                        )
+                        .order_by(Events.time_fired_ts.desc())
+                    )
+
+                    if limit:
+                        query = query.limit(limit * 2)  # Get more to filter later
+
+                    for event_row, event_data_row in query:
+                        try:
+                            # Parse event data from the EventData table
+                            if event_data_row and event_data_row.shared_data:
+                                data = json.loads(event_data_row.shared_data)
+                            else:
+                                continue
+
+                            # Filter by growspace_id if specified
+                            if (
+                                growspace_id
+                                and data.get("growspace_id") != growspace_id
+                            ):
+                                continue
+
+                            # Ensure timestamp is present
+                            if "timestamp" not in data and event_row.time_fired_ts:
+                                data["timestamp"] = event_row.time_fired_ts
+
+                            formatted_events.append(data)
+
+                            # Stop if we have enough
+                            if limit and len(formatted_events) >= limit:
+                                break
+                        except (json.JSONDecodeError, AttributeError) as err:
+                            _LOGGER.debug("Error parsing event data: %s", err)
+                            continue
+            except Exception as err:
+                _LOGGER.warning("Error querying recorder events: %s", err)
+
+            return formatted_events
+
+        # Run query in executor to avoid blocking
+        formatted_events = await recorder.async_add_executor_job(_query_events)
+
+        # Group by growspace_id
+        response_data = {}
+        if growspace_id:
+            response_data[growspace_id] = formatted_events
+        else:
+            # Group by ID
+            for evt in formatted_events:
+                gid = evt.get("growspace_id", "global")
+                if gid not in response_data:
+                    response_data[gid] = []
+                response_data[gid].append(evt)
+
+        connection.send_result(msg["id"], response_data)
+
+    except ImportError as err:
+        _LOGGER.warning("Recorder models not available: %s", err)
+        # Return empty result if recorder is not available
+        connection.send_result(msg["id"], {growspace_id: []} if growspace_id else {})
+    except KeyError as err:
+        _LOGGER.warning("Recorder not initialized: %s", err)
+        # Return empty result if recorder instance not found
+        connection.send_result(msg["id"], {growspace_id: []} if growspace_id else {})
     except Exception as err:
         _LOGGER.exception("Error handling websocket_get_event_log")
         connection.send_error(msg["id"], "unknown_error", str(err))
@@ -348,6 +531,37 @@ async def websocket_get_growspace_data(hass: HomeAssistant, connection, msg):
         connection.send_error(msg["id"], "unknown_error", str(e))
 
 
+# WebSocket API Constants
+WS_TYPE_GET_STRAIN_LIBRARY = f"{DOMAIN}/get_strain_library"
+SCHEMA_WS_GET_STRAIN_LIBRARY = websocket_api.BASE_COMMAND_MESSAGE_SCHEMA.extend(
+    {
+        vol.Required("type"): WS_TYPE_GET_STRAIN_LIBRARY,
+    }
+)
+
+
+async def websocket_get_strain_library(
+    hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
+) -> None:
+    """Handle get strain library command via WebSocket."""
+    try:
+        # Retrieve the global strain library instance
+        if DOMAIN not in hass.data or "strain_library" not in hass.data[DOMAIN]:
+            connection.send_error(
+                msg["id"], "not_loaded", "Growspace Manager strain library not loaded"
+            )
+            return
+
+        strain_library: StrainLibrary = hass.data[DOMAIN]["strain_library"]
+        # Fetch the full analytics payload
+        analytics = strain_library.get_analytics()
+        connection.send_result(msg["id"], analytics)
+    except Exception as err:
+        _LOGGER.exception("Error handling websocket_get_strain_library")
+        connection.send_error(msg["id"], "unknown_error", str(err))
+
+
+@callback
 def _async_register_websocket_api(hass: HomeAssistant) -> None:
     """Register WebSocket API commands."""
     _LOGGER.debug("Registering WebSocket API for %s", DOMAIN)
@@ -355,8 +569,14 @@ def _async_register_websocket_api(hass: HomeAssistant) -> None:
     websocket_api.async_register_command(
         hass,
         WS_TYPE_GET_LOG,
-        websocket_api.async_response(websocket_get_event_log),
+        websocket_get_event_log,
         SCHEMA_WS_GET_LOG,
+    )
+    websocket_api.async_register_command(
+        hass,
+        WS_TYPE_GET_STRAIN_LIBRARY,
+        websocket_get_strain_library,
+        SCHEMA_WS_GET_STRAIN_LIBRARY,
     )
 
     websocket_api.async_register_command(
@@ -496,6 +716,56 @@ async def _get_statistics_data(
         return None
 
 
+def _downsample_entity_binary_search(
+    states: list[Any],
+    start_time: datetime,
+    end_time: datetime,
+    interval_delta: timedelta,
+) -> list[dict]:
+    """Downsample states using binary search with finger optimization."""
+    downsampled = []
+    current_time = start_time
+
+    # Optimize: Start search from the index found in previous iteration
+    # Since we iterate forward in time, the simplified search space is [last_idx:]
+    last_idx = 0
+
+    while current_time <= end_time:
+        # key argument allows us to avoid pre-parsing the whole list O(N)
+        idx = (
+            bisect.bisect_right(states, current_time, key=_extract_ts, lo=last_idx) - 1
+        )
+
+        if idx >= 0:
+            # Update search lower bound for next iteration
+            last_idx = idx
+
+            s = states[idx]
+
+            # Skip states with invalid (sentinel) timestamps
+            if _extract_ts(s) == _EPOCH_SENTINEL:
+                current_time += interval_delta
+                continue
+
+            if isinstance(s, dict):
+                state_val = s.get("state")
+            else:
+                state_val = s.state
+
+            if state_val and state_val not in ("unknown", "unavailable"):
+                downsampled.append(
+                    {
+                        "s": state_val,
+                        "lu": current_time.isoformat(),
+                    }
+                )
+        else:
+            last_idx = 0
+
+        current_time += interval_delta
+    return downsampled
+
+
 async def _get_history_with_binary_search_downsample(
     hass: HomeAssistant,
     entity_ids: list[str],
@@ -503,7 +773,11 @@ async def _get_history_with_binary_search_downsample(
     end_time,
     interval: int,
 ) -> dict[str, list[dict]]:
-    """Fetch raw history and downsample using optimized binary search."""
+    """Fetch raw history and downsample using optimized binary search.
+
+    Optimized to avoid O(N) pre-parsing of timestamps. uses bisect with key (Py3.10+)
+    and 'lo' parameter to perform efficient 'finger search'.
+    """
 
     def _get_history():
         return history.get_significant_states(
@@ -519,45 +793,8 @@ async def _get_history_with_binary_search_downsample(
     # Fetch raw history data
     history_data = await get_instance(hass).async_add_executor_job(_get_history)
 
-    def _parse_entity_states(states):
-        """Pre-parse timestamps and states for a single entity."""
-        timestamps = []
-        parsed_states = []
-        for s in states:
-            if isinstance(s, dict):
-                ts_raw = s.get("last_updated", s.get("last_changed"))
-                ts = (
-                    dt_util.parse_datetime(ts_raw)
-                    if isinstance(ts_raw, str)
-                    else ts_raw
-                )
-                state_val = s.get("state")
-            else:
-                ts = s.last_updated
-                state_val = s.state
-
-            if ts is not None:
-                timestamps.append(ts)
-                parsed_states.append(state_val)
-        return timestamps, parsed_states
-
-    def _downsample_entity(timestamps, parsed_states, interval_delta):
-        """Downsample parsed states using binary search."""
-        downsampled = []
-        current_time = start_time
-        while current_time <= end_time:
-            idx = bisect.bisect_right(timestamps, current_time) - 1
-            if idx >= 0:
-                state_val = parsed_states[idx]
-                if state_val and state_val not in ("unknown", "unavailable"):
-                    downsampled.append(
-                        {
-                            "s": state_val,
-                            "lu": current_time.isoformat(),
-                        }
-                    )
-            current_time += interval_delta
-        return downsampled
+    # Helper to extract and ensure datetime from state object/dict
+    # (Moved to module level: _extract_ts)
 
     def _downsample_with_binary_search():
         result = {}
@@ -568,13 +805,8 @@ async def _get_history_with_binary_search_downsample(
                 result[entity_id] = []
                 continue
 
-            timestamps, parsed_states = _parse_entity_states(states)
-            if not timestamps:
-                result[entity_id] = []
-                continue
-
-            result[entity_id] = _downsample_entity(
-                timestamps, parsed_states, interval_delta
+            result[entity_id] = _downsample_entity_binary_search(
+                states, start_time, end_time, interval_delta
             )
 
         return result

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import functools
 import logging
 import uuid
 from dataclasses import asdict
@@ -29,6 +30,7 @@ from .const import (
     CONF_TEMP_SENSOR,
     CONF_VPD_SENSOR,
     DOMAIN,
+    EVENT_GROWSPACE_LOG_ENTRY,
     SPECIAL_GROWSPACES,
     PlantStage,
 )
@@ -85,6 +87,57 @@ type PlantDict = dict[str, Any]
 type GrowspaceDict = dict[str, Any]
 type NotificationDict = dict[str, Any]
 type DateInput = str | datetime | date | None
+
+
+def invalidates_growspace_cache(func):
+    """Decorator to automatically invalidate growspace cache after modification."""
+
+    @functools.wraps(func)
+    async def wrapper(self, *args, **kwargs):
+        result = await func(self, *args, **kwargs)
+
+        growspace_ids = set()
+
+        # Strategy 1: Check return value (Growspace or Plant object)
+        if result:
+            if hasattr(result, "growspace_id") and result.growspace_id:
+                growspace_ids.add(result.growspace_id)
+            elif hasattr(result, "id") and hasattr(
+                result, "plants_per_row"
+            ):  # Growspace check
+                growspace_ids.add(result.id)
+
+        # Strategy 2: Check arguments for 'growspace_id'
+        if "growspace_id" in kwargs:
+            growspace_ids.add(kwargs["growspace_id"])
+        elif len(args) > 0 and isinstance(args[0], str):
+            # Heuristic: Check if arg is a known growspace or plant ID
+            # Note: This heuristic might need to be specific to method signature if IDs overlap
+            # But with UUIDs, overlap is negligible.
+            arg_id = args[0]
+            if hasattr(self, "growspaces") and arg_id in self.growspaces:
+                growspace_ids.add(arg_id)
+
+        # Strategy 3: Check for 'plant_id' and look up growspace
+        pid = kwargs.get("plant_id")
+        if not pid and len(args) > 0 and isinstance(args[0], str):
+            # Assume arg0 could be plant_id if not growspace_id
+            # Only if we verified it's not a growspace_id (which we did above)
+            # But if it IS a growspace_id, we added it.
+            # If it is NOT, we check matches plant.
+            if hasattr(self, "plants") and args[0] in self.plants:
+                pid = args[0]
+
+        if pid and hasattr(self, "plants") and (plant := self.plants.get(pid)):
+            growspace_ids.add(plant.growspace_id)
+
+        for gs_id in growspace_ids:
+            if gs_id:
+                self._invalidate_cache(gs_id)
+
+        return result
+
+    return wrapper
 
 
 class GrowspaceCoordinator(DataUpdateCoordinator):
@@ -178,7 +231,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
         self.serializer = GrowspaceSerializer(hass)
         self.growspaces: dict[str, Growspace] = {}
         self.plants: dict[str, Plant] = {}
-        self.events: dict[str, list[GrowspaceEvent]] = {}
+        # self.events removed - using native HA Event Bus
         self.nutrient_presets: dict[str, NutrientPreset] = {}
         self.ipm_presets: dict[str, IPMPreset] = {}
 
@@ -407,25 +460,12 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
     # =============================================================================
 
     def add_event(self, growspace_id: str, event: GrowspaceEvent) -> None:
-        """Add a Growspace event to the logbook.
+        """Fire a Growspace event to the HA Event Bus (Native Event Sourcing)."""
+        event_data = asdict(event)
+        # Ensure primitive types for JSON serialization if needed, though asdict does most.
+        # Enforce event structure
 
-        Args:
-            growspace_id: The ID of the growspace where the event occurred.
-            event: The GrowspaceEvent object.
-        """
-        if growspace_id not in self.events:
-            self.events[growspace_id] = []
-
-        self.events[growspace_id].append(event)
-
-        # Enforce rolling buffer limit (max 1000 events per growspace)
-        if len(self.events[growspace_id]) > 1000:
-            self.events[growspace_id].pop(0)
-
-        # Persist changes
-        self.config_entry.async_create_background_task(
-            self.hass, self.async_commit(), "growspace_commit_event"
-        )
+        self.hass.bus.async_fire(EVENT_GROWSPACE_LOG_ENTRY, event_data)
 
     # =============================================================================
     # UTILITY AND HELPER METHODS
@@ -900,6 +940,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
             async_fire_growspace_event(self.hass, EVENT_GROWSPACE_ADDED, growspace)
             return growspace
 
+    @invalidates_growspace_cache
     async def async_remove_growspace(self, growspace_id: str) -> None:
         """Remove a growspace and all plants contained within it.
 
@@ -930,7 +971,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
             self._notifications_enabled.pop(growspace_id, None)
 
             # Cache: Remove from cache
-            self._invalidate_cache(growspace_id)
+            # Handled by decorator
 
             # ✅ Remove device from registry
             try:
@@ -1007,6 +1048,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
 
         return updated
 
+    @invalidates_growspace_cache
     async def async_update_growspace(
         self, growspace_id: str, **kwargs: dict[str, Any]
     ) -> None:
@@ -1035,8 +1077,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
                     ", ".join(changes),
                 )
 
-                # Invalidate cache for this growspace
-                self._invalidate_cache(growspace_id)
+                # Cache invalidation handled by decorator
 
                 # Validate plants if grid changed
                 if "rows" in kwargs or "plants_per_row" in kwargs:
@@ -1148,6 +1189,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
     # PLANT MANAGEMENT METHODS
     # =============================================================================
 
+    @invalidates_growspace_cache
     async def async_add_plant(
         self,
         growspace_id: str,
@@ -1169,8 +1211,6 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
         source_mother: str = "",
     ) -> Plant:
         """Add a new plant to the coordinator via lifecycle manager."""
-        # Pre-invalidate cache because lifecycle_manager might commit
-        self._invalidate_cache(growspace_id)
 
         plant = await self.lifecycle_manager.async_add_plant(
             growspace_id=growspace_id,
@@ -1356,15 +1396,18 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
             veg_start=transition_date,
         )
 
+    @invalidates_growspace_cache
     async def async_update_plant(self, plant_id: str, **updates) -> Plant:
         """Update the attributes of an existing plant."""
-        # Invalidate current growspace
+        # Invalidate current growspace (logic for move)
         if plant := self.plants.get(plant_id):
-            self._invalidate_cache(plant.growspace_id)
-
-        # If moving to new growspace, invalidate that too
-        if "growspace_id" in updates:
-            self._invalidate_cache(updates["growspace_id"])
+            # Only strictly needed if growspace_id changes, but harmless if redundant
+            # (Decorator handles the NEW state/growspace_id invalidation)
+            if (
+                "growspace_id" in updates
+                and updates["growspace_id"] != plant.growspace_id
+            ):
+                self._invalidate_cache(plant.growspace_id)
 
         plant = await self.lifecycle_manager.async_update_plant(plant_id, **updates)
 
@@ -1456,6 +1499,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
         """
         await self.async_switch_plants(plant1_id, plant2_id)
 
+    @invalidates_growspace_cache
     async def async_transition_plant_stage(
         self,
         plant_id: str,
@@ -1463,8 +1507,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
         transition_date: date | None = None,
     ) -> None:
         """Transition a plant to a new stage."""
-        if plant := self.plants.get(plant_id):
-            self._invalidate_cache(plant.growspace_id)
+        # Cache invalidation handled by decorator via plant_id lookup
 
         await self.lifecycle_manager.transition_plant_stage(
             plant_id, new_stage, transition_date

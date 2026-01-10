@@ -6,16 +6,27 @@ sensor attribute integration.
 """
 
 from datetime import datetime, timedelta
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
-from freezegun import freeze_time
 from homeassistant.core import HomeAssistant
-from pytest_homeassistant_custom_component.common import MockConfigEntry
+from pytest_homeassistant_custom_component.common import (
+    MockConfigEntry,
+    async_capture_events,
+)
 
-from custom_components.growspace_manager.const import DOMAIN
+from custom_components.growspace_manager.const import DOMAIN, EVENT_GROWSPACE_LOG_ENTRY
 from custom_components.growspace_manager.coordinator import GrowspaceCoordinator
+from custom_components.growspace_manager.exceptions import (
+    GrowspaceNotFoundError,
+    PlantNotFoundError,
+)
 from custom_components.growspace_manager.models import Growspace, Plant
+from custom_components.growspace_manager.sensor import PlantEntity
+from custom_components.growspace_manager.services.irrigation_watering import (
+    handle_water_growspace,
+    handle_water_plant,
+)
 
 
 def create_test_coordinator(hass: HomeAssistant) -> GrowspaceCoordinator:
@@ -112,50 +123,49 @@ class TestAsyncWaterPlant:
 
     @pytest.mark.asyncio
     async def test_water_plant_creates_event(
-        self, watering_coordinator: GrowspaceCoordinator
+        self, hass: HomeAssistant, watering_coordinator: GrowspaceCoordinator
     ) -> None:
         """Test that watering creates a GrowspaceEvent."""
         plant_id = "test_plant"
 
-        # Ensure events dict is initialized
-        watering_coordinator.events = {}
+        # Capture events
+        events = async_capture_events(hass, EVENT_GROWSPACE_LOG_ENTRY)
 
         # Water the plant
         await watering_coordinator.async_water_plant(plant_id, amount=1.0)
 
         # Verify an event was created
-        assert "test_gs" in watering_coordinator.events
-        assert len(watering_coordinator.events["test_gs"]) == 1
+        assert len(events) == 1
+        event_data = events[0].data
 
-        event = watering_coordinator.events["test_gs"][0]
-        assert event.sensor_type == "irrigation"
-        assert event.category == "environmental"
-        assert "Plant: Test Strain (Phenotype A)" in event.reasons
-        assert "Watered with 1.0L" in event.reasons
+        assert event_data["sensor_type"] == "irrigation"
+        assert event_data["category"] == "environmental"
+        assert "Watered with 1.0L" in str(event_data.get("reasons", []))
 
     @pytest.mark.asyncio
     async def test_water_plant_event_includes_nutrients(
-        self, watering_coordinator: GrowspaceCoordinator
+        self, hass: HomeAssistant, watering_coordinator: GrowspaceCoordinator
     ) -> None:
         """Test that watering event includes nutrient information."""
         plant_id = "test_plant"
         nutrients = {"Nitrogen": 5.0}
 
-        watering_coordinator.events = {}
+        events = async_capture_events(hass, EVENT_GROWSPACE_LOG_ENTRY)
 
         await watering_coordinator.async_water_plant(
             plant_id, amount=1.5, nutrients=nutrients
         )
 
-        event = watering_coordinator.events["test_gs"][0]
-        assert any("Nutrients:" in reason for reason in event.reasons)
+        assert len(events) == 1
+        event_data = events[0].data
+        reasons = str(event_data.get("reasons", []))
+        assert "Nutrients:" in reasons
 
     @pytest.mark.asyncio
     async def test_water_plant_nonexistent_raises(
         self, watering_coordinator: GrowspaceCoordinator
     ) -> None:
         """Test that watering a nonexistent plant raises an error."""
-        from custom_components.growspace_manager.exceptions import PlantNotFoundError
 
         with pytest.raises(PlantNotFoundError):
             await watering_coordinator.async_water_plant("nonexistent", amount=1.0)
@@ -202,18 +212,17 @@ class TestAsyncWaterGrowspace:
 
     @pytest.mark.asyncio
     async def test_water_growspace_creates_events(
-        self, watering_coordinator: GrowspaceCoordinator
+        self, hass: HomeAssistant, watering_coordinator: GrowspaceCoordinator
     ) -> None:
         """Test that watering a growspace creates events for each plant."""
-        watering_coordinator.events = {}
+        events = async_capture_events(hass, EVENT_GROWSPACE_LOG_ENTRY)
 
         await watering_coordinator.async_water_growspace(
             "test_gs", amount_per_plant=1.5
         )
 
         # Should have 2 events (one per plant)
-        assert "test_gs" in watering_coordinator.events
-        assert len(watering_coordinator.events["test_gs"]) == 2
+        assert len(events) == 2
 
     @pytest.mark.asyncio
     async def test_water_empty_growspace(
@@ -236,9 +245,6 @@ class TestAsyncWaterGrowspace:
         self, watering_coordinator: GrowspaceCoordinator
     ) -> None:
         """Test that watering a nonexistent growspace raises an error."""
-        from custom_components.growspace_manager.exceptions import (
-            GrowspaceNotFoundError,
-        )
 
         with pytest.raises(GrowspaceNotFoundError):
             await watering_coordinator.async_water_growspace(
@@ -295,9 +301,6 @@ class TestServiceHandlers:
         self, hass: HomeAssistant, watering_coordinator: GrowspaceCoordinator
     ) -> None:
         """Test the handle_water_plant service handler."""
-        from custom_components.growspace_manager.services.irrigation_watering import (
-            handle_water_plant,
-        )
 
         # Create a mock service call
         call = MagicMock()
@@ -317,9 +320,6 @@ class TestServiceHandlers:
         self, hass: HomeAssistant, watering_coordinator: GrowspaceCoordinator
     ) -> None:
         """Test the handle_water_growspace service handler."""
-        from custom_components.growspace_manager.services.irrigation_watering import (
-            handle_water_growspace,
-        )
 
         # Create a mock service call
         call = MagicMock()
@@ -343,7 +343,6 @@ class TestPlantEntityWateringAttributes:
         self, watering_coordinator: GrowspaceCoordinator
     ) -> None:
         """Test that PlantEntity exposes watering attributes correctly."""
-        from custom_components.growspace_manager.sensor import PlantEntity
 
         # Water the plant first
         await watering_coordinator.async_water_plant("test_plant", amount=1.0)
@@ -366,7 +365,6 @@ class TestPlantEntityWateringAttributes:
         self, watering_coordinator: GrowspaceCoordinator
     ) -> None:
         """Test PlantEntity shows None when plant was never watered."""
-        from custom_components.growspace_manager.sensor import PlantEntity
 
         # Create a PlantEntity without watering
         plant = watering_coordinator.plants["test_plant"]

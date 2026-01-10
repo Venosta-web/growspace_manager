@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass, field, fields
 from datetime import datetime
 from enum import StrEnum
-from typing import Any, ReadOnly, Self, TypedDict
+from typing import Any, Final, ReadOnly, Self, TypedDict
 
 from .const import PlantStage
 from .utils import calculate_days_since, days_to_week
@@ -166,7 +166,7 @@ class GrowspaceType(StrEnum):
 class Growspace(BaseModel):
     """Represents a single growspace area."""
 
-    id: str
+    id: Final[str]
     name: str
     rows: int = 3
     plants_per_row: int = 3
@@ -190,8 +190,8 @@ class Growspace(BaseModel):
 class Plant(BaseModel):
     """Represents a single plant."""
 
-    plant_id: str
-    growspace_id: str
+    plant_id: Final[str]
+    growspace_id: Final[str]
     strain: str
     phenotype: str = ""
     row: int = 1

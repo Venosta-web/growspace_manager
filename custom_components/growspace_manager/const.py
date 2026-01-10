@@ -5,7 +5,9 @@ from typing import Final
 
 DOMAIN: Final = "growspace_manager"
 STORAGE_VERSION: Final = 1
-STORAGE_KEY: Final = f"{DOMAIN}_storage"
+STORAGE_KEY: Final = f"{DOMAIN}_storage"  # Legacy Key
+STORAGE_KEY_CONFIG: Final = f"{DOMAIN}.config"
+STORAGE_KEY_PLANTS: Final = f"{DOMAIN}.plants"
 PLATFORMS: Final[list[str]] = [
     "binary_sensor",
     "sensor",
@@ -89,6 +91,8 @@ ATTR_PRESET_NAME = "preset_name"
 ATTR_MIN_DAYS_IN_STAGE = "min_days_in_stage"
 
 # Events
+EVENT_GROWSPACE_LOG_ENTRY: Final = f"{DOMAIN}_log_entry"
+
 # Icons
 ICON_NOTIFICATION = "mdi:bell"
 
@@ -203,6 +207,7 @@ class GrowspaceService(StrEnum):
     SAVE_IPM_PRESET = "save_ipm_preset"
     REMOVE_IPM_PRESET = "remove_ipm_preset"
     APPLY_IPM = "apply_ipm"
+    BATCH_ACTION = "batch_action"
 
 
 class TrainingTechnique(StrEnum):

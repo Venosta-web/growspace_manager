@@ -35,6 +35,7 @@ from .services import (
     ADD_STRAIN_SCHEMA,
     ANALYZE_ALL_GROWSPACES_SCHEMA,
     ASK_GROW_ADVICE_SCHEMA,
+    BATCH_ACTION_SCHEMA,
     CLEAR_STRAIN_LIBRARY_SCHEMA,
     CONFIGURE_ENVIRONMENT_SCHEMA,
     DEBUG_CONSOLIDATE_DUPLICATE_SPECIAL_SCHEMA,
@@ -65,6 +66,7 @@ from .services import (
     WATER_GROWSPACE_SCHEMA,
     WATER_PLANT_SCHEMA,
     ai_assistant,
+    batch,
     debug,
     environment,
     growspace,
@@ -367,6 +369,11 @@ async def register_services(
             GrowspaceService.APPLY_IPM,
             wrap(ipm.handle_apply_ipm, False),
             APPLY_IPM_SCHEMA,
+        ),
+        (
+            GrowspaceService.BATCH_ACTION,
+            wrap(batch.handle_batch_action, True),
+            BATCH_ACTION_SCHEMA,
         ),
     ]
 

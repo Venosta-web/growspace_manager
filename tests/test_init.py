@@ -31,7 +31,6 @@ from custom_components.growspace_manager import (
 )
 from custom_components.growspace_manager.const import DOMAIN
 from custom_components.growspace_manager.coordinator import GrowspaceCoordinator
-from custom_components.growspace_manager.models import GrowspaceEvent
 from custom_components.growspace_manager.schemas import (
     ADD_DRAIN_TIME_SCHEMA,
     ADD_GROWSPACE_SCHEMA,
@@ -41,6 +40,7 @@ from custom_components.growspace_manager.schemas import (
     ANALYZE_ALL_GROWSPACES_SCHEMA,
     APPLY_IPM_SCHEMA,
     ASK_GROW_ADVICE_SCHEMA,
+    BATCH_ACTION_SCHEMA,
     CLEAR_STRAIN_LIBRARY_SCHEMA,
     CONFIGURE_ENVIRONMENT_SCHEMA,
     DEBUG_CONSOLIDATE_DUPLICATE_SPECIAL_SCHEMA,
@@ -248,6 +248,7 @@ async def test_register_services(mock_hass, mock_strain_library_for_services) ->
         "save_ipm_preset": SAVE_IPM_PRESET_SCHEMA,
         "remove_ipm_preset": REMOVE_IPM_PRESET_SCHEMA,
         "apply_ipm": APPLY_IPM_SCHEMA,
+        "batch_action": BATCH_ACTION_SCHEMA,
     }
 
     # Verify call count
@@ -493,96 +494,108 @@ async def test_websocket_get_event_log(hass: HomeAssistant, mock_coordinator) ->
     mock_connection.send_result = MagicMock()
     mock_connection.send_error = MagicMock()
 
-    # Mock get_coordinator_for_call to return our mock coordinator
+    # Mock Logbook Event
+    mock_event = MagicMock()
+    mock_event.time_fired.timestamp.return_value = 1672531200.0
+    mock_event.data = {
+        "sensor_type": "mold",
+        "growspace_id": "gs1",
+        "start_time": "2023-01-01T00:00:00",
+        "end_time": "2023-01-01T00:05:00",
+        "duration_sec": 300,
+        "severity": 0.8,
+        "category": "alert",
+        "reasons": [],
+        "timestamp": 1672531200.0,
+    }
+
+    # Create mock recorder event row and event data row (new schema)
+    mock_event_row = MagicMock()
+    mock_event_row.time_fired_ts = 1672531200.0
+    mock_event_row.data_id = 1
+
+    mock_event_data_row = MagicMock()
+    mock_event_data_row.shared_data = json.dumps(mock_event.data)
+
+    # Mock the recorder instance and session
+    mock_recorder = MagicMock()
+
+    async def run_executor(func, *args, **kwargs):
+        return func(*args, **kwargs)
+
+    mock_recorder.async_add_executor_job = AsyncMock(side_effect=run_executor)
+
+    mock_session = MagicMock()
+
+    # Mock for EventTypes query (first query)
+    mock_event_type_query = MagicMock()
+    mock_event_type_query.filter.return_value = mock_event_type_query
+    mock_event_type_query.first.return_value = (1,)  # Returns event_type_id = 1
+
+    # Mock for Events/EventData query (second query)
+    mock_events_query = MagicMock()
+    mock_events_query.join.return_value = mock_events_query
+    mock_events_query.filter.return_value = mock_events_query
+    mock_events_query.order_by.return_value = mock_events_query
+    mock_events_query.limit.return_value = mock_events_query
+    mock_events_query.__iter__ = lambda self: iter(
+        [(mock_event_row, mock_event_data_row)]
+    )
+
+    # session.query() returns different things depending on args
+    def mock_query(*args):
+        if len(args) == 1:
+            # EventTypes query
+            return mock_event_type_query
+        else:
+            # Events, EventData query
+            return mock_events_query
+
+    mock_session.query = MagicMock(side_effect=mock_query)
+
     with patch(
-        "custom_components.growspace_manager.GrowspaceCoordinator.get_for_service_call",
-        return_value=mock_coordinator,
+        "custom_components.growspace_manager.get_instance",
+        return_value=mock_recorder,
     ):
-        # 1. Specific growspace
-        mock_coordinator.events = {
-            "gs1": [
-                GrowspaceEvent(
-                    sensor_type="mold",
-                    growspace_id="gs1",
-                    start_time="2023-01-01T00:00:00",
-                    end_time="2023-01-01T00:05:00",
-                    duration_sec=300,
-                    severity=0.8,
-                    category="alert",
-                    reasons=[],
-                )
-            ]
-        }
-        msg = {
-            "id": 1,
-            "type": f"{DOMAIN}/get_log",
-            "growspace_id": "gs1",
-        }
-        await websocket_get_event_log(hass, mock_connection, msg)
-
-        mock_connection.send_result.assert_called_with(
-            1,
-            {
-                "gs1": [
-                    {
-                        "sensor_type": "mold",
-                        "growspace_id": "gs1",
-                        "start_time": "2023-01-01T00:00:00",
-                        "end_time": "2023-01-01T00:05:00",
-                        "duration_sec": 300,
-                        "severity": 0.8,
-                        "category": "alert",
-                        "reasons": [],
-                    }
-                ]
-            },
-        )
-
-        # 2. Invalid growspace (ServiceValidationError)
         with patch(
-            "custom_components.growspace_manager.GrowspaceCoordinator.get_for_service_call",
-            side_effect=ServiceValidationError("Invalid ID"),
-        ):
+            "custom_components.growspace_manager.session_scope"
+        ) as mock_session_scope:
+            mock_session_scope.return_value.__enter__ = MagicMock(
+                return_value=mock_session
+            )
+            mock_session_scope.return_value.__exit__ = MagicMock(return_value=False)
+
+            # Case A: Specific Log
             msg = {
-                "id": 2,
+                "id": 1,
                 "type": f"{DOMAIN}/get_log",
-                "growspace_id": "invalid",
+                "growspace_id": "gs1",
             }
             await websocket_get_event_log(hass, mock_connection, msg)
-            mock_connection.send_result.assert_called_with(2, {})
-            # Logic: except ServiceValidationError: logger.warning... then send_result with events_data (empty)
 
-            # Let's verify what success logic does
-            # If exception is caught, events_data is empty (initialized {}).
-            # events_data["invalid"] is NOT set.
+            mock_connection.send_result.assert_called_with(
+                1, {"gs1": [mock_event.data]}
+            )
 
-        # 3. Global (no ID) - aggregates from all entries
-        mock_entry = MockConfigEntry(domain=DOMAIN, state=ConfigEntryState.LOADED)
-        mock_entry.runtime_data = mock_coordinator
-        mock_entry.add_to_hass(hass)
+            # Case B: Global (Aggregate)
+            msg_global = {
+                "id": 2,
+                "type": f"{DOMAIN}/get_log",
+            }
+            await websocket_get_event_log(hass, mock_connection, msg_global)
 
-        msg = {
-            "id": 3,
-            "type": f"{DOMAIN}/get_log",
-        }
-        await websocket_get_event_log(hass, mock_connection, msg)
-        mock_connection.send_result.assert_called_with(
-            3,
-            {
-                "gs1": [
-                    {
-                        "sensor_type": "mold",
-                        "growspace_id": "gs1",
-                        "start_time": "2023-01-01T00:00:00",
-                        "end_time": "2023-01-01T00:05:00",
-                        "duration_sec": 300,
-                        "severity": 0.8,
-                        "category": "alert",
-                        "reasons": [],
-                    }
-                ]
-            },
-        )
+            mock_connection.send_result.assert_called_with(
+                2, {"gs1": [mock_event.data]}
+            )
+
+            # Case C: Filtering out unrelated ID - returns empty because query returns gs1 data
+            msg_other = {
+                "id": 3,
+                "type": f"{DOMAIN}/get_log",
+                "growspace_id": "gs2",
+            }
+            await websocket_get_event_log(hass, mock_connection, msg_other)
+            mock_connection.send_result.assert_called_with(3, {"gs2": []})
 
 
 @pytest.mark.asyncio
@@ -804,20 +817,27 @@ async def test_websocket_get_event_log_unknown_error(hass: HomeAssistant) -> Non
     mock_connection.send_error = MagicMock()
 
     # Force an unknown exception
-    with patch(
-        "custom_components.growspace_manager.GrowspaceCoordinator.get_for_service_call",
-        side_effect=Exception("Unexpected Error"),
-    ):
-        msg = {
-            "id": 99,
-            "type": f"{DOMAIN}/get_log",
-            "growspace_id": "gs_unknown",
-        }
-        await websocket_get_event_log(hass, mock_connection, msg)
+    # Force an unknown exception from recorder by simulating a RuntimeError
+    mock_recorder = MagicMock()
+    mock_recorder.async_add_executor_job = AsyncMock(
+        side_effect=RuntimeError("Unexpected Error")
+    )
 
-        mock_connection.send_error.assert_called_with(
-            99, "unknown_error", "Unexpected Error"
-        )
+    with patch(
+        "custom_components.growspace_manager.get_instance",
+        return_value=mock_recorder,
+    ):
+        with patch("custom_components.growspace_manager.session_scope"):
+            msg = {
+                "id": 99,
+                "type": f"{DOMAIN}/get_log",
+                "growspace_id": "gs_unknown",
+            }
+            await websocket_get_event_log(hass, mock_connection, msg)
+
+            mock_connection.send_error.assert_called_with(
+                99, "unknown_error", "Unexpected Error"
+            )
 
 
 @pytest.mark.asyncio
@@ -841,7 +861,7 @@ async def test_async_register_websocket_api(mock_hass) -> None:
         "homeassistant.components.websocket_api.async_register_command"
     ) as mock_reg:
         _async_register_websocket_api(mock_hass)
-        assert mock_reg.call_count == 3
+        assert mock_reg.call_count == 4
 
 
 @pytest.mark.asyncio

@@ -2,9 +2,16 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from homeassistant.core import HomeAssistant
-from pytest_homeassistant_custom_component.common import MockConfigEntry
+from pytest_homeassistant_custom_component.common import (
+    MockConfigEntry,
+    async_capture_events,
+)
 
-from custom_components.growspace_manager.const import CATEGORY_IPM, DOMAIN
+from custom_components.growspace_manager.const import (
+    CATEGORY_IPM,
+    DOMAIN,
+    EVENT_GROWSPACE_LOG_ENTRY,
+)
 from custom_components.growspace_manager.coordinator import GrowspaceCoordinator
 from custom_components.growspace_manager.models import (
     Growspace,
@@ -23,7 +30,7 @@ def mock_coordinator(hass: HomeAssistant) -> GrowspaceCoordinator:
     coord.ipm_presets = {}
     coord.plants = {}
     coord.growspaces = {}
-    coord.events = {}
+    coord.growspaces = {}
     coord._serialized_cache = {}
     return coord
 
@@ -93,6 +100,9 @@ async def test_async_apply_ipm_to_growspace(
     )
     mock_coordinator.ipm_presets["ipm1"] = preset
 
+    # Verify Events
+    events = async_capture_events(mock_coordinator.hass, EVENT_GROWSPACE_LOG_ENTRY)
+
     # Execute
     affected = await mock_coordinator.async_apply_ipm("ipm1", growspace_id="gs1")
 
@@ -104,16 +114,17 @@ async def test_async_apply_ipm_to_growspace(
     assert p1.last_ipm_type == "foliar"
     assert p2.last_ipm is not None
 
-    # Verify Events
-    assert "gs1" in mock_coordinator.events
-    event = mock_coordinator.events["gs1"][0]
-    assert event.category == CATEGORY_IPM
-    assert event.sensor_type == "ipm_foliar"
-    assert "IPM Treatment: Weekly Maintenance" in event.reasons
-    assert "Recipe: Soap (1.0tbsp)" in event.reasons
+    assert len(events) == 1
+    event_data = events[0].data
+    reasons = str(event_data["reasons"])
+
+    assert event_data["category"] == CATEGORY_IPM
+    assert event_data["sensor_type"] == "ipm_foliar"
+    assert "IPM Treatment: Weekly Maintenance" in reasons
+    assert "Recipe: Soap (1.0tbsp)" in reasons
     # Verify Plant ID tracking for timeline filtering
-    assert "plant_id:p1" in event.reasons
-    assert "plant_id:p2" in event.reasons
+    assert "plant_id:p1" in reasons
+    assert "plant_id:p2" in reasons
 
 
 @pytest.mark.asyncio
@@ -133,6 +144,7 @@ async def test_async_apply_ipm_to_plants(
     mock_coordinator.ipm_presets["ipm1"] = preset
 
     # Execute - Only p1
+    events = async_capture_events(mock_coordinator.hass, EVENT_GROWSPACE_LOG_ENTRY)
     affected = await mock_coordinator.async_apply_ipm(
         "ipm1", plant_ids=["p1"], notes="Mites found"
     )
@@ -144,12 +156,15 @@ async def test_async_apply_ipm_to_plants(
     assert p2.last_ipm is None  # p2 untouched
 
     # Verify Event checks "Plants: ..." context
-    event = mock_coordinator.events["gs1"][0]
-    assert "Plants: Strain A" in event.reasons
-    assert "Notes: Mites found" in event.reasons
+    assert len(events) == 1
+    event_data = events[0].data
+    reasons = str(event_data["reasons"])
+
+    assert "Plants: Strain A" in reasons
+    assert "Notes: Mites found" in reasons
     # Verify Plant ID tracking
-    assert "plant_id:p1" in event.reasons
-    assert "plant_id:p2" not in event.reasons
+    assert "plant_id:p1" in reasons
+    assert "plant_id:p2" not in reasons
 
 
 @pytest.mark.asyncio
