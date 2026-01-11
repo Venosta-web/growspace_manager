@@ -7,7 +7,10 @@ from homeassistant.components.persistent_notification import (
 )
 from homeassistant.core import HomeAssistant, ServiceCall
 
-from ..const import PlantStage
+from ..const import (
+    CANONICAL_ID_CURE,
+    CANONICAL_ID_DRY,
+)
 from ..coordinator import GrowspaceCoordinator
 from ..strain_library import StrainLibrary
 
@@ -113,7 +116,7 @@ async def _handle_reset_dry_growspace(
     dry_ids_to_remove = [
         gs_id
         for gs_id in list(coordinator.growspaces.keys())
-        if gs_id == PlantStage.DRY or gs_id.startswith("dry_overview")
+        if gs_id == CANONICAL_ID_DRY or gs_id.startswith("dry_overview")
     ]
 
     dry_plants_data_to_restore = []
@@ -134,11 +137,11 @@ async def _handle_reset_dry_growspace(
         coordinator.growspaces.pop(dry_id, None)
         _LOGGER.debug("Removed dry growspace %s", dry_id)
 
-    canonical_dry = coordinator.ensure_special_growspace(PlantStage.DRY, "dry")
+    canonical_dry = coordinator.ensure_special_growspace(CANONICAL_ID_DRY, "dry")
 
     if preserve_plants and dry_plants_data_to_restore:
         await _restore_plants_to_canonical_growspace(
-            coordinator, canonical_dry, dry_plants_data_to_restore, PlantStage.DRY
+            coordinator, canonical_dry, dry_plants_data_to_restore, CANONICAL_ID_DRY
         )
 
 
@@ -150,7 +153,7 @@ async def _handle_reset_cure_growspace(
     cure_ids_to_remove = [
         gs_id
         for gs_id in list(coordinator.growspaces.keys())
-        if gs_id == PlantStage.CURE or gs_id.startswith("cure_overview")
+        if gs_id == CANONICAL_ID_CURE or gs_id.startswith("cure_overview")
     ]
 
     cure_plants_data_to_restore = []
@@ -171,11 +174,11 @@ async def _handle_reset_cure_growspace(
         coordinator.growspaces.pop(cure_id, None)
         _LOGGER.debug("Removed cure growspace %s", cure_id)
 
-    canonical_cure = coordinator.ensure_special_growspace(PlantStage.CURE, "cure")
+    canonical_cure = coordinator.ensure_special_growspace(CANONICAL_ID_CURE, "cure")
 
     if preserve_plants and cure_plants_data_to_restore:
         await _restore_plants_to_canonical_growspace(
-            coordinator, canonical_cure, cure_plants_data_to_restore, PlantStage.CURE
+            coordinator, canonical_cure, cure_plants_data_to_restore, CANONICAL_ID_CURE
         )
 
 
@@ -194,9 +197,9 @@ async def handle_debug_consolidate_duplicate_special(
 
         for gs_id, gs_data in coordinator.growspaces.items():
             # Using .lower() for case-insensitive comparison of names
-            if gs_data.name.lower() == PlantStage.DRY:
+            if gs_data.name.lower() == CANONICAL_ID_DRY:
                 dry_growspaces[gs_id] = gs_data
-            elif gs_data.name.lower() == PlantStage.CURE:
+            elif gs_data.name.lower() == CANONICAL_ID_CURE:
                 cure_growspaces[gs_id] = gs_data
 
         _LOGGER.debug("Found dry growspaces: %s", list(dry_growspaces.keys()))
@@ -204,7 +207,7 @@ async def handle_debug_consolidate_duplicate_special(
 
         # Consolidate dry growspaces
         if len(dry_growspaces) > 1:
-            canonical_dry = PlantStage.DRY  # Assuming 'dry' is the canonical ID
+            canonical_dry = CANONICAL_ID_DRY  # Assuming 'dry' is the canonical ID
             duplicate_ids = [
                 gs_id for gs_id in dry_growspaces if gs_id != canonical_dry
             ]
@@ -215,15 +218,15 @@ async def handle_debug_consolidate_duplicate_special(
             )
 
             if canonical_dry not in coordinator.growspaces:
-                coordinator.ensure_special_growspace(PlantStage.DRY, "dry")
+                coordinator.ensure_special_growspace(CANONICAL_ID_DRY, "dry")
 
             await _consolidate_plants_to_canonical_growspace(
-                coordinator, duplicate_ids, canonical_dry, PlantStage.DRY
+                coordinator, duplicate_ids, canonical_dry, CANONICAL_ID_DRY
             )
 
         # Consolidate cure growspaces
         if len(cure_growspaces) > 1:
-            canonical_cure = PlantStage.CURE  # Assuming 'cure' is the canonical ID
+            canonical_cure = CANONICAL_ID_CURE  # Assuming 'cure' is the canonical ID
             duplicate_ids = [
                 gs_id for gs_id in cure_growspaces if gs_id != canonical_cure
             ]
@@ -234,10 +237,10 @@ async def handle_debug_consolidate_duplicate_special(
             )
 
             if canonical_cure not in coordinator.growspaces:
-                coordinator.ensure_special_growspace(PlantStage.CURE, "cure")
+                coordinator.ensure_special_growspace(CANONICAL_ID_CURE, "cure")
 
             await _consolidate_plants_to_canonical_growspace(
-                coordinator, duplicate_ids, canonical_cure, PlantStage.CURE
+                coordinator, duplicate_ids, canonical_cure, CANONICAL_ID_CURE
             )
 
         coordinator.data["growspaces"] = coordinator.growspaces

@@ -770,7 +770,15 @@ class OptionsFlowHandler(OptionsFlow):
         if user_input is not None:
             # Process input back into nested structure
             new_thresholds: dict[str, Any] = {}
-            for stage in ["veg", "early_flower", "mid_flower", "late_flower"]:
+            for stage in [
+                "seedling",
+                "veg",
+                "early_flower",
+                "mid_flower",
+                "late_flower",
+                "drying",
+                "curing",
+            ]:
                 new_thresholds[stage] = {}
                 for cycle in ["day", "night"]:
                     new_thresholds[stage][cycle] = {

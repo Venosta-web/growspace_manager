@@ -20,15 +20,24 @@ from homeassistant.util import dt as dt_util
 from homeassistant.util import slugify
 
 from .const import (
+    ATTR_DRAIN_TIMES,
     ATTR_GROWSPACE_ID,
+    ATTR_IRRIGATION_TIMES,
     ATTR_MOTHER_PLANT_ID,
     ATTR_PLANT_ID,
     ATTR_TARGET_GROWSPACE_ID,
+    CANONICAL_ID_CLONE,
+    CANONICAL_ID_CURE,
+    CANONICAL_ID_DRY,
+    CANONICAL_ID_MOTHER,
+    CANONICAL_ID_VEG,
     CATEGORY_IPM,
     CATEGORY_TRAINING,
     CONF_HUMIDITY_SENSOR,
     CONF_TEMP_SENSOR,
     CONF_VPD_SENSOR,
+    DEFAULT_PLANTS_PER_ROW,
+    DEFAULT_ROWS,
     DOMAIN,
     EVENT_GROWSPACE_LOG_ENTRY,
     SPECIAL_GROWSPACES,
@@ -98,38 +107,9 @@ def invalidates_growspace_cache(func):
 
         growspace_ids = set()
 
-        # Strategy 1: Check return value (Growspace or Plant object)
-        if result:
-            if hasattr(result, "growspace_id") and result.growspace_id:
-                growspace_ids.add(result.growspace_id)
-            elif hasattr(result, "id") and hasattr(
-                result, "plants_per_row"
-            ):  # Growspace check
-                growspace_ids.add(result.id)
-
-        # Strategy 2: Check arguments for 'growspace_id'
-        if "growspace_id" in kwargs:
-            growspace_ids.add(kwargs["growspace_id"])
-        elif len(args) > 0 and isinstance(args[0], str):
-            # Heuristic: Check if arg is a known growspace or plant ID
-            # Note: This heuristic might need to be specific to method signature if IDs overlap
-            # But with UUIDs, overlap is negligible.
-            arg_id = args[0]
-            if hasattr(self, "growspaces") and arg_id in self.growspaces:
-                growspace_ids.add(arg_id)
-
-        # Strategy 3: Check for 'plant_id' and look up growspace
-        pid = kwargs.get("plant_id")
-        if not pid and len(args) > 0 and isinstance(args[0], str):
-            # Assume arg0 could be plant_id if not growspace_id
-            # Only if we verified it's not a growspace_id (which we did above)
-            # But if it IS a growspace_id, we added it.
-            # If it is NOT, we check matches plant.
-            if hasattr(self, "plants") and args[0] in self.plants:
-                pid = args[0]
-
-        if pid and hasattr(self, "plants") and (plant := self.plants.get(pid)):
-            growspace_ids.add(plant.growspace_id)
+        # Extract IDs from result and arguments
+        self._extract_gs_ids_from_result(result, growspace_ids)
+        self._extract_gs_ids_from_args(args, kwargs, growspace_ids)
 
         for gs_id in growspace_ids:
             if gs_id:
@@ -277,6 +257,43 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
         _LOGGER.debug(
             "Loaded %d plants and %d growspaces", len(self.plants), len(self.growspaces)
         )
+
+    def _extract_gs_ids_from_result(self, result: Any, gs_ids: set[str]) -> None:
+        """Extract growspace IDs from function result."""
+        if not result:
+            return
+
+        if hasattr(result, "growspace_id") and result.growspace_id:
+            gs_ids.add(result.growspace_id)
+        elif hasattr(result, "id") and hasattr(
+            result, "plants_per_row"
+        ):  # Growspace check
+            gs_ids.add(result.id)
+
+    def _extract_gs_ids_from_args(
+        self, args: tuple, kwargs: dict[str, Any], gs_ids: set[str]
+    ) -> None:
+        """Extract growspace IDs from function arguments."""
+        # Strategy 2: Check arguments for 'growspace_id'
+        if "growspace_id" in kwargs:
+            gs_ids.add(kwargs["growspace_id"])
+        elif len(args) > 0 and isinstance(args[0], str):
+            arg_id = args[0]
+            if arg_id in self.growspaces:
+                gs_ids.add(arg_id)
+
+        # Strategy 3: Check for 'plant_id' and look up growspace
+        pid = kwargs.get("plant_id")
+        if (
+            not pid
+            and len(args) > 0
+            and isinstance(args[0], str)
+            and args[0] in self.plants
+        ):
+            pid = args[0]
+
+        if pid and (plant := self.plants.get(pid)):
+            gs_ids.add(plant.growspace_id)
 
     # =============================================================================
     # CACHING AND OPTIMIZATION HELPER
@@ -568,8 +585,8 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
         self,
         growspace_id: str,
         name: str,
-        rows: int = 3,
-        plants_per_row: int = 3,
+        rows: int = DEFAULT_ROWS,
+        plants_per_row: int = DEFAULT_PLANTS_PER_ROW,
         growspace_type: GrowspaceType = GrowspaceType.FLOWER,
     ) -> str:
         """Ensure a special growspace (e.g., 'dry', 'cure') exists.
@@ -653,8 +670,8 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
         return self.ensure_special_growspace(
             PlantStage.MOTHER,
             "mother",
-            rows=3,
-            plants_per_row=3,
+            rows=DEFAULT_ROWS,
+            plants_per_row=DEFAULT_PLANTS_PER_ROW,
             growspace_type=GrowspaceType.MOTHER,
         )
 
@@ -747,11 +764,29 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
     async def _ensure_default_growspaces(self) -> None:
         """Ensure that the default special growspaces (dry, cure, etc.) exist."""
         default_growspaces = [
-            ("dry", "dry", 3, 3, GrowspaceType.DRY),
-            ("cure", "cure", 3, 3, GrowspaceType.CURE),
-            ("mother", "mother", 3, 3, GrowspaceType.MOTHER),
-            ("clone", "clone", 5, 5, GrowspaceType.CLONE),
-            ("veg", "veg", 5, 5, GrowspaceType.VEG),
+            (
+                CANONICAL_ID_DRY,
+                "dry",
+                DEFAULT_ROWS,
+                DEFAULT_PLANTS_PER_ROW,
+                GrowspaceType.DRY,
+            ),
+            (
+                CANONICAL_ID_CURE,
+                "cure",
+                DEFAULT_ROWS,
+                DEFAULT_PLANTS_PER_ROW,
+                GrowspaceType.CURE,
+            ),
+            (
+                CANONICAL_ID_MOTHER,
+                "mother",
+                DEFAULT_ROWS,
+                DEFAULT_PLANTS_PER_ROW,
+                GrowspaceType.MOTHER,
+            ),
+            (CANONICAL_ID_CLONE, "clone", 5, 5, GrowspaceType.CLONE),
+            (CANONICAL_ID_VEG, "veg", 5, 5, GrowspaceType.VEG),
         ]
 
         for (
@@ -853,8 +888,8 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
             for k, v in user_input.items()
             if k
             not in [
-                "current_irrigation_times",
-                "current_drain_times",
+                ATTR_IRRIGATION_TIMES,
+                ATTR_DRAIN_TIMES,
                 "growspace_id_read_only",
             ]
         }
@@ -886,8 +921,8 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
     async def async_add_growspace(
         self,
         name: str,
-        rows: int = 3,
-        plants_per_row: int = 3,
+        rows: int = DEFAULT_ROWS,
+        plants_per_row: int = DEFAULT_PLANTS_PER_ROW,
         notification_target: str | None = None,
         device_id: str | None = None,
         growspace_type: GrowspaceType = GrowspaceType.FLOWER,

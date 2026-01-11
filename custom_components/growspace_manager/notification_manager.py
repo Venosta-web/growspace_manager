@@ -10,7 +10,13 @@ from homeassistant.components import conversation
 from homeassistant.core import Context, HomeAssistant
 from homeassistant.util.dt import utcnow
 
-from .const import CONF_AI_ENABLED, CONF_ASSISTANT_ID, CONF_NOTIFICATION_PERSONALITY
+from .const import (
+    ATTR_TRIGGER_TYPE,
+    CONF_AI_ENABLED,
+    CONF_ASSISTANT_ID,
+    CONF_NOTIFICATION_PERSONALITY,
+    DEFAULT_COOLDOWN_MINUTES,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -23,7 +29,7 @@ class NotificationManager:
         self.hass = hass
         self.coordinator = coordinator
         self._last_notification_sent: dict[str, datetime] = {}
-        self._notification_cooldown = timedelta(minutes=5)
+        self._notification_cooldown = timedelta(minutes=DEFAULT_COOLDOWN_MINUTES)
 
     def trigger_cooldown(self, growspace_id: str) -> None:
         """Manually trigger the notification cooldown for a growspace."""
@@ -234,52 +240,83 @@ class NotificationManager:
         if not notifications:
             return
 
-        plants_by_growspace = {}
+        plants_by_growspace = self._group_plants_by_growspace()
+
+        for notification in notifications:
+            await self._process_notification(notification, plants_by_growspace)
+
+    def _group_plants_by_growspace(self) -> dict[str, list[Any]]:
+        """Group plants by growspace ID."""
+        plants_by_growspace: dict[str, list[Any]] = {}
         for plant in self.coordinator.plants.values():
             if plant.growspace_id not in plants_by_growspace:
                 plants_by_growspace[plant.growspace_id] = []
             plants_by_growspace[plant.growspace_id].append(plant)
+        return plants_by_growspace
 
-        for notification in notifications:
-            trigger_type = notification["trigger_type"]  # 'veg' or 'flower'
-            day_to_trigger = int(notification["day"])
-            message = notification["message"]
-            growspace_ids = notification.get("growspace_ids", [])
-            notification_id = notification["id"]
+    async def _process_notification(
+        self, notification: dict[str, Any], plants_by_growspace: dict[str, list[Any]]
+    ) -> None:
+        """Process a single timed notification across relevant growspaces."""
+        trigger_type = notification[ATTR_TRIGGER_TYPE]
+        day_to_trigger = int(notification["day"])
+        message = notification["message"]
+        growspace_ids = notification.get("growspace_ids", [])
+        notification_id = notification["id"]
 
-            for gs_id in growspace_ids:
-                growspace = self.coordinator.growspaces.get(gs_id)
-                if not growspace:
-                    continue
+        for gs_id in growspace_ids:
+            growspace = self.coordinator.growspaces.get(gs_id)
+            if not growspace:
+                continue
 
-                plants = plants_by_growspace.get(gs_id, [])
-                for plant in plants:
-                    days_in_stage = self.coordinator.serializer.calculate_days_in_stage(
-                        plant, trigger_type
-                    )
+            plants = plants_by_growspace.get(gs_id, [])
+            for plant in plants:
+                await self._check_and_trigger_plant_notification(
+                    plant,
+                    growspace,
+                    notification_id,
+                    trigger_type,
+                    day_to_trigger,
+                    message,
+                )
 
-                    if days_in_stage >= day_to_trigger:
-                        notification_key = f"timed_{notification_id}"
-                        if not self.coordinator._notifications_sent.get(
-                            plant.plant_id, {}
-                        ).get(notification_key, False):
-                            _LOGGER.info(
-                                "Triggering timed notification for plant %s in %s",
-                                plant.plant_id,
-                                growspace.name,
-                            )
-                            title = f"{growspace.name} - {trigger_type.capitalize()} Day {day_to_trigger}"
+    async def _check_and_trigger_plant_notification(
+        self,
+        plant: Any,
+        growspace: Any,
+        notification_id: str,
+        trigger_type: str,
+        day_to_trigger: int,
+        message: str,
+    ) -> None:
+        """Check and trigger notification for a specific plant."""
+        days_in_stage = self.coordinator.serializer.calculate_days_in_stage(
+            plant, trigger_type
+        )
 
-                            await self.async_send_notification(gs_id, title, message)
+        if days_in_stage >= day_to_trigger:
+            notification_key = f"timed_{notification_id}"
+            if not self.coordinator._notifications_sent.get(plant.plant_id, {}).get(
+                notification_key, False
+            ):
+                _LOGGER.info(
+                    "Triggering timed notification for plant %s in %s",
+                    plant.plant_id,
+                    growspace.name,
+                )
+                title = f"{growspace.name} - {trigger_type.capitalize()} Day {day_to_trigger}"
 
-                            if (
-                                plant.plant_id
-                                not in self.coordinator._notifications_sent
-                            ):
-                                self.coordinator._notifications_sent[
-                                    plant.plant_id
-                                ] = {}
-                            self.coordinator._notifications_sent[plant.plant_id][
-                                notification_key
-                            ] = True
-                            await self.coordinator.async_save()
+                await self.async_send_notification(
+                    growspace.id
+                    if hasattr(growspace, "id")
+                    else growspace.growspace_id,
+                    title,
+                    message,
+                )
+
+                if plant.plant_id not in self.coordinator._notifications_sent:
+                    self.coordinator._notifications_sent[plant.plant_id] = {}
+                self.coordinator._notifications_sent[plant.plant_id][
+                    notification_key
+                ] = True
+                await self.coordinator.async_save()

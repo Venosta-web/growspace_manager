@@ -23,6 +23,13 @@ DEFAULT_VPD_HYSTERESIS = 0.2  # kPa (fallback if not using stage thresholds)
 
 DEFAULT_NAME = "Growspace Manager"
 
+# Canonical IDs for special growspaces
+CANONICAL_ID_DRY: Final = "dry"
+CANONICAL_ID_CURE: Final = "cure"
+CANONICAL_ID_MOTHER: Final = "mother"
+CANONICAL_ID_CLONE: Final = "clone"
+CANONICAL_ID_VEG: Final = "veg"
+
 # Configuration Keys
 CONF_TEMP_SENSOR = "temperature_sensor"
 CONF_HUMIDITY_SENSOR = "humidity_sensor"
@@ -94,9 +101,21 @@ ATTR_MIN_DAYS_IN_STAGE = "min_days_in_stage"
 ATTR_IMAGES = "images"
 ATTR_TAGS = "tags"
 ATTR_METADATA = "metadata"
+ATTR_AMOUNT_ML = "amount_ml"
 ATTR_PH = "ph"
 ATTR_EC = "ec"
-ATTR_AMOUNT_ML = "amount_ml"
+ATTR_TRIGGER_TYPE = "trigger_type"
+ATTR_AMOUNT = "amount"
+ATTR_START_NUMBER = "start_number"
+ATTR_PLANT1_ID = "plant1_id"
+ATTR_PLANT2_ID = "plant2_id"
+ATTR_NEW_ROW = "new_row"
+ATTR_NEW_COL = "new_col"
+ATTR_NEW_STAGE = "new_stage"
+ATTR_DURATION = "duration"
+ATTR_TIME = "time"
+ATTR_IRRIGATION_TIMES = "irrigation_times"
+ATTR_DRAIN_TIMES = "drain_times"
 
 # Events
 EVENT_GROWSPACE_LOG_ENTRY: Final = f"{DOMAIN}_log_entry"
@@ -117,6 +136,9 @@ DEFAULT_FLOWER_MID_DAYS = 21  # Duration of mid flower (21-42 days)
 CONF_AI_ENABLED = "ai_enabled"
 CONF_ASSISTANT_ID = "assistant_id"
 CONF_NOTIFICATION_PERSONALITY = "notification_personality"
+
+# Notification Defaults
+DEFAULT_COOLDOWN_MINUTES = 5
 
 AI_PERSONALITIES = [
     "Standard",
@@ -239,6 +261,7 @@ ATTR_ITEMS = "items"
 ATTR_TYPE = "type"
 CATEGORY_TRAINING = "training"
 CATEGORY_IPM = "ipm"
+CATEGORY_NOTE = "note"
 
 
 # Plant stages
@@ -281,6 +304,8 @@ SPECIAL_GROWSPACES = {
     "veg": {"canonical_id": "veg", "canonical_name": "veg", "aliases": []},
 }
 # Grid layout options
+DEFAULT_ROWS = 4
+DEFAULT_PLANTS_PER_ROW = 4
 MAX_ROWS = 20
 MAX_PLANTS_PER_ROW = 20
 

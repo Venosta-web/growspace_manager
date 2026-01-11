@@ -414,7 +414,15 @@ class EnvironmentConfigHandler(BaseConfigHandler[dict[str, Any]]):
     def get_dehumidifier_schema(self, current_thresholds: dict[str, Any]) -> vol.Schema:
         """Generate schema for dehumidifier settings."""
         schema_dict = {}
-        for stage in ["veg", "early_flower", "mid_flower", "late_flower"]:
+        for stage in [
+            "seedling",
+            "veg",
+            "early_flower",
+            "mid_flower",
+            "late_flower",
+            "drying",
+            "curing",
+        ]:
             for cycle in ["day", "night"]:
                 defaults = current_thresholds.get(stage, {}).get(
                     cycle, DEFAULT_THRESHOLDS[stage][cycle]
