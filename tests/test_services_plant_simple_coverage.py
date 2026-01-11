@@ -3,11 +3,9 @@
 from datetime import date
 from unittest.mock import AsyncMock, MagicMock
 
-import pytest
 from homeassistant.core import HomeAssistant
 
 from custom_components.growspace_manager.const import (
-    ATTR_PLANT_ID,
     EVENT_GROWSPACE_LOG_ENTRY,
 )
 from custom_components.growspace_manager.models import Plant, PlantStage

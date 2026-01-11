@@ -722,12 +722,7 @@ async def async_add_timeline_note(
                     timestamp=transition_date_raw,
                 )
                 # Convert to relative path: timeline/filename.webp
-                if "/timeline/" in abs_path:
-                    image_paths.append(f"timeline/{abs_path.split('/timeline/')[-1]}")
-                else:
-                    # Fallback if path structure is unexpected
-
-                    image_paths.append(f"timeline/{os.path.basename(abs_path)}")
+                image_paths.append(f"timeline/{os.path.basename(abs_path)}")
             except Exception as e:
                 _LOGGER.error("Failed to save timeline image: %s", e)
 

@@ -1,31 +1,26 @@
 """Simple coverage tests for __init__.py."""
 
 import json
-from unittest.mock import MagicMock, patch, PropertyMock
+from pathlib import Path
+from unittest.mock import MagicMock, PropertyMock, patch
 
-import pytest
 from aiohttp import web
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ServiceValidationError
-from pathlib import Path
 
 from custom_components.growspace_manager import (
     StrainLibraryImageView,
+    websocket_add_timeline_note,
     websocket_get_event_log,
     websocket_get_ipm_presets,
     websocket_get_nutrient_presets,
     websocket_get_strain_library,
     websocket_remove_timeline_event,
-    websocket_add_timeline_note,
 )
 from custom_components.growspace_manager.const import (
-    ATTR_IMAGES,
     ATTR_NOTES,
-    ATTR_PLANT_ID,
     DOMAIN,
-    EVENT_GROWSPACE_LOG_ENTRY,
 )
-from custom_components.growspace_manager.coordinator import GrowspaceCoordinator
 
 # ========================================================================================
 # StrainLibraryImageView Tests
