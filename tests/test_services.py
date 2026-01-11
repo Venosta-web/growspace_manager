@@ -19,6 +19,7 @@ from custom_components.growspace_manager.schemas import (
     REMOVE_PLANT_SCHEMA,
     SWITCH_PLANT_SCHEMA,
     TAKE_CLONE_SCHEMA,
+    ADD_TIMELINE_NOTE_SCHEMA,
     TRANSITION_PLANT_SCHEMA,
     UPDATE_PLANT_SCHEMA,
 )
@@ -144,3 +145,20 @@ def test_debug_reset_special_growspaces_schema_valid() -> None:
 
 def test_debug_consolidate_duplicate_special_schema_valid() -> None:
     assert DEBUG_CONSOLIDATE_DUPLICATE_SPECIAL_SCHEMA({}) == {}
+
+
+def test_add_timeline_note_schema_valid() -> None:
+    """Test that the add_timeline_note service schema is valid."""
+    data = {
+        "plant_id": "p1",
+        "notes": "Test note",
+        "tags": ["testing"],
+        "ph": 6.2,
+        "ec": 1.5,
+        "amount_ml": 500,
+        "metadata": {"custom": "value"},
+    }
+    validated = ADD_TIMELINE_NOTE_SCHEMA(data)
+    assert validated["plant_id"] == "p1"
+    assert validated["notes"] == "Test note"
+    assert validated["ph"] == 6.2

@@ -37,6 +37,7 @@ from custom_components.growspace_manager.schemas import (
     ADD_IRRIGATION_TIME_SCHEMA,
     ADD_PLANT_SCHEMA,
     ADD_STRAIN_SCHEMA,
+    ADD_TIMELINE_NOTE_SCHEMA,
     ANALYZE_ALL_GROWSPACES_SCHEMA,
     APPLY_IPM_SCHEMA,
     ASK_GROW_ADVICE_SCHEMA,
@@ -186,8 +187,8 @@ async def test_async_setup_entry(hass: HomeAssistant) -> None:
         mock_lib.async_setup.assert_called_once()
         assert hass.data[DOMAIN]["strain_library"] == mock_lib
 
-        # Verify View registration
-        hass.http.register_view.assert_called_once()
+        # Verify View registration (StrainLibraryUploadView AND StrainLibraryImageView)
+        assert hass.http.register_view.call_count == 2
 
         # Verify Services
         mock_reg.assert_called_once_with(hass, mock_lib)
@@ -249,6 +250,7 @@ async def test_register_services(mock_hass, mock_strain_library_for_services) ->
         "remove_ipm_preset": REMOVE_IPM_PRESET_SCHEMA,
         "apply_ipm": APPLY_IPM_SCHEMA,
         "batch_action": BATCH_ACTION_SCHEMA,
+        "add_timeline_note": ADD_TIMELINE_NOTE_SCHEMA,
     }
 
     # Verify call count
@@ -861,7 +863,7 @@ async def test_async_register_websocket_api(mock_hass) -> None:
         "homeassistant.components.websocket_api.async_register_command"
     ) as mock_reg:
         _async_register_websocket_api(mock_hass)
-        assert mock_reg.call_count == 6
+        assert mock_reg.call_count == 7
 
 
 @pytest.mark.asyncio

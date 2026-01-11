@@ -1,5 +1,6 @@
 """Tests for the ImageManager."""
 
+from datetime import datetime
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -215,3 +216,24 @@ def test_delete_image_with_phenotype(
 
     image_manager.delete_image(strain_id, phenotype_id)
     assert not file_path.exists()
+
+
+async def test_save_timeline_image_success(
+    image_manager: ImageManager, tmp_path: Path
+) -> None:
+    """Test successfully saving a timeline image."""
+    plant_id = "plant_123"
+    image_base64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
+
+    path = await image_manager.save_timeline_image(plant_id, image_base64)
+
+    # Path should be relative to storage_dir for timeline images
+    assert "timeline/" in path
+    assert path.endswith(".webp")
+
+    full_path = tmp_path / path
+    assert full_path.exists()
+
+    # Small thumbnail should also exist
+    thumb_path = tmp_path / path.replace(".webp", "_small.webp")
+    assert thumb_path.exists()

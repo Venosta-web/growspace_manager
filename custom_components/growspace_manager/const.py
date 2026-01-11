@@ -90,6 +90,14 @@ ATTR_PRESET_ID = "preset_id"
 ATTR_PRESET_NAME = "preset_name"
 ATTR_MIN_DAYS_IN_STAGE = "min_days_in_stage"
 
+# Timeline Attributes
+ATTR_IMAGES = "images"
+ATTR_TAGS = "tags"
+ATTR_METADATA = "metadata"
+ATTR_PH = "ph"
+ATTR_EC = "ec"
+ATTR_AMOUNT_ML = "amount_ml"
+
 # Events
 EVENT_GROWSPACE_LOG_ENTRY: Final = f"{DOMAIN}_log_entry"
 
@@ -208,6 +216,7 @@ class GrowspaceService(StrEnum):
     REMOVE_IPM_PRESET = "remove_ipm_preset"
     APPLY_IPM = "apply_ipm"
     BATCH_ACTION = "batch_action"
+    ADD_TIMELINE_NOTE = "add_timeline_note"
 
 
 class TrainingTechnique(StrEnum):

@@ -5,7 +5,16 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass, field, fields
 from datetime import datetime
 from enum import StrEnum
-from typing import Any, Final, ReadOnly, Self, TypedDict
+from typing import Any, Final, Self, TypedDict, Annotated
+
+try:
+    from typing import ReadOnly  # Python 3.13+
+except ImportError:
+    try:
+        from typing_extensions import ReadOnly
+    except ImportError:
+        # Fallback for environments without typing_extensions/Python 3.13
+        ReadOnly = Annotated
 
 from .const import PlantStage
 from .utils import calculate_days_since, days_to_week
@@ -16,7 +25,38 @@ class IrrigationScheduleItem(TypedDict):
 
     start_time: ReadOnly[str]
     duration_seconds: ReadOnly[int]
-    # Add other keys as required by your logic
+
+
+class TimelineEventMetadata(TypedDict, total=False):
+    """Metadata for timeline events (sensor snapshots and action data)."""
+
+    temperature: float | None
+    humidity: float | None
+    vpd: float | None
+    soil_moisture: float | None
+    light_intensity: float | None
+    ph: float | None
+    ec: float | None
+    amount_ml: float | None
+
+
+class PlantTimelineEvent(TypedDict, total=False):
+    """Represents a rich timeline event for a plant."""
+
+    type: ReadOnly[str]
+    date: ReadOnly[str]
+    images: list[str]
+    tags: list[str]
+    metadata: TimelineEventMetadata
+    # Type specific fields
+    from_stage: str
+    to_stage: str
+    action: str
+    details: str
+    severity: str
+    message: str
+    text: str
+    label: str
 
 
 class DehumidifierRange(TypedDict):

@@ -33,6 +33,15 @@ from homeassistant.helpers.typing import ConfigType
 
 from . import service_registration
 from .const import (
+    ATTR_AMOUNT_ML,
+    ATTR_EC,
+    ATTR_IMAGES,
+    ATTR_METADATA,
+    ATTR_NOTES,
+    ATTR_PH,
+    ATTR_PLANT_ID,
+    ATTR_TAGS,
+    ATTR_TRANSITION_DATE,
     DOMAIN,
     EVENT_GROWSPACE_LOG_ENTRY,
     PLATFORMS,
@@ -41,6 +50,7 @@ from .const import (
 )
 from .coordinator import GrowspaceCoordinator
 from .intent import async_setup_intents
+from .services.plant import async_add_timeline_note
 from .services.strain_library import StrainLibrary
 
 CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
@@ -165,8 +175,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: GrowspaceConfigEntry) ->
         await strain_library_instance.async_setup()
         hass.data[DOMAIN]["strain_library"] = strain_library_instance
 
-        # Register View
+        # Register Views
         hass.http.register_view(StrainLibraryUploadView(hass, strain_library_instance))
+        hass.http.register_view(StrainLibraryImageView(hass, strain_library_instance))
 
         # Register all custom services
         _LOGGER.debug("Registering services for domain %s", DOMAIN)
@@ -386,6 +397,46 @@ class StrainLibraryUploadView(HomeAssistantView):
                 await self.hass.async_add_executor_job(temp_path.unlink)
 
 
+class StrainLibraryImageView(HomeAssistantView):
+    """View to serve images from the strain library storage."""
+
+    url = "/api/growspace_manager/v1/images/{filename:.*}"
+    name = "api:growspace_manager:v1:images"
+    requires_auth = False  # Or True, depending on if you want auth for images
+
+    def __init__(
+        self,
+        hass: HomeAssistant,
+        strain_lib: StrainLibrary,
+    ) -> None:
+        """Initialize the view."""
+        self.hass = hass
+        self.strain_library = strain_lib
+
+    @override
+    async def get(self, request: web.Request, filename: str) -> web.Response:
+        """Handle GET request for image."""
+        if not self.strain_library.image_manager:
+            return web.Response(status=404, text="Image manager not available")
+
+        storage_dir = self.strain_library.image_manager.storage_dir
+        
+        # Security check: resolve path and ensure it's within storage_dir
+        try:
+            file_path = (storage_dir / filename).resolve()
+            if not str(file_path).startswith(str(storage_dir.resolve())):
+                _LOGGER.warning("Attempted directory traversal access: %s", filename)
+                return web.Response(status=403, text="Access denied")
+            
+            if not file_path.exists() or not file_path.is_file():
+                return web.Response(status=404, text="Image not found")
+
+            return web.FileResponse(file_path)
+        except Exception as e:
+            _LOGGER.error("Error serving image %s: %s", filename, e)
+            return web.Response(status=500, text="Internal server error")
+
+
 WS_TYPE_GET_LOG = f"{DOMAIN}/get_log"
 SCHEMA_WS_GET_LOG = websocket_api.BASE_COMMAND_MESSAGE_SCHEMA.extend(
     {
@@ -558,6 +609,22 @@ SCHEMA_WS_GET_IPM_PRESETS = websocket_api.BASE_COMMAND_MESSAGE_SCHEMA.extend(
     }
 )
 
+WS_TYPE_ADD_TIMELINE_NOTE = f"{DOMAIN}/add_timeline_note"
+SCHEMA_WS_ADD_TIMELINE_NOTE = websocket_api.BASE_COMMAND_MESSAGE_SCHEMA.extend(
+    {
+        vol.Required("type"): WS_TYPE_ADD_TIMELINE_NOTE,
+        vol.Required(ATTR_PLANT_ID): str,
+        vol.Required(ATTR_NOTES): str,
+        vol.Optional(ATTR_TRANSITION_DATE): vol.Any(str, None),
+        vol.Optional(ATTR_IMAGES): [str],
+        vol.Optional(ATTR_TAGS): [str],
+        vol.Optional(ATTR_PH): vol.Any(float, int),
+        vol.Optional(ATTR_EC): vol.Any(float, int),
+        vol.Optional(ATTR_AMOUNT_ML): vol.Any(float, int),
+        vol.Optional(ATTR_METADATA): dict,
+    }
+)
+
 
 @callback
 def websocket_get_strain_library(
@@ -621,6 +688,36 @@ def websocket_get_ipm_presets(
         connection.send_error(msg["id"], "unknown_error", str(err))
 
 
+async def websocket_add_timeline_note(
+    hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
+) -> None:
+    """Handle add timeline note command via WebSocket."""
+    try:
+        coordinator = GrowspaceCoordinator.get_for_service_call(hass, msg)
+        strain_library = hass.data[DOMAIN]["strain_library"]
+
+        await async_add_timeline_note(
+            hass,
+            coordinator,
+            strain_library,
+            plant_id=msg[ATTR_PLANT_ID],
+            notes=msg[ATTR_NOTES],
+            transition_date_raw=msg.get(ATTR_TRANSITION_DATE),
+            images_base64=msg.get(ATTR_IMAGES),
+            tags=msg.get(ATTR_TAGS),
+            ph=msg.get(ATTR_PH),
+            ec=msg.get(ATTR_EC),
+            amount_ml=msg.get(ATTR_AMOUNT_ML),
+            external_metadata=msg.get(ATTR_METADATA),
+        )
+        connection.send_result(msg["id"])
+    except ServiceValidationError as err:
+        connection.send_error(msg["id"], "invalid_args", str(err))
+    except Exception as err:
+        _LOGGER.exception("Error handling websocket_add_timeline_note")
+        connection.send_error(msg["id"], "unknown_error", str(err))
+
+
 @callback
 def _async_register_websocket_api(hass: HomeAssistant) -> None:
     """Register WebSocket API commands."""
@@ -663,6 +760,13 @@ def _async_register_websocket_api(hass: HomeAssistant) -> None:
         WS_TYPE_GET_HISTORY_STATS,
         websocket_api.async_response(websocket_get_history_stats),
         SCHEMA_WS_GET_HISTORY_STATS,
+    )
+
+    websocket_api.async_register_command(
+        hass,
+        WS_TYPE_ADD_TIMELINE_NOTE,
+        websocket_api.async_response(websocket_add_timeline_note),
+        SCHEMA_WS_ADD_TIMELINE_NOTE,
     )
 
 

@@ -2,18 +2,24 @@ import voluptuous as vol
 from homeassistant.helpers import config_validation as cv
 
 from .const import (
+    ATTR_AMOUNT_ML,
     ATTR_COL,
+    ATTR_EC,
     ATTR_GROWSPACE_ID,
+    ATTR_IMAGES,
     ATTR_ITEMS,
+    ATTR_METADATA,
     ATTR_MIN_DAYS_IN_STAGE,
     ATTR_NAME,
     ATTR_NOTES,
+    ATTR_PH,
     ATTR_PHENOTYPE,
     ATTR_PLANT_ID,
     ATTR_PRESET_ID,
     ATTR_ROW,
     ATTR_STAGE,
     ATTR_STRAIN,
+    ATTR_TAGS,
     ATTR_TECHNIQUE,
     ATTR_TRANSITION_DATE,
     ATTR_TYPE,
@@ -466,5 +472,19 @@ BATCH_ACTION_SCHEMA = vol.Schema(
         vol.Required("entity_ids"): cv.ensure_list,
         vol.Required("action"): cv.string,
         vol.Optional("data"): dict,
+    }
+)
+
+ADD_TIMELINE_NOTE_SCHEMA = vol.Schema(
+    {
+        vol.Required(ATTR_PLANT_ID): vol.Any(str, cv.ensure_list),
+        vol.Required(ATTR_NOTES): str,
+        vol.Optional(ATTR_TRANSITION_DATE): cv.string,
+        vol.Optional(ATTR_IMAGES): cv.ensure_list,
+        vol.Optional(ATTR_TAGS): cv.ensure_list,
+        vol.Optional(ATTR_PH): vol.Coerce(float),
+        vol.Optional(ATTR_EC): vol.Coerce(float),
+        vol.Optional(ATTR_AMOUNT_ML): vol.Coerce(float),
+        vol.Optional(ATTR_METADATA): dict,
     }
 )
