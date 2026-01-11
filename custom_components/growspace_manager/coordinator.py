@@ -330,13 +330,6 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
         serialized = self.serializer.serialize_growspace(
             growspace, plants, self.environment_analyzer
         )
-        # Inject global nutrient presets
-        serialized["nutrient_presets"] = {
-            pid: asdict(preset) for pid, preset in self.nutrient_presets.items()
-        }
-        serialized["ipm_presets"] = {
-            pid: asdict(preset) for pid, preset in self.ipm_presets.items()
-        }
 
         self._serialized_cache[growspace_id] = serialized
         return serialized
@@ -833,7 +826,6 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
         self.data = {
             "growspaces": self.growspaces,
             "plants": self.plants,
-            "nutrient_presets": self.nutrient_presets,
             "notifications_sent": self._notifications_sent,
             "notifications_enabled": self._notifications_enabled,
             "_version": dt_util.now().isoformat(),

@@ -544,6 +544,20 @@ SCHEMA_WS_GET_STRAIN_LIBRARY = websocket_api.BASE_COMMAND_MESSAGE_SCHEMA.extend(
     }
 )
 
+WS_TYPE_GET_NUTRIENT_PRESETS = f"{DOMAIN}/get_nutrient_presets"
+SCHEMA_WS_GET_NUTRIENT_PRESETS = websocket_api.BASE_COMMAND_MESSAGE_SCHEMA.extend(
+    {
+        vol.Required("type"): WS_TYPE_GET_NUTRIENT_PRESETS,
+    }
+)
+
+WS_TYPE_GET_IPM_PRESETS = f"{DOMAIN}/get_ipm_presets"
+SCHEMA_WS_GET_IPM_PRESETS = websocket_api.BASE_COMMAND_MESSAGE_SCHEMA.extend(
+    {
+        vol.Required("type"): WS_TYPE_GET_IPM_PRESETS,
+    }
+)
+
 
 @callback
 def websocket_get_strain_library(
@@ -572,6 +586,42 @@ def websocket_get_strain_library(
 
 
 @callback
+def websocket_get_nutrient_presets(
+    hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
+) -> None:
+    """Handle get nutrient presets command via WebSocket."""
+    try:
+        coordinator: GrowspaceCoordinator = GrowspaceCoordinator.get_for_service_call(
+            hass, msg
+        )
+        from dataclasses import asdict
+
+        response = {pid: asdict(p) for pid, p in coordinator.nutrient_presets.items()}
+        connection.send_result(msg["id"], response)
+    except Exception as err:
+        _LOGGER.exception("Error handling websocket_get_nutrient_presets")
+        connection.send_error(msg["id"], "unknown_error", str(err))
+
+
+@callback
+def websocket_get_ipm_presets(
+    hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
+) -> None:
+    """Handle get IPM presets command via WebSocket."""
+    try:
+        coordinator: GrowspaceCoordinator = GrowspaceCoordinator.get_for_service_call(
+            hass, msg
+        )
+        from dataclasses import asdict
+
+        response = {pid: asdict(p) for pid, p in coordinator.ipm_presets.items()}
+        connection.send_result(msg["id"], response)
+    except Exception as err:
+        _LOGGER.exception("Error handling websocket_get_ipm_presets")
+        connection.send_error(msg["id"], "unknown_error", str(err))
+
+
+@callback
 def _async_register_websocket_api(hass: HomeAssistant) -> None:
     """Register WebSocket API commands."""
     _LOGGER.debug("Registering WebSocket API for %s", DOMAIN)
@@ -587,6 +637,18 @@ def _async_register_websocket_api(hass: HomeAssistant) -> None:
         WS_TYPE_GET_STRAIN_LIBRARY,
         websocket_get_strain_library,
         SCHEMA_WS_GET_STRAIN_LIBRARY,
+    )
+    websocket_api.async_register_command(
+        hass,
+        WS_TYPE_GET_NUTRIENT_PRESETS,
+        websocket_get_nutrient_presets,
+        SCHEMA_WS_GET_NUTRIENT_PRESETS,
+    )
+    websocket_api.async_register_command(
+        hass,
+        WS_TYPE_GET_IPM_PRESETS,
+        websocket_get_ipm_presets,
+        SCHEMA_WS_GET_IPM_PRESETS,
     )
 
     websocket_api.async_register_command(
