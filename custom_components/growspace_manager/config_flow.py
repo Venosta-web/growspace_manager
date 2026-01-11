@@ -30,6 +30,7 @@ from .const import (
     CONF_AI_ENABLED,
     CONF_ASSISTANT_ID,
     DEFAULT_NAME,
+    DEHUMIDIFIER_STAGES,
     DOMAIN,
 )
 from .models import EnvironmentConfig
@@ -770,7 +771,7 @@ class OptionsFlowHandler(OptionsFlow):
         if user_input is not None:
             # Process input back into nested structure
             new_thresholds: dict[str, Any] = {}
-            for stage in ["veg", "early_flower", "mid_flower", "late_flower"]:
+            for stage in DEHUMIDIFIER_STAGES:
                 new_thresholds[stage] = {}
                 for cycle in ["day", "night"]:
                     new_thresholds[stage][cycle] = {
@@ -787,8 +788,6 @@ class OptionsFlowHandler(OptionsFlow):
                 self._env_config_step1 = env_config
                 return await self.async_step_configure_advanced_bayesian()
 
-            # Save and finish
-            env_config.pop("configure_advanced", None)
             # Save and finish
             env_config.pop("configure_advanced", None)
             growspace.environment_config = EnvironmentConfig.from_dict(env_config)

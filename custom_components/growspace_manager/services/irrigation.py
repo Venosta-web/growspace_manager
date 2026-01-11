@@ -8,7 +8,14 @@ from typing import TYPE_CHECKING
 from homeassistant.core import HomeAssistant, ServiceCall
 from homeassistant.exceptions import ServiceValidationError
 
-from ..const import ATTR_GROWSPACE_ID, DOMAIN
+from ..const import (
+    ATTR_DRAIN_TIMES,
+    ATTR_DURATION,
+    ATTR_GROWSPACE_ID,
+    ATTR_IRRIGATION_TIMES,
+    ATTR_TIME,
+    DOMAIN,
+)
 
 if TYPE_CHECKING:
     from ..coordinator import GrowspaceCoordinator
@@ -68,12 +75,12 @@ async def handle_add_irrigation_time(
     growspace_id = call.data[ATTR_GROWSPACE_ID]
     irrigation_coord = await _get_irrigation_coordinator(hass, growspace_id)
 
-    duration = call.data.get("duration")
+    duration = call.data.get(ATTR_DURATION)
     if duration is None:
         duration = irrigation_coord.get_default_duration("irrigation")
 
     await irrigation_coord.async_add_schedule_item(
-        "irrigation_times", call.data["time"], duration
+        ATTR_IRRIGATION_TIMES, call.data[ATTR_TIME], duration
     )
 
 
@@ -86,7 +93,7 @@ async def handle_remove_irrigation_time(
     growspace_id = call.data[ATTR_GROWSPACE_ID]
     irrigation_coord = await _get_irrigation_coordinator(hass, growspace_id)
     await irrigation_coord.async_remove_schedule_item(
-        "irrigation_times", call.data["time"]
+        ATTR_IRRIGATION_TIMES, call.data[ATTR_TIME]
     )
 
 
@@ -99,12 +106,12 @@ async def handle_add_drain_time(
     growspace_id = call.data[ATTR_GROWSPACE_ID]
     irrigation_coord = await _get_irrigation_coordinator(hass, growspace_id)
 
-    duration = call.data.get("duration")
+    duration = call.data.get(ATTR_DURATION)
     if duration is None:
         duration = irrigation_coord.get_default_duration("drain")
 
     await irrigation_coord.async_add_schedule_item(
-        "drain_times", call.data["time"], duration
+        ATTR_DRAIN_TIMES, call.data[ATTR_TIME], duration
     )
 
 
@@ -116,4 +123,6 @@ async def handle_remove_drain_time(
     """Handle the service call to remove a drain time from a schedule."""
     growspace_id = call.data[ATTR_GROWSPACE_ID]
     irrigation_coord = await _get_irrigation_coordinator(hass, growspace_id)
-    await irrigation_coord.async_remove_schedule_item("drain_times", call.data["time"])
+    await irrigation_coord.async_remove_schedule_item(
+        ATTR_DRAIN_TIMES, call.data[ATTR_TIME]
+    )

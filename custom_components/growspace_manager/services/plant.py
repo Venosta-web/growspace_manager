@@ -13,6 +13,7 @@ from homeassistant.exceptions import ServiceValidationError
 from homeassistant.helpers import entity_registry as er
 
 from ..const import (
+    ATTR_AMOUNT,
     ATTR_AMOUNT_ML,
     ATTR_COL,
     ATTR_EC,
@@ -20,16 +21,24 @@ from ..const import (
     ATTR_IMAGES,
     ATTR_METADATA,
     ATTR_MOTHER_PLANT_ID,
+    ATTR_NEW_COL,
+    ATTR_NEW_ROW,
+    ATTR_NEW_STAGE,
     ATTR_NOTES,
     ATTR_NUM_CLONES,
     ATTR_PH,
     ATTR_PHENOTYPE,
+    ATTR_PLANT1_ID,
+    ATTR_PLANT2_ID,
     ATTR_PLANT_ID,
     ATTR_ROW,
+    ATTR_START_NUMBER,
     ATTR_STRAIN,
     ATTR_TAGS,
     ATTR_TARGET_GROWSPACE_ID,
     ATTR_TRANSITION_DATE,
+    CANONICAL_ID_MOTHER,
+    CATEGORY_NOTE,
     DATE_FIELDS,
     EVENT_GROWSPACE_LOG_ENTRY,
 )
@@ -189,9 +198,12 @@ async def handle_add_plant(
         parsed_dates = {f: parse_date_field(call.data.get(f)) for f in add_date_fields}
 
         # Auto-set mother_start if stage is mother and not provided.
-        if growspace_id == "mother" and not parsed_dates.get("mother_start"):
+        if growspace_id == CANONICAL_ID_MOTHER and not parsed_dates.get("mother_start"):
             parsed_dates["mother_start"] = datetime.now()
-            _LOGGER.debug("Auto-setting mother_start to now for 'mother' growspace")
+            _LOGGER.debug(
+                "Auto-setting mother_start to now for '%s' growspace",
+                CANONICAL_ID_MOTHER,
+            )
 
         # Call coordinator directly, catching validation errors
         try:
@@ -234,18 +246,19 @@ async def handle_add_plants(
             raise ServiceValidationError(f"Growspace '{growspace_id}' not found.")
 
         strain = call.data[ATTR_STRAIN]
-        amount = call.data["amount"]
-        start_number = call.data.get("start_number", 1)
+        amount = call.data[ATTR_AMOUNT]
+        start_number = call.data.get(ATTR_START_NUMBER, 1)
 
         # Parse and handle optional dates
         add_date_fields = [f for f in DATE_FIELDS if f != "transition_date"]
         parsed_dates = {f: parse_date_field(call.data.get(f)) for f in add_date_fields}
 
         # Auto-set mother_start if stage is mother and not provided.
-        if growspace_id == "mother" and not parsed_dates.get("mother_start"):
+        if growspace_id == CANONICAL_ID_MOTHER and not parsed_dates.get("mother_start"):
             parsed_dates["mother_start"] = datetime.now()
             _LOGGER.debug(
-                "Auto-setting mother_start to now for 'mother' growspace (batch)"
+                "Auto-setting mother_start to now for '%s' growspace (batch)",
+                CANONICAL_ID_MOTHER,
             )
 
         plants_added_count = 0
@@ -493,8 +506,8 @@ async def handle_switch_plants(
 ) -> None:
     """Handle switch plants service call."""
     # Extract IDs before try block to avoid UnboundLocalError in exception handler
-    plant_id_1 = call.data["plant1_id"]
-    plant_id_2 = call.data["plant2_id"]
+    plant_id_1 = call.data[ATTR_PLANT1_ID]
+    plant_id_2 = call.data[ATTR_PLANT2_ID]
 
     try:
         if plant_id_1 not in coordinator.plants:
@@ -533,7 +546,7 @@ async def handle_move_plant(
         plant = coordinator.plants[plant_id]
 
         # Validate new position is within bounds
-        new_row, new_col = call.data["new_row"], call.data["new_col"]
+        new_row, new_col = call.data[ATTR_NEW_ROW], call.data[ATTR_NEW_COL]
 
         # Validate position is not occupied (GrowspaceValidator handles boundary checks)
         # if not is_special and (
@@ -617,7 +630,7 @@ async def handle_transition_plant_stage(
             )
             raise ServiceValidationError(f"Plant {plant_id} does not exist.")
 
-        new_stage = call.data["new_stage"]
+        new_stage = call.data[ATTR_NEW_STAGE]
         transition_date_str = call.data.get(ATTR_TRANSITION_DATE)
         transition_date = None
         if transition_date_str:
@@ -797,7 +810,7 @@ async def async_add_timeline_note(
         ATTR_TAGS: tags,
         ATTR_METADATA: metadata,
         ATTR_IMAGES: image_paths,
-        "category": "note",
+        "category": CATEGORY_NOTE,
         "timestamp": transition_date_raw or datetime.now().isoformat(),
     }
 

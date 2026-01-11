@@ -1983,6 +1983,10 @@ async def test_options_flow_configure_dehumidifier_submit(
     flow._env_config_step1 = {"some_config": "value"}
 
     user_input = {
+        "seedling_day_on": 0.8,
+        "seedling_day_off": 0.7,
+        "seedling_night_on": 0.8,
+        "seedling_night_off": 0.7,
         "veg_day_on": 1.0,
         "veg_day_off": 0.8,
         "veg_night_on": 1.0,
@@ -1999,6 +2003,14 @@ async def test_options_flow_configure_dehumidifier_submit(
         "late_flower_day_off": 1.5,
         "late_flower_night_on": 1.8,
         "late_flower_night_off": 1.5,
+        "dry_day_on": 1.1,
+        "dry_day_off": 1.0,
+        "dry_night_on": 0.9,
+        "dry_night_off": 0.8,
+        "cure_day_on": 1.0,
+        "cure_day_off": 0.9,
+        "cure_night_on": 1.0,
+        "cure_night_off": 0.9,
     }
 
     result = await flow.async_step_configure_dehumidifier(user_input=user_input)
@@ -2553,6 +2565,10 @@ async def test_options_flow_configure_dehumidifier_save_success(
 
     # Input mimicking the huge form
     user_input = {
+        "seedling_day_on": 50,
+        "seedling_day_off": 40,
+        "seedling_night_on": 50,
+        "seedling_night_off": 40,
         "veg_day_on": 50,
         "veg_day_off": 40,
         "veg_night_on": 50,
@@ -2569,6 +2585,14 @@ async def test_options_flow_configure_dehumidifier_save_success(
         "late_flower_day_off": 40,
         "late_flower_night_on": 50,
         "late_flower_night_off": 40,
+        "dry_day_on": 50,
+        "dry_day_off": 40,
+        "dry_night_on": 50,
+        "dry_night_off": 40,
+        "cure_day_on": 50,
+        "cure_day_off": 40,
+        "cure_night_on": 50,
+        "cure_night_off": 40,
     }
 
     result = await flow.async_step_configure_dehumidifier(user_input=user_input)
@@ -2953,6 +2977,10 @@ async def test_options_flow_dehumidifier_jump_to_advanced(
     flow._env_config_step1 = {"configure_advanced": True}
 
     user_input = {
+        "seedling_day_on": 50,
+        "seedling_day_off": 40,
+        "seedling_night_on": 50,
+        "seedling_night_off": 40,
         "veg_day_on": 50,
         "veg_day_off": 40,
         "veg_night_on": 50,
@@ -2969,6 +2997,14 @@ async def test_options_flow_dehumidifier_jump_to_advanced(
         "late_flower_day_off": 40,
         "late_flower_night_on": 50,
         "late_flower_night_off": 40,
+        "dry_day_on": 50,
+        "dry_day_off": 40,
+        "dry_night_on": 50,
+        "dry_night_off": 40,
+        "cure_day_on": 50,
+        "cure_day_off": 40,
+        "cure_night_on": 50,
+        "cure_night_off": 40,
     }
 
     result = await flow.async_step_configure_dehumidifier(user_input=user_input)

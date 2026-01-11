@@ -27,6 +27,10 @@ _LOGGER = logging.getLogger(__name__)
 # Default Thresholds
 # Format: {stage: {day_or_night: {on: float, off: float}}}
 DEFAULT_THRESHOLDS = {
+    "seedling": {
+        "day": {"on": 0.5, "off": 0.6},
+        "night": {"on": 0.55, "off": 0.65},
+    },
     "veg": {
         "day": {"on": 0.6, "off": 0.7},
         "night": {"on": 0.65, "off": 0.75},
@@ -42,6 +46,14 @@ DEFAULT_THRESHOLDS = {
     "late_flower": {
         "day": {"on": 1.35, "off": 1.4},
         "night": {"on": 0.95, "off": 1.05},
+    },
+    "dry": {
+        "day": {"on": 0.8, "off": 1.0},
+        "night": {"on": 0.85, "off": 1.05},
+    },
+    "cure": {
+        "day": {"on": 0.9, "off": 1.1},
+        "night": {"on": 0.95, "off": 1.15},
     },
 }
 
@@ -252,26 +264,40 @@ class DehumidifierCoordinator:
         """Determine the current growth stage for threshold selection."""
         plants = self.main_coordinator.get_growspace_plants(self.growspace_id)
 
+        max_seedling_days = 0
         max_veg_days = 0
         max_flower_days = 0
+        max_dry_days = 0
+        max_cure_days = 0
 
         for plant in plants:
+            s_days = self.main_coordinator.serializer.calculate_days_in_stage(
+                plant, "seedling"
+            )
             v_days = self.main_coordinator.serializer.calculate_days_in_stage(
                 plant, "veg"
             )
             f_days = self.main_coordinator.serializer.calculate_days_in_stage(
                 plant, "flower"
             )
+            d_days = self.main_coordinator.serializer.calculate_days_in_stage(
+                plant, "dry"
+            )
+            c_days = self.main_coordinator.serializer.calculate_days_in_stage(
+                plant, "cure"
+            )
 
+            max_seedling_days = max(max_seedling_days, s_days)
             max_veg_days = max(max_veg_days, v_days)
             max_flower_days = max(max_flower_days, f_days)
+            max_dry_days = max(max_dry_days, d_days)
+            max_cure_days = max(max_cure_days, c_days)
 
-        # Logic from Prompt:
-        # Veg: flower_days == 0 AND veg_days > 0
-        # Early Flower: flower_days > 0 AND flower_days < 22
-        # Mid Flower: flower_days >= 22 AND flower_days < 50
-        # Late Flower: flower_days >= 50
-
+        # Priority: Cure > Dry > Flower > Veg > Seedling
+        if max_cure_days > 0:
+            return "cure"
+        if max_dry_days > 0:
+            return "dry"
         if max_flower_days >= 50:
             return "late_flower"
         if max_flower_days >= 22:
@@ -280,6 +306,8 @@ class DehumidifierCoordinator:
             return "early_flower"
         if max_veg_days > 0:
             return "veg"
+        if max_seedling_days > 0:
+            return "seedling"
 
         return "veg"  # Default
 

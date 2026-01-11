@@ -1649,7 +1649,7 @@ async def test_light_cycle_verification_sensor_async_update(
         ([], 0, 0),
         (
             [MagicMock(veg_start="2023-01-01", flower_start=None)],
-            (date.today() - date(2023, 1, 1)).days,
+            1107,
             0,
         ),
         (
@@ -1657,8 +1657,8 @@ async def test_light_cycle_verification_sensor_async_update(
                 MagicMock(veg_start="2023-01-01", flower_start="2023-01-20"),
                 MagicMock(veg_start="2022-12-01", flower_start="2023-01-10"),
             ],
-            (date.today() - date(2022, 12, 1)).days,
-            (date.today() - date(2023, 1, 10)).days,
+            1138,
+            1098,
         ),
         ([MagicMock(veg_start=None, flower_start=None)], 0, 0),
     ],
@@ -1669,8 +1669,12 @@ def test_light_cycle_get_growth_stage_info_scenarios(
     """Test _get_growth_stage_info with different plant scenarios."""
     sensor = LightCycleVerificationSensor(mock_coordinator, "gs1", env_config)
     mock_coordinator.get_growspace_plants.return_value = plants
+    
+    # Mock calculate_days to match the frozen date of 2026-01-12
+    # This is necessary because the default mock behavior in test_binary_sensor.py 
+    # uses dynamic date.today() which conflicts with our frozen time fixture
     mock_coordinator.calculate_days.side_effect = (
-        lambda date_str: (date.today() - date.fromisoformat(date_str)).days
+        lambda date_str: (date(2026, 1, 12) - date.fromisoformat(date_str)).days
         if date_str
         else 0
     )
@@ -1920,7 +1924,7 @@ class TestBayesianEnvironmentSensor:
     @pytest.mark.parametrize(
         "date_str, expected_days",
         [
-            ("2023-01-01", (date.today() - date(2023, 1, 1)).days),
+            ("2023-01-01", 1107),
             ("invalid-date", 0),
             (None, 0),
         ],
@@ -1933,7 +1937,7 @@ class TestBayesianEnvironmentSensor:
             ) as mock_datetime:
                 mock_datetime.strptime.side_effect = ValueError
                 mock_datetime.strptime.return_value.date.return_value = date(2023, 1, 1)
-                mock_datetime.today.return_value = date.today()
+                mock_datetime.today.return_value = date(2026, 1, 12)
                 result = BayesianEnvironmentSensor._days_since(date_str)
                 assert result == expected_days
         else:
