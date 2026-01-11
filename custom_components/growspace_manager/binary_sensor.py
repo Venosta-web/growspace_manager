@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from datetime import date, datetime, timedelta
+from datetime import datetime, timedelta
 from typing import Any, override
 
 from homeassistant.components.binary_sensor import (
@@ -47,7 +47,6 @@ from .bayesian_evaluator import (
     evaluate_optimal_vpd,
     evaluate_soil_moisture_stress,
 )
-from .utils import calculate_days_since
 from .const import (
     ATTR_EXPECTED_SCHEDULE,
     ATTR_LIGHT_ENTITY_ID,
@@ -70,6 +69,7 @@ from .models import (
     GrowspaceType,
 )
 from .trend_analyzer import TrendAnalyzer
+from .utils import calculate_days_since
 
 _LOGGER = logging.getLogger(__name__)
 

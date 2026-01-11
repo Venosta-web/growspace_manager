@@ -384,219 +384,6 @@ SCHEMA_WS_GET_DATA = websocket_api.BASE_COMMAND_MESSAGE_SCHEMA.extend(
 )
 
 
-async def websocket_get_event_log(hass: HomeAssistant, connection, msg):
-    """Handle get event log command via Recorder.
-
-    Uses direct Recorder event query since logbook.async_get_events was removed.
-    """
-    growspace_id = msg.get("growspace_id")
-    limit = msg.get("limit", 1000)  # Default limit 100
-    spammy_limit = 200
-    spammy_categories = {"optimal", "stress", "mold"}
-
-    # Time window: last 7 days
-    end_time = dt_util.utcnow()
-    start_time = end_time - dt_util.dt.timedelta(days=7)
-
-    try:
-        recorder = get_instance(hass)
-
-        # Convert times to timestamps for query
-        start_ts = start_time.timestamp()
-        end_ts = end_time.timestamp()
-
-        def _query_events():
-            """Query events from the recorder database using new schema."""
-            formatted_events = []
-            normal_count = 0
-            spammy_count = 0
-
-            try:
-                with session_scope(hass=hass, read_only=True) as session:
-                    # First, find the event_type_id for our event type
-                    event_type_row = (
-                        session.query(EventTypes.event_type_id)
-                        .filter(EventTypes.event_type == EVENT_GROWSPACE_LOG_ENTRY)
-                        .first()
-                    )
-
-                    if not event_type_row:
-                        _LOGGER.debug(
-                            "Event type %s not found in recorder",
-                            EVENT_GROWSPACE_LOG_ENTRY,
-                        )
-                        return []
-
-                    event_type_id = event_type_row[0]
-
-                    # Query events with proper joins to EventData
-                    # INNER JOIN (isouter=False) to ensure we only get events with data
-                    query = (
-                        session.query(Events, EventData)
-                        .join(
-                            EventData,
-                            Events.data_id == EventData.data_id,
-                            isouter=False,
-                        )
-                        .filter(
-                            Events.event_type_id == event_type_id,
-                            Events.time_fired_ts >= start_ts,
-                            Events.time_fired_ts <= end_ts,
-                        )
-                        .order_by(Events.time_fired_ts.desc())
-                    )
-
-                    # Safety Limit: Fetch a buffer to account for spammy filtering
-                    if limit:
-                        query = query.limit(limit * 5)
-
-                    for event_row, event_data_row in query:
-                        try:
-                            # Parse event data from the EventData table
-                            if event_data_row and event_data_row.shared_data:
-                                data = json.loads(event_data_row.shared_data)
-                            else:
-                                continue
-
-                            # Filter by growspace_id if specified
-                            if (
-                                growspace_id
-                                and data.get("growspace_id") != growspace_id
-                            ):
-                                continue
-
-                            # Handle Limits
-                            category = data.get("category")
-                            is_spammy = category in spammy_categories
-
-                            if is_spammy:
-                                if spammy_count >= spammy_limit:
-                                    continue
-                                spammy_count += 1
-                            else:
-                                if normal_count >= limit:
-                                    continue
-                                normal_count += 1
-
-                            # Ensure timestamp is present (Convert to milliseconds for Frontend)
-                            if "timestamp" not in data and event_row.time_fired_ts:
-                                data["timestamp"] = event_row.time_fired_ts * 1000
-
-                            # Event merging logic for environmental alerts
-                            merged = False
-                            if formatted_events:
-                                last = formatted_events[-1]
-                                # Check shared properties for merging (same type, growspace, severity)
-                                if (
-                                    data.get("category") == "alert"
-                                    and last.get("category") == "alert"
-                                    and data.get("growspace_id")
-                                    == last.get("growspace_id")
-                                    and data.get("sensor_type")
-                                    == last.get("sensor_type")
-                                    and "severity" in data
-                                    and "severity" in last
-                                    and round(float(data["severity"]), 2)
-                                    == round(float(last["severity"]), 2)
-                                ):
-                                    # Check time gap (DESC order means last is NEWER than data)
-                                    try:
-                                        last_start_iso = last.get("start_time")
-                                        data_end_iso = data.get("end_time")
-
-                                        if last_start_iso and data_end_iso:
-                                            last_start = datetime.fromisoformat(
-                                                last_start_iso
-                                            )
-                                            data_end = datetime.fromisoformat(
-                                                data_end_iso
-                                            )
-
-                                            gap = (
-                                                last_start - data_end
-                                            ).total_seconds()
-
-                                            # Merge if gap is small (e.g., < 10 minutes)
-                                            if 0 <= gap <= EVENT_MERGE_WINDOW_SECONDS:
-                                                # Update the more recent event to cover the older one's start
-                                                last["start_time"] = data["start_time"]
-                                                last["duration_sec"] = last.get(
-                                                    "duration_sec", 0
-                                                ) + data.get("duration_sec", 0)
-
-                                                # Merge reasons (uniquify)
-                                                if (
-                                                    "reasons" in data
-                                                    and "reasons" in last
-                                                ):
-                                                    combined = list(
-                                                        dict.fromkeys(
-                                                            last["reasons"]
-                                                            + data["reasons"]
-                                                        )
-                                                    )
-                                                    last["reasons"] = combined[:EVENT_MERGE_MAX_REASONS]
-
-                                                merged = True
-                                                _LOGGER.debug(
-                                                    "Merged logbook event %s into %s (gap: %ds)",
-                                                    event_row.event_id,
-                                                    last.get("event_id"),
-                                                    gap,
-                                                )
-                                    except (ValueError, TypeError, KeyError):
-                                        pass
-
-                            if merged:
-                                continue
-
-                            # Add event_id for deletion
-                            data["event_id"] = event_row.event_id
-
-                            formatted_events.append(data)
-
-                            # Stop if we have satisfied both limits
-                            if spammy_count >= spammy_limit and normal_count >= limit:
-                                break
-
-                        except (json.JSONDecodeError, AttributeError) as err:
-                            _LOGGER.debug("Error parsing event data: %s", err)
-                            continue
-            except Exception as err:
-                _LOGGER.warning("Error querying recorder events: %s", err)
-
-            return formatted_events
-
-        # Run query in executor to avoid blocking
-        formatted_events = await recorder.async_add_executor_job(_query_events)
-
-        # Group by growspace_id
-        response_data = {}
-        if growspace_id:
-            response_data[growspace_id] = formatted_events
-        else:
-            # Group by ID
-            for evt in formatted_events:
-                gid = evt.get("growspace_id", "global")
-                if gid not in response_data:
-                    response_data[gid] = []
-                response_data[gid].append(evt)
-
-        connection.send_result(msg["id"], response_data)
-
-    except ImportError as err:
-        _LOGGER.warning("Recorder models not available: %s", err)
-        # Return empty result if recorder is not available
-        connection.send_result(msg["id"], {growspace_id: []} if growspace_id else {})
-    except KeyError as err:
-        _LOGGER.warning("Recorder not initialized: %s", err)
-        # Return empty result if recorder instance not found
-        connection.send_result(msg["id"], {growspace_id: []} if growspace_id else {})
-    except Exception as err:
-        _LOGGER.exception("Error handling websocket_get_event_log")
-        connection.send_error(msg["id"], "unknown_error", str(err))
-
-
 async def websocket_get_growspace_data(hass: HomeAssistant, connection, msg):
     """Handle get growspace data command."""
     growspace_id = msg.get("growspace_id")
@@ -608,6 +395,140 @@ async def websocket_get_growspace_data(hass: HomeAssistant, connection, msg):
         connection.send_error(msg["id"], "invalid_args", str(err))
     except Exception as e:
         connection.send_error(msg["id"], "unknown_error", str(e))
+
+
+
+def _merge_logbook_event(formatted_events_list, data_dict, evt_row):
+    """Try to merge an event into the last one if they are similar alerts."""
+    if not formatted_events_list:
+        return False
+
+    last_evt = formatted_events_list[-1]
+    # Check shared properties for merging (same type, growspace, severity)
+    if (
+        data_dict.get("category") == "alert"
+        and last_evt.get("category") == "alert"
+        and data_dict.get("growspace_id") == last_evt.get("growspace_id")
+        and data_dict.get("sensor_type") == last_evt.get("sensor_type")
+        and "severity" in data_dict
+        and "severity" in last_evt
+        and round(float(data_dict["severity"]), 2)
+        == round(float(last_evt["severity"]), 2)
+    ):
+        # Check time gap (DESC order means last is NEWER than data)
+        try:
+            l_start_iso = last_evt.get("start_time")
+            d_end_iso = data_dict.get("end_time")
+
+            if l_start_iso and d_end_iso:
+                l_dt = datetime.fromisoformat(l_start_iso)
+                d_dt = datetime.fromisoformat(d_end_iso)
+                gap_sec = (l_dt - d_dt).total_seconds()
+
+                # Merge if gap is small (e.g., < 10 minutes)
+                if 0 <= gap_sec <= 600:
+                    last_evt["start_time"] = data_dict["start_time"]
+                    last_evt["duration_sec"] = last_evt.get(
+                        "duration_sec", 0
+                    ) + data_dict.get("duration_sec", 0)
+
+                    if "reasons" in data_dict and "reasons" in last_evt:
+                        comb = list(
+                            dict.fromkeys(last_evt["reasons"] + data_dict["reasons"])
+                        )
+                        last_evt["reasons"] = comb[:5]
+                    return True
+        except (ValueError, TypeError, KeyError):
+            pass
+    return False
+
+
+async def websocket_get_event_log(hass: HomeAssistant, connection, msg):
+    """Handle get event log command via Recorder."""
+    growspace_id = msg.get("growspace_id")
+    limit = msg.get("limit", 1000)
+    spam_limit = 200
+    spam_cats = {"optimal", "stress", "mold"}
+
+    try:
+        recorder = get_instance(hass)
+        end_time = dt_util.utcnow()
+        start_time = end_time - dt_util.dt.timedelta(days=7)
+
+        def _query_events():
+            formatted = []
+            counts = {"normal": 0, "spammy": 0}
+
+            with session_scope(hass=hass, read_only=True) as session:
+                t_row = (
+                    session.query(EventTypes.event_type_id)
+                    .filter(EventTypes.event_type == EVENT_GROWSPACE_LOG_ENTRY)
+                    .first()
+                )
+                if not t_row:
+                    return []
+
+                q = (
+                    session.query(Events, EventData)
+                    .join(EventData, Events.data_id == EventData.data_id, isouter=False)
+                    .filter(
+                        Events.event_type_id == t_row[0],
+                        Events.time_fired_ts >= start_time.timestamp(),
+                        Events.time_fired_ts <= end_time.timestamp(),
+                    )
+                    .order_by(Events.time_fired_ts.desc())
+                )
+                if limit:
+                    q = q.limit(limit * 5)
+
+                for e_row, d_row in q:
+                    if not d_row or not d_row.shared_data:
+                        continue
+                    try:
+                        d = json.loads(d_row.shared_data)
+                        if growspace_id and d.get("growspace_id") != growspace_id:
+                            continue
+
+                        cat = d.get("category")
+                        is_s = cat in spam_cats
+                        c_key = "spammy" if is_s else "normal"
+                        c_lim = spam_limit if is_s else limit
+
+                        if counts[c_key] >= c_lim:
+                            continue
+                        counts[c_key] += 1
+
+                        if "timestamp" not in d and e_row.time_fired_ts:
+                            d["timestamp"] = e_row.time_fired_ts * 1000
+
+                        if not _merge_logbook_event(formatted, d, e_row):
+                            d["event_id"] = e_row.event_id
+                            formatted.append(d)
+
+                        if counts["spammy"] >= spam_limit and counts["normal"] >= limit:
+                            break
+                    except (json.JSONDecodeError, AttributeError):
+                        continue
+            return formatted
+
+        evts = await recorder.async_add_executor_job(_query_events)
+        res = {}
+        if growspace_id:
+            res[growspace_id] = evts
+        else:
+            for v in evts:
+                gid = v.get("growspace_id", "global")
+                res.setdefault(gid, []).append(v)
+
+        connection.send_result(msg["id"], res)
+
+    except (ImportError, KeyError) as err:
+        _LOGGER.warning("Recorder not available: %s", err)
+        connection.send_result(msg["id"], {growspace_id: []} if growspace_id else {})
+    except Exception as err:
+        _LOGGER.exception("Error handling websocket_get_event_log")
+        connection.send_error(msg["id"], "unknown_error", str(err))
+
 
 
 # WebSocket API Constants
