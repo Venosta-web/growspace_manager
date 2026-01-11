@@ -172,6 +172,7 @@ class GrowspaceService(StrEnum):
     REMOVE_GROWSPACE = "remove_growspace"
     UPDATE_GROWSPACE = "update_growspace"
     ADD_PLANT = "add_plant"
+    ADD_PLANTS = "add_plants"
     REMOVE_PLANT = "remove_plant"
     UPDATE_PLANT = "update_plant"
     MOVE_PLANT = "move_plant"

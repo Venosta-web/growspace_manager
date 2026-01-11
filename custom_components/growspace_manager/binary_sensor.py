@@ -47,6 +47,7 @@ from .bayesian_evaluator import (
     evaluate_optimal_vpd,
     evaluate_soil_moisture_stress,
 )
+from .utils import calculate_days_since
 from .const import (
     ATTR_EXPECTED_SCHEDULE,
     ATTR_LIGHT_ENTITY_ID,
@@ -488,11 +489,7 @@ class BayesianEnvironmentSensor(BinarySensorEntity):
     @staticmethod
     def _days_since(date_str: str) -> int:
         """Calculate the number of days since a given date string."""
-        try:
-            dt = datetime.strptime(date_str, "%Y-%m-%d").date()
-        except (AttributeError, TypeError, ValueError):
-            return 0
-        return (date.today() - dt).days
+        return calculate_days_since(date_str)
 
     def _get_growth_stage_info(self) -> dict[str, int]:
         """Get the current growth stage duration (veg and flower days) for the growspace."""

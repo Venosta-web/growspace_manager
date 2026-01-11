@@ -90,6 +90,17 @@ ADD_PLANT_SCHEMA = vol.Schema(
     }
 )
 
+# Batch Add Plants
+ADD_PLANTS_SCHEMA = vol.Schema(
+    {
+        vol.Required(ATTR_GROWSPACE_ID): vol.All(str, valid_growspace_id),
+        vol.Required(ATTR_STRAIN): str,
+        vol.Required("amount"): vol.All(int, vol.Range(min=1)),
+        vol.Optional("start_number", default=1): vol.All(int, vol.Range(min=1)),
+        **_PLANT_DATE_FIELDS,
+    }
+)
+
 LOG_TRAINING_EVENT_SCHEMA = vol.Schema(
     {
         vol.Required(ATTR_TECHNIQUE): cv.string,
