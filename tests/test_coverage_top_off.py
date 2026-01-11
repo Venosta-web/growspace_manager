@@ -3,19 +3,20 @@
 import json
 from dataclasses import dataclass, field
 from datetime import datetime
-from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from homeassistant.core import HomeAssistant
-from aiohttp import web
 
 from custom_components.growspace_manager import (
-    DOMAIN,
     StrainLibraryImageView,
     StrainLibraryUploadView,
     _get_statistics_data,
+    _merge_logbook_event,
     websocket_get_event_log,
+)
+from custom_components.growspace_manager.bayesian_evaluator import (
+    _is_vpd_trend_gated,
 )
 from custom_components.growspace_manager.binary_sensor import (
     BayesianMoldRiskSensor,
@@ -45,9 +46,6 @@ from custom_components.growspace_manager.services.plant import (
     handle_add_plants,
     handle_add_timeline_note,
 )
-from custom_components.growspace_manager.bayesian_evaluator import (
-    _is_vpd_trend_gated,
-)
 
 # --- Dehumidifier Coordinator Coverage ---
 
@@ -67,7 +65,9 @@ async def test_dehumidifier_stages_coverage(hass: HomeAssistant) -> None:
         lambda p, s: 1 if s == "cure" else 0
     )
 
-    coordinator = DehumidifierCoordinator(hass, mock_config_entry, "gs1", mock_coordinator)
+    coordinator = DehumidifierCoordinator(
+        hass, mock_config_entry, "gs1", mock_coordinator
+    )
     assert coordinator._get_growth_stage() == "cure"
 
     # Test DRY stage
@@ -106,7 +106,9 @@ def test_models_casting_nested_coverage() -> None:
     data = {
         "name": "Nested",
         "plants_list": [{"plant_id": "p1", "strain": "S1", "growspace_id": "gs1"}],
-        "plants_dict": {"p2": {"plant_id": "p2", "strain": "S2", "growspace_id": "gs1"}},
+        "plants_dict": {
+            "p2": {"plant_id": "p2", "strain": "S2", "growspace_id": "gs1"}
+        },
     }
 
     model = NestedModel.from_dict(data)
@@ -291,13 +293,16 @@ async def test_strain_library_image_view_coverage(hass: HomeAssistant) -> None:
     # Success path (requires mocking web.FileResponse and path operations)
     mock_image_mgr = MagicMock()
     mock_strain_lib.image_manager = mock_image_mgr
-    
+
     mock_path = MagicMock()
     mock_image_mgr.storage_dir = mock_path
-    
+
     # We need to mock 'web.FileResponse' and avoid 'pathlib' issues by mocking 'Path'
     with (
-        patch("custom_components.growspace_manager.web.FileResponse", return_value=MagicMock(status=200)),
+        patch(
+            "custom_components.growspace_manager.web.FileResponse",
+            return_value=MagicMock(status=200),
+        ),
         patch("custom_components.growspace_manager.pathlib.Path") as mock_path_cls,
     ):
         mock_path_cls.return_value = mock_path
@@ -307,7 +312,7 @@ async def test_strain_library_image_view_coverage(hass: HomeAssistant) -> None:
         mock_path.is_file.return_value = True
         # str(file_path).startswith(str(storage_dir.resolve()))
         mock_path.__str__.return_value = "/tmp/test.jpg"
-        
+
         resp = await view.get(None, "test.jpg")
         assert resp.status == 200
 
@@ -316,7 +321,9 @@ async def test_strain_library_image_view_coverage(hass: HomeAssistant) -> None:
 
 
 @pytest.mark.asyncio
-async def test_websocket_get_event_log_spam_filter_coverage(hass: HomeAssistant) -> None:
+async def test_websocket_get_event_log_spam_filter_coverage(
+    hass: HomeAssistant,
+) -> None:
     """Test websocket_get_event_log spam filter limits."""
     connection = MagicMock()
     msg = {"id": 1, "type": "growspace_manager/get_event_log", "limit": 10}
@@ -326,12 +333,12 @@ async def test_websocket_get_event_log_spam_filter_coverage(hass: HomeAssistant)
     normal_data = json.dumps({"category": "info", "growspace_id": "gs1"})
 
     class MockEvent:
-        def __init__(self, event_id, time_fired_ts):
+        def __init__(self, event_id, time_fired_ts) -> None:
             self.event_id = event_id
             self.time_fired_ts = time_fired_ts
 
     class MockData:
-        def __init__(self, shared_data):
+        def __init__(self, shared_data) -> None:
             self.shared_data = shared_data
 
     events_to_return = []
@@ -343,30 +350,35 @@ async def test_websocket_get_event_log_spam_filter_coverage(hass: HomeAssistant)
 
     mock_query = MagicMock()
     mock_query.join.return_value.filter.return_value.order_by.return_value.limit.return_value = events_to_return
-    
+
     # Mock EventTypes query
     mock_session = MagicMock()
     mock_session.query.side_effect = [
-        MagicMock(filter=MagicMock(return_value=MagicMock(first=MagicMock(return_value=(1,))))),
-        mock_query
+        MagicMock(
+            filter=MagicMock(return_value=MagicMock(first=MagicMock(return_value=(1,))))
+        ),
+        mock_query,
     ]
 
     with (
         patch("custom_components.growspace_manager.get_instance") as mock_get_recorder,
-        patch("custom_components.growspace_manager.session_scope") as mock_session_scope,
+        patch(
+            "custom_components.growspace_manager.session_scope"
+        ) as mock_session_scope,
         patch("homeassistant.util.dt.utcnow", return_value=datetime.now()),
     ):
         mock_session_scope.return_value.__enter__.return_value = mock_session
-        
+
         async def mock_add_job(func, *args):
             return func(*args)
+
         mock_get_recorder.return_value.async_add_executor_job.side_effect = mock_add_job
 
         await websocket_get_event_log(hass, connection, msg)
 
         connection.send_result.assert_called_once()
         result = connection.send_result.call_args[0][1]
-        
+
         # gs1 should have spam_limit (200) + limit (10) = 210 events
         assert "gs1" in result
         assert len(result["gs1"]) == 210
@@ -374,52 +386,86 @@ async def test_websocket_get_event_log_spam_filter_coverage(hass: HomeAssistant)
 
 # --- Targeted Coverage Gaps ---
 
+
 def test_vpd_trend_gated_none_coverage() -> None:
     """Test _is_vpd_trend_gated returns False when vpd is None."""
     state = EnvironmentState(
-        temp=20.0, humidity=50.0, vpd=None, co2=400.0, veg_days=0, flower_days=0, is_lights_on=True, fan_off=False
+        temp=20.0,
+        humidity=50.0,
+        vpd=None,
+        co2=400.0,
+        veg_days=0,
+        flower_days=0,
+        is_lights_on=True,
+        fan_off=False,
     )
     assert _is_vpd_trend_gated(state) is False
 
+
 @pytest.mark.asyncio
-async def test_websocket_get_event_log_recorder_missing_coverage(hass: HomeAssistant) -> None:
+async def test_websocket_get_event_log_recorder_missing_coverage(
+    hass: HomeAssistant,
+) -> None:
     """Test websocket_get_event_log when recorder is missing."""
     connection = MagicMock()
     msg = {"id": 1, "type": "growspace_manager/get_event_log"}
-    
-    with patch("custom_components.growspace_manager.get_instance", side_effect=ImportError("No recorder")):
+
+    with patch(
+        "custom_components.growspace_manager.get_instance",
+        side_effect=ImportError("No recorder"),
+    ):
         await websocket_get_event_log(hass, connection, msg)
         connection.send_result.assert_called_once()
+
 
 @pytest.mark.asyncio
 async def test_merge_logbook_event_exception_coverage() -> None:
     """Test _merge_logbook_event catches ValueError on invalid dates."""
-    from custom_components.growspace_manager import _merge_logbook_event
-    
-    formatted = [{"growspace_id": "gs1", "category": "info", "sensor_type": "temp", "start_time": "INVALID", "severity": 1.0}]
-    d = {"growspace_id": "gs1", "category": "info", "sensor_type": "temp", "end_time": "2024-01-01", "severity": 1.0}
-    
+
+    formatted = [
+        {
+            "growspace_id": "gs1",
+            "category": "info",
+            "sensor_type": "temp",
+            "start_time": "INVALID",
+            "severity": 1.0,
+        }
+    ]
+    d = {
+        "growspace_id": "gs1",
+        "category": "info",
+        "sensor_type": "temp",
+        "end_time": "2024-01-01",
+        "severity": 1.0,
+    }
+
     # This should return False and not crash
     assert _merge_logbook_event(formatted, d, MagicMock()) is False
 
+
 @pytest.mark.asyncio
-async def test_strain_library_upload_view_error_cleanup_coverage(hass: HomeAssistant) -> None:
+async def test_strain_library_upload_view_error_cleanup_coverage(
+    hass: HomeAssistant,
+) -> None:
     """Test StrainLibraryUploadView cleanup on failure."""
     view = StrainLibraryUploadView(hass, MagicMock())
-    
+
     mock_field = AsyncMock()
     mock_field.name = "file"
     mock_field.read_chunk.side_effect = Exception("Write failed")
-    
+
     with (
-        patch("custom_components.growspace_manager.tempfile.mkstemp", return_value=(1, "/tmp/test.zip")),
+        patch(
+            "custom_components.growspace_manager.tempfile.mkstemp",
+            return_value=(1, "/tmp/test.zip"),
+        ),
         patch("custom_components.growspace_manager.pathlib.Path") as mock_path_cls,
     ):
         mock_path = MagicMock()
         mock_path_cls.return_value = mock_path
         mock_path.exists.return_value = True
-        
+
         with pytest.raises(Exception, match="Write failed"):
             await view._save_upload_to_temp(mock_field)
-        
+
         mock_path.unlink.assert_called_once()
