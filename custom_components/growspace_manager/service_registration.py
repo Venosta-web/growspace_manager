@@ -32,6 +32,7 @@ from .services import (
     ADD_GROWSPACE_SCHEMA,
     ADD_IRRIGATION_TIME_SCHEMA,
     ADD_PLANT_SCHEMA,
+    ADD_PLANTS_SCHEMA,
     ADD_STRAIN_SCHEMA,
     ADD_TIMELINE_NOTE_SCHEMA,
     ANALYZE_ALL_GROWSPACES_SCHEMA,
@@ -180,6 +181,11 @@ async def register_services(
             GrowspaceService.ADD_PLANT,
             wrap(plant.handle_add_plant, True),
             ADD_PLANT_SCHEMA,
+        ),
+        (
+            GrowspaceService.ADD_PLANTS,
+            wrap(plant.handle_add_plants, True),
+            ADD_PLANTS_SCHEMA,
         ),
         (
             GrowspaceService.REMOVE_PLANT,

@@ -234,6 +234,100 @@ async def handle_add_plant(
         raise
 
 
+async def handle_add_plants(
+    hass: HomeAssistant,
+    coordinator: GrowspaceCoordinator,
+    strain_library: StrainLibrary,
+    call: ServiceCall,
+) -> None:
+    """Handle batch add plants service call."""
+    _LOGGER.debug("Service call: add_plants with data: %s", call.data)
+    try:
+        growspace_id = call.data[ATTR_GROWSPACE_ID]
+        if growspace_id not in coordinator.growspaces:
+            _LOGGER.error("Growspace %s does not exist for add_plants", growspace_id)
+            raise ServiceValidationError(f"Growspace '{growspace_id}' not found.")
+
+        strain = call.data[ATTR_STRAIN]
+        amount = call.data["amount"]
+        start_number = call.data.get("start_number", 1)
+
+        # Parse and handle optional dates (same logic as single add)
+        def _local_parse_date(field_name: str) -> datetime | None:
+            val = call.data.get(field_name)
+            return parse_date_field(val)
+
+        seedling_start = _local_parse_date("seedling_start")
+        mother_start = _local_parse_date("mother_start")
+        clone_start = _local_parse_date("clone_start")
+        veg_start = _local_parse_date("veg_start")
+        flower_start = _local_parse_date("flower_start")
+        dry_start = _local_parse_date("dry_start")
+        cure_start = _local_parse_date("cure_start")
+
+        plants_added_count = 0
+
+        for i in range(amount):
+            current_number = start_number + i
+            # Format phenotype only if we have a number to append, otherwise user might want generic?
+            # Prompt says: automatically assigning incrementing phenotype numbers (e.g., "Strain #1")
+            phenotype = f"{strain} #{current_number}"
+
+            # Validate capacity
+            free_row, free_col = coordinator.validator.find_first_available_position(
+                growspace_id
+            )
+
+            if free_row is None or free_col is None:
+                _LOGGER.warning(
+                    "Growspace %s is full. Stopped batch add after %d plants",
+                    growspace_id,
+                    plants_added_count,
+                )
+                if plants_added_count == 0:
+                    raise ServiceValidationError(f"Growspace {growspace_id} is full.")
+                # Partial success - just stop adding
+                break
+
+            # Add the plant
+            try:
+                await coordinator.async_add_plant(
+                    growspace_id=growspace_id,
+                    strain=strain,
+                    row=free_row,
+                    col=free_col,
+                    phenotype=phenotype,
+                    seedling_start=seedling_start,
+                    mother_start=mother_start,
+                    clone_start=clone_start,
+                    veg_start=veg_start,
+                    flower_start=flower_start,
+                    dry_start=dry_start,
+                    cure_start=cure_start,
+                )
+                plants_added_count += 1
+            except GrowspaceError as err:
+                _LOGGER.error("Failed to add plant %d of batch: %s", i + 1, err)
+                # If one fails, we probably should stop or continue?
+                # "do not fail the entire service if some plants were already added" suggests stopping or continuing best effort.
+                # I'll log and continue to try next one?
+                # No, if one fails due to error, future ones might also fail.
+                # But availability check passed.
+                # Let's stop if add fails to be safe.
+                break
+
+        _LOGGER.info(
+            "Batch add complete. Added %d/%d plants to growspace %s",
+            plants_added_count,
+            amount,
+            growspace_id,
+        )
+
+    except Exception as err:
+        _LOGGER.exception("Failed to batch add plants: %s", err)
+        raise
+
+
 async def handle_take_clone(
     hass: HomeAssistant,
     coordinator: GrowspaceCoordinator,

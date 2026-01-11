@@ -7,6 +7,7 @@ from ..schemas import (
     ADD_GROWSPACE_SCHEMA,
     ADD_IRRIGATION_TIME_SCHEMA,
     ADD_PLANT_SCHEMA,
+    ADD_PLANTS_SCHEMA,
     ADD_STRAIN_SCHEMA,
     ADD_TIMELINE_NOTE_SCHEMA,
     ANALYZE_ALL_GROWSPACES_SCHEMA,
@@ -51,12 +52,14 @@ from . import (
     strain_library,
     training,
 )
+from .training import handle_log_training_event
 
 __all__ = [
     "ADD_DRAIN_TIME_SCHEMA",
     "ADD_GROWSPACE_SCHEMA",
     "ADD_IRRIGATION_TIME_SCHEMA",
     "ADD_PLANT_SCHEMA",
+    "ADD_PLANTS_SCHEMA",
     "ADD_STRAIN_SCHEMA",
     "ADD_TIMELINE_NOTE_SCHEMA",
     "ANALYZE_ALL_GROWSPACES_SCHEMA",

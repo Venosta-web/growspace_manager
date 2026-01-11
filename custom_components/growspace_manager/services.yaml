@@ -148,6 +148,69 @@ add_plant:
         text:
           multiline: true
 
+add_plants:
+  description: Batch add plants to a growspace
+  fields:
+    growspace_id:
+      description: ID of the growspace
+      required: true
+      selector:
+        text:
+    strain:
+      description: Strain name
+      required: true
+      selector:
+        text:
+    amount:
+      description: Number of plants to add
+      required: true
+      selector:
+        number:
+          min: 1
+          max: 100
+    start_number:
+      description: Starting number for phenotype suffix (e.g. 1 for "Strain #1")
+      required: false
+      default: 1
+      selector:
+        number:
+          min: 1
+    seedling_start:
+      description: Seedling start date
+      required: false
+      selector:
+        date:
+    mother_start:
+      description: Mother start date
+      required: false
+      selector:
+        date:
+    clone_start:
+      description: Clone start date
+      required: false
+      selector:
+        date:
+    veg_start:
+      description: Vegetative start date
+      required: false
+      selector:
+        date:
+    flower_start:
+      description: Flowering start date
+      required: false
+      selector:
+        date:
+    dry_start:
+      description: Drying start date
+      required: false
+      selector:
+        date:
+    cure_start:
+      description: Curing start date
+      required: false
+      selector:
+        date:
+
 update_plant:
   description: Update a plant
   fields:
