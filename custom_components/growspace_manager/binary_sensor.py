@@ -732,23 +732,45 @@ class BayesianMoldRiskSensor(BayesianEnvironmentSensor):
 
         # 2. Low Circulation
         if env_state.fan_off:
-            prob = (
-                PROB_MOLD_STAGNANT_AIR
-                if isinstance(PROB_MOLD_STAGNANT_AIR, tuple)
-                else (0.9, 0.1)
-            )  # Fallback
-            all_observations.append(prob)
-            all_reasons.append((prob[0], "Circulation Fan Off"))
+            is_risk = True
+            # In Veg, only penalize fan off if humidity is already somewhat high
+            if env_state.flower_days == 0 and (
+                env_state.humidity is None or env_state.humidity < 80
+            ):
+                is_risk = False
+
+            if is_risk:
+                prob = (
+                    PROB_MOLD_STAGNANT_AIR
+                    if isinstance(PROB_MOLD_STAGNANT_AIR, tuple)
+                    else (0.85, 0.15)
+                )
+                all_observations.append(prob)
+                all_reasons.append((prob[0], "Circulation Fan Off"))
 
         # 3. Humidifier
         if env_state.humidifier_value and env_state.humidifier_value > 0:
-            prob = (
-                PROB_MOLD_HUMIDIFIER_ON
-                if isinstance(PROB_MOLD_HUMIDIFIER_ON, tuple)
-                else (0.8, 0.2)
-            )
-            all_observations.append(prob)
-            all_reasons.append((prob[0], "Humidifier On"))
+            is_risk = True
+            # Humidifier on is normal in Veg/Early Flower.
+            # Only penalize if humidity is already near danger zones.
+            if env_state.flower_days == 0:  # Veg
+                if env_state.humidity is None or env_state.humidity < 85:
+                    is_risk = False
+            elif env_state.flower_days > 40:  # Late Flower
+                if env_state.humidity is None or env_state.humidity < 60:
+                    is_risk = False
+            else:  # Early/Mid Flower
+                if env_state.humidity is None or env_state.humidity < 70:
+                    is_risk = False
+
+            if is_risk:
+                prob = (
+                    PROB_MOLD_HUMIDIFIER_ON
+                    if isinstance(PROB_MOLD_HUMIDIFIER_ON, tuple)
+                    else (0.95, 0.10)
+                )
+                all_observations.append(prob)
+                all_reasons.append((prob[0], "Humidifier On"))
 
         # 4. Trends
         if self.env_config.humidity_sensor:

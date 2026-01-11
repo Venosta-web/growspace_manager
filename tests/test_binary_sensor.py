@@ -1001,7 +1001,7 @@ async def test_mold_risk_specifics(
             if entity_id == env_config.temperature_sensor:
                 return 25.0
             if entity_id == env_config.humidity_sensor:
-                return 50.0  # Normal humidity
+                return 90.0  # Dangerous humidity for Veg
             return 0.0
 
         mock_get_val.side_effect = get_val_side_effect

@@ -277,6 +277,9 @@ async def test_async_evaluate_external_mold_trend_sensor(
         stats_state = MagicMock(attributes={"change": stats_change_value})
         sensor_instance.hass.states.get.return_value = stats_state
 
+    # Create mock state with values that bypass danger zone gating
+    state = MagicMock(spec=EnvironmentState, flower_days=0, vpd=0.4, humidity=85)
+
     await _async_evaluate_external_mold_trend_sensor(
         sensor_instance,
         env_config,
@@ -285,6 +288,7 @@ async def test_async_evaluate_external_mold_trend_sensor(
         observations,
         reasons,
         trend_states,
+        state,
     )
 
     assert len(observations) == 1
