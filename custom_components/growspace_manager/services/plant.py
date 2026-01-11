@@ -269,8 +269,6 @@ async def handle_add_plants(
 
         for i in range(amount):
             current_number = start_number + i
-            # Format phenotype only if we have a number to append, otherwise user might want generic?
-            # Prompt says: automatically assigning incrementing phenotype numbers (e.g., "Strain #1")
             phenotype = f"{strain} #{current_number}"
 
             # Validate capacity
