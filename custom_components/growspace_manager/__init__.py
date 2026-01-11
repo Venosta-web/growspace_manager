@@ -478,9 +478,9 @@ async def websocket_get_event_log(hass: HomeAssistant, connection, msg):
                                     continue
                                 normal_count += 1
 
-                            # Ensure timestamp is present
+                            # Ensure timestamp is present (Convert to milliseconds for Frontend)
                             if "timestamp" not in data and event_row.time_fired_ts:
-                                data["timestamp"] = event_row.time_fired_ts
+                                data["timestamp"] = event_row.time_fired_ts * 1000
 
                             # Add event_id for deletion
                             data["event_id"] = event_row.event_id
