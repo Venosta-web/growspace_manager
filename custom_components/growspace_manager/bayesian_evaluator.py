@@ -151,11 +151,8 @@ async def _async_evaluate_external_mold_trend_sensor(
             "on" if sensor_key == "humidity" else "off"
         ):
             # VPD Falling Trend Gating (External Sensor)
-            if sensor_key == "vpd":
-                # Danger Zone: Veg < 0.5, Flower < 0.8
-                danger_zone = 0.5 if state.flower_days == 0 else 0.8
-                if state.vpd is not None and state.vpd >= danger_zone:
-                    return
+            if sensor_key == "vpd" and _is_vpd_trend_gated(state):
+                return
 
             trend_states[trend_key] = (
                 "rising" if sensor_key == "humidity" else "falling"
@@ -175,11 +172,8 @@ async def _async_evaluate_external_mold_trend_sensor(
                 sensor_key == "vpd" and change < -0.1
             ):
                 # VPD Falling Trend Gating (Stats Sensor)
-                if sensor_key == "vpd":
-                    # Danger Zone: Veg < 0.5, Flower < 0.8
-                    danger_zone = 0.5 if state.flower_days == 0 else 0.8
-                    if state.vpd is not None and state.vpd >= danger_zone:
-                        return
+                if sensor_key == "vpd" and _is_vpd_trend_gated(state):
+                    return
 
                 trend_states[trend_key] = (
                     "rising" if sensor_key == "humidity" else "falling"
@@ -192,6 +186,15 @@ async def _async_evaluate_external_mold_trend_sensor(
                         f"{sensor_key.capitalize()} {'rising' if sensor_key == 'humidity' else 'falling'}",
                     )
                 )
+
+
+def _is_vpd_trend_gated(state: EnvironmentState) -> bool:
+    """Determine if a falling VPD trend should be ignored because current VPD is safe."""
+    if state.vpd is None:
+        return False
+    # Danger Zone: Veg < 0.5, Flower < 0.8
+    danger_zone = 0.5 if state.flower_days == 0 else 0.8
+    return state.vpd >= danger_zone
 
 
 async def _async_evaluate_fallback_mold_trend_analysis(
