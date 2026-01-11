@@ -308,12 +308,6 @@ async def handle_add_plants(
                 plants_added_count += 1
             except GrowspaceError as err:
                 _LOGGER.error("Failed to add plant %d of batch: %s", i + 1, err)
-                # If one fails, we probably should stop or continue?
-                # "do not fail the entire service if some plants were already added" suggests stopping or continuing best effort.
-                # I'll log and continue to try next one?
-                # No, if one fails due to error, future ones might also fail.
-                # But availability check passed.
-                # Let's stop if add fails to be safe.
                 break
 
         _LOGGER.info(
