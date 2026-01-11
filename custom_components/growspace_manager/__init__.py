@@ -461,7 +461,9 @@ async def websocket_get_event_log(hass: HomeAssistant, connection, msg):
     Uses direct Recorder event query since logbook.async_get_events was removed.
     """
     growspace_id = msg.get("growspace_id")
-    limit = msg.get("limit", 100)  # Default limit 100
+    limit = msg.get("limit", 1000)  # Default limit 100
+    spammy_limit = 200
+    spammy_categories = {"optimal", "stress", "mold"}
 
     # Time window: last 7 days
     end_time = dt_util.utcnow()
@@ -477,6 +479,9 @@ async def websocket_get_event_log(hass: HomeAssistant, connection, msg):
         def _query_events():
             """Query events from the recorder database using new schema."""
             formatted_events = []
+            normal_count = 0
+            spammy_count = 0
+
             try:
                 with session_scope(hass=hass, read_only=True) as session:
                     # First, find the event_type_id for our event type
@@ -496,6 +501,8 @@ async def websocket_get_event_log(hass: HomeAssistant, connection, msg):
                     event_type_id = event_type_row[0]
 
                     # Query events with proper joins to EventData
+                    # We don't limit in SQL because we need to filter mixed categories in Python
+                    # Iterating the result cursor is efficient.
                     query = (
                         session.query(Events, EventData)
                         .join(
@@ -508,9 +515,6 @@ async def websocket_get_event_log(hass: HomeAssistant, connection, msg):
                         )
                         .order_by(Events.time_fired_ts.desc())
                     )
-
-                    if limit:
-                        query = query.limit(limit * 2)  # Get more to filter later
 
                     for event_row, event_data_row in query:
                         try:
@@ -527,15 +531,32 @@ async def websocket_get_event_log(hass: HomeAssistant, connection, msg):
                             ):
                                 continue
 
+                            # Handle Limits
+                            category = data.get("category")
+                            is_spammy = category in spammy_categories
+
+                            if is_spammy:
+                                if spammy_count >= spammy_limit:
+                                    continue
+                                spammy_count += 1
+                            else:
+                                if normal_count >= limit:
+                                    continue
+                                normal_count += 1
+
                             # Ensure timestamp is present
                             if "timestamp" not in data and event_row.time_fired_ts:
                                 data["timestamp"] = event_row.time_fired_ts
 
+                            # Add event_id for deletion
+                            data["event_id"] = event_row.event_id
+
                             formatted_events.append(data)
 
-                            # Stop if we have enough
-                            if limit and len(formatted_events) >= limit:
+                            # Stop if we have satisfied both limits
+                            if spammy_count >= spammy_limit and normal_count >= limit:
                                 break
+
                         except (json.JSONDecodeError, AttributeError) as err:
                             _LOGGER.debug("Error parsing event data: %s", err)
                             continue
@@ -622,6 +643,14 @@ SCHEMA_WS_ADD_TIMELINE_NOTE = websocket_api.BASE_COMMAND_MESSAGE_SCHEMA.extend(
         vol.Optional(ATTR_EC): vol.Any(float, int),
         vol.Optional(ATTR_AMOUNT_ML): vol.Any(float, int),
         vol.Optional(ATTR_METADATA): dict,
+    }
+)
+
+WS_TYPE_REMOVE_TIMELINE_EVENT = f"{DOMAIN}/remove_timeline_event"
+SCHEMA_WS_REMOVE_TIMELINE_EVENT = websocket_api.BASE_COMMAND_MESSAGE_SCHEMA.extend(
+    {
+        vol.Required("type"): WS_TYPE_REMOVE_TIMELINE_EVENT,
+        vol.Required("event_id"): int,
     }
 )
 
@@ -718,6 +747,30 @@ async def websocket_add_timeline_note(
         connection.send_error(msg["id"], "unknown_error", str(err))
 
 
+async def websocket_remove_timeline_event(
+    hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
+) -> None:
+    """Handle remove timeline event command via WebSocket."""
+    event_id = msg["event_id"]
+    try:
+        recorder = get_instance(hass)
+
+        def _delete_event():
+            with session_scope(hass=hass) as session:
+                # Delete the event from the Events table
+                # We don't delete from EventData as it might be shared
+                session.query(Events).filter(Events.event_id == event_id).delete(
+                    synchronize_session=False
+                )
+
+        await recorder.async_add_executor_job(_delete_event)
+        connection.send_result(msg["id"])
+
+    except Exception as err:
+        _LOGGER.exception("Error handling websocket_remove_timeline_event")
+        connection.send_error(msg["id"], "unknown_error", str(err))
+
+
 @callback
 def _async_register_websocket_api(hass: HomeAssistant) -> None:
     """Register WebSocket API commands."""
@@ -767,6 +820,13 @@ def _async_register_websocket_api(hass: HomeAssistant) -> None:
         WS_TYPE_ADD_TIMELINE_NOTE,
         websocket_api.async_response(websocket_add_timeline_note),
         SCHEMA_WS_ADD_TIMELINE_NOTE,
+    )
+
+    websocket_api.async_register_command(
+        hass,
+        WS_TYPE_REMOVE_TIMELINE_EVENT,
+        websocket_api.async_response(websocket_remove_timeline_event),
+        SCHEMA_WS_REMOVE_TIMELINE_EVENT,
     )
 
 
