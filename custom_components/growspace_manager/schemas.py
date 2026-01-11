@@ -210,29 +210,34 @@ CLEAR_STRAIN_LIBRARY_SCHEMA = vol.Schema(
     }
 )
 
+# Shared Strain Fields
+STRAIN_BASE_FIELDS = {
+    vol.Optional("phenotype"): str,
+    vol.Optional("breeder"): str,
+    vol.Optional("type"): str,
+    vol.Optional("lineage"): str,
+    vol.Optional("sex"): str,
+    vol.Optional("flower_days_min"): vol.All(vol.Coerce(int), vol.Range(min=0)),
+    vol.Optional("flower_days_max"): vol.All(vol.Coerce(int), vol.Range(min=0)),
+    vol.Optional("flowering_days_min"): vol.All(vol.Coerce(int), vol.Range(min=0)),
+    vol.Optional("flowering_days_max"): vol.All(vol.Coerce(int), vol.Range(min=0)),
+    vol.Optional("description"): str,
+    vol.Optional("image_base64"): str,
+    vol.Optional("image"): str,
+    vol.Optional("image_path"): str,
+    vol.Optional("image_crop_meta"): dict,
+    vol.Optional("sativa_percentage"): vol.All(
+        vol.Coerce(int), vol.Range(min=0, max=100)
+    ),
+    vol.Optional("indica_percentage"): vol.All(
+        vol.Coerce(int), vol.Range(min=0, max=100)
+    ),
+}
+
 ADD_STRAIN_SCHEMA = vol.Schema(
     {
         vol.Required("strain"): str,
-        vol.Optional("phenotype"): str,
-        vol.Optional("breeder"): str,
-        vol.Optional("type"): str,
-        vol.Optional("lineage"): str,
-        vol.Optional("sex"): str,
-        vol.Optional("flower_days_min"): vol.All(vol.Coerce(int), vol.Range(min=0)),
-        vol.Optional("flower_days_max"): vol.All(vol.Coerce(int), vol.Range(min=0)),
-        vol.Optional("flowering_days_min"): vol.All(vol.Coerce(int), vol.Range(min=0)),
-        vol.Optional("flowering_days_max"): vol.All(vol.Coerce(int), vol.Range(min=0)),
-        vol.Optional("description"): str,
-        vol.Optional("image_base64"): str,
-        vol.Optional("image"): str,
-        vol.Optional("image_path"): str,
-        vol.Optional("image_crop_meta"): dict,
-        vol.Optional("sativa_percentage"): vol.All(
-            vol.Coerce(int), vol.Range(min=0, max=100)
-        ),
-        vol.Optional("indica_percentage"): vol.All(
-            vol.Coerce(int), vol.Range(min=0, max=100)
-        ),
+        **STRAIN_BASE_FIELDS,
     }
 )
 
@@ -246,26 +251,7 @@ REMOVE_STRAIN_SCHEMA = vol.Schema(
 UPDATE_STRAIN_META_SCHEMA = vol.Schema(
     {
         vol.Required("strain"): str,
-        vol.Optional("phenotype"): str,
-        vol.Optional("breeder"): str,
-        vol.Optional("type"): str,
-        vol.Optional("lineage"): str,
-        vol.Optional("sex"): str,
-        vol.Optional("flower_days_min"): vol.All(vol.Coerce(int), vol.Range(min=0)),
-        vol.Optional("flower_days_max"): vol.All(vol.Coerce(int), vol.Range(min=0)),
-        vol.Optional("flowering_days_min"): vol.All(vol.Coerce(int), vol.Range(min=0)),
-        vol.Optional("flowering_days_max"): vol.All(vol.Coerce(int), vol.Range(min=0)),
-        vol.Optional("description"): str,
-        vol.Optional("image_base64"): str,
-        vol.Optional("image"): str,
-        vol.Optional("image_path"): str,
-        vol.Optional("image_crop_meta"): dict,
-        vol.Optional("sativa_percentage"): vol.All(
-            vol.Coerce(int), vol.Range(min=0, max=100)
-        ),
-        vol.Optional("indica_percentage"): vol.All(
-            vol.Coerce(int), vol.Range(min=0, max=100)
-        ),
+        **STRAIN_BASE_FIELDS,
     }
 )
 

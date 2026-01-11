@@ -13,6 +13,14 @@ from custom_components.growspace_manager import (
     websocket_get_strain_library,
 )
 
+from dataclasses import dataclass
+
+
+@dataclass
+class DummyPreset:
+    id: str
+    name: str
+
 
 @pytest.fixture
 def mock_connection():
@@ -83,19 +91,14 @@ async def test_websocket_get_nutrient_presets_success(mock_connection) -> None:
     hass = Mock(spec=HomeAssistant)
 
     coordinator = Mock()
-    preset = Mock()
-    preset.id = "preset_1"
-    preset.name = "Veg A"
+    preset = DummyPreset(id="preset_1", name="Veg A")
     coordinator.nutrient_presets = {"preset_1": preset}
 
     expected_data = {"preset_1": {"id": "preset_1", "name": "Veg A"}}
 
-    with (
-        patch(
-            "custom_components.growspace_manager.GrowspaceCoordinator.get_for_service_call",
-            return_value=coordinator,
-        ),
-        patch("dataclasses.asdict", return_value={"id": "preset_1", "name": "Veg A"}),
+    with patch(
+        "custom_components.growspace_manager.GrowspaceCoordinator.get_for_service_call",
+        return_value=coordinator,
     ):
         msg = {"id": 1, "type": WS_TYPE_GET_NUTRIENT_PRESETS}
         websocket_get_nutrient_presets(hass, mock_connection, msg)
@@ -108,19 +111,14 @@ async def test_websocket_get_ipm_presets_success(mock_connection) -> None:
     hass = Mock(spec=HomeAssistant)
 
     coordinator = Mock()
-    preset = Mock()
-    preset.id = "ipm_1"
-    preset.name = "Neem"
+    preset = DummyPreset(id="ipm_1", name="Neem")
     coordinator.ipm_presets = {"ipm_1": preset}
 
     expected_data = {"ipm_1": {"id": "ipm_1", "name": "Neem"}}
 
-    with (
-        patch(
-            "custom_components.growspace_manager.GrowspaceCoordinator.get_for_service_call",
-            return_value=coordinator,
-        ),
-        patch("dataclasses.asdict", return_value={"id": "ipm_1", "name": "Neem"}),
+    with patch(
+        "custom_components.growspace_manager.GrowspaceCoordinator.get_for_service_call",
+        return_value=coordinator,
     ):
         msg = {"id": 1, "type": WS_TYPE_GET_IPM_PRESETS}
         websocket_get_ipm_presets(hass, mock_connection, msg)

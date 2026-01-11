@@ -10,7 +10,6 @@ from __future__ import annotations
 # Standard library
 import asyncio
 import logging
-from dataclasses import asdict
 from datetime import datetime
 from typing import Any, override
 

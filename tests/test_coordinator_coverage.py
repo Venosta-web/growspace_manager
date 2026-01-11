@@ -207,18 +207,18 @@ async def test_get_applicable_presets(mock_coordinator: GrowspaceCoordinator) ->
     mock_coordinator.plants["p1"] = p1
 
     # Preset 1: No restrictions
-    n1 = NutrientPreset(id="n1", name="Universal", nutrients=[])
+    n1 = NutrientPreset(id="n1", name="Universal", items=[])
     mock_coordinator.nutrient_presets["n1"] = n1
 
     # Preset 2: Wrong stage
-    n2 = NutrientPreset(id="n2", name="Flower Only", nutrients=[], stage="flower")
+    n2 = NutrientPreset(id="n2", name="Flower Only", items=[], stage="flower")
     mock_coordinator.nutrient_presets["n2"] = n2
 
     # Preset 3: Correct stage, days requirement (not met)
     # Plant logic for days? Plant needs dates.
     # Provided veg_start=now -> days=0.
     n3 = NutrientPreset(
-        id="n3", name="Veg Late", nutrients=[], stage="veg", min_days_in_stage=10
+        id="n3", name="Veg Late", items=[], stage="veg", min_days_in_stage=10
     )
     mock_coordinator.nutrient_presets["n3"] = n3
 

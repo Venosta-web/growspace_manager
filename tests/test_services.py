@@ -5,6 +5,7 @@ import pytest
 from custom_components.growspace_manager.schemas import (
     ADD_GROWSPACE_SCHEMA,
     ADD_PLANT_SCHEMA,
+    ADD_TIMELINE_NOTE_SCHEMA,
     CLEAR_STRAIN_LIBRARY_SCHEMA,
     DEBUG_CLEANUP_LEGACY_SCHEMA,
     DEBUG_CONSOLIDATE_DUPLICATE_SPECIAL_SCHEMA,
@@ -19,7 +20,6 @@ from custom_components.growspace_manager.schemas import (
     REMOVE_PLANT_SCHEMA,
     SWITCH_PLANT_SCHEMA,
     TAKE_CLONE_SCHEMA,
-    ADD_TIMELINE_NOTE_SCHEMA,
     TRANSITION_PLANT_SCHEMA,
     UPDATE_PLANT_SCHEMA,
 )

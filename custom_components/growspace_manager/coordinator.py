@@ -1717,7 +1717,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
             preset = NutrientPreset(
                 id=pid,
                 name=name,
-                nutrients=nutrients,  # type: ignore[arg-type]
+                items=nutrients,  # type: ignore[arg-type]
                 stage=stage,
                 min_days_in_stage=min_days_in_stage,
                 created_at=dt_util.now().isoformat(),

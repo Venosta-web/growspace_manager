@@ -1,5 +1,7 @@
 """Additional tests for ImageManager to increase coverage to 95%+."""
 
+import base64
+from io import BytesIO
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -225,3 +227,53 @@ def test_build_cache_handles_errors(mock_hass: MagicMock, tmp_path: Path) -> Non
         # Should not raise
         manager = ImageManager(mock_hass, str(tmp_path))
         assert manager._image_cache == set()
+
+
+async def test_save_timeline_image_with_data_uri_prefix(
+    mock_hass: MagicMock, tmp_path: Path
+) -> None:
+    """Test saving timeline image with data URI prefix (covers strip split)."""
+    image_manager = ImageManager(mock_hass, str(tmp_path))
+
+    # Use data URI format (1x1 transparent PNG)
+    image_base64 = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
+
+    path = await image_manager.save_timeline_image("plant1", image_base64)
+
+    assert path is not None
+    assert "plant1_" in path
+    assert ".webp" in path
+    # Verify file exists
+    assert Path(path).exists()
+
+
+async def test_save_timeline_image_grayscale_conversion(
+    mock_hass: MagicMock, tmp_path: Path
+) -> None:
+    """Test saving grayscale timeline image (covers RGB conversion)."""
+    image_manager = ImageManager(mock_hass, str(tmp_path))
+
+    # Create valid base64 for a grayscale image
+    img = PILImage.new("L", (10, 10), color=128)
+    buffered = BytesIO()
+    img.save(buffered, format="PNG")
+    img_str = base64.b64encode(buffered.getvalue()).decode()
+
+    path = await image_manager.save_timeline_image("plant_gray", img_str)
+
+    assert Path(path).exists()
+    # Check saved image is valid WebP
+    saved_img = PILImage.open(path)
+    assert saved_img.format == "WEBP"
+
+
+async def test_save_timeline_image_exception_handling(
+    mock_hass: MagicMock, tmp_path: Path
+) -> None:
+    """Test exception handling in save_timeline_image."""
+    image_manager = ImageManager(mock_hass, str(tmp_path))
+
+    # Mock base64 decode to fail
+    with patch("base64.b64decode", side_effect=Exception("Decode Error")):
+        with pytest.raises(Exception, match="Decode Error"):
+            await image_manager.save_timeline_image("plant_err", "invalid_b64")

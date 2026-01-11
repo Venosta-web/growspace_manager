@@ -1,14 +1,9 @@
-import sys
-from unittest.mock import ANY, MagicMock, Mock
+from unittest.mock import ANY, Mock
 
 from homeassistant.core import HomeAssistant
 
 from custom_components.growspace_manager.const import DOMAIN, EVENT_GROWSPACE_LOG_ENTRY
 from custom_components.growspace_manager.logbook import async_describe_events
-
-# Mock homeassistant.components.logbook before importing the module
-mock_logbook = MagicMock()
-sys.modules["homeassistant.components.logbook"] = mock_logbook
 
 
 async def test_async_describe_events(hass: HomeAssistant) -> None:

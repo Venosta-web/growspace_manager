@@ -7,6 +7,7 @@ import json  # Added for event data parsing
 import logging
 import pathlib
 import tempfile
+from dataclasses import asdict
 from datetime import datetime, timedelta
 from typing import Any, override
 
@@ -74,78 +75,6 @@ def _extract_ts(state_obj: Any) -> datetime:
         parsed = dt_util.parse_datetime(ts_raw)
         return parsed if parsed else _EPOCH_SENTINEL
     return ts_raw
-
-
-def _query_recorder_events(
-    hass: HomeAssistant,
-    start_ts: float,
-    end_ts: float,
-    limit: int = 100,
-    growspace_id: str | None = None,
-) -> list[dict]:
-    """Query events from the recorder database using new schema."""
-    formatted_events = []
-    try:
-        with session_scope(hass=hass, read_only=True) as session:
-            # First, find the event_type_id for our event type
-            event_type_row = (
-                session.query(EventTypes.event_type_id)
-                .filter(EventTypes.event_type == EVENT_GROWSPACE_LOG_ENTRY)
-                .first()
-            )
-
-            if not event_type_row:
-                _LOGGER.debug(
-                    "Event type %s not found in recorder",
-                    EVENT_GROWSPACE_LOG_ENTRY,
-                )
-                return []
-
-            event_type_id = event_type_row[0]
-
-            # Query events with proper joins to EventData
-            query = (
-                session.query(Events, EventData)
-                .join(EventData, Events.data_id == EventData.data_id, isouter=True)
-                .filter(
-                    Events.event_type_id == event_type_id,
-                    Events.time_fired_ts >= start_ts,
-                    Events.time_fired_ts <= end_ts,
-                )
-                .order_by(Events.time_fired_ts.desc())
-            )
-
-            if limit:
-                query = query.limit(limit * 2)  # Get more to filter later
-
-            for event_row, event_data_row in query:
-                try:
-                    # Parse event data from the EventData table
-                    if event_data_row and event_data_row.shared_data:
-                        data = json.loads(event_data_row.shared_data)
-                    else:
-                        continue
-
-                    # Filter by growspace_id if specified
-                    if growspace_id and data.get("growspace_id") != growspace_id:
-                        continue
-
-                    # Ensure timestamp is present
-                    if "timestamp" not in data and event_row.time_fired_ts:
-                        data["timestamp"] = event_row.time_fired_ts
-
-                    formatted_events.append(data)
-
-                    # Stop if we have enough
-                    if limit and len(formatted_events) >= limit:
-                        break
-                except (json.JSONDecodeError, AttributeError) as err:
-                    _LOGGER.debug("Error parsing event data: %s", err)
-                    continue
-    except Exception as err:
-        _LOGGER.warning("Error querying recorder events: %s", err)
-
-    return formatted_events
 
 
 type GrowspaceConfigEntry = ConfigEntry[GrowspaceCoordinator]
@@ -420,14 +349,14 @@ class StrainLibraryImageView(HomeAssistantView):
             return web.Response(status=404, text="Image manager not available")
 
         storage_dir = self.strain_library.image_manager.storage_dir
-        
+
         # Security check: resolve path and ensure it's within storage_dir
         try:
             file_path = (storage_dir / filename).resolve()
             if not str(file_path).startswith(str(storage_dir.resolve())):
                 _LOGGER.warning("Attempted directory traversal access: %s", filename)
                 return web.Response(status=403, text="Access denied")
-            
+
             if not file_path.exists() or not file_path.is_file():
                 return web.Response(status=404, text="Image not found")
 
@@ -501,12 +430,13 @@ async def websocket_get_event_log(hass: HomeAssistant, connection, msg):
                     event_type_id = event_type_row[0]
 
                     # Query events with proper joins to EventData
-                    # We don't limit in SQL because we need to filter mixed categories in Python
-                    # Iterating the result cursor is efficient.
+                    # INNER JOIN (isouter=False) to ensure we only get events with data
                     query = (
                         session.query(Events, EventData)
                         .join(
-                            EventData, Events.data_id == EventData.data_id, isouter=True
+                            EventData,
+                            Events.data_id == EventData.data_id,
+                            isouter=False,
                         )
                         .filter(
                             Events.event_type_id == event_type_id,
@@ -515,6 +445,10 @@ async def websocket_get_event_log(hass: HomeAssistant, connection, msg):
                         )
                         .order_by(Events.time_fired_ts.desc())
                     )
+
+                    # Safety Limit: Fetch a buffer to account for spammy filtering
+                    if limit:
+                        query = query.limit(limit * 5)
 
                     for event_row, event_data_row in query:
                         try:
@@ -690,7 +624,6 @@ def websocket_get_nutrient_presets(
         coordinator: GrowspaceCoordinator = GrowspaceCoordinator.get_for_service_call(
             hass, msg
         )
-        from dataclasses import asdict
 
         response = {pid: asdict(p) for pid, p in coordinator.nutrient_presets.items()}
         connection.send_result(msg["id"], response)
@@ -708,7 +641,6 @@ def websocket_get_ipm_presets(
         coordinator: GrowspaceCoordinator = GrowspaceCoordinator.get_for_service_call(
             hass, msg
         )
-        from dataclasses import asdict
 
         response = {pid: asdict(p) for pid, p in coordinator.ipm_presets.items()}
         connection.send_result(msg["id"], response)

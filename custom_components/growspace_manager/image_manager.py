@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import base64
+import hashlib
 import logging
 from datetime import datetime
 from io import BytesIO
@@ -292,7 +293,6 @@ class ImageManager:
                 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 
             # Simple hash of image data to prevent duplicates in same timestamp
-            import hashlib
 
             data_hash = hashlib.md5(image_data).hexdigest()[:8]
 

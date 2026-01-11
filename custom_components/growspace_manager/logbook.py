@@ -4,7 +4,21 @@ from __future__ import annotations
 
 from typing import Any
 
-from homeassistant.components.logbook import LogbookEntry
+try:
+    from homeassistant.components.recorder.models import LogbookEntry
+except ImportError:
+    try:
+        from homeassistant.components.logbook import LogbookEntry
+    except ImportError:
+        from typing import Protocol, runtime_checkable
+
+        @runtime_checkable
+        class LogbookEntry(Protocol):
+            """Fallback protocol for LogbookEntry."""
+
+            data: dict[str, Any]
+
+
 from homeassistant.core import HomeAssistant, callback
 
 from .const import DOMAIN, EVENT_GROWSPACE_LOG_ENTRY
