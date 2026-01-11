@@ -286,3 +286,144 @@ async def test_veg_stage_scenario_false_positive_prevention(
 
         # Ensure probability is close to prior (0.10)
         assert sensor._probability < 0.15
+
+
+@pytest.mark.asyncio
+async def test_user_reported_veg_scenario(
+    hass: HomeAssistant, mock_coordinator, env_config
+) -> None:
+    """
+    Verify the user reported scenario: 24.2°C, 64% RH, 0.75 kPa VPD, Veg day 34.
+    The sensor should NOT have a high probability.
+    """
+    description = next(
+        d for d in SENSOR_TYPES if d.sensor_type == GrowspaceSensorType.MOLD
+    )
+    sensor = BayesianMoldRiskSensor(
+        mock_coordinator,
+        "gs1",
+        env_config,
+        description,
+    )
+    sensor.hass = hass
+    sensor.entity_id = "binary_sensor.test_mold_user_scenario"
+    sensor.platform = MagicMock()
+    sensor.notification_manager = MagicMock()
+    sensor.notification_manager.async_send_notification = AsyncMock()
+
+    # User scenario: 24.2°C, 64% RH, 0.75 kPa VPD, Veg day 34.
+    set_sensor_state(hass, "sensor.temp", 24.2)
+    set_sensor_state(hass, "sensor.humidity", 64.0)
+    set_sensor_state(hass, "sensor.vpd", 0.75)
+    set_sensor_state(hass, "switch.fan", "off")  # Let's assume fan is off to see if it triggers
+    set_sensor_state(hass, "humidifier.humidifier", "on") # Let's assume humidifier is on
+    # Add a mock humidifier value sensor if needed
+    set_sensor_state(hass, "sensor.humidifier_value", 50.0)
+    env_config.humidifier_entity = "sensor.humidifier_value"
+
+    await hass.async_block_till_done()
+
+    async def mock_analyze(sensor_id, duration, threshold):
+        if "vpd" in sensor_id:
+            return {"trend": "falling", "crossed_threshold": True}
+        return {"trend": "stable", "crossed_threshold": False}
+
+    with (
+        patch.object(
+            sensor,
+            "_get_growth_stage_info",
+            return_value={"veg_days": 34, "flower_days": 0},
+        ),
+        patch.object(sensor, "async_analyze_sensor_trend", side_effect=mock_analyze),
+        patch.object(sensor, "async_write_ha_state", new_callable=MagicMock),
+    ):
+        await sensor.async_update_and_notify()
+
+        reasons_text = [r[1] for r in sensor._reasons]
+        print(f"USER SCENARIO DEBUG: Prob: {sensor._probability}, Reasons: {reasons_text}")
+
+        # If it's > 0.75 (default threshold), it's ON.
+        # User says it's 90%.
+        assert sensor._probability < 0.75
+
+
+@pytest.mark.asyncio
+async def test_veg_fan_off_safe(
+    hass: HomeAssistant, mock_coordinator, env_config
+) -> None:
+    """Test that Fan Off in Veg with low humidity does NOT trigger risk."""
+    description = next(
+        d for d in SENSOR_TYPES if d.sensor_type == GrowspaceSensorType.MOLD
+    )
+    sensor = BayesianMoldRiskSensor(
+        mock_coordinator,
+        "gs1",
+        env_config,
+        description,
+    )
+    sensor.hass = hass
+    sensor.entity_id = "binary_sensor.test_veg_fan_safe"
+    sensor.platform = MagicMock()
+    sensor.notification_manager = MagicMock()
+    sensor.notification_manager.async_send_notification = AsyncMock()
+
+    set_sensor_state(hass, "sensor.temp", 25)
+    set_sensor_state(hass, "sensor.humidity", 50)  # Low/Safe
+    set_sensor_state(hass, "switch.fan", "off")
+    set_sensor_state(hass, "sensor.vpd", 1.0)
+    await hass.async_block_till_done()
+
+    with patch.object(
+        sensor,
+        "_get_growth_stage_info",
+        return_value={"veg_days": 20, "flower_days": 0},
+    ), patch.object(sensor, "async_write_ha_state", new_callable=MagicMock):
+        await sensor.async_update_and_notify()
+
+    assert not sensor.is_on
+    # Check reasons
+    reasons = [r[1] for r in sensor._reasons]
+    assert not any("Circulation Fan Off" in r for r in reasons)
+
+
+@pytest.mark.asyncio
+async def test_veg_fan_off_risk(
+    hass: HomeAssistant, mock_coordinator, env_config
+) -> None:
+    """Test that Fan Off in Veg with HIGH humidity DOES trigger risk."""
+    description = next(
+        d for d in SENSOR_TYPES if d.sensor_type == GrowspaceSensorType.MOLD
+    )
+    sensor = BayesianMoldRiskSensor(
+        mock_coordinator,
+        "gs1",
+        env_config,
+        description,
+    )
+    sensor.hass = hass
+    sensor.entity_id = "binary_sensor.test_veg_fan_risk"
+    sensor.platform = MagicMock()
+    sensor.notification_manager = MagicMock()
+    sensor.notification_manager.async_send_notification = AsyncMock()
+
+    set_sensor_state(hass, "sensor.temp", 25)
+    set_sensor_state(hass, "sensor.humidity", 85)  # High
+    set_sensor_state(hass, "switch.fan", "off")
+    set_sensor_state(hass, "sensor.vpd", 1.0)
+    await hass.async_block_till_done()
+
+    with patch.object(
+        sensor,
+        "_get_growth_stage_info",
+        return_value={"veg_days": 20, "flower_days": 0},
+    ), patch.object(sensor, "async_write_ha_state", new_callable=MagicMock):
+        await sensor.async_update_and_notify()
+
+    # Probability might be high enough?
+    # Fan Off (0.85/0.15) -> Odds ~ 5.6
+    # Prior 0.1 -> Odds 0.11
+    # Posterior Odds ~ 0.6 -> Prob ~ 0.37 (Not ON if thresh 0.75)
+    # But "Circulation Fan Off" should be in reasons.
+
+    reasons = [r[1] for r in sensor._reasons]
+    assert any("Circulation Fan Off" in r for r in reasons)

@@ -139,6 +139,7 @@ async def _async_evaluate_external_mold_trend_sensor(
     observations: ObservationList,
     reasons: ReasonList,
     trend_states: dict[str, str],
+    state: EnvironmentState,
 ) -> None:
     """Evaluate external trend sensors for mold risk (humidity and VPD)."""
     trend_sensor_id = env_config.get(f"{sensor_key}_trend_sensor")
@@ -149,6 +150,13 @@ async def _async_evaluate_external_mold_trend_sensor(
         if trend_state and trend_state.state == (
             "on" if sensor_key == "humidity" else "off"
         ):
+            # VPD Falling Trend Gating (External Sensor)
+            if sensor_key == "vpd":
+                # Danger Zone: Veg < 0.5, Flower < 0.8
+                danger_zone = 0.5 if state.flower_days == 0 else 0.8
+                if state.vpd is not None and state.vpd >= danger_zone:
+                    return
+
             trend_states[trend_key] = (
                 "rising" if sensor_key == "humidity" else "falling"
             )
@@ -166,6 +174,13 @@ async def _async_evaluate_external_mold_trend_sensor(
             if (sensor_key == "humidity" and change > 1.0) or (
                 sensor_key == "vpd" and change < -0.1
             ):
+                # VPD Falling Trend Gating (Stats Sensor)
+                if sensor_key == "vpd":
+                    # Danger Zone: Veg < 0.5, Flower < 0.8
+                    danger_zone = 0.5 if state.flower_days == 0 else 0.8
+                    if state.vpd is not None and state.vpd >= danger_zone:
+                        return
+
                 trend_states[trend_key] = (
                     "rising" if sensor_key == "humidity" else "falling"
                 )
@@ -267,6 +282,7 @@ async def async_evaluate_mold_risk_trend(
             target_obs,
             target_reasons,
             local_trends,
+            state,
         )
         await _async_evaluate_fallback_mold_trend_analysis(
             sensor_instance,

@@ -140,7 +140,7 @@ async def test_fallback_mold_trend_vpd_falling_flower_danger(
 
 @pytest.mark.asyncio
 async def test_external_mold_trend_sensor_humidity_rising(
-    mock_sensor_instance, hass: HomeAssistant
+    mock_sensor_instance, hass: HomeAssistant, mock_env_state
 ) -> None:
     """Test external trend sensor for humidity rising."""
     env_config = {"humidity_trend_sensor": "binary_sensor.humid_trend"}
@@ -158,6 +158,7 @@ async def test_external_mold_trend_sensor_humidity_rising(
         observations,
         reasons,
         trend_states,
+        mock_env_state,
     )
 
     assert trend_states["humidity_trend"] == "rising"
@@ -167,11 +168,14 @@ async def test_external_mold_trend_sensor_humidity_rising(
 
 @pytest.mark.asyncio
 async def test_external_mold_stats_sensor_vpd_falling(
-    mock_sensor_instance, hass: HomeAssistant
+    mock_sensor_instance, hass: HomeAssistant, mock_env_state
 ) -> None:
     """Test external stats sensor for VPD falling."""
     env_config = {"vpd_stats_sensor": "sensor.vpd_stats"}
     hass.states.async_set("sensor.vpd_stats", "1.0", {"change": -0.2})
+
+    # Set dangerous VPD so gating passes
+    mock_env_state.vpd = 0.4
 
     observations = []
     reasons = []
@@ -185,6 +189,7 @@ async def test_external_mold_stats_sensor_vpd_falling(
         observations,
         reasons,
         trend_states,
+        mock_env_state,
     )
 
     assert trend_states["vpd_trend"] == "falling"
@@ -225,3 +230,66 @@ async def test_async_evaluate_mold_risk_trend_integration(
     # VPD makes 1 observation
     assert len(obs) == 1
     assert "Vpd trend falling" in reasons[0][1]
+
+
+@pytest.mark.asyncio
+async def test_external_mold_trend_sensor_vpd_falling_safe(
+    mock_sensor_instance, hass: HomeAssistant, mock_env_state
+) -> None:
+    """Test external trend sensor for VPD falling but in safe zone."""
+    env_config = {"vpd_trend_sensor": "binary_sensor.vpd_falling"}
+    # For VPD, "off" means falling in the code logic
+    hass.states.async_set("binary_sensor.vpd_falling", "off")
+
+    mock_env_state.vpd = 1.0  # Safe (above 0.8/0.5)
+    mock_env_state.flower_days = 30  # Flower
+
+    observations = []
+    reasons = []
+    trend_states = {}
+
+    await _async_evaluate_external_mold_trend_sensor(
+        mock_sensor_instance,
+        env_config,
+        "vpd",
+        "vpd_trend",
+        observations,
+        reasons,
+        trend_states,
+        mock_env_state,
+    )
+
+    # Should be ignored due to gating
+    assert len(observations) == 0
+    assert len(reasons) == 0
+
+
+@pytest.mark.asyncio
+async def test_external_mold_stats_sensor_vpd_falling_safe(
+    mock_sensor_instance, hass: HomeAssistant, mock_env_state
+) -> None:
+    """Test external stats sensor for VPD falling but in safe zone."""
+    env_config = {"vpd_stats_sensor": "sensor.vpd_stats"}
+    hass.states.async_set("sensor.vpd_stats", "1.0", {"change": -0.2})
+
+    mock_env_state.vpd = 1.0  # Safe
+    mock_env_state.flower_days = 30
+
+    observations = []
+    reasons = []
+    trend_states = {}
+
+    await _async_evaluate_external_mold_trend_sensor(
+        mock_sensor_instance,
+        env_config,
+        "vpd",
+        "vpd_trend",
+        observations,
+        reasons,
+        trend_states,
+        mock_env_state,
+    )
+
+    # Should be ignored due to gating
+    assert len(observations) == 0
+    assert len(reasons) == 0
