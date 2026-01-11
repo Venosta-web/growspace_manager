@@ -517,7 +517,7 @@ async def websocket_get_event_log(hass: HomeAssistant, connection, msg):
                                             ).total_seconds()
 
                                             # Merge if gap is small (e.g., < 10 minutes)
-                                            if 0 <= gap <= 600:
+                                            if 0 <= gap <= EVENT_MERGE_WINDOW_SECONDS:
                                                 # Update the more recent event to cover the older one's start
                                                 last["start_time"] = data["start_time"]
                                                 last["duration_sec"] = last.get(
