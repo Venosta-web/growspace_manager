@@ -185,21 +185,12 @@ async def handle_add_plant(
         col = call.data[ATTR_COL]
 
         # Parse and handle optional dates
-        def _local_parse_date(field_name: str) -> datetime | None:
-            val = call.data.get(field_name)
-            return parse_date_field(val)
-
-        seedling_start = _local_parse_date("seedling_start")
-        mother_start = _local_parse_date("mother_start")
-        clone_start = _local_parse_date("clone_start")
-        veg_start = _local_parse_date("veg_start")
-        flower_start = _local_parse_date("flower_start")
-        dry_start = _local_parse_date("dry_start")
-        cure_start = _local_parse_date("cure_start")
+        add_date_fields = [f for f in DATE_FIELDS if f != "transition_date"]
+        parsed_dates = {f: parse_date_field(call.data.get(f)) for f in add_date_fields}
 
         # Auto-set mother_start if stage is mother and not provided.
-        if growspace_id == "mother" and not mother_start:
-            mother_start = datetime.now()
+        if growspace_id == "mother" and not parsed_dates.get("mother_start"):
+            parsed_dates["mother_start"] = datetime.now()
             _LOGGER.debug("Auto-setting mother_start to now for 'mother' growspace")
 
         # Call coordinator directly, catching validation errors
@@ -210,13 +201,7 @@ async def handle_add_plant(
                 row=row,
                 col=col,
                 phenotype=call.data.get(ATTR_PHENOTYPE, ""),
-                seedling_start=seedling_start,
-                mother_start=mother_start,
-                clone_start=clone_start,
-                veg_start=veg_start,
-                flower_start=flower_start,
-                dry_start=dry_start,
-                cure_start=cure_start,
+                **parsed_dates,
             )
         except GrowspaceError as err:
             raise ServiceValidationError(str(err)) from err
@@ -252,18 +237,16 @@ async def handle_add_plants(
         amount = call.data["amount"]
         start_number = call.data.get("start_number", 1)
 
-        # Parse and handle optional dates (same logic as single add)
-        def _local_parse_date(field_name: str) -> datetime | None:
-            val = call.data.get(field_name)
-            return parse_date_field(val)
+        # Parse and handle optional dates
+        add_date_fields = [f for f in DATE_FIELDS if f != "transition_date"]
+        parsed_dates = {f: parse_date_field(call.data.get(f)) for f in add_date_fields}
 
-        seedling_start = _local_parse_date("seedling_start")
-        mother_start = _local_parse_date("mother_start")
-        clone_start = _local_parse_date("clone_start")
-        veg_start = _local_parse_date("veg_start")
-        flower_start = _local_parse_date("flower_start")
-        dry_start = _local_parse_date("dry_start")
-        cure_start = _local_parse_date("cure_start")
+        # Auto-set mother_start if stage is mother and not provided.
+        if growspace_id == "mother" and not parsed_dates.get("mother_start"):
+            parsed_dates["mother_start"] = datetime.now()
+            _LOGGER.debug(
+                "Auto-setting mother_start to now for 'mother' growspace (batch)"
+            )
 
         plants_added_count = 0
 
@@ -295,13 +278,7 @@ async def handle_add_plants(
                     row=free_row,
                     col=free_col,
                     phenotype=phenotype,
-                    seedling_start=seedling_start,
-                    mother_start=mother_start,
-                    clone_start=clone_start,
-                    veg_start=veg_start,
-                    flower_start=flower_start,
-                    dry_start=dry_start,
-                    cure_start=cure_start,
+                    **parsed_dates,
                 )
                 plants_added_count += 1
             except GrowspaceError as err:

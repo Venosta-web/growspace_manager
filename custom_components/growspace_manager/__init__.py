@@ -482,6 +482,74 @@ async def websocket_get_event_log(hass: HomeAssistant, connection, msg):
                             if "timestamp" not in data and event_row.time_fired_ts:
                                 data["timestamp"] = event_row.time_fired_ts * 1000
 
+                            # Event merging logic for environmental alerts
+                            merged = False
+                            if formatted_events:
+                                last = formatted_events[-1]
+                                # Check shared properties for merging (same type, growspace, severity)
+                                if (
+                                    data.get("category") == "alert"
+                                    and last.get("category") == "alert"
+                                    and data.get("growspace_id")
+                                    == last.get("growspace_id")
+                                    and data.get("sensor_type")
+                                    == last.get("sensor_type")
+                                    and "severity" in data
+                                    and "severity" in last
+                                    and round(float(data["severity"]), 2)
+                                    == round(float(last["severity"]), 2)
+                                ):
+                                    # Check time gap (DESC order means last is NEWER than data)
+                                    try:
+                                        last_start_iso = last.get("start_time")
+                                        data_end_iso = data.get("end_time")
+
+                                        if last_start_iso and data_end_iso:
+                                            last_start = datetime.fromisoformat(
+                                                last_start_iso
+                                            )
+                                            data_end = datetime.fromisoformat(
+                                                data_end_iso
+                                            )
+
+                                            gap = (
+                                                last_start - data_end
+                                            ).total_seconds()
+
+                                            # Merge if gap is small (e.g., < 10 minutes)
+                                            if 0 <= gap <= 600:
+                                                # Update the more recent event to cover the older one's start
+                                                last["start_time"] = data["start_time"]
+                                                last["duration_sec"] = last.get(
+                                                    "duration_sec", 0
+                                                ) + data.get("duration_sec", 0)
+
+                                                # Merge reasons (uniquify)
+                                                if (
+                                                    "reasons" in data
+                                                    and "reasons" in last
+                                                ):
+                                                    combined = list(
+                                                        dict.fromkeys(
+                                                            last["reasons"]
+                                                            + data["reasons"]
+                                                        )
+                                                    )
+                                                    last["reasons"] = combined[:5]
+
+                                                merged = True
+                                                _LOGGER.debug(
+                                                    "Merged logbook event %s into %s (gap: %ds)",
+                                                    event_row.event_id,
+                                                    last.get("event_id"),
+                                                    gap,
+                                                )
+                                    except (ValueError, TypeError, KeyError):
+                                        pass
+
+                            if merged:
+                                continue
+
                             # Add event_id for deletion
                             data["event_id"] = event_row.event_id
 
