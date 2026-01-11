@@ -1,6 +1,7 @@
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from homeassistant.core import HomeAssistant
 from homeassistant.data_entry_flow import FlowResultType
 from pytest_homeassistant_custom_component.common import MockConfigEntry, mock_component
 
@@ -9,7 +10,6 @@ from custom_components.growspace_manager.config_handlers.environment_config_hand
 )
 from custom_components.growspace_manager.const import DOMAIN
 from custom_components.growspace_manager.models import EnvironmentConfig, Growspace
-from homeassistant.core import HomeAssistant
 
 
 @pytest.fixture
@@ -89,7 +89,15 @@ async def test_configure_dehumidifier_thresholds(
     # We'll generate the full payload.
 
     thresholds_input = {}
-    stages = ["veg", "early_flower", "mid_flower", "late_flower"]
+    stages = [
+        "seedling",
+        "veg",
+        "early_flower",
+        "mid_flower",
+        "late_flower",
+        "dry",
+        "cure",
+    ]
     cycles = ["day", "night"]
 
     for stage in stages:

@@ -47,11 +47,11 @@ DEFAULT_THRESHOLDS = {
         "day": {"on": 1.35, "off": 1.4},
         "night": {"on": 0.95, "off": 1.05},
     },
-    "drying": {
+    "dry": {
         "day": {"on": 0.8, "off": 1.0},
         "night": {"on": 0.85, "off": 1.05},
     },
-    "curing": {
+    "cure": {
         "day": {"on": 0.9, "off": 1.1},
         "night": {"on": 0.95, "off": 1.15},
     },
@@ -295,9 +295,9 @@ class DehumidifierCoordinator:
 
         # Priority: Cure > Dry > Flower > Veg > Seedling
         if max_cure_days > 0:
-            return "curing"
+            return "cure"
         if max_dry_days > 0:
-            return "drying"
+            return "dry"
         if max_flower_days >= 50:
             return "late_flower"
         if max_flower_days >= 22:

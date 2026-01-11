@@ -179,6 +179,17 @@ class PlantStage(StrEnum):
     CURE = "cure"
 
 
+DEHUMIDIFIER_STAGES: Final = [
+    PlantStage.SEEDLING.value,
+    PlantStage.VEG.value,
+    "early_flower",
+    "mid_flower",
+    "late_flower",
+    PlantStage.DRY.value,
+    PlantStage.CURE.value,
+]
+
+
 class GrowspaceSensorType(StrEnum):
     STRESS = "stress"
     MOLD = "mold"

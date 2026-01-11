@@ -2,13 +2,52 @@
 
 from __future__ import annotations
 
+import logging
 from dataclasses import asdict, dataclass, field, fields
 from datetime import datetime
 from enum import StrEnum
-from typing import Any, Final, ReadOnly, Self, TypedDict
+from typing import (
+    Any,
+    Final,
+    ReadOnly,
+    Self,
+    TypedDict,
+    get_args,
+    get_origin,
+    get_type_hints,
+)
 
 from .const import PlantStage
 from .utils import calculate_days_since, days_to_week
+
+_LOGGER = logging.getLogger(__name__)
+
+
+def _handle_nested_value(attr_type: Any, val: Any) -> Any:
+    """Recursively handle nested BaseModel types based on type hints."""
+    if val is None:
+        return None
+
+    origin = get_origin(attr_type) or attr_type
+
+    # Case 1: Direct BaseModel subclass (or class with from_dict)
+    if hasattr(attr_type, "from_dict") and isinstance(val, dict):
+        return attr_type.from_dict(val)
+
+    # Case 2: List of BaseModel subclasses
+    if origin is list and (args := get_args(attr_type)):
+        if hasattr(args[0], "from_dict") and isinstance(val, list):
+            return [args[0].from_dict(i) if isinstance(i, dict) else i for i in val]
+
+    # Case 3: Dict of BaseModel subclasses
+    if origin is dict and (args := get_args(attr_type)) and len(args) > 1:
+        if hasattr(args[1], "from_dict") and isinstance(val, dict):
+            return {
+                k: args[1].from_dict(v) if isinstance(v, dict) else v
+                for k, v in val.items()
+            }
+
+    return val
 
 
 class IrrigationScheduleItem(TypedDict):
@@ -98,44 +137,37 @@ class BaseModel:
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> Self:
-        """Create from dictionary with optional migrations and nested handlers."""
-        # Use a copy to avoid mutating the original
+        """Create from dictionary with automated nested handling and defaults."""
         data = data.copy()
-
-        # Get configuration from class attributes
-
-        nested_handlers: dict[str, Any] | None = getattr(cls, "_NESTED_HANDLERS", None)
+        type_hints = get_type_hints(cls)
         defaults: dict[str, Any] | None = getattr(cls, "_DEFAULTS", None)
 
-        # Apply defaults
         if defaults:
             for key, value in defaults.items():
                 if key not in data:
                     data[key] = value
 
-        # Apply nested handlers
-        if nested_handlers:
-            for key, handler in nested_handlers.items():
-                val = data.get(key)
-                if val is not None and isinstance(val, dict):
-                    data[key] = handler(val)
-
-        # Filter fields
         catch_all_field = getattr(cls, "_CATCH_ALL_FIELD", None)
         allowed_keys = {f.name for f in fields(cls)}
-        filtered_data = {k: v for k, v in data.items() if k in allowed_keys}
+
+        filtered_data: dict[str, Any] = {}
+        for key, val in data.items():
+            if key in allowed_keys:
+                attr_type = type_hints.get(key)
+                filtered_data[key] = _handle_nested_value(attr_type, val)
 
         if catch_all_field:
             extras = {k: v for k, v in data.items() if k not in allowed_keys}
-            # Merge with existing data in the catch-all field if present
-            existing_catch_all = filtered_data.get(catch_all_field, {})
-            # Ensure it's a dict - if None or invalid type, start fresh
+            existing_catch_all = filtered_data.get(catch_all_field)
             if not isinstance(existing_catch_all, dict):
                 existing_catch_all = {}
+
             existing_catch_all.update(extras)
             filtered_data[catch_all_field] = existing_catch_all
 
-        return cls(**filtered_data)
+        # Finally, filter filtered_data to ONLY allowed_keys before passing to constructor
+        constructor_data = {k: v for k, v in filtered_data.items() if k in allowed_keys}
+        return cls(**constructor_data)
 
 
 @dataclass(slots=True, kw_only=True)
@@ -229,12 +261,6 @@ class Growspace(BaseModel):
     dehumidifier_config: dict[str, Any] = field(default_factory=dict)
     irrigation_strategy: IrrigationStrategy = field(default_factory=IrrigationStrategy)
     growspace_type: GrowspaceType = field(default=GrowspaceType.FLOWER)
-
-    _NESTED_HANDLERS = {
-        "irrigation_strategy": IrrigationStrategy.from_dict,
-        "environment_config": EnvironmentConfig.from_dict,
-        "irrigation_config": IrrigationConfig.from_dict,
-    }
 
 
 @dataclass(slots=True)

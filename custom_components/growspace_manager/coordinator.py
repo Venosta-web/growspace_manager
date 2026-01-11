@@ -10,8 +10,8 @@ from dataclasses import asdict
 from datetime import date, datetime, timedelta
 from typing import Any, override
 
-from homeassistant.config_entries import ConfigEntryState
-from homeassistant.core import HomeAssistant
+from homeassistant.config_entries import ConfigEntry, ConfigEntryState
+from homeassistant.core import HomeAssistant, ServiceCall
 from homeassistant.exceptions import ServiceValidationError
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
@@ -134,7 +134,9 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
     strain_library: StrainLibrary | None = None
 
     @staticmethod
-    def get_for_service_call(hass: HomeAssistant, call: Any) -> GrowspaceCoordinator:
+    def get_for_service_call(
+        hass: HomeAssistant, call: ServiceCall | dict[str, Any]
+    ) -> GrowspaceCoordinator:
         """Retrieve the correct coordinator based on service call data.
 
         Args:
@@ -148,9 +150,11 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
             ServiceValidationError: If no matching coordinator can be found.
         """
 
-        data = call.data if hasattr(call, "data") else call
+        data = call.data if isinstance(call, ServiceCall) else call
 
-        entries = hass.config_entries.async_entries(DOMAIN)
+        entries: list[ConfigEntry[GrowspaceCoordinator]] = (
+            hass.config_entries.async_entries(DOMAIN)
+        )
         coordinators: list[GrowspaceCoordinator] = [
             entry.runtime_data
             for entry in entries
@@ -185,9 +189,9 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
     def __init__(
         self,
         hass: HomeAssistant,
-        entry: Any,
-        data: dict | None = None,
-        options: dict | None = None,
+        entry: ConfigEntry[GrowspaceCoordinator],
+        data: dict[str, Any] | None = None,
+        options: dict[str, Any] | None = None,
         strain_library: StrainLibrary | None = None,
     ) -> None:
         """Initialize the Growspace Coordinator.
@@ -351,7 +355,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
         self._serialized_cache[growspace_id] = serialized
         return serialized
 
-    def _load_plants(self, raw_plants: dict) -> None:
+    def _load_plants(self, raw_plants: dict[str, Any]) -> None:
         """Load plants from raw data."""
         for pid, pdata in raw_plants.items():
             try:
@@ -364,7 +368,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
             except Exception:
                 _LOGGER.exception("Failed to load plant %s", pid)
 
-    def _load_growspaces(self, raw_growspaces: dict) -> None:
+    def _load_growspaces(self, raw_growspaces: dict[str, Any]) -> None:
         """Load growspaces from raw data."""
         for gid, gdata in raw_growspaces.items():
             try:
@@ -389,7 +393,9 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
 
     # -----------------------------
 
-    async def async_initialize_sub_coordinators(self, entry: Any) -> None:
+    async def async_initialize_sub_coordinators(
+        self, entry: ConfigEntry[GrowspaceCoordinator]
+    ) -> None:
         """Initialize sub-coordinators for irrigation and dehumidifier."""
         try:
             async with asyncio.TaskGroup() as tg:
@@ -405,7 +411,10 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
             )
 
     async def _setup_growspace_sub_coordinators(
-        self, entry: Any, growspace_id: str, gs: Growspace
+        self,
+        entry: ConfigEntry[GrowspaceCoordinator],
+        growspace_id: str,
+        gs: Growspace,
     ) -> None:
         """Setup sub-coordinators for a single growspace."""
         if gs.irrigation_strategy.enabled:

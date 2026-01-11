@@ -357,31 +357,32 @@ def evaluate_direct_temp_stress(
         observations.append(prob)
         reasons.append((prob[0], f"Night Temp High ({temp})"))
 
-    # 2: General Stress/Warm/Cold Checks (Cascaded IF/ELIF Chain)
-    if temp > 32:
-        prob = env_config.get("prob_temp_extreme_heat", (0.98, 0.05))
-        observations.append(prob)
-        reasons.append((prob[0], f"Extreme Heat ({temp})"))
-    elif temp > 30:
-        prob = env_config.get("prob_temp_high_heat", (0.85, 0.15))
-        observations.append(prob)
-        reasons.append((prob[0], f"High Heat ({temp})"))
-    elif state.flower_days >= 42 and temp > 27:
-        prob = (0.70, 0.30)
-        observations.append(prob)
-        reasons.append((prob[0], f"Temp Warm ({temp})"))
-    elif temp > 28:
-        prob = env_config.get("prob_temp_warm", (0.65, 0.30))
-        observations.append(prob)
-        reasons.append((prob[0], f"Temp Warm ({temp})"))
-    elif temp < 15:
-        prob = env_config.get("prob_temp_extreme_cold", (0.95, 0.08))
-        observations.append(prob)
-        reasons.append((prob[0], f"Extreme Cold ({temp})"))
-    elif temp < 18:
-        prob = env_config.get("prob_temp_cold", (0.80, 0.20))
-        observations.append(prob)
-        reasons.append((prob[0], f"Temp Cold ({temp})"))
+    # 2: General Stress/Warm/Cold Checks (Modernized with pattern matching)
+    match temp:
+        case t if t > 32:
+            prob = env_config.get("prob_temp_extreme_heat", (0.98, 0.05))
+            observations.append(prob)
+            reasons.append((prob[0], f"Extreme Heat ({temp})"))
+        case t if t > 30:
+            prob = env_config.get("prob_temp_high_heat", (0.85, 0.15))
+            observations.append(prob)
+            reasons.append((prob[0], f"High Heat ({temp})"))
+        case t if state.flower_days >= 42 and t > 27:
+            prob = (0.70, 0.30)
+            observations.append(prob)
+            reasons.append((prob[0], f"Temp Warm ({temp})"))
+        case t if t > 28:
+            prob = env_config.get("prob_temp_warm", (0.65, 0.30))
+            observations.append(prob)
+            reasons.append((prob[0], f"Temp Warm ({temp})"))
+        case t if t < 15:
+            prob = env_config.get("prob_temp_extreme_cold", (0.95, 0.08))
+            observations.append(prob)
+            reasons.append((prob[0], f"Extreme Cold ({temp})"))
+        case t if t < 18:
+            prob = env_config.get("prob_temp_cold", (0.80, 0.20))
+            observations.append(prob)
+            reasons.append((prob[0], f"Temp Cold ({temp})"))
 
     return observations, reasons
 
@@ -404,24 +405,20 @@ def evaluate_direct_humidity_stress(
         observations.append(prob)
         reasons.append((prob[0], f"Humidity Dry ({hum})"))
 
-    # Stage-specific high humidity/out-of-range checks
-    veg = state.flower_days == 0
-    flower_early = 0 < state.flower_days < 42
-    flower_late = state.flower_days >= 42
-
-    # Use elif for mutually exclusive stage checks
-    if veg and hum > 80:
-        prob = env_config.get("prob_humidity_high_veg", (0.80, 0.20))
-        observations.append(prob)
-        reasons.append((prob[0], f"Humidity High ({hum})"))
-    elif flower_early and (hum > 60 or hum < 45):
-        prob = (0.75, 0.25)
-        observations.append(prob)
-        reasons.append((prob[0], f"Humidity out of range (<45 or >60) ({hum})"))
-    elif flower_late and (hum > 60 or hum < 40):
-        prob = (0.85, 0.15)
-        observations.append(prob)
-        reasons.append((prob[0], f"Humidity out of range (<40 or >60) ({hum})"))
+    # Stage-dependent high humidity/out-of-range checks (Modernized with pattern matching)
+    match (state.flower_days == 0, 0 < state.flower_days < 42, state.flower_days >= 42):
+        case (True, _, _) if hum > 80:
+            prob = env_config.get("prob_humidity_high_veg", (0.80, 0.20))
+            observations.append(prob)
+            reasons.append((prob[0], f"Humidity High ({hum})"))
+        case (_, True, _) if hum > 60 or hum < 45:
+            prob = (0.75, 0.25)
+            observations.append(prob)
+            reasons.append((prob[0], f"Humidity out of range (<45 or >60) ({hum})"))
+        case (_, _, True) if hum > 60 or hum < 40:
+            prob = (0.85, 0.15)
+            observations.append(prob)
+            reasons.append((prob[0], f"Humidity out of range (<40 or >60) ({hum})"))
 
     return observations, reasons
 
