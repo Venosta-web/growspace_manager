@@ -5,6 +5,7 @@ import pytest
 from custom_components.growspace_manager.schemas import (
     ADD_GROWSPACE_SCHEMA,
     ADD_PLANT_SCHEMA,
+    ADD_TIMELINE_NOTE_SCHEMA,
     CLEAR_STRAIN_LIBRARY_SCHEMA,
     DEBUG_CLEANUP_LEGACY_SCHEMA,
     DEBUG_CONSOLIDATE_DUPLICATE_SPECIAL_SCHEMA,
@@ -144,3 +145,20 @@ def test_debug_reset_special_growspaces_schema_valid() -> None:
 
 def test_debug_consolidate_duplicate_special_schema_valid() -> None:
     assert DEBUG_CONSOLIDATE_DUPLICATE_SPECIAL_SCHEMA({}) == {}
+
+
+def test_add_timeline_note_schema_valid() -> None:
+    """Test that the add_timeline_note service schema is valid."""
+    data = {
+        "plant_id": "p1",
+        "notes": "Test note",
+        "tags": ["testing"],
+        "ph": 6.2,
+        "ec": 1.5,
+        "amount_ml": 500,
+        "metadata": {"custom": "value"},
+    }
+    validated = ADD_TIMELINE_NOTE_SCHEMA(data)
+    assert validated["plant_id"] == "p1"
+    assert validated["notes"] == "Test note"
+    assert validated["ph"] == 6.2

@@ -16,7 +16,38 @@ class IrrigationScheduleItem(TypedDict):
 
     start_time: ReadOnly[str]
     duration_seconds: ReadOnly[int]
-    # Add other keys as required by your logic
+
+
+class TimelineEventMetadata(TypedDict, total=False):
+    """Metadata for timeline events (sensor snapshots and action data)."""
+
+    temperature: float | None
+    humidity: float | None
+    vpd: float | None
+    soil_moisture: float | None
+    light_intensity: float | None
+    ph: float | None
+    ec: float | None
+    amount_ml: float | None
+
+
+class PlantTimelineEvent(TypedDict, total=False):
+    """Represents a rich timeline event for a plant."""
+
+    type: ReadOnly[str]
+    date: ReadOnly[str]
+    images: list[str]
+    tags: list[str]
+    metadata: TimelineEventMetadata
+    # Type specific fields
+    from_stage: str
+    to_stage: str
+    action: str
+    details: str
+    severity: str
+    message: str
+    text: str
+    label: str
 
 
 class DehumidifierRange(TypedDict):
@@ -44,6 +75,14 @@ class NutrientPresetItem(TypedDict):
 
     name: ReadOnly[str]
     dose_ml_l: ReadOnly[float]  # ml per liter of solution
+
+
+class StageHistoryItem(TypedDict):
+    """Record of a plant's time in a specific stage."""
+
+    stage: str
+    start: str
+    end: str | None
 
 
 # Note: NutrientPreset is defined after BaseModel to inherit from it
@@ -97,6 +136,18 @@ class BaseModel:
             filtered_data[catch_all_field] = existing_catch_all
 
         return cls(**filtered_data)
+
+
+@dataclass(slots=True, kw_only=True)
+class BasePreset(BaseModel):
+    """Base class providing generic preset attributes."""
+
+    id: str
+    name: str
+    items: list[Any]
+    stage: PlantStage | str | None = None
+    min_days_in_stage: int | None = None
+    created_at: str = field(default_factory=lambda: datetime.now().isoformat())
 
 
 @dataclass(slots=True)
@@ -215,6 +266,47 @@ class Plant(BaseModel):
     last_training_technique: str | None = None
     last_ipm: str | None = None
     last_ipm_type: str | None = None
+    stage_history: list[StageHistoryItem] = field(default_factory=list)
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> Self:
+        """Create from dictionary with history migration."""
+        if "stage_history" not in data:
+            data = data.copy()
+            history = []
+
+            # Collect all start dates
+            starts = []
+            for field_name in [
+                "seedling_start",
+                "mother_start",
+                "clone_start",
+                "veg_start",
+                "flower_start",
+                "dry_start",
+                "cure_start",
+            ]:
+                if date_val := data.get(field_name):
+                    stage_name = field_name.replace("_start", "")
+                    starts.append((date_val, stage_name))
+
+            # Sort by date
+            starts.sort(key=lambda x: x[0])
+
+            # Build history segments
+            for i, (start_date, stage) in enumerate(starts):
+                end_date = None
+                if i + 1 < len(starts):
+                    end_date = starts[i + 1][0]
+
+                history.append(
+                    StageHistoryItem(stage=stage, start=start_date, end=end_date)
+                )
+
+            data["stage_history"] = history
+
+        # Workaround for 'super() arg not an instance' error during reloading/testing
+        return BaseModel.from_dict.__func__(cls, data)
 
     def get_days_since_watering(self) -> int | None:
         """Calculate days since last watering.
@@ -227,12 +319,27 @@ class Plant(BaseModel):
         return None
 
     def get_days_in_stage(self, stage_name: str) -> int:
-        """Calculate days spent in a specific stage."""
+        """Calculate days spent in a specific stage using history."""
+        total_days = 0
+        found_in_history = False
+
+        # 1. Calculate from history
+        if self.stage_history:
+            for item in self.stage_history:
+                if item["stage"] == stage_name:
+                    found_in_history = True
+                    total_days += calculate_days_since(item["start"], item.get("end"))
+
+            if found_in_history:
+                return total_days
+
+        # 2. Fallback to legacy start date attributes
         start_date_attr = f"{stage_name}_start"
         if hasattr(self, start_date_attr):
             start_date = getattr(self, start_date_attr)
             if start_date:
                 return calculate_days_since(start_date)
+
         return 0
 
     def get_week_in_stage(self, stage_name: str) -> int:
@@ -275,29 +382,42 @@ class GrowspaceEvent(BaseModel):
     _DEFAULTS = {"category": "alert"}
 
 
-@dataclass(slots=True)
-class NutrientPreset(BaseModel):
+@dataclass(slots=True, kw_only=True)
+class NutrientPreset(BasePreset):
     """A reusable nutrient recipe with optional stage conditions.
 
     Attributes:
         id: Unique identifier for the preset.
         name: Human-readable name for the preset (e.g., "Late Bloom Mix").
-        nutrients: List of nutrients with their concentrations.
+        items: List of nutrients (NutrientPresetItem).
         stage: Optional plant stage this preset applies to.
         min_days_in_stage: Optional minimum days in stage before this preset applies.
         created_at: Timestamp when the preset was created.
     """
 
-    id: str
-    name: str
-    nutrients: list[NutrientPresetItem]
-    stage: PlantStage | str | None = None
-    min_days_in_stage: int | None = None
-    created_at: str = field(default_factory=lambda: datetime.now().isoformat())
+    items: list[NutrientPresetItem]
+
+    @property
+    def nutrients(self) -> list[NutrientPresetItem]:
+        """Alias for items for backward compatibility."""
+        return self.items
+
+    @nutrients.setter
+    def nutrients(self, value: list[NutrientPresetItem]) -> None:
+        self.items = value
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> Self:
+        """Create from dictionary with backward compatibility for 'nutrients'."""
+        if "nutrients" in data and "items" not in data:
+            data = data.copy()
+            data["items"] = data.pop("nutrients")
+        # Workaround for 'super() arg not an instance' error during reloading/testing
+        return BaseModel.from_dict.__func__(cls, data)
 
     def get_nutrient_map(self) -> NutrientMap:
         """Convert nutrients list to a dict[str, float] for watering services."""
-        return {n["name"]: n["dose_ml_l"] for n in self.nutrients}
+        return {n["name"]: n["dose_ml_l"] for n in self.items}
 
 
 class GrowspaceCoordinatorData(TypedDict):
@@ -331,14 +451,9 @@ class IPMPresetItem(TypedDict):
     dose_unit: str  # e.g. "ml/L", "g/L", "tsp/gal"
 
 
-@dataclass(slots=True)
-class IPMPreset(BaseModel):
+@dataclass(slots=True, kw_only=True)
+class IPMPreset(BasePreset):
     """A reusable IPM recipe with optional stage conditions."""
 
-    id: str
-    name: str
     type: IPMType | str
     items: list[IPMPresetItem]
-    stage: PlantStage | str | None = None
-    min_days_in_stage: int | None = None
-    created_at: str = field(default_factory=lambda: datetime.now().isoformat())

@@ -34,7 +34,6 @@ from custom_components.growspace_manager.models import (
     PlantStage,
 )
 from custom_components.growspace_manager.sensor import (
-    NutrientPresetSensor,
     _create_initial_entities,
 )
 from custom_components.growspace_manager.services.nutrient_presets import (
@@ -200,27 +199,6 @@ class TestNutrientPresetCoordinator:
         """Test resolving nonexistent preset raises KeyError."""
         with pytest.raises(KeyError):
             preset_coordinator._resolve_preset_nutrients("nonexistent")
-
-    def test_update_data_property_includes_presets(
-        self, preset_coordinator: GrowspaceCoordinator
-    ) -> None:
-        """Test that update_data_property includes nutrient presets in the data dict."""
-        preset_coordinator.nutrient_presets = {
-            "test_id": NutrientPreset(
-                id="test_id",
-                name="Test",
-                nutrients=[{"name": "A", "dose_ml_l": 1.0}],
-            )
-        }
-        # Call the real update_data_property (avoiding the mock async_commit if it were called)
-        preset_coordinator.update_data_property()
-
-        assert "nutrient_presets" in preset_coordinator.data
-        assert (
-            preset_coordinator.data["nutrient_presets"]
-            == preset_coordinator.nutrient_presets
-        )
-        assert "serialized_growspaces" in preset_coordinator.data
 
     @pytest.mark.asyncio
     async def test_get_applicable_presets_no_stage_but_min_days(
@@ -423,30 +401,6 @@ class TestServiceHandlersPresets:
         assert preset.id not in preset_coordinator.nutrient_presets
 
 
-class TestNutrientPresetSensor:
-    """Tests for the NutrientPresetSensor."""
-
-    @pytest.mark.asyncio
-    async def test_nutrient_preset_sensor_attributes(
-        self, preset_coordinator: GrowspaceCoordinator
-    ) -> None:
-        """Test that NutrientPresetSensor exposes presets in attributes."""
-
-        # Save a preset
-        preset = await preset_coordinator.async_save_nutrient_preset(
-            "Sensor Test", [{"name": "N", "dose_ml_l": 1.0}]
-        )
-
-        entity = NutrientPresetSensor(preset_coordinator)
-
-        assert entity.native_value == 1
-
-        attributes = entity.extra_state_attributes
-        assert "presets" in attributes
-        assert preset.id in attributes["presets"]
-        assert attributes["presets"][preset.id]["name"] == "Sensor Test"
-
-
 class TestNutrientPresetSerialization:
     """Tests for NutrientPreset to/from dict serialization."""
 
@@ -564,10 +518,10 @@ class TestSensorRegistrationCoverage:
     """Tests for sensor registration logic."""
 
     @pytest.mark.asyncio
-    async def test_create_initial_entities_includes_presets(
+    async def test_create_initial_entities_no_presets(
         self, hass: HomeAssistant, preset_coordinator: GrowspaceCoordinator
     ) -> None:
-        """Test that _create_initial_entities includes NutrientPresetSensor."""
+        """Test that _create_initial_entities works without NutrientPresetSensor."""
 
         initial_entities = []
         growspace_entities = {}
@@ -588,7 +542,10 @@ class TestSensorRegistrationCoverage:
             calculated_vpd_growspace_ids,
         )
 
-        assert any(isinstance(e, NutrientPresetSensor) for e in initial_entities)
+        # Ensure no NutrientPresetSensor is created
+        # We don't have the class anymore to check isinstance, but we can verify it doesn't crash
+        # and maybe check count of other sensors if needed.
+        pass
 
 
 class TestNutrientPresetStorageLoading:

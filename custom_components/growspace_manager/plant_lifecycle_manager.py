@@ -416,6 +416,53 @@ class PlantLifecycleManager:
         if new_stage in stage_map:
             updates[stage_map[new_stage]] = trans_date_str
 
+        # Update stage history
+        plant = self.coordinator.plants.get(plant_id)
+        if plant:
+            # Close current stage in history
+            if plant.stage_history:
+                # Find the last open entry
+                for item in reversed(plant.stage_history):
+                    if item.get("end") is None:
+                        item["end"] = trans_date_str
+                        break
+
+            # Add new stage to history
+            # Note: We append to a new list to ensure mutation triggers updates if needed,
+            # though here we are updating the mutable list in place, but we need to ensure
+            # it's persisted. The coordinator commits the whole object.
+            # However, we are in 'async_update_plant' context conceptually?
+            # No, we are calling 'async_update_plant' below with **updates.
+            # 'stage_history' is not in **updates yet.
+
+            # We need to pass the updated history to async_update_plant or update it on the object
+            # and let async_update_plant handle it if passed.
+
+            # Let's construct the new history list and pass it in updates
+            # current_history = list(plant.stage_history)  # Unused
+            # ... wait, I can't easily iterate and modify the copy to close the previous stage
+            # without complex logic if I don't modify the object directly.
+
+            # But async_update_plant takes **updates and sets attributes.
+            # So I should prepare the NEW history list.
+
+            new_history = [
+                dict(item) for item in plant.stage_history
+            ]  # Deep copy dicts
+
+            # Close last open item
+            for item in reversed(new_history):
+                if item.get("end") is None:
+                    item["end"] = trans_date_str
+                    break
+
+            # Add new
+            new_history.append(
+                {"stage": new_stage, "start": trans_date_str, "end": None}
+            )
+
+            updates["stage_history"] = new_history
+
         await self.async_update_plant(plant_id, **updates)
 
         plant = self.coordinator.plants.get(plant_id)

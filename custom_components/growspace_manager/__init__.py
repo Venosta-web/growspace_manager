@@ -7,6 +7,7 @@ import json  # Added for event data parsing
 import logging
 import pathlib
 import tempfile
+from dataclasses import asdict
 from datetime import datetime, timedelta
 from typing import Any, override
 
@@ -33,6 +34,15 @@ from homeassistant.helpers.typing import ConfigType
 
 from . import service_registration
 from .const import (
+    ATTR_AMOUNT_ML,
+    ATTR_EC,
+    ATTR_IMAGES,
+    ATTR_METADATA,
+    ATTR_NOTES,
+    ATTR_PH,
+    ATTR_PLANT_ID,
+    ATTR_TAGS,
+    ATTR_TRANSITION_DATE,
     DOMAIN,
     EVENT_GROWSPACE_LOG_ENTRY,
     PLATFORMS,
@@ -41,6 +51,7 @@ from .const import (
 )
 from .coordinator import GrowspaceCoordinator
 from .intent import async_setup_intents
+from .services.plant import async_add_timeline_note
 from .services.strain_library import StrainLibrary
 
 CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
@@ -64,78 +75,6 @@ def _extract_ts(state_obj: Any) -> datetime:
         parsed = dt_util.parse_datetime(ts_raw)
         return parsed if parsed else _EPOCH_SENTINEL
     return ts_raw
-
-
-def _query_recorder_events(
-    hass: HomeAssistant,
-    start_ts: float,
-    end_ts: float,
-    limit: int = 100,
-    growspace_id: str | None = None,
-) -> list[dict]:
-    """Query events from the recorder database using new schema."""
-    formatted_events = []
-    try:
-        with session_scope(hass=hass, read_only=True) as session:
-            # First, find the event_type_id for our event type
-            event_type_row = (
-                session.query(EventTypes.event_type_id)
-                .filter(EventTypes.event_type == EVENT_GROWSPACE_LOG_ENTRY)
-                .first()
-            )
-
-            if not event_type_row:
-                _LOGGER.debug(
-                    "Event type %s not found in recorder",
-                    EVENT_GROWSPACE_LOG_ENTRY,
-                )
-                return []
-
-            event_type_id = event_type_row[0]
-
-            # Query events with proper joins to EventData
-            query = (
-                session.query(Events, EventData)
-                .join(EventData, Events.data_id == EventData.data_id, isouter=True)
-                .filter(
-                    Events.event_type_id == event_type_id,
-                    Events.time_fired_ts >= start_ts,
-                    Events.time_fired_ts <= end_ts,
-                )
-                .order_by(Events.time_fired_ts.desc())
-            )
-
-            if limit:
-                query = query.limit(limit * 2)  # Get more to filter later
-
-            for event_row, event_data_row in query:
-                try:
-                    # Parse event data from the EventData table
-                    if event_data_row and event_data_row.shared_data:
-                        data = json.loads(event_data_row.shared_data)
-                    else:
-                        continue
-
-                    # Filter by growspace_id if specified
-                    if growspace_id and data.get("growspace_id") != growspace_id:
-                        continue
-
-                    # Ensure timestamp is present
-                    if "timestamp" not in data and event_row.time_fired_ts:
-                        data["timestamp"] = event_row.time_fired_ts
-
-                    formatted_events.append(data)
-
-                    # Stop if we have enough
-                    if limit and len(formatted_events) >= limit:
-                        break
-                except (json.JSONDecodeError, AttributeError) as err:
-                    _LOGGER.debug("Error parsing event data: %s", err)
-                    continue
-    except Exception as err:
-        _LOGGER.warning("Error querying recorder events: %s", err)
-
-    return formatted_events
 
 
 type GrowspaceConfigEntry = ConfigEntry[GrowspaceCoordinator]
@@ -165,8 +104,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: GrowspaceConfigEntry) ->
         await strain_library_instance.async_setup()
         hass.data[DOMAIN]["strain_library"] = strain_library_instance
 
-        # Register View
+        # Register Views
         hass.http.register_view(StrainLibraryUploadView(hass, strain_library_instance))
+        hass.http.register_view(StrainLibraryImageView(hass, strain_library_instance))
 
         # Register all custom services
         _LOGGER.debug("Registering services for domain %s", DOMAIN)
@@ -265,6 +205,11 @@ async def async_unload_entry(hass: HomeAssistant, entry: GrowspaceConfigEntry) -
 
     if unload_ok:
         # Services remain registered until HA shutdown
+
+        # Clean up global Strain Library
+        if DOMAIN in hass.data and "strain_library" in hass.data[DOMAIN]:
+            await hass.data[DOMAIN]["strain_library"].async_close()
+            del hass.data[DOMAIN]["strain_library"]
 
         _LOGGER.info("Unloaded Growspace Manager for entry %s", entry.entry_id)
         return True
@@ -381,6 +326,46 @@ class StrainLibraryUploadView(HomeAssistantView):
                 await self.hass.async_add_executor_job(temp_path.unlink)
 
 
+class StrainLibraryImageView(HomeAssistantView):
+    """View to serve images from the strain library storage."""
+
+    url = "/api/growspace_manager/v1/images/{filename:.*}"
+    name = "api:growspace_manager:v1:images"
+    requires_auth = False  # Or True, depending on if you want auth for images
+
+    def __init__(
+        self,
+        hass: HomeAssistant,
+        strain_lib: StrainLibrary,
+    ) -> None:
+        """Initialize the view."""
+        self.hass = hass
+        self.strain_library = strain_lib
+
+    @override
+    async def get(self, request: web.Request, filename: str) -> web.Response:
+        """Handle GET request for image."""
+        if not self.strain_library.image_manager:
+            return web.Response(status=404, text="Image manager not available")
+
+        storage_dir = self.strain_library.image_manager.storage_dir
+
+        # Security check: resolve path and ensure it's within storage_dir
+        try:
+            file_path = (storage_dir / filename).resolve()
+            if not str(file_path).startswith(str(storage_dir.resolve())):
+                _LOGGER.warning("Attempted directory traversal access: %s", filename)
+                return web.Response(status=403, text="Access denied")
+
+            if not file_path.exists() or not file_path.is_file():
+                return web.Response(status=404, text="Image not found")
+
+            return web.FileResponse(file_path)
+        except Exception as e:
+            _LOGGER.error("Error serving image %s: %s", filename, e)
+            return web.Response(status=500, text="Internal server error")
+
+
 WS_TYPE_GET_LOG = f"{DOMAIN}/get_log"
 SCHEMA_WS_GET_LOG = websocket_api.BASE_COMMAND_MESSAGE_SCHEMA.extend(
     {
@@ -405,7 +390,9 @@ async def websocket_get_event_log(hass: HomeAssistant, connection, msg):
     Uses direct Recorder event query since logbook.async_get_events was removed.
     """
     growspace_id = msg.get("growspace_id")
-    limit = msg.get("limit", 100)  # Default limit 100
+    limit = msg.get("limit", 1000)  # Default limit 100
+    spammy_limit = 200
+    spammy_categories = {"optimal", "stress", "mold"}
 
     # Time window: last 7 days
     end_time = dt_util.utcnow()
@@ -421,6 +408,9 @@ async def websocket_get_event_log(hass: HomeAssistant, connection, msg):
         def _query_events():
             """Query events from the recorder database using new schema."""
             formatted_events = []
+            normal_count = 0
+            spammy_count = 0
+
             try:
                 with session_scope(hass=hass, read_only=True) as session:
                     # First, find the event_type_id for our event type
@@ -440,10 +430,13 @@ async def websocket_get_event_log(hass: HomeAssistant, connection, msg):
                     event_type_id = event_type_row[0]
 
                     # Query events with proper joins to EventData
+                    # INNER JOIN (isouter=False) to ensure we only get events with data
                     query = (
                         session.query(Events, EventData)
                         .join(
-                            EventData, Events.data_id == EventData.data_id, isouter=True
+                            EventData,
+                            Events.data_id == EventData.data_id,
+                            isouter=False,
                         )
                         .filter(
                             Events.event_type_id == event_type_id,
@@ -453,8 +446,9 @@ async def websocket_get_event_log(hass: HomeAssistant, connection, msg):
                         .order_by(Events.time_fired_ts.desc())
                     )
 
+                    # Safety Limit: Fetch a buffer to account for spammy filtering
                     if limit:
-                        query = query.limit(limit * 2)  # Get more to filter later
+                        query = query.limit(limit * 5)
 
                     for event_row, event_data_row in query:
                         try:
@@ -471,15 +465,32 @@ async def websocket_get_event_log(hass: HomeAssistant, connection, msg):
                             ):
                                 continue
 
+                            # Handle Limits
+                            category = data.get("category")
+                            is_spammy = category in spammy_categories
+
+                            if is_spammy:
+                                if spammy_count >= spammy_limit:
+                                    continue
+                                spammy_count += 1
+                            else:
+                                if normal_count >= limit:
+                                    continue
+                                normal_count += 1
+
                             # Ensure timestamp is present
                             if "timestamp" not in data and event_row.time_fired_ts:
                                 data["timestamp"] = event_row.time_fired_ts
 
+                            # Add event_id for deletion
+                            data["event_id"] = event_row.event_id
+
                             formatted_events.append(data)
 
-                            # Stop if we have enough
-                            if limit and len(formatted_events) >= limit:
+                            # Stop if we have satisfied both limits
+                            if spammy_count >= spammy_limit and normal_count >= limit:
                                 break
+
                         except (json.JSONDecodeError, AttributeError) as err:
                             _LOGGER.debug("Error parsing event data: %s", err)
                             continue
@@ -539,8 +550,47 @@ SCHEMA_WS_GET_STRAIN_LIBRARY = websocket_api.BASE_COMMAND_MESSAGE_SCHEMA.extend(
     }
 )
 
+WS_TYPE_GET_NUTRIENT_PRESETS = f"{DOMAIN}/get_nutrient_presets"
+SCHEMA_WS_GET_NUTRIENT_PRESETS = websocket_api.BASE_COMMAND_MESSAGE_SCHEMA.extend(
+    {
+        vol.Required("type"): WS_TYPE_GET_NUTRIENT_PRESETS,
+    }
+)
 
-async def websocket_get_strain_library(
+WS_TYPE_GET_IPM_PRESETS = f"{DOMAIN}/get_ipm_presets"
+SCHEMA_WS_GET_IPM_PRESETS = websocket_api.BASE_COMMAND_MESSAGE_SCHEMA.extend(
+    {
+        vol.Required("type"): WS_TYPE_GET_IPM_PRESETS,
+    }
+)
+
+WS_TYPE_ADD_TIMELINE_NOTE = f"{DOMAIN}/add_timeline_note"
+SCHEMA_WS_ADD_TIMELINE_NOTE = websocket_api.BASE_COMMAND_MESSAGE_SCHEMA.extend(
+    {
+        vol.Required("type"): WS_TYPE_ADD_TIMELINE_NOTE,
+        vol.Required(ATTR_PLANT_ID): str,
+        vol.Required(ATTR_NOTES): str,
+        vol.Optional(ATTR_TRANSITION_DATE): vol.Any(str, None),
+        vol.Optional(ATTR_IMAGES): [str],
+        vol.Optional(ATTR_TAGS): [str],
+        vol.Optional(ATTR_PH): vol.Any(float, int),
+        vol.Optional(ATTR_EC): vol.Any(float, int),
+        vol.Optional(ATTR_AMOUNT_ML): vol.Any(float, int),
+        vol.Optional(ATTR_METADATA): dict,
+    }
+)
+
+WS_TYPE_REMOVE_TIMELINE_EVENT = f"{DOMAIN}/remove_timeline_event"
+SCHEMA_WS_REMOVE_TIMELINE_EVENT = websocket_api.BASE_COMMAND_MESSAGE_SCHEMA.extend(
+    {
+        vol.Required("type"): WS_TYPE_REMOVE_TIMELINE_EVENT,
+        vol.Required("event_id"): int,
+    }
+)
+
+
+@callback
+def websocket_get_strain_library(
     hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
 ) -> None:
     """Handle get strain library command via WebSocket."""
@@ -553,11 +603,103 @@ async def websocket_get_strain_library(
             return
 
         strain_library: StrainLibrary = hass.data[DOMAIN]["strain_library"]
-        # Fetch the full analytics payload
-        analytics = strain_library.get_analytics()
-        connection.send_result(msg["id"], analytics)
+        # Return full strain data (including image_path) for frontend display
+        all_strains = strain_library.get_all()
+        response = {
+            "strains": all_strains,
+            "strain_list": list(all_strains.keys()),
+        }
+        connection.send_result(msg["id"], response)
     except Exception as err:
         _LOGGER.exception("Error handling websocket_get_strain_library")
+        connection.send_error(msg["id"], "unknown_error", str(err))
+
+
+@callback
+def websocket_get_nutrient_presets(
+    hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
+) -> None:
+    """Handle get nutrient presets command via WebSocket."""
+    try:
+        coordinator: GrowspaceCoordinator = GrowspaceCoordinator.get_for_service_call(
+            hass, msg
+        )
+
+        response = {pid: asdict(p) for pid, p in coordinator.nutrient_presets.items()}
+        connection.send_result(msg["id"], response)
+    except Exception as err:
+        _LOGGER.exception("Error handling websocket_get_nutrient_presets")
+        connection.send_error(msg["id"], "unknown_error", str(err))
+
+
+@callback
+def websocket_get_ipm_presets(
+    hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
+) -> None:
+    """Handle get IPM presets command via WebSocket."""
+    try:
+        coordinator: GrowspaceCoordinator = GrowspaceCoordinator.get_for_service_call(
+            hass, msg
+        )
+
+        response = {pid: asdict(p) for pid, p in coordinator.ipm_presets.items()}
+        connection.send_result(msg["id"], response)
+    except Exception as err:
+        _LOGGER.exception("Error handling websocket_get_ipm_presets")
+        connection.send_error(msg["id"], "unknown_error", str(err))
+
+
+async def websocket_add_timeline_note(
+    hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
+) -> None:
+    """Handle add timeline note command via WebSocket."""
+    try:
+        coordinator = GrowspaceCoordinator.get_for_service_call(hass, msg)
+        strain_library = hass.data[DOMAIN]["strain_library"]
+
+        await async_add_timeline_note(
+            hass,
+            coordinator,
+            strain_library,
+            plant_id=msg[ATTR_PLANT_ID],
+            notes=msg[ATTR_NOTES],
+            transition_date_raw=msg.get(ATTR_TRANSITION_DATE),
+            images_base64=msg.get(ATTR_IMAGES),
+            tags=msg.get(ATTR_TAGS),
+            ph=msg.get(ATTR_PH),
+            ec=msg.get(ATTR_EC),
+            amount_ml=msg.get(ATTR_AMOUNT_ML),
+            external_metadata=msg.get(ATTR_METADATA),
+        )
+        connection.send_result(msg["id"])
+    except ServiceValidationError as err:
+        connection.send_error(msg["id"], "invalid_args", str(err))
+    except Exception as err:
+        _LOGGER.exception("Error handling websocket_add_timeline_note")
+        connection.send_error(msg["id"], "unknown_error", str(err))
+
+
+async def websocket_remove_timeline_event(
+    hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
+) -> None:
+    """Handle remove timeline event command via WebSocket."""
+    event_id = msg["event_id"]
+    try:
+        recorder = get_instance(hass)
+
+        def _delete_event():
+            with session_scope(hass=hass) as session:
+                # Delete the event from the Events table
+                # We don't delete from EventData as it might be shared
+                session.query(Events).filter(Events.event_id == event_id).delete(
+                    synchronize_session=False
+                )
+
+        await recorder.async_add_executor_job(_delete_event)
+        connection.send_result(msg["id"])
+
+    except Exception as err:
+        _LOGGER.exception("Error handling websocket_remove_timeline_event")
         connection.send_error(msg["id"], "unknown_error", str(err))
 
 
@@ -569,7 +711,7 @@ def _async_register_websocket_api(hass: HomeAssistant) -> None:
     websocket_api.async_register_command(
         hass,
         WS_TYPE_GET_LOG,
-        websocket_get_event_log,
+        websocket_api.async_response(websocket_get_event_log),
         SCHEMA_WS_GET_LOG,
     )
     websocket_api.async_register_command(
@@ -577,6 +719,18 @@ def _async_register_websocket_api(hass: HomeAssistant) -> None:
         WS_TYPE_GET_STRAIN_LIBRARY,
         websocket_get_strain_library,
         SCHEMA_WS_GET_STRAIN_LIBRARY,
+    )
+    websocket_api.async_register_command(
+        hass,
+        WS_TYPE_GET_NUTRIENT_PRESETS,
+        websocket_get_nutrient_presets,
+        SCHEMA_WS_GET_NUTRIENT_PRESETS,
+    )
+    websocket_api.async_register_command(
+        hass,
+        WS_TYPE_GET_IPM_PRESETS,
+        websocket_get_ipm_presets,
+        SCHEMA_WS_GET_IPM_PRESETS,
     )
 
     websocket_api.async_register_command(
@@ -591,6 +745,20 @@ def _async_register_websocket_api(hass: HomeAssistant) -> None:
         WS_TYPE_GET_HISTORY_STATS,
         websocket_api.async_response(websocket_get_history_stats),
         SCHEMA_WS_GET_HISTORY_STATS,
+    )
+
+    websocket_api.async_register_command(
+        hass,
+        WS_TYPE_ADD_TIMELINE_NOTE,
+        websocket_api.async_response(websocket_add_timeline_note),
+        SCHEMA_WS_ADD_TIMELINE_NOTE,
+    )
+
+    websocket_api.async_register_command(
+        hass,
+        WS_TYPE_REMOVE_TIMELINE_EVENT,
+        websocket_api.async_response(websocket_remove_timeline_event),
+        SCHEMA_WS_REMOVE_TIMELINE_EVENT,
     )
 
 

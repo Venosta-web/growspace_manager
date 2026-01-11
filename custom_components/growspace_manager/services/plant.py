@@ -1,6 +1,7 @@
 """Services related to Plants."""
 
 import logging
+import os
 from datetime import datetime
 from typing import Any
 
@@ -12,17 +13,25 @@ from homeassistant.exceptions import ServiceValidationError
 from homeassistant.helpers import entity_registry as er
 
 from ..const import (
+    ATTR_AMOUNT_ML,
     ATTR_COL,
+    ATTR_EC,
     ATTR_GROWSPACE_ID,
+    ATTR_IMAGES,
+    ATTR_METADATA,
     ATTR_MOTHER_PLANT_ID,
+    ATTR_NOTES,
     ATTR_NUM_CLONES,
+    ATTR_PH,
     ATTR_PHENOTYPE,
     ATTR_PLANT_ID,
     ATTR_ROW,
     ATTR_STRAIN,
+    ATTR_TAGS,
     ATTR_TARGET_GROWSPACE_ID,
     ATTR_TRANSITION_DATE,
     DATE_FIELDS,
+    EVENT_GROWSPACE_LOG_ENTRY,
 )
 from ..coordinator import GrowspaceCoordinator
 from ..exceptions import GrowspaceError
@@ -634,3 +643,123 @@ async def handle_harvest_plant(
             title="Growspace Manager Error",
         )
         raise
+
+
+async def async_add_timeline_note(
+    hass: HomeAssistant,
+    coordinator: GrowspaceCoordinator,
+    strain_library: StrainLibrary,
+    plant_id: str,
+    notes: str,
+    transition_date_raw: str | None = None,
+    images_base64: list[str] | None = None,
+    tags: list[str] | None = None,
+    ph: float | None = None,
+    ec: float | None = None,
+    amount_ml: float | None = None,
+    external_metadata: dict[str, Any] | None = None,
+) -> None:
+    """Add a timeline note to a plant (logic only)."""
+    if images_base64 is None:
+        images_base64 = []
+    if tags is None:
+        tags = []
+    if external_metadata is None:
+        external_metadata = {}
+
+    plant_id = _resolve_plant_id(hass, plant_id)
+    await _ensure_plant_loaded(hass, coordinator, plant_id)
+
+    plant = coordinator.plants[plant_id]
+    growspace_id = plant.growspace_id
+
+    # 1. Fetch current sensor snapshot
+    metadata = {}
+    if growspace := coordinator.growspaces.get(growspace_id):
+        env_config = growspace.environment_config
+
+        def _get_state(entity_id: str | None) -> float | None:
+            if not entity_id:
+                return None
+            state = hass.states.get(entity_id)
+            try:
+                if state and state.state not in ("unknown", "unavailable"):
+                    return float(state.state)
+            except (ValueError, TypeError):
+                pass
+            return None
+
+        metadata.update(
+            {
+                "temperature": _get_state(env_config.temperature_sensor),
+                "humidity": _get_state(env_config.humidity_sensor),
+                "vpd": _get_state(env_config.vpd_sensor),
+                "soil_moisture": _get_state(env_config.soil_moisture_sensor),
+                "light_intensity": _get_state(env_config.light_sensor),
+            }
+        )
+
+    # Add optional action data to metadata
+    if ph is not None:
+        metadata["ph"] = ph
+    if ec is not None:
+        metadata["ec"] = ec
+    if amount_ml is not None:
+        metadata["amount_ml"] = amount_ml
+
+    # Merge with external metadata (if any)
+    metadata.update(external_metadata)
+
+    # 2. Process images
+    image_paths = []
+    if images_base64 and strain_library.image_manager:
+        for img_b64 in images_base64:
+            try:
+                # save_timeline_image returns the absolute path, we want relative for frontend
+                abs_path = await strain_library.image_manager.save_timeline_image(
+                    plant_id=plant_id,
+                    image_base64=img_b64,
+                    timestamp=transition_date_raw,
+                )
+                # Convert to relative path: timeline/filename.webp
+                image_paths.append(f"timeline/{os.path.basename(abs_path)}")
+            except Exception as e:
+                _LOGGER.error("Failed to save timeline image: %s", e)
+
+    # 3. Fire event for persistence
+    event_data = {
+        ATTR_PLANT_ID: plant_id,
+        "growspace_id": growspace_id,
+        ATTR_NOTES: notes,
+        ATTR_TAGS: tags,
+        ATTR_METADATA: metadata,
+        ATTR_IMAGES: image_paths,
+        "category": "note",
+        "timestamp": transition_date_raw or datetime.now().isoformat(),
+    }
+
+    hass.bus.async_fire(EVENT_GROWSPACE_LOG_ENTRY, event_data)
+    _LOGGER.info("Added timeline note for plant %s", plant_id)
+
+
+async def handle_add_timeline_note(
+    hass: HomeAssistant,
+    coordinator: GrowspaceCoordinator,
+    strain_library: StrainLibrary,
+    call: ServiceCall,
+) -> None:
+    """Handle adding a timeline note to a plant."""
+    await async_add_timeline_note(
+        hass,
+        coordinator,
+        strain_library,
+        plant_id=call.data[ATTR_PLANT_ID],
+        notes=call.data[ATTR_NOTES],
+        transition_date_raw=call.data.get(ATTR_TRANSITION_DATE),
+        images_base64=call.data.get(ATTR_IMAGES, []),
+        tags=call.data.get(ATTR_TAGS, []),
+        ph=call.data.get(ATTR_PH),
+        ec=call.data.get(ATTR_EC),
+        amount_ml=call.data.get(ATTR_AMOUNT_ML),
+        external_metadata=call.data.get(ATTR_METADATA, {}),
+    )

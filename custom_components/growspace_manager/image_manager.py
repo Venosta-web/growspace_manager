@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import base64
+import hashlib
 import logging
+from datetime import datetime
 from io import BytesIO
 from pathlib import Path
 
@@ -248,6 +250,74 @@ class ImageManager:
 
         except Exception as e:
             _LOGGER.error("Error saving strain image: %s", e)
+            raise
+
+    async def save_timeline_image(
+        self, plant_id: str, image_base64: str, timestamp: str | None = None
+    ) -> str:
+        """Decode and save a timeline image to the storage directory.
+
+        Args:
+            plant_id: The ID of the plant.
+            image_base64: The base64 encoded image string.
+            timestamp: Optional timestamp for unique filename.
+
+        Returns:
+            The local path to the saved image.
+        """
+        return await self.hass.async_add_executor_job(
+            self._save_timeline_image_sync, plant_id, image_base64, timestamp
+        )
+
+    def _save_timeline_image_sync(
+        self, plant_id: str, image_base64: str, timestamp: str | None = None
+    ) -> str:
+        """Synchronous helper to save a timeline image in a subdirectory."""
+        try:
+            # Ensure timeline subdirectory exists
+            timeline_dir = self.storage_dir / "timeline"
+            timeline_dir.mkdir(parents=True, exist_ok=True)
+
+            # Remove header if present
+            if "," in image_base64:
+                image_base64 = image_base64.split(",")[1]
+
+            image_data = base64.b64decode(image_base64)
+            image = Image.open(BytesIO(image_data))
+
+            if image.mode not in ("RGB", "RGBA"):
+                image = image.convert("RGB")
+
+            # Generate unique filename using plant_id and timestamp/hash
+            if not timestamp:
+                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+
+            # Simple hash of image data to prevent duplicates in same timestamp
+
+            data_hash = hashlib.md5(image_data).hexdigest()[:8]
+
+            base_name = f"{plant_id}_{timestamp}_{data_hash}"
+            filename = f"{base_name}.webp"
+            small_filename = f"{base_name}_small.webp"
+
+            file_path = timeline_dir / filename
+            small_file_path = timeline_dir / small_filename
+
+            # Save full and thumbnail
+            image.save(file_path, "WEBP", quality=85, method=4)
+
+            thumb_img = image.copy()
+            thumb_img.thumbnail((320, 320))
+            thumb_img.save(small_file_path, "WEBP", quality=80, method=4)
+
+            # Update cache with relative path from storage_dir
+            self._image_cache.add(f"timeline/{filename}")
+            self._image_cache.add(f"timeline/{small_filename}")
+
+            return str(file_path.absolute())
+
+        except Exception as e:
+            _LOGGER.error("Error saving timeline image: %s", e)
             raise
 
     def get_image_path(self, strain_id: str, phenotype_id: str | None) -> str | None:

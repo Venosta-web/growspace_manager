@@ -672,6 +672,7 @@ async def test_promote_clone_custom_target(hass: HomeAssistant) -> None:
     coordinator.lifecycle_manager = AsyncMock()
     coordinator.async_save = AsyncMock()
     coordinator._invalidate_cache = MagicMock()
+    coordinator._fire_event = MagicMock()
 
     # Setup plants and growspaces
     mock_plant = MagicMock()
