@@ -535,7 +535,7 @@ async def websocket_get_event_log(hass: HomeAssistant, connection, msg):
                                                             + data["reasons"]
                                                         )
                                                     )
-                                                    last["reasons"] = combined[:5]
+                                                    last["reasons"] = combined[:EVENT_MERGE_MAX_REASONS]
 
                                                 merged = True
                                                 _LOGGER.debug(
