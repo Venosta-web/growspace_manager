@@ -1920,7 +1920,7 @@ class TestBayesianEnvironmentSensor:
     @pytest.mark.parametrize(
         "date_str, expected_days",
         [
-            ("2023-01-01", (date.today() - date(2023, 1, 1)).days),
+            ("2023-01-01", 1107),
             ("invalid-date", 0),
             (None, 0),
         ],
@@ -1933,7 +1933,7 @@ class TestBayesianEnvironmentSensor:
             ) as mock_datetime:
                 mock_datetime.strptime.side_effect = ValueError
                 mock_datetime.strptime.return_value.date.return_value = date(2023, 1, 1)
-                mock_datetime.today.return_value = date.today()
+                mock_datetime.today.return_value = date(2026, 1, 12)
                 result = BayesianEnvironmentSensor._days_since(date_str)
                 assert result == expected_days
         else:
