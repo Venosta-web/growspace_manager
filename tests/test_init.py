@@ -515,6 +515,7 @@ async def test_websocket_get_event_log(hass: HomeAssistant, mock_coordinator) ->
     mock_event_row = MagicMock()
     mock_event_row.time_fired_ts = 1672531200.0
     mock_event_row.data_id = 1
+    mock_event_row.event_id = 12345
 
     mock_event_data_row = MagicMock()
     mock_event_data_row.shared_data = json.dumps(mock_event.data)
@@ -575,9 +576,9 @@ async def test_websocket_get_event_log(hass: HomeAssistant, mock_coordinator) ->
             }
             await websocket_get_event_log(hass, mock_connection, msg)
 
-            mock_connection.send_result.assert_called_with(
-                1, {"gs1": [mock_event.data]}
-            )
+            expected_data = mock_event.data.copy()
+            expected_data["event_id"] = 12345
+            mock_connection.send_result.assert_called_with(1, {"gs1": [expected_data]})
 
             # Case B: Global (Aggregate)
             msg_global = {
@@ -586,9 +587,7 @@ async def test_websocket_get_event_log(hass: HomeAssistant, mock_coordinator) ->
             }
             await websocket_get_event_log(hass, mock_connection, msg_global)
 
-            mock_connection.send_result.assert_called_with(
-                2, {"gs1": [mock_event.data]}
-            )
+            mock_connection.send_result.assert_called_with(2, {"gs1": [expected_data]})
 
             # Case C: Filtering out unrelated ID - returns empty because query returns gs1 data
             msg_other = {
@@ -863,7 +862,7 @@ async def test_async_register_websocket_api(mock_hass) -> None:
         "homeassistant.components.websocket_api.async_register_command"
     ) as mock_reg:
         _async_register_websocket_api(mock_hass)
-        assert mock_reg.call_count == 7
+        assert mock_reg.call_count == 8
 
 
 @pytest.mark.asyncio
