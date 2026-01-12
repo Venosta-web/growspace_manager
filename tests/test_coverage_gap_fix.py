@@ -338,7 +338,7 @@ async def test_strain_library_webp_migration(hass: HomeAssistant) -> None:
     async def connect_side_effect(*args, **kwargs):
         return mock_db
 
-    with patch("aiosqlite.connect", side_effect=connect_side_effect) as mock_connect:
+    with patch("aiosqlite.connect", side_effect=connect_side_effect):
         result = await library.async_setup()
 
         assert result is True
@@ -408,7 +408,7 @@ async def test_handle_harvest_plant_not_loaded(hass: HomeAssistant) -> None:
         patch(
             "custom_components.growspace_manager.services.plant._ensure_plant_loaded",
             return_value=False,
-        ) as mock_ensure,
+        ),
         patch(
             "custom_components.growspace_manager.services.plant._resolve_plant_id",
             return_value="p1",
@@ -703,7 +703,7 @@ async def test_resolve_entity_id_special_detected(hass: HomeAssistant) -> None:
 
     def async_get_entity_id_side_effect(domain, platform, unique_id):
         # Fail for the ALIAS unique_id "drying"
-        if "drying" in unique_id and "dry" != unique_id:
+        if "drying" in unique_id and unique_id != "dry":
             # Note: generate...("drying") makes "growspace_manager_drying_overview" likely
             # generate...("dry") makes "growspace_manager_dry_overview"
             # We will just strictly check if it's the specific dry UID we expect

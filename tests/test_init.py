@@ -829,18 +829,17 @@ async def test_websocket_get_event_log_unknown_error(hass: HomeAssistant) -> Non
     with patch(
         "custom_components.growspace_manager.get_instance",
         return_value=mock_recorder,
-    ):
-        with patch("custom_components.growspace_manager.session_scope"):
-            msg = {
-                "id": 99,
-                "type": f"{DOMAIN}/get_log",
-                "growspace_id": "gs_unknown",
-            }
-            await websocket_get_event_log(hass, mock_connection, msg)
+    ), patch("custom_components.growspace_manager.session_scope"):
+        msg = {
+            "id": 99,
+            "type": f"{DOMAIN}/get_log",
+            "growspace_id": "gs_unknown",
+        }
+        await websocket_get_event_log(hass, mock_connection, msg)
 
-            mock_connection.send_error.assert_called_with(
-                99, "unknown_error", "Unexpected Error"
-            )
+        mock_connection.send_error.assert_called_with(
+            99, "unknown_error", "Unexpected Error"
+        )
 
 
 @pytest.mark.asyncio

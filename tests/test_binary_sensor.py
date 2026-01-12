@@ -1669,9 +1669,9 @@ def test_light_cycle_get_growth_stage_info_scenarios(
     """Test _get_growth_stage_info with different plant scenarios."""
     sensor = LightCycleVerificationSensor(mock_coordinator, "gs1", env_config)
     mock_coordinator.get_growspace_plants.return_value = plants
-    
+
     # Mock calculate_days to match the frozen date of 2026-01-12
-    # This is necessary because the default mock behavior in test_binary_sensor.py 
+    # This is necessary because the default mock behavior in test_binary_sensor.py
     # uses dynamic date.today() which conflicts with our frozen time fixture
     mock_coordinator.calculate_days.side_effect = (
         lambda date_str: (date(2026, 1, 12) - date.fromisoformat(date_str)).days

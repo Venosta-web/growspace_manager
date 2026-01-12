@@ -331,7 +331,7 @@ class StrainLibraryImageView(HomeAssistantView):
 
     url = "/api/growspace_manager/v1/images/{filename:.*}"
     name = "api:growspace_manager:v1:images"
-    requires_auth = False  # Or True, depending on if you want auth for images
+    requires_auth = True  # Or True, depending on if you want auth for images
 
     def __init__(
         self,
@@ -395,7 +395,6 @@ async def websocket_get_growspace_data(hass: HomeAssistant, connection, msg):
         connection.send_error(msg["id"], "invalid_args", str(err))
     except Exception as e:
         connection.send_error(msg["id"], "unknown_error", str(e))
-
 
 
 def _merge_logbook_event(formatted_events_list, data_dict, evt_row):
@@ -528,7 +527,6 @@ async def websocket_get_event_log(hass: HomeAssistant, connection, msg):
     except Exception as err:
         _LOGGER.exception("Error handling websocket_get_event_log")
         connection.send_error(msg["id"], "unknown_error", str(err))
-
 
 
 # WebSocket API Constants
