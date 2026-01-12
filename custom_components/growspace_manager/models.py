@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from dataclasses import asdict, dataclass, field, fields
+from dataclasses import dataclass, field, fields
 from datetime import datetime
 from enum import StrEnum
 from typing import (
@@ -12,42 +12,14 @@ from typing import (
     ReadOnly,
     Self,
     TypedDict,
-    get_args,
-    get_origin,
-    get_type_hints,
 )
+
+from mashumaro.mixins.dict import DataClassDictMixin
 
 from .const import PlantStage
 from .utils import calculate_days_since, days_to_week
 
 _LOGGER = logging.getLogger(__name__)
-
-
-def _handle_nested_value(attr_type: Any, val: Any) -> Any:
-    """Recursively handle nested BaseModel types based on type hints."""
-    if val is None:
-        return None
-
-    origin = get_origin(attr_type) or attr_type
-
-    # Case 1: Direct BaseModel subclass (or class with from_dict)
-    if hasattr(attr_type, "from_dict") and isinstance(val, dict):
-        return attr_type.from_dict(val)
-
-    # Case 2: List of BaseModel subclasses
-    if origin is list and (args := get_args(attr_type)):
-        if hasattr(args[0], "from_dict") and isinstance(val, list):
-            return [args[0].from_dict(i) if isinstance(i, dict) else i for i in val]
-
-    # Case 3: Dict of BaseModel subclasses
-    if origin is dict and (args := get_args(attr_type)) and len(args) > 1:
-        if hasattr(args[1], "from_dict") and isinstance(val, dict):
-            return {
-                k: args[1].from_dict(v) if isinstance(v, dict) else v
-                for k, v in val.items()
-            }
-
-    return val
 
 
 class IrrigationScheduleItem(TypedDict):
@@ -128,46 +100,10 @@ class StageHistoryItem(TypedDict):
 
 
 @dataclass(slots=True)
-class BaseModel:
+class BaseModel(DataClassDictMixin):
     """Base class providing generic serialization methods."""
 
-    def to_dict(self) -> dict[str, Any]:
-        """Convert to dictionary."""
-        return asdict(self)
-
-    @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> Self:
-        """Create from dictionary with automated nested handling and defaults."""
-        data = data.copy()
-        type_hints = get_type_hints(cls)
-        defaults: dict[str, Any] | None = getattr(cls, "_DEFAULTS", None)
-
-        if defaults:
-            for key, value in defaults.items():
-                if key not in data:
-                    data[key] = value
-
-        catch_all_field = getattr(cls, "_CATCH_ALL_FIELD", None)
-        allowed_keys = {f.name for f in fields(cls)}
-
-        filtered_data: dict[str, Any] = {}
-        for key, val in data.items():
-            if key in allowed_keys:
-                attr_type = type_hints.get(key)
-                filtered_data[key] = _handle_nested_value(attr_type, val)
-
-        if catch_all_field:
-            extras = {k: v for k, v in data.items() if k not in allowed_keys}
-            existing_catch_all = filtered_data.get(catch_all_field)
-            if not isinstance(existing_catch_all, dict):
-                existing_catch_all = {}
-
-            existing_catch_all.update(extras)
-            filtered_data[catch_all_field] = existing_catch_all
-
-        # Finally, filter filtered_data to ONLY allowed_keys before passing to constructor
-        constructor_data = {k: v for k, v in filtered_data.items() if k in allowed_keys}
-        return cls(**constructor_data)
+    pass
 
 
 @dataclass(slots=True, kw_only=True)
@@ -218,7 +154,39 @@ class EnvironmentConfig(BaseModel):
     mold_threshold: float = 0.75
     bayesian_options: BayesianOptions = field(default_factory=dict)
 
-    _CATCH_ALL_FIELD = "bayesian_options"
+    @classmethod
+    def _from_dict_custom(cls, data: dict[str, Any]) -> Self:
+        """Create from dictionary with catch-all support for bayesian_options."""
+        # Custom logic to implement _CATCH_ALL_FIELD behavior
+        # Keep known keys, move everything else to bayesian_options
+        known_keys = {f.name for f in fields(cls)}
+
+        # Prepare data copy
+        data = data.copy()
+
+        # Extract extras
+        extras = {k: v for k, v in data.items() if k not in known_keys}
+
+        # If we have extras, put them into bayesian_options
+        if extras:
+            existing_opts = data.get("bayesian_options", {})
+            if not isinstance(existing_opts, dict):
+                existing_opts = {}
+            else:
+                existing_opts = existing_opts.copy()
+            existing_opts.update(extras)
+            data["bayesian_options"] = existing_opts
+
+        # Remove extras from main dict to rely solely on bayesian_options merging
+        for k in extras:
+            if k in data:
+                del data[k]
+
+        return cls.__mashumaro_from_dict__(data)
+
+
+# Patch from_dict to use custom logic
+EnvironmentConfig.from_dict = EnvironmentConfig._from_dict_custom
 
 
 @dataclass(slots=True)
@@ -259,7 +227,9 @@ class Growspace(BaseModel):
     environment_config: EnvironmentConfig = field(default_factory=EnvironmentConfig)
     irrigation_config: IrrigationConfig = field(default_factory=IrrigationConfig)
     dehumidifier_config: dict[str, Any] = field(default_factory=dict)
-    irrigation_strategy: IrrigationStrategy = field(default_factory=IrrigationStrategy)
+    irrigation_strategy: IrrigationStrategy = field(
+        default_factory=IrrigationStrategy
+    )
     growspace_type: GrowspaceType = field(default=GrowspaceType.FLOWER)
 
 
@@ -295,7 +265,7 @@ class Plant(BaseModel):
     stage_history: list[StageHistoryItem] = field(default_factory=list)
 
     @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> Self:
+    def _from_dict_custom(cls, data: dict[str, Any]) -> Self:
         """Create from dictionary with history migration."""
         if "stage_history" not in data:
             data = data.copy()
@@ -331,8 +301,7 @@ class Plant(BaseModel):
 
             data["stage_history"] = history
 
-        # Workaround for 'super() arg not an instance' error during reloading/testing
-        return BaseModel.from_dict.__func__(cls, data)
+        return cls.__mashumaro_from_dict__(data)
 
     def get_days_since_watering(self) -> int | None:
         """Calculate days since last watering.
@@ -374,6 +343,10 @@ class Plant(BaseModel):
         return days_to_week(days)
 
 
+# Patch from_dict to use custom logic
+Plant.from_dict = Plant._from_dict_custom
+
+
 @dataclass(slots=True)
 class EnvironmentState:
     """Represents a snapshot of the current environment state in a growspace."""
@@ -402,10 +375,8 @@ class GrowspaceEvent(BaseModel):
     end_time: str
     duration_sec: int
     severity: float
-    category: str
     reasons: list[str] = field(default_factory=list)
-
-    _DEFAULTS = {"category": "alert"}
+    category: str = "alert"
 
 
 @dataclass(slots=True, kw_only=True)
@@ -433,17 +404,20 @@ class NutrientPreset(BasePreset):
         self.items = value
 
     @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> Self:
+    def _from_dict_custom(cls, data: dict[str, Any]) -> Self:
         """Create from dictionary with backward compatibility for 'nutrients'."""
         if "nutrients" in data and "items" not in data:
             data = data.copy()
             data["items"] = data.pop("nutrients")
-        # Workaround for 'super() arg not an instance' error during reloading/testing
-        return BaseModel.from_dict.__func__(cls, data)
+        return cls.__mashumaro_from_dict__(data)
 
     def get_nutrient_map(self) -> NutrientMap:
         """Convert nutrients list to a dict[str, float] for watering services."""
         return {n["name"]: n["dose_ml_l"] for n in self.items}
+
+
+# Patch from_dict to use custom logic
+NutrientPreset.from_dict = NutrientPreset._from_dict_custom
 
 
 class GrowspaceCoordinatorData(TypedDict):

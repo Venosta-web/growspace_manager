@@ -3,6 +3,7 @@
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+from homeassistant.exceptions import ServiceValidationError
 
 from custom_components.growspace_manager.const import (
     ATTR_STAGE,
@@ -86,8 +87,9 @@ async def test_batch_error_handling(mock_hass, mock_coordinator) -> None:
     call = MagicMock()
     call.data = {"entity_ids": ["plant1", "plant2"], "action": "remove"}
 
-    # Implementation logs error but continues. Should not raise.
-    await handle_batch_action(mock_hass, mock_coordinator, call)
+    # Implementation logs error and raises ServiceValidationError at the end.
+    with pytest.raises(ServiceValidationError):
+        await handle_batch_action(mock_hass, mock_coordinator, call)
 
     assert mock_coordinator.async_remove_plant.call_count == 2
 
@@ -98,7 +100,9 @@ async def test_unknown_action(mock_hass, mock_coordinator) -> None:
     call = MagicMock()
     call.data = {"entity_ids": ["plant1"], "action": "unknown_action"}
 
-    await handle_batch_action(mock_hass, mock_coordinator, call)
+    # Should raise ServiceValidationError
+    with pytest.raises(ServiceValidationError):
+        await handle_batch_action(mock_hass, mock_coordinator, call)
 
     # Should result in no coordinator calls
     mock_coordinator.async_transition_plant_stage.assert_not_called()

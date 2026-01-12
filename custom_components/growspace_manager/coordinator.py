@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import functools
 import logging
 import uuid
 from dataclasses import asdict
@@ -96,28 +95,6 @@ type PlantDict = dict[str, Any]
 type GrowspaceDict = dict[str, Any]
 type NotificationDict = dict[str, Any]
 type DateInput = str | datetime | date | None
-
-
-def invalidates_growspace_cache(func):
-    """Decorator to automatically invalidate growspace cache after modification."""
-
-    @functools.wraps(func)
-    async def wrapper(self, *args, **kwargs):
-        result = await func(self, *args, **kwargs)
-
-        growspace_ids = set()
-
-        # Extract IDs from result and arguments
-        self._extract_gs_ids_from_result(result, growspace_ids)
-        self._extract_gs_ids_from_args(args, kwargs, growspace_ids)
-
-        for gs_id in growspace_ids:
-            if gs_id:
-                self._invalidate_cache(gs_id)
-
-        return result
-
-    return wrapper
 
 
 class GrowspaceCoordinator(DataUpdateCoordinator):
@@ -712,6 +689,8 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
 
     async def async_commit(self) -> None:
         """Commit changes to storage and notify listeners."""
+        # Ensure we always have fresh data when committing
+        self._invalidate_cache()
         self.update_data_property()
         await self.storage_manager.async_save()
         self.async_set_updated_data(self.data)
@@ -732,6 +711,10 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
     async def async_save(self) -> None:
         """Save data to storage (Alias for async_commit)."""
         await self.async_commit()
+
+    async def async_shutdown(self) -> None:
+        """Perform shutdown tasks, ensuring data is persisted."""
+        await self.storage_manager.async_force_save()
 
     async def async_load(self) -> None:
         """Load data from persistent storage and handle migrations."""
@@ -984,7 +967,6 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
             async_fire_growspace_event(self.hass, EVENT_GROWSPACE_ADDED, growspace)
             return growspace
 
-    @invalidates_growspace_cache
     async def async_remove_growspace(self, growspace_id: str) -> None:
         """Remove a growspace and all plants contained within it.
 
@@ -1092,7 +1074,6 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
 
         return updated
 
-    @invalidates_growspace_cache
     async def async_update_growspace(
         self, growspace_id: str, **kwargs: dict[str, Any]
     ) -> None:
@@ -1233,7 +1214,6 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
     # PLANT MANAGEMENT METHODS
     # =============================================================================
 
-    @invalidates_growspace_cache
     async def async_add_plant(
         self,
         growspace_id: str,
@@ -1275,6 +1255,8 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
             cure_start=cure_start,
             source_mother=source_mother,
         )
+
+        self._invalidate_cache(growspace_id)
 
         self._fire_event(
             "plant_added", {"plant": self.serializer.serialize_plant(plant)}
@@ -1440,18 +1422,18 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
             veg_start=transition_date,
         )
 
-    @invalidates_growspace_cache
     async def async_update_plant(self, plant_id: str, **updates) -> Plant:
         """Update the attributes of an existing plant."""
         # Invalidate current growspace (logic for move)
         if plant := self.plants.get(plant_id):
-            # Only strictly needed if growspace_id changes, but harmless if redundant
-            # (Decorator handles the NEW state/growspace_id invalidation)
+            # Invalidate cache for the current growspace to reflect updates (e.g. stage change)
+            self._invalidate_cache(plant.growspace_id)
+
             if (
                 "growspace_id" in updates
                 and updates["growspace_id"] != plant.growspace_id
             ):
-                self._invalidate_cache(plant.growspace_id)
+                self._invalidate_cache(updates["growspace_id"])
 
         plant = await self.lifecycle_manager.async_update_plant(plant_id, **updates)
 
@@ -1543,7 +1525,6 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
         """
         await self.async_switch_plants(plant1_id, plant2_id)
 
-    @invalidates_growspace_cache
     async def async_transition_plant_stage(
         self,
         plant_id: str,
@@ -1622,9 +1603,11 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
         Returns:
             The updated Plant object.
         """
-        return await self._water_plant_internal(
+        plant = await self._water_plant_internal(
             plant_id, amount, nutrients, preset_id, invalidate_cache=True
         )
+        await self.async_save()
+        return plant
 
     async def _water_plant_internal(
         self,
@@ -1750,6 +1733,8 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
             amount_per_plant,
             f" using preset '{preset_id}'" if preset_id else "",
         )
+
+        await self.async_save()
 
         return len(plants)
 

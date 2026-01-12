@@ -104,6 +104,10 @@ class TestAsyncWaterPlant:
         parsed = datetime.fromisoformat(plant.last_watered)
         assert isinstance(parsed, datetime)
 
+        # Verify save was called to persist the change
+        assert watering_coordinator.async_save.called
+        assert watering_coordinator.async_save.call_count == 1
+
     @pytest.mark.asyncio
     async def test_water_plant_with_nutrients(
         self, watering_coordinator: GrowspaceCoordinator
@@ -193,6 +197,9 @@ class TestAsyncWaterGrowspace:
         for plant_id in ["test_plant", "test_plant_2"]:
             plant = watering_coordinator.plants[plant_id]
             assert plant.last_watered is not None
+
+        # Verify save was called ensures persistence
+        assert watering_coordinator.async_save.called
 
     @pytest.mark.asyncio
     async def test_water_growspace_with_nutrients(

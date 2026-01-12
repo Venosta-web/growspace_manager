@@ -16,6 +16,7 @@ from ..const import (
     ATTR_TIME,
     DOMAIN,
 )
+from ..exceptions import GrowspaceError
 
 if TYPE_CHECKING:
     from ..coordinator import GrowspaceCoordinator
@@ -55,15 +56,23 @@ async def handle_set_irrigation_settings(
     call: ServiceCall,
 ) -> None:
     """Handle the service call to set irrigation settings for a growspace."""
-    growspace_id = call.data[ATTR_GROWSPACE_ID]
-    irrigation_coord = await _get_irrigation_coordinator(hass, growspace_id)
+    try:
+        growspace_id = call.data[ATTR_GROWSPACE_ID]
+        irrigation_coord = await _get_irrigation_coordinator(hass, growspace_id)
 
-    settings = {
-        key: value for key, value in call.data.items() if key != ATTR_GROWSPACE_ID
-    }
+        settings = {
+            key: value for key, value in call.data.items() if key != ATTR_GROWSPACE_ID
+        }
 
-    await irrigation_coord.async_set_settings(settings)
-    _LOGGER.info("Set irrigation settings for growspace '%s'", growspace_id)
+        await irrigation_coord.async_set_settings(settings)
+        _LOGGER.info("Set irrigation settings for growspace '%s'", growspace_id)
+    except GrowspaceError as err:
+        raise ServiceValidationError(str(err)) from err
+    except Exception as err:
+        _LOGGER.exception("Unexpected error in set_irrigation_settings: %s", err)
+        raise ServiceValidationError(
+            f"Failed to set irrigation settings: {err}"
+        ) from err
 
 
 async def handle_add_irrigation_time(
@@ -72,16 +81,22 @@ async def handle_add_irrigation_time(
     call: ServiceCall,
 ) -> None:
     """Handle the service call to add an irrigation time to a schedule."""
-    growspace_id = call.data[ATTR_GROWSPACE_ID]
-    irrigation_coord = await _get_irrigation_coordinator(hass, growspace_id)
+    try:
+        growspace_id = call.data[ATTR_GROWSPACE_ID]
+        irrigation_coord = await _get_irrigation_coordinator(hass, growspace_id)
 
-    duration = call.data.get(ATTR_DURATION)
-    if duration is None:
-        duration = irrigation_coord.get_default_duration("irrigation")
+        duration = call.data.get(ATTR_DURATION)
+        if duration is None:
+            duration = irrigation_coord.get_default_duration("irrigation")
 
-    await irrigation_coord.async_add_schedule_item(
-        ATTR_IRRIGATION_TIMES, call.data[ATTR_TIME], duration
-    )
+        await irrigation_coord.async_add_schedule_item(
+            ATTR_IRRIGATION_TIMES, call.data[ATTR_TIME], duration
+        )
+    except GrowspaceError as err:
+        raise ServiceValidationError(str(err)) from err
+    except Exception as err:
+        _LOGGER.exception("Unexpected error in add_irrigation_time: %s", err)
+        raise ServiceValidationError(f"Failed to add irrigation time: {err}") from err
 
 
 async def handle_remove_irrigation_time(
@@ -90,11 +105,19 @@ async def handle_remove_irrigation_time(
     call: ServiceCall,
 ) -> None:
     """Handle the service call to remove an irrigation time from a schedule."""
-    growspace_id = call.data[ATTR_GROWSPACE_ID]
-    irrigation_coord = await _get_irrigation_coordinator(hass, growspace_id)
-    await irrigation_coord.async_remove_schedule_item(
-        ATTR_IRRIGATION_TIMES, call.data[ATTR_TIME]
-    )
+    try:
+        growspace_id = call.data[ATTR_GROWSPACE_ID]
+        irrigation_coord = await _get_irrigation_coordinator(hass, growspace_id)
+        await irrigation_coord.async_remove_schedule_item(
+            ATTR_IRRIGATION_TIMES, call.data[ATTR_TIME]
+        )
+    except GrowspaceError as err:
+        raise ServiceValidationError(str(err)) from err
+    except Exception as err:
+        _LOGGER.exception("Unexpected error in remove_irrigation_time: %s", err)
+        raise ServiceValidationError(
+            f"Failed to remove irrigation time: {err}"
+        ) from err
 
 
 async def handle_add_drain_time(
@@ -103,16 +126,22 @@ async def handle_add_drain_time(
     call: ServiceCall,
 ) -> None:
     """Handle the service call to add a drain time to a schedule."""
-    growspace_id = call.data[ATTR_GROWSPACE_ID]
-    irrigation_coord = await _get_irrigation_coordinator(hass, growspace_id)
+    try:
+        growspace_id = call.data[ATTR_GROWSPACE_ID]
+        irrigation_coord = await _get_irrigation_coordinator(hass, growspace_id)
 
-    duration = call.data.get(ATTR_DURATION)
-    if duration is None:
-        duration = irrigation_coord.get_default_duration("drain")
+        duration = call.data.get(ATTR_DURATION)
+        if duration is None:
+            duration = irrigation_coord.get_default_duration("drain")
 
-    await irrigation_coord.async_add_schedule_item(
-        ATTR_DRAIN_TIMES, call.data[ATTR_TIME], duration
-    )
+        await irrigation_coord.async_add_schedule_item(
+            ATTR_DRAIN_TIMES, call.data[ATTR_TIME], duration
+        )
+    except GrowspaceError as err:
+        raise ServiceValidationError(str(err)) from err
+    except Exception as err:
+        _LOGGER.exception("Unexpected error in add_drain_time: %s", err)
+        raise ServiceValidationError(f"Failed to add drain time: {err}") from err
 
 
 async def handle_remove_drain_time(
@@ -121,8 +150,14 @@ async def handle_remove_drain_time(
     call: ServiceCall,
 ) -> None:
     """Handle the service call to remove a drain time from a schedule."""
-    growspace_id = call.data[ATTR_GROWSPACE_ID]
-    irrigation_coord = await _get_irrigation_coordinator(hass, growspace_id)
-    await irrigation_coord.async_remove_schedule_item(
-        ATTR_DRAIN_TIMES, call.data[ATTR_TIME]
-    )
+    try:
+        growspace_id = call.data[ATTR_GROWSPACE_ID]
+        irrigation_coord = await _get_irrigation_coordinator(hass, growspace_id)
+        await irrigation_coord.async_remove_schedule_item(
+            ATTR_DRAIN_TIMES, call.data[ATTR_TIME]
+        )
+    except GrowspaceError as err:
+        raise ServiceValidationError(str(err)) from err
+    except Exception as err:
+        _LOGGER.exception("Unexpected error in remove_drain_time: %s", err)
+        raise ServiceValidationError(f"Failed to remove drain time: {err}") from err

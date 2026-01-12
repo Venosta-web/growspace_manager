@@ -137,8 +137,8 @@ async def test_async_setup(mock_hass) -> None:
     ) as mock_ws_reg:
         assert await async_setup(mock_hass, {})
         assert DOMAIN in mock_hass.data
-        # Verify WebSocket API is registered globally in async_setup
-        mock_ws_reg.assert_called_once_with(mock_hass)
+        # WebSocket API is now registered in async_setup_entry
+        mock_ws_reg.assert_not_called()
 
 
 @pytest.mark.asyncio
@@ -194,8 +194,8 @@ async def test_async_setup_entry(hass: HomeAssistant) -> None:
         # Verify Services
         mock_reg.assert_called_once_with(hass, mock_lib)
 
-        # WebSocket API is now registered in async_setup, not async_setup_entry
-        mock_ws_reg.assert_not_called()
+        # WebSocket API is now registered in async_setup_entry, not async_setup
+        mock_ws_reg.assert_called_once_with(hass)
 
 
 @pytest.mark.asyncio
@@ -826,10 +826,13 @@ async def test_websocket_get_event_log_unknown_error(hass: HomeAssistant) -> Non
         side_effect=RuntimeError("Unexpected Error")
     )
 
-    with patch(
-        "custom_components.growspace_manager.get_instance",
-        return_value=mock_recorder,
-    ), patch("custom_components.growspace_manager.session_scope"):
+    with (
+        patch(
+            "custom_components.growspace_manager.get_instance",
+            return_value=mock_recorder,
+        ),
+        patch("custom_components.growspace_manager.session_scope"),
+    ):
         msg = {
             "id": 99,
             "type": f"{DOMAIN}/get_log",

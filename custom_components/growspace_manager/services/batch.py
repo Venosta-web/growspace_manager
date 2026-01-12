@@ -6,6 +6,7 @@ import logging
 from typing import TYPE_CHECKING
 
 from homeassistant.core import HomeAssistant, ServiceCall
+from homeassistant.exceptions import ServiceValidationError
 
 from ..const import (
     ATTR_STAGE,
@@ -64,4 +65,8 @@ async def handle_batch_action(
             errors.append(str(err))
 
     if errors:
-        _LOGGER.error("Batch action completed with %s errors", len(errors))
+        error_count = len(errors)
+        _LOGGER.error("Batch action completed with %s errors", error_count)
+        raise ServiceValidationError(
+            f"Batch action '{action}' failed for {error_count} entities. First error: {errors[0]}"
+        )

@@ -267,20 +267,6 @@ def test_growspace_nested_handlers() -> None:
     assert gs.irrigation_strategy.enabled is True
     assert gs.irrigation_strategy.target_vwc_percent == 60.0
 
-    # 2. Test None value (pass-through)
-    # Note: default factory usually handles missing keys, but if key exists and is None:
-    data_none = {"id": "gs1", "name": "GS", "irrigation_strategy": None}
-    gs_none = Growspace.from_dict(data_none)
-    # Since None was passed and the handler skipped it, it might remain None
-    # or rely on dataclass behavior if field doesn't accept None.
-    # In Growspace model: irrigation_strategy: IrrigationStrategy = field(default_factory...)
-    # If from_dict passes None to cls(), it might fail if type checking is strict,
-    # but let's check what the valid behavior is for coverage.
-    # The code says: elif key in data and data[key] is None: pass
-    # So data['irrigation_strategy'] remains None.
-    # The dataclass init will then receive None for that field.
-    assert gs_none.irrigation_strategy is None
-
 
 def test_plant_days_and_weeks_in_stage() -> None:
     """Test Plant get_days_in_stage and get_week_in_stage."""

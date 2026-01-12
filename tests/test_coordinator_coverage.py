@@ -10,7 +10,6 @@ from pytest_homeassistant_custom_component.common import MockConfigEntry
 from custom_components.growspace_manager.const import DOMAIN
 from custom_components.growspace_manager.coordinator import (
     GrowspaceCoordinator,
-    invalidates_growspace_cache,
 )
 from custom_components.growspace_manager.models import (
     Growspace,
@@ -356,35 +355,3 @@ async def test_get_for_service_call_no_match_raises(hass: HomeAssistant) -> None
     # Call with non-matching ID when multiple coordinators exist
     with pytest.raises(ServiceValidationError, match="Could not determine"):
         GrowspaceCoordinator.get_for_service_call(hass, {"plant_id": "unknown"})
-
-
-@pytest.mark.asyncio
-async def test_invalidates_cache_with_growspace_result(
-    mock_coordinator: GrowspaceCoordinator,
-) -> None:
-    """Test invalidates_growspace_cache decorator when method returns a Growspace object.
-
-    This covers lines 105-108 in coordinator.py.
-    """
-
-    # Create a growspace for the test
-    gs = Growspace(id="gs_new", name="New GS", plants_per_row=4)
-
-    # Create a mock function decorated with invalidates_growspace_cache
-    @invalidates_growspace_cache
-    async def mock_create_method(self):
-        return gs
-
-    # Mock the _invalidate_cache method
-    mock_coordinator._invalidate_cache = MagicMock()
-
-    # Call the decorated function
-    result = await mock_create_method(mock_coordinator)
-
-    # Verify result is the Growspace
-    assert result is gs
-    assert hasattr(result, "id")
-    assert hasattr(result, "plants_per_row")
-
-    # Verify cache was invalidated for the returned growspace ID
-    mock_coordinator._invalidate_cache.assert_called_once_with("gs_new")

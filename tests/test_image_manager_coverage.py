@@ -31,7 +31,8 @@ async def test_migration_with_no_storage_dir(
     image_manager = ImageManager(mock_hass, str(storage_path))
 
     # Create mock DB
-    mock_db = AsyncMock()
+    mock_db = MagicMock()
+    mock_db.execute = MagicMock(return_value=AsyncMock())
 
     # Should not error, just return False
     result = await image_manager.async_migrate_to_webp(mock_db)
@@ -43,7 +44,8 @@ async def test_migration_with_no_jpg_files(
 ) -> None:
     """Test migration when no JPG files exist."""
     image_manager = ImageManager(mock_hass, str(tmp_path))
-    mock_db = AsyncMock()
+    mock_db = MagicMock()
+    mock_db.execute = MagicMock(return_value=AsyncMock())
 
     result = await image_manager.async_migrate_to_webp(mock_db)
     assert result is False
@@ -65,7 +67,8 @@ async def test_migration_skips_existing_webp(
     test_img.save(small_webp_path, "WEBP")
 
     image_manager = ImageManager(mock_hass, str(tmp_path))
-    mock_db = AsyncMock()
+    mock_db = MagicMock()
+    mock_db.execute = MagicMock(return_value=AsyncMock())
 
     # Should skip, return False
     result = await image_manager.async_migrate_to_webp(mock_db)
@@ -81,7 +84,8 @@ async def test_migration_handles_image_conversion_error(
     jpg_path.write_bytes(b"not a valid image")
 
     image_manager = ImageManager(mock_hass, str(tmp_path))
-    mock_db = AsyncMock()
+    mock_db = MagicMock()
+    mock_db.execute = MagicMock(return_value=AsyncMock())
 
     # Should log warning but not crash
     result = await image_manager.async_migrate_to_webp(mock_db)
@@ -99,13 +103,13 @@ async def test_migration_handles_rgba_mode(
     test_img.save(jpg_path, "JPEG")
 
     image_manager = ImageManager(mock_hass, str(tmp_path))
-    mock_db = AsyncMock()
+    mock_db = MagicMock()
     mock_cursor = AsyncMock()
-    mock_cursor.__aiter__.return_value = []
-    mock_execute_context = AsyncMock()
-    mock_execute_context.__aenter__.return_value = mock_cursor
-    mock_execute_context.__aexit__.return_value = None
-    mock_db.execute.return_value = mock_execute_context
+    mock_cursor.fetchall.return_value = []
+    # execute() needs to return something that is both awaitable AND an async context manager
+    mock_db.execute = MagicMock(
+        return_value=AsyncMock(__aenter__=AsyncMock(return_value=mock_cursor))
+    )
     mock_db.commit = AsyncMock()
 
     await image_manager.async_migrate_to_webp(mock_db)
