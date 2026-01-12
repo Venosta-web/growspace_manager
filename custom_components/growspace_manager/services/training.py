@@ -4,6 +4,7 @@ import logging
 from typing import TYPE_CHECKING
 
 from homeassistant.core import HomeAssistant, ServiceCall
+from homeassistant.exceptions import ServiceValidationError
 
 from ..const import (
     ATTR_GROWSPACE_ID,
@@ -11,6 +12,7 @@ from ..const import (
     ATTR_PLANT_ID,
     ATTR_TECHNIQUE,
 )
+from ..exceptions import GrowspaceError
 
 if TYPE_CHECKING:
     from ..coordinator import GrowspaceCoordinator
@@ -24,17 +26,23 @@ async def handle_log_training_event(
     call: ServiceCall,
 ) -> None:
     """Handle log_training_event service call."""
-    growspace_id: str | None = call.data.get(ATTR_GROWSPACE_ID)
-    technique: str = call.data[ATTR_TECHNIQUE]
-    notes: str | None = call.data.get(ATTR_NOTES)
-    plant_ids: list[str] | None = call.data.get(ATTR_PLANT_ID)
+    try:
+        growspace_id: str | None = call.data.get(ATTR_GROWSPACE_ID)
+        technique: str = call.data[ATTR_TECHNIQUE]
+        notes: str | None = call.data.get(ATTR_NOTES)
+        plant_ids: list[str] | None = call.data.get(ATTR_PLANT_ID)
 
-    # If no plant_ids and no growspace_id, try to infer growspace from context if possible,
-    # but strictly we require at least one.
+        # If no plant_ids and no growspace_id, try to infer growspace from context if possible,
+        # but strictly we require at least one.
 
-    await coordinator.async_log_training_event(
-        growspace_id=growspace_id,
-        technique=technique,
-        notes=notes,
-        plant_ids=plant_ids,
-    )
+        await coordinator.async_log_training_event(
+            growspace_id=growspace_id,
+            technique=technique,
+            notes=notes,
+            plant_ids=plant_ids,
+        )
+    except GrowspaceError as err:
+        raise ServiceValidationError(str(err)) from err
+    except Exception as err:
+        _LOGGER.exception("Unexpected error in log_training_event: %s", err)
+        raise ServiceValidationError(f"Failed to log training event: {err}") from err

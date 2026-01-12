@@ -4,8 +4,10 @@ import logging
 from typing import Any
 
 from homeassistant.core import HomeAssistant, ServiceCall
+from homeassistant.exceptions import ServiceValidationError
 
 from ..coordinator import GrowspaceCoordinator
+from ..exceptions import GrowspaceError
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -22,18 +24,24 @@ async def handle_water_plant(
         coordinator: The GrowspaceCoordinator instance.
         call: The service call containing plant_id, amount, and optional nutrients.
     """
-    plant_id: str = call.data["plant_id"]
-    amount: float = call.data["amount"]
-    nutrients: dict[str, float] | None = call.data.get("nutrients")
-    preset_id: str | None = call.data.get("preset_id")
+    try:
+        plant_id: str = call.data["plant_id"]
+        amount: float = call.data["amount"]
+        nutrients: dict[str, float] | None = call.data.get("nutrients")
+        preset_id: str | None = call.data.get("preset_id")
 
-    await coordinator.async_water_plant(plant_id, amount, nutrients, preset_id)
+        await coordinator.async_water_plant(plant_id, amount, nutrients, preset_id)
 
-    _LOGGER.info(
-        "Service water_plant completed for plant %s with %sL",
-        plant_id,
-        amount,
-    )
+        _LOGGER.info(
+            "Service water_plant completed for plant %s with %sL",
+            plant_id,
+            amount,
+        )
+    except GrowspaceError as err:
+        raise ServiceValidationError(str(err)) from err
+    except Exception as err:
+        _LOGGER.exception("Unexpected error in water_plant: %s", err)
+        raise ServiceValidationError(f"Failed to water plant: {err}") from err
 
 
 async def handle_water_growspace(
@@ -51,19 +59,25 @@ async def handle_water_growspace(
     Returns:
         A dict containing the number of plants watered.
     """
-    growspace_id: str = call.data["growspace_id"]
-    amount_per_plant: float = call.data["amount_per_plant"]
-    nutrients: dict[str, float] | None = call.data.get("nutrients")
-    preset_id: str | None = call.data.get("preset_id")
+    try:
+        growspace_id: str = call.data["growspace_id"]
+        amount_per_plant: float = call.data["amount_per_plant"]
+        nutrients: dict[str, float] | None = call.data.get("nutrients")
+        preset_id: str | None = call.data.get("preset_id")
 
-    plants_watered = await coordinator.async_water_growspace(
-        growspace_id, amount_per_plant, nutrients, preset_id
-    )
+        plants_watered = await coordinator.async_water_growspace(
+            growspace_id, amount_per_plant, nutrients, preset_id
+        )
 
-    _LOGGER.info(
-        "Service water_growspace completed for growspace %s: %d plants watered",
-        growspace_id,
-        plants_watered,
-    )
+        _LOGGER.info(
+            "Service water_growspace completed for growspace %s: %d plants watered",
+            growspace_id,
+            plants_watered,
+        )
 
-    return {"plants_watered": plants_watered}
+        return {"plants_watered": plants_watered}
+    except GrowspaceError as err:
+        raise ServiceValidationError(str(err)) from err
+    except Exception as err:
+        _LOGGER.exception("Unexpected error in water_growspace: %s", err)
+        raise ServiceValidationError(f"Failed to water growspace: {err}") from err

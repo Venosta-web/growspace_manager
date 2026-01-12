@@ -15,7 +15,9 @@ def create_test_coordinator(
     """Helper to create a coordinator with a mock config entry."""
     entry = MockConfigEntry(domain=DOMAIN, data={}, options=options or {})
     entry.add_to_hass(hass)
-    entry.async_create_background_task = MagicMock()
+    entry.async_create_background_task = MagicMock(
+        side_effect=lambda hass, coro, name: coro.close()
+    )
 
     coord = GrowspaceCoordinator(
         hass,

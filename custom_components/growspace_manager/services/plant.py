@@ -228,7 +228,7 @@ async def handle_add_plant(
 
     except Exception as err:
         _LOGGER.exception("Failed to add plant: %s", err)
-        raise
+        raise ServiceValidationError(f"Failed to add plant: {err}") from err
 
 
 async def handle_add_plants(
@@ -307,7 +307,7 @@ async def handle_add_plants(
 
     except Exception as err:
         _LOGGER.exception("Failed to batch add plants: %s", err)
-        raise
+        raise ServiceValidationError(f"Failed to batch add plants: {err}") from err
 
 
 async def handle_take_clone(

@@ -51,6 +51,11 @@ class StorageManager:
         self.config_store.async_delay_save(self._get_config_data, 10)
         self.plants_store.async_delay_save(self._get_plants_data, 10)
 
+    async def async_force_save(self) -> None:
+        """Force save immediately (ignoring delay) to ensure data integrity."""
+        await self.config_store.async_save(self._get_config_data())
+        await self.plants_store.async_save(self._get_plants_data())
+
     def _get_config_data(self) -> dict:
         """Gather configuration data for storage."""
         return {

@@ -83,8 +83,6 @@ type GrowspaceConfigEntry = ConfigEntry[GrowspaceCoordinator]
 async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
     """Set up the Growspace Manager component."""
     hass.data.setdefault(DOMAIN, {})
-    # Register WebSocket API commands globally (once per HA instance)
-    _async_register_websocket_api(hass)
     return True
 
 
@@ -114,6 +112,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: GrowspaceConfigEntry) ->
 
         # Set up intents
         await async_setup_intents(hass)
+
+        # Register WebSocket API commands
+        _async_register_websocket_api(hass)
 
     # Retrieve global Strain Library
     strain_library_instance = hass.data[DOMAIN]["strain_library"]
@@ -204,6 +205,12 @@ async def async_unload_entry(hass: HomeAssistant, entry: GrowspaceConfigEntry) -
     unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
 
     if unload_ok:
+        # Persist data before final unload
+        try:
+            await entry.runtime_data.async_shutdown()
+        except Exception:
+            _LOGGER.exception("Error saving data during unload")
+
         # Services remain registered until HA shutdown
 
         # Clean up global Strain Library
