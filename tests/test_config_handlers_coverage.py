@@ -123,7 +123,7 @@ def test_irrigation_handler_schema_vwc_steering(mock_hass, mock_config_entry) ->
     # The keys in vol.Schema are Optional/Required objects.
     field_keys = [
         k.schema if isinstance(k, (vol.Optional, vol.Required)) else k
-        for k in schema.schema.keys()
+        for k in schema.schema
     ]
     assert "target_vwc_percent" in field_keys
 

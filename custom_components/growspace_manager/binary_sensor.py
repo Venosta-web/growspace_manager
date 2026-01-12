@@ -759,9 +759,8 @@ class BayesianMoldRiskSensor(BayesianEnvironmentSensor):
             elif env_state.flower_days > 40:  # Late Flower
                 if env_state.humidity is None or env_state.humidity < 60:
                     is_risk = False
-            else:  # Early/Mid Flower
-                if env_state.humidity is None or env_state.humidity < 70:
-                    is_risk = False
+            elif env_state.humidity is None or env_state.humidity < 70:
+                is_risk = False
 
             if is_risk:
                 prob = (

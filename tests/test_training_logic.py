@@ -22,7 +22,6 @@ from custom_components.growspace_manager.services.training import (
 
 @pytest.fixture
 def mock_plants():
-    now = "2023-01-01T12:00:00+00:00"
     return {
         "plant_1": Plant(
             plant_id="plant_1",

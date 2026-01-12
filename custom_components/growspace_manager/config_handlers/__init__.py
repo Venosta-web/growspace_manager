@@ -14,7 +14,7 @@ _LOGGER = logging.getLogger(__name__)
 T = TypeVar("T")
 
 
-class BaseConfigHandler(ABC, Generic[T]):
+class BaseConfigHandler[T](ABC):
     """Base class for configuration handlers."""
 
     def __init__(self, hass: HomeAssistant, config_entry: ConfigEntry) -> None:

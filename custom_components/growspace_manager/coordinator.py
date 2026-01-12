@@ -597,6 +597,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
         rows: int = DEFAULT_ROWS,
         plants_per_row: int = DEFAULT_PLANTS_PER_ROW,
         growspace_type: GrowspaceType = GrowspaceType.FLOWER,
+        update_data: bool = True,
     ) -> str:
         """Ensure a special growspace (e.g., 'dry', 'cure') exists.
 
@@ -634,7 +635,8 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
             # Name or Type changed -> Invalidate
             self._invalidate_cache(canonical_id)
 
-        self.update_data_property()
+        if update_data:
+            self.update_data_property()
         return canonical_id
 
     def _create_special_growspace(
@@ -807,9 +809,15 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
         ) in default_growspaces:
             # Use the coordinator's method to ensure special growspaces
             self.ensure_special_growspace(
-                growspace_id, name, rows, plants_per_row, growspace_type=gs_type
+                growspace_id,
+                name,
+                rows,
+                plants_per_row,
+                growspace_type=gs_type,
+                update_data=False,
             )
 
+        self.update_data_property()
         await self.async_save()
 
     def _ensure_calculated_sensors(self) -> None:
@@ -1614,6 +1622,19 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
         Returns:
             The updated Plant object.
         """
+        return await self._water_plant_internal(
+            plant_id, amount, nutrients, preset_id, invalidate_cache=True
+        )
+
+    async def _water_plant_internal(
+        self,
+        plant_id: str,
+        amount: float,
+        nutrients: dict[str, float] | None = None,
+        preset_id: str | None = None,
+        invalidate_cache: bool = True,
+    ) -> Plant:
+        """Internal watering logic with optional cache invalidation."""
         self.validator.validate_plant_exists(plant_id)
         plant = self.plants[plant_id]
 
@@ -1636,8 +1657,9 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
         now_iso = dt_util.now().isoformat()
         plant.last_watered = now_iso
 
-        # Invalidate cache for the growspace
-        self._invalidate_cache(plant.growspace_id)
+        # Invalidate cache for the growspace if requested
+        if invalidate_cache:
+            self._invalidate_cache(plant.growspace_id)
 
         # Build reasons for the event
         reasons = []
@@ -1710,9 +1732,16 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
         plants = self.get_growspace_plants(growspace_id)
 
         for plant in plants:
-            await self.async_water_plant(
-                plant.plant_id, amount_per_plant, nutrients, preset_id
+            await self._water_plant_internal(
+                plant.plant_id,
+                amount_per_plant,
+                nutrients,
+                preset_id,
+                invalidate_cache=False,
             )
+
+        # Bulk invalidation
+        self._invalidate_cache(growspace_id)
 
         _LOGGER.info(
             "Watered %d plants in growspace %s with %sL each%s",
@@ -1901,6 +1930,9 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
             )
             self.add_event(gid, event)
 
+            # Invalidate cache before saving
+            self._invalidate_cache(gid)
+
         await self.async_save()
 
     def _get_target_plants(
@@ -2058,11 +2090,11 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
             )
             self.add_event(gid, event)
 
-        await self.async_save()
-
         # Invalidate cache for affected growspaces
         for gid in affected_gids:
             self._invalidate_cache(gid)
+
+        await self.async_save()
 
         return [p.plant_id for p in target_plants]
 

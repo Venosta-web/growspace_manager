@@ -161,7 +161,7 @@ async def test_handle_import_strain_library_base64(
 
     with patch(
         "custom_components.growspace_manager.services.strain_library.create_notification"
-    ) as mock_notify:
+    ):
         with patch("tempfile.NamedTemporaryFile") as mock_temp:
             mock_temp_file = MagicMock()
             mock_temp_file.name = "/tmp/temp_import.zip"
@@ -399,7 +399,7 @@ async def test_handle_clear_strain_library(
 
     with patch(
         "custom_components.growspace_manager.services.strain_library.create_notification"
-    ) as mock_notify:
+    ):
         await handle_clear_strain_library(
             mock_hass, mock_coordinator, mock_strain_library, call
         )

@@ -1,9 +1,10 @@
-import pytest
 from unittest.mock import MagicMock, patch
+
+import pytest
 from homeassistant.core import HomeAssistant
 from homeassistant.util import dt as dt_util
 
-from custom_components.growspace_manager import websocket_get_history_stats, DOMAIN
+from custom_components.growspace_manager import DOMAIN, websocket_get_history_stats
 
 
 @pytest.mark.asyncio

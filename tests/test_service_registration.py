@@ -125,7 +125,7 @@ async def test_get_coordinator_for_call_failure(
         "homeassistant.config_entries.ConfigEntries.async_entries",
         return_value=[mock_config_entry, entry2],
     ):
-        call = ServiceCall(DOMAIN, "test", {})
+        ServiceCall(DOMAIN, "test", {})
         with pytest.raises(ServiceValidationError):
             # Original test was checking general failure when multiple coordinators exist and no ID provided.
             # But here we used a dict with IDs that don't match.
