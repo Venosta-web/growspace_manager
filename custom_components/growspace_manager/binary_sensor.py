@@ -711,7 +711,7 @@ class BayesianStressSensor(BayesianEnvironmentSensor):
 class BayesianMoldRiskSensor(BayesianEnvironmentSensor):
     """Sensor that calculates the probability of mold growth."""
 
-    async def _async_update_probability(self) -> None:
+    async def _async_update_probability(self) -> None:  # noqa: C901
         """Calculate the probability of mold risk."""
         env_state = self._get_base_environment_state()
 

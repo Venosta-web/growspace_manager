@@ -243,32 +243,32 @@ async def test_websocket_event_log_complex_logic(hass: HomeAssistant) -> None:
     context_manager_mock = MagicMock()
     context_manager_mock.__enter__.return_value = session_mock
 
-    with patch(
-        "custom_components.growspace_manager.session_scope",
-        return_value=context_manager_mock,
+    with (
+        patch(
+            "custom_components.growspace_manager.session_scope",
+            return_value=context_manager_mock,
+        ),
+        patch("custom_components.growspace_manager.get_instance") as get_instance_mock,
     ):
         # We need to mock async_add_executor_job to run the query function immediately
         # The integration code calls: await recorder.async_add_executor_job(_query_events)
-        with patch(
-            "custom_components.growspace_manager.get_instance"
-        ) as get_instance_mock:
-            instance = get_instance_mock.return_value
+        instance = get_instance_mock.return_value
 
-            async def fake_executor(func, *args):
-                return func(*args)
+        async def fake_executor(func, *args):
+            return func(*args)
 
-            instance.async_add_executor_job.side_effect = fake_executor
+        instance.async_add_executor_job.side_effect = fake_executor
 
-            await websocket_get_event_log(hass, connection, msg)
+        await websocket_get_event_log(hass, connection, msg)
 
-            # Verify result
-            connection.send_result.assert_called()
-            args = connection.send_result.call_args[0]
-            result_data = args[1]
+        # Verify result
+        connection.send_result.assert_called()
+        args = connection.send_result.call_args[0]
+        result_data = args[1]
 
-            assert "g1" in result_data
-            events = result_data["g1"]
-            # Expected: row1, row2. row3 bad json, row4 other id, row5 no data.
-            assert len(events) == 2
-            assert events[0]["event_id"] == 1
-            assert events[1]["event_id"] == 2
+        assert "g1" in result_data
+        events = result_data["g1"]
+        # Expected: row1, row2. row3 bad json, row4 other id, row5 no data.
+        assert len(events) == 2
+        assert events[0]["event_id"] == 1
+        assert events[1]["event_id"] == 2

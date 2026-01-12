@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 from abc import ABC
-from typing import Any, Generic, TypeVar
+from typing import Any, TypeVar
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
@@ -21,6 +21,22 @@ class BaseConfigHandler[T](ABC):
         """Initialize the handler."""
         self.hass = hass
         self.config_entry = config_entry
+
+    async def websocket_get_event_log(  # noqa: C901
+        self, hass: HomeAssistant, connection, msg
+    ):
+        """Handle websocket request for event log."""
+        # This method body is missing from the provided diff,
+        # so it's left as a placeholder.
+        pass
+
+    async def transition_plant_stage(  # noqa: C901
+        self, hass: HomeAssistant, connection, msg
+    ):
+        """Handle websocket request to transition plant stage."""
+        # This method body is missing from the provided diff,
+        # so it's left as a placeholder.
+        pass
 
     def clean_input(self, user_input: dict[str, Any]) -> dict[str, Any]:
         """Remove empty or None values from input."""

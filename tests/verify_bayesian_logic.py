@@ -31,6 +31,7 @@ def test_evaluate_direct_temp_stress_missing_light_sensor():
     # Should be empty or contain other stress if temp is extreme (25 is fine for day)
     assert len(observations) == 0
 
+
 def test_evaluate_optimal_temperature_missing_light_sensor():
     """Test that missing light sensor uses Day/Active logic for optimal temp."""
     # 25C is perfect for Day/Active, but out of range for Night (20-23)
@@ -47,6 +48,7 @@ def test_evaluate_optimal_temperature_missing_light_sensor():
     assert observations[0] == PROB_PERFECT
     assert len(reasons) == 0
 
+
 def test_evaluate_optimal_vpd_missing_light_sensor():
     """Test that missing light sensor uses Day/Active logic for optimal VPD."""
     # Setup a VPD that is optimal for Day but maybe not Night (depending on stage)
@@ -57,7 +59,7 @@ def test_evaluate_optimal_vpd_missing_light_sensor():
         spec=EnvironmentState,
         vpd=0.6,
         flower_days=0,
-        veg_days=10, # veg_early
+        veg_days=10,  # veg_early
         is_lights_on=None,
     )
     env_config = {}
@@ -69,21 +71,16 @@ def test_evaluate_optimal_vpd_missing_light_sensor():
     # The key change was: time_of_day = "night" if state.is_lights_on is False else "day"
     # So None -> Day.
 
+
 if __name__ == "__main__":
     import sys
-
 
     # Run tests manually
     try:
         test_evaluate_direct_temp_stress_missing_light_sensor()
-        print("test_evaluate_direct_temp_stress_missing_light_sensor PASSED")
         test_evaluate_optimal_temperature_missing_light_sensor()
-        print("test_evaluate_optimal_temperature_missing_light_sensor PASSED")
         test_evaluate_optimal_vpd_missing_light_sensor()
-        print("test_evaluate_optimal_vpd_missing_light_sensor PASSED")
-    except AssertionError as e:
-        print(f"FAILED: {e}")
+    except AssertionError:
         sys.exit(1)
-    except Exception as e:
-        print(f"ERROR: {e}")
+    except Exception:
         sys.exit(1)

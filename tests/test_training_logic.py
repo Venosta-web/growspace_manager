@@ -98,8 +98,6 @@ async def test_log_training_single_plant(
     args, _ = mock_coordinator.add_event.call_args
     gid, event = args
 
-    print(f"DEBUG: Type of event: {type(event)}")
-
     assert gid == "gs_1"
     assert event.category == CATEGORY_TRAINING
     assert event.sensor_type == technique

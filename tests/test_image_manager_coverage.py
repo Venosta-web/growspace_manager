@@ -278,6 +278,8 @@ async def test_save_timeline_image_exception_handling(
     image_manager = ImageManager(mock_hass, str(tmp_path))
 
     # Mock base64 decode to fail
-    with patch("base64.b64decode", side_effect=Exception("Decode Error")):
-        with pytest.raises(Exception, match="Decode Error"):
-            await image_manager.save_timeline_image("plant_err", "invalid_b64")
+    with (
+        patch("base64.b64decode", side_effect=Exception("Decode Error")),
+        pytest.raises(Exception, match="Decode Error"),
+    ):
+        await image_manager.save_timeline_image("plant_err", "invalid_b64")

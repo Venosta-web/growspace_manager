@@ -6,6 +6,7 @@ import pytest
 from homeassistant.config_entries import ConfigEntryState
 from homeassistant.core import HomeAssistant, ServiceCall
 from homeassistant.exceptions import ServiceValidationError
+from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.growspace_manager.const import DOMAIN
 from custom_components.growspace_manager.exceptions import GrowspaceError
@@ -137,7 +138,6 @@ async def test_get_coordinator_for_call_failure(
 @pytest.mark.asyncio
 async def test_get_coordinator_list_lookup_success(hass: HomeAssistant) -> None:
     """Test get_coordinator_for_call returns coordinator when one ID in list matches."""
-    from pytest_homeassistant_custom_component.common import MockConfigEntry
 
     entry = MockConfigEntry(domain=DOMAIN, state=ConfigEntryState.LOADED)
     mock_coordinator = MagicMock()
@@ -153,10 +153,6 @@ async def test_get_coordinator_list_lookup_success(hass: HomeAssistant) -> None:
 async def test_register_services(hass: HomeAssistant) -> None:
     """Test service registration."""
     strain_lib = MagicMock()
-
-    # Patch the class method instead of the instance method on 'hass.services'
-    # Or just use the fact that 'hass' is a fixture and we can check registered services.
-    # But checking registered services via hass.services.has_service is better.
 
     await register_services(hass, strain_lib)
 

@@ -10,6 +10,9 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from aiohttp import BodyPartReader
+from homeassistant.components.recorder.db_schema import (
+    Events,
+)
 from homeassistant.config_entries import ConfigEntryState
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ServiceValidationError
@@ -549,56 +552,61 @@ async def test_websocket_get_event_log(hass: HomeAssistant, mock_coordinator) ->
 
     # session.query() returns different things depending on args
     def mock_query(*args):
-        if len(args) == 1:
-            # EventTypes query
-            return mock_event_type_query
-        else:
-            # Events, EventData query
+        first = args[0] if args else None
+
+        # Robust check for Events class or string representation
+        if (
+            first is Events
+            or (hasattr(first, "__name__") and first.__name__ == "Events")
+            or "Events" in str(first)
+        ):
             return mock_events_query
+
+        return mock_event_type_query
 
     mock_session.query = MagicMock(side_effect=mock_query)
 
-    with patch(
-        "custom_components.growspace_manager.get_instance",
-        return_value=mock_recorder,
-    ):
-        with patch(
+    with (
+        patch(
+            "custom_components.growspace_manager.get_instance",
+            return_value=mock_recorder,
+        ),
+        patch(
             "custom_components.growspace_manager.session_scope"
-        ) as mock_session_scope:
-            mock_session_scope.return_value.__enter__ = MagicMock(
-                return_value=mock_session
-            )
-            mock_session_scope.return_value.__exit__ = MagicMock(return_value=False)
+        ) as mock_session_scope,
+    ):
+        mock_session_scope.return_value.__enter__ = MagicMock(return_value=mock_session)
+        mock_session_scope.return_value.__exit__ = MagicMock(return_value=False)
 
-            # Case A: Specific Log
-            msg = {
-                "id": 1,
-                "type": f"{DOMAIN}/get_log",
-                "growspace_id": "gs1",
-            }
-            await websocket_get_event_log(hass, mock_connection, msg)
+        # Case A: Specific Log
+        msg = {
+            "id": 1,
+            "type": f"{DOMAIN}/get_log",
+            "growspace_id": "gs1",
+        }
+        await websocket_get_event_log(hass, mock_connection, msg)
 
-            expected_data = mock_event.data.copy()
-            expected_data["event_id"] = 12345
-            mock_connection.send_result.assert_called_with(1, {"gs1": [expected_data]})
+        expected_data = mock_event.data.copy()
+        expected_data["event_id"] = 12345
+        mock_connection.send_result.assert_called_with(1, {"gs1": [expected_data]})
 
-            # Case B: Global (Aggregate)
-            msg_global = {
-                "id": 2,
-                "type": f"{DOMAIN}/get_log",
-            }
-            await websocket_get_event_log(hass, mock_connection, msg_global)
+        # Case B: Global (Aggregate)
+        msg_global = {
+            "id": 2,
+            "type": f"{DOMAIN}/get_log",
+        }
+        await websocket_get_event_log(hass, mock_connection, msg_global)
 
-            mock_connection.send_result.assert_called_with(2, {"gs1": [expected_data]})
+        mock_connection.send_result.assert_called_with(2, {"gs1": [expected_data]})
 
-            # Case C: Filtering out unrelated ID - returns empty because query returns gs1 data
-            msg_other = {
-                "id": 3,
-                "type": f"{DOMAIN}/get_log",
-                "growspace_id": "gs2",
-            }
-            await websocket_get_event_log(hass, mock_connection, msg_other)
-            mock_connection.send_result.assert_called_with(3, {"gs2": []})
+        # Case C: Filtering out unrelated ID - returns empty because query returns gs1 data
+        msg_other = {
+            "id": 3,
+            "type": f"{DOMAIN}/get_log",
+            "growspace_id": "gs2",
+        }
+        await websocket_get_event_log(hass, mock_connection, msg_other)
+        mock_connection.send_result.assert_called_with(3, {"gs2": []})
 
 
 @pytest.mark.asyncio

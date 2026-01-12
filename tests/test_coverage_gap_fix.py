@@ -123,17 +123,19 @@ async def test_downsample_empty_timestamps(hass: HomeAssistant) -> None:
     mock_recorder.async_add_executor_job = AsyncMock(side_effect=run_job)
 
     # Patch get_instance to return our mock recorder
-    with patch(
-        "custom_components.growspace_manager.get_instance", return_value=mock_recorder
-    ):
-        # Patch history.get_significant_states to return data
-        with patch(
+    with (
+        patch(
+            "custom_components.growspace_manager.get_instance",
+            return_value=mock_recorder,
+        ),
+        patch(
             "custom_components.growspace_manager.history.get_significant_states",
             return_value={"sensor.test": [mock_state]},
-        ):
-            result = await _get_history_with_binary_search_downsample(
-                hass, ["sensor.test"], start, end, 5
-            )
+        ),
+    ):
+        result = await _get_history_with_binary_search_downsample(
+            hass, ["sensor.test"], start, end, 5
+        )
 
     assert result["sensor.test"] == []
 
@@ -721,25 +723,25 @@ async def test_resolve_entity_id_special_detected(hass: HomeAssistant) -> None:
 
     mock_reg.async_get_entity_id.side_effect = async_get_entity_id_side_effect
 
-    with patch(
-        "homeassistant.helpers.entity_registry.async_get", return_value=mock_reg
-    ):
-        with patch(
+    with (
+        patch("homeassistant.helpers.entity_registry.async_get", return_value=mock_reg),
+        patch(
             "custom_components.growspace_manager.coordinator.generate_growspace_overview_unique_id"
-        ) as mock_gen_uid:
+        ) as mock_gen_uid,
+    ):
 
-            def gen_uid_side_effect(gs_id):
-                if gs_id == "drying":
-                    return "drying_uid"
-                if gs_id == "dry":
-                    return "dry_uid"
-                return f"{gs_id}_uid"
+        def gen_uid_side_effect(gs_id):
+            if gs_id == "drying":
+                return "drying_uid"
+            if gs_id == "dry":
+                return "dry_uid"
+            return f"{gs_id}_uid"
 
-            mock_gen_uid.side_effect = gen_uid_side_effect
+        mock_gen_uid.side_effect = gen_uid_side_effect
 
-            # We need a special growspace ID like "drying" which is an ALIAS in SPECIAL_GROWSPACES
-            # This triggers the fallback loop
-            eid = coordinator._guess_overview_entity_id("drying")
+        # We need a special growspace ID like "drying" which is an ALIAS in SPECIAL_GROWSPACES
+        # This triggers the fallback loop
+        eid = coordinator._guess_overview_entity_id("drying")
 
-            # Should resolve to the canonical "dry" entity
-            assert eid == "sensor.dry_overview"
+        # Should resolve to the canonical "dry" entity
+        assert eid == "sensor.dry_overview"
