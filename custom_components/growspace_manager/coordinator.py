@@ -232,8 +232,10 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
         if data is None:
             data = {}
 
-        self._load_plants(data.get("plants", {}))
-        self._load_growspaces(data.get("growspaces", {}))
+        self.plants = self.serializer.deserialize_plants(data.get("plants", {}))
+        self.growspaces = self.serializer.deserialize_growspaces(
+            data.get("growspaces", {})
+        )
 
         _LOGGER.debug(
             "Loaded %d plants and %d growspaces", len(self.plants), len(self.growspaces)
@@ -331,44 +333,6 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
 
         self._serialized_cache[growspace_id] = serialized
         return serialized
-
-    def _load_plants(self, raw_plants: dict[str, Any]) -> None:
-        """Load plants from raw data."""
-        for pid, pdata in raw_plants.items():
-            try:
-                if isinstance(pdata, dict):
-                    self.plants[pid] = Plant.from_dict(pdata)
-                elif isinstance(pdata, Plant):
-                    self.plants[pid] = pdata
-                else:
-                    self._raise_invalid_plant_data_type(pid, pdata)
-            except Exception:
-                _LOGGER.exception("Failed to load plant %s", pid)
-
-    def _load_growspaces(self, raw_growspaces: dict[str, Any]) -> None:
-        """Load growspaces from raw data."""
-        for gid, gdata in raw_growspaces.items():
-            try:
-                if isinstance(gdata, dict):
-                    self.growspaces[gid] = Growspace.from_dict(gdata)
-                elif isinstance(gdata, Growspace):
-                    self.growspaces[gid] = gdata
-                else:
-                    self._raise_invalid_growspace_data_type(gid, gdata)
-            except Exception:
-                _LOGGER.exception("Failed to load growspace %s", gid)
-
-    # -----------------------------
-    # Methods for editor dropdown
-    def _raise_invalid_plant_data_type(self, pid: str, pdata: Any) -> None:
-        """Raise TypeError for invalid plant data."""
-        raise TypeError(f"Invalid data type for plant {pid}: {type(pdata)}")
-
-    def _raise_invalid_growspace_data_type(self, gid: str, gdata: Any) -> None:
-        """Raise TypeError for invalid growspace data."""
-        raise TypeError(f"Invalid data type for growspace {gid}: {type(gdata)}")
-
-    # -----------------------------
 
     async def async_initialize_sub_coordinators(
         self, entry: ConfigEntry[GrowspaceCoordinator]

@@ -81,6 +81,46 @@ class GrowspaceSerializer:
         # But strictly speaking, type checking will fail if I pass None.
         pass
 
+    def deserialize_plants(self, raw_plants: dict[str, Any]) -> dict[str, Plant]:
+        """Deserialize plants from raw data."""
+        plants: dict[str, Plant] = {}
+        for pid, pdata in raw_plants.items():
+            try:
+                if isinstance(pdata, dict):
+                    plants[pid] = Plant.from_dict(pdata)
+                elif isinstance(pdata, Plant):
+                    plants[pid] = pdata
+                else:
+                    self._raise_invalid_data_type(pid, pdata, "plant")
+            except Exception:
+                _LOGGER.exception("Failed to load plant %s", pid)
+        return plants
+
+    def deserialize_growspaces(
+        self, raw_growspaces: dict[str, Any]
+    ) -> dict[str, Growspace]:
+        """Deserialize growspaces from raw data."""
+        growspaces: dict[str, Growspace] = {}
+        for gid, gdata in raw_growspaces.items():
+            try:
+                if isinstance(gdata, dict):
+                    growspaces[gid] = Growspace.from_dict(gdata)
+                elif isinstance(gdata, Growspace):
+                    growspaces[gid] = gdata
+                else:
+                    self._raise_invalid_data_type(gid, gdata, "growspace")
+            except Exception:
+                _LOGGER.exception("Failed to load growspace %s", gid)
+        return growspaces
+
+    def _raise_invalid_data_type(
+        self, item_id: str, item_data: Any, item_type: str
+    ) -> None:
+        """Raise TypeError for invalid data."""
+        raise TypeError(
+            f"Invalid data type for {item_type} {item_id}: {type(item_data)}"
+        )
+
     def serialize_growspace(
         self, growspace: Growspace, plants: list[Plant], analyzer: EnvironmentAnalyzer
     ) -> dict[str, Any]:

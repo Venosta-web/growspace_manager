@@ -332,3 +332,72 @@ def test_serialize_plant_with_training_and_watering(
     assert data["last_trained"] == timestamp.split("T")[0]
     assert data["last_training_technique"] == "Topping"
     assert data["days_since_last_watering"] == 5
+
+
+def test_deserialize_plants(serializer: GrowspaceSerializer) -> None:
+    """Test deserialize_plants."""
+    raw_data = {
+        "plant1": {
+            "plant_id": "plant1",
+            "growspace_id": "gs1",
+            "strain": "Test Strain",
+            "phenotype": "Alpha",
+            "row": 1,
+            "col": 1,
+            "stage": "veg",
+        },
+        "plant2": Plant(
+            plant_id="plant2",
+            growspace_id="gs1",
+            strain="Strain 2",
+            phenotype="Beta",
+            row=1,
+            col=2,
+            stage=PlantStage.FLOWER,
+        ),
+        "invalid_plant": "invalid_string_data",
+        "error_causing_plant": {"missing_required_fields": "true"},
+    }
+
+    plants = serializer.deserialize_plants(raw_data)
+
+    assert len(plants) == 2
+    assert "plant1" in plants
+    assert isinstance(plants["plant1"], Plant)
+    assert plants["plant1"].strain == "Test Strain"
+
+    assert "plant2" in plants
+    assert isinstance(plants["plant2"], Plant)
+    assert plants["plant2"].strain == "Strain 2"
+
+    assert "invalid_plant" not in plants
+    assert "error_causing_plant" not in plants
+
+
+def test_deserialize_growspaces(serializer: GrowspaceSerializer) -> None:
+    """Test deserialize_growspaces."""
+    raw_data = {
+        "gs1": {
+            "id": "gs1",
+            "name": "GS 1",
+            "rows": 2,
+            "plants_per_row": 3,
+        },
+        "gs2": Growspace(id="gs2", name="GS 2", rows=1, plants_per_row=1),
+        "invalid_gs": 12345,
+        "error_causing_gs": {"rows": "invalid_number_format"},
+    }
+
+    growspaces = serializer.deserialize_growspaces(raw_data)
+
+    assert len(growspaces) == 2
+    assert "gs1" in growspaces
+    assert isinstance(growspaces["gs1"], Growspace)
+    assert growspaces["gs1"].name == "GS 1"
+
+    assert "gs2" in growspaces
+    assert isinstance(growspaces["gs2"], Growspace)
+    assert growspaces["gs2"].name == "GS 2"
+
+    assert "invalid_gs" not in growspaces
+    assert "error_causing_gs" not in growspaces

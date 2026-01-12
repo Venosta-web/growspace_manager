@@ -1949,46 +1949,6 @@ async def test_async_initialize_sub_coordinators(
 
 
 @pytest.mark.asyncio
-async def test_load_growspaces_invalid_data(
-    mock_coordinator: GrowspaceCoordinator,
-) -> None:
-    """Test loading invalid growspace data."""
-    raw_growspaces = {
-        "valid": {
-            "id": "valid",
-            "name": "Valid",
-            "rows": 3,
-            "plants_per_row": 3,
-            "growspace_type": "flower",
-        },
-        "invalid": "this is not a dict",
-    }
-
-    with patch(
-        "custom_components.growspace_manager.coordinator._LOGGER"
-    ) as mock_logger:
-        mock_coordinator._load_growspaces(raw_growspaces)
-
-        assert "valid" in mock_coordinator.growspaces
-        assert "invalid" not in mock_coordinator.growspaces
-        # The exception handler calls logger.exception
-        assert mock_logger.exception.call_count >= 1
-
-
-@pytest.mark.asyncio
-async def test_load_plants_invalid_data_logging(
-    mock_coordinator: GrowspaceCoordinator,
-) -> None:
-    """Test loading invalid plant data logs exception."""
-    raw_plants = {"p1": "invalid_string_data"}
-    with patch(
-        "custom_components.growspace_manager.coordinator._LOGGER"
-    ) as mock_logger:
-        mock_coordinator._load_plants(raw_plants)
-        assert mock_logger.exception.call_count == 1
-
-
-@pytest.mark.asyncio
 async def test_calculate_days_caps(mock_coordinator: GrowspaceCoordinator) -> None:
     """Test calculate_days with end_date capping and various inputs."""
     today = date.today()
@@ -2630,37 +2590,6 @@ async def test_coverage_init_with_empty_data(hass: HomeAssistant) -> None:
         assert coord.growspaces == {}
 
 
-async def test_coverage_load_plant_object_directly(coordinator) -> None:
-    """Test loading a Plant object directly (line 196)."""
-    plant = Plant(
-        plant_id="test_plant",
-        growspace_id="gs1",
-        strain="Test Strain",
-        phenotype="Original",
-        veg_start="2024-01-01",
-    )
-
-    coordinator._load_plants({"test_plant": plant})
-
-    assert "test_plant" in coordinator.plants
-    assert coordinator.plants["test_plant"] == plant
-
-
-async def test_coverage_load_growspace_object_directly(coordinator) -> None:
-    """Test loading a Growspace object directly (line 214)."""
-    growspace = Growspace(
-        id="test_gs",
-        name="Test GS",
-        rows=3,
-        plants_per_row=3,
-    )
-
-    coordinator._load_growspaces({"test_gs": growspace})
-
-    assert "test_gs" in coordinator.growspaces
-    assert coordinator.growspaces["test_gs"] == growspace
-
-
 @pytest.mark.asyncio
 async def test_add_event_fires_bus_event(coordinator) -> None:
     """Test add_event fires EVENT_GROWSPACE_LOG_ENTRY to HA bus."""
@@ -2746,26 +2675,6 @@ async def test_coverage_migrate_plant_image_paths(coordinator) -> None:
     assert coordinator.plants["plant2"].phenotype["image_path"] == "/local/test2.webp"
     assert coordinator.plants["plant3"].phenotype == {}
     assert coordinator.plants["plant4"].phenotype.get("image_path") is None
-
-
-async def test_coverage_load_plants_from_dict(coordinator) -> None:
-    """Test loading plants from dictionary (line 196)."""
-    plant_data = {
-        "test_plant": {
-            "plant_id": "test_plant",
-            "name": "Test",
-            "growspace_id": "gs1",
-            "strain": "Test Strain",
-            "phenotype": "Original",
-            "veg_start": "2024-01-01",
-            "stage": "vegetative",  # Ensure stage is calculated or preserved
-        }
-    }
-
-    coordinator._load_plants(plant_data)
-
-    assert "test_plant" in coordinator.plants
-    assert coordinator.plants["test_plant"].plant_id == "test_plant"
 
 
 async def test_coverage_ensure_special_growspace_type_update(coordinator) -> None:
