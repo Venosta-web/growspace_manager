@@ -144,11 +144,11 @@ async def test_handle_import_strain_library_file_path(
         mock_notify.assert_called_once()
 
 
-async def test_handle_import_strain_library_base64(
+async def test_handle_import_strain_library_zip_base64(
     mock_hass, mock_coordinator, mock_strain_library
 ):
-    """Test importing strain library from base64."""
-    zip_content = b"PK\x03\x04"  # Fake zip header
+    """Test importing strain library with base64 encoded zip."""
+    zip_content = b"PK\x03\x04"
     zip_base64 = base64.b64encode(zip_content).decode("utf-8")
 
     call = ServiceCall(
@@ -159,27 +159,27 @@ async def test_handle_import_strain_library_base64(
         context=MagicMock(),
     )
 
-    with patch(
-        "custom_components.growspace_manager.services.strain_library.create_notification"
+    with (
+        patch(
+            "custom_components.growspace_manager.services.strain_library.create_notification"
+        ),
+        patch("tempfile.NamedTemporaryFile") as mock_temp,
+        patch("os.path.exists", return_value=True),
+        patch("os.remove") as mock_remove,
     ):
-        with patch("tempfile.NamedTemporaryFile") as mock_temp:
-            mock_temp_file = MagicMock()
-            mock_temp_file.name = "/tmp/temp_import.zip"
-            mock_temp.return_value.__enter__.return_value = mock_temp_file
+        mock_temp_file = MagicMock()
+        mock_temp_file.name = "/tmp/temp_import.zip"
+        mock_temp.return_value.__enter__.return_value = mock_temp_file
 
-            with (
-                patch("os.path.exists", return_value=True),
-                patch("os.remove") as mock_remove,
-            ):
-                await handle_import_strain_library(
-                    mock_hass, mock_coordinator, mock_strain_library, call
-                )
+        await handle_import_strain_library(
+            mock_hass, mock_coordinator, mock_strain_library, call
+        )
 
-                mock_temp_file.write.assert_called_once_with(zip_content)
-                mock_strain_library.import_library_from_zip.assert_awaited_once_with(
-                    zip_path="/tmp/temp_import.zip", merge=True
-                )
-                mock_remove.assert_called_once_with("/tmp/temp_import.zip")
+        mock_temp_file.write.assert_called_once_with(zip_content)
+        mock_strain_library.import_library_from_zip.assert_awaited_once_with(
+            zip_path="/tmp/temp_import.zip", merge=True
+        )
+        mock_remove.assert_called_once_with("/tmp/temp_import.zip")
 
 
 async def test_handle_import_strain_library_temp_file_remove_error(
@@ -197,23 +197,21 @@ async def test_handle_import_strain_library_temp_file_remove_error(
         context=MagicMock(),
     )
 
-    with patch(
-        "custom_components.growspace_manager.services.strain_library.create_notification"
+    with (
+        patch(
+            "custom_components.growspace_manager.services.strain_library.create_notification"
+        ),
+        patch("tempfile.NamedTemporaryFile") as mock_temp,
+        patch("os.path.exists", return_value=True),
+        patch("os.remove", side_effect=OSError("Remove Error")),
     ):
-        with patch("tempfile.NamedTemporaryFile") as mock_temp:
-            mock_temp_file = MagicMock()
-            mock_temp_file.name = "/tmp/temp_import.zip"
-            mock_temp.return_value.__enter__.return_value = mock_temp_file
+        mock_temp_file = MagicMock()
+        mock_temp_file.name = "/tmp/temp_import.zip"
+        mock_temp.return_value.__enter__.return_value = mock_temp_file
 
-            with (
-                patch("os.path.exists", return_value=True),
-                patch("os.remove", side_effect=OSError("Remove Error")),
-            ):
-                await handle_import_strain_library(
-                    mock_hass, mock_coordinator, mock_strain_library, call
-                )
-
-                mock_strain_library.import_library_from_zip.assert_awaited_once()
+        await handle_import_strain_library(
+            mock_hass, mock_coordinator, mock_strain_library, call
+        )
 
 
 async def test_handle_import_strain_library_no_data(

@@ -227,9 +227,7 @@ class Growspace(BaseModel):
     environment_config: EnvironmentConfig = field(default_factory=EnvironmentConfig)
     irrigation_config: IrrigationConfig = field(default_factory=IrrigationConfig)
     dehumidifier_config: dict[str, Any] = field(default_factory=dict)
-    irrigation_strategy: IrrigationStrategy = field(
-        default_factory=IrrigationStrategy
-    )
+    irrigation_strategy: IrrigationStrategy = field(default_factory=IrrigationStrategy)
     growspace_type: GrowspaceType = field(default=GrowspaceType.FLOWER)
 
 

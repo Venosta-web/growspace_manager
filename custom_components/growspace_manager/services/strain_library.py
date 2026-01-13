@@ -61,8 +61,8 @@ async def handle_export_strain_library(
             {
                 "file_path": zip_path,
                 "url": relative_path,
-                "strains_count": len(strain_library.get_all())
-            }
+                "strains_count": len(strain_library.get_all()),
+            },
         )
 
         create_notification(
@@ -136,7 +136,9 @@ async def handle_import_strain_library(
         await strain_library.save()
 
         _LOGGER.info(
-            "Imported strain library from %s. Total strains: %d", file_path, strains_count
+            "Imported strain library from %s. Total strains: %d",
+            file_path,
+            strains_count,
         )
 
         await coordinator.async_request_refresh()

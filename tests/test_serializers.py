@@ -332,3 +332,162 @@ def test_serialize_plant_with_training_and_watering(
     assert data["last_trained"] == timestamp.split("T")[0]
     assert data["last_training_technique"] == "Topping"
     assert data["days_since_last_watering"] == 5
+
+
+def test_deserialize_plants(serializer: GrowspaceSerializer) -> None:
+    """Test deserialize_plants."""
+    raw_data = {
+        "plant1": {
+            "plant_id": "plant1",
+            "growspace_id": "gs1",
+            "strain": "Test Strain",
+            "phenotype": "Alpha",
+            "row": 1,
+            "col": 1,
+            "stage": "veg",
+        },
+        "plant2": Plant(
+            plant_id="plant2",
+            growspace_id="gs1",
+            strain="Strain 2",
+            phenotype="Beta",
+            row=1,
+            col=2,
+            stage=PlantStage.FLOWER,
+        ),
+        "invalid_plant": "invalid_string_data",
+        "error_causing_plant": {"missing_required_fields": "true"},
+    }
+
+    plants = serializer.deserialize_plants(raw_data)
+
+    assert len(plants) == 2
+    assert "plant1" in plants
+    assert isinstance(plants["plant1"], Plant)
+    assert plants["plant1"].strain == "Test Strain"
+
+    assert "plant2" in plants
+    assert isinstance(plants["plant2"], Plant)
+    assert plants["plant2"].strain == "Strain 2"
+
+    assert "invalid_plant" not in plants
+    assert "error_causing_plant" not in plants
+
+
+def test_deserialize_growspaces(serializer: GrowspaceSerializer) -> None:
+    """Test deserialize_growspaces."""
+    raw_data = {
+        "gs1": {
+            "id": "gs1",
+            "name": "GS 1",
+            "rows": 2,
+            "plants_per_row": 3,
+        },
+        "gs2": Growspace(id="gs2", name="GS 2", rows=1, plants_per_row=1),
+        "invalid_gs": 12345,
+        "error_causing_gs": {"rows": "invalid_number_format"},
+    }
+
+    growspaces = serializer.deserialize_growspaces(raw_data)
+
+    assert len(growspaces) == 2
+    assert "gs1" in growspaces
+    assert isinstance(growspaces["gs1"], Growspace)
+    assert growspaces["gs1"].name == "GS 1"
+
+    assert "gs2" in growspaces
+    assert isinstance(growspaces["gs2"], Growspace)
+    assert growspaces["gs2"].name == "GS 2"
+
+    assert "invalid_gs" not in growspaces
+    assert "error_causing_gs" not in growspaces
+
+
+def test_deserialize_growspaces_irrigation_migration(
+    serializer: GrowspaceSerializer,
+) -> None:
+    """Test data migration for old irrigation config format."""
+    raw_data = {
+        "gs1": {
+            "id": "gs1",
+            "name": "GS 1",
+            "rows": 2,
+            "plants_per_row": 3,
+            "irrigation_config": {
+                "irrigation_times": [
+                    {"time": "08:00:00", "duration": 60},  # Old format
+                    {"start_time": "12:00:00", "duration_seconds": 120},  # New format
+                ],
+                "drain_times": [
+                    {"time": "08:10:00", "duration": 30},  # Old format
+                ],
+            },
+        }
+    }
+
+    growspaces = serializer.deserialize_growspaces(raw_data)
+
+    assert "gs1" in growspaces
+    gs = growspaces["gs1"]
+
+    # Check Irrigation Times
+    assert len(gs.irrigation_config.irrigation_times) == 2
+
+    # Item 1 (Migrated)
+    item1 = gs.irrigation_config.irrigation_times[0]
+    assert item1["start_time"] == "08:00:00"
+    assert item1["duration_seconds"] == 60
+    assert "time" not in item1
+    assert "duration" not in item1
+
+    # Item 2 (Already correct)
+    item2 = gs.irrigation_config.irrigation_times[1]
+    assert item2["start_time"] == "12:00:00"
+    assert item2["duration_seconds"] == 120
+
+    # Check Drain Times (Migrated)
+    assert len(gs.irrigation_config.drain_times) == 1
+    drain = gs.irrigation_config.drain_times[0]
+    assert drain["start_time"] == "08:10:00"
+    assert drain["duration_seconds"] == 30
+
+
+def test_deserialize_growspaces_irrigation_migration_float_strings(
+    serializer: GrowspaceSerializer,
+) -> None:
+    """Test data migration for old irrigation config format with float strings."""
+    raw_data = {
+        "gs1": {
+            "id": "gs1",
+            "name": "GS 1",
+            "rows": 2,
+            "plants_per_row": 3,
+            "irrigation_config": {
+                "irrigation_times": [
+                    {"time": "08:00:00", "duration": "30.0"},  # Str float
+                    {
+                        "start_time": "12:00:00",
+                        "duration_seconds": "45.0",
+                    },  # Str float new key
+                    {"time": "14:00:00", "duration": 60.0},  # Real float
+                ],
+            },
+        }
+    }
+
+    growspaces = serializer.deserialize_growspaces(raw_data)
+
+    assert "gs1" in growspaces
+    gs = growspaces["gs1"]
+
+    times = gs.irrigation_config.irrigation_times
+    assert len(times) == 3
+
+    # Item 1: "30.0" -> 30
+    assert times[0]["duration_seconds"] == 30
+
+    # Item 2: "45.0" -> 45
+    assert times[1]["duration_seconds"] == 45
+
+    # Item 3: 60.0 -> 60
+    assert times[2]["duration_seconds"] == 60

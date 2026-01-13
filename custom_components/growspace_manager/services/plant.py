@@ -721,7 +721,7 @@ async def handle_harvest_plant(
         raise
 
 
-async def async_add_timeline_note(
+async def async_add_timeline_note(  # noqa: C901
     hass: HomeAssistant,
     coordinator: GrowspaceCoordinator,
     strain_library: StrainLibrary,

@@ -127,9 +127,11 @@ async def test_import_library_success(manager: ImportExportManager):
 
 async def test_import_library_file_not_found(manager: ImportExportManager):
     """Test import with missing file."""
-    with patch("os.path.exists", return_value=False):
-        with pytest.raises(FileNotFoundError):
-            await manager.import_library("/missing.zip", TARGET_IMAGE_DIR)
+    with (
+        patch("os.path.exists", return_value=False),
+        pytest.raises(FileNotFoundError),
+    ):
+        await manager.import_library("/missing.zip", TARGET_IMAGE_DIR)
 
 
 async def test_import_library_invalid_zip(manager: ImportExportManager):
@@ -137,9 +139,9 @@ async def test_import_library_invalid_zip(manager: ImportExportManager):
     with (
         patch("os.path.exists", return_value=True),
         patch("zipfile.is_zipfile", return_value=False),
+        pytest.raises(ValueError, match="Not a valid ZIP file"),
     ):
-        with pytest.raises(ValueError, match="Not a valid ZIP file"):
-            await manager.import_library("/invalid.zip", TARGET_IMAGE_DIR)
+        await manager.import_library("/invalid.zip", TARGET_IMAGE_DIR)
 
 
 async def test_import_library_missing_json(manager: ImportExportManager):

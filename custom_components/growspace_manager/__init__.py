@@ -449,7 +449,7 @@ def _merge_logbook_event(formatted_events_list, data_dict, evt_row):
     return False
 
 
-async def websocket_get_event_log(hass: HomeAssistant, connection, msg):
+async def websocket_get_event_log(hass: HomeAssistant, connection, msg):  # noqa: C901
     """Handle get event log command via Recorder."""
     growspace_id = msg.get("growspace_id")
     limit = msg.get("limit", 1000)
@@ -461,7 +461,7 @@ async def websocket_get_event_log(hass: HomeAssistant, connection, msg):
         end_time = dt_util.utcnow()
         start_time = end_time - dt_util.dt.timedelta(days=7)
 
-        def _query_events():
+        def _query_events():  # noqa: C901
             formatted = []
             counts = {"normal": 0, "spammy": 0}
 

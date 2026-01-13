@@ -488,9 +488,11 @@ async def test_ensure_strain_and_phenotype_exist_strain_creation_failure(
     # This is difficult to simulate without deep mocking.
     # One approach is to mock add_strain to not actually add anything.
 
-    with patch.object(strain_library, "add_strain", new_callable=AsyncMock):
+    with (
+        patch.object(strain_library, "add_strain", new_callable=AsyncMock),
+        pytest.raises(RuntimeError, match="Failed to create strain"),
+    ):
         # add_strain will be called but won't actually create the strain
-        with pytest.raises(RuntimeError, match="Failed to create strain"):
-            await strain_library._ensure_strain_and_phenotype_exist(
-                "Failing Strain", "Pheno"
-            )
+        await strain_library._ensure_strain_and_phenotype_exist(
+            "Failing Strain", "Pheno"
+        )

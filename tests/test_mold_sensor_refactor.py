@@ -267,7 +267,6 @@ async def test_veg_stage_scenario_false_positive_prevention(
 
         # Check reasons
         reasons_text = [r[1] for r in sensor._reasons]
-        print(f"DEBUG: Prob: {sensor._probability}, Reasons: {reasons_text}")
 
         # Assertions
         assert not sensor.is_on, (
@@ -315,8 +314,12 @@ async def test_user_reported_veg_scenario(
     set_sensor_state(hass, "sensor.temp", 24.2)
     set_sensor_state(hass, "sensor.humidity", 64.0)
     set_sensor_state(hass, "sensor.vpd", 0.75)
-    set_sensor_state(hass, "switch.fan", "off")  # Let's assume fan is off to see if it triggers
-    set_sensor_state(hass, "humidifier.humidifier", "on") # Let's assume humidifier is on
+    set_sensor_state(
+        hass, "switch.fan", "off"
+    )  # Let's assume fan is off to see if it triggers
+    set_sensor_state(
+        hass, "humidifier.humidifier", "on"
+    )  # Let's assume humidifier is on
     # Add a mock humidifier value sensor if needed
     set_sensor_state(hass, "sensor.humidifier_value", 50.0)
     env_config.humidifier_entity = "sensor.humidifier_value"
@@ -339,8 +342,7 @@ async def test_user_reported_veg_scenario(
     ):
         await sensor.async_update_and_notify()
 
-        reasons_text = [r[1] for r in sensor._reasons]
-        print(f"USER SCENARIO DEBUG: Prob: {sensor._probability}, Reasons: {reasons_text}")
+        [r[1] for r in sensor._reasons]
 
         # If it's > 0.75 (default threshold), it's ON.
         # User says it's 90%.
@@ -373,11 +375,14 @@ async def test_veg_fan_off_safe(
     set_sensor_state(hass, "sensor.vpd", 1.0)
     await hass.async_block_till_done()
 
-    with patch.object(
-        sensor,
-        "_get_growth_stage_info",
-        return_value={"veg_days": 20, "flower_days": 0},
-    ), patch.object(sensor, "async_write_ha_state", new_callable=MagicMock):
+    with (
+        patch.object(
+            sensor,
+            "_get_growth_stage_info",
+            return_value={"veg_days": 20, "flower_days": 0},
+        ),
+        patch.object(sensor, "async_write_ha_state", new_callable=MagicMock),
+    ):
         await sensor.async_update_and_notify()
 
     assert not sensor.is_on
@@ -412,11 +417,14 @@ async def test_veg_fan_off_risk(
     set_sensor_state(hass, "sensor.vpd", 1.0)
     await hass.async_block_till_done()
 
-    with patch.object(
-        sensor,
-        "_get_growth_stage_info",
-        return_value={"veg_days": 20, "flower_days": 0},
-    ), patch.object(sensor, "async_write_ha_state", new_callable=MagicMock):
+    with (
+        patch.object(
+            sensor,
+            "_get_growth_stage_info",
+            return_value={"veg_days": 20, "flower_days": 0},
+        ),
+        patch.object(sensor, "async_write_ha_state", new_callable=MagicMock),
+    ):
         await sensor.async_update_and_notify()
 
     # Probability might be high enough?
