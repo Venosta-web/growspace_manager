@@ -1,5 +1,8 @@
 """Tests for the StorageManager."""
 
+import glob
+import json
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -34,7 +37,9 @@ def mock_coordinator():
 
 
 @pytest.mark.asyncio
-async def test_load_growspaces_uses_serializer(hass: HomeAssistant, mock_coordinator):
+async def test_load_growspaces_uses_serializer(
+    hass: HomeAssistant, mock_coordinator
+) -> None:
     """Test that loading growspaces delegates to the serializer."""
     storage = StorageManager(mock_coordinator, hass)
 
@@ -74,7 +79,9 @@ async def test_load_growspaces_uses_serializer(hass: HomeAssistant, mock_coordin
 
 
 @pytest.mark.asyncio
-async def test_backup_logic_with_corrupt_data(hass: HomeAssistant, mock_coordinator):
+async def test_backup_logic_with_corrupt_data(
+    hass: HomeAssistant, mock_coordinator
+) -> None:
     """Test that corrupt data triggers a backup file creation."""
     mock_coordinator.serializer.deserialize_growspaces.side_effect = Exception(
         "Corruption!"
@@ -96,9 +103,6 @@ async def test_backup_logic_with_corrupt_data(hass: HomeAssistant, mock_coordina
         assert mock_coordinator.growspaces == {}
 
         # Verify backup file creation
-        import glob
-        import json
-        from pathlib import Path
 
         files = glob.glob("/tmp/growspace_manager_growspaces_CORRUPT_*.json")
         assert len(files) >= 1, "Backup file was not created"

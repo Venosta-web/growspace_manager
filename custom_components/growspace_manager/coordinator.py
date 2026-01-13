@@ -80,6 +80,7 @@ from .serializers import GrowspaceSerializer
 from .storage_manager import StorageManager
 from .strain_library import StrainLibrary
 from .utils import (
+    calculate_days_since,
     calculate_plant_stage,
     generate_growspace_grid,
     generate_growspace_overview_unique_id,
@@ -327,9 +328,41 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
         else:
             plants = self.get_growspace_plants(growspace_id)
 
-        serialized = self.serializer.serialize_growspace(
-            growspace, plants, self.environment_analyzer
+        # Calculate aggregated stats for the growspace
+        max_veg_days = max(
+            (calculate_days_since(p.veg_start) for p in plants if p.veg_start),
+            default=0,
         )
+        max_flower_days = max(
+            (calculate_days_since(p.flower_start) for p in plants if p.flower_start),
+            default=0,
+        )
+        max_dry_days = max(
+            (calculate_days_since(p.dry_start) for p in plants if p.dry_start),
+            default=0,
+        )
+        max_cure_days = max(
+            (calculate_days_since(p.cure_start) for p in plants if p.cure_start),
+            default=0,
+        )
+
+        # Calculate biological metrics via EnvironmentAnalyzer (View Model assembly)
+        biological_metrics = self.environment_analyzer.calculate_biological_metrics(
+            growspace, max_veg_days, max_flower_days, max_dry_days, max_cure_days
+        )
+
+        serialized = self.serializer.serialize_growspace(
+            growspace,
+            plants,
+            biological_metrics,
+            max_veg_days=max_veg_days,
+            max_flower_days=max_flower_days,
+            max_dry_days=max_dry_days,
+            max_cure_days=max_cure_days,
+        )
+
+        # Inject timestamp for efficient frontend equality checks (change detection)
+        serialized["_ts"] = int(dt_util.utcnow().timestamp() * 1000)
 
         self._serialized_cache[growspace_id] = serialized
         return serialized

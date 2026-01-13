@@ -134,8 +134,7 @@ def test_serialize_growspace(
     # Setup dependencies
     plants = [mock_plant]
 
-    mock_analyzer = MagicMock()
-    mock_analyzer.calculate_biological_metrics.return_value = {
+    biological_metrics = {
         "granular_stage": "veg_early",
         "is_day": True,
         "vpd_target_min": 0.8,
@@ -152,7 +151,12 @@ def test_serialize_growspace(
         )
         mock_registry_get.return_value = mock_registry
 
-        data = serializer.serialize_growspace(mock_growspace, plants, mock_analyzer)
+        data = serializer.serialize_growspace(
+            mock_growspace,
+            plants,
+            biological_metrics,
+            max_veg_days=10,
+        )
 
         assert data["growspace_id"] == "gs1"
         assert data["total_plants"] == 1
@@ -160,9 +164,6 @@ def test_serialize_growspace(
         assert "grid" in data
         assert data["grid"]["position_1_1"]["plant_id"] == "plant1"
         assert data["vpd_status"] == "optimal"
-
-        # Verify analyzer call
-        mock_analyzer.calculate_biological_metrics.assert_called_once()
 
 
 def test_get_environment_attributes_with_thresholds(
@@ -273,7 +274,7 @@ def test_serialize_special_growspace_types(
 
         for gs_type in special_types:
             mock_growspace.id = gs_type
-            data = serializer.serialize_growspace(mock_growspace, plants, analyzer)
+            data = serializer.serialize_growspace(mock_growspace, plants, {})
             assert data["type"] == gs_type
 
 
@@ -292,7 +293,9 @@ def test_serialize_growspace_legacy_entity_id(
         mock_growspace.name = "My Grow Room"
         mock_growspace.id = "gs_legacy"
 
-        data = serializer.serialize_growspace(mock_growspace, plants, analyzer)
+        data = serializer.serialize_growspace(
+            mock_growspace, plants, analyzer.calculate_biological_metrics.return_value
+        )
 
         # Should fallback to slugified name
         assert data["overview_entity_id"] == "sensor.my_grow_room"

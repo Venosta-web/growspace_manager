@@ -49,7 +49,7 @@ async def test_async_commit_rebuilds_cache(hass: HomeAssistant) -> None:
         coordinator.async_set_updated_data = MagicMock()
         coordinator.serializer = MagicMock()
         coordinator.serializer.serialize_growspace = MagicMock(
-            side_effect=lambda gs, plants, analyzer: {"name": gs.name}
+            side_effect=lambda gs, plants, *args, **kwargs: {"name": gs.name}
         )
 
         # Add a growspace manually to avoid triggering async_commit loop logic in setup

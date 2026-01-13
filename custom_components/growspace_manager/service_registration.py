@@ -7,15 +7,10 @@ from collections.abc import Callable, Coroutine
 from functools import partial
 from typing import Any, cast
 
-from homeassistant.config_entries import ConfigEntryState
 from homeassistant.core import HomeAssistant, ServiceCall, SupportsResponse
 from homeassistant.exceptions import ServiceValidationError
 
 from .const import (
-    ATTR_GROWSPACE_ID,
-    ATTR_MOTHER_PLANT_ID,
-    ATTR_PLANT_ID,
-    ATTR_TARGET_GROWSPACE_ID,
     DOMAIN,
     GrowspaceService,
 )
@@ -83,57 +78,6 @@ from .services import (
 from .services.strain_library import StrainLibrary
 
 _LOGGER = logging.getLogger(__name__)
-
-
-def get_coordinator_for_call(
-    hass: HomeAssistant, call: ServiceCall | dict
-) -> GrowspaceCoordinator:
-    """Retrieve the correct coordinator based on service call data."""
-    data = call.data if isinstance(call, ServiceCall) else call
-
-    # Get all potential coordinators from loaded entries
-    entries = hass.config_entries.async_entries(DOMAIN)
-
-    coordinators = [
-        entry.runtime_data
-        for entry in entries
-        if entry.state == ConfigEntryState.LOADED and hasattr(entry, "runtime_data")
-    ]
-
-    # Prioritize specific ID keys
-    # Map key name to the coordinator attribute to check against
-    # Map key name to the coordinator attribute to check against
-    id_lookups = [
-        (ATTR_GROWSPACE_ID, "growspaces"),
-        (ATTR_TARGET_GROWSPACE_ID, "growspaces"),
-        (ATTR_PLANT_ID, "plants"),
-        (ATTR_MOTHER_PLANT_ID, "plants"),
-    ]
-
-    for key, attr in id_lookups:
-        if val := data.get(key):
-            for coordinator in coordinators:
-                target_collection = getattr(coordinator, attr)
-                # Handle list of IDs (e.g. plant_ids)
-                if isinstance(val, list):
-                    # Check if ANY of the IDs in the list belong to this coordinator.
-                    # This assumes that a request with multiple IDs is intended for a single coordinator
-                    # or that we just need to find *one* valid coordinator to handle it.
-                    # Since coordinators are usually per-entry/config, normally plants are in one place.
-                    if any(item in target_collection for item in val):
-                        return coordinator
-                # Handle single ID
-                elif val in target_collection:
-                    return coordinator
-
-    # 3. Fallback: If only one config entry exists, use it.
-    if len(coordinators) == 1:
-        return coordinators[0]
-
-    raise ServiceValidationError(
-        "Could not determine which Growspace Manager instance to use. "
-        "Please specify a valid growspace_id or plant_id."
-    )
 
 
 async def register_services(
