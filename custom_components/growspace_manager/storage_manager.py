@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import json
 import logging
 from dataclasses import asdict
+from datetime import datetime
+from pathlib import Path
 
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.storage import Store
@@ -16,10 +19,8 @@ from .const import (
 )
 from .models import (
     EnvironmentConfig,
-    Growspace,
     IPMPreset,
     NutrientPreset,
-    Plant,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -126,29 +127,50 @@ class StorageManager:
         self._load_plants(data)  # Plants were top level "plants" key
         self._load_config(data)  # Config keys were also top level
 
+    def _backup_corrupt_data(self, key: str, data: dict) -> None:
+        """Backup corrupt data to a file before reset."""
+        try:
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            backup_filename = f"growspace_manager_{key}_CORRUPT_{timestamp}.json"
+            backup_path = Path(self.hass.config.path(".storage")) / backup_filename
+
+            with open(backup_path, "w") as f:
+                json.dump(data, f, indent=2, default=str)
+
+            _LOGGER.critical(
+                "Data corruption detected for %s. Raw data backed up to %s before reset",
+                key,
+                backup_path,
+            )
+        except Exception as e:
+            _LOGGER.error("Failed to backup corrupt %s data: %s", key, e)
+
     def _load_plants(self, data: dict) -> None:
         """Load plants from storage data."""
         try:
-            self.coordinator.plants = {
-                pid: Plant.from_dict(p) for pid, p in data.get("plants", {}).items()
-            }
+            self.coordinator.plants = self.coordinator.serializer.deserialize_plants(
+                data.get("plants", {})
+            )
             _LOGGER.info("Loaded %d plants", len(self.coordinator.plants))
         except Exception as e:
             _LOGGER.exception("Error loading plants: %s", e)
+            self._backup_corrupt_data("plants", data)
             self.coordinator.plants = {}
 
     def _load_growspaces(self, data: dict) -> None:
         """Load growspaces from storage data."""
         try:
-            self.coordinator.growspaces = {
-                gid: Growspace.from_dict(g)
-                for gid, g in data.get("growspaces", {}).items()
-            }
+            self.coordinator.growspaces = (
+                self.coordinator.serializer.deserialize_growspaces(
+                    data.get("growspaces", {})
+                )
+            )
             _LOGGER.info("Loaded %d growspaces", len(self.coordinator.growspaces))
 
             self._apply_options_to_growspaces()
         except Exception as e:
             _LOGGER.exception("Error loading growspaces: %s", e)
+            self._backup_corrupt_data("growspaces", data)
             self.coordinator.growspaces = {}
 
     def _apply_options_to_growspaces(self) -> None:

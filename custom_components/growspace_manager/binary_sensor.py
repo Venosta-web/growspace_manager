@@ -22,6 +22,7 @@ from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.event import async_track_state_change_event
+from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from homeassistant.util.dt import utcnow
 
 from . import GrowspaceConfigEntry
@@ -246,7 +247,7 @@ def _validate_env_config(config: EnvironmentConfig) -> bool:
     return has_temp and has_humidity and (has_vpd or (has_temp and has_humidity))
 
 
-class BayesianEnvironmentSensor(BinarySensorEntity):
+class BayesianEnvironmentSensor(CoordinatorEntity, BinarySensorEntity):
     """Base class for Bayesian environment monitoring binary sensors."""
 
     entity_description: GrowspaceBinarySensorDescription
@@ -260,6 +261,7 @@ class BayesianEnvironmentSensor(BinarySensorEntity):
         description: GrowspaceBinarySensorDescription,
     ) -> None:
         """Initialize the Bayesian environment sensor."""
+        super().__init__(coordinator)
         self.entity_description = description  # Set this first
         self.coordinator = coordinator
         self.growspace_id = growspace_id

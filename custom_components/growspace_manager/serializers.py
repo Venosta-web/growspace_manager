@@ -81,12 +81,28 @@ class GrowspaceSerializer:
         # But strictly speaking, type checking will fail if I pass None.
         pass
 
+    def _ensure_int(self, value: Any) -> int:
+        """Safely convert value to int, handling '30.0' strings."""
+        try:
+            return int(value)
+        except (ValueError, TypeError):
+            try:
+                return int(float(value))
+            except (ValueError, TypeError):
+                return 0
+
     def deserialize_plants(self, raw_plants: dict[str, Any]) -> dict[str, Plant]:
         """Deserialize plants from raw data."""
         plants: dict[str, Plant] = {}
         for pid, pdata in raw_plants.items():
             try:
                 if isinstance(pdata, dict):
+                    # Sanitize integer fields
+                    if "row" in pdata:
+                        pdata["row"] = self._ensure_int(pdata["row"])
+                    if "col" in pdata:
+                        pdata["col"] = self._ensure_int(pdata["col"])
+
                     plants[pid] = Plant.from_dict(pdata)
                 elif isinstance(pdata, Plant):
                     plants[pid] = pdata
@@ -104,6 +120,65 @@ class GrowspaceSerializer:
         for gid, gdata in raw_growspaces.items():
             try:
                 if isinstance(gdata, dict):
+                    # Sanitize integer fields
+                    for field in ["rows", "plants_per_row"]:
+                        if field in gdata:
+                            gdata[field] = self._ensure_int(gdata[field])
+
+                    # Data Migration: Fix legacy irrigation schedule format
+                    if "irrigation_config" in gdata:
+                        irr_config = gdata["irrigation_config"]
+
+                        # Sanitize config integers
+                        if "veg_day_hours" in irr_config:
+                            irr_config["veg_day_hours"] = self._ensure_int(
+                                irr_config["veg_day_hours"]
+                            )
+
+                        for list_key in ["irrigation_times", "drain_times"]:
+                            if list_key in irr_config and isinstance(
+                                irr_config[list_key], list
+                            ):
+                                new_list = []
+                                for item in irr_config[list_key]:
+                                    if isinstance(item, dict):
+                                        # Migrate 'time' -> 'start_time'
+                                        if "time" in item and "start_time" not in item:
+                                            item["start_time"] = item.pop("time")
+
+                                        # Migrate 'duration' -> 'duration_seconds'
+                                        if (
+                                            "duration" in item
+                                            and "duration_seconds" not in item
+                                        ):
+                                            item["duration_seconds"] = self._ensure_int(
+                                                item.pop("duration")
+                                            )
+
+                                        # Ensure duration_seconds is int
+                                        if "duration_seconds" in item:
+                                            item["duration_seconds"] = self._ensure_int(
+                                                item["duration_seconds"]
+                                            )
+
+                                    new_list.append(item)
+                                irr_config[list_key] = new_list
+
+                    # Sanitize irrigation_strategy integers if present
+                    if "irrigation_strategy" in gdata and isinstance(
+                        gdata["irrigation_strategy"], dict
+                    ):
+                        strat = gdata["irrigation_strategy"]
+                        int_fields = [
+                            "p0_duration_minutes",
+                            "p2_stop_before_lights_off_minutes",
+                            "shot_duration_seconds",
+                            "shot_interval_minutes",
+                        ]
+                        for f in int_fields:
+                            if f in strat:
+                                strat[f] = self._ensure_int(strat[f])
+
                     growspaces[gid] = Growspace.from_dict(gdata)
                 elif isinstance(gdata, Growspace):
                     growspaces[gid] = gdata
