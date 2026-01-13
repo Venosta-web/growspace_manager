@@ -329,22 +329,30 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
             plants = self.get_growspace_plants(growspace_id)
 
         # Calculate aggregated stats for the growspace
-        max_veg_days = max(
-            (calculate_days_since(p.veg_start) for p in plants if p.veg_start),
-            default=0,
-        )
-        max_flower_days = max(
-            (calculate_days_since(p.flower_start) for p in plants if p.flower_start),
-            default=0,
-        )
-        max_dry_days = max(
-            (calculate_days_since(p.dry_start) for p in plants if p.dry_start),
-            default=0,
-        )
-        max_cure_days = max(
-            (calculate_days_since(p.cure_start) for p in plants if p.cure_start),
-            default=0,
-        )
+        stage_attr_map = {
+            "veg_start": "max_veg_days",
+            "flower_start": "max_flower_days",
+            "dry_start": "max_dry_days",
+            "cure_start": "max_cure_days",
+        }
+
+        # Calculate max days for each stage
+        max_days = {
+            target_var: max(
+                (
+                    calculate_days_since(getattr(p, attr))
+                    for p in plants
+                    if getattr(p, attr)
+                ),
+                default=0,
+            )
+            for attr, target_var in stage_attr_map.items()
+        }
+
+        max_veg_days = max_days["max_veg_days"]
+        max_flower_days = max_days["max_flower_days"]
+        max_dry_days = max_days["max_dry_days"]
+        max_cure_days = max_days["max_cure_days"]
 
         # Calculate biological metrics via EnvironmentAnalyzer (View Model assembly)
         biological_metrics = self.environment_analyzer.calculate_biological_metrics(
