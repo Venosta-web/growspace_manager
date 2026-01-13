@@ -1416,8 +1416,8 @@ async def test_async_load_error_handling(
     await coordinator.async_load()
 
     errors = [r.message for r in caplog.records if r.levelname == "ERROR"]
-    assert any("Error loading plants" in e for e in errors)
-    assert any("Error loading growspaces" in e for e in errors)
+    assert any("Failed to load plant" in e for e in errors)
+    assert any("Failed to load growspace" in e for e in errors)
 
 
 @pytest.mark.asyncio

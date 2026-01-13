@@ -538,6 +538,14 @@ async def test_storage_manager_load_coverage(hass: HomeAssistant) -> None:
 
         storage = StorageManager(mock_coordinator, hass)
 
+        # Mock serializer to return dicts
+        mock_coordinator.serializer.deserialize_growspaces.return_value = {
+            "gs1": Growspace(id="gs1", name="GS1")
+        }
+        mock_coordinator.serializer.deserialize_plants.return_value = {
+            "p1": Plant(plant_id="p1", strain="S1", growspace_id="gs1")
+        }
+
         # 1. Segmented load success
         mock_config_store.async_load = AsyncMock(
             return_value={"growspaces": {"gs1": {"id": "gs1", "name": "GS1"}}}
@@ -565,6 +573,15 @@ async def test_storage_manager_load_coverage(hass: HomeAssistant) -> None:
                 },
             }
         )
+
+        # Update serializer return values for legacy load
+        mock_coordinator.serializer.deserialize_growspaces.return_value = {
+            "gs2": Growspace(id="gs2", name="GS2")
+        }
+        mock_coordinator.serializer.deserialize_plants.return_value = {
+            "p2": Plant(plant_id="p2", strain="S2", growspace_id="gs2")
+        }
+
         mock_config_store.async_save = AsyncMock()
         mock_plants_store.async_save = AsyncMock()
 
@@ -580,8 +597,17 @@ async def test_storage_manager_load_coverage(hass: HomeAssistant) -> None:
 
         # 4. Error handling
         mock_config_store.async_load = AsyncMock(return_value={"growspaces": "CORRUPT"})
+
+        # Configure serializer to raise exception
+        mock_coordinator.serializer.deserialize_growspaces.side_effect = Exception(
+            "Corrupt Data"
+        )
+
         await storage.async_load()
         assert mock_coordinator.growspaces == {}
+
+        # Reset side_effect for next steps
+        mock_coordinator.serializer.deserialize_growspaces.side_effect = None
 
         # 5. Options and more error paths
         mock_coordinator.options = {"gs1": {"temp_high": 30.0}}
@@ -592,6 +618,10 @@ async def test_storage_manager_load_coverage(hass: HomeAssistant) -> None:
                 "ipm_presets": "CORRUPT",
             }
         )
+        # Restore serializer behavior for gs1
+        mock_coordinator.serializer.deserialize_growspaces.return_value = {
+            "gs1": Growspace(id="gs1", name="GS1")
+        }
         # Mock _load_plants to raise exception
         with patch.object(storage, "_load_plants", side_effect=Exception("Crash")):
             await storage.async_load()
@@ -609,6 +639,12 @@ async def test_storage_manager_load_plants_error(hass: HomeAssistant) -> None:
 
     # Trigger exception in _load_plants via malformed data
     data = {"plants": {"p1": "MALFORMED"}}
+
+    # Configure serializer to raise exception
+    mock_coordinator.serializer.deserialize_plants.side_effect = Exception(
+        "Deserialization Error"
+    )
+
     storage._load_plants(data)
 
     assert mock_coordinator.plants == {}
