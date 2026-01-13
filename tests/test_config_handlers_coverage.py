@@ -516,3 +516,48 @@ def test_plant_handler_update_plant_schema(mock_hass, mock_config_entry) -> None
     coordinator.get_strain_options.return_value = []
     schema_text = handler.get_update_plant_schema(plant, coordinator)
     assert isinstance(schema_text, vol.Schema)
+
+
+# --- Base Config Handler Tests ---
+
+
+def test_base_handler_merge_options(mock_hass, mock_config_entry) -> None:
+    """Test merge_options (lines 45-51)."""
+    # Use EnvironmentConfigHandler as concrete implementation
+    handler = EnvironmentConfigHandler(mock_hass, mock_config_entry)
+
+    current = {"a": 1, "b": 2}
+    new_ops = {"b": 3, "c": 4}
+
+    merged = handler.merge_options(current, new_ops)
+    assert merged == {"a": 1, "b": 3, "c": 4}
+    # Ensure original dicts are not mutated
+    assert current == {"a": 1, "b": 2}
+    assert new_ops == {"b": 3, "c": 4}
+
+
+@pytest.mark.asyncio
+async def test_base_handler_placeholder_methods(mock_hass, mock_config_entry) -> None:
+    """Test placeholder methods in BaseConfigHandler to ensure coverage."""
+    handler = EnvironmentConfigHandler(mock_hass, mock_config_entry)
+
+    # These just pass, so we just call them ensuring no error
+    await handler.websocket_get_event_log(mock_hass, None, None)
+    await handler.transition_plant_stage(mock_hass, None, None)
+
+
+def test_growspace_handler_add_schema_no_notify(mock_hass, mock_config_entry) -> None:
+    """Test get_add_growspace_schema with no mobile_app services (line 101)."""
+    handler = GrowspaceConfigHandler(mock_hass, mock_config_entry)
+
+    # Mock services to return NO mobile_app services
+    mock_hass.services.async_services.return_value = {
+        "notify": ["persistent_notification"]
+    }
+
+    schema = handler.get_add_growspace_schema()
+    assert isinstance(schema, vol.Schema)
+
+    # Verify notification_target uses TextSelector (fallback)
+    # Checking specific key existence or type within schema internals is hard,
+    # but execution covers the line.

@@ -21,7 +21,6 @@ from .const import (
     DOMAIN,
     PlantStage,
 )
-from .environment_analyzer import EnvironmentAnalyzer
 from .models import Growspace, Plant
 from .utils import (
     calculate_days_since,
@@ -197,35 +196,19 @@ class GrowspaceSerializer:
         )
 
     def serialize_growspace(
-        self, growspace: Growspace, plants: list[Plant], analyzer: EnvironmentAnalyzer
+        self,
+        growspace: Growspace,
+        plants: list[Plant],
+        biological_metrics: dict[str, Any],
+        max_veg_days: int = 0,
+        max_flower_days: int = 0,
+        max_dry_days: int = 0,
+        max_cure_days: int = 0,
     ) -> dict[str, Any]:
         """Build the full JSON payload for a single growspace."""
-        # Calculate max stage days
-        max_veg = max(
-            (calculate_days_since(p.veg_start) for p in plants if p.veg_start),
-            default=0,
-        )
-        max_flower = max(
-            (calculate_days_since(p.flower_start) for p in plants if p.flower_start),
-            default=0,
-        )
-        max_dry = max(
-            (calculate_days_since(p.dry_start) for p in plants if p.dry_start),
-            default=0,
-        )
-        max_cure = max(
-            (calculate_days_since(p.cure_start) for p in plants if p.cure_start),
-            default=0,
-        )
-
         # Calculate weeks from days
-        veg_week = days_to_week(max_veg)
-        flower_week = days_to_week(max_flower)
-
-        # DELEGATE TO ANALYZER
-        biological_metrics = analyzer.calculate_biological_metrics(
-            growspace, max_veg, max_flower, max_dry, max_cure
-        )
+        veg_week = days_to_week(max_veg_days)
+        flower_week = days_to_week(max_flower_days)
 
         # Get irrigation settings
         # Explicit serialization to ensure all keys are present for frontend
@@ -287,11 +270,11 @@ class GrowspaceSerializer:
             "plants_per_row": growspace.plants_per_row,
             "total_plants": len(plants),
             "notification_target": growspace.notification_target,
-            "max_veg_days": max_veg,
-            "max_flower_days": max_flower,
+            "max_veg_days": max_veg_days,
+            "max_flower_days": max_flower_days,
             "veg_week": veg_week,
             "flower_week": flower_week,
-            "max_stage_summary": f"Veg: {max_veg}d (W{veg_week}), Flower: {max_flower}d (W{flower_week})",
+            "max_stage_summary": f"Veg: {max_veg_days}d (W{veg_week}), Flower: {max_flower_days}d (W{flower_week})",
             "irrigation_config": irrigation_options,
             "irrigation_strategy": irrigation_strategy_dict,
             "grid": grid,

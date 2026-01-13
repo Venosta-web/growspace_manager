@@ -80,6 +80,7 @@ from .serializers import GrowspaceSerializer
 from .storage_manager import StorageManager
 from .strain_library import StrainLibrary
 from .utils import (
+    calculate_days_since,
     calculate_plant_stage,
     generate_growspace_grid,
     generate_growspace_overview_unique_id,
@@ -327,9 +328,49 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
         else:
             plants = self.get_growspace_plants(growspace_id)
 
-        serialized = self.serializer.serialize_growspace(
-            growspace, plants, self.environment_analyzer
+        # Calculate aggregated stats for the growspace
+        stage_attr_map = {
+            "veg_start": "max_veg_days",
+            "flower_start": "max_flower_days",
+            "dry_start": "max_dry_days",
+            "cure_start": "max_cure_days",
+        }
+
+        # Calculate max days for each stage
+        max_days = {
+            target_var: max(
+                (
+                    calculate_days_since(getattr(p, attr))
+                    for p in plants
+                    if getattr(p, attr)
+                ),
+                default=0,
+            )
+            for attr, target_var in stage_attr_map.items()
+        }
+
+        max_veg_days = max_days["max_veg_days"]
+        max_flower_days = max_days["max_flower_days"]
+        max_dry_days = max_days["max_dry_days"]
+        max_cure_days = max_days["max_cure_days"]
+
+        # Calculate biological metrics via EnvironmentAnalyzer (View Model assembly)
+        biological_metrics = self.environment_analyzer.calculate_biological_metrics(
+            growspace, max_veg_days, max_flower_days, max_dry_days, max_cure_days
         )
+
+        serialized = self.serializer.serialize_growspace(
+            growspace,
+            plants,
+            biological_metrics,
+            max_veg_days=max_veg_days,
+            max_flower_days=max_flower_days,
+            max_dry_days=max_dry_days,
+            max_cure_days=max_cure_days,
+        )
+
+        # Inject timestamp for efficient frontend equality checks (change detection)
+        serialized["_ts"] = int(dt_util.utcnow().timestamp() * 1000)
 
         self._serialized_cache[growspace_id] = serialized
         return serialized
