@@ -1,6 +1,6 @@
 # Quality Scale Tracking for Growspace Manager
-# Integration Target: Silver
-# Last Updated: 2025-12-02
+# Integration Target: Gold
+# Last Updated: 2026-01-14
 
 # =============================================================================
 # BRONZE TIER
@@ -142,11 +142,11 @@ test-coverage:
 # =============================================================================
 
 devices:
-  status: todo
+  status: done
   comment: The integration creates devices
 
 diagnostics:
-  status: todo
+  status: done
   comment: Implements diagnostics
 
 discovery-update-info:
@@ -158,35 +158,35 @@ discovery:
   comment: Devices can be discovered
 
 docs-data-update:
-  status: todo
+  status: done
   comment: The documentation describes how data is updated
 
 docs-examples:
-  status: todo
+  status: done
   comment: The documentation provides automation examples the user can use
 
 docs-known-limitations:
-  status: todo
+  status: done
   comment: The documentation describes known limitations of the integration
 
 docs-supported-devices:
-  status: todo
+  status: done
   comment: The documentation describes known supported / unsupported devices
 
 docs-supported-functions:
-  status: todo
+  status: done
   comment: The documentation describes the supported functionality, including entities, and platforms
 
 docs-troubleshooting:
-  status: todo
+  status: done
   comment: The documentation provides troubleshooting information
 
 docs-use-cases:
-  status: todo
+  status: done
   comment: The documentation describes use cases to illustrate how this integration can be used
 
 dynamic-devices:
-  status: todo
+  status: done
   comment: Devices added after integration setup
 
 entity-category:
@@ -198,15 +198,15 @@ entity-device-class:
   comment: Entities use device classes where possible
 
 entity-disabled-by-default:
-  status: todo
+  status: done
   comment: Integration disables less popular (or noisy) entities
 
 entity-translations:
-  status: todo
+  status: done
   comment: Entities have translated names
 
 exception-translations:
-  status: todo
+  status: done
   comment: Exception messages are translatable
 
 icon-translations:
@@ -222,7 +222,7 @@ repair-issues:
   comment: Repair issues and repair flows are used when user intervention is needed
 
 stale-devices:
-  status: todo
+  status: done
   comment: Stale devices are removed
 
 # =============================================================================

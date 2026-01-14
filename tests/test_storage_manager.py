@@ -90,7 +90,8 @@ async def test_backup_logic_with_corrupt_data(
     storage = StorageManager(mock_coordinator, hass)
 
     # Mock hass.config.path to return a temp directory
-    with patch.object(hass.config, "path", return_value="/tmp") as mock_path:
+    # Mock hass.config.path to return a temp directory
+    with patch.object(hass.config, "path", return_value="/tmp"):
         # Corrupt data
         bad_data = {"growspaces": {"bad_id": "bad_data"}}
 
@@ -109,7 +110,7 @@ async def test_backup_logic_with_corrupt_data(
 
         # Read the file and check content
         last_file = files[-1]
-        with open(last_file) as f:
+        with open(last_file, encoding="utf-8") as f:
             saved_data = json.load(f)
             assert saved_data == bad_data
 

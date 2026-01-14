@@ -321,5 +321,18 @@
       "title": "Failed to create pending growspace",
       "description": "The system failed to create the pending growspace {name}. Error: {error}. Please check the logs for more details."
     }
+  },
+  "entity": {
+    "sensor": {
+      "vpd": {
+        "name": "VPD"
+      },
+      "growspaces_list": {
+        "name": "Growspaces List"
+      },
+      "strain_library": {
+        "name": "Strain Library"
+      }
+    }
   }
 }

@@ -126,57 +126,14 @@ class GrowspaceSerializer:
 
                     # Data Migration: Fix legacy irrigation schedule format
                     if "irrigation_config" in gdata:
-                        irr_config = gdata["irrigation_config"]
-
-                        # Sanitize config integers
-                        if "veg_day_hours" in irr_config:
-                            irr_config["veg_day_hours"] = self._ensure_int(
-                                irr_config["veg_day_hours"]
+                        gdata["irrigation_config"] = (
+                            self._deserialize_irrigation_config(
+                                gdata["irrigation_config"]
                             )
-
-                        for list_key in ["irrigation_times", "drain_times"]:
-                            if list_key in irr_config and isinstance(
-                                irr_config[list_key], list
-                            ):
-                                new_list = []
-                                for item in irr_config[list_key]:
-                                    if isinstance(item, dict):
-                                        # Migrate 'time' -> 'start_time'
-                                        if "time" in item and "start_time" not in item:
-                                            item["start_time"] = item.pop("time")
-
-                                        # Migrate 'duration' -> 'duration_seconds'
-                                        if (
-                                            "duration" in item
-                                            and "duration_seconds" not in item
-                                        ):
-                                            item["duration_seconds"] = self._ensure_int(
-                                                item.pop("duration")
-                                            )
-
-                                        # Ensure duration_seconds is int
-                                        if "duration_seconds" in item:
-                                            item["duration_seconds"] = self._ensure_int(
-                                                item["duration_seconds"]
-                                            )
-
-                                    new_list.append(item)
-                                irr_config[list_key] = new_list
+                        )
 
                     # Sanitize irrigation_strategy integers if present
-                    if "irrigation_strategy" in gdata and isinstance(
-                        gdata["irrigation_strategy"], dict
-                    ):
-                        strat = gdata["irrigation_strategy"]
-                        int_fields = [
-                            "p0_duration_minutes",
-                            "p2_stop_before_lights_off_minutes",
-                            "shot_duration_seconds",
-                            "shot_interval_minutes",
-                        ]
-                        for f in int_fields:
-                            if f in strat:
-                                strat[f] = self._ensure_int(strat[f])
+                    self._sanitize_irrigation_strategy(gdata)
 
                     growspaces[gid] = Growspace.from_dict(gdata)
                 elif isinstance(gdata, Growspace):
@@ -186,6 +143,55 @@ class GrowspaceSerializer:
             except Exception:
                 _LOGGER.exception("Failed to load growspace %s", gid)
         return growspaces
+
+    def _deserialize_irrigation_config(
+        self, irr_config: dict[str, Any]
+    ) -> dict[str, Any]:
+        """Deserialize and sanitize irrigation configuration."""
+        # Sanitize config integers
+        if "veg_day_hours" in irr_config:
+            irr_config["veg_day_hours"] = self._ensure_int(irr_config["veg_day_hours"])
+
+        for list_key in ["irrigation_times", "drain_times"]:
+            if list_key in irr_config and isinstance(irr_config[list_key], list):
+                new_list = []
+                for item in irr_config[list_key]:
+                    if isinstance(item, dict):
+                        # Migrate 'time' -> 'start_time'
+                        if "time" in item and "start_time" not in item:
+                            item["start_time"] = item.pop("time")
+
+                        # Migrate 'duration' -> 'duration_seconds'
+                        if "duration" in item and "duration_seconds" not in item:
+                            item["duration_seconds"] = self._ensure_int(
+                                item.pop("duration")
+                            )
+
+                        # Ensure duration_seconds is int
+                        if "duration_seconds" in item:
+                            item["duration_seconds"] = self._ensure_int(
+                                item["duration_seconds"]
+                            )
+
+                    new_list.append(item)
+                irr_config[list_key] = new_list
+        return irr_config
+
+    def _sanitize_irrigation_strategy(self, gdata: dict[str, Any]) -> None:
+        """Sanitize irrigation strategy integers."""
+        if "irrigation_strategy" in gdata and isinstance(
+            gdata["irrigation_strategy"], dict
+        ):
+            strat = gdata["irrigation_strategy"]
+            int_fields = [
+                "p0_duration_minutes",
+                "p2_stop_before_lights_off_minutes",
+                "shot_duration_seconds",
+                "shot_interval_minutes",
+            ]
+            for f in int_fields:
+                if f in strat:
+                    strat[f] = self._ensure_int(strat[f])
 
     def _raise_invalid_data_type(
         self, item_id: str, item_data: Any, item_type: str

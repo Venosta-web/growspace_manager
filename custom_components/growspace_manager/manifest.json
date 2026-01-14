@@ -17,12 +17,12 @@
   "loggers": [
     "custom_components.growspace_manager"
   ],
-  "quality_scale": "silver",
+  "quality_scale": "gold",
   "requirements": [
     "aiosqlite>=0.17.0",
     "Pillow>=11.0.0",
     "mashumaro>=3.10"
   ],
   "single_config_entry": true,
-  "version": "0.3.3"
+  "version": "0.3.4"
 }

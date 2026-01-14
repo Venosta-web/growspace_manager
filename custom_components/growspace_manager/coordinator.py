@@ -42,6 +42,7 @@ from .const import (
     SPECIAL_GROWSPACES,
     PlantStage,
 )
+from .data_repository import DataRepository
 from .dehumidifier_coordinator import DehumidifierCoordinator
 from .environment_analyzer import EnvironmentAnalyzer
 from .events import (
@@ -66,6 +67,7 @@ from .exceptions import (
 from .growspace_validator import GrowspaceValidator
 from .import_export_manager import ImportExportManager
 from .irrigation_coordinator import IrrigationCoordinator
+from .managers.subsystem import SubsystemManager
 from .models import (
     Growspace,
     GrowspaceEvent,
@@ -82,7 +84,6 @@ from .strain_library import StrainLibrary
 from .utils import (
     calculate_days_since,
     calculate_plant_stage,
-    generate_growspace_grid,
     generate_growspace_overview_unique_id,
     parse_date_field,
 )
@@ -164,6 +165,18 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
             "Please specify a valid growspace_id or plant_id."
         )
 
+    @property
+    def irrigation_coordinators(
+        self,
+    ) -> dict[str, IrrigationCoordinator | VWCIrrigationCoordinator]:
+        """Return irrigation coordinators fro SubsystemManager."""
+        return self.subsystem_manager.irrigation_coordinators
+
+    @property
+    def dehumidifier_coordinators(self) -> dict[str, DehumidifierCoordinator]:
+        """Return dehumidifier coordinators fro SubsystemManager."""
+        return self.subsystem_manager.dehumidifier_coordinators
+
     def __init__(
         self,
         hass: HomeAssistant,
@@ -217,16 +230,17 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
         self.import_export_manager = ImportExportManager(hass)
         self.lifecycle_manager = PlantLifecycleManager(self)
 
+        # Initialize Data Repository
+        self.data_repository = DataRepository(self.growspaces, self.plants)
+
+        # Initialize Subsystem Manager
+        self.subsystem_manager = SubsystemManager(hass, self, entry)
+
         self._notifications_sent: dict[str, dict[str, dict[str, bool]]] = {}
         self._notifications_enabled: dict[
             str, bool
         ] = {}  # ✅ Notification switch states
 
-        # Initialize runtime coordination
-        self.irrigation_coordinators: dict[
-            str, IrrigationCoordinator | VWCIrrigationCoordinator
-        ] = {}
-        self.dehumidifier_coordinators: dict[str, DehumidifierCoordinator] = {}
         self.created_entity_ids: list[tuple[str, str, str]] = []
 
         # Load data
@@ -237,6 +251,9 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
         self.growspaces = self.serializer.deserialize_growspaces(
             data.get("growspaces", {})
         )
+
+        # Update Data Repository with loaded data
+        self.data_repository.load_data(self.growspaces, self.plants)
 
         _LOGGER.debug(
             "Loaded %d plants and %d growspaces", len(self.plants), len(self.growspaces)
@@ -379,52 +396,23 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
         self, entry: ConfigEntry[GrowspaceCoordinator]
     ) -> None:
         """Initialize sub-coordinators for irrigation and dehumidifier."""
-        try:
-            async with asyncio.TaskGroup() as tg:
-                for growspace_id, gs in self.growspaces.items():
-                    tg.create_task(
-                        self._setup_growspace_sub_coordinators(entry, growspace_id, gs)
-                    )
-        except ExceptionGroup as eg:
-            for err in eg.exceptions:
-                _LOGGER.error("Failed to initialize sub-coordinator: %s", err)
-            _LOGGER.warning(
-                "Some sub-coordinators failed to initialize, continuing with available services"
-            )
+        await self.async_register_devices()  # Register devices first
+        await self.subsystem_manager.async_initialize_sub_coordinators(self.growspaces)
 
-    async def _setup_growspace_sub_coordinators(
-        self,
-        entry: ConfigEntry[GrowspaceCoordinator],
-        growspace_id: str,
-        gs: Growspace,
-    ) -> None:
-        """Setup sub-coordinators for a single growspace."""
-        if gs.irrigation_strategy.enabled:
-            _LOGGER.info(
-                "Initializing VWC Irrigation Coordinator for growspace %s",
-                growspace_id,
+    async def async_register_devices(self) -> None:
+        """Register growspaces as devices."""
+        device_registry = dr.async_get(self.hass)
+        for gs_id, growspace in self.growspaces.items():
+            device_registry.async_get_or_create(
+                config_entry_id=self.config_entry.entry_id,
+                identifiers={(DOMAIN, gs_id)},
+                name=growspace.name,
+                model=growspace.growspace_type.value
+                if growspace.growspace_type
+                else "Growspace",
+                manufacturer="Growspace Manager",
+                sw_version="0.3.3",
             )
-            irrigation_coordinator = VWCIrrigationCoordinator(
-                self.hass, entry, growspace_id, self
-            )
-        else:
-            _LOGGER.debug(
-                "Initializing Standard Irrigation Coordinator for growspace %s",
-                growspace_id,
-            )
-            irrigation_coordinator = IrrigationCoordinator(
-                self.hass, entry, growspace_id, self
-            )
-
-        await irrigation_coordinator.async_setup()
-        self.irrigation_coordinators[growspace_id] = irrigation_coordinator
-
-        # Dehumidifier coordinator setup (currently synchronous init but triggers async tasks)
-        dehumidifier_coordinator = DehumidifierCoordinator(
-            self.hass, entry, growspace_id, self
-        )
-
-        self.dehumidifier_coordinators[growspace_id] = dehumidifier_coordinator
 
     def get_growspace_options(self) -> dict[str, str]:
         """Return growspaces for dropdown selection in the editor.
@@ -481,7 +469,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
         Returns:
             The Plant object if found, otherwise None.
         """
-        return self.plants.get(plant_id)
+        return self.data_repository.get_plant(plant_id)
 
     def _canonical_special(self, gs_id: str) -> tuple[str, str]:
         """Return the canonical ID and name for a special growspace.
@@ -726,6 +714,8 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
         await self.storage_manager.async_load()
         self._ensure_calculated_sensors()
         await self._ensure_default_growspaces()
+        # Update Data Repository with loaded data
+        self.data_repository.load_data(self.growspaces, self.plants)
 
     def migrate_plant_image_paths(self) -> int:
         """Migrate plant image paths from .jpg to .webp.
@@ -2260,11 +2250,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
         Returns:
             A list of Plant objects.
         """
-        return [
-            plant
-            for plant in self.plants.values()
-            if plant.growspace_id == growspace_id
-        ]
+        return self.data_repository.get_growspace_plants(growspace_id)
 
     def get_growspace_grid(self, growspace_id: str) -> list[list[str | None]]:
         """Generate a 2D grid representation of a growspace's plant layout.
@@ -2275,11 +2261,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
         Returns:
             A list of lists representing the grid, with plant IDs or None.
         """
-        growspace = self.growspaces[growspace_id]
-        plants = self.get_growspace_plants(growspace_id)
-        return generate_growspace_grid(
-            int(growspace.rows), int(growspace.plants_per_row), plants
-        )
+        return self.data_repository.get_growspace_grid(growspace_id)
 
     def _guess_overview_entity_id(self, growspace_id: str) -> str:
         """Make a best-effort guess of the overview sensor entity ID for a growspace.

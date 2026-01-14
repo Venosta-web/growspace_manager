@@ -94,6 +94,7 @@ async def async_setup_trend_sensor(
             unique_id,
             suggested_object_id=f"{growspace_name.lower().replace(' ', '_')}_{sensor_type}_trend",
             original_name=name,
+            disabled_by=er.RegistryEntryDisabler.INTEGRATION,
         )
 
     entity_id = entity_registry.async_get_entity_id("binary_sensor", "trend", unique_id)
@@ -171,6 +172,7 @@ async def async_setup_statistics_sensor(
             unique_id,
             suggested_object_id=f"{growspace_name.lower().replace(' ', '_')}_{sensor_type}_stats",
             original_name=name,
+            disabled_by=er.RegistryEntryDisabler.INTEGRATION,
         )
 
     entity_id = entity_registry.async_get_entity_id("sensor", "statistics", unique_id)

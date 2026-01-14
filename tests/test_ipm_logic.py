@@ -28,9 +28,10 @@ def mock_coordinator(hass: HomeAssistant) -> GrowspaceCoordinator:
     coord.async_save = AsyncMock()
     # Ensure properties are initialized
     coord.ipm_presets = {}
-    coord.plants = {}
-    coord.growspaces = {}
-    coord.growspaces = {}
+    # coord.plants and coord.growspaces are linked to DataRepository in __init__
+    # Do NOT overwrite them here or the link breaks.
+    coord.growspaces.clear()
+    coord.plants.clear()
     coord._serialized_cache = {}
     return coord
 
@@ -90,7 +91,7 @@ async def test_async_apply_ipm_to_growspace(
 
     p1 = Plant(plant_id="p1", growspace_id="gs1", strain="Strain A")
     p2 = Plant(plant_id="p2", growspace_id="gs1", strain="Strain B")
-    mock_coordinator.plants = {"p1": p1, "p2": p2}
+    mock_coordinator.plants.update({"p1": p1, "p2": p2})
 
     preset = IPMPreset(
         id="ipm1",
@@ -138,7 +139,7 @@ async def test_async_apply_ipm_to_plants(
 
     p1 = Plant(plant_id="p1", growspace_id="gs1", strain="Strain A")
     p2 = Plant(plant_id="p2", growspace_id="gs1", strain="Strain B")
-    mock_coordinator.plants = {"p1": p1, "p2": p2}
+    mock_coordinator.plants.update({"p1": p1, "p2": p2})
 
     preset = IPMPreset(id="ipm1", name="Spot Treat", type="drench", items=[])
     mock_coordinator.ipm_presets["ipm1"] = preset

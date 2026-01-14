@@ -1789,6 +1789,7 @@ class TestBayesianEnvironmentSensor:
             )
             sensor.entity_description = description
             sensor.coordinator = mock_coordinator
+            sensor.coordinator_context = None  # Required for CoordinatorEntity
             sensor.coordinator.options = {}  # Disable AI by default
             sensor.growspace_id = "gs1"
             sensor.env_config = env_config
@@ -1977,7 +1978,7 @@ class TestBayesianEnvironmentSensor:
         base_sensor.env_config = mock_env_config
         await base_sensor.async_added_to_hass()
         base_sensor.coordinator.async_add_listener.assert_called_once_with(
-            base_sensor._handle_coordinator_update
+            base_sensor._handle_coordinator_update, base_sensor.coordinator_context
         )
         mock_track_state_change.assert_called_once_with(
             base_sensor.hass,
@@ -1990,7 +1991,7 @@ class TestBayesianEnvironmentSensor:
             ],
             base_sensor._async_sensor_changed,
         )
-        base_sensor.async_on_remove.assert_called_once()
+        assert base_sensor.async_on_remove.call_count == 2
         # async_update_and_notify is scheduled via async_create_task, not directly awaited
         base_sensor.hass.async_create_task.assert_called()
 

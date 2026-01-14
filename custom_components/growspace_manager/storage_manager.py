@@ -134,7 +134,7 @@ class StorageManager:
             backup_filename = f"growspace_manager_{key}_CORRUPT_{timestamp}.json"
             backup_path = Path(self.hass.config.path(".storage")) / backup_filename
 
-            with open(backup_path, "w") as f:
+            with open(backup_path, "w", encoding="utf-8") as f:
                 json.dump(data, f, indent=2, default=str)
 
             _LOGGER.critical(

@@ -86,7 +86,7 @@ async def test_get_for_service_call_multiple_entries_list_match(
 ) -> None:
     """Test retrieval when ID is a list."""
     coord1 = mock_growspace_coordinator(entry_id="entry1", plant_ids=["p1a", "p1b"])
-    coord2 = mock_growspace_coordinator(entry_id="entry2", plant_ids=["p2a"])
+    mock_growspace_coordinator(entry_id="entry2", plant_ids=["p2a"])
 
     # Match list containing items from coord1
     call = {"plant_id": ["p1a", "p1b"]}

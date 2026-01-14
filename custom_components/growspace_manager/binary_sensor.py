@@ -436,7 +436,7 @@ class BayesianEnvironmentSensor(CoordinatorEntity, BinarySensorEntity):
     @override
     async def async_added_to_hass(self) -> None:
         """Register callbacks when the entity is added to Home Assistant."""
-        self.coordinator.async_add_listener(self._handle_coordinator_update)
+        await super().async_added_to_hass()
 
         c = self.env_config
         sensors = [
