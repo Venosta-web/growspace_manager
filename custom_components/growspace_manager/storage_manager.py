@@ -20,6 +20,7 @@ from .const import (
 from .models import (
     EnvironmentConfig,
     IPMPreset,
+    NutrientInventory,
     NutrientPreset,
 )
 
@@ -46,6 +47,17 @@ class StorageManager:
         # Legacy store for migration
         self.legacy_store = Store(hass, STORAGE_VERSION, STORAGE_KEY)
 
+    # ... (skipping methods unchanged) ...
+
+    def _load_nutrient_inventory(self, data: dict) -> None:
+        """Load nutrient inventory from storage data."""
+        try:
+            inventory = NutrientInventory.from_dict(data.get("nutrient_inventory", {}))
+            self.coordinator.on_nutrient_inventory_loaded(inventory)
+        except Exception as e:
+            _LOGGER.exception("Error loading nutrient inventory: %s", e)
+            self.coordinator.on_nutrient_inventory_loaded(NutrientInventory())
+
     async def async_save(self) -> None:
         """Save the current state to persistent storage (debounced)."""
         # debounce delay of 10 seconds as requested
@@ -71,6 +83,7 @@ class StorageManager:
             },
             "notifications_sent": self.coordinator._notifications_sent,
             "notifications_enabled": self.coordinator._notifications_enabled,
+            "nutrient_inventory": asdict(self.coordinator.nutrient_inventory),
         }
 
     def _get_plants_data(self) -> dict:
@@ -111,6 +124,7 @@ class StorageManager:
         self._load_growspaces(data)
         self._load_nutrient_presets(data)
         self._load_ipm_presets(data)
+        self._load_nutrient_inventory(data)
 
         # Load notification tracking
         self.coordinator._notifications_sent = data.get("notifications_sent", {})
@@ -207,3 +221,12 @@ class StorageManager:
         except Exception as e:
             _LOGGER.exception("Error loading IPM presets: %s", e)
             self.coordinator.ipm_presets = {}
+
+    def _load_nutrient_inventory(self, data: dict) -> None:
+        """Load nutrient inventory from storage data."""
+        try:
+            inventory = NutrientInventory.from_dict(data.get("nutrient_inventory", {}))
+            self.coordinator.on_nutrient_inventory_loaded(inventory)
+        except Exception as e:
+            _LOGGER.exception("Error loading nutrient inventory: %s", e)
+            self.coordinator.on_nutrient_inventory_loaded(NutrientInventory())

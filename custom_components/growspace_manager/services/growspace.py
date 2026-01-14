@@ -1,6 +1,9 @@
 """Services related to Growspaces."""
 
+from __future__ import annotations
+
 import logging
+from typing import TYPE_CHECKING
 
 import homeassistant.helpers.device_registry as dr
 from homeassistant.core import HomeAssistant, ServiceCall
@@ -13,7 +16,9 @@ from ..const import (
     ATTR_PLANTS_PER_ROW,
     ATTR_ROWS,
 )
-from ..coordinator import GrowspaceCoordinator
+
+if TYPE_CHECKING:
+    from ..coordinator import GrowspaceCoordinator
 from ..exceptions import GrowspaceError
 from ..strain_library import StrainLibrary
 

@@ -56,6 +56,7 @@ from .const import (
     ATTR_REASONS,
     ATTR_THRESHOLD,
     ATTR_TIME_IN_CURRENT_STATE,
+    CONF_AI_AUTO_ALERTS,
     DEFAULT_BAYESIAN_PRIORS,
     DEFAULT_BAYESIAN_THRESHOLDS,
     DOMAIN,
@@ -69,6 +70,7 @@ from .models import (
     GrowspaceEvent,
     GrowspaceType,
 )
+from .services.ai_assistant import GrowAssistant
 from .trend_analyzer import TrendAnalyzer
 from .utils import calculate_days_since
 
@@ -541,8 +543,29 @@ class BayesianEnvironmentSensor(CoordinatorEntity, BinarySensorEntity):
     async def _send_notification(self, title: str, message: str) -> None:
         """Send a notification to the configured target for the growspace."""
         try:
+            # Check for AI Auto Alerts
+            final_message = message
+            coordinator_options = getattr(self.coordinator, "options", {})
+            ai_alerts_enabled = coordinator_options.get(CONF_AI_AUTO_ALERTS, False)
+
+            if ai_alerts_enabled and self._probability >= self.threshold:
+                try:
+                    assistant = GrowAssistant(
+                        self.hass, self.coordinator, self.coordinator.strain_library
+                    )
+                    ai_message = await assistant.generate_alert_message(
+                        self.growspace_id,
+                        self.entity_description.sensor_type,
+                        [r[1] for r in self._reasons],
+                    )
+                    final_message = f"{ai_message}\n\n(Original: {message})"
+                except Exception:
+                    _LOGGER.warning(
+                        "Failed to generate AI alert, falling back to standard message"
+                    )
+
             await self.notification_manager.async_send_notification(
-                self.growspace_id, title, message, self._sensor_states
+                self.growspace_id, title, final_message, self._sensor_states
             )
         except Exception:
             _LOGGER.exception("Failed to send notification to %s", self.growspace_id)

@@ -12,6 +12,7 @@ from homeassistant.helpers import selector
 
 from ..const import (
     AI_PERSONALITIES,
+    CONF_AI_AUTO_ALERTS,
     CONF_AI_ENABLED,
     CONF_ASSISTANT_ID,
     CONF_NOTIFICATION_PERSONALITY,
@@ -110,8 +111,8 @@ class AIConfigHandler:
         # Add option to enable/disable AI notifications separately from advice
         schema[
             vol.Optional(
-                "ai_notifications_enabled",
-                default=current_settings.get("ai_notifications_enabled", True),
+                CONF_AI_AUTO_ALERTS,
+                default=current_settings.get(CONF_AI_AUTO_ALERTS, True),
             )
         ] = selector.BooleanSelector()
 

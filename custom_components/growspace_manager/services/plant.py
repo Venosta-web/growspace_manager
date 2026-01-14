@@ -1,9 +1,11 @@
 """Services related to Plants."""
 
+from __future__ import annotations
+
 import logging
 import os
 from datetime import datetime
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from homeassistant.components.persistent_notification import (
     async_create as create_notification,
@@ -42,7 +44,9 @@ from ..const import (
     DATE_FIELDS,
     EVENT_GROWSPACE_LOG_ENTRY,
 )
-from ..coordinator import GrowspaceCoordinator
+
+if TYPE_CHECKING:
+    from ..coordinator import GrowspaceCoordinator
 from ..exceptions import GrowspaceError
 from ..growspace_validator import GrowspaceValidator
 from ..strain_library import StrainLibrary

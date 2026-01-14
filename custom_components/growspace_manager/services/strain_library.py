@@ -1,10 +1,12 @@
 """Services related to Strain Library."""
 
+from __future__ import annotations
+
 import base64
 import logging
 import os
 import tempfile
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from homeassistant.components.persistent_notification import (
     async_create as create_notification,
@@ -13,7 +15,9 @@ from homeassistant.core import HomeAssistant, ServiceCall
 from homeassistant.exceptions import HomeAssistantError
 
 from ..const import DOMAIN
-from ..coordinator import GrowspaceCoordinator
+
+if TYPE_CHECKING:
+    from ..coordinator import GrowspaceCoordinator
 from ..strain_library import StrainLibrary
 
 _LOGGER = logging.getLogger(__name__)
@@ -123,7 +127,7 @@ async def handle_import_strain_library(
 
     # 2. Validate we have a path (either from arg or temp file)
     if not file_path:
-        _LOGGER.warning("No file path or base64 data provided for import.")
+        _LOGGER.warning("No file path or base64 data provided for import")
         return
 
     try:

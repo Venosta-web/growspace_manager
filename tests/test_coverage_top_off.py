@@ -40,6 +40,7 @@ from custom_components.growspace_manager.models import (
     EnvironmentConfig,
     EnvironmentState,
     Growspace,
+    NutrientInventory,
     Plant,
 )
 from custom_components.growspace_manager.plant_lifecycle_manager import (
@@ -481,6 +482,7 @@ async def test_storage_manager_force_save_coverage(hass: HomeAssistant) -> None:
     mock_coordinator.nutrient_presets = {}
     mock_coordinator.ipm_presets = {}
     mock_coordinator.plants = {}
+    mock_coordinator.nutrient_inventory = NutrientInventory()
 
     with patch(
         "custom_components.growspace_manager.storage_manager.Store"
@@ -523,6 +525,7 @@ async def test_storage_manager_load_coverage(hass: HomeAssistant) -> None:
     mock_coordinator = MagicMock()
     mock_coordinator.options = {}
     mock_coordinator.growspaces = {}
+    mock_coordinator.nutrient_inventory = NutrientInventory()
 
     with patch(
         "custom_components.growspace_manager.storage_manager.Store"

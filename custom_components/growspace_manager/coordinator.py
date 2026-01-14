@@ -73,12 +73,14 @@ from .models import (
     GrowspaceEvent,
     GrowspaceType,
     IPMPreset,
+    NutrientInventory,
     NutrientPreset,
     Plant,
 )
 from .notification_manager import NotificationManager
 from .plant_lifecycle_manager import PlantLifecycleManager
 from .serializers import GrowspaceSerializer
+from .services.nutrient_inventory import NutrientInventoryService
 from .storage_manager import StorageManager
 from .strain_library import StrainLibrary
 from .utils import (
@@ -258,6 +260,11 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
         _LOGGER.debug(
             "Loaded %d plants and %d growspaces", len(self.plants), len(self.growspaces)
         )
+
+    def on_nutrient_inventory_loaded(self, inventory: NutrientInventory) -> None:
+        """Update inventory and service after load."""
+        self.nutrient_inventory = inventory
+        self.nutrient_inventory_service = NutrientInventoryService(inventory)
 
     def _extract_gs_ids_from_result(self, result: Any, gs_ids: set[str]) -> None:
         """Extract growspace IDs from function result."""
@@ -1616,20 +1623,13 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
         self.validator.validate_plant_exists(plant_id)
         plant = self.plants[plant_id]
 
-        final_nutrients: dict[str, float] = {}
-        preset_name: str | None = None
+        final_nutrients, preset_name = self._resolve_nutrient_mix(nutrients, preset_id)
 
-        # 1. Apply preset nutrients if provided
-        if preset_id:
-            if preset_id not in self.nutrient_presets:
-                raise KeyError(f"Nutrient preset '{preset_id}' not found")
-            preset = self.nutrient_presets[preset_id]
-            preset_name = preset.name
-            final_nutrients.update(preset.get_nutrient_map())
-
-        # 2. Merge with manual nutrients (manual overrides preset)
-        if nutrients:
-            final_nutrients.update(nutrients)
+        # Deduct nutrients from inventory
+        if final_nutrients and hasattr(self, "nutrient_inventory_service"):
+            for nutrient_name, dose_ml_l in final_nutrients.items():
+                total_ml = dose_ml_l * amount
+                self.nutrient_inventory_service.deduct_usage(nutrient_name, total_ml)
 
         # Update plant's last_watered timestamp
         now_iso = dt_util.now().isoformat()
@@ -1639,30 +1639,9 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
         if invalidate_cache:
             self._invalidate_cache(plant.growspace_id)
 
-        # Build reasons for the event
-        reasons = []
-
-        # Add Plant ID for filtering (prefixed for easy parsing)
-        reasons.append(f"plant_id:{plant_id}")
-
-        # Add Plant display info
-        plant_info = f"Plant: {plant.strain}"
-        if plant.phenotype:
-            plant_info += f" ({plant.phenotype})"
-        reasons.append(plant_info)
-
-        reasons.append(f"Watered with {amount}L")
-        if preset_name:
-            reasons.append(f"Preset: {preset_name}")
-
-        if final_nutrients:
-            # Calculate total ml for each nutrient and format strings
-            nutrient_details = []
-            for name, conc in final_nutrients.items():
-                total_ml = round(amount * conc, 2)
-                nutrient_details.append(f"{name}: {conc}ml/L (Total: {total_ml}ml)")
-
-            reasons.append(f"Nutrients: {', '.join(nutrient_details)}")
+        reasons = self._create_watering_event_reasons(
+            plant, amount, preset_name, final_nutrients
+        )
 
         # Create a GrowspaceEvent for the logbook
         event = GrowspaceEvent(
@@ -1687,6 +1666,54 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
         )
 
         return plant
+
+    def _resolve_nutrient_mix(
+        self, nutrients: dict[str, float] | None, preset_id: str | None
+    ) -> tuple[dict[str, float], str | None]:
+        """Resolve final nutrient mix from optional preset and manual overrides."""
+        final_nutrients: dict[str, float] = {}
+        preset_name: str | None = None
+
+        if preset_id:
+            if preset_id not in self.nutrient_presets:
+                raise KeyError(f"Nutrient preset '{preset_id}' not found")
+            preset = self.nutrient_presets[preset_id]
+            preset_name = preset.name
+            final_nutrients.update(preset.get_nutrient_map())
+
+        if nutrients:
+            final_nutrients.update(nutrients)
+
+        return final_nutrients, preset_name
+
+    def _create_watering_event_reasons(
+        self,
+        plant: Plant,
+        amount: float,
+        preset_name: str | None,
+        final_nutrients: dict[str, float],
+    ) -> list[str]:
+        """Build the reasons list for a watering event."""
+        reasons = []
+        reasons.append(f"plant_id:{plant.plant_id}")
+
+        plant_info = f"Plant: {plant.strain}"
+        if plant.phenotype:
+            plant_info += f" ({plant.phenotype})"
+        reasons.append(plant_info)
+
+        reasons.append(f"Watered with {amount}L")
+        if preset_name:
+            reasons.append(f"Preset: {preset_name}")
+
+        if final_nutrients:
+            nutrient_details = []
+            for name, conc in final_nutrients.items():
+                total_ml = round(amount * conc, 2)
+                nutrient_details.append(f"{name}: {conc}ml/L (Total: {total_ml}ml)")
+            reasons.append(f"Nutrients: {', '.join(nutrient_details)}")
+
+        return reasons
 
     async def async_water_growspace(
         self,

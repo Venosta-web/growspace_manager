@@ -609,6 +609,100 @@ def websocket_get_strain_library(
         connection.send_error(msg["id"], "unknown_error", str(err))
 
 
+# Nutrient Inventory WebSockets
+WS_TYPE_GET_NUTRIENT_INVENTORY = f"{DOMAIN}/get_nutrient_inventory"
+SCHEMA_WS_GET_NUTRIENT_INVENTORY = websocket_api.BASE_COMMAND_MESSAGE_SCHEMA.extend(
+    {
+        vol.Required("type"): WS_TYPE_GET_NUTRIENT_INVENTORY,
+    }
+)
+
+WS_TYPE_UPDATE_NUTRIENT_STOCK = f"{DOMAIN}/update_nutrient_stock"
+SCHEMA_WS_UPDATE_NUTRIENT_STOCK = websocket_api.BASE_COMMAND_MESSAGE_SCHEMA.extend(
+    {
+        vol.Required("type"): WS_TYPE_UPDATE_NUTRIENT_STOCK,
+        vol.Required("nutrient_id"): str,
+        vol.Required("name"): str,
+        vol.Required("current_ml"): vol.Any(float, int),
+        vol.Required("initial_ml"): vol.Any(float, int),
+    }
+)
+
+WS_TYPE_REMOVE_NUTRIENT_STOCK = f"{DOMAIN}/remove_nutrient_stock"
+SCHEMA_WS_REMOVE_NUTRIENT_STOCK = websocket_api.BASE_COMMAND_MESSAGE_SCHEMA.extend(
+    {
+        vol.Required("type"): WS_TYPE_REMOVE_NUTRIENT_STOCK,
+        vol.Required("nutrient_id"): str,
+    }
+)
+
+
+@callback
+def websocket_get_nutrient_inventory(
+    hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
+) -> None:
+    """Handle get nutrient inventory command."""
+    try:
+        coordinator: GrowspaceCoordinator = GrowspaceCoordinator.get_for_service_call(
+            hass, msg
+        )
+        if hasattr(coordinator, "nutrient_inventory_service"):
+            inventory = coordinator.nutrient_inventory_service.get_inventory()
+            connection.send_result(msg["id"], asdict(inventory))
+        else:
+            connection.send_result(msg["id"], {"stocks": {}})
+    except Exception as err:
+        _LOGGER.exception("Error handling websocket_get_nutrient_inventory")
+        connection.send_error(msg["id"], "unknown_error", str(err))
+
+
+@callback
+def websocket_update_nutrient_stock(
+    hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
+) -> None:
+    """Handle update nutrient stock command."""
+    try:
+        coordinator: GrowspaceCoordinator = GrowspaceCoordinator.get_for_service_call(
+            hass, msg
+        )
+        if hasattr(coordinator, "nutrient_inventory_service"):
+            coordinator.nutrient_inventory_service.update_stock(
+                nutrient_id=msg["nutrient_id"],
+                name=msg["name"],
+                current_ml=float(msg["current_ml"]),
+                initial_ml=float(msg["initial_ml"]),
+            )
+            # Persist changes
+            hass.async_create_task(coordinator.async_save())
+            connection.send_result(msg["id"])
+        else:
+            connection.send_error(msg["id"], "not_initialized", "Service not ready")
+    except Exception as err:
+        _LOGGER.exception("Error handling websocket_update_nutrient_stock")
+        connection.send_error(msg["id"], "unknown_error", str(err))
+
+
+@callback
+def websocket_remove_nutrient_stock(
+    hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
+) -> None:
+    """Handle remove nutrient stock command."""
+    try:
+        coordinator: GrowspaceCoordinator = GrowspaceCoordinator.get_for_service_call(
+            hass, msg
+        )
+        if hasattr(coordinator, "nutrient_inventory_service"):
+            coordinator.nutrient_inventory_service.remove_stock(msg["nutrient_id"])
+            # Persist changes
+            hass.async_create_task(coordinator.async_save())
+            connection.send_result(msg["id"])
+        else:
+            connection.send_error(msg["id"], "not_initialized", "Service not ready")
+    except Exception as err:
+        _LOGGER.exception("Error handling websocket_remove_nutrient_stock")
+        connection.send_error(msg["id"], "unknown_error", str(err))
+
+
 @callback
 def websocket_get_nutrient_presets(
     hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
@@ -732,6 +826,25 @@ def _async_register_websocket_api(hass: HomeAssistant) -> None:
         WS_TYPE_GET_DATA,
         websocket_api.async_response(websocket_get_growspace_data),
         SCHEMA_WS_GET_DATA,
+    )
+
+    websocket_api.async_register_command(
+        hass,
+        WS_TYPE_GET_NUTRIENT_INVENTORY,
+        websocket_get_nutrient_inventory,
+        SCHEMA_WS_GET_NUTRIENT_INVENTORY,
+    )
+    websocket_api.async_register_command(
+        hass,
+        WS_TYPE_UPDATE_NUTRIENT_STOCK,
+        websocket_update_nutrient_stock,
+        SCHEMA_WS_UPDATE_NUTRIENT_STOCK,
+    )
+    websocket_api.async_register_command(
+        hass,
+        WS_TYPE_REMOVE_NUTRIENT_STOCK,
+        websocket_remove_nutrient_stock,
+        SCHEMA_WS_REMOVE_NUTRIENT_STOCK,
     )
 
     websocket_api.async_register_command(

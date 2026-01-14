@@ -220,6 +220,67 @@ class GrowAssistant:
 
         return analytics
 
+    def _get_strain_specific_context(self, plants: list) -> str:
+        """Build strain-specific context from breeder notes for AI prompts.
+
+        Extracts breeder notes, flowering time preferences, and genetic lineage
+        for active strains to give the AI more targeted cultivation advice.
+        """
+        if not plants:
+            return ""
+
+        all_strains = self.strain_library.get_all()
+        contexts = []
+        seen_strains: set[str] = set()
+
+        for plant in plants:
+            strain_name = plant.strain
+            if strain_name in seen_strains or strain_name not in all_strains:
+                continue
+            seen_strains.add(strain_name)
+
+            strain_data = all_strains[strain_name]
+            context = self._build_single_strain_context(strain_name, strain_data)
+            if context:
+                contexts.append(context)
+
+        return "\n".join(contexts) if contexts else ""
+
+    def _build_single_strain_context(
+        self, strain_name: str, strain_data: dict
+    ) -> str | None:
+        """Build context string for a single strain."""
+        meta = strain_data.get("meta", {})
+        phenotypes = strain_data.get("phenotypes", {})
+
+        lines = [f"**{strain_name}**:"]
+
+        if breeder_notes := meta.get("breeder_notes"):
+            lines.append(f"  Breeder Notes: {breeder_notes}")
+
+        flower_min = meta.get("flowering_days_min")
+        flower_max = meta.get("flowering_days_max")
+        if flower_min and flower_max:
+            lines.append(f"  Expected Flowering: {flower_min}-{flower_max} days")
+
+        if temp_pref := meta.get("ideal_temp_range"):
+            lines.append(f"  Ideal Temp: {temp_pref}")
+        if humidity_pref := meta.get("ideal_humidity_range"):
+            lines.append(f"  Ideal Humidity: {humidity_pref}")
+
+        if lineage := meta.get("lineage"):
+            lines.append(f"  Lineage: {lineage}")
+
+        for pheno_name, pheno_data in phenotypes.items():
+            if pheno_notes := pheno_data.get("notes"):
+                # Truncate long notes
+                display_notes = (
+                    f"{pheno_notes[:100]}..." if len(pheno_notes) > 100 else pheno_notes
+                )
+                lines.append(f"  Pheno '{pheno_name}': {display_notes}")
+
+        return "\n".join(lines) if len(lines) > 1 else None
+
     def _build_system_prompt(self, context_type: str) -> str:
         """Build the system prompt based on context type."""
         base_prompt = (
@@ -267,6 +328,15 @@ class GrowAssistant:
 
         # Add plant summary
         lines.extend(self._format_plant_data(data["plants"]))
+
+        # Add strain-specific context (breeder notes, preferences)
+        if data["plants"]["count"] > 0:
+            plants = self.coordinator.get_growspace_plants(data["growspace"]["id"])
+            strain_context = self._get_strain_specific_context(plants)
+            if strain_context:
+                lines.append("STRAIN-SPECIFIC GUIDANCE:")
+                lines.append(strain_context)
+                lines.append("")
 
         # Add strain analytics if available
         if data["strain_analytics"]:
@@ -322,6 +392,24 @@ class GrowAssistant:
                 )
             lines.append("")
         return lines
+
+    async def generate_alert_message(
+        self, growspace_id: str, risk_type: str, reasons: list[str]
+    ) -> str:
+        """Generate a concise, urgent alert message using the AI."""
+        # Setup minimal context for speed and clarity
+        reasons_str = ", ".join(reasons)
+        user_query = (
+            f"URGENT: {risk_type} risk detected due to: {reasons_str}. "
+            "Provide ONE clear, actionable recommendation to fix this immediately."
+        )
+
+        return await self.get_grow_advice(
+            growspace_id=growspace_id,
+            user_query=user_query,
+            context_type="diagnostic",
+            max_length=150,  # Keep it short for notifications
+        )
 
     async def get_grow_advice(
         self,

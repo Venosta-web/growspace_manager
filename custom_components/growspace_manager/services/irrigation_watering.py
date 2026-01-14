@@ -1,12 +1,15 @@
 """Service handlers for manual watering functionality."""
 
+from __future__ import annotations
+
 import logging
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from homeassistant.core import HomeAssistant, ServiceCall
 from homeassistant.exceptions import ServiceValidationError
 
-from ..coordinator import GrowspaceCoordinator
+if TYPE_CHECKING:
+    from ..coordinator import GrowspaceCoordinator
 from ..exceptions import GrowspaceError
 
 _LOGGER = logging.getLogger(__name__)

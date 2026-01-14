@@ -430,6 +430,7 @@ class GrowspaceCoordinatorData(TypedDict):
     serialized_growspaces: dict[str, dict[str, Any]]
     air_exchange_recommendations: dict[str, str]
     ipm_presets: dict[str, IPMPreset]
+    nutrient_inventory: NutrientInventory
 
 
 class IPMType(StrEnum):
@@ -455,3 +456,21 @@ class IPMPreset(BasePreset):
 
     type: IPMType | str
     items: list[IPMPresetItem]
+
+
+@dataclass(slots=True)
+class NutrientStock(BaseModel):
+    """Tracks nutrient inventory levels."""
+
+    nutrient_id: str
+    name: str
+    current_ml: float
+    initial_ml: float
+    last_updated: str = field(default_factory=lambda: datetime.now().isoformat())
+
+
+@dataclass(slots=True)
+class NutrientInventory(BaseModel):
+    """Collection of nutrient stocks."""
+
+    stocks: dict[str, NutrientStock] = field(default_factory=dict)

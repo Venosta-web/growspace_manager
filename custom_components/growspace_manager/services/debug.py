@@ -1,6 +1,9 @@
 """Debug services."""
 
+from __future__ import annotations
+
 import logging
+from typing import TYPE_CHECKING
 
 from homeassistant.components.persistent_notification import (
     async_create as create_notification,
@@ -11,8 +14,10 @@ from ..const import (
     CANONICAL_ID_CURE,
     CANONICAL_ID_DRY,
 )
-from ..coordinator import GrowspaceCoordinator
 from ..strain_library import StrainLibrary
+
+if TYPE_CHECKING:
+    from ..coordinator import GrowspaceCoordinator
 
 _LOGGER = logging.getLogger(__name__)
 
