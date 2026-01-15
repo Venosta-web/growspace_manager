@@ -115,13 +115,18 @@ async def async_evaluate_stress_trend(
 
         return local_obs, local_reasons, local_trends
 
-    tasks = [
-        _evaluate_single("temperature", "temperature_trend"),
-        _evaluate_single("humidity", "humidity_trend"),
-        _evaluate_single("vpd", "vpd_trend"),
-    ]
+    # Use TaskGroup for structured concurrency and better error handling
+    async with asyncio.TaskGroup() as tg:
+        temp_task = tg.create_task(_evaluate_single("temperature", "temperature_trend"))
+        hum_task = tg.create_task(_evaluate_single("humidity", "humidity_trend"))
+        vpd_task = tg.create_task(_evaluate_single("vpd", "vpd_trend"))
 
-    results = await asyncio.gather(*tasks)
+    # Collect results after TaskGroup context exits
+    results = [
+        temp_task.result(),
+        hum_task.result(),
+        vpd_task.result(),
+    ]
 
     for res_obs, res_reasons, res_trends in results:
         observations.extend(res_obs)
@@ -300,12 +305,17 @@ async def async_evaluate_mold_risk_trend(
         )
         return local_obs, local_reasons, local_trends
 
-    tasks = [
-        _evaluate_single_mold("humidity", "humidity_trend"),
-        _evaluate_single_mold("vpd", "vpd_trend"),
-    ]
+    # Use TaskGroup for structured concurrency and better error handling
+    results: list[tuple[ObservationList, ReasonList, dict[str, str]]] = []
+    async with asyncio.TaskGroup() as tg:
+        hum_task = tg.create_task(_evaluate_single_mold("humidity", "humidity_trend"))
+        vpd_task = tg.create_task(_evaluate_single_mold("vpd", "vpd_trend"))
 
-    results = await asyncio.gather(*tasks)
+    # Collect results after TaskGroup context exits
+    results = [
+        hum_task.result(),
+        vpd_task.result(),
+    ]
 
     for res_obs, res_reasons, res_trends in results:
         observations.extend(res_obs)

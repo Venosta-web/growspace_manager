@@ -6,7 +6,7 @@ import homeassistant.util.dt as dt_util
 import pytest
 from homeassistant.core import HomeAssistant
 
-from custom_components.growspace_manager import websocket_get_history_stats
+from custom_components.growspace_manager.websocket import websocket_get_history_stats
 from custom_components.growspace_manager.const import DOMAIN
 
 
@@ -41,7 +41,7 @@ async def test_websocket_history_datetime_strings(hass: HomeAssistant):
             "homeassistant.components.recorder.history.get_significant_states",
             return_value=history_data,
         ),
-        patch("custom_components.growspace_manager.get_instance") as mock_get_rec,
+        patch("custom_components.growspace_manager.websocket.get_instance") as mock_get_rec,
     ):
         mock_get_rec.return_value.async_add_executor_job = hass.async_add_executor_job
         msg = {

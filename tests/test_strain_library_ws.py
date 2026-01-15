@@ -4,8 +4,8 @@ from unittest.mock import Mock, patch
 import pytest
 from homeassistant.core import HomeAssistant
 
-from custom_components.growspace_manager import (
-    DOMAIN,
+from custom_components.growspace_manager.const import DOMAIN
+from custom_components.growspace_manager.websocket import (
     WS_TYPE_GET_IPM_PRESETS,
     WS_TYPE_GET_NUTRIENT_PRESETS,
     WS_TYPE_GET_STRAIN_LIBRARY,

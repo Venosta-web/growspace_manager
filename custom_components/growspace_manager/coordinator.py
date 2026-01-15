@@ -67,6 +67,7 @@ from .exceptions import (
 from .growspace_validator import GrowspaceValidator
 from .import_export_manager import ImportExportManager
 from .irrigation_coordinator import IrrigationCoordinator
+from .managers.nutrient import NutrientManager
 from .managers.subsystem import SubsystemManager
 from .models import (
     Growspace,
@@ -179,6 +180,48 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
         """Return dehumidifier coordinators fro SubsystemManager."""
         return self.subsystem_manager.dehumidifier_coordinators
 
+    @property
+    def nutrient_presets(self) -> dict[str, NutrientPreset]:
+        """Return nutrient presets from manager."""
+        return self.nutrient_manager.presets
+
+    @nutrient_presets.setter
+    def nutrient_presets(self, value: dict[str, NutrientPreset]) -> None:
+        """Set nutrient presets in manager."""
+        self.nutrient_manager.presets = value
+
+    @property
+    def ipm_presets(self) -> dict[str, IPMPreset]:
+        """Return IPM presets from manager."""
+        return self.nutrient_manager.ipm_presets
+
+    @ipm_presets.setter
+    def ipm_presets(self, value: dict[str, IPMPreset]) -> None:
+        """Set IPM presets in manager."""
+        self.nutrient_manager.ipm_presets = value
+
+    @property
+    def nutrient_inventory_service(self) -> NutrientInventoryService | None:
+        """Return nutrient inventory service from manager."""
+        return self.nutrient_manager.inventory_service
+
+    @nutrient_inventory_service.setter
+    def nutrient_inventory_service(
+        self, value: NutrientInventoryService | None
+    ) -> None:
+        """Set nutrient inventory service in manager."""
+        self.nutrient_manager.inventory_service = value
+
+    @property
+    def nutrient_inventory(self) -> NutrientInventory | None:
+        """Return nutrient inventory from manager."""
+        return self.nutrient_manager.inventory
+
+    @nutrient_inventory.setter
+    def nutrient_inventory(self, value: NutrientInventory | None) -> None:
+        """Set nutrient inventory in manager."""
+        self.nutrient_manager.inventory = value
+
     def __init__(
         self,
         hass: HomeAssistant,
@@ -209,8 +252,6 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
         self.growspaces: dict[str, Growspace] = {}
         self.plants: dict[str, Plant] = {}
         # self.events removed - using native HA Event Bus
-        self.nutrient_presets: dict[str, NutrientPreset] = {}
-        self.ipm_presets: dict[str, IPMPreset] = {}
 
         # Optimization: Cache for serialized growspace data
         self._serialized_cache: dict[str, dict[str, Any]] = {}
@@ -231,6 +272,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
         self.notification_manager = NotificationManager(hass, self)
         self.import_export_manager = ImportExportManager(hass)
         self.lifecycle_manager = PlantLifecycleManager(self)
+        self.nutrient_manager = NutrientManager(self)
 
         # Initialize Data Repository
         self.data_repository = DataRepository(self.growspaces, self.plants)
@@ -263,8 +305,9 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
 
     def on_nutrient_inventory_loaded(self, inventory: NutrientInventory) -> None:
         """Update inventory and service after load."""
-        self.nutrient_inventory = inventory
-        self.nutrient_inventory_service = NutrientInventoryService(inventory)
+        self.nutrient_manager.load_data(
+            self.nutrient_manager.presets, self.nutrient_manager.ipm_presets, inventory
+        )
 
     def _extract_gs_ids_from_result(self, result: Any, gs_ids: set[str]) -> None:
         """Extract growspace IDs from function result."""
@@ -1623,13 +1666,12 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
         self.validator.validate_plant_exists(plant_id)
         plant = self.plants[plant_id]
 
-        final_nutrients, preset_name = self._resolve_nutrient_mix(nutrients, preset_id)
+        final_nutrients, preset_name = self.nutrient_manager.resolve_nutrient_mix(
+            nutrients, preset_id
+        )
 
-        # Deduct nutrients from inventory
-        if final_nutrients and hasattr(self, "nutrient_inventory_service"):
-            for nutrient_name, dose_ml_l in final_nutrients.items():
-                total_ml = dose_ml_l * amount
-                self.nutrient_inventory_service.deduct_usage(nutrient_name, total_ml)
+        # Deduct nutrients from inventory using manager
+        self.nutrient_manager.deduct_from_inventory(final_nutrients, amount)
 
         # Update plant's last_watered timestamp
         now_iso = dt_util.now().isoformat()
@@ -1772,120 +1814,26 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
         min_days_in_stage: int | None = None,
         preset_id: str | None = None,
     ) -> NutrientPreset:
-        """Create or update a nutrient preset.
-
-        Args:
-            name: Human-readable name for the preset.
-            nutrients: List of nutrient items with 'name' and 'dose_ml_l'.
-            stage: Optional plant stage this preset applies to.
-            min_days_in_stage: Optional minimum days in stage for this preset.
-            preset_id: Optional ID of the preset to update. If not provided, a new one will be created.
-
-        Returns:
-            The saved NutrientPreset object.
-        """
-        if preset_id and preset_id in self.nutrient_presets:
-            preset = self.nutrient_presets[preset_id]
-            preset.name = name
-            preset.nutrients = nutrients  # type: ignore[arg-type]
-            preset.stage = stage
-            preset.min_days_in_stage = min_days_in_stage
-            # ID and created_at remain unchanged
-        else:
-            # Create new
-            pid = preset_id or str(uuid.uuid4())
-            preset = NutrientPreset(
-                id=pid,
-                name=name,
-                items=nutrients,  # type: ignore[arg-type]
-                stage=stage,
-                min_days_in_stage=min_days_in_stage,
-                created_at=dt_util.now().isoformat(),
-            )
-            self.nutrient_presets[pid] = preset
-        await self.async_save()
-
-        _LOGGER.info(
-            "Saved nutrient preset '%s' with %d nutrients (id=%s)",
-            name,
-            len(nutrients),
-            preset_id,
+        """Create or update a nutrient preset (delegated)."""
+        return await self.nutrient_manager.async_save_nutrient_preset(
+            name, nutrients, stage, min_days_in_stage, preset_id
         )
 
-        # Invalidate cache for all growspaces as presets are global
-        self._serialized_cache.clear()
-
-        return preset
-
     async def async_remove_nutrient_preset(self, preset_id: str) -> None:
-        """Remove a nutrient preset.
-
-        Args:
-            preset_id: The ID of the preset to remove.
-
-        Raises:
-            KeyError: If the preset does not exist.
-        """
-        if preset_id not in self.nutrient_presets:
-            raise KeyError(f"Nutrient preset '{preset_id}' not found")
-
-        preset_name = self.nutrient_presets[preset_id].name
-        del self.nutrient_presets[preset_id]
-        await self.async_save()
-
-        # Invalidate cache for all growspaces as presets are global
-        self._serialized_cache.clear()
-
-        _LOGGER.info("Removed nutrient preset '%s' (id=%s)", preset_name, preset_id)
+        """Remove a nutrient preset (delegated)."""
+        await self.nutrient_manager.async_remove_nutrient_preset(preset_id)
 
     def get_applicable_presets(self, plant_id: str) -> list[NutrientPreset]:
-        """Get all presets applicable to a plant based on its current stage and days.
-
-        Args:
-            plant_id: The ID of the plant to check.
-
-        Returns:
-            List of applicable NutrientPreset objects.
-        """
-        self.validator.validate_plant_exists(plant_id)
-        plant = self.plants[plant_id]
-
-        applicable: list[NutrientPreset] = []
-
-        for preset in self.nutrient_presets.values():
-            # If preset has no stage filter, it applies to all stages
-            if preset.stage is not None:
-                # Check if plant's current stage matches preset stage
-                if str(plant.stage).lower() != str(preset.stage).lower():
-                    continue
-
-            # If preset has min_days_in_stage, check if plant meets it
-            if preset.min_days_in_stage is not None:
-                current_stage = str(plant.stage).lower()
-                days_in_stage = plant.get_days_in_stage(current_stage)
-                if days_in_stage < preset.min_days_in_stage:
-                    continue
-
-            applicable.append(preset)
-
-        return applicable
+        """Get all presets applicable to a plant (delegated)."""
+        return self.nutrient_manager.get_applicable_presets(plant_id)
 
     def _resolve_preset_nutrients(self, preset_id: str) -> dict[str, float]:
-        """Resolve a preset ID to its nutrient map.
-
-        Args:
-            preset_id: The ID of the preset to resolve.
-
-        Returns:
-            Dict mapping nutrient name to concentration (ml/L).
-
-        Raises:
-            KeyError: If the preset does not exist.
-        """
-        if preset_id not in self.nutrient_presets:
+        """Resolve a preset ID to its nutrient map (delegated)."""
+        # This helper might not be needed if internal usage is gone,
+        # but kept for potential external compatibility or service usage
+        if preset_id not in self.nutrient_manager.presets:
             raise KeyError(f"Nutrient preset '{preset_id}' not found")
-
-        return self.nutrient_presets[preset_id].get_nutrient_map()
+        return self.nutrient_manager.presets[preset_id].get_nutrient_map()
 
     # =============================================================================
     # IPM METHODS

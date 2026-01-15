@@ -66,6 +66,7 @@ def mock_hass() -> MagicMock:
     """Mock Home Assistant instance."""
     hass = MagicMock(spec=HomeAssistant)
     hass.states = MagicMock()
+    hass.data = {}
 
     # Mock sensor states
     mock_state = MagicMock()
@@ -86,7 +87,9 @@ async def test_get_grow_advice_success(
     assistant: GrowAssistant, mock_hass: MagicMock
 ) -> None:
     """Test getting grow advice successfully."""
-    with patch("homeassistant.components.conversation.async_converse") as mock_converse:
+    with patch(
+        "custom_components.growspace_manager.services.ai_assistant.conversation.async_converse"
+    ) as mock_converse:
         mock_result = MagicMock()
         mock_result.response.speech = {"plain": {"speech": "AI Advice"}}
         mock_converse.return_value = mock_result
@@ -111,7 +114,9 @@ async def test_get_grow_advice_empty_response(
     assistant: GrowAssistant, mock_hass: MagicMock
 ) -> None:
     """Test getting empty response from AI."""
-    with patch("homeassistant.components.conversation.async_converse") as mock_converse:
+    with patch(
+        "custom_components.growspace_manager.services.ai_assistant.conversation.async_converse"
+    ) as mock_converse:
         mock_result = MagicMock()
         mock_result.response.speech = {"plain": {"speech": ""}}  # Empty
         mock_converse.return_value = mock_result
@@ -159,7 +164,9 @@ async def test_handle_analyze_all_growspaces(
         context=MagicMock(),
     )
 
-    with patch("homeassistant.components.conversation.async_converse") as mock_converse:
+    with patch(
+        "custom_components.growspace_manager.services.ai_assistant.conversation.async_converse"
+    ) as mock_converse:
         mock_result = MagicMock()
         mock_result.response.speech = {"plain": {"speech": "Analysis Report"}}
         mock_converse.return_value = mock_result
@@ -184,7 +191,9 @@ async def test_handle_strain_recommendation(
         context=MagicMock(),
     )
 
-    with patch("homeassistant.components.conversation.async_converse") as mock_converse:
+    with patch(
+        "custom_components.growspace_manager.services.ai_assistant.conversation.async_converse"
+    ) as mock_converse:
         mock_result = MagicMock()
         mock_result.response.speech = {"plain": {"speech": "Strain Recommendation"}}
         mock_converse.return_value = mock_result
@@ -293,7 +302,9 @@ async def test_get_grow_advice_truncation(
     assistant: GrowAssistant, mock_hass: MagicMock
 ) -> None:
     """Test truncation of grow advice."""
-    with patch("homeassistant.components.conversation.async_converse") as mock_converse:
+    with patch(
+        "custom_components.growspace_manager.services.ai_assistant.conversation.async_converse"
+    ) as mock_converse:
         mock_result = MagicMock()
         # Create a long response
         long_response = "Word " * 100
@@ -346,7 +357,7 @@ async def test_handle_analyze_all_growspaces_extended(
         )
 
         with patch(
-            "homeassistant.components.conversation.async_converse"
+            "custom_components.growspace_manager.services.ai_assistant.conversation.async_converse"
         ) as mock_converse:
             mock_result = MagicMock()
             mock_result.response.speech = {
@@ -393,7 +404,9 @@ async def test_handle_strain_recommendation_extended(
         }
     }
 
-    with patch("homeassistant.components.conversation.async_converse") as mock_converse:
+    with patch(
+        "custom_components.growspace_manager.services.ai_assistant.conversation.async_converse"
+    ) as mock_converse:
         mock_result = MagicMock()
         mock_result.response.speech = {"plain": {"speech": "Long Recommendation Extra"}}
         mock_converse.return_value = mock_result
@@ -523,7 +536,7 @@ async def test_handle_analyze_all_growspaces_optimal(
         )
 
         with patch(
-            "homeassistant.components.conversation.async_converse"
+            "custom_components.growspace_manager.services.ai_assistant.conversation.async_converse"
         ) as mock_converse:
             mock_result = MagicMock()
             mock_result.response.speech = {"plain": {"speech": "Report"}}
@@ -574,7 +587,7 @@ async def test_handle_analyze_all_growspaces_exceptions(
 
         # Test empty response from AI (missing speech)
         with patch(
-            "homeassistant.components.conversation.async_converse"
+            "custom_components.growspace_manager.services.ai_assistant.conversation.async_converse"
         ) as mock_converse:
             mock_result = MagicMock()
             mock_result.response.speech = {}  # Empty speech
@@ -611,7 +624,9 @@ async def test_handle_strain_recommendation_exceptions(
             "custom_components.growspace_manager.services.ai_assistant.GrowAssistant._gather_growspace_data",
             side_effect=Exception("Gather Error"),
         ),
-        patch("homeassistant.components.conversation.async_converse") as mock_converse,
+        patch(
+            "custom_components.growspace_manager.services.ai_assistant.conversation.async_converse"
+        ) as mock_converse,
     ):
         # Test empty response from AI (missing speech)
         mock_result = MagicMock()
@@ -631,7 +646,7 @@ async def test_get_grow_advice_exception_fallback(
 ) -> None:
     """Test get_grow_advice fallback on exception (covers lines 379-382)."""
     with patch(
-        "homeassistant.components.conversation.async_converse",
+        "custom_components.growspace_manager.services.ai_assistant.conversation.async_converse",
         side_effect=Exception("API Error"),
     ):
         response = await assistant.get_grow_advice(GROWSPACE_ID, "Query")

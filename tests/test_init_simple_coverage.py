@@ -8,8 +8,8 @@ from aiohttp import web
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ServiceValidationError
 
-from custom_components.growspace_manager import (
-    StrainLibraryImageView,
+from custom_components.growspace_manager.views import StrainLibraryImageView
+from custom_components.growspace_manager.websocket import (
     websocket_add_timeline_note,
     websocket_get_event_log,
     websocket_get_ipm_presets,
@@ -145,7 +145,7 @@ async def test_websocket_timeline_operations_errors(hass: HomeAssistant) -> None
     # This uses recorder directly.
     # Mock get_instance to raise or fail.
     with patch(
-        "custom_components.growspace_manager.get_instance",
+        "custom_components.growspace_manager.websocket.get_instance",
         side_effect=Exception("Recorder Fail"),
     ):
         await websocket_remove_timeline_event(hass, connection, msg_remove)
@@ -178,7 +178,7 @@ async def test_websocket_timeline_operations_errors(hass: HomeAssistant) -> None
         # Case A: ServiceValidationError in services/plant helper
         # Patch where it is USED in __init__.py
         with patch(
-            "custom_components.growspace_manager.async_add_timeline_note",
+            "custom_components.growspace_manager.websocket.async_add_timeline_note",
             side_effect=ServiceValidationError("Invalid"),
         ):
             await websocket_add_timeline_note(hass, connection, msg_note)
@@ -186,7 +186,7 @@ async def test_websocket_timeline_operations_errors(hass: HomeAssistant) -> None
 
         # Case B: Generic Exception
         with patch(
-            "custom_components.growspace_manager.async_add_timeline_note",
+            "custom_components.growspace_manager.websocket.async_add_timeline_note",
             side_effect=Exception("General"),
         ):
             await websocket_add_timeline_note(hass, connection, msg_note)
@@ -245,10 +245,10 @@ async def test_websocket_event_log_complex_logic(hass: HomeAssistant) -> None:
 
     with (
         patch(
-            "custom_components.growspace_manager.session_scope",
+            "custom_components.growspace_manager.websocket.session_scope",
             return_value=context_manager_mock,
         ),
-        patch("custom_components.growspace_manager.get_instance") as get_instance_mock,
+        patch("custom_components.growspace_manager.websocket.get_instance") as get_instance_mock,
     ):
         # We need to mock async_add_executor_job to run the query function immediately
         # The integration code calls: await recorder.async_add_executor_job(_query_events)

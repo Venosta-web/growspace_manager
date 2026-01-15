@@ -1,19 +1,24 @@
 """Test Nutrient Inventory WebSocket commands."""
 
 import logging
+from typing import Any
 from unittest.mock import MagicMock, patch
 
 import pytest
 from homeassistant.core import HomeAssistant
 
-from custom_components.growspace_manager import (
+from custom_components.growspace_manager.models import NutrientInventory, NutrientStock
+from custom_components.growspace_manager.websocket import (
     WS_TYPE_GET_NUTRIENT_INVENTORY,
     WS_TYPE_REMOVE_NUTRIENT_STOCK,
     WS_TYPE_UPDATE_NUTRIENT_STOCK,
+    async_register_websocket_api,
 )
-from custom_components.growspace_manager.models import NutrientInventory, NutrientStock
+
+WebSocketGenerator = Any
 
 _LOGGER = logging.getLogger(__name__)
+# Register the websocket commands
 
 
 @pytest.fixture
@@ -40,15 +45,12 @@ def mock_coordinator(hass: HomeAssistant):
         "custom_components.growspace_manager.coordinator.GrowspaceCoordinator.get_for_service_call",
         return_value=coordinator,
     ):
-        # Register the websocket commands
-        from custom_components.growspace_manager import _async_register_websocket_api
-
-        _async_register_websocket_api(hass)
+        async_register_websocket_api(hass)
         yield coordinator
 
 
 async def test_websocket_get_nutrient_inventory(
-    hass: HomeAssistant, hass_ws_client, mock_coordinator
+    hass: HomeAssistant, hass_ws_client: WebSocketGenerator, mock_coordinator
 ) -> None:
     """Test getting nutrient inventory."""
     client = await hass_ws_client(hass)
@@ -67,7 +69,7 @@ async def test_websocket_get_nutrient_inventory(
 
 
 async def test_websocket_update_nutrient_stock(
-    hass: HomeAssistant, hass_ws_client, mock_coordinator
+    hass: HomeAssistant, hass_ws_client: WebSocketGenerator, mock_coordinator
 ) -> None:
     """Test updating nutrient stock."""
     client = await hass_ws_client(hass)
@@ -96,7 +98,7 @@ async def test_websocket_update_nutrient_stock(
 
 
 async def test_websocket_remove_nutrient_stock(
-    hass: HomeAssistant, hass_ws_client, mock_coordinator
+    hass: HomeAssistant, hass_ws_client: WebSocketGenerator, mock_coordinator
 ) -> None:
     """Test removing nutrient stock."""
     client = await hass_ws_client(hass)

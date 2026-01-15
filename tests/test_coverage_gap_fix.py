@@ -6,10 +6,6 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from homeassistant.core import HomeAssistant
 from homeassistant.util import dt as dt_util
 
-from custom_components.growspace_manager import (
-    _get_history_with_binary_search_downsample,
-    websocket_get_history_stats,
-)
 from custom_components.growspace_manager.bayesian_evaluator import (
     _determine_stage_key,
     evaluate_active_saturation,
@@ -48,6 +44,10 @@ from custom_components.growspace_manager.services.plant import (
     handle_harvest_plant,
 )
 from custom_components.growspace_manager.strain_library import StrainLibrary
+from custom_components.growspace_manager.websocket import (
+    _get_history_with_binary_search_downsample,
+    websocket_get_history_stats,
+)
 
 # -----------------------------------------------------------------------------
 # __init__.py Coverage
@@ -67,7 +67,7 @@ async def test_websocket_history_stats_sub_hourly(hass: HomeAssistant) -> None:
     }
 
     with patch(
-        "custom_components.growspace_manager._get_history_with_binary_search_downsample",
+        "custom_components.growspace_manager.websocket._get_history_with_binary_search_downsample",
         return_value={"sensor.test": []},
     ) as mock_downsample:
         await websocket_get_history_stats(hass, connection, msg)
@@ -90,12 +90,14 @@ async def test_websocket_history_stats_missing_in_stats_data(
     }
 
     # Patch local import for recorder_stats
-    with patch("custom_components.growspace_manager.recorder_stats") as mock_stats:
+    with patch(
+        "custom_components.growspace_manager.websocket.recorder_stats"
+    ) as mock_stats:
         mock_stats.async_statistics_during_period.return_value = {}
 
         # ALSO patch the fallback function to avoid it calling real recorder/history
         with patch(
-            "custom_components.growspace_manager._get_history_with_binary_search_downsample",
+            "custom_components.growspace_manager.websocket._get_history_with_binary_search_downsample",
             return_value={"sensor.missing": []},
         ) as mock_fallback:
             await websocket_get_history_stats(hass, connection, msg)
@@ -125,11 +127,11 @@ async def test_downsample_empty_timestamps(hass: HomeAssistant) -> None:
     # Patch get_instance to return our mock recorder
     with (
         patch(
-            "custom_components.growspace_manager.get_instance",
+            "custom_components.growspace_manager.websocket.get_instance",
             return_value=mock_recorder,
         ),
         patch(
-            "custom_components.growspace_manager.history.get_significant_states",
+            "custom_components.growspace_manager.websocket.history.get_significant_states",
             return_value={"sensor.test": [mock_state]},
         ),
     ):

@@ -6,7 +6,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 from homeassistant.core import HomeAssistant
 
-from custom_components.growspace_manager import websocket_get_event_log
+from custom_components.growspace_manager.websocket import websocket_get_event_log
 
 
 @pytest.mark.asyncio
@@ -75,10 +75,10 @@ async def test_websocket_event_log_merging(hass: HomeAssistant) -> None:
 
     with (
         patch(
-            "custom_components.growspace_manager.session_scope",
+            "custom_components.growspace_manager.websocket.session_scope",
             return_value=context_manager_mock,
         ),
-        patch("custom_components.growspace_manager.get_instance") as get_instance_mock,
+        patch("custom_components.growspace_manager.websocket.get_instance") as get_instance_mock,
     ):
         instance = get_instance_mock.return_value
 
