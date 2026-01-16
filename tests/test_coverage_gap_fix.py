@@ -14,7 +14,7 @@ from custom_components.growspace_manager.bayesian_evaluator import (
     evaluate_optimal_vpd,
 )
 from custom_components.growspace_manager.binary_sensor import (
-    BayesianMoldRiskSensor,
+    BayesianEnvironmentSensor,
     GrowspaceBinarySensorDescription,
     GrowspaceSensorType,
     LightCycleVerificationSensor,
@@ -44,6 +44,9 @@ from custom_components.growspace_manager.services.plant import (
     handle_harvest_plant,
 )
 from custom_components.growspace_manager.strain_library import StrainLibrary
+from custom_components.growspace_manager.strategies.mold import (
+    MoldRiskEvaluatorStrategy,
+)
 from custom_components.growspace_manager.websocket import (
     _get_history_with_binary_search_downsample,
     websocket_get_history_stats,
@@ -438,8 +441,8 @@ async def test_binary_sensor_event_attributes(hass: HomeAssistant) -> None:
         sensor_type=GrowspaceSensorType.MOLD,
         prior_key="prior_mold_risk",
     )
-    sensor = BayesianMoldRiskSensor(
-        MagicMock(), "gs1", EnvironmentConfig(), description
+    sensor = BayesianEnvironmentSensor(
+        MagicMock(), "gs1", EnvironmentConfig(), description, MoldRiskEvaluatorStrategy
     )
     sensor._event_start_time = dt_util.utcnow() - timedelta(minutes=10)
 

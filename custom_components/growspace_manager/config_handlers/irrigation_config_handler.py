@@ -4,9 +4,11 @@ from __future__ import annotations
 
 import json
 import logging
+from dataclasses import asdict
 from typing import Any
 
 import voluptuous as vol
+from homeassistant.config_entries import ConfigFlowResult
 from homeassistant.helpers import selector
 
 from . import BaseConfigHandler
@@ -16,6 +18,96 @@ _LOGGER = logging.getLogger(__name__)
 
 class IrrigationConfigHandler(BaseConfigHandler[dict[str, Any]]):
     """Handle irrigation configuration steps."""
+
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        """Initialize the handler."""
+        super().__init__(*args, **kwargs)
+
+    async def async_step_select_growspace_for_irrigation(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Show a form to select a growspace before configuring its irrigation."""
+        coordinator = getattr(self.config_entry, "runtime_data", None)
+        if coordinator is None:
+            return self.flow.async_abort(reason="setup_error")
+
+        growspace_options = coordinator.get_sorted_growspace_options()
+
+        if not growspace_options:
+            return self.flow.async_abort(reason="no_growspaces")
+
+        if user_input is not None:
+            self.flow._selected_growspace_id = user_input["growspace_id"]
+            return await self.async_step_configure_irrigation()
+
+        schema: dict[Any, Any] = {
+            vol.Required("growspace_id"): selector.SelectSelector(
+                selector.SelectSelectorConfig(
+                    options=[
+                        selector.SelectOptionDict(value=gs_id, label=name)
+                        for gs_id, name in growspace_options
+                    ],
+                    mode=selector.SelectSelectorMode.DROPDOWN,
+                )
+            )
+        }
+        return self.flow.async_show_form(
+            step_id="select_growspace_for_irrigation", data_schema=vol.Schema(schema)
+        )
+
+    async def async_step_configure_irrigation(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Show the irrigation configuration menu for a selected growspace."""
+        coordinator = getattr(self.config_entry, "runtime_data", None)
+        if coordinator is None:
+            return self.flow.async_abort(reason="setup_error")
+        growspace = coordinator.growspaces.get(self.flow._selected_growspace_id)
+
+        if not growspace:
+            return self.flow.async_abort(reason="growspace_not_found")
+
+        # Route directly to the unified overview step
+        return await self.async_step_irrigation_overview()
+
+    async def async_step_irrigation_overview(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Show the unified irrigation management screen for the Lovelace card."""
+        coordinator = getattr(self.config_entry, "runtime_data", None)
+        if coordinator is None:
+            return self.flow.async_abort(reason="setup_error")
+        growspace = coordinator.growspaces.get(self.flow._selected_growspace_id)
+
+        if not growspace:
+            return self.flow.async_abort(reason="growspace_not_found")
+
+        # Load ALL current irrigation options for the growspace from the Growspace object
+        irrigation_options = asdict(growspace.irrigation_config)
+
+        if user_input is not None:
+            # Delegate update logic to coordinator
+            await coordinator.async_update_irrigation_config(
+                self.flow._selected_growspace_id, user_input
+            )
+
+            # This triggers async_update_listener in __init__.py, reloading the IrrigationCoordinator
+            return self.flow.async_create_entry(
+                title="",
+                data=self.flow._current_options,  # No changes to ConfigEntry options
+                description="Irrigation settings have been updated.",
+            )
+
+        # Describe schema to pass ALL data to the Lovelace component
+        schema = self.get_irrigation_overview_schema(
+            irrigation_options, self.flow._selected_growspace_id
+        )
+
+        return self.flow.async_show_form(
+            step_id="irrigation_overview",
+            data_schema=schema,
+            description_placeholders={"growspace_name": growspace.name},
+        )
 
     def get_irrigation_overview_schema(
         self, irrigation_options: dict[str, Any], growspace_id: str

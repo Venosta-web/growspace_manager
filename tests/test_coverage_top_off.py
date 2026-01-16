@@ -15,7 +15,7 @@ from custom_components.growspace_manager.bayesian_evaluator import (
     _is_vpd_trend_gated,
 )
 from custom_components.growspace_manager.binary_sensor import (
-    BayesianMoldRiskSensor,
+    BayesianEnvironmentSensor,
     GrowspaceBinarySensorDescription,
 )
 from custom_components.growspace_manager.const import (
@@ -46,6 +46,9 @@ from custom_components.growspace_manager.services.plant import (
     handle_add_timeline_note,
 )
 from custom_components.growspace_manager.storage_manager import StorageManager
+from custom_components.growspace_manager.strategies.mold import (
+    MoldRiskEvaluatorStrategy,
+)
 from custom_components.growspace_manager.views import StrainLibraryImageView
 from custom_components.growspace_manager.websocket import (
     _downsample_entity_binary_search,
@@ -144,8 +147,12 @@ async def test_mold_risk_stage_branches_coverage(hass: HomeAssistant) -> None:
         prior_key="prior_mold_risk",
     )
 
-    sensor = BayesianMoldRiskSensor(
-        mock_coordinator, "gs1", mock_growspace.environment_config, description
+    sensor = BayesianEnvironmentSensor(
+        mock_coordinator,
+        "gs1",
+        mock_growspace.environment_config,
+        description,
+        MoldRiskEvaluatorStrategy,
     )
     sensor.hass = hass
 

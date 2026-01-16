@@ -9,11 +9,18 @@ from homeassistant.util.dt import utcnow
 
 from custom_components.growspace_manager.binary_sensor import (
     SENSOR_TYPES,
-    BayesianMoldRiskSensor,
-    BayesianOptimalConditionsSensor,
-    BayesianStressSensor,
+    BayesianEnvironmentSensor,
 )
 from custom_components.growspace_manager.const import DOMAIN
+from custom_components.growspace_manager.strategies.mold import (
+    MoldRiskEvaluatorStrategy,
+)
+from custom_components.growspace_manager.strategies.optimal import (
+    OptimalConditionsEvaluatorStrategy,
+)
+from custom_components.growspace_manager.strategies.stress import (
+    StressEvaluatorStrategy,
+)
 
 MOCK_CONFIG_ENTRY_ID = "test_entry"
 
@@ -86,11 +93,13 @@ async def test_stress_sensor_high_heat(
     mock_recorder.return_value.async_add_executor_job = AsyncMock(return_value={})
     # Corrected instantiation with description
     description = next(d for d in SENSOR_TYPES if d.sensor_type == "stress")
-    sensor = BayesianStressSensor(
+    description = next(d for d in SENSOR_TYPES if d.sensor_type == "stress")
+    sensor = BayesianEnvironmentSensor(
         mock_coordinator,
         "gs1",
         env_config,
         description,
+        StressEvaluatorStrategy,
     )
     sensor.hass = hass
     sensor.entity_id = "binary_sensor.test_stress"
@@ -132,11 +141,13 @@ async def test_mold_risk_sensor_late_flower(
     mock_recorder.return_value.async_add_executor_job = AsyncMock(return_value={})
     # Corrected instantiation with description
     description = next(d for d in SENSOR_TYPES if d.sensor_type == "mold")
-    sensor = BayesianMoldRiskSensor(
+    description = next(d for d in SENSOR_TYPES if d.sensor_type == "mold")
+    sensor = BayesianEnvironmentSensor(
         mock_coordinator,
         "gs1",
         env_config,
         description,
+        MoldRiskEvaluatorStrategy,
     )
     sensor.hass = hass
     sensor.entity_id = "binary_sensor.test_mold"
@@ -186,11 +197,13 @@ async def test_optimal_conditions_sensor(
 
     # Corrected instantiation with description
     description = next(d for d in SENSOR_TYPES if d.sensor_type == "optimal")
-    sensor = BayesianOptimalConditionsSensor(
+    description = next(d for d in SENSOR_TYPES if d.sensor_type == "optimal")
+    sensor = BayesianEnvironmentSensor(
         mock_coordinator,
         "gs1",
         env_config,
         description,
+        OptimalConditionsEvaluatorStrategy,
     )
     sensor.hass = hass
     sensor.entity_id = "binary_sensor.test_optimal"

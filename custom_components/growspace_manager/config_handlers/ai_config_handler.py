@@ -6,8 +6,7 @@ import logging
 from typing import Any
 
 import voluptuous as vol
-from homeassistant.config_entries import ConfigEntry
-from homeassistant.core import HomeAssistant
+from homeassistant.config_entries import ConfigFlowResult
 from homeassistant.helpers import selector
 
 from ..const import (
@@ -17,17 +16,17 @@ from ..const import (
     CONF_ASSISTANT_ID,
     CONF_NOTIFICATION_PERSONALITY,
 )
+from . import BaseConfigHandler
 
 _LOGGER = logging.getLogger(__name__)
 
 
-class AIConfigHandler:
+class AIConfigHandler(BaseConfigHandler):
     """Handler for AI configuration steps."""
 
-    def __init__(self, hass: HomeAssistant, config_entry: ConfigEntry) -> None:
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
         """Initialize the AI config handler."""
-        self.hass = hass
-        self.config_entry = config_entry
+        super().__init__(*args, **kwargs)
 
     async def get_ai_settings_schema(self) -> vol.Schema:
         """Build the schema for AI settings with enhanced options."""
@@ -133,9 +132,48 @@ class AIConfigHandler:
 
         return vol.Schema(schema)
 
+    async def async_step_configure_ai(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Show the form for configuring AI settings."""
+        coordinator = self.config_entry.runtime_data
+        if coordinator is None:
+            return self.flow.async_abort(reason="setup_error")
+
+        errors = {}
+
+        if user_input is not None:
+            # Validate that if AI is enabled, an assistant is selected
+            if user_input.get(CONF_AI_ENABLED) and not user_input.get(
+                CONF_ASSISTANT_ID
+            ):
+                errors["base"] = "assistant_required"
+            else:
+                new_options = await self.save_ai_settings(user_input)
+
+                # Inform user about the changes
+                return self.flow.async_create_entry(
+                    title="",
+                    data=new_options,
+                    description="AI settings have been updated. "
+                    + (
+                        "AI features are now enabled. "
+                        if user_input.get(CONF_AI_ENABLED)
+                        else "AI features are disabled. "
+                    ),
+                )
+
+        return self.flow.async_show_form(
+            step_id="configure_ai",
+            data_schema=await self.get_ai_settings_schema(),
+            errors=errors,
+        )
+
     async def save_ai_settings(self, user_input: dict[str, Any]) -> dict[str, Any]:
         """Save AI settings to the coordinator and config entry."""
-        coordinator = self.config_entry.runtime_data
+        coordinator = getattr(self.config_entry, "runtime_data", None)
+        if coordinator is None:
+            raise ValueError("Coordinator not found")
         new_options = self.config_entry.options.copy()
         new_options["ai_settings"] = user_input
 

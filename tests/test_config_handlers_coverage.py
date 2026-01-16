@@ -398,22 +398,28 @@ def test_plant_handler_management_schema(mock_hass, mock_config_entry) -> None:
 
     # Case 1: With growspaces
     coordinator.get_sorted_growspace_options.return_value = [("gs1", "GS 1")]
+    # Populate plants so the schema includes plant_id
+    coordinator.plants = {
+        "p1": MagicMock(strain="Strain A", growspace_id="gs1", row=1, col=1)
+    }
+
     schema = handler.get_plant_management_schema(coordinator)
     assert isinstance(schema, vol.Schema)
     keys = [
         k.schema if isinstance(k, (vol.Optional, vol.Required)) else k
         for k in schema.schema
     ]
-    assert "growspace_id" in keys
+    assert "plant_id" in keys
 
     # Case 2: No growspaces
     coordinator.get_sorted_growspace_options.return_value = []
+    coordinator.plants = {}  # Clear plants
     schema_empty = handler.get_plant_management_schema(coordinator)
     keys_empty = [
         k.schema if isinstance(k, (vol.Optional, vol.Required)) else k
         for k in schema_empty.schema
     ]
-    assert "growspace_id" not in keys_empty
+    assert "plant_id" not in keys_empty
 
 
 @pytest.mark.asyncio

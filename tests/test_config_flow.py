@@ -119,6 +119,12 @@ def mock_coordinator(hass: HomeAssistant, tmp_path: Path):
     coordinator.strain_library.async_load = AsyncMock()
     coordinator.strain_library.get_all = Mock(return_value=[])
 
+    # Notification methods
+    coordinator.get_timed_notifications = Mock(return_value=[])
+    coordinator.async_add_timed_notification = AsyncMock()
+    coordinator.async_update_timed_notification = AsyncMock()
+    coordinator.async_remove_timed_notification = AsyncMock()
+
     return coordinator
 
 
@@ -473,12 +479,17 @@ async def test_options_flow_manage_growspaces_remove(
     flow = OptionsFlowHandler(config_entry)
     flow.hass = hass
 
+    mock_coordinator.growspaces = {"gs1": Mock(name="Growspace 1")}
     result = await flow.async_step_manage_growspaces(
         user_input={"action": "remove", "growspace_id": "gs1"}
     )
+    assert result["type"] == FlowResultType.FORM
+    assert result["step_id"] == "confirm_remove_growspace"
+
+    result = await flow.async_step_confirm_remove_growspace(user_input={})
 
     mock_coordinator.async_remove_growspace.assert_called_once_with("gs1")
-    assert result.get("type") == FlowResultType.FORM
+    assert result.get("type") == FlowResultType.CREATE_ENTRY
 
 
 @pytest.mark.asyncio
@@ -1143,11 +1154,13 @@ async def test_options_flow_coordinator_missing(hass: HomeAssistant) -> None:
     # Test add_growspace
     result = await flow.async_step_add_growspace()
     assert result.get("type") == FlowResultType.ABORT
+    assert result.get("reason") == "setup_error"
 
     # Test update_growspace
     flow._selected_growspace_id = "gs1"
     result = await flow.async_step_update_growspace()
     assert result.get("type") == FlowResultType.ABORT
+    assert result.get("reason") == "setup_error"
 
 
 @pytest.mark.asyncio
@@ -1291,9 +1304,12 @@ async def test_options_flow_add_timed_notification_success(
     result = await flow.async_step_add_timed_notification(user_input=user_input)
 
     assert result.get("type") == FlowResultType.CREATE_ENTRY
-    assert "timed_notifications" in result["data"]
-    assert len(result["data"]["timed_notifications"]) == 1
-    assert result["data"]["timed_notifications"][0]["message"] == "Test notification"
+    mock_coordinator.async_add_timed_notification.assert_called_once_with(
+        "Test notification",
+        "flower",
+        10,
+        ["gs1"],
+    )
 
 
 @pytest.mark.asyncio
@@ -1323,6 +1339,7 @@ async def test_options_flow_manage_timed_notifications_edit(
         options={"timed_notifications": notifications},
     )
     config_entry.add_to_hass(hass)
+    mock_coordinator.get_timed_notifications.return_value = notifications
     config_entry.runtime_data = mock_coordinator
 
     flow = OptionsFlowHandler(config_entry)
@@ -1362,6 +1379,7 @@ async def test_options_flow_edit_timed_notification_success(
         options={"timed_notifications": notifications},
     )
     config_entry.add_to_hass(hass)
+    mock_coordinator.get_timed_notifications.return_value = notifications
     config_entry.runtime_data = mock_coordinator
 
     flow = OptionsFlowHandler(config_entry)
@@ -1378,10 +1396,13 @@ async def test_options_flow_edit_timed_notification_success(
     result = await flow.async_step_edit_timed_notification(user_input=user_input)
 
     assert result.get("type") == FlowResultType.CREATE_ENTRY
-    assert "timed_notifications" in result["data"]
-    assert len(result["data"]["timed_notifications"]) == 1
-    assert result["data"]["timed_notifications"][0]["message"] == "New message"
-    assert result["data"]["timed_notifications"][0]["day"] == 20
+    mock_coordinator.async_update_timed_notification.assert_called_once_with(
+        "123",
+        "New message",
+        "veg",
+        20,
+        ["gs1"],
+    )
 
 
 @pytest.mark.asyncio
@@ -1409,6 +1430,7 @@ async def test_options_flow_manage_timed_notifications_delete(
         options={"timed_notifications": notifications},
     )
     config_entry.add_to_hass(hass)
+    mock_coordinator.get_timed_notifications.return_value = notifications
     config_entry.runtime_data = mock_coordinator
 
     flow = OptionsFlowHandler(config_entry)
@@ -1418,9 +1440,14 @@ async def test_options_flow_manage_timed_notifications_delete(
         user_input={"action": "delete", "notification_id": "123"}
     )
 
+    assert result.get("type") == FlowResultType.FORM
+    assert result.get("step_id") == "delete_timed_notification"
+
+    # Now submit the deletion confirmation
+    result = await flow.async_step_delete_timed_notification(user_input={})
+
     assert result.get("type") == FlowResultType.CREATE_ENTRY
-    assert "timed_notifications" in result["data"]
-    assert len(result["data"]["timed_notifications"]) == 0
+    mock_coordinator.async_remove_timed_notification.assert_called_once_with("123")
 
 
 # ============================================================================
@@ -3092,10 +3119,15 @@ async def test_options_flow_manage_growspaces_remove_error(
         side_effect=Exception("Del Err")
     )
 
+    mock_coordinator.growspaces = {"gs1": Mock(name="Growspace 1")}
     # Need to simulate the call from manage_growspaces
     result = await flow.async_step_manage_growspaces(
         user_input={"action": "remove", "growspace_id": "gs1"}
     )
+    assert result["type"] == FlowResultType.FORM
+    assert result["step_id"] == "confirm_remove_growspace"
+
+    result = await flow.async_step_confirm_remove_growspace(user_input={})
 
     assert result["type"] == FlowResultType.FORM
     assert result["errors"] == {"base": "remove_failed"}

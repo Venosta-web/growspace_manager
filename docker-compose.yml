@@ -1,4 +1,5 @@
 services:
+  # --- Existing Production/Dev Instance ---
   homeassistant-init:
     image: busybox
     volumes:
@@ -18,8 +19,38 @@ services:
     volumes:
       - ha-config:/config
       - ./custom_components:/config/custom_components
+      # Mount Lovelace card for auto-updates
+      - ../lovelace-growspace-manager-card/growspace-manager-card.js:/config/www/growspace-manager-card.js
     ports:
       - "8123:8123"
 
+  # --- New Fresh/Test Instance ---
+  homeassistant-test-init:
+    image: busybox
+    volumes:
+      - ha-config-test:/config
+      # Map your specific test configuration here
+      - ./tests/configs/configuration.yaml:/tmp/configuration.yaml:ro 
+    command: sh -c "[ ! -f /config/configuration.yaml ] && cp /tmp/configuration.yaml /config/ || true; chown -R 1000:1000 /config; chmod -R 755 /config"
+
+  homeassistant-test:
+    container_name: homeassistant-test
+    image: homeassistant/home-assistant:stable
+    restart: unless-stopped
+    user: "1000:1000"
+    depends_on:
+      - homeassistant-test-init
+    environment:
+      - TZ=America/Chicago
+    volumes:
+      - ha-config-test:/config
+      # Shares the same custom_components as the dev instance
+      - ./custom_components:/config/custom_components 
+      # Mount Lovelace card for auto-updates
+      - ../lovelace-growspace-manager-card/growspace-manager-card.js:/config/www/growspace-manager-card.js 
+    ports:
+      - "8124:8123" # Access this instance via http://localhost:8124
+
 volumes:
   ha-config:
+  ha-config-test: # Separate volume to preserve fresh state independently

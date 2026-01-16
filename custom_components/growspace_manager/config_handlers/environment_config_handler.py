@@ -4,9 +4,11 @@ from __future__ import annotations
 
 import ast
 import logging
+from dataclasses import asdict
 from typing import Any
 
 import voluptuous as vol
+from homeassistant.config_entries import ConfigFlowResult
 from homeassistant.helpers import selector
 
 from ..const import (
@@ -27,6 +29,7 @@ from ..const import (
     DEHUMIDIFIER_STAGES,
 )
 from ..dehumidifier_coordinator import DEFAULT_THRESHOLDS
+from ..models import EnvironmentConfig
 from . import BaseConfigHandler
 
 _LOGGER = logging.getLogger(__name__)
@@ -34,6 +37,209 @@ _LOGGER = logging.getLogger(__name__)
 
 class EnvironmentConfigHandler(BaseConfigHandler[dict[str, Any]]):
     """Handle environment configuration steps."""
+
+    async def async_step_select_growspace_for_env(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Show a form to select a growspace before configuring its environment."""
+        coordinator = getattr(self.config_entry, "runtime_data", None)
+        if coordinator is None:
+            return self.flow.async_abort(reason="setup_error")
+
+        growspace_options = coordinator.get_sorted_growspace_options()
+
+        if not growspace_options:
+            return self.flow.async_abort(reason="no_growspaces")
+
+        if user_input is not None:
+            self.flow._selected_growspace_id = user_input["growspace_id"]
+            return await self.async_step_configure_environment()
+
+        schema: dict[Any, Any] = {
+            vol.Required("growspace_id"): selector.SelectSelector(
+                selector.SelectSelectorConfig(
+                    options=[
+                        selector.SelectOptionDict(value=gs_id, label=name)
+                        for gs_id, name in growspace_options
+                    ],
+                    mode=selector.SelectSelectorMode.DROPDOWN,
+                )
+            )
+        }
+        return self.flow.async_show_form(
+            step_id="select_growspace_for_env", data_schema=vol.Schema(schema)
+        )
+
+    async def async_step_configure_environment(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Show the form for configuring environment sensors for a growspace."""
+        coordinator = getattr(self.config_entry, "runtime_data", None)
+        if coordinator is None:
+            return self.flow.async_abort(reason="setup_error")
+        growspace_id = self.flow._selected_growspace_id
+        growspace = coordinator.growspaces.get(growspace_id)
+
+        if not growspace:
+            return self.flow.async_abort(reason="growspace_not_found")
+
+        # Prepare defaults using dataclass
+        if growspace.environment_config:
+            growspace_options = asdict(growspace.environment_config)
+        else:
+            growspace_options = {}
+
+        _LOGGER.debug(
+            "Loading environment config for growspace %s: %s",
+            growspace.name,
+            growspace_options,
+        )
+
+        if user_input is not None:
+            cleaned_input = self.clean_input(user_input)
+            self.flow._env_config_step1 = self.merge_options(
+                growspace_options, cleaned_input
+            )
+
+            # Already filtered by handler, do not filter again to preserve None values for clearing
+            env_config = {
+                k: v
+                for k, v in self.flow._env_config_step1.items()
+                if k not in ("configure_dehumidifier", "configure_advanced")
+            }
+
+            # Check for next steps
+            if self.flow._env_config_step1.get(
+                "configure_dehumidifier"
+            ) and self.flow._env_config_step1.get("control_dehumidifier"):
+                return await self.async_step_configure_dehumidifier()
+
+            # If user unchecked configure_dehumidifier, clear any existing thresholds
+            if not self.flow._env_config_step1.get("configure_dehumidifier"):
+                env_config["dehumidifier_thresholds"] = {}
+
+            if self.flow._env_config_step1.get("configure_advanced"):
+                return await self.async_step_configure_advanced_bayesian()
+
+            growspace.environment_config = EnvironmentConfig.from_dict(env_config)
+            await coordinator.async_save()
+            await coordinator.async_refresh()
+
+            _LOGGER.info(
+                "Environment configuration saved for growspace %s: %s",
+                growspace.name,
+                env_config,
+            )
+            return self.flow.async_create_entry(title="", data={})
+
+        return self.flow.async_show_form(
+            step_id="configure_environment",
+            data_schema=self.get_environment_schema_step1(growspace_options),
+            description_placeholders={"growspace_name": growspace.name},
+        )
+
+    async def async_step_configure_dehumidifier(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Show the form for configuring dehumidifier thresholds."""
+        coordinator = getattr(self.config_entry, "runtime_data", None)
+        if coordinator is None:
+            return self.flow.async_abort(reason="setup_error")
+        growspace_id = self.flow._selected_growspace_id
+        growspace = coordinator.growspaces.get(growspace_id)
+
+        if not growspace:
+            return self.flow.async_abort(reason="growspace_not_found")
+
+        # Load existing thresholds or defaults
+        current_thresholds = (
+            growspace.environment_config.dehumidifier_thresholds
+            if growspace.environment_config
+            else {}
+        )
+
+        if user_input is not None:
+            # Process input back into nested structure
+            new_thresholds: dict[str, Any] = {}
+            for stage in DEHUMIDIFIER_STAGES:
+                new_thresholds[stage] = {}
+                for cycle in ["day", "night"]:
+                    new_thresholds[stage][cycle] = {
+                        "on": user_input[f"{stage}_{cycle}_on"],
+                        "off": user_input[f"{stage}_{cycle}_off"],
+                    }
+
+            # Update config
+            env_config = self.flow._env_config_step1.copy()
+            env_config["dehumidifier_thresholds"] = new_thresholds
+
+            if env_config.get("configure_advanced"):
+                # Update temporary config and move to next step
+                self.flow._env_config_step1 = env_config
+                return await self.async_step_configure_advanced_bayesian()
+
+            # Save and finish
+            env_config.pop("configure_advanced", None)
+            growspace.environment_config = EnvironmentConfig.from_dict(env_config)
+            await coordinator.async_save()
+            await coordinator.async_refresh()
+            return self.flow.async_create_entry(title="", data={})
+
+        return self.flow.async_show_form(
+            step_id="configure_dehumidifier",
+            data_schema=self.get_dehumidifier_schema(current_thresholds),
+            description_placeholders={"growspace_name": growspace.name},
+        )
+
+    async def async_step_configure_advanced_bayesian(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Show the form for advanced configuration of Bayesian probabilities."""
+        coordinator = getattr(self.config_entry, "runtime_data", None)
+        if coordinator is None:
+            return self.flow.async_abort(reason="setup_error")
+        growspace_id = self.flow._selected_growspace_id
+        growspace = coordinator.growspaces.get(growspace_id)
+
+        if not growspace:
+            return self.flow.async_abort(reason="growspace_not_found")
+
+        if user_input is not None:
+            env_config = self.flow._env_config_step1.copy()
+            env_config.pop("configure_advanced", None)
+
+            try:
+                # Update env_config *after* all parsing is successful
+                parsed_user_input = self.parse_advanced_bayesian_input(user_input)
+                env_config.update(parsed_user_input)
+
+            except (ValueError, SyntaxError, TypeError):
+                _LOGGER.warning("Invalid tuple format submitted", exc_info=True)
+                return self.flow.async_show_form(
+                    step_id="configure_advanced_bayesian",
+                    data_schema=self.get_advanced_bayesian_schema(
+                        self.flow._env_config_step1
+                    ),
+                    errors={"base": "invalid_tuple_format"},
+                    description_placeholders={"growspace_name": growspace.name},
+                )
+
+            growspace.environment_config = EnvironmentConfig.from_dict(env_config)
+            await coordinator.async_save()
+            await coordinator.async_refresh()
+
+            _LOGGER.info(
+                "Advanced Bayesian configuration saved for %s: %s",
+                growspace.name,
+                env_config,
+            )
+            return self.flow.async_create_entry(title="", data={})
+
+        return self.flow.async_show_form(
+            step_id="configure_advanced_bayesian",
+            data_schema=self.get_advanced_bayesian_schema(self.flow._env_config_step1),
+            description_placeholders={"growspace_name": growspace.name},
+        )
 
     def get_environment_schema_step1(
         self, growspace_options: dict[str, Any]

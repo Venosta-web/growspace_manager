@@ -6,20 +6,119 @@ import logging
 from typing import Any
 
 import voluptuous as vol
-from homeassistant.config_entries import ConfigEntry
-from homeassistant.core import HomeAssistant
+from homeassistant.config_entries import ConfigFlowResult
 from homeassistant.helpers import selector
+
+from . import BaseConfigHandler
 
 _LOGGER = logging.getLogger(__name__)
 
 
-class NotificationConfigHandler:
+class NotificationConfigHandler(BaseConfigHandler):
     """Handle notification configuration steps."""
 
-    def __init__(self, hass: HomeAssistant, config_entry: ConfigEntry) -> None:
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
         """Initialize the handler."""
-        self.hass = hass
-        self.config_entry = config_entry
+        super().__init__(*args, **kwargs)
+
+    async def async_step_manage_timed_notifications(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Handle timed notification management step."""
+        coordinator = getattr(self.config_entry, "runtime_data", None)
+        if coordinator is None:
+            return self.flow.async_abort(reason="setup_error")
+
+        notifications = coordinator.get_timed_notifications()
+
+        if user_input is not None:
+            action = user_input.get("action")
+            notification_id = user_input.get("notification_id")
+
+            if action == "add":
+                return await self.async_step_add_timed_notification()
+            if action == "edit" and notification_id:
+                self.flow._selected_notification_id = notification_id
+                return await self.async_step_edit_timed_notification()
+            if action == "delete" and notification_id:
+                self.flow._selected_notification_id = notification_id
+                return await self.async_step_delete_timed_notification()
+            if action == "back":
+                return await self.flow.async_step_init()
+
+        return self.flow.async_show_form(
+            step_id="manage_timed_notifications",
+            data_schema=self.get_timed_notification_schema(notifications),
+        )
+
+    async def async_step_add_timed_notification(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Show the form for adding a new timed notification."""
+        coordinator = self.config_entry.runtime_data
+
+        if user_input is not None:
+            await coordinator.async_add_timed_notification(
+                user_input["message"],
+                user_input["trigger_type"],
+                user_input["day"],
+                user_input.get("growspace_ids"),
+            )
+            return self.flow.async_create_entry(title="", data={})
+
+        return self.flow.async_show_form(
+            step_id="add_timed_notification",
+            data_schema=self.get_add_edit_schema(coordinator),
+        )
+
+    async def async_step_edit_timed_notification(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Show the form for editing a timed notification."""
+        coordinator = self.config_entry.runtime_data
+        notification_id = self.flow._selected_notification_id
+        notification = next(
+            (
+                n
+                for n in coordinator.get_timed_notifications()
+                if n["id"] == notification_id
+            ),
+            None,
+        )
+
+        if not notification:
+            return self.flow.async_abort(reason="notification_not_found")
+
+        if user_input is not None:
+            await coordinator.async_update_timed_notification(
+                notification_id,
+                user_input["message"],
+                user_input["trigger_type"],
+                user_input["day"],
+                user_input.get("growspace_ids"),
+            )
+            return self.flow.async_create_entry(title="", data={})
+
+        return self.flow.async_show_form(
+            step_id="edit_timed_notification",
+            data_schema=self.get_add_edit_schema(coordinator, notification),
+        )
+
+    async def async_step_delete_timed_notification(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Confirm deletion of a timed notification."""
+        coordinator = self.config_entry.runtime_data
+        notification_id = self.flow._selected_notification_id
+
+        if user_input is not None:
+            await coordinator.async_remove_timed_notification(notification_id)
+            return self.flow.async_create_entry(title="", data={})
+
+        return self.flow.async_show_form(
+            step_id="delete_timed_notification",
+            description_placeholders={"notification_id": notification_id},
+        )
 
     def get_timed_notification_schema(self, notifications: list[dict]) -> vol.Schema:
         """Build the schema for the timed notification management menu."""
@@ -100,11 +199,14 @@ class NotificationConfigHandler:
 
         if growspace_options:
             schema[
-                vol.Optional("growspace_id", default=notification.get("growspace_id"))
+                vol.Optional(
+                    "growspace_ids", default=notification.get("growspace_ids", [])
+                )
             ] = selector.SelectSelector(
                 selector.SelectSelectorConfig(
                     options=growspace_options,
                     mode=selector.SelectSelectorMode.DROPDOWN,
+                    multiple=True,
                 )
             )
 
