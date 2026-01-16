@@ -17,6 +17,7 @@ from custom_components.growspace_manager.websocket import (
     ATTR_NOTES,
     ATTR_PLANT_ID,
     WS_TYPE_ADD_TIMELINE_NOTE,
+    WS_TYPE_GET_ALERTS,
     WS_TYPE_GET_DATA,
     WS_TYPE_GET_HISTORY_STATS,
     WS_TYPE_GET_IPM_PRESETS,
@@ -172,6 +173,115 @@ async def test_websocket_get_event_log(
         response = await client.receive_json()
         assert response["success"]
         assert response["result"] == {"gs1": []}
+
+
+async def test_websocket_get_alerts(
+    hass: HomeAssistant, hass_ws_client: WebSocketGenerator
+) -> None:
+    """Test getting alerts."""
+    async_register_websocket_api(hass)
+    client = await hass_ws_client(hass)
+
+    with (
+        patch(
+            "custom_components.growspace_manager.websocket.get_instance"
+        ) as mock_recorder,
+        patch(
+            "custom_components.growspace_manager.websocket.session_scope"
+        ) as mock_scope,
+    ):
+        mock_session = MagicMock()
+        mock_scope.return_value.__enter__.return_value = mock_session
+
+        # Mock DB results
+        mock_session.query.return_value.filter.return_value.first.return_value = (1,)
+
+        mock_event = MagicMock()
+        mock_event.time_fired_ts = 1672574400.0
+        mock_event.event_id = 100
+
+        # An alert event
+        mock_data = MagicMock()
+        mock_data.shared_data = json.dumps(
+            {
+                "growspace_id": "gs1",
+                "category": "stress",
+                "sensor_type": "vpd",
+                "severity": 10.0,
+                "start_time": "2023-01-01T12:00:00+00:00",
+                "end_time": "2023-01-01T12:05:00+00:00",
+            }
+        )
+
+        q_mock = mock_session.query.return_value.join.return_value.filter.return_value.order_by.return_value
+        q_mock.limit.return_value = [(mock_event, mock_data)]
+
+        async def mock_executor(func, *args, **kwargs):
+            return func()
+
+        mock_recorder.return_value.async_add_executor_job.side_effect = mock_executor
+
+        await client.send_json(
+            {"id": 1, "type": WS_TYPE_GET_ALERTS, "growspace_id": "gs1"}
+        )
+        response = await client.receive_json()
+        assert response["success"]
+        assert len(response["result"]["gs1"]) == 1
+        assert response["result"]["gs1"][0]["category"] == "stress"
+
+
+async def test_websocket_get_log_filters_spam(
+    hass: HomeAssistant, hass_ws_client: WebSocketGenerator
+) -> None:
+    """Test get_log filters out spam categories."""
+    async_register_websocket_api(hass)
+    client = await hass_ws_client(hass)
+
+    with (
+        patch(
+            "custom_components.growspace_manager.websocket.get_instance"
+        ) as mock_recorder,
+        patch(
+            "custom_components.growspace_manager.websocket.session_scope"
+        ) as mock_scope,
+    ):
+        mock_session = MagicMock()
+        mock_scope.return_value.__enter__.return_value = mock_session
+
+        # Mock DB results with a SPAM event
+        mock_session.query.return_value.filter.return_value.first.return_value = (1,)
+
+        mock_event = MagicMock()
+        mock_event.time_fired_ts = 1672574400.0
+        mock_event.event_id = 100
+
+        mock_data = MagicMock()
+        mock_data.shared_data = json.dumps(
+            {
+                "growspace_id": "gs1",
+                "category": "optimal",  # This is a SPAM category
+                "sensor_type": "vpd",
+                "severity": 10.0,
+                "start_time": "2023-01-01T12:00:00+00:00",
+                "end_time": "2023-01-01T12:05:00+00:00",
+            }
+        )
+
+        q_mock = mock_session.query.return_value.join.return_value.filter.return_value.order_by.return_value
+        q_mock.limit.return_value = [(mock_event, mock_data)]
+
+        async def mock_executor(func, *args, **kwargs):
+            return func()
+
+        mock_recorder.return_value.async_add_executor_job.side_effect = mock_executor
+
+        await client.send_json(
+            {"id": 1, "type": WS_TYPE_GET_LOG, "growspace_id": "gs1"}
+        )
+        response = await client.receive_json()
+        assert response["success"]
+        # Should be filtered out
+        assert len(response["result"]["gs1"]) == 0
 
 
 async def test_websocket_get_history_stats(
@@ -1008,12 +1118,10 @@ async def test_websocket_get_event_log_limits(
         )
         response = await client.receive_json()
         assert response["success"]
-        # Limit (50) + Spam Limit (200) = 250 max
-        # Since logic breaks only when BOTH are met
+        # Limit (50). Spam events are now filtered out entirely by get_log.
         # We provided >50 normal and >200 spammy.
-        # It should process 50 normal + 200 spammy = 250 items then break.
-        # (Assuming no duplicates or misses)
-        assert len(response["result"]["gs1"]) == 250
+        # It should return 50 normal events.
+        assert len(response["result"]["gs1"]) == 50
 
 
 async def test_websocket_nutrient_inventory_service_not_ready(

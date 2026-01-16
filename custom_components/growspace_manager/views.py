@@ -116,7 +116,7 @@ class StrainLibraryImageView(HomeAssistantView):
 
     url = "/api/growspace_manager/v1/images/{filename:.*}"
     name = "api:growspace_manager:v1:images"
-    requires_auth = True  # Or True, depending on if you want auth for images
+    requires_auth = False  # Images need to be accessible by frontend img tags
 
     def __init__(
         self,

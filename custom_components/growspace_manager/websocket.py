@@ -70,6 +70,15 @@ SCHEMA_WS_GET_LOG = websocket_api.BASE_COMMAND_MESSAGE_SCHEMA.extend(
     }
 )
 
+WS_TYPE_GET_ALERTS = f"{DOMAIN}/get_alerts"
+SCHEMA_WS_GET_ALERTS = websocket_api.BASE_COMMAND_MESSAGE_SCHEMA.extend(
+    {
+        vol.Required("type"): WS_TYPE_GET_ALERTS,
+        vol.Optional("growspace_id"): str,
+        vol.Optional("limit"): vol.Any(int, None),
+    }
+)
+
 WS_TYPE_GET_DATA = f"{DOMAIN}/get_data"
 SCHEMA_WS_GET_DATA = websocket_api.BASE_COMMAND_MESSAGE_SCHEMA.extend(
     {
@@ -138,20 +147,24 @@ def _merge_logbook_event(formatted_events_list, data_dict, evt_row):
 
 
 async def websocket_get_event_log(hass: HomeAssistant, connection, msg):  # noqa: C901
-    """Handle get event log command via Recorder."""
+    """Handle get event log command via Recorder.
+
+    Excludes high-frequency environmental alerts (optimal, stress, mold).
+    """
     growspace_id = msg.get("growspace_id")
-    limit = msg.get("limit", 1000)
-    spam_limit = 200
+    limit = msg.get("limit", 50)
+    # Categories to EXCLUDE from the main log
     spam_cats = {"optimal", "stress", "mold"}
 
     try:
         recorder = get_instance(hass)
         end_time = dt_util.utcnow()
-        start_time = end_time - dt_util.dt.timedelta(days=7)
+        # Look back up to 30 days for manual logs since they are sparse
+        start_time = end_time - dt_util.dt.timedelta(days=30)
 
         def _query_events():  # noqa: C901
             formatted = []
-            counts = {"normal": 0, "spammy": 0}
+            count = 0
 
             with session_scope(hass=hass, read_only=True) as session:
                 t_row = (
@@ -172,8 +185,11 @@ async def websocket_get_event_log(hass: HomeAssistant, connection, msg):  # noqa
                     )
                     .order_by(Events.time_fired_ts.desc())
                 )
+
+                # Fetch significantly more than limit to ensure we find non-spam events
+                # even if there are thousands of alerts (e.g. 5000 alerts vs 50 logs)
                 if limit:
-                    q = q.limit(limit * 5)
+                    q = q.limit(limit * 100)
 
                 for e_row, d_row in q:
                     if not d_row or not d_row.shared_data:
@@ -183,14 +199,13 @@ async def websocket_get_event_log(hass: HomeAssistant, connection, msg):  # noqa
                         if growspace_id and d.get("growspace_id") != growspace_id:
                             continue
 
-                        cat = d.get("category")
-                        is_s = cat in spam_cats
-                        c_key = "spammy" if is_s else "normal"
-                        c_lim = spam_limit if is_s else limit
-
-                        if counts[c_key] >= c_lim:
+                        # EXCLUDE spam categories
+                        if d.get("category") in spam_cats:
                             continue
-                        counts[c_key] += 1
+
+                        if count >= limit:
+                            break
+                        count += 1
 
                         if "timestamp" not in d and e_row.time_fired_ts:
                             d["timestamp"] = e_row.time_fired_ts * 1000
@@ -199,8 +214,6 @@ async def websocket_get_event_log(hass: HomeAssistant, connection, msg):  # noqa
                             d["event_id"] = e_row.event_id
                             formatted.append(d)
 
-                        if counts["spammy"] >= spam_limit and counts["normal"] >= limit:
-                            break
                     except (json.JSONDecodeError, AttributeError):
                         continue
             return formatted
@@ -221,6 +234,95 @@ async def websocket_get_event_log(hass: HomeAssistant, connection, msg):  # noqa
         connection.send_result(msg["id"], {growspace_id: []} if growspace_id else {})
     except Exception as err:
         _LOGGER.exception("Error handling websocket_get_event_log")
+        connection.send_error(msg["id"], "unknown_error", str(err))
+
+
+async def websocket_get_alerts(hass: HomeAssistant, connection, msg):  # noqa: C901
+    """Handle get alerts command via Recorder.
+
+    ONLY includes high-frequency environmental alerts (optimal, stress, mold).
+    """
+    growspace_id = msg.get("growspace_id")
+    limit = msg.get("limit", 200)
+    # Categories to INCLUDE in the alerts log
+    alert_cats = {"optimal", "stress", "mold"}
+
+    try:
+        recorder = get_instance(hass)
+        end_time = dt_util.utcnow()
+        start_time = end_time - dt_util.dt.timedelta(days=120)
+
+        def _query_events():  # noqa: C901
+            formatted = []
+            count = 0
+
+            with session_scope(hass=hass, read_only=True) as session:
+                t_row = (
+                    session.query(EventTypes.event_type_id)
+                    .filter(EventTypes.event_type == EVENT_GROWSPACE_LOG_ENTRY)
+                    .first()
+                )
+                if not t_row:
+                    return []
+
+                q = (
+                    session.query(Events, EventData)
+                    .join(EventData, Events.data_id == EventData.data_id, isouter=False)
+                    .filter(
+                        Events.event_type_id == t_row[0],
+                        Events.time_fired_ts >= start_time.timestamp(),
+                        Events.time_fired_ts <= end_time.timestamp(),
+                    )
+                    .order_by(Events.time_fired_ts.desc())
+                )
+
+                # Fetch more than limit because we filter FOR spam
+                if limit:
+                    q = q.limit(limit * 5)
+
+                for e_row, d_row in q:
+                    if not d_row or not d_row.shared_data:
+                        continue
+                    try:
+                        d = json.loads(d_row.shared_data)
+                        if growspace_id and d.get("growspace_id") != growspace_id:
+                            continue
+
+                        # INCLUDE ONLY alert categories
+                        if d.get("category") not in alert_cats:
+                            continue
+
+                        if count >= limit:
+                            break
+                        count += 1
+
+                        if "timestamp" not in d and e_row.time_fired_ts:
+                            d["timestamp"] = e_row.time_fired_ts * 1000
+
+                        if not _merge_logbook_event(formatted, d, e_row):
+                            d["event_id"] = e_row.event_id
+                            formatted.append(d)
+
+                    except (json.JSONDecodeError, AttributeError):
+                        continue
+            return formatted
+
+        evts = await recorder.async_add_executor_job(_query_events)
+        res = {}
+        if growspace_id:
+            res[growspace_id] = evts
+        else:
+            for v in evts:
+                gid = v.get("growspace_id", "global")
+                res.setdefault(gid, []).append(v)
+
+        connection.send_result(msg["id"], res)
+
+    except (ImportError, KeyError) as err:
+        _LOGGER.warning("Recorder not available: %s", err)
+        connection.send_result(msg["id"], {growspace_id: []} if growspace_id else {})
+    except Exception as err:
+        _LOGGER.exception("Error handling websocket_get_alerts")
         connection.send_error(msg["id"], "unknown_error", str(err))
 
 
@@ -711,6 +813,12 @@ def async_register_websocket_api(hass: HomeAssistant) -> None:
         WS_TYPE_GET_LOG,
         websocket_api.async_response(websocket_get_event_log),
         SCHEMA_WS_GET_LOG,
+    )
+    websocket_api.async_register_command(
+        hass,
+        WS_TYPE_GET_ALERTS,
+        websocket_api.async_response(websocket_get_alerts),
+        SCHEMA_WS_GET_ALERTS,
     )
     websocket_api.async_register_command(
         hass,
