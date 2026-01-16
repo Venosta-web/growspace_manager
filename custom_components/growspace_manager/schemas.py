@@ -97,6 +97,7 @@ ADD_PLANTS_SCHEMA = vol.Schema(
         vol.Required(ATTR_STRAIN): str,
         vol.Required("amount"): vol.All(int, vol.Range(min=1)),
         vol.Optional("start_number", default=1): vol.All(int, vol.Range(min=1)),
+        vol.Optional(ATTR_PHENOTYPE): str,
         **_PLANT_DATE_FIELDS,
     }
 )

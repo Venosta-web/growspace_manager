@@ -252,6 +252,7 @@ async def handle_add_plants(
         strain = call.data[ATTR_STRAIN]
         amount = call.data[ATTR_AMOUNT]
         start_number = call.data.get(ATTR_START_NUMBER, 1)
+        base_phenotype = call.data.get(ATTR_PHENOTYPE)
 
         # Parse and handle optional dates
         add_date_fields = [f for f in DATE_FIELDS if f != "transition_date"]
@@ -269,7 +270,10 @@ async def handle_add_plants(
 
         for i in range(amount):
             current_number = start_number + i
-            phenotype = f"{strain} #{current_number}"
+            if base_phenotype:
+                phenotype = f"{base_phenotype} #{current_number}"
+            else:
+                phenotype = f"{strain} #{current_number}"
 
             # Validate capacity
             free_row, free_col = coordinator.validator.find_first_available_position(
