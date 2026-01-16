@@ -313,8 +313,13 @@ async def test_websocket_get_presets(
 ) -> None:
     """Test getting nutrient and IPM presets."""
     hass.data[DOMAIN] = {"coordinator": mock_coordinator}
-    mock_coordinator.nutrient_presets = {"p1": MockPreset("Nutrient Preset")}
-    mock_coordinator.ipm_presets = {"i1": MockPreset("IPM Preset")}
+    nutrient_presets_data = {"p1": {"name": "Nutrient Preset"}}
+    ipm_presets_data = {"i1": {"name": "IPM Preset"}}
+
+    mock_coordinator.nutrient_manager.get_serialization_data.return_value = {
+        "nutrient_presets": nutrient_presets_data,
+        "ipm_presets": ipm_presets_data,
+    }
 
     with patch(
         "custom_components.growspace_manager.websocket.GrowspaceCoordinator.get_for_service_call",

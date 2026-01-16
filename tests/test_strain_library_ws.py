@@ -90,10 +90,10 @@ async def test_websocket_get_nutrient_presets_success(mock_connection) -> None:
     hass = Mock(spec=HomeAssistant)
 
     coordinator = Mock()
-    preset = DummyPreset(id="preset_1", name="Veg A")
-    coordinator.nutrient_presets = {"preset_1": preset}
-
     expected_data = {"preset_1": {"id": "preset_1", "name": "Veg A"}}
+    coordinator.nutrient_manager.get_serialization_data.return_value = {
+        "nutrient_presets": expected_data
+    }
 
     with patch(
         "custom_components.growspace_manager.GrowspaceCoordinator.get_for_service_call",
@@ -110,10 +110,10 @@ async def test_websocket_get_ipm_presets_success(mock_connection) -> None:
     hass = Mock(spec=HomeAssistant)
 
     coordinator = Mock()
-    preset = DummyPreset(id="ipm_1", name="Neem")
-    coordinator.ipm_presets = {"ipm_1": preset}
-
     expected_data = {"ipm_1": {"id": "ipm_1", "name": "Neem"}}
+    coordinator.nutrient_manager.get_serialization_data.return_value = {
+        "ipm_presets": expected_data
+    }
 
     with patch(
         "custom_components.growspace_manager.GrowspaceCoordinator.get_for_service_call",

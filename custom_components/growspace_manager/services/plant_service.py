@@ -137,12 +137,12 @@ class PlantService:
         target_growspace_name: str | None = None,
         transition_date: date | None = None,
     ) -> list[Plant]:
-        """Create multiple clones from a mother plant and place them in the clone growspace.
+        """Create multiple clones from a mother plant.
 
         Args:
             mother_plant_id: The ID of the source mother plant.
             num_clones: The number of clones to create.
-            target_growspace_id: Ignored, defaults to 'clone'.
+            target_growspace_id: The target growspace ID (defaults to 'clone' if not provided).
             target_growspace_name: Ignored.
             transition_date: The date the clones were taken (defaults to today).
 
@@ -152,9 +152,21 @@ class PlantService:
         self._coord.validator.validate_plant_exists(mother_plant_id)
 
         mother = self._coord.plants[mother_plant_id]
-        clone_gs_id = self._coord.ensure_special_growspace(
-            PlantStage.CLONE, "clone", 5, 5
-        )
+
+        # Determine target growspace: use provided ID or default to clone
+        if target_growspace_id:
+            # Validate that the target growspace exists
+            if target_growspace_id not in self._coord.growspaces:
+                raise ValueError(
+                    f"Target growspace '{target_growspace_id}' does not exist"
+                )
+            clone_gs_id = target_growspace_id
+        else:
+            # Default to clone growspace
+            clone_gs_id = self._coord.ensure_special_growspace(
+                PlantStage.CLONE, "clone", 5, 5
+            )
+
         new_plants: list[Plant] = []
 
         # Ensure transition_date is a date object
@@ -179,6 +191,12 @@ class PlantService:
 
             if new_plant := self._coord.plants.get(clone_id):
                 new_plants.append(new_plant)
+                # Fire individual plant_added event for frontend refresh
+                self._coord._fire_event(
+                    "plant_added",
+                    {"plant": self._coord.serializer.serialize_plant(new_plant)},
+                )
+                async_fire_plant_event(self._coord.hass, EVENT_PLANT_ADDED, new_plant)
 
         # Fire clones taken event
         if new_plants:

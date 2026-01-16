@@ -224,6 +224,7 @@ async def test_async_setup_entry_pending_growspace_failure(hass: HomeAssistant) 
 
     hass.data = {DOMAIN: {}}
     hass.http = MagicMock()  # Mock HTTP component
+    hass.http.async_register_static_paths = AsyncMock()
 
     with (
         patch("custom_components.growspace_manager.Store", mock_store_cls),

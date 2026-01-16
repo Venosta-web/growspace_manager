@@ -153,6 +153,7 @@ async def test_async_setup_entry(hass: HomeAssistant) -> None:
     entry.add_to_hass(hass)
     hass.data[DOMAIN] = {}
     hass.http = MagicMock()
+    hass.http.async_register_static_paths = AsyncMock()
     hass.config_entries.async_forward_entry_setups = AsyncMock()
 
     coordinator_mock = AsyncMock()
@@ -347,6 +348,7 @@ async def test_async_setup_entry_with_growspaces(hass: HomeAssistant) -> None:
 
     hass.data[DOMAIN] = {}  # Empty domain data initially
     hass.http = MagicMock()
+    hass.http.async_register_static_paths = AsyncMock()
     hass.config_entries.async_forward_entry_setups = AsyncMock()
 
     coordinator_mock = AsyncMock()
@@ -668,6 +670,7 @@ async def test_pending_growspace_error(hass: HomeAssistant) -> None:
     """Test error handling when creating pending growspace."""
     hass.data.setdefault(DOMAIN, {})
     hass.http = MagicMock()
+    hass.http.async_register_static_paths = AsyncMock()
     # Mock async_forward_entry_setups to avoid integration loading implementation
     hass.config_entries.async_forward_entry_setups = AsyncMock()
 
@@ -737,6 +740,7 @@ async def test_pending_growspace_success(hass: HomeAssistant) -> None:
     """Test successful pending growspace creation."""
     hass.data.setdefault(DOMAIN, {})
     hass.http = MagicMock()
+    hass.http.async_register_static_paths = AsyncMock()
     hass.config_entries.async_forward_entry_setups = AsyncMock()
     hass.config_entries.async_update_entry = MagicMock()
 

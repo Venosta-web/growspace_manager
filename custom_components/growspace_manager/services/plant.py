@@ -330,6 +330,9 @@ async def handle_take_clone(
     transition_datetime = parse_date_field(transition_date_raw) or datetime.now()
     transition_date = transition_datetime.date()
 
+    # Extract target growspace ID (optional)
+    target_growspace_id = call.data.get(ATTR_TARGET_GROWSPACE_ID)
+
     # Number of clones to make (default = 1)
     num_clones = call.data.get(ATTR_NUM_CLONES, 1)
     try:
@@ -341,7 +344,10 @@ async def handle_take_clone(
         _LOGGER.warning("Invalid num_clones provided, defaulting to 1")
 
     _LOGGER.debug(
-        "Handling take_clone for %s, requesting %d clones", mother_plant_id, num_clones
+        "Handling take_clone for %s, requesting %d clones to growspace %s",
+        mother_plant_id,
+        num_clones,
+        target_growspace_id or "default (clone)",
     )
 
     if mother_plant_id not in coordinator.plants:
@@ -353,6 +359,7 @@ async def handle_take_clone(
         clones = await coordinator.async_take_clones(
             mother_plant_id=mother_plant_id,
             num_clones=num_clones,
+            target_growspace_id=target_growspace_id,
             transition_date=transition_date,
         )
         clones_added_count = len(clones)
@@ -361,7 +368,10 @@ async def handle_take_clone(
         raise ServiceValidationError(str(err)) from err
 
     _LOGGER.info(
-        "Successfully took %d clones from %s", clones_added_count, mother_plant_id
+        "Successfully took %d clones from %s to growspace %s",
+        clones_added_count,
+        mother_plant_id,
+        target_growspace_id or "clone",
     )
 
 
