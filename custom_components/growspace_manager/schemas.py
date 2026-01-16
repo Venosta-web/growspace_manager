@@ -394,9 +394,10 @@ WATER_PLANT_SCHEMA = vol.Schema(
 WATER_GROWSPACE_SCHEMA = vol.Schema(
     {
         vol.Required(ATTR_GROWSPACE_ID): vol.All(str, valid_growspace_id),
-        vol.Required("amount_per_plant"): vol.All(
+        vol.Optional("amount_per_plant"): vol.All(
             vol.Coerce(float), vol.Range(min=0.0)
         ),
+        vol.Optional("amount"): vol.All(vol.Coerce(float), vol.Range(min=0.0)),
         vol.Optional("nutrients"): vol.Schema({str: vol.Coerce(float)}),
         vol.Optional(ATTR_PRESET_ID): str,
     }

@@ -401,8 +401,9 @@ def websocket_get_nutrient_presets(
             hass, msg
         )
 
-        response = {pid: asdict(p) for pid, p in coordinator.nutrient_presets.items()}
-        connection.send_result(msg["id"], response)
+        # Use the manager's serialization logic to ensure consistency
+        data = coordinator.nutrient_manager.get_serialization_data()
+        connection.send_result(msg["id"], data["nutrient_presets"])
     except Exception as err:
         _LOGGER.exception("Error handling websocket_get_nutrient_presets")
         connection.send_error(msg["id"], "unknown_error", str(err))
@@ -418,8 +419,9 @@ def websocket_get_ipm_presets(
             hass, msg
         )
 
-        response = {pid: asdict(p) for pid, p in coordinator.ipm_presets.items()}
-        connection.send_result(msg["id"], response)
+        # Use the manager's serialization logic to ensure consistency
+        data = coordinator.nutrient_manager.get_serialization_data()
+        connection.send_result(msg["id"], data["ipm_presets"])
     except Exception as err:
         _LOGGER.exception("Error handling websocket_get_ipm_presets")
         connection.send_error(msg["id"], "unknown_error", str(err))

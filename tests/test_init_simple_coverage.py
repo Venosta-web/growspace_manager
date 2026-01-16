@@ -107,10 +107,11 @@ async def test_websocket_simple_getters_error_handling(hass: HomeAssistant) -> N
     # 2. websocket_get_nutrient_presets
     # Mock GrowspaceCoordinator.get_for_service_call to return our mock
     coordinator = MagicMock()
+    coordinator.nutrient_manager = MagicMock()
 
-    # Make accessing nutrient_presets raise exception
-    type(coordinator).nutrient_presets = PropertyMock(
-        side_effect=Exception("Nutrient Fail")
+    # Make get_serialization_data raise exception
+    coordinator.nutrient_manager.get_serialization_data.side_effect = Exception(
+        "Nutrient Fail"
     )
 
     with patch(
@@ -121,7 +122,10 @@ async def test_websocket_simple_getters_error_handling(hass: HomeAssistant) -> N
         assert connection.send_error.call_count == 3
 
     # 3. websocket_get_ipm_presets
-    type(coordinator).ipm_presets = PropertyMock(side_effect=Exception("IPM Fail"))
+    # Re-setup mock for second call
+    coordinator.nutrient_manager.get_serialization_data.side_effect = Exception(
+        "IPM Fail"
+    )
 
     with patch(
         "custom_components.growspace_manager.coordinator.GrowspaceCoordinator.get_for_service_call",
@@ -248,7 +252,9 @@ async def test_websocket_event_log_complex_logic(hass: HomeAssistant) -> None:
             "custom_components.growspace_manager.websocket.session_scope",
             return_value=context_manager_mock,
         ),
-        patch("custom_components.growspace_manager.websocket.get_instance") as get_instance_mock,
+        patch(
+            "custom_components.growspace_manager.websocket.get_instance"
+        ) as get_instance_mock,
     ):
         # We need to mock async_add_executor_job to run the query function immediately
         # The integration code calls: await recorder.async_add_executor_job(_query_events)

@@ -1,12 +1,15 @@
 """Unit test for coordinator pump logic."""
 
+from unittest.mock import AsyncMock, MagicMock, patch
+
 import pytest
-from unittest.mock import MagicMock, AsyncMock, patch
+from homeassistant.core import HomeAssistant
+
 from custom_components.growspace_manager.coordinator import GrowspaceCoordinator
 from custom_components.growspace_manager.models import (
     Growspace,
-    IrrigationConfig,
     GrowspaceType,
+    IrrigationConfig,
 )
 
 
@@ -31,8 +34,8 @@ def mock_managers():
 
 @pytest.mark.asyncio
 async def test_async_update_irrigation_config_normalizes_empty_strings(
-    hass, mock_managers
-):
+    hass: HomeAssistant, mock_managers
+) -> None:
     """Test that empty strings in pump entities are converted to None."""
     entry = MagicMock()
 

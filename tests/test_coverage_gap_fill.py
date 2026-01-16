@@ -3,6 +3,7 @@
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from homeassistant.core import HomeAssistant
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.growspace_manager.config_handlers import BaseConfigHandler
@@ -45,19 +46,21 @@ class MockFlow:
 
 
 @pytest.fixture
-def mock_flow(hass, mock_entry):
+def mock_flow(hass: HomeAssistant, mock_entry: MockConfigEntry) -> MockFlow:
     return MockFlow(hass, mock_entry)
 
 
 @pytest.fixture
-def mock_entry(hass):
+def mock_entry(hass: HomeAssistant) -> MockConfigEntry:
     entry = MockConfigEntry(domain=DOMAIN, data={}, options={})
     entry.add_to_hass(hass)
     return entry
 
 
 @pytest.fixture
-def mock_coordinator(hass, mock_entry):
+def mock_coordinator(
+    hass: HomeAssistant, mock_entry: MockConfigEntry
+) -> GrowspaceCoordinator:
     coordinator = MagicMock(spec=GrowspaceCoordinator)
     coordinator.hass = hass
     coordinator.config_entry = mock_entry
@@ -69,7 +72,9 @@ def mock_coordinator(hass, mock_entry):
 
 
 @pytest.mark.asyncio
-async def test_base_config_handler_placeholders(hass, mock_entry, mock_flow) -> None:
+async def test_base_config_handler_placeholders(
+    hass: HomeAssistant, mock_entry: MockConfigEntry, mock_flow: MockFlow
+) -> None:
     """Cover missed lines in BaseConfigHandler placeholders."""
     # 1. Orchestrator style (already covered by other tests, but good to be explicit here)
     handler = BaseConfigHandler(mock_flow)
@@ -120,7 +125,10 @@ async def test_evaluator_strategy_placeholders() -> None:
 
 @pytest.mark.asyncio
 async def test_growspace_config_handler_gaps(
-    hass, mock_entry, mock_flow, mock_coordinator
+    hass: HomeAssistant,
+    mock_entry: MockConfigEntry,
+    mock_flow: MockFlow,
+    mock_coordinator: GrowspaceCoordinator,
 ) -> None:
     """Cover missed lines in GrowspaceConfigHandler."""
     handler = GrowspaceConfigHandler(mock_flow)
@@ -213,7 +221,10 @@ async def test_growspace_config_handler_gaps(
 
 @pytest.mark.asyncio
 async def test_notification_config_handler_gaps(
-    hass, mock_entry, mock_flow, mock_coordinator
+    hass: HomeAssistant,
+    mock_entry: MockConfigEntry,
+    mock_flow: MockFlow,
+    mock_coordinator: GrowspaceCoordinator,
 ) -> None:
     """Cover missed lines in NotificationConfigHandler."""
     handler = NotificationConfigHandler(mock_flow)
@@ -243,7 +254,9 @@ async def test_notification_config_handler_gaps(
 
 
 @pytest.mark.asyncio
-async def test_coordinator_setters_and_gaps(hass, mock_coordinator) -> None:
+async def test_coordinator_setters_and_gaps(
+    hass: HomeAssistant, mock_coordinator: GrowspaceCoordinator
+) -> None:
     """Cover missed setters and branches in GrowspaceCoordinator."""
 
     entry = MockConfigEntry(domain=DOMAIN)
@@ -306,7 +319,9 @@ async def test_coordinator_setters_and_gaps(hass, mock_coordinator) -> None:
 
 
 @pytest.mark.asyncio
-async def test_coordinator_extended_coverage(hass, mock_entry) -> None:
+async def test_coordinator_extended_coverage(
+    hass: HomeAssistant, mock_entry: MockConfigEntry
+) -> None:
     """Cover remaining gaps in GrowspaceCoordinator."""
 
     # Use a real coordinator for these tests

@@ -1,8 +1,6 @@
-import pytest
-from unittest.mock import MagicMock, patch
-from datetime import datetime
+from unittest.mock import MagicMock
 
-from homeassistant.const import STATE_UNAVAILABLE, STATE_UNKNOWN
+import pytest
 from homeassistant.core import HomeAssistant
 
 from custom_components.growspace_manager.binary_sensor import (
@@ -18,7 +16,6 @@ from custom_components.growspace_manager.models import (
 from custom_components.growspace_manager.strategies.optimal import (
     OptimalConditionsEvaluatorStrategy,
 )
-from custom_components.growspace_manager.utils import VPDCalculator
 
 
 @pytest.fixture
@@ -31,7 +28,7 @@ def mock_coordinator():
 
 
 @pytest.mark.asyncio
-async def test_minimal_sensor_vpd_calculation(mock_coordinator):
+async def test_minimal_sensor_vpd_calculation(mock_coordinator) -> None:
     """Test that VPD is calculated when missing from config but temp/humidity exist."""
 
     # 1. Setup Environment with only Temp & Humidity

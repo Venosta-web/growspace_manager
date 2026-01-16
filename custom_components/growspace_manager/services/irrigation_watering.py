@@ -64,12 +64,13 @@ async def handle_water_growspace(
     """
     try:
         growspace_id: str = call.data["growspace_id"]
-        amount_per_plant: float = call.data["amount_per_plant"]
+        amount: float | None = call.data.get("amount")
+        amount_per_plant: float | None = call.data.get("amount_per_plant")
         nutrients: dict[str, float] | None = call.data.get("nutrients")
         preset_id: str | None = call.data.get("preset_id")
 
         plants_watered = await coordinator.async_water_growspace(
-            growspace_id, amount_per_plant, nutrients, preset_id
+            growspace_id, amount_per_plant, nutrients, preset_id, amount=amount
         )
 
         _LOGGER.info(

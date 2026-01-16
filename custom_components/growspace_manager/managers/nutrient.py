@@ -51,7 +51,7 @@ class NutrientManager:
         if preset_id and preset_id in self.presets:
             preset = self.presets[preset_id]
             preset.name = name
-            preset.nutrients = nutrients  # type: ignore[arg-type]
+            preset.items = nutrients  # type: ignore[arg-type]
             preset.stage = stage
             preset.min_days_in_stage = min_days_in_stage
         else:
@@ -198,8 +198,26 @@ class NutrientManager:
 
     def get_serialization_data(self) -> dict[str, Any]:
         """Return data for serialization."""
+        # Convert presets to dict and ensure 'items' is serialized as 'nutrients'
+        # for frontend compatibility
+        nutrient_presets_serialized = {}
+        for pid, preset in self.presets.items():
+            preset_dict = asdict(preset)
+            # Convert 'items' to 'nutrients' for backward compatibility with frontend
+            if "items" in preset_dict:
+                preset_dict["nutrients"] = preset_dict.pop("items")
+            nutrient_presets_serialized[pid] = preset_dict
+
+        ipm_presets_serialized = {}
+        for pid, preset in self.ipm_presets.items():
+            preset_dict = asdict(preset)
+            # IPM presets also use 'items', keep consistent
+            if "items" in preset_dict:
+                preset_dict["items"] = preset_dict["items"]
+            ipm_presets_serialized[pid] = preset_dict
+
         return {
-            "nutrient_presets": {pid: asdict(p) for pid, p in self.presets.items()},
-            "ipm_presets": {pid: asdict(p) for pid, p in self.ipm_presets.items()},
+            "nutrient_presets": nutrient_presets_serialized,
+            "ipm_presets": ipm_presets_serialized,
             "nutrient_inventory": asdict(self.inventory) if self.inventory else {},
         }

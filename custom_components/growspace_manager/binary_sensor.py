@@ -59,7 +59,7 @@ from .strategies.mold import MoldRiskEvaluatorStrategy
 from .strategies.optimal import OptimalConditionsEvaluatorStrategy
 from .strategies.stress import StressEvaluatorStrategy
 from .trend_analyzer import TrendAnalyzer
-from .utils import calculate_days_since, VPDCalculator
+from .utils import VPDCalculator, calculate_days_since
 
 _LOGGER = logging.getLogger(__name__)
 

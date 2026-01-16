@@ -323,7 +323,7 @@ async def register_services(
         ),
         (
             GrowspaceService.BATCH_ACTION,
-            wrap(batch.handle_batch_action, True),
+            wrap(batch.handle_batch_action, False),
             BATCH_ACTION_SCHEMA,
         ),
         (

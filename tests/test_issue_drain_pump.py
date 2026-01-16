@@ -3,6 +3,7 @@
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+from homeassistant.core import HomeAssistant
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.growspace_manager.config_flow import OptionsFlowHandler
@@ -11,7 +12,7 @@ from custom_components.growspace_manager.models import IrrigationConfig
 
 
 @pytest.fixture
-def mock_coordinator(hass):
+def mock_coordinator(hass: HomeAssistant):
     """Create a mock GrowspaceCoordinator for testing."""
     coordinator = MagicMock()
     coordinator.hass = hass
@@ -25,7 +26,9 @@ def mock_coordinator(hass):
 
 
 @pytest.mark.asyncio
-async def test_irrigation_config_optional_drain_pump(hass, mock_coordinator) -> None:
+async def test_irrigation_config_optional_drain_pump(
+    hass: HomeAssistant, mock_coordinator
+) -> None:
     """Test that drain_pump_entity can be set to None."""
 
     # Setup Config Entry with Mock Coordinator
@@ -75,7 +78,9 @@ async def test_irrigation_config_optional_drain_pump(hass, mock_coordinator) -> 
 
 
 @pytest.mark.asyncio
-async def test_irrigation_config_omitted_drain_pump(hass, mock_coordinator) -> None:
+async def test_irrigation_config_omitted_drain_pump(
+    hass: HomeAssistant, mock_coordinator
+) -> None:
     """Test that drain_pump_entity stays None if omitted/empty."""
 
     # Setup Config Entry
@@ -146,7 +151,7 @@ async def test_irrigation_config_omitted_drain_pump(hass, mock_coordinator) -> N
 
 @pytest.mark.asyncio
 async def test_irrigation_config_empty_string_drain_pump(
-    hass, mock_coordinator
+    hass: HomeAssistant, mock_coordinator
 ) -> None:
     """Test that drain_pump_entity accepts empty string and converts to None."""
 

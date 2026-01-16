@@ -51,6 +51,7 @@ from .events import (
     async_fire_plant_event,
 )
 from .exceptions import (
+    GrowspaceError,
     GrowspaceNotFoundError,
     ValidationChangeError,
 )
@@ -1483,23 +1484,25 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
     async def async_water_growspace(
         self,
         growspace_id: str,
-        amount_per_plant: float,
+        amount_per_plant: float | None = None,
         nutrients: dict[str, float] | None = None,
         preset_id: str | None = None,
+        amount: float | None = None,
     ) -> int:
-        """Record a watering event for all plants in a growspace.
-
-        Args:
-            growspace_id: The ID of the growspace to water.
-            amount_per_plant: The amount of water per plant in liters.
-            nutrients: Optional dict of nutrient name to concentration (ml/L).
-            preset_id: Optional ID of a nutrient preset to apply.
-
-        Returns:
-            The number of plants watered.
-        """
+        """Record a watering event for all plants in a growspace."""
         self.validator.validate_growspace_exists(growspace_id)
         plants = self.get_growspace_plants(growspace_id)
+
+        if not plants:
+            return 0
+
+        # Determine amount per plant if total amount is provided
+        if amount is not None:
+            amount_per_plant = amount / len(plants)
+        elif amount_per_plant is None:
+            raise GrowspaceError(
+                "Either 'amount' (total) or 'amount_per_plant' is required"
+            )
 
         for plant in plants:
             await self._water_plant_internal(
