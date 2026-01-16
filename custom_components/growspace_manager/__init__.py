@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import logging
+import pathlib
 from typing import Any
 
+from homeassistant.components.http import StaticPathConfig
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers import config_validation as cv
@@ -68,6 +70,19 @@ async def async_setup_entry(hass: HomeAssistant, entry: GrowspaceConfigEntry) ->
 
         # Register WebSocket API commands
         async_register_websocket_api(hass)
+
+        # Register static path for assets
+        static_path = pathlib.Path(__file__).parent / "static"
+        if static_path.exists():
+            await hass.http.async_register_static_paths(
+                [
+                    StaticPathConfig(
+                        "/growspace_manager/static",
+                        str(static_path),
+                        cache_headers=False,
+                    )
+                ]
+            )
 
     # Retrieve global Strain Library
     strain_library_instance = hass.data[DOMAIN]["strain_library"]
