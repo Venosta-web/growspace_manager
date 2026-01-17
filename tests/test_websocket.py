@@ -554,8 +554,12 @@ async def test_websocket_get_event_log_internals(
             }
         )
 
-        # Mock query chain
-        q_mock = mock_session.query.return_value.join.return_value.filter.return_value.order_by.return_value
+        # Mock query chain - now includes additional .filter() calls for spam exclusion
+        q_base = mock_session.query.return_value.join.return_value.filter.return_value
+        # The new code adds .filter() calls in a loop for spam categories
+        # We need to make filter() return itself to allow chaining
+        q_base.filter.return_value = q_base
+        q_mock = q_base.order_by.return_value
         q_mock.limit.return_value = [(mock_event, mock_data)]
 
         # Execute the inner function synchronously via side_effect
@@ -867,7 +871,7 @@ async def test_websocket_get_event_log_bad_date_merge(
             shared_data=json.dumps(
                 {
                     "growspace_id": "gs1",
-                    "category": "alert",
+                    "category": "user_action",  # Changed from "alert" to avoid SQL filtering
                     "sensor_type": "temp",
                     "severity": 5,
                     "start_time": "BAD-DATE",
@@ -881,7 +885,7 @@ async def test_websocket_get_event_log_bad_date_merge(
             shared_data=json.dumps(
                 {
                     "growspace_id": "gs1",
-                    "category": "alert",
+                    "category": "user_action",  # Changed from "alert" to avoid SQL filtering
                     "sensor_type": "temp",
                     "severity": 5,
                     "start_time": "BAD-DATE",
@@ -890,7 +894,10 @@ async def test_websocket_get_event_log_bad_date_merge(
             )
         )
 
-        q_mock = mock_session.query.return_value.join.return_value.filter.return_value.order_by.return_value
+        # Mock query chain - account for SQL filtering
+        q_base = mock_session.query.return_value.join.return_value.filter.return_value
+        q_base.filter.return_value = q_base
+        q_mock = q_base.order_by.return_value
         q_mock.limit.return_value = [(evt1, data1), (evt2, data2)]
 
         async def mock_executor(func, *args, **kwargs):
@@ -978,7 +985,10 @@ async def test_websocket_get_event_log_filtering(
             shared_data=json.dumps({"growspace_id": "gs1", "category": "normal"})
         )
 
-        q_mock = mock_session.query.return_value.join.return_value.filter.return_value.order_by.return_value
+        # Mock query chain - account for SQL filtering
+        q_base = mock_session.query.return_value.join.return_value.filter.return_value
+        q_base.filter.return_value = q_base
+        q_mock = q_base.order_by.return_value
         q_mock.limit.return_value = [(evt1, data1), (evt2, data2), (evt3, data3)]
 
         async def mock_executor(func, *args, **kwargs):
@@ -1053,9 +1063,8 @@ async def test_websocket_get_event_log_limits(
     with patch(
         "custom_components.growspace_manager.websocket.get_instance"
     ) as mock_recorder:
-        # Create mixed events to hit break condition
-        # Limit = 50. Spam Limit = 200.
-        # We need 50 normal and 200 spammy to trigger break.
+        # With SQL-level filtering, spam events don't reach Python
+        # Test that we correctly return limited results and handle bad JSON
         events = []
 
         # 50 Normal events
@@ -1072,17 +1081,7 @@ async def test_websocket_get_event_log_limits(
             )
 
         # 210 Spammy events
-        for i in range(210):
-            events.append(
-                (
-                    MagicMock(time_fired_ts=1000 + i, event_id=1000 + i),
-                    MagicMock(
-                        shared_data=json.dumps(
-                            {"growspace_id": "gs1", "category": "stress"}
-                        )
-                    ),
-                )
-            )
+        # SQL filtering excludes spam events at DB level
 
         # Add a bad JSON one
         events.append(
@@ -1105,7 +1104,9 @@ async def test_websocket_get_event_log_limits(
 
                 # Chain: query.join.filter.order_by -> then .limit()
                 # If limit IS provided:
-                q_mock = mock_session.query.return_value.join.return_value.filter.return_value.order_by.return_value
+                q_base = mock_session.query.return_value.join.return_value.filter.return_value
+                q_base.filter.return_value = q_base
+                q_mock = q_base.order_by.return_value
                 q_mock.limit.return_value = events
                 q_mock.__iter__.return_value = events
 

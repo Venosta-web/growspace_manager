@@ -58,30 +58,41 @@ class GrowAssistant:
             raise ServiceValidationError(f"Growspace {growspace_id} not found.")
 
         # Environment sensor data
-        env_config = getattr(growspace, "environment_config", {})
+        env_config = getattr(growspace, "environment_config", None)
         sensor_data = {}
         sensor_states = {}
 
-        for key in [
-            "temperature_sensor",
-            "humidity_sensor",
-            "vpd_sensor",
-            "co2_sensor",
-            "light_sensor",
-            "circulation_fan",
-        ]:
-            entity_id = env_config.get(key)
-            if entity_id:
-                state = self.hass.states.get(entity_id)
-                if state and state.state not in (STATE_UNAVAILABLE, STATE_UNKNOWN):
-                    value = state.state
-                    unit = state.attributes.get("unit_of_measurement", "")
-                    sensor_data[key] = f"{value} {unit}".strip()
-                    sensor_states[key] = {
-                        "value": value,
-                        "unit": unit,
-                        "attributes": dict(state.attributes),
-                    }
+        if env_config:
+            # Map of context key -> attribute name in EnvironmentConfig
+            # Note: 'circulation_fan' became 'circulation_fan_entity' in the recent refactor
+            sensor_map = [
+                ("temperature_sensor", "temperature_sensor"),
+                ("humidity_sensor", "humidity_sensor"),
+                ("vpd_sensor", "vpd_sensor"),
+                ("co2_sensor", "co2_sensor"),
+                ("light_sensor", "light_sensor"),
+                ("circulation_fan", "circulation_fan_entity"),
+                ("soil_moisture_sensor", "soil_moisture_sensor"),
+            ]
+
+            for context_key, attr_name in sensor_map:
+                # Robustly handle both legacy dict and new dataclass
+                if isinstance(env_config, dict):
+                    entity_id = env_config.get(attr_name) or env_config.get(context_key)
+                else:
+                    entity_id = getattr(env_config, attr_name, None)
+
+                if entity_id:
+                    state = self.hass.states.get(entity_id)
+                    if state and state.state not in (STATE_UNAVAILABLE, STATE_UNKNOWN):
+                        value = state.state
+                        unit = state.attributes.get("unit_of_measurement", "")
+                        sensor_data[context_key] = f"{value} {unit}".strip()
+                        sensor_states[context_key] = {
+                            "value": value,
+                            "unit": unit,
+                            "attributes": dict(state.attributes),
+                        }
 
         # Bayesian sensor analysis
         bayesian_data = self._gather_bayesian_sensor_data(growspace_id)

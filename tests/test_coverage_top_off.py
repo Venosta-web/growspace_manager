@@ -340,12 +340,12 @@ async def test_strain_library_image_view_coverage(hass: HomeAssistant) -> None:
 async def test_websocket_get_event_log_spam_filter_coverage(
     hass: HomeAssistant,
 ) -> None:
-    """Test websocket_get_event_log spam filter limits."""
+    """Test websocket_get_event_log with SQL-level spam filtering."""
     connection = MagicMock()
     msg = {"id": 1, "type": "growspace_manager/get_event_log", "limit": 10}
 
-    # Create 300 spammy events and 20 normal events
-    spam_data = json.dumps({"category": "optimal", "growspace_id": "gs1"})
+    # With SQL-level filtering, only normal events are returned from DB
+    # Spam events (optimal/stress/mold) are excluded at SQL query level
     normal_data = json.dumps({"category": "info", "growspace_id": "gs1"})
 
     class MockEvent:
@@ -357,15 +357,18 @@ async def test_websocket_get_event_log_spam_filter_coverage(
         def __init__(self, shared_data) -> None:
             self.shared_data = shared_data
 
+    # SQL filtering means only non-spam events in result
     events_to_return = []
-    # Mix them a bit
-    for i in range(250):
-        events_to_return.append((MockEvent(i, 1000.0 + i), MockData(spam_data)))
     for i in range(20):
-        events_to_return.append((MockEvent(300 + i, 2000.0 + i), MockData(normal_data)))
+        events_to_return.append((MockEvent(i, 2000.0 + i), MockData(normal_data)))
 
-    mock_query = MagicMock()
-    mock_query.join.return_value.filter.return_value.order_by.return_value.limit.return_value = events_to_return
+    # Mock query chain with SQL filtering
+    mock_query_base = MagicMock()
+    mock_filter_result = MagicMock()
+    mock_query_base.join.return_value.filter.return_value = mock_filter_result
+    # The SQL filtering adds .filter() calls in a loop for spam categories
+    mock_filter_result.filter.return_value = mock_filter_result
+    mock_filter_result.order_by.return_value.limit.return_value = events_to_return
 
     # Mock EventTypes query
     mock_session = MagicMock()
@@ -373,7 +376,7 @@ async def test_websocket_get_event_log_spam_filter_coverage(
         MagicMock(
             filter=MagicMock(return_value=MagicMock(first=MagicMock(return_value=(1,))))
         ),
-        mock_query,
+        mock_query_base,
     ]
 
     with (
@@ -397,9 +400,10 @@ async def test_websocket_get_event_log_spam_filter_coverage(
         connection.send_result.assert_called_once()
         result = connection.send_result.call_args[0][1]
 
-        # gs1 should have spam_limit (200) + limit (10) = 210 events
+        # With SQL filtering, we only get the 10 requested normal events
+        # (limit=10), not spam events
         assert "gs1" in result
-        assert len(result["gs1"]) == 210
+        assert len(result["gs1"]) == 10
 
 
 # --- Targeted Coverage Gaps ---

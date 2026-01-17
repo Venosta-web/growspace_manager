@@ -32,6 +32,7 @@ from .const import (
     CANONICAL_ID_VEG,
     CATEGORY_IPM,
     CATEGORY_TRAINING,
+    CATEGORY_WATERING,
     CONF_HUMIDITY_SENSOR,
     CONF_TEMP_SENSOR,
     CONF_VPD_SENSOR,
@@ -72,6 +73,7 @@ from .models import (
 from .notification_manager import NotificationManager
 from .plant_lifecycle_manager import PlantLifecycleManager
 from .serializers import GrowspaceSerializer
+from .services.environment_reporter import EnvironmentReporter
 from .services.growspace_service import GrowspaceService
 from .services.nutrient_inventory import NutrientInventoryService
 from .services.plant_service import PlantService
@@ -258,6 +260,9 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
             self.strain_library = StrainLibrary(hass)
         else:
             self.strain_library = strain_library
+
+        # Initialize Environment Reporter
+        self.environment_reporter = EnvironmentReporter(hass, self)
 
         self.validator = GrowspaceValidator(self)
         self.storage_manager = StorageManager(self, hass)
@@ -674,6 +679,8 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
 
     async def async_shutdown(self) -> None:
         """Perform shutdown tasks, ensuring data is persisted."""
+        if hasattr(self, "environment_reporter"):
+            self.environment_reporter.unload()
         await self.storage_manager.async_force_save()
 
     async def async_load(self) -> None:
@@ -683,6 +690,10 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
         await self._ensure_default_growspaces()
         # Update Data Repository with loaded data
         self.data_repository.load_data(self.growspaces, self.plants)
+
+        # Initialize environment reporter after data load
+        if hasattr(self, "environment_reporter"):
+            await self.environment_reporter.async_initialize()
 
     def migrate_plant_image_paths(self) -> int:
         """Migrate plant image paths from .jpg to .webp.
@@ -1417,7 +1428,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
             end_time=now_iso,
             duration_sec=0,
             severity=0.0,
-            category="environmental",
+            category=CATEGORY_WATERING,
             reasons=reasons,
         )
         self.add_event(plant.growspace_id, event)

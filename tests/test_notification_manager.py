@@ -142,7 +142,10 @@ async def test_async_send_notification_ai_rewrite(
         }
     }
 
-    with patch("homeassistant.components.conversation.async_converse") as mock_converse:
+    with patch(
+        "custom_components.growspace_manager.notification_manager.conversation.async_converse",
+        new_callable=AsyncMock,
+    ) as mock_converse:
         mock_result = MagicMock()
         mock_result.response.speech = {
             "plain": {"speech": "Ahoy! Test Message Rewrite"}
@@ -248,7 +251,8 @@ async def test_rewrite_with_ai_personalities(
         manager._last_notification_sent.clear()
 
         with patch(
-            "homeassistant.components.conversation.async_converse"
+            "custom_components.growspace_manager.notification_manager.conversation.async_converse",
+            new_callable=AsyncMock,
         ) as mock_converse:
             mock_result = MagicMock()
             mock_result.response.speech = {
@@ -292,7 +296,10 @@ async def test_rewrite_with_ai_sensor_formatting(
 
     sensor_states = {"temp": 25, "humidity": 60, "fan": True, "light": None}
 
-    with patch("homeassistant.components.conversation.async_converse") as mock_converse:
+    with patch(
+        "custom_components.growspace_manager.notification_manager.conversation.async_converse",
+        new_callable=AsyncMock,
+    ) as mock_converse:
         mock_result = MagicMock()
         mock_result.response.speech = {"plain": {"speech": "Rewritten"}}
         mock_converse.return_value = mock_result
@@ -322,7 +329,10 @@ async def test_rewrite_with_ai_truncation(
         }
     }
 
-    with patch("homeassistant.components.conversation.async_converse") as mock_converse:
+    with patch(
+        "custom_components.growspace_manager.notification_manager.conversation.async_converse",
+        new_callable=AsyncMock,
+    ) as mock_converse:
         # Case 1: Truncate
         result1 = MagicMock()
         long_response = "This is a long response"  # 23 chars. 10 < 23 < 60.
@@ -360,7 +370,10 @@ async def test_rewrite_with_ai_empty_response(
         }
     }
 
-    with patch("homeassistant.components.conversation.async_converse") as mock_converse:
+    with patch(
+        "custom_components.growspace_manager.notification_manager.conversation.async_converse",
+        new_callable=AsyncMock,
+    ) as mock_converse:
         mock_result = MagicMock()
         mock_result.response.speech = {}  # Empty speech
         mock_converse.return_value = mock_result
@@ -383,7 +396,8 @@ async def test_rewrite_with_ai_exception(
     }
 
     with patch(
-        "homeassistant.components.conversation.async_converse",
+        "custom_components.growspace_manager.notification_manager.conversation.async_converse",
+        new_callable=AsyncMock,
         side_effect=Exception("AI Error"),
     ):
         await manager.async_send_notification(GROWSPACE_ID, "Title", "Original Message")

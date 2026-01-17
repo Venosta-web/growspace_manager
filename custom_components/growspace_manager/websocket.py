@@ -175,6 +175,9 @@ async def websocket_get_event_log(hass: HomeAssistant, connection, msg):  # noqa
                 if not t_row:
                     return []
 
+                # Build SQL-level filters to exclude spam categories
+                # This ensures we fetch only relevant events, preventing action events
+                # from being pushed out when there are thousands of spam alerts
                 q = (
                     session.query(Events, EventData)
                     .join(EventData, Events.data_id == EventData.data_id, isouter=False)
@@ -183,13 +186,23 @@ async def websocket_get_event_log(hass: HomeAssistant, connection, msg):  # noqa
                         Events.time_fired_ts >= start_time.timestamp(),
                         Events.time_fired_ts <= end_time.timestamp(),
                     )
-                    .order_by(Events.time_fired_ts.desc())
                 )
 
-                # Fetch significantly more than limit to ensure we find non-spam events
-                # even if there are thousands of alerts (e.g. 5000 alerts vs 50 logs)
+                # Exclude spam categories at SQL level using JSON pattern matching
+                # This works with both SQLite (default) and PostgreSQL
+                for cat in spam_cats:
+                    # Match both compact and spaced JSON formatting
+                    q = q.filter(
+                        ~EventData.shared_data.like(f'%"category":"{cat}"%'),
+                        ~EventData.shared_data.like(f'%"category": "{cat}"%'),
+                    )
+
+                q = q.order_by(Events.time_fired_ts.desc())
+
+                # Now that spam is excluded at SQL level, we only need a small
+                # multiplier to account for merging and growspace filtering
                 if limit:
-                    q = q.limit(limit * 100)
+                    q = q.limit(limit * 2)
 
                 for e_row, d_row in q:
                     if not d_row or not d_row.shared_data:
@@ -199,9 +212,8 @@ async def websocket_get_event_log(hass: HomeAssistant, connection, msg):  # noqa
                         if growspace_id and d.get("growspace_id") != growspace_id:
                             continue
 
-                        # EXCLUDE spam categories
-                        if d.get("category") in spam_cats:
-                            continue
+                        # Note: No need for Python-level category filtering anymore
+                        # as it's handled at SQL level above
 
                         if count >= limit:
                             break

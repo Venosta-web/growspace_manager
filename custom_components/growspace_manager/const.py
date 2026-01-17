@@ -274,6 +274,7 @@ ATTR_TYPE = "type"
 CATEGORY_TRAINING = "training"
 CATEGORY_IPM = "ipm"
 CATEGORY_NOTE = "note"
+CATEGORY_WATERING = "watering"
 
 
 # Plant stages
