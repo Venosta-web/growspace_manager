@@ -1,9 +1,11 @@
 """Services related to Plants."""
 
+from __future__ import annotations
+
 import logging
 import os
 from datetime import datetime
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from homeassistant.components.persistent_notification import (
     async_create as create_notification,
@@ -42,7 +44,9 @@ from ..const import (
     DATE_FIELDS,
     EVENT_GROWSPACE_LOG_ENTRY,
 )
-from ..coordinator import GrowspaceCoordinator
+
+if TYPE_CHECKING:
+    from ..coordinator import GrowspaceCoordinator
 from ..exceptions import GrowspaceError
 from ..growspace_validator import GrowspaceValidator
 from ..strain_library import StrainLibrary
@@ -248,6 +252,7 @@ async def handle_add_plants(
         strain = call.data[ATTR_STRAIN]
         amount = call.data[ATTR_AMOUNT]
         start_number = call.data.get(ATTR_START_NUMBER, 1)
+        base_phenotype = call.data.get(ATTR_PHENOTYPE)
 
         # Parse and handle optional dates
         add_date_fields = [f for f in DATE_FIELDS if f != "transition_date"]
@@ -265,7 +270,10 @@ async def handle_add_plants(
 
         for i in range(amount):
             current_number = start_number + i
-            phenotype = f"{strain} #{current_number}"
+            if base_phenotype:
+                phenotype = f"{base_phenotype} #{current_number}"
+            else:
+                phenotype = f"{strain} #{current_number}"
 
             # Validate capacity
             free_row, free_col = coordinator.validator.find_first_available_position(
@@ -322,6 +330,9 @@ async def handle_take_clone(
     transition_datetime = parse_date_field(transition_date_raw) or datetime.now()
     transition_date = transition_datetime.date()
 
+    # Extract target growspace ID (optional)
+    target_growspace_id = call.data.get(ATTR_TARGET_GROWSPACE_ID)
+
     # Number of clones to make (default = 1)
     num_clones = call.data.get(ATTR_NUM_CLONES, 1)
     try:
@@ -333,7 +344,10 @@ async def handle_take_clone(
         _LOGGER.warning("Invalid num_clones provided, defaulting to 1")
 
     _LOGGER.debug(
-        "Handling take_clone for %s, requesting %d clones", mother_plant_id, num_clones
+        "Handling take_clone for %s, requesting %d clones to growspace %s",
+        mother_plant_id,
+        num_clones,
+        target_growspace_id or "default (clone)",
     )
 
     if mother_plant_id not in coordinator.plants:
@@ -345,6 +359,7 @@ async def handle_take_clone(
         clones = await coordinator.async_take_clones(
             mother_plant_id=mother_plant_id,
             num_clones=num_clones,
+            target_growspace_id=target_growspace_id,
             transition_date=transition_date,
         )
         clones_added_count = len(clones)
@@ -353,7 +368,10 @@ async def handle_take_clone(
         raise ServiceValidationError(str(err)) from err
 
     _LOGGER.info(
-        "Successfully took %d clones from %s", clones_added_count, mother_plant_id
+        "Successfully took %d clones from %s to growspace %s",
+        clones_added_count,
+        mother_plant_id,
+        target_growspace_id or "clone",
     )
 
 

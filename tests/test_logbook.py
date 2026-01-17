@@ -9,10 +9,13 @@ from homeassistant.util import dt as dt_util
 
 from custom_components.growspace_manager.binary_sensor import (
     SENSOR_TYPES,
-    BayesianMoldRiskSensor,
+    BayesianEnvironmentSensor,
 )
 from custom_components.growspace_manager.coordinator import GrowspaceCoordinator
 from custom_components.growspace_manager.models import Growspace, GrowspaceEvent
+from custom_components.growspace_manager.strategies.mold import (
+    MoldRiskEvaluatorStrategy,
+)
 
 
 # --- Fixtures ---
@@ -72,11 +75,12 @@ async def test_sensor_event_capture(hass: HomeAssistant, mock_coordinator) -> No
     }
 
     description = next(d for d in SENSOR_TYPES if d.sensor_type == "mold")
-    sensor = BayesianMoldRiskSensor(
+    sensor = BayesianEnvironmentSensor(
         mock_coordinator,
         "gs1",
         env_config,
         description,
+        MoldRiskEvaluatorStrategy,
     )
     sensor.hass = hass
     sensor.entity_id = "binary_sensor.test_mold_logbook"

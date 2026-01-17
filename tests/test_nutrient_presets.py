@@ -563,10 +563,12 @@ class TestNutrientPresetStorageLoading:
         }
 
         # This should trigger the exception block in storage_manager
-        preset_coordinator.storage_manager._load_nutrient_presets(malformed_data)
+        presets = preset_coordinator.storage_manager._load_nutrient_presets(
+            malformed_data
+        )
 
-        # Verify it reset to empty dict instead of crashing
-        assert preset_coordinator.nutrient_presets == {}
+        # Verify it returned empty dict instead of crashing
+        assert presets == {}
 
     def test_load_nutrient_presets_success(
         self, preset_coordinator: GrowspaceCoordinator
@@ -583,8 +585,8 @@ class TestNutrientPresetStorageLoading:
             }
         }
 
-        preset_coordinator.storage_manager._load_nutrient_presets(data)
+        presets = preset_coordinator.storage_manager._load_nutrient_presets(data)
 
-        assert "p1" in preset_coordinator.nutrient_presets
-        assert preset_coordinator.nutrient_presets["p1"].name == "Stored Preset"
-        assert preset_coordinator.nutrient_presets["p1"].stage == "flower"
+        assert "p1" in presets
+        assert presets["p1"].name == "Stored Preset"
+        assert presets["p1"].stage == "flower"

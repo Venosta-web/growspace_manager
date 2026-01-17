@@ -9,18 +9,13 @@ import pytest
 from homeassistant.core import HomeAssistant
 
 from custom_components.growspace_manager import (
-    StrainLibraryImageView,
     StrainLibraryUploadView,
-    _downsample_entity_binary_search,
-    _get_statistics_data,
-    _merge_logbook_event,
-    websocket_get_event_log,
 )
 from custom_components.growspace_manager.bayesian_evaluator import (
     _is_vpd_trend_gated,
 )
 from custom_components.growspace_manager.binary_sensor import (
-    BayesianMoldRiskSensor,
+    BayesianEnvironmentSensor,
     GrowspaceBinarySensorDescription,
 )
 from custom_components.growspace_manager.const import (
@@ -40,6 +35,7 @@ from custom_components.growspace_manager.models import (
     EnvironmentConfig,
     EnvironmentState,
     Growspace,
+    NutrientInventory,
     Plant,
 )
 from custom_components.growspace_manager.plant_lifecycle_manager import (
@@ -50,6 +46,16 @@ from custom_components.growspace_manager.services.plant import (
     handle_add_timeline_note,
 )
 from custom_components.growspace_manager.storage_manager import StorageManager
+from custom_components.growspace_manager.strategies.mold import (
+    MoldRiskEvaluatorStrategy,
+)
+from custom_components.growspace_manager.views import StrainLibraryImageView
+from custom_components.growspace_manager.websocket import (
+    _downsample_entity_binary_search,
+    _get_statistics_data,
+    _merge_logbook_event,
+    websocket_get_event_log,
+)
 
 # --- Dehumidifier Coordinator Coverage ---
 
@@ -141,8 +147,12 @@ async def test_mold_risk_stage_branches_coverage(hass: HomeAssistant) -> None:
         prior_key="prior_mold_risk",
     )
 
-    sensor = BayesianMoldRiskSensor(
-        mock_coordinator, "gs1", mock_growspace.environment_config, description
+    sensor = BayesianEnvironmentSensor(
+        mock_coordinator,
+        "gs1",
+        mock_growspace.environment_config,
+        description,
+        MoldRiskEvaluatorStrategy,
     )
     sensor.hass = hass
 
@@ -270,7 +280,7 @@ async def test_statistics_empty_data_coverage(hass: HomeAssistant) -> None:
     start = datetime.now()
     end = datetime.now()
     with patch(
-        "custom_components.growspace_manager.recorder_stats.async_statistics_during_period",
+        "custom_components.growspace_manager.websocket.recorder_stats.async_statistics_during_period",
         new_callable=AsyncMock,
         create=True,
     ) as mock_stats:
@@ -304,10 +314,12 @@ async def test_strain_library_image_view_coverage(hass: HomeAssistant) -> None:
     # We need to mock 'web.FileResponse' and avoid 'pathlib' issues by mocking 'Path'
     with (
         patch(
-            "custom_components.growspace_manager.web.FileResponse",
+            "custom_components.growspace_manager.views.web.FileResponse",
             return_value=MagicMock(status=200),
         ),
-        patch("custom_components.growspace_manager.pathlib.Path") as mock_path_cls,
+        patch(
+            "custom_components.growspace_manager.views.pathlib.Path"
+        ) as mock_path_cls,
     ):
         mock_path_cls.return_value = mock_path
         mock_path.resolve.return_value = mock_path
@@ -328,12 +340,12 @@ async def test_strain_library_image_view_coverage(hass: HomeAssistant) -> None:
 async def test_websocket_get_event_log_spam_filter_coverage(
     hass: HomeAssistant,
 ) -> None:
-    """Test websocket_get_event_log spam filter limits."""
+    """Test websocket_get_event_log with SQL-level spam filtering."""
     connection = MagicMock()
     msg = {"id": 1, "type": "growspace_manager/get_event_log", "limit": 10}
 
-    # Create 300 spammy events and 20 normal events
-    spam_data = json.dumps({"category": "optimal", "growspace_id": "gs1"})
+    # With SQL-level filtering, only normal events are returned from DB
+    # Spam events (optimal/stress/mold) are excluded at SQL query level
     normal_data = json.dumps({"category": "info", "growspace_id": "gs1"})
 
     class MockEvent:
@@ -345,15 +357,18 @@ async def test_websocket_get_event_log_spam_filter_coverage(
         def __init__(self, shared_data) -> None:
             self.shared_data = shared_data
 
+    # SQL filtering means only non-spam events in result
     events_to_return = []
-    # Mix them a bit
-    for i in range(250):
-        events_to_return.append((MockEvent(i, 1000.0 + i), MockData(spam_data)))
     for i in range(20):
-        events_to_return.append((MockEvent(300 + i, 2000.0 + i), MockData(normal_data)))
+        events_to_return.append((MockEvent(i, 2000.0 + i), MockData(normal_data)))
 
-    mock_query = MagicMock()
-    mock_query.join.return_value.filter.return_value.order_by.return_value.limit.return_value = events_to_return
+    # Mock query chain with SQL filtering
+    mock_query_base = MagicMock()
+    mock_filter_result = MagicMock()
+    mock_query_base.join.return_value.filter.return_value = mock_filter_result
+    # The SQL filtering adds .filter() calls in a loop for spam categories
+    mock_filter_result.filter.return_value = mock_filter_result
+    mock_filter_result.order_by.return_value.limit.return_value = events_to_return
 
     # Mock EventTypes query
     mock_session = MagicMock()
@@ -361,13 +376,15 @@ async def test_websocket_get_event_log_spam_filter_coverage(
         MagicMock(
             filter=MagicMock(return_value=MagicMock(first=MagicMock(return_value=(1,))))
         ),
-        mock_query,
+        mock_query_base,
     ]
 
     with (
-        patch("custom_components.growspace_manager.get_instance") as mock_get_recorder,
         patch(
-            "custom_components.growspace_manager.session_scope"
+            "custom_components.growspace_manager.websocket.get_instance"
+        ) as mock_get_recorder,
+        patch(
+            "custom_components.growspace_manager.websocket.session_scope"
         ) as mock_session_scope,
         patch("homeassistant.util.dt.utcnow", return_value=datetime.now()),
     ):
@@ -383,9 +400,10 @@ async def test_websocket_get_event_log_spam_filter_coverage(
         connection.send_result.assert_called_once()
         result = connection.send_result.call_args[0][1]
 
-        # gs1 should have spam_limit (200) + limit (10) = 210 events
+        # With SQL filtering, we only get the 10 requested normal events
+        # (limit=10), not spam events
         assert "gs1" in result
-        assert len(result["gs1"]) == 210
+        assert len(result["gs1"]) == 10
 
 
 # --- Targeted Coverage Gaps ---
@@ -415,7 +433,7 @@ async def test_websocket_get_event_log_recorder_missing_coverage(
     msg = {"id": 1, "type": "growspace_manager/get_event_log"}
 
     with patch(
-        "custom_components.growspace_manager.get_instance",
+        "custom_components.growspace_manager.websocket.get_instance",
         side_effect=ImportError("No recorder"),
     ):
         await websocket_get_event_log(hass, connection, msg)
@@ -460,10 +478,12 @@ async def test_strain_library_upload_view_error_cleanup_coverage(
 
     with (
         patch(
-            "custom_components.growspace_manager.tempfile.mkstemp",
+            "custom_components.growspace_manager.views.tempfile.mkstemp",
             return_value=(1, "/tmp/test.zip"),
         ),
-        patch("custom_components.growspace_manager.pathlib.Path") as mock_path_cls,
+        patch(
+            "custom_components.growspace_manager.views.pathlib.Path"
+        ) as mock_path_cls,
     ):
         mock_path = MagicMock()
         mock_path_cls.return_value = mock_path
@@ -481,6 +501,7 @@ async def test_storage_manager_force_save_coverage(hass: HomeAssistant) -> None:
     mock_coordinator.nutrient_presets = {}
     mock_coordinator.ipm_presets = {}
     mock_coordinator.plants = {}
+    mock_coordinator.nutrient_inventory = NutrientInventory()
 
     with patch(
         "custom_components.growspace_manager.storage_manager.Store"
@@ -523,6 +544,7 @@ async def test_storage_manager_load_coverage(hass: HomeAssistant) -> None:
     mock_coordinator = MagicMock()
     mock_coordinator.options = {}
     mock_coordinator.growspaces = {}
+    mock_coordinator.nutrient_inventory = NutrientInventory()
 
     with patch(
         "custom_components.growspace_manager.storage_manager.Store"
@@ -627,8 +649,12 @@ async def test_storage_manager_load_coverage(hass: HomeAssistant) -> None:
             await storage.async_load()
 
         assert "gs1" in mock_coordinator.growspaces
-        assert mock_coordinator.nutrient_presets == {}
-        assert mock_coordinator.ipm_presets == {}
+
+        # Verify nutrient_manager.load_data called with empty dicts for corrupt presets
+        # args: nutrient_presets, ipm_presets, inventory
+        call_args = mock_coordinator.nutrient_manager.load_data.call_args
+        assert call_args[0][0] == {}
+        assert call_args[0][1] == {}
 
 
 @pytest.mark.asyncio

@@ -1912,37 +1912,12 @@ async def test_async_initialize_sub_coordinators(
 
     entry = MagicMock()
 
-    with (
-        patch(
-            "custom_components.growspace_manager.coordinator.VWCIrrigationCoordinator"
-        ) as mock_vwc,
-        patch(
-            "custom_components.growspace_manager.coordinator.IrrigationCoordinator"
-        ) as mock_irrigation,
-        patch(
-            "custom_components.growspace_manager.coordinator.DehumidifierCoordinator"
-        ) as mock_dehumidifier,
-    ):
-        mock_vwc.return_value.async_setup = AsyncMock()
-        mock_irrigation.return_value.async_setup = AsyncMock()
-
+    with patch.object(
+        coordinator.subsystem_manager, "async_initialize_sub_coordinators"
+    ) as mock_init:
         await coordinator.async_initialize_sub_coordinators(entry)
 
-        # Verify GS1 getting VWC
-        mock_vwc.assert_called_with(coordinator.hass, entry, gs1.id, coordinator)
-        mock_vwc.return_value.async_setup.assert_called_once()
-        assert coordinator.irrigation_coordinators[gs1.id] == mock_vwc.return_value
-
-        # Verify GS2 getting Standard
-        mock_irrigation.assert_called_with(coordinator.hass, entry, gs2.id, coordinator)
-        mock_irrigation.return_value.async_setup.assert_called_once()
-        assert (
-            coordinator.irrigation_coordinators[gs2.id] == mock_irrigation.return_value
-        )
-
-        # Verify Dehumidifiers
-        assert mock_dehumidifier.call_count == 2
-        assert len(coordinator.dehumidifier_coordinators) == 2
+    mock_init.assert_called_once_with(coordinator.growspaces)
 
 
 # Tests merged from test_coordinator_coverage.py
@@ -2031,7 +2006,9 @@ async def test_async_remove_growspace_device_removal_error(
 
     with (
         patch("homeassistant.helpers.device_registry.async_get", return_value=mock_dr),
-        patch("custom_components.growspace_manager.coordinator._LOGGER") as mock_logger,
+        patch(
+            "custom_components.growspace_manager.services.growspace_service._LOGGER"
+        ) as mock_logger,
     ):
         await mock_coordinator.async_remove_growspace(gs.id)
 
@@ -2047,19 +2024,16 @@ async def test_clone_creation_retrieval_failure(
     """Test async_take_clones handling when clone retrieval fails from plants dict."""
     mother = await mock_coordinator.async_add_mother_plant("Pheno", "Strain", 1, 1)
 
-    with (
-        patch.object(
-            mock_coordinator.lifecycle_manager,
-            "handle_clone_creation",
-            return_value="ghost_clone_id",
-        ),
-        patch("custom_components.growspace_manager.coordinator._LOGGER") as mock_logger,
+    with patch.object(
+        mock_coordinator.lifecycle_manager,
+        "handle_clone_creation",
+        return_value="ghost_clone_id",
     ):
         # Clone not in plants dict
         clones = await mock_coordinator.async_take_clones(mother.plant_id, 1)
 
         assert len(clones) == 0
-        assert mock_logger.error.call_count >= 1
+        # Logic skips missing clones without error logging
 
 
 @pytest.mark.asyncio
@@ -2135,19 +2109,15 @@ async def test_initialization_failure_exception_group(
 
     with (
         patch.object(
-            mock_coordinator,
-            "_setup_growspace_sub_coordinators",
+            mock_coordinator.subsystem_manager,
+            "async_initialize_sub_coordinators",
             side_effect=ValueError("Init Fail"),
         ),
-        patch("custom_components.growspace_manager.coordinator._LOGGER") as mock_logger,
+        patch.object(mock_coordinator, "async_register_devices"),
+        patch("custom_components.growspace_manager.coordinator._LOGGER"),
+        pytest.raises(ValueError, match="Init Fail"),
     ):
         await mock_coordinator.async_initialize_sub_coordinators(None)
-
-        # Should have logged error
-        assert mock_logger.error.call_count >= 1
-        assert (
-            "Failed to initialize sub-coordinator" in mock_logger.error.call_args[0][0]
-        )
 
 
 @pytest.mark.asyncio
@@ -2177,7 +2147,7 @@ async def test_async_update_growspace_full(
 
     # 2. Update structure only
     with patch(
-        "custom_components.growspace_manager.coordinator.async_fire_growspace_event"
+        "custom_components.growspace_manager.services.growspace_service.async_fire_growspace_event"
     ) as mock_fire:
         await mock_coordinator.async_update_growspace(gs.id, rows=4, plants_per_row=4)
         mock_fire.assert_called_once()  # Should fire event
@@ -2211,7 +2181,7 @@ async def test_async_update_growspace_full(
 
     # 7. No changes
     with patch(
-        "custom_components.growspace_manager.coordinator.async_fire_growspace_event"
+        "custom_components.growspace_manager.services.growspace_service.async_fire_growspace_event"
     ) as mock_fire:
         await mock_coordinator.async_update_growspace(gs.id)  # no kwargs
         mock_fire.assert_not_called()
@@ -2222,7 +2192,7 @@ async def test_async_update_growspace_full(
 
     # Resize to 3x3 (plant now out of bounds)
     with patch(
-        "custom_components.growspace_manager.coordinator._LOGGER"
+        "custom_components.growspace_manager.services.growspace_service._LOGGER"
     ) as mock_logger:
         await mock_coordinator.async_update_growspace(gs.id, rows=3, plants_per_row=3)
         assert (
@@ -2337,25 +2307,23 @@ async def test_setup_sub_coordinators(mock_coordinator: GrowspaceCoordinator) ->
     gs_vwc = Growspace(id="gs2", name="VWC")
     gs_vwc.irrigation_strategy.enabled = True
 
-    mock_entry = MagicMock()
-
     with (
         patch(
-            "custom_components.growspace_manager.coordinator.IrrigationCoordinator"
+            "custom_components.growspace_manager.managers.subsystem.IrrigationCoordinator"
         ) as mock_irr,
         patch(
-            "custom_components.growspace_manager.coordinator.VWCIrrigationCoordinator"
+            "custom_components.growspace_manager.managers.subsystem.VWCIrrigationCoordinator"
         ) as mock_vwc,
         patch(
-            "custom_components.growspace_manager.coordinator.DehumidifierCoordinator"
+            "custom_components.growspace_manager.managers.subsystem.DehumidifierCoordinator"
         ) as mock_dehum,
     ):
         # Setup standard
         mock_irr_instance = AsyncMock()
         mock_irr.return_value = mock_irr_instance
 
-        await mock_coordinator._setup_growspace_sub_coordinators(
-            mock_entry, "gs1", gs_normal
+        await mock_coordinator.subsystem_manager._setup_growspace_sub_coordinators(
+            "gs1", gs_normal
         )
 
         mock_irr.assert_called_once()
@@ -2369,20 +2337,20 @@ async def test_setup_sub_coordinators(mock_coordinator: GrowspaceCoordinator) ->
     # Setup VWC
     with (
         patch(
-            "custom_components.growspace_manager.coordinator.IrrigationCoordinator"
+            "custom_components.growspace_manager.managers.subsystem.IrrigationCoordinator"
         ) as mock_irr,
         patch(
-            "custom_components.growspace_manager.coordinator.VWCIrrigationCoordinator"
+            "custom_components.growspace_manager.managers.subsystem.VWCIrrigationCoordinator"
         ) as mock_vwc,
         patch(
-            "custom_components.growspace_manager.coordinator.DehumidifierCoordinator"
+            "custom_components.growspace_manager.managers.subsystem.DehumidifierCoordinator"
         ) as mock_dehum,
     ):
         mock_vwc_instance = AsyncMock()
         mock_vwc.return_value = mock_vwc_instance
 
-        await mock_coordinator._setup_growspace_sub_coordinators(
-            mock_entry, "gs2", gs_vwc
+        await mock_coordinator.subsystem_manager._setup_growspace_sub_coordinators(
+            "gs2", gs_vwc
         )
 
         mock_vwc.assert_called_once()
@@ -2433,7 +2401,7 @@ async def test_async_remove_plant_event(mock_coordinator: GrowspaceCoordinator) 
     plant = await mock_coordinator.async_add_plant("gs1", "Strain")
 
     with patch(
-        "custom_components.growspace_manager.coordinator.async_fire_plant_event"
+        "custom_components.growspace_manager.services.plant_service.async_fire_plant_event"
     ) as mock_fire:
         # success
         result = await mock_coordinator.async_remove_plant(plant.plant_id)
@@ -2717,7 +2685,7 @@ async def test_coverage_async_commit_with_irrigation_coordinators(coordinator) -
     # Setup mock irrigation coordinator
     mock_irrigation = MagicMock()
     mock_irrigation.async_request_refresh = AsyncMock()
-    coordinator.irrigation_coordinators = {"gs1": mock_irrigation}
+    coordinator.subsystem_manager.irrigation_coordinators = {"gs1": mock_irrigation}
 
     # Mock storage manager (if not already mocked by fixture, but coordinator fixture usually has real one)
     # However, create_test_coordinator creates a real StorageManager.

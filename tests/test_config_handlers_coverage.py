@@ -398,22 +398,28 @@ def test_plant_handler_management_schema(mock_hass, mock_config_entry) -> None:
 
     # Case 1: With growspaces
     coordinator.get_sorted_growspace_options.return_value = [("gs1", "GS 1")]
+    # Populate plants so the schema includes plant_id
+    coordinator.plants = {
+        "p1": MagicMock(strain="Strain A", growspace_id="gs1", row=1, col=1)
+    }
+
     schema = handler.get_plant_management_schema(coordinator)
     assert isinstance(schema, vol.Schema)
     keys = [
         k.schema if isinstance(k, (vol.Optional, vol.Required)) else k
         for k in schema.schema
     ]
-    assert "growspace_id" in keys
+    assert "plant_id" in keys
 
     # Case 2: No growspaces
     coordinator.get_sorted_growspace_options.return_value = []
+    coordinator.plants = {}  # Clear plants
     schema_empty = handler.get_plant_management_schema(coordinator)
     keys_empty = [
         k.schema if isinstance(k, (vol.Optional, vol.Required)) else k
         for k in schema_empty.schema
     ]
-    assert "growspace_id" not in keys_empty
+    assert "plant_id" not in keys_empty
 
 
 @pytest.mark.asyncio
@@ -561,3 +567,521 @@ def test_growspace_handler_add_schema_no_notify(mock_hass, mock_config_entry) ->
     # Verify notification_target uses TextSelector (fallback)
     # Checking specific key existence or type within schema internals is hard,
     # but execution covers the line.
+
+
+@pytest.mark.asyncio
+async def test_growspace_handler_flow_manage_init(mock_hass, mock_config_entry) -> None:
+    """Test async_step_manage_growspaces initial step (lines 105-142)."""
+    handler = GrowspaceConfigHandler(mock_hass, mock_config_entry)
+    handler.flow = MagicMock()
+
+    coordinator = MagicMock()
+    coordinator.get_sorted_growspace_options.return_value = []
+    mock_config_entry.runtime_data = coordinator
+
+    # 1. Init (no input) -> Show menu
+    result = await handler.async_step_manage_growspaces(None)
+    handler.flow.async_show_form.assert_called_once()
+    assert result == handler.flow.async_show_form.return_value
+
+
+@pytest.mark.asyncio
+async def test_growspace_handler_flow_actions(mock_hass, mock_config_entry) -> None:
+    """Test async_step_manage_growspaces actions (lines 116-137)."""
+    handler = GrowspaceConfigHandler(mock_hass, mock_config_entry)
+    handler.flow = MagicMock()
+    # Make sure async methods on flow are awaitable
+    handler.flow.async_step_init = AsyncMock()
+
+    # Need to verify method calls on handler itself
+    handler.async_step_add_growspace = AsyncMock()
+    handler.async_step_update_growspace = AsyncMock()
+    handler.async_step_confirm_remove_growspace = AsyncMock()
+
+    coordinator = MagicMock()
+    mock_config_entry.runtime_data = coordinator
+
+    # 2. Add action
+    await handler.async_step_manage_growspaces({"action": "add"})
+    handler.async_step_add_growspace.assert_awaited()
+
+    # 3. Update action (no selection) -> Show error
+    handler.flow._selected_growspace_id = None
+    await handler.async_step_manage_growspaces(
+        {"action": "update", "growspace_id": None}
+    )
+    # Should re-show form with error
+    assert handler.flow.async_show_form.call_count == 1
+    args, kwargs = handler.flow.async_show_form.call_args
+    assert kwargs["errors"] == {"base": "select_growspace"}
+
+    handler.flow.async_show_form.reset_mock()
+
+    # 4. Update action (valid selection)
+    await handler.async_step_manage_growspaces(
+        {"action": "update", "growspace_id": "gs1"}
+    )
+    assert handler.flow._selected_growspace_id == "gs1"
+    handler.async_step_update_growspace.assert_awaited()
+
+    # 5. Remove action (no selection) -> Show error
+    handler.flow._selected_growspace_id = None
+    await handler.async_step_manage_growspaces(
+        {"action": "remove", "growspace_id": None}
+    )
+    assert handler.flow.async_show_form.call_count == 1
+    args, kwargs = handler.flow.async_show_form.call_args
+    assert kwargs["errors"] == {"base": "select_growspace"}
+
+    handler.flow.async_show_form.reset_mock()
+
+    # 6. Remove action (valid selection)
+    await handler.async_step_manage_growspaces(
+        {"action": "remove", "growspace_id": "gs1"}
+    )
+    handler.async_step_confirm_remove_growspace.assert_awaited()
+
+    # 7. Back action
+    await handler.async_step_manage_growspaces({"action": "back"})
+    handler.flow.async_step_init.assert_awaited()
+
+
+@pytest.mark.asyncio
+async def test_growspace_handler_flow_add_step(mock_hass, mock_config_entry) -> None:
+    """Test async_step_add_growspace (lines 144-167)."""
+    handler = GrowspaceConfigHandler(mock_hass, mock_config_entry)
+    handler.flow = MagicMock()
+    handler.async_add_growspace = AsyncMock()
+
+    coordinator = MagicMock()
+    mock_config_entry.runtime_data = coordinator
+
+    # 1. No input -> Show form
+    await handler.async_step_add_growspace(None)
+    handler.flow.async_show_form.assert_called()
+    assert handler.flow.async_show_form.call_args[1]["step_id"] == "add_growspace"
+
+    handler.flow.async_show_form.reset_mock()
+
+    # 2. Input -> Success
+    user_input = {"name": "New GS"}
+    await handler.async_step_add_growspace(user_input)
+    handler.async_add_growspace.assert_awaited_with(user_input)
+    handler.flow.async_create_entry.assert_called_with(title="", data={})
+
+    # 3. Input -> Error
+    handler.async_add_growspace.side_effect = Exception("Fail")
+    await handler.async_step_add_growspace(user_input)
+    handler.flow.async_show_form.assert_called()
+    assert handler.flow.async_show_form.call_args[1]["errors"] == {"base": "add_failed"}
+
+
+@pytest.mark.asyncio
+async def test_growspace_handler_flow_update_step(mock_hass, mock_config_entry) -> None:
+    """Test async_step_update_growspace (lines 297-327)."""
+    handler = GrowspaceConfigHandler(mock_hass, mock_config_entry)
+    handler.flow = MagicMock()
+    handler.flow._selected_growspace_id = "gs1"
+    handler.async_update_growspace = AsyncMock()
+
+    coordinator = MagicMock()
+    # Mock growspace existing
+    mock_gs = MagicMock(name="My GS")
+    coordinator.growspaces = {"gs1": mock_gs}
+    mock_config_entry.runtime_data = coordinator
+
+    # 1. No input -> Show form
+    await handler.async_step_update_growspace(None)
+    handler.flow.async_show_form.assert_called()
+    assert handler.flow.async_show_form.call_args[1]["step_id"] == "update_growspace"
+
+    handler.flow.async_show_form.reset_mock()
+
+    # 2. Input -> Success
+    user_input = {"name": "Renamed GS"}
+    await handler.async_step_update_growspace(user_input)
+    handler.async_update_growspace.assert_awaited_with("gs1", user_input)
+    handler.flow.async_create_entry.assert_called()
+
+    # 3. Input -> Error
+    handler.async_update_growspace.side_effect = Exception("Fail")
+    await handler.async_step_update_growspace(user_input)
+    handler.flow.async_show_form.assert_called()
+    assert handler.flow.async_show_form.call_args[1]["errors"] == {
+        "base": "update_failed"
+    }
+
+    # 4. Growspace disappeared
+    coordinator.growspaces = {}
+    await handler.async_step_update_growspace(None)
+    handler.flow.async_abort.assert_called_with(reason="growspace_not_found")
+
+
+@pytest.mark.asyncio
+async def test_growspace_handler_flow_remove_step(mock_hass, mock_config_entry) -> None:
+    """Test async_step_confirm_remove_growspace (lines 186-214)."""
+    handler = GrowspaceConfigHandler(mock_hass, mock_config_entry)
+    handler.flow = MagicMock()
+    handler.flow._selected_growspace_id = "gs1"
+    handler.async_remove_growspace = AsyncMock()
+
+    coordinator = MagicMock()
+    mock_gs = MagicMock(name="My GS")
+    coordinator.growspaces = {"gs1": mock_gs}
+    mock_config_entry.runtime_data = coordinator
+
+    # 1. No input -> Show form
+    await handler.async_step_confirm_remove_growspace(None)
+    handler.flow.async_show_form.assert_called()
+    assert (
+        handler.flow.async_show_form.call_args[1]["step_id"]
+        == "confirm_remove_growspace"
+    )
+
+    handler.flow.async_show_form.reset_mock()
+
+    # 2. Input -> Success
+    await handler.async_step_confirm_remove_growspace({})
+    handler.async_remove_growspace.assert_awaited_with("gs1")
+    handler.flow.async_create_entry.assert_called()
+
+    # 3. Input -> Error
+    handler.async_remove_growspace.side_effect = Exception("Fail")
+    await handler.async_step_confirm_remove_growspace({})
+    handler.flow.async_show_form.assert_called()
+    assert handler.flow.async_show_form.call_args[1]["errors"] == {
+        "base": "remove_failed"
+    }
+
+    # 4. Growspace disappeared
+    coordinator.growspaces = {}
+    await handler.async_step_confirm_remove_growspace(None)
+    handler.flow.async_abort.assert_called_with(reason="growspace_not_found")
+
+
+@pytest.mark.asyncio
+async def test_growspace_handler_coordinator_missing(
+    mock_hass, mock_config_entry
+) -> None:
+    """Test scenarios where coordinator is missing (lines 111, 150, 173, etc)."""
+    handler = GrowspaceConfigHandler(mock_hass, mock_config_entry)
+    handler.flow = MagicMock()
+    # Make sure async methods on flow are awaitable
+    handler.flow.async_step_init = AsyncMock()
+
+    # Set runtime_data to None to trigger the checks
+    mock_config_entry.runtime_data = None
+
+    # 1. manage_growspaces
+    await handler.async_step_manage_growspaces()
+    handler.flow.async_abort.assert_called_with(reason="setup_error")
+
+    handler.flow.async_abort.reset_mock()
+
+    # 2. add_growspace (step)
+    await handler.async_step_add_growspace()
+    handler.flow.async_abort.assert_called_with(reason="setup_error")
+
+    # 3. add_growspace (method)
+    with pytest.raises(ValueError, match="Coordinator not found"):
+        await handler.async_add_growspace({})
+
+    handler.flow.async_abort.reset_mock()
+
+    # 4. update_growspace (step)
+    await handler.async_step_update_growspace()
+    handler.flow.async_abort.assert_called_with(reason="setup_error")
+
+    # 5. update_growspace (method)
+    with pytest.raises(ValueError, match="Coordinator not found"):
+        await handler.async_update_growspace("gs1", {})
+
+    handler.flow.async_abort.reset_mock()
+
+    # 6. remove_growspace (step)
+    await handler.async_step_confirm_remove_growspace()
+    handler.flow.async_abort.assert_called_with(reason="setup_error")
+
+    # 7. remove_growspace (method)
+    with pytest.raises(ValueError, match="Coordinator not found"):
+        await handler.async_remove_growspace("gs1")
+
+
+@pytest.mark.asyncio
+async def test_plant_handler_flow_manage_init(mock_hass, mock_config_entry) -> None:
+    """Test async_step_manage_plants initial step (lines 26-60)."""
+    handler = PlantConfigHandler(mock_hass, mock_config_entry)
+    handler.flow = MagicMock()
+    # Make sure async methods on flow are awaitable
+    handler.flow.async_step_init = AsyncMock()
+
+    coordinator = MagicMock()
+    coordinator.plants = {}
+    mock_config_entry.runtime_data = coordinator
+
+    # 1. Init (no input) -> Show menu
+    result = await handler.async_step_manage_plants(None)
+    handler.flow.async_show_form.assert_called_once()
+    assert result == handler.flow.async_show_form.return_value
+
+
+@pytest.mark.asyncio
+async def test_plant_handler_flow_actions(mock_hass, mock_config_entry) -> None:
+    """Test async_step_manage_plants actions."""
+    handler = PlantConfigHandler(mock_hass, mock_config_entry)
+    handler.flow = MagicMock()
+    handler.flow.async_step_init = AsyncMock()
+
+    handler.async_step_select_growspace_for_plant = AsyncMock()
+    handler.async_step_update_plant = AsyncMock()
+    handler.async_destroy_plant = AsyncMock()
+
+    coordinator = MagicMock()
+    mock_plant = MagicMock(id="p1", growspace_id="gs1")
+    coordinator.plants = {"p1": mock_plant}
+    mock_config_entry.runtime_data = coordinator
+
+    # 1. Add action
+    await handler.async_step_manage_plants({"action": "add"})
+    handler.async_step_select_growspace_for_plant.assert_awaited()
+
+    # 2. Update action (with ID)
+    await handler.async_step_manage_plants({"action": "update", "plant_id": "p1"})
+    assert handler.flow._selected_plant_id == "p1"
+    handler.async_step_update_plant.assert_awaited()
+
+    # 3. Remove action (with ID) -> Success
+    await handler.async_step_manage_plants({"action": "remove", "plant_id": "p1"})
+    handler.async_destroy_plant.assert_awaited_with("gs1", "p1")
+
+    # 4. Remove action (exception)
+    handler.async_destroy_plant.side_effect = Exception("Fail")
+    await handler.async_step_manage_plants({"action": "remove", "plant_id": "p1"})
+    handler.flow.async_show_form.assert_called()
+    assert handler.flow.async_show_form.call_args[1]["errors"] == {
+        "base": "remove_failed"
+    }
+
+    # 5. Back action
+    await handler.async_step_manage_plants({"action": "back"})
+    handler.flow.async_step_init.assert_awaited()
+
+
+@pytest.mark.asyncio
+async def test_plant_handler_flow_select_growspace(
+    mock_hass, mock_config_entry
+) -> None:
+    """Test async_step_select_growspace_for_plant (lines 62-93)."""
+    handler = PlantConfigHandler(mock_hass, mock_config_entry)
+    handler.flow = MagicMock()
+    handler.async_step_add_plant = AsyncMock()
+
+    coordinator = MagicMock()
+    coordinator.get_sorted_growspace_options.return_value = [("gs1", "GS1")]
+    mock_config_entry.runtime_data = coordinator
+
+    # 1. No input -> Show form
+    await handler.async_step_select_growspace_for_plant(None)
+    handler.flow.async_show_form.assert_called()
+
+    handler.flow.async_show_form.reset_mock()
+
+    # 2. Input -> Add Plant
+    await handler.async_step_select_growspace_for_plant({"growspace_id": "gs1"})
+    assert handler.flow._selected_growspace_id == "gs1"
+    handler.async_step_add_plant.assert_awaited()
+
+    # 3. No growspaces available
+    coordinator.get_sorted_growspace_options.return_value = []
+    await handler.async_step_select_growspace_for_plant(None)
+    handler.flow.async_abort.assert_called_with(reason="no_growspaces")
+
+
+@pytest.mark.asyncio
+async def test_plant_handler_flow_add_step(mock_hass, mock_config_entry) -> None:
+    """Test async_step_add_plant (lines 95-128)."""
+    handler = PlantConfigHandler(mock_hass, mock_config_entry)
+    handler.flow = MagicMock()
+    handler.flow._selected_growspace_id = "gs1"
+    handler.async_add_plant = AsyncMock()
+
+    coordinator = MagicMock()
+    mock_gs = MagicMock(id="gs1")
+    coordinator.growspaces = {"gs1": mock_gs}
+    mock_config_entry.runtime_data = coordinator
+
+    # 1. No input -> Show form
+    await handler.async_step_add_plant(None)
+    handler.flow.async_show_form.assert_called()
+
+    # 2. Input -> Success
+    user_input = {"strain": "Test", "row": 1, "col": 1}
+    await handler.async_step_add_plant(user_input)
+    handler.async_add_plant.assert_awaited()
+    handler.flow.async_create_entry.assert_called()
+
+    # 3. Input -> Error
+    handler.async_add_plant.side_effect = Exception("Fail")
+    await handler.async_step_add_plant(user_input)
+    assert handler.flow.async_show_form.call_args[1]["errors"] == {"base": "Fail"}
+
+
+@pytest.mark.asyncio
+async def test_plant_handler_flow_update_step(mock_hass, mock_config_entry) -> None:
+    """Test async_step_update_plant (lines 130-160)."""
+    handler = PlantConfigHandler(mock_hass, mock_config_entry)
+    handler.flow = MagicMock()
+    handler.flow._selected_plant_id = "p1"
+    handler.async_update_plant = AsyncMock()
+
+    coordinator = MagicMock()
+    mock_plant = MagicMock(id="p1")
+    coordinator.plants = {"p1": mock_plant}
+    mock_config_entry.runtime_data = coordinator
+
+    # 1. No input -> Show form
+    await handler.async_step_update_plant(None)
+    handler.flow.async_show_form.assert_called()
+
+    # 2. Input -> Success
+    user_input = {"strain": "New Strain"}
+    await handler.async_step_update_plant(user_input)
+    handler.async_update_plant.assert_awaited()
+    handler.flow.async_create_entry.assert_called()
+
+    # 3. Input -> Error
+    handler.async_update_plant.side_effect = Exception("Fail")
+    await handler.async_step_update_plant(user_input)
+    assert handler.flow.async_show_form.call_args[1]["errors"] == {"base": "Fail"}
+
+    # 4. Plant disappeared
+    coordinator.plants = {}
+    await handler.async_step_update_plant(None)
+    handler.flow.async_abort.assert_called_with(reason="plant_not_found")
+
+
+@pytest.mark.asyncio
+async def test_plant_handler_coordinator_missing(mock_hass, mock_config_entry) -> None:
+    """Test scenarios where coordinator is missing (lines 30, 66, 99, 134, etc)."""
+    handler = PlantConfigHandler(mock_hass, mock_config_entry)
+    handler.flow = MagicMock()
+    handler.flow.async_step_init = AsyncMock()
+
+    mock_config_entry.runtime_data = None
+
+    # 1. manage_plants
+    await handler.async_step_manage_plants()
+    handler.flow.async_abort.assert_called_with(reason="setup_error")
+    handler.flow.async_abort.reset_mock()
+
+    # 2. select_growspace
+    await handler.async_step_select_growspace_for_plant()
+    handler.flow.async_abort.assert_called_with(reason="setup_error")
+    handler.flow.async_abort.reset_mock()
+
+    # 3. add_plant (step)
+    await handler.async_step_add_plant()
+    handler.flow.async_abort.assert_called_with(reason="setup_error")
+    handler.flow.async_abort.reset_mock()
+
+    # 4. add_plant (method)
+    with pytest.raises(ValueError, match="Coordinator not found"):
+        await handler.async_add_plant("gs1", "strain", 1, 1)
+
+    # 5. update_plant (step)
+    await handler.async_step_update_plant()
+    handler.flow.async_abort.assert_called_with(reason="setup_error")
+    handler.flow.async_abort.reset_mock()
+
+    # 6. update_plant (method)
+    with pytest.raises(ValueError, match="Coordinator not found"):
+        await handler.async_update_plant("p1")
+
+
+@pytest.mark.asyncio
+async def test_ai_handler_configure_ai_init(mock_hass, mock_config_entry) -> None:
+    """Test async_step_configure_ai initial step (lines 135-170)."""
+    handler = AIConfigHandler(mock_hass, mock_config_entry)
+    handler.flow = MagicMock()
+    # Mock runtime_data to satisfy the coordinator check
+    mock_config_entry.runtime_data = MagicMock()
+
+    # 1. No input -> Show form
+    await handler.async_step_configure_ai(None)
+    handler.flow.async_show_form.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_ai_handler_configure_ai_submit_error(
+    mock_hass, mock_config_entry
+) -> None:
+    """Test async_step_configure_ai validation error."""
+    handler = AIConfigHandler(mock_hass, mock_config_entry)
+    handler.flow = MagicMock()
+    mock_config_entry.runtime_data = MagicMock()
+
+    # AI enabled but no assistant selected
+    user_input = {"ai_enabled": True, "assistant_id": None}
+    await handler.async_step_configure_ai(user_input)
+
+    handler.flow.async_show_form.assert_called_once()
+    assert handler.flow.async_show_form.call_args[1]["errors"] == {
+        "base": "assistant_required"
+    }
+
+
+@pytest.mark.asyncio
+async def test_ai_handler_configure_ai_submit_success(
+    mock_hass, mock_config_entry
+) -> None:
+    """Test async_step_configure_ai successful submission."""
+    handler = AIConfigHandler(mock_hass, mock_config_entry)
+    handler.flow = MagicMock()
+
+    coordinator = MagicMock()
+    coordinator.async_save = AsyncMock()
+    mock_config_entry.runtime_data = coordinator
+    mock_config_entry.options = {"ai_settings": {}}
+
+    user_input = {"ai_enabled": True, "assistant_id": "conversation.test"}
+    await handler.async_step_configure_ai(user_input)
+
+    handler.flow.async_create_entry.assert_called_once()
+    assert (
+        "AI features are now enabled"
+        in handler.flow.async_create_entry.call_args[1]["description"]
+    )
+
+    # Test with AI disabled message
+    handler.flow.async_create_entry.reset_mock()
+    user_input = {"ai_enabled": False, "assistant_id": "conversation.test"}
+    await handler.async_step_configure_ai(user_input)
+    assert (
+        "AI features are disabled"
+        in handler.flow.async_create_entry.call_args[1]["description"]
+    )
+
+
+@pytest.mark.asyncio
+async def test_ai_handler_configure_ai_coordinator_missing(
+    mock_hass, mock_config_entry
+) -> None:
+    """Test async_step_configure_ai when coordinator is missing."""
+    handler = AIConfigHandler(mock_hass, mock_config_entry)
+    handler.flow = MagicMock()
+    mock_config_entry.runtime_data = None
+
+    await handler.async_step_configure_ai()
+    handler.flow.async_abort.assert_called_with(reason="setup_error")
+
+
+@pytest.mark.asyncio
+async def test_ai_handler_save_settings_coordinator_missing(
+    mock_hass, mock_config_entry
+) -> None:
+    """Test save_ai_settings when coordinator is missing."""
+    handler = AIConfigHandler(mock_hass, mock_config_entry)
+    mock_config_entry.runtime_data = None
+
+    with pytest.raises(ValueError, match="Coordinator not found"):
+        await handler.save_ai_settings({"enabled": True})

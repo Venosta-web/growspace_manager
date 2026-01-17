@@ -7,10 +7,8 @@ import pytest
 from homeassistant.core import HomeAssistant
 from homeassistant.util import dt as dt_util
 
-from custom_components.growspace_manager import (
-    DOMAIN,
-    websocket_get_history_stats,
-)
+from custom_components.growspace_manager.const import DOMAIN
+from custom_components.growspace_manager.websocket import websocket_get_history_stats
 
 
 @pytest.fixture
@@ -60,12 +58,12 @@ async def test_websocket_get_history_stats_binary_search(
 
     with (
         patch(
-            "custom_components.growspace_manager.history.get_significant_states",
+            "custom_components.growspace_manager.websocket.history.get_significant_states",
             side_effect=mock_get_history,
             create=True,
         ),
         patch(
-            "custom_components.growspace_manager.get_instance",
+            "custom_components.growspace_manager.websocket.get_instance",
             return_value=mock_recorder,
         ),
     ):

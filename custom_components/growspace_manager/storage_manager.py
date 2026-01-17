@@ -20,6 +20,7 @@ from .const import (
 from .models import (
     EnvironmentConfig,
     IPMPreset,
+    NutrientInventory,
     NutrientPreset,
 )
 
@@ -59,19 +60,19 @@ class StorageManager:
 
     def _get_config_data(self) -> dict:
         """Gather configuration data for storage."""
-        return {
+        # Use coordinator's nutrient manager for serialization data
+        nutrient_data = self.coordinator.nutrient_manager.get_serialization_data()
+
+        config = {
             "growspaces": {
                 gid: asdict(g) for gid, g in self.coordinator.growspaces.items()
-            },
-            "nutrient_presets": {
-                pid: asdict(p) for pid, p in self.coordinator.nutrient_presets.items()
-            },
-            "ipm_presets": {
-                pid: asdict(p) for pid, p in self.coordinator.ipm_presets.items()
             },
             "notifications_sent": self.coordinator._notifications_sent,
             "notifications_enabled": self.coordinator._notifications_enabled,
         }
+        # Merge nutrient data (presets and inventory)
+        config.update(nutrient_data)
+        return config
 
     def _get_plants_data(self) -> dict:
         """Gather plant data for storage."""
@@ -109,8 +110,18 @@ class StorageManager:
     def _load_config(self, data: dict) -> None:
         """Load configuration data."""
         self._load_growspaces(data)
-        self._load_nutrient_presets(data)
-        self._load_ipm_presets(data)
+
+        # Load nutrient data into manager
+        nutrient_presets = self._load_nutrient_presets(data)
+        ipm_presets = self._load_ipm_presets(data)
+        inventory = self._load_nutrient_inventory(data)
+
+        self.coordinator.nutrient_manager.load_data(
+            nutrient_presets, ipm_presets, inventory
+        )
+
+        # Notify coordinator of inventory load (compatibility shim/trigger)
+        self.coordinator.on_nutrient_inventory_loaded(inventory)
 
         # Load notification tracking
         self.coordinator._notifications_sent = data.get("notifications_sent", {})
@@ -134,7 +145,7 @@ class StorageManager:
             backup_filename = f"growspace_manager_{key}_CORRUPT_{timestamp}.json"
             backup_path = Path(self.hass.config.path(".storage")) / backup_filename
 
-            with open(backup_path, "w") as f:
+            with open(backup_path, "w", encoding="utf-8") as f:
                 json.dump(data, f, indent=2, default=str)
 
             _LOGGER.critical(
@@ -186,24 +197,32 @@ class StorageManager:
                 else:
                     growspace.environment_config = options
 
-    def _load_nutrient_presets(self, data: dict) -> None:
+    def _load_nutrient_presets(self, data: dict) -> dict[str, NutrientPreset]:
         """Load nutrient presets from storage data."""
         try:
-            self.coordinator.nutrient_presets = {
+            return {
                 pid: NutrientPreset.from_dict(p)
                 for pid, p in data.get("nutrient_presets", {}).items()
             }
         except Exception as e:
             _LOGGER.exception("Error loading nutrient presets: %s", e)
-            self.coordinator.nutrient_presets = {}
+            return {}
 
-    def _load_ipm_presets(self, data: dict) -> None:
+    def _load_ipm_presets(self, data: dict) -> dict[str, IPMPreset]:
         """Load IPM presets from storage data."""
         try:
-            self.coordinator.ipm_presets = {
+            return {
                 pid: IPMPreset.from_dict(p)
                 for pid, p in data.get("ipm_presets", {}).items()
             }
         except Exception as e:
             _LOGGER.exception("Error loading IPM presets: %s", e)
-            self.coordinator.ipm_presets = {}
+            return {}
+
+    def _load_nutrient_inventory(self, data: dict) -> NutrientInventory:
+        """Load nutrient inventory from storage data."""
+        try:
+            return NutrientInventory.from_dict(data.get("nutrient_inventory", {}))
+        except Exception as e:
+            _LOGGER.exception("Error loading nutrient inventory: %s", e)
+            return NutrientInventory()

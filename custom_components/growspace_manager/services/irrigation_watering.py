@@ -1,12 +1,15 @@
 """Service handlers for manual watering functionality."""
 
+from __future__ import annotations
+
 import logging
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from homeassistant.core import HomeAssistant, ServiceCall
 from homeassistant.exceptions import ServiceValidationError
 
-from ..coordinator import GrowspaceCoordinator
+if TYPE_CHECKING:
+    from ..coordinator import GrowspaceCoordinator
 from ..exceptions import GrowspaceError
 
 _LOGGER = logging.getLogger(__name__)
@@ -61,12 +64,13 @@ async def handle_water_growspace(
     """
     try:
         growspace_id: str = call.data["growspace_id"]
-        amount_per_plant: float = call.data["amount_per_plant"]
+        amount: float | None = call.data.get("amount")
+        amount_per_plant: float | None = call.data.get("amount_per_plant")
         nutrients: dict[str, float] | None = call.data.get("nutrients")
         preset_id: str | None = call.data.get("preset_id")
 
         plants_watered = await coordinator.async_water_growspace(
-            growspace_id, amount_per_plant, nutrients, preset_id
+            growspace_id, amount_per_plant, nutrients, preset_id, amount=amount
         )
 
         _LOGGER.info(

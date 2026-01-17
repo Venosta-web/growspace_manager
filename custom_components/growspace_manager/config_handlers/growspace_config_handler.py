@@ -6,22 +6,22 @@ import logging
 from typing import Any
 
 import voluptuous as vol
-from homeassistant.config_entries import ConfigEntry
-from homeassistant.core import HomeAssistant
+from homeassistant.config_entries import ConfigFlowResult
 from homeassistant.helpers import selector
 
 from custom_components.growspace_manager.coordinator import GrowspaceCoordinator
 
+from . import BaseConfigHandler
+
 _LOGGER = logging.getLogger(__name__)
 
 
-class GrowspaceConfigHandler:
+class GrowspaceConfigHandler(BaseConfigHandler):
     """Handler for Growspace configuration steps."""
 
-    def __init__(self, hass: HomeAssistant, config_entry: ConfigEntry) -> None:
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
         """Initialize the Growspace config handler."""
-        self.hass = hass
-        self.config_entry = config_entry
+        super().__init__(*args, **kwargs)
 
     def get_growspace_management_schema(
         self, coordinator: GrowspaceCoordinator
@@ -102,9 +102,75 @@ class GrowspaceConfigHandler:
 
         return vol.Schema(base)
 
+    async def async_step_manage_growspaces(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Handle growspace management step."""
+        coordinator = getattr(self.config_entry, "runtime_data", None)
+        if coordinator is None:
+            return self.flow.async_abort(reason="setup_error")
+
+        if user_input is not None:
+            action = user_input.get("action")
+
+            if action == "add":
+                return await self.async_step_add_growspace()
+            if action == "update":
+                self.flow._selected_growspace_id = user_input.get("growspace_id")
+                if not self.flow._selected_growspace_id:
+                    return self.flow.async_show_form(
+                        step_id="manage_growspaces",
+                        data_schema=self.get_growspace_management_schema(coordinator),
+                        errors={"base": "select_growspace"},
+                    )
+                return await self.async_step_update_growspace()
+            if action == "remove":
+                self.flow._selected_growspace_id = user_input.get("growspace_id")
+                if not self.flow._selected_growspace_id:
+                    return self.flow.async_show_form(
+                        step_id="manage_growspaces",
+                        data_schema=self.get_growspace_management_schema(coordinator),
+                        errors={"base": "select_growspace"},
+                    )
+                return await self.async_step_confirm_remove_growspace()
+            if action == "back":
+                return await self.flow.async_step_init()
+
+        return self.flow.async_show_form(
+            step_id="manage_growspaces",
+            data_schema=self.get_growspace_management_schema(coordinator),
+        )
+
+    async def async_step_add_growspace(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Show the form for adding a new growspace."""
+        coordinator = getattr(self.config_entry, "runtime_data", None)
+        if coordinator is None:
+            return self.flow.async_abort(reason="setup_error")
+
+        if user_input is not None:
+            try:
+                await self.async_add_growspace(user_input)
+                return self.flow.async_create_entry(title="", data={})
+            except Exception:
+                _LOGGER.exception("Error adding growspace")
+                return self.flow.async_show_form(
+                    step_id="add_growspace",
+                    data_schema=self.get_add_growspace_schema(),
+                    errors={"base": "add_failed"},
+                )
+
+        return self.flow.async_show_form(
+            step_id="add_growspace",
+            data_schema=self.get_add_growspace_schema(),
+        )
+
     async def async_add_growspace(self, user_input: dict[str, Any]) -> None:
         """Add a new growspace."""
-        coordinator = self.config_entry.runtime_data
+        coordinator = getattr(self.config_entry, "runtime_data", None)
+        if coordinator is None:
+            raise ValueError("Coordinator not found")
 
         # Use coordinator to add growspace
         await coordinator.async_add_growspace(
@@ -117,10 +183,35 @@ class GrowspaceConfigHandler:
         # Save changes
         await coordinator.async_save()
 
-    async def async_remove_growspace(self, growspace_id: str) -> None:
-        """Remove a growspace."""
-        coordinator = self.config_entry.runtime_data
-        await coordinator.async_remove_growspace(growspace_id)
+    async def async_step_confirm_remove_growspace(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Confirm removal of a growspace."""
+        coordinator = getattr(self.config_entry, "runtime_data", None)
+        if coordinator is None:
+            return self.flow.async_abort(reason="setup_error")
+        growspace_id = self.flow._selected_growspace_id
+        growspace = coordinator.growspaces.get(growspace_id)
+
+        if not growspace:
+            return self.flow.async_abort(reason="growspace_not_found")
+
+        if user_input is not None:
+            try:
+                await self.async_remove_growspace(growspace_id)
+                return self.flow.async_create_entry(title="", data={})
+            except Exception:
+                _LOGGER.exception("Error removing growspace")
+                return self.flow.async_show_form(
+                    step_id="confirm_remove_growspace",
+                    errors={"base": "remove_failed"},
+                    description_placeholders={"growspace_name": growspace.name},
+                )
+
+        return self.flow.async_show_form(
+            step_id="confirm_remove_growspace",
+            description_placeholders={"growspace_name": growspace.name},
+        )
 
     def get_update_growspace_schema(self, growspace) -> vol.Schema:
         """Build the schema for the update growspace form."""
@@ -183,13 +274,54 @@ class GrowspaceConfigHandler:
 
         return vol.Schema(base)
 
+    async def async_remove_growspace(self, growspace_id: str) -> None:
+        """Remove a growspace."""
+        coordinator = getattr(self.config_entry, "runtime_data", None)
+        if coordinator is None:
+            raise ValueError("Coordinator not found")
+        await coordinator.async_remove_growspace(growspace_id)
+
     async def async_update_growspace(
         self, growspace_id: str, user_input: dict[str, Any]
     ) -> None:
         """Update an existing growspace."""
-        coordinator = self.config_entry.runtime_data
+        coordinator = getattr(self.config_entry, "runtime_data", None)
+        if coordinator is None:
+            raise ValueError("Coordinator not found")
 
         # Filter out empty values
         update_data = {k: v for k, v in user_input.items() if v}
 
         await coordinator.async_update_growspace(growspace_id, **update_data)
+
+    async def async_step_update_growspace(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Show the form for updating an existing growspace."""
+        coordinator = getattr(self.config_entry, "runtime_data", None)
+        if coordinator is None:
+            return self.flow.async_abort(reason="setup_error")
+        growspace_id = self.flow._selected_growspace_id
+        growspace = coordinator.growspaces.get(growspace_id)
+
+        if not growspace:
+            return self.flow.async_abort(reason="growspace_not_found")
+
+        if user_input is not None:
+            try:
+                await self.async_update_growspace(growspace_id, user_input)
+                return self.flow.async_create_entry(title="", data={})
+            except Exception:
+                _LOGGER.exception("Error updating growspace")
+                return self.flow.async_show_form(
+                    step_id="update_growspace",
+                    data_schema=self.get_update_growspace_schema(growspace),
+                    errors={"base": "update_failed"},
+                    description_placeholders={"growspace_name": growspace.name},
+                )
+
+        return self.flow.async_show_form(
+            step_id="update_growspace",
+            data_schema=self.get_update_growspace_schema(growspace),
+            description_placeholders={"growspace_name": growspace.name},
+        )

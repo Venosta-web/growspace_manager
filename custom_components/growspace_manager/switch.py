@@ -17,7 +17,7 @@ from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from . import GrowspaceConfigEntry
-from .const import DOMAIN, ICON_NOTIFICATION
+from .const import DOMAIN
 from .models import Growspace
 
 _LOGGER = logging.getLogger(__name__)
@@ -33,7 +33,6 @@ class GrowspaceSwitchDescription(SwitchEntityDescription):
 NOTIFICATION_SWITCH = GrowspaceSwitchDescription(
     key="notifications",
     translation_key="notifications",
-    icon=ICON_NOTIFICATION,
 )
 
 SWITCH_TYPES: tuple[GrowspaceSwitchDescription, ...] = (NOTIFICATION_SWITCH,)

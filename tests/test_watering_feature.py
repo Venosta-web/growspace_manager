@@ -143,7 +143,7 @@ class TestAsyncWaterPlant:
         event_data = events[0].data
 
         assert event_data["sensor_type"] == "irrigation"
-        assert event_data["category"] == "environmental"
+        assert event_data["category"] == "watering"
         assert "Watered with 1.0L" in str(event_data.get("reasons", []))
 
     @pytest.mark.asyncio

@@ -181,26 +181,7 @@ async def test_options_flow_manage_growspaces_remove(
 ) -> None:
     """Test remove growspace action."""
     # Given
-    config_entry = await setup_test_environment(hass, basic_mock_coordinator)
-
-    # When
-    flow = OptionsFlowHandler(config_entry)
-    flow.hass = hass
-    await flow.async_step_manage_growspaces(
-        user_input={"action": "remove", "growspace_id": "gs1"}
-    )
-
-    # Then
-    basic_mock_coordinator.async_remove_growspace.assert_called_once_with("gs1")
-
-
-@pytest.mark.asyncio
-async def test_options_flow_manage_growspaces_remove_error(
-    hass: HomeAssistant, basic_mock_coordinator
-) -> None:
-    """Test error handling when removing growspace."""
-    # Given
-    basic_mock_coordinator.async_remove_growspace.side_effect = Exception("Test error")
+    basic_mock_coordinator.growspaces = {"gs1": Mock(name="Test Growspace")}
     config_entry = await setup_test_environment(hass, basic_mock_coordinator)
 
     # When
@@ -210,8 +191,47 @@ async def test_options_flow_manage_growspaces_remove_error(
         user_input={"action": "remove", "growspace_id": "gs1"}
     )
 
+    # Should show confirmation form first
+    assert result.get("type") == FlowResultType.FORM
+    assert result.get("step_id") == "confirm_remove_growspace"
+
+    # Confirm removal
+    result = await flow.async_step_confirm_remove_growspace(
+        user_input={"confirm": True}
+    )
+
+    # Then
+    basic_mock_coordinator.async_remove_growspace.assert_called_once_with("gs1")
+    assert result.get("type") == FlowResultType.CREATE_ENTRY
+
+
+@pytest.mark.asyncio
+async def test_options_flow_manage_growspaces_remove_error(
+    hass: HomeAssistant, basic_mock_coordinator
+) -> None:
+    """Test error handling when removing growspace."""
+    # Given
+    basic_mock_coordinator.async_remove_growspace.side_effect = Exception("Test error")
+    basic_mock_coordinator.growspaces = {"gs1": Mock(name="Test Growspace")}
+    config_entry = await setup_test_environment(hass, basic_mock_coordinator)
+
+    # When
+    flow = OptionsFlowHandler(config_entry)
+    flow.hass = hass
+    result = await flow.async_step_manage_growspaces(
+        user_input={"action": "remove", "growspace_id": "gs1"}
+    )
+
+    # Confirm removal (this triggers the actual removal attempt)
+    result = await flow.async_step_confirm_remove_growspace(
+        user_input={"confirm": True}
+    )
+
     # Then
     assert result.get("type") == FlowResultType.FORM
+    assert (
+        result.get("step_id") == "confirm_remove_growspace"
+    )  # Should return to confirmation form with error
     assert result.get("errors") == {"base": "remove_failed"}
 
 

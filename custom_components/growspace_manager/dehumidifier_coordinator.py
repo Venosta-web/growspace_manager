@@ -4,8 +4,9 @@ from __future__ import annotations
 
 import logging
 import time
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
+from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import (
     ATTR_ENTITY_ID,
     SERVICE_TURN_OFF,
@@ -21,6 +22,9 @@ from .const import (
     DEFAULT_DEHUMIDIFIER_MIN_OFFTIME,
     DEFAULT_DEHUMIDIFIER_MIN_RUNTIME,
 )
+
+if TYPE_CHECKING:
+    from .coordinator import GrowspaceCoordinator
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -64,9 +68,9 @@ class DehumidifierCoordinator:
     def __init__(
         self,
         hass: HomeAssistant,
-        config_entry: Any,
+        config_entry: ConfigEntry,
         growspace_id: str,
-        main_coordinator: Any,
+        main_coordinator: GrowspaceCoordinator,
     ) -> None:
         """Initialize the Dehumidifier Coordinator.
 

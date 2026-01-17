@@ -25,9 +25,36 @@ async def async_get_config_entry_diagnostics(
     """Return diagnostics for a config entry."""
     coordinator: GrowspaceCoordinator = entry.runtime_data
 
+    # Collect sub-coordinator states
+    irrigation_states = {
+        gs_id: {
+            "is_running": getattr(coord, "is_running", None),
+            "mode": getattr(coord, "mode", None),
+        }
+        for gs_id, coord in coordinator.irrigation_coordinators.items()
+    }
+
+    dehumidifier_states = {
+        gs_id: {
+            "control_enabled": getattr(coord, "control_dehumidifier", None),
+            "target_vpd": getattr(coord, "_target_vpd", None),
+        }
+        for gs_id, coord in coordinator.dehumidifier_coordinators.items()
+    }
+
     diagnostics_data = {
         "entry": async_redact_data(entry.as_dict(), TO_REDACT),
         "coordinator_data": async_redact_data(coordinator.data, TO_REDACT),
+        "system_stats": {
+            "growspace_count": len(coordinator.growspaces),
+            "plant_count": len(coordinator.plants),
+            "strain_library_count": len(coordinator.strain_library.get_all()),
+        },
+        "subsystems": {
+            "irrigation": irrigation_states,
+            "dehumidifier": dehumidifier_states,
+        },
+        "integration_version": "0.3.3",
     }
 
     return diagnostics_data

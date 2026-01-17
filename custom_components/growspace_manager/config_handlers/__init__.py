@@ -6,21 +6,40 @@ import logging
 from abc import ABC
 from typing import Any, TypeVar
 
-from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 
-_LOGGER = logging.getLogger(__name__)
+# NOTE: Handler imports moved to bottom of file to avoid circular import
+# (handlers import BaseConfigHandler which must be defined first)
 
 T = TypeVar("T")
+
+_LOGGER = logging.getLogger(__name__)
 
 
 class BaseConfigHandler[T](ABC):
     """Base class for configuration handlers."""
 
-    def __init__(self, hass: HomeAssistant, config_entry: ConfigEntry) -> None:
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
         """Initialize the handler."""
-        self.hass = hass
-        self.config_entry = config_entry
+        if len(args) == 1 and hasattr(args[0], "hass"):
+            # Orchestrator style
+            self.flow = args[0]
+            self.hass = args[0].hass
+            self.config_entry = getattr(args[0], "_config_entry", None)
+        elif len(args) >= 2 and isinstance(args[0], HomeAssistant):
+            # Traditional/Test style
+            self.flow = None
+            self.hass = args[0]
+            self.config_entry = args[1]
+        else:
+            # Fallback
+            self.flow = kwargs.get("flow")
+            if self.flow:
+                self.hass = self.flow.hass
+                self.config_entry = getattr(self.flow, "_config_entry", None)
+            else:
+                self.hass = kwargs.get("hass")
+                self.config_entry = kwargs.get("config_entry")
 
     async def websocket_get_event_log(  # noqa: C901
         self, hass: HomeAssistant, connection, msg
@@ -49,3 +68,24 @@ class BaseConfigHandler[T](ABC):
         updated = current_options.copy()
         updated.update(new_options)
         return updated
+
+
+# Import handlers AFTER BaseConfigHandler is defined to avoid circular import
+from .ai_config_handler import AIConfigHandler  # noqa: E402
+from .environment_config_handler import EnvironmentConfigHandler  # noqa: E402
+from .growspace_config_handler import GrowspaceConfigHandler  # noqa: E402
+from .irrigation_config_handler import IrrigationConfigHandler  # noqa: E402
+from .notification_config_handler import NotificationConfigHandler  # noqa: E402
+from .plant_config_handler import PlantConfigHandler  # noqa: E402
+from .strain_config_handler import StrainConfigHandler  # noqa: E402
+
+__all__ = [
+    "BaseConfigHandler",
+    "GrowspaceConfigHandler",
+    "PlantConfigHandler",
+    "EnvironmentConfigHandler",
+    "IrrigationConfigHandler",
+    "NotificationConfigHandler",
+    "AIConfigHandler",
+    "StrainConfigHandler",
+]

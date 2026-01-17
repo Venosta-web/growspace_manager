@@ -9,12 +9,9 @@ from aiohttp import web
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ServiceValidationError
 
-from custom_components.growspace_manager import (
-    StrainLibraryImageView,
+from custom_components.growspace_manager.views import StrainLibraryImageView
+from custom_components.growspace_manager.websocket import (
     _downsample_entity_binary_search,
-    async_reload_entry,
-    async_setup_entry,
-    async_unload_entry,
     websocket_add_timeline_note,
     websocket_get_event_log,
     websocket_get_growspace_data,
@@ -22,6 +19,11 @@ from custom_components.growspace_manager import (
     websocket_get_ipm_presets,
     websocket_get_nutrient_presets,
     websocket_remove_timeline_event,
+)
+from custom_components.growspace_manager import (
+    async_reload_entry,
+    async_setup_entry,
+    async_unload_entry,
 )
 from custom_components.growspace_manager.const import (
     ATTR_IMAGES,
@@ -74,7 +76,7 @@ async def test_websocket_add_timeline_note(hass: HomeAssistant) -> None:
             return_value=mock_coordinator,
         ),
         patch(
-            "custom_components.growspace_manager.async_add_timeline_note",
+            "custom_components.growspace_manager.websocket.async_add_timeline_note",
             new_callable=AsyncMock,
         ) as mock_add_note,
     ):
@@ -92,7 +94,7 @@ async def test_websocket_remove_timeline_event(hass: HomeAssistant) -> None:
     connection = MagicMock()
     msg = {"id": 1, "event_id": "evt1"}
 
-    with patch("custom_components.growspace_manager.get_instance") as mock_get_instance:
+    with patch("custom_components.growspace_manager.websocket.get_instance") as mock_get_instance:
         mock_recorder = MagicMock()
         mock_get_instance.return_value = mock_recorder
 
@@ -101,7 +103,7 @@ async def test_websocket_remove_timeline_event(hass: HomeAssistant) -> None:
 
         mock_recorder.async_add_executor_job.side_effect = async_run_job
 
-        with patch("custom_components.growspace_manager.session_scope") as mock_scope:
+        with patch("custom_components.growspace_manager.websocket.session_scope") as mock_scope:
             mock_session = MagicMock()
             mock_scope.return_value.__enter__.return_value = mock_session
             mock_session.query.return_value.filter.return_value = (
@@ -222,6 +224,7 @@ async def test_async_setup_entry_pending_growspace_failure(hass: HomeAssistant) 
 
     hass.data = {DOMAIN: {}}
     hass.http = MagicMock()  # Mock HTTP component
+    hass.http.async_register_static_paths = AsyncMock()
 
     with (
         patch("custom_components.growspace_manager.Store", mock_store_cls),
@@ -263,9 +266,9 @@ async def test_websocket_get_event_log_coverage(hass: HomeAssistant) -> None:
 
     # 1. Test Event Type Not Found
     with (
-        patch("custom_components.growspace_manager.get_instance") as mock_get_instance,
+        patch("custom_components.growspace_manager.websocket.get_instance") as mock_get_instance,
         patch(
-            "custom_components.growspace_manager.session_scope"
+            "custom_components.growspace_manager.websocket.session_scope"
         ) as mock_session_scope,
     ):
         mock_recorder = MagicMock()
@@ -291,7 +294,7 @@ async def test_websocket_get_event_log_coverage(hass: HomeAssistant) -> None:
     # 2. Test Recorder Import/Key Error
     connection.reset_mock()
     with patch(
-        "custom_components.growspace_manager.get_instance", side_effect=ImportError
+        "custom_components.growspace_manager.websocket.get_instance", side_effect=ImportError
     ):
         await websocket_get_event_log(hass, connection, msg)
         connection.send_result.assert_called_with(1, {"gs1": []})
@@ -299,7 +302,7 @@ async def test_websocket_get_event_log_coverage(hass: HomeAssistant) -> None:
     # 3. Test General Exception
     connection.reset_mock()
     with patch(
-        "custom_components.growspace_manager.get_instance",
+        "custom_components.growspace_manager.websocket.get_instance",
         side_effect=ValueError("Boom"),
     ):
         await websocket_get_event_log(hass, connection, msg)
@@ -332,9 +335,9 @@ async def test_websocket_history_stats_coverage(hass: HomeAssistant) -> None:
     }
 
     with (
-        patch("custom_components.growspace_manager._get_statistics_data") as mock_stats,
+        patch("custom_components.growspace_manager.websocket._get_statistics_data") as mock_stats,
         patch(
-            "custom_components.growspace_manager._get_history_with_binary_search_downsample"
+            "custom_components.growspace_manager.websocket._get_history_with_binary_search_downsample"
         ) as mock_downsample,
     ):
         mock_downsample.return_value = {"sensor.test": []}
@@ -351,7 +354,7 @@ async def test_websocket_history_stats_coverage(hass: HomeAssistant) -> None:
     # Patch something inside the try block (e.g. _get_statistics_data, but we need to ensure it's called)
     # Or properly patch _get_statistics_data to raise
     with patch(
-        "custom_components.growspace_manager._get_statistics_data",
+        "custom_components.growspace_manager.websocket._get_statistics_data",
         side_effect=ValueError("Boom"),
     ):
         # Ensure we use a large interval so _get_statistics_data is called

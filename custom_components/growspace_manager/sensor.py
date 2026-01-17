@@ -426,6 +426,12 @@ class VpdSensor(BaseVpdSensor):
         self._temp_sensor = temp_sensor
         self._humidity_sensor = humidity_sensor
         self._attr_translation_key = "vpd"
+        self._attr_device_info = DeviceInfo(
+            identifiers={(DOMAIN, "service")},
+            name="Growspace Manager Service",
+            model="Service",
+            manufacturer="Growspace Manager",
+        )
 
     @property
     @override
@@ -794,6 +800,14 @@ class StrainLibrarySensor(CoordinatorEntity[GrowspaceCoordinator], SensorEntity)
         """Initialize the Strain Library sensor."""
         super().__init__(coordinator)
         self._attr_unique_id = f"{DOMAIN}_strain_library"
+        self._attr_translation_key = "strain_library"
+        self._attr_entity_category = EntityCategory.DIAGNOSTIC
+        self._attr_device_info = DeviceInfo(
+            identifiers={(DOMAIN, "service")},
+            name="Growspace Manager Service",
+            model="Service",
+            manufacturer="Growspace Manager",
+        )
 
     @property
     @override
@@ -835,6 +849,12 @@ class GrowspaceListSensor(SensorEntity):
         self._attr_name = "Growspaces List"
         self._attr_unique_id = f"{DOMAIN}_growspaces_list"
         self._attr_translation_key = "growspaces_list"
+        self._attr_device_info = DeviceInfo(
+            identifiers={(DOMAIN, "service")},
+            name="Growspace Manager Service",
+            model="Service",
+            manufacturer="Growspace Manager",
+        )
         self._update_growspaces()
 
     def _update_growspaces(self):

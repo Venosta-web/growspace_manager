@@ -143,3 +143,70 @@ When you configure environmental sensors for a growspace, the following powerful
 *   **High Mold Risk**: (`binary_sensor.<growspace_name>_high_mold_risk`) This sensor turns **ON** when conditions are favorable for mold and bud rot, particularly during the lights-off period in late flower. It monitors for high humidity, low VPD, and poor air circulation.
 *   **Optimal Conditions**: (`binary_sensor.<growspace_name>_optimal_conditions`) This sensor turns **ON** when your environment is perfectly dialed in for the current growth stage. When this sensor is on, you know your plants are happy. It turns **OFF** as a warning that conditions have drifted out of the ideal range.
 *   **Light Schedule Correct**: (`binary_sensor.<growspace_name>_light_schedule_correct`) An optional sensor (created when a light entity is configured) that turns **ON** if the light's on/off cycle duration is correct for the current growth stage.
+
+## Automation Examples
+
+Maximize the power of Growspace Manager with these automation ideas:
+
+**1. High Heat Alert**
+Send a critical notification to your phone if the "Plant Stress" sensor is triggered for more than 5 minutes.
+
+```yaml
+trigger:
+  - platform: state
+    entity_id: binary_sensor.4x4_tent_plants_under_stress
+    to: "on"
+    for: "00:05:00"
+action:
+  - service: notify.mobile_app_your_phone
+    data:
+      message: "CRITICAL: Plants in 4x4 Tent are under stress! Check environment immediately."
+      title: "🔥 High Heat Stress"
+```
+
+**2. Auto-Adjustment for VPD**
+If the "Optimal Conditions" sensor turns off, automatically toggle your humidifier (if connected to a smart plug).
+
+```yaml
+trigger:
+  - platform: state
+    entity_id: binary_sensor.4x4_tent_optimal_conditions
+    to: "off"
+    for: "00:10:00"
+condition:
+  - condition: numeric_state
+    entity_id: sensor.4x4_tent_vpd
+    above: 1.5 # Too dry
+action:
+  - service: switch.turn_on
+    target:
+      entity_id: switch.humidifier_plug
+```
+
+## Troubleshooting
+
+**Q: My "Plants Under Stress" sensor is stuck on "Unknown".**
+*   **Cause**: One or more of the required source sensors (Temperature, Humidity, VPD) is unavailable or not configured.
+*   **Fix**: Go to **Configure** > **Configure Environment Sensors** and ensure all required sensors are linked and currently providing data.
+
+**Q: I don't see the "Light Schedule Correct" sensor.**
+*   **Cause**: You haven't linked a light entity to your growspace.
+*   **Fix**: Go to **Configure** > **Configure Environment Sensors** > **Enable Light Monitoring** and select your light entity.
+
+**Q: The AI Assistant isn't responding.**
+*   **Cause**: The notification target might be invalid or the AI agent service is down.
+*   **Fix**: Check your Home Assistant logs for "Growspace Manager" errors. Ensure the correct "Notification Target" service string is used in the growspace configuration.
+
+## Known Limitations
+
+*   **Manual Entity Deletion**: If you remove a growspace, you may need to manually delete some orphan entities from Home Assistant's entity registry if they were not cleaned up automatically.
+*   **Restart Required**: Renaming a growspace currently requires a Home Assistant restart to fully update all related entity names.
+
+## Data Updates
+
+*   **Sensors**: Data from linked environmental sensors (temperature, humidity, etc.) is updated in real-time as Home Assistant receives state changes.
+*   **Bayesian Sensors**: Stress and Mold risk probabilities are recalculated immediately upon any change in the underlying environmental sensors.
+*   **Calculated Sensors**: VPD and other derived metrics are updated whenever their source sensors change.
+*   **Plant Age**: Plant age (days in veg/flower) is recalculated daily at midnight.
+
+

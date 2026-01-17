@@ -7,11 +7,16 @@ from homeassistant.core import HomeAssistant
 
 from custom_components.growspace_manager.binary_sensor import (
     SENSOR_TYPES,
-    BayesianOptimalConditionsSensor,
-    BayesianStressSensor,
+    BayesianEnvironmentSensor,
     GrowspaceSensorType,
 )
 from custom_components.growspace_manager.models import EnvironmentConfig, GrowspaceType
+from custom_components.growspace_manager.strategies.optimal import (
+    OptimalConditionsEvaluatorStrategy,
+)
+from custom_components.growspace_manager.strategies.stress import (
+    StressEvaluatorStrategy,
+)
 
 MOCK_CONFIG_ENTRY_ID = "test_entry"
 
@@ -66,11 +71,12 @@ async def test_event_categorization(hass: HomeAssistant, mock_coordinator) -> No
     optimal_desc = next(
         d for d in SENSOR_TYPES if d.sensor_type == GrowspaceSensorType.OPTIMAL
     )
-    optimal_sensor = BayesianOptimalConditionsSensor(
+    optimal_sensor = BayesianEnvironmentSensor(
         mock_coordinator,
         "gs1",
         mock_coordinator.growspaces["gs1"].environment_config,
         optimal_desc,
+        OptimalConditionsEvaluatorStrategy,
     )
     optimal_sensor.hass = hass
     optimal_sensor.entity_id = "binary_sensor.test_optimal"
@@ -118,11 +124,12 @@ async def test_event_categorization(hass: HomeAssistant, mock_coordinator) -> No
     stress_desc = next(
         d for d in SENSOR_TYPES if d.sensor_type == GrowspaceSensorType.STRESS
     )
-    stress_sensor = BayesianStressSensor(
+    stress_sensor = BayesianEnvironmentSensor(
         mock_coordinator,
         "gs1",
         mock_coordinator.growspaces["gs1"].environment_config,
         stress_desc,
+        StressEvaluatorStrategy,
     )
     stress_sensor.hass = hass
     stress_sensor.entity_id = "binary_sensor.test_stress"

@@ -136,6 +136,7 @@ DEFAULT_FLOWER_MID_DAYS = 21  # Duration of mid flower (21-42 days)
 CONF_AI_ENABLED = "ai_enabled"
 CONF_ASSISTANT_ID = "assistant_id"
 CONF_NOTIFICATION_PERSONALITY = "notification_personality"
+CONF_AI_AUTO_ALERTS = "ai_auto_alerts"
 
 # Notification Defaults
 DEFAULT_COOLDOWN_MINUTES = 5
@@ -273,6 +274,7 @@ ATTR_TYPE = "type"
 CATEGORY_TRAINING = "training"
 CATEGORY_IPM = "ipm"
 CATEGORY_NOTE = "note"
+CATEGORY_WATERING = "watering"
 
 
 # Plant stages

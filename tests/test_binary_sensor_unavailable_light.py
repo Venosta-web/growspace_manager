@@ -10,8 +10,13 @@ from homeassistant.util.dt import utcnow
 
 from custom_components.growspace_manager.binary_sensor import (
     SENSOR_TYPES,
-    BayesianMoldRiskSensor,
-    BayesianStressSensor,
+    BayesianEnvironmentSensor,
+)
+from custom_components.growspace_manager.strategies.mold import (
+    MoldRiskEvaluatorStrategy,
+)
+from custom_components.growspace_manager.strategies.stress import (
+    StressEvaluatorStrategy,
 )
 
 
@@ -84,11 +89,13 @@ async def test_unavailable_light_sensor_no_night_stress(
 
     # Setup sensor
     description = next(d for d in SENSOR_TYPES if d.sensor_type == "stress")
-    sensor = BayesianStressSensor(
+    description = next(d for d in SENSOR_TYPES if d.sensor_type == "stress")
+    sensor = BayesianEnvironmentSensor(
         mock_coordinator,
         "gs1",
         mock_coordinator.growspaces["gs1"].environment_config,
         description,
+        StressEvaluatorStrategy,
     )
     sensor.hass = hass
     sensor.entity_id = "binary_sensor.test_stress_unavailable_light"
@@ -167,11 +174,13 @@ async def test_unavailable_additional_sensors(
 
     # Setup sensor
     description = next(d for d in SENSOR_TYPES if d.sensor_type == "stress")
-    sensor = BayesianStressSensor(
+    description = next(d for d in SENSOR_TYPES if d.sensor_type == "stress")
+    sensor = BayesianEnvironmentSensor(
         mock_coordinator,
         "gs1",
         mock_coordinator.growspaces["gs1"].environment_config,
         description,
+        StressEvaluatorStrategy,
     )
     sensor.hass = hass
     sensor.entity_id = "binary_sensor.test_stress_unavailable_others"
@@ -225,11 +234,13 @@ async def test_unavailable_additional_sensors(
 
     # Also verify Mold Risk Sensor for Fan Off
     mold_description = next(d for d in SENSOR_TYPES if d.sensor_type == "mold")
-    mold_sensor = BayesianMoldRiskSensor(
+    mold_description = next(d for d in SENSOR_TYPES if d.sensor_type == "mold")
+    mold_sensor = BayesianEnvironmentSensor(
         mock_coordinator,
         "gs1",
         mock_coordinator.growspaces["gs1"].environment_config,
         mold_description,
+        MoldRiskEvaluatorStrategy,
     )
     mold_sensor.hass = hass
     mold_sensor.entity_id = "binary_sensor.test_mold_unavailable_fan"

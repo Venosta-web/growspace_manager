@@ -3,105 +3,198 @@
 from __future__ import annotations
 
 import logging
+from typing import Any
 
 import voluptuous as vol
-from homeassistant.config_entries import ConfigEntry
-from homeassistant.core import HomeAssistant
+from homeassistant.config_entries import ConfigFlowResult
 from homeassistant.helpers import selector
 
-from custom_components.growspace_manager.coordinator import GrowspaceCoordinator
-
 from ..const import DOMAIN
+from ..coordinator import GrowspaceCoordinator
+from . import BaseConfigHandler
 
 _LOGGER = logging.getLogger(__name__)
 
 
-class PlantConfigHandler:
+class PlantConfigHandler(BaseConfigHandler):
     """Handler for Plant configuration steps."""
 
-    def __init__(self, hass: HomeAssistant, config_entry: ConfigEntry) -> None:
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
         """Initialize the Plant config handler."""
-        self.hass = hass
-        self.config_entry = config_entry
+        super().__init__(*args, **kwargs)
+
+    async def async_step_manage_plants(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Handle plant management step."""
+        coordinator = getattr(self.config_entry, "runtime_data", None)
+        if coordinator is None:
+            return self.flow.async_abort(reason="setup_error")
+
+        if user_input is not None:
+            action = user_input.get("action")
+
+            if action == "add":
+                return await self.async_step_select_growspace_for_plant()
+            if action == "update" and user_input.get("plant_id"):
+                self.flow._selected_plant_id = user_input["plant_id"]
+                return await self.async_step_update_plant()
+            if action == "remove" and user_input.get("plant_id"):
+                try:
+                    plant = coordinator.plants.get(user_input["plant_id"])
+                    if plant:
+                        await self.async_destroy_plant(plant.growspace_id, plant.id)
+                except Exception:
+                    _LOGGER.exception("Error removing plant")
+                    return self.flow.async_show_form(
+                        step_id="manage_plants",
+                        data_schema=self.get_plant_management_schema(coordinator),
+                        errors={"base": "remove_failed"},
+                    )
+            if action == "back":
+                return await self.flow.async_step_init()
+
+        return self.flow.async_show_form(
+            step_id="manage_plants",
+            data_schema=self.get_plant_management_schema(coordinator),
+        )
+
+    async def async_step_select_growspace_for_plant(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Handle growspace selection for plant step."""
+        coordinator = getattr(self.config_entry, "runtime_data", None)
+        if coordinator is None:
+            return self.flow.async_abort(reason="setup_error")
+
+        if user_input is not None:
+            self.flow._selected_growspace_id = user_input["growspace_id"]
+            return await self.async_step_add_plant()
+
+        growspace_options = coordinator.get_sorted_growspace_options()
+        if not growspace_options:
+            return self.flow.async_abort(reason="no_growspaces")
+
+        schema: dict[Any, Any] = {
+            vol.Required("growspace_id"): selector.SelectSelector(
+                selector.SelectSelectorConfig(
+                    options=[
+                        selector.SelectOptionDict(value=gid, label=name)
+                        for gid, name in growspace_options
+                    ],
+                    mode=selector.SelectSelectorMode.DROPDOWN,
+                )
+            )
+        }
+
+        return self.flow.async_show_form(
+            step_id="select_growspace_for_plant",
+            data_schema=vol.Schema(schema),
+        )
+
+    async def async_step_add_plant(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Handle adding a plant step."""
+        coordinator = getattr(self.config_entry, "runtime_data", None)
+        if coordinator is None:
+            return self.flow.async_abort(reason="setup_error")
+        growspace_id = self.flow._selected_growspace_id
+        growspace = coordinator.growspaces.get(growspace_id)
+
+        if user_input is not None:
+            try:
+                await self.async_add_plant(
+                    growspace_id=growspace_id,
+                    strain=user_input["strain"],
+                    row=user_input["row"],
+                    col=user_input["col"],
+                    phenotype=user_input.get("phenotype"),
+                    veg_start=user_input.get("veg_start"),
+                    flower_start=user_input.get("flower_start"),
+                )
+                return self.flow.async_create_entry(title="", data={})
+            except Exception as err:
+                _LOGGER.exception("Error adding plant")
+                return self.flow.async_show_form(
+                    step_id="add_plant",
+                    data_schema=self.get_add_plant_schema(growspace, coordinator),
+                    errors={"base": str(err)},
+                )
+
+        return self.flow.async_show_form(
+            step_id="add_plant",
+            data_schema=self.get_add_plant_schema(growspace, coordinator),
+        )
+
+    async def async_step_update_plant(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Handle updating a plant step."""
+        coordinator = getattr(self.config_entry, "runtime_data", None)
+        if coordinator is None:
+            return self.flow.async_abort(reason="setup_error")
+        plant_id = self.flow._selected_plant_id
+        plant = coordinator.plants.get(plant_id)
+
+        if not plant:
+            return self.flow.async_abort(reason="plant_not_found")
+
+        if user_input is not None:
+            try:
+                # Filter out empty values
+                update_data = {k: v for k, v in user_input.items() if v}
+                await self.async_update_plant(plant_id, **update_data)
+                return self.flow.async_create_entry(title="", data={})
+            except Exception as err:
+                _LOGGER.exception("Error updating plant")
+                return self.flow.async_show_form(
+                    step_id="update_plant",
+                    data_schema=self.get_update_plant_schema(plant, coordinator),
+                    errors={"base": str(err)},
+                )
+
+        return self.flow.async_show_form(
+            step_id="update_plant",
+            data_schema=self.get_update_plant_schema(plant, coordinator),
+        )
 
     def get_plant_management_schema(
         self, coordinator: GrowspaceCoordinator
     ) -> vol.Schema:
         """Build the schema for the plant management menu."""
-        growspace_options = coordinator.get_sorted_growspace_options()
+        plant_options = [
+            selector.SelectOptionDict(
+                value=p_id, label=f"{p.strain} ({p.growspace_id} R{p.row}C{p.col})"
+            )
+            for p_id, p in coordinator.plants.items()
+        ]
 
-        schema = {
-            vol.Required("action", default="add"): selector.SelectSelector(
+        schema_dict: dict[vol.Optional | vol.Required, Any] = {
+            vol.Required("action"): selector.SelectSelector(
                 selector.SelectSelectorConfig(
                     options=[
-                        selector.SelectOptionDict(value="add", label="Add Plant"),
-                        selector.SelectOptionDict(value="edit", label="Edit Plant"),
-                        selector.SelectOptionDict(value="move", label="Move Plant"),
-                        selector.SelectOptionDict(
-                            value="harvest", label="Harvest Plant"
-                        ),
-                        selector.SelectOptionDict(
-                            value="destroy", label="Destroy Plant"
-                        ),
+                        selector.SelectOptionDict(value="add", label="Add New Plant"),
+                        selector.SelectOptionDict(value="update", label="Update Plant"),
+                        selector.SelectOptionDict(value="remove", label="Remove Plant"),
                         selector.SelectOptionDict(
                             value="back", label="Back to Main Menu"
                         ),
-                    ]
-                )
-            ),
-        }
-
-        if growspace_options:
-            schema[vol.Optional("growspace_id")] = selector.SelectSelector(
-                selector.SelectSelectorConfig(
-                    options=[
-                        {"value": gs_id, "label": name}
-                        for gs_id, name in growspace_options
                     ],
                     mode=selector.SelectSelectorMode.DROPDOWN,
                 )
             )
+        }
 
-        return vol.Schema(schema)
+        if plant_options:
+            schema_dict[vol.Optional("plant_id")] = selector.SelectSelector(
+                selector.SelectSelectorConfig(
+                    options=plant_options,
+                    mode=selector.SelectSelectorMode.DROPDOWN,
+                )
+            )
 
-    async def async_harvest_plant(
-        self, growspace_id: str, plant_id: str, harvest_weight: float
-    ) -> None:
-        """Harvest a plant."""
-        coordinator = self.config_entry.runtime_data
-        await coordinator.async_harvest_plant(growspace_id, plant_id, harvest_weight)
-
-    async def async_destroy_plant(self, growspace_id: str, plant_id: str) -> None:
-        """Destroy a plant."""
-        coordinator = self.config_entry.runtime_data
-        await coordinator.async_remove_plant(plant_id)
-
-    async def async_add_plant(
-        self,
-        growspace_id: str,
-        strain: str,
-        row: int,
-        col: int,
-        phenotype: str | None = None,
-        veg_start: str | None = None,
-        flower_start: str | None = None,
-    ) -> None:
-        """Add a new plant."""
-        coordinator = self.config_entry.runtime_data
-        await coordinator.async_add_plant(
-            growspace_id=growspace_id,
-            strain=strain,
-            row=row,
-            col=col,
-            phenotype=phenotype,
-            veg_start=veg_start,
-            flower_start=flower_start,
-        )
-
-    async def async_update_plant(self, plant_id: str, **kwargs) -> None:
-        """Update an existing plant."""
-        coordinator = self.config_entry.runtime_data
-        await coordinator.async_update_plant(plant_id, **kwargs)
+        return vol.Schema(schema_dict)
 
     def get_growspace_selection_schema(
         self, growspace_devices, coordinator
@@ -249,3 +342,46 @@ class PlantConfigHandler:
                 vol.Optional("flower_start"): selector.DateSelector(),
             }
         )
+
+    async def async_harvest_plant(
+        self, growspace_id: str, plant_id: str, harvest_weight: float
+    ) -> None:
+        """Harvest a plant."""
+        coordinator = self.config_entry.runtime_data
+        await coordinator.async_harvest_plant(growspace_id, plant_id, harvest_weight)
+
+    async def async_destroy_plant(self, growspace_id: str, plant_id: str) -> None:
+        """Destroy a plant."""
+        coordinator = self.config_entry.runtime_data
+        await coordinator.async_remove_plant(plant_id)
+
+    async def async_add_plant(
+        self,
+        growspace_id: str,
+        strain: str,
+        row: int,
+        col: int,
+        phenotype: str | None = None,
+        veg_start: str | None = None,
+        flower_start: str | None = None,
+    ) -> None:
+        """Add a new plant."""
+        coordinator = getattr(self.config_entry, "runtime_data", None)
+        if coordinator is None:
+            raise ValueError("Coordinator not found")
+        await coordinator.async_add_plant(
+            growspace_id=growspace_id,
+            strain=strain,
+            row=row,
+            col=col,
+            phenotype=phenotype,
+            veg_start=veg_start,
+            flower_start=flower_start,
+        )
+
+    async def async_update_plant(self, plant_id: str, **kwargs) -> None:
+        """Update an existing plant."""
+        coordinator = getattr(self.config_entry, "runtime_data", None)
+        if coordinator is None:
+            raise ValueError("Coordinator not found")
+        await coordinator.async_update_plant(plant_id, **kwargs)

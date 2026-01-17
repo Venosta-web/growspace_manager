@@ -5,9 +5,12 @@ import pytest
 
 from custom_components.growspace_manager.binary_sensor import (
     SENSOR_TYPES,
-    BayesianStressSensor,
+    BayesianEnvironmentSensor,
 )
 from custom_components.growspace_manager.models import GrowspaceType
+from custom_components.growspace_manager.strategies.stress import (
+    StressEvaluatorStrategy,
+)
 
 
 @pytest.fixture
@@ -87,11 +90,12 @@ def test_get_growth_stage_info_dry_growspace(mock_coordinator) -> None:
     """Test _get_growth_stage_info for 'dry' growspace."""
     # Create sensor for 'dry' growspace
     description = next(d for d in SENSOR_TYPES if d.sensor_type == "stress")
-    sensor = BayesianStressSensor(
+    sensor = BayesianEnvironmentSensor(
         mock_coordinator,
         "dry",
         mock_coordinator.growspaces["dry"].environment_config,
         description,
+        StressEvaluatorStrategy,
     )
 
     # This calls _get_growth_stage_info internally relies on coordinator.get_growspace_plants
@@ -117,11 +121,13 @@ def test_get_growth_stage_info_cure_growspace(mock_coordinator) -> None:
     mock_coordinator.growspaces["cure"] = cure_growspace
 
     description = next(d for d in SENSOR_TYPES if d.sensor_type == "stress")
-    sensor = BayesianStressSensor(
+    description = next(d for d in SENSOR_TYPES if d.sensor_type == "stress")
+    sensor = BayesianEnvironmentSensor(
         mock_coordinator,
         "cure",
         mock_coordinator.growspaces["cure"].environment_config,
         description,
+        StressEvaluatorStrategy,
     )
 
     info = sensor._get_growth_stage_info()

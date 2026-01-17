@@ -26,27 +26,8 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from homeassistant.util.dt import utcnow
 
 from . import GrowspaceConfigEntry
-from .bayesian_data import (
-    CURING_THRESHOLDS,
-    DRYING_THRESHOLDS,
-    PROB_MOLD_HUMIDIFIER_ON,
-    PROB_MOLD_STAGNANT_AIR,
-)
 from .bayesian_evaluator import (
-    ObservationList,
     ReasonList,
-    async_evaluate_mold_risk_trend,
-    async_evaluate_stress_trend,
-    evaluate_active_desiccation,
-    evaluate_active_saturation,
-    evaluate_direct_co2_stress,
-    evaluate_direct_humidity_stress,
-    evaluate_direct_temp_stress,
-    evaluate_direct_vpd_stress,
-    evaluate_optimal_co2,
-    evaluate_optimal_temperature,
-    evaluate_optimal_vpd,
-    evaluate_soil_moisture_stress,
 )
 from .const import (
     ATTR_EXPECTED_SCHEDULE,
@@ -56,6 +37,7 @@ from .const import (
     ATTR_REASONS,
     ATTR_THRESHOLD,
     ATTR_TIME_IN_CURRENT_STATE,
+    CONF_AI_AUTO_ALERTS,
     DEFAULT_BAYESIAN_PRIORS,
     DEFAULT_BAYESIAN_THRESHOLDS,
     DOMAIN,
@@ -69,8 +51,15 @@ from .models import (
     GrowspaceEvent,
     GrowspaceType,
 )
+from .services.ai_assistant import GrowAssistant
+from .strategies.curing import CuringEvaluatorStrategy
+from .strategies.drying import DryingEvaluatorStrategy
+from .strategies.evaluator_strategy import BayesianEvaluatorStrategy
+from .strategies.mold import MoldRiskEvaluatorStrategy
+from .strategies.optimal import OptimalConditionsEvaluatorStrategy
+from .strategies.stress import StressEvaluatorStrategy
 from .trend_analyzer import TrendAnalyzer
-from .utils import calculate_days_since
+from .utils import VPDCalculator, calculate_days_since
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -91,7 +80,6 @@ SENSOR_TYPES: tuple[GrowspaceBinarySensorDescription, ...] = (
         sensor_type=GrowspaceSensorType.STRESS,
         prior_key="prior_stress",
         threshold_key="threshold_stress",
-        icon="mdi:alert-circle",
     ),
     GrowspaceBinarySensorDescription(
         key=GrowspaceSensorType.MOLD,
@@ -99,7 +87,6 @@ SENSOR_TYPES: tuple[GrowspaceBinarySensorDescription, ...] = (
         sensor_type=GrowspaceSensorType.MOLD,
         prior_key="prior_mold_risk",
         threshold_key="threshold_mold",
-        icon="mdi:bacteria",
     ),
     GrowspaceBinarySensorDescription(
         key=GrowspaceSensorType.OPTIMAL,
@@ -107,7 +94,6 @@ SENSOR_TYPES: tuple[GrowspaceBinarySensorDescription, ...] = (
         sensor_type=GrowspaceSensorType.OPTIMAL,
         prior_key="prior_optimal",
         threshold_key="threshold_optimal",
-        icon="mdi:check-circle",
     ),
     GrowspaceBinarySensorDescription(
         key=GrowspaceSensorType.DRYING,
@@ -115,7 +101,6 @@ SENSOR_TYPES: tuple[GrowspaceBinarySensorDescription, ...] = (
         sensor_type=GrowspaceSensorType.DRYING,
         prior_key="prior_drying",
         threshold_key="threshold_drying",
-        icon="mdi:weather-windy",
     ),
     GrowspaceBinarySensorDescription(
         key=GrowspaceSensorType.CURING,
@@ -123,7 +108,6 @@ SENSOR_TYPES: tuple[GrowspaceBinarySensorDescription, ...] = (
         sensor_type=GrowspaceSensorType.CURING,
         prior_key="prior_curing",
         threshold_key="threshold_curing",
-        icon="mdi:glass-jar",
     ),
 )
 
@@ -204,11 +188,15 @@ def _process_growspace_sensors(
         if description.sensor_type in allowed_types:
             key = f"{growspace_id}_{description.sensor_type}"
             if key not in initialized_sensors:
-                # Factory logic to pick correct class
-                # This part is a bit messy without a registry, but keeps it explicit
-                sensor_class = _get_sensor_class(description.sensor_type)
+                strategy_class = _get_strategy_class(description.sensor_type)
                 new_entities.append(
-                    sensor_class(coordinator, growspace_id, env_config, description)
+                    BayesianEnvironmentSensor(
+                        coordinator,
+                        growspace_id,
+                        env_config,
+                        description,
+                        strategy_class,
+                    )
                 )
                 initialized_sensors.add(key)
 
@@ -222,19 +210,19 @@ def _process_growspace_sensors(
             initialized_sensors.add(key)
 
 
-def _get_sensor_class(sensor_type: str) -> type[BayesianEnvironmentSensor]:
-    """Map sensor type to class."""
+def _get_strategy_class(sensor_type: str) -> type[BayesianEvaluatorStrategy]:
+    """Map sensor type to strategy class."""
     if sensor_type == GrowspaceSensorType.STRESS:
-        return BayesianStressSensor
+        return StressEvaluatorStrategy
     elif sensor_type == GrowspaceSensorType.MOLD:
-        return BayesianMoldRiskSensor
+        return MoldRiskEvaluatorStrategy
     elif sensor_type == GrowspaceSensorType.OPTIMAL:
-        return BayesianOptimalConditionsSensor
+        return OptimalConditionsEvaluatorStrategy
     elif sensor_type == GrowspaceSensorType.DRYING:
-        return BayesianDryingSensor
+        return DryingEvaluatorStrategy
     elif sensor_type == GrowspaceSensorType.CURING:
-        return BayesianCuringSensor
-    return BayesianEnvironmentSensor  # Fallback
+        return CuringEvaluatorStrategy
+    return StressEvaluatorStrategy  # Fallback
 
 
 def _validate_env_config(config: EnvironmentConfig) -> bool:
@@ -259,6 +247,7 @@ class BayesianEnvironmentSensor(CoordinatorEntity, BinarySensorEntity):
         growspace_id: str,
         env_config: EnvironmentConfig,
         description: GrowspaceBinarySensorDescription,
+        strategy_class: type[BayesianEvaluatorStrategy],
     ) -> None:
         """Initialize the Bayesian environment sensor."""
         super().__init__(coordinator)
@@ -266,6 +255,7 @@ class BayesianEnvironmentSensor(CoordinatorEntity, BinarySensorEntity):
         self.coordinator = coordinator
         self.growspace_id = growspace_id
         self.env_config = env_config
+        self.strategy = strategy_class(self)
         self._attr_should_poll = False
 
         growspace = coordinator.growspaces[growspace_id]
@@ -335,6 +325,11 @@ class BayesianEnvironmentSensor(CoordinatorEntity, BinarySensorEntity):
         temp = self._get_sensor_value(self.env_config.temperature_sensor)
         humidity = self._get_sensor_value(self.env_config.humidity_sensor)
         vpd = self._get_sensor_value(self.env_config.vpd_sensor)
+
+        # Fallback: Calculate VPD if sensor is missing but Temp/Hum are available
+        if vpd is None and temp is not None and humidity is not None:
+            vpd = VPDCalculator.calculate_vpd(temp, humidity)
+
         co2 = self._get_sensor_value(self.env_config.co2_sensor)
 
         stage_info = self._get_growth_stage_info()
@@ -436,7 +431,7 @@ class BayesianEnvironmentSensor(CoordinatorEntity, BinarySensorEntity):
     @override
     async def async_added_to_hass(self) -> None:
         """Register callbacks when the entity is added to Home Assistant."""
-        self.coordinator.async_add_listener(self._handle_coordinator_update)
+        await super().async_added_to_hass()
 
         c = self.env_config
         sensors = [
@@ -541,8 +536,29 @@ class BayesianEnvironmentSensor(CoordinatorEntity, BinarySensorEntity):
     async def _send_notification(self, title: str, message: str) -> None:
         """Send a notification to the configured target for the growspace."""
         try:
+            # Check for AI Auto Alerts
+            final_message = message
+            coordinator_options = getattr(self.coordinator, "options", {})
+            ai_alerts_enabled = coordinator_options.get(CONF_AI_AUTO_ALERTS, False)
+
+            if ai_alerts_enabled and self._probability >= self.threshold:
+                try:
+                    assistant = GrowAssistant(
+                        self.hass, self.coordinator, self.coordinator.strain_library
+                    )
+                    ai_message = await assistant.generate_alert_message(
+                        self.growspace_id,
+                        self.entity_description.sensor_type,
+                        [r[1] for r in self._reasons],
+                    )
+                    final_message = f"{ai_message}\n\n(Original: {message})"
+                except Exception:
+                    _LOGGER.warning(
+                        "Failed to generate AI alert, falling back to standard message"
+                    )
+
             await self.notification_manager.async_send_notification(
-                self.growspace_id, title, message, self._sensor_states
+                self.growspace_id, title, final_message, self._sensor_states
             )
         except Exception:
             _LOGGER.exception("Failed to send notification to %s", self.growspace_id)
@@ -551,7 +567,7 @@ class BayesianEnvironmentSensor(CoordinatorEntity, BinarySensorEntity):
         self, new_state_on: bool
     ) -> tuple[str, str] | None:
         """Return the title and message for a notification based on state change."""
-        return None
+        return self.strategy.get_notification_title_message(new_state_on)
 
     def _calculate_bayesian_probability(
         self, start_prob: float, observations: list[tuple[float, float]]
@@ -581,8 +597,18 @@ class BayesianEnvironmentSensor(CoordinatorEntity, BinarySensorEntity):
         return posterior_odds / (1 + posterior_odds)
 
     async def _async_update_probability(self) -> None:
-        """Update probability - should be implemented by subclasses."""
-        raise NotImplementedError
+        """Update probability using the assigned strategy."""
+        env_state = self._get_base_environment_state()
+        all_observations, all_reasons = await self.strategy.async_evaluate(env_state)
+
+        # Calculate final probability
+        if not all_observations:
+            self._probability = 0.0
+        else:
+            self._probability = self._calculate_bayesian_probability(
+                self.prior, all_observations
+            )
+        self._reasons = all_reasons
 
     async def async_update_and_notify(self) -> None:
         """Update the sensor's probability and send a notification if the state changes."""
@@ -636,345 +662,11 @@ class BayesianEnvironmentSensor(CoordinatorEntity, BinarySensorEntity):
         self.async_write_ha_state()
 
 
-class BayesianStressSensor(BayesianEnvironmentSensor):
-    """Sensor that calculates the probability of plant stress."""
-
-    async def _async_update_probability(self) -> None:
-        """Calculate the probability of stress based on Bayesian inference."""
-        env_state = self._get_base_environment_state()
-
-        if None in (env_state.temp, env_state.humidity, env_state.vpd, env_state.co2):
-            self._probability = 0.0
-            self._reasons = []
-            return
-
-        env_config_dict = self.env_config.to_dict()
-        all_observations: ObservationList = []
-        all_reasons: ReasonList = []
-
-        # 1. Active Desiccation (Critical)
-        obs, rsn = evaluate_active_desiccation(env_state, env_config_dict)
-        all_observations.extend(obs)
-        all_reasons.extend(rsn)
-
-        # 2. Active Saturation (Critical)
-        obs, rsn = evaluate_active_saturation(env_state, env_config_dict)
-        all_observations.extend(obs)
-        all_reasons.extend(rsn)
-
-        # 3. Direct Stress Checks
-        obs, rsn = evaluate_direct_temp_stress(env_state, env_config_dict)
-        all_observations.extend(obs)
-        all_reasons.extend(rsn)
-
-        obs, rsn = evaluate_direct_humidity_stress(env_state, env_config_dict)
-        all_observations.extend(obs)
-        all_reasons.extend(rsn)
-
-        obs, rsn = evaluate_direct_vpd_stress(env_state, env_config_dict)
-        all_observations.extend(obs)
-        all_reasons.extend(rsn)
-
-        obs, rsn = evaluate_direct_co2_stress(env_state, env_config_dict)
-        all_observations.extend(obs)
-        all_reasons.extend(rsn)
-
-        obs, rsn = evaluate_soil_moisture_stress(env_state, env_config_dict)
-        all_observations.extend(obs)
-        all_reasons.extend(rsn)
-
-        # 4. Trends
-        if self.env_config.temperature_sensor:
-            # async_evaluate_stress_trend returns (obs, reasons, states)
-            obs, rsn, _ = await async_evaluate_stress_trend(self, env_state)
-            all_observations.extend(obs)
-            all_reasons.extend(rsn)
-
-        # Calculate final probability
-        self._probability = self._calculate_bayesian_probability(
-            self.prior, all_observations
-        )
-        self._reasons = all_reasons
-
-    def get_notification_title_message(
-        self, new_state_on: bool
-    ) -> tuple[str, str] | None:
-        """Notify on rising edge of stress."""
-        if new_state_on:
-            growspace = self.coordinator.growspaces.get(self.growspace_id)
-            name = growspace.name if growspace else self.growspace_id
-            message = self._generate_notification_message(
-                f"High stress conditions detected in {name}"
-            )
-            return (f"Plant Stress Alert: {name}", message)
-        return None
-
-
-class BayesianMoldRiskSensor(BayesianEnvironmentSensor):
-    """Sensor that calculates the probability of mold growth."""
-
-    async def _async_update_probability(self) -> None:  # noqa: C901
-        """Calculate the probability of mold risk."""
-        env_state = self._get_base_environment_state()
-
-        if None in (env_state.temp, env_state.humidity):
-            self._probability = 0.0
-            self._reasons = []
-            return
-
-        # Refactoring Mold Sensor to use ObservationList
-        all_observations: ObservationList = []
-        all_reasons: ReasonList = []
-
-        # 1. High Humidity (Stage-Aware)
-        obs, rsn = self._evaluate_humidity_risk(env_state)
-        if obs:
-            all_observations.append(obs)
-            all_reasons.append(rsn)
-
-        # 2. Low Circulation
-        if env_state.fan_off:
-            is_risk = True
-            # In Veg, only penalize fan off if humidity is already somewhat high
-            if env_state.flower_days == 0 and (
-                env_state.humidity is None or env_state.humidity < 80
-            ):
-                is_risk = False
-
-            if is_risk:
-                prob = (
-                    PROB_MOLD_STAGNANT_AIR
-                    if isinstance(PROB_MOLD_STAGNANT_AIR, tuple)
-                    else (0.85, 0.15)
-                )
-                all_observations.append(prob)
-                all_reasons.append((prob[0], "Circulation Fan Off"))
-
-        # 3. Humidifier
-        if env_state.humidifier_value and env_state.humidifier_value > 0:
-            is_risk = True
-            # Humidifier on is normal in Veg/Early Flower.
-            # Only penalize if humidity is already near danger zones.
-            if env_state.flower_days == 0:  # Veg
-                if env_state.humidity is None or env_state.humidity < 85:
-                    is_risk = False
-            elif env_state.flower_days > 40:  # Late Flower
-                if env_state.humidity is None or env_state.humidity < 60:
-                    is_risk = False
-            elif env_state.humidity is None or env_state.humidity < 70:
-                is_risk = False
-
-            if is_risk:
-                prob = (
-                    PROB_MOLD_HUMIDIFIER_ON
-                    if isinstance(PROB_MOLD_HUMIDIFIER_ON, tuple)
-                    else (0.95, 0.10)
-                )
-                all_observations.append(prob)
-                all_reasons.append((prob[0], "Humidifier On"))
-
-        # 4. Trends
-        if self.env_config.humidity_sensor:
-            obs_list, rsn_list, _ = await async_evaluate_mold_risk_trend(
-                self, env_state
-            )
-            all_observations.extend(obs_list)
-            all_reasons.extend(rsn_list)
-
-        self._probability = self._calculate_bayesian_probability(
-            self.prior, all_observations
-        )
-        self._reasons = all_reasons
-
-    def _evaluate_humidity_risk(
-        self, env_state: EnvironmentState
-    ) -> tuple[tuple[float, float], tuple[float, str]] | tuple[None, None]:
-        """Evaluate humidity risk based on growth stage."""
-        hum = env_state.humidity
-        is_high_humidity = False
-
-        if env_state.flower_days == 0:  # Veg
-            # Powdery Mildew risk only at very high RH
-            if hum > 85:
-                is_high_humidity = True
-        elif env_state.flower_days > 40:  # Late Flower
-            # Botrytis risk
-            if hum > 60:
-                is_high_humidity = True
-        elif hum > 70:  # Early/Mid Flower
-            is_high_humidity = True
-
-        if is_high_humidity:
-            prob = (0.8, 0.2)
-            return prob, (prob[0], f"High Humidity ({hum}%)")
-        return None, None
-
-    def get_notification_title_message(
-        self, new_state_on: bool
-    ) -> tuple[str, str] | None:
-        """Notify on rising edge of mold risk."""
-        if new_state_on:
-            growspace = self.coordinator.growspaces.get(self.growspace_id)
-            if not growspace:
-                return None
-            name = growspace.name
-            message = self._generate_notification_message("High mold risk detected")
-            return (f"High Mold Risk in {name}", message)
-        return None
-
-
-class BayesianOptimalConditionsSensor(BayesianEnvironmentSensor):
-    """Sensor that calculates probability of optimal VPD/Temp/CO2."""
-
-    async def _async_update_probability(self) -> None:
-        """Calculate probability of optimal conditions."""
-        env_state = self._get_base_environment_state()
-
-        if None in (env_state.temp, env_state.humidity, env_state.vpd):
-            self._probability = 0.0
-            self._reasons = []
-            return
-
-        all_observations: ObservationList = []
-        all_reasons: ReasonList = []
-        env_config_dict = self.env_config.to_dict()
-
-        obs, rsn = evaluate_optimal_temperature(env_state, env_config_dict)
-        all_observations.extend(obs)
-        all_reasons.extend(rsn)
-
-        obs, rsn = evaluate_optimal_vpd(env_state, env_config_dict)
-        all_observations.extend(obs)
-        all_reasons.extend(rsn)
-
-        obs, rsn = evaluate_optimal_co2(env_state, env_config_dict)
-        all_observations.extend(obs)
-        all_reasons.extend(rsn)
-
-        self._probability = self._calculate_bayesian_probability(
-            self.prior, all_observations
-        )
-        self._reasons = all_reasons
-
-    def get_notification_title_message(
-        self, new_state_on: bool
-    ) -> tuple[str, str] | None:
-        """Notify when conditions DROP out of optimal (falling edge)."""
-        if not new_state_on:
-            growspace = self.coordinator.growspaces.get(self.growspace_id)
-            name = growspace.name if growspace else self.growspace_id
-            message = self._generate_notification_message(
-                "Conditions no longer optimal"
-            )
-            return (f"Optimal Conditions Lost: {name}", message)
-        return None
-
-
-class BayesianDryingSensor(BayesianEnvironmentSensor):
-    """Sensor for monitoring drying conditions (Temp ~60F, Hum ~60%)."""
-
-    async def _async_update_probability(self) -> None:
-        """Calculate probability of optimal drying conditions."""
-        # Skip if not a dry growspace
-        if self.growspace_id != PlantStage.DRY:
-            self._probability = 0
-            self._reasons = []
-            self.async_write_ha_state()
-            return
-
-        env_state = self._get_base_environment_state()
-
-        if None in (env_state.temp, env_state.humidity):
-            self._probability = 0.0
-            self._reasons = []
-            return
-
-        reasons: ReasonList = []
-        prob = self.prior
-
-        # Unpack thresholds: (min, max, prob_optimal, prob_out_of_range)
-        temp_min, temp_max, temp_prob_opt, temp_prob_out = DRYING_THRESHOLDS["temp"]
-        hum_min, hum_max, hum_prob_opt, hum_prob_out = DRYING_THRESHOLDS["humidity"]
-
-        # Temp check
-        if temp_min <= env_state.temp <= temp_max:
-            weight = temp_prob_opt[0]  # P(obs|true)
-            prob = (prob * weight) / ((prob * weight) + ((1 - prob) * (1 - weight)))
-            reasons.append((weight, "Temp Optimal for Drying"))
-        else:
-            weight = temp_prob_out[0]  # P(obs|false)
-            prob = (prob * weight) / ((prob * weight) + ((1 - prob) * (1 - weight)))
-            reasons.append((weight, "Temp out of range"))
-
-        # Humidity check
-        if hum_min <= env_state.humidity <= hum_max:
-            weight = hum_prob_opt[0]
-            prob = (prob * weight) / ((prob * weight) + ((1 - prob) * (1 - weight)))
-            reasons.append((weight, "Humidity Optimal for Drying"))
-        else:
-            weight = hum_prob_out[0]
-            prob = (prob * weight) / ((prob * weight) + ((1 - prob) * (1 - weight)))
-            reasons.append((weight, "Humidity out of range"))
-
-        self._probability = prob
-        self._reasons = reasons
-
-
-class BayesianCuringSensor(BayesianEnvironmentSensor):
-    """Sensor for monitoring curing conditions."""
-
-    async def _async_update_probability(self) -> None:
-        """Calculate probability of optimal curing conditions."""
-        # Skip if not a cure growspace
-        if self.growspace_id != PlantStage.CURE:
-            self._probability = 0
-            self._reasons = []
-            self.async_write_ha_state()
-            return
-
-        env_state = self._get_base_environment_state()
-
-        if None in (env_state.temp, env_state.humidity):
-            self._probability = 0.0
-            self._reasons = []
-            return
-
-        reasons: ReasonList = []
-        prob = self.prior
-
-        # Unpack thresholds: (min, max, prob_optimal, prob_out_of_range)
-        temp_min, temp_max, temp_prob_opt, temp_prob_out = CURING_THRESHOLDS["temp"]
-        hum_min, hum_max, hum_prob_opt, hum_prob_out = CURING_THRESHOLDS["humidity"]
-
-        # Temp check
-        if temp_min <= env_state.temp <= temp_max:
-            weight = temp_prob_opt[0]  # P(obs|true)
-            prob = (prob * weight) / ((prob * weight) + ((1 - prob) * (1 - weight)))
-            reasons.append((weight, "Temp Optimal for Curing"))
-        else:
-            weight = temp_prob_out[0]  # P(obs|false)
-            prob = (prob * weight) / ((prob * weight) + ((1 - prob) * (1 - weight)))
-            reasons.append((weight, "Temp out of range"))
-
-        # Humidity check
-        if hum_min <= env_state.humidity <= hum_max:
-            weight = hum_prob_opt[0]
-            prob = (prob * weight) / ((prob * weight) + ((1 - prob) * (1 - weight)))
-            reasons.append((weight, "Humidity Optimal for Curing"))
-        else:
-            weight = hum_prob_out[0]
-            prob = (prob * weight) / ((prob * weight) + ((1 - prob) * (1 - weight)))
-            reasons.append((weight, "Humidity out of range"))
-
-        self._probability = prob
-        self._reasons = reasons
-
-
 class LightCycleVerificationSensor(BinarySensorEntity):
     """Binary sensor to verify if the light schedule matches the expected plan."""
 
     _attr_should_poll = False
-    _attr_icon = "mdi:lightbulb-clock"
+    _attr_translation_key = "light_verification"
 
     def __init__(
         self,
