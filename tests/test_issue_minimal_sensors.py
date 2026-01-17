@@ -8,14 +8,20 @@ from custom_components.growspace_manager.binary_sensor import (
     GrowspaceBinarySensorDescription,
     GrowspaceSensorType,
 )
+from .conftest import create_plant
+
 from custom_components.growspace_manager.models import (
     EnvironmentConfig,
     Growspace,
     GrowspaceType,
 )
+from .conftest import create_plant
+
 from custom_components.growspace_manager.strategies.optimal import (
     OptimalConditionsEvaluatorStrategy,
 )
+from .conftest import create_plant
+
 
 
 @pytest.fixture

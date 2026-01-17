@@ -3,6 +3,7 @@
 from datetime import datetime, timedelta
 
 from custom_components.growspace_manager.models import Plant, StageHistoryItem
+from .conftest import create_plant
 
 
 def test_plant_from_dict_creates_history() -> None:
@@ -59,7 +60,7 @@ def test_plant_from_dict_preserves_existing_history() -> None:
 
 def test_get_days_in_stage_uses_history() -> None:
     """Test get_days_in_stage calculation using history."""
-    plant = Plant(plant_id="p1", growspace_id="gs1", strain="Test")
+    plant = create_plant(plant_id="p1", growspace_id="gs1", strain="Test")
 
     now = datetime.now()
     start_veg = (now - timedelta(days=50)).isoformat()
@@ -81,7 +82,7 @@ def test_get_days_in_stage_uses_history() -> None:
 
 def test_get_days_in_stage_multi_segment() -> None:
     """Test summing multiple segments for same stage (e.g. reveg)."""
-    plant = Plant(plant_id="p1", growspace_id="gs1", strain="Test")
+    plant = create_plant(plant_id="p1", growspace_id="gs1", strain="Test")
     now = datetime.now()
 
     # Veg 1: 10 days

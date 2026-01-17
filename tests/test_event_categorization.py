@@ -33,8 +33,8 @@ def mock_growspace():
         humidity_sensor="sensor.humidity",
         vpd_sensor="sensor.vpd",
         co2_sensor="sensor.co2",
-        circulation_fan_entity="switch.fan",
-        light_sensor="light.grow_light",
+        circulation_fan_entities=["switch.fan"],
+        light_sensors=["light.grow_light"],
         soil_moisture_sensor="sensor.soil_moisture",
         bayesian_options={
             "threshold_stress": 0.8,

@@ -49,12 +49,12 @@ class TestEnvironmentReporter:
         gs1 = Growspace(
             id="gs1",
             name="Growspace 1",
-            environment_config=EnvironmentConfig(light_sensor="sensor.light_1"),
+            environment_config=EnvironmentConfig(light_sensors=["sensor.light_1"]),
         )
         gs2 = Growspace(
             id="gs2",
             name="Growspace 2",
-            environment_config=EnvironmentConfig(light_sensor="sensor.light_2"),
+            environment_config=EnvironmentConfig(light_sensors=["sensor.light_2"]),
         )
         mock_coordinator.growspaces = {"gs1": gs1, "gs2": gs2}
 
@@ -82,7 +82,7 @@ class TestEnvironmentReporter:
         gs1 = Growspace(
             id="gs1",
             name="Growspace 1",
-            environment_config=EnvironmentConfig(light_sensor=None),
+            environment_config=EnvironmentConfig(light_sensors=[]),
         )
         mock_coordinator.growspaces = {"gs1": gs1}
 
@@ -115,7 +115,7 @@ class TestEnvironmentReporter:
         gs1 = Growspace(
             id="gs1",
             name="Growspace 1",
-            environment_config=EnvironmentConfig(light_sensor="sensor.light_1"),
+            environment_config=EnvironmentConfig(light_sensors=["sensor.light_1"]),
         )
         mock_coordinator.growspaces = {"gs1": gs1}
 

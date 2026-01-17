@@ -12,6 +12,7 @@ from homeassistant.util.dt import as_local
 
 from custom_components.growspace_manager.const import DOMAIN
 from custom_components.growspace_manager.models import Growspace, Plant
+from .conftest import create_plant
 from custom_components.growspace_manager.utils import (
     VPDCalculator,
     calculate_days_since,
@@ -116,8 +117,8 @@ def test_find_first_free_position() -> None:
 def test_generate_growspace_grid_basic() -> None:
     """Test the basic functionality of `generate_growspace_grid`."""
     plants = [
-        Plant(plant_id="p1", row=1, col=1, strain="A", growspace_id="g1"),
-        Plant(plant_id="p2", row=2, col=2, strain="B", growspace_id="g1"),
+        create_plant(plant_id="p1", row=1, col=1, strain="A", growspace_id="g1"),
+        create_plant(plant_id="p2", row=2, col=2, strain="B", growspace_id="g1"),
     ]
     grid = generate_growspace_grid(2, 2, plants)
     assert grid == [
@@ -161,22 +162,22 @@ def test_days_to_week(days, expected) -> None:
 def test_calculate_plant_stage() -> None:
     """Test the `calculate_plant_stage` function."""
     # 1. Special growspaces
-    p = Plant(plant_id="p1", growspace_id="mother", strain="A")
+    p = create_plant(plant_id="p1", growspace_id="mother", strain="A")
     assert calculate_plant_stage(p) == "mother"
 
-    p = Plant(plant_id="p1", growspace_id="clone", strain="A")
+    p = create_plant(plant_id="p1", growspace_id="clone", strain="A")
     assert calculate_plant_stage(p) == "clone"
 
     # 2. Date-based (mocking now is hard here without freezegun, so we use past dates)
     # Assuming today is after 2000-01-01
-    p = Plant(plant_id="p1", growspace_id="g1", strain="A", flower_start="2000-01-01")
+    p = create_plant(plant_id="p1", growspace_id="g1", strain="A", flower_start="2000-01-01")
     assert calculate_plant_stage(p) == "flower"
 
-    p = Plant(plant_id="p1", growspace_id="g1", strain="A", veg_start="2000-01-01")
+    p = create_plant(plant_id="p1", growspace_id="g1", strain="A", veg_start="2000-01-01")
     assert calculate_plant_stage(p) == "veg"
 
     # Priority check: flower > veg
-    p = Plant(
+    p = create_plant(
         plant_id="p1",
         growspace_id="g1",
         strain="A",
@@ -186,11 +187,11 @@ def test_calculate_plant_stage() -> None:
     assert calculate_plant_stage(p) == "flower"
 
     # 3. Explicit stage
-    p = Plant(plant_id="p1", growspace_id="g1", strain="A", stage="dry")
+    p = create_plant(plant_id="p1", growspace_id="g1", strain="A", stage="dry")
     assert calculate_plant_stage(p) == "dry"
 
     # Default
-    p = Plant(plant_id="p1", growspace_id="g1", strain="A")
+    p = create_plant(plant_id="p1", growspace_id="g1", strain="A")
     assert calculate_plant_stage(p) == "seedling"
 
 

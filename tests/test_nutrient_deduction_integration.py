@@ -9,6 +9,8 @@ from custom_components.growspace_manager.models import (
     NutrientStock,
     Plant,
 )
+from .conftest import create_plant
+
 
 
 @pytest.fixture
@@ -24,9 +26,9 @@ def coordinator(hass):
         "gs1": Growspace(id="gs1", name="Growspace 1", rows=1, plants_per_row=3)
     }
     coord.plants = {
-        "p1": Plant(plant_id="p1", growspace_id="gs1", row=1, col=1, strain="Strain"),
-        "p2": Plant(plant_id="p2", growspace_id="gs1", row=1, col=2, strain="Strain"),
-        "p3": Plant(plant_id="p3", growspace_id="gs1", row=1, col=3, strain="Strain"),
+        "p1": create_plant(plant_id="p1", growspace_id="gs1", row=1, col=1, strain="Strain"),
+        "p2": create_plant(plant_id="p2", growspace_id="gs1", row=1, col=2, strain="Strain"),
+        "p3": create_plant(plant_id="p3", growspace_id="gs1", row=1, col=3, strain="Strain"),
     }
 
     # IMPORTANT: Update Data Repository so coordination logic can find the plants

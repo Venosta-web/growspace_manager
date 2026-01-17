@@ -690,43 +690,9 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
         await self._ensure_default_growspaces()
         # Update Data Repository with loaded data
         self.data_repository.load_data(self.growspaces, self.plants)
-
         # Initialize environment reporter after data load
         if hasattr(self, "environment_reporter"):
             await self.environment_reporter.async_initialize()
-
-    def migrate_plant_image_paths(self) -> int:
-        """Migrate plant image paths from .jpg to .webp.
-
-        This should be called after WebP migration to update stored plant data.
-
-        Returns:
-            Number of plant image paths updated.
-        """
-        updated_count = 0
-
-        for plant_id, plant in self.plants.items():
-            # Check if plant has phenotype data with image_path
-            if not plant.phenotype:
-                continue
-
-            image_path = plant.phenotype.get("image_path")
-            if not image_path or not isinstance(image_path, str):
-                continue
-
-            # Update .jpg to .webp
-            if image_path.endswith(".jpg") or image_path.endswith(".jpeg"):
-                new_path = image_path.replace(".jpg", ".webp").replace(".jpeg", ".webp")
-                plant.phenotype["image_path"] = new_path
-                updated_count += 1
-                _LOGGER.debug(
-                    "Migrated plant %s image path: %s -> %s",
-                    plant_id,
-                    image_path,
-                    new_path,
-                )
-
-        return updated_count
 
     async def _ensure_default_growspaces(self) -> None:
         """Ensure that the default special growspaces (dry, cure, etc.) exist."""

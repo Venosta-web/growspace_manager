@@ -12,6 +12,7 @@ from pytest_homeassistant_custom_component.common import (
 from custom_components.growspace_manager.const import DOMAIN
 from custom_components.growspace_manager.coordinator import GrowspaceCoordinator
 from custom_components.growspace_manager.models import Growspace, Plant
+from .conftest import create_plant
 from custom_components.growspace_manager.sensor import async_setup_entry
 
 
@@ -157,7 +158,7 @@ async def test_handle_coordinator_update_add_plant(
     async_add_entities.reset_mock()
 
     # Add a new plant
-    new_plant = Plant(
+    new_plant = create_plant(
         plant_id="p1", growspace_id="gs1", strain="Test Plant", row=1, col=1
     )
     coordinator.plants = {"p1": new_plant}
@@ -181,7 +182,7 @@ async def test_handle_coordinator_update_remove_plant(
 ):
     """Test removing a plant."""
     growspace = Growspace(id="gs1", name="Growspace 1", rows=2, plants_per_row=2)
-    plant = Plant(plant_id="p1", growspace_id="gs1", strain="Test Plant", row=1, col=1)
+    plant = create_plant(plant_id="p1", growspace_id="gs1", strain="Test Plant", row=1, col=1)
     coordinator = mock_hass.data[DOMAIN]["entry_1"]["coordinator"]
     coordinator.growspaces = {"gs1": growspace}
     coordinator.plants = {"p1": plant}
@@ -224,7 +225,7 @@ async def test_handle_coordinator_update_remove_orphaned_plant(
 ):
     """Test removing an orphaned plant from the entity registry."""
     growspace = Growspace(id="gs1", name="Growspace 1", rows=2, plants_per_row=2)
-    plant = Plant(plant_id="p1", growspace_id="gs1", strain="Test Plant", row=1, col=1)
+    plant = create_plant(plant_id="p1", growspace_id="gs1", strain="Test Plant", row=1, col=1)
     coordinator = mock_hass.data[DOMAIN]["entry_1"]["coordinator"]
     coordinator.growspaces = {"gs1": growspace}
     coordinator.plants = {"p1": plant}

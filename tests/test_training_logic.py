@@ -15,6 +15,7 @@ from custom_components.growspace_manager.const import (
 )
 from custom_components.growspace_manager.coordinator import GrowspaceCoordinator
 from custom_components.growspace_manager.models import Plant
+from .conftest import create_plant
 from custom_components.growspace_manager.services.training import (
     handle_log_training_event,
 )
@@ -23,19 +24,19 @@ from custom_components.growspace_manager.services.training import (
 @pytest.fixture
 def mock_plants():
     return {
-        "plant_1": Plant(
+        "plant_1": create_plant(
             plant_id="plant_1",
             growspace_id="gs_1",
             strain="Blue Dream",
             stage="vegetative",
         ),
-        "plant_2": Plant(
+        "plant_2": create_plant(
             plant_id="plant_2",
             growspace_id="gs_1",
             strain="OG Kush",
             stage="vegetative",
         ),
-        "plant_3": Plant(
+        "plant_3": create_plant(
             plant_id="plant_3",
             growspace_id="gs_2",
             strain="Haze",

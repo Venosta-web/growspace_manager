@@ -102,25 +102,37 @@ class DehumidifierCoordinator:
         self.dehumidifier_config = getattr(self.growspace, "dehumidifier_config", {})
 
         # Entity IDs - env_config is an EnvironmentConfig object, use attribute access
+        # Entity IDs - multi-device support
+        # Use lists from env_config (populated by models.py migration or new config)
         self.vpd_sensor = getattr(self.env_config, "vpd_sensor", None)
-        self.light_sensor = getattr(self.env_config, "light_sensor", None)
-        self.dehumidifier_entity = getattr(self.env_config, "dehumidifier_entity", None)
+        self.light_sensors = getattr(self.env_config, "light_sensors", [])
+
+        # Dehumidifiers
+        self.dehumidifier_entities = getattr(
+            self.env_config, "dehumidifier_entities", []
+        )
+        # Exhaust fans (also controlled if configured?)
+        self.exhaust_fan_entities = getattr(self.env_config, "exhaust_fan_entities", [])
+
         self.control_dehumidifier = getattr(
             self.env_config, "control_dehumidifier", False
         )
 
-        # User Thresholds (optional override)
+        # Thresholds
         self.user_thresholds = getattr(self.env_config, "dehumidifier_thresholds", {})
 
-        if self.vpd_sensor and self.dehumidifier_entity and self.control_dehumidifier:
+        # Valid if we have VPD sensor and at least one device to control
+        has_devices = bool(self.dehumidifier_entities or self.exhaust_fan_entities)
+
+        if self.vpd_sensor and has_devices and self.control_dehumidifier:
             self._setup_listeners()
             # Start initial check after reload/starup
             self.hass.async_create_task(self.async_check_and_control())
             _LOGGER.info(
-                "DehumidifierCoordinator initialized for %s (VPD: %s, Dehum: %s)",
+                "DehumidifierCoordinator initialized for %s (VPD: %s, Devices: %d)",
                 self.growspace.name,
                 self.vpd_sensor,
-                self.dehumidifier_entity,
+                len(self.dehumidifier_entities) + len(self.exhaust_fan_entities),
             )
         elif not self.control_dehumidifier:
             _LOGGER.info(
@@ -129,15 +141,15 @@ class DehumidifierCoordinator:
             )
         else:
             _LOGGER.warning(
-                "DehumidifierCoordinator skipped for %s: Missing VPD sensor or Dehumidifier entity",
+                "DehumidifierCoordinator skipped for %s: Missing VPD sensor or Devices",
                 self.growspace.name,
             )
 
     def _setup_listeners(self) -> None:
         """Set up state change listeners."""
         entities_to_track = [self.vpd_sensor]
-        if self.light_sensor:
-            entities_to_track.append(self.light_sensor)
+        if self.light_sensors:
+            entities_to_track.extend(self.light_sensors)
 
         self._remove_listeners.append(
             async_track_state_change_event(
@@ -151,38 +163,21 @@ class DehumidifierCoordinator:
 
     async def async_check_and_control(self) -> None:
         """Evaluate conditions and control the dehumidifier."""
-        if not self.vpd_sensor or not self.dehumidifier_entity:
+        if not self.vpd_sensor or (
+            not self.dehumidifier_entities and not self.exhaust_fan_entities
+        ):
             return
 
         # Get VPD value
-        vpd_state = self.hass.states.get(self.vpd_sensor)
-        if not vpd_state or vpd_state.state in (STATE_UNKNOWN, STATE_UNAVAILABLE):
-            return
-        try:
-            current_vpd = float(vpd_state.state)
-        except ValueError:
+        current_vpd = self._get_current_vpd()
+        if current_vpd is None:
             return
 
         # Determine Growth Stage
         stage_name = self._get_growth_stage()
 
-        # Determine Day/Night
-        is_day = True  # Default to day if no sensor
-        if self.light_sensor:
-            light_state = self.hass.states.get(self.light_sensor)
-            if light_state and light_state.state not in (
-                STATE_UNKNOWN,
-                STATE_UNAVAILABLE,
-            ):
-                try:
-                    # Assuming light sensor reports lux or similar numeric value
-                    # Or it could be a binary sensor. The prompt says "Light > 0" vs "Light < 1"
-                    # which implies a numeric sensor.
-                    light_val = float(light_state.state)
-                    is_day = light_val > 0
-                except ValueError:
-                    # If it's not a number, maybe it's 'on'/'off'
-                    is_day = light_state.state == STATE_ON
+        # Determine Day/Night (OR logic)
+        is_day = self._determine_is_day()
 
         # Get Thresholds
         thresholds = self._get_current_thresholds(stage_name, is_day)
@@ -193,8 +188,9 @@ class DehumidifierCoordinator:
         # Low VPD = High Humidity -> Needs Dehumidification (Turn ON)
         # High VPD = Low Humidity -> Stop Dehumidification (Turn OFF)
 
-        dehum_state = self.hass.states.get(self.dehumidifier_entity)
-        is_on = dehum_state and dehum_state.state == STATE_ON
+        # Check state of devices
+        # We consider "is_on" true if ANY controlled device is on
+        is_on = self._determine_is_device_on()
 
         # Check timing guards to prevent short-cycling
         if self._is_locked_by_timer(is_on):
@@ -203,22 +199,20 @@ class DehumidifierCoordinator:
         # Evaluate VPD thresholds with hysteresis
         if current_vpd < on_threshold and not is_on:
             _LOGGER.info(
-                "VPD Trigger: Current %.2f < Target %.2f (%s, %s) -> Turning ON %s",
+                "VPD Trigger: Current %.2f < Target %.2f (%s, %s) -> Turning ON Devices",
                 current_vpd,
                 on_threshold,
                 stage_name,
                 "Day" if is_day else "Night",
-                self.dehumidifier_entity,
             )
             await self._control_dehumidifier(True)
         elif current_vpd > off_threshold and is_on:
             _LOGGER.info(
-                "VPD Trigger: Current %.2f > Threshold %.2f (%s, %s) -> Turning OFF %s",
+                "VPD Trigger: Current %.2f > Threshold %.2f (%s, %s) -> Turning OFF Devices",
                 current_vpd,
                 off_threshold,
                 stage_name,
                 "Day" if is_day else "Night",
-                self.dehumidifier_entity,
             )
             await self._control_dehumidifier(False)
 
@@ -242,9 +236,8 @@ class DehumidifierCoordinator:
             if self._last_turn_on_time > 0 and elapsed_on < min_runtime:
                 remaining = min_runtime - elapsed_on
                 _LOGGER.debug(
-                    "Locked by Min Runtime (remaining: %.0fs) for %s",
+                    "Locked by Min Runtime (remaining: %.0fs)",
                     remaining,
-                    self.dehumidifier_entity,
                 )
                 return True
         else:
@@ -256,9 +249,8 @@ class DehumidifierCoordinator:
             if self._last_turn_off_time > 0 and elapsed_off < min_offtime:
                 remaining = min_offtime - elapsed_off
                 _LOGGER.debug(
-                    "Locked by Min Offtime (remaining: %.0fs) for %s",
+                    "Locked by Min Offtime (remaining: %.0fs)",
                     remaining,
-                    self.dehumidifier_entity,
                 )
                 return True
 
@@ -327,19 +319,29 @@ class DehumidifierCoordinator:
         return DEFAULT_THRESHOLDS.get(stage, DEFAULT_THRESHOLDS["veg"])[day_key]
 
     async def _control_dehumidifier(self, turn_on: bool) -> None:
-        """Turn the dehumidifier on or off."""
+        """Turn the dehumidifier(s) and exhaust fan(s) on or off."""
         service = SERVICE_TURN_ON if turn_on else SERVICE_TURN_OFF
-        domain = self.dehumidifier_entity.split(".")[0]
 
-        # Support switch and humidifier domains
-        if domain not in ("switch", "humidifier"):
-            domain = "homeassistant"
+        # Combine all entities
+        all_entities = self.dehumidifier_entities + self.exhaust_fan_entities
 
-        await self.hass.services.async_call(
-            domain,
-            service,
-            {ATTR_ENTITY_ID: self.dehumidifier_entity},
-        )
+        for entity_id in all_entities:
+            domain = entity_id.split(".")[0]
+
+            # Support switch, humidifier, fan, input_boolean domains
+            # Default to homeassistant.turn_on/off if domain unknown or generic
+            if domain not in ("switch", "humidifier", "fan", "input_boolean"):
+                domain = "homeassistant"
+
+            try:
+                await self.hass.services.async_call(
+                    domain,
+                    service,
+                    {ATTR_ENTITY_ID: entity_id},
+                    blocking=False,  # Use non-blocking to speed up
+                )
+            except Exception:
+                _LOGGER.warning("Failed to control device %s", entity_id, exc_info=True)
 
         # Update timestamps for short-cycling prevention
         if turn_on:
@@ -352,3 +354,59 @@ class DehumidifierCoordinator:
         for remove_listener in self._remove_listeners:
             remove_listener()
         self._remove_listeners.clear()
+
+    def _get_current_vpd(self) -> float | None:
+        """Get the current VPD value."""
+        vpd_state = self.hass.states.get(self.vpd_sensor)
+        if not vpd_state or vpd_state.state in (STATE_UNKNOWN, STATE_UNAVAILABLE):
+            return None
+        try:
+            return float(vpd_state.state)
+        except ValueError:
+            return None
+
+    def _determine_is_day(self) -> bool:
+        """Determine Day/Night state (OR logic)."""
+        is_day = True  # Default to day if no sensor
+        if self.light_sensors:
+            any_valid = False
+            any_on = False
+            for sensor in self.light_sensors:
+                light_state = self.hass.states.get(sensor)
+                if light_state and light_state.state not in (
+                    STATE_UNKNOWN,
+                    STATE_UNAVAILABLE,
+                ):
+                    any_valid = True
+                    try:
+                        light_val = float(light_state.state)
+                        if light_val > 0:
+                            any_on = True
+                    except ValueError:
+                        if light_state.state == STATE_ON:
+                            any_on = True
+
+            # If we found at least one valid sensor, use the result
+            if any_valid:
+                is_day = any_on
+        return is_day
+
+    def _determine_is_device_on(self) -> bool:
+        """Determine if any controlled device is on."""
+        is_on = False
+
+        # Check Dehumidifiers
+        for entity in self.dehumidifier_entities:
+            state = self.hass.states.get(entity)
+            if state and state.state == STATE_ON:
+                is_on = True
+                break
+
+        # Check Exhaust Fans (if not found in dehum loop)
+        if not is_on:
+            for entity in self.exhaust_fan_entities:
+                state = self.hass.states.get(entity)
+                if state and state.state == STATE_ON:
+                    is_on = True
+                    break
+        return is_on

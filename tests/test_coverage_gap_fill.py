@@ -10,14 +10,20 @@ from custom_components.growspace_manager.config_handlers import BaseConfigHandle
 from custom_components.growspace_manager.config_handlers.growspace_config_handler import (
     GrowspaceConfigHandler,
 )
+from .conftest import create_plant
+
 from custom_components.growspace_manager.config_handlers.notification_config_handler import (
     NotificationConfigHandler,
 )
+from .conftest import create_plant
+
 from custom_components.growspace_manager.const import DOMAIN
 from custom_components.growspace_manager.coordinator import GrowspaceCoordinator
 from custom_components.growspace_manager.exceptions import (
     GrowspaceNotFoundError,
 )
+from .conftest import create_plant
+
 from custom_components.growspace_manager.models import (
     EnvironmentConfig,
     Growspace,
@@ -28,9 +34,13 @@ from custom_components.growspace_manager.models import (
     NutrientPreset,
     Plant,
 )
+from .conftest import create_plant
+
 from custom_components.growspace_manager.strategies.evaluator_strategy import (
     BayesianEvaluatorStrategy,
 )
+from .conftest import create_plant
+
 
 
 class MockFlow:
@@ -273,7 +283,7 @@ async def test_coordinator_setters_and_gaps(
 
     # Coverage for _extract_gs_ids_from_args with plant lookup
     gs_ids = set()
-    coord.plants = {"p1": Plant(plant_id="p1", strain="S1", growspace_id="gs1")}
+    coord.plants = {"p1": create_plant(plant_id="p1", strain="S1", growspace_id="gs1")}
     coord._extract_gs_ids_from_args((), {"plant_id": "p1"}, gs_ids)
     assert "gs1" in gs_ids
 

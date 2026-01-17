@@ -33,7 +33,7 @@ def mock_strain_library():
 @pytest.mark.asyncio
 async def test_handle_configure_environment_success(
     hass: HomeAssistant, mock_coordinator, mock_strain_library
-):
+) -> None:
     """Test successful environment configuration."""
     growspace = Mock()
     growspace.name = "Test Growspace"
@@ -47,7 +47,7 @@ async def test_handle_configure_environment_success(
         "humidity_sensor": "sensor.hum",
         "vpd_sensor": "sensor.vpd",
         "co2_sensor": "sensor.co2",
-        "circulation_fan_entity": "switch.fan",
+        "circulation_fan_entities": ["switch.fan"],
         "stress_threshold": 0.8,
         "mold_threshold": 0.85,
     }
@@ -59,7 +59,7 @@ async def test_handle_configure_environment_success(
         humidity_sensor="sensor.hum",
         vpd_sensor="sensor.vpd",
         co2_sensor="sensor.co2",
-        circulation_fan_entity="switch.fan",
+        circulation_fan_entities=["switch.fan"],
         stress_threshold=0.8,
         mold_threshold=0.85,
     )
@@ -70,7 +70,7 @@ async def test_handle_configure_environment_success(
 @pytest.mark.asyncio
 async def test_handle_configure_environment_missing_growspace(
     hass: HomeAssistant, mock_coordinator, mock_strain_library
-):
+) -> None:
     """Test environment configuration with missing growspace."""
     mock_coordinator.growspaces = {}
 
@@ -86,11 +86,12 @@ async def test_handle_configure_environment_missing_growspace(
 @pytest.mark.asyncio
 async def test_handle_remove_environment_success(
     hass: HomeAssistant, mock_coordinator, mock_strain_library
-):
+) -> None:
     """Test successful environment removal."""
-    growspace = Mock()
-    growspace.name = "Test Growspace"
-    growspace.environment_config = EnvironmentConfig(temperature_sensor="sensor.temp")
+    growspace = Mock(
+        name="Test Growspace",
+        environment_config=EnvironmentConfig(light_sensors=["sensor.light_1"]),
+    )
     mock_coordinator.growspaces = {"gs1": growspace}
 
     call = Mock()
@@ -106,7 +107,7 @@ async def test_handle_remove_environment_success(
 @pytest.mark.asyncio
 async def test_handle_remove_environment_missing_growspace(
     hass: HomeAssistant, mock_coordinator, mock_strain_library
-):
+) -> None:
     """Test environment removal with missing growspace."""
     mock_coordinator.growspaces = {}
 
@@ -122,7 +123,7 @@ async def test_handle_remove_environment_missing_growspace(
 @pytest.mark.asyncio
 async def test_handle_set_dehumidifier_control_success(
     hass: HomeAssistant, mock_coordinator, mock_strain_library
-):
+) -> None:
     """Test setting dehumidifier control."""
     growspace = Mock()
     growspace.name = "Test Growspace"
@@ -142,7 +143,7 @@ async def test_handle_set_dehumidifier_control_success(
 @pytest.mark.asyncio
 async def test_handle_set_dehumidifier_control_missing_growspace(
     hass: HomeAssistant, mock_coordinator, mock_strain_library
-):
+) -> None:
     """Test setting dehumidifier control with missing growspace."""
     mock_coordinator.growspaces = {}
 

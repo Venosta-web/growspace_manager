@@ -591,10 +591,10 @@ class GrowspaceOverviewSensor(CoordinatorEntity[GrowspaceCoordinator], SensorEnt
     TRACKABLE_ENVIRONMENT_ATTRS: tuple[str, ...] = (
         "soil_moisture_sensor",
         "vpd_sensor",
-        "dehumidifier_entity",
-        "exhaust_fan_entity",
-        "humidifier_entity",
-        "circulation_fan_entity",
+        "dehumidifier_entities",
+        "exhaust_fan_entities",
+        "humidifier_entities",
+        "circulation_fan_entities",
     )
 
     def __init__(
@@ -647,8 +647,11 @@ class GrowspaceOverviewSensor(CoordinatorEntity[GrowspaceCoordinator], SensorEnt
 
         # Add all configured sensors that have dynamic values we display
         for attr in self.TRACKABLE_ENVIRONMENT_ATTRS:
-            if sensor_id := getattr(env_config, attr, None):
-                sensors.append(sensor_id)
+            if val := getattr(env_config, attr, None):
+                if isinstance(val, list):
+                    sensors.extend(val)
+                elif isinstance(val, str):
+                    sensors.append(val)
 
         return sensors
 

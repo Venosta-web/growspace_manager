@@ -9,6 +9,7 @@ from custom_components.growspace_manager.const import (
     EVENT_GROWSPACE_LOG_ENTRY,
 )
 from custom_components.growspace_manager.models import Plant, PlantStage
+from .conftest import create_plant
 from custom_components.growspace_manager.plant_lifecycle_manager import (
     PlantLifecycleManager,
 )
@@ -23,7 +24,7 @@ async def test_transition_closes_existing_history(hass: HomeAssistant) -> None:
 
     # Setup plant with existing open history
     plant_id = "test_plant"
-    plant = Plant(
+    plant = create_plant(
         plant_id=plant_id,
         growspace_id="tent",
         strain="Test Strain",

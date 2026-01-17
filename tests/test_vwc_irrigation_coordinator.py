@@ -11,9 +11,13 @@ from custom_components.growspace_manager.models import (
     Growspace,
     IrrigationStrategy,
 )
+from .conftest import create_plant
+
 from custom_components.growspace_manager.vwc_irrigation_coordinator import (
     VWCIrrigationCoordinator,
 )
+from .conftest import create_plant
+
 
 
 # Patch asyncio.sleep globally for this test module to avoid lingering tasks

@@ -22,6 +22,7 @@ from custom_components.growspace_manager.exceptions import (
     PlantNotFoundError,
 )
 from custom_components.growspace_manager.models import Growspace, Plant
+from .conftest import create_plant
 from custom_components.growspace_manager.sensor import PlantEntity
 from custom_components.growspace_manager.services.irrigation_watering import (
     handle_water_growspace,
@@ -59,7 +60,7 @@ def watering_coordinator(hass: HomeAssistant) -> GrowspaceCoordinator:
         plants_per_row=3,
     )
 
-    coordinator.plants["test_plant"] = Plant(
+    coordinator.plants["test_plant"] = create_plant(
         plant_id="test_plant",
         growspace_id="test_gs",
         strain="Test Strain",
@@ -68,7 +69,7 @@ def watering_coordinator(hass: HomeAssistant) -> GrowspaceCoordinator:
         col=1,
     )
 
-    coordinator.plants["test_plant_2"] = Plant(
+    coordinator.plants["test_plant_2"] = create_plant(
         plant_id="test_plant_2",
         growspace_id="test_gs",
         strain="Test Strain 2",
@@ -264,7 +265,7 @@ class TestPlantWateringDays:
 
     def test_get_days_since_watering_none(self) -> None:
         """Test that get_days_since_watering returns None when never watered."""
-        plant = Plant(
+        plant = create_plant(
             plant_id="p1",
             growspace_id="gs1",
             strain="Test",
@@ -276,7 +277,7 @@ class TestPlantWateringDays:
     def test_get_days_since_watering_today(self) -> None:
         """Test get_days_since_watering returns 0 for today."""
         now = datetime.now().isoformat()
-        plant = Plant(
+        plant = create_plant(
             plant_id="p1",
             growspace_id="gs1",
             strain="Test",
@@ -289,7 +290,7 @@ class TestPlantWateringDays:
     def test_get_days_since_watering_past(self) -> None:
         """Test get_days_since_watering calculates correctly for past dates."""
         past = (datetime.now() - timedelta(days=3)).isoformat()
-        plant = Plant(
+        plant = create_plant(
             plant_id="p1",
             growspace_id="gs1",
             strain="Test",

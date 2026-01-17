@@ -11,6 +11,8 @@ from custom_components.growspace_manager.models import (
     GrowspaceType,
     IrrigationConfig,
 )
+from .conftest import create_plant
+
 
 
 @pytest.fixture

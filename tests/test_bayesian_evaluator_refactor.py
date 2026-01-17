@@ -12,11 +12,15 @@ from custom_components.growspace_manager.bayesian_evaluator import (
     _async_evaluate_fallback_mold_trend_analysis,
     async_evaluate_mold_risk_trend,
 )
+from .conftest import create_plant
+
 from custom_components.growspace_manager.binary_sensor import BayesianEnvironmentSensor
 from custom_components.growspace_manager.models import (
     EnvironmentConfig,
     EnvironmentState,
 )
+from .conftest import create_plant
+
 
 
 @pytest.fixture

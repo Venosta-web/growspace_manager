@@ -11,8 +11,10 @@ from custom_components.growspace_manager.const import (
     CONF_ASSISTANT_ID,
     CONF_NOTIFICATION_PERSONALITY,
 )
-from custom_components.growspace_manager.models import Growspace, Plant
+from custom_components.growspace_manager.models import Growspace
 from custom_components.growspace_manager.notification_manager import NotificationManager
+
+from .conftest import create_plant
 
 GROWSPACE_ID = "test_growspace"
 GROWSPACE_NAME = "Test Growspace"
@@ -180,7 +182,7 @@ async def test_async_check_timed_notifications(
         ]
     }
 
-    plant = Plant(
+    plant = create_plant(
         plant_id="plant_1",
         growspace_id=GROWSPACE_ID,
         strain="Strain A",

@@ -5,6 +5,7 @@ from homeassistant.core import HomeAssistant
 
 from custom_components.growspace_manager.coordinator import GrowspaceCoordinator
 from custom_components.growspace_manager.models import Plant
+from .conftest import create_plant
 
 
 @pytest.fixture
@@ -30,7 +31,7 @@ async def test_async_add_plant_fires_event(
     mock_coordinator, hass: HomeAssistant
 ) -> None:
     # Setup
-    plant_data = Plant(
+    plant_data = create_plant(
         plant_id="test_plant",
         growspace_id="test_gs",
         strain="Test Strain",
@@ -66,7 +67,7 @@ async def test_async_update_plant_fires_event(
     mock_coordinator, hass: HomeAssistant
 ) -> None:
     # Setup
-    updated_plant = Plant(
+    updated_plant = create_plant(
         plant_id="test_plant",
         growspace_id="test_gs",
         strain="Test Strain",
@@ -96,7 +97,7 @@ async def test_async_remove_plant_fires_event(
     mock_coordinator, hass: HomeAssistant
 ) -> None:
     # Setup
-    plant = Plant(plant_id="test_plant", growspace_id="test_gs", strain="Test Strain")
+    plant = create_plant(plant_id="test_plant", growspace_id="test_gs", strain="Test Strain")
     mock_coordinator.plants = {"test_plant": plant}
     mock_coordinator.lifecycle_manager.async_remove_plant.return_value = True
 

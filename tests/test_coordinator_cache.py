@@ -7,6 +7,7 @@ from pytest_homeassistant_custom_component.common import MockConfigEntry
 from custom_components.growspace_manager.const import DOMAIN
 from custom_components.growspace_manager.coordinator import GrowspaceCoordinator
 from custom_components.growspace_manager.models import Plant
+from .conftest import create_plant
 
 
 def create_test_coordinator(
@@ -45,7 +46,7 @@ async def test_cache_invalidation_add_plant(hass: HomeAssistant) -> None:
 
     # Setup mock return for add_plant
 
-    mock_plant = Plant(
+    mock_plant = create_plant(
         plant_id="p1",
         growspace_id=gs.id,
         strain="Strain A",
@@ -95,7 +96,7 @@ async def test_cache_invalidation_update_plant(hass: HomeAssistant) -> None:
     coordinator = create_test_coordinator(hass, data={})
     gs = await coordinator.async_add_growspace("Test GS")
 
-    mock_plant = Plant(
+    mock_plant = create_plant(
         plant_id="p1",
         growspace_id=gs.id,
         strain="Strain A",

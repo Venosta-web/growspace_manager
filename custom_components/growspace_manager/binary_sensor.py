@@ -338,28 +338,10 @@ class BayesianEnvironmentSensor(CoordinatorEntity, BinarySensorEntity):
 
         is_lights_on = self._determine_light_state()
 
-        fan_entity = self.env_config.circulation_fan_entity
-        fan_off = None
-        if fan_entity:
-            fan_state = self.hass.states.get(fan_entity)
-            if fan_state and fan_state.state not in (STATE_UNAVAILABLE, STATE_UNKNOWN):
-                fan_off = fan_state.state == "off"
-
-        dehumidifier_entity = self.env_config.dehumidifier_entity
-        dehumidifier_on = None
-        if dehumidifier_entity:
-            dehum_state = self.hass.states.get(dehumidifier_entity)
-            if dehum_state and dehum_state.state not in (
-                STATE_UNAVAILABLE,
-                STATE_UNKNOWN,
-            ):
-                dehumidifier_on = dehum_state.state == "on"
-
-        exhaust_sensor = self.env_config.exhaust_fan_entity
-        exhaust_value = self._get_sensor_value(exhaust_sensor)
-
-        humidifier_sensor = self.env_config.humidifier_entity
-        humidifier_value = self._get_sensor_value(humidifier_sensor)
+        fan_off = self._determine_fan_state()
+        dehumidifier_on = self._determine_dehumidifier_state()
+        exhaust_value = self._determine_exhaust_value()
+        humidifier_value = self._determine_humidifier_value()
 
         soil_moisture_sensor = self.env_config.soil_moisture_sensor
         soil_moisture = self._get_sensor_value(soil_moisture_sensor)
@@ -395,23 +377,39 @@ class BayesianEnvironmentSensor(CoordinatorEntity, BinarySensorEntity):
         )
 
     def _determine_light_state(self) -> bool | None:
-        """Determine the light state and trigger cooldown on switch."""
-        light_sensor = self.env_config.light_sensor
+        """Determine the light state (OR logic) and trigger cooldown on switch."""
+        light_sensors = self.env_config.light_sensors
+        if not light_sensors:
+            return None
+
         current_lights_on = None
+        any_valid = False
+        any_on = False
 
-        if light_sensor:
-            light_state = self.hass.states.get(light_sensor)
-            if light_state:
-                # Check for unavailable/unknown states first
-                if light_state.state in (STATE_UNAVAILABLE, STATE_UNKNOWN):
-                    return None
+        for sensor in light_sensors:
+            state = self.hass.states.get(sensor)
+            if state and state.state not in (STATE_UNAVAILABLE, STATE_UNKNOWN):
+                is_on = False
+                valid_reading = False
 
-                if light_state.domain == "sensor":
-                    sensor_value = self._get_sensor_value(light_sensor)
-                    if sensor_value is not None:
-                        current_lights_on = bool(sensor_value > 0)
+                if state.domain == "sensor":
+                    val = self._get_sensor_value(sensor)
+                    if val is not None:
+                        valid_reading = True
+                        if val > 0:
+                            is_on = True
                 else:
-                    current_lights_on = light_state.state == "on"
+                    valid_reading = True
+                    if state.state == "on":
+                        is_on = True
+
+                if valid_reading:
+                    any_valid = True
+                    if is_on:
+                        any_on = True
+
+        if any_valid:
+            current_lights_on = any_on
 
         # Check for state change to trigger notification cooldown
         if (
@@ -439,12 +437,15 @@ class BayesianEnvironmentSensor(CoordinatorEntity, BinarySensorEntity):
             c.humidity_sensor,
             c.vpd_sensor,
             c.co2_sensor,
-            c.circulation_fan_entity,
-            c.dehumidifier_entity,
-            c.exhaust_fan_entity,
-            c.humidifier_entity,
             c.soil_moisture_sensor,
         ]
+
+        # Extend with multi-device lists
+        sensors.extend(c.light_sensors)
+        sensors.extend(c.circulation_fan_entities)
+        sensors.extend(c.dehumidifier_entities)
+        sensors.extend(c.exhaust_fan_entities)
+        sensors.extend(c.humidifier_entities)
 
         sensors_filtered: list[str] = [s for s in sensors if s]
 
@@ -661,6 +662,61 @@ class BayesianEnvironmentSensor(CoordinatorEntity, BinarySensorEntity):
 
         self.async_write_ha_state()
 
+    def _determine_fan_state(self) -> bool | None:
+        """Determine if circulation fans are off (AND logic)."""
+        fan_entities = self.env_config.circulation_fan_entities
+        if not fan_entities:
+            return None
+
+        all_off = True
+        any_valid = False
+        for entity in fan_entities:
+            state = self.hass.states.get(entity)
+            if state and state.state not in (STATE_UNAVAILABLE, STATE_UNKNOWN):
+                any_valid = True
+                if state.state != "off":
+                    all_off = False
+
+        return all_off if any_valid else None
+
+    def _determine_dehumidifier_state(self) -> bool | None:
+        """Determine if dehumidifier is on (OR logic)."""
+        dehum_entities = self.env_config.dehumidifier_entities
+        if not dehum_entities:
+            return None
+
+        any_on = False
+        any_valid = False
+        for entity in dehum_entities:
+            state = self.hass.states.get(entity)
+            if state and state.state not in (STATE_UNAVAILABLE, STATE_UNKNOWN):
+                any_valid = True
+                if state.state == "on":
+                    any_on = True
+
+        return any_on if any_valid else None
+
+    def _determine_exhaust_value(self) -> float | None:
+        """Determine exhaust value (Max value)."""
+        entities = self.env_config.exhaust_fan_entities
+        return self._get_max_sensor_value(entities)
+
+    def _determine_humidifier_value(self) -> float | None:
+        """Determine humidifier value (Max value)."""
+        entities = self.env_config.humidifier_entities
+        return self._get_max_sensor_value(entities)
+
+    def _get_max_sensor_value(self, entities: list[str]) -> float | None:
+        """Helper to get max value from list of entities."""
+        if not entities:
+            return None
+        values = []
+        for entity in entities:
+            val = self._get_sensor_value(entity)
+            if val is not None:
+                values.append(val)
+        return max(values) if values else None
+
 
 class LightCycleVerificationSensor(BinarySensorEntity):
     """Binary sensor to verify if the light schedule matches the expected plan."""
@@ -691,7 +747,9 @@ class LightCycleVerificationSensor(BinarySensorEntity):
         self._is_schedule_matched = True
         self._is_correct = True  # Alias for test compatibility
         self._expected_schedule = "18/6"
-        self.light_entity_id = env_config.light_sensor
+        self.light_entity_id = (
+            self.env_config.light_sensors[0] if self.env_config.light_sensors else None
+        )
         self._time_in_current_state = timedelta(0)
 
     @property
@@ -728,12 +786,12 @@ class LightCycleVerificationSensor(BinarySensorEntity):
     async def async_added_to_hass(self) -> None:
         """Register callbacks."""
         self.coordinator.async_add_listener(self._handle_coordinator_update)
-        # Track light sensor changes
-        if self.env_config.light_sensor:
+        # Track light sensors changes
+        if self.env_config.light_sensors:
             self.async_on_remove(
                 async_track_state_change_event(
                     self.hass,
-                    [self.env_config.light_sensor],
+                    self.env_config.light_sensors,
                     self._async_light_sensor_changed,
                 )
             )
@@ -753,11 +811,11 @@ class LightCycleVerificationSensor(BinarySensorEntity):
     def _update_state(self) -> None:
         """Verify light state against schedule."""
         # Simplified Logic
-        if self.env_config.light_sensor:
-            light_state = self.hass.states.get(self.env_config.light_sensor)
-            if light_state and light_state.state != STATE_UNAVAILABLE:
-                # In a real implementation we would check time of day vs schedule
-                pass
+        light_sensors = self.env_config.light_sensors
+        if light_sensors:
+            # Just checking accessibility for now as per original code stub
+            # In real impl, we'd check time vs state
+            pass
 
         self._is_schedule_matched = True
 

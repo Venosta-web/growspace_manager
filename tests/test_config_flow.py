@@ -1675,7 +1675,7 @@ async def test_options_flow_configure_environment_remove_vpd_sensor(
     user_input = {
         "temperature_sensor": "sensor.temp",
         "humidity_sensor": "sensor.humidity",
-        # "vpd_sensor": None,  <-- Omitted effectively
+        "vpd_sensor": None,  # Explicitly clear it
     }
     result = await flow.async_step_configure_environment(user_input=user_input)
 

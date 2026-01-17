@@ -53,8 +53,8 @@ def mock_growspace():
         humidity_sensor="sensor.humidity",
         vpd_sensor="sensor.vpd",
         co2_sensor="sensor.co2",
-        circulation_fan_entity="switch.fan",
-        light_sensor="light.grow_light",
+        circulation_fan_entities=["switch.fan"],
+        light_sensors=["light.grow_light"],
         soil_moisture_sensor="sensor.soil_moisture",
         bayesian_options={
             "threshold_stress": 0.7,
@@ -1028,7 +1028,7 @@ async def test_mold_risk_specifics(
     # 1. Humidifier On
     # Mock state so humidifier_value > 0
     # env_state.humidifier_value comes from _get_sensor_value(humidifier_entity)
-    env_config.humidifier_entity = "sensor.humidifier"
+    env_config.humidifier_entities = ["sensor.humidifier"]
 
     with patch.object(sensor, "_get_sensor_value") as mock_get_val:
 
@@ -1073,7 +1073,7 @@ async def test_light_cycle_verification_sensor_logic(
 ) -> None:
     """Test LightCycleVerificationSensor logic."""
 
-    env_config.light_sensor = "light.grow_light"
+    env_config.light_sensors = ["light.grow_light"]
     sensor = LightCycleVerificationSensor(mock_coordinator, "gs1", env_config)
     sensor.hass = hass
     sensor.platform = MagicMock()
@@ -1144,7 +1144,7 @@ def test_determine_light_state_unavailable(
     )
     sensor.hass = hass
 
-    env_config.light_sensor = "sensor.light"
+    env_config.light_sensors = ["sensor.light"]
     set_sensor_state(hass, "sensor.light", STATE_UNAVAILABLE)
 
     assert sensor._determine_light_state() is None
@@ -1765,7 +1765,7 @@ async def test_light_cycle_async_added_to_hass_without_light_entity(
     mock_track_state_change, mock_coordinator, env_config
 ) -> None:
     """Test async_added_to_hass without a light entity."""
-    env_config.light_sensor = None
+    env_config.light_sensors = []
     sensor = LightCycleVerificationSensor(mock_coordinator, "gs1", env_config)
     sensor.hass = MagicMock()
     # async_on_remove and async_update are methods, use Mock() not assignment
@@ -2014,10 +2014,10 @@ class TestBayesianEnvironmentSensor:
         mock_env_config.humidity_sensor = "sensor.humidity"
         mock_env_config.vpd_sensor = "sensor.vpd"
         mock_env_config.co2_sensor = "sensor.co2"
-        mock_env_config.circulation_fan_entity = "switch.fan"
-        mock_env_config.dehumidifier_entity = None
-        mock_env_config.exhaust_fan_entity = None
-        mock_env_config.humidifier_entity = None
+        mock_env_config.circulation_fan_entities = ["switch.fan"]
+        mock_env_config.dehumidifier_entities = []
+        mock_env_config.exhaust_fan_entities = []
+        mock_env_config.humidifier_entities = []
         mock_env_config.soil_moisture_sensor = None
         base_sensor.env_config = mock_env_config
         await base_sensor.async_added_to_hass()
@@ -2051,10 +2051,10 @@ class TestBayesianEnvironmentSensor:
         mock_env_config2.humidity_sensor = None
         mock_env_config2.vpd_sensor = "sensor.vpd"
         mock_env_config2.co2_sensor = None
-        mock_env_config2.circulation_fan_entity = "switch.fan"
-        mock_env_config2.dehumidifier_entity = None
-        mock_env_config2.exhaust_fan_entity = None
-        mock_env_config2.humidifier_entity = None
+        mock_env_config2.circulation_fan_entities = ["switch.fan"]
+        mock_env_config2.dehumidifier_entities = []
+        mock_env_config2.exhaust_fan_entities = []
+        mock_env_config2.humidifier_entities = []
         mock_env_config2.soil_moisture_sensor = None
         base_sensor.env_config = mock_env_config2
         await base_sensor.async_added_to_hass()
@@ -2115,7 +2115,7 @@ class TestBayesianEnvironmentSensor:
     def test_get_base_environment_state_light_sensor_domain_sensor(self, base_sensor):
         """Test _get_base_environment_state when light sensor is a sensor domain."""
         base_sensor.hass = MagicMock()
-        base_sensor.env_config.light_sensor = "sensor.light_level"
+        base_sensor.env_config.light_sensors = ["sensor.light_level"]
 
         # Mock light_state to have domain "sensor"
         mock_light_state = MagicMock(spec=State)
@@ -2246,7 +2246,7 @@ async def test_dehumidifier_state_detection(
 ) -> None:
     """Test that dehumidifier state is correctly detected in environment state."""
     # Add dehumidifier entity to env_config
-    env_config.dehumidifier_entity = "switch.dehumidifier"
+    env_config.dehumidifier_entities = ["switch.dehumidifier"]
 
     description = next(d for d in SENSOR_TYPES if d.sensor_type == "stress")
     sensor = BayesianEnvironmentSensor(
@@ -2293,7 +2293,7 @@ async def test_active_desiccation_low_humidity(
     mock_analyze_trend, hass: HomeAssistant, mock_coordinator, env_config
 ) -> None:
     """Test Active Desiccation detection when dehumidifier is on with low humidity."""
-    env_config.dehumidifier_entity = "switch.dehumidifier"
+    env_config.dehumidifier_entities = ["switch.dehumidifier"]
 
     description = next(d for d in SENSOR_TYPES if d.sensor_type == "stress")
     sensor = BayesianEnvironmentSensor(
@@ -2335,7 +2335,7 @@ async def test_active_desiccation_high_vpd(
     mock_analyze_trend, hass: HomeAssistant, mock_coordinator, env_config
 ) -> None:
     """Test Active Desiccation detection when dehumidifier is on with high VPD."""
-    env_config.dehumidifier_entity = "switch.dehumidifier"
+    env_config.dehumidifier_entities = ["switch.dehumidifier"]
 
     description = next(d for d in SENSOR_TYPES if d.sensor_type == "stress")
     sensor = BayesianEnvironmentSensor(
@@ -2377,7 +2377,7 @@ async def test_active_saturation_veg_stage(
     mock_analyze_trend, hass: HomeAssistant, mock_coordinator, env_config
 ) -> None:
     """Test Active Saturation detection in veg stage with humidifier on."""
-    env_config.humidifier_entity = "sensor.humidifier"
+    env_config.humidifier_entities = ["sensor.humidifier"]
 
     # Set up plants in veg stage (flower_days = 0)
     mock_coordinator.plants = {
@@ -2426,7 +2426,7 @@ async def test_active_saturation_flower_stage(
     mock_analyze_trend, hass: HomeAssistant, mock_coordinator, env_config
 ) -> None:
     """Test Active Saturation detection in flower stage with humidifier on."""
-    env_config.humidifier_entity = "sensor.humidifier"
+    env_config.humidifier_entities = ["sensor.humidifier"]
 
     # Set up plants in flower stage
     mock_coordinator.plants = {
@@ -2476,7 +2476,7 @@ async def test_no_desiccation_when_conditions_normal(
     mock_analyze_trend, hass: HomeAssistant, mock_coordinator, env_config
 ) -> None:
     """Test that Active Desiccation is NOT triggered when conditions are normal."""
-    env_config.dehumidifier_entity = "switch.dehumidifier"
+    env_config.dehumidifier_entities = ["switch.dehumidifier"]
 
     description = next(d for d in SENSOR_TYPES if d.sensor_type == "stress")
     sensor = BayesianEnvironmentSensor(

@@ -40,7 +40,7 @@ async def test_configure_dehumidifier_thresholds(
     mock_growspace = Growspace(
         id="gs1",
         name="Test GS",
-        environment_config=EnvironmentConfig(dehumidifier_entity="switch.dehum"),
+        environment_config=EnvironmentConfig(dehumidifier_entities=["switch.dehum"]),
     )
     mock_coordinator.growspaces = {"gs1": mock_growspace}
     mock_coordinator.get_sorted_growspace_options.return_value = [("gs1", "Test GS")]
@@ -68,7 +68,7 @@ async def test_configure_dehumidifier_thresholds(
     user_input = {
         "control_dehumidifier": True,
         "configure_dehumidifier": True,
-        "dehumidifier_entity": "switch.dehum",
+        "dehumidifier_entities": ["switch.dehum"],
         # Pass other required or optional fields to pass validation if needed,
         # but pure optional fields can be omitted.
     }
@@ -160,7 +160,7 @@ async def test_configure_dehumidifier_thresholds(
     user_input_clear = {
         "control_dehumidifier": True,
         "configure_dehumidifier": False,  # UNCHECK
-        "dehumidifier_entity": "switch.dehum",
+        "dehumidifier_entities": ["switch.dehum"],
     }
     result_3 = await hass.config_entries.options.async_configure(
         result_2["flow_id"], user_input=user_input_clear

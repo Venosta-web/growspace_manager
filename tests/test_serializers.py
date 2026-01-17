@@ -17,6 +17,8 @@ from custom_components.growspace_manager.models import (
 )
 from custom_components.growspace_manager.serializers import GrowspaceSerializer
 
+from .conftest import create_plant
+
 
 @pytest.fixture
 def serializer(hass: HomeAssistant):
@@ -44,7 +46,7 @@ def mock_growspace(hass: HomeAssistant):
         temperature_sensor="sensor.temp",
         humidity_sensor="sensor.hum",
         vpd_sensor="sensor.vpd",
-        light_sensor="binary_sensor.light",
+        light_sensors=["binary_sensor.light"],
         soil_moisture_sensor="sensor.moisture",
     )
     return gs
@@ -115,7 +117,7 @@ def test_get_environment_attributes(
         "on",
         attributes={"humidity": 50, "current_humidity": 60, "mode": "auto"},
     )
-    mock_growspace.environment_config.dehumidifier_entity = "switch.dehum"
+    mock_growspace.environment_config.dehumidifier_entities = ["switch.dehum"]
     mock_growspace.environment_config.control_dehumidifier = True
 
     attrs = serializer._get_environment_attributes(mock_growspace)
@@ -178,7 +180,7 @@ def test_get_environment_attributes_with_thresholds(
         "on",
         attributes={"dehumidifier_control_enabled": True},
     )
-    mock_growspace.environment_config.dehumidifier_entity = "switch.dehum"
+    mock_growspace.environment_config.dehumidifier_entities = ["switch.dehum"]
     mock_growspace.environment_config.control_dehumidifier = True
     mock_growspace.environment_config.dehumidifier_thresholds = thresholds
 
@@ -199,9 +201,9 @@ def test_get_environment_attributes_extended(
 ) -> None:
     """Test environment attributes with exhaust, humidifier, and circulation fan."""
     # Setup Entity IDs
-    mock_growspace.environment_config.exhaust_fan_entity = "fan.exhaust"
-    mock_growspace.environment_config.humidifier_entity = "humidifier.room"
-    mock_growspace.environment_config.circulation_fan_entity = "fan.circulation"
+    mock_growspace.environment_config.exhaust_fan_entities = ["fan.exhaust"]
+    mock_growspace.environment_config.humidifier_entities = ["humidifier.room"]
+    mock_growspace.environment_config.circulation_fan_entities = ["fan.circulation"]
     mock_growspace.environment_config.soil_moisture_sensor = "sensor.moisture"
 
     # Setup States
@@ -234,9 +236,11 @@ def test_get_environment_attributes_missing_states(
 ) -> None:
     """Test environment attributes when entities are missing states."""
     # Setup Entity IDs
-    mock_growspace.environment_config.exhaust_fan_entity = "fan.exhaust_missing"
-    mock_growspace.environment_config.humidifier_entity = "humidifier.missing"
-    mock_growspace.environment_config.circulation_fan_entity = "fan.circulation_missing"
+    mock_growspace.environment_config.exhaust_fan_entities = ["fan.exhaust_missing"]
+    mock_growspace.environment_config.humidifier_entities = ["humidifier.missing"]
+    mock_growspace.environment_config.circulation_fan_entities = [
+        "fan.circulation_missing"
+    ]
     mock_growspace.environment_config.soil_moisture_sensor = "sensor.moisture_missing"
 
     # DO NOT set states (simulate missing)
@@ -349,7 +353,7 @@ def test_deserialize_plants(serializer: GrowspaceSerializer) -> None:
             "col": 1,
             "stage": "veg",
         },
-        "plant2": Plant(
+        "plant2": create_plant(
             plant_id="plant2",
             growspace_id="gs1",
             strain="Strain 2",

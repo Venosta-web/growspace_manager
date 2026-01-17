@@ -1171,10 +1171,10 @@ def test_growspace_overview_sensor_get_trackable_sensors(mock_coordinator) -> No
     env_config = EnvironmentConfig(
         soil_moisture_sensor="sensor.moisture",
         vpd_sensor="sensor.vpd",
-        dehumidifier_entity="switch.dehumidifier",
-        exhaust_fan_entity="fan.exhaust",
-        humidifier_entity=None,  # Not configured
-        circulation_fan_entity="fan.circulation",
+        dehumidifier_entities=["switch.dehumidifier"],
+        exhaust_fan_entities=["fan.exhaust"],
+        humidifier_entities=[],  # Not configured
+        circulation_fan_entities=["fan.circulation"],
     )
     gs_mock.environment_config = env_config
 
@@ -1196,10 +1196,10 @@ def test_growspace_overview_sensor_trackable_attrs_constant() -> None:
     expected_attrs = (
         "soil_moisture_sensor",
         "vpd_sensor",
-        "dehumidifier_entity",
-        "exhaust_fan_entity",
-        "humidifier_entity",
-        "circulation_fan_entity",
+        "dehumidifier_entities",
+        "exhaust_fan_entities",
+        "humidifier_entities",
+        "circulation_fan_entities",
     )
 
     assert hasattr(GrowspaceOverviewSensor, "TRACKABLE_ENVIRONMENT_ATTRS")

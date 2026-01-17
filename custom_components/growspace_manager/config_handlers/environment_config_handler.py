@@ -12,13 +12,17 @@ from homeassistant.config_entries import ConfigFlowResult
 from homeassistant.helpers import selector
 
 from ..const import (
+    CONF_CIRCULATION_FAN_ENTITIES,
     CONF_CIRCULATION_FAN_ENTITY,
     CONF_CO2_SENSOR,
+    CONF_DEHUMIDIFIER_ENTITIES,
     CONF_DEHUMIDIFIER_ENTITY,
-    CONF_EXHAUST_ENTITY,
+    CONF_EXHAUST_FAN_ENTITIES,
+    CONF_HUMIDIFIER_ENTITIES,
     CONF_HUMIDIFIER_ENTITY,
     CONF_HUMIDITY_SENSOR,
     CONF_LIGHT_SENSOR,
+    CONF_LIGHT_SENSORS,
     CONF_MOLD_THRESHOLD,
     CONF_SOIL_MOISTURE_SENSOR,
     CONF_STRESS_THRESHOLD,
@@ -259,26 +263,48 @@ class EnvironmentConfigHandler(BaseConfigHandler[dict[str, Any]]):
         """Override clean_input to explicitly allow clearing specific fields."""
         cleaned = super().clean_input(user_input)
 
+        list_fields = [
+            CONF_LIGHT_SENSORS,
+            CONF_EXHAUST_FAN_ENTITIES,
+            CONF_CIRCULATION_FAN_ENTITIES,
+            CONF_HUMIDIFIER_ENTITIES,
+            CONF_DEHUMIDIFIER_ENTITIES,
+        ]
+
         # Explicitly check for specific optional sensors and preserve None/empty if present in user_input
         # This allows clearing them by overwriting existing values with None.
         optional_fields = [
             CONF_VPD_SENSOR,
             CONF_SOIL_MOISTURE_SENSOR,
-            CONF_EXHAUST_ENTITY,
-            CONF_HUMIDIFIER_ENTITY,
-            CONF_DEHUMIDIFIER_ENTITY,
             CONF_LIGHT_SENSOR,
             CONF_CO2_SENSOR,
-            CONF_CIRCULATION_FAN_ENTITY,
         ]
 
+        # Handle list fields first (sanitize list content)
+        for field in list_fields:
+            if field in user_input:
+                val = user_input[field]
+                if isinstance(val, list):
+                    cleaned[field] = [v for v in val if v]
+                elif val:
+                    # Backward compat helper if somehow a string gets here (shouldn't with selector)
+                    cleaned[field] = [val]
+                else:
+                    cleaned[field] = []
+
+        # Handle simplified optional fields
         for field in optional_fields:
             if field in user_input and (
                 user_input[field] is None or user_input[field] == ""
             ):
                 cleaned[field] = None
-            elif field not in user_input:
-                cleaned[field] = None
+            elif field not in user_input and field not in list_fields:
+                # Only clear if it's not one of our new list fields (which handle themselves)
+                # Actually, optional_fields contains CONF_LIGHT_SENSOR ("light_sensor")
+                # We need to map old config flow keys (light_sensor) to new keys (light_sensors) if we change the keys in schema
+                # The Models used separate keys.
+                # Let's verify what keys we are using in the schema below.
+                pass
 
         return cleaned
 
@@ -378,34 +404,47 @@ class EnvironmentConfigHandler(BaseConfigHandler[dict[str, Any]]):
         self, schema_dict: dict, feature: str, growspace_options: dict[str, Any]
     ) -> None:
         """Add the entity selector for a specific feature."""
+        # Mapping for multi-device support
         if feature == "light":
-            entity_key = CONF_LIGHT_SENSOR
+            entity_key = CONF_LIGHT_SENSORS  # New Key
             domain = ["switch", "light", "input_boolean", "sensor"]
             device_class = None
+            suggested_val = growspace_options.get(CONF_LIGHT_SENSORS) or (
+                [growspace_options[CONF_LIGHT_SENSOR]]
+                if growspace_options.get(CONF_LIGHT_SENSOR)
+                else []
+            )
         elif feature == "fan":
-            entity_key = CONF_CIRCULATION_FAN_ENTITY
-            domain = [
-                "fan",
-                "switch",
-                "input_boolean",
-                "sensor",
-                "input_number",
-            ]
+            entity_key = CONF_CIRCULATION_FAN_ENTITIES  # New Key
+            domain = ["fan", "switch", "input_boolean", "sensor", "input_number"]
             device_class = None
-        else:  # co2
+            suggested_val = growspace_options.get(CONF_CIRCULATION_FAN_ENTITIES) or (
+                [growspace_options[CONF_CIRCULATION_FAN_ENTITY]]
+                if growspace_options.get(CONF_CIRCULATION_FAN_ENTITY)
+                else []
+            )
+        else:  # co2 (remains singular for now based on model?)
+            # Model check: co2_sensor is SINGLE. Only light/fans/humidifiers are lists.
             entity_key = CONF_CO2_SENSOR
             domain = ["sensor", "input_number"]
             device_class = ["carbon_dioxide"]
+            suggested_val = growspace_options.get(entity_key)
 
         # Build selector config - only include device_class if specified
-        selector_config = selector.EntitySelectorConfig(domain=domain)
+        # Enable multiple for array types
+        # Enable multiple for array types
+        is_multiple = entity_key in [CONF_LIGHT_SENSORS, CONF_CIRCULATION_FAN_ENTITIES]
+
+        selector_config = selector.EntitySelectorConfig(
+            domain=domain, multiple=is_multiple
+        )
         if device_class:
             selector_config = selector.EntitySelectorConfig(
                 domain=domain,
                 device_class=device_class,
+                multiple=is_multiple,
             )
 
-        suggested_val = growspace_options.get(entity_key)
         schema_dict[
             vol.Optional(
                 entity_key,
@@ -417,15 +456,16 @@ class EnvironmentConfigHandler(BaseConfigHandler[dict[str, Any]]):
         self, schema_dict: dict, growspace_options: dict[str, Any]
     ) -> None:
         """Add exhaust and humidifier to the schema."""
-        # Exhaust Entity (Merged: Fan/Switch/Sensor)
-        suggested_exhaust = (
-            growspace_options.get("exhaust_entity")
-            or growspace_options.get("exhaust_fan_entity")
-            or growspace_options.get("exhaust_sensor")
+        # Exhaust Entity (Merged: Fan/Switch/Sensor) -> Now List
+        suggested_exhaust = growspace_options.get(CONF_EXHAUST_FAN_ENTITIES) or (
+            [growspace_options.get("exhaust_fan_entity")]
+            if growspace_options.get("exhaust_fan_entity")
+            else []
         )
+
         schema_dict[
             vol.Optional(
-                "exhaust_entity",
+                CONF_EXHAUST_FAN_ENTITIES,
                 description={"suggested_value": suggested_exhaust},
             )
         ] = selector.EntitySelector(
@@ -437,17 +477,21 @@ class EnvironmentConfigHandler(BaseConfigHandler[dict[str, Any]]):
                     "sensor",
                     "binary_sensor",
                     "input_number",
-                ]
+                ],
+                multiple=True,
             )
         )
 
-        # Humidifier Entity (Merged: Humidifier/Switch/Sensor)
-        suggested_humidifier = growspace_options.get(
-            "humidifier_entity"
-        ) or growspace_options.get("humidifier_sensor")
+        # Humidifier Entity (Merged: Humidifier/Switch/Sensor) -> Now List
+        suggested_humidifier = growspace_options.get(CONF_HUMIDIFIER_ENTITIES) or (
+            [growspace_options.get(CONF_HUMIDIFIER_ENTITY)]
+            if growspace_options.get(CONF_HUMIDIFIER_ENTITY)
+            else []
+        )
+
         schema_dict[
             vol.Optional(
-                "humidifier_entity",
+                CONF_HUMIDIFIER_ENTITIES,
                 description={"suggested_value": suggested_humidifier},
             )
         ] = selector.EntitySelector(
@@ -459,7 +503,8 @@ class EnvironmentConfigHandler(BaseConfigHandler[dict[str, Any]]):
                     "sensor",
                     "binary_sensor",
                     "input_number",
-                ]
+                ],
+                multiple=True,
             )
         )
 
@@ -467,11 +512,16 @@ class EnvironmentConfigHandler(BaseConfigHandler[dict[str, Any]]):
         self, schema_dict: dict, growspace_options: dict[str, Any]
     ) -> None:
         """Add dehumidifier to the schema."""
-        # Removed configure_dehumidifier checkbox and its conditional logic
-        suggested_dehumidifier = growspace_options.get(CONF_DEHUMIDIFIER_ENTITY)
+        # Check for list or legacy str
+        suggested_dehumidifier = growspace_options.get(CONF_DEHUMIDIFIER_ENTITIES) or (
+            [growspace_options.get(CONF_DEHUMIDIFIER_ENTITY)]
+            if growspace_options.get(CONF_DEHUMIDIFIER_ENTITY)
+            else []
+        )
+
         schema_dict[
             vol.Optional(
-                CONF_DEHUMIDIFIER_ENTITY,
+                CONF_DEHUMIDIFIER_ENTITIES,
                 description={"suggested_value": suggested_dehumidifier},
             )
         ] = selector.EntitySelector(
@@ -482,7 +532,8 @@ class EnvironmentConfigHandler(BaseConfigHandler[dict[str, Any]]):
                     "sensor",
                     "binary_sensor",
                     "input_boolean",
-                ]
+                ],
+                multiple=True,
             )
         )
         schema_dict[

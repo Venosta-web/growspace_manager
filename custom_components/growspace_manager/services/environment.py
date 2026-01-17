@@ -8,15 +8,20 @@ from homeassistant.core import HomeAssistant, ServiceCall
 from homeassistant.exceptions import ServiceValidationError
 
 from ..const import (
+    CONF_CIRCULATION_FAN_ENTITIES,
     CONF_CIRCULATION_FAN_ENTITY,
     CONF_CO2_SENSOR,
     CONF_CONTROL_DEHUMIDIFIER,
+    CONF_DEHUMIDIFIER_ENTITIES,
     CONF_DEHUMIDIFIER_ENTITY,
     CONF_DEHUMIDIFIER_THRESHOLDS,
     CONF_EXHAUST_ENTITY,
+    CONF_EXHAUST_FAN_ENTITIES,
+    CONF_HUMIDIFIER_ENTITIES,
     CONF_HUMIDIFIER_ENTITY,
     CONF_HUMIDITY_SENSOR,
     CONF_LIGHT_SENSOR,
+    CONF_LIGHT_SENSORS,
     CONF_MOLD_THRESHOLD,
     CONF_SOIL_MOISTURE_SENSOR,
     CONF_STRESS_THRESHOLD,
@@ -44,17 +49,28 @@ async def handle_configure_environment(
 
     growspace = coordinator.growspaces[growspace_id]
 
+    def _get_list(key_singular, key_plural):
+        if val := call.data.get(key_plural):
+            return val
+        if val := call.data.get(key_singular):
+            return [val] if isinstance(val, str) else val
+        return []
+
     # Build environment config from service call
     env_config = EnvironmentConfig(
         temperature_sensor=call.data.get(CONF_TEMP_SENSOR),
         humidity_sensor=call.data.get(CONF_HUMIDITY_SENSOR),
         vpd_sensor=call.data.get(CONF_VPD_SENSOR),
         co2_sensor=call.data.get(CONF_CO2_SENSOR),
-        circulation_fan_entity=call.data.get(CONF_CIRCULATION_FAN_ENTITY),
-        light_sensor=call.data.get(CONF_LIGHT_SENSOR),
-        exhaust_fan_entity=call.data.get(CONF_EXHAUST_ENTITY),
-        humidifier_entity=call.data.get(CONF_HUMIDIFIER_ENTITY),
-        dehumidifier_entity=call.data.get(CONF_DEHUMIDIFIER_ENTITY),
+        circulation_fan_entities=_get_list(
+            CONF_CIRCULATION_FAN_ENTITY, CONF_CIRCULATION_FAN_ENTITIES
+        ),
+        light_sensors=_get_list(CONF_LIGHT_SENSOR, CONF_LIGHT_SENSORS),
+        exhaust_fan_entities=_get_list(CONF_EXHAUST_ENTITY, CONF_EXHAUST_FAN_ENTITIES),
+        humidifier_entities=_get_list(CONF_HUMIDIFIER_ENTITY, CONF_HUMIDIFIER_ENTITIES),
+        dehumidifier_entities=_get_list(
+            CONF_DEHUMIDIFIER_ENTITY, CONF_DEHUMIDIFIER_ENTITIES
+        ),
         soil_moisture_sensor=call.data.get(CONF_SOIL_MOISTURE_SENSOR),
         control_dehumidifier=call.data.get(CONF_CONTROL_DEHUMIDIFIER, False),
         dehumidifier_thresholds=call.data.get(CONF_DEHUMIDIFIER_THRESHOLDS, {}),

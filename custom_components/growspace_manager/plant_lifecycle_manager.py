@@ -13,7 +13,7 @@ from .exceptions import (
     PlantNotFoundError,
     ValidationChangeError,
 )
-from .models import Plant
+from .models import Plant, PlantGenetics
 from .utils import calculate_plant_stage, format_date
 
 if TYPE_CHECKING:
@@ -71,11 +71,17 @@ class PlantLifecycleManager:
                 if field in kwargs:
                     date_fields[field] = format_date(kwargs[field])
 
+            final_plant_id = plant_id or str(uuid.uuid4())
+
+            genetics = PlantGenetics(
+                strain_name=strain,
+                phenotype_name=phenotype or "",
+            )
+
             plant = Plant(
-                plant_id=plant_id or str(uuid.uuid4()),
+                plant_id=final_plant_id,
                 growspace_id=growspace_id,
-                strain=strain,
-                phenotype=phenotype,
+                genetics=genetics,
                 row=final_row,
                 col=final_col,
                 stage=stage or "",
@@ -105,6 +111,13 @@ class PlantLifecycleManager:
             for key in DATE_FIELDS:
                 if key in updates:
                     updates[key] = format_date(updates[key])
+
+            # Handle genetics updates: strain and phenotype are read-only properties
+            # that delegate to genetics.strain_name and genetics.phenotype_name
+            if "strain" in updates:
+                plant.genetics.strain_name = updates.pop("strain")
+            if "phenotype" in updates:
+                plant.genetics.phenotype_name = updates.pop("phenotype")
 
             for key, value in updates.items():
                 if hasattr(plant, key):

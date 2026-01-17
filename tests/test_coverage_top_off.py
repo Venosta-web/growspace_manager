@@ -57,6 +57,8 @@ from custom_components.growspace_manager.websocket import (
     websocket_get_event_log,
 )
 
+from .conftest import create_plant
+
 # --- Dehumidifier Coordinator Coverage ---
 
 
@@ -67,7 +69,7 @@ async def test_dehumidifier_stages_coverage(hass: HomeAssistant) -> None:
     mock_config_entry = MagicMock()
 
     # Test CURE stage
-    plant_cure = Plant(
+    plant_cure = create_plant(
         plant_id="p1", growspace_id="gs1", strain="S1", cure_start="2024-01-01"
     )
     mock_coordinator.get_growspace_plants.return_value = [plant_cure]
@@ -81,7 +83,7 @@ async def test_dehumidifier_stages_coverage(hass: HomeAssistant) -> None:
     assert coordinator._get_growth_stage() == "cure"
 
     # Test DRY stage
-    plant_dry = Plant(
+    plant_dry = create_plant(
         plant_id="p1", growspace_id="gs1", strain="S1", dry_start="2024-01-01"
     )
     mock_coordinator.get_growspace_plants.return_value = [plant_dry]
@@ -91,7 +93,7 @@ async def test_dehumidifier_stages_coverage(hass: HomeAssistant) -> None:
     assert coordinator._get_growth_stage() == "dry"
 
     # Test SEEDLING stage
-    plant_seedling = Plant(
+    plant_seedling = create_plant(
         plant_id="p1", growspace_id="gs1", strain="S1", seedling_start="2024-01-01"
     )
     mock_coordinator.get_growspace_plants.return_value = [plant_seedling]
@@ -205,7 +207,7 @@ async def test_lifecycle_history_closing_coverage(hass: HomeAssistant) -> None:
     mock_coordinator._lock = AsyncMock()
     mock_coordinator.async_commit = AsyncMock()
 
-    plant = Plant(
+    plant = create_plant(
         plant_id="p1",
         growspace_id="gs1",
         strain="S1",
@@ -565,7 +567,7 @@ async def test_storage_manager_load_coverage(hass: HomeAssistant) -> None:
             "gs1": Growspace(id="gs1", name="GS1")
         }
         mock_coordinator.serializer.deserialize_plants.return_value = {
-            "p1": Plant(plant_id="p1", strain="S1", growspace_id="gs1")
+            "p1": create_plant(plant_id="p1", strain="S1", growspace_id="gs1")
         }
 
         # 1. Segmented load success
@@ -601,7 +603,7 @@ async def test_storage_manager_load_coverage(hass: HomeAssistant) -> None:
             "gs2": Growspace(id="gs2", name="GS2")
         }
         mock_coordinator.serializer.deserialize_plants.return_value = {
-            "p2": Plant(plant_id="p2", strain="S2", growspace_id="gs2")
+            "p2": create_plant(plant_id="p2", strain="S2", growspace_id="gs2")
         }
 
         mock_config_store.async_save = AsyncMock()
@@ -761,7 +763,7 @@ def test_coordinator_extract_gs_ids_coverage() -> None:
 async def test_lifecycle_history_stages_coverage(hass: HomeAssistant) -> None:
     """Test transition_plant_stage stage branches to hit move methods."""
     mock_coordinator = MagicMock()
-    plant = Plant(
+    plant = create_plant(
         plant_id="p1",
         growspace_id="gs1",
         strain="S1",

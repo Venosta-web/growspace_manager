@@ -24,6 +24,8 @@ from custom_components.growspace_manager.const import (
     DOMAIN,
     EVENT_GROWSPACE_LOG_ENTRY,
 )
+from .conftest import create_plant
+
 from custom_components.growspace_manager.coordinator import GrowspaceCoordinator
 from custom_components.growspace_manager.models import (
     BaseModel,
@@ -33,13 +35,19 @@ from custom_components.growspace_manager.models import (
     Plant,
     PlantStage,
 )
+from .conftest import create_plant
+
 from custom_components.growspace_manager.sensor import (
     _create_initial_entities,
 )
+from .conftest import create_plant
+
 from custom_components.growspace_manager.services.nutrient_presets import (
     handle_remove_nutrient_preset,
     handle_save_nutrient_preset,
 )
+from .conftest import create_plant
+
 
 
 def create_test_coordinator(hass: HomeAssistant) -> GrowspaceCoordinator:
@@ -70,7 +78,7 @@ def preset_coordinator(hass: HomeAssistant) -> GrowspaceCoordinator:
         plants_per_row=1,
     )
 
-    coordinator.plants["test_plant"] = Plant(
+    coordinator.plants["test_plant"] = create_plant(
         plant_id="test_plant",
         growspace_id="test_gs",
         strain="Test Strain",
@@ -497,7 +505,7 @@ class TestPlantCoverage:
 
     def test_plant_days_since_watering(self) -> None:
         """Test get_days_since_watering with and without last_watered."""
-        plant = Plant(plant_id="p1", growspace_id="g1", strain="S")
+        plant = create_plant(plant_id="p1", growspace_id="g1", strain="S")
         assert plant.get_days_since_watering() is None
 
         plant.last_watered = (datetime.now() - timedelta(days=2)).isoformat()
@@ -505,7 +513,7 @@ class TestPlantCoverage:
 
     def test_plant_stage_missing_start_date(self) -> None:
         """Test get_days_in_stage returns 0 if start date attribute is missing or None."""
-        plant = Plant(plant_id="p1", growspace_id="g1", strain="S")
+        plant = create_plant(plant_id="p1", growspace_id="g1", strain="S")
         # Stage is empty, and start dates are None
         assert plant.get_days_in_stage("veg") == 0
 

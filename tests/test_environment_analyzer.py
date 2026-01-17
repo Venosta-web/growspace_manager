@@ -35,7 +35,7 @@ def mock_growspace():
     gs = MagicMock(spec=Growspace)
     gs.id = "test_growspace"
     gs.environment_config = MagicMock(spec=EnvironmentConfig)
-    gs.environment_config.light_sensor = "sensor.light"
+    gs.environment_config.light_sensors = ["sensor.light"]
     gs.environment_config.vpd_sensor = "sensor.vpd"
     return gs
 
@@ -87,7 +87,7 @@ def test_determine_is_day(
     assert analyzer.determine_is_day(mock_growspace) is False  # 0.0 is False
 
     # No sensor config
-    mock_growspace.environment_config.light_sensor = None
+    mock_growspace.environment_config.light_sensors = []
     assert analyzer.determine_is_day(mock_growspace) is True
 
 

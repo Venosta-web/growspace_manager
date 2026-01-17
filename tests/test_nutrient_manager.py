@@ -10,6 +10,8 @@ from custom_components.growspace_manager.models import (
     NutrientInventory,
     NutrientPreset,
 )
+from .conftest import create_plant
+
 
 
 @pytest.fixture

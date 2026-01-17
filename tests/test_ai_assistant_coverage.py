@@ -6,6 +6,7 @@ import pytest
 from homeassistant.core import HomeAssistant
 
 from custom_components.growspace_manager.models import Growspace, Plant
+from .conftest import create_plant
 from custom_components.growspace_manager.services.ai_assistant import GrowAssistant
 
 GROWSPACE_ID = "gs1"
@@ -123,7 +124,7 @@ def test_summarize_plants_no_dates(assistant, mock_deps) -> None:
     """Test summarizing plants that haven't started stages."""
     hass, coordinator, lib = mock_deps
 
-    p1 = Plant(plant_id="p1", strain="S1", growspace_id=GROWSPACE_ID, stage="veg")
+    p1 = create_plant(plant_id="p1", strain="S1", growspace_id=GROWSPACE_ID, stage="veg")
     # p1 has no veg_start or flower_start implicitly (None default)
 
     summary = assistant._summarize_plants([p1])
@@ -138,7 +139,7 @@ def test_get_strain_analytics_no_harvests(assistant, mock_deps) -> None:
     hass, coordinator, lib = mock_deps
 
     # Plant active
-    p1 = Plant(plant_id="p1", strain="S1", growspace_id=GROWSPACE_ID)
+    p1 = create_plant(plant_id="p1", strain="S1", growspace_id=GROWSPACE_ID)
 
     # Library data with no harvests
     lib.get_all.return_value = {
@@ -160,7 +161,7 @@ def test_get_strain_analytics_missing_strain(assistant, mock_deps) -> None:
     """Test analytics when strain is not in library."""
     hass, coordinator, lib = mock_deps
 
-    p1 = Plant(plant_id="p1", strain="Unknown Strain", growspace_id=GROWSPACE_ID)
+    p1 = create_plant(plant_id="p1", strain="Unknown Strain", growspace_id=GROWSPACE_ID)
     lib.get_all.return_value = {}
 
     analytics = assistant._get_strain_analytics([p1])
@@ -218,11 +219,11 @@ def test_get_strain_specific_context_integration(assistant, mock_deps) -> None:
     hass, coordinator, lib = mock_deps
 
     # Setup plants
-    p1 = Plant(plant_id="p1", strain="Strain A", growspace_id=GROWSPACE_ID)
-    p2 = Plant(
+    p1 = create_plant(plant_id="p1", strain="Strain A", growspace_id=GROWSPACE_ID)
+    p2 = create_plant(
         plant_id="p2", strain="Strain A", growspace_id=GROWSPACE_ID
     )  # Duplicate strain
-    p3 = Plant(plant_id="p3", strain="Strain B", growspace_id=GROWSPACE_ID)
+    p3 = create_plant(plant_id="p3", strain="Strain B", growspace_id=GROWSPACE_ID)
 
     # Setup library
     lib.get_all.return_value = {
@@ -270,7 +271,7 @@ def test_format_context_data_with_strain_context(assistant, mock_deps) -> None:
 
     # Mock coordinator to return a plant
     coordinator.get_growspace_plants.return_value = [
-        Plant(plant_id="p1", strain="Strain A", growspace_id=GROWSPACE_ID)
+        create_plant(plant_id="p1", strain="Strain A", growspace_id=GROWSPACE_ID)
     ]
 
     # Mock library

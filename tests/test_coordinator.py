@@ -39,9 +39,10 @@ from custom_components.growspace_manager.models import (
     GrowspaceEvent,
     GrowspaceType,
     IrrigationConfig,
-    Plant,
 )
 from custom_components.growspace_manager.utils import calculate_plant_stage
+
+from .conftest import create_plant
 
 
 def create_test_coordinator(
@@ -324,7 +325,7 @@ async def test_get_plant_stage(coordinator: GrowspaceCoordinator) -> None:
     # Helper to create a plant with only one stage set
     def make_plant_with_stage(stage_attr: str):
         kwargs: dict[str, Any] = {f"{stage_attr}_start": date(2025, 1, 1).isoformat()}
-        return Plant(
+        return create_plant(
             plant_id=f"{stage_attr}_id", strain="Test", growspace_id="gs1", **kwargs
         )
 
@@ -332,7 +333,9 @@ async def test_get_plant_stage(coordinator: GrowspaceCoordinator) -> None:
 
     for stage in stages:
         if stage == "seedling":
-            plant = Plant(plant_id="seedling_id", strain="Test", growspace_id="gs1")
+            plant = create_plant(
+                plant_id="seedling_id", strain="Test", growspace_id="gs1"
+            )
         else:
             plant = make_plant_with_stage(stage)
         result = calculate_plant_stage(plant)
@@ -1275,7 +1278,7 @@ def test_calculate_days_in_stage(coordinator: GrowspaceCoordinator) -> None:
     Args:
         coordinator: The mock GrowspaceCoordinator.
     """
-    plant = Plant(
+    plant = create_plant(
         plant_id="p1",
         strain="Test",
         growspace_id="gs1",
@@ -1334,7 +1337,7 @@ async def test_init_with_invalid_plant_data(
 async def test_init_with_plant_object(hass: HomeAssistant) -> None:
     """Test coordinator initialization with a Plant object instead of a dict."""
 
-    plant_obj = Plant(plant_id="p1", strain="Test Strain", growspace_id="gs1")
+    plant_obj = create_plant(plant_id="p1", strain="Test Strain", growspace_id="gs1")
     data = {"plants": {"p1": plant_obj}}
 
     coordinator = create_test_coordinator(hass, data=data)
@@ -1347,13 +1350,13 @@ async def test_init_with_plant_object(hass: HomeAssistant) -> None:
 async def test_get_plant_stage_special_growspaces(hass: HomeAssistant) -> None:
     """Test _get_plant_stage for special growspaces."""
 
-    plant_mother = Plant(plant_id="p1", strain="Test", growspace_id="mother")
+    plant_mother = create_plant(plant_id="p1", strain="Test", growspace_id="mother")
     assert calculate_plant_stage(plant_mother) == "mother"
 
-    plant_clone = Plant(plant_id="p2", strain="Test", growspace_id="clone")
+    plant_clone = create_plant(plant_id="p2", strain="Test", growspace_id="clone")
     assert calculate_plant_stage(plant_clone) == "clone"
 
-    plant_cure = Plant(plant_id="p3", strain="Test", growspace_id="cure")
+    plant_cure = create_plant(plant_id="p3", strain="Test", growspace_id="cure")
     assert calculate_plant_stage(plant_cure) == "cure"
 
 
@@ -1361,7 +1364,7 @@ async def test_get_plant_stage_special_growspaces(hass: HomeAssistant) -> None:
 async def test_get_plant_stage_seedling(hass: HomeAssistant) -> None:
     """Test _get_plant_stage for the seedling stage."""
 
-    plant = Plant(
+    plant = create_plant(
         plant_id="p1",
         strain="Test",
         growspace_id="gs1",
@@ -1374,7 +1377,7 @@ async def test_get_plant_stage_seedling(hass: HomeAssistant) -> None:
 async def test_get_plant_stage_fallback(hass: HomeAssistant) -> None:
     """Test _get_plant_stage fallback to the explicitly set stage."""
 
-    plant = Plant(plant_id="p1", strain="Test", growspace_id="gs1", stage="veg")
+    plant = create_plant(plant_id="p1", strain="Test", growspace_id="gs1", stage="veg")
     assert calculate_plant_stage(plant) == "veg"
 
 
@@ -1661,7 +1664,7 @@ async def test_harvest_to_explicit_target_no_position(
 
     caplog.set_level("WARNING")
     coordinator = create_test_coordinator(hass, data={})
-    plant = Plant(
+    plant = create_plant(
         plant_id="p1",
         growspace_id="gs1",
         strain="strain1",
@@ -1695,7 +1698,7 @@ async def test_harvest_to_explicit_target_cure(hass: HomeAssistant) -> None:
     """Test _harvest_to_explicit_target to cure growspace."""
 
     coordinator = create_test_coordinator(hass, data={})
-    plant = Plant(
+    plant = create_plant(
         plant_id="p1",
         growspace_id="gs1",
         strain="strain1",
@@ -1737,7 +1740,7 @@ async def test_harvest_to_explicit_target_clone(hass: HomeAssistant) -> None:
     """Test _harvest_to_explicit_target to clone growspace."""
 
     coordinator = create_test_coordinator(hass, data={})
-    plant = Plant(
+    plant = create_plant(
         plant_id="p1",
         growspace_id="gs1",
         strain="strain1",
@@ -1779,7 +1782,7 @@ async def test_harvest_to_explicit_target_mother(hass: HomeAssistant) -> None:
     """Test _harvest_to_explicit_target to mother growspace."""
 
     coordinator = create_test_coordinator(hass, data={})
-    plant = Plant(
+    plant = create_plant(
         plant_id="p1",
         growspace_id="gs1",
         strain="strain1",
@@ -1823,7 +1826,7 @@ async def test_move_to_clone_growspace_no_position(
     """Test _move_to_clone_growspace when no position is available."""
     caplog.set_level("WARNING")
     coordinator = create_test_coordinator(hass, data={})
-    plant = Plant(
+    plant = create_plant(
         plant_id="p1",
         growspace_id="gs1",
         strain="strain1",
@@ -2581,67 +2584,6 @@ async def test_add_event_fires_bus_event(coordinator) -> None:
     assert events[0].data["growspace_id"] == growspace_id
     assert events[0].data["reasons"] == ["reason 1"]
     assert events[0].data["category"] == "test"
-
-
-async def test_coverage_migrate_plant_image_paths(coordinator) -> None:
-    """Test migrate_plant_image_paths method (lines 599-622)."""
-    # Create plant with .jpg image path
-    plant_with_jpg = Plant(
-        plant_id="plant1",
-        growspace_id="gs1",
-        strain="Strain1",
-        phenotype="Pheno1",
-        veg_start="2024-01-01",
-    )
-    # Manually set phenotype as dict with image_path
-    plant_with_jpg.phenotype = {"image_path": "/local/test.jpg"}
-
-    # Create plant with .jpeg path
-    plant_with_jpeg = Plant(
-        plant_id="plant2",
-        growspace_id="gs1",
-        strain="Strain2",
-        phenotype="Pheno2",
-        veg_start="2024-01-01",
-    )
-    plant_with_jpeg.phenotype = {"image_path": "/local/test2.jpeg"}
-
-    # Create plant without image_path
-    plant_no_image = Plant(
-        plant_id="plant3",
-        growspace_id="gs1",
-        strain="Strain3",
-        phenotype="Pheno3",
-        veg_start="2024-01-01",
-    )
-    plant_no_image.phenotype = {}
-
-    # Create plant without image_path but with other data (for line 609)
-    plant_other_data = Plant(
-        plant_id="plant4",
-        growspace_id="gs1",
-        strain="Strain4",
-        phenotype="Pheno4",
-        veg_start="2024-01-01",
-    )
-    plant_other_data.phenotype = {"other": "value"}
-
-    coordinator.plants = {
-        "plant1": plant_with_jpg,
-        "plant2": plant_with_jpeg,
-        "plant3": plant_no_image,
-        "plant4": plant_other_data,
-    }
-
-    # Run migration
-    updated = coordinator.migrate_plant_image_paths()
-
-    # Should update 2 paths
-    assert updated == 2
-    assert coordinator.plants["plant1"].phenotype["image_path"] == "/local/test.webp"
-    assert coordinator.plants["plant2"].phenotype["image_path"] == "/local/test2.webp"
-    assert coordinator.plants["plant3"].phenotype == {}
-    assert coordinator.plants["plant4"].phenotype.get("image_path") is None
 
 
 async def test_coverage_ensure_special_growspace_type_update(coordinator) -> None:

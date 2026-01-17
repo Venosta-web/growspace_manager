@@ -7,6 +7,7 @@ import pytest
 
 from custom_components.growspace_manager.const import PlantStage
 from custom_components.growspace_manager.models import Growspace, Plant
+from .conftest import create_plant
 from custom_components.growspace_manager.plant_lifecycle_manager import (
     PlantLifecycleManager,
 )
@@ -51,7 +52,7 @@ async def test_async_remove_plant_with_notifications(mock_coordinator):
 
     # Add a plant and notification
     plant_id = "test_plant_123"
-    mock_coordinator.plants[plant_id] = Plant(
+    mock_coordinator.plants[plant_id] = create_plant(
         plant_id=plant_id,
         growspace_id="test_growspace",
         strain="Test Strain",
@@ -73,7 +74,7 @@ async def test_record_analytics_exception_handling(mock_coordinator):
     manager = PlantLifecycleManager(mock_coordinator)
 
     # Create a plant with veg and flower days
-    plant = Plant(
+    plant = create_plant(
         plant_id="test_plant",
         growspace_id="test_growspace",
         strain="Test Strain",
@@ -104,7 +105,7 @@ async def test_transition_plant_stage_to_clone(mock_coordinator):
 
     # Create a plant
     plant_id = "test_plant"
-    plant = Plant(
+    plant = create_plant(
         plant_id=plant_id,
         growspace_id="test_growspace",
         strain="Test Strain",

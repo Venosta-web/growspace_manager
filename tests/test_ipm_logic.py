@@ -12,12 +12,16 @@ from custom_components.growspace_manager.const import (
     DOMAIN,
     EVENT_GROWSPACE_LOG_ENTRY,
 )
+from .conftest import create_plant
+
 from custom_components.growspace_manager.coordinator import GrowspaceCoordinator
 from custom_components.growspace_manager.models import (
     Growspace,
     IPMPreset,
     Plant,
 )
+from .conftest import create_plant
+
 
 
 @pytest.fixture
@@ -89,8 +93,8 @@ async def test_async_apply_ipm_to_growspace(
     gs = Growspace(id="gs1", name="Veg Tent")
     mock_coordinator.growspaces["gs1"] = gs
 
-    p1 = Plant(plant_id="p1", growspace_id="gs1", strain="Strain A")
-    p2 = Plant(plant_id="p2", growspace_id="gs1", strain="Strain B")
+    p1 = create_plant(plant_id="p1", growspace_id="gs1", strain="Strain A")
+    p2 = create_plant(plant_id="p2", growspace_id="gs1", strain="Strain B")
     mock_coordinator.plants.update({"p1": p1, "p2": p2})
 
     preset = IPMPreset(
@@ -137,8 +141,8 @@ async def test_async_apply_ipm_to_plants(
     gs = Growspace(id="gs1", name="Veg Tent")
     mock_coordinator.growspaces["gs1"] = gs
 
-    p1 = Plant(plant_id="p1", growspace_id="gs1", strain="Strain A")
-    p2 = Plant(plant_id="p2", growspace_id="gs1", strain="Strain B")
+    p1 = create_plant(plant_id="p1", growspace_id="gs1", strain="Strain A")
+    p2 = create_plant(plant_id="p2", growspace_id="gs1", strain="Strain B")
     mock_coordinator.plants.update({"p1": p1, "p2": p2})
 
     preset = IPMPreset(id="ipm1", name="Spot Treat", type="drench", items=[])

@@ -4,6 +4,7 @@ import pytest
 
 from custom_components.growspace_manager.data_repository import DataRepository
 from custom_components.growspace_manager.models import Growspace, Plant
+from .conftest import create_plant
 
 
 @pytest.fixture
@@ -19,9 +20,9 @@ def mock_growspaces():
 def mock_plants():
     """Return specific plants for testing."""
     return {
-        "p1": Plant(plant_id="p1", growspace_id="gs1", strain="Plant 1"),
-        "p2": Plant(plant_id="p2", growspace_id="gs1", strain="Plant 2"),
-        "p3": Plant(plant_id="p3", growspace_id="gs2", strain="Plant 3"),
+        "p1": create_plant(plant_id="p1", growspace_id="gs1", strain="Plant 1"),
+        "p2": create_plant(plant_id="p2", growspace_id="gs1", strain="Plant 2"),
+        "p3": create_plant(plant_id="p3", growspace_id="gs2", strain="Plant 3"),
     }
 
 
@@ -31,7 +32,7 @@ def test_initialization() -> None:
     assert repo.get_all_plants() == []
     assert repo.get_all_growspaces() == []
 
-    plants = {"p1": Plant(plant_id="p1", growspace_id="gs1", strain="Plant 1")}
+    plants = {"p1": create_plant(plant_id="p1", growspace_id="gs1", strain="Plant 1")}
     growspaces = {"gs1": Growspace(id="gs1", name="Growspace 1")}
     repo_init = DataRepository(growspaces=growspaces, plants=plants)
     assert len(repo_init.get_all_plants()) == 1

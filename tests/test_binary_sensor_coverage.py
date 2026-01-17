@@ -11,8 +11,9 @@ from custom_components.growspace_manager.binary_sensor import (
 from custom_components.growspace_manager.models import (
     EnvironmentConfig,
     Growspace,
-    Plant,
 )
+
+from .conftest import create_plant
 
 
 @pytest.fixture
@@ -55,7 +56,7 @@ def env_config():
     return EnvironmentConfig(
         temperature_sensor="sensor.temp",
         humidity_sensor="sensor.humidity",
-        light_sensor="binary_sensor.light",
+        light_sensors=["binary_sensor.light"],
     )
 
 
@@ -64,7 +65,7 @@ async def test_light_cycle_sensor_no_light_entity(
 ) -> None:
     """Test LightCycleVerificationSensor with no light entity configured."""
     # Remove light sensor from config
-    env_config.light_sensor = None
+    env_config.light_sensors = []
 
     sensor = LightCycleVerificationSensor(
         mock_coordinator, "test_growspace", env_config
@@ -120,7 +121,7 @@ async def test_light_cycle_sensor_flower_stage_early(
 
     # Mock plants with flower_start
     plants = [
-        Plant(
+        create_plant(
             plant_id="plant1",
             growspace_id="test_growspace",
             strain="Test Strain",
@@ -147,7 +148,7 @@ async def test_light_cycle_sensor_flower_stage_mid(
 
     # Mock plants with flower_start
     plants = [
-        Plant(
+        create_plant(
             plant_id="plant1",
             growspace_id="test_growspace",
             strain="Test Strain",
@@ -174,7 +175,7 @@ async def test_light_cycle_sensor_flower_stage_late(
 
     # Mock plants with flower_start
     plants = [
-        Plant(
+        create_plant(
             plant_id="plant1",
             growspace_id="test_growspace",
             strain="Test Strain",

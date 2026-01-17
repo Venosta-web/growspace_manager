@@ -34,8 +34,8 @@ def mock_growspace():
         humidity_sensor="sensor.humidity",
         vpd_sensor="sensor.vpd",
         co2_sensor="sensor.co2",
-        circulation_fan_entity="switch.fan",
-        light_sensor="light.grow_light",
+        circulation_fan_entities=["switch.fan"],
+        light_sensors=["light.grow_light"],
         soil_moisture_sensor="sensor.soil_moisture",
         bayesian_options={
             "threshold_mold": 0.75,
@@ -328,7 +328,7 @@ async def test_user_reported_veg_scenario(
     )  # Let's assume humidifier is on
     # Add a mock humidifier value sensor if needed
     set_sensor_state(hass, "sensor.humidifier_value", 50.0)
-    env_config.humidifier_entity = "sensor.humidifier_value"
+    env_config.humidifier_entities = ["sensor.humidifier_value"]
 
     await hass.async_block_till_done()
 
