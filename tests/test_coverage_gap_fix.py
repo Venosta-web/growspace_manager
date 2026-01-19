@@ -13,33 +13,24 @@ from custom_components.growspace_manager.bayesian_evaluator import (
     evaluate_optimal_temperature,
     evaluate_optimal_vpd,
 )
-from .conftest import create_plant
-
 from custom_components.growspace_manager.binary_sensor import (
     BayesianEnvironmentSensor,
     GrowspaceBinarySensorDescription,
     GrowspaceSensorType,
     LightCycleVerificationSensor,
 )
-from .conftest import create_plant
-
 from custom_components.growspace_manager.calendar import GrowspaceCalendar
 from custom_components.growspace_manager.config_flow import (
     ConfigFlow,
     OptionsFlowHandler,
 )
-from .conftest import create_plant
-
 from custom_components.growspace_manager.coordinator import GrowspaceCoordinator
 from custom_components.growspace_manager.models import (
     EnvironmentConfig,
     EnvironmentState,
     Growspace,
-    Plant,
     PlantStage,
 )
-from .conftest import create_plant
-
 from custom_components.growspace_manager.notification_manager import NotificationManager
 from custom_components.growspace_manager.sensor import (
     BaseVpdSensor,
@@ -48,25 +39,19 @@ from custom_components.growspace_manager.sensor import (
     _check_calculated_vpd_sensor,
     _update_growspace_entities,
 )
-from .conftest import create_plant
-
 from custom_components.growspace_manager.services.plant import (
     handle_harvest_plant,
 )
-from .conftest import create_plant
-
 from custom_components.growspace_manager.strain_library import StrainLibrary
 from custom_components.growspace_manager.strategies.mold import (
     MoldRiskEvaluatorStrategy,
 )
-from .conftest import create_plant
-
 from custom_components.growspace_manager.websocket import (
     _get_history_with_binary_search_downsample,
     websocket_get_history_stats,
 )
-from .conftest import create_plant
 
+from .conftest import create_plant
 
 # -----------------------------------------------------------------------------
 # __init__.py Coverage

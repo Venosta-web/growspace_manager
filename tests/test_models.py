@@ -123,6 +123,8 @@ def test_environment_state_basic() -> None:
         co2=400.0,
         veg_days=10,
         flower_days=0,
+        seedling_days=0,
+        clone_days=0,
         is_lights_on=True,
         fan_off=False,
     )
@@ -132,6 +134,8 @@ def test_environment_state_basic() -> None:
     assert env_state.co2 == 400.0
     assert env_state.veg_days == 10
     assert env_state.flower_days == 0
+    assert env_state.seedling_days == 0
+    assert env_state.clone_days == 0
     assert env_state.is_lights_on is True
     assert env_state.fan_off is False
 
@@ -145,6 +149,8 @@ def test_environment_state_none_values() -> None:
         co2=None,
         veg_days=0,
         flower_days=0,
+        seedling_days=0,
+        clone_days=0,
         is_lights_on=False,
         fan_off=True,
     )
@@ -154,6 +160,8 @@ def test_environment_state_none_values() -> None:
     assert env_state.co2 is None
     assert env_state.veg_days == 0
     assert env_state.flower_days == 0
+    assert env_state.seedling_days == 0
+    assert env_state.clone_days == 0
     assert env_state.is_lights_on is False
     assert env_state.fan_off is True
 
@@ -340,6 +348,7 @@ def test_plant_days_and_weeks_in_stage() -> None:
         # 3. Test stage that exists but value is None/Empty (just in case)
         plant.veg_start = None
         assert plant.get_days_in_stage("veg") == 0
+
 
 def test_environment_config_migration() -> None:
     """Test EnvironmentConfig migration from single entities to lists."""

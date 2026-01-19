@@ -97,7 +97,7 @@ type NotificationDict = dict[str, Any]
 type DateInput = str | datetime | date | None
 
 
-class GrowspaceCoordinator(DataUpdateCoordinator):
+class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     """Manages Growspace, Plant, and Strain data for the Growspace Manager integration.
 
     This class handles loading, saving, and updating all the core data entities,

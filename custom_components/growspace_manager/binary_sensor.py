@@ -235,7 +235,9 @@ def _validate_env_config(config: EnvironmentConfig) -> bool:
     return has_temp and has_humidity and (has_vpd or (has_temp and has_humidity))
 
 
-class BayesianEnvironmentSensor(CoordinatorEntity, BinarySensorEntity):
+class BayesianEnvironmentSensor(
+    CoordinatorEntity[GrowspaceCoordinator], BinarySensorEntity
+):
     """Base class for Bayesian environment monitoring binary sensors."""
 
     entity_description: GrowspaceBinarySensorDescription
@@ -333,8 +335,10 @@ class BayesianEnvironmentSensor(CoordinatorEntity, BinarySensorEntity):
         co2 = self._get_sensor_value(self.env_config.co2_sensor)
 
         stage_info = self._get_growth_stage_info()
-        veg_days = stage_info["veg_days"]
-        flower_days = stage_info["flower_days"]
+        veg_days = stage_info.get("veg_days", 0)
+        flower_days = stage_info.get("flower_days", 0)
+        seedling_days = stage_info.get("seedling_days", 0)
+        clone_days = stage_info.get("clone_days", 0)
 
         is_lights_on = self._determine_light_state()
 
@@ -346,6 +350,8 @@ class BayesianEnvironmentSensor(CoordinatorEntity, BinarySensorEntity):
         soil_moisture_sensor = self.env_config.soil_moisture_sensor
         soil_moisture = self._get_sensor_value(soil_moisture_sensor)
 
+        humidifier_on = self._determine_humidifier_state()
+
         self._sensor_states = {
             "temperature": temp,
             "humidity": humidity,
@@ -354,11 +360,14 @@ class BayesianEnvironmentSensor(CoordinatorEntity, BinarySensorEntity):
             "soil_moisture": soil_moisture,
             "veg_days": veg_days,
             "flower_days": flower_days,
+            "seedling_days": seedling_days,
+            "clone_days": clone_days,
             "is_lights_on": is_lights_on,
             "fan_off": fan_off,
             "dehumidifier_on": dehumidifier_on,
             "exhaust_value": exhaust_value,
             "humidifier_value": humidifier_value,
+            "humidifier_on": humidifier_on,
         }
 
         return EnvironmentState(
@@ -368,11 +377,14 @@ class BayesianEnvironmentSensor(CoordinatorEntity, BinarySensorEntity):
             co2=co2,
             veg_days=veg_days,
             flower_days=flower_days,
+            seedling_days=seedling_days,
+            clone_days=clone_days,
             is_lights_on=is_lights_on,
             fan_off=fan_off,
             dehumidifier_on=dehumidifier_on,
             exhaust_value=exhaust_value,
             humidifier_value=humidifier_value,
+            humidifier_on=humidifier_on,
             soil_moisture=soil_moisture,
         )
 
@@ -382,36 +394,35 @@ class BayesianEnvironmentSensor(CoordinatorEntity, BinarySensorEntity):
         if not light_sensors:
             return None
 
-        current_lights_on = None
-        any_valid = False
         any_on = False
+        any_valid = False
 
         for sensor in light_sensors:
-            state = self.hass.states.get(sensor)
-            if state and state.state not in (STATE_UNAVAILABLE, STATE_UNKNOWN):
-                is_on = False
-                valid_reading = False
+            is_on, valid = self._check_light_sensor(sensor)
+            if valid:
+                any_valid = True
+                if is_on:
+                    any_on = True
 
-                if state.domain == "sensor":
-                    val = self._get_sensor_value(sensor)
-                    if val is not None:
-                        valid_reading = True
-                        if val > 0:
-                            is_on = True
-                else:
-                    valid_reading = True
-                    if state.state == "on":
-                        is_on = True
+        current_lights_on = any_on if any_valid else None
+        self._check_light_state_change(current_lights_on)
+        self._last_light_state = current_lights_on
+        return current_lights_on
 
-                if valid_reading:
-                    any_valid = True
-                    if is_on:
-                        any_on = True
+    def _check_light_sensor(self, sensor_id: str) -> tuple[bool, bool]:
+        """Check a single light sensor state and return (is_on, is_valid)."""
+        state = self.hass.states.get(sensor_id)
+        if not state or state.state in (STATE_UNAVAILABLE, STATE_UNKNOWN):
+            return False, False
 
-        if any_valid:
-            current_lights_on = any_on
+        if state.domain == "sensor":
+            val = self._get_sensor_value(sensor_id)
+            return val is not None and val > 0, val is not None
 
-        # Check for state change to trigger notification cooldown
+        return state.state == "on", True
+
+    def _check_light_state_change(self, current_lights_on: bool | None) -> None:
+        """Check for state change to trigger notification cooldown."""
         if (
             self._last_light_state is not None
             and current_lights_on is not None
@@ -422,9 +433,6 @@ class BayesianEnvironmentSensor(CoordinatorEntity, BinarySensorEntity):
                 self.growspace_id,
             )
             self.notification_manager.trigger_cooldown(self.growspace_id)
-
-        self._last_light_state = current_lights_on
-        return current_lights_on
 
     @override
     async def async_added_to_hass(self) -> None:
@@ -490,30 +498,67 @@ class BayesianEnvironmentSensor(CoordinatorEntity, BinarySensorEntity):
         return calculate_days_since(date_str)
 
     def _get_growth_stage_info(self) -> dict[str, int]:
-        """Get the current growth stage duration (veg and flower days) for the growspace."""
+        """Get the current growth stage duration for the growspace."""
         growspace = self.coordinator.growspaces.get(self.growspace_id)
         if growspace and growspace.growspace_type in (
             GrowspaceType.DRY,
             GrowspaceType.CURE,
         ):
-            return {"veg_days": 0, "flower_days": 0}
+            return {
+                "veg_days": 0,
+                "flower_days": 0,
+                "seedling_days": 0,
+                "clone_days": 0,
+            }
 
         plants = self.coordinator.get_growspace_plants(self.growspace_id)
 
         if not plants:
-            return {"veg_days": 0, "flower_days": 0}
+            return {
+                "veg_days": 0,
+                "flower_days": 0,
+                "seedling_days": 0,
+                "clone_days": 0,
+            }
 
         max_veg = max(
-            (self._days_since(p.veg_start) for p in plants if p.veg_start), default=0
+            (
+                self._days_since(p.veg_start)
+                for p in plants
+                if isinstance(p.veg_start, str)
+            ),
+            default=0,
         )
         max_flower = max(
-            (self._days_since(p.flower_start) for p in plants if p.flower_start),
+            (
+                self._days_since(p.flower_start)
+                for p in plants
+                if isinstance(p.flower_start, str)
+            ),
+            default=0,
+        )
+        max_seedling = max(
+            (
+                self._days_since(p.seedling_start)
+                for p in plants
+                if isinstance(p.seedling_start, str)
+            ),
+            default=0,
+        )
+        max_clone = max(
+            (
+                self._days_since(p.clone_start)
+                for p in plants
+                if isinstance(p.clone_start, str)
+            ),
             default=0,
         )
 
         return {
             "veg_days": max_veg,
             "flower_days": max_flower,
+            "seedling_days": max_seedling,
+            "clone_days": max_clone,
         }
 
     async def async_analyze_sensor_trend(
@@ -706,6 +751,23 @@ class BayesianEnvironmentSensor(CoordinatorEntity, BinarySensorEntity):
         entities = self.env_config.humidifier_entities
         return self._get_max_sensor_value(entities)
 
+    def _determine_humidifier_state(self) -> bool | None:
+        """Determine if humidifier is on (OR logic)."""
+        entities = self.env_config.humidifier_entities
+        if not entities:
+            return None
+
+        any_on = False
+        any_valid = False
+        for entity in entities:
+            state = self.hass.states.get(entity)
+            if state and state.state not in (STATE_UNAVAILABLE, STATE_UNKNOWN):
+                any_valid = True
+                if state.state == "on":
+                    any_on = True
+
+        return any_on if any_valid else None
+
     def _get_max_sensor_value(self, entities: list[str]) -> float | None:
         """Helper to get max value from list of entities."""
         if not entities:
@@ -718,7 +780,9 @@ class BayesianEnvironmentSensor(CoordinatorEntity, BinarySensorEntity):
         return max(values) if values else None
 
 
-class LightCycleVerificationSensor(BinarySensorEntity):
+class LightCycleVerificationSensor(
+    CoordinatorEntity[GrowspaceCoordinator], BinarySensorEntity
+):
     """Binary sensor to verify if the light schedule matches the expected plan."""
 
     _attr_should_poll = False
@@ -731,7 +795,7 @@ class LightCycleVerificationSensor(BinarySensorEntity):
         env_config: EnvironmentConfig,
     ) -> None:
         """Initialize."""
-        self.coordinator = coordinator
+        super().__init__(coordinator)
         self.growspace_id = growspace_id
         self.env_config = env_config
 
@@ -823,13 +887,18 @@ class LightCycleVerificationSensor(BinarySensorEntity):
         """Get the current growth stage duration for the growspace."""
         plants = self.coordinator.get_growspace_plants(self.growspace_id)
         if not plants:
-            return {"veg_days": 0, "flower_days": 0}
+            return {
+                "veg_days": 0,
+                "flower_days": 0,
+                "seedling_days": 0,
+                "clone_days": 0,
+            }
 
         max_veg = max(
             (
                 self.coordinator.calculate_days(p.veg_start)
                 for p in plants
-                if p.veg_start
+                if isinstance(p.veg_start, str)
             ),
             default=0,
         )

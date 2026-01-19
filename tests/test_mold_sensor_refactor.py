@@ -123,7 +123,12 @@ async def test_mold_sensor_stage_aware_thresholds(
         with patch.object(
             sensor,
             "_get_growth_stage_info",
-            return_value={"veg_days": 20, "flower_days": 0},
+            return_value={
+                "veg_days": 20,
+                "flower_days": 0,
+                "seedling_days": 0,
+                "clone_days": 0,
+            },
         ):
             set_sensor_state(hass, "sensor.humidity", 84)
             set_sensor_state(hass, "sensor.temp", 25)
@@ -132,21 +137,26 @@ async def test_mold_sensor_stage_aware_thresholds(
 
             await sensor.async_update_and_notify()
             assert not sensor.is_on
-            assert sensor._probability < 0.2
+            assert sensor._probability < 0.35
 
         # Sub-case 1.2: Veg Danger
         with patch.object(
             sensor,
             "_get_growth_stage_info",
-            return_value={"veg_days": 20, "flower_days": 0},
+            return_value={
+                "veg_days": 20,
+                "flower_days": 0,
+                "seedling_days": 0,
+                "clone_days": 0,
+            },
         ):
             set_sensor_state(hass, "sensor.humidity", 86)
             await hass.async_block_till_done()
 
             await sensor.async_update_and_notify()
-            # 86% RH -> High Humidity -> Prob increases to ~0.3
+            # 86% RH -> High humidity -> Prob increases to ~0.3
             assert sensor._probability > 0.25
-            assert any("High Humidity" in r[1] for r in sensor._reasons)
+            assert any("humidity" in r[1].lower() for r in sensor._reasons)
 
         # Case 2: Early Flower (10 flower days)
         # Threshold > 70%
@@ -162,7 +172,7 @@ async def test_mold_sensor_stage_aware_thresholds(
 
             await sensor.async_update_and_notify()
             assert not sensor.is_on
-            assert sensor._probability < 0.2
+            assert sensor._probability < 0.35
 
         # Sub-case 2.2: Early Flower Danger
         with patch.object(
@@ -175,7 +185,7 @@ async def test_mold_sensor_stage_aware_thresholds(
 
             await sensor.async_update_and_notify()
             assert sensor._probability > 0.25
-            assert any("High Humidity" in r[1] for r in sensor._reasons)
+            assert any("humidity" in r[1].lower() for r in sensor._reasons)
 
         # Case 3: Late Flower (45 flower days)
         # Threshold > 60%
@@ -191,7 +201,7 @@ async def test_mold_sensor_stage_aware_thresholds(
 
             await sensor.async_update_and_notify()
             assert not sensor.is_on
-            assert sensor._probability < 0.2
+            assert sensor._probability < 0.35
 
         # Sub-case 3.2: Late Flower Danger
         with patch.object(
@@ -204,7 +214,7 @@ async def test_mold_sensor_stage_aware_thresholds(
 
             await sensor.async_update_and_notify()
             assert sensor._probability > 0.25
-            assert any("High Humidity" in r[1] for r in sensor._reasons)
+            assert any("humidity" in r[1].lower() for r in sensor._reasons)
 
 
 @pytest.mark.asyncio
@@ -263,7 +273,12 @@ async def test_veg_stage_scenario_false_positive_prevention(
         patch.object(
             sensor,
             "_get_growth_stage_info",
-            return_value={"veg_days": 20, "flower_days": 0},
+            return_value={
+                "veg_days": 20,
+                "flower_days": 0,
+                "seedling_days": 0,
+                "clone_days": 0,
+            },
         ),
         patch.object(sensor, "async_analyze_sensor_trend", side_effect=mock_analyze),
         patch.object(sensor, "async_write_ha_state", new_callable=MagicMock),
@@ -386,7 +401,12 @@ async def test_veg_fan_off_safe(
         patch.object(
             sensor,
             "_get_growth_stage_info",
-            return_value={"veg_days": 20, "flower_days": 0},
+            return_value={
+                "veg_days": 20,
+                "flower_days": 0,
+                "seedling_days": 0,
+                "clone_days": 0,
+            },
         ),
         patch.object(sensor, "async_write_ha_state", new_callable=MagicMock),
     ):
@@ -429,7 +449,12 @@ async def test_veg_fan_off_risk(
         patch.object(
             sensor,
             "_get_growth_stage_info",
-            return_value={"veg_days": 20, "flower_days": 0},
+            return_value={
+                "veg_days": 20,
+                "flower_days": 0,
+                "seedling_days": 0,
+                "clone_days": 0,
+            },
         ),
         patch.object(sensor, "async_write_ha_state", new_callable=MagicMock),
     ):

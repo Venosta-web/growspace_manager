@@ -9,7 +9,13 @@ from typing import Any
 
 import homeassistant.util.dt as dt_util
 
-from ..models import IPMPreset, NutrientInventory, NutrientPreset
+from ..models import (
+    IPMPreset,
+    IPMPresetItem,
+    NutrientInventory,
+    NutrientPreset,
+    NutrientPresetItem,
+)
 from ..services.nutrient_inventory import NutrientInventoryService
 
 _LOGGER = logging.getLogger(__name__)
@@ -51,7 +57,10 @@ class NutrientManager:
         if preset_id and preset_id in self.presets:
             preset = self.presets[preset_id]
             preset.name = name
-            preset.items = nutrients  # type: ignore[arg-type]
+            preset.items = [
+                NutrientPresetItem(name=n["name"], dose_ml_l=n["dose_ml_l"])
+                for n in nutrients
+            ]
             preset.stage = stage
             preset.min_days_in_stage = min_days_in_stage
         else:
@@ -60,7 +69,10 @@ class NutrientManager:
             preset = NutrientPreset(
                 id=pid,
                 name=name,
-                items=nutrients,  # type: ignore[arg-type]
+                items=[
+                    NutrientPresetItem(name=n["name"], dose_ml_l=n["dose_ml_l"])
+                    for n in nutrients
+                ],
                 stage=stage,
                 min_days_in_stage=min_days_in_stage,
                 created_at=dt_util.now().isoformat(),
@@ -111,7 +123,14 @@ class NutrientManager:
             preset = self.ipm_presets[preset_id]
             preset.name = name
             preset.type = type
-            preset.items = items  # type: ignore[arg-type]
+            preset.items = [
+                IPMPresetItem(
+                    name=i["name"],
+                    dose_amount=i["dose_amount"],
+                    dose_unit=i["dose_unit"],
+                )
+                for i in items
+            ]
             preset.stage = stage
             preset.min_days_in_stage = min_days_in_stage
         else:
@@ -120,7 +139,14 @@ class NutrientManager:
                 id=pid,
                 name=name,
                 type=type,
-                items=items,  # type: ignore[arg-type]
+                items=[
+                    IPMPresetItem(
+                        name=i["name"],
+                        dose_amount=i["dose_amount"],
+                        dose_unit=i["dose_unit"],
+                    )
+                    for i in items
+                ],
                 stage=stage,
                 min_days_in_stage=min_days_in_stage,
                 created_at=dt_util.now().isoformat(),
@@ -209,12 +235,12 @@ class NutrientManager:
             nutrient_presets_serialized[pid] = preset_dict
 
         ipm_presets_serialized = {}
-        for pid, preset in self.ipm_presets.items():
-            preset_dict = asdict(preset)
+        for ipm_pid, ipm_preset in self.ipm_presets.items():
+            ipm_preset_dict = asdict(ipm_preset)
             # IPM presets also use 'items', keep consistent
-            if "items" in preset_dict:
-                preset_dict["items"] = preset_dict["items"]
-            ipm_presets_serialized[pid] = preset_dict
+            if "items" in ipm_preset_dict:
+                ipm_preset_dict["items"] = ipm_preset_dict["items"]
+            ipm_presets_serialized[ipm_pid] = ipm_preset_dict
 
         return {
             "nutrient_presets": nutrient_presets_serialized,

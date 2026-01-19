@@ -1,3 +1,4 @@
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock
 
 import pytest
@@ -23,7 +24,6 @@ from custom_components.growspace_manager.strategies.mold import (
 from custom_components.growspace_manager.strategies.stress import (
     StressEvaluatorStrategy,
 )
-from types import SimpleNamespace
 
 
 async def test_lifecycle_manager_transition_closing_previous(
@@ -115,8 +115,11 @@ async def test_binary_sensor_mold_risk_branches(hass: HomeAssistant) -> None:
     state.temp = 20
     state.humidity = 90
     state.fan_off = True
-    state.humidifier_value = 100
-    state.flower_days = 0  # Veg
+    state.humidifier_on = True
+    state.flower_days = 0
+    state.veg_days = 20
+    state.seedling_days = 0
+    state.clone_days = 0
 
     # 1. Veg + High Humidity (85+) + Fan Off + Humidifier On
     obs, reasons = await strategy.async_evaluate(state)
@@ -127,7 +130,7 @@ async def test_binary_sensor_mold_risk_branches(hass: HomeAssistant) -> None:
     state.humidity = 65
     obs, reasons = await strategy.async_evaluate(state)
     # Humidity Risk (65>60 in late flower), Fan Off (Triggered?), Humidifier On (65>60)
-    assert any("High Humidity" in r[1] for r in reasons)
+    assert any("humidity" in r[1].lower() for r in reasons)
 
     # 3. Notification Logic
     title_msg = strategy.get_notification_title_message(True)

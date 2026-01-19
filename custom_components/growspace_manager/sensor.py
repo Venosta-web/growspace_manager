@@ -691,7 +691,7 @@ class GrowspaceOverviewSensor(CoordinatorEntity[GrowspaceCoordinator], SensorEnt
         return attributes
 
 
-class PlantEntity(SensorEntity):
+class PlantEntity(CoordinatorEntity[GrowspaceCoordinator], SensorEntity):
     """A sensor representing a single plant in a growspace.
 
     The state of this sensor is the plant's current growth stage (e.g., 'veg',
@@ -699,14 +699,14 @@ class PlantEntity(SensorEntity):
     strain, position, and the duration of each growth stage.
     """
 
-    def __init__(self, coordinator, plant: Plant) -> None:
+    def __init__(self, coordinator: GrowspaceCoordinator, plant: Plant) -> None:
         """Initialize the plant sensor entity.
 
         Args:
             coordinator: The data update coordinator.
             plant: The Plant data object.
         """
-        self.coordinator = coordinator
+        super().__init__(coordinator)
         self._plant = plant
         self._attr_unique_id = f"{DOMAIN}_{plant.plant_id}"
         self._attr_name = f"{plant.strain} ({plant.row},{plant.col})"
@@ -782,7 +782,7 @@ class PlantEntity(SensorEntity):
     @override
     async def async_added_to_hass(self) -> None:
         """Register callbacks when the entity is added to Home Assistant."""
-        self.coordinator.async_add_listener(self.async_write_ha_state)
+        await super().async_added_to_hass()
 
 
 class StrainLibrarySensor(CoordinatorEntity[GrowspaceCoordinator], SensorEntity):

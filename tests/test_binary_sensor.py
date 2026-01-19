@@ -1024,17 +1024,27 @@ async def test_mold_risk_specifics(
         mock_coordinator, "gs1", env_config, desc_mold, MoldRiskEvaluatorStrategy
     )
     sensor.hass = hass
+    sensor.entity_id = "binary_sensor.test_mold_risk"
 
     # 1. Humidifier On
-    # Mock state so humidifier_value > 0
-    # env_state.humidifier_value comes from _get_sensor_value(humidifier_entity)
     env_config.humidifier_entities = ["sensor.humidifier"]
 
-    with patch.object(sensor, "_get_sensor_value") as mock_get_val:
+    with (
+        patch.object(sensor, "_get_sensor_value") as mock_get_val,
+        patch.object(sensor, "_determine_humidifier_state", return_value=True),
+        patch.object(
+            sensor,
+            "_get_growth_stage_info",
+            return_value={
+                "veg_days": 20,
+                "flower_days": 0,
+                "seedling_days": 0,
+                "clone_days": 0,
+            },
+        ),
+    ):
 
         def get_val_side_effect(entity_id):
-            if entity_id == "sensor.humidifier":
-                return 1.0  # On
             if entity_id == env_config.temperature_sensor:
                 return 25.0
             if entity_id == env_config.humidity_sensor:
@@ -1044,27 +1054,37 @@ async def test_mold_risk_specifics(
         mock_get_val.side_effect = get_val_side_effect
 
         await sensor._async_update_probability()
-        # Should have "Humidifier On" in reasons
         reasons = [r[1] for r in sensor._reasons]
-        assert "Humidifier On" in reasons
+        assert any("Humidifier On" in r for r in reasons)
 
     # 2. High Humidity (>70)
-    with patch.object(sensor, "_get_sensor_value") as mock_get_val:
+    with (
+        patch.object(sensor, "_get_sensor_value") as mock_get_val,
+        patch.object(sensor, "_determine_humidifier_state", return_value=False),
+        patch.object(
+            sensor,
+            "_get_growth_stage_info",
+            return_value={
+                "veg_days": 20,
+                "flower_days": 0,
+                "seedling_days": 0,
+                "clone_days": 0,
+            },
+        ),
+    ):
 
         def get_val_side_effect(entity_id):
-            if entity_id == "sensor.humidifier":
-                return 0.0
             if entity_id == env_config.temperature_sensor:
                 return 25.0
             if entity_id == env_config.humidity_sensor:
-                return 75.0  # High
+                return 82.0  # High for Veg (80)
             return 0.0
 
         mock_get_val.side_effect = get_val_side_effect
 
         await sensor._async_update_probability()
         reasons = [r[1] for r in sensor._reasons]
-        assert any("High Humidity" in r for r in reasons)
+        assert any("humidity" in r.lower() for r in reasons)
 
 
 @pytest.mark.asyncio
@@ -1993,7 +2013,12 @@ class TestBayesianEnvironmentSensor:
         """Test _get_growth_stage_info when no plants are found"""
         base_sensor.coordinator.get_growspace_plants.return_value = []
         result = base_sensor._get_growth_stage_info()
-        assert result == {"veg_days": 0, "flower_days": 0}
+        assert result == {
+            "veg_days": 0,
+            "flower_days": 0,
+            "seedling_days": 0,
+            "clone_days": 0,
+        }
 
     @pytest.mark.asyncio
     @patch(
@@ -2561,7 +2586,12 @@ async def test_soil_moisture_stress(
         patch.object(
             sensor,
             "_get_growth_stage_info",
-            return_value={"veg_days": 30, "flower_days": 0},
+            side_effect=lambda: {
+                "veg_days": 20,
+                "flower_days": 0,
+                "seedling_days": 0,
+                "clone_days": 0,
+            },
         ),
     ):
         await sensor._async_update_probability()

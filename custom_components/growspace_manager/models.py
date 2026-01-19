@@ -448,14 +448,17 @@ Plant.from_dict = Plant._from_dict_custom
 class EnvironmentState:
     """Represents a snapshot of the current environment state in a growspace."""
 
-    temp: float | None
-    humidity: float | None
-    vpd: float | None
-    co2: float | None
-    veg_days: int
-    flower_days: int
-    is_lights_on: bool | None
-    fan_off: bool | None
+    temp: float | None = None
+    humidity: float | None = None
+    vpd: float | None = None
+    co2: float | None = None
+    veg_days: int = 0
+    flower_days: int = 0
+    seedling_days: int = 0
+    clone_days: int = 0
+    is_lights_on: bool | None = None
+    fan_off: bool | None = None
+    humidifier_on: bool | None = None
     dehumidifier_on: bool | None = None
     exhaust_value: float | None = None
     humidifier_value: float | None = None

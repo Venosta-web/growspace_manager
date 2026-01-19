@@ -10,8 +10,6 @@ from custom_components.growspace_manager.models import (
     NutrientInventory,
     NutrientPreset,
 )
-from .conftest import create_plant
-
 
 
 @pytest.fixture
@@ -107,7 +105,10 @@ async def test_remove_nutrient_preset_not_found(manager) -> None:
 @pytest.mark.asyncio
 async def test_save_ipm_preset(manager, mock_coordinator) -> None:
     preset = await manager.async_save_ipm_preset(
-        name="New IPM", type="spray", items=[{"name": "Oil", "dose": 5.0}], stage="veg"
+        name="New IPM",
+        type="spray",
+        items=[{"name": "Oil", "dose_amount": 5.0, "dose_unit": "ml/L"}],
+        stage="veg",
     )
 
     assert preset.id in manager.ipm_presets
