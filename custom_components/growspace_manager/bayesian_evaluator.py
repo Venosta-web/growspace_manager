@@ -49,7 +49,7 @@ async def async_evaluate_stress_trend(
     if hasattr(raw_config, "to_dict"):
         env_config = raw_config.to_dict()
     else:
-        env_config = raw_config  # type: ignore[assignment]
+        env_config = raw_config
 
     trend_states["temperature_trend"] = "stable"
     trend_states["humidity_trend"] = "stable"

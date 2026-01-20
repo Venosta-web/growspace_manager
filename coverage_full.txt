@@ -1,0 +1,16 @@
+============================= test session starts ==============================
+platform linux -- Python 3.13.10, pytest-9.0.0, pluggy-1.6.0
+rootdir: /home/maxi/core/core/vendor/growspace_manager
+configfile: pytest.ini (WARNING: ignoring pytest config in pyproject.toml!)
+plugins: cov-7.0.0, anyio-4.12.1, homeassistant-custom-component-0.13.305, syrupy-5.0.0, respx-0.22.0, aiohttp-1.1.0, github-actions-annotate-failures-0.3.0, picked-0.5.1, timeout-2.4.0, xdist-3.8.0, unordered-0.7.0, requests-mock-1.12.1, sugar-1.0.0, pytest_freezer-0.4.9, asyncio-1.3.0, socket-0.7.0
+asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=function, asyncio_default_test_loop_scope=function
+collected 1441 items
+
+tests/test_ai_assistant.py .......................                       [  1%]
+tests/test_ai_assistant_coverage.py ............                         [  2%]
+tests/test_ai_config_handler.py .....                                    [  2%]
+tests/test_batch_actions.py .....                                        [  3%]
+tests/test_batch_add_plants.py .....                                     [  3%]
+tests/test_bayesian_evaluator.py ....................................... [  6%]
+.......                                                                  [  6%]
+tests/test_bayesian_evaluator_refactor.py ....

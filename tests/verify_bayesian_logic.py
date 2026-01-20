@@ -1,4 +1,5 @@
 from unittest.mock import MagicMock
+from typing import Any
 
 from custom_components.growspace_manager.bayesian_data import PROB_PERFECT
 from custom_components.growspace_manager.bayesian_evaluator import (
@@ -19,7 +20,7 @@ def test_evaluate_direct_temp_stress_missing_light_sensor() -> None:
         flower_days=10,
         is_lights_on=None,
     )
-    env_config = {}
+    env_config: dict[str, Any] = {}
     observations, reasons = evaluate_direct_temp_stress(state, env_config)
 
     # Should NOT have "Night Temp High"
@@ -39,7 +40,7 @@ def test_evaluate_optimal_temperature_missing_light_sensor() -> None:
         flower_days=10,
         is_lights_on=None,
     )
-    env_config = {}
+    env_config: dict[str, Any] = {}
     observations, reasons = evaluate_optimal_temperature(state, env_config)
 
     assert len(observations) == 1
@@ -60,7 +61,7 @@ def test_evaluate_optimal_vpd_missing_light_sensor() -> None:
         veg_days=10,  # veg_early
         is_lights_on=None,
     )
-    env_config = {}
+    env_config: dict[str, Any] = {}
     observations, _reasons = evaluate_optimal_vpd(state, env_config)
 
     # Should find an optimal range

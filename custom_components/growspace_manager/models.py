@@ -261,7 +261,7 @@ class EnvironmentConfig(BaseModel):
             if k in data:
                 del data[k]
 
-        return cast(Self, cls.__mashumaro_from_dict__(data))
+        return cast(Self, cls.__mashumaro_from_dict__(data))  # type: ignore[no-any-return]
 
 
 # Patch from_dict to use custom logic
@@ -523,7 +523,7 @@ class NutrientPreset(BasePreset):
         self.items = value
 
     @classmethod
-    def from_dict(cls, data: Mapping[Any, Any], **kwargs: Any) -> Self:
+    def from_dict(cls, d: Mapping[Any, Any], **kwargs: Any) -> Self:
         """Create a NutrientPreset instance from a dictionary."""
         return cast(Self, super().from_dict(data))
 
