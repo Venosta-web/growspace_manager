@@ -11,12 +11,13 @@ from __future__ import annotations
 import logging
 from typing import Any, override
 
-import homeassistant.helpers.config_validation as cv
 import voluptuous as vol
+
 from homeassistant import config_entries
 from homeassistant.config_entries import ConfigEntry, ConfigFlowResult, OptionsFlow
 from homeassistant.core import callback
 from homeassistant.helpers import selector
+import homeassistant.helpers.config_validation as cv
 
 from .config_handlers import (
     AIConfigHandler,
@@ -44,7 +45,7 @@ STEP_USER_DATA_SCHEMA = vol.Schema(
 )
 
 
-class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
+class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):  # type: ignore[misc, call-arg]
     """Handle the initial configuration flow for Growspace Manager.
 
     This class is responsible for the initial setup of the integration when the
@@ -55,7 +56,7 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     MINOR_VERSION = 1
     integration_name = "Growspace Manager"
 
-    @override
+    @override  # type: ignore[misc]
     async def async_step_user(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
@@ -153,7 +154,7 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         )
 
     @staticmethod
-    @callback
+    @callback  # type: ignore[misc]
     def async_get_options_flow(config_entry: ConfigEntry) -> OptionsFlowHandler:
         """Get the options flow for this handler.
 
@@ -166,7 +167,7 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         return OptionsFlowHandler(config_entry)
 
 
-class OptionsFlowHandler(OptionsFlow):
+class OptionsFlowHandler(OptionsFlow):  # type: ignore[misc]
     """Handles the options flow for Growspace Manager.
 
     This class provides the UI for managing the integration's settings after
@@ -180,16 +181,17 @@ class OptionsFlowHandler(OptionsFlow):
         Args:
             config_entry: The configuration entry.
         """
-        self._config_entry = config_entry
-        self._current_options: dict[str, Any] = self._config_entry.options.copy()
+        super().__init__()
+        self.handler = config_entry.entry_id
+        self.current_options: dict[str, Any] = config_entry.options.copy()
         self._growspace_handler: GrowspaceConfigHandler | None = None
         self._plant_handler: PlantConfigHandler | None = None
         self._ai_handler: AIConfigHandler | None = None
-        self._selected_notification_id: str | None = None
-        self._selected_growspace_id: str | None = None
-        self._env_config_step1: dict[str, Any] | None = None
-        self._selected_plant_id: str | None = None
-        self._selected_strain_id: str | None = None
+        self.selected_notification_id: str | None = None
+        self.selected_growspace_id: str | None = None
+        self.env_config_step1: dict[str, Any] | None = None
+        self.selected_plant_id: str | None = None
+        self.selected_strain_id: str | None = None
         self._env_handler: EnvironmentConfigHandler | None = None
         self._irrigation_handler: IrrigationConfigHandler | None = None
         self._notify_handler: NotificationConfigHandler | None = None
@@ -244,7 +246,7 @@ class OptionsFlowHandler(OptionsFlow):
             self._strain_handler = StrainConfigHandler(self)
         return self._strain_handler
 
-    @override
+    @override  # type: ignore[misc]
     async def async_step_init(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
@@ -447,11 +449,11 @@ class OptionsFlowHandler(OptionsFlow):
     ) -> ConfigFlowResult:
         """Show the form for configuring global sensors (outside weather, lung room)."""
         if user_input is not None:
-            new_options = self._config_entry.options.copy()
+            new_options = self.config_entry.options.copy()
             new_options["global_settings"] = user_input
             return self.async_create_entry(title="", data=new_options)
 
-        global_settings = self._config_entry.options.get("global_settings", {})
+        global_settings = self.config_entry.options.get("global_settings", {})
         schema_dict = {
             vol.Optional(
                 "weather_entity", default=global_settings.get("weather_entity")

@@ -4,9 +4,9 @@ import json
 from unittest.mock import MagicMock, patch
 
 import pytest
-from homeassistant.core import HomeAssistant
 
 from custom_components.growspace_manager.websocket import websocket_get_event_log
+from homeassistant.core import HomeAssistant
 
 
 @pytest.mark.asyncio

@@ -3,34 +3,34 @@
 from __future__ import annotations
 
 import logging
-from typing import Any
+from typing import Any, cast
 
 import voluptuous as vol
-from homeassistant.config_entries import ConfigFlowResult
-from homeassistant.helpers import selector
 
-from ..const import (
+from custom_components.growspace_manager.const import (
     AI_PERSONALITIES,
     CONF_AI_AUTO_ALERTS,
     CONF_AI_ENABLED,
     CONF_ASSISTANT_ID,
     CONF_NOTIFICATION_PERSONALITY,
 )
+from homeassistant.config_entries import ConfigFlowResult
+from homeassistant.helpers import selector
+
 from . import BaseConfigHandler
 
 _LOGGER = logging.getLogger(__name__)
 
 
-class AIConfigHandler(BaseConfigHandler):
+class AIConfigHandler(BaseConfigHandler[dict[str, Any]]):
     """Handler for AI configuration steps."""
-
-    def __init__(self, *args: Any, **kwargs: Any) -> None:
-        """Initialize the AI config handler."""
-        super().__init__(*args, **kwargs)
 
     async def get_ai_settings_schema(self) -> vol.Schema:
         """Build the schema for AI settings with enhanced options."""
-        current_settings = self.config_entry.options.get("ai_settings", {})
+        if self.config_entry is None:
+            current_settings = {}
+        else:
+            current_settings = self.config_entry.options.get("ai_settings", {})
 
         # Get available conversation entities from the state machine
         assistants = []
@@ -45,7 +45,7 @@ class AIConfigHandler(BaseConfigHandler):
                 for state in states
             ]
             _LOGGER.debug("Found %d conversation entities", len(assistants))
-        except Exception as err:
+        except Exception as err:  # noqa: BLE001
             _LOGGER.warning("Could not fetch conversation entities: %s", err)
 
         # Filter to valid assistants with id and name
@@ -136,6 +136,8 @@ class AIConfigHandler(BaseConfigHandler):
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
         """Show the form for configuring AI settings."""
+        if self.config_entry is None:
+            return self.flow.async_abort(reason="setup_error")
         coordinator = self.config_entry.runtime_data
         if coordinator is None:
             return self.flow.async_abort(reason="setup_error")
@@ -171,7 +173,9 @@ class AIConfigHandler(BaseConfigHandler):
 
     async def save_ai_settings(self, user_input: dict[str, Any]) -> dict[str, Any]:
         """Save AI settings to the coordinator and config entry."""
-        coordinator = getattr(self.config_entry, "runtime_data", None)
+        if self.config_entry is None:
+            raise ValueError("Coordinator not found")
+        coordinator = self.config_entry.runtime_data
         if coordinator is None:
             raise ValueError("Coordinator not found")
         new_options = self.config_entry.options.copy()
@@ -183,4 +187,4 @@ class AIConfigHandler(BaseConfigHandler):
         # Save to storage
         await coordinator.async_save()
 
-        return new_options
+        return cast(dict[str, Any], new_options)

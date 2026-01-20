@@ -3,8 +3,6 @@
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
-from homeassistant.core import HomeAssistant, ServiceCall
-from homeassistant.exceptions import ServiceValidationError
 
 from custom_components.growspace_manager.const import (
     ATTR_GROWSPACE_ID,
@@ -39,6 +37,8 @@ from custom_components.growspace_manager.services.nutrient_presets import (
 from custom_components.growspace_manager.services.training import (
     handle_log_training_event,
 )
+from homeassistant.core import HomeAssistant, ServiceCall
+from homeassistant.exceptions import ServiceValidationError
 
 
 @pytest.fixture

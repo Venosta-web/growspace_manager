@@ -3,12 +3,12 @@
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
-from homeassistant.core import HomeAssistant
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.growspace_manager.config_flow import OptionsFlowHandler
 from custom_components.growspace_manager.const import DOMAIN
 from custom_components.growspace_manager.models import IrrigationConfig
+from homeassistant.core import HomeAssistant
 
 
 @pytest.fixture
@@ -50,7 +50,7 @@ async def test_irrigation_config_optional_drain_pump(
     flow.hass = hass
 
     # Manually select context to skip selection step
-    flow._selected_growspace_id = "gs1"
+    flow.selected_growspace_id = "gs1"
 
     # Get the handler
     handler = flow.irrigation_handler
@@ -99,7 +99,7 @@ async def test_irrigation_config_omitted_drain_pump(
     # Initialize Options Flow
     flow = OptionsFlowHandler(config_entry)
     flow.hass = hass
-    flow._selected_growspace_id = "gs1"
+    flow.selected_growspace_id = "gs1"
 
     handler = flow.irrigation_handler
     handler.flow = flow
@@ -146,7 +146,6 @@ async def test_irrigation_config_omitted_drain_pump(
 
     # Let's refine the test to pass what Voluptuous would pass: `None`
     # Checks specific to "Missing Key" might be redundant if Voluptuous guarantees presence.
-    pass
 
 
 @pytest.mark.asyncio
@@ -171,7 +170,7 @@ async def test_irrigation_config_empty_string_drain_pump(
     # Initialize Options Flow
     flow = OptionsFlowHandler(config_entry)
     flow.hass = hass
-    flow._selected_growspace_id = "gs1"
+    flow.selected_growspace_id = "gs1"
 
     handler = flow.irrigation_handler
     handler.flow = flow
@@ -189,7 +188,7 @@ async def test_irrigation_config_empty_string_drain_pump(
     # Verification
     mock_coordinator.async_update_irrigation_config.assert_called_once()
     call_args = mock_coordinator.async_update_irrigation_config.call_args
-    _, data = call_args[0]
+    _, _data = call_args[0]
 
     # This assumes the coordinator normalization logic works on the input dictionary inplace
     # OR that the arguments passed to it are what we check.
@@ -204,4 +203,3 @@ async def test_irrigation_config_empty_string_drain_pump(
 
     # To test the COORDINATOR logic, I need an improperly mocked coordinator.
     # OR I should use a real coordinator.
-    pass

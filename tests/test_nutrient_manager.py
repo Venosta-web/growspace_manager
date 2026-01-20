@@ -105,7 +105,10 @@ async def test_remove_nutrient_preset_not_found(manager) -> None:
 @pytest.mark.asyncio
 async def test_save_ipm_preset(manager, mock_coordinator) -> None:
     preset = await manager.async_save_ipm_preset(
-        name="New IPM", type="spray", items=[{"name": "Oil", "dose": 5.0}], stage="veg"
+        name="New IPM",
+        type="spray",
+        items=[{"name": "Oil", "dose_amount": 5.0, "dose_unit": "ml/L"}],
+        stage="veg",
     )
 
     assert preset.id in manager.ipm_presets
@@ -278,16 +281,16 @@ async def test_cache_invalidation(manager, mock_coordinator) -> None:
 
     # Save
     await manager.async_save_nutrient_preset("Test", [])
-    mock_coordinator._serialized_cache.clear.assert_called_once()
+    mock_coordinator.invalidate_cache.assert_called_once()
 
     # Reset
-    mock_coordinator._serialized_cache.reset_mock()
+    mock_coordinator.invalidate_cache.reset_mock()
 
     await manager.async_save_nutrient_preset("Test 2", [])
-    mock_coordinator._serialized_cache.clear.assert_called_once()
+    mock_coordinator.invalidate_cache.assert_called_once()
 
     # Reset
-    mock_coordinator._serialized_cache.reset_mock()
+    mock_coordinator.invalidate_cache.reset_mock()
 
     await manager.async_remove_nutrient_preset(list(manager.presets.keys())[0])
-    mock_coordinator._serialized_cache.clear.assert_called_once()
+    mock_coordinator.invalidate_cache.assert_called_once()

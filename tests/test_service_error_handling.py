@@ -3,8 +3,6 @@
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
-from homeassistant.core import HomeAssistant
-from homeassistant.exceptions import ServiceValidationError
 
 from custom_components.growspace_manager.const import (
     ATTR_AMOUNT,
@@ -22,6 +20,8 @@ from custom_components.growspace_manager.services.plant import (
     handle_add_plant,
     handle_add_plants,
 )
+from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import ServiceValidationError
 
 
 @pytest.fixture

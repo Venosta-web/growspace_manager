@@ -3,22 +3,22 @@
 from __future__ import annotations
 
 import base64
+import binascii
 import logging
-import os
+from pathlib import Path
 import tempfile
 from typing import TYPE_CHECKING, Any
 
+from custom_components.growspace_manager.const import DOMAIN
 from homeassistant.components.persistent_notification import (
     async_create as create_notification,
 )
 from homeassistant.core import HomeAssistant, ServiceCall
 from homeassistant.exceptions import HomeAssistantError
 
-from ..const import DOMAIN
-
 if TYPE_CHECKING:
-    from ..coordinator import GrowspaceCoordinator
-from ..strain_library import StrainLibrary
+    from custom_components.growspace_manager.coordinator import GrowspaceCoordinator
+from custom_components.growspace_manager.strain_library import StrainLibrary
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -76,7 +76,7 @@ async def handle_export_strain_library(
         )
 
     except Exception as err:
-        _LOGGER.exception("Failed to export strain library: %s", err)
+        _LOGGER.exception("Failed to export strain library")
         create_notification(
             hass,
             f"Failed to export strain library: {err!s}",
@@ -118,8 +118,8 @@ async def handle_import_strain_library(
                 temp_file_path = tmp.name
                 file_path = tmp.name  # Use this temp path for import
 
-        except Exception as err:
-            _LOGGER.error("Failed to process uploaded zip file: %s", err)
+        except (binascii.Error, OSError):
+            _LOGGER.exception("Failed to process uploaded zip file")
             create_notification(
                 hass, "Failed to process uploaded file.", title="Import Error"
             )
@@ -159,7 +159,7 @@ async def handle_import_strain_library(
         )
 
     except Exception as err:
-        _LOGGER.exception("Failed to import strain library: %s", err)
+        _LOGGER.exception("Failed to import strain library")
         create_notification(
             hass,
             f"Failed to import strain library: {err!s}",
@@ -169,9 +169,9 @@ async def handle_import_strain_library(
 
     finally:
         # 3. Cleanup Temporary File
-        if temp_file_path and os.path.exists(temp_file_path):
+        if temp_file_path and Path(temp_file_path).exists():
             try:
-                os.remove(temp_file_path)
+                Path(temp_file_path).unlink()
             except OSError as e:
                 _LOGGER.warning("Could not remove temp file %s: %s", temp_file_path, e)
 
@@ -323,7 +323,7 @@ async def handle_clear_strain_library(
             f"{DOMAIN}_strain_library_cleared", {"cleared_count": cleared_count}
         )
     except Exception as err:
-        _LOGGER.exception("Failed to clear strain library: %s", err)
+        _LOGGER.exception("Failed to clear strain library")
         create_notification(
             hass,
             f"Failed to clear strain library: {err!s}",

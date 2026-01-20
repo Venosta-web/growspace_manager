@@ -5,10 +5,7 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING
 
-from homeassistant.core import HomeAssistant, ServiceCall
-from homeassistant.exceptions import ServiceValidationError
-
-from ..const import (
+from custom_components.growspace_manager.const import (
     ATTR_GROWSPACE_ID,
     ATTR_ITEMS,
     ATTR_MIN_DAYS_IN_STAGE,
@@ -19,10 +16,12 @@ from ..const import (
     ATTR_STAGE,
     ATTR_TYPE,
 )
-from ..exceptions import GrowspaceError
+from custom_components.growspace_manager.exceptions import GrowspaceError
+from homeassistant.core import HomeAssistant, ServiceCall
+from homeassistant.exceptions import ServiceValidationError
 
 if TYPE_CHECKING:
-    from ..coordinator import GrowspaceCoordinator
+    from custom_components.growspace_manager.coordinator import GrowspaceCoordinator
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -50,7 +49,7 @@ async def handle_save_ipm_preset(
     except GrowspaceError as err:
         raise ServiceValidationError(str(err)) from err
     except Exception as err:
-        _LOGGER.exception("Unexpected error in save_ipm_preset: %s", err)
+        _LOGGER.exception("Unexpected error in save_ipm_preset")
         raise ServiceValidationError(f"Failed to save IPM preset: {err}") from err
 
 
@@ -64,7 +63,7 @@ async def handle_remove_ipm_preset(
     except GrowspaceError as err:
         raise ServiceValidationError(str(err)) from err
     except Exception as err:
-        _LOGGER.exception("Unexpected error in remove_ipm_preset: %s", err)
+        _LOGGER.exception("Unexpected error in remove_ipm_preset")
         raise ServiceValidationError(f"Failed to remove IPM preset: {err}") from err
 
 
@@ -87,5 +86,5 @@ async def handle_apply_ipm(
     except GrowspaceError as err:
         raise ServiceValidationError(str(err)) from err
     except Exception as err:
-        _LOGGER.exception("Unexpected error in apply_ipm: %s", err)
+        _LOGGER.exception("Unexpected error in apply_ipm")
         raise ServiceValidationError(f"Failed to apply IPM: {err}") from err

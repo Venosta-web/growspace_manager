@@ -2,27 +2,21 @@
 
 from __future__ import annotations
 
-import json
-import logging
 from dataclasses import asdict
 from datetime import datetime
+import json
+import logging
 from pathlib import Path
+from typing import TYPE_CHECKING, Any
 
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.storage import Store
 
-from .const import (
-    STORAGE_KEY,
-    STORAGE_KEY_CONFIG,
-    STORAGE_KEY_PLANTS,
-    STORAGE_VERSION,
-)
-from .models import (
-    EnvironmentConfig,
-    IPMPreset,
-    NutrientInventory,
-    NutrientPreset,
-)
+from .const import STORAGE_KEY, STORAGE_KEY_CONFIG, STORAGE_KEY_PLANTS, STORAGE_VERSION
+from .models import EnvironmentConfig, IPMPreset, NutrientInventory, NutrientPreset
+
+if TYPE_CHECKING:
+    from .coordinator import GrowspaceCoordinator
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -30,7 +24,7 @@ _LOGGER = logging.getLogger(__name__)
 class StorageManager:
     """Manages data persistence for the Growspace Manager."""
 
-    def __init__(self, coordinator, hass: HomeAssistant) -> None:
+    def __init__(self, coordinator: GrowspaceCoordinator, hass: HomeAssistant) -> None:
         """Initialize the StorageManager.
 
         Args:
@@ -58,7 +52,7 @@ class StorageManager:
         await self.config_store.async_save(self._get_config_data())
         await self.plants_store.async_save(self._get_plants_data())
 
-    def _get_config_data(self) -> dict:
+    def _get_config_data(self) -> dict[str, Any]:
         """Gather configuration data for storage."""
         # Use coordinator's nutrient manager for serialization data
         nutrient_data = self.coordinator.nutrient_manager.get_serialization_data()
@@ -67,14 +61,14 @@ class StorageManager:
             "growspaces": {
                 gid: asdict(g) for gid, g in self.coordinator.growspaces.items()
             },
-            "notifications_sent": self.coordinator._notifications_sent,
-            "notifications_enabled": self.coordinator._notifications_enabled,
+            "notifications_sent": self.coordinator.notifications_sent,
+            "notifications_enabled": self.coordinator.notifications_enabled,
         }
         # Merge nutrient data (presets and inventory)
         config.update(nutrient_data)
         return config
 
-    def _get_plants_data(self) -> dict:
+    def _get_plants_data(self) -> dict[str, Any]:
         """Gather plant data for storage."""
         return {
             "plants": {pid: asdict(p) for pid, p in self.coordinator.plants.items()},
@@ -107,7 +101,7 @@ class StorageManager:
                 # Ensure files are created even if empty
                 await self.async_save()
 
-    def _load_config(self, data: dict) -> None:
+    def _load_config(self, data: dict[str, Any]) -> None:
         """Load configuration data."""
         self._load_growspaces(data)
 
@@ -124,28 +118,28 @@ class StorageManager:
         self.coordinator.on_nutrient_inventory_loaded(inventory)
 
         # Load notification tracking
-        self.coordinator._notifications_sent = data.get("notifications_sent", {})
-        self.coordinator._notifications_enabled = data.get("notifications_enabled", {})
+        self.coordinator.notifications_sent = data.get("notifications_sent", {})
+        self.coordinator.notifications_enabled = data.get("notifications_enabled", {})
 
         # Ensure all growspaces have a notification enabled state
         for growspace_id in self.coordinator.growspaces:
-            if growspace_id not in self.coordinator._notifications_enabled:
-                self.coordinator._notifications_enabled[growspace_id] = True
+            if growspace_id not in self.coordinator.notifications_enabled:
+                self.coordinator.notifications_enabled[growspace_id] = True
 
-    def _load_legacy(self, data: dict) -> None:
+    def _load_legacy(self, data: dict[str, Any]) -> None:
         """Load from legacy single-file format."""
         # Legacy format had everything in one dict
         self._load_plants(data)  # Plants were top level "plants" key
         self._load_config(data)  # Config keys were also top level
 
-    def _backup_corrupt_data(self, key: str, data: dict) -> None:
+    def _backup_corrupt_data(self, key: str, data: dict[str, Any]) -> None:
         """Backup corrupt data to a file before reset."""
         try:
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             backup_filename = f"growspace_manager_{key}_CORRUPT_{timestamp}.json"
             backup_path = Path(self.hass.config.path(".storage")) / backup_filename
 
-            with open(backup_path, "w", encoding="utf-8") as f:
+            with backup_path.open("w", encoding="utf-8") as f:
                 json.dump(data, f, indent=2, default=str)
 
             _LOGGER.critical(
@@ -153,22 +147,22 @@ class StorageManager:
                 key,
                 backup_path,
             )
-        except Exception as e:
-            _LOGGER.error("Failed to backup corrupt %s data: %s", key, e)
+        except (OSError, TypeError, ValueError):
+            _LOGGER.exception("Failed to backup corrupt %s data", key)
 
-    def _load_plants(self, data: dict) -> None:
+    def _load_plants(self, data: dict[str, Any]) -> None:
         """Load plants from storage data."""
         try:
             self.coordinator.plants = self.coordinator.serializer.deserialize_plants(
                 data.get("plants", {})
             )
             _LOGGER.info("Loaded %d plants", len(self.coordinator.plants))
-        except Exception as e:
-            _LOGGER.exception("Error loading plants: %s", e)
+        except Exception:
+            _LOGGER.exception("Error loading plants")
             self._backup_corrupt_data("plants", data)
             self.coordinator.plants = {}
 
-    def _load_growspaces(self, data: dict) -> None:
+    def _load_growspaces(self, data: dict[str, Any]) -> None:
         """Load growspaces from storage data."""
         try:
             self.coordinator.growspaces = (
@@ -179,8 +173,8 @@ class StorageManager:
             _LOGGER.info("Loaded %d growspaces", len(self.coordinator.growspaces))
 
             self._apply_options_to_growspaces()
-        except Exception as e:
-            _LOGGER.exception("Error loading growspaces: %s", e)
+        except Exception:
+            _LOGGER.exception("Error loading growspaces")
             self._backup_corrupt_data("growspaces", data)
             self.coordinator.growspaces = {}
 
@@ -197,32 +191,37 @@ class StorageManager:
                 else:
                     growspace.environment_config = options
 
-    def _load_nutrient_presets(self, data: dict) -> dict[str, NutrientPreset]:
+    def _load_nutrient_presets(self, data: dict[str, Any]) -> dict[str, NutrientPreset]:
         """Load nutrient presets from storage data."""
         try:
             return {
                 pid: NutrientPreset.from_dict(p)
                 for pid, p in data.get("nutrient_presets", {}).items()
             }
-        except Exception as e:
-            _LOGGER.exception("Error loading nutrient presets: %s", e)
+        except Exception:
+            _LOGGER.exception("Error loading nutrient presets")
             return {}
 
-    def _load_ipm_presets(self, data: dict) -> dict[str, IPMPreset]:
+    def _load_ipm_presets(self, data: dict[str, Any]) -> dict[str, IPMPreset]:
         """Load IPM presets from storage data."""
         try:
             return {
                 pid: IPMPreset.from_dict(p)
                 for pid, p in data.get("ipm_presets", {}).items()
             }
-        except Exception as e:
-            _LOGGER.exception("Error loading IPM presets: %s", e)
+        except Exception:
+            _LOGGER.exception("Error loading IPM presets")
             return {}
 
-    def _load_nutrient_inventory(self, data: dict) -> NutrientInventory:
+    def _load_nutrient_inventory(self, data: dict[str, Any]) -> NutrientInventory:
         """Load nutrient inventory from storage data."""
         try:
-            return NutrientInventory.from_dict(data.get("nutrient_inventory", {}))
-        except Exception as e:
-            _LOGGER.exception("Error loading nutrient inventory: %s", e)
+            # Explicitly type the result of from_dict
+            inventory: NutrientInventory = NutrientInventory.from_dict(
+                data.get("nutrient_inventory", {})
+            )
+        except Exception:
+            _LOGGER.exception("Error loading nutrient inventory")
             return NutrientInventory()
+        else:
+            return inventory

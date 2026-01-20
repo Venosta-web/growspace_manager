@@ -3,21 +3,20 @@
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
+from custom_components.growspace_manager.const import (
+    CANONICAL_ID_CURE,
+    CANONICAL_ID_DRY,
+)
+from custom_components.growspace_manager.strain_library import StrainLibrary
 from homeassistant.components.persistent_notification import (
     async_create as create_notification,
 )
 from homeassistant.core import HomeAssistant, ServiceCall
 
-from ..const import (
-    CANONICAL_ID_CURE,
-    CANONICAL_ID_DRY,
-)
-from ..strain_library import StrainLibrary
-
 if TYPE_CHECKING:
-    from ..coordinator import GrowspaceCoordinator
+    from custom_components.growspace_manager.coordinator import GrowspaceCoordinator
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -76,7 +75,7 @@ async def handle_debug_list_growspaces(
 async def _restore_plants_to_canonical_growspace(
     coordinator: GrowspaceCoordinator,
     canonical_id: str,
-    plants_data_to_restore: list[dict],
+    plants_data_to_restore: list[dict[str, Any]],
     log_prefix: str,
 ) -> None:
     restored_count = 0
@@ -87,6 +86,12 @@ async def _restore_plants_to_canonical_growspace(
                 new_row, new_col = coordinator.validator.find_first_available_position(
                     canonical_id
                 )
+                if new_row is None or new_col is None:
+                    _LOGGER.warning(
+                        "Cannot restore %s: no space in %s", plant_id, canonical_id
+                    )
+                    continue
+
                 coordinator.plants[plant_id].growspace_id = canonical_id
                 coordinator.plants[plant_id].row = new_row
                 coordinator.plants[plant_id].col = new_col
@@ -124,19 +129,18 @@ async def _handle_reset_dry_growspace(
         if gs_id == CANONICAL_ID_DRY or gs_id.startswith("dry_overview")
     ]
 
-    dry_plants_data_to_restore = []
+    dry_plants_data_to_restore: list[dict[str, Any]] = []
     if preserve_plants:
         for dry_id in dry_ids_to_remove:
-            plants = coordinator.get_growspace_plants(dry_id)
-            for plant in plants:
-                if plant.plant_id in coordinator.plants:
-                    dry_plants_data_to_restore.append(
-                        {
-                            "plant_id": plant.plant_id,
-                            "strain": plant.strain,
-                            "old_pos": f"({plant.row},{plant.col})",
-                        }
-                    )
+            dry_plants_data_to_restore.extend(
+                {
+                    "plant_id": plant.plant_id,
+                    "strain": plant.strain,
+                    "old_pos": f"({plant.row},{plant.col})",
+                }
+                for plant in coordinator.get_growspace_plants(dry_id)
+                if plant.plant_id in coordinator.plants
+            )
 
     for dry_id in dry_ids_to_remove:
         coordinator.growspaces.pop(dry_id, None)
@@ -161,19 +165,18 @@ async def _handle_reset_cure_growspace(
         if gs_id == CANONICAL_ID_CURE or gs_id.startswith("cure_overview")
     ]
 
-    cure_plants_data_to_restore = []
+    cure_plants_data_to_restore: list[dict[str, Any]] = []
     if preserve_plants:
         for cure_id in cure_ids_to_remove:
-            plants = coordinator.get_growspace_plants(cure_id)
-            for plant in plants:
-                if plant.plant_id in coordinator.plants:
-                    cure_plants_data_to_restore.append(
-                        {
-                            "plant_id": plant.plant_id,
-                            "strain": plant.strain,
-                            "old_pos": f"({plant.row},{plant.col})",
-                        }
-                    )
+            cure_plants_data_to_restore.extend(
+                {
+                    "plant_id": plant.plant_id,
+                    "strain": plant.strain,
+                    "old_pos": f"({plant.row},{plant.col})",
+                }
+                for plant in coordinator.get_growspace_plants(cure_id)
+                if plant.plant_id in coordinator.plants
+            )
 
     for cure_id in cure_ids_to_remove:
         coordinator.growspaces.pop(cure_id, None)
@@ -254,8 +257,8 @@ async def handle_debug_consolidate_duplicate_special(
 
         _LOGGER.debug("Duplicate consolidation complete")
 
-    except Exception as e:
-        _LOGGER.exception("Duplicate consolidation failed: %s", e)
+    except Exception:
+        _LOGGER.exception("Duplicate consolidation failed")
         raise
 
 
@@ -290,8 +293,8 @@ async def handle_debug_reset_special_growspaces(
 
         _LOGGER.debug("Special growspace reset complete")
 
-    except Exception as e:
-        _LOGGER.exception("Special growspace reset failed: %s", e)
+    except Exception:
+        _LOGGER.exception("Failed to update strain")
         raise
 
 
@@ -313,9 +316,17 @@ async def _consolidate_plants_to_canonical_growspace(
                             canonical_id
                         )
                     )
-                    coordinator.plants[plant_id].growspace_id = canonical_id
-                    coordinator.plants[plant_id].row = new_row
-                    coordinator.plants[plant_id].col = new_col
+                    if new_row is None or new_col is None:
+                        _LOGGER.warning(
+                            "Cannot move plant %s to %s: No space available",
+                            plant_id,
+                            canonical_id,
+                        )
+                        continue
+
+                    plant.growspace_id = canonical_id
+                    plant.row = new_row
+                    plant.col = new_col
                     _LOGGER.debug(
                         "Moved plant %s from duplicate %s %s to %s at (%d,%d)",
                         plant_id,

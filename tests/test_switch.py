@@ -1,10 +1,10 @@
-from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
 
 from custom_components.growspace_manager.const import DOMAIN
 from custom_components.growspace_manager.coordinator import GrowspaceCoordinator
+from custom_components.growspace_manager.models import Growspace
 from custom_components.growspace_manager.switch import (
     NOTIFICATION_SWITCH,
     GrowspaceNotificationSwitch,
@@ -91,9 +91,7 @@ async def test_async_setup_entry_creates_entities(mock_hass, mock_coordinator) -
 @pytest.mark.asyncio
 async def test_growspace_notification_switch_on_off(mock_coordinator) -> None:
     # Growspace object
-    growspace = SimpleNamespace(
-        id="gs1", name="Growspace 1", notification_target="notify_me"
-    )
+    growspace = Growspace(id="gs1", name="Growspace 1", notification_target="notify_me")
 
     # Mock coordinator methods
     mock_coordinator.async_set_growspace_notification = AsyncMock()
@@ -122,9 +120,7 @@ async def test_growspace_notification_switch_on_off(mock_coordinator) -> None:
 
 @pytest.mark.asyncio
 async def test_async_added_to_hass_calls_add_listener(mock_coordinator) -> None:
-    growspace = SimpleNamespace(
-        id="gs1", name="Growspace 1", notification_target="notify_me"
-    )
+    growspace = Growspace(id="gs1", name="Growspace 1", notification_target="notify_me")
     switch = GrowspaceNotificationSwitch(
         mock_coordinator, "gs1", growspace, NOTIFICATION_SWITCH
     )

@@ -2,19 +2,24 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 from .const import PlantStage
 from .exceptions import (
     GrowspaceNotFoundError,
     PlantNotFoundError,
     ValidationChangeError,
 )
+
+if TYPE_CHECKING:
+    from .coordinator import GrowspaceCoordinator
 from .utils import find_first_free_position
 
 
 class GrowspaceValidator:
     """Validates growspace and plant operations."""
 
-    def __init__(self, coordinator) -> None:
+    def __init__(self, coordinator: GrowspaceCoordinator) -> None:
         """Initialize the GrowspaceValidator.
 
         Args:
@@ -85,7 +90,9 @@ class GrowspaceValidator:
                     f"Position ({row},{col}) is already occupied by {existing_plant.strain}"
                 )
 
-    def find_first_available_position(self, growspace_id: str) -> tuple[int, int]:
+    def find_first_available_position(
+        self, growspace_id: str
+    ) -> tuple[int | None, int | None]:
         """Find the first available (row, col) position in a growspace."""
         growspace = self.coordinator.growspaces[growspace_id]
         occupied = {

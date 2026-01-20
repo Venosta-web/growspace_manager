@@ -3,7 +3,6 @@
 from unittest.mock import MagicMock, patch
 
 import pytest
-from homeassistant.core import HomeAssistant
 
 from custom_components.growspace_manager.binary_sensor import (
     SENSOR_TYPES,
@@ -17,6 +16,7 @@ from custom_components.growspace_manager.strategies.optimal import (
 from custom_components.growspace_manager.strategies.stress import (
     StressEvaluatorStrategy,
 )
+from homeassistant.core import HomeAssistant
 
 MOCK_CONFIG_ENTRY_ID = "test_entry"
 
@@ -33,8 +33,8 @@ def mock_growspace():
         humidity_sensor="sensor.humidity",
         vpd_sensor="sensor.vpd",
         co2_sensor="sensor.co2",
-        circulation_fan_entity="switch.fan",
-        light_sensor="light.grow_light",
+        circulation_fan_entities=["switch.fan"],
+        light_sensors=["light.grow_light"],
         soil_moisture_sensor="sensor.soil_moisture",
         bayesian_options={
             "threshold_stress": 0.8,

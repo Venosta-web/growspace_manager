@@ -3,16 +3,18 @@
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from homeassistant.core import HomeAssistant
-from homeassistant.util import dt as dt_util
 
 from custom_components.growspace_manager.const import (
     CONF_AI_ENABLED,
     CONF_ASSISTANT_ID,
     CONF_NOTIFICATION_PERSONALITY,
 )
-from custom_components.growspace_manager.models import Growspace, Plant
+from custom_components.growspace_manager.models import Growspace
 from custom_components.growspace_manager.notification_manager import NotificationManager
+from homeassistant.core import HomeAssistant
+from homeassistant.util import dt as dt_util
+
+from .common import create_plant
 
 GROWSPACE_ID = "test_growspace"
 GROWSPACE_NAME = "Test Growspace"
@@ -61,7 +63,7 @@ def test_initialization(
     assert manager._last_notification_sent == {}
 
 
-def test_generate_notification_message(manager: NotificationManager) -> None:
+def testgenerate_notification_message(manager: NotificationManager) -> None:
     """Test generating notification message."""
     base_message = "Base message"
     reasons = [(0.9, "Reason 1"), (0.8, "Reason 2")]
@@ -180,7 +182,7 @@ async def test_async_check_timed_notifications(
         ]
     }
 
-    plant = Plant(
+    plant = create_plant(
         plant_id="plant_1",
         growspace_id=GROWSPACE_ID,
         strain="Strain A",
@@ -189,15 +191,16 @@ async def test_async_check_timed_notifications(
     mock_coordinator.get_growspace_plants.return_value = [plant]
     mock_coordinator.serializer = MagicMock()
     mock_coordinator.serializer.calculate_days_in_stage.return_value = 10
+    mock_coordinator.notifications_sent = {"plant_1": {}}
 
     await manager.async_check_timed_notifications()
 
     mock_hass.services.async_call.assert_awaited()
-    assert mock_coordinator._notifications_sent["plant_1"]["timed_notify_1"] is True
+    assert mock_coordinator.notifications_sent["plant_1"]["timed_notify_1"] is True
     mock_coordinator.async_save.assert_awaited()
 
 
-def test_generate_notification_message_truncation(manager: NotificationManager) -> None:
+def testgenerate_notification_message_truncation(manager: NotificationManager) -> None:
     """Test message truncation in generate_notification_message."""
     base_message = "Base"
     # Create reasons that will exceed the 65 char limit

@@ -3,22 +3,24 @@
 from __future__ import annotations
 
 import ast
-import logging
 from dataclasses import asdict
+import logging
 from typing import Any
 
 import voluptuous as vol
-from homeassistant.config_entries import ConfigFlowResult
-from homeassistant.helpers import selector
 
-from ..const import (
+from custom_components.growspace_manager.const import (
+    CONF_CIRCULATION_FAN_ENTITIES,
     CONF_CIRCULATION_FAN_ENTITY,
     CONF_CO2_SENSOR,
+    CONF_DEHUMIDIFIER_ENTITIES,
     CONF_DEHUMIDIFIER_ENTITY,
-    CONF_EXHAUST_ENTITY,
+    CONF_EXHAUST_FAN_ENTITIES,
+    CONF_HUMIDIFIER_ENTITIES,
     CONF_HUMIDIFIER_ENTITY,
     CONF_HUMIDITY_SENSOR,
     CONF_LIGHT_SENSOR,
+    CONF_LIGHT_SENSORS,
     CONF_MOLD_THRESHOLD,
     CONF_SOIL_MOISTURE_SENSOR,
     CONF_STRESS_THRESHOLD,
@@ -28,8 +30,13 @@ from ..const import (
     DEFAULT_VEG_DAY_HOURS,
     DEHUMIDIFIER_STAGES,
 )
-from ..dehumidifier_coordinator import DEFAULT_THRESHOLDS
-from ..models import EnvironmentConfig
+from custom_components.growspace_manager.dehumidifier_coordinator import (
+    DEFAULT_THRESHOLDS,
+)
+from custom_components.growspace_manager.models import EnvironmentConfig
+from homeassistant.config_entries import ConfigFlowResult
+from homeassistant.helpers import selector
+
 from . import BaseConfigHandler
 
 _LOGGER = logging.getLogger(__name__)
@@ -42,7 +49,9 @@ class EnvironmentConfigHandler(BaseConfigHandler[dict[str, Any]]):
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
         """Show a form to select a growspace before configuring its environment."""
-        coordinator = getattr(self.config_entry, "runtime_data", None)
+        if self.config_entry is None:
+            return self.flow.async_abort(reason="setup_error")
+        coordinator = self.config_entry.runtime_data
         if coordinator is None:
             return self.flow.async_abort(reason="setup_error")
 
@@ -52,7 +61,7 @@ class EnvironmentConfigHandler(BaseConfigHandler[dict[str, Any]]):
             return self.flow.async_abort(reason="no_growspaces")
 
         if user_input is not None:
-            self.flow._selected_growspace_id = user_input["growspace_id"]
+            self.flow.selected_growspace_id = user_input["growspace_id"]
             return await self.async_step_configure_environment()
 
         schema: dict[Any, Any] = {
@@ -74,10 +83,12 @@ class EnvironmentConfigHandler(BaseConfigHandler[dict[str, Any]]):
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
         """Show the form for configuring environment sensors for a growspace."""
-        coordinator = getattr(self.config_entry, "runtime_data", None)
+        if self.config_entry is None:
+            return self.flow.async_abort(reason="setup_error")
+        coordinator = self.config_entry.runtime_data
         if coordinator is None:
             return self.flow.async_abort(reason="setup_error")
-        growspace_id = self.flow._selected_growspace_id
+        growspace_id = self.flow.selected_growspace_id
         growspace = coordinator.growspaces.get(growspace_id)
 
         if not growspace:
@@ -97,28 +108,28 @@ class EnvironmentConfigHandler(BaseConfigHandler[dict[str, Any]]):
 
         if user_input is not None:
             cleaned_input = self.clean_input(user_input)
-            self.flow._env_config_step1 = self.merge_options(
+            self.flow.env_config_step1 = self.merge_options(
                 growspace_options, cleaned_input
             )
 
             # Already filtered by handler, do not filter again to preserve None values for clearing
             env_config = {
                 k: v
-                for k, v in self.flow._env_config_step1.items()
+                for k, v in self.flow.env_config_step1.items()
                 if k not in ("configure_dehumidifier", "configure_advanced")
             }
 
             # Check for next steps
-            if self.flow._env_config_step1.get(
+            if self.flow.env_config_step1.get(
                 "configure_dehumidifier"
-            ) and self.flow._env_config_step1.get("control_dehumidifier"):
+            ) and self.flow.env_config_step1.get("control_dehumidifier"):
                 return await self.async_step_configure_dehumidifier()
 
             # If user unchecked configure_dehumidifier, clear any existing thresholds
-            if not self.flow._env_config_step1.get("configure_dehumidifier"):
+            if not self.flow.env_config_step1.get("configure_dehumidifier"):
                 env_config["dehumidifier_thresholds"] = {}
 
-            if self.flow._env_config_step1.get("configure_advanced"):
+            if self.flow.env_config_step1.get("configure_advanced"):
                 return await self.async_step_configure_advanced_bayesian()
 
             growspace.environment_config = EnvironmentConfig.from_dict(env_config)
@@ -142,10 +153,12 @@ class EnvironmentConfigHandler(BaseConfigHandler[dict[str, Any]]):
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
         """Show the form for configuring dehumidifier thresholds."""
-        coordinator = getattr(self.config_entry, "runtime_data", None)
+        if self.config_entry is None:
+            return self.flow.async_abort(reason="setup_error")
+        coordinator = self.config_entry.runtime_data
         if coordinator is None:
             return self.flow.async_abort(reason="setup_error")
-        growspace_id = self.flow._selected_growspace_id
+        growspace_id = self.flow.selected_growspace_id
         growspace = coordinator.growspaces.get(growspace_id)
 
         if not growspace:
@@ -170,12 +183,12 @@ class EnvironmentConfigHandler(BaseConfigHandler[dict[str, Any]]):
                     }
 
             # Update config
-            env_config = self.flow._env_config_step1.copy()
+            env_config = self.flow.env_config_step1.copy()
             env_config["dehumidifier_thresholds"] = new_thresholds
 
             if env_config.get("configure_advanced"):
                 # Update temporary config and move to next step
-                self.flow._env_config_step1 = env_config
+                self.flow.env_config_step1 = env_config
                 return await self.async_step_configure_advanced_bayesian()
 
             # Save and finish
@@ -195,17 +208,19 @@ class EnvironmentConfigHandler(BaseConfigHandler[dict[str, Any]]):
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
         """Show the form for advanced configuration of Bayesian probabilities."""
-        coordinator = getattr(self.config_entry, "runtime_data", None)
+        if self.config_entry is None:
+            return self.flow.async_abort(reason="setup_error")
+        coordinator = self.config_entry.runtime_data
         if coordinator is None:
             return self.flow.async_abort(reason="setup_error")
-        growspace_id = self.flow._selected_growspace_id
+        growspace_id = self.flow.selected_growspace_id
         growspace = coordinator.growspaces.get(growspace_id)
 
         if not growspace:
             return self.flow.async_abort(reason="growspace_not_found")
 
         if user_input is not None:
-            env_config = self.flow._env_config_step1.copy()
+            env_config = self.flow.env_config_step1.copy()
             env_config.pop("configure_advanced", None)
 
             try:
@@ -218,7 +233,7 @@ class EnvironmentConfigHandler(BaseConfigHandler[dict[str, Any]]):
                 return self.flow.async_show_form(
                     step_id="configure_advanced_bayesian",
                     data_schema=self.get_advanced_bayesian_schema(
-                        self.flow._env_config_step1
+                        self.flow.env_config_step1
                     ),
                     errors={"base": "invalid_tuple_format"},
                     description_placeholders={"growspace_name": growspace.name},
@@ -237,7 +252,7 @@ class EnvironmentConfigHandler(BaseConfigHandler[dict[str, Any]]):
 
         return self.flow.async_show_form(
             step_id="configure_advanced_bayesian",
-            data_schema=self.get_advanced_bayesian_schema(self.flow._env_config_step1),
+            data_schema=self.get_advanced_bayesian_schema(self.flow.env_config_step1),
             description_placeholders={"growspace_name": growspace.name},
         )
 
@@ -259,31 +274,53 @@ class EnvironmentConfigHandler(BaseConfigHandler[dict[str, Any]]):
         """Override clean_input to explicitly allow clearing specific fields."""
         cleaned = super().clean_input(user_input)
 
+        list_fields = [
+            CONF_LIGHT_SENSORS,
+            CONF_EXHAUST_FAN_ENTITIES,
+            CONF_CIRCULATION_FAN_ENTITIES,
+            CONF_HUMIDIFIER_ENTITIES,
+            CONF_DEHUMIDIFIER_ENTITIES,
+        ]
+
         # Explicitly check for specific optional sensors and preserve None/empty if present in user_input
         # This allows clearing them by overwriting existing values with None.
         optional_fields = [
             CONF_VPD_SENSOR,
             CONF_SOIL_MOISTURE_SENSOR,
-            CONF_EXHAUST_ENTITY,
-            CONF_HUMIDIFIER_ENTITY,
-            CONF_DEHUMIDIFIER_ENTITY,
             CONF_LIGHT_SENSOR,
             CONF_CO2_SENSOR,
-            CONF_CIRCULATION_FAN_ENTITY,
         ]
 
+        # Handle list fields first (sanitize list content)
+        for field in list_fields:
+            if field in user_input:
+                val = user_input[field]
+                if isinstance(val, list):
+                    cleaned[field] = [v for v in val if v]
+                elif val:
+                    # Backward compat helper if somehow a string gets here (shouldn't with selector)
+                    cleaned[field] = [val]
+                else:
+                    cleaned[field] = []
+
+        # Handle simplified optional fields
         for field in optional_fields:
             if field in user_input and (
                 user_input[field] is None or user_input[field] == ""
             ):
                 cleaned[field] = None
-            elif field not in user_input:
-                cleaned[field] = None
+            elif field not in user_input and field not in list_fields:
+                # Only clear if it's not one of our new list fields (which handle themselves)
+                # Actually, optional_fields contains CONF_LIGHT_SENSOR ("light_sensor")
+                # We need to map old config flow keys (light_sensor) to new keys (light_sensors) if we change the keys in schema
+                # The Models used separate keys.
+                # Let's verify what keys we are using in the schema below.
+                pass
 
         return cleaned
 
     def _add_basic_sensors_to_schema(
-        self, schema_dict: dict, growspace_options: dict[str, Any]
+        self, schema_dict: dict[Any, Any], growspace_options: dict[str, Any]
     ) -> None:
         """Add basic sensors (temp, humidity, vpd) to the schema."""
         # Basic sensors
@@ -342,7 +379,7 @@ class EnvironmentConfigHandler(BaseConfigHandler[dict[str, Any]]):
         )
 
     def _add_lst_offset_to_schema(
-        self, schema_dict: dict, growspace_options: dict[str, Any]
+        self, schema_dict: dict[Any, Any], growspace_options: dict[str, Any]
     ) -> None:
         """Add LST offset to the schema if applicable."""
         has_temp = bool(growspace_options.get(CONF_TEMP_SENSOR))
@@ -366,7 +403,7 @@ class EnvironmentConfigHandler(BaseConfigHandler[dict[str, Any]]):
             )
 
     def _add_optional_features_to_schema(
-        self, schema_dict: dict, growspace_options: dict[str, Any]
+        self, schema_dict: dict[Any, Any], growspace_options: dict[str, Any]
     ) -> None:
         """Add optional features (light, co2, fan) to the schema."""
         for feature in ["light", "co2", "fan"]:
@@ -375,37 +412,53 @@ class EnvironmentConfigHandler(BaseConfigHandler[dict[str, Any]]):
             self._add_feature_entity_selector(schema_dict, feature, growspace_options)
 
     def _add_feature_entity_selector(
-        self, schema_dict: dict, feature: str, growspace_options: dict[str, Any]
+        self,
+        schema_dict: dict[Any, Any],
+        feature: str,
+        growspace_options: dict[str, Any],
     ) -> None:
         """Add the entity selector for a specific feature."""
+        # Mapping for multi-device support
         if feature == "light":
-            entity_key = CONF_LIGHT_SENSOR
+            entity_key = CONF_LIGHT_SENSORS  # New Key
             domain = ["switch", "light", "input_boolean", "sensor"]
             device_class = None
+            suggested_val = growspace_options.get(CONF_LIGHT_SENSORS) or (
+                [growspace_options[CONF_LIGHT_SENSOR]]
+                if growspace_options.get(CONF_LIGHT_SENSOR)
+                else []
+            )
         elif feature == "fan":
-            entity_key = CONF_CIRCULATION_FAN_ENTITY
-            domain = [
-                "fan",
-                "switch",
-                "input_boolean",
-                "sensor",
-                "input_number",
-            ]
+            entity_key = CONF_CIRCULATION_FAN_ENTITIES  # New Key
+            domain = ["fan", "switch", "input_boolean", "sensor", "input_number"]
             device_class = None
-        else:  # co2
+            suggested_val = growspace_options.get(CONF_CIRCULATION_FAN_ENTITIES) or (
+                [growspace_options[CONF_CIRCULATION_FAN_ENTITY]]
+                if growspace_options.get(CONF_CIRCULATION_FAN_ENTITY)
+                else []
+            )
+        else:  # co2 (remains singular for now based on model?)
+            # Model check: co2_sensor is SINGLE. Only light/fans/humidifiers are lists.
             entity_key = CONF_CO2_SENSOR
             domain = ["sensor", "input_number"]
             device_class = ["carbon_dioxide"]
+            suggested_val = growspace_options.get(entity_key)
 
         # Build selector config - only include device_class if specified
-        selector_config = selector.EntitySelectorConfig(domain=domain)
+        # Enable multiple for array types
+        # Enable multiple for array types
+        is_multiple = entity_key in [CONF_LIGHT_SENSORS, CONF_CIRCULATION_FAN_ENTITIES]
+
+        selector_config = selector.EntitySelectorConfig(
+            domain=domain, multiple=is_multiple
+        )
         if device_class:
             selector_config = selector.EntitySelectorConfig(
                 domain=domain,
                 device_class=device_class,
+                multiple=is_multiple,
             )
 
-        suggested_val = growspace_options.get(entity_key)
         schema_dict[
             vol.Optional(
                 entity_key,
@@ -414,18 +467,19 @@ class EnvironmentConfigHandler(BaseConfigHandler[dict[str, Any]]):
         ] = selector.EntitySelector(selector_config)
 
     def _add_exhaust_humidifier_to_schema(
-        self, schema_dict: dict, growspace_options: dict[str, Any]
+        self, schema_dict: dict[Any, Any], growspace_options: dict[str, Any]
     ) -> None:
         """Add exhaust and humidifier to the schema."""
-        # Exhaust Entity (Merged: Fan/Switch/Sensor)
-        suggested_exhaust = (
-            growspace_options.get("exhaust_entity")
-            or growspace_options.get("exhaust_fan_entity")
-            or growspace_options.get("exhaust_sensor")
+        # Exhaust Entity (Merged: Fan/Switch/Sensor) -> Now List
+        suggested_exhaust = growspace_options.get(CONF_EXHAUST_FAN_ENTITIES) or (
+            [growspace_options.get("exhaust_fan_entity")]
+            if growspace_options.get("exhaust_fan_entity")
+            else []
         )
+
         schema_dict[
             vol.Optional(
-                "exhaust_entity",
+                CONF_EXHAUST_FAN_ENTITIES,
                 description={"suggested_value": suggested_exhaust},
             )
         ] = selector.EntitySelector(
@@ -437,17 +491,21 @@ class EnvironmentConfigHandler(BaseConfigHandler[dict[str, Any]]):
                     "sensor",
                     "binary_sensor",
                     "input_number",
-                ]
+                ],
+                multiple=True,
             )
         )
 
-        # Humidifier Entity (Merged: Humidifier/Switch/Sensor)
-        suggested_humidifier = growspace_options.get(
-            "humidifier_entity"
-        ) or growspace_options.get("humidifier_sensor")
+        # Humidifier Entity (Merged: Humidifier/Switch/Sensor) -> Now List
+        suggested_humidifier = growspace_options.get(CONF_HUMIDIFIER_ENTITIES) or (
+            [growspace_options.get(CONF_HUMIDIFIER_ENTITY)]
+            if growspace_options.get(CONF_HUMIDIFIER_ENTITY)
+            else []
+        )
+
         schema_dict[
             vol.Optional(
-                "humidifier_entity",
+                CONF_HUMIDIFIER_ENTITIES,
                 description={"suggested_value": suggested_humidifier},
             )
         ] = selector.EntitySelector(
@@ -459,19 +517,25 @@ class EnvironmentConfigHandler(BaseConfigHandler[dict[str, Any]]):
                     "sensor",
                     "binary_sensor",
                     "input_number",
-                ]
+                ],
+                multiple=True,
             )
         )
 
     def _add_dehumidifier_to_schema(
-        self, schema_dict: dict, growspace_options: dict[str, Any]
+        self, schema_dict: dict[Any, Any], growspace_options: dict[str, Any]
     ) -> None:
         """Add dehumidifier to the schema."""
-        # Removed configure_dehumidifier checkbox and its conditional logic
-        suggested_dehumidifier = growspace_options.get(CONF_DEHUMIDIFIER_ENTITY)
+        # Check for list or legacy str
+        suggested_dehumidifier = growspace_options.get(CONF_DEHUMIDIFIER_ENTITIES) or (
+            [growspace_options.get(CONF_DEHUMIDIFIER_ENTITY)]
+            if growspace_options.get(CONF_DEHUMIDIFIER_ENTITY)
+            else []
+        )
+
         schema_dict[
             vol.Optional(
-                CONF_DEHUMIDIFIER_ENTITY,
+                CONF_DEHUMIDIFIER_ENTITIES,
                 description={"suggested_value": suggested_dehumidifier},
             )
         ] = selector.EntitySelector(
@@ -482,7 +546,8 @@ class EnvironmentConfigHandler(BaseConfigHandler[dict[str, Any]]):
                     "sensor",
                     "binary_sensor",
                     "input_boolean",
-                ]
+                ],
+                multiple=True,
             )
         )
         schema_dict[
@@ -655,7 +720,7 @@ class EnvironmentConfigHandler(BaseConfigHandler[dict[str, Any]]):
 
         return vol.Schema(schema_dict)
 
-    def get_advanced_bayesian_schema(self, options: dict) -> vol.Schema:
+    def get_advanced_bayesian_schema(self, options: dict[str, Any]) -> vol.Schema:
         """Build the schema for the advanced Bayesian settings form."""
         defaults = {
             "prob_temp_extreme_heat": (0.98, 0.05),

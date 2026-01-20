@@ -1,6 +1,7 @@
 """Tests for the constants and validation functions in const.py."""
 
 from datetime import date, datetime
+from typing import Any
 
 import pytest
 import voluptuous as vol
@@ -111,7 +112,7 @@ def test_update_plant_schema_valid() -> None:
     """Test UPDATE_PLANT_SCHEMA with valid data."""
     data = {"plant_id": "p1", "seedling_days": "10", "veg_start": "2023-02-01"}
     # Schema coerces string dates to datetime objects if valid and days to integers
-    expected = data.copy()
+    expected: dict[str, Any] = data.copy()
     expected["veg_start"] = datetime.combine(date(2023, 2, 1), datetime.min.time())
     expected["seedling_days"] = 10
 

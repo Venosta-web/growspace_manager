@@ -1,9 +1,9 @@
 """Nutrient Inventory Service."""
 
-import logging
 from datetime import datetime
+import logging
 
-from ..models import NutrientInventory, NutrientStock
+from custom_components.growspace_manager.models import NutrientInventory, NutrientStock
 
 _LOGGER = logging.getLogger(__name__)
 

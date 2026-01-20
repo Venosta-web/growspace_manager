@@ -1,7 +1,5 @@
 """Tests for Growspace Manager events."""
 
-from homeassistant.core import HomeAssistant, callback
-
 from custom_components.growspace_manager.events import (
     EVENT_CLONES_TAKEN,
     EVENT_GROWSPACE_UPDATED,
@@ -10,7 +8,10 @@ from custom_components.growspace_manager.events import (
     async_fire_growspace_event,
     async_fire_plant_event,
 )
-from custom_components.growspace_manager.models import Growspace, Plant
+from custom_components.growspace_manager.models import Growspace
+from homeassistant.core import HomeAssistant, callback
+
+from .common import create_plant
 
 
 async def test_async_fire_growspace_event(hass: HomeAssistant) -> None:
@@ -36,7 +37,7 @@ async def test_async_fire_growspace_event(hass: HomeAssistant) -> None:
 
 async def test_async_fire_plant_event(hass: HomeAssistant) -> None:
     """Test firing a plant event."""
-    plant = Plant(
+    plant = create_plant(
         plant_id="p1",
         strain="Strain A",
         growspace_id="gs1",
@@ -65,7 +66,7 @@ async def test_async_fire_plant_event(hass: HomeAssistant) -> None:
 
 async def test_async_fire_plant_event_with_changes(hass: HomeAssistant) -> None:
     """Test firing a plant event with changes."""
-    plant = Plant(
+    plant = create_plant(
         plant_id="p1",
         strain="Strain A",
         growspace_id="gs1",
@@ -96,7 +97,7 @@ async def test_async_fire_plant_event_with_changes(hass: HomeAssistant) -> None:
 
 async def test_async_fire_clones_taken_event(hass: HomeAssistant) -> None:
     """Test firing clones taken event."""
-    mother = Plant(
+    mother = create_plant(
         plant_id="mom1", strain="Strain M", growspace_id="mother", device_id="devM"
     )
 

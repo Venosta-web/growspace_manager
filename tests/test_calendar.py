@@ -4,20 +4,20 @@ from datetime import timedelta
 from unittest.mock import MagicMock, Mock
 
 import pytest
-from homeassistant.util import dt as dt_util
 
 from custom_components.growspace_manager.calendar import (
     GrowspaceCalendar,
     async_setup_entry,
 )
 from custom_components.growspace_manager.const import DOMAIN
+from homeassistant.util import dt as dt_util
 
 
 # --------------------
 # Fixtures
 # --------------------
 @pytest.fixture
-def mock_coordinator():
+def mock_coordinator() -> Mock:
     """Create a mock GrowspaceCoordinator for calendar testing."""
     coordinator = Mock()
     coordinator.hass = Mock()
@@ -64,7 +64,7 @@ def mock_coordinator():
 # async_setup_entry
 # --------------------
 @pytest.mark.asyncio
-async def test_async_setup_entry_adds_entities(mock_coordinator) -> None:
+async def test_async_setup_entry_adds_entities(mock_coordinator: Mock) -> None:
     """Test that `async_setup_entry` correctly adds calendar entities."""
     hass = MagicMock()
 
@@ -87,7 +87,7 @@ async def test_async_setup_entry_adds_entities(mock_coordinator) -> None:
 # --------------------
 # GrowspaceCalendar
 # --------------------
-def test_growspace_calendar_init(mock_coordinator) -> None:
+def test_growspace_calendar_init(mock_coordinator: Mock) -> None:
     """Test the initialization of the GrowspaceCalendar."""
     calendar = GrowspaceCalendar(mock_coordinator, "gs1")
     assert calendar.growspace_id == "gs1"
@@ -96,7 +96,7 @@ def test_growspace_calendar_init(mock_coordinator) -> None:
 
 
 @pytest.mark.asyncio
-async def test_growspace_calendar_update_and_get_events(mock_coordinator) -> None:
+async def test_growspace_calendar_update_and_get_events(mock_coordinator: Mock) -> None:
     """Test event generation and retrieval."""
     calendar = GrowspaceCalendar(mock_coordinator, "gs1")
     await calendar.async_update()
@@ -126,7 +126,7 @@ async def test_growspace_calendar_update_and_get_events(mock_coordinator) -> Non
 
 
 @pytest.mark.asyncio
-async def test_growspace_calendar_event_property(mock_coordinator) -> None:
+async def test_growspace_calendar_event_property(mock_coordinator: Mock) -> None:
     """Test the event property to get the next upcoming event."""
     calendar = GrowspaceCalendar(mock_coordinator, "gs1")
 
@@ -149,7 +149,7 @@ async def test_growspace_calendar_event_property(mock_coordinator) -> None:
 
 
 @pytest.mark.asyncio
-async def test_growspace_calendar_no_events(mock_coordinator) -> None:
+async def test_growspace_calendar_no_events(mock_coordinator: Mock) -> None:
     """Test calendar when no events are generated."""
     mock_coordinator.options["timed_notifications"] = []
     calendar = GrowspaceCalendar(mock_coordinator, "gs1")
@@ -166,7 +166,9 @@ async def test_growspace_calendar_no_events(mock_coordinator) -> None:
 
 
 @pytest.mark.asyncio
-async def test_generate_events_handles_missing_start_date(mock_coordinator) -> None:
+async def test_generate_events_handles_missing_start_date(
+    mock_coordinator: Mock,
+) -> None:
     """Test that event generation skips notifications with missing plant start dates."""
     mock_coordinator.plants["p1"].veg_start = None
     calendar = GrowspaceCalendar(mock_coordinator, "gs1")
@@ -185,7 +187,7 @@ async def test_generate_events_handles_missing_start_date(mock_coordinator) -> N
 
 @pytest.mark.asyncio
 async def test_generate_events_handles_invalid_date_format(
-    mock_coordinator, caplog: pytest.LogCaptureFixture
+    mock_coordinator: Mock, caplog: pytest.LogCaptureFixture
 ) -> None:
     """Test that event generation handles and logs errors for invalid date formats."""
     mock_coordinator.plants["p1"].flower_start = "not a date"

@@ -11,6 +11,8 @@ from custom_components.growspace_manager.models import (
     Plant,
 )
 
+from .common import create_plant
+
 # --------------------
 # Growspace Model Tests
 # --------------------
@@ -51,11 +53,38 @@ def test_growspace_from_dict_with_extra_fields() -> None:
 
 def test_plant_to_dict() -> None:
     """Test Plant to_dict method."""
-    plant = Plant(plant_id="p1", growspace_id="gs1", strain="OG Kush")
+    plant = create_plant(plant_id="p1", growspace_id="gs1", strain="OG Kush")
     data = plant.to_dict()
     assert data["plant_id"] == "p1"
     assert data["growspace_id"] == "gs1"
-    assert data["strain"] == "OG Kush"
+    assert data["genetics"]["strain_name"] == "OG Kush"
+
+
+def test_plant_from_dict_migration() -> None:
+    """Test Plant migration from legacy flat structure."""
+    data = {
+        "plant_id": "p1",
+        "growspace_id": "gs1",
+        "strain": "Legacy Strain",  # Flat field
+        "phenotype": "Legacy Pheno",  # Flat field
+        "stage": "veg",
+    }
+
+    plant = Plant.from_dict(data)
+
+    # Check proper migration
+    assert plant.genetics.strain_name == "Legacy Strain"
+    assert plant.genetics.phenotype_name == "Legacy Pheno"
+
+    # Check backward compatibility properties
+    assert plant.strain == "Legacy Strain"
+    assert plant.phenotype == "Legacy Pheno"
+
+    # Ensure flat fields are NOT in serialized output (clean migration)
+    serialized = plant.to_dict()
+    assert "strain" not in serialized
+    assert "phenotype" not in serialized
+    assert serialized["genetics"]["strain_name"] == "Legacy Strain"
 
 
 def test_plant_from_dict_basic() -> None:
@@ -94,6 +123,8 @@ def test_environment_state_basic() -> None:
         co2=400.0,
         veg_days=10,
         flower_days=0,
+        seedling_days=0,
+        clone_days=0,
         is_lights_on=True,
         fan_off=False,
     )
@@ -103,6 +134,8 @@ def test_environment_state_basic() -> None:
     assert env_state.co2 == 400.0
     assert env_state.veg_days == 10
     assert env_state.flower_days == 0
+    assert env_state.seedling_days == 0
+    assert env_state.clone_days == 0
     assert env_state.is_lights_on is True
     assert env_state.fan_off is False
 
@@ -116,6 +149,8 @@ def test_environment_state_none_values() -> None:
         co2=None,
         veg_days=0,
         flower_days=0,
+        seedling_days=0,
+        clone_days=0,
         is_lights_on=False,
         fan_off=True,
     )
@@ -125,6 +160,8 @@ def test_environment_state_none_values() -> None:
     assert env_state.co2 is None
     assert env_state.veg_days == 0
     assert env_state.flower_days == 0
+    assert env_state.seedling_days == 0
+    assert env_state.clone_days == 0
     assert env_state.is_lights_on is False
     assert env_state.fan_off is True
 
@@ -275,7 +312,7 @@ def test_plant_days_and_weeks_in_stage() -> None:
     with patch(
         "custom_components.growspace_manager.models.calculate_days_since"
     ) as mock_calc:
-        plant = Plant(
+        plant = create_plant(
             plant_id="p1",
             growspace_id="gs1",
             strain="Strain",
@@ -311,3 +348,47 @@ def test_plant_days_and_weeks_in_stage() -> None:
         # 3. Test stage that exists but value is None/Empty (just in case)
         plant.veg_start = None
         assert plant.get_days_in_stage("veg") == 0
+
+
+def test_environment_config_migration() -> None:
+    """Test EnvironmentConfig migration from single entities to lists."""
+    data = {
+        "light_sensor": "sensor.light",
+        "exhaust_fan_entity": "fan.exhaust",
+        "circulation_fan_entity": "fan.circulation",
+        "humidifier_entity": "humidifier.test",
+        "dehumidifier_entity": "switch.dehumidifier",
+        # New fields missing, should be populated from above
+    }
+
+    config = EnvironmentConfig.from_dict(data)
+
+    # Check migration to lists
+    assert config.light_sensors == ["sensor.light"]
+    assert config.exhaust_fan_entities == ["fan.exhaust"]
+    assert config.circulation_fan_entities == ["fan.circulation"]
+    assert config.humidifier_entities == ["humidifier.test"]
+    assert config.dehumidifier_entities == ["switch.dehumidifier"]
+
+    # Check backward compatibility properties
+    assert config.light_sensor == "sensor.light"
+    assert config.exhaust_fan_entity == "fan.exhaust"
+    assert config.circulation_fan_entity == "fan.circulation"
+    assert config.humidifier_entity == "humidifier.test"
+    assert config.dehumidifier_entity == "switch.dehumidifier"
+
+    # Test initialization with lists already present
+    data_lists = {
+        "light_sensors": ["sensor.light_1", "sensor.light_2"],
+        "exhaust_fan_entities": ["fan.exhaust_1", "fan.exhaust_2"],
+    }
+    config_lists = EnvironmentConfig.from_dict(data_lists)
+
+    # Lists should be preserved
+    assert len(config_lists.light_sensors) == 2
+    assert "sensor.light_1" in config_lists.light_sensors
+    assert "sensor.light_2" in config_lists.light_sensors
+
+    # Properties should return first element
+    assert config_lists.light_sensor == "sensor.light_1"
+    assert config_lists.exhaust_fan_entity == "fan.exhaust_1"

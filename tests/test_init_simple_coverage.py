@@ -2,12 +2,11 @@
 
 import json
 from pathlib import Path
-from unittest.mock import MagicMock, PropertyMock, patch
+from unittest.mock import MagicMock, patch
 
 from aiohttp import web
-from homeassistant.core import HomeAssistant
-from homeassistant.exceptions import ServiceValidationError
 
+from custom_components.growspace_manager.const import ATTR_NOTES, DOMAIN
 from custom_components.growspace_manager.views import StrainLibraryImageView
 from custom_components.growspace_manager.websocket import (
     websocket_add_timeline_note,
@@ -17,17 +16,17 @@ from custom_components.growspace_manager.websocket import (
     websocket_get_strain_library,
     websocket_remove_timeline_event,
 )
-from custom_components.growspace_manager.const import (
-    ATTR_NOTES,
-    DOMAIN,
-)
+from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import ServiceValidationError
 
 # ========================================================================================
 # StrainLibraryImageView Tests
 # ========================================================================================
 
 
-async def test_strain_library_image_view_errors(hass: HomeAssistant) -> None:
+async def test_strain_library_image_view_errors(
+    hass: HomeAssistant, tmp_path: Path
+) -> None:
     """Test StrainLibraryImageView error handling."""
     strain_lib = MagicMock()
     # Case 1: image_manager is None -> 404
@@ -44,7 +43,7 @@ async def test_strain_library_image_view_errors(hass: HomeAssistant) -> None:
     # Case 2: Generic exception (e.g. resolve fails) -> 500
     # Simulate image_manager existing but raising scenarios
     strain_lib.image_manager = MagicMock()
-    strain_lib.image_manager.storage_dir = Path("/tmp/test")
+    strain_lib.image_manager.storage_dir = tmp_path / "test"
 
     # We need to force an exception inside the try block
     # One way: patch Path.resolve to raise
@@ -70,8 +69,6 @@ async def test_strain_library_image_view_filesystem_errors(
     # Ensure file doesn't exist
     response = await view.get(request, "test.jpg")
     assert response.status == 404
-
-    pass
 
 
 # ========================================================================================

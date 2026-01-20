@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 import asyncio
-import logging
+from collections.abc import Callable
 from datetime import datetime, timedelta
+import logging
 from typing import TYPE_CHECKING, override
 
 from homeassistant.config_entries import ConfigEntry
@@ -15,7 +16,7 @@ from homeassistant.util.dt import now, utcnow
 if TYPE_CHECKING:
     from .coordinator import GrowspaceCoordinator
 from .irrigation_coordinator import BaseIrrigationCoordinator
-from .models import GrowspaceEvent, IrrigationStrategy
+from .models import Growspace, GrowspaceEvent, IrrigationStrategy
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -32,7 +33,7 @@ class VWCIrrigationCoordinator(BaseIrrigationCoordinator):
     ) -> None:
         """Initialize the VWC irrigation coordinator."""
         super().__init__(hass, config_entry, growspace_id, main_coordinator)
-        self._remove_update_listener = None
+        self._remove_update_listener: Callable[[], None] | None = None
 
         # State tracking
         self._current_phase = "P3"  # Start in safe state
@@ -43,7 +44,7 @@ class VWCIrrigationCoordinator(BaseIrrigationCoordinator):
         self._sensor_warning_logged = False
 
     @override
-    async def async_setup(self):
+    async def async_setup(self) -> None:
         """Set up the coordinator and start the update loop."""
         _LOGGER.info(
             "Setting up VWC Irrigation Coordinator for growspace %s", self._growspace_id
@@ -54,7 +55,7 @@ class VWCIrrigationCoordinator(BaseIrrigationCoordinator):
         )
 
     @override
-    async def async_unload(self):
+    async def async_unload(self) -> None:
         """Unload the coordinator and stop listeners."""
         # Call base implementation to clean up any base listeners (if added in future)
         await super().async_unload()
@@ -62,16 +63,16 @@ class VWCIrrigationCoordinator(BaseIrrigationCoordinator):
             "Unloaded VWC Irrigation Coordinator for growspace %s", self._growspace_id
         )
 
-    @callback
+    @callback  # type: ignore[misc]
     @override
-    def async_cancel_listeners(self):
+    def async_cancel_listeners(self) -> None:
         """Cancel all scheduled listeners."""
         super().async_cancel_listeners()
         if self._remove_update_listener:
             self._remove_update_listener()
             self._remove_update_listener = None
 
-    async def _update_loop(self, _now: datetime):
+    async def _update_loop(self, _now: datetime) -> None:
         """Main update loop triggered every minute."""
         try:
             growspace = self.growspace
@@ -109,14 +110,15 @@ class VWCIrrigationCoordinator(BaseIrrigationCoordinator):
             period = self._determine_time_period(strategy, growspace)
             self._execute_phase_logic(period, current_vwc, strategy)
 
-        except Exception as e:
+        except Exception:
             _LOGGER.exception(
-                "Error in VWC Irrigation loop for growspace %s: %s",
+                "Error in VWC Irrigation loop for growspace %s",
                 self._growspace_id,
-                e,
             )
 
-    def _determine_time_period(self, strategy: IrrigationStrategy, growspace) -> str:
+    def _determine_time_period(
+        self, strategy: IrrigationStrategy, growspace: Growspace
+    ) -> str:
         """Determine the current steering phase based on time of day."""
 
         # Parse Lights On Time
@@ -187,7 +189,7 @@ class VWCIrrigationCoordinator(BaseIrrigationCoordinator):
 
     def _execute_phase_logic(
         self, period: str, current_vwc: float, strategy: IrrigationStrategy
-    ):
+    ) -> None:
         """Execute the logic for the current phase."""
 
         if period == "P3":
@@ -236,7 +238,7 @@ class VWCIrrigationCoordinator(BaseIrrigationCoordinator):
                 )
                 self._handle_watering(strategy, "P2")
 
-    def _handle_watering(self, strategy: IrrigationStrategy, phase: str):
+    def _handle_watering(self, strategy: IrrigationStrategy, phase: str) -> None:
         """Handle execution of a shot if interval permits."""
         now_dt = now()
 
@@ -265,7 +267,9 @@ class VWCIrrigationCoordinator(BaseIrrigationCoordinator):
 
         self._last_shot_time = now_dt
 
-    async def _run_pump_cycle(self, pump_entity: str, duration: int, phase: str):
+    async def _run_pump_cycle(
+        self, pump_entity: str, duration: int, phase: str
+    ) -> None:
         """Execute the pump cycle."""
         start_time = utcnow()
         try:
@@ -286,7 +290,7 @@ class VWCIrrigationCoordinator(BaseIrrigationCoordinator):
 
     async def _log_event(
         self, phase: str, duration: int, start_time: datetime, end_time: datetime
-    ):
+    ) -> None:
         """Log the irrigation event."""
         event = GrowspaceEvent(
             sensor_type="irrigation",
@@ -303,9 +307,14 @@ class VWCIrrigationCoordinator(BaseIrrigationCoordinator):
     def _get_pump_entity(self) -> str | None:
         """Get configured irrigation pump entity."""
         growspace = self.growspace
-        return growspace.irrigation_config.get("irrigation_pump_entity")
+        # Ensure we return a string or None, explicitly cast if needed or rely on typed access
+        return (
+            str(growspace.irrigation_config.get("irrigation_pump_entity"))
+            if growspace.irrigation_config.get("irrigation_pump_entity")
+            else None
+        )
 
-    def _set_phase(self, phase: str):
+    def _set_phase(self, phase: str) -> None:
         """Update phase state and potentially expose strictly for debugging."""
         # In a full implementation, we might expose this as a sensor state.
         if self._current_phase != phase:

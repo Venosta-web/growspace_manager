@@ -1,14 +1,12 @@
 """Test the Growspace Manager WebSocket API."""
 
-import json
 from dataclasses import dataclass
 from datetime import datetime, timedelta
+import json
 from typing import Any
 from unittest.mock import MagicMock, patch
 
 import pytest
-from homeassistant.core import HomeAssistant
-from homeassistant.exceptions import ServiceValidationError
 
 from custom_components.growspace_manager.const import DOMAIN
 from custom_components.growspace_manager.strain_library import StrainLibrary
@@ -32,6 +30,8 @@ from custom_components.growspace_manager.websocket import (
     _merge_logbook_event,
     async_register_websocket_api,
 )
+from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import ServiceValidationError
 
 WebSocketGenerator = Any
 
@@ -217,7 +217,7 @@ async def test_websocket_get_alerts(
         q_mock.limit.return_value = [(mock_event, mock_data)]
 
         async def mock_executor(func, *args, **kwargs):
-            return func()
+            return func(*args, **kwargs)
 
         mock_recorder.return_value.async_add_executor_job.side_effect = mock_executor
 
@@ -271,7 +271,7 @@ async def test_websocket_get_log_filters_spam(
         q_mock.limit.return_value = [(mock_event, mock_data)]
 
         async def mock_executor(func, *args, **kwargs):
-            return func()
+            return func(*args, **kwargs)
 
         mock_recorder.return_value.async_add_executor_job.side_effect = mock_executor
 
@@ -297,7 +297,7 @@ async def test_websocket_get_history_stats(
     with patch(
         "custom_components.growspace_manager.websocket._get_history_with_binary_search_downsample",
         return_value={"sensor.test": [{"s": "10", "lu": "time"}]},
-    ) as mock_search:
+    ):
         await client.send_json(
             {
                 "id": 1,
@@ -316,7 +316,7 @@ async def test_websocket_get_history_stats(
     with patch(
         "custom_components.growspace_manager.websocket._get_statistics_data",
         return_value={"sensor.test": [{"s": "10", "lu": "time"}]},
-    ) as mock_stats:
+    ):
         await client.send_json(
             {
                 "id": 2,
@@ -564,7 +564,7 @@ async def test_websocket_get_event_log_internals(
 
         # Execute the inner function synchronously via side_effect
         async def mock_executor(func, *args, **kwargs):
-            return func()
+            return func(*args, **kwargs)
 
         mock_recorder.return_value.async_add_executor_job.side_effect = mock_executor
 
@@ -600,6 +600,7 @@ async def test_websocket_get_history_stats_long_interval(
                 ]
             }
 
+        mock_stats_module.statistics_during_period.side_effect = mock_async_stats
         mock_stats_module.async_statistics_during_period.side_effect = mock_async_stats
 
         await client.send_json(
@@ -635,6 +636,7 @@ async def test_websocket_get_history_stats_day_interval(
         async def mock_async_stats(*args, **kwargs):
             return {"sensor.test": [{"start": 1672574400.0, "mean": 10.0}]}
 
+        mock_stats_module.statistics_during_period.side_effect = mock_async_stats
         mock_stats_module.async_statistics_during_period.side_effect = mock_async_stats
 
         await client.send_json(
@@ -649,7 +651,7 @@ async def test_websocket_get_history_stats_day_interval(
         )
         response = await client.receive_json()
         assert response["success"]
-        # Verify call to async_statistics_during_period used "day" period
+        # Verify call to statistics_during_period used "day" period
         assert mock_stats_module.async_statistics_during_period.call_args[0][4] == "day"
 
 
@@ -672,6 +674,7 @@ async def test_websocket_get_history_stats_fallback(
         async def mock_fail(*args, **kwargs):
             raise ValueError("Stats API broken")
 
+        mock_stats_module.statistics_during_period.side_effect = mock_fail
         mock_stats_module.async_statistics_during_period.side_effect = mock_fail
 
         # History Mock
@@ -681,7 +684,7 @@ async def test_websocket_get_history_stats_fallback(
                 state.state = "50"
                 state.last_updated = datetime.fromisoformat("2023-01-01T12:00:00+00:00")
                 return {"sensor.test": [state]}
-            return func()
+            return func(*args, **kwargs)
 
         mock_recorder.return_value.async_add_executor_job.side_effect = (
             mock_history_executor
@@ -835,7 +838,7 @@ async def test_websocket_get_event_log_internals_no_type(
 
         # Execute synchronously
         async def mock_executor(func, *args, **kwargs):
-            return func()
+            return func(*args, **kwargs)
 
         mock_recorder.return_value.async_add_executor_job.side_effect = mock_executor
 
@@ -901,7 +904,7 @@ async def test_websocket_get_event_log_bad_date_merge(
         q_mock.limit.return_value = [(evt1, data1), (evt2, data2)]
 
         async def mock_executor(func, *args, **kwargs):
-            return func()
+            return func(*args, **kwargs)
 
         mock_recorder.return_value.async_add_executor_job.side_effect = mock_executor
 
@@ -928,7 +931,7 @@ async def test_websocket_get_history_stats_fallback_empty(
         async def mock_history_executor(func, *args, **kwargs):
             if func.__name__ == "_get_history":
                 return {"sensor.test": []}
-            return func()
+            return func(*args, **kwargs)
 
         mock_recorder.return_value.async_add_executor_job.side_effect = (
             mock_history_executor
@@ -992,7 +995,7 @@ async def test_websocket_get_event_log_filtering(
         q_mock.limit.return_value = [(evt1, data1), (evt2, data2), (evt3, data3)]
 
         async def mock_executor(func, *args, **kwargs):
-            return func()
+            return func(*args, **kwargs)
 
         mock_recorder.return_value.async_add_executor_job.side_effect = mock_executor
 
@@ -1029,7 +1032,7 @@ async def test_websocket_get_history_stats_sentinel(
         async def mock_executor(func, *args, **kwargs):
             if func.__name__ == "_get_history":
                 return {"sensor.test": [state1, state2]}
-            return func()
+            return func(*args, **kwargs)
 
         mock_recorder.return_value.async_add_executor_job.side_effect = mock_executor
 
@@ -1068,8 +1071,8 @@ async def test_websocket_get_event_log_limits(
         events = []
 
         # 50 Normal events
-        for i in range(55):  # More than limit
-            events.append(
+        events.extend(
+            [
                 (
                     MagicMock(time_fired_ts=3000 + i, event_id=i),
                     MagicMock(
@@ -1078,7 +1081,9 @@ async def test_websocket_get_event_log_limits(
                         )
                     ),
                 )
-            )
+                for i in range(55)
+            ]
+        )
 
         # 210 Spammy events
         # SQL filtering excludes spam events at DB level
@@ -1110,7 +1115,7 @@ async def test_websocket_get_event_log_limits(
                 q_mock.limit.return_value = events
                 q_mock.__iter__.return_value = events
 
-                return func()
+                return func(*args, **kwargs)
 
         mock_recorder.return_value.async_add_executor_job.side_effect = mock_executor
 
@@ -1130,7 +1135,8 @@ async def test_websocket_nutrient_inventory_service_not_ready(
 ) -> None:
     """Test nutrient inventory when service is not initialized."""
     # Remove service from coordinator to simulate not initialized
-    del mock_coordinator.nutrient_inventory_service
+    # Use explicit deletion if the property is set, or set to None
+    mock_coordinator.nutrient_inventory_service = None
 
     hass.data[DOMAIN] = {"coordinator": mock_coordinator}
     async_register_websocket_api(hass)
@@ -1284,6 +1290,7 @@ async def test_websocket_statistics_edge_cases(
         async def mock_empty(*args, **kwargs):
             return {}  # Empty dict
 
+        mock_stats_module.statistics_during_period.side_effect = mock_empty
         mock_stats_module.async_statistics_during_period.side_effect = mock_empty
 
         # 3. Stats data missing entity
@@ -1295,6 +1302,7 @@ async def test_websocket_statistics_edge_cases(
             return {"sensor.test": [{"start": 100, "mean": None, "state": 50}]}
 
         # Test Case: Missing Entity in stats
+        mock_stats_module.statistics_during_period.side_effect = mock_missing_entity
         mock_stats_module.async_statistics_during_period.side_effect = (
             mock_missing_entity
         )
@@ -1312,6 +1320,7 @@ async def test_websocket_statistics_edge_cases(
         assert resp["result"]["sensor.test"] == []
 
         # Test Case: Value Fallback
+        mock_stats_module.statistics_during_period.side_effect = mock_val_fallback
         mock_stats_module.async_statistics_during_period.side_effect = mock_val_fallback
         await client.send_json(
             {

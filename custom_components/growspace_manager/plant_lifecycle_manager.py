@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-import logging
-import uuid
 from datetime import date, datetime
+import logging
 from typing import TYPE_CHECKING, Any
+import uuid
 
 from .const import DATE_FIELDS, PLANT_STAGES, SPECIAL_GROWSPACES, PlantStage
 from .exceptions import (
@@ -13,7 +13,7 @@ from .exceptions import (
     PlantNotFoundError,
     ValidationChangeError,
 )
-from .models import Plant
+from .models import Plant, PlantGenetics
 from .utils import calculate_plant_stage, format_date
 
 if TYPE_CHECKING:
@@ -47,7 +47,7 @@ class PlantLifecycleManager:
         **kwargs: Any,
     ) -> Plant:
         """Add a new plant to the system."""
-        async with self.coordinator._lock:  # Accessing generic lock from coordinator
+        async with self.coordinator.lock:  # Accessing generic lock from coordinator
             try:
                 self.coordinator.validator.validate_position_not_occupied(
                     growspace_id, row, col
@@ -60,22 +60,39 @@ class PlantLifecycleManager:
                     col,
                     growspace_id,
                 )
-                final_row, final_col = (
+                found_row, found_col = (
                     self.coordinator.validator.find_first_available_position(
                         growspace_id
                     )
                 )
+
+                if found_row is None or found_col is None:
+                    _LOGGER.warning(
+                        "No free space in growspace %s, cannot resolve conflict",
+                        growspace_id,
+                    )
+                    raise ValidationChangeError(
+                        f"Growspace {growspace_id} is full, cannot add/move plant"
+                    ) from None
+
+                final_row, final_col = found_row, found_col
 
             date_fields = {}
             for field in DATE_FIELDS:
                 if field in kwargs:
                     date_fields[field] = format_date(kwargs[field])
 
+            final_plant_id = plant_id or str(uuid.uuid4())
+
+            genetics = PlantGenetics(
+                strain_name=strain,
+                phenotype_name=phenotype or "",
+            )
+
             plant = Plant(
-                plant_id=plant_id or str(uuid.uuid4()),
+                plant_id=final_plant_id,
                 growspace_id=growspace_id,
-                strain=strain,
-                phenotype=phenotype,
+                genetics=genetics,
                 row=final_row,
                 col=final_col,
                 stage=stage or "",
@@ -83,7 +100,7 @@ class PlantLifecycleManager:
                 device_id=device_id,
                 created_at=datetime.now().isoformat(),
                 updated_at=datetime.now().isoformat(),
-                **date_fields,
+                **date_fields,  # type: ignore[arg-type]
                 source_mother=kwargs.get("source_mother", ""),
             )
 
@@ -97,7 +114,7 @@ class PlantLifecycleManager:
 
     async def async_update_plant(self, plant_id: str, **updates: Any) -> Plant:
         """Update attributes of an existing plant."""
-        async with self.coordinator._lock:
+        async with self.coordinator.lock:
             plant = self.coordinator.plants.get(plant_id)
             if not plant:
                 raise PlantNotFoundError(f"Plant {plant_id} does not exist")
@@ -105,6 +122,13 @@ class PlantLifecycleManager:
             for key in DATE_FIELDS:
                 if key in updates:
                     updates[key] = format_date(updates[key])
+
+            # Handle genetics updates: strain and phenotype are read-only properties
+            # that delegate to genetics.strain_name and genetics.phenotype_name
+            if "strain" in updates:
+                plant.genetics.strain_name = updates.pop("strain")
+            if "phenotype" in updates:
+                plant.genetics.phenotype_name = updates.pop("phenotype")
 
             for key, value in updates.items():
                 if hasattr(plant, key):
@@ -116,11 +140,11 @@ class PlantLifecycleManager:
 
     async def async_remove_plant(self, plant_id: str) -> bool:
         """Remove a plant and its associated entities."""
-        async with self.coordinator._lock:
+        async with self.coordinator.lock:
             if plant_id in self.coordinator.plants:
                 del self.coordinator.plants[plant_id]
-                if plant_id in self.coordinator._notifications_sent:
-                    del self.coordinator._notifications_sent[plant_id]
+                if plant_id in self.coordinator.notifications_sent:
+                    del self.coordinator.notifications_sent[plant_id]
                 await self.coordinator.async_commit()
                 return True
             return False
@@ -131,7 +155,7 @@ class PlantLifecycleManager:
 
     async def async_switch_plants(self, plant1_id: str, plant2_id: str) -> None:
         """Switch the positions of two plants."""
-        async with self.coordinator._lock:
+        async with self.coordinator.lock:
             self.coordinator.validator.validate_plant_exists(plant1_id)
             self.coordinator.validator.validate_plant_exists(plant2_id)
 
@@ -323,17 +347,18 @@ class PlantLifecycleManager:
         flower_days = self.coordinator.serializer.calculate_days_in_stage(
             plant, PlantStage.FLOWER
         )
-        if veg_days > 0 or flower_days > 0:
+        if self.coordinator.strain_library and (veg_days > 0 or flower_days > 0):
             try:
                 await self.coordinator.strain_library.record_harvest(
                     plant.strain, plant.phenotype, veg_days, flower_days
                 )
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001
                 _LOGGER.warning("Failed to record harvest analytics: %s", e)
 
     async def move_to_dry_growspace(
         self, plant_id: str, plant: Plant, transition_date: str
     ) -> bool:
+        """Move a plant to the dry growspace."""
         return await self._move_to_special_growspace(
             plant_id,
             plant,
@@ -345,6 +370,7 @@ class PlantLifecycleManager:
     async def move_to_cure_growspace(
         self, plant_id: str, plant: Plant, transition_date: str
     ) -> bool:
+        """Move a plant to the cure growspace."""
         return await self._move_to_special_growspace(
             plant_id, plant, PlantStage.CURE, transition_date
         )
@@ -352,6 +378,7 @@ class PlantLifecycleManager:
     async def move_to_clone_growspace(
         self, plant_id: str, plant: Plant, transition_date: str
     ) -> bool:
+        """Move a plant back to the clone growspace."""
         return await self._move_to_special_growspace(
             plant_id, plant, PlantStage.CLONE, transition_date
         )
@@ -385,7 +412,7 @@ class PlantLifecycleManager:
         )
         return plant.plant_id
 
-    async def transition_plant_stage(  # noqa: C901
+    async def transition_plant_stage(
         self,
         plant_id: str,
         new_stage: str | PlantStage,
@@ -405,13 +432,13 @@ class PlantLifecycleManager:
             else str(transition_date)
         )
 
-        updates = {"stage": new_stage}
+        updates: dict[str, Any] = {"stage": new_stage}
         stage_map = {
-            PlantStage.VEG: "veg_start",
-            PlantStage.FLOWER: "flower_start",
-            PlantStage.DRY: "dry_start",
-            PlantStage.CURE: "cure_start",
-            PlantStage.CLONE: "clone_start",
+            PlantStage.VEG.value: "veg_start",
+            PlantStage.FLOWER.value: "flower_start",
+            PlantStage.DRY.value: "dry_start",
+            PlantStage.CURE.value: "cure_start",
+            PlantStage.CLONE.value: "clone_start",
         }
         if new_stage in stage_map:
             updates[stage_map[new_stage]] = trans_date_str

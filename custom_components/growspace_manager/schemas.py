@@ -1,4 +1,7 @@
+"""Validation schemas for the Growspace Manager integration."""
+
 import voluptuous as vol
+
 from homeassistant.helpers import config_validation as cv
 
 from .const import (
@@ -23,15 +26,20 @@ from .const import (
     ATTR_TECHNIQUE,
     ATTR_TRANSITION_DATE,
     ATTR_TYPE,
+    CONF_CIRCULATION_FAN_ENTITIES,
     CONF_CIRCULATION_FAN_ENTITY,
     CONF_CO2_SENSOR,
     CONF_CONTROL_DEHUMIDIFIER,
+    CONF_DEHUMIDIFIER_ENTITIES,
     CONF_DEHUMIDIFIER_ENTITY,
     CONF_DEHUMIDIFIER_THRESHOLDS,
     CONF_EXHAUST_ENTITY,
+    CONF_EXHAUST_FAN_ENTITIES,
+    CONF_HUMIDIFIER_ENTITIES,
     CONF_HUMIDIFIER_ENTITY,
     CONF_HUMIDITY_SENSOR,
     CONF_LIGHT_SENSOR,
+    CONF_LIGHT_SENSORS,
     CONF_MOLD_THRESHOLD,
     CONF_SOIL_MOISTURE_SENSOR,
     CONF_STRESS_THRESHOLD,
@@ -308,6 +316,12 @@ CONFIGURE_ENVIRONMENT_SCHEMA = vol.Schema(
         vol.Optional(CONF_MOLD_THRESHOLD, default=0.75): vol.All(
             vol.Coerce(float), vol.Range(min=0.0, max=1.0)
         ),
+        # Multi-device support
+        vol.Optional(CONF_LIGHT_SENSORS): cv.ensure_list,
+        vol.Optional(CONF_DEHUMIDIFIER_ENTITIES): cv.ensure_list,
+        vol.Optional(CONF_CIRCULATION_FAN_ENTITIES): cv.ensure_list,
+        vol.Optional(CONF_HUMIDIFIER_ENTITIES): cv.ensure_list,
+        vol.Optional(CONF_EXHAUST_FAN_ENTITIES): cv.ensure_list,
     }
 )
 

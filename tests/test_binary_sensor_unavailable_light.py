@@ -4,9 +4,6 @@ from datetime import timedelta
 from unittest.mock import AsyncMock, MagicMock, Mock, patch
 
 import pytest
-from homeassistant.const import STATE_UNAVAILABLE, STATE_UNKNOWN
-from homeassistant.core import HomeAssistant
-from homeassistant.util.dt import utcnow
 
 from custom_components.growspace_manager.binary_sensor import (
     SENSOR_TYPES,
@@ -18,6 +15,9 @@ from custom_components.growspace_manager.strategies.mold import (
 from custom_components.growspace_manager.strategies.stress import (
     StressEvaluatorStrategy,
 )
+from homeassistant.const import STATE_UNAVAILABLE, STATE_UNKNOWN
+from homeassistant.core import HomeAssistant
+from homeassistant.util.dt import utcnow
 
 
 @pytest.fixture

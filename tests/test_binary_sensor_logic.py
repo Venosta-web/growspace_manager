@@ -4,8 +4,6 @@ from datetime import datetime, timedelta
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from homeassistant.core import HomeAssistant
-from homeassistant.util.dt import utcnow
 
 from custom_components.growspace_manager.binary_sensor import (
     SENSOR_TYPES,
@@ -21,6 +19,8 @@ from custom_components.growspace_manager.strategies.optimal import (
 from custom_components.growspace_manager.strategies.stress import (
     StressEvaluatorStrategy,
 )
+from homeassistant.core import HomeAssistant
+from homeassistant.util.dt import utcnow
 
 MOCK_CONFIG_ENTRY_ID = "test_entry"
 

@@ -1,3 +1,4 @@
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -27,13 +28,13 @@ from custom_components.growspace_manager.models import EnvironmentState
 async def test_async_evaluate_fallback_mold_trend_analysis_rising() -> None:
     """Test fallback mold trend analysis for rising humidity."""
     sensor_instance = MagicMock()
-    env_config = {
+    env_config: dict[str, Any] = {
         "humidity_sensor": "sensor.humidity",
         "humidity_trend_sensitivity": 0.5,
     }
-    observations = []
-    reasons = []
-    trend_states = {}
+    observations: list[tuple[float, float]] = []
+    reasons: list[tuple[float, str]] = []
+    trend_states: dict[str, str] = {}
     analyze_trend = AsyncMock(return_value={"trend": "rising"})
 
     # Create mock state with unsafe humidity (above safe_limit of 65 for Veg)
@@ -66,13 +67,13 @@ async def test_async_evaluate_fallback_mold_trend_analysis_rising() -> None:
 async def test_async_evaluate_fallback_mold_trend_analysis_falling() -> None:
     """Test fallback mold trend analysis for falling VPD."""
     sensor_instance = MagicMock()
-    env_config = {
+    env_config: dict[str, Any] = {
         "vpd_sensor": "sensor.vpd",
         "vpd_trend_sensitivity": 0.5,
     }
-    observations = []
-    reasons = []
-    trend_states = {}
+    observations: list[tuple[float, float]] = []
+    reasons: list[tuple[float, str]] = []
+    trend_states: dict[str, str] = {}
     analyze_trend = AsyncMock(return_value={"trend": "falling"})
 
     # Create mock state (VPD trends are not gated)
@@ -103,14 +104,14 @@ async def test_async_evaluate_fallback_mold_trend_analysis_falling() -> None:
 def test_evaluate_direct_temp_stress_no_temp() -> None:
     """Test evaluate_direct_temp_stress when temperature is None."""
     state = MagicMock(spec=EnvironmentState, temp=None)
-    env_config = {}
+    env_config: dict[str, Any] = {}
     observations, reasons = evaluate_direct_temp_stress(state, env_config)
     assert observations == []
     assert reasons == []
 
 
 @pytest.mark.parametrize(
-    "temp, flower_days, is_lights_on, expected_reason, expected_prob",
+    ("temp", "flower_days", "is_lights_on", "expected_reason", "expected_prob"),
     [
         (33, 10, True, "Extreme Heat", (0.98, 0.05)),
         (31, 10, True, "High Heat", (0.85, 0.15)),
@@ -131,7 +132,7 @@ def test_evaluate_direct_temp_stress_branches(
         flower_days=flower_days,
         is_lights_on=is_lights_on,
     )
-    env_config = {}
+    env_config: dict[str, Any] = {}
     observations, reasons = evaluate_direct_temp_stress(state, env_config)
     assert len(observations) == 1
     assert len(reasons) == 1
@@ -142,7 +143,7 @@ def test_evaluate_direct_temp_stress_branches(
 def test_evaluate_direct_humidity_stress_no_humidity() -> None:
     """Test evaluate_direct_humidity_stress when humidity is None."""
     state = MagicMock(spec=EnvironmentState, humidity=None)
-    env_config = {}
+    env_config: dict[str, Any] = {}
     observations, reasons = evaluate_direct_humidity_stress(state, env_config)
     assert observations == []
     assert reasons == []
@@ -151,7 +152,7 @@ def test_evaluate_direct_humidity_stress_no_humidity() -> None:
 def test_evaluate_direct_humidity_stress_veg_early_high_humidity() -> None:
     """Test evaluate_direct_humidity_stress for veg_early and high humidity."""
     state = MagicMock(spec=EnvironmentState, humidity=85, flower_days=0, veg_days=7)
-    env_config = {}
+    env_config: dict[str, Any] = {}
     observations, reasons = evaluate_direct_humidity_stress(state, env_config)
     assert len(observations) == 1
     assert len(reasons) == 1
@@ -162,7 +163,7 @@ def test_evaluate_direct_humidity_stress_veg_early_high_humidity() -> None:
 def test_evaluate_direct_vpd_stress_no_vpd() -> None:
     """Test evaluate_direct_vpd_stress when VPD is None."""
     state = MagicMock(spec=EnvironmentState, vpd=None)
-    env_config = {}
+    env_config: dict[str, Any] = {}
     observations, reasons = evaluate_direct_vpd_stress(state, env_config)
     assert observations == []
     assert reasons == []
@@ -171,7 +172,7 @@ def test_evaluate_direct_vpd_stress_no_vpd() -> None:
 def test_evaluate_optimal_temperature_no_temp() -> None:
     """Test evaluate_optimal_temperature when temperature is None."""
     state = MagicMock(spec=EnvironmentState, temp=None)
-    env_config = {}
+    env_config: dict[str, Any] = {}
     observations, reasons = evaluate_optimal_temperature(state, env_config)
     assert observations == []
     assert reasons == []
@@ -180,14 +181,14 @@ def test_evaluate_optimal_temperature_no_temp() -> None:
 def test_evaluate_optimal_co2_no_co2() -> None:
     """Test evaluate_optimal_co2 when CO2 is None."""
     state = MagicMock(spec=EnvironmentState, co2=None)
-    env_config = {}
+    env_config: dict[str, Any] = {}
     observations, reasons = evaluate_optimal_co2(state, env_config)
     assert observations == []
     assert reasons == []
 
 
 @pytest.mark.parametrize(
-    "co2, flower_days, expected_prob, expected_reason_substring",
+    ("co2", "flower_days", "expected_prob", "expected_reason_substring"),
     [
         # Late Flower Logic (flower_days >= 42)
         (600, 45, (0.90, 0.25), None),  # 400-800 range
@@ -211,7 +212,7 @@ def test_evaluate_optimal_co2_branches(
         co2=co2,
         flower_days=flower_days,
     )
-    env_config = {}
+    env_config: dict[str, Any] = {}
     observations, reasons = evaluate_optimal_co2(state, env_config)
 
     if expected_prob == []:
@@ -230,7 +231,7 @@ def test_evaluate_optimal_co2_branches(
 def test_evaluate_optimal_vpd_no_vpd() -> None:
     """Test evaluate_optimal_vpd when VPD is None."""
     state = MagicMock(spec=EnvironmentState, vpd=None)
-    env_config = {}
+    env_config: dict[str, Any] = {}
     observations, reasons = evaluate_optimal_vpd(state, env_config)
     assert observations == []
     assert reasons == []
@@ -238,7 +239,7 @@ def test_evaluate_optimal_vpd_no_vpd() -> None:
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    "sensor_key, trend_state_value, stats_change_value, expected_trend, expected_prob, expected_reason",
+    ("sensor_key", "trend_state_value", "stats_change_value", "expected_trend", "expected_prob", "expected_reason"),
     [
         # Test trend_sensor_id branch
         ("humidity", "on", None, "rising", (0.90, 0.20), "Humidity rising"),
@@ -260,13 +261,13 @@ async def test_async_evaluate_external_mold_trend_sensor(
     sensor_instance = MagicMock()
     sensor_instance.hass = MagicMock()
 
-    env_config = {
+    env_config: dict[str, Any] = {
         f"{sensor_key}_trend_sensor": f"sensor.{sensor_key}_trend",
         f"{sensor_key}_stats_sensor": f"sensor.{sensor_key}_stats",
     }
-    observations = []
-    reasons = []
-    trend_states = {}
+    observations: list[tuple[float, float]] = []
+    reasons: list[tuple[float, str]] = []
+    trend_states: dict[str, str] = {}
 
     if trend_state_value:
         trend_state = MagicMock(state=trend_state_value)
@@ -300,7 +301,7 @@ async def test_async_evaluate_external_mold_trend_sensor(
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    "test_sensor_key, use_trend_sensor, use_stats_sensor, trend_state_value, gradient, stats_change, manual_analysis_result, expected_trend, expected_prob, expected_reason",
+    ("test_sensor_key", "use_trend_sensor", "use_stats_sensor", "trend_state_value", "gradient", "stats_change", "manual_analysis_result", "expected_trend", "expected_prob", "expected_reason"),
     [
         # Trend Sensor Logic
         (
@@ -390,7 +391,7 @@ async def test_async_evaluate_stress_trend(
 
     sensor_instance.async_analyze_sensor_trend = AsyncMock(side_effect=side_effect)
 
-    env_config = {
+    env_config: dict[str, Any] = {
         "prob_trend_fast_rise": (0.95, 0.15),
         "prob_trend_slow_rise": (0.75, 0.30),
     }
@@ -447,7 +448,7 @@ def test_determine_stage_key_none() -> None:
 
 
 @pytest.mark.parametrize(
-    "temp, flower_days, is_lights_on, expected_prob, expected_reason_substring",
+    ("temp", "flower_days", "is_lights_on", "expected_prob", "expected_reason_substring"),
     [
         # Case A: Lights ON & Late Flower (Days >= 42)
         (24, 45, True, PROB_PERFECT, None),  # PROB_PERFECT
@@ -497,7 +498,7 @@ def test_evaluate_optimal_temperature_all_branches(
         flower_days=flower_days,
         is_lights_on=is_lights_on,
     )
-    env_config = {}
+    env_config: dict[str, Any] = {}
     observations, reasons = evaluate_optimal_temperature(state, env_config)
 
     assert len(observations) == 1
@@ -514,13 +515,13 @@ def test_evaluate_optimal_temperature_all_branches(
 async def test_async_evaluate_fallback_mold_trend_analysis_veg_safe_zone() -> None:
     """Test that rising humidity in Veg safe zone does not trigger alert."""
     sensor_instance = MagicMock()
-    env_config = {
+    env_config: dict[str, Any] = {
         "humidity_sensor": "sensor.humidity",
         "humidity_trend_sensitivity": 0.5,
     }
-    observations = []
-    reasons = []
-    trend_states = {}
+    observations: list[tuple[float, float]] = []
+    reasons: list[tuple[float, str]] = []
+    trend_states: dict[str, str] = {}
     analyze_trend = AsyncMock(return_value={"trend": "rising"})
 
     # Create mock state with Veg stage and humidity in safe zone (< 65)
@@ -548,13 +549,13 @@ async def test_async_evaluate_fallback_mold_trend_analysis_veg_safe_zone() -> No
 async def test_async_evaluate_fallback_mold_trend_analysis_late_flower_unsafe() -> None:
     """Test that rising humidity in Late Flower unsafe zone triggers alert."""
     sensor_instance = MagicMock()
-    env_config = {
+    env_config: dict[str, Any] = {
         "humidity_sensor": "sensor.humidity",
         "humidity_trend_sensitivity": 0.5,
     }
-    observations = []
-    reasons = []
-    trend_states = {}
+    observations: list[tuple[float, float]] = []
+    reasons: list[tuple[float, str]] = []
+    trend_states: dict[str, str] = {}
     analyze_trend = AsyncMock(return_value={"trend": "rising"})
 
     # Create mock state with Late Flower stage and humidity approaching danger zone (> 55)

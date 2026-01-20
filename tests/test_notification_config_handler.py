@@ -4,12 +4,12 @@ from unittest.mock import MagicMock
 
 import pytest
 import voluptuous as vol
-from homeassistant.core import HomeAssistant
 
 from custom_components.growspace_manager.config_handlers.notification_config_handler import (
     NotificationConfigHandler,
 )
 from custom_components.growspace_manager.models import Growspace
+from homeassistant.core import HomeAssistant
 
 
 @pytest.fixture

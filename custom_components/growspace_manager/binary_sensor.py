@@ -8,9 +8,9 @@ cycle schedule.
 
 from __future__ import annotations
 
-import logging
 from dataclasses import dataclass
 from datetime import datetime, timedelta
+import logging
 from typing import Any, override
 
 from homeassistant.components.binary_sensor import (
@@ -18,7 +18,7 @@ from homeassistant.components.binary_sensor import (
     BinarySensorEntityDescription,
 )
 from homeassistant.const import STATE_UNAVAILABLE, STATE_UNKNOWN
-from homeassistant.core import HomeAssistant, callback
+from homeassistant.core import Event, HomeAssistant, callback
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.event import async_track_state_change_event
@@ -26,9 +26,7 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from homeassistant.util.dt import utcnow
 
 from . import GrowspaceConfigEntry
-from .bayesian_evaluator import (
-    ReasonList,
-)
+from .bayesian_evaluator import ReasonList
 from .const import (
     ATTR_EXPECTED_SCHEDULE,
     ATTR_LIGHT_ENTITY_ID,
@@ -45,12 +43,7 @@ from .const import (
     PlantStage,
 )
 from .coordinator import GrowspaceCoordinator
-from .models import (
-    EnvironmentConfig,
-    EnvironmentState,
-    GrowspaceEvent,
-    GrowspaceType,
-)
+from .models import EnvironmentConfig, EnvironmentState, GrowspaceEvent, GrowspaceType
 from .services.ai_assistant import GrowAssistant
 from .strategies.curing import CuringEvaluatorStrategy
 from .strategies.drying import DryingEvaluatorStrategy
@@ -65,7 +58,7 @@ _LOGGER = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True, kw_only=True)
-class GrowspaceBinarySensorDescription(BinarySensorEntityDescription):
+class GrowspaceBinarySensorDescription(BinarySensorEntityDescription):  # type: ignore[misc]
     """Class describing Growspace binary sensors."""
 
     sensor_type: str
@@ -121,7 +114,7 @@ async def async_setup_entry(
     coordinator = entry.runtime_data
     initialized_sensors: set[str] = set()
 
-    async def _update_binary_sensors():
+    async def _update_binary_sensors() -> None:
         """Check for new growspaces with environment config and add sensors."""
         new_entities: list[BinarySensorEntity] = []
 
@@ -214,13 +207,13 @@ def _get_strategy_class(sensor_type: str) -> type[BayesianEvaluatorStrategy]:
     """Map sensor type to strategy class."""
     if sensor_type == GrowspaceSensorType.STRESS:
         return StressEvaluatorStrategy
-    elif sensor_type == GrowspaceSensorType.MOLD:
+    if sensor_type == GrowspaceSensorType.MOLD:
         return MoldRiskEvaluatorStrategy
-    elif sensor_type == GrowspaceSensorType.OPTIMAL:
+    if sensor_type == GrowspaceSensorType.OPTIMAL:
         return OptimalConditionsEvaluatorStrategy
-    elif sensor_type == GrowspaceSensorType.DRYING:
+    if sensor_type == GrowspaceSensorType.DRYING:
         return DryingEvaluatorStrategy
-    elif sensor_type == GrowspaceSensorType.CURING:
+    if sensor_type == GrowspaceSensorType.CURING:
         return CuringEvaluatorStrategy
     return StressEvaluatorStrategy  # Fallback
 
@@ -235,7 +228,10 @@ def _validate_env_config(config: EnvironmentConfig) -> bool:
     return has_temp and has_humidity and (has_vpd or (has_temp and has_humidity))
 
 
-class BayesianEnvironmentSensor(CoordinatorEntity, BinarySensorEntity):
+class BayesianEnvironmentSensor(
+    CoordinatorEntity[GrowspaceCoordinator],  # type: ignore[misc]
+    BinarySensorEntity,  # type: ignore[misc]
+):
     """Base class for Bayesian environment monitoring binary sensors."""
 
     entity_description: GrowspaceBinarySensorDescription
@@ -293,13 +289,13 @@ class BayesianEnvironmentSensor(CoordinatorEntity, BinarySensorEntity):
         self.notification_manager = self.coordinator.notification_manager
 
     @property
-    @override
+    @override  # type: ignore[misc]
     def is_on(self) -> bool:
         """Return true if the sensor is on (probability > threshold)."""
         return self._probability >= self.threshold
 
     @property
-    @override
+    @override  # type: ignore[misc]
     def extra_state_attributes(self) -> dict[str, Any]:
         """Return the state attributes."""
         attrs = {
@@ -333,36 +329,22 @@ class BayesianEnvironmentSensor(CoordinatorEntity, BinarySensorEntity):
         co2 = self._get_sensor_value(self.env_config.co2_sensor)
 
         stage_info = self._get_growth_stage_info()
-        veg_days = stage_info["veg_days"]
-        flower_days = stage_info["flower_days"]
+        veg_days = stage_info.get("veg_days", 0)
+        flower_days = stage_info.get("flower_days", 0)
+        seedling_days = stage_info.get("seedling_days", 0)
+        clone_days = stage_info.get("clone_days", 0)
 
         is_lights_on = self._determine_light_state()
 
-        fan_entity = self.env_config.circulation_fan_entity
-        fan_off = None
-        if fan_entity:
-            fan_state = self.hass.states.get(fan_entity)
-            if fan_state and fan_state.state not in (STATE_UNAVAILABLE, STATE_UNKNOWN):
-                fan_off = fan_state.state == "off"
-
-        dehumidifier_entity = self.env_config.dehumidifier_entity
-        dehumidifier_on = None
-        if dehumidifier_entity:
-            dehum_state = self.hass.states.get(dehumidifier_entity)
-            if dehum_state and dehum_state.state not in (
-                STATE_UNAVAILABLE,
-                STATE_UNKNOWN,
-            ):
-                dehumidifier_on = dehum_state.state == "on"
-
-        exhaust_sensor = self.env_config.exhaust_fan_entity
-        exhaust_value = self._get_sensor_value(exhaust_sensor)
-
-        humidifier_sensor = self.env_config.humidifier_entity
-        humidifier_value = self._get_sensor_value(humidifier_sensor)
+        fan_off = self._determine_fan_state()
+        dehumidifier_on = self._determine_dehumidifier_state()
+        exhaust_value = self._determine_exhaust_value()
+        humidifier_value = self._determine_humidifier_value()
 
         soil_moisture_sensor = self.env_config.soil_moisture_sensor
         soil_moisture = self._get_sensor_value(soil_moisture_sensor)
+
+        humidifier_on = self._determine_humidifier_state()
 
         self._sensor_states = {
             "temperature": temp,
@@ -372,11 +354,14 @@ class BayesianEnvironmentSensor(CoordinatorEntity, BinarySensorEntity):
             "soil_moisture": soil_moisture,
             "veg_days": veg_days,
             "flower_days": flower_days,
+            "seedling_days": seedling_days,
+            "clone_days": clone_days,
             "is_lights_on": is_lights_on,
             "fan_off": fan_off,
             "dehumidifier_on": dehumidifier_on,
             "exhaust_value": exhaust_value,
             "humidifier_value": humidifier_value,
+            "humidifier_on": humidifier_on,
         }
 
         return EnvironmentState(
@@ -386,34 +371,52 @@ class BayesianEnvironmentSensor(CoordinatorEntity, BinarySensorEntity):
             co2=co2,
             veg_days=veg_days,
             flower_days=flower_days,
+            seedling_days=seedling_days,
+            clone_days=clone_days,
             is_lights_on=is_lights_on,
             fan_off=fan_off,
             dehumidifier_on=dehumidifier_on,
             exhaust_value=exhaust_value,
             humidifier_value=humidifier_value,
+            humidifier_on=humidifier_on,
             soil_moisture=soil_moisture,
         )
 
     def _determine_light_state(self) -> bool | None:
-        """Determine the light state and trigger cooldown on switch."""
-        light_sensor = self.env_config.light_sensor
-        current_lights_on = None
+        """Determine the light state (OR logic) and trigger cooldown on switch."""
+        light_sensors = self.env_config.light_sensors
+        if not light_sensors:
+            return None
 
-        if light_sensor:
-            light_state = self.hass.states.get(light_sensor)
-            if light_state:
-                # Check for unavailable/unknown states first
-                if light_state.state in (STATE_UNAVAILABLE, STATE_UNKNOWN):
-                    return None
+        any_on = False
+        any_valid = False
 
-                if light_state.domain == "sensor":
-                    sensor_value = self._get_sensor_value(light_sensor)
-                    if sensor_value is not None:
-                        current_lights_on = bool(sensor_value > 0)
-                else:
-                    current_lights_on = light_state.state == "on"
+        for sensor in light_sensors:
+            is_on, valid = self._check_light_sensor(sensor)
+            if valid:
+                any_valid = True
+                if is_on:
+                    any_on = True
 
-        # Check for state change to trigger notification cooldown
+        current_lights_on = any_on if any_valid else None
+        self._check_light_state_change(current_lights_on)
+        self._last_light_state = current_lights_on
+        return current_lights_on
+
+    def _check_light_sensor(self, sensor_id: str) -> tuple[bool, bool]:
+        """Check a single light sensor state and return (is_on, is_valid)."""
+        state = self.hass.states.get(sensor_id)
+        if not state or state.state in (STATE_UNAVAILABLE, STATE_UNKNOWN):
+            return False, False
+
+        if state.domain == "sensor":
+            val = self._get_sensor_value(sensor_id)
+            return val is not None and val > 0, val is not None
+
+        return state.state == "on", True
+
+    def _check_light_state_change(self, current_lights_on: bool | None) -> None:
+        """Check for state change to trigger notification cooldown."""
         if (
             self._last_light_state is not None
             and current_lights_on is not None
@@ -425,10 +428,7 @@ class BayesianEnvironmentSensor(CoordinatorEntity, BinarySensorEntity):
             )
             self.notification_manager.trigger_cooldown(self.growspace_id)
 
-        self._last_light_state = current_lights_on
-        return current_lights_on
-
-    @override
+    @override  # type: ignore[misc]
     async def async_added_to_hass(self) -> None:
         """Register callbacks when the entity is added to Home Assistant."""
         await super().async_added_to_hass()
@@ -439,12 +439,15 @@ class BayesianEnvironmentSensor(CoordinatorEntity, BinarySensorEntity):
             c.humidity_sensor,
             c.vpd_sensor,
             c.co2_sensor,
-            c.circulation_fan_entity,
-            c.dehumidifier_entity,
-            c.exhaust_fan_entity,
-            c.humidifier_entity,
             c.soil_moisture_sensor,
         ]
+
+        # Extend with multi-device lists
+        sensors.extend(c.light_sensors)
+        sensors.extend(c.circulation_fan_entities)
+        sensors.extend(c.dehumidifier_entities)
+        sensors.extend(c.exhaust_fan_entities)
+        sensors.extend(c.humidifier_entities)
 
         sensors_filtered: list[str] = [s for s in sensors if s]
 
@@ -459,13 +462,13 @@ class BayesianEnvironmentSensor(CoordinatorEntity, BinarySensorEntity):
         # Schedule initial update
         self.hass.async_create_task(self.async_update_and_notify())
 
-    @callback
+    @callback  # type: ignore[misc]
     def _handle_coordinator_update(self) -> None:
         """Handle updates from the data coordinator."""
         self.hass.async_create_task(self.async_update_and_notify())
 
-    @callback
-    def _async_sensor_changed(self, event) -> None:
+    @callback  # type: ignore[misc]
+    def _async_sensor_changed(self, event: Event) -> None:
         """Handle state changes of the monitored environment sensors."""
         self.hass.async_create_task(self.async_update_and_notify())
 
@@ -489,30 +492,67 @@ class BayesianEnvironmentSensor(CoordinatorEntity, BinarySensorEntity):
         return calculate_days_since(date_str)
 
     def _get_growth_stage_info(self) -> dict[str, int]:
-        """Get the current growth stage duration (veg and flower days) for the growspace."""
+        """Get the current growth stage duration for the growspace."""
         growspace = self.coordinator.growspaces.get(self.growspace_id)
         if growspace and growspace.growspace_type in (
             GrowspaceType.DRY,
             GrowspaceType.CURE,
         ):
-            return {"veg_days": 0, "flower_days": 0}
+            return {
+                "veg_days": 0,
+                "flower_days": 0,
+                "seedling_days": 0,
+                "clone_days": 0,
+            }
 
         plants = self.coordinator.get_growspace_plants(self.growspace_id)
 
         if not plants:
-            return {"veg_days": 0, "flower_days": 0}
+            return {
+                "veg_days": 0,
+                "flower_days": 0,
+                "seedling_days": 0,
+                "clone_days": 0,
+            }
 
         max_veg = max(
-            (self._days_since(p.veg_start) for p in plants if p.veg_start), default=0
+            (
+                self._days_since(p.veg_start)
+                for p in plants
+                if isinstance(p.veg_start, str)
+            ),
+            default=0,
         )
         max_flower = max(
-            (self._days_since(p.flower_start) for p in plants if p.flower_start),
+            (
+                self._days_since(p.flower_start)
+                for p in plants
+                if isinstance(p.flower_start, str)
+            ),
+            default=0,
+        )
+        max_seedling = max(
+            (
+                self._days_since(p.seedling_start)
+                for p in plants
+                if isinstance(p.seedling_start, str)
+            ),
+            default=0,
+        )
+        max_clone = max(
+            (
+                self._days_since(p.clone_start)
+                for p in plants
+                if isinstance(p.clone_start, str)
+            ),
             default=0,
         )
 
         return {
             "veg_days": max_veg,
             "flower_days": max_flower,
+            "seedling_days": max_seedling,
+            "clone_days": max_clone,
         }
 
     async def async_analyze_sensor_trend(
@@ -527,7 +567,7 @@ class BayesianEnvironmentSensor(CoordinatorEntity, BinarySensorEntity):
             _LOGGER.exception("Error analyzing sensor history for %s", sensor_id)
             return {"trend": "unknown", "crossed_threshold": False}
 
-    def _generate_notification_message(self, base_message: str) -> str:
+    def generate_notification_message(self, base_message: str) -> str:
         """Construct a detailed notification message from the list of reasons."""
         return self.notification_manager.generate_notification_message(
             base_message, self._reasons
@@ -541,7 +581,11 @@ class BayesianEnvironmentSensor(CoordinatorEntity, BinarySensorEntity):
             coordinator_options = getattr(self.coordinator, "options", {})
             ai_alerts_enabled = coordinator_options.get(CONF_AI_AUTO_ALERTS, False)
 
-            if ai_alerts_enabled and self._probability >= self.threshold:
+            if (
+                ai_alerts_enabled
+                and self._probability >= self.threshold
+                and self.coordinator.strain_library
+            ):
                 try:
                     assistant = GrowAssistant(
                         self.hass, self.coordinator, self.coordinator.strain_library
@@ -552,7 +596,7 @@ class BayesianEnvironmentSensor(CoordinatorEntity, BinarySensorEntity):
                         [r[1] for r in self._reasons],
                     )
                     final_message = f"{ai_message}\n\n(Original: {message})"
-                except Exception:
+                except Exception:  # noqa: BLE001
                     _LOGGER.warning(
                         "Failed to generate AI alert, falling back to standard message"
                     )
@@ -661,8 +705,83 @@ class BayesianEnvironmentSensor(CoordinatorEntity, BinarySensorEntity):
 
         self.async_write_ha_state()
 
+    def _determine_fan_state(self) -> bool | None:
+        """Determine if circulation fans are off (AND logic)."""
+        fan_entities = self.env_config.circulation_fan_entities
+        if not fan_entities:
+            return None
 
-class LightCycleVerificationSensor(BinarySensorEntity):
+        all_off = True
+        any_valid = False
+        for entity in fan_entities:
+            state = self.hass.states.get(entity)
+            if state and state.state not in (STATE_UNAVAILABLE, STATE_UNKNOWN):
+                any_valid = True
+                if state.state != "off":
+                    all_off = False
+
+        return all_off if any_valid else None
+
+    def _determine_dehumidifier_state(self) -> bool | None:
+        """Determine if dehumidifier is on (OR logic)."""
+        dehum_entities = self.env_config.dehumidifier_entities
+        if not dehum_entities:
+            return None
+
+        any_on = False
+        any_valid = False
+        for entity in dehum_entities:
+            state = self.hass.states.get(entity)
+            if state and state.state not in (STATE_UNAVAILABLE, STATE_UNKNOWN):
+                any_valid = True
+                if state.state == "on":
+                    any_on = True
+
+        return any_on if any_valid else None
+
+    def _determine_exhaust_value(self) -> float | None:
+        """Determine exhaust value (Max value)."""
+        entities = self.env_config.exhaust_fan_entities
+        return self._get_max_sensor_value(entities)
+
+    def _determine_humidifier_value(self) -> float | None:
+        """Determine humidifier value (Max value)."""
+        entities = self.env_config.humidifier_entities
+        return self._get_max_sensor_value(entities)
+
+    def _determine_humidifier_state(self) -> bool | None:
+        """Determine if humidifier is on (OR logic)."""
+        entities = self.env_config.humidifier_entities
+        if not entities:
+            return None
+
+        any_on = False
+        any_valid = False
+        for entity in entities:
+            state = self.hass.states.get(entity)
+            if state and state.state not in (STATE_UNAVAILABLE, STATE_UNKNOWN):
+                any_valid = True
+                if state.state == "on":
+                    any_on = True
+
+        return any_on if any_valid else None
+
+    def _get_max_sensor_value(self, entities: list[str]) -> float | None:
+        """Helper to get max value from list of entities."""
+        if not entities:
+            return None
+        values = []
+        for entity in entities:
+            val = self._get_sensor_value(entity)
+            if val is not None:
+                values.append(val)
+        return max(values) if values else None
+
+
+class LightCycleVerificationSensor(
+    CoordinatorEntity[GrowspaceCoordinator],  # type: ignore[misc]
+    BinarySensorEntity,  # type: ignore[misc]
+):
     """Binary sensor to verify if the light schedule matches the expected plan."""
 
     _attr_should_poll = False
@@ -675,7 +794,7 @@ class LightCycleVerificationSensor(BinarySensorEntity):
         env_config: EnvironmentConfig,
     ) -> None:
         """Initialize."""
-        self.coordinator = coordinator
+        super().__init__(coordinator)
         self.growspace_id = growspace_id
         self.env_config = env_config
 
@@ -691,7 +810,9 @@ class LightCycleVerificationSensor(BinarySensorEntity):
         self._is_schedule_matched = True
         self._is_correct = True  # Alias for test compatibility
         self._expected_schedule = "18/6"
-        self.light_entity_id = env_config.light_sensor
+        self.light_entity_id = (
+            self.env_config.light_sensors[0] if self.env_config.light_sensors else None
+        )
         self._time_in_current_state = timedelta(0)
 
     @property
@@ -728,24 +849,24 @@ class LightCycleVerificationSensor(BinarySensorEntity):
     async def async_added_to_hass(self) -> None:
         """Register callbacks."""
         self.coordinator.async_add_listener(self._handle_coordinator_update)
-        # Track light sensor changes
-        if self.env_config.light_sensor:
+        # Track light sensors changes
+        if self.env_config.light_sensors:
             self.async_on_remove(
                 async_track_state_change_event(
                     self.hass,
-                    [self.env_config.light_sensor],
+                    self.env_config.light_sensors,
                     self._async_light_sensor_changed,
                 )
             )
         await self.async_update()
 
-    @callback
+    @callback  # type: ignore[misc]
     def _handle_coordinator_update(self) -> None:
         """Handle updates from the data coordinator."""
         self.hass.async_create_task(self.async_update())
 
-    @callback
-    def _handle_sensor_change(self, event) -> None:
+    @callback  # type: ignore[misc]
+    def _handle_sensor_change(self, event: Event) -> None:
         """Handle light sensor change."""
         self._update_state()
         self.async_write_ha_state()
@@ -753,11 +874,11 @@ class LightCycleVerificationSensor(BinarySensorEntity):
     def _update_state(self) -> None:
         """Verify light state against schedule."""
         # Simplified Logic
-        if self.env_config.light_sensor:
-            light_state = self.hass.states.get(self.env_config.light_sensor)
-            if light_state and light_state.state != STATE_UNAVAILABLE:
-                # In a real implementation we would check time of day vs schedule
-                pass
+        light_sensors = self.env_config.light_sensors
+        if light_sensors:
+            # Just checking accessibility for now as per original code stub
+            # In real impl, we'd check time vs state
+            pass
 
         self._is_schedule_matched = True
 
@@ -765,13 +886,18 @@ class LightCycleVerificationSensor(BinarySensorEntity):
         """Get the current growth stage duration for the growspace."""
         plants = self.coordinator.get_growspace_plants(self.growspace_id)
         if not plants:
-            return {"veg_days": 0, "flower_days": 0}
+            return {
+                "veg_days": 0,
+                "flower_days": 0,
+                "seedling_days": 0,
+                "clone_days": 0,
+            }
 
         max_veg = max(
             (
                 self.coordinator.calculate_days(p.veg_start)
                 for p in plants
-                if p.veg_start
+                if isinstance(p.veg_start, str)
             ),
             default=0,
         )
@@ -799,8 +925,8 @@ class LightCycleVerificationSensor(BinarySensorEntity):
             return "flower_late"
         return PlantStage.VEG
 
-    @callback
-    def _async_light_sensor_changed(self, event) -> None:
+    @callback  # type: ignore[misc]
+    def _async_light_sensor_changed(self, event: Event) -> None:
         """Handle state changes of the monitored light sensor."""
         self.hass.async_create_task(self.async_update())
 

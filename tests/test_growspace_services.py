@@ -3,13 +3,8 @@
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from homeassistant.core import Context, HomeAssistant, ServiceCall, State
-from homeassistant.exceptions import ServiceValidationError
 
-from custom_components.growspace_manager.const import (
-    CONF_AI_ENABLED,
-    CONF_ASSISTANT_ID,
-)
+from custom_components.growspace_manager.const import CONF_AI_ENABLED, CONF_ASSISTANT_ID
 from custom_components.growspace_manager.coordinator import GrowspaceCoordinator
 from custom_components.growspace_manager.exceptions import GrowspaceError
 from custom_components.growspace_manager.services.ai_assistant import (
@@ -21,6 +16,8 @@ from custom_components.growspace_manager.services.growspace import (
     handle_update_growspace,
 )
 from custom_components.growspace_manager.strain_library import StrainLibrary
+from homeassistant.core import Context, HomeAssistant, ServiceCall, State
+from homeassistant.exceptions import ServiceValidationError
 
 
 @pytest.fixture

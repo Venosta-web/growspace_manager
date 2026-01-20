@@ -3,7 +3,7 @@
 from homeassistant.exceptions import HomeAssistantError
 
 
-class GrowspaceError(HomeAssistantError):
+class GrowspaceError(HomeAssistantError):  # type: ignore[misc]
     """Base error for Growspace Manager."""
 
 

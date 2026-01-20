@@ -1,17 +1,15 @@
 """Tests for the ImportExportManager."""
 
 import json
+from pathlib import Path
 from unittest.mock import MagicMock, mock_open, patch
 
 import pytest
-from homeassistant.core import HomeAssistant
 
 from custom_components.growspace_manager.import_export_manager import (
     ImportExportManager,
 )
-
-OUTPUT_DIR = "/test/output/dir"
-TARGET_IMAGE_DIR = "/test/target/image/dir"
+from homeassistant.core import HomeAssistant
 
 
 @pytest.fixture
@@ -39,9 +37,25 @@ def manager(mock_hass: MagicMock) -> ImportExportManager:
 
 
 async def test_export_library_success(
-    manager: ImportExportManager, mock_hass: MagicMock
-):
+    manager: ImportExportManager, mock_hass: MagicMock, tmp_path: Path
+) -> None:
     """Test successful library export."""
+    output_dir = tmp_path / "output"
+
+    # Setup source image in tmp_path
+    source_dir = tmp_path / "config"
+    www_dir = source_dir / "www"
+    image_dir = www_dir / "images"
+    image_dir.mkdir(parents=True)
+    source_image = image_dir / "strain1.jpg"
+    source_image.touch()
+
+    # Override hass.config.path to use our tmp source_dir
+    def mock_path_side_effect(*args):
+        return str(source_dir.joinpath(*args))
+
+    mock_hass.config.path.side_effect = mock_path_side_effect
+
     library_data = {
         "strain1": {
             "name": "Strain 1",
@@ -50,24 +64,22 @@ async def test_export_library_success(
     }
 
     with (
-        patch("os.makedirs") as mock_makedirs,
         patch("zipfile.ZipFile") as mock_zip_cls,
-        patch("os.path.exists", return_value=True),
-        patch("datetime.datetime") as mock_datetime,
+        patch(
+            "custom_components.growspace_manager.import_export_manager.datetime"
+        ) as mock_datetime,
     ):
         mock_datetime.now.return_value.strftime.return_value = "20230101_120000"
         mock_zip = MagicMock()
         mock_zip_cls.return_value.__enter__.return_value = mock_zip
 
-        zip_path = await manager.export_library(library_data, OUTPUT_DIR)
+        zip_path = await manager.export_library(library_data, str(output_dir))
 
-        assert zip_path == f"{OUTPUT_DIR}/strain_library_export_20230101_120000.zip"
-        mock_makedirs.assert_called_with(OUTPUT_DIR, exist_ok=True)
+        assert zip_path == str(output_dir / "strain_library_export_20230101_120000.zip")
+        assert output_dir.exists()
 
         # Verify image was added to zip
-        mock_zip.write.assert_called_with(
-            "/config/www/images/strain1.jpg", "images/strain1.jpg"
-        )
+        mock_zip.write.assert_called_with(source_image, "images/strain1.jpg")
 
         # Verify JSON was written
         # We need to check the content of the written JSON
@@ -80,15 +92,17 @@ async def test_export_library_success(
         )
 
 
-async def test_import_library_success(manager: ImportExportManager):
+async def test_import_library_success(
+    manager: ImportExportManager, tmp_path: Path
+) -> None:
     """Test successful library import."""
-    zip_path = "/test/import.zip"
+    target_image_dir = tmp_path / "target_images"
+    zip_path = tmp_path / "import.zip"
+    zip_path.touch()
     library_data = {"strain1": {"name": "Strain 1"}}
 
     with (
-        patch("os.path.exists", return_value=True),
         patch("zipfile.is_zipfile", return_value=True),
-        patch("os.makedirs") as mock_makedirs,
         patch("zipfile.ZipFile") as mock_zip_cls,
         patch("shutil.copyfileobj") as mock_copy,
     ):
@@ -118,43 +132,52 @@ async def test_import_library_success(manager: ImportExportManager):
 
         # Mock built-in open for writing image
         with patch("builtins.open", mock_open()):
-            result = await manager.import_library(zip_path, TARGET_IMAGE_DIR)
+            result = await manager.import_library(str(zip_path), str(target_image_dir))
 
         assert result == library_data
-        mock_makedirs.assert_called_with(TARGET_IMAGE_DIR, exist_ok=True)
+        assert target_image_dir.exists()
         assert mock_copy.call_count == 1  # One image copied
 
 
-async def test_import_library_file_not_found(manager: ImportExportManager):
+async def test_import_library_file_not_found(
+    manager: ImportExportManager, tmp_path: Path
+) -> None:
     """Test import with missing file."""
-    with (
-        patch("os.path.exists", return_value=False),
-        pytest.raises(FileNotFoundError),
-    ):
-        await manager.import_library("/missing.zip", TARGET_IMAGE_DIR)
+    target_image_dir = str(tmp_path / "target_images")
+    with pytest.raises(FileNotFoundError):
+        await manager.import_library("/missing.zip", target_image_dir)
 
 
-async def test_import_library_invalid_zip(manager: ImportExportManager):
+async def test_import_library_invalid_zip(
+    manager: ImportExportManager, tmp_path: Path
+) -> None:
     """Test import with invalid zip file."""
+    target_image_dir = str(tmp_path / "target_images")
+    zip_path = tmp_path / "invalid.zip"
+    zip_path.write_text("not a zip")
+
     with (
-        patch("os.path.exists", return_value=True),
         patch("zipfile.is_zipfile", return_value=False),
         pytest.raises(ValueError, match="Not a valid ZIP file"),
     ):
-        await manager.import_library("/invalid.zip", TARGET_IMAGE_DIR)
+        await manager.import_library(str(zip_path), target_image_dir)
 
 
-async def test_import_library_missing_json(manager: ImportExportManager):
+async def test_import_library_missing_json(
+    manager: ImportExportManager, tmp_path: Path
+) -> None:
     """Test import with missing library.json."""
+    target_image_dir = str(tmp_path / "target_images")
+    zip_path = tmp_path / "test.zip"
+    zip_path.touch()
+
     with (
-        patch("os.path.exists", return_value=True),
         patch("zipfile.is_zipfile", return_value=True),
         patch("zipfile.ZipFile") as mock_zip_cls,
-        patch("os.makedirs"),
     ):
         mock_zip = MagicMock()
         mock_zip_cls.return_value.__enter__.return_value = mock_zip
         mock_zip.namelist.return_value = ["images/only.jpg"]
 
         with pytest.raises(ValueError, match="library.json missing"):
-            await manager.import_library("/test.zip", TARGET_IMAGE_DIR)
+            await manager.import_library(str(zip_path), target_image_dir)

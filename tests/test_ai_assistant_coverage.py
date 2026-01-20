@@ -1,18 +1,21 @@
 """Additional coverage tests for AI Assistant."""
 
+from typing import Any
 from unittest.mock import MagicMock, patch
 
 import pytest
+
+from custom_components.growspace_manager.models import EnvironmentConfig, Growspace
+from custom_components.growspace_manager.services.ai_assistant import GrowAssistant
 from homeassistant.core import HomeAssistant
 
-from custom_components.growspace_manager.models import Growspace, Plant
-from custom_components.growspace_manager.services.ai_assistant import GrowAssistant
+from .common import create_plant
 
 GROWSPACE_ID = "gs1"
 
 
 @pytest.fixture
-def mock_deps():
+def mock_deps() -> tuple[MagicMock, MagicMock, MagicMock]:
     hass = MagicMock(spec=HomeAssistant)
     hass.states = MagicMock()  # Ensure states is a mock
     hass.data = {}
@@ -20,7 +23,9 @@ def mock_deps():
     strain_lib = MagicMock()
 
     coordinator.growspaces = {
-        GROWSPACE_ID: Growspace(id=GROWSPACE_ID, name="GS1", environment_config={})
+        GROWSPACE_ID: Growspace(
+            id=GROWSPACE_ID, name="GS1", environment_config=EnvironmentConfig()
+        )
     }
     # Default options
     coordinator.options = {
@@ -31,12 +36,12 @@ def mock_deps():
 
 
 @pytest.fixture
-def assistant(mock_deps):
+def assistant(mock_deps: tuple[MagicMock, MagicMock, MagicMock]) -> GrowAssistant:
     return GrowAssistant(*mock_deps)
 
 
 @pytest.mark.asyncio
-async def test_generate_alert_message(assistant) -> None:
+async def test_generate_alert_message(assistant: GrowAssistant) -> None:
     """Test generating a concise alert message."""
     with patch.object(
         assistant, "get_grow_advice", return_value="Fix it now"
@@ -48,7 +53,7 @@ async def test_generate_alert_message(assistant) -> None:
         assert msg == "Fix it now"
         # Verify call args
         mock_get.assert_awaited_once()
-        args, kwargs = mock_get.call_args
+        _args, kwargs = mock_get.call_args
         assert kwargs["growspace_id"] == GROWSPACE_ID
         assert kwargs["context_type"] == "diagnostic"
         assert kwargs["max_length"] == 150
@@ -57,7 +62,7 @@ async def test_generate_alert_message(assistant) -> None:
         assert "High Humidity" in kwargs["user_query"]
 
 
-def test_build_system_prompt(assistant) -> None:
+def test_build_system_prompt(assistant: GrowAssistant) -> None:
     """Test system prompt generation for different context types."""
     # General
     p_gen = assistant._build_system_prompt("general")
@@ -81,9 +86,9 @@ def test_build_system_prompt(assistant) -> None:
     assert p_fall == p_gen
 
 
-def test_build_single_strain_context_minimal(assistant) -> None:
+def test_build_single_strain_context_minimal(assistant: GrowAssistant) -> None:
     """Test building strain context with missing metadata."""
-    strain_data = {
+    strain_data: dict[str, Any] = {
         "meta": {},  # Empty meta
         "phenotypes": {},
     }
@@ -98,7 +103,7 @@ def test_build_single_strain_context_minimal(assistant) -> None:
     assert context is None
 
 
-def test_build_single_strain_context_partial(assistant) -> None:
+def test_build_single_strain_context_partial(assistant: GrowAssistant) -> None:
     """Test building strain context with partial metadata."""
     strain_data = {
         "meta": {
@@ -110,6 +115,7 @@ def test_build_single_strain_context_partial(assistant) -> None:
     }
 
     context = assistant._build_single_strain_context("Strain A", strain_data)
+    assert context is not None
     assert "**Strain A**:" in context
     assert "Breeder Notes: Great strain" in context
     assert "Lineage: A x B" in context
@@ -119,11 +125,14 @@ def test_build_single_strain_context_partial(assistant) -> None:
     assert "Ideal Temp" not in context
 
 
-def test_summarize_plants_no_dates(assistant, mock_deps) -> None:
-    """Test summarizing plants that haven't started stages."""
-    hass, coordinator, lib = mock_deps
+def test_summarize_plants_no_dates(
+    assistant: GrowAssistant, mock_deps: tuple[MagicMock, MagicMock, MagicMock]
+) -> None:
+    _hass, _coordinator, _lib = mock_deps
 
-    p1 = Plant(plant_id="p1", strain="S1", growspace_id=GROWSPACE_ID, stage="veg")
+    p1 = create_plant(
+        plant_id="p1", strain="S1", growspace_id=GROWSPACE_ID, stage="veg"
+    )
     # p1 has no veg_start or flower_start implicitly (None default)
 
     summary = assistant._summarize_plants([p1])
@@ -133,12 +142,14 @@ def test_summarize_plants_no_dates(assistant, mock_deps) -> None:
     assert summary["max_flower_days"] == 0
 
 
-def test_get_strain_analytics_no_harvests(assistant, mock_deps) -> None:
+def test_get_strain_analytics_no_harvests(
+    assistant: GrowAssistant, mock_deps: tuple[MagicMock, MagicMock, MagicMock]
+) -> None:
     """Test analytics when strain exists but has no harvest history."""
-    hass, coordinator, lib = mock_deps
+    _hass, _coordinator, lib = mock_deps
 
     # Plant active
-    p1 = Plant(plant_id="p1", strain="S1", growspace_id=GROWSPACE_ID)
+    p1 = create_plant(plant_id="p1", strain="S1", growspace_id=GROWSPACE_ID)
 
     # Library data with no harvests
     lib.get_all.return_value = {
@@ -156,11 +167,13 @@ def test_get_strain_analytics_no_harvests(assistant, mock_deps) -> None:
     assert "S1" not in analytics
 
 
-def test_get_strain_analytics_missing_strain(assistant, mock_deps) -> None:
+def test_get_strain_analytics_missing_strain(
+    assistant: GrowAssistant, mock_deps: tuple[MagicMock, MagicMock, MagicMock]
+) -> None:
     """Test analytics when strain is not in library."""
-    hass, coordinator, lib = mock_deps
+    _hass, _coordinator, lib = mock_deps
 
-    p1 = Plant(plant_id="p1", strain="Unknown Strain", growspace_id=GROWSPACE_ID)
+    p1 = create_plant(plant_id="p1", strain="Unknown Strain", growspace_id=GROWSPACE_ID)
     lib.get_all.return_value = {}
 
     analytics = assistant._get_strain_analytics([p1])
@@ -168,9 +181,11 @@ def test_get_strain_analytics_missing_strain(assistant, mock_deps) -> None:
 
 
 @pytest.mark.asyncio
-async def test_gather_bayesian_sensor_data_partial(assistant, mock_deps) -> None:
+async def test_gather_bayesian_sensor_data_partial(
+    assistant: GrowAssistant, mock_deps: tuple[MagicMock, MagicMock, MagicMock]
+) -> None:
     """Test gathering bayesian data when some sensors are missing."""
-    hass, coordinator, lib = mock_deps
+    hass, _coordinator, _lib = mock_deps
 
     # Mock hass.states.get to return None
     hass.states.get.return_value = None
@@ -182,7 +197,7 @@ async def test_gather_bayesian_sensor_data_partial(assistant, mock_deps) -> None
     assert data["light_schedule"]["correct"] is False
 
 
-def test_build_single_strain_context_full(assistant) -> None:
+def test_build_single_strain_context_full(assistant: GrowAssistant) -> None:
     """Test building full strain context with all fields."""
     strain_data = {
         "meta": {
@@ -197,6 +212,7 @@ def test_build_single_strain_context_full(assistant) -> None:
     }
 
     context = assistant._build_single_strain_context("Strain Full", strain_data)
+    assert context is not None
 
     assert "**Strain Full**:" in context
     assert "Breeder Notes: Great strain" in context
@@ -207,22 +223,24 @@ def test_build_single_strain_context_full(assistant) -> None:
     assert "Pheno 'Pheno 1': Tall" in context
 
 
-def test_get_strain_specific_context_empty(assistant) -> None:
+def test_get_strain_specific_context_empty(assistant: GrowAssistant) -> None:
     """Test getting strain specific context with no plants."""
     context = assistant._get_strain_specific_context([])
     assert context == ""
 
 
-def test_get_strain_specific_context_integration(assistant, mock_deps) -> None:
+def test_get_strain_specific_context_integration(
+    assistant: GrowAssistant, mock_deps: tuple[MagicMock, MagicMock, MagicMock]
+) -> None:
     """Test get_strain_specific_context with actual plant data."""
-    hass, coordinator, lib = mock_deps
+    _hass, _coordinator, lib = mock_deps
 
     # Setup plants
-    p1 = Plant(plant_id="p1", strain="Strain A", growspace_id=GROWSPACE_ID)
-    p2 = Plant(
+    p1 = create_plant(plant_id="p1", strain="Strain A", growspace_id=GROWSPACE_ID)
+    p2 = create_plant(
         plant_id="p2", strain="Strain A", growspace_id=GROWSPACE_ID
     )  # Duplicate strain
-    p3 = Plant(plant_id="p3", strain="Strain B", growspace_id=GROWSPACE_ID)
+    p3 = create_plant(plant_id="p3", strain="Strain B", growspace_id=GROWSPACE_ID)
 
     # Setup library
     lib.get_all.return_value = {
@@ -241,9 +259,11 @@ def test_get_strain_specific_context_integration(assistant, mock_deps) -> None:
     assert "Note B" in context
 
 
-def test_format_context_data_with_strain_context(assistant, mock_deps) -> None:
+def test_format_context_data_with_strain_context(
+    assistant: GrowAssistant, mock_deps: tuple[MagicMock, MagicMock, MagicMock]
+) -> None:
     """Test format_context_data including strain guidance."""
-    hass, coordinator, lib = mock_deps
+    _hass, coordinator, lib = mock_deps
 
     # Setup data
     data = {
@@ -270,7 +290,7 @@ def test_format_context_data_with_strain_context(assistant, mock_deps) -> None:
 
     # Mock coordinator to return a plant
     coordinator.get_growspace_plants.return_value = [
-        Plant(plant_id="p1", strain="Strain A", growspace_id=GROWSPACE_ID)
+        create_plant(plant_id="p1", strain="Strain A", growspace_id=GROWSPACE_ID)
     ]
 
     # Mock library

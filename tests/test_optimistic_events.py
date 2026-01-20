@@ -1,10 +1,11 @@
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
-from homeassistant.core import HomeAssistant
 
 from custom_components.growspace_manager.coordinator import GrowspaceCoordinator
-from custom_components.growspace_manager.models import Plant
+from homeassistant.core import HomeAssistant
+
+from .common import create_plant
 
 
 @pytest.fixture
@@ -19,9 +20,9 @@ def mock_coordinator(hass: HomeAssistant):
         "veg_days": 10,
     }
     # Mock async_save
-    coordinator.async_save = AsyncMock()
+    coordinator.async_save = AsyncMock()  # type: ignore[method-assign]
     # Mock invalidate
-    coordinator._invalidate_cache = MagicMock()
+    coordinator._invalidate_cache = MagicMock()  # type: ignore[method-assign]
     return coordinator
 
 
@@ -30,7 +31,7 @@ async def test_async_add_plant_fires_event(
     mock_coordinator, hass: HomeAssistant
 ) -> None:
     # Setup
-    plant_data = Plant(
+    plant_data = create_plant(
         plant_id="test_plant",
         growspace_id="test_gs",
         strain="Test Strain",
@@ -66,7 +67,7 @@ async def test_async_update_plant_fires_event(
     mock_coordinator, hass: HomeAssistant
 ) -> None:
     # Setup
-    updated_plant = Plant(
+    updated_plant = create_plant(
         plant_id="test_plant",
         growspace_id="test_gs",
         strain="Test Strain",
@@ -96,7 +97,9 @@ async def test_async_remove_plant_fires_event(
     mock_coordinator, hass: HomeAssistant
 ) -> None:
     # Setup
-    plant = Plant(plant_id="test_plant", growspace_id="test_gs", strain="Test Strain")
+    plant = create_plant(
+        plant_id="test_plant", growspace_id="test_gs", strain="Test Strain"
+    )
     mock_coordinator.plants = {"test_plant": plant}
     mock_coordinator.lifecycle_manager.async_remove_plant.return_value = True
 

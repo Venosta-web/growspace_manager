@@ -4,9 +4,6 @@ import datetime
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from homeassistant.const import STATE_OFF, STATE_ON, STATE_UNAVAILABLE, STATE_UNKNOWN
-from homeassistant.core import HomeAssistant, State
-from homeassistant.util import dt as dt_util
 from pytest_homeassistant_custom_component.common import async_capture_events
 
 from custom_components.growspace_manager.const import EVENT_GROWSPACE_LOG_ENTRY
@@ -15,6 +12,9 @@ from custom_components.growspace_manager.models import EnvironmentConfig, Growsp
 from custom_components.growspace_manager.services.environment_reporter import (
     EnvironmentReporter,
 )
+from homeassistant.const import STATE_OFF, STATE_ON, STATE_UNAVAILABLE, STATE_UNKNOWN
+from homeassistant.core import HomeAssistant, State
+from homeassistant.util import dt as dt_util
 
 
 @pytest.fixture
@@ -49,12 +49,12 @@ class TestEnvironmentReporter:
         gs1 = Growspace(
             id="gs1",
             name="Growspace 1",
-            environment_config=EnvironmentConfig(light_sensor="sensor.light_1"),
+            environment_config=EnvironmentConfig(light_sensors=["sensor.light_1"]),
         )
         gs2 = Growspace(
             id="gs2",
             name="Growspace 2",
-            environment_config=EnvironmentConfig(light_sensor="sensor.light_2"),
+            environment_config=EnvironmentConfig(light_sensors=["sensor.light_2"]),
         )
         mock_coordinator.growspaces = {"gs1": gs1, "gs2": gs2}
 
@@ -82,7 +82,7 @@ class TestEnvironmentReporter:
         gs1 = Growspace(
             id="gs1",
             name="Growspace 1",
-            environment_config=EnvironmentConfig(light_sensor=None),
+            environment_config=EnvironmentConfig(light_sensors=[]),
         )
         mock_coordinator.growspaces = {"gs1": gs1}
 
@@ -115,7 +115,7 @@ class TestEnvironmentReporter:
         gs1 = Growspace(
             id="gs1",
             name="Growspace 1",
-            environment_config=EnvironmentConfig(light_sensor="sensor.light_1"),
+            environment_config=EnvironmentConfig(light_sensors=["sensor.light_1"]),
         )
         mock_coordinator.growspaces = {"gs1": gs1}
 

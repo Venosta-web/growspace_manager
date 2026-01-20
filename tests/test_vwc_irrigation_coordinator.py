@@ -5,15 +5,12 @@ from datetime import datetime
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from homeassistant.util import dt as dt_util
 
-from custom_components.growspace_manager.models import (
-    Growspace,
-    IrrigationStrategy,
-)
+from custom_components.growspace_manager.models import Growspace, IrrigationStrategy
 from custom_components.growspace_manager.vwc_irrigation_coordinator import (
     VWCIrrigationCoordinator,
 )
+from homeassistant.util import dt as dt_util
 
 
 # Patch asyncio.sleep globally for this test module to avoid lingering tasks

@@ -2,19 +2,12 @@
 
 from __future__ import annotations
 
-import logging
-import os
 from datetime import datetime
+import logging
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from homeassistant.components.persistent_notification import (
-    async_create as create_notification,
-)
-from homeassistant.core import HomeAssistant, ServiceCall
-from homeassistant.exceptions import ServiceValidationError
-from homeassistant.helpers import entity_registry as er
-
-from ..const import (
+from custom_components.growspace_manager.const import (
     ATTR_AMOUNT,
     ATTR_AMOUNT_ML,
     ATTR_COL,
@@ -44,13 +37,19 @@ from ..const import (
     DATE_FIELDS,
     EVENT_GROWSPACE_LOG_ENTRY,
 )
+from homeassistant.components.persistent_notification import (
+    async_create as create_notification,
+)
+from homeassistant.core import HomeAssistant, ServiceCall
+from homeassistant.exceptions import ServiceValidationError
+from homeassistant.helpers import entity_registry as er
 
 if TYPE_CHECKING:
-    from ..coordinator import GrowspaceCoordinator
-from ..exceptions import GrowspaceError
-from ..growspace_validator import GrowspaceValidator
-from ..strain_library import StrainLibrary
-from ..utils import parse_date_field
+    from custom_components.growspace_manager.coordinator import GrowspaceCoordinator
+from custom_components.growspace_manager.exceptions import GrowspaceError
+from custom_components.growspace_manager.growspace_validator import GrowspaceValidator
+from custom_components.growspace_manager.strain_library import StrainLibrary
+from custom_components.growspace_manager.utils import parse_date_field
 
 # from ..models import Plant # Potentially needed for type hinting if desired
 
@@ -140,13 +139,13 @@ def _resolve_plant_id(hass: HomeAssistant, plant_id: str) -> str:
                 _LOGGER.debug(
                     "Resolved entity ID '%s' to plant ID '%s'", plant_id, resolved_id
                 )
-                return resolved_id
+                return resolved_id  # type: ignore[no-any-return]
             _LOGGER.warning(
                 "Could not resolve entity ID '%s' to a plant_id attribute", plant_id
             )
         else:
             _LOGGER.warning("Entity Registry not available, cannot resolve entity ID")
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         _LOGGER.warning("Error resolving entity ID '%s': %s", plant_id, e)
 
     return plant_id
@@ -165,7 +164,7 @@ async def _ensure_plant_loaded(
     )
     try:
         await coordinator.async_load()
-    except Exception as load_err:
+    except Exception as load_err:  # noqa: BLE001
         _LOGGER.error("Error reloading coordinator data: %s", load_err)
 
     if plant_id not in coordinator.plants:
@@ -185,15 +184,14 @@ async def handle_add_plant(
     call: ServiceCall,
 ) -> None:
     """Handle add plant service call."""
-    _LOGGER.debug(
-        "Service call: add_plant with data: %s", call.data
-    )  # Changed warning to debug for less noisy logs
-    try:
-        growspace_id = call.data[ATTR_GROWSPACE_ID]
-        if growspace_id not in coordinator.growspaces:
-            _LOGGER.error("Growspace %s does not exist for add_plant", growspace_id)
-            raise ServiceValidationError(f"Growspace '{growspace_id}' not found.")
+    _LOGGER.debug("Service call: add_plant with data: %s", call.data)
 
+    growspace_id = call.data[ATTR_GROWSPACE_ID]
+    if growspace_id not in coordinator.growspaces:
+        _LOGGER.error("Growspace %s does not exist for add_plant", growspace_id)
+        raise ServiceValidationError(f"Growspace '{growspace_id}' not found.")
+
+    try:
         row = call.data[ATTR_ROW]
         col = call.data[ATTR_COL]
 
@@ -217,7 +215,7 @@ async def handle_add_plant(
                 row=row,
                 col=col,
                 phenotype=call.data.get(ATTR_PHENOTYPE, ""),
-                **parsed_dates,
+                **parsed_dates,  # type: ignore[arg-type]
             )
         except GrowspaceError as err:
             raise ServiceValidationError(str(err)) from err
@@ -230,8 +228,10 @@ async def handle_add_plant(
             col,
         )
 
+    except ServiceValidationError:
+        raise
     except Exception as err:
-        _LOGGER.exception("Failed to add plant: %s", err)
+        _LOGGER.exception("Failed to add plant")
         raise ServiceValidationError(f"Failed to add plant: {err}") from err
 
 
@@ -242,15 +242,28 @@ async def handle_add_plants(
     call: ServiceCall,
 ) -> None:
     """Handle batch add plants service call."""
-    _LOGGER.debug("Service call: add_plants with data: %s", call.data)
-    try:
-        growspace_id = call.data[ATTR_GROWSPACE_ID]
-        if growspace_id not in coordinator.growspaces:
-            _LOGGER.error("Growspace %s does not exist for add_plants", growspace_id)
-            raise ServiceValidationError(f"Growspace '{growspace_id}' not found.")
 
-        strain = call.data[ATTR_STRAIN]
-        amount = call.data[ATTR_AMOUNT]
+    def validate_batch_add() -> tuple[str, str, int, int]:
+        """Validate batch add request and return extracted params."""
+        gs_id = call.data[ATTR_GROWSPACE_ID]
+        if gs_id not in coordinator.growspaces:
+            _LOGGER.error("Growspace %s does not exist for add_plants", gs_id)
+            raise ServiceValidationError(f"Growspace {gs_id} does not exist")
+
+        # Pre-check capacity for at least one plant
+        row, col = coordinator.validator.find_first_available_position(gs_id)
+        if row is None or col is None:
+            _LOGGER.error("Growspace %s is full for add_plants", gs_id)
+            raise ServiceValidationError(f"Growspace {gs_id} is full")
+
+        strn = call.data[ATTR_STRAIN]
+        amt = call.data[ATTR_AMOUNT]
+        return gs_id, strn, amt, row
+
+    try:
+        _LOGGER.debug("Service call: add_plants with data: %s", call.data)
+
+        growspace_id, strain, amount, _ = validate_batch_add()
         start_number = call.data.get(ATTR_START_NUMBER, 1)
         base_phenotype = call.data.get(ATTR_PHENOTYPE)
 
@@ -286,8 +299,6 @@ async def handle_add_plants(
                     growspace_id,
                     plants_added_count,
                 )
-                if plants_added_count == 0:
-                    raise ServiceValidationError(f"Growspace {growspace_id} is full.")
                 # Partial success - just stop adding
                 break
 
@@ -299,7 +310,7 @@ async def handle_add_plants(
                     row=free_row,
                     col=free_col,
                     phenotype=phenotype,
-                    **parsed_dates,
+                    **parsed_dates,  # type: ignore[arg-type]
                 )
                 plants_added_count += 1
             except GrowspaceError as err:
@@ -314,7 +325,7 @@ async def handle_add_plants(
         )
 
     except Exception as err:
-        _LOGGER.exception("Failed to batch add plants: %s", err)
+        _LOGGER.exception("Unexpected error during batch add plants")
         raise ServiceValidationError(f"Failed to batch add plants: {err}") from err
 
 
@@ -411,7 +422,7 @@ async def handle_move_clone(
             target_growspace_id,
         )
     except Exception as e:
-        _LOGGER.exception("Failed to promote clone %s: %s", plant_id, e)
+        _LOGGER.exception("Failed to promote clone %s", plant_id)
         create_notification(
             hass,
             f"Failed to move clone {plant_id}: {e!s}",
@@ -481,8 +492,8 @@ async def handle_update_plant(
     except GrowspaceError as err:
         raise ServiceValidationError(str(err)) from err
 
-    except Exception as err:
-        _LOGGER.exception("Failed to update plant: %s", err)
+    except Exception:
+        _LOGGER.exception("Failed to update plant")
         raise
 
 
@@ -493,13 +504,13 @@ async def handle_remove_plant(
     call: ServiceCall,
 ) -> None:
     """Handle remove plant service call."""
+    plant_id = call.data[ATTR_PLANT_ID]
+
+    if plant_id not in coordinator.plants:
+        _LOGGER.error("Plant %s not found for removal", plant_id)
+        raise ServiceValidationError(f"Plant {plant_id} not found for removal.")
+
     try:
-        plant_id = call.data[ATTR_PLANT_ID]
-
-        if plant_id not in coordinator.plants:
-            _LOGGER.error("Plant %s not found for removal", plant_id)
-            raise ServiceValidationError(f"Plant {plant_id} not found for removal.")
-
         plant_info = coordinator.plants[plant_id]  # Get info before removal
         await coordinator.async_remove_plant(plant_id)
         _LOGGER.info(
@@ -511,8 +522,8 @@ async def handle_remove_plant(
     except GrowspaceError as err:
         raise ServiceValidationError(str(err)) from err
 
-    except Exception as err:
-        _LOGGER.exception("Failed to remove plant %s: %s", plant_id, err)
+    except Exception:
+        _LOGGER.exception("Failed to remove plant %s", plant_id)
         raise
 
 
@@ -527,24 +538,22 @@ async def handle_switch_plants(
     plant_id_1 = call.data[ATTR_PLANT1_ID]
     plant_id_2 = call.data[ATTR_PLANT2_ID]
 
-    try:
-        if plant_id_1 not in coordinator.plants:
-            _LOGGER.error("Plant %s does not exist for switch_plants", plant_id_1)
-            raise ServiceValidationError(f"Plant {plant_id_1} does not exist.")
-        if plant_id_2 not in coordinator.plants:
-            _LOGGER.error("Plant %s does not exist for switch_plants", plant_id_2)
-            raise ServiceValidationError(f"Plant {plant_id_2} does not exist.")
+    if plant_id_1 not in coordinator.plants:
+        _LOGGER.error("Plant %s does not exist for switch_plants", plant_id_1)
+        raise ServiceValidationError(f"Plant {plant_id_1} does not exist.")
+    if plant_id_2 not in coordinator.plants:
+        _LOGGER.error("Plant %s does not exist for switch_plants", plant_id_2)
+        raise ServiceValidationError(f"Plant {plant_id_2} does not exist.")
 
+    try:
         await coordinator.async_switch_plants(plant_id_1, plant_id_2)
         _LOGGER.info("Plants %s and %s switched successfully", plant_id_1, plant_id_2)
 
     except GrowspaceError as err:
         raise ServiceValidationError(str(err)) from err
 
-    except Exception as err:
-        _LOGGER.exception(
-            "Failed to switch plants %s and %s: %s", plant_id_1, plant_id_2, err
-        )
+    except Exception:
+        _LOGGER.exception("Failed to switch plants %s and %s", plant_id_1, plant_id_2)
         raise
 
 
@@ -555,12 +564,12 @@ async def handle_move_plant(
     call: ServiceCall,
 ) -> None:
     """Handle move plant service call, potentially switching positions with another plant."""
-    try:
-        plant_id = call.data[ATTR_PLANT_ID]
-        if plant_id not in coordinator.plants:
-            _LOGGER.error("Plant %s does not exist for move_plant", plant_id)
-            raise ServiceValidationError(f"Plant {plant_id} does not exist.")
+    plant_id = call.data[ATTR_PLANT_ID]
+    if plant_id not in coordinator.plants:
+        _LOGGER.error("Plant %s does not exist for move_plant", plant_id)
+        raise ServiceValidationError(f"Plant {plant_id} does not exist.")
 
+    try:
         plant = coordinator.plants[plant_id]
 
         # Validate new position is within bounds
@@ -628,8 +637,8 @@ async def handle_move_plant(
         _LOGGER.warning("Validation error moving plant %s: %s", plant_id, err)
         raise ServiceValidationError(str(err)) from err
 
-    except Exception as err:
-        _LOGGER.exception("Failed to move plant %s: %s", plant_id, err)
+    except Exception:
+        _LOGGER.exception("Failed to move plant %s", plant_id)
         raise
 
 
@@ -640,39 +649,37 @@ async def handle_transition_plant_stage(
     call: ServiceCall,
 ) -> None:
     """Handle transition plant stage service call."""
-    try:
-        plant_id = call.data[ATTR_PLANT_ID]
-        if plant_id not in coordinator.plants:
-            _LOGGER.error(
-                "Plant %s does not exist for transition_plant_stage", plant_id
+    plant_id = call.data[ATTR_PLANT_ID]
+    if plant_id not in coordinator.plants:
+        _LOGGER.error("Plant %s does not exist for transition_plant_stage", plant_id)
+        raise ServiceValidationError(f"Plant {plant_id} does not exist.")
+
+    new_stage = call.data[ATTR_NEW_STAGE]
+    transition_date_str = call.data.get(ATTR_TRANSITION_DATE)
+    transition_date = None
+    if transition_date_str:
+        transition_date = parse_date_field(transition_date_str)
+        if not transition_date:
+            _LOGGER.warning(
+                "Could not parse transition_date string: %s", transition_date_str
             )
-            raise ServiceValidationError(f"Plant {plant_id} does not exist.")
+            raise ServiceValidationError(
+                f"Invalid transition_date format: {transition_date_str}."
+            )
 
-        new_stage = call.data[ATTR_NEW_STAGE]
-        transition_date_str = call.data.get(ATTR_TRANSITION_DATE)
-        transition_date = None
-        if transition_date_str:
-            transition_date = parse_date_field(transition_date_str)
-            if not transition_date:
-                _LOGGER.warning(
-                    "Could not parse transition_date string: %s", transition_date_str
-                )
-                raise ServiceValidationError(
-                    f"Invalid transition_date format: {transition_date_str}."
-                )
-
+    try:
         await coordinator.async_transition_plant_stage(
             plant_id=plant_id,
             new_stage=new_stage,
-            transition_date=transition_date.isoformat() if transition_date else None,
+            transition_date=transition_date if transition_date else None,
         )
         _LOGGER.info("Plant %s transitioned to %s stage", plant_id, new_stage)
 
     except GrowspaceError as err:
         raise ServiceValidationError(str(err)) from err
 
-    except Exception as err:
-        _LOGGER.exception("Failed to transition plant stage for %s: %s", plant_id, err)
+    except Exception:
+        _LOGGER.exception("Failed to transition plant stage for %s", plant_id)
         raise
 
 
@@ -691,7 +698,7 @@ async def handle_harvest_plant(
     plant_id = _resolve_plant_id(hass, plant_id)
 
     if not await _ensure_plant_loaded(hass, coordinator, plant_id):
-        return
+        return None
 
     target_growspace_id = call.data.get(ATTR_TARGET_GROWSPACE_ID)
     transition_date_str = call.data.get(ATTR_TRANSITION_DATE)
@@ -718,19 +725,17 @@ async def handle_harvest_plant(
         )
         _LOGGER.info("Plant %s harvested successfully", plant_id)
 
-        result = {
+        return {
             ATTR_PLANT_ID: plant_id,
             ATTR_TARGET_GROWSPACE_ID: target_growspace_id,
             "harvest_date": transition_date.isoformat() if transition_date else None,
         }
 
-        return result
-
     except GrowspaceError as err:
         raise ServiceValidationError(str(err)) from err
 
     except Exception as err:
-        _LOGGER.exception("Failed to harvest plant %s: %s", plant_id, err)
+        _LOGGER.exception("Failed to harvest plant %s", plant_id)
         create_notification(
             hass,
             f"Failed to harvest plant {plant_id}: {err!s}",
@@ -739,7 +744,7 @@ async def handle_harvest_plant(
         raise
 
 
-async def async_add_timeline_note(  # noqa: C901
+async def async_add_timeline_note(
     hass: HomeAssistant,
     coordinator: GrowspaceCoordinator,
     strain_library: StrainLibrary,
@@ -816,8 +821,8 @@ async def async_add_timeline_note(  # noqa: C901
                     timestamp=transition_date_raw,
                 )
                 # Convert to relative path: timeline/filename.webp
-                image_paths.append(f"timeline/{os.path.basename(abs_path)}")
-            except Exception as e:
+                image_paths.append(f"timeline/{Path(abs_path).name}")
+            except Exception as e:  # noqa: BLE001
                 _LOGGER.error("Failed to save timeline image: %s", e)
 
     # 3. Fire event for persistence

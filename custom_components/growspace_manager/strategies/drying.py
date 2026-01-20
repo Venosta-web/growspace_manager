@@ -4,13 +4,17 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from ..bayesian_data import DRYING_THRESHOLDS
-from ..const import PlantStage
+from custom_components.growspace_manager.bayesian_data import DRYING_THRESHOLDS
+from custom_components.growspace_manager.const import PlantStage
+
 from .evaluator_strategy import BayesianEvaluatorStrategy
 
 if TYPE_CHECKING:
-    from ..bayesian_evaluator import ObservationList, ReasonList
-    from ..models import EnvironmentState
+    from custom_components.growspace_manager.bayesian_evaluator import (
+        ObservationList,
+        ReasonList,
+    )
+    from custom_components.growspace_manager.models import EnvironmentState
 
 
 class DryingEvaluatorStrategy(BayesianEvaluatorStrategy):

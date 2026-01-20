@@ -2,22 +2,19 @@
 
 from __future__ import annotations
 
-import logging
 from datetime import datetime, timedelta
+import logging
 from typing import TYPE_CHECKING, Any
 
+from custom_components.growspace_manager.const import EVENT_GROWSPACE_LOG_ENTRY
 from homeassistant.components.recorder import history
 from homeassistant.const import STATE_OFF, STATE_ON, STATE_UNAVAILABLE, STATE_UNKNOWN
-from homeassistant.core import HomeAssistant, State, callback
+from homeassistant.core import Event, HomeAssistant, State, callback
 from homeassistant.helpers.event import async_track_state_change_event
 from homeassistant.util import dt as dt_util
 
-from ..const import (
-    EVENT_GROWSPACE_LOG_ENTRY,
-)
-
 if TYPE_CHECKING:
-    from ..coordinator import GrowspaceCoordinator
+    from custom_components.growspace_manager.coordinator import GrowspaceCoordinator
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -67,8 +64,8 @@ class EnvironmentReporter:
         if growspace_id not in self._state_start_times:
             self._state_start_times[growspace_id] = dt_util.utcnow()
 
-        @callback
-        def _light_state_listener(event) -> None:
+        @callback  # type: ignore[misc]
+        def _light_state_listener(event: Event) -> None:
             self.hass.async_create_task(
                 self._handle_light_change(
                     growspace_id,

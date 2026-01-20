@@ -1,15 +1,16 @@
 """Tests for GrowspaceCoordinator service call retrieval logic."""
 
+from typing import Any
 from unittest.mock import MagicMock
 
 import pytest
-from homeassistant.config_entries import ConfigEntryState
-from homeassistant.core import HomeAssistant
-from homeassistant.exceptions import ServiceValidationError
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.growspace_manager.const import DOMAIN
 from custom_components.growspace_manager.coordinator import GrowspaceCoordinator
+from homeassistant.config_entries import ConfigEntryState
+from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import ServiceValidationError
 
 
 @pytest.fixture
@@ -17,9 +18,9 @@ def mock_growspace_coordinator(hass: HomeAssistant):
     """Create a mock coordinator attached to a config entry."""
 
     def _create_coordinator(
-        entry_id="test_entry",
-        growspace_ids: list[str] = None,
-        plant_ids: list[str] = None,
+        entry_id: str = "test_entry",
+        growspace_ids: list[str] | None = None,
+        plant_ids: list[str] | None = None,
     ):
         entry = MockConfigEntry(domain=DOMAIN, entry_id=entry_id)
         entry.add_to_hass(hass)
@@ -47,7 +48,8 @@ async def test_get_for_service_call_single_entry(
     coord1 = mock_growspace_coordinator(entry_id="entry1")
 
     # Empty call data
-    call = {}
+    # Empty call data
+    call: dict[str, Any] = {}
 
     result = GrowspaceCoordinator.get_for_service_call(hass, call)
     assert result == coord1
@@ -105,7 +107,7 @@ async def test_get_for_service_call_ambiguous_failure(
     mock_growspace_coordinator(entry_id="entry1")
     mock_growspace_coordinator(entry_id="entry2")
 
-    call = {}
+    call: dict[str, Any] = {}
 
     with pytest.raises(ServiceValidationError, match="Could not determine"):
         GrowspaceCoordinator.get_for_service_call(hass, call)
@@ -118,7 +120,7 @@ async def test_get_for_service_call_invalid_id_failure(
     mock_growspace_coordinator(entry_id="entry1", growspace_ids=["gs1"])
     mock_growspace_coordinator(entry_id="entry2", growspace_ids=["gs2"])
 
-    call = {"growspace_id": "gs3"}
+    call: dict[str, Any] = {"growspace_id": "gs3"}
 
     # Should fall through to the ambiguous error since no match found
     # and multiple coords exist

@@ -4,14 +4,16 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 import voluptuous as vol
-from homeassistant.config_entries import ConfigEntry
-from homeassistant.core import HomeAssistant
 
 from custom_components.growspace_manager.config_handlers.plant_config_handler import (
     PlantConfigHandler,
 )
 from custom_components.growspace_manager.const import DOMAIN
-from custom_components.growspace_manager.models import Growspace, Plant
+from custom_components.growspace_manager.models import Growspace
+from homeassistant.config_entries import ConfigEntry
+from homeassistant.core import HomeAssistant
+
+from .common import create_plant
 
 ENTRY_ID = "test_entry_id"
 GROWSPACE_ID = "test_growspace"
@@ -177,7 +179,7 @@ def test_get_update_plant_schema(
     handler: PlantConfigHandler, mock_coordinator: MagicMock
 ) -> None:
     """Test generating update plant schema."""
-    plant = Plant(
+    plant = create_plant(
         plant_id="plant_1", growspace_id=GROWSPACE_ID, strain="Strain A", row=1, col=1
     )
 

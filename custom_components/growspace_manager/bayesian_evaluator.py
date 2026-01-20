@@ -7,9 +7,9 @@ including trend analysis and stress detection.
 from __future__ import annotations
 
 import asyncio
-import logging
 from collections.abc import Awaitable, Callable
-from typing import TYPE_CHECKING
+import logging
+from typing import TYPE_CHECKING, Any
 
 from homeassistant.core import State
 
@@ -46,14 +46,17 @@ async def async_evaluate_stress_trend(
     trend_states: dict[str, str] = {}
     # Handle both dict and EnvironmentConfig objects
     raw_config = sensor_instance.env_config
-    env_config = raw_config if isinstance(raw_config, dict) else raw_config.to_dict()
+    if hasattr(raw_config, "to_dict"):
+        env_config = raw_config.to_dict()
+    else:
+        env_config = raw_config  # type: ignore[assignment]
 
     trend_states["temperature_trend"] = "stable"
     trend_states["humidity_trend"] = "stable"
     trend_states["vpd_trend"] = "stable"
 
     # Define common variables and helpers outside the loop for cleaner logic
-    analyze_trend: Callable[[str, int, float], Awaitable[dict]] = (
+    analyze_trend: Callable[[str, int, float], Awaitable[dict[str, Any]]] = (
         sensor_instance.async_analyze_sensor_trend
     )
 
@@ -138,7 +141,7 @@ async def async_evaluate_stress_trend(
 
 async def _async_evaluate_external_mold_trend_sensor(
     sensor_instance: BayesianEnvironmentSensor,
-    env_config: dict,
+    env_config: dict[str, Any],
     sensor_key: str,
     trend_key: str,
     observations: ObservationList,
@@ -204,13 +207,13 @@ def _is_vpd_trend_gated(state: EnvironmentState) -> bool:
 
 async def _async_evaluate_fallback_mold_trend_analysis(
     sensor_instance: BayesianEnvironmentSensor,
-    env_config: dict,
+    env_config: dict[str, Any],
     sensor_key: str,
     trend_key: str,
     observations: ObservationList,
     reasons: ReasonList,
     trend_states: dict[str, str],
-    analyze_trend: Callable[[str, int, float], Awaitable[dict]],
+    analyze_trend: Callable[[str, int, float], Awaitable[dict[str, Any]]],
     state: EnvironmentState,
 ) -> None:
     """Perform fallback manual trend analysis for mold risk."""
@@ -258,7 +261,7 @@ async def async_evaluate_mold_risk_trend(
     trend_states["humidity_trend"] = "stable"
     trend_states["vpd_trend"] = "stable"
 
-    analyze_trend: Callable[[str, int, float], Awaitable[dict]] = (
+    analyze_trend: Callable[[str, int, float], Awaitable[dict[str, Any]]] = (
         sensor_instance.async_analyze_sensor_trend
     )
 
@@ -349,7 +352,7 @@ def _determine_stage_key(state: EnvironmentState) -> str | None:
 
 
 def evaluate_direct_temp_stress(
-    state: EnvironmentState, env_config: dict
+    state: EnvironmentState, env_config: dict[str, Any]
 ) -> tuple[ObservationList, ReasonList]:
     """Evaluate temperature against extreme/out-of-range stress thresholds."""
     observations: ObservationList = []
@@ -398,7 +401,7 @@ def evaluate_direct_temp_stress(
 
 
 def evaluate_direct_humidity_stress(
-    state: EnvironmentState, env_config: dict
+    state: EnvironmentState, env_config: dict[str, Any]
 ) -> tuple[ObservationList, ReasonList]:
     """Evaluate humidity against stage-dependent stress thresholds."""
     observations: ObservationList = []
@@ -434,7 +437,7 @@ def evaluate_direct_humidity_stress(
 
 
 def evaluate_direct_vpd_stress(
-    state: EnvironmentState, env_config: dict
+    state: EnvironmentState, env_config: dict[str, Any]
 ) -> tuple[ObservationList, ReasonList]:
     """Evaluate VPD against stage-dependent stress thresholds."""
     observations: ObservationList = []
@@ -470,7 +473,7 @@ def evaluate_direct_vpd_stress(
 
 
 def evaluate_direct_co2_stress(
-    state: EnvironmentState, env_config: dict
+    state: EnvironmentState, env_config: dict[str, Any]
 ) -> tuple[ObservationList, ReasonList]:
     """Evaluate CO2 against low/high stress thresholds."""
     observations: ObservationList = []
@@ -495,7 +498,7 @@ def evaluate_direct_co2_stress(
 
 
 def evaluate_soil_moisture_stress(
-    state: EnvironmentState, env_config: dict
+    state: EnvironmentState, env_config: dict[str, Any]
 ) -> tuple[ObservationList, ReasonList]:
     """Evaluate soil moisture against stress thresholds."""
     observations: ObservationList = []
@@ -525,7 +528,7 @@ def evaluate_soil_moisture_stress(
 
 
 def evaluate_optimal_temperature(
-    state: EnvironmentState, env_config: dict
+    state: EnvironmentState, env_config: dict[str, Any]
 ) -> tuple[ObservationList, ReasonList]:
     """Evaluate temperature against optimal ranges for the current stage/light cycle."""
     observations: ObservationList = []
@@ -537,17 +540,14 @@ def evaluate_optimal_temperature(
     # Match against (is_lights_on, flower_days) for branching logic
     match (state.is_lights_on, state.flower_days):
         # Case A: Lights ON & Late Flower (Days >= 42)
-        case True, days if days >= 42:
+        # Treat None (unknown) as Lights ON for fallback
+        case (True | None, days) if days >= 42:
             _evaluate_optimal_temp_late_flower(state.temp, observations, reasons)
 
         # Case B: Lights ON & Normal (Days < 42 or Veg)
-        case True, _:
+        # Treat None (unknown) as Lights ON for fallback
+        case (True | None, _):
             _evaluate_optimal_temp_lights_on(state.temp, observations, reasons)
-
-        # Case C: Unknown Light State
-        case None, _:
-            # Do not penalize if light state is unknown
-            pass
 
         # Case D: Lights OFF (Nighttime)
         case False, _:
@@ -607,7 +607,7 @@ def _evaluate_optimal_temp_lights_off(
 
 
 def evaluate_optimal_vpd(
-    state: EnvironmentState, env_config: dict
+    state: EnvironmentState, env_config: dict[str, Any]
 ) -> tuple[ObservationList, ReasonList]:
     """Evaluate VPD against optimal ranges for the current stage/light cycle."""
     observations: ObservationList = []
@@ -622,9 +622,6 @@ def evaluate_optimal_vpd(
     stage_key = _determine_stage_key(state)
 
     if stage_key:
-        if state.is_lights_on is None:
-            return observations, reasons
-
         # Treat None (missing sensor) as "day" (active) for threshold lookup
         time_of_day = "night" if state.is_lights_on is False else "day"
 
@@ -647,7 +644,7 @@ def evaluate_optimal_vpd(
 
 
 def evaluate_optimal_co2(
-    state: EnvironmentState, env_config: dict
+    state: EnvironmentState, env_config: dict[str, Any]
 ) -> tuple[ObservationList, ReasonList]:
     """Evaluate CO2 levels against optimal ranges for the current stage."""
     observations: ObservationList = []
@@ -683,7 +680,7 @@ def evaluate_optimal_co2(
 
 
 def evaluate_active_desiccation(
-    state: EnvironmentState, env_config: dict
+    state: EnvironmentState, env_config: dict[str, Any]
 ) -> tuple[ObservationList, ReasonList]:
     """Evaluate active desiccation (Dehumidifier ON + Low Humidity or High VPD)."""
     observations: ObservationList = []
@@ -708,7 +705,7 @@ def evaluate_active_desiccation(
 
 
 def evaluate_active_saturation(
-    state: EnvironmentState, env_config: dict
+    state: EnvironmentState, env_config: dict[str, Any]
 ) -> tuple[ObservationList, ReasonList]:
     """Evaluate active saturation (Humidifier ON + High Humidity)."""
     observations: ObservationList = []
@@ -725,9 +722,7 @@ def evaluate_active_saturation(
         veg = state.flower_days == 0
         flower = state.flower_days > 0
 
-        if veg and hum > 80:
-            is_saturated = True
-        elif flower and hum > 60:
+        if (veg and hum > 80) or (flower and hum > 60):
             is_saturated = True
 
         if is_saturated:

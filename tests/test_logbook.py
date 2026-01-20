@@ -4,8 +4,6 @@ from datetime import datetime
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from homeassistant.core import HomeAssistant
-from homeassistant.util import dt as dt_util
 
 from custom_components.growspace_manager.binary_sensor import (
     SENSOR_TYPES,
@@ -16,6 +14,8 @@ from custom_components.growspace_manager.models import Growspace, GrowspaceEvent
 from custom_components.growspace_manager.strategies.mold import (
     MoldRiskEvaluatorStrategy,
 )
+from homeassistant.core import HomeAssistant
+from homeassistant.util import dt as dt_util
 
 
 # --- Fixtures ---
@@ -87,12 +87,12 @@ async def test_sensor_event_capture(hass: HomeAssistant, mock_coordinator) -> No
     sensor.platform = MagicMock()
 
     # Mock update probability logic to control is_on
-    sensor._async_update_probability = MagicMock()
+    sensor._async_update_probability = MagicMock()  # type: ignore[method-assign]
     sensor._async_update_probability.side_effect = (
         None  # ensure it's not raising if previously set
     )
 
-    sensor._async_update_probability = AsyncMock()
+    sensor._async_update_probability = AsyncMock()  # type: ignore[method-assign]
 
     # 1. Initial State (Off)
     sensor._probability = 0.5  # Threshold is 0.8

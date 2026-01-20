@@ -1,10 +1,10 @@
 """Additional tests for Config Handlers to achieve higher coverage."""
 
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 import voluptuous as vol
-from homeassistant.core import HomeAssistant
 
 from custom_components.growspace_manager.config_handlers.ai_config_handler import (
     AIConfigHandler,
@@ -29,6 +29,7 @@ from custom_components.growspace_manager.const import (
     CONF_TEMP_SENSOR,
     CONF_VPD_SENSOR,
 )
+from homeassistant.core import HomeAssistant
 
 
 @pytest.fixture
@@ -76,7 +77,7 @@ def test_growspace_handler_update_schema_invalid_growspace(
     """Test get_update_growspace_schema with None growspace (line 128)."""
     handler = GrowspaceConfigHandler(mock_hass, mock_config_entry)
 
-    schema = handler.get_update_growspace_schema(None)
+    schema = handler.get_update_growspace_schema(None)  # type: ignore[arg-type]
     assert isinstance(schema, vol.Schema)
     # Should be empty schema
     assert schema.schema == {}
@@ -237,7 +238,7 @@ def test_growspace_handler_schemas(mock_hass, mock_config_entry) -> None:
 def test_environment_handler_bayesian_schema(mock_hass, mock_config_entry) -> None:
     """Test get_advanced_bayesian_schema (lines 453-487)."""
     handler = EnvironmentConfigHandler(mock_hass, mock_config_entry)
-    options = {}
+    options: dict[str, Any] = {}
     schema = handler.get_advanced_bayesian_schema(options)
     assert isinstance(schema, vol.Schema)
 
@@ -269,7 +270,7 @@ def test_environment_handler_lst_offset_schema(mock_hass, mock_config_entry) -> 
         CONF_HUMIDITY_SENSOR: "sensor.humidity",
         # CONF_VPD_SENSOR missing
     }
-    schema_dict_trigger = {}
+    schema_dict_trigger: dict[Any, Any] = {}
     handler._add_lst_offset_to_schema(schema_dict_trigger, options_trigger)
 
     # Check if lst_offset key exists
@@ -283,7 +284,7 @@ def test_environment_handler_lst_offset_schema(mock_hass, mock_config_entry) -> 
     options_miss = {
         CONF_HUMIDITY_SENSOR: "sensor.humidity",
     }
-    schema_dict_miss = {}
+    schema_dict_miss: dict[Any, Any] = {}
     handler._add_lst_offset_to_schema(schema_dict_miss, options_miss)
     keys_miss = [
         k.schema if isinstance(k, (vol.Optional, vol.Required)) else k
@@ -548,8 +549,8 @@ async def test_base_handler_placeholder_methods(mock_hass, mock_config_entry) ->
     handler = EnvironmentConfigHandler(mock_hass, mock_config_entry)
 
     # These just pass, so we just call them ensuring no error
-    await handler.websocket_get_event_log(mock_hass, None, None)
-    await handler.transition_plant_stage(mock_hass, None, None)
+    await handler.websocket_get_event_log(mock_hass, None, None)  # type: ignore[arg-type]
+    await handler.transition_plant_stage(mock_hass, None, None)  # type: ignore[arg-type]
 
 
 def test_growspace_handler_add_schema_no_notify(mock_hass, mock_config_entry) -> None:
@@ -594,9 +595,9 @@ async def test_growspace_handler_flow_actions(mock_hass, mock_config_entry) -> N
     handler.flow.async_step_init = AsyncMock()
 
     # Need to verify method calls on handler itself
-    handler.async_step_add_growspace = AsyncMock()
-    handler.async_step_update_growspace = AsyncMock()
-    handler.async_step_confirm_remove_growspace = AsyncMock()
+    handler.async_step_add_growspace = AsyncMock()  # type: ignore[method-assign]
+    handler.async_step_update_growspace = AsyncMock()  # type: ignore[method-assign]
+    handler.async_step_confirm_remove_growspace = AsyncMock()  # type: ignore[method-assign]
 
     coordinator = MagicMock()
     mock_config_entry.runtime_data = coordinator
@@ -606,13 +607,13 @@ async def test_growspace_handler_flow_actions(mock_hass, mock_config_entry) -> N
     handler.async_step_add_growspace.assert_awaited()
 
     # 3. Update action (no selection) -> Show error
-    handler.flow._selected_growspace_id = None
+    handler.flow.selected_growspace_id = None
     await handler.async_step_manage_growspaces(
         {"action": "update", "growspace_id": None}
     )
     # Should re-show form with error
     assert handler.flow.async_show_form.call_count == 1
-    args, kwargs = handler.flow.async_show_form.call_args
+    _args, kwargs = handler.flow.async_show_form.call_args
     assert kwargs["errors"] == {"base": "select_growspace"}
 
     handler.flow.async_show_form.reset_mock()
@@ -621,16 +622,16 @@ async def test_growspace_handler_flow_actions(mock_hass, mock_config_entry) -> N
     await handler.async_step_manage_growspaces(
         {"action": "update", "growspace_id": "gs1"}
     )
-    assert handler.flow._selected_growspace_id == "gs1"
+    assert handler.flow.selected_growspace_id == "gs1"
     handler.async_step_update_growspace.assert_awaited()
 
     # 5. Remove action (no selection) -> Show error
-    handler.flow._selected_growspace_id = None
+    handler.flow.selected_growspace_id = None
     await handler.async_step_manage_growspaces(
         {"action": "remove", "growspace_id": None}
     )
     assert handler.flow.async_show_form.call_count == 1
-    args, kwargs = handler.flow.async_show_form.call_args
+    _args, kwargs = handler.flow.async_show_form.call_args
     assert kwargs["errors"] == {"base": "select_growspace"}
 
     handler.flow.async_show_form.reset_mock()
@@ -651,7 +652,7 @@ async def test_growspace_handler_flow_add_step(mock_hass, mock_config_entry) -> 
     """Test async_step_add_growspace (lines 144-167)."""
     handler = GrowspaceConfigHandler(mock_hass, mock_config_entry)
     handler.flow = MagicMock()
-    handler.async_add_growspace = AsyncMock()
+    handler.async_add_growspace = AsyncMock()  # type: ignore[method-assign]
 
     coordinator = MagicMock()
     mock_config_entry.runtime_data = coordinator
@@ -681,8 +682,8 @@ async def test_growspace_handler_flow_update_step(mock_hass, mock_config_entry) 
     """Test async_step_update_growspace (lines 297-327)."""
     handler = GrowspaceConfigHandler(mock_hass, mock_config_entry)
     handler.flow = MagicMock()
-    handler.flow._selected_growspace_id = "gs1"
-    handler.async_update_growspace = AsyncMock()
+    handler.flow.selected_growspace_id = "gs1"
+    handler.async_update_growspace = AsyncMock()  # type: ignore[method-assign]
 
     coordinator = MagicMock()
     # Mock growspace existing
@@ -722,8 +723,8 @@ async def test_growspace_handler_flow_remove_step(mock_hass, mock_config_entry) 
     """Test async_step_confirm_remove_growspace (lines 186-214)."""
     handler = GrowspaceConfigHandler(mock_hass, mock_config_entry)
     handler.flow = MagicMock()
-    handler.flow._selected_growspace_id = "gs1"
-    handler.async_remove_growspace = AsyncMock()
+    handler.flow.selected_growspace_id = "gs1"
+    handler.async_remove_growspace = AsyncMock()  # type: ignore[method-assign]
 
     coordinator = MagicMock()
     mock_gs = MagicMock(name="My GS")
@@ -832,9 +833,9 @@ async def test_plant_handler_flow_actions(mock_hass, mock_config_entry) -> None:
     handler.flow = MagicMock()
     handler.flow.async_step_init = AsyncMock()
 
-    handler.async_step_select_growspace_for_plant = AsyncMock()
-    handler.async_step_update_plant = AsyncMock()
-    handler.async_destroy_plant = AsyncMock()
+    handler.async_step_select_growspace_for_plant = AsyncMock()  # type: ignore[method-assign]
+    handler.async_step_update_plant = AsyncMock()  # type: ignore[method-assign]
+    handler.async_destroy_plant = AsyncMock()  # type: ignore[method-assign]
 
     coordinator = MagicMock()
     mock_plant = MagicMock(id="p1", growspace_id="gs1")
@@ -847,7 +848,7 @@ async def test_plant_handler_flow_actions(mock_hass, mock_config_entry) -> None:
 
     # 2. Update action (with ID)
     await handler.async_step_manage_plants({"action": "update", "plant_id": "p1"})
-    assert handler.flow._selected_plant_id == "p1"
+    assert handler.flow.selected_plant_id == "p1"
     handler.async_step_update_plant.assert_awaited()
 
     # 3. Remove action (with ID) -> Success
@@ -874,7 +875,7 @@ async def test_plant_handler_flow_select_growspace(
     """Test async_step_select_growspace_for_plant (lines 62-93)."""
     handler = PlantConfigHandler(mock_hass, mock_config_entry)
     handler.flow = MagicMock()
-    handler.async_step_add_plant = AsyncMock()
+    handler.async_step_add_plant = AsyncMock()  # type: ignore[method-assign]
 
     coordinator = MagicMock()
     coordinator.get_sorted_growspace_options.return_value = [("gs1", "GS1")]
@@ -888,7 +889,7 @@ async def test_plant_handler_flow_select_growspace(
 
     # 2. Input -> Add Plant
     await handler.async_step_select_growspace_for_plant({"growspace_id": "gs1"})
-    assert handler.flow._selected_growspace_id == "gs1"
+    assert handler.flow.selected_growspace_id == "gs1"
     handler.async_step_add_plant.assert_awaited()
 
     # 3. No growspaces available
@@ -902,8 +903,8 @@ async def test_plant_handler_flow_add_step(mock_hass, mock_config_entry) -> None
     """Test async_step_add_plant (lines 95-128)."""
     handler = PlantConfigHandler(mock_hass, mock_config_entry)
     handler.flow = MagicMock()
-    handler.flow._selected_growspace_id = "gs1"
-    handler.async_add_plant = AsyncMock()
+    handler.flow.selected_growspace_id = "gs1"
+    handler.async_add_plant = AsyncMock()  # type: ignore[method-assign]
 
     coordinator = MagicMock()
     mock_gs = MagicMock(id="gs1")
@@ -931,8 +932,8 @@ async def test_plant_handler_flow_update_step(mock_hass, mock_config_entry) -> N
     """Test async_step_update_plant (lines 130-160)."""
     handler = PlantConfigHandler(mock_hass, mock_config_entry)
     handler.flow = MagicMock()
-    handler.flow._selected_plant_id = "p1"
-    handler.async_update_plant = AsyncMock()
+    handler.flow.selected_plant_id = "p1"
+    handler.async_update_plant = AsyncMock()  # type: ignore[method-assign]
 
     coordinator = MagicMock()
     mock_plant = MagicMock(id="p1")

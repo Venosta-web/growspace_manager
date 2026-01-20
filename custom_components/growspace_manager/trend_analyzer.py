@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
+from datetime import timedelta
 import itertools
 import logging
-from datetime import timedelta
 from typing import Any
 
 from homeassistant.components.recorder import history
@@ -73,14 +73,14 @@ class TrendAnalyzer:
 
                 results[sensor_id] = {"trend": trend, "crossed_threshold": crossed}
 
-            return results
-
-        except Exception as e:
-            _LOGGER.error("Error analyzing bulk sensor history: %s", e)
+        except Exception:
+            _LOGGER.exception("Error analyzing bulk sensor history")
             return {
                 sid: {"trend": "unknown", "crossed_threshold": False}
                 for sid in sensor_ids
             }
+        else:
+            return results
 
     async def async_analyze_sensor_trend(
         self, sensor_id: str, duration_minutes: int, threshold: float

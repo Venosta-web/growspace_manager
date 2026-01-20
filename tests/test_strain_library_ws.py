@@ -2,7 +2,6 @@ from dataclasses import dataclass
 from unittest.mock import Mock, patch
 
 import pytest
-from homeassistant.core import HomeAssistant
 
 from custom_components.growspace_manager.const import DOMAIN
 from custom_components.growspace_manager.websocket import (
@@ -13,6 +12,7 @@ from custom_components.growspace_manager.websocket import (
     websocket_get_nutrient_presets,
     websocket_get_strain_library,
 )
+from homeassistant.core import HomeAssistant
 
 
 @dataclass

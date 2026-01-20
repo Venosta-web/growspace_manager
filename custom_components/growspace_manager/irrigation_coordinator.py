@@ -3,12 +3,11 @@
 from __future__ import annotations
 
 import asyncio
-import logging
-from abc import ABC
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from datetime import datetime
 from functools import partial
-from typing import TYPE_CHECKING, Any, override
+import logging
+from typing import TYPE_CHECKING, Any, cast, override
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
@@ -22,7 +21,7 @@ from .models import Growspace, GrowspaceEvent
 _LOGGER = logging.getLogger(__name__)
 
 
-class BaseIrrigationCoordinator(ABC):
+class BaseIrrigationCoordinator:
     """Base class for irrigation coordinators."""
 
     def __init__(
@@ -37,7 +36,7 @@ class BaseIrrigationCoordinator(ABC):
         self._config_entry = config_entry
         self._growspace_id = growspace_id
         self._main_coordinator = main_coordinator
-        self._listeners: list[Callable] = []
+        self._listeners: list[Callable[[], None]] = []
         self._running_tasks: dict[str, asyncio.Task[Any]] = {}
 
     @property
@@ -50,11 +49,9 @@ class BaseIrrigationCoordinator(ABC):
 
         Subclasses can override this if they need specific refresh logic.
         """
-        pass
 
     async def async_setup(self) -> None:
         """Set up the coordinator."""
-        pass
 
     async def async_unload(self) -> None:
         """Unload the coordinator and stop listeners."""
@@ -78,7 +75,7 @@ class BaseIrrigationCoordinator(ABC):
                 blocking=False,
             )
 
-    @callback
+    @callback  # type: ignore[misc]
     def async_cancel_listeners(self) -> None:
         """Cancel all scheduled listeners."""
         for listener in self._listeners:
@@ -133,7 +130,9 @@ class IrrigationCoordinator(BaseIrrigationCoordinator):
         await self._main_coordinator.async_save()
 
         # Notify listeners of update
-        self._main_coordinator.async_set_updated_data(self._main_coordinator.data)
+        self._main_coordinator.async_set_updated_data(
+            cast(dict[str, Any], self._main_coordinator.data)  # type: ignore[has-type]
+        )
 
         # Reload the irrigation listeners with new schedule
         if reload_listeners:
@@ -172,7 +171,7 @@ class IrrigationCoordinator(BaseIrrigationCoordinator):
             return
 
         # Get current list
-        current_schedule: list[dict] = getattr(
+        current_schedule: list[dict[str, Any]] = getattr(
             self.growspace.irrigation_config, schedule_key
         )
 
@@ -226,10 +225,15 @@ class IrrigationCoordinator(BaseIrrigationCoordinator):
         if not time_str:
             raise ValueError("Time cannot be empty")
 
-        try:
-            if not hasattr(self.growspace.irrigation_config, schedule_key):
-                raise KeyError(schedule_key)
+        if not hasattr(self.growspace.irrigation_config, schedule_key):
+            _LOGGER.warning(
+                "Cannot remove item: schedule '%s' not found for growspace %s",
+                schedule_key,
+                self._growspace_id,
+            )
+            return
 
+        try:
             schedule = getattr(self.growspace.irrigation_config, schedule_key)
             items_before = len(schedule)
 
@@ -259,21 +263,19 @@ class IrrigationCoordinator(BaseIrrigationCoordinator):
             # Persist the changes
             await self._save_and_reload()
 
-        except KeyError:
-            _LOGGER.warning(
-                "Cannot remove item: schedule '%s' not found for growspace %s",
-                schedule_key,
-                self._growspace_id,
+        except Exception:
+            _LOGGER.exception(
+                "Unexpected error removing schedule item from %s", schedule_key
             )
 
     @override
-    async def async_setup(self):
+    async def async_setup(self) -> None:
         """Set up the irrigation schedules."""
 
         # Load schedules without triggering updates
         await self.async_update_listeners()
 
-    async def async_update_listeners(self, *args):
+    async def async_update_listeners(self, *args: Any) -> None:
         """Remove old listeners and create new ones based on current config."""
         self.async_cancel_listeners()
 
@@ -309,7 +311,7 @@ class IrrigationCoordinator(BaseIrrigationCoordinator):
         for event in unique_drain_times:
             self._schedule_event(event, "drain")
 
-    def _schedule_event(self, event: dict[str, Any], event_type: str):
+    def _schedule_event(self, event: Mapping[str, Any], event_type: str) -> None:
         """Helper to schedule a single irrigation or drain event."""
         try:
             time_str = event.get("time")
@@ -357,7 +359,7 @@ class IrrigationCoordinator(BaseIrrigationCoordinator):
 
     async def _handle_event(
         self, now: datetime, *, event_type: str, event_data: dict[str, Any]
-    ):
+    ) -> None:
         """Handle a scheduled event."""
         if (
             event_type in self._running_tasks
@@ -398,7 +400,7 @@ class IrrigationCoordinator(BaseIrrigationCoordinator):
         pump_entity: str,
         duration: int,
         event_data: dict[str, Any],
-    ):
+    ) -> None:
         """Run the on-off cycle for a pump and send notifications."""
         start_dt = None
         moisture_before = None
@@ -433,7 +435,7 @@ class IrrigationCoordinator(BaseIrrigationCoordinator):
                 self._growspace_id,
                 pump_entity,
             )
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             _LOGGER.error(
                 "Error during %s cycle for %s (entity: %s): %s",
                 event_type,
@@ -483,7 +485,7 @@ class IrrigationCoordinator(BaseIrrigationCoordinator):
                         reasons=reasons,
                     )
                     self._main_coordinator.add_event(self._growspace_id, event)
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001
                 _LOGGER.error("Failed to log %s event: %s", event_type, e)
 
             _LOGGER.info(

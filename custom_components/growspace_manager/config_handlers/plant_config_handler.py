@@ -6,28 +6,28 @@ import logging
 from typing import Any
 
 import voluptuous as vol
+
+from custom_components.growspace_manager.const import DOMAIN
+from custom_components.growspace_manager.coordinator import GrowspaceCoordinator
+from custom_components.growspace_manager.models import Growspace, Plant
 from homeassistant.config_entries import ConfigFlowResult
 from homeassistant.helpers import selector
 
-from ..const import DOMAIN
-from ..coordinator import GrowspaceCoordinator
 from . import BaseConfigHandler
 
 _LOGGER = logging.getLogger(__name__)
 
 
-class PlantConfigHandler(BaseConfigHandler):
+class PlantConfigHandler(BaseConfigHandler[dict[str, Any]]):
     """Handler for Plant configuration steps."""
-
-    def __init__(self, *args: Any, **kwargs: Any) -> None:
-        """Initialize the Plant config handler."""
-        super().__init__(*args, **kwargs)
 
     async def async_step_manage_plants(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
         """Handle plant management step."""
-        coordinator = getattr(self.config_entry, "runtime_data", None)
+        if self.config_entry is None:
+            return self.flow.async_abort(reason="setup_error")
+        coordinator = self.config_entry.runtime_data
         if coordinator is None:
             return self.flow.async_abort(reason="setup_error")
 
@@ -37,7 +37,7 @@ class PlantConfigHandler(BaseConfigHandler):
             if action == "add":
                 return await self.async_step_select_growspace_for_plant()
             if action == "update" and user_input.get("plant_id"):
-                self.flow._selected_plant_id = user_input["plant_id"]
+                self.flow.selected_plant_id = user_input["plant_id"]
                 return await self.async_step_update_plant()
             if action == "remove" and user_input.get("plant_id"):
                 try:
@@ -63,12 +63,14 @@ class PlantConfigHandler(BaseConfigHandler):
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
         """Handle growspace selection for plant step."""
-        coordinator = getattr(self.config_entry, "runtime_data", None)
+        if self.config_entry is None:
+            return self.flow.async_abort(reason="setup_error")
+        coordinator = self.config_entry.runtime_data
         if coordinator is None:
             return self.flow.async_abort(reason="setup_error")
 
         if user_input is not None:
-            self.flow._selected_growspace_id = user_input["growspace_id"]
+            self.flow.selected_growspace_id = user_input["growspace_id"]
             return await self.async_step_add_plant()
 
         growspace_options = coordinator.get_sorted_growspace_options()
@@ -96,10 +98,12 @@ class PlantConfigHandler(BaseConfigHandler):
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
         """Handle adding a plant step."""
-        coordinator = getattr(self.config_entry, "runtime_data", None)
+        if self.config_entry is None:
+            return self.flow.async_abort(reason="setup_error")
+        coordinator = self.config_entry.runtime_data
         if coordinator is None:
             return self.flow.async_abort(reason="setup_error")
-        growspace_id = self.flow._selected_growspace_id
+        growspace_id = self.flow.selected_growspace_id
         growspace = coordinator.growspaces.get(growspace_id)
 
         if user_input is not None:
@@ -131,10 +135,12 @@ class PlantConfigHandler(BaseConfigHandler):
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
         """Handle updating a plant step."""
-        coordinator = getattr(self.config_entry, "runtime_data", None)
+        if self.config_entry is None:
+            return self.flow.async_abort(reason="setup_error")
+        coordinator = self.config_entry.runtime_data
         if coordinator is None:
             return self.flow.async_abort(reason="setup_error")
-        plant_id = self.flow._selected_plant_id
+        plant_id = self.flow.selected_plant_id
         plant = coordinator.plants.get(plant_id)
 
         if not plant:
@@ -197,7 +203,7 @@ class PlantConfigHandler(BaseConfigHandler):
         return vol.Schema(schema_dict)
 
     def get_growspace_selection_schema(
-        self, growspace_devices, coordinator
+        self, growspace_devices: list[Any], coordinator: GrowspaceCoordinator
     ) -> vol.Schema:
         """Build the schema for selecting a growspace from the device registry."""
         growspace_options = []
@@ -230,7 +236,11 @@ class PlantConfigHandler(BaseConfigHandler):
             }
         )
 
-    def get_add_plant_schema(self, growspace, coordinator=None) -> vol.Schema:
+    def get_add_plant_schema(
+        self,
+        growspace: Growspace | None,
+        coordinator: GrowspaceCoordinator | None = None,
+    ) -> vol.Schema:
         """Build the schema for the add plant form."""
         if not growspace:
             return vol.Schema({})
@@ -283,7 +293,9 @@ class PlantConfigHandler(BaseConfigHandler):
             }
         )
 
-    def get_update_plant_schema(self, plant, coordinator) -> vol.Schema:
+    def get_update_plant_schema(
+        self, plant: Plant | None, coordinator: GrowspaceCoordinator
+    ) -> vol.Schema:
         """Build the schema for the update plant form."""
         growspace = coordinator.growspaces.get(plant.growspace_id) if plant else None
 
@@ -347,11 +359,15 @@ class PlantConfigHandler(BaseConfigHandler):
         self, growspace_id: str, plant_id: str, harvest_weight: float
     ) -> None:
         """Harvest a plant."""
+        if self.config_entry is None:
+            raise ValueError("Coordinator not found")
         coordinator = self.config_entry.runtime_data
         await coordinator.async_harvest_plant(growspace_id, plant_id, harvest_weight)
 
     async def async_destroy_plant(self, growspace_id: str, plant_id: str) -> None:
         """Destroy a plant."""
+        if self.config_entry is None:
+            raise ValueError("Coordinator not found")
         coordinator = self.config_entry.runtime_data
         await coordinator.async_remove_plant(plant_id)
 
@@ -366,7 +382,9 @@ class PlantConfigHandler(BaseConfigHandler):
         flower_start: str | None = None,
     ) -> None:
         """Add a new plant."""
-        coordinator = getattr(self.config_entry, "runtime_data", None)
+        if self.config_entry is None:
+            raise ValueError("Coordinator not found")
+        coordinator = self.config_entry.runtime_data
         if coordinator is None:
             raise ValueError("Coordinator not found")
         await coordinator.async_add_plant(
@@ -379,9 +397,11 @@ class PlantConfigHandler(BaseConfigHandler):
             flower_start=flower_start,
         )
 
-    async def async_update_plant(self, plant_id: str, **kwargs) -> None:
+    async def async_update_plant(self, plant_id: str, **kwargs: Any) -> None:
         """Update an existing plant."""
-        coordinator = getattr(self.config_entry, "runtime_data", None)
+        if self.config_entry is None:
+            raise ValueError("Coordinator not found")
+        coordinator = self.config_entry.runtime_data
         if coordinator is None:
             raise ValueError("Coordinator not found")
         await coordinator.async_update_plant(plant_id, **kwargs)

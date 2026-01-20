@@ -4,14 +4,14 @@ Uses real aiosqlite to test database path update logic.
 """
 
 import base64
-import shutil
 from io import BytesIO
 from pathlib import Path
+import shutil
 from unittest.mock import MagicMock
 
 import aiosqlite
-import pytest
 from PIL import Image as PILImage
+import pytest
 
 from custom_components.growspace_manager.image_manager import ImageManager
 

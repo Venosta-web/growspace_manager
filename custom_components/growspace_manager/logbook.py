@@ -2,50 +2,46 @@
 
 from __future__ import annotations
 
-from typing import Any
+from collections.abc import Callable
+from typing import TYPE_CHECKING, Any
 
-try:
-    from homeassistant.components.recorder.models import LogbookEntry
-except ImportError:
-    try:
-        from homeassistant.components.logbook import LogbookEntry
-    except ImportError:
-        from typing import Protocol, runtime_checkable
-
-        @runtime_checkable
-        class LogbookEntry(Protocol):
-            """Fallback protocol for LogbookEntry."""
-
-            data: dict[str, Any]
-
-
+from homeassistant.components.logbook import LOGBOOK_ENTRY_MESSAGE, LOGBOOK_ENTRY_NAME
 from homeassistant.core import HomeAssistant, callback
 
 from .const import CATEGORY_NOTE, DOMAIN, EVENT_GROWSPACE_LOG_ENTRY
 
+if TYPE_CHECKING:
+    from homeassistant.components.logbook import LazyEventPartialState
 
-@callback
-def async_describe_events(hass: HomeAssistant, async_describe_event) -> None:
+
+@callback  # type: ignore[misc]
+def async_describe_events(
+    hass: HomeAssistant,
+    async_describe_event: Callable[
+        [str, str, Callable[[LazyEventPartialState], dict[str, Any]]], None
+    ],
+) -> None:
     """Describe logbook events."""
 
-    @callback
-    def async_describe_log_entry_event(event: LogbookEntry) -> dict[str, Any]:
+    @callback  # type: ignore[misc]
+    def async_describe_log_entry_event(
+        event: LazyEventPartialState,
+    ) -> dict[str, Any]:
         """Describe a log entry event."""
         data = event.data
         category = data.get("category")
 
-        # Use helper based on category
-        if category == CATEGORY_NOTE:
-            return _describe_note_event(data)
-        if category in ("water", "watering", "irrigation"):
-            return _describe_watering_event(data)
-        if category == "training":
-            return _describe_training_event(data)
-        if category == "ipm":
-            return _describe_ipm_event(data)
-
-        # Default fallback
-        return _describe_default_event(category, data)
+        match category:
+            case category if category == CATEGORY_NOTE:
+                return _describe_note_event(data)
+            case "water" | "watering" | "irrigation":
+                return _describe_watering_event(data)
+            case "training":
+                return _describe_training_event(data)
+            case "ipm":
+                return _describe_ipm_event(data)
+            case _:
+                return _describe_default_event(category, data)
 
     async_describe_event(
         DOMAIN, EVENT_GROWSPACE_LOG_ENTRY, async_describe_log_entry_event
@@ -70,7 +66,7 @@ def _describe_note_event(data: dict[str, Any]) -> dict[str, Any]:
             message += " "
         message += f"[{' | '.join(extras)}]"
 
-    return {"name": "Plant Note", "message": message}
+    return {LOGBOOK_ENTRY_NAME: "Plant Note", LOGBOOK_ENTRY_MESSAGE: message}
 
 
 def _describe_watering_event(data: dict[str, Any]) -> dict[str, Any]:
@@ -83,7 +79,7 @@ def _describe_watering_event(data: dict[str, Any]) -> dict[str, Any]:
     if "recipe" in data:
         message += f" with {data['recipe']}"
 
-    return {"name": "Watering", "message": message}
+    return {LOGBOOK_ENTRY_NAME: "Watering", LOGBOOK_ENTRY_MESSAGE: message}
 
 
 def _describe_training_event(data: dict[str, Any]) -> dict[str, Any]:
@@ -93,21 +89,20 @@ def _describe_training_event(data: dict[str, Any]) -> dict[str, Any]:
         technique = technique.replace("_", " ").title()
 
     return {
-        "name": technique,
-        "message": data.get("notes", "Training performed"),
+        LOGBOOK_ENTRY_NAME: technique,
+        LOGBOOK_ENTRY_MESSAGE: data.get("notes", "Training performed"),
     }
 
 
 def _describe_ipm_event(data: dict[str, Any]) -> dict[str, Any]:
     """Describe an IPM event."""
     treatment = data.get("sensor_type", "IPM")
-    if treatment.startswith("ipm_"):
-        treatment = treatment[4:]
+    treatment = treatment.removeprefix("ipm_")
     treatment = treatment.replace("_", " ").title()
 
     return {
-        "name": "IPM Treatment",
-        "message": f"{treatment}: {data.get('notes', 'Applied')}",
+        LOGBOOK_ENTRY_NAME: "IPM Treatment",
+        LOGBOOK_ENTRY_MESSAGE: f"{treatment}: {data.get('notes', 'Applied')}",
     }
 
 
@@ -116,8 +111,8 @@ def _describe_default_event(
 ) -> dict[str, Any]:
     """Describe a default event."""
     return {
-        "name": f"Growspace {category.title() if category else 'Event'}",
-        "message": data.get("notes", "")
+        LOGBOOK_ENTRY_NAME: f"Growspace {category.title() if category else 'Event'}",
+        LOGBOOK_ENTRY_MESSAGE: data.get("notes", "")
         or data.get("sensor_type", "")
         or "Event recorded",
     }

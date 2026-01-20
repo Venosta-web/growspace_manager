@@ -4,13 +4,19 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from ..bayesian_data import PROB_MOLD_HUMIDIFIER_ON, PROB_MOLD_STAGNANT_AIR
-from ..bayesian_evaluator import async_evaluate_mold_risk_trend
+from custom_components.growspace_manager.bayesian_data import (
+    PROB_MOLD_HUMIDIFIER_ON,
+    PROB_MOLD_STAGNANT_AIR,
+)
+from custom_components.growspace_manager.bayesian_evaluator import (
+    async_evaluate_mold_risk_trend,
+)
+
 from .evaluator_strategy import BayesianEvaluatorStrategy
 
 if TYPE_CHECKING:
-    from ..bayesian_evaluator import ObservationList, ReasonList
-    from ..models import EnvironmentState
+    from custom_components.growspace_manager.bayesian_evaluator import ObservationList
+    from custom_components.growspace_manager.models import EnvironmentState
 
 
 class MoldRiskEvaluatorStrategy(BayesianEvaluatorStrategy):
@@ -18,70 +24,144 @@ class MoldRiskEvaluatorStrategy(BayesianEvaluatorStrategy):
 
     async def async_evaluate(
         self, state: EnvironmentState
-    ) -> tuple[ObservationList, ReasonList]:
-        """Evaluate mold risk conditions."""
-        all_observations: ObservationList = []
-        all_reasons: ReasonList = []
+    ) -> tuple[ObservationList, list[tuple[float, str]]]:
+        """Evaluate mold risk based on environment state."""
+        observations: ObservationList = []
+        reasons: list[tuple[float, str]] = []
 
-        if None in (state.temp, state.humidity):
-            return [], []
+        if state.humidity is None:
+            return observations, reasons
 
-        # 1. High Humidity (Stage-Aware)
-        obs, rsn = self._evaluate_humidity_risk(state)
-        if obs:
-            all_observations.append(obs)
-            all_reasons.append(rsn)
+        # 1. Evaluate Humidity Risk
+        self._evaluate_humidity_risk(state, observations, reasons)
 
-        # 2. Low Circulation
-        # In Veg, only penalize fan off if humidity is already somewhat high
-        if state.fan_off:
-            is_risk = True
-            if state.flower_days == 0 and (
-                state.humidity is None or state.humidity < 80
-            ):
-                is_risk = False
+        # 2. Evaluate Circulation Fan Risk
+        self._evaluate_circulation_risk(state, observations, reasons)
 
-            if is_risk:
-                prob = (
-                    PROB_MOLD_STAGNANT_AIR
-                    if isinstance(PROB_MOLD_STAGNANT_AIR, tuple)
-                    else (0.85, 0.15)
-                )
-                all_observations.append(prob)
-                all_reasons.append((prob[0], "Circulation Fan Off"))
-
-        # 3. Humidifier
-        # Humidifier on is normal in Veg/Early Flower.
-        # Only penalize if humidity is already near danger zones.
-        if state.humidifier_value and state.humidifier_value > 0:
-            is_risk = True
-            if state.flower_days == 0:  # Veg
-                if state.humidity is None or state.humidity < 85:
-                    is_risk = False
-            elif state.flower_days > 40:  # Late Flower
-                if state.humidity is None or state.humidity < 60:
-                    is_risk = False
-            elif state.humidity is None or state.humidity < 70:
-                is_risk = False
-
-            if is_risk:
-                prob = (
-                    PROB_MOLD_HUMIDIFIER_ON
-                    if isinstance(PROB_MOLD_HUMIDIFIER_ON, tuple)
-                    else (0.95, 0.10)
-                )
-                all_observations.append(prob)
-                all_reasons.append((prob[0], "Humidifier On"))
+        # 3. Evaluate Humidifier Risk
+        self._evaluate_humidifier_risk(state, observations, reasons)
 
         # 4. Trends
         if self.sensor.env_config.humidity_sensor:
             obs_list, rsn_list, _ = await async_evaluate_mold_risk_trend(
                 self.sensor, state
             )
-            all_observations.extend(obs_list)
-            all_reasons.extend(rsn_list)
+            observations.extend(obs_list)
+            reasons.extend(rsn_list)
 
-        return all_observations, all_reasons
+        return observations, reasons
+
+    def _evaluate_humidity_risk(
+        self,
+        state: EnvironmentState,
+        observations: ObservationList,
+        reasons: list[tuple[float, str]],
+    ) -> None:
+        """Evaluate mold risk based on humidity and growth stage."""
+        if state.humidity is None:
+            return
+
+        # Define thresholds based on growth stage
+        # Seedlings and clones need high humidity (up to 90%)
+        is_early_stage = (state.seedling_days > 0 or state.clone_days > 0) and (
+            state.flower_days == 0
+        )
+
+        if is_early_stage:
+            critical_humidity = 92.0
+            high_humidity = 88.0
+        elif state.flower_days > 0:
+            # Late flower is more sensitive
+            critical_humidity = 65.0 if state.flower_days > 42 else 75.0
+            high_humidity = 60.0 if state.flower_days > 42 else 70.0
+        else:
+            # Veg stage
+            critical_humidity = 85.0
+            high_humidity = 80.0
+
+        if not is_early_stage and state.humidity > 90.0:
+            # Extra penalty for extremely high humidity in non-early stages
+            observations.append((0.99, 0.01))
+            reasons.append((0.95, f"Extreme humidity risk: {state.humidity}%"))
+        elif state.humidity >= critical_humidity:
+            observations.append((0.95, 0.05))
+            reasons.append((0.9, f"Critical humidity: {state.humidity}%"))
+        elif state.humidity >= high_humidity:
+            observations.append((0.8, 0.2))
+            reasons.append((0.7, f"High humidity: {state.humidity}%"))
+
+    def _evaluate_circulation_risk(
+        self,
+        state: EnvironmentState,
+        observations: ObservationList,
+        reasons: list[tuple[float, str]],
+    ) -> None:
+        """Evaluate risk from low air circulation."""
+        if not state.fan_off:
+            return
+
+        # Define thresholds based on growth stage
+        is_early_stage = (state.seedling_days > 0 or state.clone_days > 0) and (
+            state.flower_days == 0
+        )
+
+        threshold = 0.0
+        if is_early_stage:
+            threshold = 90.0
+        elif state.flower_days == 0:  # Veg
+            threshold = 80.0
+        else:  # Flower
+            threshold = 70.0
+
+        if state.humidity is None or state.humidity < threshold:
+            return
+
+        prob = (
+            PROB_MOLD_STAGNANT_AIR
+            if isinstance(PROB_MOLD_STAGNANT_AIR, tuple)
+            else (0.85, 0.15)
+        )
+        observations.append(prob)
+        reasons.append((prob[0], f"Circulation Fan Off: Humidity is {state.humidity}%"))
+
+    def _evaluate_humidifier_risk(
+        self,
+        state: EnvironmentState,
+        observations: ObservationList,
+        reasons: list[tuple[float, str]],
+    ) -> None:
+        """Evaluate risk from humidifier operation."""
+        if not state.humidifier_on:
+            return
+
+        # Define thresholds based on growth stage
+        is_early_stage = (state.seedling_days > 0 or state.clone_days > 0) and (
+            state.flower_days == 0
+        )
+
+        is_risk = True
+        if is_early_stage:
+            if state.humidity is None or state.humidity < 90:
+                is_risk = False
+        elif state.flower_days == 0:  # Veg
+            if state.humidity is None or state.humidity < 85:
+                is_risk = False
+        elif state.flower_days > 40:  # Late Flower
+            if state.humidity is None or state.humidity < 60:
+                is_risk = False
+        elif state.humidity is None or state.humidity < 70:
+            is_risk = False
+
+        if not is_risk:
+            return
+
+        prob = (
+            PROB_MOLD_HUMIDIFIER_ON
+            if isinstance(PROB_MOLD_HUMIDIFIER_ON, tuple)
+            else (0.95, 0.10)
+        )
+        observations.append(prob)
+        reasons.append((prob[0], f"Humidifier On: Humidity is {state.humidity}%"))
 
     def get_notification_title_message(
         self, new_state_on: bool
@@ -92,34 +172,8 @@ class MoldRiskEvaluatorStrategy(BayesianEvaluatorStrategy):
             if not growspace:
                 return None
             name = growspace.name
-            message = self.sensor._generate_notification_message(
+            message = self.sensor.generate_notification_message(
                 "High mold risk detected"
             )
             return (f"High Mold Risk in {name}", message)
         return None
-
-    def _evaluate_humidity_risk(
-        self, state: EnvironmentState
-    ) -> tuple[tuple[float, float], tuple[float, str]] | tuple[None, None]:
-        """Evaluate humidity risk based on growth stage."""
-        hum = state.humidity
-        if hum is None:
-            return None, None
-
-        is_high_humidity = False
-
-        if state.flower_days == 0:  # Veg
-            # Powdery Mildew risk only at very high RH
-            if hum > 85:
-                is_high_humidity = True
-        elif state.flower_days > 40:  # Late Flower
-            # Botrytis risk
-            if hum > 60:
-                is_high_humidity = True
-        elif hum > 70:  # Early/Mid Flower
-            is_high_humidity = True
-
-        if is_high_humidity:
-            prob = (0.8, 0.2)
-            return prob, (prob[0], f"High Humidity ({hum}%)")
-        return None, None

@@ -1,11 +1,11 @@
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from homeassistant.core import HomeAssistant
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.growspace_manager.const import DOMAIN
 from custom_components.growspace_manager.coordinator import GrowspaceCoordinator
+from homeassistant.core import HomeAssistant
 
 
 @pytest.mark.asyncio
@@ -23,7 +23,7 @@ async def test_async_commit_invalidates_cache(hass: HomeAssistant) -> None:
         coordinator = GrowspaceCoordinator(hass, entry, data={})
 
         # Manually populate cache to simulate existing state
-        coordinator._serialized_cache = {"gs1": "stale_data"}
+        coordinator._serialized_cache = {"gs1": {"data": "stale_data"}}
 
         # Spy on _invalidate_cache
         with patch.object(

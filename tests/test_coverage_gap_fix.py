@@ -1,10 +1,10 @@
 """Test specifically targeting coverage gaps with robust mocks."""
 
 from datetime import timedelta
+from typing import Any, cast
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from homeassistant.core import HomeAssistant
-from homeassistant.util import dt as dt_util
+from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.growspace_manager.bayesian_evaluator import (
     _determine_stage_key,
@@ -24,12 +24,13 @@ from custom_components.growspace_manager.config_flow import (
     ConfigFlow,
     OptionsFlowHandler,
 )
+from custom_components.growspace_manager.const import DOMAIN
 from custom_components.growspace_manager.coordinator import GrowspaceCoordinator
 from custom_components.growspace_manager.models import (
     EnvironmentConfig,
     EnvironmentState,
     Growspace,
-    Plant,
+    IrrigationConfig,
     PlantStage,
 )
 from custom_components.growspace_manager.notification_manager import NotificationManager
@@ -40,9 +41,7 @@ from custom_components.growspace_manager.sensor import (
     _check_calculated_vpd_sensor,
     _update_growspace_entities,
 )
-from custom_components.growspace_manager.services.plant import (
-    handle_harvest_plant,
-)
+from custom_components.growspace_manager.services.plant import handle_harvest_plant
 from custom_components.growspace_manager.strain_library import StrainLibrary
 from custom_components.growspace_manager.strategies.mold import (
     MoldRiskEvaluatorStrategy,
@@ -51,6 +50,10 @@ from custom_components.growspace_manager.websocket import (
     _get_history_with_binary_search_downsample,
     websocket_get_history_stats,
 )
+from homeassistant.core import HomeAssistant
+from homeassistant.util import dt as dt_util
+
+from .common import create_plant
 
 # -----------------------------------------------------------------------------
 # __init__.py Coverage
@@ -96,7 +99,7 @@ async def test_websocket_history_stats_missing_in_stats_data(
     with patch(
         "custom_components.growspace_manager.websocket.recorder_stats"
     ) as mock_stats:
-        mock_stats.async_statistics_during_period.return_value = {}
+        mock_stats.statistics_during_period.return_value = {}
 
         # ALSO patch the fallback function to avoid it calling real recorder/history
         with patch(
@@ -167,7 +170,7 @@ async def test_calendar_notification_not_for_growspace(hass: HomeAssistant) -> N
 
     gs = Growspace(id="our_gs", name="Our GS")
     coordinator.growspaces = {"our_gs": gs}
-    plant = Plant(
+    plant = create_plant(
         plant_id="p1",
         growspace_id="our_gs",
         strain="Test Strain",
@@ -304,18 +307,23 @@ def test_bayesian_branches() -> None:
         "fan_off": False,
     }
 
-    state = EnvironmentState(**(base_args | {"is_lights_on": None}))
-    obs, reasons = evaluate_optimal_vpd(state, {})
-    assert not obs
-
-    state = EnvironmentState(**(base_args | {"humidifier_value": None}))
-    obs, reasons = evaluate_active_saturation(state, {})
+    state = EnvironmentState(**dict[str, float | None](base_args | {"vpd": None}))  # type: ignore[arg-type]
+    obs, _reasons = evaluate_optimal_vpd(state, {})
     assert not obs
 
     state = EnvironmentState(
-        **(base_args | {"humidifier_value": 1, "humidity": 90, "flower_days": 0})
+        **cast(dict[str, Any], base_args | {"humidifier_value": None})
     )
-    obs, reasons = evaluate_active_saturation(state, {})
+    obs, _reasons = evaluate_active_saturation(state, {})
+    assert not obs
+
+    state = EnvironmentState(
+        **cast(
+            dict[str, Any],
+            base_args | {"humidifier_value": 1, "humidity": 90, "flower_days": 0},
+        )
+    )
+    obs, _reasons = evaluate_active_saturation(state, {})
     assert len(obs) > 0
 
 
@@ -331,10 +339,10 @@ async def test_strain_library_webp_migration(hass: HomeAssistant) -> None:
     # Mock database
     library._db = MagicMock()
     # Mock load to avoid DB calls
-    library.load = AsyncMock()
+    library.load = AsyncMock()  # type: ignore[method-assign]
 
     # Mock image_manager.async_migrate_to_webp to return True
-    library.image_manager.async_migrate_to_webp = AsyncMock(return_value=True)
+    library.image_manager.async_migrate_to_webp = AsyncMock(return_value=True)  # type: ignore[method-assign]
 
     # Mock aiosqlite.connect to be an async context manager or awaitable
     mock_db = MagicMock()
@@ -383,10 +391,10 @@ async def test_config_flow_missing_env_config(hass: HomeAssistant) -> None:
     flow._config_entry.runtime_data = coordinator
 
     gs = Growspace(id="gs1", name="Test GS")
-    gs.environment_config = None  # Explicitly set to None
+    gs.environment_config = None  # type: ignore[assignment]
     coordinator.growspaces.get = MagicMock(return_value=gs)
 
-    flow._selected_growspace_id = "gs1"
+    flow.selected_growspace_id = "gs1"
 
     # We expect this to proceed without error and default to empty dict
     with patch(
@@ -486,7 +494,7 @@ def test_bayesian_none_checks() -> None:
     )
 
     # CO2 None
-    obs, rsn = evaluate_direct_co2_stress(state, {})
+    obs, _rsn = evaluate_direct_co2_stress(state, {})
     assert not obs
 
     # Humidity None in saturation
@@ -501,23 +509,28 @@ def test_bayesian_none_checks() -> None:
         fan_off=False,
         humidifier_value=1,
     )
-    obs, rsn = evaluate_active_saturation(state2, {})
+    obs, _rsn = evaluate_active_saturation(state2, {})
     assert not obs
 
     # Lights Unknown (None) in optimal temp
+    # The fix ensures this falls back to day/active logic, so it SHOULD generate an observation
+    # if the temp (25) is within the optimal range (or outside the range for stress).
+    # Since 25 is optimal for veg, and we have 0 flower days, it evaluates as Veg Early.
+    # The default 'active' prob should be returned.
     state3 = EnvironmentState(
         temp=25,
         humidity=50,
         vpd=1.0,
         co2=800,
-        veg_days=0,
+        veg_days=10,  # Ensure we are clearly in Veg
         flower_days=0,
         is_lights_on=None,
         fan_off=False,
     )
-    obs, rsn = evaluate_optimal_temperature(state3, {})
-    # Should hit the 'pass' case
-    assert not obs
+    obs, _rsn = evaluate_optimal_temperature(state3, {})
+    # 25C is great for veg (active), so we expect high probability
+    assert len(obs) > 0
+    assert obs[0][0] > 0.8  # Expecting good probability
 
 
 # -----------------------------------------------------------------------------
@@ -532,14 +545,13 @@ async def test_coordinator_update_missing_pump_keys(hass: HomeAssistant) -> None
     coord = GrowspaceCoordinator(hass, lc_manager)
 
     # Setup mock growspace
-    config = MagicMock()
-    # Ensure attributes exist and are initially set
-    config.irrigation_pump_entity = "switch.pump"
-    config.drain_pump_entity = "switch.drain"
+    # Setup mock growspace
+    config = IrrigationConfig(
+        irrigation_pump_entity="switch.pump", drain_pump_entity="switch.drain"
+    )
 
     gs = Growspace(id="gs1", name="GS1", irrigation_config=config)
     coord.growspaces = {"gs1": gs}
-    coord.async_save = AsyncMock()
 
     await coord.async_update_irrigation_config("gs1", {"some_other_key": "val"})
 
@@ -553,7 +565,17 @@ async def test_sensor_new_vpd_entity_creation_in_update(hass: HomeAssistant) -> 
     coordinator = MagicMock()
     gs = Growspace(id="gs1", name="GS1")
     gs.environment_config = EnvironmentConfig(vpd_sensor="sensor.calculated_vpd_gs1")
-    coordinator.growspaces = {"gs1": gs}
+    coordinator.growspaces = {
+        "gs1": gs,
+        "gs2": Growspace(
+            id="gs2",
+            name="GS2",
+            environment_config=EnvironmentConfig(
+                temperature_sensor="sensor.temp",
+                humidity_sensor="sensor.hum",
+            ),
+        ),
+    }
 
     # We need to simulate the sensor internal state
     sensor = GrowspaceOverviewSensor(coordinator, "gs1", gs)
@@ -563,8 +585,8 @@ async def test_sensor_new_vpd_entity_creation_in_update(hass: HomeAssistant) -> 
     # Use _update_growspace_entities directly to target lines 270-280
     config_entry = MagicMock()
     config_entry.runtime_data = coordinator
-    growspace_entities = {}
-    calculated_vpd_growspace_ids = set()
+    growspace_entities: dict[str, Any] = {}
+    calculated_vpd_growspace_ids: set[str] = set()
 
     mock_add_entities = MagicMock()
 
@@ -629,9 +651,8 @@ async def test_light_cycle_sensor_stages_negative(hass: HomeAssistant) -> None:
 async def test_config_flow_missing_env_config_coverage(hass: HomeAssistant) -> None:
     """Test config flow with explicitly missing environment config path."""
 
-    mock_entry = MagicMock()
-    mock_entry.data = {}
-    mock_entry.options = {}
+    mock_entry = MockConfigEntry(domain=DOMAIN, data={}, options={})
+    mock_entry.add_to_hass(hass)
     mock_coordinator = MagicMock()
     mock_entry.runtime_data = mock_coordinator
 
@@ -642,7 +663,7 @@ async def test_config_flow_missing_env_config_coverage(hass: HomeAssistant) -> N
     mock_gs.environment_config = None  # Ensure this is None
     mock_coordinator.growspaces = {"gs1": mock_gs}
 
-    flow._selected_growspace_id = "gs1"
+    flow.selected_growspace_id = "gs1"
 
     # We call async_step_configure_environment directly as that's where the logic is
     step_result = await flow.async_step_configure_environment(None)
@@ -653,8 +674,8 @@ async def test_config_flow_missing_env_config_coverage(hass: HomeAssistant) -> N
 async def test_async_remove_growspace_device_cleanup(hass: HomeAssistant) -> None:
     """Test removing a growspace cleans up the device registry."""
     coordinator = GrowspaceCoordinator(hass, MagicMock())
-    coordinator.async_save = AsyncMock()
-    coordinator._invalidate_cache = MagicMock()
+    coordinator.async_save = AsyncMock()  # type: ignore[method-assign]
+    coordinator.invalidate_cache = MagicMock()  # type: ignore[method-assign]
 
     # Setup growspace
     coordinator.growspaces["gs1"] = Growspace(id="gs1", name="Test Only")
@@ -677,14 +698,15 @@ async def test_promote_clone_custom_target(hass: HomeAssistant) -> None:
     """Test promoting a clone to a custom growspace."""
     coordinator = GrowspaceCoordinator(hass, MagicMock())
     coordinator.lifecycle_manager = AsyncMock()
-    coordinator.async_save = AsyncMock()
-    coordinator._invalidate_cache = MagicMock()
-    coordinator._fire_event = MagicMock()
+    coordinator.async_save = AsyncMock()  # type: ignore[method-assign]
+    coordinator.invalidate_cache = MagicMock()  # type: ignore[method-assign]
+    coordinator.fire_event = MagicMock()  # type: ignore[method-assign]
 
     # Setup plants and growspaces
     mock_plant = MagicMock()
     mock_plant.stage = PlantStage.CLONE
     mock_plant.growspace_id = "clone_room"
+
     coordinator.plants["p1"] = mock_plant
 
     coordinator.growspaces["custom_room"] = Growspace(
@@ -692,7 +714,7 @@ async def test_promote_clone_custom_target(hass: HomeAssistant) -> None:
     )
 
     # Create valid position finder mock
-    coordinator.validator.find_first_available_position = MagicMock(return_value=(1, 1))
+    coordinator.validator.find_first_available_position = MagicMock(return_value=(1, 1))  # type: ignore[method-assign]
 
     await coordinator.async_promote_clone("p1", target_growspace_id="custom_room")
 

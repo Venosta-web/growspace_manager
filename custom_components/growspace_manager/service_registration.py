@@ -2,18 +2,15 @@
 
 from __future__ import annotations
 
-import logging
 from collections.abc import Callable, Coroutine
 from functools import partial
+import logging
 from typing import Any, cast
 
 from homeassistant.core import HomeAssistant, ServiceCall, SupportsResponse
 from homeassistant.exceptions import ServiceValidationError
 
-from .const import (
-    DOMAIN,
-    GrowspaceService,
-)
+from .const import DOMAIN, GrowspaceService
 from .coordinator import GrowspaceCoordinator
 from .exceptions import GrowspaceError
 from .schemas import (
@@ -75,7 +72,7 @@ from .services import (
     strain_library,
     training,
 )
-from .services.strain_library import StrainLibrary
+from .strain_library import StrainLibrary
 
 _LOGGER = logging.getLogger(__name__)
 

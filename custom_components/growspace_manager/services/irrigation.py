@@ -3,12 +3,9 @@
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
-from homeassistant.core import HomeAssistant, ServiceCall
-from homeassistant.exceptions import ServiceValidationError
-
-from ..const import (
+from custom_components.growspace_manager.const import (
     ATTR_DRAIN_TIMES,
     ATTR_DURATION,
     ATTR_GROWSPACE_ID,
@@ -16,11 +13,15 @@ from ..const import (
     ATTR_TIME,
     DOMAIN,
 )
-from ..exceptions import GrowspaceError
+from custom_components.growspace_manager.exceptions import GrowspaceError
+from homeassistant.core import HomeAssistant, ServiceCall
+from homeassistant.exceptions import ServiceValidationError
 
 if TYPE_CHECKING:
-    from ..coordinator import GrowspaceCoordinator
-    from ..irrigation_coordinator import IrrigationCoordinator
+    from custom_components.growspace_manager.coordinator import GrowspaceCoordinator
+    from custom_components.growspace_manager.irrigation_coordinator import (
+        IrrigationCoordinator,
+    )
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -43,7 +44,7 @@ async def _get_irrigation_coordinator(
             raise ServiceValidationError(
                 f"Growspace '{growspace_id}' not found or has no irrigation setup."
             )
-        return irrigation_coordinators[growspace_id]
+        return cast("IrrigationCoordinator", irrigation_coordinators[growspace_id])
     except AttributeError:
         raise ServiceValidationError(
             "Irrigation coordinators not found. Setup may be incomplete."
@@ -69,7 +70,7 @@ async def handle_set_irrigation_settings(
     except GrowspaceError as err:
         raise ServiceValidationError(str(err)) from err
     except Exception as err:
-        _LOGGER.exception("Unexpected error in set_irrigation_settings: %s", err)
+        _LOGGER.exception("Unexpected error in set_irrigation_settings")
         raise ServiceValidationError(
             f"Failed to set irrigation settings: {err}"
         ) from err
@@ -95,7 +96,7 @@ async def handle_add_irrigation_time(
     except GrowspaceError as err:
         raise ServiceValidationError(str(err)) from err
     except Exception as err:
-        _LOGGER.exception("Unexpected error in add_irrigation_time: %s", err)
+        _LOGGER.exception("Unexpected error in add_irrigation_time")
         raise ServiceValidationError(f"Failed to add irrigation time: {err}") from err
 
 
@@ -114,7 +115,7 @@ async def handle_remove_irrigation_time(
     except GrowspaceError as err:
         raise ServiceValidationError(str(err)) from err
     except Exception as err:
-        _LOGGER.exception("Unexpected error in remove_irrigation_time: %s", err)
+        _LOGGER.exception("Unexpected error in remove_irrigation_time")
         raise ServiceValidationError(
             f"Failed to remove irrigation time: {err}"
         ) from err
@@ -140,7 +141,7 @@ async def handle_add_drain_time(
     except GrowspaceError as err:
         raise ServiceValidationError(str(err)) from err
     except Exception as err:
-        _LOGGER.exception("Unexpected error in add_drain_time: %s", err)
+        _LOGGER.exception("Unexpected error in add_drain_time")
         raise ServiceValidationError(f"Failed to add drain time: {err}") from err
 
 
@@ -159,5 +160,5 @@ async def handle_remove_drain_time(
     except GrowspaceError as err:
         raise ServiceValidationError(str(err)) from err
     except Exception as err:
-        _LOGGER.exception("Unexpected error in remove_drain_time: %s", err)
+        _LOGGER.exception("Unexpected error in remove_drain_time")
         raise ServiceValidationError(f"Failed to remove drain time: {err}") from err

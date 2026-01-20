@@ -5,14 +5,11 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, Any
 
-from homeassistant.const import STATE_ON, STATE_UNAVAILABLE, STATE_UNKNOWN
+from homeassistant.const import STATE_OFF, STATE_ON, STATE_UNAVAILABLE, STATE_UNKNOWN
 from homeassistant.helpers import entity_registry as er
 
 from .bayesian_data import VPD_STRESS_THRESHOLDS
-from .const import (
-    DEFAULT_FLOWER_EARLY_DAYS,
-    DOMAIN,
-)
+from .const import DEFAULT_FLOWER_EARLY_DAYS, DOMAIN
 from .utils import VPDCalculator
 
 if TYPE_CHECKING:
@@ -154,22 +151,41 @@ class EnvironmentAnalyzer:
         Returns:
             True if lights are on (day), False otherwise.
         """
-        light_sensor = growspace.environment_config.light_sensor
-        if light_sensor:
-            light_state = self.hass.states.get(light_sensor)
+        light_sensors = growspace.environment_config.light_sensors
+        if not light_sensors:
+            return True
+
+        has_valid_state = False
+        is_day = False
+
+        for sensor in light_sensors:
+            light_state = self.hass.states.get(sensor)
             if light_state and light_state.state not in (
                 STATE_UNKNOWN,
                 STATE_UNAVAILABLE,
             ):
                 if light_state.state == STATE_ON:
-                    return True
-                if light_state.state == "off":
-                    return False
+                    has_valid_state = True
+                    is_day = True
+                    break
+                if light_state.state == STATE_OFF:
+                    has_valid_state = True
+                    # is_day remains False
+                    break
                 try:
-                    return float(light_state.state) > 0
+                    if float(light_state.state) > 0:
+                        has_valid_state = True
+                        is_day = True
+                        break
+                    # If it parses but is 0, it's valid code (night)
+                    has_valid_state = True
                 except (ValueError, TypeError):
                     pass
-        return True
+
+        if not has_valid_state:
+            return True
+
+        return is_day
 
     def _get_sensor_value(self, entity_id: str | None) -> float | None:
         """Safely get the numeric state of a sensor entity from Home Assistant.
@@ -315,12 +331,12 @@ class EnvironmentAnalyzer:
         global_settings = self.coordinator.options.get("global_settings", {})
 
         # Get outside conditions
-        outside_temp, outside_humidity, outside_vpd = self._get_outside_conditions(
+        outside_temp, _outside_humidity, outside_vpd = self._get_outside_conditions(
             global_settings
         )
 
         # Get lung room conditions
-        lung_room_temp, lung_room_humidity, lung_room_vpd = (
+        lung_room_temp, _lung_room_humidity, lung_room_vpd = (
             self._get_lung_room_conditions(global_settings)
         )
 
@@ -346,7 +362,7 @@ class EnvironmentAnalyzer:
                 growspace.environment_config.vpd_sensor
             )
             target_vpd = (
-                self.coordinator.data.get("bayesian_sensors_reason", {})
+                self.coordinator.data.get("bayesian_sensors_reason", {})  # type: ignore[has-type]
                 .get(growspace_id, {})
                 .get("target_vpd")
             )
@@ -361,6 +377,7 @@ class EnvironmentAnalyzer:
                 lung_room_vpd,
             )
 
-        if "air_exchange_recommendations" not in self.coordinator.data:
-            self.coordinator.data["air_exchange_recommendations"] = {}
-        self.coordinator.data["air_exchange_recommendations"].update(recommendations)
+        data: dict[str, Any] = self.coordinator.data  # type: ignore[has-type]
+        if "air_exchange_recommendations" not in data:
+            data["air_exchange_recommendations"] = {}
+        data["air_exchange_recommendations"].update(recommendations)

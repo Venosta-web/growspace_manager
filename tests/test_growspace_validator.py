@@ -11,7 +11,9 @@ from custom_components.growspace_manager.exceptions import (
     ValidationChangeError,
 )
 from custom_components.growspace_manager.growspace_validator import GrowspaceValidator
-from custom_components.growspace_manager.models import Growspace, Plant
+from custom_components.growspace_manager.models import Growspace
+
+from .common import create_plant
 
 
 @pytest.fixture
@@ -76,7 +78,7 @@ def test_validate_position_bounds_special(validator, mock_coordinator) -> None:
 
 def test_validate_position_not_occupied(validator, mock_coordinator) -> None:
     """Test validate_position_not_occupied."""
-    p1 = Plant(plant_id="p1", growspace_id="g1", row=1, col=1, strain="A")
+    p1 = create_plant(plant_id="p1", growspace_id="g1", row=1, col=1, strain="A")
     mock_coordinator.plants = {"p1": p1}
 
     # Not occupied
@@ -96,7 +98,7 @@ def test_find_first_available_position(validator, mock_coordinator) -> None:
     gs = Growspace(id="g1", name="G1", rows=2, plants_per_row=2)
     mock_coordinator.growspaces = {"g1": gs}
     mock_coordinator.plants = {
-        "p1": Plant(plant_id="p1", growspace_id="g1", row=1, col=1, strain="A")
+        "p1": create_plant(plant_id="p1", growspace_id="g1", row=1, col=1, strain="A")
     }
 
     assert validator.find_first_available_position("g1") == (1, 2)

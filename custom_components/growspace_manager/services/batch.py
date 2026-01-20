@@ -5,17 +5,16 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING
 
-from homeassistant.core import HomeAssistant, ServiceCall
-from homeassistant.exceptions import ServiceValidationError
-
-from ..const import (
+from custom_components.growspace_manager.const import (
     ATTR_STAGE,
     ATTR_TARGET_GROWSPACE_ID,
     ATTR_TRANSITION_DATE,
 )
+from homeassistant.core import HomeAssistant, ServiceCall
+from homeassistant.exceptions import ServiceValidationError
 
 if TYPE_CHECKING:
-    from ..coordinator import GrowspaceCoordinator
+    from custom_components.growspace_manager.coordinator import GrowspaceCoordinator
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -48,6 +47,7 @@ async def handle_batch_action(
                 await coordinator.async_harvest_plant(
                     plant_id=entity_id,
                     target_growspace_id=data.get(ATTR_TARGET_GROWSPACE_ID),
+                    target_growspace_name=None,
                     transition_date=data.get(ATTR_TRANSITION_DATE),
                 )
             elif action == "remove":
@@ -60,7 +60,7 @@ async def handle_batch_action(
                 # Better to just log. But since it repeats for all, break.
                 break
 
-        except Exception as err:
+        except Exception as err:  # noqa: BLE001
             _LOGGER.error("Error processing batch action for %s: %s", entity_id, err)
             errors.append(str(err))
 

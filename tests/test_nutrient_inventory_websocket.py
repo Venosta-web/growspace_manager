@@ -5,7 +5,6 @@ from typing import Any
 from unittest.mock import MagicMock, patch
 
 import pytest
-from homeassistant.core import HomeAssistant
 
 from custom_components.growspace_manager.models import NutrientInventory, NutrientStock
 from custom_components.growspace_manager.websocket import (
@@ -14,6 +13,7 @@ from custom_components.growspace_manager.websocket import (
     WS_TYPE_UPDATE_NUTRIENT_STOCK,
     async_register_websocket_api,
 )
+from homeassistant.core import HomeAssistant
 
 WebSocketGenerator = Any
 

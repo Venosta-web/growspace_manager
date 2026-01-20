@@ -4,11 +4,11 @@ from datetime import timedelta
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from homeassistant.core import HomeAssistant
-from homeassistant.util import dt as dt_util
 
 from custom_components.growspace_manager.const import DOMAIN
 from custom_components.growspace_manager.websocket import websocket_get_history_stats
+from homeassistant.core import HomeAssistant
+from homeassistant.util import dt as dt_util
 
 
 @pytest.fixture
@@ -73,16 +73,31 @@ async def test_websocket_get_history_stats_binary_search(
             side_effect=lambda f, *args: f(*args)
         )
 
-        msg = {
-            "id": 1,
-            "type": f"{DOMAIN}/get_history_stats",
-            "entity_ids": ["sensor.test"],
-            "start_time": start_time.isoformat(),
-            "end_time": end_time.isoformat(),
-            "interval_minutes": 100,  # Should downsample to ~10 points
-        }
+        # Mock statistics to return None to force fallback to binary search history
+        with (
+            patch(
+                "custom_components.growspace_manager.websocket.recorder_stats.statistics_during_period",
+                new_callable=AsyncMock,
+                create=True,
+                return_value=None,
+            ),
+            patch(
+                "custom_components.growspace_manager.websocket.recorder_stats.async_statistics_during_period",
+                new_callable=AsyncMock,
+                create=True,
+                return_value=None,
+            ),
+        ):
+            msg = {
+                "id": 1,
+                "type": f"{DOMAIN}/get_history_stats",
+                "entity_ids": ["sensor.test"],
+                "start_time": start_time.isoformat(),
+                "end_time": end_time.isoformat(),
+                "interval_minutes": 100,  # Should downsample to ~10 points
+            }
 
-        await websocket_get_history_stats(mock_hass, mock_connection, msg)
+            await websocket_get_history_stats(mock_hass, mock_connection, msg)
 
         mock_connection.send_result.assert_called_once()
         result = mock_connection.send_result.call_args[0][1]
@@ -113,7 +128,7 @@ async def test_websocket_get_history_stats_statistics_api(
     start_time = dt_util.utcnow() - timedelta(days=7)
 
     with patch(
-        "homeassistant.components.recorder.statistics.async_statistics_during_period",
+        "custom_components.growspace_manager.websocket.recorder_stats.async_statistics_during_period",
         new_callable=AsyncMock,
         create=True,
     ) as mock_stats:

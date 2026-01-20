@@ -3,14 +3,16 @@
 from __future__ import annotations
 
 import base64
-import hashlib
-import logging
 from datetime import datetime
+import hashlib
 from io import BytesIO
+import logging
 from pathlib import Path
+from typing import Any, cast
+
+from PIL import Image
 
 from homeassistant.core import HomeAssistant
-from PIL import Image
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -48,7 +50,7 @@ class ImageManager:
         except OSError as e:
             _LOGGER.error("Error building image cache: %s", e)
 
-    async def async_migrate_to_webp(self, db_connection=None) -> bool:
+    async def async_migrate_to_webp(self, db_connection: Any = None) -> bool:
         """Auto-migrate existing JPG images to WebP format (async wrapper).
 
         This should be called after initialization to convert legacy JPG files
@@ -127,7 +129,7 @@ class ImageManager:
                         "Migrated %s to WebP format (full + thumbnail)", jpg_path.name
                     )
 
-                except Exception as e:
+                except Exception as e:  # noqa: BLE001
                     _LOGGER.warning(
                         "Failed to migrate %s to WebP: %s", jpg_path.name, e
                     )
@@ -137,10 +139,10 @@ class ImageManager:
                     "Auto-migration complete: converted %d image(s) to WebP", migrated
                 )
 
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             _LOGGER.error("Error during auto-migration to WebP: %s", e)
 
-    async def _update_db_paths(self, db_connection) -> int:
+    async def _update_db_paths(self, db_connection: Any) -> int:
         """Update database image_path from .jpg to .webp.
 
         Args:
@@ -182,11 +184,11 @@ class ImageManager:
             if updated > 0:
                 _LOGGER.info("Updated %d database path(s) from .jpg to .webp", updated)
 
-            return updated
-
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             _LOGGER.error("Error updating database paths: %s", e)
             return 0
+        else:
+            return updated
 
     async def save_strain_image(
         self, strain_id: str, phenotype_id: str | None, image_base64: str
@@ -201,8 +203,11 @@ class ImageManager:
         Returns:
             The local path to the saved image.
         """
-        return await self.hass.async_add_executor_job(
-            self._save_image_sync, strain_id, phenotype_id, image_base64
+        return cast(
+            str,
+            await self.hass.async_add_executor_job(
+                self._save_image_sync, strain_id, phenotype_id, image_base64
+            ),
         )
 
     def _save_image_sync(
@@ -265,8 +270,11 @@ class ImageManager:
         Returns:
             The local path to the saved image.
         """
-        return await self.hass.async_add_executor_job(
-            self._save_timeline_image_sync, plant_id, image_base64, timestamp
+        return cast(
+            str,
+            await self.hass.async_add_executor_job(
+                self._save_timeline_image_sync, plant_id, image_base64, timestamp
+            ),
         )
 
     def _save_timeline_image_sync(

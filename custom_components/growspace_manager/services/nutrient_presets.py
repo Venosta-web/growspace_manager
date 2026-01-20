@@ -5,19 +5,18 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING
 
-from homeassistant.core import HomeAssistant, ServiceCall
-from homeassistant.exceptions import ServiceValidationError
-
-from ..const import (
+from custom_components.growspace_manager.const import (
     ATTR_MIN_DAYS_IN_STAGE,
     ATTR_NAME,
     ATTR_PRESET_ID,
     ATTR_STAGE,
 )
-from ..exceptions import GrowspaceError
+from custom_components.growspace_manager.exceptions import GrowspaceError
+from homeassistant.core import HomeAssistant, ServiceCall
+from homeassistant.exceptions import ServiceValidationError
 
 if TYPE_CHECKING:
-    from ..coordinator import GrowspaceCoordinator
+    from custom_components.growspace_manager.coordinator import GrowspaceCoordinator
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -43,7 +42,7 @@ async def handle_save_nutrient_preset(
     except GrowspaceError as err:
         raise ServiceValidationError(str(err)) from err
     except Exception as err:
-        _LOGGER.exception("Unexpected error in save_nutrient_preset: %s", err)
+        _LOGGER.exception("Unexpected error in save_nutrient_preset")
         raise ServiceValidationError(f"Failed to save nutrient preset: {err}") from err
 
 
@@ -57,7 +56,7 @@ async def handle_remove_nutrient_preset(
     except GrowspaceError as err:
         raise ServiceValidationError(str(err)) from err
     except Exception as err:
-        _LOGGER.exception("Unexpected error in remove_nutrient_preset: %s", err)
+        _LOGGER.exception("Unexpected error in remove_nutrient_preset")
         raise ServiceValidationError(
             f"Failed to remove nutrient preset: {err}"
         ) from err
