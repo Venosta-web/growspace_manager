@@ -3,7 +3,6 @@
 from unittest.mock import MagicMock, patch
 
 import pytest
-from homeassistant.core import HomeAssistant
 
 from custom_components.growspace_manager.models import (
     EnvironmentConfig,
@@ -11,6 +10,7 @@ from custom_components.growspace_manager.models import (
     NutrientInventory,
 )
 from custom_components.growspace_manager.storage_manager import StorageManager
+from homeassistant.core import HomeAssistant
 
 
 @pytest.fixture

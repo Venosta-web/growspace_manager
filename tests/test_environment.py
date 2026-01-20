@@ -3,8 +3,6 @@
 from unittest.mock import AsyncMock, Mock
 
 import pytest
-from homeassistant.core import HomeAssistant
-from homeassistant.exceptions import ServiceValidationError
 
 from custom_components.growspace_manager.models import EnvironmentConfig
 from custom_components.growspace_manager.services.environment import (
@@ -12,6 +10,8 @@ from custom_components.growspace_manager.services.environment import (
     handle_remove_environment,
     handle_set_dehumidifier_control,
 )
+from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import ServiceValidationError
 
 
 @pytest.fixture

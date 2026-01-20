@@ -1,0 +1,276 @@
+TRY301 Abstract `raise` to an inner function
+  --> config_handlers/strain_config_handler.py:78:21
+   |
+76 |             try:
+77 |                 if self.config_entry is None:
+78 |                     raise ValueError("Config entry not found")
+   |                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+79 |                 coordinator = self.config_entry.runtime_data
+80 |                 file_path = user_input["file_path"]
+   |
+
+TRY300 Consider moving this statement to an `else` block
+   --> image_manager.py:187:13
+    |
+185 |                 _LOGGER.info("Updated %d database path(s) from .jpg to .webp", updated)
+186 |
+187 |             return updated
+    |             ^^^^^^^^^^^^^^
+188 |
+189 |         except Exception as e:  # noqa: BLE001
+    |
+
+TRY301 Abstract `raise` to an inner function
+   --> irrigation_coordinator.py:230:17
+    |
+228 |         try:
+229 |             if not hasattr(self.growspace.irrigation_config, schedule_key):
+230 |                 raise KeyError(schedule_key)
+    |                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+231 |
+232 |             schedule = getattr(self.growspace.irrigation_config, schedule_key)
+    |
+
+D102 Missing docstring in public method
+   --> models.py:192:9
+    |
+191 |     @property
+192 |     def exhaust_fan_entity(self) -> str | None:
+    |         ^^^^^^^^^^^^^^^^^^
+193 |         return self.exhaust_fan_entities[0] if self.exhaust_fan_entities else None
+    |
+
+D102 Missing docstring in public method
+   --> models.py:196:9
+    |
+195 |     @property
+196 |     def circulation_fan_entity(self) -> str | None:
+    |         ^^^^^^^^^^^^^^^^^^^^^^
+197 |         return (
+198 |             self.circulation_fan_entities[0] if self.circulation_fan_entities else None
+    |
+
+D102 Missing docstring in public method
+   --> models.py:202:9
+    |
+201 |     @property
+202 |     def humidifier_entity(self) -> str | None:
+    |         ^^^^^^^^^^^^^^^^^
+203 |         return self.humidifier_entities[0] if self.humidifier_entities else None
+    |
+
+D102 Missing docstring in public method
+   --> models.py:206:9
+    |
+205 |     @property
+206 |     def dehumidifier_entity(self) -> str | None:
+    |         ^^^^^^^^^^^^^^^^^^^
+207 |         return self.dehumidifier_entities[0] if self.dehumidifier_entities else None
+    |
+
+D102 Missing docstring in public method
+   --> plant_lifecycle_manager.py:358:15
+    |
+356 |                 _LOGGER.warning("Failed to record harvest analytics: %s", e)
+357 |
+358 |     async def move_to_dry_growspace(
+    |               ^^^^^^^^^^^^^^^^^^^^^
+359 |         self, plant_id: str, plant: Plant, transition_date: str
+360 |     ) -> bool:
+    |
+
+D102 Missing docstring in public method
+   --> plant_lifecycle_manager.py:369:15
+    |
+367 |         )
+368 |
+369 |     async def move_to_cure_growspace(
+    |               ^^^^^^^^^^^^^^^^^^^^^^
+370 |         self, plant_id: str, plant: Plant, transition_date: str
+371 |     ) -> bool:
+    |
+
+D102 Missing docstring in public method
+   --> plant_lifecycle_manager.py:376:15
+    |
+374 |         )
+375 |
+376 |     async def move_to_clone_growspace(
+    |               ^^^^^^^^^^^^^^^^^^^^^^^
+377 |         self, plant_id: str, plant: Plant, transition_date: str
+378 |     ) -> bool:
+    |
+
+PERF401 Use `list.extend` to create a transformed list
+   --> services/ai_assistant.py:380:17
+    |
+378 |             lines.append("⚠️ STRESS DETECTED:")
+379 |             for reason in analysis["stress"]["reasons"]:
+380 |                 lines.append(f"  - {reason}")
+    |                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+381 |             lines.append("")
+    |
+help: Replace for loop with list.extend
+
+PERF401 Use `list.extend` to create a transformed list
+   --> services/ai_assistant.py:386:17
+    |
+384 |             lines.append("🍄 MOLD RISK DETECTED:")
+385 |             for reason in analysis["mold_risk"]["reasons"]:
+386 |                 lines.append(f"  - {reason}")
+    |                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+387 |             lines.append("")
+    |
+help: Replace for loop with list.extend
+
+TRY301 Abstract `raise` to an inner function
+   --> services/ai_assistant.py:651:9
+    |
+649 |                 "growspaces_analyzed": len(all_data),
+650 |             }
+651 |         raise ServiceValidationError("AI assistant returned an empty response")
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+652 |
+653 |     except Exception as err:  # noqa: BLE001
+    |
+
+PERF401 Use `list.extend` to create a transformed list
+   --> services/ai_assistant.py:688:13
+    |
+686 |         summary_lines.append("⚠️ ISSUES REQUIRING ATTENTION:")
+687 |         for issue in issues_found:
+688 |             summary_lines.append(f"  - {issue}")
+    |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+689 |         summary_lines.append("")
+    |
+help: Replace for loop with list.extend
+
+TRY301 Abstract `raise` to an inner function
+   --> services/ai_assistant.py:786:9
+    |
+785 |             return {"response": response, "strains_analyzed": len(all_strains)}
+786 |         raise ServiceValidationError("AI assistant returned an empty response")
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+787 |
+788 |     except Exception as err:  # noqa: BLE001
+    |
+
+PERF401 Use `list.extend` to create a transformed list
+   --> services/debug.py:138:21
+    |
+136 |               for plant in plants:
+137 |                   if plant.plant_id in coordinator.plants:
+138 | /                     dry_plants_data_to_restore.append(
+139 | |                         {
+140 | |                             "plant_id": plant.plant_id,
+141 | |                             "strain": plant.strain,
+142 | |                             "old_pos": f"({plant.row},{plant.col})",
+143 | |                         }
+144 | |                     )
+    | |_____________________^
+145 |
+146 |       for dry_id in dry_ids_to_remove:
+    |
+help: Replace for loop with list.extend
+
+PERF401 Use `list.extend` to create a transformed list
+   --> services/debug.py:175:21
+    |
+173 |               for plant in plants:
+174 |                   if plant.plant_id in coordinator.plants:
+175 | /                     cure_plants_data_to_restore.append(
+176 | |                         {
+177 | |                             "plant_id": plant.plant_id,
+178 | |                             "strain": plant.strain,
+179 | |                             "old_pos": f"({plant.row},{plant.col})",
+180 | |                         }
+181 | |                     )
+    | |_____________________^
+182 |
+183 |       for cure_id in cure_ids_to_remove:
+    |
+help: Replace for loop with list.extend
+
+TRY401 Redundant exception object included in `logging.exception` call
+  --> services/ipm.py:52:70
+   |
+50 |         raise ServiceValidationError(str(err)) from err
+51 |     except Exception as err:
+52 |         _LOGGER.exception("Unexpected error in save_ipm_preset: %s", err)
+   |                                                                      ^^^
+53 |         raise ServiceValidationError(f"Failed to save IPM preset: {err}") from err
+   |
+
+TRY401 Redundant exception object included in `logging.exception` call
+  --> services/ipm.py:66:72
+   |
+64 |         raise ServiceValidationError(str(err)) from err
+65 |     except Exception as err:
+66 |         _LOGGER.exception("Unexpected error in remove_ipm_preset: %s", err)
+   |                                                                        ^^^
+67 |         raise ServiceValidationError(f"Failed to remove IPM preset: {err}") from err
+   |
+
+TRY401 Redundant exception object included in `logging.exception` call
+  --> services/ipm.py:89:64
+   |
+87 |         raise ServiceValidationError(str(err)) from err
+88 |     except Exception as err:
+89 |         _LOGGER.exception("Unexpected error in apply_ipm: %s", err)
+   |                                                                ^^^
+90 |         raise ServiceValidationError(f"Failed to apply IPM: {err}") from err
+   |
+
+TRY401 Redundant exception object included in `logging.exception` call
+  --> services/irrigation_watering.py:46:66
+   |
+44 |         raise ServiceValidationError(str(err)) from err
+45 |     except Exception as err:
+46 |         _LOGGER.exception("Unexpected error in water_plant: %s", err)
+   |                                                                  ^^^
+47 |         raise ServiceValidationError(f"Failed to water plant: {err}") from err
+   |
+
+TRY300 Consider moving this statement to an `else` block
+  --> services/irrigation_watering.py:82:9
+   |
+80 |         )
+81 |
+82 |         return {"plants_watered": plants_watered}
+   |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+83 |     except GrowspaceError as err:
+84 |         raise ServiceValidationError(str(err)) from err
+   |
+
+TRY401 Redundant exception object included in `logging.exception` call
+  --> services/irrigation_watering.py:86:70
+   |
+84 |         raise ServiceValidationError(str(err)) from err
+85 |     except Exception as err:
+86 |         _LOGGER.exception("Unexpected error in water_growspace: %s", err)
+   |                                                                      ^^^
+87 |         raise ServiceValidationError(f"Failed to water growspace: {err}") from err
+   |
+
+TRY401 Redundant exception object included in `logging.exception` call
+  --> services/nutrient_presets.py:45:75
+   |
+43 |         raise ServiceValidationError(str(err)) from err
+44 |     except Exception as err:
+45 |         _LOGGER.exception("Unexpected error in save_nutrient_preset: %s", err)
+   |                                                                           ^^^
+46 |         raise ServiceValidationError(f"Failed to save nutrient preset: {err}") from err
+   |
+
+TRY401 Redundant exception object included in `logging.exception` call
+  --> services/nutrient_presets.py:59:77
+   |
+57 |         raise ServiceValidationError(str(err)) from err
+58 |     except Exception as err:
+59 |         _LOGGER.exception("Unexpected error in remove_nutrient_preset: %s", err)
+   |                                                                             ^^^
+60 |         raise ServiceValidationError(
+61 |             f"Failed to remove nutrient preset: {err}"
+   |
+
+Found 25 errors.

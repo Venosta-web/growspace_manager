@@ -1,16 +1,17 @@
 """Integration tests for nutrient deduction during watering."""
 
 from unittest.mock import AsyncMock, MagicMock, patch
+
 import pytest
+
 from custom_components.growspace_manager.coordinator import GrowspaceCoordinator
 from custom_components.growspace_manager.models import (
     Growspace,
     NutrientInventory,
     NutrientStock,
-    Plant,
 )
-from .conftest import create_plant
 
+from .common import create_plant
 
 
 @pytest.fixture

@@ -3,11 +3,14 @@
 from __future__ import annotations
 
 import logging
+from typing import cast
 
-import homeassistant.helpers.config_validation as cv
 import voluptuous as vol
+
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import intent
+import homeassistant.helpers.config_validation as cv
+from homeassistant.helpers.intent import IntentHandler
 
 from .const import DOMAIN
 
@@ -22,10 +25,10 @@ async def async_setup_intents(hass: HomeAssistant) -> None:
     if hass.data.get(f"{DOMAIN}_intent_registered"):
         return
     hass.data[f"{DOMAIN}_intent_registered"] = True
-    intent.async_register(hass, AskGrowAdviceIntent(hass))
+    intent.async_register(hass, GrowspaceIntentHandler(hass))
 
 
-class AskGrowAdviceIntent(intent.IntentHandler):
+class GrowspaceIntentHandler(IntentHandler):  # type: ignore[misc]
     """Handle Ask Grow Advice intent."""
 
     intent_type = INTENT_ASK_GROW_ADVICE
@@ -67,7 +70,7 @@ class AskGrowAdviceIntent(intent.IntentHandler):
 
             speech_text = "I couldn't get a response from the grow assistant."
             if response_data and "response" in response_data:
-                speech_text = response_data["response"]
+                speech_text = cast(str, response_data["response"])
 
         except Exception as err:
             _LOGGER.error("Error handling ask grow advice intent: %s", err)
@@ -85,5 +88,5 @@ class AskGrowAdviceIntent(intent.IntentHandler):
                 curr_coordinator = entry.runtime_data
                 for gs_id, gs in curr_coordinator.growspaces.items():
                     if gs.name.lower() == growspace_name.lower():
-                        return gs_id
+                        return cast(str | None, gs_id)
         return None

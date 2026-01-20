@@ -1,29 +1,21 @@
 """Tests to fill coverage gaps in Growspace Manager backend."""
 
+from typing import Any, cast
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from homeassistant.core import HomeAssistant
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.growspace_manager.config_handlers import BaseConfigHandler
 from custom_components.growspace_manager.config_handlers.growspace_config_handler import (
     GrowspaceConfigHandler,
 )
-from .conftest import create_plant
-
 from custom_components.growspace_manager.config_handlers.notification_config_handler import (
     NotificationConfigHandler,
 )
-from .conftest import create_plant
-
 from custom_components.growspace_manager.const import DOMAIN
 from custom_components.growspace_manager.coordinator import GrowspaceCoordinator
-from custom_components.growspace_manager.exceptions import (
-    GrowspaceNotFoundError,
-)
-from .conftest import create_plant
-
+from custom_components.growspace_manager.exceptions import GrowspaceNotFoundError
 from custom_components.growspace_manager.models import (
     EnvironmentConfig,
     Growspace,
@@ -32,27 +24,25 @@ from custom_components.growspace_manager.models import (
     IrrigationConfig,
     NutrientInventory,
     NutrientPreset,
-    Plant,
 )
-from .conftest import create_plant
-
 from custom_components.growspace_manager.strategies.evaluator_strategy import (
     BayesianEvaluatorStrategy,
 )
-from .conftest import create_plant
+from homeassistant.core import HomeAssistant
 
+from .common import create_plant
 
 
 class MockFlow:
-    def __init__(self, hass=None, config_entry=None) -> None:
+    def __init__(self, hass: HomeAssistant, config_entry: Any = None) -> None:
         self.hass = hass
-        self._config_entry = config_entry
+        self.config_entry = config_entry
         self.async_show_form = MagicMock()
         self.async_abort = MagicMock()
         self.async_create_entry = MagicMock()
         self.async_step_init = AsyncMock()
-        self._selected_growspace_id = None
-        self._selected_notification_id = None
+        self.selected_growspace_id: str | None = None
+        self.selected_notification_id: str | None = None
 
 
 @pytest.fixture
@@ -87,23 +77,23 @@ async def test_base_config_handler_placeholders(
 ) -> None:
     """Cover missed lines in BaseConfigHandler placeholders."""
     # 1. Orchestrator style (already covered by other tests, but good to be explicit here)
-    handler = BaseConfigHandler(mock_flow)
+    handler: BaseConfigHandler = BaseConfigHandler(mock_flow)
     assert handler.flow == mock_flow
     assert handler.hass == hass
 
     # 2. Traditional/Test style
-    handler2 = BaseConfigHandler(hass, mock_entry)
+    handler2: BaseConfigHandler = BaseConfigHandler(hass, mock_entry)
     assert handler2.flow is None
     assert handler2.hass == hass
     assert handler2.config_entry == mock_entry
 
     # 3. Fallback with flow in kwargs
-    handler3 = BaseConfigHandler(flow=mock_flow)
+    handler3: BaseConfigHandler = BaseConfigHandler(flow=mock_flow)
     assert handler3.flow == mock_flow
     assert handler3.hass == hass
 
     # 4. Fallback with hass/entry in kwargs
-    handler4 = BaseConfigHandler(hass=hass, config_entry=mock_entry)
+    handler4: BaseConfigHandler = BaseConfigHandler(hass=hass, config_entry=mock_entry)
     assert handler4.flow is None
     assert handler4.hass == hass
     assert handler4.config_entry == mock_entry
@@ -115,10 +105,10 @@ async def test_base_config_handler_placeholders(
     assert handler.merge_options({"a": 1}, {"b": 2}) == {"a": 1, "b": 2}
 
     # Coverage for websocket_get_event_log
-    await handler.websocket_get_event_log(hass, None, None)
+    await handler.websocket_get_event_log(hass, None, None)  # type: ignore[arg-type]
 
     # Coverage for transition_plant_stage
-    await handler.transition_plant_stage(hass, None, None)
+    await handler.transition_plant_stage(hass, None, None)  # type: ignore[arg-type]
 
 
 @pytest.mark.asyncio
@@ -126,11 +116,13 @@ async def test_evaluator_strategy_placeholders() -> None:
     """Cover missed lines in BayesianEvaluatorStrategy placeholders."""
 
     class TestStrategy(BayesianEvaluatorStrategy):
-        async def async_evaluate(self, state):
+        async def async_evaluate(  # type: ignore[override]
+            self, environment_state: Any, env_config: dict[str, Any]
+        ) -> tuple[list[str], list[str]]:
             return ([], [])
 
     strategy = TestStrategy(MagicMock())
-    assert strategy.get_notification_title_message(None) is None
+    assert strategy.get_notification_title_message(False) is None
 
 
 @pytest.mark.asyncio
@@ -141,91 +133,88 @@ async def test_growspace_config_handler_gaps(
     mock_coordinator: GrowspaceCoordinator,
 ) -> None:
     """Cover missed lines in GrowspaceConfigHandler."""
-    handler = GrowspaceConfigHandler(mock_flow)
+    handler: GrowspaceConfigHandler = GrowspaceConfigHandler(mock_flow)
 
     # 1. coordinator is None in async_step_manage_growspaces
-    with patch(
-        "custom_components.growspace_manager.config_handlers.growspace_config_handler.getattr",
-        side_effect=lambda obj, attr, default=None: None
-        if attr == "runtime_data"
-        else getattr(obj, attr, default),
-    ):
-        result = await handler.async_step_manage_growspaces()
-        assert result is not None
-        mock_flow.async_abort.assert_called_with(reason="setup_error")
+    # Temporarily remove runtime_data
+    mock_entry.runtime_data = None
+    result = await handler.async_step_manage_growspaces()
+    assert result is not None
+    mock_flow.async_abort.assert_called_with(reason="setup_error")
+
+    # Restore coordinator
+    mock_entry.runtime_data = mock_coordinator
 
     # Now restore coordinator for further tests
     mock_entry.runtime_data = mock_coordinator
 
     # 2. Add growspace exception branch
-    mock_coordinator.async_add_growspace = AsyncMock(
+    mock_coordinator.async_add_growspace = AsyncMock(  # type: ignore[method-assign]
         side_effect=Exception("Test Error")
     )
 
-    with patch(
-        "custom_components.growspace_manager.config_handlers.growspace_config_handler.getattr",
-        side_effect=lambda obj, attr, default=None: mock_coordinator
-        if attr == "runtime_data"
-        else getattr(obj, attr, default),
+    # 2. Add growspace exception branch
+    mock_coordinator.async_add_growspace = AsyncMock(  # type: ignore[method-assign]
+        side_effect=Exception("Test Error")
+    )
+    # mock_entry already has runtime_data restored above
+
+    result = await handler.async_step_add_growspace({"name": "Test"})
+    assert result is not None
+    mock_flow.async_show_form.assert_called()
+    assert mock_flow.async_show_form.call_args[1]["errors"] == {"base": "add_failed"}
+
+    # 3. manage_growspaces 'update' action with no selected growspace
+    mock_flow.async_show_form.reset_mock()
+    await handler.async_step_manage_growspaces(
+        {"action": "update", "growspace_id": None}
+    )
+    mock_flow.async_show_form.assert_called()
+    assert mock_flow.async_show_form.call_args[1]["errors"] == {
+        "base": "select_growspace"
+    }
+
+    # 4. manage_growspaces 'remove' action with no selected growspace
+    mock_flow.async_show_form.reset_mock()
+    await handler.async_step_manage_growspaces(
+        {"action": "remove", "growspace_id": None}
+    )
+    mock_flow.async_show_form.assert_called()
+    assert mock_flow.async_show_form.call_args[1]["errors"] == {
+        "base": "select_growspace"
+    }
+
+    # 5. confirm_remove_growspace exception branch
+    mock_flow.selected_growspace_id = "gs1"
+    gs = Growspace(id="gs1", name="GS1")
+    mock_coordinator.growspaces = {"gs1": gs}
+
+    with patch.object(
+        handler, "async_remove_growspace", side_effect=Exception("Test Error")
     ):
-        result = await handler.async_step_add_growspace({"name": "Test"})
-        assert result is not None
+        await handler.async_step_confirm_remove_growspace({"confirm": True})
         mock_flow.async_show_form.assert_called()
         assert mock_flow.async_show_form.call_args[1]["errors"] == {
-            "base": "add_failed"
+            "base": "remove_failed"
         }
 
-        # 3. manage_growspaces 'update' action with no selected growspace
-        mock_flow.async_show_form.reset_mock()
-        await handler.async_step_manage_growspaces(
-            {"action": "update", "growspace_id": None}
-        )
+    # 7. update_growspace exception branch
+    with patch.object(
+        handler, "async_update_growspace", side_effect=Exception("Test Error")
+    ):
+        await handler.async_step_update_growspace({"name": "New Name"})
         mock_flow.async_show_form.assert_called()
         assert mock_flow.async_show_form.call_args[1]["errors"] == {
-            "base": "select_growspace"
+            "base": "update_failed"
         }
 
-        # 4. manage_growspaces 'remove' action with no selected growspace
-        mock_flow.async_show_form.reset_mock()
-        await handler.async_step_manage_growspaces(
-            {"action": "remove", "growspace_id": None}
-        )
-        mock_flow.async_show_form.assert_called()
-        assert mock_flow.async_show_form.call_args[1]["errors"] == {
-            "base": "select_growspace"
-        }
-
-        # 5. confirm_remove_growspace exception branch
-        mock_flow._selected_growspace_id = "gs1"
-        gs = Growspace(id="gs1", name="GS1")
-        mock_coordinator.growspaces = {"gs1": gs}
-
-        with patch.object(
-            handler, "async_remove_growspace", side_effect=Exception("Test Error")
-        ):
-            await handler.async_step_confirm_remove_growspace({"confirm": True})
-            mock_flow.async_show_form.assert_called()
-            assert mock_flow.async_show_form.call_args[1]["errors"] == {
-                "base": "remove_failed"
-            }
-
-        # 7. update_growspace exception branch
-        with patch.object(
-            handler, "async_update_growspace", side_effect=Exception("Test Error")
-        ):
-            await handler.async_step_update_growspace({"name": "New Name"})
-            mock_flow.async_show_form.assert_called()
-            assert mock_flow.async_show_form.call_args[1]["errors"] == {
-                "base": "update_failed"
-            }
-
-        # 8. update_growspace 'back' action
-        mock_flow.async_step_init.reset_mock()
-        await handler.async_step_manage_growspaces({"action": "back"})
-        mock_flow.async_step_init.assert_called_once()
+    # 8. update_growspace 'back' action
+    mock_flow.async_step_init.reset_mock()
+    await handler.async_step_manage_growspaces({"action": "back"})
+    mock_flow.async_step_init.assert_called_once()
 
     # 6. update_growspace_schema with no growspace
-    schema = handler.get_update_growspace_schema(None)
+    schema = handler.get_update_growspace_schema(None)  # type: ignore[arg-type]
     assert schema.schema == {}
 
 
@@ -237,30 +226,28 @@ async def test_notification_config_handler_gaps(
     mock_coordinator: GrowspaceCoordinator,
 ) -> None:
     """Cover missed lines in NotificationConfigHandler."""
-    handler = NotificationConfigHandler(mock_flow)
+    handler: NotificationConfigHandler = NotificationConfigHandler(mock_flow)
 
     # 1. manage_timed_notifications 'back' action
     mock_flow.async_step_init.reset_mock()
-    mock_coordinator.get_timed_notifications.return_value = []
+    cast(MagicMock, mock_coordinator.get_timed_notifications).return_value = []
 
-    with patch(
-        "custom_components.growspace_manager.config_handlers.notification_config_handler.getattr",
-        side_effect=lambda obj, attr, default=None: mock_coordinator
-        if attr == "runtime_data"
-        else getattr(obj, attr, default),
-    ):
-        await handler.async_step_manage_timed_notifications({"action": "back"})
-        mock_flow.async_step_init.assert_called_once()
+    # 1. manage_timed_notifications 'back' action
+    mock_flow.async_step_init.reset_mock()
+    cast(MagicMock, mock_coordinator.get_timed_notifications).return_value = []
+
+    # Check if runtime_data is set (it should be from fixture)
+    assert mock_entry.runtime_data == mock_coordinator
+
+    await handler.async_step_manage_timed_notifications({"action": "back"})
+    mock_flow.async_step_init.assert_called_once()
 
     # 2. manage_timed_notifications with None coordinator
-    with patch(
-        "custom_components.growspace_manager.config_handlers.notification_config_handler.getattr",
-        side_effect=lambda obj, attr, default=None: None
-        if attr == "runtime_data"
-        else getattr(obj, attr, default),
-    ):
-        await handler.async_step_manage_timed_notifications()
-        mock_flow.async_abort.assert_called_with(reason="setup_error")
+    mock_entry.runtime_data = None
+    await handler.async_step_manage_timed_notifications()
+    mock_flow.async_abort.assert_called_with(reason="setup_error")
+    # Restore
+    mock_entry.runtime_data = mock_coordinator
 
 
 @pytest.mark.asyncio
@@ -282,7 +269,7 @@ async def test_coordinator_setters_and_gaps(
     coord.nutrient_inventory = NutrientInventory(stocks={})
 
     # Coverage for _extract_gs_ids_from_args with plant lookup
-    gs_ids = set()
+    gs_ids: set[str] = set()
     coord.plants = {"p1": create_plant(plant_id="p1", strain="S1", growspace_id="gs1")}
     coord._extract_gs_ids_from_args((), {"plant_id": "p1"}, gs_ids)
     assert "gs1" in gs_ids
@@ -346,7 +333,7 @@ async def test_coordinator_extended_coverage(
     assert coord.nutrient_inventory == inventory
 
     # 2. _extract_gs_ids_from_result with None (line 311)
-    gs_ids = set()
+    gs_ids: set[str] = set()
     coord._extract_gs_ids_from_result(None, gs_ids)
     assert len(gs_ids) == 0
 
@@ -358,7 +345,7 @@ async def test_coordinator_extended_coverage(
 
     # 4. _update_growspace_structure (lines 909-923)
     gs = Growspace(id="gs1", name="GS1", rows=1, plants_per_row=1)
-    changes = []
+    changes: list[str] = []
     # No changes
     assert not coord._update_growspace_structure(gs, {}, changes)
     # Rows change

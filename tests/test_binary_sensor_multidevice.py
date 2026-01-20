@@ -1,8 +1,6 @@
 from unittest.mock import MagicMock
 
 import pytest
-from homeassistant.const import STATE_OFF, STATE_ON
-from homeassistant.core import HomeAssistant
 
 from custom_components.growspace_manager.binary_sensor import (
     SENSOR_TYPES,
@@ -13,6 +11,8 @@ from custom_components.growspace_manager.models import EnvironmentConfig
 from custom_components.growspace_manager.strategies.stress import (
     StressEvaluatorStrategy,
 )
+from homeassistant.const import STATE_OFF, STATE_ON
+from homeassistant.core import HomeAssistant
 
 
 @pytest.fixture

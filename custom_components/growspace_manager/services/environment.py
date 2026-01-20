@@ -3,11 +3,9 @@
 from __future__ import annotations
 
 import logging
+from typing import cast
 
-from homeassistant.core import HomeAssistant, ServiceCall
-from homeassistant.exceptions import ServiceValidationError
-
-from ..const import (
+from custom_components.growspace_manager.const import (
     CONF_CIRCULATION_FAN_ENTITIES,
     CONF_CIRCULATION_FAN_ENTITY,
     CONF_CO2_SENSOR,
@@ -28,8 +26,10 @@ from ..const import (
     CONF_TEMP_SENSOR,
     CONF_VPD_SENSOR,
 )
-from ..coordinator import GrowspaceCoordinator
-from ..models import EnvironmentConfig
+from custom_components.growspace_manager.coordinator import GrowspaceCoordinator
+from custom_components.growspace_manager.models import EnvironmentConfig
+from homeassistant.core import HomeAssistant, ServiceCall
+from homeassistant.exceptions import ServiceValidationError
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -49,11 +49,11 @@ async def handle_configure_environment(
 
     growspace = coordinator.growspaces[growspace_id]
 
-    def _get_list(key_singular, key_plural):
+    def _get_list(key_singular: str, key_plural: str) -> list[str]:
         if val := call.data.get(key_plural):
-            return val
+            return cast(list[str], val)
         if val := call.data.get(key_singular):
-            return [val] if isinstance(val, str) else val
+            return cast(list[str], [val] if isinstance(val, str) else val)
         return []
 
     # Build environment config from service call

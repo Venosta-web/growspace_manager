@@ -2,29 +2,26 @@
 
 from __future__ import annotations
 
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
-from homeassistant.core import HomeAssistant
 
 from custom_components.growspace_manager.bayesian_evaluator import (
     _async_evaluate_external_mold_trend_sensor,
     _async_evaluate_fallback_mold_trend_analysis,
     async_evaluate_mold_risk_trend,
 )
-from .conftest import create_plant
-
 from custom_components.growspace_manager.binary_sensor import BayesianEnvironmentSensor
 from custom_components.growspace_manager.models import (
     EnvironmentConfig,
     EnvironmentState,
 )
-from .conftest import create_plant
-
+from homeassistant.core import HomeAssistant
 
 
 @pytest.fixture
-def mock_sensor_instance(hass: HomeAssistant):
+def mock_sensor_instance(hass: HomeAssistant) -> MagicMock:
     """Fixture for a mock BayesianEnvironmentSensor."""
     sensor = MagicMock(spec=BayesianEnvironmentSensor)
     sensor.hass = hass
@@ -36,7 +33,7 @@ def mock_sensor_instance(hass: HomeAssistant):
 
 
 @pytest.fixture
-def mock_env_state():
+def mock_env_state() -> MagicMock:
     """Fixture for EnvironmentState."""
     state = MagicMock(spec=EnvironmentState)
     state.flower_days = 0  # Default to Veg
@@ -49,19 +46,21 @@ def mock_env_state():
 
 @pytest.mark.asyncio
 async def test_fallback_mold_trend_vpd_falling_veg_danger(
-    mock_sensor_instance, mock_env_state
+    mock_sensor_instance: MagicMock, mock_env_state: MagicMock
 ) -> None:
     """Test VPD falling trend in Veg stage approaching danger zone."""
     mock_env_state.flower_days = 0  # Veg
     mock_env_state.vpd = 0.4  # Below 0.5 danger zone
 
     # Mock analysis returning "falling"
-    async def mock_analyze(sensor, duration, threshold):
+    async def mock_analyze(
+        sensor: str, duration: int, threshold: float
+    ) -> dict[str, Any]:
         return {"trend": "falling", "crossed_threshold": True}
 
-    observations = []
-    reasons = []
-    trend_states = {}
+    observations: list[Any] = []
+    reasons: list[Any] = []
+    trend_states: dict[str, Any] = {}
 
     await _async_evaluate_fallback_mold_trend_analysis(
         mock_sensor_instance,
@@ -82,18 +81,20 @@ async def test_fallback_mold_trend_vpd_falling_veg_danger(
 
 @pytest.mark.asyncio
 async def test_fallback_mold_trend_vpd_falling_veg_safe(
-    mock_sensor_instance, mock_env_state
+    mock_sensor_instance: MagicMock, mock_env_state: MagicMock
 ) -> None:
     """Test VPD falling trend in Veg stage in safe zone."""
     mock_env_state.flower_days = 0  # Veg
     mock_env_state.vpd = 0.8  # Above 0.5 danger zone
 
-    async def mock_analyze(sensor, duration, threshold):
+    async def mock_analyze(
+        sensor: str, duration: int, threshold: float
+    ) -> dict[str, Any]:
         return {"trend": "falling", "crossed_threshold": True}
 
-    observations = []
-    reasons = []
-    trend_states = {}
+    observations: list[Any] = []
+    reasons: list[Any] = []
+    trend_states: dict[str, Any] = {}
 
     await _async_evaluate_fallback_mold_trend_analysis(
         mock_sensor_instance,
@@ -113,18 +114,20 @@ async def test_fallback_mold_trend_vpd_falling_veg_safe(
 
 @pytest.mark.asyncio
 async def test_fallback_mold_trend_vpd_falling_flower_danger(
-    mock_sensor_instance, mock_env_state
+    mock_sensor_instance: MagicMock, mock_env_state: MagicMock
 ) -> None:
     """Test VPD falling trend in Flower stage approaching danger zone."""
     mock_env_state.flower_days = 30  # Flower
     mock_env_state.vpd = 0.7  # Below 0.8 danger zone
 
-    async def mock_analyze(sensor, duration, threshold):
+    async def mock_analyze(
+        sensor: str, duration: int, threshold: float
+    ) -> dict[str, Any]:
         return {"trend": "falling", "crossed_threshold": True}
 
-    observations = []
-    reasons = []
-    trend_states = {}
+    observations: list[Any] = []
+    reasons: list[Any] = []
+    trend_states: dict[str, Any] = {}
 
     await _async_evaluate_fallback_mold_trend_analysis(
         mock_sensor_instance,
@@ -144,15 +147,15 @@ async def test_fallback_mold_trend_vpd_falling_flower_danger(
 
 @pytest.mark.asyncio
 async def test_external_mold_trend_sensor_humidity_rising(
-    mock_sensor_instance, hass: HomeAssistant, mock_env_state
+    mock_sensor_instance: MagicMock, hass: HomeAssistant, mock_env_state: MagicMock
 ) -> None:
     """Test external trend sensor for humidity rising."""
     env_config = {"humidity_trend_sensor": "binary_sensor.humid_trend"}
     hass.states.async_set("binary_sensor.humid_trend", "on")
 
-    observations = []
-    reasons = []
-    trend_states = {}
+    observations: list[Any] = []
+    reasons: list[Any] = []
+    trend_states: dict[str, Any] = {}
 
     await _async_evaluate_external_mold_trend_sensor(
         mock_sensor_instance,
@@ -172,7 +175,7 @@ async def test_external_mold_trend_sensor_humidity_rising(
 
 @pytest.mark.asyncio
 async def test_external_mold_stats_sensor_vpd_falling(
-    mock_sensor_instance, hass: HomeAssistant, mock_env_state
+    mock_sensor_instance: MagicMock, hass: HomeAssistant, mock_env_state: MagicMock
 ) -> None:
     """Test external stats sensor for VPD falling."""
     env_config = {"vpd_stats_sensor": "sensor.vpd_stats"}
@@ -181,9 +184,9 @@ async def test_external_mold_stats_sensor_vpd_falling(
     # Set dangerous VPD so gating passes
     mock_env_state.vpd = 0.4
 
-    observations = []
-    reasons = []
-    trend_states = {}
+    observations: list[Any] = []
+    reasons: list[Any] = []
+    trend_states: dict[str, Any] = {}
 
     await _async_evaluate_external_mold_trend_sensor(
         mock_sensor_instance,
@@ -203,14 +206,16 @@ async def test_external_mold_stats_sensor_vpd_falling(
 
 @pytest.mark.asyncio
 async def test_async_evaluate_mold_risk_trend_integration(
-    mock_sensor_instance, mock_env_state
+    mock_sensor_instance: MagicMock, mock_env_state: MagicMock
 ) -> None:
     """Test the full evaluation function ignores humidity trends but passes VPD."""
     # Setup mocks
     mock_env_state.flower_days = 0
     mock_env_state.vpd = 0.4  # Danger
 
-    async def mock_analyze(sensor, duration, threshold):
+    async def mock_analyze(
+        sensor: str, duration: int, threshold: float
+    ) -> dict[str, Any]:
         if "humidity" in sensor:
             return {"trend": "rising", "crossed_threshold": True}
         if "vpd" in sensor:
@@ -238,7 +243,7 @@ async def test_async_evaluate_mold_risk_trend_integration(
 
 @pytest.mark.asyncio
 async def test_external_mold_trend_sensor_vpd_falling_safe(
-    mock_sensor_instance, hass: HomeAssistant, mock_env_state
+    mock_sensor_instance: MagicMock, hass: HomeAssistant, mock_env_state: MagicMock
 ) -> None:
     """Test external trend sensor for VPD falling but in safe zone."""
     env_config = {"vpd_trend_sensor": "binary_sensor.vpd_falling"}
@@ -248,9 +253,9 @@ async def test_external_mold_trend_sensor_vpd_falling_safe(
     mock_env_state.vpd = 1.0  # Safe (above 0.8/0.5)
     mock_env_state.flower_days = 30  # Flower
 
-    observations = []
-    reasons = []
-    trend_states = {}
+    observations: list[Any] = []
+    reasons: list[Any] = []
+    trend_states: dict[str, Any] = {}
 
     await _async_evaluate_external_mold_trend_sensor(
         mock_sensor_instance,
@@ -270,7 +275,7 @@ async def test_external_mold_trend_sensor_vpd_falling_safe(
 
 @pytest.mark.asyncio
 async def test_external_mold_stats_sensor_vpd_falling_safe(
-    mock_sensor_instance, hass: HomeAssistant, mock_env_state
+    mock_sensor_instance: MagicMock, hass: HomeAssistant, mock_env_state: MagicMock
 ) -> None:
     """Test external stats sensor for VPD falling but in safe zone."""
     env_config = {"vpd_stats_sensor": "sensor.vpd_stats"}
@@ -279,9 +284,9 @@ async def test_external_mold_stats_sensor_vpd_falling_safe(
     mock_env_state.vpd = 1.0  # Safe
     mock_env_state.flower_days = 30
 
-    observations = []
-    reasons = []
-    trend_states = {}
+    observations: list[Any] = []
+    reasons: list[Any] = []
+    trend_states: dict[str, Any] = {}
 
     await _async_evaluate_external_mold_trend_sensor(
         mock_sensor_instance,

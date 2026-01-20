@@ -1,9 +1,8 @@
 from unittest.mock import ANY, Mock
 
-from homeassistant.core import HomeAssistant
-
 from custom_components.growspace_manager.const import DOMAIN, EVENT_GROWSPACE_LOG_ENTRY
 from custom_components.growspace_manager.logbook import async_describe_events
+from homeassistant.core import HomeAssistant
 
 
 async def test_async_describe_events(hass: HomeAssistant) -> None:

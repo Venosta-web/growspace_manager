@@ -2,17 +2,12 @@
 
 from __future__ import annotations
 
-import logging
+from collections.abc import Mapping
 from dataclasses import dataclass, field, fields
 from datetime import datetime
 from enum import StrEnum
-from typing import (
-    Any,
-    Final,
-    ReadOnly,
-    Self,
-    TypedDict,
-)
+import logging
+from typing import Any, Self, TypedDict, cast
 
 from mashumaro.mixins.dict import DataClassDictMixin
 
@@ -34,11 +29,13 @@ from .utils import calculate_days_since, days_to_week
 _LOGGER = logging.getLogger(__name__)
 
 
-class IrrigationScheduleItem(TypedDict):
+class IrrigationScheduleItem(TypedDict, total=False):
     """Irrigation schedule item definition (immutable)."""
 
-    start_time: ReadOnly[str]
-    duration_seconds: ReadOnly[int]
+    time: str
+    duration: int
+    start_time: str
+    duration_seconds: int | float
 
 
 class TimelineEventMetadata(TypedDict, total=False):
@@ -57,8 +54,8 @@ class TimelineEventMetadata(TypedDict, total=False):
 class PlantTimelineEvent(TypedDict, total=False):
     """Represents a rich timeline event for a plant."""
 
-    type: ReadOnly[str]
-    date: ReadOnly[str]
+    type: str
+    date: str
     images: list[str]
     tags: list[str]
     metadata: TimelineEventMetadata
@@ -76,46 +73,62 @@ class PlantTimelineEvent(TypedDict, total=False):
 class DehumidifierRange(TypedDict):
     """Dehumidifier on/off range (immutable)."""
 
-    on: ReadOnly[float]
-    off: ReadOnly[float]
+    on: float
+    off: float
 
 
-type DehumidifierThresholds = dict[str, dict[str, DehumidifierRange]]
-type BayesianOptions = dict[str, Any]
-type NutrientMap = dict[str, float]
+DehumidifierThresholds = dict[str, dict[str, DehumidifierRange]]
+BayesianOptions = dict[str, Any]
+NutrientMap = dict[str, float]
 
 
 class NutrientEntry(TypedDict):
-    """A single nutrient entry with concentration info (immutable)."""
+    """Nutrient entry in the inventory."""
 
-    name: ReadOnly[str]
-    dose_ml_l: ReadOnly[float]
-    total_amount: ReadOnly[float]
+    name: str
+    npk: str
+    manufacturer: str
+    description: str
+    notes: str
 
 
 class NutrientPresetItem(TypedDict):
     """A single nutrient in a preset recipe (immutable)."""
 
-    name: ReadOnly[str]
-    dose_ml_l: ReadOnly[float]  # ml per liter of solution
+    name: str
+    dose_ml_l: float  # ml per liter of solution
+
+
+class NutrientPresetDict(TypedDict):
+    """Nutrient preset definition."""
+
+    name: str
+    nutrients: NutrientMap
+    ec_target: float
+    ph_target: float
+    description: str
+
+
+class IPMPresetDict(TypedDict):
+    """IPM preset definition."""
+
+    name: str
+    note: str
+    description: str
+    end: str | None
 
 
 class StageHistoryItem(TypedDict):
-    """Record of a plant's time in a specific stage."""
+    """Stage history record."""
 
     stage: str
     start: str
     end: str | None
 
 
-# Note: NutrientPreset is defined after BaseModel to inherit from it
-
-
 @dataclass(slots=True)
-class BaseModel(DataClassDictMixin):
+class BaseModel(DataClassDictMixin):  # type: ignore[misc]
     """Base class providing generic serialization methods."""
-
-    pass
 
 
 @dataclass(slots=True, kw_only=True)
@@ -177,24 +190,28 @@ class EnvironmentConfig(BaseModel):
 
     @property
     def exhaust_fan_entity(self) -> str | None:
+        """Return first exhaust fan for backward compatibility."""
         return self.exhaust_fan_entities[0] if self.exhaust_fan_entities else None
 
     @property
     def circulation_fan_entity(self) -> str | None:
+        """Return first circulation fan for backward compatibility."""
         return (
             self.circulation_fan_entities[0] if self.circulation_fan_entities else None
         )
 
     @property
     def humidifier_entity(self) -> str | None:
+        """Return first humidifier for backward compatibility."""
         return self.humidifier_entities[0] if self.humidifier_entities else None
 
     @property
     def dehumidifier_entity(self) -> str | None:
+        """Return first dehumidifier for backward compatibility."""
         return self.dehumidifier_entities[0] if self.dehumidifier_entities else None
 
     @classmethod
-    def _from_dict_custom(cls, data: dict[str, Any]) -> Self:
+    def from_dict_custom(cls, data: dict[str, Any]) -> Self:
         """Create from dictionary with catch-all support for bayesian_options and migration."""
         data = data.copy()
 
@@ -244,11 +261,12 @@ class EnvironmentConfig(BaseModel):
             if k in data:
                 del data[k]
 
-        return cls.__mashumaro_from_dict__(data)
+        return cast(Self, cls.__mashumaro_from_dict__(data))
 
 
 # Patch from_dict to use custom logic
-EnvironmentConfig.from_dict = EnvironmentConfig._from_dict_custom
+EnvironmentConfig.__mashumaro_from_dict__ = EnvironmentConfig.from_dict
+EnvironmentConfig.from_dict = EnvironmentConfig.from_dict_custom
 
 
 @dataclass(slots=True)
@@ -279,7 +297,7 @@ class GrowspaceType(StrEnum):
 class Growspace(BaseModel):
     """Represents a single growspace area."""
 
-    id: Final[str]
+    id: str
     name: str
     rows: int = 3
     plants_per_row: int = 3
@@ -316,8 +334,8 @@ class PlantGenetics(BaseModel):
 class Plant(BaseModel):
     """Represents a single plant."""
 
-    plant_id: Final[str]
-    growspace_id: Final[str]
+    plant_id: str
+    growspace_id: str
     genetics: PlantGenetics = field(default_factory=PlantGenetics)
     row: int = 1
     col: int = 1
@@ -354,7 +372,7 @@ class Plant(BaseModel):
         return self.genetics.phenotype_name
 
     @classmethod
-    def _from_dict_custom(cls, data: dict[str, Any]) -> Self:
+    def from_dict_custom(cls, data: dict[str, Any]) -> Self:
         """Create from dictionary with history and genetics migration."""
         # Migration: flat fields → PlantGenetics
         if "strain" in data and "genetics" not in data:
@@ -441,7 +459,8 @@ class Plant(BaseModel):
 
 
 # Patch from_dict to use custom logic
-Plant.from_dict = Plant._from_dict_custom
+Plant.__mashumaro_from_dict__ = Plant.from_dict
+Plant.from_dict = Plant.from_dict_custom
 
 
 @dataclass(slots=True)
@@ -482,6 +501,7 @@ class GrowspaceEvent(BaseModel):
 @dataclass(slots=True, kw_only=True)
 class NutrientPreset(BasePreset):
     """A reusable nutrient recipe with optional stage conditions.
+
     Attributes:
         id: Unique identifier for the preset.
         name: Human-readable name for the preset (e.g., "Late Bloom Mix").
@@ -503,12 +523,9 @@ class NutrientPreset(BasePreset):
         self.items = value
 
     @classmethod
-    def _from_dict_custom(cls, data: dict[str, Any]) -> Self:
-        """Create from dictionary with backward compatibility for 'nutrients'."""
-        if "nutrients" in data and "items" not in data:
-            data = data.copy()
-            data["items"] = data.pop("nutrients")
-        return cls.__mashumaro_from_dict__(data)
+    def from_dict(cls, data: Mapping[Any, Any], **kwargs: Any) -> Self:
+        """Create a NutrientPreset instance from a dictionary."""
+        return cast(Self, super().from_dict(data))
 
     def get_nutrient_map(self) -> NutrientMap:
         """Convert nutrients list to a dict[str, float] for watering services."""
@@ -516,7 +533,6 @@ class NutrientPreset(BasePreset):
 
 
 # Patch from_dict to use custom logic
-NutrientPreset.from_dict = NutrientPreset._from_dict_custom
 
 
 class GrowspaceCoordinatorData(TypedDict):

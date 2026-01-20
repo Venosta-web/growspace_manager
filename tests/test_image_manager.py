@@ -3,11 +3,11 @@
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-import pytest
-from homeassistant.core import HomeAssistant
 from PIL import Image
+import pytest
 
 from custom_components.growspace_manager.image_manager import ImageManager
+from homeassistant.core import HomeAssistant
 
 
 @pytest.fixture

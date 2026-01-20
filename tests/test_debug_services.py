@@ -3,11 +3,9 @@
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from homeassistant.core import HomeAssistant, ServiceCall
 
 from custom_components.growspace_manager.coordinator import GrowspaceCoordinator
 from custom_components.growspace_manager.models import Plant
-from .conftest import create_plant
 from custom_components.growspace_manager.services.debug import (
     _consolidate_plants_to_canonical_growspace,
     _handle_reset_cure_growspace,
@@ -19,6 +17,9 @@ from custom_components.growspace_manager.services.debug import (
     handle_test_notification,
 )
 from custom_components.growspace_manager.strain_library import StrainLibrary
+from homeassistant.core import HomeAssistant, ServiceCall
+
+from .common import create_plant
 
 
 @pytest.fixture
@@ -646,10 +647,10 @@ async def test_debug_reset_special_growspaces_exception(
     """Test handle_debug_reset_special_growspaces service with an exception."""
     mock_coordinator.growspaces = {"dry": {}}
     mock_coordinator.ensure_special_growspace = MagicMock(
-        side_effect=Exception("Test Exception")
+        side_effect=RuntimeError("Test Exception")
     )
 
-    with pytest.raises(Exception):
+    with pytest.raises(RuntimeError):
         await handle_debug_reset_special_growspaces(
             mock_hass, mock_coordinator, mock_strain_library, mock_call
         )
@@ -660,15 +661,19 @@ async def test_debug_consolidate_duplicate_special_exception(
     mock_hass, mock_coordinator, mock_strain_library, mock_call
 ) -> None:
     """Test handle_debug_consolidate_duplicate_special service with an exception."""
+    mock_dry1 = MagicMock()
+    mock_dry1.name = "Dry"
+    mock_dry2 = MagicMock()
+    mock_dry2.name = "Dry"
     mock_coordinator.growspaces = {
-        "dry_1": {"name": "Dry"},
-        "dry_2": {"name": "Dry"},
+        "dry_1": mock_dry1,
+        "dry_2": mock_dry2,
     }
     mock_coordinator.ensure_special_growspace = MagicMock(
-        side_effect=Exception("Test Exception")
+        side_effect=RuntimeError("Test Exception")
     )
 
-    with pytest.raises(Exception):
+    with pytest.raises(RuntimeError):
         await handle_debug_consolidate_duplicate_special(
             mock_hass, mock_coordinator, mock_strain_library, mock_call
         )

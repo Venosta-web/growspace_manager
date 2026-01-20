@@ -2,23 +2,25 @@
 
 from __future__ import annotations
 
+import contextlib
 import logging
 import pathlib
 import tempfile
 from typing import Any, override
 
 from aiohttp import BodyPartReader, web
+
 from homeassistant.components.http import HomeAssistantView
 from homeassistant.config_entries import ConfigEntryState
 from homeassistant.core import HomeAssistant
 
 from .const import DOMAIN
-from .services.strain_library import StrainLibrary
+from .strain_library import StrainLibrary
 
 _LOGGER = logging.getLogger(__name__)
 
 
-class StrainLibraryUploadView(HomeAssistantView):
+class StrainLibraryUploadView(HomeAssistantView):  # type: ignore[misc]
     """View to handle strain library imports via HTTP upload."""
 
     url = "/api/growspace_manager/import_strains"
@@ -40,11 +42,11 @@ class StrainLibraryUploadView(HomeAssistantView):
             return False
         if not isinstance(file_field, BodyPartReader):
             return False
-        return file_field.name == "file"
+        return bool(file_field.name == "file")
 
     async def _save_upload_to_temp(self, file_field: BodyPartReader) -> pathlib.Path:
         """Save uploaded stream to a temporary file."""
-        temp_fd, temp_path_str = await self.hass.async_add_executor_job(
+        _temp_fd, temp_path_str = await self.hass.async_add_executor_job(
             tempfile.mkstemp, ".zip"
         )
         temp_path = pathlib.Path(temp_path_str)
@@ -52,7 +54,7 @@ class StrainLibraryUploadView(HomeAssistantView):
         try:
             # We use a file object opened in binary write mode
             def write_chunk(path: str, data: bytes) -> None:
-                with open(path, "ab") as f:
+                with pathlib.Path(path).open("ab") as f:
                     f.write(data)
 
             while True:
@@ -62,14 +64,15 @@ class StrainLibraryUploadView(HomeAssistantView):
                 await self.hass.async_add_executor_job(
                     write_chunk, temp_path_str, chunk
                 )
-            return temp_path
         except Exception:
             # Clean up if writing fails
-            if temp_path.exists():
+            with contextlib.suppress(OSError, AttributeError):
                 await self.hass.async_add_executor_job(temp_path.unlink)
             raise
+        else:
+            return temp_path
 
-    @override
+    @override  # type: ignore[misc]
     async def post(self, request: web.Request) -> web.Response:
         """Handle the POST request for file upload."""
         # 1. Read the multipart data (file)
@@ -82,7 +85,7 @@ class StrainLibraryUploadView(HomeAssistantView):
         # 2. Save to temp file
         try:
             temp_path = await self._save_upload_to_temp(file_field)
-        except Exception:
+        except (OSError, RuntimeError):
             return web.Response(status=500, text="Failed to save upload")
 
         try:
@@ -107,11 +110,11 @@ class StrainLibraryUploadView(HomeAssistantView):
 
         finally:
             # Cleanup
-            if temp_path.exists():
+            with contextlib.suppress(OSError, AttributeError):
                 await self.hass.async_add_executor_job(temp_path.unlink)
 
 
-class StrainLibraryImageView(HomeAssistantView):
+class StrainLibraryImageView(HomeAssistantView):  # type: ignore[misc]
     """View to serve images from the strain library storage."""
 
     url = "/api/growspace_manager/v1/images/{filename:.*}"
@@ -127,7 +130,7 @@ class StrainLibraryImageView(HomeAssistantView):
         self.hass = hass
         self.strain_library = strain_lib
 
-    @override
+    @override  # type: ignore[misc]
     async def get(self, request: web.Request, filename: str) -> web.Response:
         """Handle GET request for image."""
         if not self.strain_library.image_manager:
@@ -146,6 +149,6 @@ class StrainLibraryImageView(HomeAssistantView):
                 return web.Response(status=404, text="Image not found")
 
             return web.FileResponse(file_path)
-        except Exception as e:
-            _LOGGER.error("Error serving image %s: %s", filename, e)
+        except (OSError, ValueError, RuntimeError, Exception):
+            _LOGGER.exception("Error serving image %s", filename)
             return web.Response(status=500, text="Internal server error")

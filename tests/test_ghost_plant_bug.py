@@ -1,9 +1,9 @@
 from unittest.mock import AsyncMock, patch
 
 import pytest
-from homeassistant.core import HomeAssistant
 
 from custom_components.growspace_manager.coordinator import GrowspaceCoordinator
+from homeassistant.core import HomeAssistant
 
 
 @pytest.mark.asyncio

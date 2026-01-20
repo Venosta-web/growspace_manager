@@ -6,11 +6,12 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from custom_components.growspace_manager.const import PlantStage
-from custom_components.growspace_manager.models import Growspace, Plant
-from .conftest import create_plant
+from custom_components.growspace_manager.models import Growspace
 from custom_components.growspace_manager.plant_lifecycle_manager import (
     PlantLifecycleManager,
 )
+
+from .common import create_plant
 
 
 @pytest.fixture
@@ -24,8 +25,8 @@ def mock_coordinator():
             name="Test Growspace",
         )
     }
-    coordinator._notifications_sent = {}
-    coordinator._lock = AsyncMock()
+    coordinator.notifications_sent = {}
+    coordinator.lock = AsyncMock()
     coordinator.async_commit = AsyncMock()
     coordinator.validator = MagicMock()
     coordinator.serializer = MagicMock()
@@ -34,7 +35,7 @@ def mock_coordinator():
     return coordinator
 
 
-async def test_async_remove_plant_not_found(mock_coordinator):
+async def test_async_remove_plant_not_found(mock_coordinator) -> None:
     """Test async_remove_plant when plant doesn't exist."""
     manager = PlantLifecycleManager(mock_coordinator)
 
@@ -46,7 +47,7 @@ async def test_async_remove_plant_not_found(mock_coordinator):
     mock_coordinator.async_commit.assert_not_awaited()
 
 
-async def test_async_remove_plant_with_notifications(mock_coordinator):
+async def test_async_remove_plant_with_notifications(mock_coordinator) -> None:
     """Test async_remove_plant removes from notifications_sent dict."""
     manager = PlantLifecycleManager(mock_coordinator)
 
@@ -57,19 +58,19 @@ async def test_async_remove_plant_with_notifications(mock_coordinator):
         growspace_id="test_growspace",
         strain="Test Strain",
     )
-    mock_coordinator._notifications_sent[plant_id] = True
+    mock_coordinator.notifications_sent[plant_id] = True
 
     # Remove the plant
     result = await manager.async_remove_plant(plant_id)
 
     # Should remove from notifications_sent (line 123)
     assert result is True
-    assert plant_id not in mock_coordinator._notifications_sent
+    assert plant_id not in mock_coordinator.notifications_sent
     assert plant_id not in mock_coordinator.plants
     mock_coordinator.async_commit.assert_awaited_once()
 
 
-async def test_record_analytics_exception_handling(mock_coordinator):
+async def test_record_analytics_exception_handling(mock_coordinator) -> None:
     """Test _record_analytics handles exceptions gracefully."""
     manager = PlantLifecycleManager(mock_coordinator)
 
@@ -99,7 +100,7 @@ async def test_record_analytics_exception_handling(mock_coordinator):
     )
 
 
-async def test_transition_plant_stage_to_clone(mock_coordinator):
+async def test_transition_plant_stage_to_clone(mock_coordinator) -> None:
     """Test transition_plant_stage to CLONE stage."""
     manager = PlantLifecycleManager(mock_coordinator)
 

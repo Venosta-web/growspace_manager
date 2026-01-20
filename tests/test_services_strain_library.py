@@ -1,11 +1,10 @@
 """Tests for the Strain Library services."""
 
 import base64
+from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from homeassistant.core import HomeAssistant, ServiceCall
-from homeassistant.exceptions import HomeAssistantError
 
 from custom_components.growspace_manager.const import DOMAIN
 from custom_components.growspace_manager.services.strain_library import (
@@ -17,6 +16,8 @@ from custom_components.growspace_manager.services.strain_library import (
     handle_remove_strain,
     handle_update_strain_meta,
 )
+from homeassistant.core import HomeAssistant, ServiceCall
+from homeassistant.exceptions import HomeAssistantError
 
 
 @pytest.fixture
@@ -60,7 +61,7 @@ def mock_hass() -> MagicMock:
 
 async def test_handle_get_strain_library(
     mock_hass, mock_coordinator, mock_strain_library
-):
+) -> None:
     """Test getting the strain library."""
     call = ServiceCall(mock_hass, DOMAIN, "get_strain_library", {}, context=MagicMock())
 
@@ -77,7 +78,7 @@ async def test_handle_get_strain_library(
 
 async def test_handle_export_strain_library(
     mock_hass, mock_coordinator, mock_strain_library
-):
+) -> None:
     """Test exporting the strain library."""
     call = ServiceCall(
         mock_hass, DOMAIN, "export_strain_library", {}, context=MagicMock()
@@ -98,7 +99,7 @@ async def test_handle_export_strain_library(
 
 async def test_handle_export_strain_library_error(
     mock_hass, mock_coordinator, mock_strain_library
-):
+) -> None:
     """Test exporting the strain library with error."""
     mock_strain_library.export_library_to_zip.side_effect = Exception("Export Error")
     call = ServiceCall(
@@ -117,14 +118,15 @@ async def test_handle_export_strain_library_error(
 
 
 async def test_handle_import_strain_library_file_path(
-    mock_hass, mock_coordinator, mock_strain_library
-):
+    mock_hass, mock_coordinator, mock_strain_library, tmp_path: Path
+) -> None:
     """Test importing strain library from file path."""
+    import_path = tmp_path / "import.zip"
     call = ServiceCall(
         mock_hass,
         DOMAIN,
         "import_strain_library",
-        {"file_path": "/tmp/import.zip", "replace": True},
+        {"file_path": str(import_path), "replace": True},
         context=MagicMock(),
     )
 
@@ -136,7 +138,7 @@ async def test_handle_import_strain_library_file_path(
         )
 
         mock_strain_library.import_library_from_zip.assert_awaited_once_with(
-            zip_path="/tmp/import.zip", merge=False
+            zip_path=str(import_path), merge=False
         )
         mock_strain_library.save.assert_awaited_once()
         mock_coordinator.async_request_refresh.assert_awaited_once()
@@ -145,11 +147,12 @@ async def test_handle_import_strain_library_file_path(
 
 
 async def test_handle_import_strain_library_zip_base64(
-    mock_hass, mock_coordinator, mock_strain_library
-):
+    mock_hass, mock_coordinator, mock_strain_library, tmp_path: Path
+) -> None:
     """Test importing strain library with base64 encoded zip."""
     zip_content = b"PK\x03\x04"
     zip_base64 = base64.b64encode(zip_content).decode("utf-8")
+    temp_import_path = tmp_path / "temp_import.zip"
 
     call = ServiceCall(
         mock_hass,
@@ -165,11 +168,14 @@ async def test_handle_import_strain_library_zip_base64(
         ),
         patch("tempfile.NamedTemporaryFile") as mock_temp,
         patch("os.path.exists", return_value=True),
-        patch("os.remove") as mock_remove,
+        patch("os.unlink") as mock_remove,
     ):
         mock_temp_file = MagicMock()
-        mock_temp_file.name = "/tmp/temp_import.zip"
+        mock_temp_file.name = str(temp_import_path)
         mock_temp.return_value.__enter__.return_value = mock_temp_file
+
+        # Ensure file "exists" so cleanup tries to remove it
+        temp_import_path.touch()
 
         await handle_import_strain_library(
             mock_hass, mock_coordinator, mock_strain_library, call
@@ -177,17 +183,18 @@ async def test_handle_import_strain_library_zip_base64(
 
         mock_temp_file.write.assert_called_once_with(zip_content)
         mock_strain_library.import_library_from_zip.assert_awaited_once_with(
-            zip_path="/tmp/temp_import.zip", merge=True
+            zip_path=str(temp_import_path), merge=True
         )
-        mock_remove.assert_called_once_with("/tmp/temp_import.zip")
+        mock_remove.assert_called_once_with(temp_import_path)
 
 
 async def test_handle_import_strain_library_temp_file_remove_error(
-    mock_hass, mock_coordinator, mock_strain_library
-):
+    mock_hass, mock_coordinator, mock_strain_library, tmp_path: Path
+) -> None:
     """Test importing strain library with temp file removal error."""
     zip_content = b"PK\x03\x04"
     zip_base64 = base64.b64encode(zip_content).decode("utf-8")
+    temp_import_path = tmp_path / "temp_import.zip"
 
     call = ServiceCall(
         mock_hass,
@@ -206,7 +213,7 @@ async def test_handle_import_strain_library_temp_file_remove_error(
         patch("os.remove", side_effect=OSError("Remove Error")),
     ):
         mock_temp_file = MagicMock()
-        mock_temp_file.name = "/tmp/temp_import.zip"
+        mock_temp_file.name = str(temp_import_path)
         mock_temp.return_value.__enter__.return_value = mock_temp_file
 
         await handle_import_strain_library(
@@ -216,7 +223,7 @@ async def test_handle_import_strain_library_temp_file_remove_error(
 
 async def test_handle_import_strain_library_no_data(
     mock_hass, mock_coordinator, mock_strain_library
-):
+) -> None:
     """Test importing strain library with no data."""
     call = ServiceCall(
         mock_hass, DOMAIN, "import_strain_library", {}, context=MagicMock()
@@ -231,7 +238,7 @@ async def test_handle_import_strain_library_no_data(
 
 async def test_handle_import_strain_library_base64_error(
     mock_hass, mock_coordinator, mock_strain_library
-):
+) -> None:
     """Test importing strain library with base64 error."""
     call = ServiceCall(
         mock_hass,
@@ -253,14 +260,15 @@ async def test_handle_import_strain_library_base64_error(
 
 
 async def test_handle_import_strain_library_import_error(
-    mock_hass, mock_coordinator, mock_strain_library
-):
+    mock_hass, mock_coordinator, mock_strain_library, tmp_path: Path
+) -> None:
     """Test importing strain library with import error."""
+    import_path = tmp_path / "import.zip"
     call = ServiceCall(
         mock_hass,
         DOMAIN,
         "import_strain_library",
-        {"file_path": "/tmp/import.zip"},
+        {"file_path": str(import_path)},
         context=MagicMock(),
     )
     mock_strain_library.import_library_from_zip.side_effect = Exception("Import Error")
@@ -276,7 +284,9 @@ async def test_handle_import_strain_library_import_error(
         mock_notify.assert_called_once()
 
 
-async def test_handle_add_strain(mock_hass, mock_coordinator, mock_strain_library):
+async def test_handle_add_strain(
+    mock_hass, mock_coordinator, mock_strain_library
+) -> None:
     """Test adding a strain."""
     call = ServiceCall(
         mock_hass,
@@ -301,7 +311,7 @@ async def test_handle_add_strain(mock_hass, mock_coordinator, mock_strain_librar
 
 async def test_handle_add_strain_error(
     mock_hass, mock_coordinator, mock_strain_library
-):
+) -> None:
     """Test adding a strain with error."""
     call = ServiceCall(
         mock_hass,
@@ -318,7 +328,7 @@ async def test_handle_add_strain_error(
 
 async def test_handle_update_strain_meta(
     mock_hass, mock_coordinator, mock_strain_library
-):
+) -> None:
     """Test updating strain metadata."""
     call = ServiceCall(
         mock_hass,
@@ -338,7 +348,7 @@ async def test_handle_update_strain_meta(
 
 async def test_handle_update_strain_meta_error(
     mock_hass, mock_coordinator, mock_strain_library
-):
+) -> None:
     """Test updating strain metadata with error."""
     call = ServiceCall(
         mock_hass,
@@ -355,7 +365,9 @@ async def test_handle_update_strain_meta_error(
         )
 
 
-async def test_handle_remove_strain(mock_hass, mock_coordinator, mock_strain_library):
+async def test_handle_remove_strain(
+    mock_hass, mock_coordinator, mock_strain_library
+) -> None:
     """Test removing a strain."""
     # Remove entire strain
     call = ServiceCall(
@@ -389,7 +401,7 @@ async def test_handle_remove_strain(mock_hass, mock_coordinator, mock_strain_lib
 
 async def test_handle_clear_strain_library(
     mock_hass, mock_coordinator, mock_strain_library
-):
+) -> None:
     """Test clearing the strain library."""
     call = ServiceCall(
         mock_hass, DOMAIN, "clear_strain_library", {}, context=MagicMock()
@@ -410,7 +422,7 @@ async def test_handle_clear_strain_library(
 
 async def test_handle_clear_strain_library_error(
     mock_hass, mock_coordinator, mock_strain_library
-):
+) -> None:
     """Test clearing the strain library with error."""
     mock_strain_library.clear.side_effect = Exception("Clear Error")
     call = ServiceCall(

@@ -1,8 +1,6 @@
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from homeassistant.core import HomeAssistant
-from homeassistant.data_entry_flow import FlowResultType
 from pytest_homeassistant_custom_component.common import MockConfigEntry, mock_component
 
 from custom_components.growspace_manager.config_handlers.environment_config_handler import (
@@ -10,6 +8,8 @@ from custom_components.growspace_manager.config_handlers.environment_config_hand
 )
 from custom_components.growspace_manager.const import DOMAIN
 from custom_components.growspace_manager.models import EnvironmentConfig, Growspace
+from homeassistant.core import HomeAssistant
+from homeassistant.data_entry_flow import FlowResultType
 
 
 @pytest.fixture

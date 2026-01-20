@@ -1,23 +1,21 @@
 """Additional tests for binary_sensor coverage."""
 
+import contextlib
 from unittest.mock import MagicMock
 
 import pytest
-from homeassistant.core import HomeAssistant
 
 from custom_components.growspace_manager.binary_sensor import (
     LightCycleVerificationSensor,
 )
-from custom_components.growspace_manager.models import (
-    EnvironmentConfig,
-    Growspace,
-)
+from custom_components.growspace_manager.models import EnvironmentConfig, Growspace
+from homeassistant.core import HomeAssistant
 
-from .conftest import create_plant
+from .common import create_plant
 
 
 @pytest.fixture
-def mock_coordinator():
+def mock_coordinator() -> MagicMock:
     """Mock coordinator."""
     coordinator = MagicMock()
     coordinator.growspaces = {
@@ -35,15 +33,17 @@ def mock_coordinator():
 
 
 @pytest.fixture
-def mock_hass():
+def mock_hass() -> MagicMock:
     """Mock Home Assistant."""
     hass = MagicMock(spec=HomeAssistant)
     hass.states = MagicMock()
 
-    def async_create_task(coro):
+    def async_create_task(coro: object) -> MagicMock:
         """Mock async_create_task that closes the coroutine to avoid warnings."""
         if coro:
-            coro.close()
+            with contextlib.suppress(AttributeError):
+                # Try to close if it has a close method (coroutines do)
+                coro.close()  # type: ignore[attr-defined]
         return MagicMock()
 
     hass.async_create_task = MagicMock(side_effect=async_create_task)
@@ -51,7 +51,7 @@ def mock_hass():
 
 
 @pytest.fixture
-def env_config():
+def env_config() -> EnvironmentConfig:
     """Environment config fixture."""
     return EnvironmentConfig(
         temperature_sensor="sensor.temp",
@@ -61,7 +61,7 @@ def env_config():
 
 
 async def test_light_cycle_sensor_no_light_entity(
-    mock_hass, mock_coordinator, env_config
+    mock_hass: MagicMock, mock_coordinator: MagicMock, env_config: EnvironmentConfig
 ) -> None:
     """Test LightCycleVerificationSensor with no light entity configured."""
     # Remove light sensor from config
@@ -82,7 +82,7 @@ async def test_light_cycle_sensor_no_light_entity(
 
 
 async def test_light_cycle_sensor_coordinator_update_callback(
-    mock_hass, mock_coordinator, env_config
+    mock_hass: MagicMock, mock_coordinator: MagicMock, env_config: EnvironmentConfig
 ) -> None:
     """Test _handle_coordinator_update callback."""
     sensor = LightCycleVerificationSensor(
@@ -96,7 +96,7 @@ async def test_light_cycle_sensor_coordinator_update_callback(
 
 
 async def test_light_cycle_sensor_light_sensor_changed_callback(
-    mock_hass, mock_coordinator, env_config
+    mock_hass: MagicMock, mock_coordinator: MagicMock, env_config: EnvironmentConfig
 ) -> None:
     """Test _async_light_sensor_changed callback."""
     sensor = LightCycleVerificationSensor(
@@ -111,7 +111,7 @@ async def test_light_cycle_sensor_light_sensor_changed_callback(
 
 
 async def test_light_cycle_sensor_flower_stage_early(
-    mock_hass, mock_coordinator, env_config
+    mock_hass: MagicMock, mock_coordinator: MagicMock, env_config: EnvironmentConfig
 ) -> None:
     """Test _get_current_stage_key with early flower stage."""
     sensor = LightCycleVerificationSensor(
@@ -138,7 +138,7 @@ async def test_light_cycle_sensor_flower_stage_early(
 
 
 async def test_light_cycle_sensor_flower_stage_mid(
-    mock_hass, mock_coordinator, env_config
+    mock_hass: MagicMock, mock_coordinator: MagicMock, env_config: EnvironmentConfig
 ) -> None:
     """Test _get_current_stage_key with mid flower stage."""
     sensor = LightCycleVerificationSensor(
@@ -165,7 +165,7 @@ async def test_light_cycle_sensor_flower_stage_mid(
 
 
 async def test_light_cycle_sensor_flower_stage_late(
-    mock_hass, mock_coordinator, env_config
+    mock_hass: MagicMock, mock_coordinator: MagicMock, env_config: EnvironmentConfig
 ) -> None:
     """Test _get_current_stage_key with late flower stage."""
     sensor = LightCycleVerificationSensor(
@@ -192,7 +192,7 @@ async def test_light_cycle_sensor_flower_stage_late(
 
 
 async def test_light_cycle_sensor_update_state_with_light(
-    mock_hass, mock_coordinator, env_config
+    mock_hass: MagicMock, mock_coordinator: MagicMock, env_config: EnvironmentConfig
 ) -> None:
     """Test _update_state with light sensor configured."""
     sensor = LightCycleVerificationSensor(

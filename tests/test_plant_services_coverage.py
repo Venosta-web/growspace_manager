@@ -1,10 +1,9 @@
 """Test plant services coverage."""
 
+from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, PropertyMock, patch
 
 import pytest
-from homeassistant.core import HomeAssistant, ServiceCall
-from homeassistant.exceptions import ServiceValidationError
 
 from custom_components.growspace_manager.const import (
     ATTR_IMAGES,
@@ -20,6 +19,8 @@ from custom_components.growspace_manager.services.plant import (
     handle_add_timeline_note,
     handle_harvest_plant,
 )
+from homeassistant.core import HomeAssistant, ServiceCall
+from homeassistant.exceptions import ServiceValidationError
 
 
 async def test_add_timeline_note_defaults() -> None:
@@ -117,7 +118,8 @@ async def test_add_timeline_note_sensor_snapshot() -> None:
     assert metadata["vpd"] is None  # Not set
 
 
-async def test_add_timeline_note_images() -> None:
+@pytest.mark.asyncio
+async def test_add_timeline_note_images(tmp_path: Path) -> None:
     """Test async_add_timeline_note image processing."""
     hass = MagicMock()
     coordinator = MagicMock()
@@ -165,7 +167,8 @@ async def test_add_timeline_note_images() -> None:
     assert data[ATTR_IMAGES] == ["timeline/image.webp"]
 
     # Case 2: Save returns path without /timeline/ (fallback)
-    image_manager.save_timeline_image.return_value = "/tmp/image.jpg"
+    fallback_path = tmp_path / "image.jpg"
+    image_manager.save_timeline_image.return_value = str(fallback_path)
     hass.bus.async_fire.reset_mock()
 
     with (
@@ -187,7 +190,7 @@ async def test_add_timeline_note_images() -> None:
         )
 
     data = hass.bus.async_fire.call_args[0][1]
-    assert data[ATTR_IMAGES] == ["timeline/image.jpg"]
+    assert data[ATTR_IMAGES] == [f"timeline/{fallback_path.name}"]
 
     # Case 3: Exception during save
     image_manager.save_timeline_image.side_effect = Exception("Save failed")
@@ -343,7 +346,7 @@ async def test_handle_add_plants_errors(hass: HomeAssistant) -> None:
 
     # 1. Growspace not found (245-246)
     mock_call.data = {"growspace_id": "missing", "strain": "S1", "amount": 1}
-    with pytest.raises(ServiceValidationError, match="Growspace 'missing' not found"):
+    with pytest.raises(ServiceValidationError, match=".*does not exist.*"):
         await handle_add_plants(hass, mock_coordinator, MagicMock(), mock_call)
 
     # 2. GrowspaceError during add (297-299)
@@ -370,12 +373,16 @@ async def test_handle_add_plants_full(hass: HomeAssistant) -> None:
 
     # Case: Full from the start (282)
     mock_coordinator.validator.find_first_available_position.return_value = (None, None)
-    with pytest.raises(ServiceValidationError, match="is full"):
+    with pytest.raises(ServiceValidationError, match=".*is full.*"):
         await handle_add_plants(hass, mock_coordinator, MagicMock(), mock_call)
 
     # Case: Becomes full during batch (284)
+    # 1. find_first_available_position (initial check)
+    # 2. find_first_available_position (first plant)
+    # 3. find_first_available_position (second plant - returns None)
     mock_coordinator.validator.find_first_available_position.side_effect = [
-        (1, 1),
+        (0, 0),
+        (0, 0),
         (None, None),
     ]
     mock_coordinator.async_add_plant = AsyncMock()

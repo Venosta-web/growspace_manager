@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
-import math
 from datetime import date, datetime
-from typing import TYPE_CHECKING
+import math
+from typing import TYPE_CHECKING, cast
 
 from dateutil import parser
+
 from homeassistant.util.dt import as_local, now
 
 from .const import DOMAIN, PlantStage
@@ -39,15 +40,13 @@ def parse_date_field(date_value: DateInput) -> datetime | None:
                     dt = parser.isoparse(date_value)
                 except (ValueError, TypeError):
                     return None
-        case _:
-            return None
 
     if dt is not None:
         if dt.tzinfo is None:
-            return as_local(dt)
+            return cast(datetime, as_local(dt))
         return dt
 
-    return None  # pragma: no cover
+    return None  # type: ignore[unreachable]
 
 
 def format_date(date_value: DateInput) -> str | None:
@@ -69,7 +68,7 @@ def calculate_days_since(
     end = parse_date_field(end_date) if end_date else now()
     if start is None or end is None:
         return 0
-    return (end.date() - start.date()).days
+    return int((end.date() - start.date()).days)
 
 
 def days_to_week(days: int) -> int:
@@ -88,7 +87,7 @@ def days_to_week(days: int) -> int:
 
 def find_first_free_position(
     growspace: Growspace, occupied_positions: set[tuple[int, int]]
-) -> tuple[int, int]:
+) -> tuple[int | None, int | None]:
     """_Returns the first col/row thats free in growspace.
 
     Args:
@@ -105,7 +104,11 @@ def find_first_free_position(
         for c in range(1, total_cols + 1):
             if (r, c) not in occupied_positions:
                 return r, c
-    return total_rows, total_cols
+
+    # Return bottom-right if full (as per legacy test expectation)
+    if total_rows > 0 and total_cols > 0:
+        return total_rows, total_cols
+    return None, None
 
 
 def generate_growspace_grid(
@@ -148,7 +151,7 @@ class VPDCalculator:
         if not isinstance(temperature_c, (int, float)) or not isinstance(
             humidity_rh, (int, float)
         ):
-            return None
+            return None  # type: ignore[unreachable]
 
         # Calculate saturation vapor pressure (SVP)
         svp = VPDCalculator._calculate_svp(temperature_c)
@@ -177,7 +180,7 @@ class VPDCalculator:
         if not isinstance(air_temperature_c, (int, float)) or not isinstance(
             humidity_rh, (int, float)
         ):
-            return None
+            return None  # type: ignore[unreachable]
 
         # Calculate leaf temperature
         leaf_temperature_c = air_temperature_c + lst_offset

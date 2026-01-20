@@ -8,11 +8,9 @@ parsing, formatting, calculations, and grid generation logic.
 from datetime import date, datetime
 
 import pytest
-from homeassistant.util.dt import as_local
 
 from custom_components.growspace_manager.const import DOMAIN
-from custom_components.growspace_manager.models import Growspace, Plant
-from .conftest import create_plant
+from custom_components.growspace_manager.models import Growspace
 from custom_components.growspace_manager.utils import (
     VPDCalculator,
     calculate_days_since,
@@ -25,13 +23,16 @@ from custom_components.growspace_manager.utils import (
     generate_vpd_sensor_unique_id,
     parse_date_field,
 )
+from homeassistant.util.dt import as_local
+
+from .common import create_plant
 
 
 # ----------------------------
 # parse_date_field tests
 # ----------------------------
 @pytest.mark.parametrize(
-    "input_value,expected",
+    ("input_value", "expected"),
     [
         (None, None),
         (date(2025, 11, 3), as_local(datetime(2025, 11, 3, 0, 0))),
@@ -55,7 +56,7 @@ def test_parse_date_field(input_value, expected) -> None:
 # format_date tests
 # ----------------------------
 @pytest.mark.parametrize(
-    "input_value,expected",
+    ("input_value", "expected"),
     [
         (None, None),
         (date(2025, 11, 3), "2025-11-03"),
@@ -140,7 +141,7 @@ def test_generate_growspace_grid_empty() -> None:
 # days_to_week tests
 # ----------------------------
 @pytest.mark.parametrize(
-    "days,expected",
+    ("days", "expected"),
     [
         (0, 0),
         (-5, 0),
@@ -170,10 +171,14 @@ def test_calculate_plant_stage() -> None:
 
     # 2. Date-based (mocking now is hard here without freezegun, so we use past dates)
     # Assuming today is after 2000-01-01
-    p = create_plant(plant_id="p1", growspace_id="g1", strain="A", flower_start="2000-01-01")
+    p = create_plant(
+        plant_id="p1", growspace_id="g1", strain="A", flower_start="2000-01-01"
+    )
     assert calculate_plant_stage(p) == "flower"
 
-    p = create_plant(plant_id="p1", growspace_id="g1", strain="A", veg_start="2000-01-01")
+    p = create_plant(
+        plant_id="p1", growspace_id="g1", strain="A", veg_start="2000-01-01"
+    )
     assert calculate_plant_stage(p) == "veg"
 
     # Priority check: flower > veg
@@ -205,8 +210,8 @@ def test_calculate_vpd() -> None:
     assert VPDCalculator.calculate_vpd(30.0, 50.0) == 2.12
 
     # Invalid inputs (covers line 151)
-    assert VPDCalculator.calculate_vpd("25", 60.0) is None
-    assert VPDCalculator.calculate_vpd(25.0, "60") is None
+    assert VPDCalculator.calculate_vpd("25", 60.0) is None  # type: ignore[arg-type]
+    assert VPDCalculator.calculate_vpd(25.0, "60") is None  # type: ignore[arg-type]
 
 
 def test_calculate_vpd_with_lst_offset() -> None:
@@ -220,8 +225,8 @@ def test_calculate_vpd_with_lst_offset() -> None:
     assert VPDCalculator.calculate_vpd_with_lst_offset(25.0, 60.0, -2.0) == 0.91
 
     # Invalid inputs (covers line 180)
-    assert VPDCalculator.calculate_vpd_with_lst_offset("25", 60.0) is None
-    assert VPDCalculator.calculate_vpd_with_lst_offset(25.0, "60") is None
+    assert VPDCalculator.calculate_vpd_with_lst_offset("25", 60.0) is None  # type: ignore[arg-type]
+    assert VPDCalculator.calculate_vpd_with_lst_offset(25.0, "60") is None  # type: ignore[arg-type]
 
 
 def test_parse_date_field_with_tz() -> None:

@@ -3,22 +3,20 @@
 from unittest.mock import AsyncMock, MagicMock, Mock
 
 import pytest
-import voluptuous as vol
-from homeassistant.core import HomeAssistant
-from homeassistant.data_entry_flow import FlowResultType
 from pytest_homeassistant_custom_component.common import MockConfigEntry
+import voluptuous as vol
 
-from custom_components.growspace_manager.config_flow import (
-    OptionsFlowHandler,
-)
+from custom_components.growspace_manager.config_flow import OptionsFlowHandler
 from custom_components.growspace_manager.const import DOMAIN
 from custom_components.growspace_manager.coordinator import GrowspaceCoordinator
+from homeassistant.core import HomeAssistant
+from homeassistant.data_entry_flow import FlowResultType
 
 
 # Helper function to set up the test environment
 async def setup_test_environment(hass: HomeAssistant, coordinator):
     """Set up the test environment with a mock coordinator and config entry."""
-    config_entry = MockConfigEntry(domain=DOMAIN, data={"name": "Test"})
+    config_entry = MockConfigEntry(domain=DOMAIN, data={"name": "Test"}, options={})
     config_entry.runtime_data = MagicMock()
     config_entry.runtime_data = coordinator
     config_entry.add_to_hass(hass)
@@ -172,7 +170,7 @@ async def test_options_flow_manage_growspaces_update(
     # Then
     assert result.get("type") == FlowResultType.FORM
     assert result.get("step_id") == "update_growspace"
-    assert flow._selected_growspace_id == "gs1"
+    assert flow.selected_growspace_id == "gs1"
 
 
 @pytest.mark.asyncio
@@ -261,6 +259,13 @@ async def test_options_flow_manage_growspaces_no_coordinator(
     """Test error when coordinator not found."""
     # Given
     config_entry = MockConfigEntry(domain=DOMAIN, data={"name": "Test"})
+    config_entry.mock_runtime_data = (
+        None  # property setter might not exist on MockConfigEntry depending on version
+    )
+    # Since we cannot trust property setters on mocks sometimes, let's just assume accessing it via attribute works or we set it if possible.
+    # However, MockConfigEntry usually doesn't have runtime_data in __init__.
+    # The error was AttributeError. We can set it after creation.
+    config_entry.runtime_data = None
     config_entry.add_to_hass(hass)
 
     # When
@@ -373,7 +378,7 @@ async def test_options_flow_update_growspace_show_form(
     # When
     flow = OptionsFlowHandler(config_entry)
     flow.hass = hass
-    flow._selected_growspace_id = "gs1"
+    flow.selected_growspace_id = "gs1"
     result = await flow.async_step_update_growspace()
 
     # Then
@@ -398,7 +403,7 @@ async def test_options_flow_update_growspace_success(
     # When
     flow = OptionsFlowHandler(config_entry)
     flow.hass = hass
-    flow._selected_growspace_id = "gs1"
+    flow.selected_growspace_id = "gs1"
     user_input = {"name": "New Name", "rows": 5}
     result = await flow.async_step_update_growspace(user_input=user_input)
 
@@ -418,7 +423,7 @@ async def test_options_flow_update_growspace_not_found(
     # When
     flow = OptionsFlowHandler(config_entry)
     flow.hass = hass
-    flow._selected_growspace_id = "nonexistent"
+    flow.selected_growspace_id = "nonexistent"
     result = await flow.async_step_update_growspace()
 
     # Then
@@ -446,7 +451,7 @@ async def test_options_flow_update_growspace_error(
     # When
     flow = OptionsFlowHandler(config_entry)
     flow.hass = hass
-    flow._selected_growspace_id = "gs1"
+    flow.selected_growspace_id = "gs1"
     user_input = {"name": "New Name"}
     result = await flow.async_step_update_growspace(user_input=user_input)
 

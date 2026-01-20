@@ -6,8 +6,6 @@ from datetime import date
 from unittest.mock import AsyncMock, MagicMock, Mock, patch
 
 import pytest
-from homeassistant.const import STATE_UNKNOWN
-from homeassistant.core import HomeAssistant
 
 from custom_components.growspace_manager.binary_sensor import (
     SENSOR_TYPES,
@@ -18,6 +16,8 @@ from custom_components.growspace_manager.models import EnvironmentConfig, Growsp
 from custom_components.growspace_manager.strategies.mold import (
     MoldRiskEvaluatorStrategy,
 )
+from homeassistant.const import STATE_UNKNOWN
+from homeassistant.core import HomeAssistant
 
 MOCK_CONFIG_ENTRY_ID = "test_entry"
 
@@ -221,8 +221,7 @@ async def test_mold_sensor_stage_aware_thresholds(
 async def test_veg_stage_scenario_false_positive_prevention(
     hass: HomeAssistant, mock_coordinator, env_config
 ) -> None:
-    """
-    Verify that in a Veg Stage scenario (e.g., 22.7°C, 56.8% RH, 0.87 kPa VPD),
+    """Verify that in a Veg Stage scenario (e.g., 22.7°C, 56.8% RH, 0.87 kPa VPD),
     the sensor probability remains low even if trends are "rising" or "falling".
     """
     description = next(
@@ -311,8 +310,7 @@ async def test_veg_stage_scenario_false_positive_prevention(
 async def test_user_reported_veg_scenario(
     hass: HomeAssistant, mock_coordinator, env_config
 ) -> None:
-    """
-    Verify the user reported scenario: 24.2°C, 64% RH, 0.75 kPa VPD, Veg day 34.
+    """Verify the user reported scenario: 24.2°C, 64% RH, 0.75 kPa VPD, Veg day 34.
     The sensor should NOT have a high probability.
     """
     description = next(

@@ -1,25 +1,12 @@
 """Test init module coverage."""
 
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, Mock, patch
 
-import homeassistant.util.dt as dt_util
 from aiohttp import web
-from homeassistant.core import HomeAssistant
-from homeassistant.exceptions import ServiceValidationError
+import pytest
 
-from custom_components.growspace_manager.views import StrainLibraryImageView
-from custom_components.growspace_manager.websocket import (
-    _downsample_entity_binary_search,
-    websocket_add_timeline_note,
-    websocket_get_event_log,
-    websocket_get_growspace_data,
-    websocket_get_history_stats,
-    websocket_get_ipm_presets,
-    websocket_get_nutrient_presets,
-    websocket_remove_timeline_event,
-)
 from custom_components.growspace_manager import (
     async_reload_entry,
     async_setup_entry,
@@ -31,6 +18,19 @@ from custom_components.growspace_manager.const import (
     ATTR_PLANT_ID,
     DOMAIN,
 )
+from custom_components.growspace_manager.views import StrainLibraryImageView
+from custom_components.growspace_manager.websocket import (
+    _downsample_entity_binary_search,
+    websocket_add_timeline_note,
+    websocket_get_event_log,
+    websocket_get_growspace_data,
+    websocket_get_history_stats,
+    websocket_get_ipm_presets,
+    websocket_get_nutrient_presets,
+    websocket_remove_timeline_event,
+)
+from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import ServiceValidationError
 
 # --- Websocket Tests ---
 
@@ -68,7 +68,7 @@ async def test_websocket_add_timeline_note(hass: HomeAssistant) -> None:
 
     mock_coordinator = MagicMock()
     mock_strain_lib = MagicMock()
-    hass.data = {DOMAIN: {"strain_library": mock_strain_lib}}
+    hass.data[DOMAIN] = {"strain_library": mock_strain_lib}
 
     with (
         patch(
@@ -94,7 +94,9 @@ async def test_websocket_remove_timeline_event(hass: HomeAssistant) -> None:
     connection = MagicMock()
     msg = {"id": 1, "event_id": "evt1"}
 
-    with patch("custom_components.growspace_manager.websocket.get_instance") as mock_get_instance:
+    with patch(
+        "custom_components.growspace_manager.websocket.get_instance"
+    ) as mock_get_instance:
         mock_recorder = MagicMock()
         mock_get_instance.return_value = mock_recorder
 
@@ -103,7 +105,9 @@ async def test_websocket_remove_timeline_event(hass: HomeAssistant) -> None:
 
         mock_recorder.async_add_executor_job.side_effect = async_run_job
 
-        with patch("custom_components.growspace_manager.websocket.session_scope") as mock_scope:
+        with patch(
+            "custom_components.growspace_manager.websocket.session_scope"
+        ) as mock_scope:
             mock_session = MagicMock()
             mock_scope.return_value.__enter__.return_value = mock_session
             mock_session.query.return_value.filter.return_value = (
@@ -125,7 +129,7 @@ async def test_async_unload_entry(hass: HomeAssistant) -> None:
     entry.runtime_data = MagicMock()
 
     mock_strain_lib = AsyncMock()
-    hass.data = {DOMAIN: {"strain_library": mock_strain_lib}}
+    hass.data[DOMAIN] = {"strain_library": mock_strain_lib}
 
     with patch.object(hass.config_entries, "async_unload_platforms", return_value=True):
         assert await async_unload_entry(hass, entry) is True
@@ -134,7 +138,7 @@ async def test_async_unload_entry(hass: HomeAssistant) -> None:
 
     # Reset for Failure Test
     mock_strain_lib.reset_mock()
-    hass.data = {DOMAIN: {"strain_library": mock_strain_lib}}
+    hass.data[DOMAIN] = {"strain_library": mock_strain_lib}
 
     # Test Failure
     with patch.object(
@@ -222,7 +226,7 @@ async def test_async_setup_entry_pending_growspace_failure(hass: HomeAssistant) 
     mock_strain_lib = MagicMock()
     mock_strain_lib.async_setup = AsyncMock()
 
-    hass.data = {DOMAIN: {}}
+    hass.data[DOMAIN] = {}
     hass.http = MagicMock()  # Mock HTTP component
     hass.http.async_register_static_paths = AsyncMock()
 
@@ -266,7 +270,9 @@ async def test_websocket_get_event_log_coverage(hass: HomeAssistant) -> None:
 
     # 1. Test Event Type Not Found
     with (
-        patch("custom_components.growspace_manager.websocket.get_instance") as mock_get_instance,
+        patch(
+            "custom_components.growspace_manager.websocket.get_instance"
+        ) as mock_get_instance,
         patch(
             "custom_components.growspace_manager.websocket.session_scope"
         ) as mock_session_scope,
@@ -276,7 +282,7 @@ async def test_websocket_get_event_log_coverage(hass: HomeAssistant) -> None:
 
         # Mock executor job to run the inner function immediately
         async def async_run_job(job, *args):
-            return job()
+            return job(*args)
 
         mock_recorder.async_add_executor_job.side_effect = async_run_job
 
@@ -294,7 +300,8 @@ async def test_websocket_get_event_log_coverage(hass: HomeAssistant) -> None:
     # 2. Test Recorder Import/Key Error
     connection.reset_mock()
     with patch(
-        "custom_components.growspace_manager.websocket.get_instance", side_effect=ImportError
+        "custom_components.growspace_manager.websocket.get_instance",
+        side_effect=ImportError,
     ):
         await websocket_get_event_log(hass, connection, msg)
         connection.send_result.assert_called_with(1, {"gs1": []})
@@ -335,7 +342,9 @@ async def test_websocket_history_stats_coverage(hass: HomeAssistant) -> None:
     }
 
     with (
-        patch("custom_components.growspace_manager.websocket._get_statistics_data") as mock_stats,
+        patch(
+            "custom_components.growspace_manager.websocket._get_statistics_data"
+        ) as mock_stats,
         patch(
             "custom_components.growspace_manager.websocket._get_history_with_binary_search_downsample"
         ) as mock_downsample,
@@ -367,7 +376,7 @@ async def test_websocket_history_stats_coverage(hass: HomeAssistant) -> None:
 def test_downsample_binary_search_logic() -> None:
     """Directly test the binary search downsample logic for edge cases."""
 
-    start = datetime(2023, 1, 1, 12, 0, 0, tzinfo=dt_util.dt.timezone.utc)
+    start = datetime(2023, 1, 1, 12, 0, 0, tzinfo=UTC)
     interval = timedelta(minutes=10)
     end = start + timedelta(minutes=30)
 
@@ -407,12 +416,13 @@ def test_downsample_binary_search_logic() -> None:
     assert result[-1]["s"] == "30"
 
 
-async def test_image_view_security(hass: HomeAssistant) -> None:
+@pytest.mark.asyncio
+async def test_image_view_security(hass: HomeAssistant, tmp_path: Path) -> None:
     """Test security checks in StrainLibraryImageView."""
     strain_lib = MagicMock()
     image_manager = MagicMock()
     strain_lib.image_manager = image_manager
-    image_manager.storage_dir = Path("/tmp/safe")
+    image_manager.storage_dir = tmp_path
 
     view = StrainLibraryImageView(hass, strain_lib)
     request = Mock(spec=web.Request)

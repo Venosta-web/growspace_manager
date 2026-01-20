@@ -2,21 +2,26 @@
 
 from __future__ import annotations
 
-import logging
-import uuid
 from dataclasses import asdict
-from typing import Any
+import logging
+from typing import TYPE_CHECKING, Any
+import uuid
 
 import homeassistant.util.dt as dt_util
 
-from ..models import (
+if TYPE_CHECKING:
+    from custom_components.growspace_manager.coordinator import GrowspaceCoordinator
+
+from custom_components.growspace_manager.models import (
     IPMPreset,
     IPMPresetItem,
     NutrientInventory,
     NutrientPreset,
     NutrientPresetItem,
 )
-from ..services.nutrient_inventory import NutrientInventoryService
+from custom_components.growspace_manager.services.nutrient_inventory import (
+    NutrientInventoryService,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -24,7 +29,7 @@ _LOGGER = logging.getLogger(__name__)
 class NutrientManager:
     """Manages nutrient presets, IPM presets, and inventory integration."""
 
-    def __init__(self, coordinator) -> None:
+    def __init__(self, coordinator: GrowspaceCoordinator) -> None:
         """Initialize the NutrientManager."""
         self._coordinator = coordinator
         self.presets: dict[str, NutrientPreset] = {}
@@ -89,8 +94,8 @@ class NutrientManager:
         )
 
         # Invalidate cache for all growspaces as presets are global
-        if hasattr(self._coordinator, "_serialized_cache"):
-            self._coordinator._serialized_cache.clear()
+        # Invalidate cache for all growspaces as presets are global
+        self._coordinator.invalidate_cache()
 
         return preset
 
@@ -104,8 +109,7 @@ class NutrientManager:
         await self._coordinator.async_save()
 
         # Invalidate cache
-        if hasattr(self._coordinator, "_serialized_cache"):
-            self._coordinator._serialized_cache.clear()
+        self._coordinator.invalidate_cache()
 
         _LOGGER.info("Removed nutrient preset '%s' (id=%s)", preset_name, preset_id)
 

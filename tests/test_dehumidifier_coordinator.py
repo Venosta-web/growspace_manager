@@ -5,6 +5,11 @@ import time
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+
+from custom_components.growspace_manager.dehumidifier_coordinator import (
+    DehumidifierCoordinator,
+)
+from custom_components.growspace_manager.models import Growspace, Plant
 from homeassistant.const import (
     ATTR_ENTITY_ID,
     SERVICE_TURN_OFF,
@@ -14,11 +19,6 @@ from homeassistant.const import (
     STATE_UNAVAILABLE,
 )
 from homeassistant.core import HomeAssistant
-
-from custom_components.growspace_manager.dehumidifier_coordinator import (
-    DehumidifierCoordinator,
-)
-from custom_components.growspace_manager.models import Growspace, Plant
 
 
 @pytest.fixture
@@ -407,7 +407,9 @@ async def test_timer_guard_bypassed_on_first_action(coordinator, mock_hass) -> N
     )
 
 
-def test_init_missing_growspace(mock_hass, mock_main_coordinator, caplog) -> None:
+def test_init_missing_growspace(
+    mock_hass, mock_main_coordinator, caplog: pytest.LogCaptureFixture
+) -> None:
     """Test initialization when growspace does not exist (lines 80-83)."""
     mock_main_coordinator.growspaces = {}
 
@@ -430,7 +432,7 @@ async def test_on_sensor_change(
     )
 
     # Mock async_check_and_control to verify it's awaited
-    coordinator.async_check_and_control = AsyncMock()
+    coordinator.async_check_and_control = AsyncMock()  # type: ignore[method-assign]
 
     await coordinator._on_sensor_change(None)
 
@@ -472,11 +474,11 @@ async def test_binary_light_sensor(
     )
 
     # Mock internal methods to isolate logic
-    coordinator._get_growth_stage = MagicMock(return_value="veg")
-    coordinator._get_current_thresholds = MagicMock(
+    coordinator._get_growth_stage = MagicMock(return_value="veg")  # type: ignore[method-assign]
+    coordinator._get_current_thresholds = MagicMock(  # type: ignore[method-assign]
         return_value={"on": 1.0, "off": 2.0}
     )
-    coordinator._control_dehumidifier = AsyncMock()
+    coordinator._control_dehumidifier = AsyncMock()  # type: ignore[method-assign]
 
     await coordinator.async_check_and_control()
 

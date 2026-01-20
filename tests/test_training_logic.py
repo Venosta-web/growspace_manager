@@ -4,7 +4,6 @@ from datetime import datetime
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from homeassistant.core import HomeAssistant, ServiceCall
 
 from custom_components.growspace_manager.const import (
     ATTR_GROWSPACE_ID,
@@ -14,11 +13,12 @@ from custom_components.growspace_manager.const import (
     TrainingTechnique,
 )
 from custom_components.growspace_manager.coordinator import GrowspaceCoordinator
-from custom_components.growspace_manager.models import Plant
-from .conftest import create_plant
 from custom_components.growspace_manager.services.training import (
     handle_log_training_event,
 )
+from homeassistant.core import HomeAssistant, ServiceCall
+
+from .common import create_plant
 
 
 @pytest.fixture
@@ -95,8 +95,8 @@ async def test_log_training_single_plant(
     assert mock_coordinator.plants["plant_1"].last_training_technique == technique
 
     # Check event creation
-    mock_coordinator.add_event.assert_called_once()
-    args, _ = mock_coordinator.add_event.call_args
+    mock_coordinator.add_event.assert_called_once()  # type: ignore[attr-defined]
+    args, _ = mock_coordinator.add_event.call_args  # type: ignore[attr-defined]
     gid, event = args
 
     assert gid == "gs_1"
@@ -127,8 +127,8 @@ async def test_log_training_growspace_all(
     assert mock_coordinator.plants["plant_3"].last_training_technique is None
 
     # Check event
-    mock_coordinator.add_event.assert_called_once()
-    args, _ = mock_coordinator.add_event.call_args
+    mock_coordinator.add_event.assert_called_once()  # type: ignore[attr-defined]
+    args, _ = mock_coordinator.add_event.call_args  # type: ignore[attr-defined]
     _, event = args
     assert event.growspace_id == "gs_1"
     # Should not list specific plants if all were affected (implementation detail check)
@@ -149,7 +149,7 @@ async def test_log_training_subset(mock_coordinator: GrowspaceCoordinator) -> No
     assert mock_coordinator.plants["plant_2"].last_training_technique is None
 
     # Check event lists specific plants
-    args, _ = mock_coordinator.add_event.call_args
+    args, _ = mock_coordinator.add_event.call_args  # type: ignore[attr-defined]
     _, event = args
     # Access as dict or object depending on what it is.
     # If it is a dataclass, it should have attributes.

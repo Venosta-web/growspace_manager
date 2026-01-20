@@ -18,10 +18,7 @@ from homeassistant.const import (
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.event import async_track_state_change_event
 
-from .const import (
-    DEFAULT_DEHUMIDIFIER_MIN_OFFTIME,
-    DEFAULT_DEHUMIDIFIER_MIN_RUNTIME,
-)
+from .const import DEFAULT_DEHUMIDIFIER_MIN_OFFTIME, DEFAULT_DEHUMIDIFIER_MIN_RUNTIME
 
 if TYPE_CHECKING:
     from .coordinator import GrowspaceCoordinator
@@ -84,7 +81,7 @@ class DehumidifierCoordinator:
         self.config_entry = config_entry
         self.growspace_id = growspace_id
         self.main_coordinator = main_coordinator
-        self._remove_listeners: list = []
+        self._remove_listeners: list[Any] = []
 
         # Timing state for short-cycling prevention
         self._last_turn_on_time: float = 0.0
@@ -98,7 +95,7 @@ class DehumidifierCoordinator:
             )
             return
 
-        self.env_config = self.growspace.environment_config or {}
+        self.env_config: Any = self.growspace.environment_config or {}
         self.dehumidifier_config = getattr(self.growspace, "dehumidifier_config", {})
 
         # Entity IDs - env_config is an EnvironmentConfig object, use attribute access
@@ -119,7 +116,9 @@ class DehumidifierCoordinator:
         )
 
         # Thresholds
-        self.user_thresholds = getattr(self.env_config, "dehumidifier_thresholds", {})
+        self.user_thresholds: dict[str, Any] = getattr(
+            self.env_config, "dehumidifier_thresholds", {}
+        )
 
         # Valid if we have VPD sensor and at least one device to control
         has_devices = bool(self.dehumidifier_entities or self.exhaust_fan_entities)
@@ -313,7 +312,8 @@ class DehumidifierCoordinator:
 
         # Check user overrides first
         if stage in self.user_thresholds and day_key in self.user_thresholds[stage]:
-            return self.user_thresholds[stage][day_key]
+            # Expecting dict[str, float] structure
+            return dict(self.user_thresholds[stage][day_key])
 
         # Fallback to defaults
         return DEFAULT_THRESHOLDS.get(stage, DEFAULT_THRESHOLDS["veg"])[day_key]
@@ -340,7 +340,7 @@ class DehumidifierCoordinator:
                     {ATTR_ENTITY_ID: entity_id},
                     blocking=False,  # Use non-blocking to speed up
                 )
-            except Exception:
+            except Exception:  # noqa: BLE001
                 _LOGGER.warning("Failed to control device %s", entity_id, exc_info=True)
 
         # Update timestamps for short-cycling prevention

@@ -4,8 +4,6 @@ import asyncio
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from homeassistant.config_entries import ConfigEntry
-from homeassistant.core import HomeAssistant
 
 from custom_components.growspace_manager.const import DOMAIN
 from custom_components.growspace_manager.irrigation_coordinator import (
@@ -13,6 +11,8 @@ from custom_components.growspace_manager.irrigation_coordinator import (
     IrrigationCoordinator,
 )
 from custom_components.growspace_manager.models import Growspace, IrrigationConfig
+from homeassistant.config_entries import ConfigEntry
+from homeassistant.core import HomeAssistant
 
 GROWSPACE_ID = "test_growspace"
 ENTRY_ID = "test_entry_id"

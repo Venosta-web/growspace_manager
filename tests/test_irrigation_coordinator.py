@@ -6,8 +6,6 @@ from datetime import datetime
 from unittest.mock import AsyncMock, MagicMock, Mock, patch
 
 import pytest
-from homeassistant.config_entries import ConfigEntry
-from homeassistant.core import HomeAssistant
 
 from custom_components.growspace_manager.const import DOMAIN
 from custom_components.growspace_manager.irrigation_coordinator import (
@@ -15,6 +13,8 @@ from custom_components.growspace_manager.irrigation_coordinator import (
     IrrigationCoordinator,
 )
 from custom_components.growspace_manager.models import Growspace, IrrigationConfig
+from homeassistant.config_entries import ConfigEntry
+from homeassistant.core import HomeAssistant
 
 GROWSPACE_ID = "test_growspace"
 ENTRY_ID = "test_entry_id"
@@ -35,10 +35,10 @@ def mock_main_coordinator() -> MagicMock:
                 irrigation_duration=30,
                 drain_duration=60,
                 irrigation_times=[
-                    {"time": "10:00:00"},
+                    {"time": "10:00:00", "duration": 30},
                     {"time": "20:00:00", "duration": 45},
                 ],
-                drain_times=[{"time": "12:00:00"}],
+                drain_times=[{"time": "12:00:00", "duration": 60}],
             ),
         )
     }
@@ -76,10 +76,10 @@ def mock_config_entry() -> MagicMock:
                 "irrigation_duration": 30,
                 "drain_duration": 60,
                 "irrigation_times": [
-                    {"time": "10:00:00"},
+                    {"time": "10:00:00", "duration": 30},
                     {"time": "20:00:00", "duration": 45},
                 ],
-                "drain_times": [{"time": "12:00:00"}],
+                "drain_times": [{"time": "12:00:00", "duration": 60}],
             }
         }
     }
@@ -282,6 +282,7 @@ async def test_async_add_schedule_item(
         await coordinator.async_add_schedule_item("irrigation_times", "08:00", 30)
 
         new_item = next((i for i in items if i["time"] == "08:00:00"), None)
+        assert new_item is not None
         assert new_item["duration"] == 30
 
         assert mock_main_coordinator.async_save.call_count == 2
@@ -623,7 +624,7 @@ async def test_run_pump_cycle_with_moisture_logging(
         await coordinator._run_pump_cycle("irrigation", "switch.pump", 30, {})
 
         mock_main_coordinator.add_event.assert_called_once()
-        args, _ = mock_main_coordinator.add_event.call_args
+        _args, _ = mock_main_coordinator.add_event.call_args
         # Removed unused event = args[1]
 
 
@@ -694,7 +695,7 @@ async def test_irrigation_coordinator_coverage_gaps(
         )  # Lines 161-162 (error logged)
 
         # 4. Test async_request_refresh
-        coordinator.async_update_listeners = AsyncMock()
+        coordinator.async_update_listeners = AsyncMock()  # type: ignore[method-assign]
         await coordinator.async_request_refresh()
         coordinator.async_update_listeners.assert_called_once()  # Line 115
 

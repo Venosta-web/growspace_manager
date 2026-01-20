@@ -28,9 +28,9 @@ def coordinator_mock():
     mock.async_commit = AsyncMock()
     mock.serializer = MagicMock()
     mock.serializer.calculate_days_in_stage = MagicMock(return_value=10)
-    mock._lock = MagicMock()
-    mock._lock.__aenter__ = AsyncMock(return_value=None)
-    mock._lock.__aexit__ = AsyncMock(return_value=None)
+    mock.lock = MagicMock()
+    mock.lock.__aenter__ = AsyncMock(return_value=None)
+    mock.lock.__aexit__ = AsyncMock(return_value=None)
     return mock
 
 
@@ -139,8 +139,6 @@ async def test_harvest_auto_flow_strict_matching_audreys_garden(
 
         # Maybe we need token-based matching or manual override.
         # For now, strict equality against aliases is safer. User should alias "Drying Tent" or name it "Drying".
-
-    pass
 
 
 @pytest.mark.asyncio

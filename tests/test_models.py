@@ -11,7 +11,7 @@ from custom_components.growspace_manager.models import (
     Plant,
 )
 
-from .conftest import create_plant
+from .common import create_plant
 
 # --------------------
 # Growspace Model Tests

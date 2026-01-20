@@ -4,7 +4,6 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 import voluptuous as vol
-from homeassistant.core import HomeAssistant
 
 from custom_components.growspace_manager.config_handlers.ai_config_handler import (
     AIConfigHandler,
@@ -14,10 +13,11 @@ from custom_components.growspace_manager.const import (
     CONF_ASSISTANT_ID,
     DOMAIN,
 )
+from homeassistant.core import HomeAssistant
 
 
 @pytest.fixture
-def mock_hass():
+def mock_hass() -> MagicMock:
     """Mock Home Assistant instance."""
     hass = MagicMock(spec=HomeAssistant)
     hass.data = {DOMAIN: {}}
@@ -26,7 +26,7 @@ def mock_hass():
 
 
 @pytest.fixture
-def mock_config_entry():
+def mock_config_entry() -> MagicMock:
     """Mock Config Entry."""
     entry = MagicMock()
     entry.entry_id = "test_entry"
@@ -35,18 +35,22 @@ def mock_config_entry():
 
 
 @pytest.fixture
-def handler(mock_hass, mock_config_entry):
+def handler(mock_hass: MagicMock, mock_config_entry: MagicMock) -> AIConfigHandler:
     """Create an AIConfigHandler instance."""
     return AIConfigHandler(mock_hass, mock_config_entry)
 
 
-async def test_initialization(handler, mock_hass, mock_config_entry) -> None:
+async def test_initialization(
+    handler: AIConfigHandler, mock_hass: MagicMock, mock_config_entry: MagicMock
+) -> None:
     """Test successful initialization."""
     assert handler.hass == mock_hass
     assert handler.config_entry == mock_config_entry
 
 
-async def test_get_ai_settings_schema_defaults(handler, mock_hass) -> None:
+async def testget_ai_settings_schema_defaults(
+    handler: AIConfigHandler, mock_hass: MagicMock
+) -> None:
     """Test schema generation with default values."""
     mock_hass.states.async_all.return_value = []
     schema = await handler.get_ai_settings_schema()
@@ -54,7 +58,9 @@ async def test_get_ai_settings_schema_defaults(handler, mock_hass) -> None:
     assert isinstance(schema, vol.Schema)
 
 
-async def test_get_ai_settings_schema_with_agents(handler, mock_hass) -> None:
+async def testget_ai_settings_schema_with_agents(
+    handler: AIConfigHandler, mock_hass: MagicMock
+) -> None:
     """Test schema generation with available conversation agents."""
     agent1 = MagicMock()
     agent1.entity_id = "conversation.agent_1"
@@ -71,7 +77,9 @@ async def test_get_ai_settings_schema_with_agents(handler, mock_hass) -> None:
     assert isinstance(schema, vol.Schema)
 
 
-async def test_get_ai_settings_schema_no_agents(handler, mock_hass) -> None:
+async def testget_ai_settings_schema_no_agents(
+    handler: AIConfigHandler, mock_hass: MagicMock
+) -> None:
     """Test schema generation when no agents are found."""
     mock_hass.states.async_all.return_value = []
 
@@ -80,7 +88,9 @@ async def test_get_ai_settings_schema_no_agents(handler, mock_hass) -> None:
     assert isinstance(schema, vol.Schema)
 
 
-async def test_save_ai_settings(handler, mock_hass, mock_config_entry) -> None:
+async def test_save_ai_settings(
+    handler: AIConfigHandler, mock_hass: MagicMock, mock_config_entry: MagicMock
+) -> None:
     """Test saving AI settings."""
     # Setup coordinator mock
     mock_coordinator = MagicMock()

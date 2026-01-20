@@ -9,8 +9,8 @@ from __future__ import annotations
 
 # Standard library
 import asyncio
-import logging
 from datetime import datetime
+import logging
 from typing import Any, override
 
 # Third-party / external
@@ -18,7 +18,7 @@ from typing import Any, override
 from homeassistant.components.sensor import SensorEntity, SensorStateClass
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import EntityCategory
-from homeassistant.core import HomeAssistant
+from homeassistant.core import Event, HomeAssistant
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity import Entity
@@ -62,7 +62,7 @@ async def _async_create_derivative_sensors(
     hass: HomeAssistant,
     config_entry: ConfigEntry,
     growspace: Growspace,
-):
+) -> None:
     """Create helper trend and statistics sensors for a growspace's environment.
 
     This function sets up `trend` and `statistics` helper entities for the
@@ -79,7 +79,13 @@ async def _async_create_derivative_sensors(
 
     created_entity_ids = config_entry.runtime_data.created_entity_ids
 
-    async def _create_and_track(sensor_cls_setup, platform, domain, s_type, s_source):
+    async def _create_and_track(
+        sensor_cls_setup: Any,
+        platform: str,
+        domain: str,
+        s_type: str,
+        s_source: str,
+    ) -> None:
         unique_id = await sensor_cls_setup(
             hass, s_source, growspace.id, growspace.name, s_type
         )
@@ -326,7 +332,7 @@ def _check_calculated_vpd_sensor(
     if not env_config:
         return None
 
-    def get_val(key):
+    def get_val(key: str) -> Any:
         if isinstance(env_config, dict):
             return env_config.get(key)
         return getattr(env_config, key, None)
@@ -339,16 +345,14 @@ def _check_calculated_vpd_sensor(
     # OR if the configured sensor appears to be one we generated (contains calculated_vpd)
     should_create = False
     if temp_sensor and humidity_sensor:
-        if not vpd_sensor:
-            should_create = True
-        elif "calculated_vpd" in vpd_sensor:
+        if not vpd_sensor or "calculated_vpd" in vpd_sensor:
             should_create = True
 
     if should_create:
         lst_offset = get_val("lst_offset")
         if lst_offset is None:
             lst_offset = -2.0
-        calc_vpd_sensor = CalculatedVpdSensor(
+        return CalculatedVpdSensor(
             coordinator,
             growspace.id,
             growspace.name,
@@ -357,17 +361,16 @@ def _check_calculated_vpd_sensor(
             lst_offset,
         )
 
-        return calc_vpd_sensor
     return None
 
 
-class BaseVpdSensor(SensorEntity):
+class BaseVpdSensor(SensorEntity):  # type: ignore[misc]
     """Base class for VPD sensors providing common functionality."""
 
     _attr_state_class = SensorStateClass.MEASUREMENT
     _attr_native_unit_of_measurement = "kPa"
 
-    @override
+    @override  # type: ignore[misc]
     async def async_added_to_hass(self) -> None:
         """Register callbacks when the entity is added to Home Assistant."""
         if self.entities_to_track:
@@ -377,7 +380,7 @@ class BaseVpdSensor(SensorEntity):
                 )
             )
 
-    async def _handle_source_update(self, event) -> None:
+    async def _handle_source_update(self, event: Event) -> None:
         """Handle updates from source sensors."""
         self.async_write_ha_state()
 
@@ -447,7 +450,7 @@ class VpdSensor(BaseVpdSensor):
         return tracking
 
     @property
-    @override
+    @override  # type: ignore[misc]
     def native_value(self) -> float | None:
         """Return the calculated VPD value in kPa."""
         temp = None
@@ -508,7 +511,7 @@ class CalculatedVpdSensor(BaseVpdSensor):
         return [self._temp_sensor, self._humidity_sensor]
 
     @property
-    @override
+    @override  # type: ignore[misc]
     def native_value(self) -> float | None:
         """Return the calculated VPD value in kPa."""
         temp = self._get_float_state(self._temp_sensor)
@@ -521,7 +524,7 @@ class CalculatedVpdSensor(BaseVpdSensor):
         return None
 
     @property
-    @override
+    @override  # type: ignore[misc]
     def extra_state_attributes(self) -> dict[str, Any]:
         """Return additional state attributes."""
         return {
@@ -532,7 +535,7 @@ class CalculatedVpdSensor(BaseVpdSensor):
         }
 
 
-class AirExchangeSensor(CoordinatorEntity[GrowspaceCoordinator], SensorEntity):
+class AirExchangeSensor(CoordinatorEntity[GrowspaceCoordinator], SensorEntity):  # type: ignore[misc]
     """A sensor that provides an air exchange recommendation for a growspace.
 
     This sensor's state reflects the recommended action (e.g., 'Open Window',
@@ -564,17 +567,17 @@ class AirExchangeSensor(CoordinatorEntity[GrowspaceCoordinator], SensorEntity):
         )
 
     @property
-    @override
+    @override  # type: ignore[misc]
     def native_value(self) -> str:
         """Return the current recommended air exchange action."""
         # The actual state is calculated in the coordinator and stored.
         # This sensor just retrieves it.
-        return self.coordinator.data.get("air_exchange_recommendations", {}).get(
+        return self.coordinator.data.get("air_exchange_recommendations", {}).get(  # type: ignore[no-any-return]
             self.growspace_id, "Idle"
         )
 
 
-class GrowspaceOverviewSensor(CoordinatorEntity[GrowspaceCoordinator], SensorEntity):
+class GrowspaceOverviewSensor(CoordinatorEntity[GrowspaceCoordinator], SensorEntity):  # type: ignore[misc]
     """A sensor that provides an overview of a single growspace.
 
     The state of this sensor is the number of plants in the growspace. Its
@@ -622,7 +625,7 @@ class GrowspaceOverviewSensor(CoordinatorEntity[GrowspaceCoordinator], SensorEnt
             manufacturer="Growspace Manager",
         )
 
-    @override
+    @override  # type: ignore[misc]
     async def async_added_to_hass(self) -> None:
         """Register callbacks when the entity is added to Home Assistant."""
         await super().async_added_to_hass()
@@ -655,7 +658,7 @@ class GrowspaceOverviewSensor(CoordinatorEntity[GrowspaceCoordinator], SensorEnt
 
         return sensors
 
-    async def _handle_sensor_update(self, event) -> None:
+    async def _handle_sensor_update(self, event: Event) -> None:
         """Handle updates from tracked environment sensors."""
         # Use the public thread-safe method to refresh growspace data
         await self.coordinator.async_refresh_growspace_data(self.growspace_id)
@@ -663,14 +666,14 @@ class GrowspaceOverviewSensor(CoordinatorEntity[GrowspaceCoordinator], SensorEnt
         self.async_write_ha_state()
 
     @property
-    @override
+    @override  # type: ignore[misc]
     def native_value(self) -> int:
         """Return the number of plants in the growspace."""
         plants = self.coordinator.get_growspace_plants(self.growspace_id)
         return len(plants)
 
     @property
-    @override
+    @override  # type: ignore[misc]
     def extra_state_attributes(self) -> dict[str, Any]:
         """Return the detailed state attributes for the growspace."""
         # Fetch pre-calculated serialization from coordinator
@@ -688,10 +691,10 @@ class GrowspaceOverviewSensor(CoordinatorEntity[GrowspaceCoordinator], SensorEnt
         attributes.pop("grid", None)
         attributes.pop("plants", None)
 
-        return attributes
+        return attributes  # type: ignore[no-any-return]
 
 
-class PlantEntity(CoordinatorEntity[GrowspaceCoordinator], SensorEntity):
+class PlantEntity(CoordinatorEntity[GrowspaceCoordinator], SensorEntity):  # type: ignore[misc]
     """A sensor representing a single plant in a growspace.
 
     The state of this sensor is the plant's current growth stage (e.g., 'veg',
@@ -715,7 +718,7 @@ class PlantEntity(CoordinatorEntity[GrowspaceCoordinator], SensorEntity):
 
         # Set up device info - plant belongs to growspace device
         growspace_id = plant.growspace_id
-        growspace = coordinator.growspaces.get(growspace_id, {})
+        growspace: Any = coordinator.growspaces.get(growspace_id, {})
         self._attr_device_info = DeviceInfo(
             identifiers={(DOMAIN, growspace_id)},
             name=getattr(growspace, "name", growspace_id),
@@ -724,7 +727,7 @@ class PlantEntity(CoordinatorEntity[GrowspaceCoordinator], SensorEntity):
         )
 
     @property
-    @override
+    @override  # type: ignore[misc]
     def native_value(self) -> str:
         """Return the current growth stage of the plant."""
         # Get updated plant data
@@ -740,7 +743,7 @@ class PlantEntity(CoordinatorEntity[GrowspaceCoordinator], SensorEntity):
         return stage
 
     @property
-    @override
+    @override  # type: ignore[misc]
     def extra_state_attributes(self) -> dict[str, Any]:
         """Return the detailed state attributes for the plant."""
         plant = self.coordinator.plants.get(self._plant.plant_id)
@@ -779,13 +782,13 @@ class PlantEntity(CoordinatorEntity[GrowspaceCoordinator], SensorEntity):
 
         return attributes
 
-    @override
+    @override  # type: ignore[misc]
     async def async_added_to_hass(self) -> None:
         """Register callbacks when the entity is added to Home Assistant."""
         await super().async_added_to_hass()
 
 
-class StrainLibrarySensor(CoordinatorEntity[GrowspaceCoordinator], SensorEntity):
+class StrainLibrarySensor(CoordinatorEntity[GrowspaceCoordinator], SensorEntity):  # type: ignore[misc]
     """A sensor that provides analytics from the user's strain library.
 
     The state of this sensor is the total number of unique strains (and
@@ -813,13 +816,13 @@ class StrainLibrarySensor(CoordinatorEntity[GrowspaceCoordinator], SensorEntity)
         )
 
     @property
-    @override
+    @override  # type: ignore[misc]
     def native_value(self) -> int:
         """Return the number of unique strains in the library."""
         return len(self.coordinator.strain_library.get_all())
 
     @property
-    @override
+    @override  # type: ignore[misc]
     def extra_state_attributes(self) -> dict[str, Any]:
         """Return the calculated strain analytics as state attributes."""
         # Get the full data but only extract what is strictly necessary for basic HA usage
@@ -836,7 +839,7 @@ class StrainLibrarySensor(CoordinatorEntity[GrowspaceCoordinator], SensorEntity)
     # Register common system sensors (Library, etc.)
 
 
-class GrowspaceListSensor(SensorEntity):
+class GrowspaceListSensor(SensorEntity):  # type: ignore[misc]
     """A sensor that exposes the list of all configured growspaces.
 
     The state of this sensor is the total number of growspaces. Its attributes
@@ -860,19 +863,19 @@ class GrowspaceListSensor(SensorEntity):
         )
         self._update_growspaces()
 
-    def _update_growspaces(self):
+    def _update_growspaces(self) -> None:
         """Update the internal list of growspaces from the coordinator."""
         self._growspaces = self.coordinator.get_growspace_options()
 
     @property
-    @override
-    def native_value(self):
+    @override  # type: ignore[misc]
+    def native_value(self) -> int:
         """Return the total number of growspaces."""
         self._update_growspaces()
         return len(self._growspaces)
 
     @property
-    @override
-    def extra_state_attributes(self):
+    @override  # type: ignore[misc]
+    def extra_state_attributes(self) -> dict[str, dict[str, Any]]:
         """Return the list of growspaces as a state attribute."""
         return {"growspaces": self._growspaces}

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 import pathlib
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from homeassistant.components.http import StaticPathConfig
 from homeassistant.config_entries import ConfigEntry
@@ -15,15 +15,10 @@ from homeassistant.helpers.storage import Store
 from homeassistant.helpers.typing import ConfigType
 
 from . import service_registration
-from .const import (
-    DOMAIN,
-    PLATFORMS,
-    STORAGE_KEY,
-    STORAGE_VERSION,
-)
+from .const import DOMAIN, PLATFORMS, STORAGE_KEY, STORAGE_VERSION
 from .coordinator import GrowspaceCoordinator
 from .intent import async_setup_intents
-from .services.strain_library import StrainLibrary
+from .strain_library import StrainLibrary
 from .views import StrainLibraryImageView, StrainLibraryUploadView
 from .websocket import async_register_websocket_api
 
@@ -32,7 +27,10 @@ CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 _LOGGER = logging.getLogger(__name__)
 
 
-type GrowspaceConfigEntry = ConfigEntry[GrowspaceCoordinator]
+if TYPE_CHECKING:
+    from typing import TypeAlias
+
+GrowspaceConfigEntry: TypeAlias = ConfigEntry["GrowspaceCoordinator"]  # noqa: UP040
 
 
 async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
@@ -151,7 +149,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: GrowspaceConfigEntry) ->
     return True
 
 
-@callback
+@callback  # type: ignore[misc]
 def _async_cancel_coordinators(coordinator: GrowspaceCoordinator) -> None:
     """Cancel irrigation and dehumidifier listeners."""
     for irr_coordinator in coordinator.irrigation_coordinators.values():

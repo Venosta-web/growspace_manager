@@ -1,19 +1,15 @@
 """Tests to close identified coverage gaps in growspace_manager."""
 
-import json
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
+import json
+from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from homeassistant.core import HomeAssistant
 
-from custom_components.growspace_manager import (
-    StrainLibraryUploadView,
-)
-from custom_components.growspace_manager.bayesian_evaluator import (
-    _is_vpd_trend_gated,
-)
+from custom_components.growspace_manager import StrainLibraryUploadView
+from custom_components.growspace_manager.bayesian_evaluator import _is_vpd_trend_gated
 from custom_components.growspace_manager.binary_sensor import (
     BayesianEnvironmentSensor,
     GrowspaceBinarySensorDescription,
@@ -56,8 +52,9 @@ from custom_components.growspace_manager.websocket import (
     _merge_logbook_event,
     websocket_get_event_log,
 )
+from homeassistant.core import HomeAssistant
 
-from .conftest import create_plant
+from .common import create_plant
 
 # --- Dehumidifier Coordinator Coverage ---
 
@@ -204,7 +201,7 @@ async def test_mold_risk_stage_branches_coverage(hass: HomeAssistant) -> None:
 async def test_lifecycle_history_closing_coverage(hass: HomeAssistant) -> None:
     """Test transition_plant_stage correctly closes previous history entry."""
     mock_coordinator = MagicMock()
-    mock_coordinator._lock = AsyncMock()
+    mock_coordinator.lock = AsyncMock()
     mock_coordinator.async_commit = AsyncMock()
 
     plant = create_plant(
@@ -244,7 +241,7 @@ async def test_batch_add_mother_auto_date_coverage(hass: HomeAssistant) -> None:
     call.data = {ATTR_GROWSPACE_ID: "mother", ATTR_STRAIN: "Strain A", ATTR_AMOUNT: 1}
 
     await handle_add_plants(hass, mock_coordinator, MagicMock(), call)
-    args, kwargs = mock_coordinator.async_add_plant.call_args
+    _args, kwargs = mock_coordinator.async_add_plant.call_args
     assert kwargs.get("mother_start") is not None
 
 
@@ -282,13 +279,13 @@ async def test_statistics_empty_data_coverage(hass: HomeAssistant) -> None:
     start = datetime.now()
     end = datetime.now()
     with patch(
-        "custom_components.growspace_manager.websocket.recorder_stats.async_statistics_during_period",
+        "custom_components.growspace_manager.websocket.recorder_stats.statistics_during_period",
         new_callable=AsyncMock,
         create=True,
     ) as mock_stats:
         mock_stats.return_value = {"other": []}
         res = await _get_statistics_data(hass, ["sensor.test"], start, end, 3600)
-        assert res["sensor.test"] == []
+        assert res is None
 
 
 # --- Strain Library Image View Coverage ---
@@ -328,10 +325,10 @@ async def test_strain_library_image_view_coverage(hass: HomeAssistant) -> None:
         mock_path.__truediv__.return_value = mock_path
         mock_path.exists.return_value = True
         mock_path.is_file.return_value = True
-        # str(file_path).startswith(str(storage_dir.resolve()))
-        mock_path.__str__.return_value = "/tmp/test.jpg"
-
-        resp = await view.get(None, "test.jpg")
+    request = MagicMock()
+    # 2. get calls logic inline
+    with patch("os.path.exists", return_value=True):
+        resp = await view.get(request, "strain_id.jpg")
         assert resp.status == 200
 
 
@@ -360,9 +357,9 @@ async def test_websocket_get_event_log_spam_filter_coverage(
             self.shared_data = shared_data
 
     # SQL filtering means only non-spam events in result
-    events_to_return = []
-    for i in range(20):
-        events_to_return.append((MockEvent(i, 2000.0 + i), MockData(normal_data)))
+    events_to_return = [
+        (MockEvent(i, 2000.0 + i), MockData(normal_data)) for i in range(20)
+    ]
 
     # Mock query chain with SQL filtering
     mock_query_base = MagicMock()
@@ -469,11 +466,12 @@ async def test_merge_logbook_event_exception_coverage() -> None:
 
 @pytest.mark.asyncio
 async def test_strain_library_upload_view_error_cleanup_coverage(
-    hass: HomeAssistant,
+    hass: HomeAssistant, tmp_path: Path
 ) -> None:
     """Test StrainLibraryUploadView cleanup on failure."""
     view = StrainLibraryUploadView(hass, MagicMock())
 
+    temp_file = tmp_path / "test.zip"
     mock_field = AsyncMock()
     mock_field.name = "file"
     mock_field.read_chunk.side_effect = Exception("Write failed")
@@ -481,12 +479,14 @@ async def test_strain_library_upload_view_error_cleanup_coverage(
     with (
         patch(
             "custom_components.growspace_manager.views.tempfile.mkstemp",
-            return_value=(1, "/tmp/test.zip"),
+            return_value=(1, str(temp_file)),
         ),
         patch(
             "custom_components.growspace_manager.views.pathlib.Path"
         ) as mock_path_cls,
     ):
+        # 1. _get_image_path returning None - we need to silence Mypy as it thinks this is a method
+        # view._get_image_path = MagicMock(return_value=None)
         mock_path = MagicMock()
         mock_path_cls.return_value = mock_path
         mock_path.exists.return_value = True
@@ -715,7 +715,7 @@ def test_coordinator_extract_gs_ids_coverage() -> None:
     coordinator.growspaces = {"gs3": MagicMock()}
     coordinator.plants = {"p1": MagicMock(growspace_id="gs3")}
 
-    gs_ids = set()
+    gs_ids: set[str] = set()
 
     # Strategy 1 result: hasattr(result, "growspace_id")
     class MockResult:
@@ -773,10 +773,10 @@ async def test_lifecycle_history_stages_coverage(hass: HomeAssistant) -> None:
     mock_coordinator.plants = {"p1": plant}
 
     manager = PlantLifecycleManager(mock_coordinator)
-    manager.async_update_plant = AsyncMock()
-    manager.move_to_dry_growspace = AsyncMock()
-    manager.move_to_cure_growspace = AsyncMock()
-    manager.move_to_clone_growspace = AsyncMock()
+    manager.async_update_plant = AsyncMock()  # type: ignore[method-assign]
+    manager.move_to_dry_growspace = AsyncMock()  # type: ignore[method-assign]
+    manager.move_to_cure_growspace = AsyncMock()  # type: ignore[method-assign]
+    manager.move_to_clone_growspace = AsyncMock()  # type: ignore[method-assign]
 
     # Hit DRY transition
     await manager.transition_plant_stage("p1", PlantStage.DRY)

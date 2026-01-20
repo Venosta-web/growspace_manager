@@ -3,13 +3,13 @@
 import glob
 import json
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, Mock, patch
 
 import pytest
-from homeassistant.core import HomeAssistant
 
 from custom_components.growspace_manager.models import Growspace
 from custom_components.growspace_manager.storage_manager import StorageManager
+from homeassistant.core import HomeAssistant
 
 
 @pytest.fixture
@@ -80,7 +80,7 @@ async def test_load_growspaces_uses_serializer(
 
 @pytest.mark.asyncio
 async def test_backup_logic_with_corrupt_data(
-    hass: HomeAssistant, mock_coordinator
+    hass: HomeAssistant, mock_coordinator: Mock, tmp_path: Path
 ) -> None:
     """Test that corrupt data triggers a backup file creation."""
     mock_coordinator.serializer.deserialize_growspaces.side_effect = Exception(
@@ -91,7 +91,7 @@ async def test_backup_logic_with_corrupt_data(
 
     # Mock hass.config.path to return a temp directory
     # Mock hass.config.path to return a temp directory
-    with patch.object(hass.config, "path", return_value="/tmp"):
+    with patch.object(hass.config, "path", return_value=str(tmp_path)):
         # Corrupt data
         bad_data = {"growspaces": {"bad_id": "bad_data"}}
 
@@ -105,12 +105,12 @@ async def test_backup_logic_with_corrupt_data(
 
         # Verify backup file creation
 
-        files = glob.glob("/tmp/growspace_manager_growspaces_CORRUPT_*.json")
+        files = glob.glob(f"{tmp_path}/growspace_manager_growspaces_CORRUPT_*.json")
         assert len(files) >= 1, "Backup file was not created"
 
         # Read the file and check content
         last_file = files[-1]
-        with open(last_file, encoding="utf-8") as f:
+        with Path(last_file).open(encoding="utf-8") as f:  # noqa: ASYNC230
             saved_data = json.load(f)
             assert saved_data == bad_data
 

@@ -3,8 +3,9 @@
 import pytest
 
 from custom_components.growspace_manager.data_repository import DataRepository
-from custom_components.growspace_manager.models import Growspace, Plant
-from .conftest import create_plant
+from custom_components.growspace_manager.models import Growspace
+
+from .common import create_plant
 
 
 @pytest.fixture

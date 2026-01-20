@@ -7,23 +7,27 @@ extracted from the coordinator to reduce complexity.
 from __future__ import annotations
 
 import logging
-import uuid
 from typing import TYPE_CHECKING, Any
+import uuid
 
 if TYPE_CHECKING:
-    from ..coordinator import GrowspaceCoordinator
+    from custom_components.growspace_manager.coordinator import GrowspaceCoordinator
 
-from homeassistant.helpers import device_registry as dr
-
-from ..const import DEFAULT_PLANTS_PER_ROW, DEFAULT_ROWS, DOMAIN, PlantStage
-from ..events import (
+from custom_components.growspace_manager.const import (
+    DEFAULT_PLANTS_PER_ROW,
+    DEFAULT_ROWS,
+    DOMAIN,
+    PlantStage,
+)
+from custom_components.growspace_manager.events import (
     EVENT_GROWSPACE_ADDED,
     EVENT_GROWSPACE_REMOVED,
     EVENT_GROWSPACE_UPDATED,
     async_fire_growspace_event,
 )
-from ..exceptions import GrowspaceNotFoundError
-from ..models import Growspace, GrowspaceType
+from custom_components.growspace_manager.exceptions import GrowspaceNotFoundError
+from custom_components.growspace_manager.models import Growspace, GrowspaceType
+from homeassistant.helpers import device_registry as dr
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -38,7 +42,7 @@ class GrowspaceService:
             coordinator: Reference to parent coordinator for accessing
                         shared resources.
         """
-        self._coord = coordinator
+        self.coordinator = coordinator
 
     async def add_growspace(
         self,
@@ -59,7 +63,7 @@ class GrowspaceService:
             device_id: The device ID to associate with the growspace (optional).
             growspace_type: The type of growspace.
         """
-        async with self._coord._lock:
+        async with self.coordinator.lock:
             # Normalize notification target
             if not notification_target or notification_target in ("None", "none", ""):
                 _LOGGER.debug(
@@ -77,15 +81,15 @@ class GrowspaceService:
                 device_id=device_id,
                 growspace_type=growspace_type,
             )
-            self._coord.growspaces[growspace_id] = growspace
+            self.coordinator.growspaces[growspace_id] = growspace
 
             # Enable notifications by default for new growspace
-            self._coord._notifications_enabled[growspace_id] = True
+            self.coordinator.notifications_enabled[growspace_id] = True
 
-            await self._coord.async_commit()
+            await self.coordinator.async_commit()
 
             async_fire_growspace_event(
-                self._coord.hass, EVENT_GROWSPACE_ADDED, growspace
+                self.coordinator.hass, EVENT_GROWSPACE_ADDED, growspace
             )
             return growspace
 
@@ -95,30 +99,30 @@ class GrowspaceService:
         Args:
             growspace_id: The ID of the growspace to remove.
         """
-        async with self._coord._lock:
-            self._coord.validator.validate_growspace_exists(growspace_id)
+        async with self.coordinator.lock:
+            self.coordinator.validator.validate_growspace_exists(growspace_id)
 
             # Remove all plants in this growspace
             plants_to_remove = [
                 plant_id
-                for plant_id, plant in self._coord.plants.items()
+                for plant_id, plant in self.coordinator.plants.items()
                 if plant.growspace_id == growspace_id
             ]
 
             for plant_id in plants_to_remove:
-                self._coord.plants.pop(plant_id, None)
-                self._coord._notifications_sent.pop(plant_id, None)
+                self.coordinator.plants.pop(plant_id, None)
+                self.coordinator.notifications_sent.pop(plant_id, None)
 
-            growspace = self._coord.growspaces[growspace_id]
+            growspace = self.coordinator.growspaces[growspace_id]
             growspace_name = growspace.name
-            self._coord.growspaces.pop(growspace_id, None)
+            self.coordinator.growspaces.pop(growspace_id, None)
 
             # Remove notification state
-            self._coord._notifications_enabled.pop(growspace_id, None)
+            self.coordinator.notifications_enabled.pop(growspace_id, None)
 
             # Remove device from registry
             try:
-                dev_reg = dr.async_get(self._coord.hass)
+                dev_reg = dr.async_get(self.coordinator.hass)
                 device = dev_reg.async_get_device(identifiers={(DOMAIN, growspace_id)})
                 if device:
                     dev_reg.async_remove_device(device.id)
@@ -128,7 +132,7 @@ class GrowspaceService:
                     "Error removing device for growspace %s", growspace_id
                 )
 
-            await self._coord.async_commit()
+            await self.coordinator.async_commit()
 
             _LOGGER.info(
                 "Removed growspace %s (%s) and %d plants",
@@ -137,18 +141,18 @@ class GrowspaceService:
                 len(plants_to_remove),
             )
             async_fire_growspace_event(
-                self._coord.hass, EVENT_GROWSPACE_REMOVED, growspace
+                self.coordinator.hass, EVENT_GROWSPACE_REMOVED, growspace
             )
 
     async def update_growspace(
         self, growspace_id: str, **kwargs: dict[str, Any]
     ) -> None:
         """Update a growspace."""
-        async with self._coord._lock:
-            if growspace_id not in self._coord.growspaces:
+        async with self.coordinator.lock:
+            if growspace_id not in self.coordinator.growspaces:
                 raise GrowspaceNotFoundError(f"Growspace {growspace_id} not found")
 
-            growspace = self._coord.growspaces[growspace_id]
+            growspace = self.coordinator.growspaces[growspace_id]
             changes: list[str] = []
 
             # Update structure
@@ -176,9 +180,9 @@ class GrowspaceService:
                         growspace.plants_per_row,
                     )
 
-                await self._coord.async_commit()
+                await self.coordinator.async_commit()
                 async_fire_growspace_event(
-                    self._coord.hass, EVENT_GROWSPACE_UPDATED, growspace
+                    self.coordinator.hass, EVENT_GROWSPACE_UPDATED, growspace
                 )
             else:
                 _LOGGER.debug("No changes detected for growspace %s", growspace_id)
@@ -246,7 +250,7 @@ class GrowspaceService:
             new_rows: The new number of rows.
             new_plants_per_row: The new number of plants per row.
         """
-        plants_to_check = self._coord.get_growspace_plants(growspace_id)
+        plants_to_check = self.coordinator.get_growspace_plants(growspace_id)
         invalid_plants = []
 
         invalid_plants = [
@@ -282,7 +286,9 @@ class GrowspaceService:
         Returns:
             A unique name that does not conflict with existing growspace names.
         """
-        existing_names = {gs.name.lower() for gs in self._coord.growspaces.values()}
+        existing_names = {
+            gs.name.lower() for gs in self.coordinator.growspaces.values()
+        }
         name = base_name
         counter = 1
 
@@ -300,7 +306,7 @@ class GrowspaceService:
         """
         return {
             gs_id: getattr(gs, "name", gs_id)
-            for gs_id, gs in self._coord.growspaces.items()
+            for gs_id, gs in self.coordinator.growspaces.items()
         }
 
     def get_sorted_growspace_options(self) -> list[tuple[str, str]]:
@@ -314,7 +320,7 @@ class GrowspaceService:
         return sorted(
             (
                 (gs_id, getattr(gs, "name", gs_id))
-                for gs_id, gs in self._coord.growspaces.items()
+                for gs_id, gs in self.coordinator.growspaces.items()
             ),
             key=lambda x: x[1].lower(),
         )
@@ -345,28 +351,30 @@ class GrowspaceService:
             The canonical ID of the special growspace.
         """
         # Get canonical form
-        canonical_id, _ = self._coord._canonical_special(growspace_id)
+        canonical_id, _ = self.coordinator.canonical_special(growspace_id)
 
         # Create or update the canonical growspace
-        if canonical_id not in self._coord.growspaces:
+        if canonical_id not in self.coordinator.growspaces:
             self._create_special_growspace(
                 canonical_id, name, rows, plants_per_row, growspace_type
             )
             # Enable notifications by default for new special growspace
-            self._coord._notifications_enabled[canonical_id] = True
+            self.coordinator.notifications_enabled[canonical_id] = True
             # Cache invalidation for new space
-            self._coord._invalidate_cache(canonical_id)
+            self.coordinator.invalidate_cache(canonical_id)
         else:
             self._update_special_growspace_name(canonical_id, name)
             # Ensure type is correct even if existing (for migration)
-            start_type = self._coord.growspaces[canonical_id].growspace_type
+            start_type = self.coordinator.growspaces[canonical_id].growspace_type
             if start_type != growspace_type:
-                self._coord.growspaces[canonical_id].growspace_type = growspace_type
+                self.coordinator.growspaces[
+                    canonical_id
+                ].growspace_type = growspace_type
             # Name or Type changed -> Invalidate
-            self._coord._invalidate_cache(canonical_id)
+            self.coordinator.invalidate_cache(canonical_id)
 
         if update_data:
-            self._coord.update_data_property()
+            self.coordinator.update_data_property()
         return canonical_id
 
     def _create_special_growspace(
@@ -378,7 +386,7 @@ class GrowspaceService:
         growspace_type: GrowspaceType,
     ) -> None:
         """Create a new special growspace with the given parameters."""
-        self._coord.growspaces[canonical_id] = Growspace(
+        self.coordinator.growspaces[canonical_id] = Growspace(
             id=canonical_id,
             name=canonical_name,
             rows=rows,
@@ -395,7 +403,7 @@ class GrowspaceService:
         self, canonical_id: str, canonical_name: str
     ) -> None:
         """Update the name of an existing special growspace if it has changed."""
-        existing = self._coord.growspaces[canonical_id]
+        existing = self.coordinator.growspaces[canonical_id]
         if existing.name != canonical_name:
             existing.name = canonical_name
             _LOGGER.info(

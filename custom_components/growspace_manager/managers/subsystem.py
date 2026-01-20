@@ -10,16 +10,21 @@ import asyncio
 import logging
 from typing import TYPE_CHECKING
 
+from custom_components.growspace_manager.dehumidifier_coordinator import (
+    DehumidifierCoordinator,
+)
+from custom_components.growspace_manager.irrigation_coordinator import (
+    IrrigationCoordinator,
+)
+from custom_components.growspace_manager.vwc_irrigation_coordinator import (
+    VWCIrrigationCoordinator,
+)
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 
-from ..dehumidifier_coordinator import DehumidifierCoordinator
-from ..irrigation_coordinator import IrrigationCoordinator
-from ..vwc_irrigation_coordinator import VWCIrrigationCoordinator
-
 if TYPE_CHECKING:
-    from ..coordinator import GrowspaceCoordinator
-    from ..models import Growspace
+    from custom_components.growspace_manager.coordinator import GrowspaceCoordinator
+    from custom_components.growspace_manager.models import Growspace
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -64,6 +69,7 @@ class SubsystemManager:
         self, growspace_id: str, gs: Growspace
     ) -> None:
         """Setup sub-coordinators for a single growspace."""
+        irrigation_coordinator: IrrigationCoordinator | VWCIrrigationCoordinator
         if gs.irrigation_strategy.enabled:
             _LOGGER.info(
                 "Initializing VWC Irrigation Coordinator for growspace %s",

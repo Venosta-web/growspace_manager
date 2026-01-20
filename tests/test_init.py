@@ -4,19 +4,13 @@ This file contains tests to ensure that the integration can be successfully set 
 and unloaded within Home Assistant.
 """
 
+from datetime import timedelta
 import json
 import tempfile
 from unittest.mock import AsyncMock, MagicMock, patch
 
-import pytest
 from aiohttp import BodyPartReader
-from homeassistant.components.recorder.db_schema import (
-    Events,
-)
-from homeassistant.config_entries import ConfigEntryState
-from homeassistant.core import HomeAssistant
-from homeassistant.exceptions import ServiceValidationError
-from homeassistant.util import dt as dt_util
+import pytest
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.growspace_manager import (
@@ -82,6 +76,11 @@ from custom_components.growspace_manager.websocket import (
     websocket_get_growspace_data,
     websocket_get_history_stats,
 )
+from homeassistant.components.recorder.db_schema import Events
+from homeassistant.config_entries import ConfigEntryState
+from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import ServiceValidationError
+from homeassistant.util import dt as dt_util
 
 
 @pytest.fixture
@@ -106,15 +105,13 @@ def mock_hass():
 @pytest.fixture
 def mock_coordinator_for_services():
     """Fixture for a mock GrowspaceCoordinator instance for service testing."""
-    coordinator = MagicMock()
-    return coordinator
+    return MagicMock()
 
 
 @pytest.fixture
 def mock_strain_library_for_services():
     """Fixture for a mock StrainLibrary instance for service testing."""
-    strain_library = MagicMock()
-    return strain_library
+    return MagicMock()
 
 
 @pytest.fixture
@@ -396,7 +393,6 @@ async def test_async_setup_entry_with_growspaces(hass: HomeAssistant) -> None:
         # MockConfigEntry defines async_on_unload as a method that appends to a list usually?
         # Actually MockConfigEntry.async_on_unload is usually NOT a mock unless we mock it.
         # let's assume it works or we can't easily check it without mocking MockConfigEntry internals.
-        pass
 
 
 @pytest.mark.asyncio
@@ -918,7 +914,7 @@ async def test_websocket_get_history_stats(
         start = dt_util.utcnow().replace(minute=0, second=0, microsecond=0)
         t1 = start
         t2 = (
-            start + dt_util.dt.timedelta(minutes=10)
+            start + timedelta(minutes=10)
         )  # Should be skipped by sampling if strictly looking for bucket match, or held?
         # Logic: while current_time <= end_time: take state AT current_time or last_valid
 
@@ -941,7 +937,7 @@ async def test_websocket_get_history_stats(
         }
 
         # We need end_time to cover the loop
-        end = start + dt_util.dt.timedelta(minutes=30)
+        end = start + timedelta(minutes=30)
 
         msg = {
             "id": 1,
@@ -1033,7 +1029,7 @@ async def test_websocket_history_empty_and_unavailable(hass: HomeAssistant) -> N
             "type": f"{DOMAIN}/get_history_stats",
             "entity_ids": ["sensor.empty", "sensor.unavail"],
             "start_time": start.isoformat(),
-            "end_time": (start + dt_util.dt.timedelta(minutes=10)).isoformat(),
+            "end_time": (start + timedelta(minutes=10)).isoformat(),
             "interval_minutes": 5,
             "significant_changes_only": True,
         }
@@ -1156,14 +1152,14 @@ async def test_websocket_history_stats_uses_statistics_api_for_long_intervals(
     mock_connection.send_error = MagicMock()
 
     start = dt_util.utcnow().replace(minute=0, second=0, microsecond=0)
-    end = start + dt_util.dt.timedelta(hours=6)
+    end = start + timedelta(hours=6)
 
     # Mock statistics data
     stats_data = {
         "sensor.test": [
             {"start": start.timestamp(), "mean": 22.5},
             {
-                "start": (start + dt_util.dt.timedelta(hours=1)).timestamp(),
+                "start": (start + timedelta(hours=1)).timestamp(),
                 "mean": 23.0,
             },
         ]
@@ -1213,7 +1209,7 @@ async def test_websocket_history_stats_falls_back_when_statistics_fails(
     mock_connection.send_result = MagicMock()
 
     start = dt_util.utcnow().replace(minute=0, second=0, microsecond=0)
-    end = start + dt_util.dt.timedelta(hours=2)
+    end = start + timedelta(hours=2)
 
     class MockState:
         def __init__(self, state, last_updated) -> None:
@@ -1232,7 +1228,7 @@ async def test_websocket_history_stats_falls_back_when_statistics_fails(
             return_value={
                 "sensor.test": [
                     MockState("10", start),
-                    MockState("20", start + dt_util.dt.timedelta(minutes=30)),
+                    MockState("20", start + timedelta(minutes=30)),
                 ]
             },
         ),
@@ -1269,7 +1265,7 @@ async def test_websocket_history_stats_short_interval_uses_binary_search(
     mock_connection.send_result = MagicMock()
 
     start = dt_util.utcnow().replace(minute=0, second=0, microsecond=0)
-    end = start + dt_util.dt.timedelta(minutes=30)
+    end = start + timedelta(minutes=30)
 
     class MockState:
         def __init__(self, state, last_updated) -> None:
@@ -1287,7 +1283,7 @@ async def test_websocket_history_stats_short_interval_uses_binary_search(
             return_value={
                 "sensor.test": [
                     MockState("10", start),
-                    MockState("20", start + dt_util.dt.timedelta(minutes=10)),
+                    MockState("20", start + timedelta(minutes=10)),
                 ]
             },
         ),
@@ -1323,7 +1319,7 @@ async def test_websocket_history_stats_uses_daily_period_for_large_intervals(
     mock_connection.send_result = MagicMock()
 
     start = dt_util.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
-    end = start + dt_util.dt.timedelta(days=7)
+    end = start + timedelta(days=7)
 
     stats_data = {
         "sensor.test": [
@@ -1371,7 +1367,7 @@ async def test_websocket_history_stats_statistics_with_state_instead_of_mean(
     mock_connection.send_result = MagicMock()
 
     start = dt_util.utcnow().replace(minute=0, second=0, microsecond=0)
-    end = start + dt_util.dt.timedelta(hours=2)
+    end = start + timedelta(hours=2)
 
     # Statistics with 'state' instead of 'mean' (e.g., for binary sensors)
     stats_data = {
@@ -1416,7 +1412,7 @@ async def test_websocket_history_stats_empty_statistics(hass: HomeAssistant) -> 
     mock_connection.send_result = MagicMock()
 
     start = dt_util.utcnow().replace(minute=0, second=0, microsecond=0)
-    end = start + dt_util.dt.timedelta(hours=2)
+    end = start + timedelta(hours=2)
 
     with (
         patch(

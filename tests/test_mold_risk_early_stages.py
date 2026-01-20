@@ -40,7 +40,7 @@ async def test_mold_risk_seedling_high_humidity(mock_sensor) -> None:
         humidifier_on=False,
     )
 
-    obs, rsn = await strategy.async_evaluate(state)
+    _obs, rsn = await strategy.async_evaluate(state)
 
     # Probability calculation: 88% is >= high_humidity (88.0)
     # So it should have a high humidity reason but NOT critical (92.0)
@@ -73,7 +73,7 @@ async def test_mold_risk_veg_high_humidity(mock_sensor) -> None:
         humidifier_on=False,
     )
 
-    obs, rsn = await strategy.async_evaluate(state)
+    _obs, rsn = await strategy.async_evaluate(state)
 
     # In Veg, 86% is >= critical_humidity (85.0)
     has_critical_hum_reason = any("Critical humidity: 86.0%" in r[1] for r in rsn)
@@ -104,14 +104,14 @@ async def test_mold_risk_extreme_humidity_penalty(mock_sensor) -> None:
         humidifier_on=False,
     )
 
-    obs, rsn = await strategy.async_evaluate(state)
+    _obs, rsn = await strategy.async_evaluate(state)
     has_extreme_reason = any("Extreme humidity risk: 91.0%" in r[1] for r in rsn)
     assert has_extreme_reason
 
     # Seedling stage, 91% humidity -> No extreme penalty (91 < 92)
     state.seedling_days = 10
     state.veg_days = 0
-    obs, rsn = await strategy.async_evaluate(state)
+    _obs, rsn = await strategy.async_evaluate(state)
     has_extreme_reason = any("Extreme humidity risk" in r[1] for r in rsn)
     assert not has_extreme_reason
     # But it should have High humidity reason

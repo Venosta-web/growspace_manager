@@ -3,16 +3,16 @@
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from homeassistant.core import Context, HomeAssistant
-from homeassistant.helpers import intent
 
 from custom_components.growspace_manager.const import DOMAIN
 from custom_components.growspace_manager.intent import (
     INTENT_ASK_GROW_ADVICE,
-    AskGrowAdviceIntent,
+    GrowspaceIntentHandler,
     async_setup_intents,
 )
 from custom_components.growspace_manager.models import Growspace
+from homeassistant.core import Context, HomeAssistant
+from homeassistant.helpers import intent
 
 GROWSPACE_ID = "test_growspace"
 GROWSPACE_NAME = "Test Growspace"
@@ -46,13 +46,13 @@ def mock_hass(mock_coordinator) -> MagicMock:
 
 
 @pytest.fixture
-def intent_handler(mock_hass: MagicMock) -> AskGrowAdviceIntent:
-    """Fixture for AskGrowAdviceIntent."""
-    return AskGrowAdviceIntent(mock_hass)
+def intent_handler(mock_hass: MagicMock) -> GrowspaceIntentHandler:
+    """Fixture for GrowspaceIntentHandler."""
+    return GrowspaceIntentHandler(mock_hass)
 
 
 async def test_handle_intent_success(
-    intent_handler: AskGrowAdviceIntent, mock_hass: MagicMock
+    intent_handler: GrowspaceIntentHandler, mock_hass: MagicMock
 ) -> None:
     """Test successful intent handling."""
     intent_obj = intent.Intent(
@@ -84,7 +84,7 @@ async def test_handle_intent_success(
 
 
 async def test_handle_intent_growspace_not_found(
-    intent_handler: AskGrowAdviceIntent, mock_hass: MagicMock
+    intent_handler: GrowspaceIntentHandler, mock_hass: MagicMock
 ) -> None:
     """Test intent handling when growspace is not found."""
     intent_obj = intent.Intent(
@@ -107,7 +107,7 @@ async def test_handle_intent_growspace_not_found(
 
 
 async def test_handle_intent_service_error(
-    intent_handler: AskGrowAdviceIntent, mock_hass: MagicMock
+    intent_handler: GrowspaceIntentHandler, mock_hass: MagicMock
 ) -> None:
     """Test intent handling when service call fails."""
     intent_obj = intent.Intent(
@@ -132,7 +132,7 @@ async def test_handle_intent_service_error(
 
 
 async def test_handle_intent_no_response(
-    intent_handler: AskGrowAdviceIntent, mock_hass: MagicMock
+    intent_handler: GrowspaceIntentHandler, mock_hass: MagicMock
 ) -> None:
     """Test intent handling when service returns no response."""
     intent_obj = intent.Intent(

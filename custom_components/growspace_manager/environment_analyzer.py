@@ -9,10 +9,7 @@ from homeassistant.const import STATE_OFF, STATE_ON, STATE_UNAVAILABLE, STATE_UN
 from homeassistant.helpers import entity_registry as er
 
 from .bayesian_data import VPD_STRESS_THRESHOLDS
-from .const import (
-    DEFAULT_FLOWER_EARLY_DAYS,
-    DOMAIN,
-)
+from .const import DEFAULT_FLOWER_EARLY_DAYS, DOMAIN
 from .utils import VPDCalculator
 
 if TYPE_CHECKING:
@@ -334,12 +331,12 @@ class EnvironmentAnalyzer:
         global_settings = self.coordinator.options.get("global_settings", {})
 
         # Get outside conditions
-        outside_temp, outside_humidity, outside_vpd = self._get_outside_conditions(
+        outside_temp, _outside_humidity, outside_vpd = self._get_outside_conditions(
             global_settings
         )
 
         # Get lung room conditions
-        lung_room_temp, lung_room_humidity, lung_room_vpd = (
+        lung_room_temp, _lung_room_humidity, lung_room_vpd = (
             self._get_lung_room_conditions(global_settings)
         )
 
@@ -365,7 +362,7 @@ class EnvironmentAnalyzer:
                 growspace.environment_config.vpd_sensor
             )
             target_vpd = (
-                self.coordinator.data.get("bayesian_sensors_reason", {})
+                self.coordinator.data.get("bayesian_sensors_reason", {})  # type: ignore[has-type]
                 .get(growspace_id, {})
                 .get("target_vpd")
             )
@@ -380,6 +377,7 @@ class EnvironmentAnalyzer:
                 lung_room_vpd,
             )
 
-        if "air_exchange_recommendations" not in self.coordinator.data:
-            self.coordinator.data["air_exchange_recommendations"] = {}
-        self.coordinator.data["air_exchange_recommendations"].update(recommendations)
+        data: dict[str, Any] = self.coordinator.data  # type: ignore[has-type]
+        if "air_exchange_recommendations" not in data:
+            data["air_exchange_recommendations"] = {}
+        data["air_exchange_recommendations"].update(recommendations)

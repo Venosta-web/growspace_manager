@@ -4,13 +4,19 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from ..bayesian_data import PROB_MOLD_HUMIDIFIER_ON, PROB_MOLD_STAGNANT_AIR
-from ..bayesian_evaluator import async_evaluate_mold_risk_trend
+from custom_components.growspace_manager.bayesian_data import (
+    PROB_MOLD_HUMIDIFIER_ON,
+    PROB_MOLD_STAGNANT_AIR,
+)
+from custom_components.growspace_manager.bayesian_evaluator import (
+    async_evaluate_mold_risk_trend,
+)
+
 from .evaluator_strategy import BayesianEvaluatorStrategy
 
 if TYPE_CHECKING:
-    from ..bayesian_evaluator import ObservationList
-    from ..models import EnvironmentState
+    from custom_components.growspace_manager.bayesian_evaluator import ObservationList
+    from custom_components.growspace_manager.models import EnvironmentState
 
 
 class MoldRiskEvaluatorStrategy(BayesianEvaluatorStrategy):
@@ -166,7 +172,7 @@ class MoldRiskEvaluatorStrategy(BayesianEvaluatorStrategy):
             if not growspace:
                 return None
             name = growspace.name
-            message = self.sensor._generate_notification_message(
+            message = self.sensor.generate_notification_message(
                 "High mold risk detected"
             )
             return (f"High Mold Risk in {name}", message)

@@ -3,20 +3,18 @@
 from __future__ import annotations
 
 import asyncio
-import logging
-import uuid
 from dataclasses import asdict
 from datetime import date, datetime, timedelta
-from typing import Any, override
+import logging
+from typing import Any, cast
+import uuid
 
 from homeassistant.config_entries import ConfigEntry, ConfigEntryState
 from homeassistant.core import HomeAssistant, ServiceCall
 from homeassistant.exceptions import ServiceValidationError
-from homeassistant.helpers import device_registry as dr
-from homeassistant.helpers import entity_registry as er
+from homeassistant.helpers import device_registry as dr, entity_registry as er
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
-from homeassistant.util import dt as dt_util
-from homeassistant.util import slugify
+from homeassistant.util import dt as dt_util, slugify
 
 from .const import (
     ATTR_DRAIN_TIMES,
@@ -51,11 +49,7 @@ from .events import (
     EVENT_PLANT_HARVESTED,
     async_fire_plant_event,
 )
-from .exceptions import (
-    GrowspaceError,
-    GrowspaceNotFoundError,
-    ValidationChangeError,
-)
+from .exceptions import GrowspaceError, GrowspaceNotFoundError, ValidationChangeError
 from .growspace_validator import GrowspaceValidator
 from .import_export_manager import ImportExportManager
 from .irrigation_coordinator import IrrigationCoordinator
@@ -91,13 +85,13 @@ _LOGGER = logging.getLogger(__name__)
 
 
 # Type aliases for better readability
-type PlantDict = dict[str, Any]
-type GrowspaceDict = dict[str, Any]
-type NotificationDict = dict[str, Any]
-type DateInput = str | datetime | date | None
+PlantDict = dict[str, Any]
+GrowspaceDict = dict[str, Any]
+NotificationDict = dict[str, Any]
+DateInput = datetime | date | str | None
 
 
-class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
+class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):  # type: ignore[misc]
     """Manages Growspace, Plant, and Strain data for the Growspace Manager integration.
 
     This class handles loading, saving, and updating all the core data entities,
@@ -242,7 +236,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
         self.hass = hass
         self.config_entry = entry
-        self._lock = asyncio.Lock()
+        self.lock = asyncio.Lock()
         self.serializer = GrowspaceSerializer(hass)
         self.growspaces: dict[str, Growspace] = {}
         self.plants: dict[str, Plant] = {}
@@ -278,8 +272,8 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         # Initialize Subsystem Manager
         self.subsystem_manager = SubsystemManager(hass, self, entry)
 
-        self._notifications_sent: dict[str, dict[str, dict[str, bool]]] = {}
-        self._notifications_enabled: dict[
+        self.notifications_sent: dict[str, dict[str, dict[str, bool]]] = {}
+        self.notifications_enabled: dict[
             str, bool
         ] = {}  # ✅ Notification switch states
 
@@ -324,7 +318,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             gs_ids.add(result.id)
 
     def _extract_gs_ids_from_args(
-        self, args: tuple, kwargs: dict[str, Any], gs_ids: set[str]
+        self, args: tuple[Any, ...], kwargs: dict[str, Any], gs_ids: set[str]
     ) -> None:
         """Extract growspace IDs from function arguments."""
         # Strategy 2: Check arguments for 'growspace_id'
@@ -363,6 +357,10 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         else:
             self._serialized_cache.pop(growspace_id, None)
 
+    def invalidate_cache(self, growspace_id: str | None = None) -> None:
+        """Invalidate the serialization cache (public wrapper)."""
+        self._invalidate_cache(growspace_id)
+
     async def async_refresh_growspace_data(self, growspace_id: str) -> None:
         """Thread-safe method to refresh data for a specific growspace.
 
@@ -373,7 +371,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         Args:
             growspace_id: The ID of the growspace to refresh.
         """
-        async with self._lock:
+        async with self.lock:
             self._invalidate_cache(growspace_id)
             self.update_data_property()
 
@@ -498,7 +496,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         """Retrieve a plant by its ID (delegates to PlantService)."""
         return self._plant_service.get_plant(plant_id)
 
-    def _canonical_special(self, gs_id: str) -> tuple[str, str]:
+    def canonical_special(self, gs_id: str) -> tuple[str, str]:
         """Return the canonical ID and name for a special growspace.
 
         This also triggers a migration check to ensure any legacy aliases are handled.
@@ -532,7 +530,8 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             if isinstance(date_value, date):
                 return date_value
             if isinstance(date_value, str):
-                return parse_date_field(date_value).date()
+                if dt := parse_date_field(date_value):
+                    return dt.date()
         except Exception:
             _LOGGER.exception("Failed to parse date %s", date_value)
         return None
@@ -624,15 +623,13 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 "Updated growspace name: %s -> '%s'", canonical_id, canonical_name
             )
 
-    def _ensure_mother_growspace(self) -> str:
+    def ensure_mother_growspace(self) -> str:
         """Ensure the 'mother' growspace exists (delegates to GrowspaceService)."""
         return self._growspace_service.ensure_mother_growspace()
 
     # =============================================================================
     # DATA UPDATE COORDINATOR OVERRIDE
     # =============================================================================
-
-    @override
     async def _async_update_data(self) -> dict[str, Any]:
         """Refresh data, called periodically by the DataUpdateCoordinator.
 
@@ -650,7 +647,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         await self.notification_manager.async_check_timed_notifications()
         await self.environment_analyzer.async_update_air_exchange_recommendations()
 
-        return self.data
+        return self.data  # type: ignore[no-any-return, has-type]
 
     async def async_commit(self) -> None:
         """Commit changes to storage and notify listeners."""
@@ -658,7 +655,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._invalidate_cache()
         self.update_data_property()
         await self.storage_manager.async_save()
-        self.async_set_updated_data(self.data)
+        self.async_set_updated_data(self.data)  # type: ignore[has-type]
         self.async_fire_growspace_updated()
 
         for gs_id in self.growspaces:
@@ -767,8 +764,8 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         """Update the central `self.data` property to reflect the current coordinator state."""
         # Preserve existing recommendations if valid
         recs = {}
-        if self.data and isinstance(self.data, dict):
-            recs = self.data.get("air_exchange_recommendations", {})
+        if self.data and isinstance(self.data, dict):  # type: ignore[has-type]
+            recs = self.data.get("air_exchange_recommendations", {})  # type: ignore[has-type]
 
         # Optimized: Serialize growspaces using cache
         serialized_growspaces = {}
@@ -800,8 +797,8 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self.data = {
             "growspaces": self.growspaces,
             "plants": self.plants,
-            "notifications_sent": self._notifications_sent,
-            "notifications_enabled": self._notifications_enabled,
+            "notifications_sent": self.notifications_sent,
+            "notifications_enabled": self.notifications_enabled,
             "_version": dt_util.now().isoformat(),
             "serialized_growspaces": serialized_growspaces,
             "air_exchange_recommendations": recs,
@@ -934,9 +931,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
         return updated
 
-    async def async_update_growspace(
-        self, growspace_id: str, **kwargs: dict[str, Any]
-    ) -> None:
+    async def async_update_growspace(self, growspace_id: str, **kwargs: Any) -> None:
         """Update a growspace (delegates to GrowspaceService)."""
         await self._growspace_service.update_growspace(growspace_id, **kwargs)
 
@@ -995,7 +990,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             True if notifications are enabled, False otherwise. Defaults to True.
         """
         # Default to True if not found (notifications on by default)
-        return self._notifications_enabled.get(growspace_id, True)
+        return self.notifications_enabled.get(growspace_id, True)
 
     async def set_notifications_enabled(self, growspace_id: str, enabled: bool) -> None:
         """Enable or disable notifications for a specific growspace.
@@ -1011,12 +1006,12 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             )
             return
 
-        old_state = self._notifications_enabled.get(growspace_id, True)
-        self._notifications_enabled[growspace_id] = enabled
+        old_state = self.notifications_enabled.get(growspace_id, True)
+        self.notifications_enabled[growspace_id] = enabled
 
         # Notify listeners (updates switch state)
         # Update data dictionary
-        self.data["notifications_enabled"] = self._notifications_enabled
+        self.data["notifications_enabled"] = self.notifications_enabled
 
         # Notification settings generally don't change visual grid serialization, but we can invalidate if needed
         # self._invalidate_cache(growspace_id)
@@ -1037,7 +1032,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
     def get_timed_notifications(self) -> list[dict[str, Any]]:
         """Get the list of configured timed notifications."""
-        return self.config_entry.options.get("timed_notifications", [])
+        return self.config_entry.options.get("timed_notifications", [])  # type: ignore[no-any-return]
 
     async def async_add_timed_notification(
         self,
@@ -1230,7 +1225,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             veg_start=transition_date,
         )
 
-    async def async_update_plant(self, plant_id: str, **updates) -> Plant:
+    async def async_update_plant(self, plant_id: str, **updates: Any) -> Plant:
         """Update the attributes of an existing plant (delegates to PlantService)."""
         return await self._plant_service.update_plant(plant_id, **updates)
 
@@ -1573,7 +1568,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         for gid in affected_gids:
             affected_in_gid = [p for p in target_plants if p.growspace_id == gid]
             reasons = self._create_training_reasons(
-                gid, technique, notes, plant_ids, affected_in_gid
+                gid, technique, notes or "", plant_ids or [], affected_in_gid
             )
 
             event = GrowspaceEvent(
@@ -1604,7 +1599,12 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         raise ValueError("Either growspace_id or plant_ids must be provided.")
 
     def _create_training_reasons(
-        self, gid, technique, notes, plant_ids, affected_in_gid
+        self,
+        gid: str,
+        technique: str,
+        notes: str,
+        plant_ids: list[str],
+        affected_in_gid: list[Plant],
     ) -> list[str]:
         """Generate reason strings for training events."""
         reasons = [f"plant_id:{p.plant_id}" for p in affected_in_gid]
@@ -1645,7 +1645,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             preset = self.ipm_presets[preset_id]
             preset.name = name
             preset.type = type
-            preset.items = items  # type: ignore[arg-type]
+            preset.items = items  # type: ignore[assignment]
             preset.stage = stage
             preset.min_days_in_stage = min_days_in_stage
         else:
@@ -1757,7 +1757,12 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         return [p.plant_id for p in target_plants]
 
     def _create_ipm_reasons(
-        self, gid, preset, notes, plant_ids, affected_in_gid
+        self,
+        gid: str,
+        preset: IPMPreset,
+        notes: str | None,
+        plant_ids: list[str] | None,
+        affected_in_gid: list[Plant],
     ) -> list[str]:
         """Generate reason strings for IPM events."""
         recipe_str = ", ".join(
@@ -1882,6 +1887,8 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             A sorted list of unique strain names.
         """
         # The keys are just the strain names in the new hierarchical structure
+        if not self.strain_library:
+            return []
         return sorted(self.strain_library.get_all().keys())
 
     def export_strain_library(self) -> list[str]:
@@ -1898,6 +1905,8 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         Returns:
             The number of strains cleared.
         """
+        if not self.strain_library:
+            return 0
         return await self.strain_library.clear()
 
     # =============================================================================
@@ -1939,10 +1948,10 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         """
         # Try to look up via Entity Registry using consistent unique_id
         unique_id = generate_growspace_overview_unique_id(growspace_id)
-        registry = er.async_get(self.hass)
+        registry: er.EntityRegistry = er.async_get(self.hass)
         entity_id = registry.async_get_entity_id("sensor", DOMAIN, unique_id)
         if entity_id:
-            return entity_id
+            return cast(str, entity_id)
 
         # Fallback: Handle special cases logic data-driven
         for special_def in SPECIAL_GROWSPACES.values():
@@ -1950,10 +1959,10 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             if growspace_id == canonical_id or growspace_id in special_def.get(
                 "aliases", []
             ):
-                canonical_uid = generate_growspace_overview_unique_id(canonical_id)
+                canonical_uid = generate_growspace_overview_unique_id(str(canonical_id))
                 eid = registry.async_get_entity_id("sensor", DOMAIN, canonical_uid)
                 if eid:
-                    return eid
+                    return cast(str, eid)
                 return f"sensor.{canonical_id}"
 
         # Standard Fallback
@@ -1982,7 +1991,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             True if the notification should be sent, False if it has already been sent.
         """
         return (
-            not self._notifications_sent.get(plant_id, {})
+            not self.notifications_sent.get(plant_id, {})
             .get(stage, {})
             .get(str(days), False)
         )
@@ -1997,16 +2006,16 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             stage: The growth stage of the event.
             days: The day number of the event.
         """
-        if plant_id not in self._notifications_sent:
-            self._notifications_sent[plant_id] = {}
+        if plant_id not in self.notifications_sent:
+            self.notifications_sent[plant_id] = {}
 
-        if stage not in self._notifications_sent[plant_id]:
-            self._notifications_sent[plant_id][stage] = {}
+        if stage not in self.notifications_sent[plant_id]:
+            self.notifications_sent[plant_id][stage] = {}
 
-        self._notifications_sent[plant_id][stage][str(days)] = True
+        self.notifications_sent[plant_id][stage][str(days)] = True
         await self.async_commit()
 
-    def _fire_event(self, event_type: str, data: dict[str, Any]) -> None:
+    def fire_event(self, event_type: str, data: dict[str, Any]) -> None:
         """Fire a growspace manager event."""
         payload = {"event_type": event_type, "data": data}
         self.hass.bus.async_fire("growspace_manager_updated", payload)

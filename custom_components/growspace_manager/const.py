@@ -179,6 +179,8 @@ DEFAULT_NOTIFICATION_EVENTS = {
 
 
 class PlantStage(StrEnum):
+    """Stages of plant growth."""
+
     SEEDLING = "seedling"
     CLONE = "clone"
     MOTHER = "mother"
@@ -200,6 +202,8 @@ DEHUMIDIFIER_STAGES: Final = [
 
 
 class GrowspaceSensorType(StrEnum):
+    """Types of growspace sensors."""
+
     STRESS = "stress"
     MOLD = "mold"
     OPTIMAL = "optimal"

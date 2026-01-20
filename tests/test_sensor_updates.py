@@ -3,7 +3,6 @@
 from unittest.mock import AsyncMock, MagicMock, Mock, patch
 
 import pytest
-from homeassistant.core import HomeAssistant
 from pytest_homeassistant_custom_component.common import (
     mock_device_registry,
     mock_registry,
@@ -11,9 +10,11 @@ from pytest_homeassistant_custom_component.common import (
 
 from custom_components.growspace_manager.const import DOMAIN
 from custom_components.growspace_manager.coordinator import GrowspaceCoordinator
-from custom_components.growspace_manager.models import Growspace, Plant
-from .conftest import create_plant
+from custom_components.growspace_manager.models import Growspace
 from custom_components.growspace_manager.sensor import async_setup_entry
+from homeassistant.core import HomeAssistant
+
+from .common import create_plant
 
 
 @pytest.fixture

@@ -5,8 +5,8 @@ from io import BytesIO
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
-import pytest
 from PIL import Image as PILImage
+import pytest
 
 from custom_components.growspace_manager.image_manager import ImageManager
 

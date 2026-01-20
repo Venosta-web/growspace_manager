@@ -1,4 +1,7 @@
+"""Validation schemas for the Growspace Manager integration."""
+
 import voluptuous as vol
+
 from homeassistant.helpers import config_validation as cv
 
 from .const import (

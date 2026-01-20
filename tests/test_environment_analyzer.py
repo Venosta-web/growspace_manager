@@ -3,14 +3,12 @@
 from unittest.mock import MagicMock, patch
 
 import pytest
-from homeassistant.const import STATE_ON
-from homeassistant.core import HomeAssistant
 
-from custom_components.growspace_manager.const import (
-    DEFAULT_FLOWER_EARLY_DAYS,
-)
+from custom_components.growspace_manager.const import DEFAULT_FLOWER_EARLY_DAYS
 from custom_components.growspace_manager.environment_analyzer import EnvironmentAnalyzer
 from custom_components.growspace_manager.models import EnvironmentConfig, Growspace
+from homeassistant.const import STATE_ON
+from homeassistant.core import HomeAssistant
 
 
 @pytest.fixture

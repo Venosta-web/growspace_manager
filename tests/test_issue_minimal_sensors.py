@@ -1,27 +1,21 @@
 from unittest.mock import MagicMock
 
 import pytest
-from homeassistant.core import HomeAssistant
 
 from custom_components.growspace_manager.binary_sensor import (
     BayesianEnvironmentSensor,
     GrowspaceBinarySensorDescription,
     GrowspaceSensorType,
 )
-from .conftest import create_plant
-
 from custom_components.growspace_manager.models import (
     EnvironmentConfig,
     Growspace,
     GrowspaceType,
 )
-from .conftest import create_plant
-
 from custom_components.growspace_manager.strategies.optimal import (
     OptimalConditionsEvaluatorStrategy,
 )
-from .conftest import create_plant
-
+from homeassistant.core import HomeAssistant
 
 
 @pytest.fixture
@@ -95,4 +89,3 @@ async def test_minimal_sensor_vpd_calculation(mock_coordinator) -> None:
     assert env_state.humidity == 60.0
     assert env_state.vpd is not None
     assert env_state.vpd == 1.26
-    print(f"SUCCESS: VPD calculated as {env_state.vpd}")

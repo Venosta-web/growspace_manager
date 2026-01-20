@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
-import logging
 from abc import ABC
-from typing import Any, TypeVar
+import logging
+from typing import Any, Generic, TypeVar
 
+from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 
 # NOTE: Handler imports moved to bottom of file to avoid circular import
@@ -16,8 +17,10 @@ T = TypeVar("T")
 _LOGGER = logging.getLogger(__name__)
 
 
-class BaseConfigHandler[T](ABC):
+class BaseConfigHandler(ABC, Generic[T]):
     """Base class for configuration handlers."""
+
+    config_entry: ConfigEntry | None = None
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         """Initialize the handler."""
@@ -25,7 +28,7 @@ class BaseConfigHandler[T](ABC):
             # Orchestrator style
             self.flow = args[0]
             self.hass = args[0].hass
-            self.config_entry = getattr(args[0], "_config_entry", None)
+            self.config_entry = getattr(args[0], "config_entry", None)
         elif len(args) >= 2 and isinstance(args[0], HomeAssistant):
             # Traditional/Test style
             self.flow = None
@@ -36,26 +39,24 @@ class BaseConfigHandler[T](ABC):
             self.flow = kwargs.get("flow")
             if self.flow:
                 self.hass = self.flow.hass
-                self.config_entry = getattr(self.flow, "_config_entry", None)
+                self.config_entry = getattr(self.flow, "config_entry", None)
             else:
                 self.hass = kwargs.get("hass")
                 self.config_entry = kwargs.get("config_entry")
 
-    async def websocket_get_event_log(  # noqa: C901
-        self, hass: HomeAssistant, connection, msg
-    ):
+    async def websocket_get_event_log(
+        self, hass: HomeAssistant, connection: Any, msg: dict[str, Any]
+    ) -> None:
         """Handle websocket request for event log."""
         # This method body is missing from the provided diff,
         # so it's left as a placeholder.
-        pass
 
-    async def transition_plant_stage(  # noqa: C901
-        self, hass: HomeAssistant, connection, msg
-    ):
+    async def transition_plant_stage(
+        self, hass: HomeAssistant, connection: Any, msg: dict[str, Any]
+    ) -> None:
         """Handle websocket request to transition plant stage."""
         # This method body is missing from the provided diff,
         # so it's left as a placeholder.
-        pass
 
     def clean_input(self, user_input: dict[str, Any]) -> dict[str, Any]:
         """Remove empty or None values from input."""
@@ -80,12 +81,12 @@ from .plant_config_handler import PlantConfigHandler  # noqa: E402
 from .strain_config_handler import StrainConfigHandler  # noqa: E402
 
 __all__ = [
+    "AIConfigHandler",
     "BaseConfigHandler",
-    "GrowspaceConfigHandler",
-    "PlantConfigHandler",
     "EnvironmentConfigHandler",
+    "GrowspaceConfigHandler",
     "IrrigationConfigHandler",
     "NotificationConfigHandler",
-    "AIConfigHandler",
+    "PlantConfigHandler",
     "StrainConfigHandler",
 ]

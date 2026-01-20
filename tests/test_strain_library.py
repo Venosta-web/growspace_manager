@@ -1,10 +1,12 @@
 """Tests for the StrainLibrary class."""
 
+from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import aiosqlite
 import pytest
 
+from custom_components.growspace_manager.image_manager import ImageManager
 from custom_components.growspace_manager.strain_library import StrainLibrary
 
 
@@ -70,7 +72,7 @@ async def strain_library(mock_hass, mock_image_manager, mock_import_export_manag
 
 
 @pytest.mark.asyncio
-async def test_add_strain_and_load(strain_library: StrainLibrary):
+async def test_add_strain_and_load(strain_library: StrainLibrary) -> None:
     """Test adding a strain and verifying it loads correctly."""
     await strain_library.add_strain(
         strain="Blue Dream",
@@ -87,7 +89,7 @@ async def test_add_strain_and_load(strain_library: StrainLibrary):
 
 
 @pytest.mark.asyncio
-async def test_add_strain_with_phenotype(strain_library: StrainLibrary):
+async def test_add_strain_with_phenotype(strain_library: StrainLibrary) -> None:
     """Test adding a strain with a specific phenotype."""
     await strain_library.add_strain(
         strain="Gorilla Glue",
@@ -105,7 +107,7 @@ async def test_add_strain_with_phenotype(strain_library: StrainLibrary):
 
 
 @pytest.mark.asyncio
-async def test_record_harvest_and_analytics(strain_library: StrainLibrary):
+async def test_record_harvest_and_analytics(strain_library: StrainLibrary) -> None:
     """Test recording harvests and analytics calculation."""
     await strain_library.add_strain("OG Kush", "Original")
 
@@ -136,7 +138,7 @@ async def test_record_harvest_and_analytics(strain_library: StrainLibrary):
 @pytest.mark.asyncio
 async def test_remove_strain_phenotype(
     strain_library: StrainLibrary, mock_image_manager
-):
+) -> None:
     """Test removing a phenotype."""
     await strain_library.add_strain("Gelato", "#33")
     await strain_library.add_strain("Gelato", "#41")
@@ -151,7 +153,7 @@ async def test_remove_strain_phenotype(
 
 
 @pytest.mark.asyncio
-async def test_remove_strain(strain_library: StrainLibrary):
+async def test_remove_strain(strain_library: StrainLibrary) -> None:
     """Test removing an entire strain."""
     await strain_library.add_strain("Sour Diesel")
     assert "Sour Diesel" in strain_library.strains
@@ -161,7 +163,7 @@ async def test_remove_strain(strain_library: StrainLibrary):
 
 
 @pytest.mark.asyncio
-async def test_import_library(strain_library: StrainLibrary):
+async def test_import_library(strain_library: StrainLibrary) -> None:
     """Test importing a library dictionary."""
     import_data = {
         "Imported Strain": {
@@ -191,7 +193,7 @@ async def test_import_library(strain_library: StrainLibrary):
 
 
 @pytest.mark.asyncio
-async def test_import_strains_list(strain_library: StrainLibrary):
+async def test_import_strains_list(strain_library: StrainLibrary) -> None:
     """Test importing a list of strain names."""
     strains = ["Strain A", "Strain B"]
     await strain_library.import_strains(strains, replace=True)
@@ -202,7 +204,7 @@ async def test_import_strains_list(strain_library: StrainLibrary):
 
 
 @pytest.mark.asyncio
-async def test_hybrid_percentage_validation(strain_library: StrainLibrary):
+async def test_hybrid_percentage_validation(strain_library: StrainLibrary) -> None:
     """Test validation of hybrid percentages."""
     with pytest.raises(
         ValueError, match="Combined Sativa/Indica percentage cannot exceed 100%"
@@ -216,7 +218,9 @@ async def test_hybrid_percentage_validation(strain_library: StrainLibrary):
 
 
 @pytest.mark.asyncio
-async def test_image_handling(strain_library: StrainLibrary, mock_image_manager):
+async def test_image_handling(
+    strain_library: StrainLibrary, mock_image_manager
+) -> None:
     """Test image saving during add_strain."""
     await strain_library.add_strain(
         "Photo Strain", "Pheno", image_base64="data:image/jpeg;base64,..."
@@ -228,13 +232,13 @@ async def test_image_handling(strain_library: StrainLibrary, mock_image_manager)
 
 
 @pytest.mark.asyncio
-async def test_save_noop(strain_library: StrainLibrary):
+async def test_save_noop(strain_library: StrainLibrary) -> None:
     """Test that save() is a no-op."""
     await strain_library.save()  # Should not raise
 
 
 @pytest.mark.asyncio
-async def test_get_all(strain_library: StrainLibrary):
+async def test_get_all(strain_library: StrainLibrary) -> None:
     """Test get_all() returns the strains dictionary."""
     await strain_library.add_strain("Test Strain")
     all_strains = strain_library.get_all()
@@ -242,7 +246,7 @@ async def test_get_all(strain_library: StrainLibrary):
 
 
 @pytest.mark.asyncio
-async def test_analytics_with_zero_harvests(strain_library: StrainLibrary):
+async def test_analytics_with_zero_harvests(strain_library: StrainLibrary) -> None:
     """Test analytics calculation when phenotype has zero harvests."""
     await strain_library.add_strain("No Harvest Strain", "Pheno1")
 
@@ -261,7 +265,7 @@ async def test_analytics_with_zero_harvests(strain_library: StrainLibrary):
 
 
 @pytest.mark.asyncio
-async def test_analytics_caching(strain_library: StrainLibrary):
+async def test_analytics_caching(strain_library: StrainLibrary) -> None:
     """Test that analytics are cached."""
     await strain_library.add_strain("Cache Test")
 
@@ -275,7 +279,7 @@ async def test_analytics_caching(strain_library: StrainLibrary):
 
 
 @pytest.mark.asyncio
-async def test_set_strain_meta(strain_library: StrainLibrary):
+async def test_set_strain_meta(strain_library: StrainLibrary) -> None:
     """Test set_strain_meta() updates metadata."""
     await strain_library.add_strain("Meta Strain")
 
@@ -288,14 +292,16 @@ async def test_set_strain_meta(strain_library: StrainLibrary):
 
 
 @pytest.mark.asyncio
-async def test_remove_strain_phenotype_nonexistent(strain_library: StrainLibrary):
+async def test_remove_strain_phenotype_nonexistent(
+    strain_library: StrainLibrary,
+) -> None:
     """Test removing a non-existent phenotype (should not error)."""
     await strain_library.remove_strain_phenotype("NonExistent", "Pheno")
     # Should not raise
 
 
 @pytest.mark.asyncio
-async def test_remove_strain_nonexistent(strain_library: StrainLibrary):
+async def test_remove_strain_nonexistent(strain_library: StrainLibrary) -> None:
     """Test removing a non-existent strain (should not error)."""
     await strain_library.remove_strain("NonExistent")
     # Should not raise
@@ -303,8 +309,8 @@ async def test_remove_strain_nonexistent(strain_library: StrainLibrary):
 
 @pytest.mark.asyncio
 async def test_remove_strain_phenotype_deletes_strain_when_no_phenotypes_remain(
-    strain_library: StrainLibrary, mock_image_manager
-):
+    strain_library: StrainLibrary, mock_image_manager: ImageManager
+) -> None:
     """Test that strain is deleted when all phenotypes are removed."""
     await strain_library.add_strain("Single Pheno Strain", "OnlyOne")
 
@@ -318,7 +324,7 @@ async def test_remove_strain_phenotype_deletes_strain_when_no_phenotypes_remain(
 @pytest.mark.asyncio
 async def test_record_harvest_creates_strain_if_not_exists(
     strain_library: StrainLibrary,
-):
+) -> None:
     """Test that record_harvest creates strain/phenotype if they don't exist."""
     await strain_library.record_harvest("New Strain", "New Pheno", 30, 60)
 
@@ -333,7 +339,7 @@ async def test_record_harvest_creates_strain_if_not_exists(
 @pytest.mark.asyncio
 async def test_ensure_strain_and_phenotype_exist_creates_phenotype(
     strain_library: StrainLibrary,
-):
+) -> None:
     """Test _ensure_strain_and_phenotype_exist creates phenotype if only strain exists."""
     await strain_library.add_strain("Existing Strain", "Pheno1")
 
@@ -348,7 +354,9 @@ async def test_ensure_strain_and_phenotype_exist_creates_phenotype(
 
 
 @pytest.mark.asyncio
-async def test_hybrid_sativa_percentage_auto_calc(strain_library: StrainLibrary):
+async def test_hybrid_sativa_percentage_auto_calc(
+    strain_library: StrainLibrary,
+) -> None:
     """Test that indica percentage is auto-calculated for hybrid."""
     await strain_library.add_strain(
         "Auto Calc Hybrid", strain_type="Hybrid", sativa_percentage=70
@@ -359,7 +367,9 @@ async def test_hybrid_sativa_percentage_auto_calc(strain_library: StrainLibrary)
 
 
 @pytest.mark.asyncio
-async def test_hybrid_indica_percentage_auto_calc(strain_library: StrainLibrary):
+async def test_hybrid_indica_percentage_auto_calc(
+    strain_library: StrainLibrary,
+) -> None:
     """Test that sativa percentage is auto-calculated for hybrid."""
     await strain_library.add_strain(
         "Auto Calc Hybrid 2", strain_type="Hybrid", indica_percentage=80
@@ -374,7 +384,7 @@ async def test_hybrid_indica_percentage_auto_calc(strain_library: StrainLibrary)
 
 
 @pytest.mark.asyncio
-async def test_add_strain_with_image_path(strain_library: StrainLibrary):
+async def test_add_strain_with_image_path(strain_library: StrainLibrary) -> None:
     """Test adding strain with image_path instead of image_base64."""
     await strain_library.add_strain(
         "Path Strain", "Pheno", image_path="/local/custom/path.jpg"
@@ -385,23 +395,25 @@ async def test_add_strain_with_image_path(strain_library: StrainLibrary):
 
 
 @pytest.mark.asyncio
-async def test_import_library_invalid_data(strain_library: StrainLibrary):
+async def test_import_library_invalid_data(strain_library: StrainLibrary) -> None:
     """Test that import_library handles invalid data gracefully."""
     # Import with non-dict data
-    result = await strain_library.import_library("not a dict", replace=False)
+    result = await strain_library.import_library("not a dict", replace=False)  # type: ignore[arg-type]
     assert result == 0  # Should return current count
 
 
 @pytest.mark.asyncio
-async def test_import_strains_invalid_data(strain_library: StrainLibrary):
+async def test_import_strains_invalid_data(strain_library: StrainLibrary) -> None:
     """Test that import_strains handles invalid data gracefully."""
     # Import with non-list data
-    result = await strain_library.import_strains("not a list", replace=False)
+    result = await strain_library.import_strains("not a list", replace=False)  # type: ignore[arg-type]
     assert result == 0  # Should return current count
 
 
 @pytest.mark.asyncio
-async def test_import_library_with_legacy_image_path(strain_library: StrainLibrary):
+async def test_import_library_with_legacy_image_path(
+    strain_library: StrainLibrary,
+) -> None:
     """Test importing library with legacy image path format."""
     import_data = {
         "Legacy Strain": {
@@ -420,12 +432,12 @@ async def test_import_library_with_legacy_image_path(strain_library: StrainLibra
 
 @pytest.mark.asyncio
 async def test_export_library_to_zip(
-    strain_library: StrainLibrary, mock_import_export_manager
-):
+    strain_library: StrainLibrary, mock_import_export_manager, tmp_path: Path
+) -> None:
     """Test exporting library to ZIP."""
     await strain_library.add_strain("Export Strain")
 
-    result = await strain_library.export_library_to_zip("/tmp")
+    result = await strain_library.export_library_to_zip(str(tmp_path))
 
     assert result == "/path/to/export.zip"
     mock_import_export_manager.export_library.assert_awaited_once()
@@ -434,7 +446,7 @@ async def test_export_library_to_zip(
 @pytest.mark.asyncio
 async def test_import_library_from_zip(
     strain_library: StrainLibrary, mock_import_export_manager
-):
+) -> None:
     """Test importing library from ZIP."""
     mock_import_export_manager.import_library.return_value = {
         "Imported Strain": {"meta": {}, "phenotypes": {"Pheno": {"harvests": []}}}
@@ -451,9 +463,10 @@ async def test_import_library_from_zip(
 @pytest.mark.asyncio
 async def test_load_with_invalid_json_in_image_crop_meta(
     strain_library: StrainLibrary, mock_hass
-):
+) -> None:
     """Test load() handles invalid JSON in image_crop_meta gracefully."""
     # Manually insert a phenotype with invalid JSON in image_crop_meta
+    assert strain_library._db is not None
     await strain_library._db.execute(
         """
         INSERT INTO strains (strain_name) VALUES (?)
@@ -481,7 +494,7 @@ async def test_load_with_invalid_json_in_image_crop_meta(
 @pytest.mark.asyncio
 async def test_ensure_strain_and_phenotype_exist_strain_creation_failure(
     strain_library: StrainLibrary,
-):
+) -> None:
     """Test RuntimeError when strain creation fails unexpectedly."""
     # This is a very edge case scenario. We need to simulate a situation where
     # add_strain completes but the strain is not actually created.

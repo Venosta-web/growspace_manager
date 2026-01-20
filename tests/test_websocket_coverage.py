@@ -1,12 +1,10 @@
 """Tests for Websocket coverage (exceptions and edge cases)."""
 
-import json
 from dataclasses import dataclass
+import json
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from homeassistant.core import HomeAssistant
-from homeassistant.exceptions import ServiceValidationError
 
 from custom_components.growspace_manager.const import DOMAIN
 from custom_components.growspace_manager.websocket import (
@@ -21,6 +19,8 @@ from custom_components.growspace_manager.websocket import (
     websocket_remove_timeline_event,
     websocket_update_nutrient_stock,
 )
+from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import ServiceValidationError
 
 
 @pytest.fixture
@@ -137,7 +137,7 @@ async def test_websocket_nutrient_inventory_service_missing(
     # Mock coordinator get via service call
     mock_coord = MagicMock()
     # Ensure it does NOT have nutrient_inventory_service
-    del mock_coord.nutrient_inventory_service
+    mock_coord.nutrient_inventory_service = None
 
     with patch(
         "custom_components.growspace_manager.coordinator.GrowspaceCoordinator.get_for_service_call",

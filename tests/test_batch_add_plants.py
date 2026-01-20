@@ -4,17 +4,17 @@ from datetime import date, datetime
 from unittest.mock import AsyncMock, Mock
 
 import pytest
-from homeassistant.core import HomeAssistant, ServiceCall
-from homeassistant.exceptions import ServiceValidationError
-from homeassistant.util.dt import as_local
 
 from custom_components.growspace_manager.const import DOMAIN
 from custom_components.growspace_manager.exceptions import GrowspaceError
 from custom_components.growspace_manager.services.plant import handle_add_plants
+from homeassistant.core import HomeAssistant, ServiceCall
+from homeassistant.exceptions import ServiceValidationError
+from homeassistant.util.dt import as_local
 
 
 @pytest.fixture
-def mock_growspace():
+def mock_growspace() -> Mock:
     """Create a mock growspace."""
     growspace = Mock()
     growspace.name = "Test Growspace"
@@ -22,7 +22,7 @@ def mock_growspace():
 
 
 @pytest.fixture
-def mock_coordinator(mock_growspace):
+def mock_coordinator(mock_growspace: Mock) -> Mock:
     """Create a mock coordinator."""
     coordinator = Mock()
     coordinator.growspaces = {"gs1": mock_growspace}
@@ -34,14 +34,14 @@ def mock_coordinator(mock_growspace):
 
 
 @pytest.fixture
-def mock_strain_library():
+def mock_strain_library() -> Mock:
     """Create a mock strain library."""
     return Mock()
 
 
 @pytest.mark.asyncio
 async def test_batch_add_plants_success(
-    hass: HomeAssistant, mock_coordinator, mock_strain_library
+    hass: HomeAssistant, mock_coordinator: Mock, mock_strain_library: Mock
 ) -> None:
     """Test successful batch add of plants."""
     call = ServiceCall(
@@ -57,11 +57,12 @@ async def test_batch_add_plants_success(
         },
     )
 
-    # Mock finding position for 3 calls
+    # Mock finding position for 4 calls (1 pre-check + 3 per-plant)
     mock_coordinator.validator.find_first_available_position.side_effect = [
-        (1, 1),
-        (1, 2),
-        (1, 3),
+        (1, 1),  # Pre-check
+        (1, 1),  # 1st plant
+        (1, 2),  # 2nd plant
+        (1, 3),  # 3rd plant
     ]
 
     await handle_add_plants(hass, mock_coordinator, mock_strain_library, call)
@@ -95,7 +96,7 @@ async def test_batch_add_plants_success(
 
 @pytest.mark.asyncio
 async def test_batch_add_plants_growspace_full(
-    hass: HomeAssistant, mock_coordinator, mock_strain_library
+    hass: HomeAssistant, mock_coordinator: Mock, mock_strain_library: Mock
 ) -> None:
     """Test handling when growspace becomes full mid-batch."""
     call = ServiceCall(
@@ -109,8 +110,9 @@ async def test_batch_add_plants_growspace_full(
         },
     )
 
-    # 1st ok, 2nd full (None, None)
+    # 1st ok (pre-check), 2nd ok (1st plant), 3rd full (2nd plant)
     mock_coordinator.validator.find_first_available_position.side_effect = [
+        (1, 1),
         (1, 1),
         (None, None),
         (None, None),
@@ -128,7 +130,7 @@ async def test_batch_add_plants_growspace_full(
 
 @pytest.mark.asyncio
 async def test_batch_add_plants_initially_full(
-    hass: HomeAssistant, mock_coordinator, mock_strain_library
+    hass: HomeAssistant, mock_coordinator: Mock, mock_strain_library: Mock
 ) -> None:
     """Test error when growspace is full from the start."""
     call = ServiceCall(
@@ -144,7 +146,7 @@ async def test_batch_add_plants_initially_full(
 
     mock_coordinator.validator.find_first_available_position.return_value = (None, None)
 
-    with pytest.raises(ServiceValidationError, match="Growspace gs1 is full"):
+    with pytest.raises(ServiceValidationError, match=".*is full.*"):
         await handle_add_plants(hass, mock_coordinator, mock_strain_library, call)
 
     mock_coordinator.async_add_plant.assert_not_called()
@@ -152,7 +154,7 @@ async def test_batch_add_plants_initially_full(
 
 @pytest.mark.asyncio
 async def test_batch_add_plants_growspace_not_found(
-    hass: HomeAssistant, mock_coordinator, mock_strain_library
+    hass: HomeAssistant, mock_coordinator: Mock, mock_strain_library: Mock
 ) -> None:
     """Test error when growspace ID is invalid."""
     mock_coordinator.growspaces = {}  # Empty
@@ -168,13 +170,13 @@ async def test_batch_add_plants_growspace_not_found(
         },
     )
 
-    with pytest.raises(ServiceValidationError, match="Growspace 'missing' not found"):
+    with pytest.raises(ServiceValidationError, match=".*does not exist.*"):
         await handle_add_plants(hass, mock_coordinator, mock_strain_library, call)
 
 
 @pytest.mark.asyncio
 async def test_batch_add_plants_individual_error(
-    hass: HomeAssistant, mock_coordinator, mock_strain_library
+    hass: HomeAssistant, mock_coordinator: Mock, mock_strain_library: Mock
 ) -> None:
     """Test aborting when an individual plant addition fails."""
     call = ServiceCall(
@@ -188,11 +190,12 @@ async def test_batch_add_plants_individual_error(
         },
     )
 
-    # 1st position found, 2nd position found
+    # Pre-check + loop calls
     mock_coordinator.validator.find_first_available_position.reset_mock()
     mock_coordinator.validator.find_first_available_position.side_effect = [
-        (1, 1),
-        (1, 2),
+        (1, 1),  # Pre-check
+        (1, 1),  # 1st plant
+        (1, 2),  # 2nd plant
     ]
 
     # 1st add raises error

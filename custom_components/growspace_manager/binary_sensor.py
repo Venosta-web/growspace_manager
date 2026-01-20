@@ -8,9 +8,9 @@ cycle schedule.
 
 from __future__ import annotations
 
-import logging
 from dataclasses import dataclass
 from datetime import datetime, timedelta
+import logging
 from typing import Any, override
 
 from homeassistant.components.binary_sensor import (
@@ -18,7 +18,7 @@ from homeassistant.components.binary_sensor import (
     BinarySensorEntityDescription,
 )
 from homeassistant.const import STATE_UNAVAILABLE, STATE_UNKNOWN
-from homeassistant.core import HomeAssistant, callback
+from homeassistant.core import Event, HomeAssistant, callback
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.event import async_track_state_change_event
@@ -26,9 +26,7 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from homeassistant.util.dt import utcnow
 
 from . import GrowspaceConfigEntry
-from .bayesian_evaluator import (
-    ReasonList,
-)
+from .bayesian_evaluator import ReasonList
 from .const import (
     ATTR_EXPECTED_SCHEDULE,
     ATTR_LIGHT_ENTITY_ID,
@@ -45,12 +43,7 @@ from .const import (
     PlantStage,
 )
 from .coordinator import GrowspaceCoordinator
-from .models import (
-    EnvironmentConfig,
-    EnvironmentState,
-    GrowspaceEvent,
-    GrowspaceType,
-)
+from .models import EnvironmentConfig, EnvironmentState, GrowspaceEvent, GrowspaceType
 from .services.ai_assistant import GrowAssistant
 from .strategies.curing import CuringEvaluatorStrategy
 from .strategies.drying import DryingEvaluatorStrategy
@@ -65,7 +58,7 @@ _LOGGER = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True, kw_only=True)
-class GrowspaceBinarySensorDescription(BinarySensorEntityDescription):
+class GrowspaceBinarySensorDescription(BinarySensorEntityDescription):  # type: ignore[misc]
     """Class describing Growspace binary sensors."""
 
     sensor_type: str
@@ -121,7 +114,7 @@ async def async_setup_entry(
     coordinator = entry.runtime_data
     initialized_sensors: set[str] = set()
 
-    async def _update_binary_sensors():
+    async def _update_binary_sensors() -> None:
         """Check for new growspaces with environment config and add sensors."""
         new_entities: list[BinarySensorEntity] = []
 
@@ -214,13 +207,13 @@ def _get_strategy_class(sensor_type: str) -> type[BayesianEvaluatorStrategy]:
     """Map sensor type to strategy class."""
     if sensor_type == GrowspaceSensorType.STRESS:
         return StressEvaluatorStrategy
-    elif sensor_type == GrowspaceSensorType.MOLD:
+    if sensor_type == GrowspaceSensorType.MOLD:
         return MoldRiskEvaluatorStrategy
-    elif sensor_type == GrowspaceSensorType.OPTIMAL:
+    if sensor_type == GrowspaceSensorType.OPTIMAL:
         return OptimalConditionsEvaluatorStrategy
-    elif sensor_type == GrowspaceSensorType.DRYING:
+    if sensor_type == GrowspaceSensorType.DRYING:
         return DryingEvaluatorStrategy
-    elif sensor_type == GrowspaceSensorType.CURING:
+    if sensor_type == GrowspaceSensorType.CURING:
         return CuringEvaluatorStrategy
     return StressEvaluatorStrategy  # Fallback
 
@@ -236,7 +229,8 @@ def _validate_env_config(config: EnvironmentConfig) -> bool:
 
 
 class BayesianEnvironmentSensor(
-    CoordinatorEntity[GrowspaceCoordinator], BinarySensorEntity
+    CoordinatorEntity[GrowspaceCoordinator],  # type: ignore[misc]
+    BinarySensorEntity,  # type: ignore[misc]
 ):
     """Base class for Bayesian environment monitoring binary sensors."""
 
@@ -295,13 +289,13 @@ class BayesianEnvironmentSensor(
         self.notification_manager = self.coordinator.notification_manager
 
     @property
-    @override
+    @override  # type: ignore[misc]
     def is_on(self) -> bool:
         """Return true if the sensor is on (probability > threshold)."""
         return self._probability >= self.threshold
 
     @property
-    @override
+    @override  # type: ignore[misc]
     def extra_state_attributes(self) -> dict[str, Any]:
         """Return the state attributes."""
         attrs = {
@@ -434,7 +428,7 @@ class BayesianEnvironmentSensor(
             )
             self.notification_manager.trigger_cooldown(self.growspace_id)
 
-    @override
+    @override  # type: ignore[misc]
     async def async_added_to_hass(self) -> None:
         """Register callbacks when the entity is added to Home Assistant."""
         await super().async_added_to_hass()
@@ -468,13 +462,13 @@ class BayesianEnvironmentSensor(
         # Schedule initial update
         self.hass.async_create_task(self.async_update_and_notify())
 
-    @callback
+    @callback  # type: ignore[misc]
     def _handle_coordinator_update(self) -> None:
         """Handle updates from the data coordinator."""
         self.hass.async_create_task(self.async_update_and_notify())
 
-    @callback
-    def _async_sensor_changed(self, event) -> None:
+    @callback  # type: ignore[misc]
+    def _async_sensor_changed(self, event: Event) -> None:
         """Handle state changes of the monitored environment sensors."""
         self.hass.async_create_task(self.async_update_and_notify())
 
@@ -573,7 +567,7 @@ class BayesianEnvironmentSensor(
             _LOGGER.exception("Error analyzing sensor history for %s", sensor_id)
             return {"trend": "unknown", "crossed_threshold": False}
 
-    def _generate_notification_message(self, base_message: str) -> str:
+    def generate_notification_message(self, base_message: str) -> str:
         """Construct a detailed notification message from the list of reasons."""
         return self.notification_manager.generate_notification_message(
             base_message, self._reasons
@@ -587,7 +581,11 @@ class BayesianEnvironmentSensor(
             coordinator_options = getattr(self.coordinator, "options", {})
             ai_alerts_enabled = coordinator_options.get(CONF_AI_AUTO_ALERTS, False)
 
-            if ai_alerts_enabled and self._probability >= self.threshold:
+            if (
+                ai_alerts_enabled
+                and self._probability >= self.threshold
+                and self.coordinator.strain_library
+            ):
                 try:
                     assistant = GrowAssistant(
                         self.hass, self.coordinator, self.coordinator.strain_library
@@ -598,7 +596,7 @@ class BayesianEnvironmentSensor(
                         [r[1] for r in self._reasons],
                     )
                     final_message = f"{ai_message}\n\n(Original: {message})"
-                except Exception:
+                except Exception:  # noqa: BLE001
                     _LOGGER.warning(
                         "Failed to generate AI alert, falling back to standard message"
                     )
@@ -781,7 +779,8 @@ class BayesianEnvironmentSensor(
 
 
 class LightCycleVerificationSensor(
-    CoordinatorEntity[GrowspaceCoordinator], BinarySensorEntity
+    CoordinatorEntity[GrowspaceCoordinator],  # type: ignore[misc]
+    BinarySensorEntity,  # type: ignore[misc]
 ):
     """Binary sensor to verify if the light schedule matches the expected plan."""
 
@@ -861,13 +860,13 @@ class LightCycleVerificationSensor(
             )
         await self.async_update()
 
-    @callback
+    @callback  # type: ignore[misc]
     def _handle_coordinator_update(self) -> None:
         """Handle updates from the data coordinator."""
         self.hass.async_create_task(self.async_update())
 
-    @callback
-    def _handle_sensor_change(self, event) -> None:
+    @callback  # type: ignore[misc]
+    def _handle_sensor_change(self, event: Event) -> None:
         """Handle light sensor change."""
         self._update_state()
         self.async_write_ha_state()
@@ -926,8 +925,8 @@ class LightCycleVerificationSensor(
             return "flower_late"
         return PlantStage.VEG
 
-    @callback
-    def _async_light_sensor_changed(self, event) -> None:
+    @callback  # type: ignore[misc]
+    def _async_light_sensor_changed(self, event: Event) -> None:
         """Handle state changes of the monitored light sensor."""
         self.hass.async_create_task(self.async_update())
 

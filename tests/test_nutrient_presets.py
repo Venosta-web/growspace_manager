@@ -6,11 +6,10 @@ including stage-based applicability filtering and merging with manual inputs.
 
 from dataclasses import dataclass
 from datetime import datetime, timedelta
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
-from homeassistant.config_entries import ConfigEntry
-from homeassistant.core import HomeAssistant
 from pytest_homeassistant_custom_component.common import (
     MockConfigEntry,
     async_capture_events,
@@ -24,30 +23,23 @@ from custom_components.growspace_manager.const import (
     DOMAIN,
     EVENT_GROWSPACE_LOG_ENTRY,
 )
-from .conftest import create_plant
-
 from custom_components.growspace_manager.coordinator import GrowspaceCoordinator
 from custom_components.growspace_manager.models import (
     BaseModel,
     EnvironmentConfig,
     Growspace,
     NutrientPreset,
-    Plant,
     PlantStage,
 )
-from .conftest import create_plant
-
-from custom_components.growspace_manager.sensor import (
-    _create_initial_entities,
-)
-from .conftest import create_plant
-
+from custom_components.growspace_manager.sensor import _create_initial_entities
 from custom_components.growspace_manager.services.nutrient_presets import (
     handle_remove_nutrient_preset,
     handle_save_nutrient_preset,
 )
-from .conftest import create_plant
+from homeassistant.config_entries import ConfigEntry
+from homeassistant.core import HomeAssistant
 
+from .common import create_plant
 
 
 def create_test_coordinator(hass: HomeAssistant) -> GrowspaceCoordinator:
@@ -59,8 +51,8 @@ def create_test_coordinator(hass: HomeAssistant) -> GrowspaceCoordinator:
     )
 
     coordinator = GrowspaceCoordinator(hass, entry, data={})
-    coordinator.async_save = AsyncMock()
-    coordinator.async_commit = AsyncMock()
+    coordinator.async_save = AsyncMock()  # type: ignore[method-assign]
+    coordinator.async_commit = AsyncMock()  # type: ignore[method-assign]
     coordinator.async_set_updated_data = MagicMock()
     return coordinator
 
@@ -114,7 +106,7 @@ class TestNutrientPresetCoordinator:
         assert preset.stage == PlantStage.VEG
         assert preset.min_days_in_stage == 5
         assert preset.id in preset_coordinator.nutrient_presets
-        preset_coordinator.async_save.assert_called_once()
+        preset_coordinator.async_save.assert_called_once()  # type: ignore[attr-defined]
 
     @pytest.mark.asyncio
     async def test_remove_nutrient_preset(
@@ -131,7 +123,7 @@ class TestNutrientPresetCoordinator:
         await preset_coordinator.async_remove_nutrient_preset(preset_id)
 
         assert preset_id not in preset_coordinator.nutrient_presets
-        assert preset_coordinator.async_save.call_count == 2
+        assert preset_coordinator.async_save.call_count == 2  # type: ignore[attr-defined]
 
     @pytest.mark.asyncio
     async def test_remove_nonexistent_preset_raises(
@@ -418,7 +410,7 @@ class TestNutrientPresetSerialization:
         data = {
             "id": "preset-123",
             "name": "Full Recipe",
-            "nutrients": [
+            "items": [
                 {"name": "Part A", "dose_ml_l": 2.0},
                 {"name": "Part B", "dose_ml_l": 2.0},
             ],
@@ -531,10 +523,10 @@ class TestSensorRegistrationCoverage:
     ) -> None:
         """Test that _create_initial_entities works without NutrientPresetSensor."""
 
-        initial_entities = []
-        growspace_entities = {}
-        plant_entities = {}
-        calculated_vpd_growspace_ids = set()
+        initial_entities: list[Any] = []
+        growspace_entities: dict[str, Any] = {}
+        plant_entities: dict[str, Any] = {}
+        calculated_vpd_growspace_ids: set[str] = set()
 
         # We need a mock config entry
         mock_entry = MagicMock(spec=ConfigEntry)
@@ -553,7 +545,6 @@ class TestSensorRegistrationCoverage:
         # Ensure no NutrientPresetSensor is created
         # We don't have the class anymore to check isinstance, but we can verify it doesn't crash
         # and maybe check count of other sensors if needed.
-        pass
 
 
 class TestNutrientPresetStorageLoading:
@@ -587,7 +578,7 @@ class TestNutrientPresetStorageLoading:
                 "p1": {
                     "id": "p1",
                     "name": "Stored Preset",
-                    "nutrients": [{"name": "A", "dose_ml_l": 1.0}],
+                    "items": [{"name": "A", "dose_ml_l": 1.0}],
                     "stage": "flower",
                 }
             }

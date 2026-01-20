@@ -3,8 +3,6 @@
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
-from homeassistant.core import HomeAssistant, ServiceCall
-from homeassistant.exceptions import ServiceValidationError
 
 from custom_components.growspace_manager.const import DOMAIN
 from custom_components.growspace_manager.services.irrigation import (
@@ -15,6 +13,8 @@ from custom_components.growspace_manager.services.irrigation import (
     handle_remove_irrigation_time,
     handle_set_irrigation_settings,
 )
+from homeassistant.core import HomeAssistant, ServiceCall
+from homeassistant.exceptions import ServiceValidationError
 
 
 @pytest.fixture

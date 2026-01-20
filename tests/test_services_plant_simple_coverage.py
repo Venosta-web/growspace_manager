@@ -3,17 +3,15 @@
 from datetime import date
 from unittest.mock import AsyncMock, MagicMock
 
-from homeassistant.core import HomeAssistant
-
-from custom_components.growspace_manager.const import (
-    EVENT_GROWSPACE_LOG_ENTRY,
-)
-from custom_components.growspace_manager.models import Plant, PlantStage
-from .conftest import create_plant
+from custom_components.growspace_manager.const import EVENT_GROWSPACE_LOG_ENTRY
+from custom_components.growspace_manager.models import PlantStage
 from custom_components.growspace_manager.plant_lifecycle_manager import (
     PlantLifecycleManager,
 )
 from custom_components.growspace_manager.services.plant import async_add_timeline_note
+from homeassistant.core import HomeAssistant
+
+from .common import create_plant
 
 
 async def test_transition_closes_existing_history(hass: HomeAssistant) -> None:
@@ -28,7 +26,7 @@ async def test_transition_closes_existing_history(hass: HomeAssistant) -> None:
         plant_id=plant_id,
         growspace_id="tent",
         strain="Test Strain",
-        stage=PlantStage.VEG,
+        stage=PlantStage.FLOWER,
         stage_history=[
             {"stage": "seedling", "start": "2023-01-01", "end": "2023-02-01"},
             {"stage": "veg", "start": "2023-02-01", "end": None},  # Open item
@@ -38,12 +36,12 @@ async def test_transition_closes_existing_history(hass: HomeAssistant) -> None:
 
     # Mock async_update_plant to verify the update
     # We patch the method on the instance we created
-    manager.async_update_plant = AsyncMock()
-    manager.move_to_dry_growspace = AsyncMock()  # Mock these to avoid side effects
+    manager.async_update_plant = AsyncMock()  # type: ignore[method-assign]
+    manager.move_to_dry_growspace = AsyncMock()  # type: ignore[method-assign]
 
     # Transition
     today = date.today().isoformat()
-    await manager.transition_plant_stage(plant_id, PlantStage.FLOWER, today)
+    await manager.transition_plant_stage(plant_id, PlantStage.FLOWER, date.today())
 
     # Verify async_update_plant called with updated history
     manager.async_update_plant.assert_called_once()

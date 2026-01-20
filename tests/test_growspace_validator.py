@@ -11,8 +11,9 @@ from custom_components.growspace_manager.exceptions import (
     ValidationChangeError,
 )
 from custom_components.growspace_manager.growspace_validator import GrowspaceValidator
-from custom_components.growspace_manager.models import Growspace, Plant
-from .conftest import create_plant
+from custom_components.growspace_manager.models import Growspace
+
+from .common import create_plant
 
 
 @pytest.fixture

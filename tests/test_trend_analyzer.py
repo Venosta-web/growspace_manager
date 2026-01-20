@@ -1,21 +1,21 @@
 """Tests for the TrendAnalyzer helper."""
 
+from collections.abc import Sequence
 from datetime import datetime, timedelta
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+
+from custom_components.growspace_manager.trend_analyzer import TrendAnalyzer
 from homeassistant.const import STATE_UNAVAILABLE
 from homeassistant.core import HomeAssistant, State
 from homeassistant.util.dt import utcnow
-
-from custom_components.growspace_manager.trend_analyzer import TrendAnalyzer
 
 
 @pytest.fixture
 def mock_hass():
     """Mock Home Assistant instance."""
-    hass = MagicMock(spec=HomeAssistant)
-    return hass
+    return MagicMock(spec=HomeAssistant)
 
 
 @pytest.fixture
@@ -25,7 +25,7 @@ def trend_analyzer(mock_hass):
 
 
 def create_mock_history(
-    states: list[tuple[datetime, float | str]],
+    states: Sequence[tuple[datetime, float | str]],
 ) -> dict[str, list[State]]:
     """Create a mock history list for get_significant_states."""
     mock_states = []

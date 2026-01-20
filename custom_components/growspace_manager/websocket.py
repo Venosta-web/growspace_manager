@@ -3,25 +3,25 @@
 from __future__ import annotations
 
 import bisect
-import json
-import logging
 from dataclasses import asdict
 from datetime import datetime, timedelta
+import json
+import logging
 from typing import Any
 
-import homeassistant.util.dt as dt_util
 import voluptuous as vol
+
 from homeassistant.components import websocket_api
-from homeassistant.components.recorder import get_instance, history
-from homeassistant.components.recorder import statistics as recorder_stats
-from homeassistant.components.recorder.db_schema import (
-    EventData,
-    Events,
-    EventTypes,
+from homeassistant.components.recorder import (
+    get_instance,
+    history,
+    statistics as recorder_stats,
 )
+from homeassistant.components.recorder.db_schema import EventData, Events, EventTypes
 from homeassistant.components.recorder.util import session_scope
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.exceptions import ServiceValidationError
+import homeassistant.util.dt as dt_util
 
 from .const import (
     ATTR_AMOUNT_ML,
@@ -38,12 +38,12 @@ from .const import (
 )
 from .coordinator import GrowspaceCoordinator
 from .services.plant import async_add_timeline_note
-from .services.strain_library import StrainLibrary
+from .strain_library import StrainLibrary
 
 _LOGGER = logging.getLogger(__name__)
 
 # Sentinel for invalid timestamps
-_EPOCH_SENTINEL = dt_util.dt.datetime.min.replace(tzinfo=dt_util.dt.timezone.utc)
+_EPOCH_SENTINEL: datetime = datetime.min.replace(tzinfo=dt_util.UTC)
 
 
 def _extract_ts(state_obj: Any) -> datetime:
@@ -58,7 +58,9 @@ def _extract_ts(state_obj: Any) -> datetime:
     if isinstance(ts_raw, str):
         parsed = dt_util.parse_datetime(ts_raw)
         return parsed if parsed else _EPOCH_SENTINEL
-    return ts_raw
+    if isinstance(ts_raw, datetime):
+        return ts_raw
+    return _EPOCH_SENTINEL
 
 
 WS_TYPE_GET_LOG = f"{DOMAIN}/get_log"
@@ -88,7 +90,9 @@ SCHEMA_WS_GET_DATA = websocket_api.BASE_COMMAND_MESSAGE_SCHEMA.extend(
 )
 
 
-async def websocket_get_growspace_data(hass: HomeAssistant, connection, msg):
+async def websocket_get_growspace_data(
+    hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
+) -> None:
     """Handle get growspace data command."""
     growspace_id = msg.get("growspace_id")
     try:
@@ -97,11 +101,15 @@ async def websocket_get_growspace_data(hass: HomeAssistant, connection, msg):
         connection.send_result(msg["id"], data)
     except ServiceValidationError as err:
         connection.send_error(msg["id"], "invalid_args", str(err))
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         connection.send_error(msg["id"], "unknown_error", str(e))
 
 
-def _merge_logbook_event(formatted_events_list, data_dict, evt_row):
+def _merge_logbook_event(
+    formatted_events_list: list[dict[str, Any]],
+    data_dict: dict[str, Any],
+    evt_row: EventData,
+) -> bool:
     """Try to merge an event into the last one if they are similar alerts."""
     if not formatted_events_list:
         return False
@@ -146,7 +154,83 @@ def _merge_logbook_event(formatted_events_list, data_dict, evt_row):
     return False
 
 
-async def websocket_get_event_log(hass: HomeAssistant, connection, msg):  # noqa: C901
+def _query_logbook_events_impl(
+    hass: HomeAssistant,
+    start_time: datetime,
+    end_time: datetime,
+    limit: int,
+    growspace_id: str | None,
+    exclude_categories: set[str] | None = None,
+    include_categories: set[str] | None = None,
+    limit_multiplier: int = 2,
+) -> list[dict[str, Any]]:
+    """Execute the logbook query with filtering logic."""
+    formatted: list[dict[str, Any]] = []
+    count = 0
+
+    with session_scope(hass=hass, read_only=True) as session:
+        t_row = (
+            session.query(EventTypes.event_type_id)
+            .filter(EventTypes.event_type == EVENT_GROWSPACE_LOG_ENTRY)
+            .first()
+        )
+        if not t_row:
+            return []
+
+        q = (
+            session.query(Events, EventData)
+            .join(EventData, Events.data_id == EventData.data_id, isouter=False)
+            .filter(
+                Events.event_type_id == t_row[0],
+                Events.time_fired_ts >= start_time.timestamp(),
+                Events.time_fired_ts <= end_time.timestamp(),
+            )
+        )
+
+        # SQL level exclusion
+        if exclude_categories:
+            for cat in exclude_categories:
+                # Match both compact and spaced JSON formatting
+                q = q.filter(
+                    ~EventData.shared_data.like(f'%"category":"{cat}"%'),
+                    ~EventData.shared_data.like(f'%"category": "{cat}"%'),
+                )
+
+        q = q.order_by(Events.time_fired_ts.desc())
+
+        if limit:
+            q = q.limit(limit * limit_multiplier)
+
+        for e_row, d_row in q:
+            if not d_row or not d_row.shared_data:
+                continue
+            try:
+                d = json.loads(d_row.shared_data)
+                if growspace_id and d.get("growspace_id") != growspace_id:
+                    continue
+
+                if include_categories and d.get("category") not in include_categories:
+                    continue
+
+                if count >= limit:
+                    break
+                count += 1
+
+                if "timestamp" not in d and e_row.time_fired_ts:
+                    d["timestamp"] = e_row.time_fired_ts * 1000
+
+                if not _merge_logbook_event(formatted, d, e_row):
+                    d["event_id"] = e_row.event_id
+                    formatted.append(d)
+
+            except (json.JSONDecodeError, AttributeError):
+                continue
+    return formatted
+
+
+async def websocket_get_event_log(
+    hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
+) -> None:
     """Handle get event log command via Recorder.
 
     Excludes high-frequency environmental alerts (optimal, stress, mold).
@@ -154,83 +238,25 @@ async def websocket_get_event_log(hass: HomeAssistant, connection, msg):  # noqa
     growspace_id = msg.get("growspace_id")
     limit = msg.get("limit", 50)
     # Categories to EXCLUDE from the main log
-    spam_cats = {"optimal", "stress", "mold"}
+    spam_cats = {"optimal", "stress", "mold", "alert", "environment"}
 
     try:
         recorder = get_instance(hass)
         end_time = dt_util.utcnow()
         # Look back up to 30 days for manual logs since they are sparse
-        start_time = end_time - dt_util.dt.timedelta(days=30)
+        start_time = end_time - timedelta(days=30)
 
-        def _query_events():  # noqa: C901
-            formatted = []
-            count = 0
-
-            with session_scope(hass=hass, read_only=True) as session:
-                t_row = (
-                    session.query(EventTypes.event_type_id)
-                    .filter(EventTypes.event_type == EVENT_GROWSPACE_LOG_ENTRY)
-                    .first()
-                )
-                if not t_row:
-                    return []
-
-                # Build SQL-level filters to exclude spam categories
-                # This ensures we fetch only relevant events, preventing action events
-                # from being pushed out when there are thousands of spam alerts
-                q = (
-                    session.query(Events, EventData)
-                    .join(EventData, Events.data_id == EventData.data_id, isouter=False)
-                    .filter(
-                        Events.event_type_id == t_row[0],
-                        Events.time_fired_ts >= start_time.timestamp(),
-                        Events.time_fired_ts <= end_time.timestamp(),
-                    )
-                )
-
-                # Exclude spam categories at SQL level using JSON pattern matching
-                # This works with both SQLite (default) and PostgreSQL
-                for cat in spam_cats:
-                    # Match both compact and spaced JSON formatting
-                    q = q.filter(
-                        ~EventData.shared_data.like(f'%"category":"{cat}"%'),
-                        ~EventData.shared_data.like(f'%"category": "{cat}"%'),
-                    )
-
-                q = q.order_by(Events.time_fired_ts.desc())
-
-                # Now that spam is excluded at SQL level, we only need a small
-                # multiplier to account for merging and growspace filtering
-                if limit:
-                    q = q.limit(limit * 2)
-
-                for e_row, d_row in q:
-                    if not d_row or not d_row.shared_data:
-                        continue
-                    try:
-                        d = json.loads(d_row.shared_data)
-                        if growspace_id and d.get("growspace_id") != growspace_id:
-                            continue
-
-                        # Note: No need for Python-level category filtering anymore
-                        # as it's handled at SQL level above
-
-                        if count >= limit:
-                            break
-                        count += 1
-
-                        if "timestamp" not in d and e_row.time_fired_ts:
-                            d["timestamp"] = e_row.time_fired_ts * 1000
-
-                        if not _merge_logbook_event(formatted, d, e_row):
-                            d["event_id"] = e_row.event_id
-                            formatted.append(d)
-
-                    except (json.JSONDecodeError, AttributeError):
-                        continue
-            return formatted
-
-        evts = await recorder.async_add_executor_job(_query_events)
+        evts = await recorder.async_add_executor_job(
+            _query_logbook_events_impl,
+            hass,
+            start_time,
+            end_time,
+            limit,
+            growspace_id,
+            spam_cats,
+            None,
+            2,
+        )
         res = {}
         if growspace_id:
             res[growspace_id] = evts
@@ -249,7 +275,9 @@ async def websocket_get_event_log(hass: HomeAssistant, connection, msg):  # noqa
         connection.send_error(msg["id"], "unknown_error", str(err))
 
 
-async def websocket_get_alerts(hass: HomeAssistant, connection, msg):  # noqa: C901
+async def websocket_get_alerts(
+    hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
+) -> None:
     """Handle get alerts command via Recorder.
 
     ONLY includes high-frequency environmental alerts (optimal, stress, mold).
@@ -257,69 +285,24 @@ async def websocket_get_alerts(hass: HomeAssistant, connection, msg):  # noqa: C
     growspace_id = msg.get("growspace_id")
     limit = msg.get("limit", 200)
     # Categories to INCLUDE in the alerts log
-    alert_cats = {"optimal", "stress", "mold"}
+    alert_cats = {"optimal", "stress", "mold", "alert", "environment"}
 
     try:
         recorder = get_instance(hass)
         end_time = dt_util.utcnow()
-        start_time = end_time - dt_util.dt.timedelta(days=120)
+        start_time = end_time - timedelta(days=120)
 
-        def _query_events():  # noqa: C901
-            formatted = []
-            count = 0
-
-            with session_scope(hass=hass, read_only=True) as session:
-                t_row = (
-                    session.query(EventTypes.event_type_id)
-                    .filter(EventTypes.event_type == EVENT_GROWSPACE_LOG_ENTRY)
-                    .first()
-                )
-                if not t_row:
-                    return []
-
-                q = (
-                    session.query(Events, EventData)
-                    .join(EventData, Events.data_id == EventData.data_id, isouter=False)
-                    .filter(
-                        Events.event_type_id == t_row[0],
-                        Events.time_fired_ts >= start_time.timestamp(),
-                        Events.time_fired_ts <= end_time.timestamp(),
-                    )
-                    .order_by(Events.time_fired_ts.desc())
-                )
-
-                # Fetch more than limit because we filter FOR spam
-                if limit:
-                    q = q.limit(limit * 5)
-
-                for e_row, d_row in q:
-                    if not d_row or not d_row.shared_data:
-                        continue
-                    try:
-                        d = json.loads(d_row.shared_data)
-                        if growspace_id and d.get("growspace_id") != growspace_id:
-                            continue
-
-                        # INCLUDE ONLY alert categories
-                        if d.get("category") not in alert_cats:
-                            continue
-
-                        if count >= limit:
-                            break
-                        count += 1
-
-                        if "timestamp" not in d and e_row.time_fired_ts:
-                            d["timestamp"] = e_row.time_fired_ts * 1000
-
-                        if not _merge_logbook_event(formatted, d, e_row):
-                            d["event_id"] = e_row.event_id
-                            formatted.append(d)
-
-                    except (json.JSONDecodeError, AttributeError):
-                        continue
-            return formatted
-
-        evts = await recorder.async_add_executor_job(_query_events)
+        evts = await recorder.async_add_executor_job(
+            _query_logbook_events_impl,
+            hass,
+            start_time,
+            end_time,
+            limit,
+            growspace_id,
+            None,
+            alert_cats,
+            5,
+        )
         res = {}
         if growspace_id:
             res[growspace_id] = evts
@@ -448,7 +431,7 @@ def websocket_get_nutrient_inventory(
         coordinator: GrowspaceCoordinator = GrowspaceCoordinator.get_for_service_call(
             hass, msg
         )
-        if hasattr(coordinator, "nutrient_inventory_service"):
+        if coordinator.nutrient_inventory_service:
             inventory = coordinator.nutrient_inventory_service.get_inventory()
             connection.send_result(msg["id"], asdict(inventory))
         else:
@@ -467,7 +450,7 @@ def websocket_update_nutrient_stock(
         coordinator: GrowspaceCoordinator = GrowspaceCoordinator.get_for_service_call(
             hass, msg
         )
-        if hasattr(coordinator, "nutrient_inventory_service"):
+        if coordinator.nutrient_inventory_service:
             coordinator.nutrient_inventory_service.update_stock(
                 nutrient_id=msg["nutrient_id"],
                 name=msg["name"],
@@ -493,7 +476,7 @@ def websocket_remove_nutrient_stock(
         coordinator: GrowspaceCoordinator = GrowspaceCoordinator.get_for_service_call(
             hass, msg
         )
-        if hasattr(coordinator, "nutrient_inventory_service"):
+        if coordinator.nutrient_inventory_service:
             coordinator.nutrient_inventory_service.remove_stock(msg["nutrient_id"])
             # Persist changes
             hass.async_create_task(coordinator.async_save())
@@ -579,7 +562,7 @@ async def websocket_remove_timeline_event(
     try:
         recorder = get_instance(hass)
 
-        def _delete_event():
+        def _delete_event() -> None:
             with session_scope(hass=hass) as session:
                 # Delete the event from the Events table
                 # We don't delete from EventData as it might be shared
@@ -608,7 +591,9 @@ SCHEMA_WS_GET_HISTORY_STATS = websocket_api.BASE_COMMAND_MESSAGE_SCHEMA.extend(
 )
 
 
-async def websocket_get_history_stats(hass: HomeAssistant, connection, msg):
+async def websocket_get_history_stats(
+    hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
+) -> None:
     """Handle get history stats command with server-side optimization.
 
     Uses Recorder Statistics API for long periods (pre-aggregated hourly data)
@@ -626,6 +611,10 @@ async def websocket_get_history_stats(hass: HomeAssistant, connection, msg):
 
     if not start_time:
         connection.send_error(msg["id"], "invalid_args", "Invalid start_time")
+        return
+
+    if not end_time:
+        connection.send_error(msg["id"], "invalid_args", "Invalid end_time")
         return
 
     try:
@@ -654,10 +643,10 @@ async def websocket_get_history_stats(hass: HomeAssistant, connection, msg):
 async def _get_statistics_data(
     hass: HomeAssistant,
     entity_ids: list[str],
-    start_time,
-    end_time,
+    start_time: datetime,
+    end_time: datetime,
     interval: int,
-) -> dict[str, list[dict]] | None:
+) -> dict[str, list[dict[str, Any]]] | None:
     """Fetch data using Recorder Statistics API (pre-aggregated hourly data)."""
     # Determine the appropriate period based on interval
     if interval >= 1440:  # 24 hours or more
@@ -669,21 +658,36 @@ async def _get_statistics_data(
 
     try:
         # Fetch statistics from the recorder (native async method)
-        stats_data = await recorder_stats.async_statistics_during_period(
-            hass,
-            start_time,
-            end_time,
-            set(entity_ids),
-            period,
-            None,  # units (use default)
-            {"mean", "state"},  # types to fetch
-        )
+        # Use async_statistics_during_period if available (standard)
+        if hasattr(recorder_stats, "async_statistics_during_period"):
+            stats_data = await recorder_stats.async_statistics_during_period(
+                hass,
+                start_time,
+                end_time,
+                set(entity_ids),
+                period,
+                None,  # units (use default)
+                {"mean", "state"},  # types to fetch
+            )
+        else:
+            # Fallback for when async helper is missing (unlikely, but safe)
+            # Run sync version in executor
+            stats_data = await get_instance(hass).async_add_executor_job(
+                recorder_stats.statistics_during_period,
+                hass,
+                start_time,
+                end_time,
+                set(entity_ids),
+                period,
+                None,
+                {"mean", "state"},
+            )
 
         if not stats_data:
             return None
 
         # Convert statistics format to our expected output format
-        result: dict[str, list[dict]] = {}
+        result: dict[str, list[dict[str, Any]]] = {}
         for entity_id in entity_ids:
             if entity_id in stats_data:
                 points = stats_data[entity_id]
@@ -710,11 +714,12 @@ async def _get_statistics_data(
             else:
                 result[entity_id] = []
 
-        return result
-
-    except Exception as err:
-        _LOGGER.debug("Statistics API failed, falling back to raw history: %s", err)
+    except Exception:  # noqa: BLE001
+        # Catch any error from Statistics API to ensure fallback to raw history
+        _LOGGER.debug("Statistics API failed, falling back to raw history")
         return None
+    else:
+        return result
 
 
 def _downsample_entity_binary_search(
@@ -722,7 +727,7 @@ def _downsample_entity_binary_search(
     start_time: datetime,
     end_time: datetime,
     interval_delta: timedelta,
-) -> list[dict]:
+) -> list[dict[str, Any]]:
     """Downsample states using binary search with finger optimization."""
     downsampled = []
     current_time = start_time
@@ -770,17 +775,17 @@ def _downsample_entity_binary_search(
 async def _get_history_with_binary_search_downsample(
     hass: HomeAssistant,
     entity_ids: list[str],
-    start_time,
-    end_time,
+    start_time: datetime,
+    end_time: datetime,
     interval: int,
-) -> dict[str, list[dict]]:
+) -> dict[str, list[dict[str, Any]]]:
     """Fetch raw history and downsample using optimized binary search.
 
     Optimized to avoid O(N) pre-parsing of timestamps. uses bisect with key (Py3.10+)
     and 'lo' parameter to perform efficient 'finger search'.
     """
 
-    def _get_history():
+    def _get_history() -> dict[str, list[Any]]:
         return history.get_significant_states(
             hass,
             start_time,
@@ -797,9 +802,9 @@ async def _get_history_with_binary_search_downsample(
     # Helper to extract and ensure datetime from state object/dict
     # (Moved to module level: _extract_ts)
 
-    def _downsample_with_binary_search():
-        result = {}
-        interval_delta = dt_util.dt.timedelta(minutes=interval)
+    def _downsample_with_binary_search() -> dict[str, list[dict[str, Any]]]:
+        result: dict[str, list[dict[str, Any]]] = {}
+        interval_delta = timedelta(minutes=interval)
 
         for entity_id, states in history_data.items():
             if not states:

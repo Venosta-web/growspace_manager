@@ -1,17 +1,22 @@
+from typing import Any, cast
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
-from homeassistant.core import HomeAssistant
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.growspace_manager.const import DOMAIN
 from custom_components.growspace_manager.coordinator import GrowspaceCoordinator
 from custom_components.growspace_manager.models import Plant
-from .conftest import create_plant
+from homeassistant.core import HomeAssistant
+
+from .common import create_plant
 
 
 def create_test_coordinator(
-    hass: HomeAssistant, data=None, options=None, strain_library=None
+    hass: HomeAssistant,
+    data: dict[str, Any] | None = None,
+    options: dict[str, Any] | None = None,
+    strain_library: Any | None = None,
 ) -> GrowspaceCoordinator:
     """Helper to create a coordinator with a mock config entry."""
     entry = MockConfigEntry(domain=DOMAIN, data={}, options=options or {})
@@ -58,11 +63,14 @@ async def test_cache_invalidation_add_plant(hass: HomeAssistant) -> None:
         updated_at="2025-01-01",
     )
 
-    def side_effect_add_plant(**kwargs):
+    async def side_effect_add_plant(**kwargs: Any) -> Plant:
         coordinator.plants[mock_plant.plant_id] = mock_plant
         return mock_plant
 
-    coordinator.lifecycle_manager.async_add_plant.side_effect = side_effect_add_plant
+    # cast to Mock to set side_effect because mypy thinks it is the real method
+    cast(
+        MagicMock, coordinator.lifecycle_manager.async_add_plant
+    ).side_effect = side_effect_add_plant
 
     # 2. Add plant
     await coordinator.async_add_plant(gs.id, "Strain A")
@@ -115,12 +123,12 @@ async def test_cache_invalidation_update_plant(hass: HomeAssistant) -> None:
     # Manually invalidate because we bypassed standard add methods that would invalidate
     coordinator._invalidate_cache(gs.id)
 
-    async def side_effect_update(plant_id, **updates):
+    async def side_effect_update(plant_id: str, **updates: Any) -> Plant:
         for k, v in updates.items():
             setattr(mock_plant, k, v)
         return mock_plant
 
-    coordinator.lifecycle_manager.async_update_plant = AsyncMock(
+    coordinator.lifecycle_manager.async_update_plant = AsyncMock(  # type: ignore[method-assign]
         side_effect=side_effect_update
     )
 

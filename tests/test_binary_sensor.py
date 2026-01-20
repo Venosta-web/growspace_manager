@@ -2,14 +2,11 @@
 
 from __future__ import annotations
 
-import logging
 from datetime import date, datetime, timedelta
+import logging
 from unittest.mock import AsyncMock, MagicMock, Mock, patch
 
 import pytest
-from homeassistant.const import STATE_UNAVAILABLE, STATE_UNKNOWN
-from homeassistant.core import Event, HomeAssistant, State
-from homeassistant.util.dt import utcnow
 
 from custom_components.growspace_manager.binary_sensor import (
     SENSOR_TYPES,
@@ -37,6 +34,9 @@ from custom_components.growspace_manager.strategies.optimal import (
 from custom_components.growspace_manager.strategies.stress import (
     StressEvaluatorStrategy,
 )
+from homeassistant.const import STATE_UNAVAILABLE, STATE_UNKNOWN
+from homeassistant.core import Event, HomeAssistant, State
+from homeassistant.util.dt import utcnow
 
 MOCK_CONFIG_ENTRY_ID = "test_entry"
 
@@ -381,7 +381,7 @@ async def test_stress_sensor_notification_on_state_change(
     sensor.platform = MagicMock()
     sensor.entity_id = "binary_sensor.test_stress"
 
-    async def mock_update_prob():
+    async def mock_update_prob() -> None:
         sensor._probability = 0.9
 
     with (
@@ -422,7 +422,7 @@ async def test_optimal_conditions_notification_on_state_change(
     sensor.platform = MagicMock()
     sensor.entity_id = "binary_sensor.test_optimal"
 
-    async def mock_update_prob():
+    async def mock_update_prob() -> None:
         sensor._probability = 0.5
 
     with (
@@ -435,7 +435,7 @@ async def test_optimal_conditions_notification_on_state_change(
         mock_send.assert_called_once()
 
 
-def test_generate_notification_message_truncation(
+def testgenerate_notification_message_truncation(
     hass: HomeAssistant, mock_coordinator
 ) -> None:
     """Test that the notification message is correctly truncated."""
@@ -458,7 +458,7 @@ def test_generate_notification_message_truncation(
         (0.8, "Temp is much too high for the current growth stage"),
         (0.7, "Humidity is low"),
     ]
-    message = sensor._generate_notification_message("Alert")
+    message = sensor.generate_notification_message("Alert")
     assert len(message) < 65
     assert "VPD out of range" in message
     assert "Temp is much too high" not in message
@@ -539,7 +539,7 @@ def test_mold_risk_sensor_notification_returns_tuple_when_on_and_growspace_exist
             mock_coordinator, "growspaces", new=MagicMock()
         ) as mock_growspaces_dict,
         patch.object(
-            sensor, "_generate_notification_message", return_value="Mocked message"
+            sensor, "generate_notification_message", return_value="Mocked message"
         ) as mock_generate_message,
     ):
         mock_growspace_obj = MagicMock()
@@ -569,7 +569,7 @@ def test_mold_risk_sensor_notification_returns_none_when_on_and_growspace_does_n
         patch.object(
             mock_coordinator, "growspaces", new=MagicMock()
         ) as mock_growspaces_dict,
-        patch.object(sensor, "_generate_notification_message") as mock_generate_message,
+        patch.object(sensor, "generate_notification_message") as mock_generate_message,
     ):
         mock_growspaces_dict.get.return_value = None
         notification = sensor.get_notification_title_message(new_state_on=True)
@@ -584,7 +584,7 @@ def test_mold_risk_sensor_notification_returns_none_when_on_and_growspace_does_n
     return_value={"trend": "stable", "crossed_threshold": False},
 )
 @pytest.mark.parametrize(
-    "sensor_readings, expected_reason_fragment",
+    ("sensor_readings", "expected_reason_fragment"),
     [
         ({"temp": 33}, "Extreme Heat"),
         ({"temp": 14}, "Extreme Cold"),
@@ -641,7 +641,7 @@ async def test_bayesian_stress_sensor_granular(
     await hass.async_block_till_done()
 
     # Avoid light hysteresis
-    sensor._last_light_state = True if light_state == "on" else False
+    sensor._last_light_state = light_state == "on"
 
     with (
         patch.object(
@@ -686,7 +686,7 @@ async def test_bayesian_stress_sensor_granular(
 
 
 @pytest.mark.parametrize(
-    "state_value, expected",
+    ("state_value", "expected"),
     [
         ("25.5", 25.5),
         (STATE_UNAVAILABLE, None),
@@ -724,7 +724,7 @@ async def test_get_sensor_value_edge_cases(
 @patch("custom_components.growspace_manager.trend_analyzer.get_recorder_instance")
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    "history_data, duration, threshold, expected_trend, expected_crossed",
+    ("history_data", "duration", "threshold", "expected_trend", "expected_crossed"),
     [
         # Case 1: Rising trend
         (
@@ -1176,7 +1176,7 @@ def test_determine_light_state_unavailable(
     return_value={"trend": "stable", "crossed_threshold": False},
 )
 @pytest.mark.parametrize(
-    "sensor_readings, stage_info, expected_reason",
+    ("sensor_readings", "stage_info", "expected_reason"),
     [
         # Case 1: High temp at night
         (
@@ -1246,7 +1246,7 @@ async def test_stress_sensor_stage_and_time_logic(
     await hass.async_block_till_done()
 
     # Avoid light hysteresis
-    sensor._last_light_state = True if light_state == "on" else False
+    sensor._last_light_state = light_state == "on"
 
     # Mock stage info
     with (
@@ -1265,7 +1265,7 @@ async def test_stress_sensor_stage_and_time_logic(
     return_value={"trend": "stable", "crossed_threshold": False},
 )
 @pytest.mark.parametrize(
-    "sensor_readings, stage_info, expected_reason",
+    ("sensor_readings", "stage_info", "expected_reason"),
     [
         # Case 1: High humidity at night in late flower
         (
@@ -1336,7 +1336,7 @@ async def test_mold_risk_sensor_triggers(
     await hass.async_block_till_done()
 
     # Avoid light hysteresis
-    sensor._last_light_state = True if light_state == "on" else False
+    sensor._last_light_state = light_state == "on"
 
     with (
         patch.object(sensor, "_get_growth_stage_info", return_value=stage_info),
@@ -1358,7 +1358,7 @@ async def test_mold_risk_sensor_triggers(
     return_value={"trend": "stable", "crossed_threshold": False},
 )
 @pytest.mark.parametrize(
-    "sensor_readings, stage_info, expected_reason",
+    ("sensor_readings", "stage_info", "expected_reason"),
     [
         # Case 1: Temp too high in late flower (day)
         (
@@ -1416,7 +1416,7 @@ async def test_optimal_sensor_off_states(
     await hass.async_block_till_done()
 
     # Avoid light hysteresis
-    sensor._last_light_state = True if light_state == "on" else False
+    sensor._last_light_state = light_state == "on"
 
     # Mock stage info
     with (
@@ -1435,7 +1435,7 @@ async def test_optimal_sensor_off_states(
     return_value={"trend": "stable", "crossed_threshold": False},
 )
 @pytest.mark.parametrize(
-    "strategy_class, growspace_id, sensor_readings, expected_reason",
+    ("strategy_class", "growspace_id", "sensor_readings", "expected_reason"),
     [
         # Case 1: Drying sensor, temp too high
         (
@@ -1658,7 +1658,7 @@ async def test_light_cycle_verification_sensor_async_update_light_state_unavaila
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    "stage_info, light_state, time_since_last_changed, expected_is_correct",
+    ("stage_info", "light_state", "time_since_last_changed", "expected_is_correct"),
     [
         # Veg Stage
         ({"veg_days": 20, "flower_days": 0}, "on", timedelta(hours=17), True),
@@ -1707,7 +1707,7 @@ async def test_light_cycle_verification_sensor_async_update(
 
 
 @pytest.mark.parametrize(
-    "plants, expected_veg, expected_flower",
+    ("plants", "expected_veg", "expected_flower"),
     [
         ([], 0, 0),
         (
@@ -1894,7 +1894,7 @@ class TestBayesianEnvironmentSensor:
         assert attrs["reasons"] == ["Reason A", "Reason B", "Reason C"]
 
     @pytest.mark.parametrize(
-        "prior, observations, expected_probability",
+        ("prior", "observations", "expected_probability"),
         [
             (0.5, [], 0.5),  # No observations, should return prior
             (0.5, [(0.9, 0.1)], 0.9),  # Single observation
@@ -1987,7 +1987,7 @@ class TestBayesianEnvironmentSensor:
             assert "Test Error" in caplog.text
 
     @pytest.mark.parametrize(
-        "date_str, expected_days",
+        ("date_str", "expected_days"),
         [
             ("2023-01-01", 1107),
             ("invalid-date", 0),
@@ -2538,7 +2538,7 @@ async def test_no_desiccation_when_conditions_normal(
     return_value={"trend": "stable", "crossed_threshold": False},
 )
 @pytest.mark.parametrize(
-    "moisture_value, expected_stress, expected_reason",
+    ("moisture_value", "expected_stress", "expected_reason"),
     [
         (15, True, "Soil Moisture Low"),
         (65, True, "Soil Moisture High"),

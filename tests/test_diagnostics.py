@@ -3,11 +3,11 @@
 from unittest.mock import MagicMock
 
 import pytest
-from homeassistant.core import HomeAssistant
 
 from custom_components.growspace_manager.diagnostics import (
     async_get_config_entry_diagnostics,
 )
+from homeassistant.core import HomeAssistant
 
 
 @pytest.mark.asyncio

@@ -3,30 +3,32 @@
 from __future__ import annotations
 
 import logging
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from custom_components.growspace_manager.coordinator import GrowspaceCoordinator
 
 import voluptuous as vol
+
+from custom_components.growspace_manager.schemas import ADD_STRAIN_SCHEMA
 from homeassistant.config_entries import ConfigFlowResult
 from homeassistant.helpers import selector
 
-from ..schemas import ADD_STRAIN_SCHEMA
 from . import BaseConfigHandler
 
 _LOGGER = logging.getLogger(__name__)
 
 
-class StrainConfigHandler(BaseConfigHandler):
+class StrainConfigHandler(BaseConfigHandler[dict[str, Any]]):
     """Handle strain library configuration steps."""
-
-    def __init__(self, *args: Any, **kwargs: Any) -> None:
-        """Initialize the handler."""
-        super().__init__(*args, **kwargs)
 
     async def async_step_manage_strain_library(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
         """Manage the strain library."""
-        coordinator = getattr(self.config_entry, "runtime_data", None)
+        if self.config_entry is None:
+            return self.flow.async_abort(reason="setup_error")
+        coordinator = self.config_entry.runtime_data
         if coordinator is None:
             return self.flow.async_abort(reason="setup_error")
 
@@ -35,11 +37,11 @@ class StrainConfigHandler(BaseConfigHandler):
             if action == "add_strain":
                 return await self.async_step_add_strain()
             if action == "edit_strain":
-                self.flow._selected_strain_id = user_input.get("strain_id")
+                self.flow.selected_strain_id = user_input.get("strain_id")
                 return await self.async_step_edit_strain()
             if action == "delete_strain":
                 try:
-                    await coordinator.strain_library.async_delete_strain(
+                    await coordinator.strain_library.remove_strain(
                         user_input.get("strain_id")
                     )
                 except Exception:
@@ -71,28 +73,28 @@ class StrainConfigHandler(BaseConfigHandler):
         """Import strain library from ZIP."""
         errors = {}
         if user_input is not None:
-            try:
-                coordinator = self.config_entry.runtime_data
-                file_path = user_input["file_path"]
+            if self.config_entry is None:
+                errors["base"] = "setup_error"
+            else:
+                try:
+                    coordinator = self.config_entry.runtime_data
+                    file_path = user_input["file_path"]
 
-                # Use default image directory if not specified
-                target_dir = self.flow.hass.config.path("www/growspace_images")
+                    await coordinator.strain_library.import_library_from_zip(
+                        file_path, merge=True
+                    )
 
-                await coordinator.import_export_manager.import_library(
-                    file_path, target_dir
-                )
+                    # Reload strains to reflect changes
+                    await coordinator.strain_library.async_load()
 
-                # Reload strains to reflect changes
-                await coordinator.strain_library.async_load()
-
-                return await self.async_step_manage_strain_library()
-            except FileNotFoundError:
-                errors["base"] = "file_not_found"
-            except ValueError:
-                errors["base"] = "invalid_zip"
-            except Exception:
-                _LOGGER.exception("Import failed")
-                errors["base"] = "import_failed"
+                    return await self.async_step_manage_strain_library()
+                except FileNotFoundError:
+                    errors["base"] = "file_not_found"
+                except ValueError:
+                    errors["base"] = "invalid_zip"
+                except Exception:
+                    _LOGGER.exception("Import failed")
+                    errors["base"] = "import_failed"
 
         return self.flow.async_show_form(
             step_id="import_strain_library",
@@ -114,14 +116,16 @@ class StrainConfigHandler(BaseConfigHandler):
         if user_input is not None:
             return await self.async_step_manage_strain_library()
 
+        if self.config_entry is None:
+            return self.flow.async_abort(reason="setup_error")
         coordinator = self.config_entry.runtime_data
 
         # Default export location
         export_dir = self.flow.hass.config.path("exports")
 
         try:
-            zip_path = await coordinator.import_export_manager.export_library(
-                coordinator.strain_library.get_all(), export_dir
+            zip_path = await coordinator.strain_library.export_library_to_zip(
+                export_dir
             )
             return self.flow.async_show_form(
                 step_id="export_strain_library",
@@ -132,11 +136,16 @@ class StrainConfigHandler(BaseConfigHandler):
             _LOGGER.exception("Export failed")
             return self.flow.async_abort(reason="export_failed")
 
-    def _get_strain_library_menu_schema(self, coordinator) -> vol.Schema:
+    def _get_strain_library_menu_schema(
+        self, coordinator: GrowspaceCoordinator
+    ) -> vol.Schema:
         """Build the schema for the strain library menu."""
-        strains = coordinator.strain_library.get_all_strains()
+        if not coordinator.strain_library:
+            return vol.Schema({})
+
+        strains = list(coordinator.strain_library.get_all().keys())
         strain_options = [
-            selector.SelectOptionDict(value=s.id, label=s.name) for s in strains
+            selector.SelectOptionDict(value=name, label=name) for name in strains
         ]
 
         schema_dict: dict[vol.Optional | vol.Required, Any] = {
@@ -181,6 +190,8 @@ class StrainConfigHandler(BaseConfigHandler):
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
         """Show the form for adding a new strain."""
+        if self.config_entry is None:
+            return self.flow.async_abort(reason="setup_error")
         coordinator = self.config_entry.runtime_data
 
         if user_input is not None:

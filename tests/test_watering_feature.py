@@ -9,7 +9,6 @@ from datetime import datetime, timedelta
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
-from homeassistant.core import HomeAssistant
 from pytest_homeassistant_custom_component.common import (
     MockConfigEntry,
     async_capture_events,
@@ -21,13 +20,15 @@ from custom_components.growspace_manager.exceptions import (
     GrowspaceNotFoundError,
     PlantNotFoundError,
 )
-from custom_components.growspace_manager.models import Growspace, Plant
-from .conftest import create_plant
+from custom_components.growspace_manager.models import Growspace
 from custom_components.growspace_manager.sensor import PlantEntity
 from custom_components.growspace_manager.services.irrigation_watering import (
     handle_water_growspace,
     handle_water_plant,
 )
+from homeassistant.core import HomeAssistant
+
+from .common import create_plant
 
 
 def create_test_coordinator(hass: HomeAssistant) -> GrowspaceCoordinator:
@@ -41,8 +42,8 @@ def create_test_coordinator(hass: HomeAssistant) -> GrowspaceCoordinator:
     )
 
     coordinator = GrowspaceCoordinator(hass, entry, data={})
-    coordinator.async_save = AsyncMock()
-    coordinator.async_commit = AsyncMock()
+    coordinator.async_save = AsyncMock()  # type: ignore[method-assign]
+    coordinator.async_commit = AsyncMock()  # type: ignore[method-assign]
     coordinator.async_set_updated_data = MagicMock()
     return coordinator
 
@@ -106,8 +107,8 @@ class TestAsyncWaterPlant:
         assert isinstance(parsed, datetime)
 
         # Verify save was called to persist the change
-        assert watering_coordinator.async_save.called
-        assert watering_coordinator.async_save.call_count == 1
+        assert watering_coordinator.async_save.called  # type: ignore[attr-defined]
+        assert watering_coordinator.async_save.call_count == 1  # type: ignore[attr-defined]
 
     @pytest.mark.asyncio
     async def test_water_plant_with_nutrients(
@@ -200,7 +201,7 @@ class TestAsyncWaterGrowspace:
             assert plant.last_watered is not None
 
         # Verify save was called ensures persistence
-        assert watering_coordinator.async_save.called
+        assert watering_coordinator.async_save.called  # type: ignore[attr-defined]
 
     @pytest.mark.asyncio
     async def test_water_growspace_with_nutrients(

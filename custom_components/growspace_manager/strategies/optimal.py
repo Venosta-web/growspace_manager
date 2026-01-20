@@ -4,16 +4,20 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from ..bayesian_evaluator import (
+from custom_components.growspace_manager.bayesian_evaluator import (
     evaluate_optimal_co2,
     evaluate_optimal_temperature,
     evaluate_optimal_vpd,
 )
+
 from .evaluator_strategy import BayesianEvaluatorStrategy
 
 if TYPE_CHECKING:
-    from ..bayesian_evaluator import ObservationList, ReasonList
-    from ..models import EnvironmentState
+    from custom_components.growspace_manager.bayesian_evaluator import (
+        ObservationList,
+        ReasonList,
+    )
+    from custom_components.growspace_manager.models import EnvironmentState
 
 
 class OptimalConditionsEvaluatorStrategy(BayesianEvaluatorStrategy):
@@ -49,7 +53,7 @@ class OptimalConditionsEvaluatorStrategy(BayesianEvaluatorStrategy):
         if not new_state_on:
             growspace = self.sensor.coordinator.growspaces.get(self.sensor.growspace_id)
             name = growspace.name if growspace else self.sensor.growspace_id
-            message = self.sensor._generate_notification_message(
+            message = self.sensor.generate_notification_message(
                 "Conditions no longer optimal"
             )
             return (f"Optimal Conditions Lost: {name}", message)

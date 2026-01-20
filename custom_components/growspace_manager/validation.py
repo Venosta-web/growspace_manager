@@ -1,9 +1,12 @@
+"""Validation utilities for growspace manager."""
+
 from datetime import date, datetime
+from typing import Any
 
 import voluptuous as vol
 
 
-def valid_date_or_none(value):
+def valid_date_or_none(value: Any) -> date | datetime | None:
     """Validate that a value is a valid date or None for voluptuous schemas.
 
     Args:
@@ -39,7 +42,7 @@ def valid_date_or_none(value):
         ) from None
 
 
-def valid_growspace_id(value):
+def valid_growspace_id(value: Any) -> str:
     """Validate that a value is a non-empty string for a growspace ID.
 
     Args:

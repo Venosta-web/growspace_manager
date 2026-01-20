@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-import logging
 from datetime import datetime, timedelta
-from typing import Any
+import logging
+from typing import Any, cast
 
 from homeassistant.components import conversation
 from homeassistant.core import Context, HomeAssistant
@@ -158,11 +158,11 @@ class NotificationManager:
                 # Validate the response isn't too long
                 if len(rewritten) <= max_length:
                     _LOGGER.info("AI rewrote notification in %s style", personality)
-                    return rewritten
+                    return cast(str, rewritten)
                 # Try to truncate intelligently if it's close
                 if len(rewritten) < max_length + 50:
                     _LOGGER.info("AI response truncated to fit length limit")
-                    return rewritten[:max_length].rsplit(" ", 1)[0] + "..."
+                    return cast(str, rewritten[:max_length].rsplit(" ", 1)[0] + "...")
                 _LOGGER.warning(
                     "AI response too long (%d chars > %d), using default",
                     len(rewritten),
@@ -171,7 +171,7 @@ class NotificationManager:
             else:
                 _LOGGER.warning("AI returned empty response, using default message")
 
-        except Exception as err:
+        except Exception as err:  # noqa: BLE001
             _LOGGER.error("Failed to process AI notification: %s", err)
 
         return original_message
@@ -296,7 +296,7 @@ class NotificationManager:
 
         if days_in_stage >= day_to_trigger:
             notification_key = f"timed_{notification_id}"
-            if not self.coordinator._notifications_sent.get(plant.plant_id, {}).get(
+            if not self.coordinator.notifications_sent.get(plant.plant_id, {}).get(
                 notification_key, False
             ):
                 _LOGGER.info(
@@ -314,9 +314,9 @@ class NotificationManager:
                     message,
                 )
 
-                if plant.plant_id not in self.coordinator._notifications_sent:
-                    self.coordinator._notifications_sent[plant.plant_id] = {}
-                self.coordinator._notifications_sent[plant.plant_id][
+                if plant.plant_id not in self.coordinator.notifications_sent:
+                    self.coordinator.notifications_sent[plant.plant_id] = {}
+                self.coordinator.notifications_sent[plant.plant_id][
                     notification_key
                 ] = True
                 await self.coordinator.async_save()

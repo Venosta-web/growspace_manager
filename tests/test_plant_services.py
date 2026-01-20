@@ -5,14 +5,8 @@ from typing import Any, cast
 from unittest.mock import AsyncMock, MagicMock, Mock
 
 import pytest
-from homeassistant.core import HomeAssistant, ServiceCall
-from homeassistant.exceptions import ServiceValidationError
-from homeassistant.helpers import entity_registry as er
-from homeassistant.util.dt import as_local
 
-from custom_components.growspace_manager.const import (
-    DOMAIN,
-)
+from custom_components.growspace_manager.const import DOMAIN
 from custom_components.growspace_manager.exceptions import (
     GrowspaceError,
     GrowspaceNotFoundError,
@@ -30,6 +24,10 @@ from custom_components.growspace_manager.services.plant import (
     handle_transition_plant_stage,
     handle_update_plant,
 )
+from homeassistant.core import HomeAssistant, ServiceCall
+from homeassistant.exceptions import ServiceValidationError
+from homeassistant.helpers import entity_registry as er
+from homeassistant.util.dt import as_local
 
 
 @pytest.fixture
@@ -505,7 +503,6 @@ async def test_take_clone_partial_failure(
     # We should update test to mock async_take_clones returning partial list or raising?
     # Actually async_take_clones treats atomic operation usually or returns list.
     # Let's assume for this test we mock async_take_clones returning success.
-    pass
 
 
 # ============================================================================
@@ -774,7 +771,8 @@ async def test_update_plant_not_found(
     # The service should catch the PlantNotFoundError and re-raise as ServiceValidationError
     with pytest.raises(ServiceValidationError, match="does not exist"):
         await handle_update_plant(hass, mock_coordinator, mock_strain_library, call)
-        mock_coordinator.async_update_plant.assert_not_called()
+
+    mock_coordinator.async_update_plant.assert_not_called()
 
 
 @pytest.mark.asyncio
@@ -1303,12 +1301,12 @@ async def test_transition_plant_stage_success(
     await hass.async_block_till_done()
 
     # Assert
-    args, kwargs = mock_coordinator.async_transition_plant_stage.call_args
+    _args, kwargs = mock_coordinator.async_transition_plant_stage.call_args
     assert kwargs["plant_id"] == "plant_1"
     assert kwargs["new_stage"] == "flower"
     # Compare dates with tolerance or just timezone equality
     expected_dt = as_local(datetime(2024, 1, 15, 0, 0))
-    assert kwargs["transition_date"] == expected_dt.isoformat()
+    assert kwargs["transition_date"] == expected_dt
 
     # mock_coordinator.async_save.assert_called_once()
     # mock_coordinator.async_request_refresh.assert_called_once()
@@ -1417,7 +1415,7 @@ async def test_transition_plant_stage_with_timezone(
     actual_dt_str = call_kwargs["transition_date"]
     # handle_transition_plant_stage converts to isoformat string
     # Input was 12:00:00Z, so output should be 2024-01-15T12:00:00+00:00
-    assert actual_dt_str == "2024-01-15T12:00:00+00:00"
+    assert actual_dt_str.isoformat() == "2024-01-15T12:00:00+00:00"
 
 
 @pytest.mark.asyncio

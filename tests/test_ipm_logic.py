@@ -1,7 +1,6 @@
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
-from homeassistant.core import HomeAssistant
 from pytest_homeassistant_custom_component.common import (
     MockConfigEntry,
     async_capture_events,
@@ -12,16 +11,11 @@ from custom_components.growspace_manager.const import (
     DOMAIN,
     EVENT_GROWSPACE_LOG_ENTRY,
 )
-from .conftest import create_plant
-
 from custom_components.growspace_manager.coordinator import GrowspaceCoordinator
-from custom_components.growspace_manager.models import (
-    Growspace,
-    IPMPreset,
-    Plant,
-)
-from .conftest import create_plant
+from custom_components.growspace_manager.models import Growspace, IPMPreset
+from homeassistant.core import HomeAssistant
 
+from .common import create_plant
 
 
 @pytest.fixture
@@ -29,7 +23,7 @@ def mock_coordinator(hass: HomeAssistant) -> GrowspaceCoordinator:
     entry = MockConfigEntry(domain=DOMAIN, data={}, options={})
     entry.add_to_hass(hass)
     coord = GrowspaceCoordinator(hass, entry, data={}, strain_library=MagicMock())
-    coord.async_save = AsyncMock()
+    coord.async_save = AsyncMock()  # type: ignore[method-assign]
     # Ensure properties are initialized
     coord.ipm_presets = {}
     # coord.plants and coord.growspaces are linked to DataRepository in __init__
@@ -52,7 +46,7 @@ async def test_async_save_ipm_preset(mock_coordinator: GrowspaceCoordinator) -> 
     assert preset.id in mock_coordinator.ipm_presets
     assert mock_coordinator.ipm_presets[preset.id].name == "Bug Free"
     assert mock_coordinator.ipm_presets[preset.id].items == items
-    mock_coordinator.async_save.assert_called()
+    mock_coordinator.async_save.assert_called()  # type: ignore[attr-defined]
 
     # Test Update
     updated_items = [{"name": "Neem Oil", "dose_amount": 10.0, "dose_unit": "ml/L"}]
@@ -77,7 +71,7 @@ async def test_async_remove_ipm_preset(mock_coordinator: GrowspaceCoordinator) -
     # Test Remove
     await mock_coordinator.async_remove_ipm_preset("ipm1")
     assert "ipm1" not in mock_coordinator.ipm_presets
-    mock_coordinator.async_save.assert_called()
+    mock_coordinator.async_save.assert_called()  # type: ignore[attr-defined]
 
     # Test Missing
     with pytest.raises(KeyError):

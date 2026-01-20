@@ -7,11 +7,14 @@ notifications for that specific area.
 
 from __future__ import annotations
 
-import logging
 from dataclasses import dataclass
-from typing import Any, override
+import logging
+from typing import TYPE_CHECKING, Any, override
 
 from homeassistant.components.switch import SwitchEntity, SwitchEntityDescription
+
+if TYPE_CHECKING:
+    from .coordinator import GrowspaceCoordinator
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
@@ -24,7 +27,7 @@ _LOGGER = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True, kw_only=True)
-class GrowspaceSwitchDescription(SwitchEntityDescription):
+class GrowspaceSwitchDescription(SwitchEntityDescription):  # type: ignore[misc]
     """Class describing Growspace Manager switch entities."""
 
     has_entity_name: bool = True
@@ -62,7 +65,7 @@ async def async_setup_entry(
         _LOGGER.debug("Added %d switches", len(entities))
 
 
-class GrowspaceNotificationSwitch(SwitchEntity):
+class GrowspaceNotificationSwitch(SwitchEntity):  # type: ignore[misc]
     """A switch entity to control notifications for a specific growspace."""
 
     entity_description: GrowspaceSwitchDescription
@@ -70,7 +73,7 @@ class GrowspaceNotificationSwitch(SwitchEntity):
 
     def __init__(
         self,
-        coordinator,
+        coordinator: GrowspaceCoordinator,
         growspace_id: str,
         growspace: Growspace,
         description: GrowspaceSwitchDescription,
@@ -92,12 +95,12 @@ class GrowspaceNotificationSwitch(SwitchEntity):
         )
 
     @property
-    @override
+    @override  # type: ignore[misc]
     def is_on(self) -> bool:
         """Return true if notifications are enabled for the growspace."""
         return self._coordinator.is_notifications_enabled(self._growspace_id)
 
-    @override
+    @override  # type: ignore[misc]
     async def async_turn_on(self, **kwargs: Any) -> None:
         """Enable notifications for the growspace."""
         await self._coordinator.set_notifications_enabled(self._growspace_id, True)
@@ -108,7 +111,7 @@ class GrowspaceNotificationSwitch(SwitchEntity):
             self._growspace.name,
         )
 
-    @override
+    @override  # type: ignore[misc]
     async def async_turn_off(self, **kwargs: Any) -> None:
         """Disable notifications for the growspace."""
         await self._coordinator.set_notifications_enabled(self._growspace_id, False)
@@ -119,7 +122,7 @@ class GrowspaceNotificationSwitch(SwitchEntity):
             self._growspace.name,
         )
 
-    @override
+    @override  # type: ignore[misc]
     async def async_added_to_hass(self) -> None:
         """Register a listener when the entity is added to Home Assistant."""
         self._coordinator.async_add_listener(self.async_write_ha_state)

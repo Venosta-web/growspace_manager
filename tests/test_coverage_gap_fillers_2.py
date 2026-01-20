@@ -1,8 +1,7 @@
-from types import SimpleNamespace
+from typing import Any, cast
 from unittest.mock import AsyncMock, Mock
 
 import pytest
-from homeassistant.core import HomeAssistant
 
 from custom_components.growspace_manager.binary_sensor import (
     BayesianEnvironmentSensor,
@@ -14,7 +13,7 @@ from custom_components.growspace_manager.const import (
 )
 from custom_components.growspace_manager.coordinator import GrowspaceCoordinator
 from custom_components.growspace_manager.exceptions import GrowspaceError
-from custom_components.growspace_manager.models import EnvironmentConfig
+from custom_components.growspace_manager.models import EnvironmentConfig, Growspace
 from custom_components.growspace_manager.plant_lifecycle_manager import (
     PlantLifecycleManager,
 )
@@ -24,6 +23,7 @@ from custom_components.growspace_manager.strategies.mold import (
 from custom_components.growspace_manager.strategies.stress import (
     StressEvaluatorStrategy,
 )
+from homeassistant.core import HomeAssistant
 
 
 async def test_lifecycle_manager_transition_closing_previous(
@@ -53,19 +53,19 @@ async def test_lifecycle_manager_transition_closing_previous(
     coordinator.plants[plant_id] = mock_plant
     coordinator.update_plant = AsyncMock()
     coordinator.async_commit = AsyncMock()
-    # Fix for async with self.coordinator._lock
-    coordinator._lock = AsyncMock()
-    coordinator._lock.__aenter__ = AsyncMock(return_value=None)
-    coordinator._lock.__aexit__ = AsyncMock(return_value=None)
+    # Fix for async with self.coordinator.lock
+    coordinator.lock = AsyncMock()
+    coordinator.lock.__aenter__ = AsyncMock(return_value=None)
+    coordinator.lock.__aexit__ = AsyncMock(return_value=None)
 
     await lifecycle_mgr.transition_plant_stage(plant_id, "flower")
 
     # Check if 'stage_history' attribute on mock_plant was updated
     assert len(mock_plant.stage_history) == 3
     # Previous stage (index 1) should now have an end date
-    assert mock_plant.stage_history[1]["end"] is not None
+    assert cast(list[dict[str, Any]], mock_plant.stage_history)[1]["end"] is not None
     # New stage (index 2) should be flower
-    assert mock_plant.stage_history[2]["stage"] == "flower"
+    assert cast(list[dict[str, Any]], mock_plant.stage_history)[2]["stage"] == "flower"
 
 
 async def test_coordinator_water_growspace_error(hass: HomeAssistant) -> None:
@@ -75,7 +75,7 @@ async def test_coordinator_water_growspace_error(hass: HomeAssistant) -> None:
     coordinator.plants = {}  # growspace empty?
     # Ensure validate_growspace_exists passes mock
     coordinator.validator.validate_growspace_exists = Mock()
-    coordinator.get_growspace_plants = Mock(return_value=[Mock(plant_id="p1")])
+    coordinator.get_growspace_plants = Mock(return_value=[Mock(plant_id="p1")])  # type: ignore[method-assign]
 
     with pytest.raises(GrowspaceError, match="required"):
         await coordinator.async_water_growspace(
@@ -91,7 +91,7 @@ async def test_binary_sensor_mold_risk_branches(hass: HomeAssistant) -> None:
     coordinator.growspaces = {}
 
     coordinator.growspaces = {
-        "gs1": SimpleNamespace(name="Growspace 1", device_id="device_1")
+        "gs1": Growspace(id="gs1", name="Growspace 1", device_id="device_1")
     }
 
     desc = GrowspaceBinarySensorDescription(
@@ -146,7 +146,7 @@ async def test_binary_sensor_notification_failure(hass: HomeAssistant) -> None:
     coordinator.notification_manager = Mock()
 
     coordinator.growspaces = {
-        "gs1": SimpleNamespace(name="Growspace 1", device_id="device_1")
+        "gs1": Growspace(id="gs1", name="Growspace 1", device_id="device_1")
     }
     coordinator.options = {
         CONF_AI_AUTO_ALERTS: True

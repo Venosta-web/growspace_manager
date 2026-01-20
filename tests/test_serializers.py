@@ -1,14 +1,13 @@
 """Tests for serializers."""
 
 from datetime import timedelta
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, Mock, patch
 
 import pytest
-from homeassistant.core import HomeAssistant
-from homeassistant.util import dt as dt_util
 
 from custom_components.growspace_manager.const import PlantStage
 from custom_components.growspace_manager.models import (
+    DehumidifierThresholds,
     EnvironmentConfig,
     Growspace,
     IrrigationConfig,
@@ -16,8 +15,10 @@ from custom_components.growspace_manager.models import (
     Plant,
 )
 from custom_components.growspace_manager.serializers import GrowspaceSerializer
+from homeassistant.core import HomeAssistant
+from homeassistant.util import dt as dt_util
 
-from .conftest import create_plant
+from .common import create_plant
 
 
 @pytest.fixture
@@ -173,7 +174,7 @@ def test_get_environment_attributes_with_thresholds(
 ) -> None:
     """Test fetching environment attributes with dehumidifier thresholds."""
     # Mock Dehumidifier with attributes including thresholds
-    thresholds = {"veg": {"day": {"on": 1.2, "off": 1.5}}}
+    thresholds: DehumidifierThresholds = {"veg": {"day": {"on": 1.2, "off": 1.5}}}
 
     hass.states.async_set(
         "switch.dehum",
@@ -269,7 +270,7 @@ def test_serialize_special_growspace_types(
 ) -> None:
     """Test serialization of special growspace types."""
     special_types = ["mother", "clone", "dry", "cure"]
-    plants = []
+    plants: list[Plant] = []
     analyzer = MagicMock()
     analyzer.calculate_biological_metrics.return_value = {}
 
@@ -286,7 +287,7 @@ def test_serialize_growspace_legacy_entity_id(
     hass: HomeAssistant, serializer, mock_growspace
 ) -> None:
     """Test legacy entity ID generation fallback."""
-    plants = []
+    plants: list[Plant] = []
     analyzer = MagicMock()
     analyzer.calculate_biological_metrics.return_value = {}
 
@@ -327,10 +328,10 @@ def test_serialize_plant_with_training_and_watering(
 ) -> None:
     """Test that serialize_plant includes training and watering fields."""
     timestamp = dt_util.now().isoformat()
-    mock_plant.last_watered = timestamp
     mock_plant.last_trained = timestamp
     mock_plant.last_training_technique = "Topping"
-    mock_plant.get_days_since_watering.return_value = 5
+    mock_plant.last_watered = timestamp
+    mock_plant.get_days_since_watering = Mock(return_value=5)  # type: ignore[method-assign]
 
     data = serializer.serialize_plant(mock_plant, entity_id="sensor.plant1")
 

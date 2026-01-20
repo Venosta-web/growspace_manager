@@ -85,7 +85,6 @@ class GrowspaceSerializer:
         # I will modify Serializer init to take an optional analyzer or just create one with None coordinator
         # if the coordinator isn't used for those specific methods.
         # But strictly speaking, type checking will fail if I pass None.
-        pass
 
     def _ensure_int(self, value: Any) -> int:
         """Safely convert value to int, handling '30.0' strings."""
@@ -398,9 +397,9 @@ class GrowspaceSerializer:
         except (ValueError, TypeError):
             return None
 
-    def _get_environment_attributes(self, growspace: Growspace) -> dict[str, Any]:  # noqa: C901
+    def _get_environment_attributes(self, growspace: Growspace) -> dict[str, Any]:
         """Get environment-related attributes."""
-        attributes = {}
+        attributes: dict[str, Any] = {}
         if growspace.environment_config:
             env_config = growspace.environment_config
 

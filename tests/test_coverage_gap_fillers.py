@@ -1,8 +1,5 @@
 from unittest.mock import AsyncMock, Mock, patch
 
-from homeassistant.const import STATE_UNKNOWN
-from homeassistant.core import HomeAssistant
-
 from custom_components.growspace_manager.config_handlers.environment_config_handler import (
     EnvironmentConfigHandler,
 )
@@ -25,6 +22,8 @@ from custom_components.growspace_manager.dehumidifier_coordinator import (
 # Direct imports of the functions we want to test
 from custom_components.growspace_manager.services.plant import handle_add_plants
 from custom_components.growspace_manager.websocket import _merge_logbook_event
+from homeassistant.const import STATE_UNKNOWN
+from homeassistant.core import HomeAssistant
 
 
 async def test_add_plants_with_base_phenotype(hass: HomeAssistant) -> None:
@@ -103,7 +102,7 @@ async def test_irrigation_config_handler_abort_missing_coordinator(
     mock_flow.hass = hass
     mock_config_entry = Mock()
     mock_config_entry.runtime_data = None  # Simulate missing coordinator
-    mock_flow._config_entry = mock_config_entry
+    mock_flow.config_entry = mock_config_entry
 
     mock_flow.async_abort = Mock(return_value="ABORT")
 
@@ -129,7 +128,7 @@ async def test_environment_config_handler_abort_missing_coordinator(
     mock_flow.hass = hass
     mock_config_entry = Mock()
     mock_config_entry.runtime_data = None  # Simulate missing coordinator
-    mock_flow._config_entry = mock_config_entry
+    mock_flow.config_entry = mock_config_entry
 
     mock_flow.async_abort = Mock(return_value="ABORT")
 
@@ -145,7 +144,7 @@ def test_environment_config_handler_clean_input(hass: HomeAssistant) -> None:
     """Test EnvironmentConfigHandler clean_input specifically for list handling."""
     mock_flow = Mock()
     mock_flow.hass = hass
-    mock_flow._config_entry = Mock()
+    mock_flow.config_entry = Mock()
     handler = EnvironmentConfigHandler(flow=mock_flow)
 
     # Test 1: List field as list

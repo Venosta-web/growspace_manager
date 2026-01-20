@@ -84,7 +84,7 @@ def async_fire_plant_event(
     }
 
     if changes:
-        payload.update(changes)  # type: ignore[arg-type]
+        payload.update(changes)  # type: ignore[typeddict-item]
 
     hass.bus.async_fire(event_type, payload)
 

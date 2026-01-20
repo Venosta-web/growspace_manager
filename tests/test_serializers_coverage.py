@@ -1,9 +1,9 @@
 """Tests for serializers coverage gaps."""
 
 import pytest
-from homeassistant.core import HomeAssistant
 
 from custom_components.growspace_manager.serializers import GrowspaceSerializer
+from homeassistant.core import HomeAssistant
 
 
 @pytest.fixture

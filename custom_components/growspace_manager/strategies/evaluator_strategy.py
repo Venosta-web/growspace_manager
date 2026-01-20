@@ -6,9 +6,14 @@ from abc import ABC, abstractmethod
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from ..bayesian_evaluator import ObservationList, ReasonList
-    from ..binary_sensor import BayesianEnvironmentSensor
-    from ..models import EnvironmentState
+    from custom_components.growspace_manager.bayesian_evaluator import (
+        ObservationList,
+        ReasonList,
+    )
+    from custom_components.growspace_manager.binary_sensor import (
+        BayesianEnvironmentSensor,
+    )
+    from custom_components.growspace_manager.models import EnvironmentState
 
 
 class BayesianEvaluatorStrategy(ABC):

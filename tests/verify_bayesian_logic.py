@@ -1,8 +1,6 @@
 from unittest.mock import MagicMock
 
-from custom_components.growspace_manager.bayesian_data import (
-    PROB_PERFECT,
-)
+from custom_components.growspace_manager.bayesian_data import PROB_PERFECT
 from custom_components.growspace_manager.bayesian_evaluator import (
     evaluate_direct_temp_stress,
     evaluate_optimal_temperature,
@@ -11,7 +9,7 @@ from custom_components.growspace_manager.bayesian_evaluator import (
 from custom_components.growspace_manager.models import EnvironmentState
 
 
-def test_evaluate_direct_temp_stress_missing_light_sensor():
+def test_evaluate_direct_temp_stress_missing_light_sensor() -> None:
     """Test that missing light sensor (None) does NOT trigger night stress."""
     # Setup state with None for is_lights_on and a temp that would be high for night (e.g. 25)
     # but okay for day.
@@ -32,7 +30,7 @@ def test_evaluate_direct_temp_stress_missing_light_sensor():
     assert len(observations) == 0
 
 
-def test_evaluate_optimal_temperature_missing_light_sensor():
+def test_evaluate_optimal_temperature_missing_light_sensor() -> None:
     """Test that missing light sensor uses Day/Active logic for optimal temp."""
     # 25C is perfect for Day/Active, but out of range for Night (20-23)
     state = MagicMock(
@@ -49,7 +47,7 @@ def test_evaluate_optimal_temperature_missing_light_sensor():
     assert len(reasons) == 0
 
 
-def test_evaluate_optimal_vpd_missing_light_sensor():
+def test_evaluate_optimal_vpd_missing_light_sensor() -> None:
     """Test that missing light sensor uses Day/Active logic for optimal VPD."""
     # Setup a VPD that is optimal for Day but maybe not Night (depending on stage)
     # For veg_early: Day optimal is 0.4-0.8, Night optimal is 0.4-0.8 (bad example, they overlap)
@@ -63,7 +61,7 @@ def test_evaluate_optimal_vpd_missing_light_sensor():
         is_lights_on=None,
     )
     env_config = {}
-    observations, reasons = evaluate_optimal_vpd(state, env_config)
+    observations, _reasons = evaluate_optimal_vpd(state, env_config)
 
     # Should find an optimal range
     assert len(observations) > 0
@@ -82,5 +80,5 @@ if __name__ == "__main__":
         test_evaluate_optimal_vpd_missing_light_sensor()
     except AssertionError:
         sys.exit(1)
-    except Exception:
+    except Exception:  # noqa: BLE001
         sys.exit(1)

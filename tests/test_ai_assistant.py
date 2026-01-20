@@ -3,17 +3,17 @@
 from unittest.mock import MagicMock, patch
 
 import pytest
-from homeassistant.core import HomeAssistant, ServiceCall
-from homeassistant.exceptions import ServiceValidationError
 
 from custom_components.growspace_manager.const import CONF_AI_ENABLED, CONF_ASSISTANT_ID
-from custom_components.growspace_manager.models import Growspace
+from custom_components.growspace_manager.models import EnvironmentConfig, Growspace
 from custom_components.growspace_manager.services.ai_assistant import (
     GrowAssistant,
     handle_analyze_all_growspaces,
     handle_ask_grow_advice,
     handle_strain_recommendation,
 )
+from homeassistant.core import HomeAssistant, ServiceCall
+from homeassistant.exceptions import ServiceValidationError
 
 GROWSPACE_ID = "test_growspace"
 GROWSPACE_NAME = "Test Growspace"
@@ -29,10 +29,10 @@ def mock_coordinator() -> MagicMock:
             name=GROWSPACE_NAME,
             rows=3,
             plants_per_row=3,
-            environment_config={
-                "temperature_sensor": "sensor.temp",
-                "humidity_sensor": "sensor.humidity",
-            },
+            environment_config=EnvironmentConfig(
+                temperature_sensor="sensor.temp",
+                humidity_sensor="sensor.humidity",
+            ),
         )
     }
     coordinator.options = {
@@ -244,7 +244,7 @@ def test_format_context_data(assistant: GrowAssistant) -> None:
     assert "Strain A: Avg 30d veg" in context
 
 
-def test_get_ai_settings_missing_agent(
+def testget_ai_settings_missing_agent(
     assistant: GrowAssistant, mock_coordinator: MagicMock
 ) -> None:
     """Test getting AI settings with missing agent ID."""
@@ -254,13 +254,13 @@ def test_get_ai_settings_missing_agent(
             # No agent ID
         }
     }
-    assert assistant._get_ai_settings() is None
+    assert assistant.get_ai_settings() is None
 
 
-def test_gather_growspace_data_missing(assistant: GrowAssistant) -> None:
+def testgather_growspace_data_missing(assistant: GrowAssistant) -> None:
     """Test gathering data for missing growspace."""
     with pytest.raises(ServiceValidationError):
-        assistant._gather_growspace_data("missing_id")
+        assistant.gather_growspace_data("missing_id")
 
 
 def test_format_context_data_extended(assistant: GrowAssistant) -> None:
@@ -328,13 +328,13 @@ async def test_handle_analyze_all_growspaces_extended(
             name="GS1",
             rows=3,
             plants_per_row=3,
-            environment_config={},
+            environment_config=EnvironmentConfig(),
         )
     }
 
     # Mock gather_growspace_data to return data with issues
     with patch(
-        "custom_components.growspace_manager.services.ai_assistant.GrowAssistant._gather_growspace_data"
+        "custom_components.growspace_manager.services.ai_assistant.GrowAssistant.gather_growspace_data"
     ) as mock_gather:
         mock_gather.return_value = {
             "growspace": {"id": "gs1", "name": "GS1", "size": "3x3", "total_plants": 5},
@@ -456,7 +456,7 @@ async def test_handle_strain_recommendation_no_agent(
         context=MagicMock(),
     )
 
-    with patch.object(assistant, "_get_ai_settings", return_value=None):
+    with patch.object(assistant, "get_ai_settings", return_value=None):
         response = await handle_strain_recommendation(
             mock_hass, mock_coordinator, mock_strain_library, call
         )
@@ -464,7 +464,7 @@ async def test_handle_strain_recommendation_no_agent(
     assert "AI Assistant not configured" in response["response"]
 
 
-async def test_gather_growspace_data_with_plants(
+async def testgather_growspace_data_with_plants(
     assistant: GrowAssistant,
     mock_coordinator: MagicMock,
     mock_strain_library: MagicMock,
@@ -493,7 +493,7 @@ async def test_gather_growspace_data_with_plants(
         }
     }
 
-    data = assistant._gather_growspace_data(GROWSPACE_ID)
+    data = assistant.gather_growspace_data(GROWSPACE_ID)
 
     assert data["plants"]["count"] == 2
     assert data["plants"]["stages"]["veg"] == 1
@@ -508,12 +508,16 @@ async def test_handle_analyze_all_growspaces_optimal(
     """Test analyze all growspaces with optimal conditions."""
     mock_coordinator.growspaces = {
         "gs1": Growspace(
-            id="gs1", name="GS1", rows=3, plants_per_row=3, environment_config={}
+            id="gs1",
+            name="GS1",
+            rows=3,
+            plants_per_row=3,
+            environment_config=EnvironmentConfig(),
         )
     }
 
     with patch(
-        "custom_components.growspace_manager.services.ai_assistant.GrowAssistant._gather_growspace_data"
+        "custom_components.growspace_manager.services.ai_assistant.GrowAssistant.gather_growspace_data"
     ) as mock_gather:
         mock_gather.return_value = {
             "growspace": {"id": "gs1", "name": "GS1", "size": "3x3", "total_plants": 5},
@@ -555,15 +559,23 @@ async def test_handle_analyze_all_growspaces_exceptions(
     """Test exceptions in analyze all growspaces."""
     mock_coordinator.growspaces = {
         "gs1": Growspace(
-            id="gs1", name="GS1", rows=3, plants_per_row=3, environment_config={}
+            id="gs1",
+            name="GS1",
+            rows=3,
+            plants_per_row=3,
+            environment_config=EnvironmentConfig(),
         ),
         "gs2": Growspace(
-            id="gs2", name="GS2", rows=3, plants_per_row=3, environment_config={}
+            id="gs2",
+            name="GS2",
+            rows=3,
+            plants_per_row=3,
+            environment_config=EnvironmentConfig(),
         ),
     }
 
     with patch(
-        "custom_components.growspace_manager.services.ai_assistant.GrowAssistant._gather_growspace_data",
+        "custom_components.growspace_manager.services.ai_assistant.GrowAssistant.gather_growspace_data",
         side_effect=[
             Exception("Gather Error"),
             {
@@ -621,7 +633,7 @@ async def test_handle_strain_recommendation_exceptions(
     # Mock gather_growspace_data exception
     with (
         patch(
-            "custom_components.growspace_manager.services.ai_assistant.GrowAssistant._gather_growspace_data",
+            "custom_components.growspace_manager.services.ai_assistant.GrowAssistant.gather_growspace_data",
             side_effect=Exception("Gather Error"),
         ),
         patch(
