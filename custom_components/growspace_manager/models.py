@@ -525,7 +525,7 @@ class NutrientPreset(BasePreset):
     @classmethod
     def from_dict(cls, d: Mapping[Any, Any], **kwargs: Any) -> Self:
         """Create a NutrientPreset instance from a dictionary."""
-        return cast(Self, super().from_dict(data))
+        return cast(Self, super().from_dict(d))
 
     def get_nutrient_map(self) -> NutrientMap:
         """Convert nutrients list to a dict[str, float] for watering services."""

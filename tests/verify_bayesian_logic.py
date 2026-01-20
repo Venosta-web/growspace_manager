@@ -1,5 +1,5 @@
-from unittest.mock import MagicMock
 from typing import Any
+from unittest.mock import MagicMock
 
 from custom_components.growspace_manager.bayesian_data import PROB_PERFECT
 from custom_components.growspace_manager.bayesian_evaluator import (
