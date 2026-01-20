@@ -200,29 +200,19 @@ async def test_async_check_timed_notifications(
     mock_coordinator.async_save.assert_awaited()
 
 
-def testgenerate_notification_message_truncation(manager: NotificationManager) -> None:
+def test_generate_notification_message_truncation(manager: NotificationManager) -> None:
     """Test message truncation in generate_notification_message."""
     base_message = "Base"
-    # Create reasons that will exceed the 65 char limit
-    # "Base" is 4 chars.
-    # "Reason 1" is 8 chars.
-    # "Reason 2" is 8 chars.
-    # "Reason 3" is 8 chars.
-    # "Reason 4" is 8 chars.
-    # "Reason 5" is 8 chars.
-    # "Reason 6" is 8 chars.
-    # "Reason 7" is 8 chars.
-    # "Reason 8" is 8 chars.
-    reasons = [(0.9, "A" * 20), (0.8, "B" * 20), (0.7, "C" * 20)]
-
-    # "Base" (4) + ", " (2) + "A"*20 (20) = 26 chars.
-    # 26 + 2 + 20 = 48 chars.
-    # 48 + 2 + 20 = 70 chars > 65. So C should be skipped.
+    # Create reasons that will exceed the 240 char limit
+    # "Base" (4) + ", " (2) + "A"*100 (100) = 106 chars.
+    # 106 + 2 + 100 = 208 chars.
+    # 208 + 2 + 100 = 310 chars > 240. So C should be skipped.
+    reasons = [(0.9, "A" * 100), (0.8, "B" * 100), (0.7, "C" * 100)]
 
     message = manager.generate_notification_message(base_message, reasons)
-    assert "A" * 20 in message
-    assert "B" * 20 in message
-    assert "C" * 20 not in message
+    assert "A" * 100 in message
+    assert "B" * 100 in message
+    assert "C" * 100 not in message
 
 
 async def test_async_send_notification_exception(

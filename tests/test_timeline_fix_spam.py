@@ -1,11 +1,9 @@
 """Test timeline spam filtering fix."""
 
 import json
-from datetime import timedelta
 from typing import Any
 from unittest.mock import MagicMock, patch
 
-import pytest
 from custom_components.growspace_manager.websocket import (
     WS_TYPE_GET_ALERTS,
     WS_TYPE_GET_LOG,

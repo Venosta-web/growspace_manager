@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import date, datetime, timedelta
 import logging
-from unittest.mock import AsyncMock, MagicMock, Mock, patch
+from unittest.mock import AsyncMock, MagicMock, Mock, PropertyMock, patch
 
 import pytest
 
@@ -254,6 +254,8 @@ async def test_notification_sending(
     )
     sensor.hass = hass
     sensor.entity_id = "binary_sensor.test_notification"
+    # Mock name to avoid platform_data attribute error in tests
+    type(sensor).name = PropertyMock(return_value="Stress Sensor")
     sensor.platform = MagicMock()
     sensor.threshold = (
         0.4  # Low enough to trigger on temp=31, high enough for temp=25 to be off
@@ -270,9 +272,10 @@ async def test_notification_sending(
     set_sensor_state(hass, "sensor.co2", 800)  # Add CO2 to prevent early return
     set_sensor_state(hass, "light.grow_light", "on")
     await hass.async_block_till_done()
-    # Mock notification manager to verify notification flow
-    sensor.notification_manager = MagicMock()
-    sensor.notification_manager.async_send_notification = AsyncMock()
+    # Use real NotificationManager to allow awaiting its internal methods
+    sensor.notification_manager = NotificationManager(hass, mock_coordinator)
+    # But mock the schedule call to verify it was called by the sensor
+    sensor.notification_manager.async_schedule_notification = MagicMock()
 
     with (
         patch.object(sensor, "async_write_ha_state", new_callable=MagicMock),
@@ -284,7 +287,7 @@ async def test_notification_sending(
     with (
         patch.object(
             sensor, "get_notification_title_message", return_value=("Title", "Message")
-        ) as mock_get_notification,
+        ),
         patch.object(sensor, "async_write_ha_state", new_callable=MagicMock),
     ):
         # Change state to trigger notification
@@ -292,13 +295,25 @@ async def test_notification_sending(
         await hass.async_block_till_done()
         await sensor.async_update_and_notify()
 
-        mock_get_notification.assert_called_with(True)
-        # Verify notification was called
-        sensor.notification_manager.async_send_notification.assert_awaited_once()
-        call_args = sensor.notification_manager.async_send_notification.call_args
-        assert call_args[0][0] == "gs1"  # growspace_id
-        assert call_args[0][1] == "Title"
-        assert call_args[0][2] == "Message"
+        # Verify notification was scheduled
+        sensor.notification_manager.async_schedule_notification.assert_called_once_with(
+            "gs1"
+        )
+
+        # Manually trigger batch to verify content integration
+        with patch.object(
+            sensor.notification_manager,
+            "async_send_notification",
+            new_callable=AsyncMock,
+        ) as mock_send_final:
+            # Register sensor so batcher finds it
+            sensor.notification_manager.attach_sensor("gs1", sensor)
+            await sensor.notification_manager._async_send_batched_notification("gs1")
+            mock_send_final.assert_awaited_once()
+            args, _ = mock_send_final.call_args
+            assert args[0] == "gs1"
+            assert args[1] == "Title"
+            assert "Message" in args[2]
 
 
 @pytest.mark.asyncio
@@ -386,18 +401,20 @@ async def test_stress_sensor_notification_on_state_change(
 
     with (
         patch.object(sensor, "_async_update_probability", side_effect=mock_update_prob),
-        patch.object(sensor, "_send_notification", new_callable=AsyncMock) as mock_send,
+        patch.object(sensor, "_send_notification", new_callable=AsyncMock),
         # FIX: Add patch
         patch.object(sensor, "async_write_ha_state", new_callable=MagicMock),
     ):
         await sensor.async_update_and_notify()
         assert sensor.is_on
-        mock_send.assert_called_once()
+        sensor.notification_manager.async_schedule_notification.assert_called_once_with(
+            "gs1"
+        )
 
-        mock_send.reset_mock()
+        sensor.notification_manager.async_schedule_notification.reset_mock()
         await sensor.async_update_and_notify()
         assert sensor.is_on
-        mock_send.assert_not_called()
+        sensor.notification_manager.async_schedule_notification.assert_not_called()
 
 
 @pytest.mark.asyncio
@@ -427,12 +444,14 @@ async def test_optimal_conditions_notification_on_state_change(
 
     with (
         patch.object(sensor, "_async_update_probability", side_effect=mock_update_prob),
-        patch.object(sensor, "_send_notification", new_callable=AsyncMock) as mock_send,
+        patch.object(sensor, "_send_notification", new_callable=AsyncMock),
         patch.object(sensor, "async_write_ha_state", new_callable=MagicMock),
     ):
         await sensor.async_update_and_notify()
         assert not sensor.is_on
-        mock_send.assert_called_once()
+        sensor.notification_manager.async_schedule_notification.assert_called_once_with(
+            "gs1"
+        )
 
 
 def testgenerate_notification_message_truncation(
@@ -458,12 +477,14 @@ def testgenerate_notification_message_truncation(
         (0.8, "Temp is much too high for the current growth stage"),
         (0.7, "Humidity is low"),
     ]
-    message = sensor.generate_notification_message("Alert")
-    assert len(message) < 65
+    message = sensor.notification_manager.generate_notification_message(
+        "Alert", sensor._reasons
+    )
+    # New limit is 240, so it shouldn't be truncated at 65 anymore
+    assert len(message) > 40
     assert "VPD out of range" in message
-    assert "Temp is much too high" not in message
-    assert "Humidity is low" not in message
-    assert message == "Alert, VPD out of range"
+    assert "Temp is much too high" in message
+    assert "Humidity is low" in message
 
 
 def test_stress_sensor_notification_returns_none_when_off(
@@ -625,11 +646,13 @@ async def test_bayesian_stress_sensor_granular(
     sensor.threshold = 0.49  # Lower threshold for single observation
     sensor.prior = 0.5  # Set neutral prior to allow single observations to trigger
 
-    # Fix mocking for notification manager
-    sensor.notification_manager = MagicMock()
-    sensor.notification_manager.async_send_notification = AsyncMock()
-    sensor.notification_manager.async_process_ai_notification = AsyncMock()
-    sensor.notification_manager.hass = hass
+    # Mock name to avoid platform_data attribute error in tests
+    type(sensor).name = PropertyMock(return_value="Stress Sensor")
+
+    # Use real NotificationManager to allow awaiting its internal methods
+    sensor.notification_manager = NotificationManager(hass, mock_coordinator)
+    # But mock the schedule call to verify it was called by the sensor
+    sensor.notification_manager.async_schedule_notification = MagicMock()
 
     # Mock sensor states
     set_sensor_state(hass, "sensor.temp", sensor_readings.get("temp", 25))
@@ -654,12 +677,12 @@ async def test_bayesian_stress_sensor_granular(
         ),
         patch("homeassistant.core.ServiceRegistry.async_call", new_callable=AsyncMock),
         patch.object(sensor, "async_write_ha_state", new_callable=MagicMock),
+        patch.object(
+            sensor.notification_manager,
+            "generate_notification_message",
+            side_effect=lambda *args: str(args),
+        ),
     ):
-        # Mock generate_notification_message to return string representation of reasons
-        sensor.notification_manager.generate_notification_message.side_effect = (
-            lambda *args: str(args)
-        )
-
         await sensor.async_update_and_notify()
 
         # 1. Assert the sensor turned ON
@@ -668,21 +691,24 @@ async def test_bayesian_stress_sensor_granular(
             f"Probability: {sensor._probability}. Reasons: {sensor._reasons}"
         )
 
-        # 2. Assert the notification was called
-        sensor.notification_manager.async_send_notification.assert_called_once()
+        # 2. Assert the notification was scheduled
+        sensor.notification_manager.async_schedule_notification.assert_called_once_with(
+            "gs1"
+        )
 
         # 3. Check that the expected reason fragment is in the notification message
-        call_args = sensor.notification_manager.async_send_notification.call_args
-        # args: (growspace_id, title, message, sensor_states)
-        # Note: Depending on how it's called, message might be in args[2] or kwargs["message"]
-        if call_args.kwargs and "message" in call_args.kwargs:
-            message = call_args.kwargs["message"]
-        else:
-            message = call_args.args[2]
-
-        assert expected_reason_fragment in message, (
-            f"Expected '{expected_reason_fragment}' not in notification: '{message}'"
-        )
+        # Manually trigger batch to verify content
+        with patch.object(
+            sensor.notification_manager, "async_send_notification"
+        ) as mock_send_final:
+            sensor.notification_manager.attach_sensor("gs1", sensor)
+            await sensor.notification_manager._async_send_batched_notification("gs1")
+            mock_send_final.assert_awaited_once()
+            args, kwargs = mock_send_final.call_args
+            message = args[2] if len(args) > 2 else kwargs.get("message")
+            assert expected_reason_fragment in message, (
+                f"Expected '{expected_reason_fragment}' not in notification: '{message}'"
+            )
 
 
 @pytest.mark.parametrize(
