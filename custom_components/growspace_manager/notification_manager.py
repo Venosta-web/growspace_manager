@@ -1,13 +1,12 @@
 """Notification manager for Growspace Manager."""
 
-from __future__ import annotations
-
 from datetime import datetime, timedelta
 import logging
 from typing import Any, cast
 
 from homeassistant.components import conversation
-from homeassistant.core import Context, HomeAssistant
+from homeassistant.core import CALLBACK_TYPE, Context, HomeAssistant, callback
+from homeassistant.helpers.event import async_call_later
 from homeassistant.util.dt import utcnow
 
 from .const import (
@@ -30,6 +29,19 @@ class NotificationManager:
         self.coordinator = coordinator
         self._last_notification_sent: dict[str, datetime] = {}
         self._notification_cooldown = timedelta(minutes=DEFAULT_COOLDOWN_MINUTES)
+        self._registered_sensors: dict[str, set[Any]] = {}
+        self._batch_timers: dict[str, CALLBACK_TYPE] = {}
+
+    def attach_sensor(self, growspace_id: str, sensor: Any) -> None:
+        """Register a sensor for batch notification tracking."""
+        if growspace_id not in self._registered_sensors:
+            self._registered_sensors[growspace_id] = set()
+        self._registered_sensors[growspace_id].add(sensor)
+
+    def detach_sensor(self, growspace_id: str, sensor: Any) -> None:
+        """Unregister a sensor."""
+        if growspace_id in self._registered_sensors:
+            self._registered_sensors[growspace_id].discard(sensor)
 
     def trigger_cooldown(self, growspace_id: str) -> None:
         """Manually trigger the notification cooldown for a growspace."""
@@ -43,12 +55,98 @@ class NotificationManager:
         sorted_reasons = sorted(reasons, reverse=True)
         message = base_message
 
+        # Increased limit from 65 to 240 for modern mobile displays
         for _, reason in sorted_reasons:
-            if len(message) + len(reason) + 2 < 65:
+            if len(message) + len(reason) + 2 < 240:
                 message += f", {reason}"
             else:
                 break
         return message
+
+    @callback
+    def async_schedule_notification(self, growspace_id: str) -> None:
+        """Schedule a debounced batched notification for a growspace."""
+        if timer := self._batch_timers.get(growspace_id):
+            timer()
+
+        self._batch_timers[growspace_id] = async_call_later(
+            self.hass,
+            5,
+            lambda _: self.hass.async_create_task(
+                self._async_send_batched_notification(growspace_id)
+            ),
+        )
+
+    async def _async_send_batched_notification(self, growspace_id: str) -> None:
+        """Collect triggered sensors and send a consolidated notification."""
+        self._batch_timers.pop(growspace_id, None)
+
+        now = utcnow()
+        last_sent = self._last_notification_sent.get(growspace_id)
+
+        # Check global cooldown for this growspace
+        if last_sent and (now - last_sent) < self._notification_cooldown:
+            _LOGGER.debug(
+                "Global notification cooldown active for %s, skipping batch",
+                growspace_id,
+            )
+            return
+
+        sensors = self._registered_sensors.get(growspace_id, set())
+        active_sensors = [s for s in sensors if s.is_on]
+
+        if not active_sensors:
+            return
+
+        # Aggregate unique reasons across all sensors
+        combined_reasons: list[tuple[float, str]] = []
+        seen_reasons = set()
+        sensor_names: list[str] = []
+        all_sensor_states: dict[str, Any] = {}
+
+        for sensor in active_sensors:
+            try:
+                name = sensor.name
+            except AttributeError:
+                name = sensor.entity_id
+            sensor_names.append(name)
+            # Access public sensor properties
+            all_sensor_states.update(sensor.sensor_states)
+            for r_prob, r_text in sensor.reasons:
+                if r_text not in seen_reasons:
+                    combined_reasons.append((r_prob, r_text))
+                    seen_reasons.add(r_text)
+
+        # Build composite title and message
+        growspace = self.coordinator.growspaces.get(growspace_id)
+        gs_name = growspace.name if growspace else growspace_id
+
+        if len(active_sensors) == 1:
+            sensor = active_sensors[0]
+            # Use specialized title logic from sensor if available
+            title_msg = sensor.get_notification_title_message(True)
+            if title_msg and len(title_msg) == 2:
+                title, base_message = title_msg
+            else:
+                title = f"{sensor.name}: {growspace_id}"
+                base_message = f"Issue detected in {growspace_id}"
+        else:
+            title = f"Multiple Issues: {gs_name}"
+            base_message = f"Critical alerts in {gs_name} ({', '.join(sensor_names)})"
+
+        message = self.generate_notification_message(base_message, combined_reasons)
+
+        # Actually send via the non-batched method which handles AI/Service calls
+        # We manually update _last_notification_sent here so that async_send_notification
+        # correctly passes the cooldown check (if we let it check it again).
+        # Actually, async_send_notification checks cooldown at the start.
+        # So we should be careful.
+        # Let's call the low-level logic or just bypass the internal cooldown check in async_send_notification
+        # by NOT updating self._last_notification_sent yet.
+
+        await self.async_send_notification(
+            growspace_id, title, message, sensor_states=all_sensor_states
+        )
 
     async def async_send_notification(
         self,

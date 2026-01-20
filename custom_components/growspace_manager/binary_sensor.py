@@ -286,7 +286,18 @@ class BayesianEnvironmentSensor(
         self._last_light_state: bool | None = None
 
         self.trend_analyzer = TrendAnalyzer(self.coordinator.hass)
-        self.notification_manager = self.coordinator.notification_manager
+        if notification_manager := self.coordinator.notification_manager:
+            self.notification_manager = notification_manager
+
+    @property
+    def sensor_states(self) -> dict[str, Any]:
+        """Return the observed sensor states."""
+        return self._sensor_states
+
+    @property
+    def reasons(self) -> list[tuple[float, str]]:
+        """Return the current reasons for the sensor state."""
+        return self._reasons
 
     @property
     @override  # type: ignore[misc]
@@ -428,10 +439,12 @@ class BayesianEnvironmentSensor(
             )
             self.notification_manager.trigger_cooldown(self.growspace_id)
 
-    @override  # type: ignore[misc]
     async def async_added_to_hass(self) -> None:
         """Register callbacks when the entity is added to Home Assistant."""
         await super().async_added_to_hass()
+
+        # Register for batched notifications
+        self.notification_manager.attach_sensor(self.growspace_id, self)
 
         c = self.env_config
         sensors = [
@@ -461,6 +474,11 @@ class BayesianEnvironmentSensor(
 
         # Schedule initial update
         self.hass.async_create_task(self.async_update_and_notify())
+
+    async def async_will_remove_from_hass(self) -> None:
+        """Unregister from batched notifications."""
+        self.notification_manager.detach_sensor(self.growspace_id, self)
+        await super().async_will_remove_from_hass()
 
     @callback  # type: ignore[misc]
     def _handle_coordinator_update(self) -> None:
@@ -699,9 +717,8 @@ class BayesianEnvironmentSensor(
             self._event_max_prob = 0.0
 
         if new_state_on != old_state_on:
-            notification_data = self.get_notification_title_message(new_state_on)
-            if notification_data:
-                await self._send_notification(*notification_data)
+            # Trigger debounced batched notification instead of direct sending
+            self.notification_manager.async_schedule_notification(self.growspace_id)
 
         self.async_write_ha_state()
 
