@@ -45,7 +45,7 @@ def parse_date_field(date_value: DateInput) -> datetime | None:
         return None  # type: ignore[unreachable]
 
     if dt.tzinfo is None:
-        return as_local(dt)
+        return as_local(dt)  # type: ignore[no-any-return]  # dateutil.parser returns Any
     return dt
 
 

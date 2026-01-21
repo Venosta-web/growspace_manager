@@ -1952,7 +1952,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         registry: er.EntityRegistry = er.async_get(self.hass)
         entity_id = registry.async_get_entity_id("sensor", DOMAIN, unique_id)
         if entity_id:
-            return entity_id
+            return entity_id  # type: ignore[no-any-return]  # Entity Registry returns Any
 
         # Fallback: Handle special cases logic data-driven
         for special_def in SPECIAL_GROWSPACES.values():

@@ -106,8 +106,8 @@ class ImageManager:
                     continue
 
                 try:
-                    # Using cast because Image.open returns different subclasses (ImageFile, etc)
-                    img = cast(Image.Image, Image.open(jpg_path))
+                    # Image.open returns Image.Image (no cast needed)
+                    img = Image.open(jpg_path)
 
                     # Convert to RGB if needed
                     if img.mode not in ("RGB", "RGBA"):
@@ -221,7 +221,7 @@ class ImageManager:
                 image_base64 = image_base64.split(",")[1]
 
             image_data = base64.b64decode(image_base64)
-            image = cast(Image.Image, Image.open(BytesIO(image_data)))
+            image = Image.open(BytesIO(image_data))
 
             # Convert to RGB (WebP supports RGBA, but RGB is safer for photos)
             if image.mode not in ("RGB", "RGBA"):
@@ -292,7 +292,7 @@ class ImageManager:
                 image_base64 = image_base64.split(",")[1]
 
             image_data = base64.b64decode(image_base64)
-            image = cast(Image.Image, Image.open(BytesIO(image_data)))
+            image = Image.open(BytesIO(image_data))
 
             if image.mode not in ("RGB", "RGBA"):
                 image = image.convert("RGB")

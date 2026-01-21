@@ -262,11 +262,11 @@ class EnvironmentConfig(BaseModel):
             if k in data:
                 del data[k]
 
-        return cast(Self, cls.__mashumaro_from_dict__(data))  # type: ignore[attr-defined]
+        return cast(Self, cls.__mashumaro_from_dict__(data))
 
 
 # Patch from_dict to use custom logic
-EnvironmentConfig.from_dict = EnvironmentConfig.from_dict_custom  # type: ignore[method-assign, assignment, misc]
+EnvironmentConfig.from_dict = EnvironmentConfig.from_dict_custom
 
 
 @dataclass(slots=True)
@@ -416,7 +416,7 @@ class Plant(BaseModel):
 
             data["stage_history"] = history
 
-        return cast(Self, cls.__mashumaro_from_dict__(data))  # type: ignore[attr-defined]
+        return cast(Self, cls.__mashumaro_from_dict__(data))
 
     def get_days_since_watering(self) -> int | None:
         """Calculate days since last watering.
@@ -459,7 +459,7 @@ class Plant(BaseModel):
 
 
 # Patch from_dict to use custom logic
-Plant.from_dict = Plant.from_dict_custom  # type: ignore[method-assign, assignment, misc]
+Plant.from_dict = Plant.from_dict_custom
 
 
 @dataclass(slots=True)

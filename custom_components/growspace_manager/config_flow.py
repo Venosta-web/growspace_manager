@@ -45,7 +45,7 @@ STEP_USER_DATA_SCHEMA = vol.Schema(
 )
 
 
-class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):  # type: ignore[misc, call-arg]
+class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     """Handle the initial configuration flow for Growspace Manager.
 
     This class is responsible for the initial setup of the integration when the
@@ -56,7 +56,7 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):  # type: ignore[misc
     MINOR_VERSION = 1
     integration_name = "Growspace Manager"
 
-    @override  # type: ignore[misc]
+    @override
     async def async_step_user(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
@@ -154,7 +154,7 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):  # type: ignore[misc
         )
 
     @staticmethod
-    @callback  # type: ignore[misc]
+    @callback
     def async_get_options_flow(config_entry: ConfigEntry) -> OptionsFlowHandler:
         """Get the options flow for this handler.
 
@@ -167,7 +167,7 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):  # type: ignore[misc
         return OptionsFlowHandler(config_entry)
 
 
-class OptionsFlowHandler(OptionsFlow):  # type: ignore[misc]
+class OptionsFlowHandler(OptionsFlow):
     """Handles the options flow for Growspace Manager.
 
     This class provides the UI for managing the integration's settings after
@@ -246,7 +246,7 @@ class OptionsFlowHandler(OptionsFlow):  # type: ignore[misc]
             self._strain_handler = StrainConfigHandler(self)
         return self._strain_handler
 
-    @override  # type: ignore[misc]
+    @override
     async def async_step_init(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
