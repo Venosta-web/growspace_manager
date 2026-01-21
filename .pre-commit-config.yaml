@@ -56,10 +56,11 @@ repos:
         files: ^(homeassistant|tests|script)/.+\.py$
   - repo: local
     hooks:
-      # Run mypy through our wrapper script in order to get the possible
-      # pyenv and/or virtualenv activated; it may not have been e.g. if
-      # committing from a GUI tool that was not launched from an activated
-      # shell.
+      - id: pytest
+        name: pytest
+        entry: ./venv/bin/pytest
+        language: system
+        types: [python]
       - id: mypy
         name: mypy
         entry: script/run-in-env.sh mypy
