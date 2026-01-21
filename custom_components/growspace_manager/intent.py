@@ -28,7 +28,7 @@ async def async_setup_intents(hass: HomeAssistant) -> None:
     intent.async_register(hass, GrowspaceIntentHandler(hass))
 
 
-class GrowspaceIntentHandler(IntentHandler):  # type: ignore[misc]
+class GrowspaceIntentHandler(IntentHandler):
     """Handle Ask Grow Advice intent."""
 
     intent_type = INTENT_ASK_GROW_ADVICE

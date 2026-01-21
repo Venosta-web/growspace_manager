@@ -185,7 +185,9 @@ class GrowAssistant:
             "strains": list(strains),
             "max_veg_days": max(
                 (
-                    self.coordinator.calculate_days_in_stage(p, PlantStage.VEG)
+                    self.coordinator.serializer.calculate_days_in_stage(
+                        p, PlantStage.VEG
+                    )
                     for p in plants
                     if p.veg_start
                 ),
@@ -193,7 +195,9 @@ class GrowAssistant:
             ),
             "max_flower_days": max(
                 (
-                    self.coordinator.calculate_days_in_stage(p, PlantStage.FLOWER)
+                    self.coordinator.serializer.calculate_days_in_stage(
+                        p, PlantStage.FLOWER
+                    )
                     for p in plants
                     if p.flower_start
                 ),

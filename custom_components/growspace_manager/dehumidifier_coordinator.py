@@ -146,9 +146,9 @@ class DehumidifierCoordinator:
 
     def _setup_listeners(self) -> None:
         """Set up state change listeners."""
-        entities_to_track = [self.vpd_sensor]
+        entities_to_track: list[str] = [e for e in [self.vpd_sensor] if e]
         if self.light_sensors:
-            entities_to_track.extend(self.light_sensors)
+            entities_to_track.extend([e for e in self.light_sensors if e])
 
         self._remove_listeners.append(
             async_track_state_change_event(
@@ -357,6 +357,8 @@ class DehumidifierCoordinator:
 
     def _get_current_vpd(self) -> float | None:
         """Get the current VPD value."""
+        if not self.vpd_sensor:
+            return None
         vpd_state = self.hass.states.get(self.vpd_sensor)
         if not vpd_state or vpd_state.state in (STATE_UNKNOWN, STATE_UNAVAILABLE):
             return None

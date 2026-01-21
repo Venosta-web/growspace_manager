@@ -34,7 +34,9 @@ async def test_websocket_history_handles_dicts(hass: HomeAssistant):
             "homeassistant.components.recorder.history.get_significant_states",
             return_value=history_data,
         ),
-        patch("custom_components.growspace_manager.websocket.get_instance") as mock_get_rec,
+        patch(
+            "custom_components.growspace_manager.websocket.get_instance"
+        ) as mock_get_rec,
     ):
         mock_get_rec.return_value.async_add_executor_job = hass.async_add_executor_job
         msg = {

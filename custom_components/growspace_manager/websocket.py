@@ -57,7 +57,7 @@ def _extract_ts(state_obj: Any) -> datetime:
         return _EPOCH_SENTINEL
     if isinstance(ts_raw, str):
         parsed = dt_util.parse_datetime(ts_raw)
-        return parsed if parsed else _EPOCH_SENTINEL  # type: ignore[no-any-return]
+        return parsed if parsed else _EPOCH_SENTINEL
     if isinstance(ts_raw, datetime):
         return ts_raw
     return _EPOCH_SENTINEL
@@ -368,7 +368,7 @@ SCHEMA_WS_REMOVE_TIMELINE_EVENT = websocket_api.BASE_COMMAND_MESSAGE_SCHEMA.exte
 )
 
 
-@callback  # type: ignore[misc]
+@callback
 def websocket_get_strain_library(
     hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
 ) -> None:
@@ -422,7 +422,7 @@ SCHEMA_WS_REMOVE_NUTRIENT_STOCK = websocket_api.BASE_COMMAND_MESSAGE_SCHEMA.exte
 )
 
 
-@callback  # type: ignore[misc]
+@callback
 def websocket_get_nutrient_inventory(
     hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
 ) -> None:
@@ -441,7 +441,7 @@ def websocket_get_nutrient_inventory(
         connection.send_error(msg["id"], "unknown_error", str(err))
 
 
-@callback  # type: ignore[misc]
+@callback
 def websocket_update_nutrient_stock(
     hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
 ) -> None:
@@ -467,7 +467,7 @@ def websocket_update_nutrient_stock(
         connection.send_error(msg["id"], "unknown_error", str(err))
 
 
-@callback  # type: ignore[misc]
+@callback
 def websocket_remove_nutrient_stock(
     hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
 ) -> None:
@@ -488,7 +488,7 @@ def websocket_remove_nutrient_stock(
         connection.send_error(msg["id"], "unknown_error", str(err))
 
 
-@callback  # type: ignore[misc]
+@callback
 def websocket_get_nutrient_presets(
     hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
 ) -> None:
@@ -506,7 +506,7 @@ def websocket_get_nutrient_presets(
         connection.send_error(msg["id"], "unknown_error", str(err))
 
 
-@callback  # type: ignore[misc]
+@callback
 def websocket_get_ipm_presets(
     hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
 ) -> None:
@@ -785,7 +785,7 @@ async def _get_history_with_binary_search_downsample(
     and 'lo' parameter to perform efficient 'finger search'.
     """
 
-    def _get_history() -> dict[str, list[Any]]:  # type: ignore[no-any-return]
+    def _get_history() -> dict[str, list[Any]]:
         return history.get_significant_states(
             hass,
             start_time,

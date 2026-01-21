@@ -1,12 +1,14 @@
+from unittest.mock import AsyncMock, MagicMock
+
 import pytest
-from unittest.mock import MagicMock, AsyncMock, patch
+
 from custom_components.growspace_manager.strain_library import StrainLibrary
 
 
 @pytest.fixture
 def mock_hass():
     hass = MagicMock()
-    hass.config.path.return_value = "/tmp/test_db.sqlite"
+    hass.config.path.return_value = "/tmp/test_db.sqlite"  # noqa: S108
     return hass
 
 
@@ -57,11 +59,33 @@ async def test_ensure_phenotype_creation_failure(mock_hass) -> None:
 
     # Mock DB connection
     mock_db = MagicMock()
+    mock_db.commit = AsyncMock()
     lib._db = mock_db
 
-    # Mock cursor context manager
+    # Helper to mock an object that is both awaitable and an async context manager
+    class AwaitableAsyncContextManager:
+        def __init__(self, mock_cursor) -> None:
+            self.mock_cursor = mock_cursor
+
+        def __await__(self):
+            async def _return_cursor():
+                return self.mock_cursor
+
+            return _return_cursor().__await__()
+
+        async def __aenter__(self):
+            return self.mock_cursor
+
+        async def __aexit__(self, exc_type, exc, tb):
+            pass
+
+    # Mock cursor
     mock_cursor = AsyncMock()
-    mock_db.execute.return_value.__aenter__.return_value = mock_cursor
+
+    # Configure fetchone side effects later
+
+    # Mock execute to return the helper
+    mock_db.execute = MagicMock(return_value=AwaitableAsyncContextManager(mock_cursor))
 
     # Scenario:
     # 1. Check strain -> Found (return strain_id)
@@ -69,11 +93,13 @@ async def test_ensure_phenotype_creation_failure(mock_hass) -> None:
     # 3. Insert phenotype -> Success
     # 4. Check phenotype again -> Still Not Found (Simulation of race condition or failure)
 
-    mock_cursor.fetchone.side_effect = [
-        (1,),  # Strain ID found
-        None,  # Phenotype not found first time
-        None,  # Phenotype still not found after insert
-    ]
+    mock_cursor.fetchone = AsyncMock(
+        side_effect=[
+            (1,),  # Strain ID found
+            None,  # Phenotype not found first time
+            None,  # Phenotype still not found after insert
+        ]
+    )
 
     with pytest.raises(RuntimeError, match="Failed to retrieve phenotype ID"):
         await lib._ensure_strain_and_phenotype_exist("StrainX", "PhenoY")

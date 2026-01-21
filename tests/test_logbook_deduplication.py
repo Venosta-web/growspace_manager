@@ -78,7 +78,9 @@ async def test_websocket_event_log_merging(hass: HomeAssistant) -> None:
             "custom_components.growspace_manager.websocket.session_scope",
             return_value=context_manager_mock,
         ),
-        patch("custom_components.growspace_manager.websocket.get_instance") as get_instance_mock,
+        patch(
+            "custom_components.growspace_manager.websocket.get_instance"
+        ) as get_instance_mock,
     ):
         instance = get_instance_mock.return_value
 

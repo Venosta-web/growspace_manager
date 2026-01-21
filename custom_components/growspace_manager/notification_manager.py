@@ -63,18 +63,22 @@ class NotificationManager:
                 break
         return message
 
-    @callback  # type: ignore[misc]
+    @callback
     def async_schedule_notification(self, growspace_id: str) -> None:
         """Schedule a debounced batched notification for a growspace."""
         if timer := self._batch_timers.get(growspace_id):
             timer()
 
+        @callback
+        def _send_notification(_: datetime) -> None:
+            self.hass.async_create_task(
+                self._async_send_batched_notification(growspace_id)
+            )
+
         self._batch_timers[growspace_id] = async_call_later(
             self.hass,
             5,
-            lambda _: self.hass.async_create_task(
-                self._async_send_batched_notification(growspace_id)
-            ),
+            _send_notification,
         )
 
     async def _async_send_batched_notification(self, growspace_id: str) -> None:

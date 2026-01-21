@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
 from dataclasses import dataclass, field, fields
 from datetime import datetime
 from enum import StrEnum
@@ -127,7 +126,7 @@ class StageHistoryItem(TypedDict):
 
 
 @dataclass(slots=True)
-class BaseModel(DataClassDictMixin):  # type: ignore[misc]
+class BaseModel(DataClassDictMixin):
     """Base class providing generic serialization methods."""
 
 
@@ -166,6 +165,8 @@ class EnvironmentConfig(BaseModel):
     vpd_sensor: str | None = None
     co2_sensor: str | None = None
     soil_moisture_sensor: str | None = None
+    veg_day_hours: int = 18
+    flower_day_hours: int = 12
 
     # Multi-device fields (NEW)
     light_sensors: list[str] = field(default_factory=list)
@@ -261,12 +262,11 @@ class EnvironmentConfig(BaseModel):
             if k in data:
                 del data[k]
 
-        return cast(Self, cls.__mashumaro_from_dict__(data))  # type: ignore[no-any-return]
+        return cast(Self, cls.__mashumaro_from_dict__(data))  # type: ignore[attr-defined]
 
 
 # Patch from_dict to use custom logic
-EnvironmentConfig.__mashumaro_from_dict__ = EnvironmentConfig.from_dict
-EnvironmentConfig.from_dict = EnvironmentConfig.from_dict_custom
+EnvironmentConfig.from_dict = EnvironmentConfig.from_dict_custom  # type: ignore[method-assign, assignment, misc]
 
 
 @dataclass(slots=True)
@@ -416,7 +416,7 @@ class Plant(BaseModel):
 
             data["stage_history"] = history
 
-        return cls.__mashumaro_from_dict__(data)
+        return cast(Self, cls.__mashumaro_from_dict__(data))  # type: ignore[attr-defined]
 
     def get_days_since_watering(self) -> int | None:
         """Calculate days since last watering.
@@ -459,8 +459,7 @@ class Plant(BaseModel):
 
 
 # Patch from_dict to use custom logic
-Plant.__mashumaro_from_dict__ = Plant.from_dict
-Plant.from_dict = Plant.from_dict_custom
+Plant.from_dict = Plant.from_dict_custom  # type: ignore[method-assign, assignment, misc]
 
 
 @dataclass(slots=True)
@@ -521,11 +520,6 @@ class NutrientPreset(BasePreset):
     @nutrients.setter
     def nutrients(self, value: list[NutrientPresetItem]) -> None:
         self.items = value
-
-    @classmethod
-    def from_dict(cls, d: Mapping[Any, Any], **kwargs: Any) -> Self:
-        """Create a NutrientPreset instance from a dictionary."""
-        return cast(Self, super().from_dict(d))
 
     def get_nutrient_map(self) -> NutrientMap:
         """Convert nutrients list to a dict[str, float] for watering services."""

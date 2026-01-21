@@ -63,7 +63,7 @@ class VWCIrrigationCoordinator(BaseIrrigationCoordinator):
             "Unloaded VWC Irrigation Coordinator for growspace %s", self._growspace_id
         )
 
-    @callback  # type: ignore[misc]
+    @callback
     @override
     def async_cancel_listeners(self) -> None:
         """Cancel all scheduled listeners."""
@@ -82,7 +82,7 @@ class VWCIrrigationCoordinator(BaseIrrigationCoordinator):
                 # Should not happen if correctly loaded, but safe guard
                 return
 
-            sensor_entity = growspace.environment_config.get("soil_moisture_sensor")
+            sensor_entity = growspace.environment_config.soil_moisture_sensor
             if not sensor_entity:
                 if not self._sensor_warning_logged:
                     _LOGGER.warning(
@@ -142,9 +142,10 @@ class VWCIrrigationCoordinator(BaseIrrigationCoordinator):
             # This is a simplification. A more robust implementation would determine the dominant
             # plant stage in the growspace and use the corresponding day hours.
             # For now, we prefer flower hours if available, as steering is often flower-focused.
-            day_hours = growspace.environment_config.get(
+            day_hours = getattr(
+                growspace.environment_config,
                 "flower_day_hours",
-                growspace.environment_config.get("veg_day_hours", 12),
+                getattr(growspace.environment_config, "veg_day_hours", 12),
             )
 
         # Calculate P0 End
@@ -309,8 +310,8 @@ class VWCIrrigationCoordinator(BaseIrrigationCoordinator):
         growspace = self.growspace
         # Ensure we return a string or None, explicitly cast if needed or rely on typed access
         return (
-            str(growspace.irrigation_config.get("irrigation_pump_entity"))
-            if growspace.irrigation_config.get("irrigation_pump_entity")
+            growspace.irrigation_config.irrigation_pump_entity
+            if growspace.irrigation_config.irrigation_pump_entity
             else None
         )
 

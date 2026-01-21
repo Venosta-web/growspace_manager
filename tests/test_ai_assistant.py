@@ -42,7 +42,7 @@ def mock_coordinator() -> MagicMock:
         }
     }
     coordinator.get_growspace_plants.return_value = []
-    coordinator.calculate_days_in_stage.return_value = 10
+    coordinator.serializer.calculate_days_in_stage.return_value = 10
     return coordinator
 
 
@@ -481,7 +481,7 @@ async def testgather_growspace_data_with_plants(
     plant2.flower_start = "2023-02-01"
 
     mock_coordinator.get_growspace_plants.return_value = [plant1, plant2]
-    mock_coordinator.calculate_days_in_stage.return_value = 10
+    mock_coordinator.serializer.calculate_days_in_stage.return_value = 10
 
     # Mock strain library
     mock_strain_library.get_all.return_value = {

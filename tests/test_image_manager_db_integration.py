@@ -68,6 +68,7 @@ async def test_db_path_update_with_jpg_entries(
             "SELECT image_path FROM phenotypes WHERE phenotype_id = 1"
         ) as cursor:
             row = await cursor.fetchone()
+            assert row is not None
             assert (
                 row["image_path"]
                 == "/local/growspace_manager/strains/test_strain_pheno.webp"

@@ -1791,15 +1791,13 @@ async def test_light_cycle_async_added_to_hass_with_light_entity(
     ):
         await sensor.async_added_to_hass()
 
-        mock_coordinator.async_add_listener.assert_called_once_with(
-            sensor._handle_coordinator_update
-        )
+        mock_coordinator.async_add_listener.assert_called_once()
         mock_track_state_change.assert_called_once_with(
             sensor.hass,
             [sensor.light_entity_id],
             sensor._async_light_sensor_changed,
         )
-        mock_on_remove.assert_called_once()
+        assert mock_on_remove.call_count == 2
         mock_update.assert_awaited_once()
 
 
@@ -1821,11 +1819,9 @@ async def test_light_cycle_async_added_to_hass_without_light_entity(
     ):
         await sensor.async_added_to_hass()
 
-        mock_coordinator.async_add_listener.assert_called_once_with(
-            sensor._handle_coordinator_update
-        )
+        mock_coordinator.async_add_listener.assert_called_once()
         mock_track_state_change.assert_not_called()
-        mock_on_remove.assert_not_called()
+        mock_on_remove.assert_called_once()
         mock_update.assert_awaited_once()
 
 

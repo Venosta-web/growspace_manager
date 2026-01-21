@@ -362,7 +362,7 @@ class EnvironmentAnalyzer:
                 growspace.environment_config.vpd_sensor
             )
             target_vpd = (
-                self.coordinator.data.get("bayesian_sensors_reason", {})  # type: ignore[has-type]
+                self.coordinator.data.get("bayesian_sensors_reason", {})
                 .get(growspace_id, {})
                 .get("target_vpd")
             )
@@ -377,7 +377,7 @@ class EnvironmentAnalyzer:
                 lung_room_vpd,
             )
 
-        data: dict[str, Any] = self.coordinator.data  # type: ignore[has-type]
+        data: dict[str, Any] = self.coordinator.data
         if "air_exchange_recommendations" not in data:
             data["air_exchange_recommendations"] = {}
         data["air_exchange_recommendations"].update(recommendations)
