@@ -208,6 +208,10 @@ async def handle_add_strain(
     sativa_percentage = call.data.get("sativa_percentage")
     indica_percentage = call.data.get("indica_percentage")
 
+    if not strain:
+        _LOGGER.warning("Service call add_strain missing required 'strain' parameter")
+        return
+
     try:
         await strain_library.add_strain(
             strain=strain,
@@ -263,6 +267,12 @@ async def handle_update_strain_meta(
     sativa_percentage = call.data.get("sativa_percentage")
     indica_percentage = call.data.get("indica_percentage")
 
+    if not strain:
+        _LOGGER.warning(
+            "Service call update_strain_meta missing required 'strain' parameter"
+        )
+        return
+
     try:
         await strain_library.set_strain_meta(
             strain=strain,
@@ -295,6 +305,12 @@ async def handle_remove_strain(
     """Handle the remove_strain service call."""
     strain = call.data.get("strain")
     phenotype = call.data.get("phenotype")
+
+    if not strain:
+        _LOGGER.warning(
+            "Service call remove_strain missing required 'strain' parameter"
+        )
+        return
 
     if phenotype:
         await strain_library.remove_strain_phenotype(strain, phenotype)

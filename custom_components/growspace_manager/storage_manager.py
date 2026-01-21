@@ -35,11 +35,17 @@ class StorageManager:
         self.hass = hass
 
         # Segmented stores
-        self.config_store = Store(hass, STORAGE_VERSION, STORAGE_KEY_CONFIG)
-        self.plants_store = Store(hass, STORAGE_VERSION, STORAGE_KEY_PLANTS)
+        self.config_store: Store[dict[str, Any]] = Store(
+            hass, STORAGE_VERSION, STORAGE_KEY_CONFIG
+        )
+        self.plants_store: Store[dict[str, Any]] = Store(
+            hass, STORAGE_VERSION, STORAGE_KEY_PLANTS
+        )
 
         # Legacy store for migration
-        self.legacy_store = Store(hass, STORAGE_VERSION, STORAGE_KEY)
+        self.legacy_store: Store[dict[str, Any]] = Store(
+            hass, STORAGE_VERSION, STORAGE_KEY
+        )
 
     async def async_save(self) -> None:
         """Save the current state to persistent storage (debounced)."""

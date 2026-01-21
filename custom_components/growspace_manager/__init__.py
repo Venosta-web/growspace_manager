@@ -149,7 +149,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: GrowspaceConfigEntry) ->
     return True
 
 
-@callback  # type: ignore[misc]
+@callback
 def _async_cancel_coordinators(coordinator: GrowspaceCoordinator) -> None:
     """Cancel irrigation and dehumidifier listeners."""
     for irr_coordinator in coordinator.irrigation_coordinators.values():

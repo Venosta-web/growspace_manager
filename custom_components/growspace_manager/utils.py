@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import date, datetime
 import math
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING
 
 from dateutil import parser
 
@@ -41,12 +41,12 @@ def parse_date_field(date_value: DateInput) -> datetime | None:
                 except (ValueError, TypeError):
                     return None
 
-    if dt is not None:
-        if dt.tzinfo is None:
-            return cast(datetime, as_local(dt))
-        return dt
+    if dt is None:
+        return None  # type: ignore[unreachable]
 
-    return None  # type: ignore[unreachable]
+    if dt.tzinfo is None:
+        return as_local(dt)  # type: ignore[no-any-return]  # dateutil.parser returns Any
+    return dt
 
 
 def format_date(date_value: DateInput) -> str | None:
@@ -148,6 +148,7 @@ class VPDCalculator:
         Returns:
             The calculated VPD in kilopascals (kPa), or None if inputs are invalid.
         """
+        # Validate types specifically for non-static-typed callers
         if not isinstance(temperature_c, (int, float)) or not isinstance(
             humidity_rh, (int, float)
         ):
@@ -177,8 +178,11 @@ class VPDCalculator:
         Returns:
             The calculated VPD in kilopascals (kPa), or None if inputs are invalid.
         """
-        if not isinstance(air_temperature_c, (int, float)) or not isinstance(
-            humidity_rh, (int, float)
+        # Validate types specifically for non-static-typed callers
+        if (
+            not isinstance(air_temperature_c, (int, float))
+            or not isinstance(humidity_rh, (int, float))
+            or not isinstance(lst_offset, (int, float))
         ):
             return None  # type: ignore[unreachable]
 

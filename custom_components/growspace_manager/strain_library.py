@@ -341,7 +341,10 @@ class StrainLibrary:
         async with self._db.execute(
             "SELECT strain_id FROM strains WHERE strain_name = ?", (strain,)
         ) as cur:
-            strain_id = (await cur.fetchone())[0]
+            row = await cur.fetchone()
+            if row is None:
+                raise RuntimeError(f"Strain {strain} not found")
+            strain_id = row[0]
         # Prepare phenotype data
         pheno_data = {
             "description": description,
@@ -483,7 +486,8 @@ class StrainLibrary:
         async with self._db.execute(
             "SELECT COUNT(*) FROM phenotypes WHERE strain_id = ?", (strain_id,)
         ) as cur:
-            if (await cur.fetchone())[0] == 0:
+            row = await cur.fetchone()
+            if row is not None and row[0] == 0:
                 await self._db.execute(
                     "DELETE FROM strains WHERE strain_id = ?", (strain_id,)
                 )
@@ -603,6 +607,7 @@ class StrainLibrary:
 
         # Validation
         if not isinstance(library_data, dict):
+            _LOGGER.warning("Invalid library data format: expected dict")  # type: ignore[unreachable]
             return 0
 
         if replace:
@@ -636,8 +641,6 @@ class StrainLibrary:
                 phenotype_id = await self._ensure_strain_and_phenotype_exist(
                     strain_name, pheno_name
                 )
-                if self._db is None:
-                    return 0
                 for harvest in pheno_data.get("harvests", []):
                     await self._db.execute(
                         """
@@ -662,13 +665,13 @@ class StrainLibrary:
 
     async def import_strains(self, strains: list[str], replace: bool = False) -> int:
         """Import a list of strain names, creating default entries."""
+        # Validation
         if not isinstance(strains, list):
-            return 0
+            _LOGGER.warning("Invalid strains format: expected list")  # type: ignore[unreachable]
+            return len(self.strains)
 
         if replace:
             await self.clear()
-        # if not isinstance(strains, list):
-        #    raise TypeError("strains must be a list") - Changed to return 0 for test compatibility
 
         for strain in strains:
             await self.add_strain(strain)

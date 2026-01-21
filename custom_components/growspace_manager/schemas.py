@@ -1,5 +1,7 @@
 """Validation schemas for the Growspace Manager integration."""
 
+from typing import Any
+
 import voluptuous as vol
 
 from homeassistant.helpers import config_validation as cv
@@ -51,9 +53,11 @@ from .const import (
 from .validation import valid_date_or_none, valid_growspace_id
 
 # Shared Schema Dictionaries
-_PLANT_DATE_FIELDS = {vol.Optional(field): valid_date_or_none for field in DATE_FIELDS}
+_PLANT_DATE_FIELDS: dict[Any, Any] = {
+    vol.Optional(field): valid_date_or_none for field in DATE_FIELDS
+}
 
-_PLANT_DAYS_FIELDS = {
+_PLANT_DAYS_FIELDS: dict[Any, Any] = {
     vol.Optional(f"{stage}_days"): vol.All(vol.Coerce(int)) for stage in PLANT_STAGES
 }
 
@@ -231,7 +235,7 @@ CLEAR_STRAIN_LIBRARY_SCHEMA = vol.Schema(
 )
 
 # Shared Strain Fields
-STRAIN_BASE_FIELDS = {
+STRAIN_BASE_FIELDS: dict[Any, Any] = {
     vol.Optional("phenotype"): str,
     vol.Optional("breeder"): str,
     vol.Optional("type"): str,

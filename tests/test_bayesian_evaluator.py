@@ -239,7 +239,14 @@ def test_evaluate_optimal_vpd_no_vpd() -> None:
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    ("sensor_key", "trend_state_value", "stats_change_value", "expected_trend", "expected_prob", "expected_reason"),
+    (
+        "sensor_key",
+        "trend_state_value",
+        "stats_change_value",
+        "expected_trend",
+        "expected_prob",
+        "expected_reason",
+    ),
     [
         # Test trend_sensor_id branch
         ("humidity", "on", None, "rising", (0.90, 0.20), "Humidity rising"),
@@ -301,7 +308,18 @@ async def test_async_evaluate_external_mold_trend_sensor(
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    ("test_sensor_key", "use_trend_sensor", "use_stats_sensor", "trend_state_value", "gradient", "stats_change", "manual_analysis_result", "expected_trend", "expected_prob", "expected_reason"),
+    (
+        "test_sensor_key",
+        "use_trend_sensor",
+        "use_stats_sensor",
+        "trend_state_value",
+        "gradient",
+        "stats_change",
+        "manual_analysis_result",
+        "expected_trend",
+        "expected_prob",
+        "expected_reason",
+    ),
     [
         # Trend Sensor Logic
         (
@@ -448,7 +466,13 @@ def test_determine_stage_key_none() -> None:
 
 
 @pytest.mark.parametrize(
-    ("temp", "flower_days", "is_lights_on", "expected_prob", "expected_reason_substring"),
+    (
+        "temp",
+        "flower_days",
+        "is_lights_on",
+        "expected_prob",
+        "expected_reason_substring",
+    ),
     [
         # Case A: Lights ON & Late Flower (Days >= 42)
         (24, 45, True, PROB_PERFECT, None),  # PROB_PERFECT

@@ -14,7 +14,7 @@ if TYPE_CHECKING:
     from homeassistant.components.logbook import LazyEventPartialState
 
 
-@callback  # type: ignore[misc]
+@callback
 def async_describe_events(
     hass: HomeAssistant,
     async_describe_event: Callable[
@@ -23,7 +23,7 @@ def async_describe_events(
 ) -> None:
     """Describe logbook events."""
 
-    @callback  # type: ignore[misc]
+    @callback
     def async_describe_log_entry_event(
         event: LazyEventPartialState,
     ) -> dict[str, Any]:

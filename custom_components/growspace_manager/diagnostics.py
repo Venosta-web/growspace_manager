@@ -58,4 +58,3 @@ async def async_get_config_entry_diagnostics(
         },
         "integration_version": "0.3.3",
     }
-

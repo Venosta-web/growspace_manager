@@ -6,7 +6,7 @@ import contextlib
 import logging
 import pathlib
 import tempfile
-from typing import Any, override
+from typing import Any, TypeGuard
 
 from aiohttp import BodyPartReader, web
 
@@ -20,7 +20,7 @@ from .strain_library import StrainLibrary
 _LOGGER = logging.getLogger(__name__)
 
 
-class StrainLibraryUploadView(HomeAssistantView):  # type: ignore[misc]
+class StrainLibraryUploadView(HomeAssistantView):
     """View to handle strain library imports via HTTP upload."""
 
     url = "/api/growspace_manager/import_strains"
@@ -36,7 +36,7 @@ class StrainLibraryUploadView(HomeAssistantView):  # type: ignore[misc]
         self.hass = hass
         self.strain_library = strain_lib
 
-    def _is_valid_upload_field(self, file_field: Any) -> bool:
+    def _is_valid_upload_field(self, file_field: Any) -> TypeGuard[BodyPartReader]:
         """Validate the uploaded file field."""
         if not file_field:
             return False
@@ -72,8 +72,7 @@ class StrainLibraryUploadView(HomeAssistantView):  # type: ignore[misc]
         else:
             return temp_path
 
-    @override  # type: ignore[misc]
-    async def post(self, request: web.Request) -> web.Response:
+    async def post(self, request: web.Request) -> web.StreamResponse:
         """Handle the POST request for file upload."""
         # 1. Read the multipart data (file)
         reader = await request.multipart()
@@ -114,7 +113,7 @@ class StrainLibraryUploadView(HomeAssistantView):  # type: ignore[misc]
                 await self.hass.async_add_executor_job(temp_path.unlink)
 
 
-class StrainLibraryImageView(HomeAssistantView):  # type: ignore[misc]
+class StrainLibraryImageView(HomeAssistantView):
     """View to serve images from the strain library storage."""
 
     url = "/api/growspace_manager/v1/images/{filename:.*}"
@@ -130,8 +129,7 @@ class StrainLibraryImageView(HomeAssistantView):  # type: ignore[misc]
         self.hass = hass
         self.strain_library = strain_lib
 
-    @override  # type: ignore[misc]
-    async def get(self, request: web.Request, filename: str) -> web.Response:
+    async def get(self, request: web.Request, filename: str) -> web.StreamResponse:
         """Handle GET request for image."""
         if not self.strain_library.image_manager:
             return web.Response(status=404, text="Image manager not available")

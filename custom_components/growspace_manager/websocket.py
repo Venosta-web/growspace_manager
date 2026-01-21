@@ -57,7 +57,7 @@ def _extract_ts(state_obj: Any) -> datetime:
         return _EPOCH_SENTINEL
     if isinstance(ts_raw, str):
         parsed = dt_util.parse_datetime(ts_raw)
-        return parsed if parsed else _EPOCH_SENTINEL
+        return parsed if parsed else _EPOCH_SENTINEL  # type: ignore[no-any-return]
     if isinstance(ts_raw, datetime):
         return ts_raw
     return _EPOCH_SENTINEL
@@ -148,7 +148,7 @@ def _merge_logbook_event(
                             dict.fromkeys(last_evt["reasons"] + data_dict["reasons"])
                         )
                         last_evt["reasons"] = comb[:5]
-                    return True
+                    return True  # type: ignore[no-any-return]
         except (ValueError, TypeError, KeyError):
             pass
     return False
@@ -817,7 +817,7 @@ async def _get_history_with_binary_search_downsample(
 
         return result
 
-    return await hass.async_add_executor_job(_downsample_with_binary_search)
+    return await hass.async_add_executor_job(_downsample_with_binary_search)  # type: ignore[no-any-return]  # executor returns Any
 
 
 @callback

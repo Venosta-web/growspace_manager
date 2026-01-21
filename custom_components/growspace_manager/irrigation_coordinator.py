@@ -7,7 +7,7 @@ from collections.abc import Callable, Mapping
 from datetime import datetime
 from functools import partial
 import logging
-from typing import TYPE_CHECKING, Any, cast, override
+from typing import TYPE_CHECKING, Any, override
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
@@ -58,7 +58,7 @@ class BaseIrrigationCoordinator:
         self.async_cancel_listeners()
 
     async def _async_send_cycle_notification(
-        self, event_type: str, duration: int, event_data: dict[str, Any]
+        self, event_type: str, duration: int, event_data: Mapping[str, Any]
     ) -> None:
         """Send a notification for the start of a pump cycle."""
         coordinator = self._config_entry.runtime_data
@@ -75,7 +75,7 @@ class BaseIrrigationCoordinator:
                 blocking=False,
             )
 
-    @callback  # type: ignore[misc]
+    @callback
     def async_cancel_listeners(self) -> None:
         """Cancel all scheduled listeners."""
         for listener in self._listeners:
@@ -130,9 +130,7 @@ class IrrigationCoordinator(BaseIrrigationCoordinator):
         await self._main_coordinator.async_save()
 
         # Notify listeners of update
-        self._main_coordinator.async_set_updated_data(
-            cast(dict[str, Any], self._main_coordinator.data)  # type: ignore[has-type]
-        )
+        self._main_coordinator.async_set_updated_data(self._main_coordinator.data)
 
         # Reload the irrigation listeners with new schedule
         if reload_listeners:
@@ -358,7 +356,7 @@ class IrrigationCoordinator(BaseIrrigationCoordinator):
             )
 
     async def _handle_event(
-        self, now: datetime, *, event_type: str, event_data: dict[str, Any]
+        self, now: datetime, *, event_type: str, event_data: Mapping[str, Any]
     ) -> None:
         """Handle a scheduled event."""
         if (
@@ -399,7 +397,7 @@ class IrrigationCoordinator(BaseIrrigationCoordinator):
         event_type: str,
         pump_entity: str,
         duration: int,
-        event_data: dict[str, Any],
+        event_data: Mapping[str, Any],
     ) -> None:
         """Run the on-off cycle for a pump and send notifications."""
         start_dt = None

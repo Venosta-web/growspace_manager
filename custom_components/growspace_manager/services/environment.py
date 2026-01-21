@@ -136,7 +136,7 @@ async def handle_set_dehumidifier_control(
     growspace = coordinator.growspaces[growspace_id]
 
     # Update configuration
-    growspace.environment_config.control_dehumidifier = enabled
+    growspace.environment_config.control_dehumidifier = bool(enabled)
 
     # Save to storage
     await coordinator.async_save()

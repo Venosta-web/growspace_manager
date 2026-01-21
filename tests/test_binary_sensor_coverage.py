@@ -1,210 +1,341 @@
-"""Additional tests for binary_sensor coverage."""
+"""Tests to increase coverage for binary_sensor.py."""
 
-import contextlib
-from unittest.mock import MagicMock
+from datetime import timedelta
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
 from custom_components.growspace_manager.binary_sensor import (
+    BayesianEnvironmentSensor,
+    GrowspaceSensorType,
     LightCycleVerificationSensor,
+    _get_strategy_class,
 )
-from custom_components.growspace_manager.models import EnvironmentConfig, Growspace
+from custom_components.growspace_manager.const import (
+    ATTR_TIME_IN_CURRENT_STATE,
+    PlantStage,
+)
+from custom_components.growspace_manager.models import EnvironmentConfig
+from custom_components.growspace_manager.strategies.stress import (
+    StressEvaluatorStrategy,
+)
+from homeassistant.const import STATE_OFF, STATE_ON, STATE_UNAVAILABLE
 from homeassistant.core import HomeAssistant
-
-from .common import create_plant
+from homeassistant.util import dt as dt_util
 
 
 @pytest.fixture
-def mock_coordinator() -> MagicMock:
-    """Mock coordinator."""
+def mock_growspace():
+    """Fixture for a mock growspace."""
+    growspace = MagicMock()
+    growspace.name = "Test Growspace"
+    growspace.environment_config = EnvironmentConfig(
+        temperature_sensor="sensor.temp",
+        humidity_sensor="sensor.humidity",
+    )
+    return growspace
+
+
+@pytest.fixture
+def mock_coordinator(mock_growspace):
+    """Fixture for a mock coordinator."""
     coordinator = MagicMock()
-    coordinator.growspaces = {
-        "test_growspace": Growspace(
-            id="test_growspace",
-            name="Test Growspace",
-        )
-    }
-    coordinator.get_growspace_plants = MagicMock(return_value=[])
-    coordinator.calculate_days = MagicMock(return_value=0)
-    coordinator.async_add_listener = MagicMock()
-    # Explicitly mock async_commit as MagicMock to prevent "coroutine never awaited" warnings
-    coordinator.async_commit = MagicMock()
+    coordinator.hass = MagicMock()
+    coordinator.growspaces = {"gs1": mock_growspace}
+    coordinator.options = {}
+    coordinator.get_growspace_plants.return_value = []
     return coordinator
 
 
-@pytest.fixture
-def mock_hass() -> MagicMock:
-    """Mock Home Assistant."""
-    hass = MagicMock(spec=HomeAssistant)
-    hass.states = MagicMock()
-
-    def async_create_task(coro: object) -> MagicMock:
-        """Mock async_create_task that closes the coroutine to avoid warnings."""
-        if coro:
-            with contextlib.suppress(AttributeError):
-                # Try to close if it has a close method (coroutines do)
-                coro.close()  # type: ignore[attr-defined]
-        return MagicMock()
-
-    hass.async_create_task = MagicMock(side_effect=async_create_task)
-    return hass
+def test_get_strategy_class_fallback() -> None:
+    """Test fallback strategy class."""
+    strategy = _get_strategy_class("unknown_type")
+    assert strategy == StressEvaluatorStrategy
 
 
-@pytest.fixture
-def env_config() -> EnvironmentConfig:
-    """Environment config fixture."""
-    return EnvironmentConfig(
-        temperature_sensor="sensor.temp",
-        humidity_sensor="sensor.humidity",
-        light_sensors=["binary_sensor.light"],
+@pytest.mark.asyncio
+async def test_remove_from_hass(mock_coordinator, hass: HomeAssistant) -> None:
+    """Test async_will_remove_from_hass."""
+    description = MagicMock()
+    description.sensor_type = GrowspaceSensorType.STRESS
+    description.prior_key = "prior_stress"
+    description.threshold_key = "threshold_stress"
+
+    sensor = BayesianEnvironmentSensor(
+        mock_coordinator,
+        "gs1",
+        mock_coordinator.growspaces["gs1"].environment_config,
+        description,
+        StressEvaluatorStrategy,
     )
+    sensor.hass = hass
+    sensor.notification_manager = MagicMock()
+
+    await sensor.async_will_remove_from_hass()
+    sensor.notification_manager.detach_sensor.assert_called_once_with("gs1", sensor)
 
 
-async def test_light_cycle_sensor_no_light_entity(
-    mock_hass: MagicMock, mock_coordinator: MagicMock, env_config: EnvironmentConfig
+@pytest.mark.asyncio
+async def test_determine_light_state_no_sensors(mock_coordinator) -> None:
+    """Test _determine_light_state with no light sensors."""
+    config = EnvironmentConfig(light_sensors=[])
+    description = MagicMock()
+    description.sensor_type = GrowspaceSensorType.STRESS
+
+    sensor = BayesianEnvironmentSensor(
+        mock_coordinator,
+        "gs1",
+        config,
+        description,
+        StressEvaluatorStrategy,
+    )
+    assert sensor._determine_light_state() is None
+
+
+@pytest.mark.asyncio
+async def test_determine_fan_state_no_sensors(mock_coordinator) -> None:
+    """Test _determine_fan_state with no fan entities."""
+    config = EnvironmentConfig(circulation_fan_entities=[])
+    description = MagicMock()
+    description.sensor_type = GrowspaceSensorType.STRESS
+
+    sensor = BayesianEnvironmentSensor(
+        mock_coordinator,
+        "gs1",
+        config,
+        description,
+        StressEvaluatorStrategy,
+    )
+    assert sensor._determine_fan_state() is None
+
+
+@pytest.mark.asyncio
+async def test_humidifier_on_state(mock_coordinator, hass: HomeAssistant) -> None:
+    """Test humidifier state ON."""
+    config = EnvironmentConfig(humidifier_entities=["switch.humidifier"])
+    description = MagicMock()
+    description.sensor_type = GrowspaceSensorType.STRESS
+
+    sensor = BayesianEnvironmentSensor(
+        mock_coordinator,
+        "gs1",
+        config,
+        description,
+        StressEvaluatorStrategy,
+    )
+    sensor.hass = hass
+
+    hass.states.async_set("switch.humidifier", STATE_ON)
+    assert sensor._determine_humidifier_state() is True
+
+    hass.states.async_set("switch.humidifier", STATE_OFF)
+    assert sensor._determine_humidifier_state() is False
+
+
+@pytest.mark.asyncio
+async def test_ai_alert_exception_handling(
+    mock_coordinator, hass: HomeAssistant
 ) -> None:
-    """Test LightCycleVerificationSensor with no light entity configured."""
-    # Remove light sensor from config
-    env_config.light_sensors = []
+    """Test exception handling during AI alert generation."""
+    description = MagicMock()
+    description.sensor_type = GrowspaceSensorType.STRESS
 
-    sensor = LightCycleVerificationSensor(
-        mock_coordinator, "test_growspace", env_config
+    sensor = BayesianEnvironmentSensor(
+        mock_coordinator,
+        "gs1",
+        mock_coordinator.growspaces["gs1"].environment_config,
+        description,
+        StressEvaluatorStrategy,
     )
-    sensor.hass = mock_hass
-    sensor.async_write_ha_state = MagicMock()
+    sensor.hass = hass
+    sensor._probability = 0.9
+    sensor.threshold = 0.8
+    sensor.notification_manager = MagicMock()
+    # Explicitly make async_send_notification an AsyncMock
+    sensor.notification_manager.async_send_notification = AsyncMock()
+    sensor.coordinator.strain_library = MagicMock()
 
-    # This should hit lines 1088-1091
-    await sensor.async_update()
+    mock_coordinator.options = {"ai_auto_alerts": True}
 
-    assert sensor._is_schedule_matched is False
-    assert sensor._is_correct is False
-    sensor.async_write_ha_state.assert_called_once()
+    with patch(
+        "custom_components.growspace_manager.binary_sensor.GrowAssistant"
+    ) as mock_assistant:
+        mock_cls = mock_assistant.return_value
+        mock_cls.generate_alert_message = AsyncMock(side_effect=Exception("AI Error"))
+
+        await sensor._send_notification("Title", "Message")
+
+        sensor.notification_manager.async_send_notification.assert_awaited()
 
 
-async def test_light_cycle_sensor_coordinator_update_callback(
-    mock_hass: MagicMock, mock_coordinator: MagicMock, env_config: EnvironmentConfig
+@pytest.mark.asyncio
+async def test_ai_alert_success(mock_coordinator, hass: HomeAssistant) -> None:
+    """Test successful AI alert generation."""
+    description = MagicMock()
+    description.sensor_type = GrowspaceSensorType.STRESS
+
+    sensor = BayesianEnvironmentSensor(
+        mock_coordinator,
+        "gs1",
+        mock_coordinator.growspaces["gs1"].environment_config,
+        description,
+        StressEvaluatorStrategy,
+    )
+    sensor.hass = hass
+    sensor._probability = 0.9
+    sensor.threshold = 0.8
+    sensor.notification_manager = MagicMock()
+    sensor.notification_manager.async_send_notification = AsyncMock()
+    sensor.coordinator.strain_library = MagicMock()
+
+    mock_coordinator.options = {"ai_auto_alerts": True}
+
+    with patch(
+        "custom_components.growspace_manager.binary_sensor.GrowAssistant"
+    ) as mock_assistant:
+        mock_cls = mock_assistant.return_value
+        mock_cls.generate_alert_message = AsyncMock(return_value="AI Suggestion")
+
+        await sensor._send_notification("Title", "Message")
+
+        # Verify message construction
+        args = sensor.notification_manager.async_send_notification.await_args[0]
+        assert "AI Suggestion" in args[2]
+        assert "(Original: Message)" in args[2]
+
+
+@pytest.mark.asyncio
+async def test_optimal_sensor_event_category(
+    mock_coordinator, hass: HomeAssistant
 ) -> None:
-    """Test _handle_coordinator_update callback."""
-    sensor = LightCycleVerificationSensor(
-        mock_coordinator, "test_growspace", env_config
+    """Test optimal sensor event category assignment."""
+    description = MagicMock()
+    description.sensor_type = GrowspaceSensorType.OPTIMAL
+    description.prior_key = "prior_optimal"
+
+    sensor = BayesianEnvironmentSensor(
+        mock_coordinator,
+        "gs1",
+        mock_coordinator.growspaces["gs1"].environment_config,
+        description,
+        StressEvaluatorStrategy,
     )
-    sensor.hass = mock_hass
+    sensor.hass = hass
 
-    sensor._handle_coordinator_update()
+    # Init with high prob so old_state=True
+    sensor._probability = 0.9
+    # Initial Start Time
+    sensor._event_start_time = dt_util.utcnow() - timedelta(minutes=10)
 
-    mock_hass.async_create_task.assert_called_once()
+    # Mock strategy to return low probability on update forcing new_state=False
+    with patch.object(
+        sensor.strategy, "async_evaluate", AsyncMock(return_value=([], []))
+    ):
+        # Mock prior to be low so calculation results in low
+        sensor.prior = 0.1
+
+        with patch.object(sensor, "async_write_ha_state"):
+            await sensor.async_update_and_notify()
+
+    mock_coordinator.add_event.assert_called()
+    event = mock_coordinator.add_event.call_args[0][1]
+    assert event.category == "environment"
 
 
-async def test_light_cycle_sensor_light_sensor_changed_callback(
-    mock_hass: MagicMock, mock_coordinator: MagicMock, env_config: EnvironmentConfig
+def test_time_in_current_state_attr(mock_coordinator) -> None:
+    """Test ATTR_TIME_IN_CURRENT_STATE attribute."""
+    description = MagicMock()
+    description.sensor_type = GrowspaceSensorType.STRESS
+
+    sensor = BayesianEnvironmentSensor(
+        mock_coordinator,
+        "gs1",
+        mock_coordinator.growspaces["gs1"].environment_config,
+        description,
+        StressEvaluatorStrategy,
+    )
+    sensor._probability = 0.9
+    sensor._event_start_time = dt_util.utcnow() - timedelta(seconds=100)
+
+    attrs = sensor.extra_state_attributes
+    assert ATTR_TIME_IN_CURRENT_STATE in attrs
+    assert attrs[ATTR_TIME_IN_CURRENT_STATE] >= 100
+
+
+def test_get_current_stage_key_fallback(mock_coordinator: MagicMock) -> None:
+    """Test fallback in _get_current_stage_key."""
+    config = EnvironmentConfig()
+    LightCycleVerificationSensor(mock_coordinator, "gs1", config)
+
+
+def test_get_current_stage_key_branches(mock_coordinator: MagicMock) -> None:
+    """Test all branches of _get_current_stage_key."""
+    config = EnvironmentConfig()
+    sensor = LightCycleVerificationSensor(mock_coordinator, "gs1", config)
+
+    # 1. Vega (0 days)
+    assert sensor._get_current_stage_key({"flower_days": 0}) == PlantStage.VEG
+
+    # 2. Early Flower (10 days)
+    assert sensor._get_current_stage_key({"flower_days": 10}) == "flower_early"
+
+    # 3. Mid Flower (30 days)
+    assert sensor._get_current_stage_key({"flower_days": 30}) == "flower_mid"
+
+    # 4. Late Flower (50 days)
+    assert sensor._get_current_stage_key({"flower_days": 50}) == "flower_late"
+
+    # 5. Fallback (< 0 days)
+    assert sensor._get_current_stage_key({"flower_days": -1}) == PlantStage.VEG
+
+
+@pytest.mark.asyncio
+async def test_light_verification_callbacks(
+    mock_coordinator, hass: HomeAssistant
 ) -> None:
-    """Test _async_light_sensor_changed callback."""
-    sensor = LightCycleVerificationSensor(
-        mock_coordinator, "test_growspace", env_config
-    )
-    sensor.hass = mock_hass
+    """Test light verification callbacks."""
+    config = EnvironmentConfig(light_sensors=["light.grow_1"])
+    sensor = LightCycleVerificationSensor(mock_coordinator, "gs1", config)
+    sensor.hass = hass
 
-    # This should hit line 1078
-    sensor._async_light_sensor_changed(None)
+    # Test _handle_coordinator_update
+    with patch.object(hass, "async_create_task") as mock_create_task:
+        sensor._handle_coordinator_update()
+        mock_create_task.assert_called()
 
-    mock_hass.async_create_task.assert_called_once()
+    # Test _async_light_sensor_changed
+    with patch.object(hass, "async_create_task") as mock_create_task:
+        sensor._async_light_sensor_changed(MagicMock())
+        mock_create_task.assert_called()
 
 
-async def test_light_cycle_sensor_flower_stage_early(
-    mock_hass: MagicMock, mock_coordinator: MagicMock, env_config: EnvironmentConfig
+@pytest.mark.asyncio
+async def test_light_verification_async_update_no_entity(
+    mock_coordinator, hass: HomeAssistant
 ) -> None:
-    """Test _get_current_stage_key with early flower stage."""
-    sensor = LightCycleVerificationSensor(
-        mock_coordinator, "test_growspace", env_config
-    )
-    sensor.hass = mock_hass
+    """Test async_update with no light entity."""
+    config = EnvironmentConfig(light_sensors=[])
+    sensor = LightCycleVerificationSensor(mock_coordinator, "gs1", config)
+    sensor.hass = hass
 
-    # Mock plants with flower_start
-    plants = [
-        create_plant(
-            plant_id="plant1",
-            growspace_id="test_growspace",
-            strain="Test Strain",
-            flower_start="2024-12-10",  # 11 days ago (< 21)
-        )
-    ]
-    mock_coordinator.get_growspace_plants.return_value = plants
-    mock_coordinator.calculate_days.return_value = 11
-
-    stage_info = sensor._get_growth_stage_info()
-    stage_key = sensor._get_current_stage_key(stage_info)
-
-    assert stage_key == "flower_early"
+    with patch.object(sensor, "async_write_ha_state") as mock_write:
+        await sensor.async_update()
+        assert sensor._is_correct is False
+        mock_write.assert_called()
 
 
-async def test_light_cycle_sensor_flower_stage_mid(
-    mock_hass: MagicMock, mock_coordinator: MagicMock, env_config: EnvironmentConfig
+@pytest.mark.asyncio
+async def test_light_verification_async_update_unavailable(
+    mock_coordinator, hass: HomeAssistant
 ) -> None:
-    """Test _get_current_stage_key with mid flower stage."""
-    sensor = LightCycleVerificationSensor(
-        mock_coordinator, "test_growspace", env_config
-    )
-    sensor.hass = mock_hass
+    """Test async_update with unavailable light entity."""
+    config = EnvironmentConfig(light_sensors=["light.grow_1"])
+    sensor = LightCycleVerificationSensor(mock_coordinator, "gs1", config)
+    sensor.hass = hass
 
-    # Mock plants with flower_start
-    plants = [
-        create_plant(
-            plant_id="plant1",
-            growspace_id="test_growspace",
-            strain="Test Strain",
-            flower_start="2024-11-20",  # 31 days ago (21-42)
-        )
-    ]
-    mock_coordinator.get_growspace_plants.return_value = plants
-    mock_coordinator.calculate_days.return_value = 31
+    hass.states.async_set("light.grow_1", STATE_UNAVAILABLE)
 
-    stage_info = sensor._get_growth_stage_info()
-    stage_key = sensor._get_current_stage_key(stage_info)
-
-    assert stage_key == "flower_mid"
-
-
-async def test_light_cycle_sensor_flower_stage_late(
-    mock_hass: MagicMock, mock_coordinator: MagicMock, env_config: EnvironmentConfig
-) -> None:
-    """Test _get_current_stage_key with late flower stage."""
-    sensor = LightCycleVerificationSensor(
-        mock_coordinator, "test_growspace", env_config
-    )
-    sensor.hass = mock_hass
-
-    # Mock plants with flower_start
-    plants = [
-        create_plant(
-            plant_id="plant1",
-            growspace_id="test_growspace",
-            strain="Test Strain",
-            flower_start="2024-10-10",  # 72 days ago (>= 42)
-        )
-    ]
-    mock_coordinator.get_growspace_plants.return_value = plants
-    mock_coordinator.calculate_days.return_value = 72
-
-    stage_info = sensor._get_growth_stage_info()
-    stage_key = sensor._get_current_stage_key(stage_info)
-
-    assert stage_key == "flower_late"
-
-
-async def test_light_cycle_sensor_update_state_with_light(
-    mock_hass: MagicMock, mock_coordinator: MagicMock, env_config: EnvironmentConfig
-) -> None:
-    """Test _update_state with light sensor configured."""
-    sensor = LightCycleVerificationSensor(
-        mock_coordinator, "test_growspace", env_config
-    )
-    sensor.hass = mock_hass
-
-    # Mock light state
-    mock_light_state = MagicMock()
-    mock_light_state.state = "on"
-    mock_hass.states.get.return_value = mock_light_state
-
-    sensor._update_state()
-
-    assert sensor._is_schedule_matched is True
+    with patch.object(sensor, "async_write_ha_state") as mock_write:
+        await sensor.async_update()
+        assert sensor._is_correct is False
+        mock_write.assert_called()

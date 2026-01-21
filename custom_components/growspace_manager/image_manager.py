@@ -106,6 +106,7 @@ class ImageManager:
                     continue
 
                 try:
+                    # Image.open returns Image.Image (no cast needed)
                     img = Image.open(jpg_path)
 
                     # Convert to RGB if needed

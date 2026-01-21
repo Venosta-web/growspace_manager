@@ -6,7 +6,7 @@ import asyncio
 from dataclasses import asdict
 from datetime import date, datetime, timedelta
 import logging
-from typing import Any, cast
+from typing import Any
 import uuid
 
 from homeassistant.config_entries import ConfigEntry, ConfigEntryState
@@ -91,7 +91,7 @@ NotificationDict = dict[str, Any]
 DateInput = datetime | date | str | None
 
 
-class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):  # type: ignore[misc]
+class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     """Manages Growspace, Plant, and Strain data for the Growspace Manager integration.
 
     This class handles loading, saving, and updating all the core data entities,
@@ -100,6 +100,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):  # type: igno
     entities.
     """
 
+    config_entry: ConfigEntry[GrowspaceCoordinator]
     growspaces: dict[str, Growspace] = {}
     plants: dict[str, Plant] = {}
     strain_library: StrainLibrary | None = None
@@ -647,7 +648,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):  # type: igno
         await self.notification_manager.async_check_timed_notifications()
         await self.environment_analyzer.async_update_air_exchange_recommendations()
 
-        return self.data  # type: ignore[no-any-return, has-type]
+        return self.data
 
     async def async_commit(self) -> None:
         """Commit changes to storage and notify listeners."""
@@ -655,7 +656,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):  # type: igno
         self._invalidate_cache()
         self.update_data_property()
         await self.storage_manager.async_save()
-        self.async_set_updated_data(self.data)  # type: ignore[has-type]
+        self.async_set_updated_data(self.data)
         self.async_fire_growspace_updated()
 
         for gs_id in self.growspaces:
@@ -764,8 +765,8 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):  # type: igno
         """Update the central `self.data` property to reflect the current coordinator state."""
         # Preserve existing recommendations if valid
         recs = {}
-        if self.data and isinstance(self.data, dict):  # type: ignore[has-type]
-            recs = self.data.get("air_exchange_recommendations", {})  # type: ignore[has-type]
+        if self.data and isinstance(self.data, dict):
+            recs = self.data.get("air_exchange_recommendations", {})
 
         # Optimized: Serialize growspaces using cache
         serialized_growspaces = {}
@@ -1951,7 +1952,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):  # type: igno
         registry: er.EntityRegistry = er.async_get(self.hass)
         entity_id = registry.async_get_entity_id("sensor", DOMAIN, unique_id)
         if entity_id:
-            return cast(str, entity_id)
+            return entity_id  # type: ignore[no-any-return]  # Entity Registry returns Any
 
         # Fallback: Handle special cases logic data-driven
         for special_def in SPECIAL_GROWSPACES.values():
@@ -1962,7 +1963,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):  # type: igno
                 canonical_uid = generate_growspace_overview_unique_id(str(canonical_id))
                 eid = registry.async_get_entity_id("sensor", DOMAIN, canonical_uid)
                 if eid:
-                    return cast(str, eid)
+                    return eid
                 return f"sensor.{canonical_id}"
 
         # Standard Fallback

@@ -6,7 +6,12 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from custom_components.growspace_manager.models import Growspace, IrrigationStrategy
+from custom_components.growspace_manager.models import (
+    EnvironmentConfig,
+    Growspace,
+    IrrigationConfig,
+    IrrigationStrategy,
+)
 from custom_components.growspace_manager.vwc_irrigation_coordinator import (
     VWCIrrigationCoordinator,
 )
@@ -36,8 +41,8 @@ def mock_growspace():
     growspace = Growspace(
         id="gs1",
         name="Test Growspace",
-        environment_config={"soil_moisture_sensor": "sensor.moisture"},
-        irrigation_config={"irrigation_pump_entity": "switch.pump"},
+        environment_config=EnvironmentConfig(soil_moisture_sensor="sensor.moisture"),
+        irrigation_config=IrrigationConfig(irrigation_pump_entity="switch.pump"),
     )
     growspace.irrigation_strategy = IrrigationStrategy(
         enabled=True,
@@ -219,7 +224,7 @@ async def test_p3_dryback(vwc_coordinator, mock_hass) -> None:
 
 async def test_missing_sensor(vwc_coordinator, mock_hass, mock_growspace) -> None:
     """Test handling of missing sensor."""
-    mock_growspace.environment_config = {}  # No sensor
+    mock_growspace.environment_config = EnvironmentConfig()  # No sensor
 
     now = datetime(2023, 1, 1, 10, 0, 0, tzinfo=dt_util.UTC)
 
@@ -233,10 +238,10 @@ async def test_custom_day_hours(vwc_coordinator, mock_hass, mock_growspace) -> N
     """Test custom day hours from environment config."""
     # Config: 10 hours day (Lights On 08:00 -> Off 18:00)
     # P2 Stop = 120 min before off -> 16:00
-    mock_growspace.environment_config = {
-        "soil_moisture_sensor": "sensor.moisture",
-        "flower_day_hours": 10,
-    }
+    mock_growspace.environment_config = EnvironmentConfig(
+        soil_moisture_sensor="sensor.moisture",
+        flower_day_hours=10,
+    )
 
     # Case A: 15:00 -> Should be P2 (15 < 16)
     now_p2 = datetime(2023, 1, 1, 15, 0, 0, tzinfo=dt_util.UTC)
@@ -394,7 +399,7 @@ async def test_shot_interval_logic(vwc_coordinator, mock_hass) -> None:
 async def test_missing_pump_entity(vwc_coordinator, mock_growspace, mock_hass) -> None:
     """Test logic when pump entity is configured as empty/None."""
     # Remove pump entity
-    mock_growspace.irrigation_config["irrigation_pump_entity"] = None
+    mock_growspace.irrigation_config.irrigation_pump_entity = None
 
     strategy = mock_growspace.irrigation_strategy
 
