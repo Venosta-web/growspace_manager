@@ -47,7 +47,7 @@ def mock_plants():
 
 @pytest.fixture
 def mock_coordinator(hass: HomeAssistant, mock_plants):
-    coordinator = MagicMock(spec=GrowspaceCoordinator)
+    coordinator = MagicMock()
     coordinator.hass = hass
     coordinator.plants = mock_plants
     coordinator.get_growspace_plants = lambda gid: [

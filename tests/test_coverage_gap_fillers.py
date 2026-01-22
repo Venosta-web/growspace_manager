@@ -1,4 +1,4 @@
-from unittest.mock import AsyncMock, Mock, patch
+from unittest.mock import AsyncMock, MagicMock, Mock, patch
 
 from custom_components.growspace_manager.config_handlers.environment_config_handler import (
     EnvironmentConfigHandler,
@@ -33,7 +33,8 @@ async def test_add_plants_with_base_phenotype(hass: HomeAssistant) -> None:
     mock_coordinator.growspaces = {"gs1": Mock()}
     mock_coordinator.validator = Mock()
     mock_coordinator.validator.find_first_available_position.return_value = (1, 1)
-    mock_coordinator.async_add_plant = AsyncMock()
+    mock_coordinator._plant_service = MagicMock()
+    mock_coordinator._plant_service.add_plant = AsyncMock()
 
     mock_strain_library = Mock()
 
@@ -54,8 +55,8 @@ async def test_add_plants_with_base_phenotype(hass: HomeAssistant) -> None:
     await handle_add_plants(hass, mock_coordinator, mock_strain_library, call)
 
     # Verify
-    mock_coordinator.async_add_plant.assert_called_once()
-    call_kwargs = mock_coordinator.async_add_plant.call_args.kwargs
+    mock_coordinator._plant_service.add_plant.assert_called_once()
+    call_kwargs = mock_coordinator._plant_service.add_plant.call_args.kwargs
 
     # Check that 'Bluey #1' was passed as phenotype
     assert call_kwargs["phenotype"] == "Bluey #1"

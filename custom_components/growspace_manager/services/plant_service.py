@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING, Any
 from custom_components.growspace_manager.const import PlantStage
 from custom_components.growspace_manager.events import (
     EVENT_PLANT_ADDED,
+    EVENT_PLANT_HARVESTED,
     EVENT_PLANT_MOVED,
     EVENT_PLANT_REMOVED,
     EVENT_PLANT_SWITCHED,
@@ -22,6 +23,7 @@ from custom_components.growspace_manager.events import (
     async_fire_plant_event,
 )
 from custom_components.growspace_manager.models import Plant
+from custom_components.growspace_manager.utils import calculate_plant_stage
 
 if TYPE_CHECKING:
     from custom_components.growspace_manager.coordinator import GrowspaceCoordinator
@@ -82,7 +84,7 @@ class PlantService:
             source_mother=source_mother,
         )
 
-        self.coordinator.invalidate_cache(growspace_id)
+        self.coordinator.cache.invalidate(growspace_id)
 
         self.coordinator.fire_event(
             "plant_added", {"plant": self.coordinator.serializer.serialize_plant(plant)}
@@ -114,7 +116,7 @@ class PlantService:
         Returns:
             The newly created mother Plant object.
         """
-        mother_id: str = self.coordinator.ensure_mother_growspace()
+        mother_id: str = self.coordinator._growspace_service.ensure_mother_growspace()
         kwargs["type"] = PlantStage.MOTHER
 
         # Set mother_start to today if not provided
@@ -166,7 +168,7 @@ class PlantService:
             clone_gs_id = target_growspace_id
         else:
             # Default to clone growspace
-            clone_gs_id = self.coordinator.ensure_special_growspace(
+            clone_gs_id = self.coordinator._growspace_service.ensure_special_growspace(
                 PlantStage.CLONE, "clone", 5, 5
             )
 
@@ -177,7 +179,7 @@ class PlantService:
             transition_date = date.today()
 
         # Pre-invalidate clone growspace cache
-        self.coordinator.invalidate_cache(clone_gs_id)
+        self.coordinator.cache.invalidate(clone_gs_id)
 
         for _ in range(num_clones):
             row, col = self.coordinator.validator.find_first_available_position(
@@ -222,13 +224,13 @@ class PlantService:
         # Invalidate current growspace (logic for move)
         if plant := self.coordinator.plants.get(plant_id):
             # Invalidate cache for the current growspace to reflect updates (e.g. stage change)
-            self.coordinator.invalidate_cache(plant.growspace_id)
+            self.coordinator.cache.invalidate(plant.growspace_id)
 
             if (
                 "growspace_id" in updates
                 and updates["growspace_id"] != plant.growspace_id
             ):
-                self.coordinator.invalidate_cache(updates["growspace_id"])
+                self.coordinator.cache.invalidate(updates["growspace_id"])
 
         plant = await self.coordinator.lifecycle_manager.async_update_plant(
             plant_id, **updates
@@ -246,7 +248,7 @@ class PlantService:
     async def move_plant(self, plant_id: str, new_row: int, new_col: int) -> None:
         """Move a plant to a new position via lifecycle manager."""
         if plant := self.coordinator.plants.get(plant_id):
-            self.coordinator.invalidate_cache(plant.growspace_id)
+            self.coordinator.cache.invalidate(plant.growspace_id)
 
         await self.coordinator.lifecycle_manager.async_move_plant(
             plant_id, new_row, new_col
@@ -267,9 +269,9 @@ class PlantService:
         p2 = self.coordinator.plants.get(plant2_id)
 
         if p1:
-            self.coordinator.invalidate_cache(p1.growspace_id)
+            self.coordinator.cache.invalidate(p1.growspace_id)
         if p2:
-            self.coordinator.invalidate_cache(p2.growspace_id)
+            self.coordinator.cache.invalidate(p2.growspace_id)
 
         await self.coordinator.lifecycle_manager.async_switch_plants(
             plant1_id, plant2_id
@@ -315,7 +317,7 @@ class PlantService:
         if not plant:
             return False
 
-        self.coordinator.invalidate_cache(plant.growspace_id)
+        self.coordinator.cache.invalidate(plant.growspace_id)
 
         removed = await self.coordinator.lifecycle_manager.async_remove_plant(plant_id)
         if removed:
@@ -337,3 +339,126 @@ class PlantService:
             The Plant object if found, otherwise None.
         """
         return self.coordinator.data_repository.get_plant(plant_id)
+
+    # =========================================================================
+    # STAGE TRANSITION CONVENIENCE METHODS
+    # =========================================================================
+
+    async def start_flowering(self, plant_id: str) -> Plant:
+        """Transition a plant to the 'flower' stage, starting today.
+
+        Args:
+            plant_id: The ID of the plant to start flowering.
+
+        Returns:
+            The updated Plant object.
+        """
+        await self.transition_plant_stage(plant_id, PlantStage.FLOWER, date.today())
+        return self.coordinator.plants[plant_id]
+
+    async def start_drying(self, plant_id: str) -> Plant:
+        """Transition a plant to the 'drying' stage, starting today.
+
+        Args:
+            plant_id: The ID of the plant to start drying.
+
+        Returns:
+            The updated Plant object.
+        """
+        await self.transition_plant_stage(plant_id, PlantStage.DRY, date.today())
+        return self.coordinator.plants[plant_id]
+
+    async def start_curing(self, plant_id: str) -> Plant:
+        """Transition a plant to the 'curing' stage, starting today.
+
+        Args:
+            plant_id: The ID of the plant to start curing.
+
+        Returns:
+            The updated Plant object.
+        """
+        await self.transition_plant_stage(plant_id, PlantStage.CURE, date.today())
+        return self.coordinator.plants[plant_id]
+
+    async def harvest(self, plant_id: str) -> Plant:
+        """Quick harvest - mark plant as harvested and transition to drying stage.
+
+        This is a convenience method that transitions the plant to the dry stage
+        starting today.
+
+        Args:
+            plant_id: The ID of the plant to harvest.
+
+        Returns:
+            The updated Plant object.
+        """
+        return await self.start_drying(plant_id)
+
+    # =========================================================================
+    # HARVEST ORCHESTRATION
+    # =========================================================================
+
+    async def harvest_plant(
+        self,
+        plant_id: str,
+        target_growspace_id: str | None = None,
+        target_growspace_name: str | None = None,
+        transition_date: str | None = None,
+    ) -> None:
+        """Harvest a plant, which may involve moving it to a 'dry' or 'cure' growspace.
+
+        This method orchestrates the harvest process, including recording analytics
+        and moving the plant based on an explicit target or an automatic flow.
+
+        Args:
+            plant_id: The ID of the plant to harvest.
+            target_growspace_id: The explicit ID of the growspace to move the plant to (optional).
+            target_growspace_name: The name of the target growspace (used as a hint).
+            transition_date: The date of the harvest (optional, defaults to today).
+        """
+        self.coordinator.validator.validate_plant_exists(plant_id)
+
+        plant = self.coordinator.plants[plant_id]
+        transition_date = transition_date or date.today().isoformat()
+
+        # Log harvest start
+        stage_before = calculate_plant_stage(plant)
+        _LOGGER.info(
+            "Harvest start: plant_id=%s stage=%s current_growspace=%s target_id=%s target_name=%s date=%s",
+            plant_id,
+            stage_before,
+            plant.growspace_id,
+            target_growspace_id,
+            target_growspace_name,
+            transition_date,
+        )
+
+        # Invalidate source
+        self.coordinator.cache.invalidate(plant.growspace_id)
+        # Invalidate target if known (and different)
+        if target_growspace_id:
+            self.coordinator.cache.invalidate(target_growspace_id)
+
+        moved = await self.coordinator.lifecycle_manager.handle_harvest_logic(
+            plant_id, plant, target_growspace_id, target_growspace_name, transition_date
+        )
+
+        # Invalidate common harvest targets just in case
+        if moved:
+            self.coordinator.cache.invalidate("dry")
+            self.coordinator.cache.invalidate("cure")
+
+        await self.coordinator.async_commit()
+
+        _LOGGER.info(
+            "Harvest end: plant_id=%s moved=%s target_growspace_id=%s row=%s col=%s stage=%s dry_start=%s cure_start=%s",
+            plant_id,
+            moved,
+            target_growspace_id,
+            plant.row,
+            plant.col,
+            plant.stage,
+            plant.dry_start,
+            plant.cure_start,
+        )
+        async_fire_plant_event(self.coordinator.hass, EVENT_PLANT_HARVESTED, plant)

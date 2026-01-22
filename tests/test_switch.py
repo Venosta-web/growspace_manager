@@ -18,7 +18,7 @@ from custom_components.growspace_manager.switch import (
 @pytest.fixture
 def mock_coordinator() -> GrowspaceCoordinator:
     """Return a mock coordinator with sample growspaces."""
-    coordinator = Mock(spec=GrowspaceCoordinator)
+    coordinator = Mock()
     coordinator.hass = Mock()
     coordinator.growspaces = {
         "gs1": {
@@ -94,7 +94,7 @@ async def test_growspace_notification_switch_on_off(mock_coordinator) -> None:
     growspace = Growspace(id="gs1", name="Growspace 1", notification_target="notify_me")
 
     # Mock coordinator methods
-    mock_coordinator.async_set_growspace_notification = AsyncMock()
+    mock_coordinator.set_notifications_enabled = AsyncMock()
     mock_coordinator.is_notifications_enabled = Mock(return_value=True)
 
     switch = GrowspaceNotificationSwitch(

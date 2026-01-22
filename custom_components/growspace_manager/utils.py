@@ -11,11 +11,10 @@ from dateutil import parser
 from homeassistant.util.dt import as_local, now
 
 from .const import DOMAIN, PlantStage
+from .types import DateInput
 
 if TYPE_CHECKING:
     from .models import Growspace, Plant
-
-DateInput = str | datetime | date | None
 
 
 def parse_date_field(date_value: DateInput) -> datetime | None:

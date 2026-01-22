@@ -95,7 +95,7 @@ class NutrientManager:
 
         # Invalidate cache for all growspaces as presets are global
         # Invalidate cache for all growspaces as presets are global
-        self._coordinator.invalidate_cache()
+        self._coordinator.cache.invalidate()
 
         return preset
 
@@ -109,7 +109,7 @@ class NutrientManager:
         await self._coordinator.async_save()
 
         # Invalidate cache
-        self._coordinator.invalidate_cache()
+        self._coordinator.cache.invalidate()
 
         _LOGGER.info("Removed nutrient preset '%s' (id=%s)", preset_name, preset_id)
 

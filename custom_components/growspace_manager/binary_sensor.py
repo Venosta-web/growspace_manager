@@ -300,13 +300,13 @@ class BayesianEnvironmentSensor(
         return self._reasons
 
     @property
-    @override
+    @override  # type: ignore[misc]
     def is_on(self) -> bool:
         """Return true if the sensor is on (probability > threshold)."""
         return self._probability >= self.threshold
 
     @property
-    @override
+    @override  # type: ignore[misc]
     def extra_state_attributes(self) -> dict[str, Any]:
         """Return the state attributes."""
         attrs = {

@@ -20,7 +20,7 @@ from homeassistant.util import dt as dt_util
 @pytest.fixture
 def mock_coordinator(hass: HomeAssistant) -> GrowspaceCoordinator:
     """Mock the GrowspaceCoordinator."""
-    coordinator = MagicMock(spec=GrowspaceCoordinator)
+    coordinator = MagicMock()
     coordinator.hass = hass
     coordinator.growspaces = {}
     return coordinator

@@ -23,6 +23,9 @@ from .const import (
     CONF_LIGHT_SENSORS,
     PlantStage,
 )
+
+# Import type aliases from centralized types module
+from .types import BayesianOptions, DehumidifierThresholds, NutrientMap
 from .utils import calculate_days_since, days_to_week
 
 _LOGGER = logging.getLogger(__name__)
@@ -74,11 +77,6 @@ class DehumidifierRange(TypedDict):
 
     on: float
     off: float
-
-
-DehumidifierThresholds = dict[str, dict[str, DehumidifierRange]]
-BayesianOptions = dict[str, Any]
-NutrientMap = dict[str, float]
 
 
 class NutrientEntry(TypedDict):

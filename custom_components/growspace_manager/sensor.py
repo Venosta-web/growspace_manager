@@ -865,7 +865,7 @@ class GrowspaceListSensor(SensorEntity):  # type: ignore[misc]
 
     def _update_growspaces(self) -> None:
         """Update the internal list of growspaces from the coordinator."""
-        self._growspaces = self.coordinator.get_growspace_options()
+        self._growspaces = self.coordinator._growspace_service.get_growspace_options()
 
     @property
     @override  # type: ignore[misc]

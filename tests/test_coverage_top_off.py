@@ -235,13 +235,13 @@ async def test_batch_add_mother_auto_date_coverage(hass: HomeAssistant) -> None:
     mock_coordinator = MagicMock()
     mock_coordinator.growspaces = {"mother": MagicMock()}
     mock_coordinator.validator.find_first_available_position.return_value = (1, 1)
-    mock_coordinator.async_add_plant = AsyncMock()
+    mock_coordinator._plant_service.add_plant = AsyncMock()
 
     call = MagicMock()
     call.data = {ATTR_GROWSPACE_ID: "mother", ATTR_STRAIN: "Strain A", ATTR_AMOUNT: 1}
 
     await handle_add_plants(hass, mock_coordinator, MagicMock(), call)
-    _args, kwargs = mock_coordinator.async_add_plant.call_args
+    _args, kwargs = mock_coordinator._plant_service.add_plant.call_args
     assert kwargs.get("mother_start") is not None
 
 
@@ -706,59 +706,6 @@ def test_downsample_empty_idx_coverage() -> None:
     assert res == []
 
 
-def test_coordinator_extract_gs_ids_coverage() -> None:
-    """Test GrowspaceCoordinator ID extraction helpers (244-277)."""
-    MagicMock()
-
-    # We can just mock the instance and call the methods on it
-    coordinator = MagicMock()
-    coordinator.growspaces = {"gs3": MagicMock()}
-    coordinator.plants = {"p1": MagicMock(growspace_id="gs3")}
-
-    gs_ids: set[str] = set()
-
-    # Strategy 1 result: hasattr(result, "growspace_id")
-    class MockResult:
-        def __init__(self, gs_id=None, rid=None, ppr=None) -> None:
-            if gs_id:
-                self.growspace_id = gs_id
-            if rid:
-                self.id = rid
-            if ppr:
-                self.plants_per_row = ppr
-
-    res_obj = MockResult(gs_id="gs1")
-    GrowspaceCoordinator._extract_gs_ids_from_result(coordinator, res_obj, gs_ids)
-    assert "gs1" in gs_ids
-
-    # Strategy 1 result: hasattr(result, "id") and hasattr(result, "plants_per_row")
-    res_gs = MockResult(rid="gs2", ppr=4)
-    GrowspaceCoordinator._extract_gs_ids_from_result(coordinator, res_gs, gs_ids)
-    assert "gs2" in gs_ids
-
-    # Strategy 2 args/kwargs
-    gs_ids = set()
-    GrowspaceCoordinator._extract_gs_ids_from_args(
-        coordinator, (), {"growspace_id": "gs3"}, gs_ids
-    )
-    assert "gs3" in gs_ids
-
-    gs_ids = set()
-    GrowspaceCoordinator._extract_gs_ids_from_args(coordinator, ("gs3",), {}, gs_ids)
-    assert "gs3" in gs_ids
-
-    # Strategy 3 plant_id
-    gs_ids = set()
-    GrowspaceCoordinator._extract_gs_ids_from_args(
-        coordinator, (), {"plant_id": "p1"}, gs_ids
-    )
-    assert "gs3" in gs_ids
-
-    gs_ids = set()
-    GrowspaceCoordinator._extract_gs_ids_from_args(coordinator, ("p1",), {}, gs_ids)
-    assert "gs3" in gs_ids
-
-
 @pytest.mark.asyncio
 async def test_lifecycle_history_stages_coverage(hass: HomeAssistant) -> None:
     """Test transition_plant_stage stage branches to hit move methods."""
@@ -773,7 +720,8 @@ async def test_lifecycle_history_stages_coverage(hass: HomeAssistant) -> None:
     mock_coordinator.plants = {"p1": plant}
 
     manager = PlantLifecycleManager(mock_coordinator)
-    manager.async_update_plant = AsyncMock()  # type: ignore[method-assign]
+    mock_coordinator._plant_service.update_plant = AsyncMock()  # type: ignore[method-assign]
+    mock_coordinator.async_commit = AsyncMock()
     manager.move_to_dry_growspace = AsyncMock()  # type: ignore[method-assign]
     manager.move_to_cure_growspace = AsyncMock()  # type: ignore[method-assign]
     manager.move_to_clone_growspace = AsyncMock()  # type: ignore[method-assign]

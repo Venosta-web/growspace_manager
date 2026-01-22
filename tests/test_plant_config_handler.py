@@ -36,7 +36,17 @@ def mock_coordinator() -> MagicMock:
     }
     coordinator.get_strain_options.return_value = ["Strain A", "Strain B"]
 
-    # Async methods
+    # Services
+    coordinator._growspace_service = MagicMock()
+    coordinator._growspace_service.add_growspace = AsyncMock()
+    coordinator._growspace_service.update_growspace = AsyncMock()
+
+    coordinator._plant_service = MagicMock()
+    coordinator._plant_service.add_plant = AsyncMock()
+    coordinator._plant_service.remove_plant = AsyncMock()
+    coordinator._plant_service.harvest_plant = AsyncMock()
+    coordinator._plant_service.update_plant = AsyncMock()
+
     coordinator.async_harvest_plant = AsyncMock()
     coordinator.async_remove_plant = AsyncMock()
     coordinator.async_add_plant = AsyncMock()

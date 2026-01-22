@@ -277,20 +277,20 @@ def test_get_serialization_data(manager) -> None:
 async def test_cache_invalidation(manager, mock_coordinator) -> None:
     """Test cache invalidation on save/remove."""
     # Setup cache mock - must be a Mock object to have methods like clear
-    mock_coordinator._serialized_cache = MagicMock()
+    mock_coordinator.cache = MagicMock()
 
     # Save
     await manager.async_save_nutrient_preset("Test", [])
-    mock_coordinator.invalidate_cache.assert_called_once()
+    mock_coordinator.cache.invalidate.assert_called_once()
 
     # Reset
-    mock_coordinator.invalidate_cache.reset_mock()
+    mock_coordinator.cache.invalidate.reset_mock()
 
     await manager.async_save_nutrient_preset("Test 2", [])
-    mock_coordinator.invalidate_cache.assert_called_once()
+    mock_coordinator.cache.invalidate.assert_called_once()
 
     # Reset
-    mock_coordinator.invalidate_cache.reset_mock()
+    mock_coordinator.cache.invalidate.reset_mock()
 
     await manager.async_remove_nutrient_preset(list(manager.presets.keys())[0])
-    mock_coordinator.invalidate_cache.assert_called_once()
+    mock_coordinator.cache.invalidate.assert_called_once()

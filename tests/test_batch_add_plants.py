@@ -1,7 +1,7 @@
 """Test batch add plants service."""
 
 from datetime import date, datetime
-from unittest.mock import AsyncMock, Mock
+from unittest.mock import AsyncMock, MagicMock, Mock
 
 import pytest
 
@@ -25,8 +25,10 @@ def mock_growspace() -> Mock:
 def mock_coordinator(mock_growspace: Mock) -> Mock:
     """Create a mock coordinator."""
     coordinator = Mock()
+    coordinator._plant_service = MagicMock()
+    coordinator._plant_service.add_plant = AsyncMock()
     coordinator.growspaces = {"gs1": mock_growspace}
-    coordinator.async_add_plant = AsyncMock()
+    coordinator.async_add_plant = coordinator._plant_service.add_plant
     coordinator.validator = Mock()
     # default infinite space
     coordinator.validator.find_first_available_position = Mock(return_value=(1, 1))

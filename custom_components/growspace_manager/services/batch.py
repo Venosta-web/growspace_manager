@@ -38,7 +38,7 @@ async def handle_batch_action(
     for entity_id in entity_ids:
         try:
             if action == "transition":
-                await coordinator.async_transition_plant_stage(
+                await coordinator._plant_service.transition_plant_stage(
                     plant_id=entity_id,
                     new_stage=data[ATTR_STAGE],
                     transition_date=data.get(ATTR_TRANSITION_DATE),

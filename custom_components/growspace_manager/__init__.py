@@ -106,7 +106,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: GrowspaceConfigEntry) ->
     pending = entry.data.get("pending_growspace")
     if pending:
         try:
-            await coordinator.async_add_growspace(
+            await coordinator._growspace_service.add_growspace(
                 name=pending["name"],
                 rows=pending["rows"],
                 plants_per_row=pending["plants_per_row"],

@@ -55,7 +55,7 @@ class EnvironmentConfigHandler(BaseConfigHandler[dict[str, Any]]):
         if coordinator is None:
             return self.flow.async_abort(reason="setup_error")
 
-        growspace_options = coordinator.get_sorted_growspace_options()
+        growspace_options = coordinator._growspace_service.get_sorted_growspace_options()
 
         if not growspace_options:
             return self.flow.async_abort(reason="no_growspaces")

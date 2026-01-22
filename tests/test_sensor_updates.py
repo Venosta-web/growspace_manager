@@ -34,7 +34,7 @@ def mock_hass():
 
     hass.async_create_task = MagicMock(side_effect=run_task)
 
-    coordinator = MagicMock(spec=GrowspaceCoordinator)
+    coordinator = MagicMock()
     coordinator.hass = hass
     coordinator.growspaces = {}
     coordinator.plants = {}

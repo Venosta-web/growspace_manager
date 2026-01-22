@@ -21,7 +21,7 @@ from homeassistant.util import dt as dt_util
 # --- Fixtures ---
 @pytest.fixture
 def mock_coordinator(hass: HomeAssistant):
-    coord = MagicMock(spec=GrowspaceCoordinator)
+    coord = MagicMock()
     coord.hass = hass
     coord.growspaces = {"gs1": Growspace(id="gs1", name="Test Growspace")}
     coord.notification_manager = MagicMock()

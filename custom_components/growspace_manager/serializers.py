@@ -1,4 +1,4 @@
-"""Serializers for the Growspace Manager integration."""
+"""Serialization logic for Growspace Manager data structures."""
 
 from __future__ import annotations
 
@@ -29,6 +29,8 @@ from .const import (
     PlantStage,
 )
 from .models import Growspace, Plant
+
+# Import centralized types for better type safety
 from .utils import (
     calculate_days_since,
     calculate_plant_stage,
@@ -46,45 +48,6 @@ class GrowspaceSerializer:
     def __init__(self, hass: HomeAssistant) -> None:
         """Initialize the serializer."""
         self.hass = hass
-        # We can't easily inject coordinator here because serializer is often initialized
-        # by the coordinator itself or before it.
-        # But EnvironmentAnalyzer requires a coordinator.
-        # This is a circular dependency risk or just initialization order issue.
-        # However, EnvironmentAnalyzer only needs coordinator for recommendations in the OLD code.
-        # But my NEW calculate_biological_metrics code in EnvironmentAnalyzer
-        # DOES NOT use self.coordinator. It takes growspace as argument.
-        # So I can initialize it with None for coordinator if I only use that method?
-        # Or better, the Serializer shouldn't own the Analyzer, the *Coordinator* should.
-        # BUT the serializer methods take `growspace` and `plants`.
-
-        # Let's instantiate it with just hass for now, but EnvironmentAnalyzer constructor
-        # expects coordinator.
-        # Let's check EnvironmentAnalyzer.__init__ signature again.
-        # def __init__(self, hass: HomeAssistant, coordinator: GrowspaceCoordinator) -> None:
-
-        # If I change the Serializer to accept an analyzer instance?
-        # Or if I just instantiate it?
-
-        # Ideally, `GrowspaceCoordinator` holds `self.serializer` AND `self.environment_analyzer`.
-        # And when it calls `self.serializer.serialize_growspace(...)`, it could pass the analyzer?
-        # Or `GrowspaceSerializer` could use `EnvironmentAnalyzer` as a helper.
-
-        # Given the constraint of minimal changes to architecture:
-        # I will instantiate EnvironmentAnalyzer with None for coordinator if possible, or Mock?
-        # No, that's hacky.
-
-        # Better approach: Pass the analyzer logic as a dependency or static method?
-        # The new methods I added to EnvironmentAnalyzer DO NOT depend on `self.coordinator`.
-        # `calculate_biological_metrics`, `determine_granular_stage`, `determine_is_day`
-        # only use `growspace` or pure logic.
-
-        # So I can make them static? Or just separate them?
-        # No, `determine_is_day` uses `self.hass`.
-
-        # So I need `hass`.
-        # I will modify Serializer init to take an optional analyzer or just create one with None coordinator
-        # if the coordinator isn't used for those specific methods.
-        # But strictly speaking, type checking will fail if I pass None.
 
     def _ensure_int(self, value: Any) -> int:
         """Safely convert value to int, handling '30.0' strings."""
@@ -257,18 +220,12 @@ class GrowspaceSerializer:
         )
 
         # Determine overview entity ID
-        # Logic duplicated/simplified from coordinator._guess_overview_entity_id
-        # Ideally we use the registry lookup
         unique_id = generate_growspace_overview_unique_id(growspace.id)
         registry = er.async_get(self.hass)
         overview_entity_id = registry.async_get_entity_id("sensor", DOMAIN, unique_id)
 
         # Fallback for special growspaces if standard lookup fails (legacy support)
         if not overview_entity_id:
-            # Just provide a best guess formatted ID which frontend might use OR null
-            # If null, frontend GrowspaceAdapter will handle it (loading/unknown)
-            # But let's try to match the slug pattern
-
             slug = slugify(growspace.name or growspace.id)
             overview_entity_id = f"sensor.{slug}"
 

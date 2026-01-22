@@ -31,7 +31,10 @@ def mock_coordinator():
     coordinator.validator = MagicMock()
     coordinator.serializer = MagicMock()
     coordinator.strain_library = MagicMock()
-    coordinator.ensure_special_growspace = MagicMock(return_value="dry")
+    coordinator._growspace_service = MagicMock()
+    coordinator._growspace_service.ensure_special_growspace = MagicMock(
+        return_value="dry"
+    )
     return coordinator
 
 
@@ -119,5 +122,5 @@ async def test_transition_plant_stage_to_clone(mock_coordinator) -> None:
     # Transition to CLONE stage (line 428)
     await manager.transition_plant_stage(plant_id, PlantStage.CLONE, date(2024, 1, 15))
 
-    # Verify move_to_clone_growspace was called
-    mock_coordinator.ensure_special_growspace.assert_called()
+    # Verify move_to_clone_growspace was called via service
+    mock_coordinator._growspace_service.ensure_special_growspace.assert_called()

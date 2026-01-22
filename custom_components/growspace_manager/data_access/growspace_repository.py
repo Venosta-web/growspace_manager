@@ -1,26 +1,48 @@
 """Data Access Repository for Growspace Manager.
 
-This module encapsulates data retrieval logic to reduce the complexity
+This module encapsulates data retrieval and management logic to reduce the complexity
 of the GrowspaceCoordinator monolithic class.
 """
 
 from __future__ import annotations
 
-from .models import Growspace, Plant
-from .utils import generate_growspace_grid
+from custom_components.growspace_manager.models import Growspace, Plant
+from custom_components.growspace_manager.utils import generate_growspace_grid
 
 
-class DataRepository:
-    """Repository for accessing Growspace and Plant data."""
+class GrowspaceRepository:
+    """Repository for accessing and managing Growspace and Plant data."""
 
     def __init__(
         self,
         growspaces: dict[str, Growspace] | None = None,
         plants: dict[str, Plant] | None = None,
     ) -> None:
-        """Initialize the DataRepository."""
-        self._growspaces: dict[str, Growspace] = growspaces or {}
-        self._plants: dict[str, Plant] = plants or {}
+        """Initialize the GrowspaceRepository."""
+        self._growspaces: dict[str, Growspace] = (
+            growspaces if growspaces is not None else {}
+        )
+        self._plants: dict[str, Plant] = plants if plants is not None else {}
+
+    @property
+    def growspaces(self) -> dict[str, Growspace]:
+        """Return the growspaces dictionary."""
+        return self._growspaces
+
+    @growspaces.setter
+    def growspaces(self, value: dict[str, Growspace]) -> None:
+        """Set the growspaces dictionary."""
+        self._growspaces = value
+
+    @property
+    def plants(self) -> dict[str, Plant]:
+        """Return the plants dictionary."""
+        return self._plants
+
+    @plants.setter
+    def plants(self, value: dict[str, Plant]) -> None:
+        """Set the plants dictionary."""
+        self._plants = value
 
     def load_data(
         self, growspaces: dict[str, Growspace], plants: dict[str, Plant]
@@ -28,6 +50,10 @@ class DataRepository:
         """Update the repository with new data references."""
         self._growspaces = growspaces
         self._plants = plants
+
+    # =========================================================================
+    # PLANT OPERATIONS
+    # =========================================================================
 
     def get_plant(self, plant_id: str) -> Plant | None:
         """Retrieve a plant by its ID."""
@@ -37,6 +63,18 @@ class DataRepository:
         """Retrieve all plants."""
         return list(self._plants.values())
 
+    def add_plant(self, plant: Plant) -> None:
+        """Add a plant to the repository."""
+        self._plants[plant.plant_id] = plant
+
+    def remove_plant(self, plant_id: str) -> Plant | None:
+        """Remove a plant from the repository."""
+        return self._plants.pop(plant_id, None)
+
+    # =========================================================================
+    # GROWSPACE OPERATIONS
+    # =========================================================================
+
     def get_growspace(self, growspace_id: str) -> Growspace | None:
         """Retrieve a growspace by its ID."""
         return self._growspaces.get(growspace_id)
@@ -44,6 +82,18 @@ class DataRepository:
     def get_all_growspaces(self) -> list[Growspace]:
         """Retrieve all growspaces."""
         return list(self._growspaces.values())
+
+    def add_growspace(self, growspace: Growspace) -> None:
+        """Add a growspace to the repository."""
+        self._growspaces[growspace.id] = growspace
+
+    def remove_growspace(self, growspace_id: str) -> Growspace | None:
+        """Remove a growspace from the repository."""
+        return self._growspaces.pop(growspace_id, None)
+
+    # =========================================================================
+    # QUERY METHODS
+    # =========================================================================
 
     def get_growspace_plants(self, growspace_id: str) -> list[Plant]:
         """Get all plants located in a specific growspace.
@@ -71,11 +121,6 @@ class DataRepository:
         """
         growspace = self.get_growspace(growspace_id)
         if not growspace:
-            # Consistent with previous behavior if accessed via key (KeyError)
-            # or safer lookup. The original code used self.growspaces[growspace_id]
-            # which raises KeyError. We mimic that if we want exact parity,
-            # but let's return empty grid for now to be safe, or raise.
-            # To match original logic:
             raise KeyError(growspace_id)
 
         plants = self.get_growspace_plants(growspace_id)

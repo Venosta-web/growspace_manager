@@ -35,7 +35,7 @@ def mock_hass():
 @pytest.fixture
 def mock_coordinator():
     """Fixture for a mock GrowspaceCoordinator instance."""
-    coordinator = MagicMock(spec=GrowspaceCoordinator)
+    coordinator = MagicMock()
     coordinator.async_save = AsyncMock()
     coordinator.async_request_refresh = AsyncMock()
     return coordinator

@@ -56,7 +56,7 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     MINOR_VERSION = 1
     integration_name = "Growspace Manager"
 
-    @override
+    @override  # type: ignore[misc]
     async def async_step_user(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
@@ -246,7 +246,7 @@ class OptionsFlowHandler(OptionsFlow):
             self._strain_handler = StrainConfigHandler(self)
         return self._strain_handler
 
-    @override
+    @override  # type: ignore[misc]
     async def async_step_init(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:

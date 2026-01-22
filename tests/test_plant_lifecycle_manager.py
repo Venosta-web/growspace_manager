@@ -180,7 +180,7 @@ async def test_move_to_dry_growspace_device_id_ghosting(
     coordinator_mock.ensure_special_growspace.return_value = "dry_gs"
     mock_dry_gs = MagicMock()
     mock_dry_gs.device_id = None  # Crucial: destination has no device
-    coordinator_mock.growspaces = {"dry_gs": mock_dry_gs}
+    coordinator_mock.growspaces = {"dry_gs": mock_dry_gs, "gs1": MagicMock()}
     # Ensure plant in coordinator
     coordinator_mock.plants = {"p1": plant}
 

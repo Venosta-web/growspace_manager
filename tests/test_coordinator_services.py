@@ -28,7 +28,7 @@ def mock_growspace_coordinator(hass: HomeAssistant):
         # Manually set state to LOADED as the mock helper might not do it automatically for logic checks
         entry.mock_state(hass, ConfigEntryState.LOADED)
 
-        coordinator = MagicMock(spec=GrowspaceCoordinator)
+        coordinator = MagicMock()
         coordinator.config_entry = entry
 
         # Setup searchable collections

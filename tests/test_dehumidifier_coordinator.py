@@ -64,7 +64,7 @@ def mock_main_coordinator():
 @pytest.fixture
 def mock_growspace():
     """Mock a Growspace object."""
-    growspace = MagicMock(spec=Growspace)
+    growspace = MagicMock()
     growspace.id = "gs1"
     growspace.name = "Test Growspace"
 

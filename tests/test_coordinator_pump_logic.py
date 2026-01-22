@@ -25,7 +25,7 @@ def mock_managers():
         patch("custom_components.growspace_manager.coordinator.ImportExportManager"),
         patch("custom_components.growspace_manager.coordinator.PlantLifecycleManager"),
         patch("custom_components.growspace_manager.coordinator.NutrientManager"),
-        patch("custom_components.growspace_manager.coordinator.DataRepository"),
+        patch("custom_components.growspace_manager.coordinator.GrowspaceRepository"),
         patch("custom_components.growspace_manager.coordinator.SubsystemManager"),
         patch("custom_components.growspace_manager.coordinator.PlantService"),
         patch("custom_components.growspace_manager.coordinator.GrowspaceService"),
@@ -44,7 +44,8 @@ async def test_async_update_irrigation_config_normalizes_empty_strings(
     coordinator = GrowspaceCoordinator(hass, entry, data={})
 
     # Mock internal methods
-    coordinator._invalidate_cache = MagicMock()  # type: ignore[method-assign]
+    coordinator.cache = MagicMock()
+    coordinator.cache.invalidate = MagicMock()
     coordinator.async_save = AsyncMock()  # type: ignore[method-assign]
     coordinator.async_set_updated_data = MagicMock()
 

@@ -30,7 +30,7 @@ def analyzer(hass: HomeAssistant, mock_coordinator):
 @pytest.fixture
 def mock_growspace():
     """Return a mock Growspace."""
-    gs = MagicMock(spec=Growspace)
+    gs = MagicMock()
     gs.id = "test_growspace"
     gs.environment_config = MagicMock(spec=EnvironmentConfig)
     gs.environment_config.light_sensors = ["sensor.light"]

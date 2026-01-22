@@ -34,8 +34,7 @@ def create_test_coordinator(
     )
     coord.storage_manager = MagicMock()
     coord.storage_manager.async_save = AsyncMock()
-    coord.lifecycle_manager = MagicMock()
-    coord.lifecycle_manager.async_add_plant = AsyncMock()
+    # Don't mock _plant_service - let real service logic run for cache invalidation tests
     return coord
 
 
@@ -43,37 +42,19 @@ def create_test_coordinator(
 async def test_cache_invalidation_add_plant(hass: HomeAssistant) -> None:
     """Test that adding a plant invalidates the growspace cache."""
     coordinator = create_test_coordinator(hass, data={})
-    gs = await coordinator.async_add_growspace("Test GS")
+    gs = await coordinator._growspace_service.add_growspace("Test GS")
 
     # 1. Get initial data
     data1 = coordinator.get_growspace_data(gs.id)
     assert data1["total_plants"] == 0
 
-    # Setup mock return for add_plant
-
-    mock_plant = create_plant(
-        plant_id="p1",
+    # 2. Add plant using real coordinator/service (no mocks - real cache invalidation)
+    await coordinator.async_add_plant(
         growspace_id=gs.id,
         strain="Strain A",
-        phenotype="",
         row=1,
         col=1,
-        stage="veg",
-        created_at="2025-01-01",
-        updated_at="2025-01-01",
     )
-
-    async def side_effect_add_plant(**kwargs: Any) -> Plant:
-        coordinator.plants[mock_plant.plant_id] = mock_plant
-        return mock_plant
-
-    # cast to Mock to set side_effect because mypy thinks it is the real method
-    cast(
-        MagicMock, coordinator.lifecycle_manager.async_add_plant
-    ).side_effect = side_effect_add_plant
-
-    # 2. Add plant
-    await coordinator.async_add_plant(gs.id, "Strain A")
 
     # 3. Get data again (should be fresh)
     data2 = coordinator.get_growspace_data(gs.id)
@@ -87,12 +68,12 @@ async def test_cache_invalidation_add_plant(hass: HomeAssistant) -> None:
 async def test_cache_invalidation_update_growspace(hass: HomeAssistant) -> None:
     """Test that updating growspace invalidates cache."""
     coordinator = create_test_coordinator(hass, data={})
-    gs = await coordinator.async_add_growspace("Test GS")
+    gs = await coordinator._growspace_service.add_growspace("Test GS")
 
     data1 = coordinator.get_growspace_data(gs.id)
     assert data1["name"] == "Test GS"
 
-    await coordinator.async_update_growspace(gs.id, name="Renamed GS")
+    await coordinator._growspace_service.update_growspace(gs.id, name="Renamed GS")
 
     data2 = coordinator.get_growspace_data(gs.id)
     assert data2["name"] == "Renamed GS"
@@ -102,7 +83,7 @@ async def test_cache_invalidation_update_growspace(hass: HomeAssistant) -> None:
 async def test_cache_invalidation_update_plant(hass: HomeAssistant) -> None:
     """Test that updating a plant invalidates cache."""
     coordinator = create_test_coordinator(hass, data={})
-    gs = await coordinator.async_add_growspace("Test GS")
+    gs = await coordinator._growspace_service.add_growspace("Test GS")
 
     mock_plant = create_plant(
         plant_id="p1",
@@ -121,16 +102,7 @@ async def test_cache_invalidation_update_plant(hass: HomeAssistant) -> None:
     coordinator.growspaces[gs.id].rows = 5
 
     # Manually invalidate because we bypassed standard add methods that would invalidate
-    coordinator._invalidate_cache(gs.id)
-
-    async def side_effect_update(plant_id: str, **updates: Any) -> Plant:
-        for k, v in updates.items():
-            setattr(mock_plant, k, v)
-        return mock_plant
-
-    coordinator.lifecycle_manager.async_update_plant = AsyncMock(  # type: ignore[method-assign]
-        side_effect=side_effect_update
-    )
+    coordinator.cache.invalidate(gs.id)
 
     data1 = coordinator.get_growspace_data(gs.id)
     assert data1["grid"]["position_1_1"]["plant_id"] == "p1"

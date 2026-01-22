@@ -57,7 +57,7 @@ def coordinator(hass):
 
 
 @pytest.mark.asyncio
-@patch("custom_components.growspace_manager.coordinator.async_fire_plant_event")
+@patch("custom_components.growspace_manager.events.async_fire_plant_event")
 async def test_water_growspace_total_amount_deduction(
     mock_fire_event, coordinator
 ) -> None:
@@ -79,7 +79,7 @@ async def test_water_growspace_total_amount_deduction(
 
 
 @pytest.mark.asyncio
-@patch("custom_components.growspace_manager.coordinator.async_fire_plant_event")
+@patch("custom_components.growspace_manager.events.async_fire_plant_event")
 async def test_water_growspace_per_plant_compatibility(
     mock_fire_event, coordinator
 ) -> None:

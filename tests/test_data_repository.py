@@ -2,7 +2,7 @@
 
 import pytest
 
-from custom_components.growspace_manager.data_repository import DataRepository
+from custom_components.growspace_manager.data_access.growspace_repository import GrowspaceRepository as DataRepository
 from custom_components.growspace_manager.models import Growspace
 
 from .common import create_plant

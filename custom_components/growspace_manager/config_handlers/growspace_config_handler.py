@@ -26,7 +26,9 @@ class GrowspaceConfigHandler(BaseConfigHandler[dict[str, Any]]):
         self, coordinator: GrowspaceCoordinator
     ) -> vol.Schema:
         """Build the schema for the growspace management menu."""
-        growspace_options = coordinator.get_sorted_growspace_options()
+        growspace_options = (
+            coordinator._growspace_service.get_sorted_growspace_options()
+        )
 
         schema: dict[Any, Any] = {
             vol.Required("action", default="add"): selector.SelectSelector(
@@ -184,9 +186,6 @@ class GrowspaceConfigHandler(BaseConfigHandler[dict[str, Any]]):
             plants_per_row=user_input["plants_per_row"],
             notification_target=user_input.get("notification_target"),
         )
-
-        # Save changes
-        await coordinator.async_save()
 
     async def async_step_confirm_remove_growspace(
         self, user_input: dict[str, Any] | None = None

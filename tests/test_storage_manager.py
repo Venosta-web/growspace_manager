@@ -63,7 +63,7 @@ async def test_load_growspaces_uses_serializer(
         mock_load.return_value = raw_data
 
         # Override the side effect to return a mock result to prove it was called
-        mock_result = {"gs1": MagicMock(spec=Growspace)}
+        mock_result = {"gs1": MagicMock()}
         mock_coordinator.serializer.deserialize_growspaces.side_effect = None
         mock_coordinator.serializer.deserialize_growspaces.return_value = mock_result
 

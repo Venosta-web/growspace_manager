@@ -39,7 +39,7 @@ async def test_minimal_sensor_vpd_calculation(mock_coordinator) -> None:
     )
 
     growspace_id = "gs1"
-    mock_growspace = MagicMock(spec=Growspace)
+    mock_growspace = MagicMock()
     mock_growspace.environment_config = env_config
     mock_growspace.growspace_type = GrowspaceType.FLOWER
     mock_coordinator.growspaces = {growspace_id: mock_growspace}

@@ -30,7 +30,7 @@ def serializer(hass: HomeAssistant):
 @pytest.fixture
 def mock_growspace(hass: HomeAssistant):
     """Return a mock growspace."""
-    gs = MagicMock(spec=Growspace)
+    gs = MagicMock()
     gs.id = "gs1"
     gs.name = "Test Growspace"
     gs.rows = 2

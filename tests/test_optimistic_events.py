@@ -49,7 +49,7 @@ async def test_async_add_plant_fires_event(
     hass.bus.async_listen("growspace_manager_updated", event_listener)
 
     # Execute
-    await mock_coordinator.async_add_plant(growspace_id="test_gs", strain="Test Strain")
+    await mock_coordinator._plant_service.add_plant(growspace_id="test_gs", strain="Test Strain")
     await hass.async_block_till_done()
 
     # Verify
@@ -80,7 +80,7 @@ async def test_async_update_plant_fires_event(
     hass.bus.async_listen("growspace_manager_updated", lambda e: fired_events.append(e))
 
     # Execute
-    await mock_coordinator.async_update_plant(plant_id="test_plant", stage="flower")
+    await mock_coordinator._plant_service.update_plant(plant_id="test_plant", stage="flower")
     await hass.async_block_till_done()
 
     # Verify

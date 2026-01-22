@@ -361,7 +361,7 @@ class GrowspaceService:
             # Enable notifications by default for new special growspace
             self.coordinator.notifications_enabled[canonical_id] = True
             # Cache invalidation for new space
-            self.coordinator.invalidate_cache(canonical_id)
+            self.coordinator.cache.invalidate(canonical_id)
         else:
             self._update_special_growspace_name(canonical_id, name)
             # Ensure type is correct even if existing (for migration)
@@ -371,10 +371,12 @@ class GrowspaceService:
                     canonical_id
                 ].growspace_type = growspace_type
             # Name or Type changed -> Invalidate
-            self.coordinator.invalidate_cache(canonical_id)
+            self.coordinator.cache.invalidate(canonical_id)
 
         if update_data:
-            self.coordinator.update_data_property()
+            self.coordinator.data = (
+                self.coordinator.view_model_builder.build_data_property()
+            )
         return canonical_id
 
     def _create_special_growspace(
@@ -423,3 +425,100 @@ class GrowspaceService:
             plants_per_row=DEFAULT_PLANTS_PER_ROW,
             growspace_type=GrowspaceType.MOTHER,
         )
+
+    # =========================================================================
+    # INITIALIZATION METHODS
+    # =========================================================================
+
+    async def ensure_default_growspaces(self) -> None:
+        """Ensure that the default special growspaces (dry, cure, etc.) exist.
+
+        Creates standard growspaces if they don't already exist:
+        - dry, cure, mother, clone, veg
+        """
+        from custom_components.growspace_manager.const import (
+            CANONICAL_ID_CLONE,
+            CANONICAL_ID_CURE,
+            CANONICAL_ID_DRY,
+            CANONICAL_ID_MOTHER,
+            CANONICAL_ID_VEG,
+        )
+
+        default_growspaces = [
+            (
+                CANONICAL_ID_DRY,
+                "dry",
+                DEFAULT_ROWS,
+                DEFAULT_PLANTS_PER_ROW,
+                GrowspaceType.DRY,
+            ),
+            (
+                CANONICAL_ID_CURE,
+                "cure",
+                DEFAULT_ROWS,
+                DEFAULT_PLANTS_PER_ROW,
+                GrowspaceType.CURE,
+            ),
+            (
+                CANONICAL_ID_MOTHER,
+                "mother",
+                DEFAULT_ROWS,
+                DEFAULT_PLANTS_PER_ROW,
+                GrowspaceType.MOTHER,
+            ),
+            (CANONICAL_ID_CLONE, "clone", 5, 5, GrowspaceType.CLONE),
+            (CANONICAL_ID_VEG, "veg", 5, 5, GrowspaceType.VEG),
+        ]
+
+        for (
+            growspace_id,
+            name,
+            rows,
+            plants_per_row,
+            gs_type,
+        ) in default_growspaces:
+            # Use the coordinator's method to ensure special growspaces
+            self.coordinator._growspace_service.ensure_special_growspace(
+                growspace_id,
+                name,
+                rows,
+                plants_per_row,
+                growspace_type=gs_type,
+                update_data=False,
+            )
+
+        self.coordinator.data = (
+            self.coordinator.view_model_builder.build_data_property()
+        )
+
+    def ensure_calculated_sensors(self) -> None:
+        """Ensure default calculated sensors are configured in growspace config.
+
+        Automatically configures VPD sensors for growspaces that have
+        temperature and humidity sensors but no VPD sensor configured.
+        """
+        from custom_components.growspace_manager.const import (
+            CONF_HUMIDITY_SENSOR,
+            CONF_TEMP_SENSOR,
+            CONF_VPD_SENSOR,
+        )
+        from homeassistant.util import slugify
+
+        for growspace in self.coordinator.growspaces.values():
+            env_config = growspace.environment_config
+            if not env_config:
+                continue
+
+            temp_sensor = getattr(env_config, CONF_TEMP_SENSOR, None)
+            humidity_sensor = getattr(env_config, CONF_HUMIDITY_SENSOR, None)
+            vpd_sensor = getattr(env_config, CONF_VPD_SENSOR, None)
+
+            if temp_sensor and humidity_sensor and not vpd_sensor:
+                calc_name = f"{growspace.name} Calculated VPD"
+                expected_id = f"sensor.{slugify(calc_name)}"
+
+                # Patch config
+                setattr(env_config, CONF_VPD_SENSOR, expected_id)
+                _LOGGER.info("Configured default calculated VPD for %s", growspace.name)
+                # Config changed
+                self.coordinator.cache.invalidate(growspace.id)

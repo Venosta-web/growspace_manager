@@ -117,7 +117,7 @@ def mock_strain_library_for_services():
 @pytest.fixture
 def mock_coordinator(hass: HomeAssistant):
     """Fixture for a mock GrowspaceCoordinator instance."""
-    coordinator = MagicMock(spec=GrowspaceCoordinator)
+    coordinator = MagicMock()
     coordinator.hass = hass
     coordinator.growspaces = {}
     coordinator.events = {}
@@ -707,13 +707,15 @@ async def test_pending_growspace_error(hass: HomeAssistant) -> None:
         mock_store_instance.async_load = AsyncMock(return_value={})
         mock_store_cls.return_value = mock_store_instance
 
-        coordinator_mock = MagicMock(spec=GrowspaceCoordinator)
+        coordinator_mock = MagicMock()
+        coordinator_mock.async_config_entry_first_refresh = AsyncMock()
+        coordinator_mock._growspace_service = MagicMock()
         coordinator_mock.async_load = AsyncMock()
         coordinator_mock.async_initialize_sub_coordinators = AsyncMock()
 
-        # Make async_add_growspace raise exception
-        coordinator_mock.async_add_growspace.side_effect = RuntimeError(
-            "Failed creation"
+        coordinator_mock._growspace_service = MagicMock()
+        coordinator_mock._growspace_service.add_growspace = AsyncMock(
+            side_effect=RuntimeError("Failed creation")
         )
 
         with patch(
@@ -774,10 +776,12 @@ async def test_pending_growspace_success(hass: HomeAssistant) -> None:
         mock_store_instance.async_load = AsyncMock(return_value={})
         mock_store_cls.return_value = mock_store_instance
 
-        coordinator_mock = MagicMock(spec=GrowspaceCoordinator)
+        coordinator_mock = MagicMock()
+        coordinator_mock.async_config_entry_first_refresh = AsyncMock()
+        coordinator_mock._growspace_service = MagicMock()
+        coordinator_mock._growspace_service.add_growspace = AsyncMock()
         coordinator_mock.async_load = AsyncMock()
         coordinator_mock.async_initialize_sub_coordinators = AsyncMock()
-        coordinator_mock.async_add_growspace = AsyncMock()
 
         with patch(
             "custom_components.growspace_manager.GrowspaceCoordinator",
@@ -786,7 +790,7 @@ async def test_pending_growspace_success(hass: HomeAssistant) -> None:
             await async_setup_entry(hass, entry)
 
             # Verify successful creation logging and data update
-            coordinator_mock.async_add_growspace.assert_called_once_with(
+            coordinator_mock._growspace_service.add_growspace.assert_called_once_with(
                 name="Pending", rows=4, plants_per_row=4, notification_target=None
             )
             hass.config_entries.async_update_entry.assert_called_once()

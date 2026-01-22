@@ -23,15 +23,16 @@ async def test_async_commit_invalidates_cache(hass: HomeAssistant) -> None:
         coordinator = GrowspaceCoordinator(hass, entry, data={})
 
         # Manually populate cache to simulate existing state
-        coordinator._serialized_cache = {"gs1": {"data": "stale_data"}}
+        coordinator.cache._cache = {"gs1": {"data": "stale_data"}}
 
-        # Spy on _invalidate_cache
-        with patch.object(
-            coordinator, "_invalidate_cache", wraps=coordinator._invalidate_cache
-        ) as spy_invalidate:
-            await coordinator.async_commit()
+        # Mock the cache's invalidate method
+        coordinator.cache.invalidate = MagicMock()
 
-            spy_invalidate.assert_called_once()
+        # Check that async_commit invalidates the cache
+        await coordinator.async_commit()
+
+        # Verify invalidate was called
+        coordinator.cache.invalidate.assert_called_once()
 
 
 @pytest.mark.asyncio
@@ -53,14 +54,14 @@ async def test_async_commit_rebuilds_cache(hass: HomeAssistant) -> None:
         )
 
         # Add a growspace manually to avoid triggering async_commit loop logic in setup
-        gs = await coordinator.async_add_growspace("Test GS")
+        gs = await coordinator._growspace_service.add_growspace("Test GS")
 
         # Verify it's in cache (async_add calls commit)
-        assert gs.id in coordinator._serialized_cache
+        assert gs.id in coordinator.cache._cache
 
         # Backdoor modification logic simulation:
         # We manually inject a WRONG value into cache
-        coordinator._serialized_cache[gs.id] = {"name": "Old Cache"}
+        coordinator.cache._cache[gs.id] = {"name": "Old Cache"}
 
         # And we update the growspace name in reality
         coordinator.growspaces[gs.id].name = "Updated Name"
@@ -69,4 +70,4 @@ async def test_async_commit_rebuilds_cache(hass: HomeAssistant) -> None:
         await coordinator.async_commit()
 
         # Cache should be updated
-        assert coordinator._serialized_cache[gs.id]["name"] == "Updated Name"
+        assert coordinator.cache._cache[gs.id]["name"] == "Updated Name"

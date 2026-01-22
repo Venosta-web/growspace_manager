@@ -61,12 +61,14 @@ def mock_entry(hass: HomeAssistant) -> MockConfigEntry:
 def mock_coordinator(
     hass: HomeAssistant, mock_entry: MockConfigEntry
 ) -> GrowspaceCoordinator:
-    coordinator = MagicMock(spec=GrowspaceCoordinator)
+    coordinator = MagicMock()
     coordinator.hass = hass
     coordinator.config_entry = mock_entry
     coordinator.growspaces = {}
     coordinator.plants = {}
-    coordinator.get_sorted_growspace_options = MagicMock(return_value=[])
+    coordinator._growspace_service.get_sorted_growspace_options = MagicMock(
+        return_value=[]
+    )
     mock_entry.runtime_data = coordinator
     return coordinator
 
@@ -149,12 +151,12 @@ async def test_growspace_config_handler_gaps(
     mock_entry.runtime_data = mock_coordinator
 
     # 2. Add growspace exception branch
-    mock_coordinator.async_add_growspace = AsyncMock(  # type: ignore[method-assign]
+    mock_coordinator._growspace_service.add_growspace = AsyncMock(  # type: ignore[method-assign]
         side_effect=Exception("Test Error")
     )
 
     # 2. Add growspace exception branch
-    mock_coordinator.async_add_growspace = AsyncMock(  # type: ignore[method-assign]
+    mock_coordinator._growspace_service.add_growspace = AsyncMock(  # type: ignore[method-assign]
         side_effect=Exception("Test Error")
     )
     # mock_entry already has runtime_data restored above
@@ -268,21 +270,9 @@ async def test_coordinator_setters_and_gaps(
     coord.nutrient_inventory_service = MagicMock()
     coord.nutrient_inventory = NutrientInventory(stocks={})
 
-    # Coverage for _extract_gs_ids_from_args with plant lookup
-    gs_ids: set[str] = set()
-    coord.plants = {"p1": create_plant(plant_id="p1", strain="S1", growspace_id="gs1")}
-    coord._extract_gs_ids_from_args((), {"plant_id": "p1"}, gs_ids)
-    assert "gs1" in gs_ids
-
-    # Coverage for _to_date exception
-    assert coord._to_date("junk") is None
-
-    # Coverage for calculate_days with invalid start_date
-    assert coord.calculate_days("junk") == 0
-
     # Coverage for set_notifications_enabled non-existent growspace
     with patch(
-        "custom_components.growspace_manager.coordinator._LOGGER.warning"
+        "custom_components.growspace_manager.notifications.notification_settings_manager._LOGGER.warning"
     ) as mock_warn:
         await coord.set_notifications_enabled("nonexistent", True)
         mock_warn.assert_called()
@@ -331,11 +321,6 @@ async def test_coordinator_extended_coverage(
     coord.nutrient_inventory = inventory
     assert coord.nutrient_inventory_service == service
     assert coord.nutrient_inventory == inventory
-
-    # 2. _extract_gs_ids_from_result with None (line 311)
-    gs_ids: set[str] = set()
-    coord._extract_gs_ids_from_result(None, gs_ids)
-    assert len(gs_ids) == 0
 
     # 3. _get_target_plants exception branches (lines 597-604 are actually _create_special_growspace)
 

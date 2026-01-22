@@ -46,7 +46,7 @@ async def handle_add_growspace(
         rows = call.data[ATTR_ROWS]
         plants_per_row = call.data[ATTR_PLANTS_PER_ROW]
 
-        growspace_id = await coordinator.async_add_growspace(
+        growspace_id = await coordinator._growspace_service.add_growspace(
             name=name,
             rows=rows,
             plants_per_row=plants_per_row,
@@ -71,7 +71,7 @@ async def handle_update_growspace(
     """Handle update growspace service call."""
     try:
         growspace_id = call.data[ATTR_GROWSPACE_ID]
-        await coordinator.async_update_growspace(
+        await coordinator._growspace_service.update_growspace(
             growspace_id=growspace_id,
             name=call.data.get(ATTR_NAME),
             rows=call.data.get(ATTR_ROWS),
