@@ -347,6 +347,32 @@ class NotificationManager:
         for notification in notifications:
             await self._process_notification(notification, plants_by_growspace)
 
+    async def async_check_tank_levels(self) -> None:
+        """Check all irrigation tank levels and notify if below warning threshold."""
+        from .serializers import GrowspaceSerializer
+
+        serializer = GrowspaceSerializer(self.hass)
+
+        for growspace in self.coordinator.growspaces.values():
+            if (
+                not growspace.environment_config
+                or not growspace.environment_config.irrigation_tanks
+            ):
+                continue
+
+            for tank in growspace.environment_config.irrigation_tanks:
+                state_obj = self.hass.states.get(tank.sensor_entity)
+                level = (
+                    serializer._parse_tank_level(state_obj.state) if state_obj else None
+                )
+
+                if level is not None and level <= tank.warning_level:
+                    await self.async_send_notification(
+                        growspace.id,
+                        title="⚠️ Low Irrigation Tank Level",
+                        message=f"{tank.name} in {growspace.name} is at {level:.0f}% (warning at {tank.warning_level:.0f}%)",
+                    )
+
     def _group_plants_by_growspace(self) -> dict[str, list[Any]]:
         """Group plants by growspace ID."""
         plants_by_growspace: dict[str, list[Any]] = {}

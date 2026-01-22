@@ -155,6 +155,15 @@ class IrrigationStrategy(BaseModel):
 
 
 @dataclass(slots=True)
+class IrrigationTank(BaseModel):
+    """Configuration for an irrigation tank."""
+
+    sensor_entity: str
+    name: str = "Tank"
+    warning_level: float = 30.0  # Percentage threshold for warnings
+
+
+@dataclass(slots=True)
 class EnvironmentConfig(BaseModel):
     """Configuration for environment sensors and devices."""
 
@@ -180,6 +189,7 @@ class EnvironmentConfig(BaseModel):
     stress_threshold: float = 0.70
     mold_threshold: float = 0.75
     bayesian_options: BayesianOptions = field(default_factory=dict)
+    irrigation_tanks: list[IrrigationTank] = field(default_factory=list)
 
     # Backward-compatible properties
     @property

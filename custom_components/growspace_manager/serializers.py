@@ -354,6 +354,29 @@ class GrowspaceSerializer:
         except (ValueError, TypeError):
             return None
 
+    def _parse_tank_level(self, state_value: str | None) -> float | None:
+        """Parse tank level from sensor state.
+
+        Handles formats like:
+        - "50.0 %"
+        - "50,0 %" (European format)
+        - "50" (plain number)
+        """
+        if not state_value:
+            return None
+        try:
+            # Remove % sign and whitespace
+            cleaned = state_value.replace("%", "").strip()
+            # Replace European comma with period
+            cleaned = cleaned.replace(",", ".")
+            return float(cleaned)
+        except (ValueError, TypeError, AttributeError):
+            # If it's already a number or conversion failed
+            try:
+                return float(state_value)
+            except (ValueError, TypeError):
+                return None
+
     def _get_environment_attributes(self, growspace: Growspace) -> dict[str, Any]:
         """Get environment-related attributes."""
         attributes: dict[str, Any] = {}
@@ -461,5 +484,27 @@ class GrowspaceSerializer:
                 attributes["circulation_fan_state"] = (
                     state_obj.state if state_obj else None
                 )
+
+            # Irrigation Tanks
+            if env_config.irrigation_tanks:
+                tanks_data = []
+                for tank in env_config.irrigation_tanks:
+                    state_obj = self.hass.states.get(tank.sensor_entity)
+                    fill_level = (
+                        self._parse_tank_level(state_obj.state) if state_obj else None
+                    )
+                    tanks_data.append(
+                        {
+                            "sensor_entity": tank.sensor_entity,
+                            "name": tank.name,
+                            "warning_level": tank.warning_level,
+                            "fill_level": fill_level,
+                            "is_warning": fill_level is not None
+                            and fill_level <= tank.warning_level,
+                        }
+                    )
+                attributes["irrigation_tanks"] = tanks_data
+            else:
+                attributes["irrigation_tanks"] = []
 
         return attributes

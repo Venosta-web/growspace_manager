@@ -19,6 +19,8 @@ from custom_components.growspace_manager.const import (
     CONF_HUMIDIFIER_ENTITIES,
     CONF_HUMIDIFIER_ENTITY,
     CONF_HUMIDITY_SENSOR,
+    CONF_IRRIGATION_TANK_SENSORS,
+    CONF_IRRIGATION_TANK_WARNING_LEVEL,
     CONF_LIGHT_SENSOR,
     CONF_LIGHT_SENSORS,
     CONF_MOLD_THRESHOLD,
@@ -55,7 +57,9 @@ class EnvironmentConfigHandler(BaseConfigHandler[dict[str, Any]]):
         if coordinator is None:
             return self.flow.async_abort(reason="setup_error")
 
-        growspace_options = coordinator._growspace_service.get_sorted_growspace_options()
+        growspace_options = (
+            coordinator._growspace_service.get_sorted_growspace_options()
+        )
 
         if not growspace_options:
             return self.flow.async_abort(reason="no_growspaces")
@@ -97,6 +101,24 @@ class EnvironmentConfigHandler(BaseConfigHandler[dict[str, Any]]):
         # Prepare defaults using dataclass
         if growspace.environment_config:
             growspace_options = asdict(growspace.environment_config)
+
+            # Convert irrigation_tanks from list of dicts back to list of sensor entities for the form
+            if (
+                "irrigation_tanks" in growspace_options
+                and growspace_options["irrigation_tanks"]
+            ):
+                tank_sensors = [
+                    tank["sensor_entity"]
+                    for tank in growspace_options["irrigation_tanks"]
+                ]
+                # Get warning level from first tank (they all share the same warning level in the form)
+                warning_level = growspace_options["irrigation_tanks"][0].get(
+                    "warning_level", 30.0
+                )
+                growspace_options[CONF_IRRIGATION_TANK_SENSORS] = tank_sensors
+                growspace_options[CONF_IRRIGATION_TANK_WARNING_LEVEL] = warning_level
+                # Remove the irrigation_tanks as it's not a form field
+                growspace_options.pop("irrigation_tanks", None)
         else:
             growspace_options = {}
 
@@ -128,6 +150,35 @@ class EnvironmentConfigHandler(BaseConfigHandler[dict[str, Any]]):
             # If user unchecked configure_dehumidifier, clear any existing thresholds
             if not self.flow.env_config_step1.get("configure_dehumidifier"):
                 env_config["dehumidifier_thresholds"] = {}
+
+            # Convert irrigation tank sensors to IrrigationTank instances
+            tank_sensors = env_config.get(CONF_IRRIGATION_TANK_SENSORS, [])
+            warning_level = env_config.get(CONF_IRRIGATION_TANK_WARNING_LEVEL, 30.0)
+            if tank_sensors:
+                # Create IrrigationTank instances from sensor entities
+                irrigation_tanks = []
+                for i, sensor_entity in enumerate(tank_sensors, start=1):
+                    # Extract friendly name from sensor if available
+                    state_obj = self.hass.states.get(sensor_entity)
+                    tank_name = (
+                        state_obj.attributes.get("friendly_name", f"Tank {i}")
+                        if state_obj
+                        else f"Tank {i}"
+                    )
+                    irrigation_tanks.append(
+                        {
+                            "sensor_entity": sensor_entity,
+                            "name": tank_name,
+                            "warning_level": warning_level,
+                        }
+                    )
+                env_config["irrigation_tanks"] = irrigation_tanks
+            else:
+                env_config["irrigation_tanks"] = []
+
+            # Remove the temporary config flow fields
+            env_config.pop(CONF_IRRIGATION_TANK_SENSORS, None)
+            env_config.pop(CONF_IRRIGATION_TANK_WARNING_LEVEL, None)
 
             if self.flow.env_config_step1.get("configure_advanced"):
                 return await self.async_step_configure_advanced_bayesian()
@@ -375,6 +426,36 @@ class EnvironmentConfigHandler(BaseConfigHandler[dict[str, Any]]):
             selector.EntitySelectorConfig(
                 domain=["sensor", "input_number"],
                 device_class="pressure",
+            )
+        )
+
+        # Irrigation tank sensors - optional (multiple sensors for tank level monitoring)
+        suggested_tanks = growspace_options.get(CONF_IRRIGATION_TANK_SENSORS, [])
+        schema_dict[
+            vol.Optional(
+                CONF_IRRIGATION_TANK_SENSORS,
+                description={"suggested_value": suggested_tanks},
+            )
+        ] = selector.EntitySelector(
+            selector.EntitySelectorConfig(
+                domain=["sensor", "input_number"],
+                multiple=True,
+            )
+        )
+
+        # Irrigation tank warning level - optional
+        schema_dict[
+            vol.Optional(
+                CONF_IRRIGATION_TANK_WARNING_LEVEL,
+                default=growspace_options.get(CONF_IRRIGATION_TANK_WARNING_LEVEL, 30.0),
+            )
+        ] = selector.NumberSelector(
+            selector.NumberSelectorConfig(
+                min=5.0,
+                max=50.0,
+                step=5.0,
+                mode=selector.NumberSelectorMode.SLIDER,
+                unit_of_measurement="%",
             )
         )
 

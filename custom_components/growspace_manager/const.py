@@ -48,6 +48,8 @@ CONF_EXHAUST_ENTITY = "exhaust_entity"
 CONF_EXHAUST_FAN_ENTITY = "exhaust_fan_entity"
 CONF_HUMIDIFIER_ENTITY = "humidifier_entity"
 CONF_SOIL_MOISTURE_SENSOR = "soil_moisture_sensor"
+CONF_IRRIGATION_TANK_SENSORS = "irrigation_tank_sensors"
+CONF_IRRIGATION_TANK_WARNING_LEVEL = "irrigation_tank_warning_level"
 CONF_CONTROL_DEHUMIDIFIER = "control_dehumidifier"
 
 # Multi-Device Config Keys
