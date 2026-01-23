@@ -351,6 +351,17 @@ class EnvironmentConfigHandler(BaseConfigHandler[dict[str, Any]]):
             elif isinstance(val, str):
                 sensors_to_configure.append(val)
 
+        # Add irrigation pumps if configured
+        if growspace.irrigation_config:
+            if growspace.irrigation_config.irrigation_pump_entity:
+                sensors_to_configure.append(
+                    growspace.irrigation_config.irrigation_pump_entity
+                )
+            if growspace.irrigation_config.drain_pump_entity:
+                sensors_to_configure.append(
+                    growspace.irrigation_config.drain_pump_entity
+                )
+
         # Remove duplicates
         sensors_to_configure = sorted(set(sensors_to_configure))
 

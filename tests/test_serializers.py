@@ -499,3 +499,50 @@ def test_deserialize_growspaces_irrigation_migration_float_strings(
 
     # Item 3: 60.0 -> 60
     assert times[2]["duration_seconds"] == 60
+
+
+def test_get_sensor_types(
+    serializer: GrowspaceSerializer, mock_growspace: Growspace
+) -> None:
+    """Test mapping of entity IDs to sensor types."""
+    # Setup mixed sensors
+    mock_growspace.environment_config.temperature_sensor = "sensor.t1"
+    mock_growspace.environment_config.temperature_sensors = ["sensor.t1", "sensor.t2"]
+    mock_growspace.environment_config.humidity_sensors = ["sensor.h1"]
+    mock_growspace.environment_config.light_sensors = ["sensor.l1"]
+    mock_growspace.environment_config.exhaust_fan_entities = ["fan.e1"]
+    mock_growspace.environment_config.co2_sensor = "sensor.co2"
+    mock_growspace.irrigation_config.irrigation_pump_entity = "switch.irrigation"
+    mock_growspace.irrigation_config.drain_pump_entity = "switch.drain"
+
+    sensor_types = serializer._get_sensor_types(mock_growspace)
+
+    assert sensor_types["sensor.t1"] == "temperature"
+    assert sensor_types["sensor.t2"] == "temperature"
+    assert sensor_types["sensor.h1"] == "humidity"
+    assert sensor_types["sensor.l1"] == "light"
+    assert sensor_types["fan.e1"] == "exhaust"
+    assert sensor_types["sensor.co2"] == "co2"
+    assert sensor_types["switch.irrigation"] == "irrigation_pump"
+    assert sensor_types["switch.drain"] == "drain_pump"
+
+
+def test_serialize_growspace_includes_sensor_types(
+    hass: HomeAssistant, serializer, mock_growspace, mock_plant
+) -> None:
+    """Test that serialize_growspace includes the sensor_types map."""
+    mock_growspace.environment_config.temperature_sensor = "sensor.temp"
+
+    with patch("homeassistant.helpers.entity_registry.async_get") as mock_registry_get:
+        mock_registry = MagicMock()
+        mock_registry_get.return_value = mock_registry
+
+        data = serializer.serialize_growspace(
+            mock_growspace,
+            [mock_plant],
+            {},
+            max_veg_days=10,
+        )
+
+        assert "sensor_types" in data
+        assert data["sensor_types"]["sensor.temp"] == "temperature"

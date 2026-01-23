@@ -252,6 +252,7 @@ class GrowspaceSerializer:
             "irrigation_strategy": irrigation_strategy_dict,
             "grid": grid,
             "air_exchange": air_exchange,
+            "sensor_types": self._get_sensor_types(growspace),
             **biological_metrics,
         }
 
@@ -518,3 +519,61 @@ class GrowspaceSerializer:
                 attributes["irrigation_tanks"] = []
 
         return attributes
+
+    def _get_sensor_types(self, growspace: Growspace) -> dict[str, str]:
+        """Map entity IDs to their sensor types for frontend heuristics replacement."""
+        sensor_types: dict[str, str] = {}
+        if not growspace.environment_config:
+            return sensor_types
+
+        env = growspace.environment_config
+
+        # Temperature
+        for eid in env.temperature_sensors:
+            sensor_types[eid] = "temperature"
+        if env.temperature_sensor and env.temperature_sensor not in sensor_types:
+            sensor_types[env.temperature_sensor] = "temperature"
+
+        # Humidity
+        for eid in env.humidity_sensors:
+            sensor_types[eid] = "humidity"
+        if env.humidity_sensor and env.humidity_sensor not in sensor_types:
+            sensor_types[env.humidity_sensor] = "humidity"
+
+        # VPD
+        for eid in env.vpd_sensors:
+            sensor_types[eid] = "vpd"
+        if env.vpd_sensor and env.vpd_sensor not in sensor_types:
+            sensor_types[env.vpd_sensor] = "vpd"
+
+        # Light
+        for eid in env.light_sensors:
+            sensor_types[eid] = "light"
+
+        # CO2
+        if env.co2_sensor:
+            sensor_types[env.co2_sensor] = "co2"
+
+        # Soil Moisture
+        if env.soil_moisture_sensor:
+            sensor_types[env.soil_moisture_sensor] = "soil_moisture"
+
+        # Actuators
+        for eid in env.exhaust_fan_entities:
+            sensor_types[eid] = "exhaust"
+        for eid in env.circulation_fan_entities:
+            sensor_types[eid] = "circulation"
+        for eid in env.humidifier_entities:
+            sensor_types[eid] = "humidifier"
+        for eid in env.dehumidifier_entities:
+            sensor_types[eid] = "dehumidifier"
+
+        # Irrigation
+        if growspace.irrigation_config:
+            irr = growspace.irrigation_config
+            if irr.irrigation_pump_entity:
+                sensor_types[irr.irrigation_pump_entity] = "irrigation_pump"
+            if irr.drain_pump_entity:
+                sensor_types[irr.drain_pump_entity] = "drain_pump"
+
+        return sensor_types
