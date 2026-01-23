@@ -182,6 +182,7 @@ class GrowspaceSerializer:
         max_flower_days: int = 0,
         max_dry_days: int = 0,
         max_cure_days: int = 0,
+        active_events: dict[str, dict[str, Any]] | None = None,
     ) -> dict[str, Any]:
         """Build the full JSON payload for a single growspace."""
         # Calculate weeks from days
@@ -257,7 +258,9 @@ class GrowspaceSerializer:
         }
 
         # Add environment attributes
-        data.update(self._get_environment_attributes(growspace))
+        data.update(
+            self._get_environment_attributes(growspace, active_events=active_events)
+        )
 
         return data
 
@@ -382,7 +385,11 @@ class GrowspaceSerializer:
             except (ValueError, TypeError):
                 return None
 
-    def _get_environment_attributes(self, growspace: Growspace) -> dict[str, Any]:
+    def _get_environment_attributes(
+        self,
+        growspace: Growspace,
+        active_events: dict[str, dict[str, Any]] | None = None,
+    ) -> dict[str, Any]:
         """Get environment-related attributes."""
         attributes: dict[str, Any] = {}
         if growspace.environment_config:
@@ -495,6 +502,23 @@ class GrowspaceSerializer:
                 attributes["circulation_fan_state"] = (
                     state_obj.state if state_obj else None
                 )
+
+            # Irrigation Pumps (States for change detection in 3D heatmap)
+            if growspace.irrigation_config:
+                irr_cfg = growspace.irrigation_config
+                if irr_cfg.irrigation_pump_entity:
+                    state_obj = self.hass.states.get(irr_cfg.irrigation_pump_entity)
+                    attributes["irrigation_pump_state"] = (
+                        state_obj.state if state_obj else None
+                    )
+                if irr_cfg.drain_pump_entity:
+                    state_obj = self.hass.states.get(irr_cfg.drain_pump_entity)
+                    attributes["drain_pump_state"] = (
+                        state_obj.state if state_obj else None
+                    )
+
+                # Active Events (Start Time + Duration for precise animation)
+                attributes["active_events"] = active_events or {}
 
             # Irrigation Tanks
             if env_config.irrigation_tanks:

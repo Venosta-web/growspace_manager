@@ -116,6 +116,18 @@ class ViewModelBuilder:
             )
         )
 
+        # Fetch active events from irrigation sub-coordinators
+        active_events = {}
+        if (
+            self.coordinator.subsystem_manager
+            and growspace_id
+            in self.coordinator.subsystem_manager.irrigation_coordinators
+        ):
+            irr_coord = self.coordinator.subsystem_manager.irrigation_coordinators[
+                growspace_id
+            ]
+            active_events = irr_coord.active_events
+
         serialized = self.coordinator.serializer.serialize_growspace(
             growspace,
             plants,
@@ -124,6 +136,7 @@ class ViewModelBuilder:
             max_flower_days=max_flower_days,
             max_dry_days=max_dry_days,
             max_cure_days=max_cure_days,
+            active_events=active_events,
         )
 
         # Inject timestamp for efficient frontend equality checks (change detection)
