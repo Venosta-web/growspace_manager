@@ -86,6 +86,20 @@ def mock_coordinator():
     coordinator.async_load = AsyncMock()
     coordinator.async_refresh = AsyncMock()
     coordinator.async_update_irrigation_config = AsyncMock()
+
+    async def _mock_update_env_config(
+        growspace_id: str, environment_data: dict
+    ) -> None:
+        if growspace := coordinator.growspaces.get(growspace_id):
+            for k, v in environment_data.items():
+                if k == "bayesian_options" and isinstance(v, dict):
+                    growspace.environment_config.bayesian_options.update(v)
+                elif hasattr(growspace.environment_config, k):
+                    setattr(growspace.environment_config, k, v)
+
+    coordinator.async_update_environment_config = AsyncMock(
+        side_effect=_mock_update_env_config
+    )
     coordinator.async_start_flowering = AsyncMock()
     coordinator.async_start_drying = AsyncMock()
     coordinator.async_start_curing = AsyncMock()

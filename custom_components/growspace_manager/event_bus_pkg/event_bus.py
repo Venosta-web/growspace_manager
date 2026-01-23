@@ -48,5 +48,6 @@ class GrowspaceEventBus:
         This event signals that growspace data has been modified and
         components should refresh their state.
         """
-        self._hass.bus.async_fire(EVENT_GROWSPACE_UPDATED)
+        payload = {"event_type": EVENT_GROWSPACE_UPDATED, "data": {}}
+        self._hass.bus.async_fire(EVENT_GROWSPACE_UPDATED, payload)
         _LOGGER.debug("Fired growspace updated event")

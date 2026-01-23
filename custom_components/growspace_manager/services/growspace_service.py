@@ -14,6 +14,11 @@ if TYPE_CHECKING:
     from custom_components.growspace_manager.coordinator import GrowspaceCoordinator
 
 from custom_components.growspace_manager.const import (
+    CANONICAL_ID_CLONE,
+    CANONICAL_ID_CURE,
+    CANONICAL_ID_DRY,
+    CANONICAL_ID_MOTHER,
+    CANONICAL_ID_VEG,
     DEFAULT_PLANTS_PER_ROW,
     DEFAULT_ROWS,
     DOMAIN,
@@ -28,6 +33,7 @@ from custom_components.growspace_manager.events import (
 from custom_components.growspace_manager.exceptions import GrowspaceNotFoundError
 from custom_components.growspace_manager.models import Growspace, GrowspaceType
 from homeassistant.helpers import device_registry as dr
+from homeassistant.util import slugify
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -52,6 +58,9 @@ class GrowspaceService:
         notification_target: str | None = None,
         device_id: str | None = None,
         growspace_type: GrowspaceType = GrowspaceType.FLOWER,
+        dimensions: dict[str, Any] | None = None,
+        environment_config: dict[str, Any] | None = None,
+        irrigation_config: dict[str, Any] | None = None,
     ) -> Growspace:
         """Add a new growspace to the coordinator.
 
@@ -62,6 +71,9 @@ class GrowspaceService:
             notification_target: The notification service to use (optional).
             device_id: The device ID to associate with the growspace (optional).
             growspace_type: The type of growspace.
+            dimensions: Physical dimensions (optional).
+            environment_config: Environment configuration (optional).
+            irrigation_config: Irrigation configuration (optional).
         """
         async with self.coordinator.lock:
             # Normalize notification target
@@ -72,15 +84,27 @@ class GrowspaceService:
                 notification_target = None
 
             growspace_id = str(uuid.uuid4())
-            growspace = Growspace(
-                id=growspace_id,
-                name=name.strip(),
-                rows=rows,
-                plants_per_row=plants_per_row,
-                notification_target=notification_target,
-                device_id=device_id,
-                growspace_type=growspace_type,
-            )
+
+            # Build kwargs, omitting None values to let default factories work
+            growspace_kwargs = {
+                "id": growspace_id,
+                "name": name.strip(),
+                "rows": rows,
+                "plants_per_row": plants_per_row,
+                "notification_target": notification_target,
+                "device_id": device_id,
+                "growspace_type": growspace_type,
+            }
+
+            # Only add these if they're not None to preserve default factories
+            if dimensions is not None:
+                growspace_kwargs["dimensions"] = dimensions
+            if environment_config is not None:
+                growspace_kwargs["environment_config"] = environment_config
+            if irrigation_config is not None:
+                growspace_kwargs["irrigation_config"] = irrigation_config
+
+            growspace = Growspace(**growspace_kwargs)
             self.coordinator.growspaces[growspace_id] = growspace
 
             # Enable notifications by default for new growspace
@@ -236,6 +260,11 @@ class GrowspaceService:
         if "irrigation_config" in kwargs:
             growspace.irrigation_config = kwargs["irrigation_config"]
             changes.append("irrigation_config updated")
+            updated = True
+
+        if "dimensions" in kwargs:
+            growspace.dimensions = kwargs["dimensions"]
+            changes.append("dimensions updated")
             updated = True
 
         return updated
@@ -436,14 +465,6 @@ class GrowspaceService:
         Creates standard growspaces if they don't already exist:
         - dry, cure, mother, clone, veg
         """
-        from custom_components.growspace_manager.const import (
-            CANONICAL_ID_CLONE,
-            CANONICAL_ID_CURE,
-            CANONICAL_ID_DRY,
-            CANONICAL_ID_MOTHER,
-            CANONICAL_ID_VEG,
-        )
-
         default_growspaces = [
             (
                 CANONICAL_ID_DRY,
@@ -478,7 +499,7 @@ class GrowspaceService:
             gs_type,
         ) in default_growspaces:
             # Use the coordinator's method to ensure special growspaces
-            self.coordinator._growspace_service.ensure_special_growspace(
+            self.ensure_special_growspace(
                 growspace_id,
                 name,
                 rows,
@@ -497,28 +518,59 @@ class GrowspaceService:
         Automatically configures VPD sensors for growspaces that have
         temperature and humidity sensors but no VPD sensor configured.
         """
-        from custom_components.growspace_manager.const import (
-            CONF_HUMIDITY_SENSOR,
-            CONF_TEMP_SENSOR,
-            CONF_VPD_SENSOR,
-        )
-        from homeassistant.util import slugify
 
-        for growspace in self.coordinator.growspaces.values():
+        for growspace in list(self.coordinator.growspaces.values()):
             env_config = growspace.environment_config
             if not env_config:
                 continue
 
-            temp_sensor = getattr(env_config, CONF_TEMP_SENSOR, None)
-            humidity_sensor = getattr(env_config, CONF_HUMIDITY_SENSOR, None)
-            vpd_sensor = getattr(env_config, CONF_VPD_SENSOR, None)
+            # Work with plural lists
+            temps = env_config.temperature_sensors
+            hums = env_config.humidity_sensors
+            vpds = env_config.vpd_sensors
 
-            if temp_sensor and humidity_sensor and not vpd_sensor:
-                calc_name = f"{growspace.name} Calculated VPD"
-                expected_id = f"sensor.{slugify(calc_name)}"
+            # Sync lengths if necessary (though migration should have handled it)
+            if not temps and env_config.temperature_sensor:
+                temps = [env_config.temperature_sensor]
+            if not hums and env_config.humidity_sensor:
+                hums = [env_config.humidity_sensor]
+            if not vpds and env_config.vpd_sensor:
+                vpds = [env_config.vpd_sensor]
 
-                # Patch config
-                setattr(env_config, CONF_VPD_SENSOR, expected_id)
-                _LOGGER.info("Configured default calculated VPD for %s", growspace.name)
+            num_pairs = min(len(temps), len(hums))
+            if num_pairs == 0:
+                continue
+
+            # Ensure vpd_sensors list is at least long enough
+            # We don't want to overwrite explicitly configured sensors, so we pad with None
+            while len(vpds) < num_pairs:
+                vpds.append(None)
+
+            updated = False
+            for i in range(num_pairs):
+                if (
+                    temps[i]
+                    and hums[i]
+                    and (vpds[i] is None or "calculated_vpd" in vpds[i])
+                ):
+                    suffix = f" {i + 1}" if num_pairs > 1 else ""
+                    calc_name = f"{growspace.name} Calculated VPD{suffix}"
+                    expected_id = f"sensor.{slugify(calc_name)}"
+
+                    if vpds[i] != expected_id:
+                        vpds[i] = expected_id
+                        updated = True
+                        _LOGGER.info(
+                            "Configured calculated VPD for %s (index %d)",
+                            growspace.name,
+                            i,
+                        )
+
+            if updated:
+                env_config.vpd_sensors = vpds
+                # Also update singular for backward compat if it was the first one
+                if len(vpds) > 0:
+                    env_config.vpd_sensor = vpds[0]
+
                 # Config changed
                 self.coordinator.cache.invalidate(growspace.id)

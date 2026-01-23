@@ -4,7 +4,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from custom_components.growspace_manager.const import DOMAIN
+
 from custom_components.growspace_manager.services.irrigation import (
     _get_irrigation_coordinator,
     handle_add_drain_time,
@@ -48,7 +48,12 @@ def mock_irrigation_coordinator():
 @pytest.fixture
 def mock_coordinator():
     """Create a mock growspace coordinator."""
-    return MagicMock()
+    coordinator = MagicMock()
+    coordinator.irrigation_coordinators = {}
+    coordinator.growspaces = {}
+    coordinator.subsystem_manager = MagicMock()
+    coordinator.subsystem_manager.async_setup_growspace_sub_coordinators = AsyncMock()
+    return coordinator
 
 
 @pytest.fixture
@@ -61,74 +66,60 @@ class TestGetIrrigationCoordinator:
     """Tests for _get_irrigation_coordinator helper function."""
 
     @pytest.mark.asyncio
-    async def test_no_config_entries(self, mock_hass):
-        """Test error when no config entries exist."""
-        mock_hass.config_entries.async_entries.return_value = []
-
-        with pytest.raises(ServiceValidationError, match="not yet set up"):
-            await _get_irrigation_coordinator(mock_hass, "gs1")
-
-    @pytest.mark.asyncio
-    async def test_missing_domain_data(self, mock_hass, mock_config_entry):
-        """Test error when domain data is missing."""
-        mock_hass.config_entries.async_entries.return_value = [mock_config_entry]
-        # hass.data is empty
-
-        with pytest.raises(ServiceValidationError, match="not found"):
-            await _get_irrigation_coordinator(mock_hass, "gs1")
-
-    @pytest.mark.asyncio
-    async def test_missing_irrigation_coordinators(self, mock_hass, mock_config_entry):
+    async def test_missing_irrigation_coordinators(self, mock_coordinator):
         """Test error when irrigation_coordinators key is missing."""
-        mock_hass.config_entries.async_entries.return_value = [mock_config_entry]
-        mock_hass.data[DOMAIN] = {mock_config_entry.entry_id: {}}
+        # Using a plain object to simulate missing attribute
+        mock_coordinator = object()
 
         with pytest.raises(ServiceValidationError, match="not found"):
-            await _get_irrigation_coordinator(mock_hass, "gs1")
+            await _get_irrigation_coordinator(mock_coordinator, "gs1")
 
     @pytest.mark.asyncio
     async def test_growspace_not_found(
-        self, mock_hass, mock_config_entry, mock_irrigation_coordinator
+        self, mock_coordinator, mock_irrigation_coordinator
     ):
         """Test error when specified growspace is not found."""
-        mock_hass.config_entries.async_entries.return_value = [mock_config_entry]
-        mock_config_entry.runtime_data = MagicMock()
-        mock_config_entry.runtime_data.irrigation_coordinators = {
+        mock_coordinator.irrigation_coordinators = {
             "other_gs": mock_irrigation_coordinator
         }
+        mock_coordinator.growspaces = {}
 
         with pytest.raises(
             ServiceValidationError, match="'gs1' not found or has no irrigation setup"
         ):
-            await _get_irrigation_coordinator(mock_hass, "gs1")
+            await _get_irrigation_coordinator(mock_coordinator, "gs1")
 
     @pytest.mark.asyncio
-    async def test_success(
-        self, mock_hass, mock_config_entry, mock_irrigation_coordinator
-    ):
+    async def test_success(self, mock_coordinator, mock_irrigation_coordinator):
         """Test successful retrieval of irrigation coordinator."""
-        mock_hass.config_entries.async_entries.return_value = [mock_config_entry]
-        mock_config_entry.runtime_data = MagicMock()
-        mock_config_entry.runtime_data.irrigation_coordinators = {
-            "gs1": mock_irrigation_coordinator
-        }
+        mock_coordinator.irrigation_coordinators = {"gs1": mock_irrigation_coordinator}
 
-        result = await _get_irrigation_coordinator(mock_hass, "gs1")
+        result = await _get_irrigation_coordinator(mock_coordinator, "gs1")
         assert result == mock_irrigation_coordinator
 
     @pytest.mark.asyncio
-    async def test_irrigation_coordinators_attribute_error(
-        self, mock_hass, mock_config_entry
+    async def test_lazy_init_success(
+        self, mock_coordinator, mock_irrigation_coordinator
     ):
-        """Test error when irrigation_coordinators attribute is missing from runtime_data."""
-        mock_hass.config_entries.async_entries.return_value = [mock_config_entry]
-        # Simulate missing attribute by using a plain object or configuring the mock
-        mock_config_entry.runtime_data = object()
+        """Test successful lazy initialization of irrigation coordinator."""
+        growspace_id = "lazy_gs"
+        mock_growspace = MagicMock()
+        mock_coordinator.growspaces = {growspace_id: mock_growspace}
+        mock_coordinator.irrigation_coordinators = {}
 
-        with pytest.raises(
-            ServiceValidationError, match="Irrigation coordinators not found"
-        ):
-            await _get_irrigation_coordinator(mock_hass, "gs1")
+        async def mock_setup(gs_id, gs):
+            mock_coordinator.irrigation_coordinators[gs_id] = (
+                mock_irrigation_coordinator
+            )
+
+        mock_coordinator.subsystem_manager.async_setup_growspace_sub_coordinators.side_effect = mock_setup
+
+        result = await _get_irrigation_coordinator(mock_coordinator, growspace_id)
+
+        assert result == mock_irrigation_coordinator
+        mock_coordinator.subsystem_manager.async_setup_growspace_sub_coordinators.assert_awaited_once_with(
+            growspace_id, mock_growspace
+        )
 
 
 class TestHandleSetIrrigationSettings:
@@ -138,18 +129,12 @@ class TestHandleSetIrrigationSettings:
     async def test_set_irrigation_settings(
         self,
         mock_hass,
-        mock_config_entry,
         mock_irrigation_coordinator,
         mock_coordinator,
-        mock_strain_library,
     ):
         """Test setting irrigation settings."""
         # Setup
-        mock_hass.config_entries.async_entries.return_value = [mock_config_entry]
-        mock_config_entry.runtime_data = MagicMock()
-        mock_config_entry.runtime_data.irrigation_coordinators = {
-            "gs1": mock_irrigation_coordinator
-        }
+        mock_coordinator.irrigation_coordinators = {"gs1": mock_irrigation_coordinator}
 
         call = MagicMock(spec=ServiceCall)
         call.data = {
@@ -176,18 +161,17 @@ class TestHandleSetIrrigationSettings:
 
     @pytest.mark.asyncio
     async def test_set_irrigation_settings_growspace_not_found(
-        self, mock_hass, mock_config_entry, mock_coordinator, mock_strain_library
+        self, mock_hass, mock_coordinator
     ):
         """Test error when growspace not found."""
-        mock_hass.config_entries.async_entries.return_value = [mock_config_entry]
-        mock_hass.data[DOMAIN] = {
-            mock_config_entry.entry_id: {"irrigation_coordinators": {}}
-        }
+        mock_coordinator.irrigation_coordinators = {}
+        mock_coordinator.growspaces = {}
 
         call = MagicMock(spec=ServiceCall)
         call.data = {"growspace_id": "gs1", "irrigation_pump_entity": "switch.pump"}
 
-        with pytest.raises(ServiceValidationError):
+        # Should raise ServiceValidationError because GS not found even in fallback
+        with pytest.raises(ServiceValidationError, match="not found"):
             await handle_set_irrigation_settings(mock_hass, mock_coordinator, call)
 
 
@@ -198,18 +182,12 @@ class TestHandleAddIrrigationTime:
     async def test_add_irrigation_time_with_duration(
         self,
         mock_hass,
-        mock_config_entry,
         mock_irrigation_coordinator,
         mock_coordinator,
-        mock_strain_library,
     ):
         """Test adding irrigation time with explicit duration."""
         # Setup
-        mock_hass.config_entries.async_entries.return_value = [mock_config_entry]
-        mock_config_entry.runtime_data = MagicMock()
-        mock_config_entry.runtime_data.irrigation_coordinators = {
-            "gs1": mock_irrigation_coordinator
-        }
+        mock_coordinator.irrigation_coordinators = {"gs1": mock_irrigation_coordinator}
 
         call = MagicMock(spec=ServiceCall)
         call.data = {"growspace_id": "gs1", "time": "08:00:00", "duration": 600}
@@ -226,18 +204,12 @@ class TestHandleAddIrrigationTime:
     async def test_add_irrigation_time_default_duration(
         self,
         mock_hass,
-        mock_config_entry,
         mock_irrigation_coordinator,
         mock_coordinator,
-        mock_strain_library,
     ):
         """Test adding irrigation time using default duration."""
         # Setup
-        mock_hass.config_entries.async_entries.return_value = [mock_config_entry]
-        mock_config_entry.runtime_data = MagicMock()
-        mock_config_entry.runtime_data.irrigation_coordinators = {
-            "gs1": mock_irrigation_coordinator
-        }
+        mock_coordinator.irrigation_coordinators = {"gs1": mock_irrigation_coordinator}
 
         call = MagicMock(spec=ServiceCall)
         call.data = {"growspace_id": "gs1", "time": "08:00:00"}
@@ -261,18 +233,12 @@ class TestHandleRemoveIrrigationTime:
     async def test_remove_irrigation_time(
         self,
         mock_hass,
-        mock_config_entry,
         mock_irrigation_coordinator,
         mock_coordinator,
-        mock_strain_library,
     ):
         """Test removing irrigation time."""
         # Setup
-        mock_hass.config_entries.async_entries.return_value = [mock_config_entry]
-        mock_config_entry.runtime_data = MagicMock()
-        mock_config_entry.runtime_data.irrigation_coordinators = {
-            "gs1": mock_irrigation_coordinator
-        }
+        mock_coordinator.irrigation_coordinators = {"gs1": mock_irrigation_coordinator}
 
         call = MagicMock(spec=ServiceCall)
         call.data = {"growspace_id": "gs1", "time": "08:00:00"}
@@ -293,18 +259,12 @@ class TestHandleAddDrainTime:
     async def test_add_drain_time_with_duration(
         self,
         mock_hass,
-        mock_config_entry,
         mock_irrigation_coordinator,
         mock_coordinator,
-        mock_strain_library,
     ):
         """Test adding drain time with explicit duration."""
         # Setup
-        mock_hass.config_entries.async_entries.return_value = [mock_config_entry]
-        mock_config_entry.runtime_data = MagicMock()
-        mock_config_entry.runtime_data.irrigation_coordinators = {
-            "gs1": mock_irrigation_coordinator
-        }
+        mock_coordinator.irrigation_coordinators = {"gs1": mock_irrigation_coordinator}
 
         call = MagicMock(spec=ServiceCall)
         call.data = {"growspace_id": "gs1", "time": "10:00:00", "duration": 180}
@@ -321,18 +281,12 @@ class TestHandleAddDrainTime:
     async def test_add_drain_time_default_duration(
         self,
         mock_hass,
-        mock_config_entry,
         mock_irrigation_coordinator,
         mock_coordinator,
-        mock_strain_library,
     ):
         """Test adding drain time using default duration."""
         # Setup
-        mock_hass.config_entries.async_entries.return_value = [mock_config_entry]
-        mock_config_entry.runtime_data = MagicMock()
-        mock_config_entry.runtime_data.irrigation_coordinators = {
-            "gs1": mock_irrigation_coordinator
-        }
+        mock_coordinator.irrigation_coordinators = {"gs1": mock_irrigation_coordinator}
 
         call = MagicMock(spec=ServiceCall)
         call.data = {"growspace_id": "gs1", "time": "10:00:00"}
@@ -356,18 +310,12 @@ class TestHandleRemoveDrainTime:
     async def test_remove_drain_time(
         self,
         mock_hass,
-        mock_config_entry,
         mock_irrigation_coordinator,
         mock_coordinator,
-        mock_strain_library,
     ):
         """Test removing drain time."""
         # Setup
-        mock_hass.config_entries.async_entries.return_value = [mock_config_entry]
-        mock_config_entry.runtime_data = MagicMock()
-        mock_config_entry.runtime_data.irrigation_coordinators = {
-            "gs1": mock_irrigation_coordinator
-        }
+        mock_coordinator.irrigation_coordinators = {"gs1": mock_irrigation_coordinator}
 
         call = MagicMock(spec=ServiceCall)
         call.data = {"growspace_id": "gs1", "time": "10:00:00"}

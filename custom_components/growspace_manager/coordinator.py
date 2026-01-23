@@ -453,7 +453,27 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
     async def async_add_growspace(self, **kwargs: Any) -> Growspace:
         """Add a growspace (delegated to GrowspaceService)."""
-        return await self._growspace_service.add_growspace(**kwargs)
+        growspace = await self._growspace_service.add_growspace(**kwargs)
+
+        # Register device in HA registry
+        device_registry = dr.async_get(self.hass)
+        device_registry.async_get_or_create(
+            config_entry_id=self.config_entry.entry_id,
+            identifiers={(DOMAIN, growspace.id)},
+            name=growspace.name,
+            model=growspace.growspace_type.value
+            if growspace.growspace_type
+            else "Growspace",
+            manufacturer="Growspace Manager",
+            sw_version="0.3.3",
+        )
+
+        # Initialize sub-coordinators for the new growspace
+        await self.subsystem_manager.async_setup_growspace_sub_coordinators(
+            growspace.id, growspace
+        )
+
+        return growspace
 
     async def async_update_growspace(
         self, growspace_id: str, **kwargs: Any

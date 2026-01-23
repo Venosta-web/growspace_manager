@@ -240,6 +240,9 @@ async def test_config_flow_add_growspace_with_data(
         "name": "Test Growspace",
         "rows": 5,
         "plants_per_row": 5,
+        "length": 120,
+        "width": 120,
+        "height": 200,
         "notification_target": "mobile_app_test",
     }
 
@@ -615,6 +618,9 @@ async def test_options_flow_add_growspace_success(
         "name": "New Growspace",
         "rows": 5,
         "plants_per_row": 6,
+        "length": 120,
+        "width": 120,
+        "height": 200,
         "notification_target": "mobile_app_test",
     }
 
@@ -626,6 +632,7 @@ async def test_options_flow_add_growspace_success(
         rows=5,
         plants_per_row=6,
         notification_target="mobile_app_test",
+        dimensions={"length": 120, "width": 120, "height": 200, "unit": "cm"},
     )
 
 
@@ -724,7 +731,13 @@ async def test_options_flow_update_growspace_success(
     flow.hass = hass
     flow.selected_growspace_id = "gs1"
 
-    user_input = {"name": "New Name", "rows": 5}
+    user_input = {
+        "name": "New Name",
+        "rows": 5,
+        "length": 120,
+        "width": 120,
+        "height": 200,
+    }
     result = await flow.async_step_update_growspace(user_input=user_input)
 
     assert result.get("type") == FlowResultType.CREATE_ENTRY
@@ -1679,7 +1692,11 @@ async def test_options_flow_configure_environment_submit(
     config_entry = MockConfigEntry(domain=DOMAIN, data={"name": "Test"}, options={})
     config_entry.add_to_hass(hass)
     config_entry.runtime_data = mock_coordinator
-    mock_growspace = Mock(name="Growspace 1", environment_config=EnvironmentConfig())
+    mock_growspace = Mock(
+        name="Growspace 1",
+        environment_config=EnvironmentConfig(),
+        dimensions={"width": 100, "length": 100, "height": 200, "unit": "cm"},
+    )
     mock_coordinator.growspaces = {"gs1": mock_growspace}
     config_entry.runtime_data = mock_coordinator
 
@@ -1688,15 +1705,21 @@ async def test_options_flow_configure_environment_submit(
     flow.selected_growspace_id = "gs1"
 
     user_input = {
-        "temperature_sensor": "sensor.temp",
-        "humidity_sensor": "sensor.humidity",
-        "vpd_sensor": "sensor.vpd",
+        "temperature_sensors": ["sensor.temp"],
+        "humidity_sensors": ["sensor.humidity"],
+        "vpd_sensors": ["sensor.vpd"],
     }
     result = await flow.async_step_configure_environment(user_input=user_input)
 
+    assert result.get("type") == FlowResultType.FORM
+    assert result.get("step_id") == "configure_sensor_placement"
+
+    # Complete the flow
+    result = await flow.async_step_configure_sensor_placement(user_input={})
     assert result.get("type") == FlowResultType.CREATE_ENTRY
+
     # Environment config is saved to the growspace object, not config_entry options
-    assert mock_growspace.environment_config.temperature_sensor == "sensor.temp"
+    assert mock_growspace.environment_config.temperature_sensors == ["sensor.temp"]
     mock_coordinator.async_save.assert_called_once()
 
 
@@ -1720,6 +1743,7 @@ async def test_options_flow_configure_environment_remove_vpd_sensor(
             temperature_sensor="sensor.temp",
             humidity_sensor="sensor.humidity",
         ),
+        dimensions={"width": 100, "length": 100, "height": 200, "unit": "cm"},
     )
     mock_coordinator.growspaces = {"gs1": mock_growspace}
     config_entry.runtime_data = mock_coordinator
@@ -1728,22 +1752,26 @@ async def test_options_flow_configure_environment_remove_vpd_sensor(
     flow.hass = hass
     flow.selected_growspace_id = "gs1"
 
-    # Simulate user clearing the VPD sensor (sending missing key or None)
-    # When default=... is used in schema, clearing often results in missing key or default being re-injected.
-    # We want to test that missing key (cleared) results in None.
+    # Simulate user clearing the VPD sensor (sending missing key or empty list)
     user_input = {
-        "temperature_sensor": "sensor.temp",
-        "humidity_sensor": "sensor.humidity",
-        "vpd_sensor": None,  # Explicitly clear it
+        "temperature_sensors": ["sensor.temp"],
+        "humidity_sensors": ["sensor.humidity"],
+        "vpd_sensors": [],  # Explicitly clear it
     }
     result = await flow.async_step_configure_environment(user_input=user_input)
+
+    assert result.get("type") == FlowResultType.FORM
+    assert result.get("step_id") == "configure_sensor_placement"
+
+    # Complete the flow
+    result = await flow.async_step_configure_sensor_placement(user_input={})
 
     assert result.get("type") == FlowResultType.CREATE_ENTRY
     # Ensure vpd_sensor is strictly None (not just missing if that was the case)
     # The fix ensures Nones are preserved in the flow.
-    assert mock_growspace.environment_config.vpd_sensor is None
+    assert mock_growspace.environment_config.vpd_sensors == []
     # Ensure other sensors remain
-    assert mock_growspace.environment_config.temperature_sensor == "sensor.temp"
+    assert mock_growspace.environment_config.temperature_sensors == ["sensor.temp"]
     mock_coordinator.async_save.assert_called_once()
 
 
@@ -1769,9 +1797,9 @@ async def test_options_flow_configure_environment_advanced(
     flow.selected_growspace_id = "gs1"
 
     user_input = {
-        "temperature_sensor": "sensor.temp",
-        "humidity_sensor": "sensor.humidity",
-        "vpd_sensor": "sensor.vpd",
+        "temperature_sensors": ["sensor.temp"],
+        "humidity_sensors": ["sensor.humidity"],
+        "vpd_sensors": ["sensor.vpd"],
         "configure_advanced": True,
     }
     result = await flow.async_step_configure_environment(user_input=user_input)
@@ -1826,17 +1854,27 @@ async def test_options_flow_configure_advanced_bayesian_submit(
     config_entry = MockConfigEntry(domain=DOMAIN, data={"name": "Test"}, options={})
     config_entry.add_to_hass(hass)
     config_entry.runtime_data = mock_coordinator
-    mock_growspace = Mock(name="Growspace 1", environment_config=EnvironmentConfig())
+    mock_growspace = Mock(
+        name="Growspace 1",
+        environment_config=EnvironmentConfig(),
+        dimensions={"width": 100, "length": 100, "height": 200, "unit": "cm"},
+    )
     mock_coordinator.growspaces = {"gs1": mock_growspace}
     config_entry.runtime_data = mock_coordinator
 
     flow = OptionsFlowHandler(config_entry)
     flow.hass = hass
     flow.selected_growspace_id = "gs1"
-    flow.env_config_step1 = {}
+    flow.env_config_step1 = {"temperature_sensors": ["sensor.temp"]}
 
     user_input = {"prob_temp_extreme_heat": "(0.9, 0.1)"}
     result = await flow.async_step_configure_advanced_bayesian(user_input=user_input)
+
+    assert result.get("type") == FlowResultType.FORM
+    assert result.get("step_id") == "configure_sensor_placement"
+
+    # Complete the flow
+    result = await flow.async_step_configure_sensor_placement(user_input={})
 
     assert result.get("type") == FlowResultType.CREATE_ENTRY
     # Bayesian config is saved to the growspace object
@@ -1864,7 +1902,11 @@ async def test_options_flow_configure_advanced_bayesian_invalid_tuple(
     config_entry = MockConfigEntry(domain=DOMAIN, data={"name": "Test"}, options={})
     config_entry.add_to_hass(hass)
     config_entry.runtime_data = mock_coordinator
-    mock_growspace = Mock(name="Growspace 1", environment_config=EnvironmentConfig())
+    mock_growspace = Mock(
+        name="Growspace 1",
+        environment_config=EnvironmentConfig(),
+        dimensions={"width": 100, "length": 100, "height": 200, "unit": "cm"},
+    )
     mock_coordinator.growspaces = {"gs1": mock_growspace}
     config_entry.runtime_data = mock_coordinator
 
@@ -2014,18 +2056,28 @@ async def test_options_flow_configure_advanced_bayesian_non_string_value(
     config_entry = MockConfigEntry(domain=DOMAIN, data={"name": "Test"}, options={})
     config_entry.add_to_hass(hass)
     config_entry.runtime_data = mock_coordinator
-    mock_growspace = Mock(name="Growspace 1", environment_config=EnvironmentConfig())
+    mock_growspace = Mock(
+        name="Growspace 1",
+        environment_config=EnvironmentConfig(),
+        dimensions={"width": 100, "length": 100, "height": 200, "unit": "cm"},
+    )
     mock_coordinator.growspaces = {"gs1": mock_growspace}
     config_entry.runtime_data = mock_coordinator
 
     flow = OptionsFlowHandler(config_entry)
     flow.hass = hass
     flow.selected_growspace_id = "gs1"
-    flow.env_config_step1 = {}
+    flow.env_config_step1 = {"temperature_sensors": ["sensor.temp"]}
 
     # Provide a non-string value (e.g., a float)
     user_input = {"prob_temp_extreme_heat": 0.9}
     result = await flow.async_step_configure_advanced_bayesian(user_input=user_input)
+
+    assert result.get("type") == FlowResultType.FORM
+    assert result.get("step_id") == "configure_sensor_placement"
+
+    # Complete the flow
+    result = await flow.async_step_configure_sensor_placement(user_input={})
 
     assert result.get("type") == FlowResultType.CREATE_ENTRY
     # The flow updates the growspace object directly
@@ -2071,14 +2123,21 @@ async def test_options_flow_configure_dehumidifier_submit(
     config_entry = MockConfigEntry(domain=DOMAIN, data={"name": "Test"}, options={})
     config_entry.add_to_hass(hass)
     config_entry.runtime_data = mock_coordinator
-    mock_growspace = Mock(name="Growspace 1", environment_config=EnvironmentConfig())
+    mock_growspace = Mock(
+        name="Growspace 1",
+        environment_config=EnvironmentConfig(),
+        dimensions={"width": 100, "length": 100, "height": 200, "unit": "cm"},
+    )
     mock_coordinator.growspaces = {"gs1": mock_growspace}
     config_entry.runtime_data = mock_coordinator
 
     flow = OptionsFlowHandler(config_entry)
     flow.hass = hass
     flow.selected_growspace_id = "gs1"
-    flow.env_config_step1 = {"some_config": "value"}
+    flow.env_config_step1 = {
+        "some_config": "value",
+        "temperature_sensors": ["sensor.temp"],
+    }
 
     user_input = {
         "seedling_day_on": 0.8,
@@ -2112,6 +2171,12 @@ async def test_options_flow_configure_dehumidifier_submit(
     }
 
     result = await flow.async_step_configure_dehumidifier(user_input=user_input)
+
+    assert result.get("type") == FlowResultType.FORM
+    assert result.get("step_id") == "configure_sensor_placement"
+
+    # Complete the flow
+    result = await flow.async_step_configure_sensor_placement(user_input={})
 
     assert result.get("type") == FlowResultType.CREATE_ENTRY
     assert (
@@ -2628,7 +2693,11 @@ async def test_options_flow_configure_environment_jump_to_advanced(
     config_entry.add_to_hass(hass)
     config_entry.runtime_data = mock_coordinator
 
-    mock_gs = Mock(name="GS1", environment_config=EnvironmentConfig())
+    mock_gs = Mock(
+        name="GS1",
+        environment_config=EnvironmentConfig(),
+        dimensions={"width": 100, "length": 100, "height": 200, "unit": "cm"},
+    )
     mock_coordinator.growspaces = {"gs1": mock_gs}
     config_entry.runtime_data = mock_coordinator
 

@@ -76,6 +76,27 @@ class GrowspaceConfigHandler(BaseConfigHandler[dict[str, Any]]):
                     min=1, max=20, mode=selector.NumberSelectorMode.BOX
                 )
             ),
+            vol.Required("length", default=120): selector.NumberSelector(
+                selector.NumberSelectorConfig(
+                    min=1,
+                    mode=selector.NumberSelectorMode.BOX,
+                    unit_of_measurement="cm",
+                )
+            ),
+            vol.Required("width", default=120): selector.NumberSelector(
+                selector.NumberSelectorConfig(
+                    min=1,
+                    mode=selector.NumberSelectorMode.BOX,
+                    unit_of_measurement="cm",
+                )
+            ),
+            vol.Required("height", default=200): selector.NumberSelector(
+                selector.NumberSelectorConfig(
+                    min=1,
+                    mode=selector.NumberSelectorMode.BOX,
+                    unit_of_measurement="cm",
+                )
+            ),
             vol.Optional("notification_target"): selector.TextSelector(),
         }
 
@@ -185,6 +206,12 @@ class GrowspaceConfigHandler(BaseConfigHandler[dict[str, Any]]):
             rows=user_input["rows"],
             plants_per_row=user_input["plants_per_row"],
             notification_target=user_input.get("notification_target"),
+            dimensions={
+                "length": user_input["length"],
+                "width": user_input["width"],
+                "height": user_input["height"],
+                "unit": "cm",
+            },
         )
 
     async def async_step_confirm_remove_growspace(
@@ -261,6 +288,42 @@ class GrowspaceConfigHandler(BaseConfigHandler[dict[str, Any]]):
                     min=1, max=20, mode=selector.NumberSelectorMode.BOX
                 )
             ),
+            vol.Optional(
+                "length",
+                default=growspace.dimensions.get("length", 120)
+                if growspace.dimensions
+                else 120,
+            ): selector.NumberSelector(
+                selector.NumberSelectorConfig(
+                    min=1,
+                    mode=selector.NumberSelectorMode.BOX,
+                    unit_of_measurement="cm",
+                )
+            ),
+            vol.Optional(
+                "width",
+                default=growspace.dimensions.get("width", 120)
+                if growspace.dimensions
+                else 120,
+            ): selector.NumberSelector(
+                selector.NumberSelectorConfig(
+                    min=1,
+                    mode=selector.NumberSelectorMode.BOX,
+                    unit_of_measurement="cm",
+                )
+            ),
+            vol.Optional(
+                "height",
+                default=growspace.dimensions.get("height", 200)
+                if growspace.dimensions
+                else 200,
+            ): selector.NumberSelector(
+                selector.NumberSelectorConfig(
+                    min=1,
+                    mode=selector.NumberSelectorMode.BOX,
+                    unit_of_measurement="cm",
+                )
+            ),
         }
 
         if notification_options:
@@ -301,6 +364,16 @@ class GrowspaceConfigHandler(BaseConfigHandler[dict[str, Any]]):
 
         # Filter out empty values
         update_data = {k: v for k, v in user_input.items() if v}
+
+        # Handle dimensions update if present
+        if "length" in user_input and "width" in user_input and "height" in user_input:
+            dimensions = {
+                "length": user_input.pop("length"),
+                "width": user_input.pop("width"),
+                "height": user_input.pop("height"),
+                "unit": "cm",
+            }
+            update_data["dimensions"] = dimensions
 
         await coordinator.async_update_growspace(growspace_id, **update_data)
 

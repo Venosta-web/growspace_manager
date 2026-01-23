@@ -2402,7 +2402,7 @@ async def test_setup_sub_coordinators(coordinator: GrowspaceCoordinator) -> None
         mock_irr_instance = AsyncMock()
         mock_irr.return_value = mock_irr_instance
 
-        await coordinator.subsystem_manager._setup_growspace_sub_coordinators(
+        await coordinator.subsystem_manager.async_setup_growspace_sub_coordinators(
             "gs1", gs_normal
         )
 
@@ -2429,7 +2429,7 @@ async def test_setup_sub_coordinators(coordinator: GrowspaceCoordinator) -> None
         mock_vwc_instance = AsyncMock()
         mock_vwc.return_value = mock_vwc_instance
 
-        await coordinator.subsystem_manager._setup_growspace_sub_coordinators(
+        await coordinator.subsystem_manager.async_setup_growspace_sub_coordinators(
             "gs2", gs_vwc
         )
 

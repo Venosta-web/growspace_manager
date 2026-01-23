@@ -220,9 +220,9 @@ def _get_strategy_class(sensor_type: str) -> type[BayesianEvaluatorStrategy]:
 
 def _validate_env_config(config: EnvironmentConfig) -> bool:
     """Validate that the required environment sensor entities are configured."""
-    has_temp = bool(config.temperature_sensor)
-    has_humidity = bool(config.humidity_sensor)
-    has_vpd = bool(config.vpd_sensor)
+    has_temp = bool(config.temperature_sensor) or bool(config.temperature_sensors)
+    has_humidity = bool(config.humidity_sensor) or bool(config.humidity_sensors)
+    has_vpd = bool(config.vpd_sensor) or bool(config.vpd_sensors)
 
     # Valid if we have temp, humidity, and either a VPD sensor or ability to calculate it
     return has_temp and has_humidity and (has_vpd or (has_temp and has_humidity))
@@ -328,10 +328,16 @@ class BayesianEnvironmentSensor(
         if growspace and growspace.environment_config:
             self.env_config = growspace.environment_config
 
-        # With strict typing, access attributes directly from dataclass
-        temp = self._get_sensor_value(self.env_config.temperature_sensor)
-        humidity = self._get_sensor_value(self.env_config.humidity_sensor)
-        vpd = self._get_sensor_value(self.env_config.vpd_sensor)
+        # Aggregate sensors with fallback to singular if needed
+        temp = self._get_aggregated_sensor_value(
+            self.env_config.temperature_sensors or [self.env_config.temperature_sensor]
+        )
+        humidity = self._get_aggregated_sensor_value(
+            self.env_config.humidity_sensors or [self.env_config.humidity_sensor]
+        )
+        vpd = self._get_aggregated_sensor_value(
+            self.env_config.vpd_sensors or [self.env_config.vpd_sensor]
+        )
 
         # Fallback: Calculate VPD if sensor is missing but Temp/Hum are available
         if vpd is None and temp is not None and humidity is not None:
@@ -456,6 +462,9 @@ class BayesianEnvironmentSensor(
         ]
 
         # Extend with multi-device lists
+        sensors.extend(c.temperature_sensors)
+        sensors.extend(c.humidity_sensors)
+        sensors.extend(c.vpd_sensors)
         sensors.extend(c.light_sensors)
         sensors.extend(c.circulation_fan_entities)
         sensors.extend(c.dehumidifier_entities)
@@ -503,6 +512,22 @@ class BayesianEnvironmentSensor(
             return float(state.state)
         except (ValueError, TypeError):
             return None
+
+    def _get_aggregated_sensor_value(self, sensor_ids: list[str]) -> float | None:
+        """Get the average value from a list of sensor entity IDs."""
+        if not sensor_ids:
+            return None
+
+        values = []
+        for sensor_id in sensor_ids:
+            val = self._get_sensor_value(sensor_id)
+            if val is not None:
+                values.append(val)
+
+        if not values:
+            return None
+
+        return sum(values) / len(values)
 
     @staticmethod
     def _days_since(date_str: str) -> int:

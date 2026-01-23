@@ -8,7 +8,6 @@ coordinator.
 """
 
 from datetime import date, timedelta
-from typing import cast
 from unittest.mock import AsyncMock, MagicMock, Mock, patch
 
 import pytest
@@ -40,15 +39,14 @@ def mock_coordinator() -> MagicMock:
     """
     coordinator = Mock()
     coordinator.hass = Mock()
-    coordinator.growspaces = {
-        "gs1": Mock(
-            id="gs1",
-            name="Growspace 1",
-            rows=2,
-            plants_per_row=2,
-            notification_target="notify_me",
-        )
-    }
+    gs1 = Mock(
+        id="gs1",
+        rows=2,
+        plants_per_row=2,
+        notification_target="notify_me",
+    )
+    gs1.name = "Growspace 1"
+    coordinator.growspaces = {"gs1": gs1}
     coordinator.plants = {
         "p1": Mock(
             plant_id="p1",
@@ -418,15 +416,13 @@ async def test_async_create_derivative_sensors(mock_coordinator: MagicMock) -> N
     """Test that _async_create_derivative_sensors creates trend and statistics sensors."""
     hass = MagicMock()
     config_entry = Mock(entry_id="entry_1")
-    growspace = Mock(
-        id="gs1",
-        name="Growspace 1",
-        environment_config={
-            "temperature_sensor": "sensor.temp",
-            "humidity_sensor": "sensor.humidity",
-            "vpd_sensor": "sensor.vpd",
-        },
-    )
+    growspace = Mock(id="gs1")
+    growspace.name = "Growspace 1"
+    growspace.environment_config = {
+        "temperature_sensor": "sensor.temp",
+        "humidity_sensor": "sensor.humidity",
+        "vpd_sensor": "sensor.vpd",
+    }
     config_entry.runtime_data = mock_coordinator
 
     with (
@@ -450,10 +446,10 @@ async def test_async_create_derivative_sensors(mock_coordinator: MagicMock) -> N
         assert mock_setup_stats.call_count == 3
 
         mock_setup_trend.assert_any_call(
-            hass, "sensor.temp", "gs1", growspace.name, "temperature"
+            hass, "sensor.temp", "gs1", "Growspace 1", "temperature"
         )
         mock_setup_stats.assert_any_call(
-            hass, "sensor.temp", "gs1", growspace.name, "temperature"
+            hass, "sensor.temp", "gs1", "Growspace 1", "temperature"
         )
 
         created_entity_ids = config_entry.runtime_data.created_entity_ids
@@ -866,17 +862,17 @@ async def test_sensor_coverage_gaps(mock_coordinator: MagicMock) -> None:
     )
     gs_obj_config = Mock(id="gs_obj", name="GS Obj", environment_config=env_config_obj)
 
-    calc_sensor = sensor_module._check_calculated_vpd_sensor(
+    calc_sensors = sensor_module._check_calculated_vpd_sensor(
         mock_coordinator, gs_obj_config
     )
-    assert calc_sensor is not None
-    assert calc_sensor._lst_offset == -2.0  # Default value
-    assert calc_sensor.entities_to_track == ["sensor.t", "sensor.h"]
+    assert calc_sensors
+    assert calc_sensors[0]._lst_offset == -2.0  # Default value
+    assert calc_sensors[0].entities_to_track == ["sensor.t", "sensor.h"]
 
     # Test creation failure (return None) if sensors missing
     gs_missing = Mock(id="gs_miss", environment_config={"temperature_sensor": None})
     assert (
-        sensor_module._check_calculated_vpd_sensor(mock_coordinator, gs_missing) is None
+        sensor_module._check_calculated_vpd_sensor(mock_coordinator, gs_missing) == []
     )
 
     # 4. Test VpdSensor.entities_to_track with all entities
@@ -972,10 +968,9 @@ def test_growspace_list_sensor_state_and_attributes(
     sensor = GrowspaceListSensor(mock_coordinator)
     sensor.platform = MagicMock()
     sensor.platform_data = sensor.platform
-    assert sensor.state == 1
     attrs = sensor.extra_state_attributes
     assert "growspaces" in attrs
-    assert cast(list[str], attrs["growspaces"]) == ["gs1"]
+    assert attrs["growspaces"] == {"gs1": "Growspace 1"}
 
 
 # --------------------

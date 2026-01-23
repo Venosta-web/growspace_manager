@@ -84,9 +84,13 @@ class EnvironmentAnalyzer:
         danger_min, danger_max = cycle_data.get("stress", (0.6, 1.4))
 
         vpd_status = "unknown"
-        vpd_sensor_id = growspace.environment_config.vpd_sensor
-        if vpd_sensor_id:
-            current_vpd = self._get_sensor_value(vpd_sensor_id)
+        env_config = growspace.environment_config
+        vpd_sensors = env_config.vpd_sensors or (
+            [env_config.vpd_sensor] if env_config.vpd_sensor else []
+        )
+
+        if vpd_sensors:
+            current_vpd = self._get_aggregated_sensor_value(vpd_sensors)
             if current_vpd is not None:
                 if current_vpd < danger_min or current_vpd > danger_max:
                     vpd_status = "danger"
@@ -205,6 +209,22 @@ class EnvironmentAnalyzer:
             except (ValueError, TypeError):
                 return None
         return None
+
+    def _get_aggregated_sensor_value(self, sensor_ids: list[str]) -> float | None:
+        """Get the average value from a list of sensor entity IDs."""
+        if not sensor_ids:
+            return None
+
+        values = []
+        for sensor_id in sensor_ids:
+            val = self._get_sensor_value(sensor_id)
+            if val is not None:
+                values.append(val)
+
+        if not values:
+            return None
+
+        return sum(values) / len(values)
 
     def _get_outside_conditions(
         self, global_settings: dict[str, Any]
@@ -358,9 +378,11 @@ class EnvironmentAnalyzer:
                 recommendations[growspace_id] = "Idle"
                 continue
 
-            current_vpd = self._get_sensor_value(
-                growspace.environment_config.vpd_sensor
+            env_config = growspace.environment_config
+            vpd_sensors = env_config.vpd_sensors or (
+                [env_config.vpd_sensor] if env_config.vpd_sensor else []
             )
+            current_vpd = self._get_aggregated_sensor_value(vpd_sensors)
             target_vpd = (
                 self.coordinator.data.get("bayesian_sensors_reason", {})
                 .get(growspace_id, {})

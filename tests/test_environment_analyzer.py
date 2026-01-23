@@ -6,7 +6,7 @@ import pytest
 
 from custom_components.growspace_manager.const import DEFAULT_FLOWER_EARLY_DAYS
 from custom_components.growspace_manager.environment_analyzer import EnvironmentAnalyzer
-from custom_components.growspace_manager.models import EnvironmentConfig, Growspace
+from custom_components.growspace_manager.models import EnvironmentConfig
 from homeassistant.const import STATE_ON
 from homeassistant.core import HomeAssistant
 
@@ -35,6 +35,9 @@ def mock_growspace():
     gs.environment_config = MagicMock(spec=EnvironmentConfig)
     gs.environment_config.light_sensors = ["sensor.light"]
     gs.environment_config.vpd_sensor = "sensor.vpd"
+    gs.environment_config.vpd_sensors = []
+    gs.environment_config.temperature_sensors = []
+    gs.environment_config.humidity_sensors = []
     return gs
 
 

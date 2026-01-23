@@ -8,7 +8,6 @@ import voluptuous as vol
 
 from custom_components.growspace_manager.config_flow import OptionsFlowHandler
 from custom_components.growspace_manager.const import DOMAIN
-from custom_components.growspace_manager.coordinator import GrowspaceCoordinator
 from homeassistant.core import HomeAssistant
 from homeassistant.data_entry_flow import FlowResultType
 
@@ -326,6 +325,9 @@ async def test_options_flow_add_growspace_success(
         "rows": 5,
         "plants_per_row": 6,
         "notification_target": "mobile_app_test",
+        "length": 120,
+        "width": 120,
+        "height": 200,
     }
     result = await flow.async_step_add_growspace(user_input=user_input)
 
@@ -336,6 +338,12 @@ async def test_options_flow_add_growspace_success(
         rows=5,
         plants_per_row=6,
         notification_target="mobile_app_test",
+        dimensions={
+            "length": 120,
+            "width": 120,
+            "height": 200,
+            "unit": "cm",
+        },
     )
 
 
@@ -416,7 +424,9 @@ async def test_options_flow_update_growspace_success(
 
     # Then
     assert result.get("type") == FlowResultType.CREATE_ENTRY
-    mock_coordinator.async_update_growspace.assert_awaited_once()
+    mock_coordinator.async_update_growspace.assert_awaited_once_with(
+        "gs1", name="New Name", rows=5
+    )
 
 
 @pytest.mark.asyncio

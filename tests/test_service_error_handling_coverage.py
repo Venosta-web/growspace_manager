@@ -137,6 +137,7 @@ async def test_irrigation_error_handling(
     call = MagicMock(spec=ServiceCall)
     call.data = {ATTR_GROWSPACE_ID: "gs1", ATTR_TIME: "08:00:00"}
 
+    mock_coordinator.irrigation_coordinators = {"gs1": mock_irrigation_coordinator}
     # Set Settings - GrowspaceError
     mock_irrigation_coordinator.async_set_settings.side_effect = GrowspaceError(
         "Set failed"

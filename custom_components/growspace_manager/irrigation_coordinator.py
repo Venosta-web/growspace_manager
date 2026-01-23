@@ -297,11 +297,15 @@ class IrrigationCoordinator(BaseIrrigationCoordinator):
         if drain_times:
             _LOGGER.debug("Drain schedule: %s", drain_times)
 
-        # Deduplicate events based on time
+        # Deduplicate events based on time, skipping malformed records
         unique_irrigation_times = {
-            event["time"]: event for event in irrigation_times
+            t: event
+            for event in irrigation_times
+            if (t := event.get("time")) is not None
         }.values()
-        unique_drain_times = {event["time"]: event for event in drain_times}.values()
+        unique_drain_times = {
+            t: event for event in drain_times if (t := event.get("time")) is not None
+        }.values()
 
         for event in unique_irrigation_times:
             self._schedule_event(event, "irrigation")

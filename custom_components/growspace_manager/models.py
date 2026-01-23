@@ -176,11 +176,17 @@ class EnvironmentConfig(BaseModel):
     flower_day_hours: int = 12
 
     # Multi-device fields (NEW)
+    temperature_sensors: list[str] = field(default_factory=list)
+    humidity_sensors: list[str] = field(default_factory=list)
+    vpd_sensors: list[str] = field(default_factory=list)
     light_sensors: list[str] = field(default_factory=list)
     exhaust_fan_entities: list[str] = field(default_factory=list)
     circulation_fan_entities: list[str] = field(default_factory=list)
     humidifier_entities: list[str] = field(default_factory=list)
     dehumidifier_entities: list[str] = field(default_factory=list)
+
+    # 3D Sensor Configuration
+    sensor_coordinates: dict[str, dict[str, float]] = field(default_factory=dict)
 
     lst_offset: float = -2.0
     control_dehumidifier: bool = False
@@ -190,6 +196,23 @@ class EnvironmentConfig(BaseModel):
     mold_threshold: float = 0.75
     bayesian_options: BayesianOptions = field(default_factory=dict)
     irrigation_tanks: list[IrrigationTank] = field(default_factory=list)
+
+    def __post_init__(self) -> None:
+        """Sync singular fields to plural lists for initialization support."""
+        if self.temperature_sensor and not self.temperature_sensors:
+            self.temperature_sensors = [self.temperature_sensor]
+        if self.humidity_sensor and not self.humidity_sensors:
+            self.humidity_sensors = [self.humidity_sensor]
+        if self.vpd_sensor and not self.vpd_sensors:
+            self.vpd_sensors = [self.vpd_sensor]
+
+        # Sync plural -> singular for internal consistency
+        if self.temperature_sensors and not self.temperature_sensor:
+            self.temperature_sensor = self.temperature_sensors[0]
+        if self.humidity_sensors and not self.humidity_sensor:
+            self.humidity_sensor = self.humidity_sensors[0]
+        if self.vpd_sensors and not self.vpd_sensor:
+            self.vpd_sensor = self.vpd_sensors[0]
 
     # Backward-compatible properties
     @property
@@ -231,11 +254,14 @@ class EnvironmentConfig(BaseModel):
             CONF_CIRCULATION_FAN_ENTITY: CONF_CIRCULATION_FAN_ENTITIES,
             CONF_HUMIDIFIER_ENTITY: CONF_HUMIDIFIER_ENTITIES,
             CONF_DEHUMIDIFIER_ENTITY: CONF_DEHUMIDIFIER_ENTITIES,
+            "temperature_sensor": "temperature_sensors",
+            "humidity_sensor": "humidity_sensors",
+            "vpd_sensor": "vpd_sensors",
         }
         for old_key, new_key in migrations.items():
             # If we have the old key but NOT the new key, migrate
             if old_key in data and new_key not in data:
-                val = data.pop(old_key)
+                val = data.get(old_key)  # Don't pop yet
                 # Ensure we handle potentially None values from old config
                 if val:
                     data[new_key] = [val] if isinstance(val, str) else []
@@ -307,6 +333,14 @@ class Growspace(BaseModel):
 
     id: str
     name: str
+    dimensions: dict[str, float | str] = field(
+        default_factory=lambda: {
+            "width": 120,
+            "depth": 120,
+            "height": 200,
+            "unit": "cm",
+        }
+    )
     rows: int = 3
     plants_per_row: int = 3
     notification_target: str | None = None

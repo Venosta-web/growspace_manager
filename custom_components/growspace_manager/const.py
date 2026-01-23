@@ -58,6 +58,9 @@ CONF_DEHUMIDIFIER_ENTITIES = "dehumidifier_entities"
 CONF_CIRCULATION_FAN_ENTITIES = "circulation_fan_entities"
 CONF_HUMIDIFIER_ENTITIES = "humidifier_entities"
 CONF_EXHAUST_FAN_ENTITIES = "exhaust_fan_entities"
+CONF_TEMP_SENSORS = "temperature_sensors"
+CONF_HUMIDITY_SENSORS = "humidity_sensors"
+CONF_VPD_SENSORS = "vpd_sensors"
 
 # Metric Names
 METRIC_STRESS = "stress"

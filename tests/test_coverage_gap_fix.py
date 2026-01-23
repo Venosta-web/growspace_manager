@@ -211,13 +211,13 @@ async def test_check_calculated_vpd_sensor_creation() -> None:
         temperature_sensor="sensor.temp", humidity_sensor="sensor.hum"
     )
 
-    sensor = _check_calculated_vpd_sensor(coordinator, gs)
-    assert sensor is not None
-    assert isinstance(sensor, CalculatedVpdSensor)
+    sensors = _check_calculated_vpd_sensor(coordinator, gs)
+    assert sensors
+    assert isinstance(sensors[0], CalculatedVpdSensor)
 
     gs.environment_config.vpd_sensor = "sensor.calculated_vpd_gs1"
-    sensor = _check_calculated_vpd_sensor(coordinator, gs)
-    assert sensor is not None
+    sensors = _check_calculated_vpd_sensor(coordinator, gs)
+    assert sensors
 
 
 async def test_base_vpd_sensor_tracking(hass: HomeAssistant) -> None:
@@ -594,7 +594,8 @@ async def test_sensor_new_vpd_entity_creation_in_update(hass: HomeAssistant) -> 
         "custom_components.growspace_manager.sensor._check_calculated_vpd_sensor"
     ) as mock_check:
         mock_vpd_entity = MagicMock()
-        mock_check.return_value = mock_vpd_entity
+        mock_vpd_entity.unique_id = "gs1"
+        mock_check.return_value = [mock_vpd_entity]
 
         with patch(
             "custom_components.growspace_manager.sensor._async_create_derivative_sensors"
@@ -609,9 +610,7 @@ async def test_sensor_new_vpd_entity_creation_in_update(hass: HomeAssistant) -> 
             )
 
         # Verify
-        mock_add_entities.assert_called()
-        args = mock_add_entities.call_args[0][0]
-        assert mock_vpd_entity in args
+        mock_add_entities.assert_any_call([mock_vpd_entity])
         assert "gs1" in calculated_vpd_growspace_ids
 
     # Check if async_request_refresh was called on the coordinator

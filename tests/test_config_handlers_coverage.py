@@ -513,13 +513,26 @@ async def test_growspace_handler_flow_add_step(mock_hass, mock_config_entry) -> 
 
     # 2. Input success
     # 2. Input success
-    user_input = {"name": "New GS", "rows": 4, "plants_per_row": 4}
+    user_input = {
+        "name": "New GS",
+        "rows": 4,
+        "plants_per_row": 4,
+        "length": 120,
+        "width": 120,
+        "height": 200,
+    }
     await handler.async_step_add_growspace(user_input)
     coordinator.async_add_growspace.assert_awaited_with(
         name=user_input["name"],
         rows=user_input["rows"],
         plants_per_row=user_input["plants_per_row"],
         notification_target=None,
+        dimensions={
+            "length": 120,
+            "width": 120,
+            "height": 200,
+            "unit": "cm",
+        },
     )
     handler.flow.async_create_entry.assert_called()
 

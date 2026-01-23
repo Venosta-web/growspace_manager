@@ -21,10 +21,13 @@ from .const import (
     CONF_HUMIDIFIER_ENTITIES,
     CONF_HUMIDIFIER_ENTITY,
     CONF_HUMIDITY_SENSOR,
+    CONF_HUMIDITY_SENSORS,
     CONF_LIGHT_SENSOR,
     CONF_LIGHT_SENSORS,
     CONF_TEMP_SENSOR,
+    CONF_TEMP_SENSORS,
     CONF_VPD_SENSOR,
+    CONF_VPD_SENSORS,
     DOMAIN,
     PlantStage,
 )
@@ -238,6 +241,7 @@ class GrowspaceSerializer:
             "rows": growspace.rows,
             "plants_per_row": growspace.plants_per_row,
             "total_plants": len(plants),
+            "dimensions": growspace.dimensions,
             "notification_target": growspace.notification_target,
             "max_veg_days": max_veg_days,
             "max_flower_days": max_flower_days,
@@ -473,6 +477,12 @@ class GrowspaceSerializer:
 
             # Add light_sensors list specifically
             attributes["light_sensors"] = env_config.light_sensors
+
+            # Add 3D Sensor coordinates and plural sensor lists
+            attributes["sensor_coordinates"] = env_config.sensor_coordinates
+            attributes[CONF_TEMP_SENSORS] = env_config.temperature_sensors
+            attributes[CONF_HUMIDITY_SENSORS] = env_config.humidity_sensors
+            attributes[CONF_VPD_SENSORS] = env_config.vpd_sensors
 
             # Circulation fan
             circulation_fan_entity = env_config.circulation_fan_entity

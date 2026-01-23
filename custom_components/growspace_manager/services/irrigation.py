@@ -11,7 +11,6 @@ from custom_components.growspace_manager.const import (
     ATTR_GROWSPACE_ID,
     ATTR_IRRIGATION_TIMES,
     ATTR_TIME,
-    DOMAIN,
 )
 from custom_components.growspace_manager.exceptions import GrowspaceError
 from homeassistant.core import HomeAssistant, ServiceCall
@@ -27,23 +26,29 @@ _LOGGER = logging.getLogger(__name__)
 
 
 async def _get_irrigation_coordinator(
-    hass: HomeAssistant, growspace_id: str
+    coordinator: GrowspaceCoordinator, growspace_id: str
 ) -> IrrigationCoordinator:
     """Get the irrigation coordinator for a specific growspace, raising on failure."""
-    # This integration assumes a single config entry.
-    entries = hass.config_entries.async_entries(DOMAIN)
-    if not entries:
-        raise ServiceValidationError("Growspace Manager integration not yet set up.")
-
-    entry = entries[0]
-
     try:
-        irrigation_coordinators = entry.runtime_data.irrigation_coordinators
+        irrigation_coordinators = coordinator.irrigation_coordinators
 
         if growspace_id not in irrigation_coordinators:
-            raise ServiceValidationError(
-                f"Growspace '{growspace_id}' not found or has no irrigation setup."
-            )
+            # Fallback: Check if growspace exists and try to lazy init
+            growspace = coordinator.growspaces.get(growspace_id)
+            if growspace:
+                _LOGGER.info(
+                    "Lazy initializing subsystems for growspace %s", growspace_id
+                )
+                await coordinator.subsystem_manager.async_setup_growspace_sub_coordinators(
+                    growspace_id, growspace
+                )
+                # Re-fetch
+                irrigation_coordinators = coordinator.irrigation_coordinators
+
+            if growspace_id not in irrigation_coordinators:
+                raise ServiceValidationError(
+                    f"Growspace '{growspace_id}' not found or has no irrigation setup."
+                )
         return cast("IrrigationCoordinator", irrigation_coordinators[growspace_id])
     except AttributeError:
         raise ServiceValidationError(
@@ -59,7 +64,7 @@ async def handle_set_irrigation_settings(
     """Handle the service call to set irrigation settings for a growspace."""
     try:
         growspace_id = call.data[ATTR_GROWSPACE_ID]
-        irrigation_coord = await _get_irrigation_coordinator(hass, growspace_id)
+        irrigation_coord = await _get_irrigation_coordinator(coordinator, growspace_id)
 
         settings = {
             key: value for key, value in call.data.items() if key != ATTR_GROWSPACE_ID
@@ -84,7 +89,7 @@ async def handle_add_irrigation_time(
     """Handle the service call to add an irrigation time to a schedule."""
     try:
         growspace_id = call.data[ATTR_GROWSPACE_ID]
-        irrigation_coord = await _get_irrigation_coordinator(hass, growspace_id)
+        irrigation_coord = await _get_irrigation_coordinator(coordinator, growspace_id)
 
         duration = call.data.get(ATTR_DURATION)
         if duration is None:
@@ -108,7 +113,7 @@ async def handle_remove_irrigation_time(
     """Handle the service call to remove an irrigation time from a schedule."""
     try:
         growspace_id = call.data[ATTR_GROWSPACE_ID]
-        irrigation_coord = await _get_irrigation_coordinator(hass, growspace_id)
+        irrigation_coord = await _get_irrigation_coordinator(coordinator, growspace_id)
         await irrigation_coord.async_remove_schedule_item(
             ATTR_IRRIGATION_TIMES, call.data[ATTR_TIME]
         )
@@ -129,7 +134,7 @@ async def handle_add_drain_time(
     """Handle the service call to add a drain time to a schedule."""
     try:
         growspace_id = call.data[ATTR_GROWSPACE_ID]
-        irrigation_coord = await _get_irrigation_coordinator(hass, growspace_id)
+        irrigation_coord = await _get_irrigation_coordinator(coordinator, growspace_id)
 
         duration = call.data.get(ATTR_DURATION)
         if duration is None:
@@ -153,7 +158,7 @@ async def handle_remove_drain_time(
     """Handle the service call to remove a drain time from a schedule."""
     try:
         growspace_id = call.data[ATTR_GROWSPACE_ID]
-        irrigation_coord = await _get_irrigation_coordinator(hass, growspace_id)
+        irrigation_coord = await _get_irrigation_coordinator(coordinator, growspace_id)
         await irrigation_coord.async_remove_schedule_item(
             ATTR_DRAIN_TIMES, call.data[ATTR_TIME]
         )

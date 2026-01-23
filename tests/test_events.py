@@ -30,9 +30,10 @@ async def test_async_fire_growspace_event(hass: HomeAssistant) -> None:
     await hass.async_block_till_done()
 
     assert len(events) == 1
-    assert events[0].data["growspace_id"] == "gs1"
-    assert events[0].data["name"] == "Test GS"
-    assert events[0].data["device_id"] == "dev1"
+    assert events[0].data["event_type"] == EVENT_GROWSPACE_UPDATED
+    assert events[0].data["data"]["growspace_id"] == "gs1"
+    assert events[0].data["data"]["name"] == "Test GS"
+    assert events[0].data["data"]["device_id"] == "dev1"
 
 
 async def test_async_fire_plant_event(hass: HomeAssistant) -> None:

@@ -640,6 +640,80 @@ async def websocket_get_history_stats(
         connection.send_error(msg["id"], "unknown_error", str(err))
 
 
+WS_TYPE_UPDATE_SENSOR_COORDINATES = f"{DOMAIN}/update_sensor_coordinates"
+SCHEMA_WS_UPDATE_SENSOR_COORDINATES = websocket_api.BASE_COMMAND_MESSAGE_SCHEMA.extend(
+    {
+        vol.Required("type"): WS_TYPE_UPDATE_SENSOR_COORDINATES,
+        vol.Required("growspace_id"): str,
+        vol.Required("entity_id"): str,
+        vol.Required("x"): int,
+        vol.Required("y"): int,
+        vol.Required("z"): int,
+        vol.Optional("rotation"): int,
+    }
+)
+
+
+async def websocket_update_sensor_coordinates(
+    hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
+) -> None:
+    """Handle update sensor coordinates command."""
+    growspace_id = msg["growspace_id"]
+    entity_id = msg["entity_id"]
+    x = msg["x"]
+    y = msg["y"]
+    z = msg["z"]
+    rotation = msg.get("rotation")
+
+    try:
+        coordinator = GrowspaceCoordinator.get_for_service_call(hass, msg)
+        growspace = coordinator.growspaces.get(growspace_id)
+
+        if not growspace:
+            connection.send_error(
+                msg["id"], "not_found", f"Growspace {growspace_id} not found"
+            )
+            return
+
+        # Update sensor coordinates in growspace data
+        if (
+            not hasattr(growspace, "environment_config")
+            or not growspace.environment_config
+        ):
+            connection.send_error(
+                msg["id"],
+                "invalid_state",
+                "Grow space has no environment configuration",
+            )
+            return
+
+        if not growspace.environment_config.sensor_coordinates:
+            growspace.environment_config.sensor_coordinates = {}
+
+        data = {
+            "x": x,
+            "y": y,
+            "z": z,
+        }
+        if rotation is not None:
+            data["rotation"] = rotation
+
+        growspace.environment_config.sensor_coordinates[entity_id] = data
+
+        # Save the coordinator data
+        await coordinator.async_save()
+
+        # Trigger a coordinator refresh to update all sensors
+        await coordinator.async_request_refresh()
+
+        connection.send_result(msg["id"])
+    except ServiceValidationError as err:
+        connection.send_error(msg["id"], "invalid_args", str(err))
+    except Exception as err:
+        _LOGGER.exception("Error handling websocket_update_sensor_coordinates")
+        connection.send_error(msg["id"], "unknown_error", str(err))
+
+
 async def _get_statistics_data(
     hass: HomeAssistant,
     entity_ids: list[str],
@@ -887,6 +961,13 @@ def async_register_websocket_api(hass: HomeAssistant) -> None:
         WS_TYPE_GET_HISTORY_STATS,
         websocket_api.async_response(websocket_get_history_stats),
         SCHEMA_WS_GET_HISTORY_STATS,
+    )
+
+    websocket_api.async_register_command(
+        hass,
+        WS_TYPE_UPDATE_SENSOR_COORDINATES,
+        websocket_api.async_response(websocket_update_sensor_coordinates),
+        SCHEMA_WS_UPDATE_SENSOR_COORDINATES,
     )
 
     websocket_api.async_register_command(

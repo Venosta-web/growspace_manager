@@ -376,6 +376,12 @@ class OptionsFlowHandler(OptionsFlow):
         """Delegate advanced Bayesian configuration to the handler."""
         return await self.env_handler.async_step_configure_advanced_bayesian(user_input)
 
+    async def async_step_configure_sensor_placement(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Delegate sensor placement configuration to the handler."""
+        return await self.env_handler.async_step_configure_sensor_placement(user_input)
+
     async def async_step_manage_plants(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:

@@ -86,8 +86,11 @@ def mock_coordinator(mock_growspace):
     # Create a new EnvironmentConfig based on the original
     dry_config = EnvironmentConfig(**mock_growspace.environment_config.to_dict())
     dry_config.temperature_sensor = "sensor.drying_temp"
+    dry_config.temperature_sensors = ["sensor.drying_temp"]
     dry_config.humidity_sensor = "sensor.drying_humidity"
+    dry_config.humidity_sensors = ["sensor.drying_humidity"]
     dry_config.vpd_sensor = "sensor.drying_vpd"
+    dry_config.vpd_sensors = ["sensor.drying_vpd"]
     drying_growspace.environment_config = dry_config
     coordinator.growspaces["dry"] = drying_growspace
 
@@ -97,8 +100,11 @@ def mock_coordinator(mock_growspace):
     curing_growspace.growspace_type = GrowspaceType.CURE
     cure_config = EnvironmentConfig(**mock_growspace.environment_config.to_dict())
     cure_config.temperature_sensor = "sensor.curing_temp"
+    cure_config.temperature_sensors = ["sensor.curing_temp"]
     cure_config.humidity_sensor = "sensor.curing_humidity"
+    cure_config.humidity_sensors = ["sensor.curing_humidity"]
     cure_config.vpd_sensor = "sensor.curing_vpd"
+    cure_config.vpd_sensors = ["sensor.curing_vpd"]
     curing_growspace.environment_config = cure_config
     coordinator.growspaces["cure"] = curing_growspace
 

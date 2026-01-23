@@ -56,7 +56,7 @@ class SubsystemManager:
             async with asyncio.TaskGroup() as tg:
                 for growspace_id, gs in growspaces.items():
                     tg.create_task(
-                        self._setup_growspace_sub_coordinators(growspace_id, gs)
+                        self.async_setup_growspace_sub_coordinators(growspace_id, gs)
                     )
         except ExceptionGroup as eg:
             for err in eg.exceptions:
@@ -65,7 +65,7 @@ class SubsystemManager:
                 "Some sub-coordinators failed to initialize, continuing with available services"
             )
 
-    async def _setup_growspace_sub_coordinators(
+    async def async_setup_growspace_sub_coordinators(
         self, growspace_id: str, gs: Growspace
     ) -> None:
         """Setup sub-coordinators for a single growspace."""
