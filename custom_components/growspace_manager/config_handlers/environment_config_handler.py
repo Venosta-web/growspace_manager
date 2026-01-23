@@ -332,8 +332,16 @@ class EnvironmentConfigHandler(BaseConfigHandler[dict[str, Any]]):
             "vpd_sensors",
             "light_sensors",
             "co2_sensor",
+            "soil_moisture_sensor",
             "circulation_fan_entities",
             "circulation_fan_entity",
+            "exhaust_fan_entities",
+            "exhaust_entity",
+            "exhaust_fan_entity",
+            "humidifier_entities",
+            "humidifier_entity",
+            "dehumidifier_entities",
+            "dehumidifier_entity",
         ]:
             val = env_config.get(key)
             if not val:
