@@ -73,9 +73,7 @@ class PlantConfigHandler(BaseConfigHandler[dict[str, Any]]):
             self.flow.selected_growspace_id = user_input["growspace_id"]
             return await self.async_step_add_plant()
 
-        growspace_options = (
-            coordinator._growspace_service.get_sorted_growspace_options()
-        )
+        growspace_options = coordinator.growspace_service.get_sorted_growspace_options()
         if not growspace_options:
             return self.flow.async_abort(reason="no_growspaces")
 

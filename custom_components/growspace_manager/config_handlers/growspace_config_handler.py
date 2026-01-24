@@ -26,9 +26,7 @@ class GrowspaceConfigHandler(BaseConfigHandler[dict[str, Any]]):
         self, coordinator: GrowspaceCoordinator
     ) -> vol.Schema:
         """Build the schema for the growspace management menu."""
-        growspace_options = (
-            coordinator._growspace_service.get_sorted_growspace_options()
-        )
+        growspace_options = coordinator.growspace_service.get_sorted_growspace_options()
 
         schema: dict[Any, Any] = {
             vol.Required("action", default="add"): selector.SelectSelector(

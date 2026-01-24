@@ -300,7 +300,7 @@ class PlantLifecycleManager:
         if record_harvest_analytics:
             await self._record_analytics(plant)
 
-        gs_id = self.coordinator._growspace_service.ensure_special_growspace(
+        gs_id = self.coordinator.growspace_service.ensure_special_growspace(
             target_stage.value, target_stage.value
         )
         target_gs = self.coordinator.growspaces.get(gs_id)

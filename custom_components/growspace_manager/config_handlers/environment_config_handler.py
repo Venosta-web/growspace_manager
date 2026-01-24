@@ -57,9 +57,7 @@ class EnvironmentConfigHandler(BaseConfigHandler[dict[str, Any]]):
         if coordinator is None:
             return self.flow.async_abort(reason="setup_error")
 
-        growspace_options = (
-            coordinator._growspace_service.get_sorted_growspace_options()
-        )
+        growspace_options = coordinator.growspace_service.get_sorted_growspace_options()
 
         if not growspace_options:
             return self.flow.async_abort(reason="no_growspaces")
@@ -103,10 +101,7 @@ class EnvironmentConfigHandler(BaseConfigHandler[dict[str, Any]]):
             growspace_options = asdict(growspace.environment_config)
 
             # Convert irrigation_tanks from list of dicts back to list of sensor entities for the form
-            if (
-                "irrigation_tanks" in growspace_options
-                and growspace_options["irrigation_tanks"]
-            ):
+            if growspace_options.get("irrigation_tanks"):
                 tank_sensors = [
                     tank["sensor_entity"]
                     for tank in growspace_options["irrigation_tanks"]
@@ -324,8 +319,10 @@ class EnvironmentConfigHandler(BaseConfigHandler[dict[str, Any]]):
 
         env_config = self.flow.env_config_step1
 
-        # Identify all configured sensors
+        # Identify all configured sensors and those allowed to be outside
         sensors_to_configure = []
+        sensors_allowed_outside = set()
+
         for key in [
             "temperature_sensors",
             "humidity_sensors",
@@ -346,24 +343,37 @@ class EnvironmentConfigHandler(BaseConfigHandler[dict[str, Any]]):
             val = env_config.get(key)
             if not val:
                 continue
-            if isinstance(val, list):
-                sensors_to_configure.extend(val)
-            elif isinstance(val, str):
-                sensors_to_configure.append(val)
+            entities = val if isinstance(val, list) else [val]
+            entities = [e for e in entities if isinstance(e, str)]
+            if not entities:
+                continue
 
-        # Add irrigation pumps if configured
+            sensors_to_configure.extend(entities)
+
+            # Check if this key belongs to allowed outside types
+            if any(k in key for k in ["humidifier", "dehumidifier", "tank", "pump"]):
+                sensors_allowed_outside.update(entities)
+
+        # Add irrigation tanks and pumps
+        if "irrigation_tanks" in env_config:
+            for tank in env_config["irrigation_tanks"]:
+                sensor = tank.get("sensor_entity")
+                if isinstance(sensor, str):
+                    sensors_to_configure.append(sensor)
+                    sensors_allowed_outside.add(sensor)
+
         if growspace.irrigation_config:
-            if growspace.irrigation_config.irrigation_pump_entity:
-                sensors_to_configure.append(
-                    growspace.irrigation_config.irrigation_pump_entity
-                )
-            if growspace.irrigation_config.drain_pump_entity:
-                sensors_to_configure.append(
-                    growspace.irrigation_config.drain_pump_entity
-                )
+            if isinstance(growspace.irrigation_config.irrigation_pump_entity, str):
+                pump = growspace.irrigation_config.irrigation_pump_entity
+                sensors_to_configure.append(pump)
+                sensors_allowed_outside.add(pump)
+            if isinstance(growspace.irrigation_config.drain_pump_entity, str):
+                pump = growspace.irrigation_config.drain_pump_entity
+                sensors_to_configure.append(pump)
+                sensors_allowed_outside.add(pump)
 
         # Remove duplicates
-        sensors_to_configure = sorted(set(sensors_to_configure))
+        sensors_to_configure = sorted(set(sensors_to_configure), key=str)
 
         if not sensors_to_configure:
             # No sensors to place, save and exit
@@ -384,9 +394,17 @@ class EnvironmentConfigHandler(BaseConfigHandler[dict[str, Any]]):
         # Build schema
         schema_dict = {}
         dimensions = growspace.dimensions or {}
-        max_width = dimensions.get("width", 120)
-        max_depth = dimensions.get("length", 120)  # depth is length
-        max_height = dimensions.get("height", 200)
+
+        def get_dimension(key: str, default: float) -> float:
+            val = dimensions.get(key, default)
+            return float(val) if isinstance(val, (int, float)) else default
+
+        max_width = get_dimension("width", 120.0)
+        max_depth = get_dimension("length", 120.0)  # depth is length
+        max_height = get_dimension("height", 200.0)
+        unit = dimensions.get("unit", "cm")
+        if not isinstance(unit, str):
+            unit = "cm"
 
         existing_coords = (
             growspace.environment_config.sensor_coordinates
@@ -395,48 +413,37 @@ class EnvironmentConfigHandler(BaseConfigHandler[dict[str, Any]]):
         )
 
         for sensor in sensors_to_configure:
-            # Get friendly name
-            state_obj = self.hass.states.get(sensor)
-            friendly_name = (
-                state_obj.attributes.get("friendly_name", sensor)
-                if state_obj
-                else sensor
-            )
-
             defaults = existing_coords.get(sensor, {"x": 0.0, "y": 0.0, "z": 0.0})
-
-            # Use a section header for each sensor using description (not ideal in HA but best we can do in one form)
-            # Actually we can't do section headers easily in pure voluptuous schema for HA config flow without new data_description features which might be too complex.
-            # We will just prefix the labels.
+            is_outside_allowed = sensor in sensors_allowed_outside
 
             schema_dict[
                 vol.Required(f"coord_{sensor}_x", default=defaults.get("x", 0.0))
             ] = selector.NumberSelector(
                 selector.NumberSelectorConfig(
-                    min=0,
-                    max=max_width,
+                    min=-100 if is_outside_allowed else 0,
+                    max=max_width + 100 if is_outside_allowed else max_width,
                     mode=selector.NumberSelectorMode.BOX,
-                    unit_of_measurement=dimensions.get("unit", "cm"),
+                    unit_of_measurement=unit,
                 )
             )
             schema_dict[
                 vol.Required(f"coord_{sensor}_y", default=defaults.get("y", 0.0))
             ] = selector.NumberSelector(
                 selector.NumberSelectorConfig(
-                    min=0,
-                    max=max_depth,
+                    min=-100 if is_outside_allowed else 0,
+                    max=max_depth + 100 if is_outside_allowed else max_depth,
                     mode=selector.NumberSelectorMode.BOX,
-                    unit_of_measurement=dimensions.get("unit", "cm"),
+                    unit_of_measurement=unit,
                 )
             )
             schema_dict[
                 vol.Required(f"coord_{sensor}_z", default=defaults.get("z", 0.0))
             ] = selector.NumberSelector(
                 selector.NumberSelectorConfig(
-                    min=0,
-                    max=max_height,
+                    min=-50 if is_outside_allowed else 0,
+                    max=max_height + 50 if is_outside_allowed else max_height,
                     mode=selector.NumberSelectorMode.BOX,
-                    unit_of_measurement=dimensions.get("unit", "cm"),
+                    unit_of_measurement=unit,
                 )
             )
 

@@ -208,6 +208,16 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         """Set nutrient inventory in manager."""
         self.nutrient_manager.inventory = value
 
+    @property
+    def growspace_service(self) -> GrowspaceService:
+        """Return the growspace service."""
+        return self._growspace_service
+
+    @property
+    def plant_service(self) -> PlantService:
+        """Return the plant service."""
+        return self._plant_service
+
     def __init__(
         self,
         hass: HomeAssistant,

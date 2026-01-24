@@ -600,4 +600,10 @@ class GrowspaceSerializer:
             if irr.drain_pump_entity:
                 sensor_types[irr.drain_pump_entity] = "drain_pump"
 
+        # Irrigation Tanks
+        if env.irrigation_tanks:
+            for tank in env.irrigation_tanks:
+                if tank.sensor_entity:
+                    sensor_types[tank.sensor_entity] = "irrigation_tank"
+
         return sensor_types

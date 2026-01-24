@@ -30,7 +30,6 @@ from custom_components.growspace_manager.const import (
     DEFAULT_NAME,
     DOMAIN,
 )
-from custom_components.growspace_manager.coordinator import GrowspaceCoordinator
 from custom_components.growspace_manager.models import (
     EnvironmentConfig,
     IrrigationConfig,
@@ -63,22 +62,20 @@ def mock_coordinator(hass: HomeAssistant, tmp_path: Path):
     coordinator.async_add_plant = AsyncMock()
     coordinator.async_update_plant = AsyncMock()
 
-    coordinator._growspace_service = MagicMock()
-    coordinator._growspace_service.ensure_special_growspace = Mock(
+    coordinator.growspace_service = MagicMock()
+    coordinator.growspace_service.ensure_special_growspace = Mock(
         return_value="mock_id"
     )
     # Add mocks for all async methods called by the config/options flow
-    coordinator._growspace_service.add_growspace = AsyncMock(
-        return_value=Mock(id="gs1")
-    )
-    coordinator._growspace_service.update_growspace = AsyncMock()
-    coordinator._growspace_service.get_sorted_growspace_options = Mock(
+    coordinator.growspace_service.add_growspace = AsyncMock(return_value=Mock(id="gs1"))
+    coordinator.growspace_service.update_growspace = AsyncMock()
+    coordinator.growspace_service.get_sorted_growspace_options = Mock(
         return_value=[("gs1", "Growspace 1")]
     )
 
-    coordinator._plant_service = MagicMock()
-    coordinator._plant_service.add_plant = AsyncMock()
-    coordinator._plant_service.update_plant = AsyncMock()
+    coordinator.plant_service = MagicMock()
+    coordinator.plant_service.add_plant = AsyncMock()
+    coordinator.plant_service.update_plant = AsyncMock()
 
     coordinator.async_remove_growspace = AsyncMock()
     coordinator.async_remove_plant = AsyncMock()
@@ -1533,7 +1530,7 @@ async def test_options_flow_init_configure_environment(
     config_entry.add_to_hass(hass)
     config_entry.runtime_data = mock_coordinator
     mock_coordinator = MagicMock()
-    mock_coordinator._growspace_service.get_sorted_growspace_options = MagicMock(
+    mock_coordinator.growspace_service.get_sorted_growspace_options = MagicMock(
         return_value=[("gs1", "Growspace 1")]
     )
     config_entry.runtime_data = mock_coordinator
@@ -1564,7 +1561,7 @@ async def test_options_flow_select_growspace_for_env_show_form(
     config_entry.add_to_hass(hass)
     config_entry.runtime_data = mock_coordinator
     mock_coordinator = MagicMock()
-    mock_coordinator._growspace_service.get_sorted_growspace_options = MagicMock(
+    mock_coordinator.growspace_service.get_sorted_growspace_options = MagicMock(
         return_value=[("gs1", "Growspace 1")]
     )
     config_entry.runtime_data = mock_coordinator
@@ -1593,7 +1590,7 @@ async def test_options_flow_select_growspace_for_env_no_growspaces(
     config_entry = MockConfigEntry(domain=DOMAIN, data={"name": "Test"}, options={})
     config_entry.add_to_hass(hass)
     config_entry.runtime_data = mock_coordinator
-    mock_coordinator._growspace_service.get_sorted_growspace_options = MagicMock(
+    mock_coordinator.growspace_service.get_sorted_growspace_options = MagicMock(
         return_value=[]
     )
     config_entry.runtime_data = mock_coordinator
@@ -1629,7 +1626,7 @@ async def test_options_flow_select_growspace_for_env_submit(
             irrigation_config=IrrigationConfig(),
         )
     }
-    mock_coordinator._growspace_service.get_sorted_growspace_options = Mock(
+    mock_coordinator.growspace_service.get_sorted_growspace_options = Mock(
         return_value=[("gs1", "Growspace 1")]
     )
     config_entry.runtime_data = mock_coordinator
@@ -2199,7 +2196,7 @@ async def test_options_flow_init_configure_irrigation(
     config_entry = MockConfigEntry(domain=DOMAIN, data={"name": "Test"}, options={})
     config_entry.add_to_hass(hass)
     config_entry.runtime_data = mock_coordinator
-    mock_coordinator._growspace_service.get_sorted_growspace_options = MagicMock(
+    mock_coordinator.growspace_service.get_sorted_growspace_options = MagicMock(
         return_value=[("gs1", "Growspace 1")]
     )
     config_entry.runtime_data = mock_coordinator
@@ -2221,7 +2218,7 @@ async def test_options_flow_select_growspace_for_irrigation_show_form(
     config_entry = MockConfigEntry(domain=DOMAIN, data={"name": "Test"}, options={})
     config_entry.add_to_hass(hass)
     config_entry.runtime_data = mock_coordinator
-    mock_coordinator._growspace_service.get_sorted_growspace_options = MagicMock(
+    mock_coordinator.growspace_service.get_sorted_growspace_options = MagicMock(
         return_value=[("gs1", "Growspace 1")]
     )
     config_entry.runtime_data = mock_coordinator
@@ -2250,7 +2247,7 @@ async def test_options_flow_select_growspace_for_irrigation_submit(
     )
     # mock_gs.irrigation_config = {} # REMOVED: Must use dataclass
     mock_coordinator.growspaces = {"gs1": mock_gs}
-    mock_coordinator._growspace_service.get_sorted_growspace_options = Mock(
+    mock_coordinator.growspace_service.get_sorted_growspace_options = Mock(
         return_value=[("gs1", "Growspace 1")]
     )
     config_entry.runtime_data = mock_coordinator
@@ -2824,7 +2821,7 @@ async def test_options_flow_irrigation_no_growspaces(
     config_entry.add_to_hass(hass)
     config_entry.runtime_data = mock_coordinator
     config_entry.runtime_data = mock_coordinator
-    mock_coordinator._growspace_service.get_sorted_growspace_options = Mock(
+    mock_coordinator.growspace_service.get_sorted_growspace_options = Mock(
         return_value=[]
     )  # Empty
 
@@ -3133,7 +3130,7 @@ async def test_options_flow_select_growspace_for_plant_success(
     config_entry = MockConfigEntry(domain=DOMAIN, data={"name": "Test"})
     config_entry.add_to_hass(hass)
     config_entry.runtime_data = mock_coordinator
-    mock_coordinator._growspace_service.get_sorted_growspace_options = Mock(
+    mock_coordinator.growspace_service.get_sorted_growspace_options = Mock(
         return_value=[("gs1", "GS 1")]
     )
     config_entry.runtime_data = mock_coordinator
@@ -3262,7 +3259,7 @@ async def test_options_flow_select_growspace_for_plant_no_gs(
     config_entry = MockConfigEntry(domain=DOMAIN, data={"name": "Test"})
     config_entry.add_to_hass(hass)
     config_entry.runtime_data = mock_coordinator
-    mock_coordinator._growspace_service.get_sorted_growspace_options = Mock(
+    mock_coordinator.growspace_service.get_sorted_growspace_options = Mock(
         return_value=[]
     )
     config_entry.runtime_data = mock_coordinator
@@ -3343,7 +3340,7 @@ async def test_options_flow_manage_plants_nav_add(
 
     # Mock behavior of select_growspace_for_plant to verify transition
     # We can rely on it returning FORM for the select step
-    mock_coordinator._growspace_service.get_sorted_growspace_options = Mock(
+    mock_coordinator.growspace_service.get_sorted_growspace_options = Mock(
         return_value=[("gs1", "GS1")]
     )
 

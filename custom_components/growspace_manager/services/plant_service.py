@@ -116,7 +116,7 @@ class PlantService:
         Returns:
             The newly created mother Plant object.
         """
-        mother_id: str = self.coordinator._growspace_service.ensure_mother_growspace()
+        mother_id: str = self.coordinator.growspace_service.ensure_mother_growspace()
         kwargs["type"] = PlantStage.MOTHER
 
         # Set mother_start to today if not provided
@@ -168,7 +168,7 @@ class PlantService:
             clone_gs_id = target_growspace_id
         else:
             # Default to clone growspace
-            clone_gs_id = self.coordinator._growspace_service.ensure_special_growspace(
+            clone_gs_id = self.coordinator.growspace_service.ensure_special_growspace(
                 PlantStage.CLONE, "clone", 5, 5
             )
 
