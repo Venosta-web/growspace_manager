@@ -542,6 +542,14 @@ class GrowspaceSerializer:
             else:
                 attributes["irrigation_tanks"] = []
 
+            # Sensor Groups
+            if env_config.sensor_groups:
+                attributes["sensor_groups"] = [
+                    g.to_dict() for g in env_config.sensor_groups
+                ]
+            else:
+                attributes["sensor_groups"] = []
+
         return attributes
 
     def _get_sensor_types(self, growspace: Growspace) -> dict[str, str]:

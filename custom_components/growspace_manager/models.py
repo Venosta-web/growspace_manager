@@ -164,6 +164,20 @@ class IrrigationTank(BaseModel):
 
 
 @dataclass(slots=True)
+class SensorGroup(BaseModel):
+    """Configuration for a group of sensors at a specific coordinate."""
+
+    id: str
+    name: str
+    x: float
+    y: float
+    z: float = 0.0
+    temperature_sensors: list[str] = field(default_factory=list)
+    humidity_sensors: list[str] = field(default_factory=list)
+    vpd_sensors: list[str] = field(default_factory=list)
+
+
+@dataclass(slots=True)
 class EnvironmentConfig(BaseModel):
     """Configuration for environment sensors and devices."""
 
@@ -187,6 +201,7 @@ class EnvironmentConfig(BaseModel):
 
     # 3D Sensor Configuration
     sensor_coordinates: dict[str, dict[str, float]] = field(default_factory=dict)
+    sensor_groups: list[SensorGroup] = field(default_factory=list)
 
     lst_offset: float = -2.0
     control_dehumidifier: bool = False

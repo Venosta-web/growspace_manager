@@ -136,6 +136,10 @@ class EnvironmentConfigHandler(BaseConfigHandler[dict[str, Any]]):
                 if k not in ("configure_dehumidifier", "configure_advanced")
             }
 
+            # Preserve sensor_groups if present in input
+            if "sensor_groups" in cleaned_input:
+                env_config["sensor_groups"] = cleaned_input["sensor_groups"]
+
             # Check for next steps
             if self.flow.env_config_step1.get(
                 "configure_dehumidifier"
