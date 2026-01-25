@@ -47,29 +47,22 @@ def mock_plants():
 
 @pytest.fixture
 def mock_coordinator(hass: HomeAssistant, mock_plants):
-    coordinator = MagicMock()
-    coordinator.hass = hass
-    coordinator.plants = mock_plants
-    coordinator.get_growspace_plants = lambda gid: [
-        p for p in mock_plants.values() if p.growspace_id == gid
-    ]
-    coordinator.async_save = AsyncMock()
-    coordinator.add_event = MagicMock()
+    from pytest_homeassistant_custom_component.common import MockConfigEntry
 
-    # Bind the method to test and its helpers
-    coordinator.async_log_training_event = (
-        GrowspaceCoordinator.async_log_training_event.__get__(
-            coordinator, GrowspaceCoordinator
-        )
-    )
-    coordinator._get_target_plants = GrowspaceCoordinator._get_target_plants.__get__(
-        coordinator, GrowspaceCoordinator
-    )
-    coordinator._create_training_reasons = (
-        GrowspaceCoordinator._create_training_reasons.__get__(
-            coordinator, GrowspaceCoordinator
-        )
-    )
+    from custom_components.growspace_manager.const import DOMAIN
+
+    # Use real coordinator instead of MagicMock to support delegation to services
+    entry = MockConfigEntry(domain=DOMAIN, data={}, options={})
+    entry.add_to_hass(hass)
+    coordinator = GrowspaceCoordinator(hass, entry, data={}, strain_library=MagicMock())
+
+    # Set up plants
+    coordinator.data_repository.plants = mock_plants
+    coordinator.async_save = AsyncMock()  # type: ignore[method-assign]
+    # Mock save callback on training service
+    coordinator._training_service.save_callback = coordinator.async_save
+    coordinator.add_event = MagicMock()
+    coordinator._training_service.add_event = coordinator.add_event
 
     return coordinator
 

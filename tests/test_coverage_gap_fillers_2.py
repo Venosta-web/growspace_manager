@@ -1,4 +1,4 @@
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from pytest_homeassistant_custom_component.common import MockConfigEntry
@@ -85,13 +85,11 @@ async def test_coordinator_water_growspace_error(hass: HomeAssistant) -> None:
     coordinator.data_repository.growspaces = {
         "gs1": Growspace(id="gs1", name="Growspace 1")
     }
-    # Mock return_value for get_growspace_plants to have 1 plant
-    with (
-        patch.object(
-            coordinator, "get_growspace_plants", return_value=[MagicMock(plant_id="p1")]
-        ),
-        pytest.raises(GrowspaceError, match="required"),
-    ):
+    # Add a mock plant to the repository so get_growspace_plants returns it
+    coordinator.data_repository.plants = {"p1": MagicMock(plant_id="p1", growspace_id="gs1")}
+
+    # Now test that error is raised when neither amount nor amount_per_plant is provided
+    with pytest.raises(GrowspaceError, match="required"):
         await coordinator.async_water_growspace(
             "gs1", amount=None, amount_per_plant=None
         )

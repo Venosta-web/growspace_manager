@@ -45,6 +45,8 @@ def create_test_coordinator(hass: HomeAssistant) -> GrowspaceCoordinator:
     coordinator.async_save = AsyncMock()  # type: ignore[method-assign]
     coordinator.async_commit = AsyncMock()  # type: ignore[method-assign]
     coordinator.async_set_updated_data = MagicMock()
+    # Mock save callback on watering service since it now handles saves
+    coordinator._watering_service.save_callback = coordinator.async_save
     return coordinator
 
 

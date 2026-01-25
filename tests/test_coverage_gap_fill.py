@@ -281,9 +281,7 @@ async def test_coordinator_setters_and_gaps(
     with pytest.raises(GrowspaceNotFoundError):
         await coord.async_update_irrigation_config("nonexistent", {})
 
-    # Coverage for _get_target_plants value error
-    with pytest.raises(ValueError):
-        coord._get_target_plants(None, None)
+    # _get_target_plants is now in TrainingService - tested through public API
 
     # Coverage for async_save_ipm_preset update branch
     coord.ipm_presets = {
@@ -379,23 +377,23 @@ async def test_coordinator_extended_coverage(
     await coord.async_remove_timed_notification(nid)
     assert len(coord.get_timed_notifications()) == 0
 
-    # 7. _resolve_nutrient_mix (lines 1438-1451)
+    # 7. resolve_nutrient_mix - now tested via NutrientManager (dead code removed from coordinator)
     coord.nutrient_presets = {
         "p1": NutrientPreset(
             id="p1", name="P1", items=[{"name": "N1", "dose_ml_l": 1.0}]
         )
     }
     # Preset only
-    mix, name = coord._resolve_nutrient_mix(None, "p1")
+    mix, name = coord.nutrient_manager.resolve_nutrient_mix(None, "p1")
     assert mix == {"N1": 1.0}
     assert name == "P1"
     # Manual only
-    mix, name = coord._resolve_nutrient_mix({"N2": 2.0}, None)
+    mix, name = coord.nutrient_manager.resolve_nutrient_mix({"N2": 2.0}, None)
     assert mix == {"N2": 2.0}
     assert name is None
     # Both
-    mix, name = coord._resolve_nutrient_mix({"N1": 5.0}, "p1")
+    mix, name = coord.nutrient_manager.resolve_nutrient_mix({"N1": 5.0}, "p1")
     assert mix == {"N1": 5.0}  # Manual override
     # Preset not found
     with pytest.raises(KeyError):
-        coord._resolve_nutrient_mix(None, "invalid")
+        coord.nutrient_manager.resolve_nutrient_mix(None, "invalid")

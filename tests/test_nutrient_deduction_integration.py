@@ -21,6 +21,8 @@ def coordinator(hass):
     coord.storage_manager = MagicMock()
     coord.storage_manager.async_save = AsyncMock()
     coord.async_save = AsyncMock()
+    # Mock save callback on watering service since it now handles saves
+    coord._watering_service.save_callback = coord.async_save
 
     # Initialize basic data
     coord.growspaces = {

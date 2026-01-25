@@ -176,14 +176,18 @@ async def test_async_log_training_event_empty_plants_with_gs(
     gs = Growspace(id=gs_id, name="Test GS")
     coordinator.data_repository.growspaces = {gs_id: gs}
 
-    # Mock internal methods that are called during training recording
-    coordinator._get_target_plants = MagicMock(return_value=[])
-    coordinator._create_training_reasons = MagicMock(return_value=["Reason"])
+    # Mock add_event at the event bus level since it's now called through TrainingService
+    original_add_event = coordinator.add_event
     coordinator.add_event = MagicMock()
+    # Also need to mock it on the service
+    coordinator._training_service.add_event = coordinator.add_event
 
     await coordinator.async_log_training_event(gs_id, "topping")
 
-    # Verify add_event was called with the gs_id from Line 1184
+    # Verify add_event was called with the gs_id
     coordinator.add_event.assert_called_once()
     event = coordinator.add_event.call_args[0][1]
     assert event.growspace_id == gs_id
+
+    # Restore original
+    coordinator.add_event = original_add_event
