@@ -1,0 +1,113 @@
+# Home Assistant Test Instance Configuration
+# This configuration is used by the homeassistant-test Docker instance
+
+# Basic configuration
+homeassistant:
+  name: Test Instance
+  latitude: 41.8781
+  longitude: -87.6298
+  elevation: 181
+  unit_system: metric
+  time_zone: America/Chicago
+  
+# Enable the frontend
+frontend:
+  themes: !include_dir_merge_named themes
+
+# Lovelace resources for custom cards
+lovelace:
+  mode: storage
+  resources:
+    - url: /local/growspace-manager-card.js
+      type: module
+
+# Enable configuration UI
+config:
+
+# Enable system health
+system_health:
+
+# Enable HTTP component
+http:
+
+# Enable logging
+logger:
+  default: info
+  logs:
+    custom_components.growspace_manager: debug
+
+# Enable history
+history:
+
+# Enable logbook
+logbook:
+
+# Recorder for storing sensor data
+recorder:
+  purge_keep_days: 7
+
+# Template sensors for testing
+template:
+  - sensor:
+      # Temperature sensor
+      - name: "Test Temperature"
+        unique_id: test_temperature_sensor
+        unit_of_measurement: "°C"
+        device_class: temperature
+        state_class: measurement
+        state: >
+          {{ 22 + (range(0, 6) | random) }}
+        
+      # Humidity sensor
+      - name: "Test Humidity"
+        unique_id: test_humidity_sensor
+        unit_of_measurement: "%"
+        device_class: humidity
+        state_class: measurement
+        state: >
+          {{ 55 + (range(0, 15) | random) }}
+        
+      # VPD sensor
+      - name: "Test VPD"
+        unique_id: test_vpd_sensor
+        unit_of_measurement: "kPa"
+        state_class: measurement
+        state: >
+          {{ (1.0 + (range(0, 5) | random) / 10) | round(2) }}
+        
+      # CO2 sensor
+      - name: "Test CO2"
+        unique_id: test_co2_sensor
+        unit_of_measurement: "ppm"
+        device_class: carbon_dioxide
+        state_class: measurement
+        state: >
+          {{ 800 + (range(0, 400) | random) }}
+        
+      # Light sensor (PPFD)
+      - name: "Test PPFD"
+        unique_id: test_ppfd_sensor
+        unit_of_measurement: "µmol/m²/s"
+        device_class: illuminance
+        state_class: measurement
+        state: >
+          {% set hour = now().hour %}
+          {% if hour >= 6 and hour < 22 %}
+            {{ 400 + (range(0, 200) | random) }}
+          {% else %}
+            0
+          {% endif %}
+        
+      # Soil moisture sensor
+      - name: "Test Soil Moisture"
+        unique_id: test_soil_moisture_sensor
+        unit_of_measurement: "%"
+        device_class: moisture
+        state_class: measurement
+        state: >
+          {{ 40 + (range(0, 30) | random) }}
+
+# Growspace Manager Integration
+# Configure this through the UI after setup
+growspace_manager:
+
