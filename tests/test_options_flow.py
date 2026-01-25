@@ -46,6 +46,11 @@ def mock_coordinator(hass: HomeAssistant):
     coordinator.async_remove_plant = AsyncMock()
     coordinator.async_save = AsyncMock()
     coordinator.async_refresh = AsyncMock()
+
+    # Public properties for services
+    type(coordinator).growspace_service = property(lambda self: self._growspace_service)
+    type(coordinator).plant_service = property(lambda self: self._plant_service)
+
     return coordinator
 
 

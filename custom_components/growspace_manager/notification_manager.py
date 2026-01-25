@@ -16,6 +16,7 @@ from .const import (
     CONF_NOTIFICATION_PERSONALITY,
     DEFAULT_COOLDOWN_MINUTES,
 )
+from .serializers import GrowspaceSerializer
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -349,7 +350,6 @@ class NotificationManager:
 
     async def async_check_tank_levels(self) -> None:
         """Check all irrigation tank levels and notify if below warning threshold."""
-        from .serializers import GrowspaceSerializer
 
         serializer = GrowspaceSerializer(self.hass)
 

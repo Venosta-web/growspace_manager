@@ -35,6 +35,10 @@ def mock_coordinator():
     coordinator._growspace_service.ensure_special_growspace = MagicMock(
         return_value="dry"
     )
+
+    # Public properties for services
+    type(coordinator).growspace_service = property(lambda self: self._growspace_service)
+
     return coordinator
 
 

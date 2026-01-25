@@ -524,6 +524,8 @@ class GrowspaceService:
             if not env_config:
                 continue
 
+            updated = False
+
             # Work with plural lists
             temps = env_config.temperature_sensors
             hums = env_config.humidity_sensors
@@ -532,10 +534,13 @@ class GrowspaceService:
             # Sync lengths if necessary (though migration should have handled it)
             if not temps and env_config.temperature_sensor:
                 temps = [env_config.temperature_sensor]
+                updated = True
             if not hums and env_config.humidity_sensor:
                 hums = [env_config.humidity_sensor]
+                updated = True
             if not vpds and env_config.vpd_sensor:
                 vpds = [env_config.vpd_sensor]
+                updated = True
 
             num_pairs = min(len(temps), len(hums))
             if num_pairs == 0:
@@ -546,7 +551,6 @@ class GrowspaceService:
             while len(vpds) < num_pairs:
                 vpds.append(None)
 
-            updated = False
             for i in range(num_pairs):
                 if (
                     temps[i]

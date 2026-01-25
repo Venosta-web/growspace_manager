@@ -22,7 +22,6 @@ from custom_components.growspace_manager import (
     async_unload_entry,
 )
 from custom_components.growspace_manager.const import DOMAIN
-from custom_components.growspace_manager.coordinator import GrowspaceCoordinator
 from custom_components.growspace_manager.schemas import (
     ADD_DRAIN_TIME_SCHEMA,
     ADD_GROWSPACE_SCHEMA,
@@ -713,6 +712,11 @@ async def test_pending_growspace_error(hass: HomeAssistant) -> None:
         coordinator_mock.async_load = AsyncMock()
         coordinator_mock.async_initialize_sub_coordinators = AsyncMock()
 
+        # Public properties for services
+        type(coordinator_mock).growspace_service = property(
+            lambda self: self._growspace_service
+        )
+
         coordinator_mock._growspace_service = MagicMock()
         coordinator_mock._growspace_service.add_growspace = AsyncMock(
             side_effect=RuntimeError("Failed creation")
@@ -782,6 +786,11 @@ async def test_pending_growspace_success(hass: HomeAssistant) -> None:
         coordinator_mock._growspace_service.add_growspace = AsyncMock()
         coordinator_mock.async_load = AsyncMock()
         coordinator_mock.async_initialize_sub_coordinators = AsyncMock()
+
+        # Public properties for services
+        type(coordinator_mock).growspace_service = property(
+            lambda self: self._growspace_service
+        )
 
         with patch(
             "custom_components.growspace_manager.GrowspaceCoordinator",

@@ -43,9 +43,16 @@ async def test_configure_dehumidifier_thresholds(
         environment_config=EnvironmentConfig(dehumidifier_entities=["switch.dehum"]),
     )
     mock_coordinator.growspaces = {"gs1": mock_growspace}
-    mock_coordinator._growspace_service.get_sorted_growspace_options.return_value = [("gs1", "Test GS")]
+    mock_coordinator._growspace_service.get_sorted_growspace_options.return_value = [
+        ("gs1", "Test GS")
+    ]
     mock_coordinator.async_save = AsyncMock()
     mock_coordinator.async_refresh = AsyncMock()
+
+    # Public properties for services
+    type(mock_coordinator).growspace_service = property(
+        lambda self: self._growspace_service
+    )
 
     entry.runtime_data = mock_coordinator
     entry.add_to_hass(hass)
@@ -112,13 +119,32 @@ async def test_configure_dehumidifier_thresholds(
         result["flow_id"], user_input=thresholds_input
     )
 
+    # Expect transition to 'configure_sensor_placement' step
+    assert result["type"] == FlowResultType.FORM
+    assert result["step_id"] == "configure_sensor_placement"
+
+    # 5. Fill in Sensor Placement
+    placement_input = {
+        "coord_switch.dehum_x": 10.0,
+        "coord_switch.dehum_y": 20.0,
+        "coord_switch.dehum_z": 30.0,
+    }
+
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], user_input=placement_input
+    )
+
     assert result["type"] == FlowResultType.CREATE_ENTRY
 
-    # 5. Verify data saved to Growspace object
+    # 6. Verify data saved to Growspace object
     saved_thresholds = mock_growspace.environment_config.dehumidifier_thresholds
     assert saved_thresholds["veg"]["day"]["on"] == 2.0
     assert saved_thresholds["veg"]["night"]["on"] == 1.5  # default form our loop
     assert saved_thresholds["early_flower"]["day"]["on"] == 1.5
+
+    # Verify sensor coordinates saved
+    saved_coords = mock_growspace.environment_config.sensor_coordinates
+    assert saved_coords["switch.dehum"] == {"x": 10.0, "y": 20.0, "z": 30.0}
 
     # Verify save called
     assert mock_coordinator.async_save.called
@@ -166,8 +192,21 @@ async def test_configure_dehumidifier_thresholds(
         result_2["flow_id"], user_input=user_input_clear
     )
 
-    # Should skip detailed config and go to CREATE_ENTRY
-    assert result_3["type"] == FlowResultType.CREATE_ENTRY
+    # Should go to sensor placement
+    assert result_3["type"] == FlowResultType.FORM
+    assert result_3["step_id"] == "configure_sensor_placement"
+
+    # Finish flow
+    result_4 = await hass.config_entries.options.async_configure(
+        result_3["flow_id"],
+        user_input={
+            "coord_switch.dehum_x": 0.0,
+            "coord_switch.dehum_y": 0.0,
+            "coord_switch.dehum_z": 0.0,
+        },
+    )
+
+    assert result_4["type"] == FlowResultType.CREATE_ENTRY
 
     # Verify thresholds cleared in growspace object
     assert mock_growspace.environment_config.dehumidifier_thresholds == {}

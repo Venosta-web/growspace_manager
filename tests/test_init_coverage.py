@@ -218,6 +218,11 @@ async def test_async_setup_entry_pending_growspace_failure(hass: HomeAssistant) 
     mock_coordinator.async_initialize_sub_coordinators = AsyncMock()
     mock_coordinator.async_config_entry_first_refresh = AsyncMock()
 
+    # Public properties for services
+    type(mock_coordinator).growspace_service = property(
+        lambda self: self._growspace_service
+    )
+
     mock_coordinator._growspace_service = MagicMock()
     mock_coordinator._growspace_service.add_growspace = AsyncMock(
         side_effect=RuntimeError("Creation failed")
