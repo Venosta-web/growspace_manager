@@ -106,7 +106,7 @@ class TestNutrientPresetCoordinator:
         assert preset.stage == PlantStage.VEG
         assert preset.min_days_in_stage == 5
         assert preset.id in preset_coordinator.nutrient_presets
-        preset_coordinator.async_save.assert_called_once()  # type: ignore[attr-defined]
+        preset_coordinator.async_commit.assert_called_once()  # type: ignore[attr-defined]
 
     @pytest.mark.asyncio
     async def test_remove_nutrient_preset(
@@ -123,7 +123,7 @@ class TestNutrientPresetCoordinator:
         await preset_coordinator.async_remove_nutrient_preset(preset_id)
 
         assert preset_id not in preset_coordinator.nutrient_presets
-        assert preset_coordinator.async_save.call_count == 2  # type: ignore[attr-defined]
+        assert preset_coordinator.async_commit.call_count == 2  # type: ignore[attr-defined]
 
     @pytest.mark.asyncio
     async def test_remove_nonexistent_preset_raises(

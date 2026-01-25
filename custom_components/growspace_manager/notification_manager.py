@@ -133,8 +133,8 @@ class NotificationManager:
             if title_msg and len(title_msg) == 2:
                 title, base_message = title_msg
             else:
-                title = f"{sensor.name}: {growspace_id}"
-                base_message = f"Issue detected in {growspace_id}"
+                title = f"{getattr(sensor, 'name', sensor.entity_id)}: {gs_name}"
+                base_message = f"Issue detected in {gs_name}"
         else:
             title = f"Multiple Issues: {gs_name}"
             base_message = f"Critical alerts in {gs_name} ({', '.join(sensor_names)})"

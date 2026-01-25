@@ -67,6 +67,15 @@ class NutrientInventoryService:
                 amount_ml,
             )
 
+    def deduct_nutrients(
+        self, final_nutrients: dict[str, float], amount_liters: float
+    ) -> None:
+        """Deduct multiple nutrients based on water amount."""
+        for name, conc in final_nutrients.items():
+            total_ml = amount_liters * conc
+            if total_ml > 0:
+                self.deduct_usage(name, total_ml)
+
     def remove_stock(self, nutrient_id: str) -> None:
         """Remove a nutrient stock."""
         if nutrient_id in self._inventory.stocks:

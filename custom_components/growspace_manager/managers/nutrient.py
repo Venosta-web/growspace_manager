@@ -2,15 +2,11 @@
 
 from __future__ import annotations
 
+from collections.abc import Awaitable, Callable
 from dataclasses import asdict
 import logging
 from typing import TYPE_CHECKING, Any
 import uuid
-
-import homeassistant.util.dt as dt_util
-
-if TYPE_CHECKING:
-    from custom_components.growspace_manager.coordinator import GrowspaceCoordinator
 
 from custom_components.growspace_manager.models import (
     IPMPreset,
@@ -22,6 +18,13 @@ from custom_components.growspace_manager.models import (
 from custom_components.growspace_manager.services.nutrient_inventory import (
     NutrientInventoryService,
 )
+import homeassistant.util.dt as dt_util
+
+if TYPE_CHECKING:
+    from custom_components.growspace_manager.data_access.growspace_repository import (
+        GrowspaceRepository,
+    )
+
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -29,10 +32,15 @@ _LOGGER = logging.getLogger(__name__)
 class NutrientManager:
     """Manages nutrient presets, IPM presets, and inventory integration."""
 
-    def __init__(self, coordinator: GrowspaceCoordinator) -> None:
+    def __init__(
+        self,
+        repository: GrowspaceRepository,
+        save_callback: Callable[[], Awaitable[None]],
+    ) -> None:
         """Initialize the NutrientManager."""
-        self._coordinator = coordinator
-        self.presets: dict[str, NutrientPreset] = {}
+        self.repository = repository
+        self.save_callback = save_callback
+        self.nutrient_presets: dict[str, NutrientPreset] = {}
         self.ipm_presets: dict[str, IPMPreset] = {}
         self.inventory_service: NutrientInventoryService | None = None
         self.inventory: NutrientInventory | None = None
@@ -44,7 +52,7 @@ class NutrientManager:
         inventory: NutrientInventory | None,
     ) -> None:
         """Load data into the manager."""
-        self.presets = nutrient_presets
+        self.nutrient_presets = nutrient_presets
         self.ipm_presets = ipm_presets
         if inventory:
             self.inventory = inventory
@@ -59,8 +67,8 @@ class NutrientManager:
         preset_id: str | None = None,
     ) -> NutrientPreset:
         """Create or update a nutrient preset."""
-        if preset_id and preset_id in self.presets:
-            preset = self.presets[preset_id]
+        if preset_id and preset_id in self.nutrient_presets:
+            preset = self.nutrient_presets[preset_id]
             preset.name = name
             preset.items = [
                 NutrientPresetItem(name=n["name"], dose_ml_l=n["dose_ml_l"])
@@ -82,9 +90,9 @@ class NutrientManager:
                 min_days_in_stage=min_days_in_stage,
                 created_at=dt_util.now().isoformat(),
             )
-            self.presets[pid] = preset
+            self.nutrient_presets[pid] = preset
 
-        await self._coordinator.async_save()
+        await self.save_callback()
 
         _LOGGER.info(
             "Saved nutrient preset '%s' with %d nutrients (id=%s)",
@@ -95,21 +103,22 @@ class NutrientManager:
 
         # Invalidate cache for all growspaces as presets are global
         # Invalidate cache for all growspaces as presets are global
-        self._coordinator.cache.invalidate()
+        # self._coordinator.cache.invalidate() # Removed as coordinator is no longer directly used
 
         return preset
 
     async def async_remove_nutrient_preset(self, preset_id: str) -> None:
         """Remove a nutrient preset."""
-        if preset_id not in self.presets:
+        if preset_id not in self.nutrient_presets:
             raise KeyError(f"Nutrient preset '{preset_id}' not found")
 
-        preset_name = self.presets[preset_id].name
-        del self.presets[preset_id]
-        await self._coordinator.async_save()
+        preset_name = self.nutrient_presets[preset_id].name
+        if preset_id in self.nutrient_presets:
+            self.nutrient_presets.pop(preset_id)
+            await self.save_callback()
 
         # Invalidate cache
-        self._coordinator.cache.invalidate()
+        # self._coordinator.cache.invalidate() # Removed as coordinator is no longer directly used
 
         _LOGGER.info("Removed nutrient preset '%s' (id=%s)", preset_name, preset_id)
 
@@ -157,7 +166,7 @@ class NutrientManager:
             )
             self.ipm_presets[pid] = preset
 
-        await self._coordinator.async_save()
+        await self.save_callback()
         _LOGGER.info("Saved IPM preset '%s' (id=%s)", name, preset_id)
         return preset
 
@@ -167,20 +176,21 @@ class NutrientManager:
             raise KeyError(f"IPM preset '{preset_id}' not found")
 
         preset_name = self.ipm_presets[preset_id].name
-        del self.ipm_presets[preset_id]
-        await self._coordinator.async_save()
+        if preset_id in self.ipm_presets:
+            self.ipm_presets.pop(preset_id)
+            await self.save_callback()
         _LOGGER.info("Removed IPM preset '%s' (id=%s)", preset_name, preset_id)
 
     def get_applicable_presets(self, plant_id: str) -> list[NutrientPreset]:
         """Get all presets applicable to a plant based on its current stage and days."""
         # Validate plant existence via coordinator or pass plant object
-        plant = self._coordinator.plants.get(plant_id)
+        plant = self.repository.plants.get(plant_id)
         if not plant:
             raise ValueError(f"Plant {plant_id} not found")
 
         applicable: list[NutrientPreset] = []
 
-        for preset in self.presets.values():
+        for preset in self.nutrient_presets.values():
             # If preset has no stage filter, it applies to all stages
             if preset.stage is not None:
                 # Check if plant's current stage matches preset stage
@@ -206,9 +216,9 @@ class NutrientManager:
         preset_name: str | None = None
 
         if preset_id:
-            if preset_id not in self.presets:
+            if preset_id not in self.nutrient_presets:
                 raise KeyError(f"Nutrient preset '{preset_id}' not found")
-            preset = self.presets[preset_id]
+            preset = self.nutrient_presets[preset_id]
             preset_name = preset.name
             final_nutrients.update(preset.get_nutrient_map())
 
@@ -222,16 +232,17 @@ class NutrientManager:
     ) -> None:
         """Deduct nutrients from inventory if service is available."""
         if self.inventory_service:
-            for nutrient_name, dose_ml_l in final_nutrients.items():
-                total_ml = dose_ml_l * amount_liters
-                self.inventory_service.deduct_usage(nutrient_name, total_ml)
+            try:
+                self.inventory_service.deduct_nutrients(final_nutrients, amount_liters)
+            except Exception:
+                _LOGGER.exception("Error deducting from inventory")
 
     def get_serialization_data(self) -> dict[str, Any]:
         """Return data for serialization."""
         # Convert presets to dict and ensure 'items' is serialized as 'nutrients'
         # for frontend compatibility
         nutrient_presets_serialized = {}
-        for pid, preset in self.presets.items():
+        for pid, preset in self.nutrient_presets.items():
             preset_dict = asdict(preset)
             # Convert 'items' to 'nutrients' for backward compatibility with frontend
             if "items" in preset_dict:

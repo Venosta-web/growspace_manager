@@ -13,16 +13,26 @@ from custom_components.growspace_manager.models import (
 
 
 @pytest.fixture
-def mock_coordinator():
+def repository_mock():
+    """Mock the GrowspaceRepository."""
     mock = MagicMock()
-    mock.async_save = AsyncMock()
     mock.plants = {}
     return mock
 
 
 @pytest.fixture
-def manager(mock_coordinator):
-    return NutrientManager(mock_coordinator)
+def save_callback_mock():
+    """Mock the save callback."""
+    return AsyncMock()
+
+
+@pytest.fixture
+def manager(repository_mock, save_callback_mock):
+    """NutrientManager fixture."""
+    return NutrientManager(
+        repository=repository_mock,
+        save_callback=save_callback_mock,
+    )
 
 
 @pytest.mark.asyncio
@@ -41,14 +51,14 @@ async def test_load_data(manager) -> None:
 
     manager.load_data(presets, ipm, inv)
 
-    assert manager.presets == presets
+    assert manager.nutrient_presets == presets
     assert manager.ipm_presets == ipm
     assert manager.inventory == inv
     assert manager.inventory_service is not None
 
 
 @pytest.mark.asyncio
-async def test_save_nutrient_preset_new(manager, mock_coordinator) -> None:
+async def test_save_nutrient_preset_new(manager, save_callback_mock) -> None:
     preset = await manager.async_save_nutrient_preset(
         name="New Preset",
         nutrients=[{"name": "N1", "dose_ml_l": 2.0}],
@@ -56,19 +66,19 @@ async def test_save_nutrient_preset_new(manager, mock_coordinator) -> None:
         min_days_in_stage=5,
     )
 
-    assert preset.id in manager.presets
+    assert preset.id in manager.nutrient_presets
     assert preset.name == "New Preset"
     assert preset.stage == "veg"
-    mock_coordinator.async_save.assert_awaited_once()
+    save_callback_mock.assert_awaited_once()
 
 
 @pytest.mark.asyncio
-async def test_save_nutrient_preset_update(manager, mock_coordinator) -> None:
+async def test_save_nutrient_preset_update(manager, save_callback_mock) -> None:
     # Setup existing
     existing = NutrientPreset(
         id="p1", name="Old Name", items=[], created_at="2024-01-01"
     )
-    manager.presets = {"p1": existing}
+    manager.nutrient_presets = {"p1": existing}
 
     await manager.async_save_nutrient_preset(
         preset_id="p1",
@@ -77,23 +87,23 @@ async def test_save_nutrient_preset_update(manager, mock_coordinator) -> None:
         stage="flower",
     )
 
-    updated = manager.presets["p1"]
+    updated = manager.nutrient_presets["p1"]
     assert updated.name == "New Name"
     assert updated.stage == "flower"
-    mock_coordinator.async_save.assert_awaited_once()
+    save_callback_mock.assert_awaited_once()
 
 
 @pytest.mark.asyncio
-async def test_remove_nutrient_preset(manager, mock_coordinator) -> None:
+async def test_remove_nutrient_preset(manager, save_callback_mock) -> None:
     existing = NutrientPreset(
         id="p1", name="Old Name", items=[], created_at="2024-01-01"
     )
-    manager.presets = {"p1": existing}
+    manager.nutrient_presets = {"p1": existing}
 
     await manager.async_remove_nutrient_preset("p1")
 
-    assert "p1" not in manager.presets
-    mock_coordinator.async_save.assert_awaited_once()
+    assert "p1" not in manager.nutrient_presets
+    save_callback_mock.assert_awaited_once()
 
 
 @pytest.mark.asyncio
@@ -103,7 +113,7 @@ async def test_remove_nutrient_preset_not_found(manager) -> None:
 
 
 @pytest.mark.asyncio
-async def test_save_ipm_preset(manager, mock_coordinator) -> None:
+async def test_save_ipm_preset(manager, save_callback_mock) -> None:
     preset = await manager.async_save_ipm_preset(
         name="New IPM",
         type="spray",
@@ -114,11 +124,11 @@ async def test_save_ipm_preset(manager, mock_coordinator) -> None:
     assert preset.id in manager.ipm_presets
     assert preset.name == "New IPM"
     assert preset.type == "spray"
-    mock_coordinator.async_save.assert_awaited_once()
+    save_callback_mock.assert_awaited_once()
 
 
 @pytest.mark.asyncio
-async def test_save_ipm_preset_update(manager, mock_coordinator) -> None:
+async def test_save_ipm_preset_update(manager, save_callback_mock) -> None:
     existing = IPMPreset(
         id="i1", name="Old IPM", type="spray", items=[], created_at="2024-01-01"
     )
@@ -137,7 +147,7 @@ async def test_save_ipm_preset_update(manager, mock_coordinator) -> None:
 
 
 @pytest.mark.asyncio
-async def test_remove_ipm_preset(manager, mock_coordinator) -> None:
+async def test_remove_ipm_preset(manager, save_callback_mock) -> None:
     existing = IPMPreset(
         id="i1", name="Old IPM", type="spray", items=[], created_at="2024-01-01"
     )
@@ -146,7 +156,7 @@ async def test_remove_ipm_preset(manager, mock_coordinator) -> None:
     await manager.async_remove_ipm_preset("i1")
 
     assert "i1" not in manager.ipm_presets
-    mock_coordinator.async_save.assert_awaited_once()
+    save_callback_mock.assert_awaited_once()
 
 
 @pytest.mark.asyncio
@@ -155,14 +165,14 @@ async def test_remove_ipm_preset_not_found(manager) -> None:
         await manager.async_remove_ipm_preset("unknown")
 
 
-def test_get_applicable_presets(manager, mock_coordinator) -> None:
+def test_get_applicable_presets(manager, repository_mock) -> None:
     # Setup plant as Mock to allow method overriding
     plant = MagicMock()
     plant.strain = "Strain A"
     plant.stage = "veg"
     plant.veg_start = "2024-01-01"
     plant.growspace_id = "gs1"
-    mock_coordinator.plants["plant1"] = plant
+    repository_mock.plants["plant1"] = plant
 
     # Setup presets
     # 1. Matches stage (veg)
@@ -185,7 +195,7 @@ def test_get_applicable_presets(manager, mock_coordinator) -> None:
     # 4. No stage filter (applies to all)
     p4 = NutrientPreset(id="p4", name="General", items=[], created_at="2024-01-01")
 
-    manager.presets = {"p1": p1, "p2": p2, "p3": p3, "p4": p4}
+    manager.nutrient_presets = {"p1": p1, "p2": p2, "p3": p3, "p4": p4}
 
     # Mock plant days calculation
     # Return 10 days for veg
@@ -216,7 +226,7 @@ def test_resolve_nutrient_mix(manager) -> None:
         items=[{"name": "A", "dose_ml_l": 2.0}],
         created_at="2024-01-01",
     )
-    manager.presets = {"p1": p1}
+    manager.nutrient_presets = {"p1": p1}
 
     # 1. Preset only
     mix, name = manager.resolve_nutrient_mix(None, "p1")
@@ -250,11 +260,9 @@ def test_deduct_from_inventory(manager) -> None:
     manager.deduct_from_inventory(nutrients, amount_liters)
 
     # Check calls
-    # A: 2.0 * 10 = 20.0
-    # B: 1.0 * 10 = 10.0
-    calls = manager.inventory_service.deduct_usage.call_args_list
-    # Order not guaranteed, check content
-    assert len(calls) == 2
+    manager.inventory_service.deduct_nutrients.assert_called_with(
+        nutrients, amount_liters
+    )
 
 
 def test_get_serialization_data(manager) -> None:
@@ -262,7 +270,7 @@ def test_get_serialization_data(manager) -> None:
     i1 = IPMPreset(id="i1", name="I1", type="spray", items=[], created_at="2024-01-01")
     inventory = NutrientInventory()
 
-    manager.presets = {"p1": p1}
+    manager.nutrient_presets = {"p1": p1}
     manager.ipm_presets = {"i1": i1}
     manager.inventory = inventory
 
@@ -274,23 +282,20 @@ def test_get_serialization_data(manager) -> None:
 
 
 @pytest.mark.asyncio
-async def test_cache_invalidation(manager, mock_coordinator) -> None:
-    """Test cache invalidation on save/remove."""
-    # Setup cache mock - must be a Mock object to have methods like clear
-    mock_coordinator.cache = MagicMock()
-
+async def test_cache_invalidation(manager, save_callback_mock) -> None:
+    """Test that save_callback is called (which handles invalidation)."""
     # Save
     await manager.async_save_nutrient_preset("Test", [])
-    mock_coordinator.cache.invalidate.assert_called_once()
+    save_callback_mock.assert_awaited_once()
 
     # Reset
-    mock_coordinator.cache.invalidate.reset_mock()
+    save_callback_mock.reset_mock()
 
     await manager.async_save_nutrient_preset("Test 2", [])
-    mock_coordinator.cache.invalidate.assert_called_once()
+    save_callback_mock.assert_awaited_once()
 
     # Reset
-    mock_coordinator.cache.invalidate.reset_mock()
+    save_callback_mock.reset_mock()
 
-    await manager.async_remove_nutrient_preset(list(manager.presets.keys())[0])
-    mock_coordinator.cache.invalidate.assert_called_once()
+    await manager.async_remove_nutrient_preset(list(manager.nutrient_presets.keys())[0])
+    save_callback_mock.assert_awaited_once()

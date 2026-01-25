@@ -1,5 +1,6 @@
 """Tests for the NotificationManager."""
 
+from datetime import timedelta
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -9,7 +10,11 @@ from custom_components.growspace_manager.const import (
     CONF_ASSISTANT_ID,
     CONF_NOTIFICATION_PERSONALITY,
 )
-from custom_components.growspace_manager.models import Growspace
+from custom_components.growspace_manager.models import (
+    EnvironmentConfig,
+    Growspace,
+    IrrigationTank,
+)
 from custom_components.growspace_manager.notification_manager import NotificationManager
 from homeassistant.core import HomeAssistant
 from homeassistant.util import dt as dt_util
@@ -45,6 +50,7 @@ def mock_hass() -> MagicMock:
     hass = MagicMock(spec=HomeAssistant)
     hass.services = MagicMock()
     hass.services.async_call = AsyncMock()
+    hass.async_create_task = MagicMock()
     return hass
 
 
@@ -196,7 +202,7 @@ async def test_async_check_timed_notifications(
     await manager.async_check_timed_notifications()
 
     mock_hass.services.async_call.assert_awaited()
-    assert mock_coordinator.notifications_sent["plant_1"]["timed_notify_1"] is True
+    assert mock_coordinator.notifications_sent["plant_1"]["timed_notify_1"]
     mock_coordinator.async_save.assert_awaited()
 
 
@@ -426,3 +432,206 @@ async def test_async_check_timed_notifications_missing_growspace(
 
     await manager.async_check_timed_notifications()
     # Should continue without error
+
+
+async def test_async_schedule_notification_cancel(manager: NotificationManager) -> None:
+    """Test scheduling notification cancels existing timer."""
+    mock_timer = MagicMock()
+    manager._batch_timers[GROWSPACE_ID] = mock_timer
+
+    with patch(
+        "custom_components.growspace_manager.notification_manager.async_call_later"
+    ) as mock_call:
+        manager.async_schedule_notification(GROWSPACE_ID)
+        # Verify old timer was cancelled (called)
+        mock_timer.assert_called_once()
+        mock_call.assert_called_once()
+
+
+async def test_async_send_batched_notification_sensor_name_fallback(
+    manager: NotificationManager, mock_coordinator: MagicMock, mock_hass: MagicMock
+) -> None:
+    """Test sensor name fallback to entity_id when name attribute is missing."""
+    sensor = MagicMock()
+    del sensor.name
+    sensor.entity_id = "sensor.no_name"
+    sensor.is_on = True
+    sensor.sensor_states = {}
+    sensor.reasons = []
+
+    manager.attach_sensor(GROWSPACE_ID, sensor)
+
+    with patch.object(
+        manager, "async_send_notification", new_callable=AsyncMock
+    ) as mock_send:
+        await manager._async_send_batched_notification(GROWSPACE_ID)
+        # Verify it used sensor.no_name in title (single sensor path)
+        args = mock_send.call_args[0]
+        assert "sensor.no_name" in args[1]
+
+
+async def test_async_check_tank_levels(
+    manager: NotificationManager, mock_coordinator: MagicMock, mock_hass: MagicMock
+) -> None:
+    """Test checking tank levels."""
+
+    # CASE 1: Low level triggers notification
+    tank = IrrigationTank(
+        sensor_entity="sensor.tank1", name="Water Tank", warning_level=30.0
+    )
+    gs = mock_coordinator.growspaces[GROWSPACE_ID]
+    gs.environment_config = EnvironmentConfig(irrigation_tanks=[tank])
+
+    mock_state = MagicMock()
+    mock_state.state = "10.0 %"
+    mock_hass.states = MagicMock()
+    mock_hass.states.get.return_value = mock_state
+
+    with patch.object(
+        manager, "async_send_notification", new_callable=AsyncMock
+    ) as mock_send:
+        await manager.async_check_tank_levels()
+        mock_send.assert_awaited_once()
+        # It uses keyword arguments
+        assert "Low Irrigation Tank Level" in mock_send.call_args[1]["title"]
+
+    # CASE 2: No environment config (skip)
+    gs.environment_config = None
+    mock_send.reset_mock()
+    await manager.async_check_tank_levels()
+    mock_send.assert_not_awaited()
+
+
+async def test_async_send_batched_notification_multiple_sensors(
+    manager: NotificationManager, mock_coordinator: MagicMock, mock_hass: MagicMock
+) -> None:
+    """Test batched notification with multiple active sensors."""
+    s1 = MagicMock(entity_id="sensor.s1")
+    s1.name = "Sensor 1"
+    s1.is_on = True
+    s1.sensor_states = {}
+    s1.reasons = []
+
+    s2 = MagicMock(entity_id="sensor.s2")
+    s2.name = "Sensor 2"
+    s2.is_on = True
+    s2.sensor_states = {}
+    s2.reasons = []
+
+    manager.attach_sensor(GROWSPACE_ID, s1)
+    manager.attach_sensor(GROWSPACE_ID, s2)
+
+    with patch.object(
+        manager, "async_send_notification", new_callable=AsyncMock
+    ) as mock_send:
+        await manager._async_send_batched_notification(GROWSPACE_ID)
+        # Line 139-140 path
+        args = mock_send.call_args[0]
+        assert "Multiple Issues" in args[1]
+        assert "Sensor 1" in args[2]
+        assert "Sensor 2" in args[2]
+
+
+async def test_async_send_batched_notification_specialized_title(
+    manager: NotificationManager, mock_coordinator: MagicMock, mock_hass: MagicMock
+) -> None:
+    """Test batched notification with specialized title from sensor."""
+    sensor = MagicMock()
+    sensor.name = "S1"
+    sensor.is_on = True
+    sensor.sensor_states = {}
+    sensor.reasons = []
+    sensor.get_notification_title_message.return_value = (
+        "Special Title",
+        "Special Base",
+    )
+
+    manager.attach_sensor(GROWSPACE_ID, sensor)
+
+    with patch.object(
+        manager, "async_send_notification", new_callable=AsyncMock
+    ) as mock_send:
+        await manager._async_send_batched_notification(GROWSPACE_ID)
+        # Line 134 path
+        args = mock_send.call_args[0]
+        assert args[1] == "Special Title"
+        assert "Special Base" in args[2]
+
+
+async def test_async_send_batched_notification_unique_reasons(
+    manager: NotificationManager, mock_coordinator: MagicMock
+) -> None:
+    """Test aggregation of unique reasons in batched notification."""
+    s1 = MagicMock(entity_id="sensor.s1", is_on=True)
+    s1.name = "S1"
+    s1.sensor_states = {}
+    s1.reasons = [(0.9, "Reason 1"), (0.8, "Reason 2")]
+
+    s2 = MagicMock(entity_id="sensor.s2", is_on=True)
+    s2.name = "S2"
+    s2.sensor_states = {}
+    s2.reasons = [(0.7, "Reason 1")]  # Duplicate reason
+
+    manager.attach_sensor(GROWSPACE_ID, s1)
+    manager.attach_sensor(GROWSPACE_ID, s2)
+
+    with patch.object(
+        manager, "async_send_notification", new_callable=AsyncMock
+    ) as mock_send:
+        await manager._async_send_batched_notification(GROWSPACE_ID)
+        # Verify Reason 1 is only included once
+        msg = mock_send.call_args[0][2]
+        assert msg.count("Reason 1") == 1
+
+
+async def test_async_send_batched_notification_cooldown(
+    manager: NotificationManager, mock_coordinator: MagicMock
+) -> None:
+    """Test global cooldown in _async_send_batched_notification."""
+
+    now = dt_util.utcnow()
+    manager._last_notification_sent[GROWSPACE_ID] = now
+
+    with patch(
+        "custom_components.growspace_manager.notification_manager.utcnow",
+        return_value=now + timedelta(seconds=5),
+    ):
+        # Cooldown is 1 min, so 5s later should still be active
+        await manager._async_send_batched_notification(GROWSPACE_ID)
+        # Should return early (line 98)
+
+
+async def test_async_send_batched_notification_empty_active(
+    manager: NotificationManager,
+) -> None:
+    """Test batched notification with no active sensors (line 110)."""
+    # no sensors registered
+    await manager._async_send_batched_notification(GROWSPACE_ID)
+    # should return early
+
+
+async def test_generate_notification_message_sorting(
+    manager: NotificationManager,
+) -> None:
+    """Test reasons sorting in generate_notification_message (lines 121-123)."""
+    reasons = [(0.5, "Low"), (0.9, "High"), (0.7, "Medium")]
+    message = manager.generate_notification_message("Base", reasons)
+    # Should be sorted High, Medium, Low
+    assert message.index("High") < message.index("Medium")
+    assert message.index("Medium") < message.index("Low")
+
+
+async def test_async_send_notification_disabled_cases(
+    manager: NotificationManager, mock_coordinator: MagicMock, mock_hass: MagicMock
+) -> None:
+    """Test notification disabled cases (lines 44-45, 49-50)."""
+    # CASE: Notifications disabled for growspace
+    mock_coordinator.is_notifications_enabled.return_value = False
+    await manager.async_send_notification(GROWSPACE_ID, "T", "M")
+    mock_hass.services.async_call.assert_not_called()
+
+    # CASE: No target
+    mock_coordinator.is_notifications_enabled.return_value = True
+    mock_coordinator.growspaces[GROWSPACE_ID].notification_target = None
+    await manager.async_send_notification(GROWSPACE_ID, "T", "M")
+    mock_hass.services.async_call.assert_not_called()

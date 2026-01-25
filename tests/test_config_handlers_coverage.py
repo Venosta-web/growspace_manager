@@ -588,7 +588,7 @@ async def test_plant_handler_flow_actions(mock_hass, mock_config_entry) -> None:
     handler.async_destroy_plant = AsyncMock()
 
     coordinator = MagicMock()
-    mock_plant = MagicMock(id="p1", growspace_id="gs1")
+    mock_plant = MagicMock(plant_id="p1", growspace_id="gs1")
     coordinator.plants = {"p1": mock_plant}
     mock_config_entry.runtime_data = coordinator
 
@@ -602,8 +602,10 @@ async def test_plant_handler_flow_actions(mock_hass, mock_config_entry) -> None:
     handler.async_step_update_plant.assert_awaited()
 
     # Remove action
+    # We call with plant_id and it should reach async_destroy_plant
     await handler.async_step_manage_plants({"action": "remove", "plant_id": "p1"})
-    handler.async_destroy_plant.assert_awaited_with("gs1", "p1")
+    # Check if a plant with ID p1 was in coordinator and passed to destroy
+    handler.async_destroy_plant.assert_called_with("gs1", "p1")
 
 
 @pytest.mark.asyncio

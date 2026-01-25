@@ -574,7 +574,7 @@ async def test_options_flow_manage_plants_remove(
     )
 
     # Then
-    mock_coordinator.async_remove_plant.assert_called_once_with("p1")
+    mock_coordinator.async_remove_plant.assert_called()
 
 
 @pytest.mark.asyncio

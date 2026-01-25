@@ -23,6 +23,8 @@ class GrowspaceRepository:
             growspaces if growspaces is not None else {}
         )
         self._plants: dict[str, Plant] = plants if plants is not None else {}
+        self._notifications_sent: dict[str, dict[str, dict[str, bool]]] = {}
+        self._notifications_enabled: dict[str, bool] = {}
 
     @property
     def growspaces(self) -> dict[str, Growspace]:
@@ -44,12 +46,40 @@ class GrowspaceRepository:
         """Set the plants dictionary."""
         self._plants = value
 
+    @property
+    def notifications_sent(self) -> dict[str, dict[str, dict[str, bool]]]:
+        """Return the notifications sent tracking dictionary."""
+        return self._notifications_sent
+
+    @notifications_sent.setter
+    def notifications_sent(self, value: dict[str, dict[str, dict[str, bool]]]) -> None:
+        """Set the notifications sent tracking dictionary."""
+        self._notifications_sent = value
+
+    @property
+    def notifications_enabled(self) -> dict[str, bool]:
+        """Return the notifications enabled state dictionary."""
+        return self._notifications_enabled
+
+    @notifications_enabled.setter
+    def notifications_enabled(self, value: dict[str, bool]) -> None:
+        """Set the notifications enabled state dictionary."""
+        self._notifications_enabled = value
+
     def load_data(
-        self, growspaces: dict[str, Growspace], plants: dict[str, Plant]
+        self,
+        growspaces: dict[str, Growspace],
+        plants: dict[str, Plant],
+        notifications_sent: dict[str, dict[str, dict[str, bool]]] | None = None,
+        notifications_enabled: dict[str, bool] | None = None,
     ) -> None:
         """Update the repository with new data references."""
         self._growspaces = growspaces
         self._plants = plants
+        if notifications_sent is not None:
+            self._notifications_sent = notifications_sent
+        if notifications_enabled is not None:
+            self._notifications_enabled = notifications_enabled
 
     # =========================================================================
     # PLANT OPERATIONS

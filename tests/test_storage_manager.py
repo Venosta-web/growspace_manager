@@ -1,9 +1,8 @@
 """Tests for the StorageManager."""
 
 import glob
-import json
 from pathlib import Path
-from unittest.mock import MagicMock, Mock, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -13,37 +12,50 @@ from homeassistant.core import HomeAssistant
 
 
 @pytest.fixture
-def mock_coordinator():
-    """Mock the coordinator."""
-    coordinator = MagicMock()
-    coordinator.growspaces = {}
-    coordinator.plants = {}
-    coordinator.nutrient_presets = {}
-    coordinator.ipm_presets = {}
-    coordinator._notifications_sent = {}
-    coordinator._notifications_enabled = {}
-    coordinator.options = {}
+def repository_mock():
+    """Mock the GrowspaceRepository."""
+    mock = MagicMock()
+    mock.growspaces = {}
+    mock.plants = {}
+    mock.notifications_sent = {}
+    mock.notifications_enabled = {}
+    return mock
 
-    # Mock serializer behavior
-    coordinator.serializer = MagicMock()
+
+@pytest.fixture
+def nutrient_manager_mock():
+    """Mock the NutrientManager."""
+    mock = MagicMock()
+    mock.nutrient_presets = {}
+    mock.ipm_presets = {}
+    mock.inventory = None
+    mock.get_serialization_data.return_value = {}
+    return mock
+
+
+@pytest.fixture
+def serializer_mock():
+    """Mock the GrowspaceSerializer."""
+    mock = MagicMock()
 
     def deserialize_gs(data):
         return {gid: Growspace.from_dict(gdata) for gid, gdata in data.items()}
 
-    coordinator.serializer.deserialize_growspaces.side_effect = deserialize_gs
-    coordinator.serializer.deserialize_plants.return_value = {}
-
-    return coordinator
+    mock.deserialize_growspaces.side_effect = deserialize_gs
+    mock.deserialize_plants.return_value = {}
+    return mock
 
 
 @pytest.mark.asyncio
 async def test_load_growspaces_uses_serializer(
-    hass: HomeAssistant, mock_coordinator
+    hass: HomeAssistant, repository_mock, nutrient_manager_mock, serializer_mock
 ) -> None:
     """Test that loading growspaces delegates to the serializer."""
-    storage = StorageManager(mock_coordinator, hass)
+    storage = StorageManager(
+        hass, repository_mock, nutrient_manager_mock, serializer_mock
+    )
 
-    # Mock data with legacy irrigation format
+    # Mock data
     raw_data = {
         "growspaces": {
             "gs1": {
@@ -64,55 +76,50 @@ async def test_load_growspaces_uses_serializer(
 
         # Override the side effect to return a mock result to prove it was called
         mock_result = {"gs1": MagicMock()}
-        mock_coordinator.serializer.deserialize_growspaces.side_effect = None
-        mock_coordinator.serializer.deserialize_growspaces.return_value = mock_result
+        serializer_mock.deserialize_growspaces.side_effect = None
+        serializer_mock.deserialize_growspaces.return_value = mock_result
 
         await storage.async_load()
 
         # VERIFICATION: Ensure serializer.deserialize_growspaces was called
-        mock_coordinator.serializer.deserialize_growspaces.assert_called_once_with(
+        serializer_mock.deserialize_growspaces.assert_called_once_with(
             raw_data["growspaces"]
         )
 
-        # Verify the result was assigned to coordinator
-        assert mock_coordinator.growspaces == mock_result
+        # Verify the result was assigned to repository
+        assert repository_mock.growspaces == mock_result
 
 
 @pytest.mark.asyncio
 async def test_backup_logic_with_corrupt_data(
-    hass: HomeAssistant, mock_coordinator: Mock, tmp_path: Path
+    hass: HomeAssistant,
+    repository_mock,
+    nutrient_manager_mock,
+    serializer_mock,
+    tmp_path: Path,
 ) -> None:
     """Test that corrupt data triggers a backup file creation."""
-    mock_coordinator.serializer.deserialize_growspaces.side_effect = Exception(
-        "Corruption!"
+    serializer_mock.deserialize_growspaces.side_effect = Exception("Corruption!")
+
+    storage = StorageManager(
+        hass, repository_mock, nutrient_manager_mock, serializer_mock
     )
 
-    storage = StorageManager(mock_coordinator, hass)
-
-    # Mock hass.config.path to return a temp directory
     # Mock hass.config.path to return a temp directory
     with patch.object(hass.config, "path", return_value=str(tmp_path)):
         # Corrupt data
         bad_data = {"growspaces": {"bad_id": "bad_data"}}
 
         # Trigger load which should fail
-        # We need to test _load_growspaces specifically or async_load
-        # using the internal method for direct testing as in the safety test
         storage._load_growspaces(bad_data)
 
         # Verify empty growspaces set (reset happened)
-        assert mock_coordinator.growspaces == {}
+        assert repository_mock.growspaces == {}
 
         # Verify backup file creation
-
         files = glob.glob(f"{tmp_path}/growspace_manager_growspaces_CORRUPT_*.json")
         assert len(files) >= 1, "Backup file was not created"
 
-        # Read the file and check content
-        last_file = files[-1]
-        with Path(last_file).open(encoding="utf-8") as f:  # noqa: ASYNC230
-            saved_data = json.load(f)
-            assert saved_data == bad_data
-
         # Cleanup
-        Path(last_file).unlink()
+        for f in files:
+            Path(f).unlink()

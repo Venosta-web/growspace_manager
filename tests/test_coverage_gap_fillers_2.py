@@ -1,7 +1,7 @@
-from typing import Any, cast
-from unittest.mock import AsyncMock, Mock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.growspace_manager.binary_sensor import (
     BayesianEnvironmentSensor,
@@ -30,12 +30,25 @@ async def test_lifecycle_manager_transition_closing_previous(
     hass: HomeAssistant,
 ) -> None:
     """Test transition_plant_stage explicitly closing previous stage."""
-    coordinator = Mock()
-    coordinator.hass = hass
-    coordinator.plant_services = Mock()
-    coordinator.plants = {}
+    repository = MagicMock()
+    validator = MagicMock()
+    gs_service = MagicMock()
+    strain_library = MagicMock()
+    serializer = MagicMock()
+    save_callback = AsyncMock()
+    lock = MagicMock()
+    lock.__aenter__ = AsyncMock(return_value=None)
+    lock.__aexit__ = AsyncMock(return_value=None)
 
-    lifecycle_mgr = PlantLifecycleManager(coordinator)
+    lifecycle_mgr = PlantLifecycleManager(
+        repository=repository,
+        validator=validator,
+        growspace_service=gs_service,
+        strain_library=strain_library,
+        serializer=serializer,
+        save_callback=save_callback,
+        lock=lock,
+    )
 
     plant_id = "plant_123"
     # Stage history where the last item is open (end=None)
@@ -45,39 +58,40 @@ async def test_lifecycle_manager_transition_closing_previous(
     ]
 
     # Mock Plant object behaving like a dict/object as needed
-    mock_plant = Mock()
+    mock_plant = MagicMock()
     mock_plant.plant_id = plant_id
     mock_plant.stage_history = stage_history
     mock_plant.growspace_id = "gs1"
+    mock_plant.to_dict.return_value = {"stage_history": stage_history}
 
-    coordinator.plants[plant_id] = mock_plant
-    coordinator.update_plant = AsyncMock()
-    coordinator.async_commit = AsyncMock()
-    # Fix for async with self.coordinator.lock
-    coordinator.lock = AsyncMock()
-    coordinator.lock.__aenter__ = AsyncMock(return_value=None)
-    coordinator.lock.__aexit__ = AsyncMock(return_value=None)
+    repository.plants = {plant_id: mock_plant}
 
     await lifecycle_mgr.transition_plant_stage(plant_id, "flower")
 
     # Check if 'stage_history' attribute on mock_plant was updated
     assert len(mock_plant.stage_history) == 3
     # Previous stage (index 1) should now have an end date
-    assert cast(list[dict[str, Any]], mock_plant.stage_history)[1]["end"] is not None
+    assert mock_plant.stage_history[1]["end"] is not None
     # New stage (index 2) should be flower
-    assert cast(list[dict[str, Any]], mock_plant.stage_history)[2]["stage"] == "flower"
+    assert mock_plant.stage_history[2]["stage"] == "flower"
 
 
 async def test_coordinator_water_growspace_error(hass: HomeAssistant) -> None:
     """Test async_water_growspace raises error when inputs missing."""
-    coordinator = GrowspaceCoordinator(hass, Mock())
-    coordinator.validator = Mock()
-    coordinator.plants = {}  # growspace empty?
-    # Ensure validate_growspace_exists passes mock
-    coordinator.validator.validate_growspace_exists = Mock()
-    coordinator.get_growspace_plants = Mock(return_value=[Mock(plant_id="p1")])  # type: ignore[method-assign]
+    entry = MockConfigEntry(domain="growspace_manager", data={})
+    entry.add_to_hass(hass)
+    coordinator = GrowspaceCoordinator(hass, entry, data={})
 
-    with pytest.raises(GrowspaceError, match="required"):
+    coordinator.data_repository.growspaces = {
+        "gs1": Growspace(id="gs1", name="Growspace 1")
+    }
+    # Mock return_value for get_growspace_plants to have 1 plant
+    with (
+        patch.object(
+            coordinator, "get_growspace_plants", return_value=[MagicMock(plant_id="p1")]
+        ),
+        pytest.raises(GrowspaceError, match="required"),
+    ):
         await coordinator.async_water_growspace(
             "gs1", amount=None, amount_per_plant=None
         )
@@ -85,11 +99,9 @@ async def test_coordinator_water_growspace_error(hass: HomeAssistant) -> None:
 
 async def test_binary_sensor_mold_risk_branches(hass: HomeAssistant) -> None:
     """Test BayesianMoldRiskSensor branches for probability calculation."""
-    coordinator = Mock()  # Removing spec to avoid missing attribute issues
+    coordinator = MagicMock()
     coordinator.hass = hass
-    coordinator.notification_manager = Mock()
-    coordinator.growspaces = {}
-
+    coordinator.notification_manager = MagicMock()
     coordinator.growspaces = {
         "gs1": Growspace(id="gs1", name="Growspace 1", device_id="device_1")
     }
@@ -111,7 +123,7 @@ async def test_binary_sensor_mold_risk_branches(hass: HomeAssistant) -> None:
     strategy = sensor.strategy
 
     # Mock state object
-    state = Mock()
+    state = MagicMock()
     state.temp = 20
     state.humidity = 90
     state.fan_off = True
@@ -129,7 +141,6 @@ async def test_binary_sensor_mold_risk_branches(hass: HomeAssistant) -> None:
     state.flower_days = 45
     state.humidity = 65
     obs, reasons = await strategy.async_evaluate(state)
-    # Humidity Risk (65>60 in late flower), Fan Off (Triggered?), Humidifier On (65>60)
     assert any("humidity" in r[1].lower() for r in reasons)
 
     # 3. Notification Logic
@@ -140,17 +151,14 @@ async def test_binary_sensor_mold_risk_branches(hass: HomeAssistant) -> None:
 
 async def test_binary_sensor_notification_failure(hass: HomeAssistant) -> None:
     """Test notification service failure handling in binary sensor."""
-    # Fix NameError
-    coordinator = Mock()
+    coordinator = MagicMock()
     coordinator.hass = hass
-    coordinator.notification_manager = Mock()
+    coordinator.notification_manager = MagicMock()
 
     coordinator.growspaces = {
         "gs1": Growspace(id="gs1", name="Growspace 1", device_id="device_1")
     }
-    coordinator.options = {
-        CONF_AI_AUTO_ALERTS: True
-    }  # Enable AI to test that path too if desired
+    coordinator.options = {CONF_AI_AUTO_ALERTS: True}
 
     desc = GrowspaceBinarySensorDescription(
         key="stress",
@@ -158,7 +166,6 @@ async def test_binary_sensor_notification_failure(hass: HomeAssistant) -> None:
         prior_key="p",
         threshold_key="t",
     )
-    # Need a valid strategy class for init
 
     sensor = BayesianEnvironmentSensor(
         coordinator,
@@ -167,14 +174,10 @@ async def test_binary_sensor_notification_failure(hass: HomeAssistant) -> None:
         desc,
         StressEvaluatorStrategy,
     )
-    sensor.notification_manager = Mock()
+    sensor.notification_manager = MagicMock()
     sensor.notification_manager.async_send_notification.side_effect = Exception(
         "Notification Service Down"
     )
-
-    # We need to trigger _send_notification.
-    # It's usually triggered when probability > threshold in _async_update_probability -> _handle_alert_state
-    # Or explicit call.
 
     await sensor._send_notification("Title", "Message")
     # Should not raise, exception caught and logged

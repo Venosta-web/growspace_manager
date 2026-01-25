@@ -15,72 +15,129 @@ from .common import create_plant
 
 
 @pytest.fixture
-def mock_coordinator():
-    """Mock coordinator fixture."""
-    coordinator = MagicMock()
-    coordinator.plants = {}
-    coordinator.growspaces = {
+def repository_mock():
+    """Mock the GrowspaceRepository."""
+    mock = MagicMock()
+    mock.plants = {}
+    mock.growspaces = {
         "test_growspace": Growspace(
             id="test_growspace",
             name="Test Growspace",
         )
     }
-    coordinator.notifications_sent = {}
-    coordinator.lock = AsyncMock()
-    coordinator.async_commit = AsyncMock()
-    coordinator.validator = MagicMock()
-    coordinator.serializer = MagicMock()
-    coordinator.strain_library = MagicMock()
-    coordinator._growspace_service = MagicMock()
-    coordinator._growspace_service.ensure_special_growspace = MagicMock(
-        return_value="dry"
+    mock.notifications_sent = {}
+    return mock
+
+
+@pytest.fixture
+def validator_mock():
+    """Mock the GrowspaceValidator."""
+    mock = MagicMock()
+    mock.find_first_available_position.return_value = (1, 1)
+    return mock
+
+
+@pytest.fixture
+def gs_service_mock():
+    """Mock the GrowspaceService."""
+    mock = MagicMock()
+    mock.ensure_special_growspace.return_value = "dry"
+    return mock
+
+
+@pytest.fixture
+def strain_library_mock():
+    """Mock the StrainLibrary."""
+    mock = MagicMock()
+    mock.record_harvest = AsyncMock()
+    return mock
+
+
+@pytest.fixture
+def serializer_mock():
+    """Mock the GrowspaceSerializer."""
+    mock = MagicMock()
+    mock.calculate_days_in_stage.return_value = 10
+    return mock
+
+
+@pytest.fixture
+def lock_mock():
+    """Mock the asyncio Lock."""
+    mock = MagicMock()
+    mock.__aenter__ = AsyncMock(return_value=None)
+    mock.__aexit__ = AsyncMock(return_value=None)
+    return mock
+
+
+@pytest.fixture
+def save_callback_mock():
+    """Mock the save callback."""
+    return AsyncMock()
+
+
+@pytest.fixture
+def manager(
+    repository_mock,
+    validator_mock,
+    gs_service_mock,
+    strain_library_mock,
+    serializer_mock,
+    save_callback_mock,
+    lock_mock,
+):
+    """Fixture for PlantLifecycleManager."""
+    return PlantLifecycleManager(
+        repository=repository_mock,
+        validator=validator_mock,
+        growspace_service=gs_service_mock,
+        strain_library=strain_library_mock,
+        serializer=serializer_mock,
+        save_callback=save_callback_mock,
+        lock=lock_mock,
     )
 
-    # Public properties for services
-    type(coordinator).growspace_service = property(lambda self: self._growspace_service)
 
-    return coordinator
-
-
-async def test_async_remove_plant_not_found(mock_coordinator) -> None:
+@pytest.mark.asyncio
+async def test_async_remove_plant_not_found(manager, save_callback_mock) -> None:
     """Test async_remove_plant when plant doesn't exist."""
-    manager = PlantLifecycleManager(mock_coordinator)
-
     # Try to remove non-existent plant
     result = await manager.async_remove_plant("nonexistent_plant_id")
 
-    # Should return False (line 126)
+    # Should return False
     assert result is False
-    mock_coordinator.async_commit.assert_not_awaited()
+    save_callback_mock.assert_not_awaited()
 
 
-async def test_async_remove_plant_with_notifications(mock_coordinator) -> None:
+@pytest.mark.asyncio
+async def test_async_remove_plant_with_notifications(
+    manager, repository_mock, save_callback_mock
+) -> None:
     """Test async_remove_plant removes from notifications_sent dict."""
-    manager = PlantLifecycleManager(mock_coordinator)
-
     # Add a plant and notification
     plant_id = "test_plant_123"
-    mock_coordinator.plants[plant_id] = create_plant(
+    repository_mock.plants[plant_id] = create_plant(
         plant_id=plant_id,
         growspace_id="test_growspace",
         strain="Test Strain",
     )
-    mock_coordinator.notifications_sent[plant_id] = True
+    repository_mock.notifications_sent[plant_id] = True
 
     # Remove the plant
     result = await manager.async_remove_plant(plant_id)
 
-    # Should remove from notifications_sent (line 123)
+    # Should remove from notifications_sent
     assert result is True
-    assert plant_id not in mock_coordinator.notifications_sent
-    assert plant_id not in mock_coordinator.plants
-    mock_coordinator.async_commit.assert_awaited_once()
+    assert plant_id not in repository_mock.notifications_sent
+    assert plant_id not in repository_mock.plants
+    save_callback_mock.assert_awaited_once()
 
 
-async def test_record_analytics_exception_handling(mock_coordinator) -> None:
+@pytest.mark.asyncio
+async def test_record_analytics_exception_handling(
+    manager, serializer_mock, strain_library_mock
+) -> None:
     """Test _record_analytics handles exceptions gracefully."""
-    manager = PlantLifecycleManager(mock_coordinator)
-
     # Create a plant with veg and flower days
     plant = create_plant(
         plant_id="test_plant",
@@ -91,10 +148,10 @@ async def test_record_analytics_exception_handling(mock_coordinator) -> None:
     )
 
     # Mock serializer to return positive days
-    mock_coordinator.serializer.calculate_days_in_stage.side_effect = [30, 60]
+    serializer_mock.calculate_days_in_stage.side_effect = [30, 60]
 
-    # Mock strain_library.record_harvest to raise exception (lines 331-332)
-    mock_coordinator.strain_library.record_harvest = AsyncMock(
+    # Mock strain_library.record_harvest to raise exception
+    strain_library_mock.record_harvest = AsyncMock(
         side_effect=Exception("Database error")
     )
 
@@ -102,15 +159,16 @@ async def test_record_analytics_exception_handling(mock_coordinator) -> None:
     await manager._record_analytics(plant)
 
     # Verify record_harvest was called
-    mock_coordinator.strain_library.record_harvest.assert_awaited_once_with(
+    strain_library_mock.record_harvest.assert_awaited_once_with(
         "Test Strain", "", 30, 60
     )
 
 
-async def test_transition_plant_stage_to_clone(mock_coordinator) -> None:
+@pytest.mark.asyncio
+async def test_transition_plant_stage_to_clone(
+    manager, repository_mock, validator_mock, gs_service_mock
+) -> None:
     """Test transition_plant_stage to CLONE stage."""
-    manager = PlantLifecycleManager(mock_coordinator)
-
     # Create a plant
     plant_id = "test_plant"
     plant = create_plant(
@@ -118,13 +176,10 @@ async def test_transition_plant_stage_to_clone(mock_coordinator) -> None:
         growspace_id="test_growspace",
         strain="Test Strain",
     )
-    mock_coordinator.plants[plant_id] = plant
+    repository_mock.plants[plant_id] = plant
 
-    # Mock validator to find position
-    mock_coordinator.validator.find_first_available_position.return_value = (1, 1)
-
-    # Transition to CLONE stage (line 428)
+    # Transition to CLONE stage
     await manager.transition_plant_stage(plant_id, PlantStage.CLONE, date(2024, 1, 15))
 
     # Verify move_to_clone_growspace was called via service
-    mock_coordinator._growspace_service.ensure_special_growspace.assert_called()
+    gs_service_mock.ensure_special_growspace.assert_called()

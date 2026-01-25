@@ -438,3 +438,97 @@ async def test_handle_clear_strain_library_error(
             )
 
         mock_notify.assert_called_once()
+
+
+async def test_handle_import_strain_library_cleanup_oserror(
+    mock_hass, mock_coordinator, mock_strain_library, tmp_path: Path
+) -> None:
+    """Test importing strain library with OS error during cleanup."""
+    zip_content = b"PK\x03\x04"
+    zip_base64 = base64.b64encode(zip_content).decode("utf-8")
+    temp_import_path = tmp_path / "temp_import.zip"
+
+    call = ServiceCall(
+        mock_hass,
+        DOMAIN,
+        "import_strain_library",
+        {"zip_base64": f"data:application/zip;base64,{zip_base64}"},
+        context=MagicMock(),
+    )
+
+    with (
+        patch(
+            "custom_components.growspace_manager.services.strain_library.create_notification"
+        ),
+        patch("tempfile.NamedTemporaryFile") as mock_temp,
+        patch(
+            "custom_components.growspace_manager.services.strain_library.Path"
+        ) as mock_path,
+    ):
+        mock_temp_file = MagicMock()
+        mock_temp_file.name = str(temp_import_path)
+        mock_temp.return_value.__enter__.return_value = mock_temp_file
+
+        # Mock Path(temp_file_path).exists() -> True
+        # Mock Path(temp_file_path).unlink() -> raises OSError
+        mock_path_instance = MagicMock()
+        mock_path_instance.exists.return_value = True
+        mock_path_instance.unlink.side_effect = OSError("Unlink Error")
+        mock_path.return_value = mock_path_instance
+
+        await handle_import_strain_library(
+            mock_hass, mock_coordinator, mock_strain_library, call
+        )
+        # Should complete without raising exception (it's in a finally/try/except block)
+        mock_path_instance.unlink.assert_called_once()
+
+
+async def test_handle_add_strain_no_strain(
+    mock_hass, mock_coordinator, mock_strain_library
+) -> None:
+    """Test adding a strain with missing strain parameter."""
+    call = ServiceCall(
+        mock_hass,
+        DOMAIN,
+        "add_strain",
+        {"phenotype": "Pheno 1"},
+        context=MagicMock(),
+    )
+
+    await handle_add_strain(mock_hass, mock_coordinator, mock_strain_library, call)
+    mock_strain_library.add_strain.assert_not_awaited()
+
+
+async def test_handle_update_strain_meta_no_strain(
+    mock_hass, mock_coordinator, mock_strain_library
+) -> None:
+    """Test updating strain metadata with missing strain parameter."""
+    call = ServiceCall(
+        mock_hass,
+        DOMAIN,
+        "update_strain_meta",
+        {"description": "New Description"},
+        context=MagicMock(),
+    )
+
+    await handle_update_strain_meta(
+        mock_hass, mock_coordinator, mock_strain_library, call
+    )
+    mock_strain_library.set_strain_meta.assert_not_awaited()
+
+
+async def test_handle_remove_strain_no_strain(
+    mock_hass, mock_coordinator, mock_strain_library
+) -> None:
+    """Test removing a strain with missing strain parameter."""
+    call = ServiceCall(
+        mock_hass,
+        DOMAIN,
+        "remove_strain",
+        {"phenotype": "Pheno 1"},
+        context=MagicMock(),
+    )
+
+    await handle_remove_strain(mock_hass, mock_coordinator, mock_strain_library, call)
+    mock_strain_library.remove_strain.assert_not_awaited()
+    mock_strain_library.remove_strain_phenotype.assert_not_awaited()

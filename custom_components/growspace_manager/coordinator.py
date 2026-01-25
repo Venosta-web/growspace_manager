@@ -169,12 +169,12 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     @property
     def nutrient_presets(self) -> dict[str, NutrientPreset]:
         """Return nutrient presets from manager."""
-        return self.nutrient_manager.presets
+        return self.nutrient_manager.nutrient_presets
 
     @nutrient_presets.setter
     def nutrient_presets(self, value: dict[str, NutrientPreset]) -> None:
         """Set nutrient presets in manager."""
-        self.nutrient_manager.presets = value
+        self.nutrient_manager.nutrient_presets = value
 
     @property
     def ipm_presets(self) -> dict[str, IPMPreset]:
@@ -207,6 +207,26 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     def nutrient_inventory(self, value: NutrientInventory | None) -> None:
         """Set nutrient inventory in manager."""
         self.nutrient_manager.inventory = value
+
+    @property
+    def notifications_sent(self) -> dict[str, dict[str, dict[str, bool]]]:
+        """Return the notifications sent tracking dictionary."""
+        return self.data_repository.notifications_sent
+
+    @notifications_sent.setter
+    def notifications_sent(self, value: dict[str, dict[str, dict[str, bool]]]) -> None:
+        """Set the notifications sent tracking dictionary."""
+        self.data_repository.notifications_sent = value
+
+    @property
+    def notifications_enabled(self) -> dict[str, bool]:
+        """Return the notifications enabled state dictionary."""
+        return self.data_repository.notifications_enabled
+
+    @notifications_enabled.setter
+    def notifications_enabled(self, value: dict[str, bool]) -> None:
+        """Set the notifications enabled state dictionary."""
+        self.data_repository.notifications_enabled = value
 
     @property
     def growspace_service(self) -> GrowspaceService:
@@ -249,79 +269,90 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         # Initialize Data Repository first - it owns the data dicts
         self.data_repository = GrowspaceRepository({}, {})
 
+        # 1. Initialize logic components with minimal dependencies
+        self.validator = GrowspaceValidator(self.data_repository)
+        self.view_model_builder = ViewModelBuilder(self)
+
+        # 2. Load initial data if provided (uses serializer and validator)
+        if data:
+            self._load_initial_data(data)
+
         # Initialize helper managers
         self._special_growspace_manager = SpecialGrowspaceManager(self)
         self._date_time_helper = DateTimeHelper()
         self._event_bus = GrowspaceEventBus(hass)
-        # self.events removed - using native HA Event Bus
 
         # Cache management - using dedicated CacheManager
         self.cache = CacheManager()
 
-        self.notifications_sent: dict[str, dict[str, dict[str, bool]]] = {}
-        self.notifications_enabled: dict[
-            str, bool
-        ] = {}  # ✅ Notification switch states
-
-        # Notification settings management
-        self.notification_settings = NotificationSettingsManager(self)
-
-        self.options = options or {}
-        _LOGGER.info("--- COORDINATOR INITIALIZED WITH OPTIONS: %s ---", self.options)
-
         # Initialize strain library
         if strain_library is None:
-            # Fallback for testing or legacy init
             self.strain_library = StrainLibrary(hass)
         else:
             self.strain_library = strain_library
 
-        # Initialize Environment Reporter
-        self.environment_reporter = EnvironmentReporter(hass, self)
+        # 3. Initialize storage (depends on repository, nutrient_manager, serializer)
+        self.nutrient_manager = NutrientManager(
+            self.data_repository, self._save_callback
+        )
+        self.storage_manager = StorageManager(
+            self.hass, self.data_repository, self.nutrient_manager, self.serializer
+        )
 
-        self.validator = GrowspaceValidator(self)
-        self.storage_manager = StorageManager(self, hass)
+        # 4. Initialize Domain Services (depend on repository, validator, view_model_builder)
+        self._growspace_service = GrowspaceService(
+            self.hass,
+            self.data_repository,
+            self.validator,
+            self.view_model_builder,
+            self._save_callback,
+            self.lock,
+        )
+
+        self.lifecycle_manager = PlantLifecycleManager(
+            self.data_repository,
+            self.validator,
+            self._growspace_service,
+            self.strain_library,
+            self.serializer,
+            self._save_callback,
+            self.lock,
+        )
+
+        self._plant_service = PlantService(
+            self.hass,
+            self.data_repository,
+            self.validator,
+            self.lifecycle_manager,
+            self._growspace_service,
+            self.serializer,
+            self._save_callback,
+            self.lock,
+        )
+
+        # 4. Initialize analysis and notification (still depend on coordinator for now)
         self.environment_analyzer = EnvironmentAnalyzer(hass, self)
+        self.environment_reporter = EnvironmentReporter(hass, self)
         self.notification_manager = NotificationManager(hass, self)
+        self.notification_settings = NotificationSettingsManager(self)
         self.import_export_manager = ImportExportManager(hass)
-        self.lifecycle_manager = PlantLifecycleManager(self)
-        self.nutrient_manager = NutrientManager(self)
-
-        # Update Data Repository with loaded data
-        self.data_repository.load_data(self.growspaces, self.plants)
 
         # Initialize Subsystem Manager
         self.subsystem_manager = SubsystemManager(hass, self, entry)
 
         self.created_entity_ids: list[tuple[str, str, str]] = []
 
-        # Load data
-        if data is None:
-            data = {}
+        # Options and state initialization
 
-        self.plants = self.serializer.deserialize_plants(data.get("plants", {}))
-        self.growspaces = self.serializer.deserialize_growspaces(
-            data.get("growspaces", {})
-        )
-
-        # Update Data Repository with loaded data
-        self.data_repository.load_data(self.growspaces, self.plants)
-
-        _LOGGER.debug(
-            "Loaded %d plants and %d growspaces", len(self.plants), len(self.growspaces)
-        )
-
-        # Initialize domain services
-        self._plant_service = PlantService(self)
-        self._growspace_service = GrowspaceService(self)
-
-        # Initialize view model builder
-        self.view_model_builder = ViewModelBuilder(self)
+        self.options = options or {}
+        _LOGGER.info("--- COORDINATOR INITIALIZED WITH OPTIONS: %s ---", self.options)
 
     def on_nutrient_inventory_loaded(self, inventory: NutrientInventory) -> None:
         """Update inventory and service after load."""
         self.nutrient_manager.load_data(
-            self.nutrient_manager.presets, self.nutrient_manager.ipm_presets, inventory
+            self.nutrient_manager.nutrient_presets,
+            self.nutrient_manager.ipm_presets,
+            inventory,
         )
 
     # =============================================================================
@@ -439,6 +470,24 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
         return self.data
 
+    async def _save_callback(self) -> None:
+        """Helper to call current async_commit for late-binding in tests."""
+        await self.async_commit()
+
+    def _load_initial_data(self, data: dict[str, Any]) -> None:
+        """Load and validate initial data from a dictionary."""
+        # Deserialize growspaces and plants using the serializer
+        growspaces = self.serializer.deserialize_growspaces(data.get("growspaces", {}))
+        plants = self.serializer.deserialize_plants(data.get("plants", {}))
+
+        # Update the repository with deserialized objects
+        self.data_repository.load_data(
+            growspaces,
+            plants,
+            data.get("notifications_sent"),
+            data.get("notifications_enabled"),
+        )
+
     async def async_commit(self) -> None:
         """Commit changes to storage and notify listeners."""
         # Ensure we always have fresh data when committing
@@ -511,7 +560,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
     async def async_load(self) -> None:
         """Load data from persistent storage and handle migrations."""
-        await self.storage_manager.async_load()
+        await self.storage_manager.async_load(self.options)
 
         # Ensure calculated sensors are configured
         self._growspace_service.ensure_calculated_sensors()
@@ -520,8 +569,6 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         await self._growspace_service.ensure_default_growspaces()
         await self.async_save()
 
-        # Update Data Repository with loaded data
-        self.data_repository.load_data(self.growspaces, self.plants)
         # Initialize environment reporter after data load
         if hasattr(self, "environment_reporter"):
             await self.environment_reporter.async_initialize()
@@ -1100,9 +1147,9 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         """Resolve a preset ID to its nutrient map (delegated)."""
         # This helper might not be needed if internal usage is gone,
         # but kept for potential external compatibility or service usage
-        if preset_id not in self.nutrient_manager.presets:
+        if preset_id not in self.nutrient_manager.nutrient_presets:
             raise KeyError(f"Nutrient preset '{preset_id}' not found")
-        return self.nutrient_manager.presets[preset_id].get_nutrient_map()
+        return self.nutrient_manager.nutrient_presets[preset_id].get_nutrient_map()
 
     # =============================================================================
     # IPM METHODS

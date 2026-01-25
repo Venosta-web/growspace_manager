@@ -14,38 +14,51 @@ from homeassistant.core import HomeAssistant
 
 
 @pytest.fixture
-def mock_coordinator():
-    """Mock the coordinator."""
-    coordinator = MagicMock()
-    coordinator.growspaces = {}
-    coordinator.plants = {}
-    coordinator.options = {}
-    coordinator.nutrient_manager = MagicMock()
-    coordinator.serializer = MagicMock()
-    return coordinator
+def repository_mock():
+    """Mock the GrowspaceRepository."""
+    mock = MagicMock()
+    mock.growspaces = {}
+    mock.plants = {}
+    return mock
+
+
+@pytest.fixture
+def nutrient_manager_mock():
+    """Mock the NutrientManager."""
+    return MagicMock()
+
+
+@pytest.fixture
+def serializer_mock():
+    """Mock the GrowspaceSerializer."""
+    return MagicMock()
 
 
 @pytest.mark.asyncio
 async def test_storage_apply_options_object(
-    hass: HomeAssistant, mock_coordinator
+    hass: HomeAssistant, repository_mock, nutrient_manager_mock, serializer_mock
 ) -> None:
-    """Test applying options when they are already an object (Line 198)."""
+    """Test applying options when they are already an object."""
     env_config = EnvironmentConfig(temperature_sensor="sensor.temp")
-    mock_coordinator.options = {"gs1": env_config}
-    mock_coordinator.growspaces = {"gs1": Growspace(id="gs1", name="Test")}
+    options = {"gs1": env_config}
+    repository_mock.growspaces = {"gs1": Growspace(id="gs1", name="Test")}
 
-    storage = StorageManager(mock_coordinator, hass)
-    storage._apply_options_to_growspaces()
+    storage = StorageManager(
+        hass, repository_mock, nutrient_manager_mock, serializer_mock
+    )
+    storage._apply_options_to_growspaces(options)
 
-    assert mock_coordinator.growspaces["gs1"].environment_config == env_config
+    assert repository_mock.growspaces["gs1"].environment_config == env_config
 
 
 @pytest.mark.asyncio
 async def test_storage_load_nutrient_inventory_exception(
-    hass: HomeAssistant, mock_coordinator
+    hass: HomeAssistant, repository_mock, nutrient_manager_mock, serializer_mock
 ) -> None:
-    """Test exception handling in _load_nutrient_inventory (Lines 226-228)."""
-    storage = StorageManager(mock_coordinator, hass)
+    """Test exception handling in _load_nutrient_inventory."""
+    storage = StorageManager(
+        hass, repository_mock, nutrient_manager_mock, serializer_mock
+    )
 
     with patch(
         "custom_components.growspace_manager.models.NutrientInventory.from_dict",
@@ -53,16 +66,16 @@ async def test_storage_load_nutrient_inventory_exception(
     ):
         result = storage._load_nutrient_inventory({"nutrient_inventory": {}})
         assert isinstance(result, NutrientInventory)
-        # Should return a fresh NutrientInventory on error
 
 
 @pytest.mark.asyncio
 async def test_storage_backup_corrupt_data_exception(
-    hass: HomeAssistant, mock_coordinator
+    hass: HomeAssistant, repository_mock, nutrient_manager_mock, serializer_mock
 ) -> None:
-    """Test exception handling in _backup_corrupt_data (Lines 156-157)."""
-    # This covers the catch-all exception in backup logic
-    storage = StorageManager(mock_coordinator, hass)
+    """Test exception handling in _backup_corrupt_data."""
+    storage = StorageManager(
+        hass, repository_mock, nutrient_manager_mock, serializer_mock
+    )
 
     with patch("builtins.open", side_effect=PermissionError("No way")):
         # This should log an error but not raise

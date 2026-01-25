@@ -7,6 +7,7 @@ from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.growspace_manager import StrainLibraryUploadView
 from custom_components.growspace_manager.bayesian_evaluator import _is_vpd_trend_gated
@@ -200,9 +201,15 @@ async def test_mold_risk_stage_branches_coverage(hass: HomeAssistant) -> None:
 @pytest.mark.asyncio
 async def test_lifecycle_history_closing_coverage(hass: HomeAssistant) -> None:
     """Test transition_plant_stage correctly closes previous history entry."""
-    mock_coordinator = MagicMock()
-    mock_coordinator.lock = AsyncMock()
-    mock_coordinator.async_commit = AsyncMock()
+    repository = MagicMock()
+    validator = MagicMock()
+    gs_service = MagicMock()
+    strain_library = MagicMock()
+    serializer = MagicMock()
+    save_callback = AsyncMock()
+    lock = MagicMock()
+    lock.__aenter__ = AsyncMock(return_value=None)
+    lock.__aexit__ = AsyncMock(return_value=None)
 
     plant = create_plant(
         plant_id="p1",
@@ -211,9 +218,17 @@ async def test_lifecycle_history_closing_coverage(hass: HomeAssistant) -> None:
         stage="veg",
         stage_history=[{"stage": "veg", "start": "2024-01-01", "end": None}],
     )
-    mock_coordinator.plants = {"p1": plant}
+    repository.plants = {"p1": plant}
 
-    manager = PlantLifecycleManager(mock_coordinator)
+    manager = PlantLifecycleManager(
+        repository=repository,
+        validator=validator,
+        growspace_service=gs_service,
+        strain_library=strain_library,
+        serializer=serializer,
+        save_callback=save_callback,
+        lock=lock,
+    )
     with patch.object(
         manager, "async_update_plant", new_callable=AsyncMock
     ) as mock_update:
@@ -232,17 +247,26 @@ async def test_lifecycle_history_closing_coverage(hass: HomeAssistant) -> None:
 @pytest.mark.asyncio
 async def test_batch_add_mother_auto_date_coverage(hass: HomeAssistant) -> None:
     """Test add_plants auto-sets mother_start for mother growspace."""
-    mock_coordinator = MagicMock()
-    mock_coordinator.growspaces = {"mother": MagicMock()}
-    mock_coordinator.validator.find_first_available_position.return_value = (1, 1)
-    mock_coordinator._plant_service.add_plant = AsyncMock()
+    entry = MockConfigEntry(domain="growspace_manager", data={})
+    entry.add_to_hass(hass)
+    mock_coordinator = GrowspaceCoordinator(hass, entry, data={})
 
-    call = MagicMock()
-    call.data = {ATTR_GROWSPACE_ID: "mother", ATTR_STRAIN: "Strain A", ATTR_AMOUNT: 1}
+    mock_coordinator.data_repository.growspaces = {"mother": MagicMock()}
+    with patch.object(
+        mock_coordinator.validator, "find_first_available_position", return_value=(1, 1)
+    ):
+        mock_coordinator._plant_service.add_plant = AsyncMock()
 
-    await handle_add_plants(hass, mock_coordinator, MagicMock(), call)
-    _args, kwargs = mock_coordinator._plant_service.add_plant.call_args
-    assert kwargs.get("mother_start") is not None
+        call = MagicMock()
+        call.data = {
+            ATTR_GROWSPACE_ID: "mother",
+            ATTR_STRAIN: "Strain A",
+            ATTR_AMOUNT: 1,
+        }
+
+        await handle_add_plants(hass, mock_coordinator, MagicMock(), call)
+        _args, kwargs = mock_coordinator._plant_service.add_plant.call_args
+        assert kwargs.get("mother_start") is not None
 
 
 @pytest.mark.asyncio
@@ -378,6 +402,7 @@ async def test_websocket_get_event_log_spam_filter_coverage(
         mock_query_base,
     ]
 
+    # Use a real dt_util.utcnow or mock it correctly
     with (
         patch(
             "custom_components.growspace_manager.websocket.get_instance"
@@ -485,8 +510,6 @@ async def test_strain_library_upload_view_error_cleanup_coverage(
             "custom_components.growspace_manager.views.pathlib.Path"
         ) as mock_path_cls,
     ):
-        # 1. _get_image_path returning None - we need to silence Mypy as it thinks this is a method
-        # view._get_image_path = MagicMock(return_value=None)
         mock_path = MagicMock()
         mock_path_cls.return_value = mock_path
         mock_path.exists.return_value = True
@@ -498,12 +521,16 @@ async def test_strain_library_upload_view_error_cleanup_coverage(
 @pytest.mark.asyncio
 async def test_storage_manager_force_save_coverage(hass: HomeAssistant) -> None:
     """Test StorageManager.async_force_save actually calls async_save on stores."""
-    mock_coordinator = MagicMock()
-    mock_coordinator.growspaces = {}
-    mock_coordinator.nutrient_presets = {}
-    mock_coordinator.ipm_presets = {}
-    mock_coordinator.plants = {}
-    mock_coordinator.nutrient_inventory = NutrientInventory()
+    repository = MagicMock()
+    repository.growspaces = {}
+    repository.plants = {}
+    repository.notifications_sent = {}
+    repository.notifications_enabled = {}
+
+    nutrient_manager = MagicMock()
+    nutrient_manager.get_serialization_data.return_value = {}
+
+    serializer = MagicMock()
 
     with patch(
         "custom_components.growspace_manager.storage_manager.Store"
@@ -512,7 +539,7 @@ async def test_storage_manager_force_save_coverage(hass: HomeAssistant) -> None:
         mock_plants_store = MagicMock()
         mock_store_cls.side_effect = [mock_config_store, mock_plants_store, MagicMock()]
 
-        storage = StorageManager(mock_coordinator, hass)
+        storage = StorageManager(hass, repository, nutrient_manager, serializer)
 
         mock_config_store.async_save = AsyncMock()
         mock_plants_store.async_save = AsyncMock()
@@ -530,7 +557,7 @@ async def test_storage_manager_force_save_coverage(hass: HomeAssistant) -> None:
         mock_plants_store = MagicMock()
         mock_store_cls.side_effect = [mock_config_store, mock_plants_store, MagicMock()]
 
-        storage = StorageManager(mock_coordinator, hass)
+        storage = StorageManager(hass, repository, nutrient_manager, serializer)
 
         mock_config_store.async_delay_save = MagicMock()
         mock_plants_store.async_delay_save = MagicMock()
@@ -543,10 +570,12 @@ async def test_storage_manager_force_save_coverage(hass: HomeAssistant) -> None:
 @pytest.mark.asyncio
 async def test_storage_manager_load_coverage(hass: HomeAssistant) -> None:
     """Test StorageManager.async_load with segmented and legacy storage."""
-    mock_coordinator = MagicMock()
-    mock_coordinator.options = {}
-    mock_coordinator.growspaces = {}
-    mock_coordinator.nutrient_inventory = NutrientInventory()
+    repository = MagicMock()
+    repository.growspaces = {}
+    repository.plants = {}
+
+    nutrient_manager = MagicMock()
+    serializer = MagicMock()
 
     with patch(
         "custom_components.growspace_manager.storage_manager.Store"
@@ -560,13 +589,13 @@ async def test_storage_manager_load_coverage(hass: HomeAssistant) -> None:
             mock_legacy_store,
         ]
 
-        storage = StorageManager(mock_coordinator, hass)
+        storage = StorageManager(hass, repository, nutrient_manager, serializer)
 
-        # Mock serializer to return dicts
-        mock_coordinator.serializer.deserialize_growspaces.return_value = {
+        # Mock serializer to return objects
+        serializer.deserialize_growspaces.return_value = {
             "gs1": Growspace(id="gs1", name="GS1")
         }
-        mock_coordinator.serializer.deserialize_plants.return_value = {
+        serializer.deserialize_plants.return_value = {
             "p1": create_plant(plant_id="p1", strain="S1", growspace_id="gs1")
         }
 
@@ -583,8 +612,8 @@ async def test_storage_manager_load_coverage(hass: HomeAssistant) -> None:
         )
 
         await storage.async_load()
-        assert "gs1" in mock_coordinator.growspaces
-        assert "p1" in mock_coordinator.plants
+        assert "gs1" in repository.growspaces
+        assert "p1" in repository.plants
 
         # 2. Legacy migration
         mock_config_store.async_load = AsyncMock(return_value=None)
@@ -599,10 +628,10 @@ async def test_storage_manager_load_coverage(hass: HomeAssistant) -> None:
         )
 
         # Update serializer return values for legacy load
-        mock_coordinator.serializer.deserialize_growspaces.return_value = {
+        serializer.deserialize_growspaces.return_value = {
             "gs2": Growspace(id="gs2", name="GS2")
         }
-        mock_coordinator.serializer.deserialize_plants.return_value = {
+        serializer.deserialize_plants.return_value = {
             "p2": create_plant(plant_id="p2", strain="S2", growspace_id="gs2")
         }
 
@@ -610,7 +639,7 @@ async def test_storage_manager_load_coverage(hass: HomeAssistant) -> None:
         mock_plants_store.async_save = AsyncMock()
 
         await storage.async_load()
-        assert "gs2" in mock_coordinator.growspaces
+        assert "gs2" in repository.growspaces
         mock_config_store.async_save.assert_awaited()
 
         # 3. fresh load
@@ -621,20 +650,16 @@ async def test_storage_manager_load_coverage(hass: HomeAssistant) -> None:
 
         # 4. Error handling
         mock_config_store.async_load = AsyncMock(return_value={"growspaces": "CORRUPT"})
-
-        # Configure serializer to raise exception
-        mock_coordinator.serializer.deserialize_growspaces.side_effect = Exception(
-            "Corrupt Data"
-        )
+        serializer.deserialize_growspaces.side_effect = Exception("Corrupt Data")
 
         await storage.async_load()
-        assert mock_coordinator.growspaces == {}
+        assert repository.growspaces == {}
 
-        # Reset side_effect for next steps
-        mock_coordinator.serializer.deserialize_growspaces.side_effect = None
+        # Reset side_effect
+        serializer.deserialize_growspaces.side_effect = None
 
         # 5. Options and more error paths
-        mock_coordinator.options = {"gs1": {"temp_high": 30.0}}
+        options = {"gs1": {"temp_high": 30.0}}
         mock_config_store.async_load = AsyncMock(
             return_value={
                 "growspaces": {"gs1": {"id": "gs1", "name": "GS1"}},
@@ -642,46 +667,42 @@ async def test_storage_manager_load_coverage(hass: HomeAssistant) -> None:
                 "ipm_presets": "CORRUPT",
             }
         )
-        # Restore serializer behavior for gs1
-        mock_coordinator.serializer.deserialize_growspaces.return_value = {
+        serializer.deserialize_growspaces.return_value = {
             "gs1": Growspace(id="gs1", name="GS1")
         }
-        # Mock _load_plants to raise exception
         with patch.object(storage, "_load_plants", side_effect=Exception("Crash")):
-            await storage.async_load()
+            await storage.async_load(options=options)
 
-        assert "gs1" in mock_coordinator.growspaces
+        assert "gs1" in repository.growspaces
 
         # Verify nutrient_manager.load_data called with empty dicts for corrupt presets
-        # args: nutrient_presets, ipm_presets, inventory
-        call_args = mock_coordinator.nutrient_manager.load_data.call_args
+        # We check the last call
+        call_args = nutrient_manager.load_data.call_args
         assert call_args[0][0] == {}
         assert call_args[0][1] == {}
+        assert isinstance(call_args[0][2], NutrientInventory)
 
 
 @pytest.mark.asyncio
 async def test_storage_manager_load_plants_error(hass: HomeAssistant) -> None:
-    """Test StorageManager._load_plants error handling (136-138)."""
-    mock_coordinator = MagicMock()
-    storage = StorageManager(mock_coordinator, hass)
+    """Test StorageManager._load_plants error handling."""
+    repository = MagicMock()
+    repository.plants = {}
+    nutrient_manager = MagicMock()
+    serializer = MagicMock()
+    storage = StorageManager(hass, repository, nutrient_manager, serializer)
 
-    # Trigger exception in _load_plants via malformed data
+    # Trigger exception in _load_plants
     data = {"plants": {"p1": "MALFORMED"}}
-
-    # Configure serializer to raise exception
-    mock_coordinator.serializer.deserialize_plants.side_effect = Exception(
-        "Deserialization Error"
-    )
+    serializer.deserialize_plants.side_effect = Exception("Deserialization Error")
 
     storage._load_plants(data)
-
-    assert mock_coordinator.plants == {}
+    assert repository.plants == {}
 
 
 @pytest.mark.asyncio
 async def test_merge_logbook_event_extra_exceptions_coverage() -> None:
-    """Test _merge_logbook_event catches KeyError/TypeError (447-448)."""
-    # Trigger KeyError by passing data without 'category' but with match condition
+    """Test _merge_logbook_event catches KeyError/TypeError."""
     formatted = [
         {
             "growspace_id": "gs1",
@@ -690,16 +711,14 @@ async def test_merge_logbook_event_extra_exceptions_coverage() -> None:
             "start_time": "2024-01-01",
         }
     ]
-    # d is missing 'category' which is accessed in the loop
     d = {"growspace_id": "gs1"}
     assert _merge_logbook_event(formatted, d, MagicMock()) is False
 
 
 def test_downsample_empty_idx_coverage() -> None:
-    """Test _downsample_entity_binary_search else branch (925)."""
+    """Test _downsample_entity_binary_search else branch."""
     start = datetime(2024, 1, 1, 10, 0, 0)
     end = datetime(2024, 1, 1, 11, 0, 0)
-    # Use real dict to avoid Mock comparison issues in bisect
     states = [{"last_updated": datetime(2024, 1, 1, 12, 0, 0)}]
 
     res = _downsample_entity_binary_search(states, start, end, timedelta(minutes=60))
@@ -709,7 +728,16 @@ def test_downsample_empty_idx_coverage() -> None:
 @pytest.mark.asyncio
 async def test_lifecycle_history_stages_coverage(hass: HomeAssistant) -> None:
     """Test transition_plant_stage stage branches to hit move methods."""
-    mock_coordinator = MagicMock()
+    repository = MagicMock()
+    validator = MagicMock()
+    gs_service = MagicMock()
+    strain_library = MagicMock()
+    serializer = MagicMock()
+    save_callback = AsyncMock()
+    lock = MagicMock()
+    lock.__aenter__ = AsyncMock(return_value=None)
+    lock.__aexit__ = AsyncMock(return_value=None)
+
     plant = create_plant(
         plant_id="p1",
         growspace_id="gs1",
@@ -717,14 +745,22 @@ async def test_lifecycle_history_stages_coverage(hass: HomeAssistant) -> None:
         stage="veg",
         stage_history=[{"stage": "veg", "start": "2024-01-01", "end": None}],
     )
-    mock_coordinator.plants = {"p1": plant}
+    repository.plants = {"p1": plant}
 
-    manager = PlantLifecycleManager(mock_coordinator)
-    mock_coordinator._plant_service.update_plant = AsyncMock()  # type: ignore[method-assign]
-    mock_coordinator.async_commit = AsyncMock()
-    manager.move_to_dry_growspace = AsyncMock()  # type: ignore[method-assign]
-    manager.move_to_cure_growspace = AsyncMock()  # type: ignore[method-assign]
-    manager.move_to_clone_growspace = AsyncMock()  # type: ignore[method-assign]
+    manager = PlantLifecycleManager(
+        repository=repository,
+        validator=validator,
+        growspace_service=gs_service,
+        strain_library=strain_library,
+        serializer=serializer,
+        save_callback=save_callback,
+        lock=lock,
+    )
+
+    manager.async_update_plant = AsyncMock()
+    manager.move_to_dry_growspace = AsyncMock()
+    manager.move_to_cure_growspace = AsyncMock()
+    manager.move_to_clone_growspace = AsyncMock()
 
     # Hit DRY transition
     await manager.transition_plant_stage("p1", PlantStage.DRY)

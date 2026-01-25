@@ -43,7 +43,9 @@ class PlantConfigHandler(BaseConfigHandler[dict[str, Any]]):
                 try:
                     plant = coordinator.plants.get(user_input["plant_id"])
                     if plant:
-                        await self.async_destroy_plant(plant.growspace_id, plant.id)
+                        await self.async_destroy_plant(
+                            plant.growspace_id, plant.plant_id
+                        )
                 except Exception:
                     _LOGGER.exception("Error removing plant")
                     return self.flow.async_show_form(

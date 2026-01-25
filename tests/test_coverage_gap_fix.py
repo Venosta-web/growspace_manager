@@ -697,25 +697,31 @@ async def test_promote_clone_custom_target(hass: HomeAssistant) -> None:
     """Test promoting a clone to a custom growspace."""
     coordinator = GrowspaceCoordinator(hass, MagicMock())
     coordinator.lifecycle_manager = AsyncMock()
+    # Inject mock into internal service
+    coordinator._plant_service.lifecycle_manager = coordinator.lifecycle_manager
+
     coordinator.async_save = AsyncMock()  # type: ignore[method-assign]
     coordinator.invalidate_cache = MagicMock()  # type: ignore[method-assign]
     coordinator.fire_event = MagicMock()  # type: ignore[method-assign]
 
-    # Setup plants and growspaces
-    mock_plant = MagicMock()
-    mock_plant.stage = PlantStage.CLONE
-    mock_plant.growspace_id = "clone_room"
-
-    coordinator.plants["p1"] = mock_plant
+    # Setup plants and growspaces using real objects to avoid asdict() issues
+    plant = create_plant(
+        plant_id="p1",
+        growspace_id="clone_room",
+        strain="Test Strain",
+        stage=PlantStage.CLONE,
+    )
+    coordinator.plants["p1"] = plant
 
     coordinator.growspaces["custom_room"] = Growspace(
         id="custom_room", name="Custom Room"
     )
 
     # Create valid position finder mock
-    coordinator.validator.find_first_available_position = MagicMock(return_value=(1, 1))  # type: ignore[method-assign]
-
-    await coordinator.async_promote_clone("p1", target_growspace_id="custom_room")
+    with patch.object(
+        coordinator.validator, "find_first_available_position", return_value=(1, 1)
+    ):
+        await coordinator.async_promote_clone("p1", target_growspace_id="custom_room")
 
     coordinator.lifecycle_manager.async_update_plant.assert_called_once()
     call_kwargs = coordinator.lifecycle_manager.async_update_plant.call_args[1]
