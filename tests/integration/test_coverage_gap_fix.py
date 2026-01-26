@@ -15,9 +15,8 @@ from custom_components.growspace_manager.bayesian_evaluator import (
     evaluate_optimal_vpd,
 )
 from custom_components.growspace_manager.binary_sensor import (
-    BayesianEnvironmentSensor,
     SENSOR_TYPES,
-    GrowspaceBinarySensorDescription,
+    BayesianEnvironmentSensor,
     GrowspaceSensorType,
     LightCycleVerificationSensor,
 )

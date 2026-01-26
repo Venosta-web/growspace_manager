@@ -36,6 +36,27 @@ async def test_async_fire_growspace_event(hass: HomeAssistant) -> None:
     assert events[0].data["data"]["device_id"] == "dev1"
 
 
+async def test_async_fire_growspace_event_simple(hass: HomeAssistant) -> None:
+    """Test firing a growspace event with a custom event type."""
+    growspace = Growspace(id="gs1", name="Test GS", device_id="dev1")
+
+    events = []
+
+    @callback
+    def capture_event(event):
+        events.append(event)
+
+    hass.bus.async_listen("custom_event", capture_event)
+
+    async_fire_growspace_event(hass, "custom_event", growspace)
+    await hass.async_block_till_done()
+
+    assert len(events) == 1
+    assert events[0].data["growspace_id"] == "gs1"
+    assert events[0].data["name"] == "Test GS"
+    assert events[0].data["device_id"] == "dev1"
+
+
 async def test_async_fire_plant_event(hass: HomeAssistant) -> None:
     """Test firing a plant event."""
     plant = create_plant(
@@ -63,6 +84,36 @@ async def test_async_fire_plant_event(hass: HomeAssistant) -> None:
     assert events[0].data["strain"] == "Strain A"
     assert events[0].data["stage"] == "veg"
     assert events[0].data["device_id"] == "dev1"
+
+
+async def test_async_fire_plant_event_multiplexed(hass: HomeAssistant) -> None:
+    """Test firing a plant event on the main update bus."""
+    plant = create_plant(
+        plant_id="p1",
+        strain="Strain A",
+        growspace_id="gs1",
+        stage="veg",
+        device_id="dev1",
+    )
+
+    events = []
+
+    @callback
+    def capture_event(event):
+        events.append(event)
+
+    hass.bus.async_listen("growspace_manager_updated", capture_event)
+
+    async_fire_plant_event(hass, "growspace_manager_updated", plant)
+    await hass.async_block_till_done()
+
+    assert len(events) == 1
+    assert events[0].data["event_type"] == "growspace_manager_updated"
+    assert events[0].data["data"]["plant_id"] == "p1"
+    assert events[0].data["data"]["growspace_id"] == "gs1"
+    assert events[0].data["data"]["strain"] == "Strain A"
+    assert events[0].data["data"]["stage"] == "veg"
+    assert events[0].data["data"]["device_id"] == "dev1"
 
 
 async def test_async_fire_plant_event_with_changes(hass: HomeAssistant) -> None:

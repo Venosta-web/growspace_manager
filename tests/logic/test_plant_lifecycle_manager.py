@@ -49,14 +49,6 @@ def strain_library_mock():
 
 
 @pytest.fixture
-def serializer_mock():
-    """Mock the GrowspaceSerializer."""
-    mock = MagicMock()
-    mock.calculate_days_in_stage = MagicMock(return_value=10)
-    return mock
-
-
-@pytest.fixture
 def lock_mock():
     """Mock the asyncio Lock."""
     mock = MagicMock()
@@ -77,7 +69,6 @@ def manager(
     validator_mock,
     gs_service_mock,
     strain_library_mock,
-    serializer_mock,
     save_callback_mock,
     lock_mock,
 ):
@@ -87,7 +78,6 @@ def manager(
         validator=validator_mock,
         growspace_service=gs_service_mock,
         strain_library=strain_library_mock,
-        serializer=serializer_mock,
         save_callback=save_callback_mock,
         lock=lock_mock,
     )

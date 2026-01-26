@@ -37,9 +37,8 @@ def mock_coordinator() -> MagicMock:
         )
     }
     coordinator.options = {}
-    coordinator.is_notifications_enabled.return_value = True
-    coordinator._notifications_sent = {}
     coordinator.async_save = AsyncMock()
+    coordinator.get_growspace_plants = MagicMock(return_value=[])
     return coordinator
 
 
@@ -50,6 +49,10 @@ def mock_hass() -> MagicMock:
     hass.services = MagicMock()
     hass.services.async_call = AsyncMock()
     hass.async_create_task = MagicMock()
+    hass.data = {}
+    hass.config = MagicMock()
+    hass.config.config_dir = "/tmp"
+    hass.bus = MagicMock()
     return hass
 
 
@@ -194,11 +197,13 @@ async def test_async_check_timed_notifications(
     )
     mock_coordinator.plants = {"plant_1": plant}
     mock_coordinator.get_growspace_plants.return_value = [plant]
-    mock_coordinator.serializer = MagicMock()
-    mock_coordinator.serializer.calculate_days_in_stage.return_value = 10
     mock_coordinator.notifications_sent = {"plant_1": {}}
 
-    await manager.async_check_timed_notifications()
+    with patch(
+        "custom_components.growspace_manager.notification_manager.calculate_days_in_stage",
+        return_value=10,
+    ):
+        await manager.async_check_timed_notifications()
 
     mock_hass.services.async_call.assert_awaited()
     assert mock_coordinator.notifications_sent["plant_1"]["timed_notify_1"]
@@ -486,13 +491,18 @@ async def test_async_check_tank_levels(
     mock_hass.states = MagicMock()
     mock_hass.states.get.return_value = mock_state
 
-    with patch.object(
-        manager, "async_send_notification", new_callable=AsyncMock
-    ) as mock_send:
-        await manager.async_check_tank_levels()
-        mock_send.assert_awaited_once()
-        # It uses keyword arguments
-        assert "Low Irrigation Tank Level" in mock_send.call_args[1]["title"]
+    with patch(
+        "custom_components.growspace_manager.presentation.entity_queries.EntityQueries"
+    ) as mock_queries:
+        mock_instance = mock_queries.return_value
+        mock_instance.parse_tank_level.return_value = 10.0
+        with patch.object(
+            manager, "async_send_notification", new_callable=AsyncMock
+        ) as mock_send:
+            await manager.async_check_tank_levels()
+            mock_send.assert_awaited_once()
+            # It uses keyword arguments
+            assert "Low Irrigation Tank Level" in mock_send.call_args[1]["title"]
 
     # CASE 2: No environment config (skip)
     gs.environment_config = None

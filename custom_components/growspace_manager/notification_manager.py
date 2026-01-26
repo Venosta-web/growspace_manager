@@ -20,7 +20,7 @@ from .const import (
     MAX_NOTIFICATION_LENGTH,
     NOTIFICATION_DEBOUNCE_SECONDS,
 )
-from .serializers import GrowspaceSerializer
+from .domain import calculate_days_in_stage
 
 if TYPE_CHECKING:
     from .coordinator import GrowspaceCoordinator
@@ -357,8 +357,9 @@ class NotificationManager:
 
     async def async_check_tank_levels(self) -> None:
         """Check all irrigation tank levels and notify if below warning threshold."""
+        from .presentation import EntityQueries
 
-        serializer = GrowspaceSerializer(self.hass)
+        entity_queries = EntityQueries(self.hass)
 
         for growspace in self.coordinator.growspaces.values():
             if (
@@ -370,7 +371,9 @@ class NotificationManager:
             for tank in growspace.environment_config.irrigation_tanks:
                 state_obj = self.hass.states.get(tank.sensor_entity)
                 level = (
-                    serializer._parse_tank_level(state_obj.state) if state_obj else None
+                    entity_queries.parse_tank_level(state_obj.state)
+                    if state_obj
+                    else None
                 )
 
                 if level is not None and level <= tank.warning_level:
@@ -425,7 +428,7 @@ class NotificationManager:
         message: str,
     ) -> None:
         """Check and trigger notification for a specific plant."""
-        days_in_stage = self.coordinator.serializer.calculate_days_in_stage(
+        days_in_stage = calculate_days_in_stage(
             plant, trigger_type
         )
 

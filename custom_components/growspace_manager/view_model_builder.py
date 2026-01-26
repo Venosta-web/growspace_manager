@@ -12,6 +12,7 @@ from typing import TYPE_CHECKING, Any
 from homeassistant.util import dt as dt_util
 
 from .models import Plant
+from .presentation import GrowspaceViewModelBuilder
 from .utils import calculate_days_since
 
 if TYPE_CHECKING:
@@ -28,6 +29,9 @@ class ViewModelBuilder:
     - Growspace serialization with caching
     - Plant statistics aggregation
     - Data property assembly for frontend
+
+    This class orchestrates coordinator-specific concerns (caching, biological metrics,
+    irrigation events) and delegates the actual view model building to presentation layer.
     """
 
     def __init__(self, coordinator: GrowspaceCoordinator) -> None:
@@ -37,6 +41,7 @@ class ViewModelBuilder:
             coordinator: The GrowspaceCoordinator instance
         """
         self.coordinator = coordinator
+        self._growspace_builder = GrowspaceViewModelBuilder(coordinator.hass)
 
     @property
     def growspaces(self) -> dict[str, Growspace]:
@@ -128,7 +133,8 @@ class ViewModelBuilder:
             ]
             active_events = irr_coord.active_events
 
-        serialized = self.coordinator.serializer.serialize_growspace(
+        # Use presentation layer to build rich growspace payload
+        serialized = self._growspace_builder.build(
             growspace,
             plants,
             biological_metrics,
@@ -177,7 +183,7 @@ class ViewModelBuilder:
             plants_by_growspace[plant.growspace_id].append(plant)
 
         for growspace_id in self.growspaces:
-            # Pass the pre-filtered list to the serializer
+            # Pass the pre-filtered list to the builder
             # Use empty list if no plants found for this growspace
             plants = plants_by_growspace.get(growspace_id, [])
             serialized_growspaces[growspace_id] = self.build_serialized_growspace(

@@ -5,7 +5,6 @@ import pytest
 from custom_components.growspace_manager.binary_sensor import (
     SENSOR_TYPES,
     BayesianEnvironmentSensor,
-    GrowspaceBinarySensorDescription,
     GrowspaceSensorType,
 )
 from custom_components.growspace_manager.models import EnvironmentConfig, GrowspaceType
@@ -70,13 +69,6 @@ async def test_minimal_sensor_vpd_calculation(mock_coordinator) -> None:
     mock_growspace.growspace_type = GrowspaceType.FLOWER
     mock_coordinator.growspaces = {growspace_id: mock_growspace}
     mock_coordinator.get_growspace_plants.return_value = []
-
-    # 2. Setup Sensor
-    description = GrowspaceBinarySensorDescription(
-        key=GrowspaceSensorType.OPTIMAL,
-        sensor_type=GrowspaceSensorType.OPTIMAL,
-        prior_key="prior_optimal",
-    )
 
     # Explicitly mock states before assigning to sensor
     mock_states = MagicMock()

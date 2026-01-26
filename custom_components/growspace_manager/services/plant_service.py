@@ -32,7 +32,7 @@ from custom_components.growspace_manager.models import Plant
 from custom_components.growspace_manager.plant_lifecycle_manager import (
     PlantLifecycleManager,
 )
-from custom_components.growspace_manager.serializers import GrowspaceSerializer
+from custom_components.growspace_manager.presentation import PlantViewModelBuilder
 from custom_components.growspace_manager.services.growspace_service import (
     GrowspaceService,
 )
@@ -52,7 +52,7 @@ class PlantService:
         validator: GrowspaceValidator,
         lifecycle_manager: PlantLifecycleManager,
         growspace_service: GrowspaceService,
-        serializer: GrowspaceSerializer,
+        plant_view_builder: PlantViewModelBuilder,
         save_callback: Callable[[], Awaitable[None]],
         lock: asyncio.Lock,
     ) -> None:
@@ -64,7 +64,7 @@ class PlantService:
             validator: Growspace validator.
             lifecycle_manager: Plant lifecycle manager.
             growspace_service: Growspace service.
-            serializer: Growspace serializer.
+            plant_view_builder: Plant view model builder for serialization.
             save_callback: Callback to save data.
             lock: Async lock for thread safety.
         """
@@ -73,7 +73,7 @@ class PlantService:
         self.validator = validator
         self.lifecycle_manager = lifecycle_manager
         self.growspace_service = growspace_service
-        self.serializer = serializer
+        self.plant_view_builder = plant_view_builder
         self.save_callback = save_callback
         self.lock = lock
 
@@ -127,7 +127,7 @@ class PlantService:
         # self.cache.invalidate(growspace_id)
 
         self._fire_event(
-            "plant_added", {"plant": self.serializer.serialize_plant(plant)}
+            "plant_added", {"plant": self.plant_view_builder.build(plant)}
         )
         async_fire_plant_event(self.hass, EVENT_PLANT_ADDED, plant)
         return plant
@@ -244,7 +244,7 @@ class PlantService:
                 # Fire individual plant_added event for frontend refresh
                 self._fire_event(
                     "plant_added",
-                    {"plant": self.serializer.serialize_plant(new_plant)},
+                    {"plant": self.plant_view_builder.build(new_plant)},
                 )
                 async_fire_plant_event(self.hass, EVENT_PLANT_ADDED, new_plant)
 
@@ -274,7 +274,7 @@ class PlantService:
 
         self._fire_event(
             "plant_updated",
-            {"plant": self.serializer.serialize_plant(plant)},
+            {"plant": self.plant_view_builder.build(plant)},
         )
         async_fire_plant_event(self.hass, EVENT_PLANT_UPDATED, plant, updates)
         return plant
@@ -314,14 +314,14 @@ class PlantService:
         if p1 := self.repository.plants.get(plant1_id):
             self._fire_event(
                 "plant_switched",
-                {"plant": self.serializer.serialize_plant(p1)},
+                {"plant": self.plant_view_builder.build(p1)},
             )
             async_fire_plant_event(self.hass, EVENT_PLANT_SWITCHED, p1)
 
         if p2 := self.repository.plants.get(plant2_id):
             self._fire_event(
                 "plant_switched",
-                {"plant": self.serializer.serialize_plant(p2)},
+                {"plant": self.plant_view_builder.build(p2)},
             )
             async_fire_plant_event(self.hass, EVENT_PLANT_SWITCHED, p2)
 

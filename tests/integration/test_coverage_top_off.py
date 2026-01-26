@@ -72,34 +72,36 @@ async def test_dehumidifier_stages_coverage(hass: HomeAssistant) -> None:
         plant_id="p1", growspace_id="gs1", strain="S1", cure_start="2024-01-01"
     )
     mock_coordinator.get_growspace_plants.return_value = [plant_cure]
-    mock_coordinator.serializer.calculate_days_in_stage.side_effect = (
-        lambda p, s: 1 if s == "cure" else 0
-    )
-
-    coordinator = DehumidifierCoordinator(
-        hass, mock_config_entry, "gs1", mock_coordinator
-    )
-    assert coordinator._get_growth_stage() == "cure"
+    with patch(
+        "custom_components.growspace_manager.dehumidifier_coordinator.calculate_days_in_stage",
+        side_effect=lambda p, s: 1 if s == "cure" else 0,
+    ):
+        coordinator = DehumidifierCoordinator(
+            hass, mock_config_entry, "gs1", mock_coordinator
+        )
+        assert coordinator._get_growth_stage() == "cure"
 
     # Test DRY stage
     plant_dry = create_plant(
         plant_id="p1", growspace_id="gs1", strain="S1", dry_start="2024-01-01"
     )
     mock_coordinator.get_growspace_plants.return_value = [plant_dry]
-    mock_coordinator.serializer.calculate_days_in_stage.side_effect = (
-        lambda p, s: 1 if s == "dry" else 0
-    )
-    assert coordinator._get_growth_stage() == "dry"
+    with patch(
+        "custom_components.growspace_manager.dehumidifier_coordinator.calculate_days_in_stage",
+        side_effect=lambda p, s: 1 if s == "dry" else 0,
+    ):
+        assert coordinator._get_growth_stage() == "dry"
 
     # Test SEEDLING stage
     plant_seedling = create_plant(
         plant_id="p1", growspace_id="gs1", strain="S1", seedling_start="2024-01-01"
     )
     mock_coordinator.get_growspace_plants.return_value = [plant_seedling]
-    mock_coordinator.serializer.calculate_days_in_stage.side_effect = (
-        lambda p, s: 1 if s == "seedling" else 0
-    )
-    assert coordinator._get_growth_stage() == "seedling"
+    with patch(
+        "custom_components.growspace_manager.dehumidifier_coordinator.calculate_days_in_stage",
+        side_effect=lambda p, s: 1 if s == "seedling" else 0,
+    ):
+        assert coordinator._get_growth_stage() == "seedling"
 
 
 # --- Models Nesting Coverage ---
@@ -255,7 +257,6 @@ async def test_lifecycle_history_closing_coverage(hass: HomeAssistant) -> None:
         validator=validator,
         growspace_service=gs_service,
         strain_library=strain_library,
-        serializer=serializer,
         save_callback=save_callback,
         lock=lock,
     )
@@ -569,7 +570,7 @@ async def test_storage_manager_force_save_coverage(hass: HomeAssistant) -> None:
         mock_plants_store = MagicMock()
         mock_store_cls.side_effect = [mock_config_store, mock_plants_store, MagicMock()]
 
-        storage = StorageManager(hass, repository, nutrient_manager, serializer)
+        storage = StorageManager(hass, repository, nutrient_manager)
 
         mock_config_store.async_save = AsyncMock()
         mock_plants_store.async_save = AsyncMock()
@@ -587,7 +588,7 @@ async def test_storage_manager_force_save_coverage(hass: HomeAssistant) -> None:
         mock_plants_store = MagicMock()
         mock_store_cls.side_effect = [mock_config_store, mock_plants_store, MagicMock()]
 
-        storage = StorageManager(hass, repository, nutrient_manager, serializer)
+        storage = StorageManager(hass, repository, nutrient_manager)
 
         mock_config_store.async_delay_save = MagicMock()
         mock_plants_store.async_delay_save = MagicMock()
@@ -619,7 +620,7 @@ async def test_storage_manager_load_coverage(hass: HomeAssistant) -> None:
             mock_legacy_store,
         ]
 
-        storage = StorageManager(hass, repository, nutrient_manager, serializer)
+        storage = StorageManager(hass, repository, nutrient_manager)
 
         # Mock serializer to return objects
         serializer.deserialize_growspaces.return_value = {
@@ -720,7 +721,7 @@ async def test_storage_manager_load_plants_error(hass: HomeAssistant) -> None:
     repository.plants = {}
     nutrient_manager = MagicMock()
     serializer = MagicMock()
-    storage = StorageManager(hass, repository, nutrient_manager, serializer)
+    storage = StorageManager(hass, repository, nutrient_manager)
 
     # Trigger exception in _load_plants
     data = {"plants": {"p1": "MALFORMED"}}
@@ -782,7 +783,6 @@ async def test_lifecycle_history_stages_coverage(hass: HomeAssistant) -> None:
         validator=validator,
         growspace_service=gs_service,
         strain_library=strain_library,
-        serializer=serializer,
         save_callback=save_callback,
         lock=lock,
     )

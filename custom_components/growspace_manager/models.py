@@ -6,7 +6,7 @@ from dataclasses import dataclass, field, fields
 from datetime import datetime
 from enum import StrEnum
 import logging
-from typing import Any, Self, TypedDict, cast
+from typing import Any, TypedDict
 
 from mashumaro.mixins.dict import DataClassDictMixin
 
@@ -258,8 +258,13 @@ class EnvironmentConfig(BaseModel):
         return self.dehumidifier_entities[0] if self.dehumidifier_entities else None
 
     @classmethod
-    def from_dict_custom(cls, data: dict[str, Any]) -> Self:
-        """Create from dictionary with catch-all support for bayesian_options and migration."""
+    def __pre_deserialize__(cls, data: dict[str, Any]) -> dict[str, Any]:
+        """Mashumaro hook: transform data before deserialization.
+
+        Handles:
+        - Migration: singular sensor fields → plural lists
+        - Catch-all: unknown fields → bayesian_options dict
+        """
         data = data.copy()
 
         # Migration: singular -> plural list
@@ -276,24 +281,21 @@ class EnvironmentConfig(BaseModel):
         for old_key, new_key in migrations.items():
             # If we have the old key but NOT the new key, migrate
             if old_key in data and new_key not in data:
-                val = data.get(old_key)  # Don't pop yet
+                val = data.get(old_key)
                 # Ensure we handle potentially None values from old config
                 if val:
                     data[new_key] = [val] if isinstance(val, str) else []
                 else:
                     data[new_key] = []
-            # If we have both (e.g. from transition period), prefer the new one but ensure old is cleaned up
+            # If we have both (e.g. from transition period), prefer the new one
             elif old_key in data:
                 data.pop(old_key)
 
         # Custom logic to implement _CATCH_ALL_FIELD behavior
         # Keep known keys, move everything else to bayesian_options
-        known_keys = {f.name for f in fields(cls)}
+        known_keys = {fld.name for fld in fields(cls)}
 
-        # Prepare data copy
-        data = data.copy()
-
-        # Extract extras
+        # Extract extras (unknown fields)
         extras = {k: v for k, v in data.items() if k not in known_keys}
 
         # If we have extras, put them into bayesian_options
@@ -306,16 +308,12 @@ class EnvironmentConfig(BaseModel):
             existing_opts.update(extras)
             data["bayesian_options"] = existing_opts
 
-        # Remove extras from main dict to rely solely on bayesian_options merging
+        # Remove extras from main dict
         for k in extras:
             if k in data:
                 del data[k]
 
-        return cast(Self, cls.__mashumaro_from_dict__(data))
-
-
-# Patch from_dict to use custom logic
-EnvironmentConfig.from_dict = EnvironmentConfig.from_dict_custom
+        return data
 
 
 @dataclass(slots=True)
@@ -367,6 +365,95 @@ class Growspace(BaseModel):
     irrigation_strategy: IrrigationStrategy = field(default_factory=IrrigationStrategy)
     growspace_type: GrowspaceType = field(default=GrowspaceType.FLOWER)
 
+    @classmethod
+    def __pre_deserialize__(cls, data: dict[str, Any]) -> dict[str, Any]:
+        """Mashumaro hook: transform data before deserialization.
+
+        Handles:
+        - Sanitization: rows/plants_per_row strings → integers
+        - Migration: irrigation_config legacy format (time → start_time, duration → duration_seconds)
+        - Sanitization: irrigation_strategy integer fields
+        """
+        data = data.copy()
+
+        # Sanitize integer fields
+        for field_name in ["rows", "plants_per_row"]:
+            if field_name in data:
+                try:
+                    data[field_name] = int(float(data[field_name]))
+                except (ValueError, TypeError):
+                    data[field_name] = 3  # Safe default
+
+        # Migration: Fix legacy irrigation schedule format
+        if "irrigation_config" in data and isinstance(data["irrigation_config"], dict):
+            irr_config = data["irrigation_config"].copy()
+
+            # Sanitize veg_day_hours
+            if "veg_day_hours" in irr_config:
+                try:
+                    irr_config["veg_day_hours"] = int(
+                        float(irr_config["veg_day_hours"])
+                    )
+                except (ValueError, TypeError):
+                    irr_config["veg_day_hours"] = 12
+
+            # Migrate irrigation_times and drain_times
+            for list_key in ["irrigation_times", "drain_times"]:
+                if list_key in irr_config and isinstance(irr_config[list_key], list):
+                    new_list = []
+                    for item in irr_config[list_key]:
+                        if isinstance(item, dict):
+                            item = item.copy()
+                            # Migrate 'time' -> 'start_time'
+                            if "time" in item and "start_time" not in item:
+                                item["start_time"] = item.pop("time")
+
+                            # Migrate 'duration' -> 'duration_seconds'
+                            if "duration" in item and "duration_seconds" not in item:
+                                try:
+                                    item["duration_seconds"] = int(
+                                        float(item.pop("duration"))
+                                    )
+                                except (ValueError, TypeError):
+                                    item["duration_seconds"] = 60
+
+                            # Ensure duration_seconds is int
+                            if "duration_seconds" in item:
+                                try:
+                                    item["duration_seconds"] = int(
+                                        float(item["duration_seconds"])
+                                    )
+                                except (ValueError, TypeError):
+                                    item["duration_seconds"] = 60
+
+                        new_list.append(item)
+                    irr_config[list_key] = new_list
+
+            data["irrigation_config"] = irr_config
+
+        # Sanitize irrigation_strategy integers
+        if "irrigation_strategy" in data and isinstance(
+            data["irrigation_strategy"], dict
+        ):
+            strat = data["irrigation_strategy"].copy()
+            int_fields = [
+                "p0_duration_minutes",
+                "p2_stop_before_lights_off_minutes",
+                "shot_duration_seconds",
+                "shot_interval_minutes",
+            ]
+            for f in int_fields:
+                if f in strat:
+                    try:
+                        strat[f] = int(float(strat[f]))
+                    except (ValueError, TypeError):
+                        # Remove invalid value to let dataclass default take over
+                        if f in strat:
+                            del strat[f]
+            data["irrigation_strategy"] = strat
+
+        return data
+
 
 @dataclass(slots=True)
 class PlantGenetics(BaseModel):
@@ -417,30 +504,34 @@ class Plant(BaseModel):
     last_ipm_type: str | None = None
     stage_history: list[StageHistoryItem] = field(default_factory=list)
 
-    # Backward-compatible properties
-    @property
-    def strain(self) -> str:
-        """Get strain name from genetics."""
-        return self.genetics.strain_name
-
-    @property
-    def phenotype(self) -> str:
-        """Get phenotype name from genetics."""
-        return self.genetics.phenotype_name
-
     @classmethod
-    def from_dict_custom(cls, data: dict[str, Any]) -> Self:
-        """Create from dictionary with history and genetics migration."""
+    def __pre_deserialize__(cls, data: dict[str, Any]) -> dict[str, Any]:
+        """Mashumaro hook: transform data before deserialization.
+
+        Handles:
+        - Migration: flat strain/phenotype → PlantGenetics
+        - Sanitization: row/col strings ("30.0") → integers
+        - Migration: build stage_history from start dates
+        """
+        data = data.copy()
+
+        # Sanitize integer fields - handle "30.0" strings
+        for field_name in ["row", "col"]:
+            if field_name in data:
+                try:
+                    data[field_name] = int(float(data[field_name]))
+                except (ValueError, TypeError):
+                    data[field_name] = 1  # Safe default
+
         # Migration: flat fields → PlantGenetics
         if "strain" in data and "genetics" not in data:
-            data = data.copy()
             data["genetics"] = {
                 "strain_name": data.pop("strain", ""),
                 "phenotype_name": data.pop("phenotype", ""),
             }
 
+        # Migration: build stage_history from start dates if not present
         if "stage_history" not in data:
-            data = data.copy() if "strain" not in data else data
             history = []
 
             # Collect all start dates
@@ -473,7 +564,18 @@ class Plant(BaseModel):
 
             data["stage_history"] = history
 
-        return cast(Self, cls.__mashumaro_from_dict__(data))
+        return data
+
+    # Backward-compatible properties
+    @property
+    def strain(self) -> str:
+        """Get strain name from genetics."""
+        return self.genetics.strain_name
+
+    @property
+    def phenotype(self) -> str:
+        """Get phenotype name from genetics."""
+        return self.genetics.phenotype_name
 
     def get_days_since_watering(self) -> int | None:
         """Calculate days since last watering.
@@ -513,10 +615,6 @@ class Plant(BaseModel):
         """Calculate the week number in a specific stage."""
         days = self.get_days_in_stage(stage_name)
         return days_to_week(days)
-
-
-# Patch from_dict to use custom logic
-Plant.from_dict = Plant.from_dict_custom
 
 
 @dataclass(slots=True)

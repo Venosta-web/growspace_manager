@@ -1,7 +1,7 @@
 """Additional tests for plant_lifecycle_manager coverage."""
 
 from datetime import date
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 from common import create_plant
 import pytest
@@ -53,14 +53,6 @@ def strain_library_mock():
 
 
 @pytest.fixture
-def serializer_mock():
-    """Mock the GrowspaceSerializer."""
-    mock = MagicMock()
-    mock.calculate_days_in_stage.return_value = 10
-    return mock
-
-
-@pytest.fixture
 def lock_mock():
     """Mock the asyncio Lock."""
     mock = MagicMock()
@@ -81,7 +73,6 @@ def manager(
     validator_mock,
     gs_service_mock,
     strain_library_mock,
-    serializer_mock,
     save_callback_mock,
     lock_mock,
 ):
@@ -91,7 +82,6 @@ def manager(
         validator=validator_mock,
         growspace_service=gs_service_mock,
         strain_library=strain_library_mock,
-        serializer=serializer_mock,
         save_callback=save_callback_mock,
         lock=lock_mock,
     )
@@ -134,7 +124,7 @@ async def test_async_remove_plant_with_notifications(
 
 @pytest.mark.asyncio
 async def test_record_analytics_exception_handling(
-    manager, serializer_mock, strain_library_mock
+    manager, strain_library_mock
 ) -> None:
     """Test _record_analytics handles exceptions gracefully."""
     # Create a plant with veg and flower days
@@ -146,16 +136,18 @@ async def test_record_analytics_exception_handling(
         flower_start="2024-02-01",
     )
 
-    # Mock serializer to return positive days
-    serializer_mock.calculate_days_in_stage.side_effect = [30, 60]
+    # Patch calculate_days_in_stage to return positive days
+    with patch(
+        "custom_components.growspace_manager.plant_lifecycle_manager.calculate_days_in_stage",
+        side_effect=[30, 60],
+    ):
+        # Mock strain_library.record_harvest to raise exception
+        strain_library_mock.record_harvest = AsyncMock(
+            side_effect=Exception("Database error")
+        )
 
-    # Mock strain_library.record_harvest to raise exception
-    strain_library_mock.record_harvest = AsyncMock(
-        side_effect=Exception("Database error")
-    )
-
-    # Should not raise, exception is caught and logged
-    await manager._record_analytics(plant)
+        # Should not raise, exception is caught and logged
+        await manager._record_analytics(plant)
 
     # Verify record_harvest was called
     strain_library_mock.record_harvest.assert_awaited_once_with(

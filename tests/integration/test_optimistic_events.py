@@ -19,10 +19,9 @@ def mock_coordinator(hass: HomeAssistant):
     coordinator.lifecycle_manager = AsyncMock()
     coordinator._plant_service.lifecycle_manager = coordinator.lifecycle_manager
 
-    # Mock serializer behavior
-    coordinator.serializer = MagicMock()
-    coordinator._plant_service.serializer = coordinator.serializer
-    coordinator.serializer.serialize_plant.return_value = {
+    # Mock plant_view_builder behavior
+    coordinator._plant_service.plant_view_builder = MagicMock()
+    coordinator._plant_service.plant_view_builder.build.return_value = {
         "plant_id": "test_plant",
         "stage": "veg",
         "veg_days": 10,

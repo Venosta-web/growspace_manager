@@ -55,9 +55,7 @@ def mock_main_coordinator():
     coordinator = MagicMock()
     coordinator.growspaces = {}
     coordinator.get_growspace_plants = MagicMock(return_value=[])
-    coordinator.calculate_days_in_stage = MagicMock(return_value=0)
-    coordinator.serializer = MagicMock()
-    coordinator.serializer.calculate_days_in_stage = MagicMock(return_value=0)
+    coordinator.get_growspace_plants = MagicMock(return_value=[])
     return coordinator
 
 
@@ -224,40 +222,44 @@ async def test_growth_stage_detection(coordinator, mock_main_coordinator) -> Non
     mock_main_coordinator.get_growspace_plants.return_value = [plant1, plant2]
 
     # Case 1: Veg
-    mock_main_coordinator.serializer.calculate_days_in_stage.side_effect = (
-        lambda p, stage: {
+    with patch(
+        "custom_components.growspace_manager.dehumidifier_coordinator.calculate_days_in_stage",
+        side_effect=lambda p, stage: {
             "veg": 10,
             "flower": 0,
-        }.get(stage, 0)
-    )
-    assert coordinator._get_growth_stage() == "veg"
+        }.get(stage, 0),
+    ):
+        assert coordinator._get_growth_stage() == "veg"
 
     # Case 2: Early Flower
-    mock_main_coordinator.serializer.calculate_days_in_stage.side_effect = (
-        lambda p, stage: {
+    with patch(
+        "custom_components.growspace_manager.dehumidifier_coordinator.calculate_days_in_stage",
+        side_effect=lambda p, stage: {
             "veg": 30,
             "flower": 10,
-        }.get(stage, 0)
-    )
-    assert coordinator._get_growth_stage() == "early_flower"
+        }.get(stage, 0),
+    ):
+        assert coordinator._get_growth_stage() == "early_flower"
 
     # Case 3: Mid Flower
-    mock_main_coordinator.serializer.calculate_days_in_stage.side_effect = (
-        lambda p, stage: {
+    with patch(
+        "custom_components.growspace_manager.dehumidifier_coordinator.calculate_days_in_stage",
+        side_effect=lambda p, stage: {
             "veg": 30,
             "flower": 30,
-        }.get(stage, 0)
-    )
-    assert coordinator._get_growth_stage() == "mid_flower"
+        }.get(stage, 0),
+    ):
+        assert coordinator._get_growth_stage() == "mid_flower"
 
     # Case 4: Late Flower
-    mock_main_coordinator.serializer.calculate_days_in_stage.side_effect = (
-        lambda p, stage: {
+    with patch(
+        "custom_components.growspace_manager.dehumidifier_coordinator.calculate_days_in_stage",
+        side_effect=lambda p, stage: {
             "veg": 30,
             "flower": 60,
-        }.get(stage, 0)
-    )
-    assert coordinator._get_growth_stage() == "late_flower"
+        }.get(stage, 0),
+    ):
+        assert coordinator._get_growth_stage() == "late_flower"
 
 
 async def test_user_threshold_override(coordinator, mock_hass, mock_growspace) -> None:
@@ -520,3 +522,92 @@ async def test_generic_domain_control(
         {ATTR_ENTITY_ID: "input_boolean.dehumidifier"},
         blocking=False,
     )
+
+
+async def test_growth_stage_detection_cure_dry_seedling(
+    coordinator, mock_main_coordinator
+) -> None:
+    """Test detection of cure, dry, and seedling stages."""
+    plant = MagicMock(spec=Plant)
+    mock_main_coordinator.get_growspace_plants.return_value = [plant]
+
+    # Test Cure
+    with patch(
+        "custom_components.growspace_manager.dehumidifier_coordinator.calculate_days_in_stage",
+        side_effect=lambda p, stage: 1 if stage == "cure" else 0,
+    ):
+        assert coordinator._get_growth_stage() == "cure"
+
+    # Test Dry
+    with patch(
+        "custom_components.growspace_manager.dehumidifier_coordinator.calculate_days_in_stage",
+        side_effect=lambda p, stage: 1 if stage == "dry" else 0,
+    ):
+        assert coordinator._get_growth_stage() == "dry"
+
+    # Test Seedling
+    with patch(
+        "custom_components.growspace_manager.dehumidifier_coordinator.calculate_days_in_stage",
+        side_effect=lambda p, stage: 1 if stage == "seedling" else 0,
+    ):
+        assert coordinator._get_growth_stage() == "seedling"
+
+
+async def test_control_domain_fallback(
+    mock_hass, mock_main_coordinator, mock_growspace, mock_track_state_change_event
+) -> None:
+    """Test domain fallback in _control_dehumidifier."""
+    mock_growspace.environment_config.dehumidifier_entities = ["light.dehumidifier"]
+    mock_main_coordinator.growspaces = {"gs1": mock_growspace}
+
+    coordinator = DehumidifierCoordinator(
+        mock_hass, mock_track_state_change_event, "gs1", mock_main_coordinator
+    )
+
+    await coordinator._control_dehumidifier(True)
+
+    # light is not in the list of recognized domains, so should fallback to homeassistant
+    mock_hass.services.async_call.assert_awaited_with(
+        "homeassistant",
+        SERVICE_TURN_ON,
+        {ATTR_ENTITY_ID: "light.dehumidifier"},
+        blocking=False,
+    )
+
+
+async def test_control_device_exception(
+    coordinator, mock_hass, caplog: pytest.LogCaptureFixture
+) -> None:
+    """Test exception handling in _control_dehumidifier."""
+    mock_hass.services.async_call.side_effect = Exception("Service failure")
+
+    with caplog.at_level(logging.WARNING):
+        await coordinator._control_dehumidifier(True)
+
+    assert "Failed to control device" in caplog.text
+
+
+async def test_get_current_vpd_missing_sensor(
+    coordinator,
+) -> None:
+    """Test _get_current_vpd returns None when sensor is missing."""
+    coordinator.vpd_sensor = None
+    assert coordinator._get_current_vpd() is None
+
+
+async def test_determine_is_device_on_exhaust_fans(coordinator, mock_hass) -> None:
+    """Test _determine_is_device_on checks exhaust fans."""
+    coordinator.dehumidifier_entities = []
+    coordinator.exhaust_fan_entities = ["fan.exhaust"]
+
+    mock_hass.states.get.side_effect = lambda entity_id: {
+        "fan.exhaust": MagicMock(state=STATE_ON),
+    }.get(entity_id)
+
+    assert coordinator._determine_is_device_on() is True
+
+    mock_hass.states.get.side_effect = lambda entity_id: {
+        "fan.exhaust": MagicMock(state=STATE_OFF),
+    }.get(entity_id)
+
+    assert coordinator._determine_is_device_on() is False

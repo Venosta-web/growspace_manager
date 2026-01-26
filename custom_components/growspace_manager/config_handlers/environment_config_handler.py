@@ -333,8 +333,8 @@ class EnvironmentConfigHandler(BaseConfigHandler[dict[str, Any]]):
         env_config = self.flow.env_config_step1
 
         # Collect sensors that need coordinate configuration
-        sensors_to_configure, sensors_allowed_outside = self._collect_sensors_to_configure(
-            env_config, growspace
+        sensors_to_configure, sensors_allowed_outside = (
+            self._collect_sensors_to_configure(env_config, growspace)
         )
 
         if not sensors_to_configure:
@@ -502,7 +502,7 @@ class EnvironmentConfigHandler(BaseConfigHandler[dict[str, Any]]):
         env_config.pop("configure_advanced", None)
         env_config.pop("configure_dehumidifier", None)
 
-        growspace.environment_config = EnvironmentConfig.from_dict_custom(env_config)
+        growspace.environment_config = EnvironmentConfig.from_dict(env_config)
         await coordinator.async_save()
         await coordinator.async_refresh()
 

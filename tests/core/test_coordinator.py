@@ -1342,7 +1342,7 @@ def test_calculate_days_in_stage(coordinator: GrowspaceCoordinator) -> None:
         growspace_id="gs1",
         veg_start=(now().date() - timedelta(days=10)).isoformat(),
     )
-    days = coordinator.serializer.calculate_days_in_stage(plant, PlantStage.VEG)
+    days = plant.get_days_in_stage(PlantStage.VEG)
     assert days == 10
 
 

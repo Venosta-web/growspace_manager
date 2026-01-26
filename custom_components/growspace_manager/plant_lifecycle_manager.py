@@ -11,6 +11,7 @@ import uuid
 
 from .const import DATE_FIELDS, PLANT_STAGES, SPECIAL_GROWSPACES, PlantStage
 from .data_access.growspace_repository import GrowspaceRepository
+from .domain import calculate_days_in_stage
 from .exceptions import (
     GrowspaceNotFoundError,
     PlantNotFoundError,
@@ -18,7 +19,6 @@ from .exceptions import (
 )
 from .growspace_validator import GrowspaceValidator
 from .models import Plant, PlantGenetics
-from .serializers import GrowspaceSerializer
 from .services.growspace_service import GrowspaceService
 from .strain_library import StrainLibrary
 from .utils import calculate_plant_stage, format_date
@@ -35,7 +35,6 @@ class PlantLifecycleManager:
         validator: GrowspaceValidator,
         growspace_service: GrowspaceService,
         strain_library: StrainLibrary,
-        serializer: GrowspaceSerializer,
         save_callback: Callable[[], Awaitable[None]],
         lock: asyncio.Lock,
     ) -> None:
@@ -44,7 +43,6 @@ class PlantLifecycleManager:
         self.validator = validator
         self.growspace_service = growspace_service
         self.strain_library = strain_library
-        self.serializer = serializer
         self.save_callback = save_callback
         self.lock = lock
 
@@ -351,8 +349,8 @@ class PlantLifecycleManager:
 
     async def _record_analytics(self, plant: Plant) -> None:
         """Helper to record harvest analytics."""
-        veg_days = self.serializer.calculate_days_in_stage(plant, PlantStage.VEG)
-        flower_days = self.serializer.calculate_days_in_stage(plant, PlantStage.FLOWER)
+        veg_days = calculate_days_in_stage(plant, PlantStage.VEG)
+        flower_days = calculate_days_in_stage(plant, PlantStage.FLOWER)
         if self.strain_library and (veg_days > 0 or flower_days > 0):
             try:
                 await self.strain_library.record_harvest(

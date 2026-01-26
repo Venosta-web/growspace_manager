@@ -47,9 +47,11 @@ def gs_service_mock():
 
 
 @pytest.fixture
-def serializer_mock():
-    """Mock the GrowspaceSerializer."""
-    return MagicMock()
+def plant_view_builder_mock():
+    """Mock the PlantViewModelBuilder."""
+    mock = MagicMock()
+    mock.build = MagicMock(return_value={})
+    return mock
 
 
 @pytest.fixture
@@ -74,7 +76,7 @@ def service(
     validator_mock,
     lifecycle_manager_mock,
     gs_service_mock,
-    serializer_mock,
+    plant_view_builder_mock,
     save_callback_mock,
     lock_mock,
 ):
@@ -85,7 +87,7 @@ def service(
         validator=validator_mock,
         lifecycle_manager=lifecycle_manager_mock,
         growspace_service=gs_service_mock,
-        serializer=serializer_mock,
+        plant_view_builder=plant_view_builder_mock,
         save_callback=save_callback_mock,
         lock=lock_mock,
     )

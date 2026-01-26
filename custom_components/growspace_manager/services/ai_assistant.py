@@ -14,6 +14,7 @@ from custom_components.growspace_manager.const import (
     CONF_ASSISTANT_ID,
     PlantStage,
 )
+from custom_components.growspace_manager.domain import calculate_days_in_stage
 from homeassistant.components import conversation
 from homeassistant.const import STATE_UNAVAILABLE, STATE_UNKNOWN
 from homeassistant.core import Context, HomeAssistant, ServiceCall
@@ -188,7 +189,7 @@ class GrowAssistant:
             "strains": list(strains),
             "max_veg_days": max(
                 (
-                    self.coordinator.serializer.calculate_days_in_stage(
+                    calculate_days_in_stage(
                         p, PlantStage.VEG
                     )
                     for p in plants
@@ -198,7 +199,7 @@ class GrowAssistant:
             ),
             "max_flower_days": max(
                 (
-                    self.coordinator.serializer.calculate_days_in_stage(
+                    calculate_days_in_stage(
                         p, PlantStage.FLOWER
                     )
                     for p in plants

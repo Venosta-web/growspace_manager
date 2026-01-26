@@ -13,12 +13,18 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.storage import Store
 
 from .const import STORAGE_KEY, STORAGE_KEY_CONFIG, STORAGE_KEY_PLANTS, STORAGE_VERSION
-from .models import EnvironmentConfig, IPMPreset, NutrientInventory, NutrientPreset
+from .models import (
+    EnvironmentConfig,
+    Growspace,
+    IPMPreset,
+    NutrientInventory,
+    NutrientPreset,
+    Plant,
+)
 
 if TYPE_CHECKING:
     from .data_access.growspace_repository import GrowspaceRepository
     from .managers.nutrient import NutrientManager
-    from .serializers import GrowspaceSerializer
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -31,7 +37,6 @@ class StorageManager:
         hass: HomeAssistant,
         repository: GrowspaceRepository,
         nutrient_manager: NutrientManager,
-        serializer: GrowspaceSerializer,
     ) -> None:
         """Initialize the StorageManager.
 
@@ -39,12 +44,10 @@ class StorageManager:
             hass: The Home Assistant instance.
             repository: The data repository.
             nutrient_manager: The nutrient manager.
-            serializer: The data serializer.
         """
         self.hass = hass
         self.repository = repository
         self.nutrient_manager = nutrient_manager
-        self.serializer = serializer
 
         # Segmented stores
         self.config_store: Store[dict[str, Any]] = Store(
@@ -168,11 +171,33 @@ class StorageManager:
             _LOGGER.exception("Failed to backup corrupt %s data", key)
 
     def _load_plants(self, data: dict[str, Any]) -> None:
-        """Load plants from storage data."""
+        """Load plants from storage data.
+
+        Uses mashumaro for deserialization. Plant.__pre_deserialize__ handles
+        migrations (strain→genetics, row/col sanitization, stage_history building).
+        """
         try:
-            self.repository.plants = self.serializer.deserialize_plants(
-                data.get("plants", {})
-            )
+            raw_plants = data.get("plants", {})
+            plants: dict[str, Plant] = {}
+
+            for pid, pdata in raw_plants.items():
+                try:
+                    if isinstance(pdata, dict):
+                        # Mashumaro handles all migrations via __pre_deserialize__
+                        plants[pid] = Plant.from_dict(pdata)
+                    elif isinstance(pdata, Plant):
+                        # Already a Plant instance
+                        plants[pid] = pdata
+                    else:
+                        _LOGGER.error(
+                            "Failed to load plant %s (invalid type: %s)",
+                            pid,
+                            type(pdata),
+                        )
+                except Exception:
+                    _LOGGER.exception("Failed to load plant %s", pid)
+
+            self.repository.plants = plants
             _LOGGER.info("Loaded %d plants", len(self.repository.plants))
         except Exception:
             _LOGGER.exception("Error loading plants")
@@ -182,11 +207,33 @@ class StorageManager:
     def _load_growspaces(
         self, data: dict[str, Any], options: dict[str, Any] | None = None
     ) -> None:
-        """Load growspaces from storage data."""
+        """Load growspaces from storage data.
+
+        Uses mashumaro for deserialization. Growspace.__pre_deserialize__ handles
+        migrations (rows/plants_per_row sanitization, irrigation_config migrations).
+        """
         try:
-            self.repository.growspaces = self.serializer.deserialize_growspaces(
-                data.get("growspaces", {})
-            )
+            raw_growspaces = data.get("growspaces", {})
+            growspaces: dict[str, Growspace] = {}
+
+            for gid, gdata in raw_growspaces.items():
+                try:
+                    if isinstance(gdata, dict):
+                        # Mashumaro handles all migrations via __pre_deserialize__
+                        growspaces[gid] = Growspace.from_dict(gdata)
+                    elif isinstance(gdata, Growspace):
+                        # Already a Growspace instance
+                        growspaces[gid] = gdata
+                    else:
+                        _LOGGER.error(
+                            "Failed to load growspace %s (invalid type: %s)",
+                            gid,
+                            type(gdata),
+                        )
+                except Exception:
+                    _LOGGER.exception("Failed to load growspace %s", gid)
+
+            self.repository.growspaces = growspaces
             _LOGGER.info("Loaded %d growspaces", len(self.repository.growspaces))
 
             self._apply_options_to_growspaces(options)

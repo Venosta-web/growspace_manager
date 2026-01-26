@@ -45,7 +45,6 @@ from .models import (
 from .notification_manager import NotificationManager
 from .notifications import NotificationSettingsManager
 from .plant_lifecycle_manager import PlantLifecycleManager
-from .serializers import GrowspaceSerializer
 from .service_coordinator_locator import ServiceCoordinatorLocator
 from .services.environment_reporter import EnvironmentReporter
 from .services.growspace_service import GrowspaceService
@@ -188,7 +187,9 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             value: New IPM presets dictionary.
         """
         self._ipm_service.ipm_presets = value
-        self.nutrient_manager.ipm_presets = value  # Keep in sync for backward compatibility
+        self.nutrient_manager.ipm_presets = (
+            value  # Keep in sync for backward compatibility
+        )
 
     @property
     def nutrient_inventory_service(self) -> NutrientInventoryService | None:
@@ -314,7 +315,6 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
         self.config_entry = entry
         self.lock = asyncio.Lock()
-        self.serializer = GrowspaceSerializer(hass)
 
         # Initialize Data Repository first - it owns the data dicts
         self.data_repository = GrowspaceRepository({}, {})
@@ -323,7 +323,12 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self.validator = GrowspaceValidator(self.data_repository)
         self.view_model_builder = ViewModelBuilder(self)
 
-        # 2. Load initial data if provided (uses serializer and validator)
+        # Initialize presentation layer builders
+        from .presentation import PlantViewModelBuilder
+
+        self._plant_view_builder = PlantViewModelBuilder(hass)
+
+        # 2. Load initial data if provided (uses mashumaro and validator)
         if data:
             self._load_initial_data(data)
 
@@ -341,12 +346,12 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         else:
             self.strain_library = strain_library
 
-        # 3. Initialize storage (depends on repository, nutrient_manager, serializer)
+        # 3. Initialize storage (depends on repository, nutrient_manager)
         self.nutrient_manager = NutrientManager(
             self.data_repository, self._save_callback
         )
         self.storage_manager = StorageManager(
-            self.hass, self.data_repository, self.nutrient_manager, self.serializer
+            self.hass, self.data_repository, self.nutrient_manager
         )
 
         # 4. Initialize Domain Services (depend on repository, validator, view_model_builder)
@@ -364,7 +369,6 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             self.validator,
             self._growspace_service,
             self.strain_library,
-            self.serializer,
             self._save_callback,
             self.lock,
         )
@@ -375,7 +379,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             self.validator,
             self.lifecycle_manager,
             self._growspace_service,
-            self.serializer,
+            self._plant_view_builder,
             self._save_callback,
             self.lock,
         )
@@ -569,10 +573,44 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         await self.async_commit()
 
     def _load_initial_data(self, data: dict[str, Any]) -> None:
-        """Load and validate initial data from a dictionary."""
-        # Deserialize growspaces and plants using the serializer
-        growspaces = self.serializer.deserialize_growspaces(data.get("growspaces", {}))
-        plants = self.serializer.deserialize_plants(data.get("plants", {}))
+        """Load and validate initial data from a dictionary.
+
+        Uses mashumaro for deserialization. Model __pre_deserialize__ hooks
+        handle all migrations automatically.
+        """
+        from .models import Growspace, Plant
+
+        # Deserialize growspaces using mashumaro
+        raw_growspaces = data.get("growspaces", {})
+        growspaces = {}
+        for gid, gdata in raw_growspaces.items():
+            if isinstance(gdata, Growspace):
+                growspaces[gid] = gdata
+            elif isinstance(gdata, dict):
+                try:
+                    growspaces[gid] = Growspace.from_dict(gdata)
+                except Exception:
+                    _LOGGER.exception("Failed to load growspace %s", gid)
+            else:
+                _LOGGER.error(
+                    "Failed to load growspace %s (invalid type: %s)", gid, type(gdata)
+                )
+
+        # Deserialize plants using mashumaro
+        raw_plants = data.get("plants", {})
+        plants = {}
+        for pid, pdata in raw_plants.items():
+            if isinstance(pdata, Plant):
+                plants[pid] = pdata
+            elif isinstance(pdata, dict):
+                try:
+                    plants[pid] = Plant.from_dict(pdata)
+                except Exception:
+                    _LOGGER.exception("Failed to load plant %s", pid)
+            else:
+                _LOGGER.error(
+                    "Failed to load plant %s (invalid type: %s)", pid, type(pdata)
+                )
 
         # Update the repository with deserialized objects
         self.data_repository.load_data(
