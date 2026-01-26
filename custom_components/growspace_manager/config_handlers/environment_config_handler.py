@@ -39,7 +39,7 @@ from custom_components.growspace_manager.models import EnvironmentConfig
 from homeassistant.config_entries import ConfigFlowResult
 from homeassistant.helpers import selector
 
-from . import BaseConfigHandler
+from . import AbortFlow, BaseConfigHandler
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -51,11 +51,10 @@ class EnvironmentConfigHandler(BaseConfigHandler[dict[str, Any]]):
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
         """Show a form to select a growspace before configuring its environment."""
-        if self.config_entry is None:
-            return self.flow.async_abort(reason="setup_error")
-        coordinator = self.config_entry.runtime_data
-        if coordinator is None:
-            return self.flow.async_abort(reason="setup_error")
+        try:
+            coordinator = self.get_coordinator()
+        except AbortFlow as e:
+            return self.flow.async_abort(reason=e.reason)
 
         growspace_options = coordinator.growspace_service.get_sorted_growspace_options()
 
@@ -85,11 +84,10 @@ class EnvironmentConfigHandler(BaseConfigHandler[dict[str, Any]]):
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
         """Show the form for configuring environment sensors for a growspace."""
-        if self.config_entry is None:
-            return self.flow.async_abort(reason="setup_error")
-        coordinator = self.config_entry.runtime_data
-        if coordinator is None:
-            return self.flow.async_abort(reason="setup_error")
+        try:
+            coordinator = self.get_coordinator()
+        except AbortFlow as e:
+            return self.flow.async_abort(reason=e.reason)
         growspace_id = self.flow.selected_growspace_id
         growspace = coordinator.growspaces.get(growspace_id)
 
@@ -124,70 +122,10 @@ class EnvironmentConfigHandler(BaseConfigHandler[dict[str, Any]]):
         )
 
         if user_input is not None:
-            cleaned_input = self.clean_input(user_input)
-            self.flow.env_config_step1 = self.merge_options(
-                growspace_options, cleaned_input
-            )
-
-            # Already filtered by handler, do not filter again to preserve None values for clearing
-            env_config = {
-                k: v
-                for k, v in self.flow.env_config_step1.items()
-                if k not in ("configure_dehumidifier", "configure_advanced")
-            }
-
-            # Preserve sensor_groups if present in input
-            if "sensor_groups" in cleaned_input:
-                env_config["sensor_groups"] = cleaned_input["sensor_groups"]
-
-            # Check for next steps
-            if self.flow.env_config_step1.get(
-                "configure_dehumidifier"
-            ) and self.flow.env_config_step1.get("control_dehumidifier"):
-                return await self.async_step_configure_dehumidifier()
-
-            # If user unchecked configure_dehumidifier, clear any existing thresholds
-            if not self.flow.env_config_step1.get("configure_dehumidifier"):
-                env_config["dehumidifier_thresholds"] = {}
-
-            # Convert irrigation tank sensors to IrrigationTank instances
-            tank_sensors = env_config.get(CONF_IRRIGATION_TANK_SENSORS, [])
-            warning_level = env_config.get(CONF_IRRIGATION_TANK_WARNING_LEVEL, 30.0)
-            if tank_sensors:
-                # Create IrrigationTank instances from sensor entities
-                irrigation_tanks = []
-                for i, sensor_entity in enumerate(tank_sensors, start=1):
-                    # Extract friendly name from sensor if available
-                    state_obj = self.hass.states.get(sensor_entity)
-                    tank_name = (
-                        state_obj.attributes.get("friendly_name", f"Tank {i}")
-                        if state_obj
-                        else f"Tank {i}"
-                    )
-                    irrigation_tanks.append(
-                        {
-                            "sensor_entity": sensor_entity,
-                            "name": tank_name,
-                            "warning_level": warning_level,
-                        }
-                    )
-                env_config["irrigation_tanks"] = irrigation_tanks
-            else:
-                env_config["irrigation_tanks"] = []
-
-            # Remove the temporary config flow fields
-            env_config.pop(CONF_IRRIGATION_TANK_SENSORS, None)
-            env_config.pop(CONF_IRRIGATION_TANK_WARNING_LEVEL, None)
-
-            # Update env_config in flow for next steps
+            env_config = self._clean_and_merge_input(user_input, growspace_options)
+            env_config = self._process_irrigation_tanks(env_config)
             self.flow.env_config_step1 = env_config
-
-            if self.flow.env_config_step1.get(
-                "configure_advanced"
-            ) or cleaned_input.get("configure_advanced"):
-                return await self.async_step_configure_advanced_bayesian()
-
-            return await self.async_step_configure_sensor_placement()
+            return await self._determine_next_step(user_input)
 
         return self.flow.async_show_form(
             step_id="configure_environment",
@@ -195,15 +133,88 @@ class EnvironmentConfigHandler(BaseConfigHandler[dict[str, Any]]):
             description_placeholders={"growspace_name": growspace.name},
         )
 
+    def _clean_and_merge_input(
+        self, user_input: dict[str, Any], growspace_options: dict[str, Any]
+    ) -> dict[str, Any]:
+        """Clean user input and merge with existing options."""
+        cleaned_input = self.clean_input(user_input)
+        merged = self.merge_options(growspace_options, cleaned_input)
+
+        # Filter out config flow control fields
+        env_config = {
+            k: v
+            for k, v in merged.items()
+            if k not in ("configure_dehumidifier", "configure_advanced")
+        }
+
+        # Preserve sensor_groups if present in input
+        if "sensor_groups" in cleaned_input:
+            env_config["sensor_groups"] = cleaned_input["sensor_groups"]
+
+        # Clear dehumidifier thresholds if unchecked
+        if not merged.get("configure_dehumidifier"):
+            env_config["dehumidifier_thresholds"] = {}
+
+        return env_config
+
+    def _process_irrigation_tanks(self, env_config: dict[str, Any]) -> dict[str, Any]:
+        """Convert irrigation tank sensors to IrrigationTank instances."""
+        tank_sensors = env_config.get(CONF_IRRIGATION_TANK_SENSORS, [])
+        warning_level = env_config.get(CONF_IRRIGATION_TANK_WARNING_LEVEL, 30.0)
+
+        if tank_sensors:
+            irrigation_tanks = []
+            for i, sensor_entity in enumerate(tank_sensors, start=1):
+                # Extract friendly name from sensor if available
+                state_obj = self.hass.states.get(sensor_entity)
+                tank_name = (
+                    state_obj.attributes.get("friendly_name", f"Tank {i}")
+                    if state_obj
+                    else f"Tank {i}"
+                )
+                irrigation_tanks.append(
+                    {
+                        "sensor_entity": sensor_entity,
+                        "name": tank_name,
+                        "warning_level": warning_level,
+                    }
+                )
+            env_config["irrigation_tanks"] = irrigation_tanks
+        else:
+            env_config["irrigation_tanks"] = []
+
+        # Remove temporary config flow fields
+        env_config.pop(CONF_IRRIGATION_TANK_SENSORS, None)
+        env_config.pop(CONF_IRRIGATION_TANK_WARNING_LEVEL, None)
+
+        return env_config
+
+    async def _determine_next_step(
+        self, user_input: dict[str, Any]
+    ) -> ConfigFlowResult:
+        """Determine which configuration step to show next."""
+        cleaned_input = self.clean_input(user_input)
+        merged = self.merge_options({}, cleaned_input)
+
+        # Check if dehumidifier configuration is requested
+        if merged.get("configure_dehumidifier") and merged.get("control_dehumidifier"):
+            return await self.async_step_configure_dehumidifier()
+
+        # Check if advanced Bayesian configuration is requested
+        if merged.get("configure_advanced") or cleaned_input.get("configure_advanced"):
+            return await self.async_step_configure_advanced_bayesian()
+
+        # Default to sensor placement
+        return await self.async_step_configure_sensor_placement()
+
     async def async_step_configure_dehumidifier(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
         """Show the form for configuring dehumidifier thresholds."""
-        if self.config_entry is None:
-            return self.flow.async_abort(reason="setup_error")
-        coordinator = self.config_entry.runtime_data
-        if coordinator is None:
-            return self.flow.async_abort(reason="setup_error")
+        try:
+            coordinator = self.get_coordinator()
+        except AbortFlow as e:
+            return self.flow.async_abort(reason=e.reason)
         growspace_id = self.flow.selected_growspace_id
         growspace = coordinator.growspaces.get(growspace_id)
 
@@ -252,11 +263,10 @@ class EnvironmentConfigHandler(BaseConfigHandler[dict[str, Any]]):
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
         """Show the form for advanced configuration of Bayesian probabilities."""
-        if self.config_entry is None:
-            return self.flow.async_abort(reason="setup_error")
-        coordinator = self.config_entry.runtime_data
-        if coordinator is None:
-            return self.flow.async_abort(reason="setup_error")
+        try:
+            coordinator = self.get_coordinator()
+        except AbortFlow as e:
+            return self.flow.async_abort(reason=e.reason)
         growspace_id = self.flow.selected_growspace_id
         growspace = coordinator.growspaces.get(growspace_id)
 
@@ -310,11 +320,10 @@ class EnvironmentConfigHandler(BaseConfigHandler[dict[str, Any]]):
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
         """Configure 3D coordinates for sensors."""
-        if self.config_entry is None:
-            return self.flow.async_abort(reason="setup_error")
-        coordinator = self.config_entry.runtime_data
-        if coordinator is None:
-            return self.flow.async_abort(reason="setup_error")
+        try:
+            coordinator = self.get_coordinator()
+        except AbortFlow as e:
+            return self.flow.async_abort(reason=e.reason)
         growspace_id = self.flow.selected_growspace_id
         growspace = coordinator.growspaces.get(growspace_id)
 
@@ -323,10 +332,46 @@ class EnvironmentConfigHandler(BaseConfigHandler[dict[str, Any]]):
 
         env_config = self.flow.env_config_step1
 
-        # Identify all configured sensors and those allowed to be outside
+        # Collect sensors that need coordinate configuration
+        sensors_to_configure, sensors_allowed_outside = self._collect_sensors_to_configure(
+            env_config, growspace
+        )
+
+        if not sensors_to_configure:
+            # No sensors to place, save and exit
+            return await self._async_save_and_finish(growspace, env_config)
+
+        if user_input is not None:
+            sensor_coordinates = {}
+            for sensor in sensors_to_configure:
+                x = user_input.get(f"coord_{sensor}_x")
+                y = user_input.get(f"coord_{sensor}_y")
+                z = user_input.get(f"coord_{sensor}_z")
+                if x is not None and y is not None and z is not None:
+                    sensor_coordinates[sensor] = {"x": x, "y": y, "z": z}
+
+            env_config["sensor_coordinates"] = sensor_coordinates
+            return await self._async_save_and_finish(growspace, env_config)
+
+        # Build schema for sensor coordinates
+        schema_dict = self._build_sensor_coordinate_schema(
+            sensors_to_configure, sensors_allowed_outside, growspace
+        )
+
+        return self.flow.async_show_form(
+            step_id="configure_sensor_placement",
+            data_schema=vol.Schema(schema_dict),
+            description_placeholders={"growspace_name": growspace.name},
+        )
+
+    def _collect_sensors_to_configure(
+        self, env_config: dict[str, Any], growspace: Any
+    ) -> tuple[list[str], set[str]]:
+        """Identify all configured sensors and those allowed to be outside."""
         sensors_to_configure = []
         sensors_allowed_outside = set()
 
+        # Collect sensors from environment config
         for key in [
             "temperature_sensors",
             "humidity_sensors",
@@ -358,7 +403,7 @@ class EnvironmentConfigHandler(BaseConfigHandler[dict[str, Any]]):
             if any(k in key for k in ["humidifier", "dehumidifier", "tank", "pump"]):
                 sensors_allowed_outside.update(entities)
 
-        # Add irrigation tanks and pumps
+        # Add irrigation tanks
         if "irrigation_tanks" in env_config:
             for tank in env_config["irrigation_tanks"]:
                 sensor = tank.get("sensor_entity")
@@ -366,6 +411,7 @@ class EnvironmentConfigHandler(BaseConfigHandler[dict[str, Any]]):
                     sensors_to_configure.append(sensor)
                     sensors_allowed_outside.add(sensor)
 
+        # Add irrigation pumps
         if growspace.irrigation_config:
             if isinstance(growspace.irrigation_config.irrigation_pump_entity, str):
                 pump = growspace.irrigation_config.irrigation_pump_entity
@@ -376,26 +422,18 @@ class EnvironmentConfigHandler(BaseConfigHandler[dict[str, Any]]):
                 sensors_to_configure.append(pump)
                 sensors_allowed_outside.add(pump)
 
-        # Remove duplicates
+        # Remove duplicates and sort
         sensors_to_configure = sorted(set(sensors_to_configure), key=str)
 
-        if not sensors_to_configure:
-            # No sensors to place, save and exit
-            return await self._async_save_and_finish(growspace, env_config)
+        return sensors_to_configure, sensors_allowed_outside
 
-        if user_input is not None:
-            sensor_coordinates = {}
-            for sensor in sensors_to_configure:
-                x = user_input.get(f"coord_{sensor}_x")
-                y = user_input.get(f"coord_{sensor}_y")
-                z = user_input.get(f"coord_{sensor}_z")
-                if x is not None and y is not None and z is not None:
-                    sensor_coordinates[sensor] = {"x": x, "y": y, "z": z}
-
-            env_config["sensor_coordinates"] = sensor_coordinates
-            return await self._async_save_and_finish(growspace, env_config)
-
-        # Build schema
+    def _build_sensor_coordinate_schema(
+        self,
+        sensors_to_configure: list[str],
+        sensors_allowed_outside: set[str],
+        growspace: Any,
+    ) -> dict[Any, Any]:
+        """Build schema for sensor coordinate configuration."""
         schema_dict = {}
         dimensions = growspace.dimensions or {}
 
@@ -420,6 +458,7 @@ class EnvironmentConfigHandler(BaseConfigHandler[dict[str, Any]]):
             defaults = existing_coords.get(sensor, {"x": 0.0, "y": 0.0, "z": 0.0})
             is_outside_allowed = sensor in sensors_allowed_outside
 
+            # X coordinate
             schema_dict[
                 vol.Required(f"coord_{sensor}_x", default=defaults.get("x", 0.0))
             ] = selector.NumberSelector(
@@ -430,6 +469,7 @@ class EnvironmentConfigHandler(BaseConfigHandler[dict[str, Any]]):
                     unit_of_measurement=unit,
                 )
             )
+            # Y coordinate
             schema_dict[
                 vol.Required(f"coord_{sensor}_y", default=defaults.get("y", 0.0))
             ] = selector.NumberSelector(
@@ -440,6 +480,7 @@ class EnvironmentConfigHandler(BaseConfigHandler[dict[str, Any]]):
                     unit_of_measurement=unit,
                 )
             )
+            # Z coordinate
             schema_dict[
                 vol.Required(f"coord_{sensor}_z", default=defaults.get("z", 0.0))
             ] = selector.NumberSelector(
@@ -451,11 +492,7 @@ class EnvironmentConfigHandler(BaseConfigHandler[dict[str, Any]]):
                 )
             )
 
-        return self.flow.async_show_form(
-            step_id="configure_sensor_placement",
-            data_schema=vol.Schema(schema_dict),
-            description_placeholders={"growspace_name": growspace.name},
-        )
+        return schema_dict
 
     async def _async_save_and_finish(self, growspace, env_config):
         """Helper to save config and finish flow."""

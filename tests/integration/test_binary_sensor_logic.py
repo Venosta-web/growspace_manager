@@ -8,8 +8,10 @@ import pytest
 from custom_components.growspace_manager.binary_sensor import (
     SENSOR_TYPES,
     BayesianEnvironmentSensor,
+    GrowspaceSensorType,
 )
 from custom_components.growspace_manager.const import DOMAIN
+from custom_components.growspace_manager.models import EnvironmentConfig
 from custom_components.growspace_manager.strategies.mold import (
     MoldRiskEvaluatorStrategy,
 )
@@ -24,6 +26,35 @@ from homeassistant.util.dt import utcnow
 
 MOCK_CONFIG_ENTRY_ID = "test_entry"
 
+
+
+def create_test_sensor(
+    coordinator: MagicMock,
+    growspace_id: str,
+    sensor_type: str,
+    strategy_class: type,
+    env_config: EnvironmentConfig | None = None,
+) -> BayesianEnvironmentSensor:
+    """Helper to create a BayesianEnvironmentSensor for testing with all dependencies."""
+    if env_config is None:
+        env_config = coordinator.growspaces[growspace_id].environment_config
+
+    description = next(d for d in SENSOR_TYPES if d.sensor_type == sensor_type)
+
+    return BayesianEnvironmentSensor(
+        coordinator=coordinator,
+        growspace_id=growspace_id,
+        env_config=env_config,
+        description=description,
+        strategy_class=strategy_class,
+        # Inject dependencies
+        get_growspace=lambda gid: coordinator.growspaces.get(gid),
+        get_plants=coordinator.get_growspace_plants,
+        add_event=coordinator.add_event,
+        notification_manager=coordinator.notification_manager,
+        strain_library=coordinator.strain_library,
+        options=coordinator.options,
+    )
 
 @pytest.fixture
 def mock_coordinator():
@@ -92,14 +123,12 @@ async def test_stress_sensor_high_heat(
 
     mock_recorder.return_value.async_add_executor_job = AsyncMock(return_value={})
     # Corrected instantiation with description
-    description = next(d for d in SENSOR_TYPES if d.sensor_type == "stress")
-    description = next(d for d in SENSOR_TYPES if d.sensor_type == "stress")
-    sensor = BayesianEnvironmentSensor(
+    sensor = create_test_sensor(
         mock_coordinator,
         "gs1",
-        env_config,
-        description,
+        GrowspaceSensorType.STRESS,
         StressEvaluatorStrategy,
+        env_config,
     )
     sensor.hass = hass
     sensor.entity_id = "binary_sensor.test_stress"
@@ -140,14 +169,12 @@ async def test_mold_risk_sensor_late_flower(
 
     mock_recorder.return_value.async_add_executor_job = AsyncMock(return_value={})
     # Corrected instantiation with description
-    description = next(d for d in SENSOR_TYPES if d.sensor_type == "mold")
-    description = next(d for d in SENSOR_TYPES if d.sensor_type == "mold")
-    sensor = BayesianEnvironmentSensor(
+    sensor = create_test_sensor(
         mock_coordinator,
         "gs1",
-        env_config,
-        description,
+        GrowspaceSensorType.MOLD,
         MoldRiskEvaluatorStrategy,
+        env_config,
     )
     sensor.hass = hass
     sensor.entity_id = "binary_sensor.test_mold"
@@ -196,14 +223,12 @@ async def test_optimal_conditions_sensor(
     hass.data[DOMAIN] = {MOCK_CONFIG_ENTRY_ID: {"coordinator": mock_coordinator}}
 
     # Corrected instantiation with description
-    description = next(d for d in SENSOR_TYPES if d.sensor_type == "optimal")
-    description = next(d for d in SENSOR_TYPES if d.sensor_type == "optimal")
-    sensor = BayesianEnvironmentSensor(
+    sensor = create_test_sensor(
         mock_coordinator,
         "gs1",
-        env_config,
-        description,
+        GrowspaceSensorType.OPTIMAL,
         OptimalConditionsEvaluatorStrategy,
+        env_config,
     )
     sensor.hass = hass
     sensor.entity_id = "binary_sensor.test_optimal"

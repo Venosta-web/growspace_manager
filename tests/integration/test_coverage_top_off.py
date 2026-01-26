@@ -13,8 +13,10 @@ from pytest_homeassistant_custom_component.common import MockConfigEntry
 from custom_components.growspace_manager import StrainLibraryUploadView
 from custom_components.growspace_manager.bayesian_evaluator import _is_vpd_trend_gated
 from custom_components.growspace_manager.binary_sensor import (
+    SENSOR_TYPES,
     BayesianEnvironmentSensor,
     GrowspaceBinarySensorDescription,
+    GrowspaceSensorType,
 )
 from custom_components.growspace_manager.const import (
     ATTR_AMOUNT,
@@ -103,6 +105,35 @@ async def test_dehumidifier_stages_coverage(hass: HomeAssistant) -> None:
 # --- Models Nesting Coverage ---
 
 
+def create_test_sensor(
+    coordinator: MagicMock,
+    growspace_id: str,
+    sensor_type: str,
+    strategy_class: type,
+    env_config: EnvironmentConfig | None = None,
+) -> BayesianEnvironmentSensor:
+    """Helper to create a BayesianEnvironmentSensor for testing with all dependencies."""
+    if env_config is None:
+        env_config = coordinator.growspaces[growspace_id].environment_config
+
+    description = next(d for d in SENSOR_TYPES if d.sensor_type == sensor_type)
+
+    return BayesianEnvironmentSensor(
+        coordinator=coordinator,
+        growspace_id=growspace_id,
+        env_config=env_config,
+        description=description,
+        strategy_class=strategy_class,
+        # Inject dependencies
+        get_growspace=lambda gid: coordinator.growspaces.get(gid),
+        get_plants=coordinator.get_growspace_plants,
+        add_event=coordinator.add_event,
+        notification_manager=coordinator.notification_manager,
+        strain_library=coordinator.strain_library,
+        options=coordinator.options,
+    )
+
+
 @dataclass
 class NestedModel(BaseModel):
     plants_list: list[Plant] = field(default_factory=list)
@@ -146,12 +177,12 @@ async def test_mold_risk_stage_branches_coverage(hass: HomeAssistant) -> None:
         prior_key="prior_mold_risk",
     )
 
-    sensor = BayesianEnvironmentSensor(
+    sensor = create_test_sensor(
         mock_coordinator,
         "gs1",
-        mock_growspace.environment_config,
-        description,
+        GrowspaceSensorType.MOLD,
         MoldRiskEvaluatorStrategy,
+        mock_growspace.environment_config,
     )
     sensor.hass = hass
 

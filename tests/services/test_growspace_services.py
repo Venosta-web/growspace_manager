@@ -174,7 +174,7 @@ async def test_handle_add_growspace_exception(
     mock_async_get.return_value.devices = {}
 
     with pytest.raises(
-        ServiceValidationError, match="Failed to add growspace: Add failed"
+        ServiceValidationError, match="Operation failed: Add failed"
     ):
         await handle_add_growspace(
             mock_hass, mock_coordinator, mock_strain_library, mock_call
@@ -207,7 +207,7 @@ async def test_handle_remove_growspace_exception(
     mock_coordinator.async_remove_growspace.side_effect = Exception("Remove failed")
 
     with pytest.raises(
-        ServiceValidationError, match="Failed to remove growspace: Remove failed"
+        ServiceValidationError, match="Operation failed: Remove failed"
     ):
         await handle_remove_growspace(mock_hass, mock_coordinator, mock_call)
 
@@ -391,7 +391,7 @@ async def test_handle_update_growspace_exception(
     )
 
     with pytest.raises(
-        ServiceValidationError, match="Failed to update growspace: Update failed"
+        ServiceValidationError, match="Operation failed: Update failed"
     ):
         await handle_update_growspace(
             mock_hass, mock_coordinator, mock_strain_library, mock_call

@@ -16,6 +16,13 @@ PLATFORMS: Final[list[str]] = [
 
 PARALLEL_UPDATES: Final = 0
 
+# Coordinator Update Interval
+COORDINATOR_UPDATE_INTERVAL_MINUTES = 15  # How often coordinator refreshes data
+
+# WebSocket Event Log Lookback Periods
+EVENT_LOG_LOOKBACK_DAYS = 30  # Days to look back for manual event logs
+ALERT_LOG_LOOKBACK_DAYS = 120  # Days to look back for environmental alerts
+
 # Dehumidifier Control Timing Defaults
 DEFAULT_DEHUMIDIFIER_MIN_RUNTIME = 300  # 5 minutes in seconds
 DEFAULT_DEHUMIDIFIER_MIN_OFFTIME = 300  # 5 minutes in seconds
@@ -358,6 +365,17 @@ DEFAULT_BAYESIAN_THRESHOLDS = {
     "drying": 0.80,
     "curing": 0.80,
 }
+
+# Notification constants
+MAX_NOTIFICATION_LENGTH: Final = 240
+"""Maximum notification message length for modern mobile displays."""
+
+NOTIFICATION_DEBOUNCE_SECONDS: Final = 5
+"""Debounce time for batched notifications in seconds."""
+
+# WebSocket constants
+MERGE_ALERT_GAP_SECONDS: Final = 600
+"""Maximum time gap (in seconds) between alerts for merging (10 minutes)."""
 
 
 # --- Service Schemas (Moved to schemas.py) ---

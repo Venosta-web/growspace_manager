@@ -6,6 +6,7 @@ from unittest.mock import AsyncMock, MagicMock, Mock, patch
 
 from aiohttp import web
 import pytest
+from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.growspace_manager import (
     async_reload_entry,
@@ -196,11 +197,14 @@ async def test_websocket_get_growspace_data_errors(hass: HomeAssistant) -> None:
 
 async def test_async_setup_entry_pending_growspace_failure(hass: HomeAssistant) -> None:
     """Test logic when pending growspace creation fails."""
-    entry = MagicMock()
-    entry.data = {
-        "pending_growspace": {"name": "Test Room", "rows": 1, "plants_per_row": 1}
-    }
-    entry.options = {}
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={
+            "pending_growspace": {"name": "Test Room", "rows": 1, "plants_per_row": 1}
+        },
+        options={},
+    )
+    entry.add_to_hass(hass)
 
     # Store Mock Setup to handle Generics Store[...]
     mock_store_instance = MagicMock()
@@ -242,7 +246,7 @@ async def test_async_setup_entry_pending_growspace_failure(hass: HomeAssistant) 
             return_value=mock_strain_lib,
         ),
         patch(
-            "custom_components.growspace_manager.GrowspaceCoordinator",
+            "custom_components.growspace_manager.coordinator.GrowspaceCoordinator",
             return_value=mock_coordinator,
         ),
         patch(

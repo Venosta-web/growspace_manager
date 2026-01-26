@@ -1,8 +1,10 @@
 """Notification manager for Growspace Manager."""
 
+from __future__ import annotations
+
 from datetime import datetime, timedelta
 import logging
-from typing import Any, cast
+from typing import TYPE_CHECKING, Any, cast
 
 from homeassistant.components import conversation
 from homeassistant.core import CALLBACK_TYPE, Context, HomeAssistant, callback
@@ -15,8 +17,13 @@ from .const import (
     CONF_ASSISTANT_ID,
     CONF_NOTIFICATION_PERSONALITY,
     DEFAULT_COOLDOWN_MINUTES,
+    MAX_NOTIFICATION_LENGTH,
+    NOTIFICATION_DEBOUNCE_SECONDS,
 )
 from .serializers import GrowspaceSerializer
+
+if TYPE_CHECKING:
+    from .coordinator import GrowspaceCoordinator
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -24,7 +31,7 @@ _LOGGER = logging.getLogger(__name__)
 class NotificationManager:
     """Manages notifications for Growspace Manager."""
 
-    def __init__(self, hass: HomeAssistant, coordinator: Any) -> None:
+    def __init__(self, hass: HomeAssistant, coordinator: GrowspaceCoordinator) -> None:
         """Initialize the notification manager."""
         self.hass = hass
         self.coordinator = coordinator
@@ -56,9 +63,9 @@ class NotificationManager:
         sorted_reasons = sorted(reasons, reverse=True)
         message = base_message
 
-        # Increased limit from 65 to 240 for modern mobile displays
+        # Increased limit from 65 to MAX_NOTIFICATION_LENGTH for modern mobile displays
         for _, reason in sorted_reasons:
-            if len(message) + len(reason) + 2 < 240:
+            if len(message) + len(reason) + 2 < MAX_NOTIFICATION_LENGTH:
                 message += f", {reason}"
             else:
                 break
@@ -78,7 +85,7 @@ class NotificationManager:
 
         self._batch_timers[growspace_id] = async_call_later(
             self.hass,
-            5,
+            NOTIFICATION_DEBOUNCE_SECONDS,
             _send_notification,
         )
 

@@ -12,7 +12,7 @@ import voluptuous as vol
 from homeassistant.config_entries import ConfigFlowResult
 from homeassistant.helpers import selector
 
-from . import BaseConfigHandler
+from . import AbortFlow, BaseConfigHandler
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -24,11 +24,10 @@ class IrrigationConfigHandler(BaseConfigHandler[dict[str, Any]]):
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
         """Show a form to select a growspace before configuring its irrigation."""
-        if self.config_entry is None:
-            return self.flow.async_abort(reason="setup_error")
-        coordinator = self.config_entry.runtime_data
-        if coordinator is None:
-            return self.flow.async_abort(reason="setup_error")
+        try:
+            coordinator = self.get_coordinator()
+        except AbortFlow as e:
+            return self.flow.async_abort(reason=e.reason)
 
         growspace_options = coordinator.growspace_service.get_sorted_growspace_options()
 
@@ -58,11 +57,10 @@ class IrrigationConfigHandler(BaseConfigHandler[dict[str, Any]]):
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
         """Show the irrigation configuration menu for a selected growspace."""
-        if self.config_entry is None:
-            return self.flow.async_abort(reason="setup_error")
-        coordinator = self.config_entry.runtime_data
-        if coordinator is None:
-            return self.flow.async_abort(reason="setup_error")
+        try:
+            coordinator = self.get_coordinator()
+        except AbortFlow as e:
+            return self.flow.async_abort(reason=e.reason)
         growspace = coordinator.growspaces.get(self.flow.selected_growspace_id)
 
         if not growspace:
@@ -75,11 +73,10 @@ class IrrigationConfigHandler(BaseConfigHandler[dict[str, Any]]):
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
         """Show the unified irrigation management screen for the Lovelace card."""
-        if self.config_entry is None:
-            return self.flow.async_abort(reason="setup_error")
-        coordinator = self.config_entry.runtime_data
-        if coordinator is None:
-            return self.flow.async_abort(reason="setup_error")
+        try:
+            coordinator = self.get_coordinator()
+        except AbortFlow as e:
+            return self.flow.async_abort(reason=e.reason)
         growspace = coordinator.growspaces.get(self.flow.selected_growspace_id)
 
         if not growspace:
@@ -164,81 +161,8 @@ class IrrigationConfigHandler(BaseConfigHandler[dict[str, Any]]):
 
         # Add VWC Steering parameters if enabled
         if irrigation_options.get("use_vwc_steering"):
-            schema_dict.update(
-                {
-                    vol.Optional(
-                        "lights_on_time",
-                        default=irrigation_options.get("lights_on_time", "06:00:00"),
-                    ): selector.TimeSelector(),
-                    vol.Optional(
-                        "target_vwc_percent",
-                        default=irrigation_options.get("target_vwc_percent", 55.0),
-                    ): selector.NumberSelector(
-                        selector.NumberSelectorConfig(
-                            min=0,
-                            max=100,
-                            step=0.1,
-                            unit_of_measurement="%",
-                            mode=selector.NumberSelectorMode.BOX,
-                        )
-                    ),
-                    vol.Optional(
-                        "p0_duration_minutes",
-                        default=irrigation_options.get("p0_duration_minutes", 60),
-                    ): selector.NumberSelector(
-                        selector.NumberSelectorConfig(
-                            min=0,
-                            unit_of_measurement="min",
-                            mode=selector.NumberSelectorMode.BOX,
-                        )
-                    ),
-                    vol.Optional(
-                        "shot_duration_seconds",
-                        default=irrigation_options.get("shot_duration_seconds", 10),
-                    ): selector.NumberSelector(
-                        selector.NumberSelectorConfig(
-                            min=1,
-                            unit_of_measurement="sec",
-                            mode=selector.NumberSelectorMode.BOX,
-                        )
-                    ),
-                    vol.Optional(
-                        "shot_interval_minutes",
-                        default=irrigation_options.get("shot_interval_minutes", 15),
-                    ): selector.NumberSelector(
-                        selector.NumberSelectorConfig(
-                            min=1,
-                            unit_of_measurement="min",
-                            mode=selector.NumberSelectorMode.BOX,
-                        )
-                    ),
-                    vol.Optional(
-                        "maintenance_dryback_percent",
-                        default=irrigation_options.get(
-                            "maintenance_dryback_percent", 2.0
-                        ),
-                    ): selector.NumberSelector(
-                        selector.NumberSelectorConfig(
-                            min=0.1,
-                            step=0.1,
-                            unit_of_measurement="%",
-                            mode=selector.NumberSelectorMode.BOX,
-                        )
-                    ),
-                    vol.Optional(
-                        "p2_stop_before_lights_off_minutes",
-                        default=irrigation_options.get(
-                            "p2_stop_before_lights_off_minutes", 120
-                        ),
-                    ): selector.NumberSelector(
-                        selector.NumberSelectorConfig(
-                            min=0,
-                            unit_of_measurement="min",
-                            mode=selector.NumberSelectorMode.BOX,
-                        )
-                    ),
-                }
-            )
+            vwc_schema = self._build_vwc_steering_schema(irrigation_options)
+            schema_dict.update(vwc_schema)
 
         # Add Read-only Fields: Schedules and ID
         schema_dict.update(
@@ -258,3 +182,79 @@ class IrrigationConfigHandler(BaseConfigHandler[dict[str, Any]]):
         )
 
         return vol.Schema(schema_dict)
+
+    def _build_vwc_steering_schema(
+        self, irrigation_options: dict[str, Any]
+    ) -> dict[Any, Any]:
+        """Build the VWC (Volumetric Water Content) crop steering schema."""
+        return {
+            vol.Optional(
+                "lights_on_time",
+                default=irrigation_options.get("lights_on_time", "06:00:00"),
+            ): selector.TimeSelector(),
+            vol.Optional(
+                "target_vwc_percent",
+                default=irrigation_options.get("target_vwc_percent", 55.0),
+            ): selector.NumberSelector(
+                selector.NumberSelectorConfig(
+                    min=0,
+                    max=100,
+                    step=0.1,
+                    unit_of_measurement="%",
+                    mode=selector.NumberSelectorMode.BOX,
+                )
+            ),
+            vol.Optional(
+                "p0_duration_minutes",
+                default=irrigation_options.get("p0_duration_minutes", 60),
+            ): selector.NumberSelector(
+                selector.NumberSelectorConfig(
+                    min=0,
+                    unit_of_measurement="min",
+                    mode=selector.NumberSelectorMode.BOX,
+                )
+            ),
+            vol.Optional(
+                "shot_duration_seconds",
+                default=irrigation_options.get("shot_duration_seconds", 10),
+            ): selector.NumberSelector(
+                selector.NumberSelectorConfig(
+                    min=1,
+                    unit_of_measurement="sec",
+                    mode=selector.NumberSelectorMode.BOX,
+                )
+            ),
+            vol.Optional(
+                "shot_interval_minutes",
+                default=irrigation_options.get("shot_interval_minutes", 15),
+            ): selector.NumberSelector(
+                selector.NumberSelectorConfig(
+                    min=1,
+                    unit_of_measurement="min",
+                    mode=selector.NumberSelectorMode.BOX,
+                )
+            ),
+            vol.Optional(
+                "maintenance_dryback_percent",
+                default=irrigation_options.get("maintenance_dryback_percent", 2.0),
+            ): selector.NumberSelector(
+                selector.NumberSelectorConfig(
+                    min=0.1,
+                    step=0.1,
+                    unit_of_measurement="%",
+                    mode=selector.NumberSelectorMode.BOX,
+                )
+            ),
+            vol.Optional(
+                "p2_stop_before_lights_off_minutes",
+                default=irrigation_options.get(
+                    "p2_stop_before_lights_off_minutes", 120
+                ),
+            ): selector.NumberSelector(
+                selector.NumberSelectorConfig(
+                    min=0,
+                    unit_of_measurement="min",
+                    mode=selector.NumberSelectorMode.BOX,
+                )
+            ),
+        }

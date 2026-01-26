@@ -12,7 +12,7 @@ from custom_components.growspace_manager.const import (
     ATTR_IRRIGATION_TIMES,
     ATTR_TIME,
 )
-from custom_components.growspace_manager.exceptions import GrowspaceError
+from custom_components.growspace_manager.services.utils import handle_service_errors
 from homeassistant.core import HomeAssistant, ServiceCall
 from homeassistant.exceptions import ServiceValidationError
 
@@ -56,114 +56,85 @@ async def _get_irrigation_coordinator(
         ) from None
 
 
+@handle_service_errors
 async def handle_set_irrigation_settings(
     hass: HomeAssistant,
     coordinator: GrowspaceCoordinator,
     call: ServiceCall,
 ) -> None:
     """Handle the service call to set irrigation settings for a growspace."""
-    try:
-        growspace_id = call.data[ATTR_GROWSPACE_ID]
-        irrigation_coord = await _get_irrigation_coordinator(coordinator, growspace_id)
+    growspace_id = call.data[ATTR_GROWSPACE_ID]
+    irrigation_coord = await _get_irrigation_coordinator(coordinator, growspace_id)
 
-        settings = {
-            key: value for key, value in call.data.items() if key != ATTR_GROWSPACE_ID
-        }
+    settings = {
+        key: value for key, value in call.data.items() if key != ATTR_GROWSPACE_ID
+    }
 
-        await irrigation_coord.async_set_settings(settings)
-        _LOGGER.info("Set irrigation settings for growspace '%s'", growspace_id)
-    except GrowspaceError as err:
-        raise ServiceValidationError(str(err)) from err
-    except Exception as err:
-        _LOGGER.exception("Unexpected error in set_irrigation_settings")
-        raise ServiceValidationError(
-            f"Failed to set irrigation settings: {err}"
-        ) from err
+    await irrigation_coord.async_set_settings(settings)
+    _LOGGER.info("Set irrigation settings for growspace '%s'", growspace_id)
 
 
+@handle_service_errors
 async def handle_add_irrigation_time(
     hass: HomeAssistant,
     coordinator: GrowspaceCoordinator,
     call: ServiceCall,
 ) -> None:
     """Handle the service call to add an irrigation time to a schedule."""
-    try:
-        growspace_id = call.data[ATTR_GROWSPACE_ID]
-        irrigation_coord = await _get_irrigation_coordinator(coordinator, growspace_id)
+    growspace_id = call.data[ATTR_GROWSPACE_ID]
+    irrigation_coord = await _get_irrigation_coordinator(coordinator, growspace_id)
 
-        duration = call.data.get(ATTR_DURATION)
-        if duration is None:
-            duration = irrigation_coord.get_default_duration("irrigation")
+    duration = call.data.get(ATTR_DURATION)
+    if duration is None:
+        duration = irrigation_coord.get_default_duration("irrigation")
 
-        await irrigation_coord.async_add_schedule_item(
-            ATTR_IRRIGATION_TIMES, call.data[ATTR_TIME], duration
-        )
-    except GrowspaceError as err:
-        raise ServiceValidationError(str(err)) from err
-    except Exception as err:
-        _LOGGER.exception("Unexpected error in add_irrigation_time")
-        raise ServiceValidationError(f"Failed to add irrigation time: {err}") from err
+    await irrigation_coord.async_add_schedule_item(
+        ATTR_IRRIGATION_TIMES, call.data[ATTR_TIME], duration
+    )
 
 
+@handle_service_errors
 async def handle_remove_irrigation_time(
     hass: HomeAssistant,
     coordinator: GrowspaceCoordinator,
     call: ServiceCall,
 ) -> None:
     """Handle the service call to remove an irrigation time from a schedule."""
-    try:
-        growspace_id = call.data[ATTR_GROWSPACE_ID]
-        irrigation_coord = await _get_irrigation_coordinator(coordinator, growspace_id)
-        await irrigation_coord.async_remove_schedule_item(
-            ATTR_IRRIGATION_TIMES, call.data[ATTR_TIME]
-        )
-    except GrowspaceError as err:
-        raise ServiceValidationError(str(err)) from err
-    except Exception as err:
-        _LOGGER.exception("Unexpected error in remove_irrigation_time")
-        raise ServiceValidationError(
-            f"Failed to remove irrigation time: {err}"
-        ) from err
+    growspace_id = call.data[ATTR_GROWSPACE_ID]
+    irrigation_coord = await _get_irrigation_coordinator(coordinator, growspace_id)
+    await irrigation_coord.async_remove_schedule_item(
+        ATTR_IRRIGATION_TIMES, call.data[ATTR_TIME]
+    )
 
 
+@handle_service_errors
 async def handle_add_drain_time(
     hass: HomeAssistant,
     coordinator: GrowspaceCoordinator,
     call: ServiceCall,
 ) -> None:
     """Handle the service call to add a drain time to a schedule."""
-    try:
-        growspace_id = call.data[ATTR_GROWSPACE_ID]
-        irrigation_coord = await _get_irrigation_coordinator(coordinator, growspace_id)
+    growspace_id = call.data[ATTR_GROWSPACE_ID]
+    irrigation_coord = await _get_irrigation_coordinator(coordinator, growspace_id)
 
-        duration = call.data.get(ATTR_DURATION)
-        if duration is None:
-            duration = irrigation_coord.get_default_duration("drain")
+    duration = call.data.get(ATTR_DURATION)
+    if duration is None:
+        duration = irrigation_coord.get_default_duration("drain")
 
-        await irrigation_coord.async_add_schedule_item(
-            ATTR_DRAIN_TIMES, call.data[ATTR_TIME], duration
-        )
-    except GrowspaceError as err:
-        raise ServiceValidationError(str(err)) from err
-    except Exception as err:
-        _LOGGER.exception("Unexpected error in add_drain_time")
-        raise ServiceValidationError(f"Failed to add drain time: {err}") from err
+    await irrigation_coord.async_add_schedule_item(
+        ATTR_DRAIN_TIMES, call.data[ATTR_TIME], duration
+    )
 
 
+@handle_service_errors
 async def handle_remove_drain_time(
     hass: HomeAssistant,
     coordinator: GrowspaceCoordinator,
     call: ServiceCall,
 ) -> None:
     """Handle the service call to remove a drain time from a schedule."""
-    try:
-        growspace_id = call.data[ATTR_GROWSPACE_ID]
-        irrigation_coord = await _get_irrigation_coordinator(coordinator, growspace_id)
-        await irrigation_coord.async_remove_schedule_item(
-            ATTR_DRAIN_TIMES, call.data[ATTR_TIME]
-        )
-    except GrowspaceError as err:
-        raise ServiceValidationError(str(err)) from err
-    except Exception as err:
-        _LOGGER.exception("Unexpected error in remove_drain_time")
-        raise ServiceValidationError(f"Failed to remove drain time: {err}") from err
+    growspace_id = call.data[ATTR_GROWSPACE_ID]
+    irrigation_coord = await _get_irrigation_coordinator(coordinator, growspace_id)
+    await irrigation_coord.async_remove_schedule_item(
+        ATTR_DRAIN_TIMES, call.data[ATTR_TIME]
+    )

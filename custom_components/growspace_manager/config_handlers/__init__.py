@@ -4,10 +4,13 @@ from __future__ import annotations
 
 from abc import ABC
 import logging
-from typing import Any, Generic, TypeVar
+from typing import TYPE_CHECKING, Any, Generic, TypeVar
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
+
+if TYPE_CHECKING:
+    from custom_components.growspace_manager.coordinator import GrowspaceCoordinator
 
 # NOTE: Handler imports moved to bottom of file to avoid circular import
 # (handlers import BaseConfigHandler which must be defined first)
@@ -15,6 +18,15 @@ from homeassistant.core import HomeAssistant
 T = TypeVar("T")
 
 _LOGGER = logging.getLogger(__name__)
+
+
+class AbortFlow(Exception):
+    """Exception to signal config flow should abort."""
+
+    def __init__(self, reason: str) -> None:
+        """Initialize abort flow exception."""
+        super().__init__(reason)
+        self.reason = reason
 
 
 class BaseConfigHandler(ABC, Generic[T]):
@@ -43,6 +55,22 @@ class BaseConfigHandler(ABC, Generic[T]):
             else:
                 self.hass = kwargs.get("hass")
                 self.config_entry = kwargs.get("config_entry")
+
+    def get_coordinator(self) -> GrowspaceCoordinator:
+        """Get coordinator with validation.
+
+        Returns:
+            GrowspaceCoordinator instance
+
+        Raises:
+            AbortFlow: If coordinator not available
+        """
+        if self.config_entry is None:
+            raise AbortFlow("setup_error")
+        coordinator = self.config_entry.runtime_data
+        if coordinator is None:
+            raise AbortFlow("setup_error")
+        return coordinator  # type: ignore[return-value]
 
     async def websocket_get_event_log(
         self, hass: HomeAssistant, connection: Any, msg: dict[str, Any]

@@ -16,6 +16,7 @@ from custom_components.growspace_manager.bayesian_evaluator import (
 )
 from custom_components.growspace_manager.binary_sensor import (
     BayesianEnvironmentSensor,
+    SENSOR_TYPES,
     GrowspaceBinarySensorDescription,
     GrowspaceSensorType,
     LightCycleVerificationSensor,
@@ -188,6 +189,35 @@ async def test_calendar_notification_not_for_growspace(hass: HomeAssistant) -> N
 # -----------------------------------------------------------------------------
 # notification_manager.py Coverage
 # -----------------------------------------------------------------------------
+
+
+def create_test_sensor(
+    coordinator: MagicMock,
+    growspace_id: str,
+    sensor_type: str,
+    strategy_class: type,
+    env_config: EnvironmentConfig | None = None,
+) -> BayesianEnvironmentSensor:
+    """Helper to create a BayesianEnvironmentSensor for testing with all dependencies."""
+    if env_config is None:
+        env_config = coordinator.growspaces[growspace_id].environment_config
+
+    description = next(d for d in SENSOR_TYPES if d.sensor_type == sensor_type)
+
+    return BayesianEnvironmentSensor(
+        coordinator=coordinator,
+        growspace_id=growspace_id,
+        env_config=env_config,
+        description=description,
+        strategy_class=strategy_class,
+        # Inject dependencies
+        get_growspace=lambda gid: coordinator.growspaces.get(gid),
+        get_plants=coordinator.get_growspace_plants,
+        add_event=coordinator.add_event,
+        notification_manager=coordinator.notification_manager,
+        strain_library=coordinator.strain_library,
+        options=coordinator.options,
+    )
 
 
 def test_trigger_cooldown_manual(hass: HomeAssistant) -> None:
@@ -443,13 +473,12 @@ async def test_handle_harvest_plant_not_loaded(hass: HomeAssistant) -> None:
 
 async def test_binary_sensor_event_attributes(hass: HomeAssistant) -> None:
     """Test binary sensor extra attributes with active event."""
-    description = GrowspaceBinarySensorDescription(
-        key=GrowspaceSensorType.MOLD,
-        sensor_type=GrowspaceSensorType.MOLD,
-        prior_key="prior_mold_risk",
-    )
-    sensor = BayesianEnvironmentSensor(
-        MagicMock(), "gs1", EnvironmentConfig(), description, MoldRiskEvaluatorStrategy
+    sensor = create_test_sensor(
+        MagicMock(),
+        "gs1",
+        GrowspaceSensorType.MOLD,
+        MoldRiskEvaluatorStrategy,
+        EnvironmentConfig(),
     )
     sensor._event_start_time = dt_util.utcnow() - timedelta(minutes=10)
 
@@ -461,7 +490,13 @@ async def test_binary_sensor_event_attributes(hass: HomeAssistant) -> None:
 async def test_light_cycle_sensor_stages(hass: HomeAssistant) -> None:
     """Test light cycle sensor stage determination branches."""
     coordinator = MagicMock()
-    sensor = LightCycleVerificationSensor(coordinator, "gs1", EnvironmentConfig())
+    sensor = LightCycleVerificationSensor(
+        coordinator,
+        "gs1",
+        EnvironmentConfig(),
+        get_plants=coordinator.get_growspace_plants,
+        calculate_days=lambda d: 30,
+    )
 
     # Mock 0 flower days -> Veg
     assert sensor._get_current_stage_key({"flower_days": 0}) == "veg"
@@ -639,7 +674,14 @@ async def test_config_flow_add_growspace_exception(hass: HomeAssistant) -> None:
 
 async def test_light_cycle_sensor_stages_negative(hass: HomeAssistant) -> None:
     """Test light cycle sensor with negative flower days (fallback)."""
-    sensor = LightCycleVerificationSensor(MagicMock(), "gs1", EnvironmentConfig())
+    mock_coord = MagicMock()
+    sensor = LightCycleVerificationSensor(
+        mock_coord,
+        "gs1",
+        EnvironmentConfig(),
+        get_plants=mock_coord.get_growspace_plants,
+        calculate_days=lambda d: 30,
+    )
 
     # Force negative flower days to hit the fallback return
     # This specifically hits binary_sensor.py:1062

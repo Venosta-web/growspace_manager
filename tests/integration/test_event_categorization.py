@@ -21,6 +21,35 @@ from homeassistant.core import HomeAssistant
 MOCK_CONFIG_ENTRY_ID = "test_entry"
 
 
+def create_test_sensor(
+    coordinator: MagicMock,
+    growspace_id: str,
+    sensor_type: str,
+    strategy_class: type,
+    env_config: EnvironmentConfig | None = None,
+) -> BayesianEnvironmentSensor:
+    """Helper to create a BayesianEnvironmentSensor for testing with all dependencies."""
+    if env_config is None:
+        env_config = coordinator.growspaces[growspace_id].environment_config
+
+    description = next(d for d in SENSOR_TYPES if d.sensor_type == sensor_type)
+
+    return BayesianEnvironmentSensor(
+        coordinator=coordinator,
+        growspace_id=growspace_id,
+        env_config=env_config,
+        description=description,
+        strategy_class=strategy_class,
+        # Inject dependencies
+        get_growspace=lambda gid: coordinator.growspaces.get(gid),
+        get_plants=coordinator.get_growspace_plants,
+        add_event=coordinator.add_event,
+        notification_manager=coordinator.notification_manager,
+        strain_library=coordinator.strain_library,
+        options=coordinator.options,
+    )
+
+
 @pytest.fixture
 def mock_growspace():
     """Fixture for a mock growspace with environment config."""
@@ -68,15 +97,12 @@ async def test_event_categorization(hass: HomeAssistant, mock_coordinator) -> No
     """Test that events are categorized correctly."""
 
     # 1. Test Optimal Conditions Sensor -> Should be "environment"
-    optimal_desc = next(
-        d for d in SENSOR_TYPES if d.sensor_type == GrowspaceSensorType.OPTIMAL
-    )
-    optimal_sensor = BayesianEnvironmentSensor(
+    optimal_sensor = create_test_sensor(
         mock_coordinator,
         "gs1",
-        mock_coordinator.growspaces["gs1"].environment_config,
-        optimal_desc,
+        GrowspaceSensorType.OPTIMAL,
         OptimalConditionsEvaluatorStrategy,
+        mock_coordinator.growspaces["gs1"].environment_config,
     )
     optimal_sensor.hass = hass
     optimal_sensor.entity_id = "binary_sensor.test_optimal"
@@ -121,15 +147,12 @@ async def test_event_categorization(hass: HomeAssistant, mock_coordinator) -> No
     # 2. Test Stress Sensor -> Should be "alert"
     mock_coordinator.add_event.reset_mock()
 
-    stress_desc = next(
-        d for d in SENSOR_TYPES if d.sensor_type == GrowspaceSensorType.STRESS
-    )
-    stress_sensor = BayesianEnvironmentSensor(
+    stress_sensor = create_test_sensor(
         mock_coordinator,
         "gs1",
-        mock_coordinator.growspaces["gs1"].environment_config,
-        stress_desc,
+        GrowspaceSensorType.STRESS,
         StressEvaluatorStrategy,
+        mock_coordinator.growspaces["gs1"].environment_config,
     )
     stress_sensor.hass = hass
     stress_sensor.entity_id = "binary_sensor.test_stress"

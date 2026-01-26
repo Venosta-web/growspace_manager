@@ -105,9 +105,7 @@ async def test_handle_water_plant_wraps_generic_error(
     call = MagicMock()
     call.data = {"plant_id": "p1", "amount": 1.0}
 
-    with pytest.raises(
-        ServiceValidationError, match="Failed to water plant: Pump Failure"
-    ):
+    with pytest.raises(ServiceValidationError, match="Operation failed: Pump Failure"):
         await handle_water_plant(hass, mock_coordinator, call)
 
 
@@ -121,7 +119,5 @@ async def test_handle_water_growspace_wraps_error(
     call = MagicMock()
     call.data = {"growspace_id": "gs1", "amount_per_plant": 1.0}
 
-    with pytest.raises(
-        ServiceValidationError, match="Failed to water growspace: Valve Error"
-    ):
+    with pytest.raises(ServiceValidationError, match="Operation failed: Valve Error"):
         await handle_water_growspace(hass, mock_coordinator, call)

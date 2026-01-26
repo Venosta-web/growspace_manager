@@ -8,16 +8,51 @@ import pytest
 from custom_components.growspace_manager.binary_sensor import (
     SENSOR_TYPES,
     BayesianEnvironmentSensor,
+    GrowspaceSensorType,
 )
-from custom_components.growspace_manager.models import Growspace, GrowspaceEvent
+from custom_components.growspace_manager.models import (
+    EnvironmentConfig,
+    Growspace,
+    GrowspaceEvent,
+)
 from custom_components.growspace_manager.strategies.mold import (
     MoldRiskEvaluatorStrategy,
 )
 from homeassistant.core import HomeAssistant
 from homeassistant.util import dt as dt_util
 
-
 # --- Fixtures ---
+
+
+def create_test_sensor(
+    coordinator: MagicMock,
+    growspace_id: str,
+    sensor_type: str,
+    strategy_class: type,
+    env_config: EnvironmentConfig | None = None,
+) -> BayesianEnvironmentSensor:
+    """Helper to create a BayesianEnvironmentSensor for testing with all dependencies."""
+    if env_config is None:
+        env_config = coordinator.growspaces[growspace_id].environment_config
+
+    description = next(d for d in SENSOR_TYPES if d.sensor_type == sensor_type)
+
+    return BayesianEnvironmentSensor(
+        coordinator=coordinator,
+        growspace_id=growspace_id,
+        env_config=env_config,
+        description=description,
+        strategy_class=strategy_class,
+        # Inject dependencies
+        get_growspace=lambda gid: coordinator.growspaces.get(gid),
+        get_plants=coordinator.get_growspace_plants,
+        add_event=coordinator.add_event,
+        notification_manager=coordinator.notification_manager,
+        strain_library=coordinator.strain_library,
+        options=coordinator.options,
+    )
+
+
 @pytest.fixture
 def mock_coordinator(hass: HomeAssistant):
     coord = MagicMock()
@@ -73,13 +108,12 @@ async def test_sensor_event_capture(hass: HomeAssistant, mock_coordinator) -> No
         "humidity_sensor": "sensor.hum",
     }
 
-    description = next(d for d in SENSOR_TYPES if d.sensor_type == "mold")
-    sensor = BayesianEnvironmentSensor(
+    sensor = create_test_sensor(
         mock_coordinator,
         "gs1",
-        env_config,
-        description,
+        GrowspaceSensorType.STRESS,
         MoldRiskEvaluatorStrategy,
+        env_config,
     )
     sensor.hass = hass
     sensor.entity_id = "binary_sensor.test_mold_logbook"

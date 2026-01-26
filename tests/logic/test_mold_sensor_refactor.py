@@ -19,6 +19,36 @@ from custom_components.growspace_manager.strategies.mold import (
 from homeassistant.const import STATE_UNKNOWN
 from homeassistant.core import HomeAssistant
 
+
+def create_test_sensor(
+    coordinator: MagicMock,
+    growspace_id: str,
+    sensor_type: str,
+    strategy_class: type,
+    env_config: EnvironmentConfig | None = None,
+) -> BayesianEnvironmentSensor:
+    """Helper to create a BayesianEnvironmentSensor for testing with all dependencies."""
+    if env_config is None:
+        env_config = coordinator.growspaces[growspace_id].environment_config
+
+    description = next(d for d in SENSOR_TYPES if d.sensor_type == sensor_type)
+
+    return BayesianEnvironmentSensor(
+        coordinator=coordinator,
+        growspace_id=growspace_id,
+        env_config=env_config,
+        description=description,
+        strategy_class=strategy_class,
+        # Inject dependencies
+        get_growspace=lambda gid: coordinator.growspaces.get(gid),
+        get_plants=coordinator.get_growspace_plants,
+        add_event=coordinator.add_event,
+        notification_manager=coordinator.notification_manager,
+        strain_library=coordinator.strain_library,
+        options=coordinator.options,
+    )
+
+
 MOCK_CONFIG_ENTRY_ID = "test_entry"
 
 
@@ -90,15 +120,12 @@ async def test_mold_sensor_stage_aware_thresholds(
 ) -> None:
     """Test new stage-aware humidity thresholds."""
 
-    description = next(
-        d for d in SENSOR_TYPES if d.sensor_type == GrowspaceSensorType.MOLD
-    )
-    sensor = BayesianEnvironmentSensor(
+    sensor = create_test_sensor(
         mock_coordinator,
         "gs1",
-        env_config,
-        description,
+        GrowspaceSensorType.MOLD,
         MoldRiskEvaluatorStrategy,
+        env_config,
     )
     sensor.hass = hass
     sensor.entity_id = "binary_sensor.test_mold"
@@ -224,15 +251,12 @@ async def test_veg_stage_scenario_false_positive_prevention(
     """Verify that in a Veg Stage scenario (e.g., 22.7°C, 56.8% RH, 0.87 kPa VPD),
     the sensor probability remains low even if trends are "rising" or "falling".
     """
-    description = next(
-        d for d in SENSOR_TYPES if d.sensor_type == GrowspaceSensorType.MOLD
-    )
-    sensor = BayesianEnvironmentSensor(
+    sensor = create_test_sensor(
         mock_coordinator,
         "gs1",
-        env_config,
-        description,
+        GrowspaceSensorType.MOLD,
         MoldRiskEvaluatorStrategy,
+        env_config,
     )
     sensor.hass = hass
     sensor.entity_id = "binary_sensor.test_mold_false_positive"
@@ -313,15 +337,12 @@ async def test_user_reported_veg_scenario(
     """Verify the user reported scenario: 24.2°C, 64% RH, 0.75 kPa VPD, Veg day 34.
     The sensor should NOT have a high probability.
     """
-    description = next(
-        d for d in SENSOR_TYPES if d.sensor_type == GrowspaceSensorType.MOLD
-    )
-    sensor = BayesianEnvironmentSensor(
+    sensor = create_test_sensor(
         mock_coordinator,
         "gs1",
-        env_config,
-        description,
+        GrowspaceSensorType.MOLD,
         MoldRiskEvaluatorStrategy,
+        env_config,
     )
     sensor.hass = hass
     sensor.entity_id = "binary_sensor.test_mold_user_scenario"
@@ -373,15 +394,12 @@ async def test_veg_fan_off_safe(
     hass: HomeAssistant, mock_coordinator, env_config
 ) -> None:
     """Test that Fan Off in Veg with low humidity does NOT trigger risk."""
-    description = next(
-        d for d in SENSOR_TYPES if d.sensor_type == GrowspaceSensorType.MOLD
-    )
-    sensor = BayesianEnvironmentSensor(
+    sensor = create_test_sensor(
         mock_coordinator,
         "gs1",
-        env_config,
-        description,
+        GrowspaceSensorType.MOLD,
         MoldRiskEvaluatorStrategy,
+        env_config,
     )
     sensor.hass = hass
     sensor.entity_id = "binary_sensor.test_veg_fan_safe"
@@ -421,15 +439,12 @@ async def test_veg_fan_off_risk(
     hass: HomeAssistant, mock_coordinator, env_config
 ) -> None:
     """Test that Fan Off in Veg with HIGH humidity DOES trigger risk."""
-    description = next(
-        d for d in SENSOR_TYPES if d.sensor_type == GrowspaceSensorType.MOLD
-    )
-    sensor = BayesianEnvironmentSensor(
+    sensor = create_test_sensor(
         mock_coordinator,
         "gs1",
-        env_config,
-        description,
+        GrowspaceSensorType.MOLD,
         MoldRiskEvaluatorStrategy,
+        env_config,
     )
     sensor.hass = hass
     sensor.entity_id = "binary_sensor.test_veg_fan_risk"

@@ -24,6 +24,7 @@ from homeassistant.exceptions import ServiceValidationError
 import homeassistant.util.dt as dt_util
 
 from .const import (
+    ALERT_LOG_LOOKBACK_DAYS,
     ATTR_AMOUNT_ML,
     ATTR_EC,
     ATTR_IMAGES,
@@ -35,6 +36,8 @@ from .const import (
     ATTR_TRANSITION_DATE,
     DOMAIN,
     EVENT_GROWSPACE_LOG_ENTRY,
+    EVENT_LOG_LOOKBACK_DAYS,
+    MERGE_ALERT_GAP_SECONDS,
 )
 from .coordinator import GrowspaceCoordinator
 from .services.plant import async_add_timeline_note
@@ -137,7 +140,7 @@ def _merge_logbook_event(
                 gap_sec = (l_dt - d_dt).total_seconds()
 
                 # Merge if gap is small (e.g., < 10 minutes)
-                if 0 <= gap_sec <= 600:
+                if 0 <= gap_sec <= MERGE_ALERT_GAP_SECONDS:
                     last_evt["start_time"] = data_dict["start_time"]
                     last_evt["duration_sec"] = last_evt.get(
                         "duration_sec", 0
@@ -243,8 +246,8 @@ async def websocket_get_event_log(
     try:
         recorder = get_instance(hass)
         end_time = dt_util.utcnow()
-        # Look back up to 30 days for manual logs since they are sparse
-        start_time = end_time - timedelta(days=30)
+        # Look back for manual logs since they are sparse
+        start_time = end_time - timedelta(days=EVENT_LOG_LOOKBACK_DAYS)
 
         evts = await recorder.async_add_executor_job(
             _query_logbook_events_impl,
@@ -290,7 +293,7 @@ async def websocket_get_alerts(
     try:
         recorder = get_instance(hass)
         end_time = dt_util.utcnow()
-        start_time = end_time - timedelta(days=120)
+        start_time = end_time - timedelta(days=ALERT_LOG_LOOKBACK_DAYS)
 
         evts = await recorder.async_add_executor_job(
             _query_logbook_events_impl,

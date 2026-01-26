@@ -158,7 +158,7 @@ async def test_async_setup_entry(hass: HomeAssistant) -> None:
     with (
         patch("homeassistant.helpers.storage.Store") as mock_store_cls,
         patch(
-            "custom_components.growspace_manager.GrowspaceCoordinator",
+            "custom_components.growspace_manager.coordinator.GrowspaceCoordinator",
             return_value=coordinator_mock,
         ),
         patch(
@@ -356,7 +356,7 @@ async def test_async_setup_entry_with_growspaces(hass: HomeAssistant) -> None:
     with (
         patch("homeassistant.helpers.storage.Store") as mock_store_cls,
         patch(
-            "custom_components.growspace_manager.GrowspaceCoordinator",
+            "custom_components.growspace_manager.coordinator.GrowspaceCoordinator",
             return_value=coordinator_mock,
         ),
         patch(
@@ -723,7 +723,7 @@ async def test_pending_growspace_error(hass: HomeAssistant) -> None:
         )
 
         with patch(
-            "custom_components.growspace_manager.GrowspaceCoordinator",
+            "custom_components.growspace_manager.coordinator.GrowspaceCoordinator",
             return_value=coordinator_mock,
         ):
             await async_setup_entry(hass, entry)
@@ -793,7 +793,7 @@ async def test_pending_growspace_success(hass: HomeAssistant) -> None:
         )
 
         with patch(
-            "custom_components.growspace_manager.GrowspaceCoordinator",
+            "custom_components.growspace_manager.coordinator.GrowspaceCoordinator",
             return_value=coordinator_mock,
         ):
             await async_setup_entry(hass, entry)

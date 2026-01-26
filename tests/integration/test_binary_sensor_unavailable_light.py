@@ -8,7 +8,9 @@ import pytest
 from custom_components.growspace_manager.binary_sensor import (
     SENSOR_TYPES,
     BayesianEnvironmentSensor,
+    GrowspaceSensorType,
 )
+from custom_components.growspace_manager.models import EnvironmentConfig
 from custom_components.growspace_manager.strategies.mold import (
     MoldRiskEvaluatorStrategy,
 )
@@ -18,6 +20,35 @@ from custom_components.growspace_manager.strategies.stress import (
 from homeassistant.const import STATE_UNAVAILABLE, STATE_UNKNOWN
 from homeassistant.core import HomeAssistant
 from homeassistant.util.dt import utcnow
+
+
+def create_test_sensor(
+    coordinator: MagicMock,
+    growspace_id: str,
+    sensor_type: str,
+    strategy_class: type,
+    env_config: EnvironmentConfig | None = None,
+) -> BayesianEnvironmentSensor:
+    """Helper to create a BayesianEnvironmentSensor for testing with all dependencies."""
+    if env_config is None:
+        env_config = coordinator.growspaces[growspace_id].environment_config
+
+    description = next(d for d in SENSOR_TYPES if d.sensor_type == sensor_type)
+
+    return BayesianEnvironmentSensor(
+        coordinator=coordinator,
+        growspace_id=growspace_id,
+        env_config=env_config,
+        description=description,
+        strategy_class=strategy_class,
+        # Inject dependencies
+        get_growspace=lambda gid: coordinator.growspaces.get(gid),
+        get_plants=coordinator.get_growspace_plants,
+        add_event=coordinator.add_event,
+        notification_manager=coordinator.notification_manager,
+        strain_library=coordinator.strain_library,
+        options=coordinator.options,
+    )
 
 
 @pytest.fixture
@@ -87,15 +118,12 @@ async def test_unavailable_light_sensor_no_night_stress(
 ) -> None:
     """Test that unavailable light sensor does not trigger Night Temp High stress."""
 
-    # Setup sensor
-    description = next(d for d in SENSOR_TYPES if d.sensor_type == "stress")
-    description = next(d for d in SENSOR_TYPES if d.sensor_type == "stress")
-    sensor = BayesianEnvironmentSensor(
+    sensor = create_test_sensor(
         mock_coordinator,
         "gs1",
-        mock_coordinator.growspaces["gs1"].environment_config,
-        description,
+        GrowspaceSensorType.STRESS,
         StressEvaluatorStrategy,
+        mock_coordinator.growspaces["gs1"].environment_config,
     )
     sensor.hass = hass
     sensor.entity_id = "binary_sensor.test_stress_unavailable_light"
@@ -172,15 +200,12 @@ async def test_unavailable_additional_sensors(
 ) -> None:
     """Test that unavailable fan/dehumidifier do not trigger false alerts."""
 
-    # Setup sensor
-    description = next(d for d in SENSOR_TYPES if d.sensor_type == "stress")
-    description = next(d for d in SENSOR_TYPES if d.sensor_type == "stress")
-    sensor = BayesianEnvironmentSensor(
+    sensor = create_test_sensor(
         mock_coordinator,
         "gs1",
-        mock_coordinator.growspaces["gs1"].environment_config,
-        description,
+        GrowspaceSensorType.STRESS,
         StressEvaluatorStrategy,
+        mock_coordinator.growspaces["gs1"].environment_config,
     )
     sensor.hass = hass
     sensor.entity_id = "binary_sensor.test_stress_unavailable_others"
@@ -233,14 +258,12 @@ async def test_unavailable_additional_sensors(
     )
 
     # Also verify Mold Risk Sensor for Fan Off
-    mold_description = next(d for d in SENSOR_TYPES if d.sensor_type == "mold")
-    mold_description = next(d for d in SENSOR_TYPES if d.sensor_type == "mold")
-    mold_sensor = BayesianEnvironmentSensor(
+    mold_sensor = create_test_sensor(
         mock_coordinator,
         "gs1",
-        mock_coordinator.growspaces["gs1"].environment_config,
-        mold_description,
+        GrowspaceSensorType.MOLD,
         MoldRiskEvaluatorStrategy,
+        mock_coordinator.growspaces["gs1"].environment_config,
     )
     mold_sensor.hass = hass
     mold_sensor.entity_id = "binary_sensor.test_mold_unavailable_fan"

@@ -6,15 +6,16 @@ import logging
 from typing import TYPE_CHECKING, Any
 
 from homeassistant.core import HomeAssistant, ServiceCall
-from homeassistant.exceptions import ServiceValidationError
+
+from .utils import handle_service_errors
 
 if TYPE_CHECKING:
     from custom_components.growspace_manager.coordinator import GrowspaceCoordinator
-from custom_components.growspace_manager.exceptions import GrowspaceError
 
 _LOGGER = logging.getLogger(__name__)
 
 
+@handle_service_errors
 async def handle_water_plant(
     hass: HomeAssistant,
     coordinator: GrowspaceCoordinator,
@@ -40,13 +41,12 @@ async def handle_water_plant(
             plant_id,
             amount,
         )
-    except GrowspaceError as err:
-        raise ServiceValidationError(str(err)) from err
-    except Exception as err:
+    except Exception:
         _LOGGER.exception("Unexpected error in water_plant")
-        raise ServiceValidationError(f"Failed to water plant: {err}") from err
+        raise
 
 
+@handle_service_errors
 async def handle_water_growspace(
     hass: HomeAssistant,
     coordinator: GrowspaceCoordinator,
@@ -79,8 +79,8 @@ async def handle_water_growspace(
             plants_watered,
         )
 
-    except Exception as err:
+    except Exception:
         _LOGGER.exception("Unexpected error in water_growspace")
-        raise ServiceValidationError(f"Failed to water growspace: {err}") from err
+        raise
     else:
         return {"plants_watered": plants_watered}

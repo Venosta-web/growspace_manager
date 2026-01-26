@@ -15,6 +15,35 @@ from homeassistant.const import STATE_OFF, STATE_ON
 from homeassistant.core import HomeAssistant
 
 
+def create_test_sensor(
+    coordinator: MagicMock,
+    growspace_id: str,
+    sensor_type: str,
+    strategy_class: type,
+    env_config: EnvironmentConfig | None = None,
+) -> BayesianEnvironmentSensor:
+    """Helper to create a BayesianEnvironmentSensor for testing with all dependencies."""
+    if env_config is None:
+        env_config = coordinator.growspaces[growspace_id].environment_config
+
+    description = next(d for d in SENSOR_TYPES if d.sensor_type == sensor_type)
+
+    return BayesianEnvironmentSensor(
+        coordinator=coordinator,
+        growspace_id=growspace_id,
+        env_config=env_config,
+        description=description,
+        strategy_class=strategy_class,
+        # Inject dependencies
+        get_growspace=lambda gid: coordinator.growspaces.get(gid),
+        get_plants=coordinator.get_growspace_plants,
+        add_event=coordinator.add_event,
+        notification_manager=coordinator.notification_manager,
+        strain_library=coordinator.strain_library,
+        options=coordinator.options,
+    )
+
+
 @pytest.fixture
 def mock_growspace_multi():
     """Fixture for a mock growspace with multi-device config."""
@@ -48,6 +77,11 @@ def mock_coordinator_multi(mock_growspace_multi):
     coordinator.hass = MagicMock()
     coordinator.growspaces = {"gs_multi": mock_growspace_multi}
     coordinator.options = {}
+    # Add missing dependencies
+    coordinator.get_growspace_plants = MagicMock(return_value=[])
+    coordinator.add_event = MagicMock()
+    coordinator.notification_manager = MagicMock()
+    coordinator.strain_library = None
     return coordinator
 
 
@@ -56,15 +90,12 @@ def sensor_multi(
     mock_coordinator_multi, hass: HomeAssistant
 ) -> BayesianEnvironmentSensor:
     """Fixture for the sensor instance."""
-    description = next(
-        d for d in SENSOR_TYPES if d.sensor_type == GrowspaceSensorType.STRESS
-    )
-    sensor = BayesianEnvironmentSensor(
+    sensor = create_test_sensor(
         mock_coordinator_multi,
         "gs_multi",
-        mock_coordinator_multi.growspaces["gs_multi"].environment_config,
-        description,
+        GrowspaceSensorType.STRESS,
         StressEvaluatorStrategy,
+        mock_coordinator_multi.growspaces["gs_multi"].environment_config,
     )
     sensor.hass = hass
     return sensor

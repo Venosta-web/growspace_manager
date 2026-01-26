@@ -129,6 +129,12 @@ def mock_coordinator(mock_growspace):
     coordinator.async_add_listener = Mock()
     coordinator.calculate_days.side_effect = _calculate_days_side_effect
     coordinator.options = {}  # Disable AI by default
+
+    # Add missing dependencies for refactored sensor
+    coordinator.add_event = MagicMock()
+    coordinator.notification_manager = MagicMock(spec=NotificationManager)
+    coordinator.strain_library = None
+
     return coordinator
 
 
@@ -136,6 +142,35 @@ def mock_coordinator(mock_growspace):
 def env_config(mock_growspace):
     """Fixture for a sample environment configuration."""
     return mock_growspace.environment_config
+
+
+def create_test_sensor(
+    coordinator: MagicMock,
+    growspace_id: str,
+    sensor_type: str,
+    strategy_class: type,
+    env_config: EnvironmentConfig | None = None,
+) -> BayesianEnvironmentSensor:
+    """Helper to create a BayesianEnvironmentSensor for testing with all dependencies."""
+    if env_config is None:
+        env_config = coordinator.growspaces[growspace_id].environment_config
+
+    description = next(d for d in SENSOR_TYPES if d.sensor_type == sensor_type)
+
+    return BayesianEnvironmentSensor(
+        coordinator=coordinator,
+        growspace_id=growspace_id,
+        env_config=env_config,
+        description=description,
+        strategy_class=strategy_class,
+        # Inject dependencies
+        get_growspace=lambda gid: coordinator.growspaces.get(gid),
+        get_plants=coordinator.get_growspace_plants,
+        add_event=coordinator.add_event,
+        notification_manager=coordinator.notification_manager,
+        strain_library=coordinator.strain_library,
+        options=coordinator.options,
+    )
 
 
 def set_sensor_state(hass: HomeAssistant, entity_id, state, attributes=None):
@@ -223,14 +258,10 @@ async def test_async_setup_entry_no_env_config(
 
 def test_get_growth_stage_info(mock_coordinator) -> None:
     """Test _get_growth_stage_info calculates days correctly."""
-    description = next(
-        d for d in SENSOR_TYPES if d.sensor_type == GrowspaceSensorType.STRESS
-    )
-    sensor = BayesianEnvironmentSensor(
+    sensor = create_test_sensor(
         mock_coordinator,
         "gs1",
-        mock_coordinator.growspaces["gs1"].environment_config,
-        description,
+        GrowspaceSensorType.STRESS,
         StressEvaluatorStrategy,
     )
     # _days_since is a static method, not an attribute - no need to mock it
@@ -248,15 +279,12 @@ async def test_notification_sending(
 
     mock_recorder.return_value.async_add_executor_job = AsyncMock(return_value={})
     # Corrected instantiation
-    description = next(
-        d for d in SENSOR_TYPES if d.sensor_type == GrowspaceSensorType.STRESS
-    )
-    sensor = BayesianEnvironmentSensor(
+    sensor = create_test_sensor(
         mock_coordinator,
         "gs1",
-        env_config,
-        description,
+        GrowspaceSensorType.STRESS,
         StressEvaluatorStrategy,
+        env_config,
     )
     sensor.hass = hass
     sensor.entity_id = "binary_sensor.test_notification"
@@ -328,15 +356,12 @@ async def test_send_notification_anti_spam(
 ) -> None:
     """Test that notifications are not sent if within the cooldown period."""
 
-    description = next(
-        d for d in SENSOR_TYPES if d.sensor_type == GrowspaceSensorType.STRESS
-    )
-    sensor = BayesianEnvironmentSensor(
+    sensor = create_test_sensor(
         mock_coordinator,
         "gs1",
-        mock_coordinator.growspaces["gs1"].environment_config,
-        description,
+        GrowspaceSensorType.STRESS,
         StressEvaluatorStrategy,
+        mock_coordinator.growspaces["gs1"].environment_config,
     )
     sensor.hass = hass
     # Notification cooldown is handled by notification_manager, not the sensor
@@ -361,15 +386,12 @@ async def test_send_notification_no_target(
 
     mock_coordinator.growspaces["gs1"].notification_target = None
     # Corrected instantiation
-    description = next(
-        d for d in SENSOR_TYPES if d.sensor_type == GrowspaceSensorType.STRESS
-    )
-    sensor = BayesianEnvironmentSensor(
+    sensor = create_test_sensor(
         mock_coordinator,
         "gs1",
-        mock_coordinator.growspaces["gs1"].environment_config,
-        description,
+        GrowspaceSensorType.STRESS,
         StressEvaluatorStrategy,
+        mock_coordinator.growspaces["gs1"].environment_config,
     )
     sensor.hass = hass
 
@@ -387,15 +409,12 @@ async def test_stress_sensor_notification_on_state_change(
     """Test stress sensor sends notification when state changes to on."""
 
     # Corrected instantiation
-    description = next(
-        d for d in SENSOR_TYPES if d.sensor_type == GrowspaceSensorType.STRESS
-    )
-    sensor = BayesianEnvironmentSensor(
+    sensor = create_test_sensor(
         mock_coordinator,
         "gs1",
-        mock_coordinator.growspaces["gs1"].environment_config,
-        description,
+        GrowspaceSensorType.STRESS,
         StressEvaluatorStrategy,
+        mock_coordinator.growspaces["gs1"].environment_config,
     )
     sensor.hass = hass
     sensor._probability = 0.1  # Start in OFF state (threshold is 0.7)
@@ -430,15 +449,12 @@ async def test_optimal_conditions_notification_on_state_change(
     """Test optimal sensor sends notification when state changes to off."""
 
     # Corrected instantiation
-    description = next(
-        d for d in SENSOR_TYPES if d.sensor_type == GrowspaceSensorType.OPTIMAL
-    )
-    sensor = BayesianEnvironmentSensor(
+    sensor = create_test_sensor(
         mock_coordinator,
         "gs1",
-        mock_coordinator.growspaces["gs1"].environment_config,
-        description,
+        GrowspaceSensorType.OPTIMAL,
         OptimalConditionsEvaluatorStrategy,
+        mock_coordinator.growspaces["gs1"].environment_config,
     )
     sensor.hass = hass
     sensor._probability = 0.9  # Start in ON state (threshold is 0.8)
@@ -465,15 +481,12 @@ def testgenerate_notification_message_truncation(
 ) -> None:
     """Test that the notification message is correctly truncated."""
     # Corrected instantiation
-    description = next(
-        d for d in SENSOR_TYPES if d.sensor_type == GrowspaceSensorType.STRESS
-    )
-    sensor = BayesianEnvironmentSensor(
+    sensor = create_test_sensor(
         mock_coordinator,
         "gs1",
-        mock_coordinator.growspaces["gs1"].environment_config,
-        description,
+        GrowspaceSensorType.STRESS,
         StressEvaluatorStrategy,
+        mock_coordinator.growspaces["gs1"].environment_config,
     )
     # Use real NotificationManager to test truncation logic
     sensor.notification_manager = NotificationManager(hass, mock_coordinator)
@@ -497,15 +510,12 @@ def test_stress_sensor_notification_returns_none_when_off(
     mock_coordinator, env_config
 ) -> None:
     """Test that the stress sensor does not generate a notification when turning off."""
-    description = next(
-        d for d in SENSOR_TYPES if d.sensor_type == GrowspaceSensorType.STRESS
-    )
-    sensor = BayesianEnvironmentSensor(
+    sensor = create_test_sensor(
         mock_coordinator,
         "gs1",
-        env_config,
-        description,
+        GrowspaceSensorType.STRESS,
         StressEvaluatorStrategy,
+        env_config,
     )
     notification = sensor.get_notification_title_message(new_state_on=False)
     assert notification is None
@@ -515,15 +525,12 @@ def test_mold_risk_sensor_notification_returns_none_when_off(
     mock_coordinator, env_config
 ) -> None:
     """Test that the mold risk sensor does not generate a notification when turning off."""
-    description = next(
-        d for d in SENSOR_TYPES if d.sensor_type == GrowspaceSensorType.MOLD
-    )
-    sensor = BayesianEnvironmentSensor(
+    sensor = create_test_sensor(
         mock_coordinator,
         "gs1",
-        env_config,
-        description,
+        GrowspaceSensorType.MOLD,
         MoldRiskEvaluatorStrategy,
+        env_config,
     )
     notification = sensor.get_notification_title_message(new_state_on=False)
     assert notification is None
@@ -533,15 +540,12 @@ def test_optimal_conditions_notification_returns_none_when_on(
     mock_coordinator, env_config
 ) -> None:
     """Test that the optimal conditions sensor does not generate a notification when turning on."""
-    description = next(
-        d for d in SENSOR_TYPES if d.sensor_type == GrowspaceSensorType.OPTIMAL
-    )
-    sensor = BayesianEnvironmentSensor(
+    sensor = create_test_sensor(
         mock_coordinator,
         "gs1",
-        env_config,
-        description,
+        GrowspaceSensorType.OPTIMAL,
         OptimalConditionsEvaluatorStrategy,
+        env_config,
     )
     notification = sensor.get_notification_title_message(new_state_on=True)
     assert notification is None
@@ -551,15 +555,12 @@ def test_mold_risk_sensor_notification_returns_tuple_when_on_and_growspace_exist
     mock_coordinator, env_config
 ) -> None:
     """Test that the mold risk sensor generates a notification when turning on and growspace exists."""
-    description = next(
-        d for d in SENSOR_TYPES if d.sensor_type == GrowspaceSensorType.MOLD
-    )
-    sensor = BayesianEnvironmentSensor(
+    sensor = create_test_sensor(
         mock_coordinator,
         "gs1",
-        env_config,
-        description,
+        GrowspaceSensorType.MOLD,
         MoldRiskEvaluatorStrategy,
+        env_config,
     )
     with (
         patch.object(
@@ -582,15 +583,12 @@ def test_mold_risk_sensor_notification_returns_none_when_on_and_growspace_does_n
     mock_coordinator, env_config
 ) -> None:
     """Test that the mold risk sensor does not generate a notification when turning on and growspace does not exist."""
-    description = next(
-        d for d in SENSOR_TYPES if d.sensor_type == GrowspaceSensorType.MOLD
-    )
-    sensor = BayesianEnvironmentSensor(
+    sensor = create_test_sensor(
         mock_coordinator,
         "gs1",
-        env_config,
-        description,
+        GrowspaceSensorType.MOLD,
         MoldRiskEvaluatorStrategy,
+        env_config,
     )
     with (
         patch.object(
@@ -635,15 +633,12 @@ async def test_bayesian_stress_sensor_granular(
     """Test BayesianStressSensor triggers for specific individual conditions."""
 
     # Corrected instantiation
-    description = next(
-        d for d in SENSOR_TYPES if d.sensor_type == GrowspaceSensorType.STRESS
-    )
-    sensor = BayesianEnvironmentSensor(
+    sensor = create_test_sensor(
         mock_coordinator,
         "gs1",
-        mock_coordinator.growspaces["gs1"].environment_config,
-        description,
+        GrowspaceSensorType.STRESS,
         StressEvaluatorStrategy,
+        mock_coordinator.growspaces["gs1"].environment_config,
     )
     sensor.hass = hass
     sensor.entity_id = "binary_sensor.test_stress_granular"
@@ -734,15 +729,12 @@ async def test_get_sensor_value_edge_cases(
     """Test the _get_sensor_value helper with various invalid states."""
 
     # Corrected instantiation
-    description = next(
-        d for d in SENSOR_TYPES if d.sensor_type == GrowspaceSensorType.STRESS
-    )
-    sensor = BayesianEnvironmentSensor(
+    sensor = create_test_sensor(
         mock_coordinator,
         "gs1",
-        env_config,
-        description,
+        GrowspaceSensorType.STRESS,
         StressEvaluatorStrategy,
+        env_config,
     )
     sensor.hass = hass
 
@@ -834,15 +826,12 @@ async def test_async_analyze_sensor_trend(
     )
 
     # Corrected instantiation
-    description = next(
-        d for d in SENSOR_TYPES if d.sensor_type == GrowspaceSensorType.STRESS
-    )
-    sensor = BayesianEnvironmentSensor(
+    sensor = create_test_sensor(
         mock_coordinator,
         "gs1",
-        env_config,
-        description,
+        GrowspaceSensorType.STRESS,
         StressEvaluatorStrategy,
+        env_config,
     )
     sensor.hass = hass
     sensor.platform = MagicMock()
@@ -923,11 +912,12 @@ async def test_falling_edge_event_creation(
     hass: HomeAssistant, mock_coordinator, env_config
 ) -> None:
     """Test that a falling edge creates an event."""
-    description = next(
-        d for d in SENSOR_TYPES if d.sensor_type == GrowspaceSensorType.STRESS
-    )
-    sensor = BayesianEnvironmentSensor(
-        mock_coordinator, "gs1", env_config, description, StressEvaluatorStrategy
+    sensor = create_test_sensor(
+        mock_coordinator,
+        "gs1",
+        GrowspaceSensorType.STRESS,
+        StressEvaluatorStrategy,
+        env_config,
     )
     sensor.hass = hass
     sensor.entity_id = "binary_sensor.test_stress_falling"  # Fix: Set entity ID
@@ -976,11 +966,12 @@ async def test_early_returns_missing_sensors(
     """Test early returns when required sensors are None."""
 
     # STRESS
-    desc_stress = next(
-        d for d in SENSOR_TYPES if d.sensor_type == GrowspaceSensorType.STRESS
-    )
-    sensor_stress = BayesianEnvironmentSensor(
-        mock_coordinator, "gs1", env_config, desc_stress, StressEvaluatorStrategy
+    sensor_stress = create_test_sensor(
+        mock_coordinator,
+        "gs1",
+        GrowspaceSensorType.STRESS,
+        StressEvaluatorStrategy,
+        env_config,
     )
     sensor_stress.hass = hass
     # Force _get_sensor_value to return None (so env_state.temp is None)
@@ -989,11 +980,12 @@ async def test_early_returns_missing_sensors(
         assert sensor_stress._probability == 0.0
 
     # MOLD
-    desc_mold = next(
-        d for d in SENSOR_TYPES if d.sensor_type == GrowspaceSensorType.MOLD
-    )
-    sensor_mold = BayesianEnvironmentSensor(
-        mock_coordinator, "gs1", env_config, desc_mold, MoldRiskEvaluatorStrategy
+    sensor_mold = create_test_sensor(
+        mock_coordinator,
+        "gs1",
+        GrowspaceSensorType.MOLD,
+        MoldRiskEvaluatorStrategy,
+        env_config,
     )
     sensor_mold.hass = hass
     with patch.object(sensor_mold, "_get_sensor_value", return_value=None):
@@ -1001,15 +993,12 @@ async def test_early_returns_missing_sensors(
         assert sensor_mold._probability == 0.0
 
     # OPTIMAL
-    desc_opt = next(
-        d for d in SENSOR_TYPES if d.sensor_type == GrowspaceSensorType.OPTIMAL
-    )
-    sensor_opt = BayesianEnvironmentSensor(
+    sensor_opt = create_test_sensor(
         mock_coordinator,
         "gs1",
-        env_config,
-        desc_opt,
+        GrowspaceSensorType.OPTIMAL,
         OptimalConditionsEvaluatorStrategy,
+        env_config,
     )
     sensor_opt.hass = hass
     with patch.object(sensor_opt, "_get_sensor_value", return_value=None):
@@ -1017,13 +1006,14 @@ async def test_early_returns_missing_sensors(
         assert sensor_opt._probability == 0.0
 
     # DRYING
-    desc_dry = next(
-        d for d in SENSOR_TYPES if d.sensor_type == GrowspaceSensorType.DRYING
-    )
     # Use drying tent config
     dry_config = mock_coordinator.growspaces["dry"].environment_config
-    sensor_dry = BayesianEnvironmentSensor(
-        mock_coordinator, "dry", dry_config, desc_dry, DryingEvaluatorStrategy
+    sensor_dry = create_test_sensor(
+        mock_coordinator,
+        "dry",
+        GrowspaceSensorType.DRYING,
+        DryingEvaluatorStrategy,
+        dry_config,
     )
     sensor_dry.hass = hass
     with patch.object(sensor_dry, "_get_sensor_value", return_value=None):
@@ -1031,12 +1021,13 @@ async def test_early_returns_missing_sensors(
         assert sensor_dry._probability == 0.0
 
     # CURING
-    desc_cure = next(
-        d for d in SENSOR_TYPES if d.sensor_type == GrowspaceSensorType.CURING
-    )
     cure_config = mock_coordinator.growspaces["cure"].environment_config
-    sensor_cure = BayesianEnvironmentSensor(
-        mock_coordinator, "cure", cure_config, desc_cure, CuringEvaluatorStrategy
+    sensor_cure = create_test_sensor(
+        mock_coordinator,
+        "cure",
+        GrowspaceSensorType.CURING,
+        CuringEvaluatorStrategy,
+        cure_config,
     )
     sensor_cure.hass = hass
     with patch.object(sensor_cure, "_get_sensor_value", return_value=None):
@@ -1049,11 +1040,12 @@ async def test_mold_risk_specifics(
     hass: HomeAssistant, mock_coordinator, env_config
 ) -> None:
     """Test mold risk specific branches like humidifier."""
-    desc_mold = next(
-        d for d in SENSOR_TYPES if d.sensor_type == GrowspaceSensorType.MOLD
-    )
-    sensor = BayesianEnvironmentSensor(
-        mock_coordinator, "gs1", env_config, desc_mold, MoldRiskEvaluatorStrategy
+    sensor = create_test_sensor(
+        mock_coordinator,
+        "gs1",
+        GrowspaceSensorType.MOLD,
+        MoldRiskEvaluatorStrategy,
+        env_config,
     )
     sensor.hass = hass
     sensor.entity_id = "binary_sensor.test_mold_risk"
@@ -1126,7 +1118,13 @@ async def test_light_cycle_verification_sensor_logic(
     """Test LightCycleVerificationSensor logic."""
 
     env_config.light_sensors = ["light.grow_light"]
-    sensor = LightCycleVerificationSensor(mock_coordinator, "gs1", env_config)
+    sensor = LightCycleVerificationSensor(
+        coordinator=mock_coordinator,
+        growspace_id="gs1",
+        env_config=env_config,
+        get_plants=mock_coordinator.get_growspace_plants,
+        calculate_days=mock_coordinator.calculate_days,
+    )
     sensor.hass = hass
     sensor.platform = MagicMock()
     sensor.entity_id = "binary_sensor.light_verification"
@@ -1188,11 +1186,12 @@ def test_determine_light_state_unavailable(
     hass: HomeAssistant, mock_coordinator, env_config
 ) -> None:
     """Test _determine_light_state when sensor is unavailable."""
-    description = next(
-        d for d in SENSOR_TYPES if d.sensor_type == GrowspaceSensorType.STRESS
-    )
-    sensor = BayesianEnvironmentSensor(
-        mock_coordinator, "gs1", env_config, description, StressEvaluatorStrategy
+    sensor = create_test_sensor(
+        mock_coordinator,
+        "gs1",
+        GrowspaceSensorType.STRESS,
+        StressEvaluatorStrategy,
+        env_config,
     )
     sensor.hass = hass
 
@@ -1255,13 +1254,12 @@ async def test_stress_sensor_stage_and_time_logic(
     """Test BayesianStressSensor with stage- and time-specific logic."""
 
     # Corrected instantiation
-    description = next(d for d in SENSOR_TYPES if d.sensor_type == "stress")
-    sensor = BayesianEnvironmentSensor(
+    sensor = create_test_sensor(
         mock_coordinator,
         "gs1",
-        env_config,
-        description,
+        GrowspaceSensorType.STRESS,
         StressEvaluatorStrategy,
+        env_config,
     )
     sensor.hass = hass
     sensor.entity_id = "binary_sensor.test_stress_complex"
@@ -1344,13 +1342,12 @@ async def test_mold_risk_sensor_triggers(
     """Test BayesianMoldRiskSensor with specific triggers."""
 
     # Corrected instantiation
-    description = next(d for d in SENSOR_TYPES if d.sensor_type == "mold")
-    sensor = BayesianEnvironmentSensor(
+    sensor = create_test_sensor(
         mock_coordinator,
         "gs1",
-        env_config,
-        description,
+        GrowspaceSensorType.MOLD,
         MoldRiskEvaluatorStrategy,
+        env_config,
     )
     sensor.hass = hass
     sensor.entity_id = "binary_sensor.test_mold_complex"
@@ -1425,13 +1422,12 @@ async def test_optimal_sensor_off_states(
     """Test BayesianOptimalConditionsSensor for non-optimal (off) states."""
 
     # Corrected instantiation
-    description = next(d for d in SENSOR_TYPES if d.sensor_type == "optimal")
-    sensor = BayesianEnvironmentSensor(
+    sensor = create_test_sensor(
         mock_coordinator,
         "gs1",
-        env_config,
-        description,
+        GrowspaceSensorType.OPTIMAL,
         OptimalConditionsEvaluatorStrategy,
+        env_config,
     )
     sensor.hass = hass
     sensor.entity_id = "binary_sensor.test_optimal_fail"
@@ -1525,13 +1521,12 @@ async def test_dry_cure_sensors_off_states(
     else:
         sensor_type = GrowspaceSensorType.STRESS
 
-    description = next(d for d in SENSOR_TYPES if d.sensor_type == sensor_type)
-    sensor = BayesianEnvironmentSensor(
+    sensor = create_test_sensor(
         mock_coordinator,
         growspace_id,
-        env_config,
-        description,
+        sensor_type,
         strategy_class,
+        env_config,
     )
     sensor.hass = hass
     sensor.entity_id = f"binary_sensor.test_{growspace_id}_fail"
@@ -1564,11 +1559,12 @@ async def test_curing_sensor_skips_if_not_cure_growspace(
 ) -> None:
     """Test that the Curing sensor skips probability calculation if growspace_id is not 'cure'."""
     # Create a Curing sensor for a non-cure growspace
-    description = next(
-        d for d in SENSOR_TYPES if d.sensor_type == GrowspaceSensorType.CURING
-    )
-    sensor = BayesianEnvironmentSensor(
-        mock_coordinator, "gs1", env_config, description, CuringEvaluatorStrategy
+    sensor = create_test_sensor(
+        mock_coordinator,
+        "gs1",
+        GrowspaceSensorType.CURING,
+        CuringEvaluatorStrategy,
+        env_config,
     )
     sensor.hass = MagicMock()
     sensor.entity_id = "binary_sensor.test_curing_non_cure"
@@ -1588,11 +1584,12 @@ async def test_drying_sensor_skips_if_not_dry_growspace(
 ) -> None:
     """Test that the Drying sensor skips probability calculation if growspace_id is not 'dry'."""
     # Create a Drying sensor for a non-dry growspace
-    description = next(
-        d for d in SENSOR_TYPES if d.sensor_type == GrowspaceSensorType.DRYING
-    )
-    sensor = BayesianEnvironmentSensor(
-        mock_coordinator, "gs1", env_config, description, DryingEvaluatorStrategy
+    sensor = create_test_sensor(
+        mock_coordinator,
+        "gs1",
+        GrowspaceSensorType.DRYING,
+        DryingEvaluatorStrategy,
+        env_config,
     )
     sensor.hass = MagicMock()
     sensor.entity_id = "binary_sensor.test_drying_non_dry"
@@ -1610,7 +1607,13 @@ def test_light_cycle_verification_sensor_is_on_property(
     mock_coordinator, env_config
 ) -> None:
     """Test the is_on property of LightCycleVerificationSensor."""
-    sensor = LightCycleVerificationSensor(mock_coordinator, "gs1", env_config)
+    sensor = LightCycleVerificationSensor(
+        coordinator=mock_coordinator,
+        growspace_id="gs1",
+        env_config=env_config,
+        get_plants=mock_coordinator.get_growspace_plants,
+        calculate_days=mock_coordinator.calculate_days,
+    )
     sensor._is_correct = True
     assert sensor.is_on is True
     sensor._is_correct = False
@@ -1621,7 +1624,13 @@ def test_light_cycle_verification_sensor_extra_state_attributes_veg_stage(
     mock_coordinator, env_config
 ) -> None:
     """Test extra_state_attributes for LightCycleVerificationSensor in veg stage."""
-    sensor = LightCycleVerificationSensor(mock_coordinator, "gs1", env_config)
+    sensor = LightCycleVerificationSensor(
+        coordinator=mock_coordinator,
+        growspace_id="gs1",
+        env_config=env_config,
+        get_plants=mock_coordinator.get_growspace_plants,
+        calculate_days=mock_coordinator.calculate_days,
+    )
     sensor.light_entity_id = "light.test_light"
     sensor._time_in_current_state = timedelta(hours=10)
 
@@ -1640,7 +1649,13 @@ def test_light_cycle_verification_sensor_extra_state_attributes_flower_stage(
     mock_coordinator, env_config
 ) -> None:
     """Test extra_state_attributes for LightCycleVerificationSensor in flower stage."""
-    sensor = LightCycleVerificationSensor(mock_coordinator, "gs1", env_config)
+    sensor = LightCycleVerificationSensor(
+        coordinator=mock_coordinator,
+        growspace_id="gs1",
+        env_config=env_config,
+        get_plants=mock_coordinator.get_growspace_plants,
+        calculate_days=mock_coordinator.calculate_days,
+    )
     sensor.light_entity_id = "light.test_light"
     sensor._time_in_current_state = timedelta(hours=8)
 
@@ -1660,7 +1675,13 @@ async def test_light_cycle_verification_sensor_async_update_no_light_entity(
     hass: HomeAssistant, mock_coordinator, env_config
 ) -> None:
     """Test async_update when no light entity is configured."""
-    sensor = LightCycleVerificationSensor(mock_coordinator, "gs1", env_config)
+    sensor = LightCycleVerificationSensor(
+        coordinator=mock_coordinator,
+        growspace_id="gs1",
+        env_config=env_config,
+        get_plants=mock_coordinator.get_growspace_plants,
+        calculate_days=mock_coordinator.calculate_days,
+    )
     sensor.hass = hass
     sensor.light_entity_id = None
     with patch.object(
@@ -1676,7 +1697,13 @@ async def test_light_cycle_verification_sensor_async_update_light_state_unavaila
     hass: HomeAssistant, mock_coordinator, env_config
 ) -> None:
     """Test async_update when the light sensor state is unavailable."""
-    sensor = LightCycleVerificationSensor(mock_coordinator, "gs1", env_config)
+    sensor = LightCycleVerificationSensor(
+        coordinator=mock_coordinator,
+        growspace_id="gs1",
+        env_config=env_config,
+        get_plants=mock_coordinator.get_growspace_plants,
+        calculate_days=mock_coordinator.calculate_days,
+    )
     sensor.hass = hass
     sensor.light_entity_id = "light.test_light"
     hass.states.async_set("light.test_light", STATE_UNAVAILABLE)
@@ -1714,7 +1741,13 @@ async def test_light_cycle_verification_sensor_async_update(
     expected_is_correct,
 ) -> None:
     """Test the async_update method of LightCycleVerificationSensor."""
-    sensor = LightCycleVerificationSensor(mock_coordinator, "gs1", env_config)
+    sensor = LightCycleVerificationSensor(
+        coordinator=mock_coordinator,
+        growspace_id="gs1",
+        env_config=env_config,
+        get_plants=mock_coordinator.get_growspace_plants,
+        calculate_days=mock_coordinator.calculate_days,
+    )
     sensor.hass = hass
     sensor.light_entity_id = "light.test_light"
 
@@ -1762,7 +1795,13 @@ def test_light_cycle_get_growth_stage_info_scenarios(
     mock_coordinator, env_config, plants, expected_veg, expected_flower
 ) -> None:
     """Test _get_growth_stage_info with different plant scenarios."""
-    sensor = LightCycleVerificationSensor(mock_coordinator, "gs1", env_config)
+    sensor = LightCycleVerificationSensor(
+        coordinator=mock_coordinator,
+        growspace_id="gs1",
+        env_config=env_config,
+        get_plants=mock_coordinator.get_growspace_plants,
+        calculate_days=mock_coordinator.calculate_days,
+    )
     mock_coordinator.get_growspace_plants.return_value = plants
 
     # Mock calculate_days to match the frozen date of 2026-01-12
@@ -1788,7 +1827,13 @@ async def test_light_cycle_async_added_to_hass_with_light_entity(
     mock_track_state_change, mock_coordinator, env_config
 ) -> None:
     """Test async_added_to_hass with a light entity."""
-    sensor = LightCycleVerificationSensor(mock_coordinator, "gs1", env_config)
+    sensor = LightCycleVerificationSensor(
+        coordinator=mock_coordinator,
+        growspace_id="gs1",
+        env_config=env_config,
+        get_plants=mock_coordinator.get_growspace_plants,
+        calculate_days=mock_coordinator.calculate_days,
+    )
     sensor.hass = MagicMock()
     # async_on_remove and async_update are methods, use Mock() not assignment
     with (
@@ -1816,7 +1861,13 @@ async def test_light_cycle_async_added_to_hass_without_light_entity(
 ) -> None:
     """Test async_added_to_hass without a light entity."""
     env_config.light_sensors = []
-    sensor = LightCycleVerificationSensor(mock_coordinator, "gs1", env_config)
+    sensor = LightCycleVerificationSensor(
+        coordinator=mock_coordinator,
+        growspace_id="gs1",
+        env_config=env_config,
+        get_plants=mock_coordinator.get_growspace_plants,
+        calculate_days=mock_coordinator.calculate_days,
+    )
     sensor.hass = MagicMock()
     # async_on_remove and async_update are methods, use Mock() not assignment
     with (
@@ -1836,7 +1887,13 @@ async def test_light_cycle_callbacks(
     mock_coordinator, env_config, hass: HomeAssistant
 ) -> None:
     """Test the callbacks for coordinator and light sensor changes."""
-    sensor = LightCycleVerificationSensor(mock_coordinator, "gs1", env_config)
+    sensor = LightCycleVerificationSensor(
+        coordinator=mock_coordinator,
+        growspace_id="gs1",
+        env_config=env_config,
+        get_plants=mock_coordinator.get_growspace_plants,
+        calculate_days=mock_coordinator.calculate_days,
+    )
     sensor.hass = hass
     sensor.entity_id = "binary_sensor.light_cycle"
     sensor.platform = MagicMock()
@@ -1906,6 +1963,17 @@ class TestBayesianEnvironmentSensor:
                 (0.7, "Reason C"),
             ]
             sensor._event_start_time = None  # Add missing attribute
+            sensor._event_max_prob = 0.0
+
+            # Add missing injected dependencies
+            sensor._get_growspace = lambda gid: sensor.coordinator.growspaces.get(gid)
+            sensor._get_plants = lambda gid: sensor.coordinator.get_growspace_plants(
+                gid
+            )
+            sensor._add_event = lambda gid, evt: sensor.coordinator.add_event(gid, evt)
+            sensor._strain_library = None
+            sensor._options = {}
+
             sensor.strategy = MagicMock()  # Mock strategy
             sensor.strategy.async_evaluate = AsyncMock(return_value=([], []))
             # Notification state is handled by notification_manager, not sensor attributes
@@ -2241,20 +2309,18 @@ class TestBayesianEnvironmentSensor:
 
 
 @pytest.mark.asyncio
-@pytest.mark.asyncio
 async def test_light_state_cooldown_logic(
     hass: HomeAssistant, mock_coordinator, env_config
 ) -> None:
     """Test that light state changes trigger notification cooldown."""
 
     # Setup sensor
-    description = next(d for d in SENSOR_TYPES if d.sensor_type == "stress")
-    sensor = BayesianEnvironmentSensor(
+    sensor = create_test_sensor(
         mock_coordinator,
         "gs1",
-        env_config,
-        description,
+        GrowspaceSensorType.STRESS,
         StressEvaluatorStrategy,
+        env_config,
     )
     sensor.hass = hass
     sensor.entity_id = "binary_sensor.test_cooldown"
@@ -2301,13 +2367,12 @@ async def test_dehumidifier_state_detection(
     # Add dehumidifier entity to env_config
     env_config.dehumidifier_entities = ["switch.dehumidifier"]
 
-    description = next(d for d in SENSOR_TYPES if d.sensor_type == "stress")
-    sensor = BayesianEnvironmentSensor(
+    sensor = create_test_sensor(
         mock_coordinator,
         "gs1",
-        env_config,
-        description,
+        GrowspaceSensorType.STRESS,
         StressEvaluatorStrategy,
+        env_config,
     )
     sensor.hass = hass
 
@@ -2348,13 +2413,12 @@ async def test_active_desiccation_low_humidity(
     """Test Active Desiccation detection when dehumidifier is on with low humidity."""
     env_config.dehumidifier_entities = ["switch.dehumidifier"]
 
-    description = next(d for d in SENSOR_TYPES if d.sensor_type == "stress")
-    sensor = BayesianEnvironmentSensor(
+    sensor = create_test_sensor(
         mock_coordinator,
         "gs1",
-        env_config,
-        description,
+        GrowspaceSensorType.STRESS,
         StressEvaluatorStrategy,
+        env_config,
     )
     sensor.hass = hass
     sensor.entity_id = "binary_sensor.test_desiccation"
@@ -2390,13 +2454,12 @@ async def test_active_desiccation_high_vpd(
     """Test Active Desiccation detection when dehumidifier is on with high VPD."""
     env_config.dehumidifier_entities = ["switch.dehumidifier"]
 
-    description = next(d for d in SENSOR_TYPES if d.sensor_type == "stress")
-    sensor = BayesianEnvironmentSensor(
+    sensor = create_test_sensor(
         mock_coordinator,
         "gs1",
-        env_config,
-        description,
+        GrowspaceSensorType.STRESS,
         StressEvaluatorStrategy,
+        env_config,
     )
     sensor.hass = hass
     sensor.entity_id = "binary_sensor.test_desiccation_vpd"
@@ -2439,13 +2502,12 @@ async def test_active_saturation_veg_stage(
         )
     }
 
-    description = next(d for d in SENSOR_TYPES if d.sensor_type == "stress")
-    sensor = BayesianEnvironmentSensor(
+    sensor = create_test_sensor(
         mock_coordinator,
         "gs1",
-        env_config,
-        description,
+        GrowspaceSensorType.STRESS,
         StressEvaluatorStrategy,
+        env_config,
     )
     sensor.hass = hass
     sensor.entity_id = "binary_sensor.test_saturation_veg"
@@ -2489,13 +2551,12 @@ async def test_active_saturation_flower_stage(
         )
     }
 
-    description = next(d for d in SENSOR_TYPES if d.sensor_type == "stress")
-    sensor = BayesianEnvironmentSensor(
+    sensor = create_test_sensor(
         mock_coordinator,
         "gs1",
-        env_config,
-        description,
+        GrowspaceSensorType.STRESS,
         StressEvaluatorStrategy,
+        env_config,
     )
     sensor.hass = hass
     sensor.entity_id = "binary_sensor.test_saturation_flower"
@@ -2531,13 +2592,12 @@ async def test_no_desiccation_when_conditions_normal(
     """Test that Active Desiccation is NOT triggered when conditions are normal."""
     env_config.dehumidifier_entities = ["switch.dehumidifier"]
 
-    description = next(d for d in SENSOR_TYPES if d.sensor_type == "stress")
-    sensor = BayesianEnvironmentSensor(
+    sensor = create_test_sensor(
         mock_coordinator,
         "gs1",
-        env_config,
-        description,
+        GrowspaceSensorType.STRESS,
         StressEvaluatorStrategy,
+        env_config,
     )
     sensor.hass = hass
     sensor.entity_id = "binary_sensor.test_no_desiccation"
@@ -2585,13 +2645,12 @@ async def test_soil_moisture_stress(
     expected_reason,
 ) -> None:
     """Test soil moisture stress evaluation."""
-    description = next(d for d in SENSOR_TYPES if d.sensor_type == "stress")
-    sensor = BayesianEnvironmentSensor(
+    sensor = create_test_sensor(
         mock_coordinator,
         "gs1",
-        env_config,
-        description,
+        GrowspaceSensorType.STRESS,
         StressEvaluatorStrategy,
+        env_config,
     )
     sensor.hass = hass
     sensor.entity_id = "binary_sensor.test_soil_moisture"

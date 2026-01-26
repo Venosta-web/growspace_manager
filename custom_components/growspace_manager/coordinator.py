@@ -17,6 +17,7 @@ from .cache import CacheManager
 from .const import (
     ATTR_DRAIN_TIMES,
     ATTR_IRRIGATION_TIMES,
+    COORDINATOR_UPDATE_INTERVAL_MINUTES,
     DOMAIN,
     SPECIAL_GROWSPACES,
     PlantStage,
@@ -307,7 +308,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             hass,
             _LOGGER,
             name="Growspace Manager Coordinator",
-            update_interval=timedelta(minutes=15),
+            update_interval=timedelta(minutes=COORDINATOR_UPDATE_INTERVAL_MINUTES),
             config_entry=entry,
         )
 

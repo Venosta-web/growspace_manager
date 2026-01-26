@@ -17,6 +17,7 @@ from homeassistant.helpers.typing import ConfigType
 from . import service_registration
 from .const import DOMAIN, PLATFORMS, STORAGE_KEY, STORAGE_VERSION
 from .coordinator import GrowspaceCoordinator
+from .coordinator_builder import CoordinatorBuilder
 from .intent import async_setup_intents
 from .strain_library import StrainLibrary
 from .views import StrainLibraryImageView, StrainLibraryUploadView
@@ -85,10 +86,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: GrowspaceConfigEntry) ->
     # Retrieve global Strain Library
     strain_library_instance = hass.data[DOMAIN]["strain_library"]
 
-    coordinator = GrowspaceCoordinator(
-        hass,
-        entry,
-        data,
+    # Use builder to create coordinator with all dependencies
+    builder = CoordinatorBuilder(hass, entry)
+    coordinator = builder.build(
+        data=data,
         options=dict(entry.options),
         strain_library=strain_library_instance,
     )
