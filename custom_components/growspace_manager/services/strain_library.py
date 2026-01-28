@@ -368,8 +368,12 @@ async def handle_print_label(
         raise HomeAssistantError(f"Plant {plant_id} not found")
 
     strain_name = plant.genetics.strain_name
-    phenotype_name = plant.genetics.phenotype_name or "default"
+    if not strain_name:
+        raise HomeAssistantError(f"Plant {plant_id} has no strain name")
 
+    phenotype_name = plant.genetics.phenotype_name or "-"
+    if phenotype_name == "default":
+        phenotype_name = "-"
     # Ensure library is loaded to get meta
     await strain_library.load()
     library_data = strain_library.get_all()
@@ -387,11 +391,22 @@ async def handle_print_label(
     payload.append(
         {
             "type": "text",
-            "value": strain_name,
+            "value": strain_name.upper(),  # Caps look more professional for headers
             "x": 15,
             "y": 15,
-            "size": 50,
+            "size": 55,
             "font": "ppb.ttf",
+        }
+    )
+    # A thin rectangle acting as a separator
+    payload.append(
+        {
+            "type": "rectangle",
+            "x_start": 15,
+            "x_end": 270,
+            "y_start": 75,
+            "y_end": 78,
+            "fill": "black",
         }
     )
     multiline_value = f"{phenotype_name}\n{breeder}\n{lineage}"
@@ -401,29 +416,40 @@ async def handle_print_label(
         {
             "type": "new_multiline",
             "x": 15,
-            "y": 60,
-            "size": 100,  # Start large; 'fit: true' will scale it down
-            "width": 280,  # Constrain width so it doesn't hit the logo
-            "height": 150,  # Total vertical area for the 3 lines
+            "y": 85,
+            "size": 80,
+            "width": 260,
+            "height": 140,
             "fit": True,
             "font": "rbm.ttf",
             "value": multiline_value,
         }
     )
 
-    # Breeder Logo if available - move it to the right
+    # 4. Breeder Logo with a subtle "frame" if it exists
     if breeder_logo:
+        # Optional: Add a small rectangle border around the logo area
+        payload.append(
+            {
+                "type": "rectangle",
+                "x_start": 285,
+                "x_end": 390,
+                "y_start": 15,
+                "y_end": 120,
+                "fill": None,  # Outline only
+                "width": 1,  # Border thickness
+            }
+        )
         payload.append(
             {
                 "type": "dlimg",
                 "url": breeder_logo,
-                "x": 285,
-                "y": 15,
-                "xsize": 100,
-                "ysize": 100,
+                "x": 290,
+                "y": 20,
+                "xsize": 95,
+                "ysize": 95,
             }
         )
-
     # Call Niimbot service
     service_data = {
         "width": 400,

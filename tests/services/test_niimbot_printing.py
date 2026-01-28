@@ -121,7 +121,7 @@ async def test_handle_print_label(mock_hass, mock_coordinator, strain_library) -
     payload = service_data["payload"]
     # Check for core fields in payload
     values = [item["value"] for item in payload if "value" in item]
-    assert "Blue Dream" in values
+    assert "BLUE DREAM" in values
     assert "Berry\nHumboldt\n-" in values
 
     # Check for breeder logo
