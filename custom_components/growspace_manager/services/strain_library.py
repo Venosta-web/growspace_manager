@@ -376,8 +376,8 @@ async def handle_print_label(
     strain_meta = library_data.get(strain_name, {}).get("meta", {})
 
     # Breeder
-    breeder = strain_meta.get("breeder", "Unknown")
-    lineage = strain_meta.get("lineage", "N/A")
+    breeder = strain_meta.get("breeder", "-")
+    lineage = strain_meta.get("lineage", "-")
     breeder_logo = strain_meta.get("breeder_logo")
 
     # Construct Niimbot payload
@@ -388,32 +388,28 @@ async def handle_print_label(
         {
             "type": "text",
             "value": strain_name,
-            "x": 10,
-            "y": 10,
-            "size": 40,
+            "x": 15,
+            "y": 15,
+            "size": 50,
             "font": "ppb.ttf",
         }
     )
+    multiline_value = f"{phenotype_name}\n{breeder}\n{lineage}"
 
-    # Body fields
-    fields = [
-        ("STRAIN", strain_name),
-        ("PHENO", phenotype_name),
-        ("BREEDER", breeder),
-        ("LINEAGE", lineage),
-    ]
-
-    for i, (label, value) in enumerate(fields):
-        y_pos = 60 + (i * 30)
-        payload.append(
-            {
-                "type": "text",
-                "value": f"{label}: {value}",
-                "x": 10,
-                "y": y_pos,
-                "size": 25,
-            }
-        )
+    # Multiline text with auto-fit
+    payload.append(
+        {
+            "type": "new_multiline",
+            "x": 15,
+            "y": 60,
+            "size": 100,  # Start large; 'fit: true' will scale it down
+            "width": 280,  # Constrain width so it doesn't hit the logo
+            "height": 150,  # Total vertical area for the 3 lines
+            "fit": True,
+            "font": "rbm.ttf",
+            "value": multiline_value,
+        }
+    )
 
     # Breeder Logo if available - move it to the right
     if breeder_logo:
@@ -421,8 +417,8 @@ async def handle_print_label(
             {
                 "type": "dlimg",
                 "url": breeder_logo,
-                "x": 350,
-                "y": 10,
+                "x": 285,
+                "y": 15,
                 "xsize": 100,
                 "ysize": 100,
             }
@@ -430,6 +426,9 @@ async def handle_print_label(
 
     # Call Niimbot service
     service_data = {
+        "width": 400,
+        "height": 240,
+        "rotate": 0,
         "payload": payload,
         "preview": preview,
     }
