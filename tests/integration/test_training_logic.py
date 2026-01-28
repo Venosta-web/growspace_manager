@@ -177,3 +177,33 @@ async def test_handle_log_training_event_service(
             notes="Service call test",
             plant_ids=None,
         )
+
+
+@pytest.mark.asyncio
+async def test_log_training_empty_growspace(
+    mock_coordinator: GrowspaceCoordinator,
+) -> None:
+    """Test logging training for a growspace with no plants."""
+    # Create a growspace with no plants (gs_none)
+    await mock_coordinator.async_log_training_event(
+        growspace_id="empty_gs", technique="testing"
+    )
+
+    # Check event creation
+    mock_coordinator.add_event.assert_called_once()
+    args, _ = mock_coordinator.add_event.call_args
+    gid, _ = args
+    assert gid == "empty_gs"
+
+
+@pytest.mark.asyncio
+async def test_log_training_missing_params_error(
+    mock_coordinator: GrowspaceCoordinator,
+) -> None:
+    """Test that ValueError is raised when no targets are provided."""
+    with pytest.raises(
+        ValueError, match="Either growspace_id or plant_ids must be provided"
+    ):
+        await mock_coordinator.async_log_training_event(
+            growspace_id=None, technique="testing", plant_ids=None
+        )

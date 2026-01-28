@@ -408,9 +408,9 @@ async def handle_print_label(
     strain_meta = library_data.get(strain_name, {}).get("meta", {})
 
     # Use provided values or fall back to library meta
-    breeder = breeder or strain_meta.get("breeder", "-")
-    lineage = lineage or strain_meta.get("lineage", "-")
-    breeder_logo = breeder_logo or strain_meta.get("breeder_logo")
+    breeder = breeder or strain_meta.get(ATTR_BREEDER, "-")
+    lineage = lineage or strain_meta.get(ATTR_LINEAGE, "-")
+    breeder_logo = breeder_logo or strain_meta.get(ATTR_BREEDER_LOGO)
 
     # Construct Niimbot payload based on the "Perfect Label" mockup
     payload = []
@@ -420,7 +420,7 @@ async def handle_print_label(
         {
             "type": "new_multiline",
             "value": strain_name.upper(),
-            "x": 20,
+            "x": 0,
             "y": 20,
             "x_end": 260,
             "size": 50,
@@ -435,7 +435,7 @@ async def handle_print_label(
     payload.append(
         {
             "type": "rectangle",
-            "x_start": 20,
+            "x_start": 0,
             "x_end": 260,
             "y_start": 85,
             "y_end": 88,
@@ -448,7 +448,7 @@ async def handle_print_label(
     payload.append(
         {
             "type": "new_multiline",
-            "x": 20,
+            "x": 0,
             "y": 100,
             "x_end": 260,
             "size": 40,
@@ -468,8 +468,7 @@ async def handle_print_label(
                 "url": breeder_logo,
                 "x": 290,
                 "y": 20,
-                "xsize": 100,
-                "ysize": 100,
+                "size": 100,
             }
         )
 

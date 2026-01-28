@@ -106,7 +106,11 @@ async def test_handle_print_label(mock_hass, mock_coordinator, strain_library) -
     call = MagicMock()
     call.data = {"plant_id": plant_id, "device_id": "printer_1", "preview": True}
 
-    await handle_print_label(mock_hass, mock_coordinator, strain_library, call)
+    with patch(
+        "custom_components.growspace_manager.services.strain_library.get_url",
+        return_value="http://homeassistant.local",
+    ):
+        await handle_print_label(mock_hass, mock_coordinator, strain_library, call)
 
     # Verify niimbot.print service call
     mock_hass.services.async_call.assert_awaited_once()
@@ -165,7 +169,13 @@ async def test_handle_print_label_service_error(
     call.data = {"plant_id": plant_id}
     # Mock service call to fail
     mock_hass.services.async_call.side_effect = Exception("Service error")
-    with pytest.raises(
-        HomeAssistantError, match="Failed to print Niimbot label: Service error"
+    with (
+        patch(
+            "custom_components.growspace_manager.services.strain_library.get_url",
+            return_value="http://homeassistant.local",
+        ),
+        pytest.raises(
+            HomeAssistantError, match="Failed to print Niimbot label: Service error"
+        ),
     ):
         await handle_print_label(mock_hass, mock_coordinator, strain_library, call)
