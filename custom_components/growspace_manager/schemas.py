@@ -291,6 +291,7 @@ PRINT_LABEL_SCHEMA = vol.Schema(
         vol.Optional("breeder_logo"): str,
         vol.Optional("device_id"): str,
         vol.Optional("preview", default=False): bool,
+        vol.Optional("base_url"): str,
     }
 )
 

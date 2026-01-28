@@ -81,3 +81,32 @@ async def test_handle_print_label_fix_verification(
         )
         assert qr_code_item is not None
         assert qr_code_item["data"] == "http://homeassistant.local/plant/plant_1"
+
+
+@pytest.mark.asyncio
+async def test_handle_print_label_with_base_url(
+    mock_hass, mock_coordinator, mock_strain_library, mock_call
+) -> None:
+    """Verify that handle_print_label uses base_url if provided."""
+    mock_call.data = {
+        "plant_id": "plant_1",
+        "base_url": "http://my-dashboard.local/lovelace/growspace",
+    }
+    mock_coordinator.plants = {"plant_1": MagicMock()}
+    mock_coordinator.plants["plant_1"].genetics.strain_name = "Test Strain"
+    mock_coordinator.plants["plant_1"].genetics.phenotype_name = "Pheno 1"
+
+    await handle_print_label(
+        mock_hass, mock_coordinator, mock_strain_library, mock_call
+    )
+
+    # Verify the payload contains the custom base_url
+    service_data = mock_hass.services.async_call.call_args.args[2]
+    payload = service_data["payload"]
+
+    qr_code_item = next((item for item in payload if item["type"] == "qrcode"), None)
+    assert qr_code_item is not None
+    assert (
+        qr_code_item["data"]
+        == "http://my-dashboard.local/lovelace/growspace?plantId=plant_1"
+    )
