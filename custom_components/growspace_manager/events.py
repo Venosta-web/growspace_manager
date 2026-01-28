@@ -60,12 +60,18 @@ def async_fire_growspace_event(
     hass: HomeAssistant, event_type: str, growspace: Growspace
 ) -> None:
     """Fire a growspace-related event."""
-    payload: GrowspaceEventPayload = {
+    data = {
         "growspace_id": growspace.id,
         "name": growspace.name,
         "device_id": growspace.device_id,
     }
-    hass.bus.async_fire(event_type, payload)
+
+    # If firing on the main update bus, use multiplexed format
+    if event_type == "growspace_manager_updated":
+        payload = {"event_type": event_type, "data": data}
+        hass.bus.async_fire("growspace_manager_updated", payload)
+    else:
+        hass.bus.async_fire(event_type, data)
 
 
 def async_fire_plant_event(
@@ -75,7 +81,7 @@ def async_fire_plant_event(
     changes: dict[str, Any] | None = None,
 ) -> None:
     """Fire a plant-related event."""
-    payload: PlantEventPayload = {
+    data: PlantEventPayload = {
         "plant_id": plant.plant_id,
         "growspace_id": plant.growspace_id,
         "strain": plant.strain,
@@ -84,9 +90,14 @@ def async_fire_plant_event(
     }
 
     if changes:
-        payload.update(changes)  # type: ignore[typeddict-item]
+        data.update(changes)  # type: ignore[typeddict-item]
 
-    hass.bus.async_fire(event_type, payload)
+    # If firing on the main update bus, use multiplexed format
+    if event_type == "growspace_manager_updated":
+        payload = {"event_type": event_type, "data": data}
+        hass.bus.async_fire("growspace_manager_updated", payload)
+    else:
+        hass.bus.async_fire(event_type, data)
 
 
 def async_fire_clones_taken_event(
@@ -96,10 +107,10 @@ def async_fire_clones_taken_event(
     target_growspace_id: str,
 ) -> None:
     """Fire the clones taken event."""
-    payload: ClonesTakenEventPayload = {
+    data: ClonesTakenEventPayload = {
         "mother_plant_id": mother_plant.plant_id,
         "num_clones": num_clones,
         "growspace_id": target_growspace_id,
         "device_id": mother_plant.device_id,
     }
-    hass.bus.async_fire(event_type=EVENT_CLONES_TAKEN, event_data=payload)
+    hass.bus.async_fire(EVENT_CLONES_TAKEN, data)

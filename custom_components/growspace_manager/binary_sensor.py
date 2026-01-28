@@ -8,6 +8,7 @@ cycle schedule.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 import logging
@@ -43,8 +44,17 @@ from .const import (
     PlantStage,
 )
 from .coordinator import GrowspaceCoordinator
-from .models import EnvironmentConfig, EnvironmentState, GrowspaceEvent, GrowspaceType
+from .models import (
+    EnvironmentConfig,
+    EnvironmentState,
+    Growspace,
+    GrowspaceEvent,
+    GrowspaceType,
+    Plant,
+)
+from .notification_manager import NotificationManager
 from .services.ai_assistant import GrowAssistant
+from .strain_library import StrainLibrary
 from .strategies.curing import CuringEvaluatorStrategy
 from .strategies.drying import DryingEvaluatorStrategy
 from .strategies.evaluator_strategy import BayesianEvaluatorStrategy
@@ -184,11 +194,18 @@ def _process_growspace_sensors(
                 strategy_class = _get_strategy_class(description.sensor_type)
                 new_entities.append(
                     BayesianEnvironmentSensor(
-                        coordinator,
-                        growspace_id,
-                        env_config,
-                        description,
-                        strategy_class,
+                        coordinator=coordinator,
+                        growspace_id=growspace_id,
+                        env_config=env_config,
+                        description=description,
+                        strategy_class=strategy_class,
+                        # Inject dependencies as callbacks
+                        get_growspace=lambda gid: coordinator.growspaces.get(gid),
+                        get_plants=coordinator.get_growspace_plants,
+                        add_event=coordinator.add_event,
+                        notification_manager=coordinator.notification_manager,
+                        strain_library=coordinator.strain_library,
+                        options=coordinator.options,
                     )
                 )
                 initialized_sensors.add(key)
@@ -198,7 +215,14 @@ def _process_growspace_sensors(
         key = f"{growspace_id}_light_verification"
         if key not in initialized_sensors:
             new_entities.append(
-                LightCycleVerificationSensor(coordinator, growspace_id, env_config)
+                LightCycleVerificationSensor(
+                    coordinator=coordinator,
+                    growspace_id=growspace_id,
+                    env_config=env_config,
+                    # Inject dependencies
+                    get_plants=coordinator.get_growspace_plants,
+                    calculate_days=coordinator.calculate_days,
+                )
             )
             initialized_sensors.add(key)
 
@@ -220,9 +244,9 @@ def _get_strategy_class(sensor_type: str) -> type[BayesianEvaluatorStrategy]:
 
 def _validate_env_config(config: EnvironmentConfig) -> bool:
     """Validate that the required environment sensor entities are configured."""
-    has_temp = bool(config.temperature_sensor)
-    has_humidity = bool(config.humidity_sensor)
-    has_vpd = bool(config.vpd_sensor)
+    has_temp = bool(config.temperature_sensor) or bool(config.temperature_sensors)
+    has_humidity = bool(config.humidity_sensor) or bool(config.humidity_sensors)
+    has_vpd = bool(config.vpd_sensor) or bool(config.vpd_sensors)
 
     # Valid if we have temp, humidity, and either a VPD sensor or ability to calculate it
     return has_temp and has_humidity and (has_vpd or (has_temp and has_humidity))
@@ -244,6 +268,12 @@ class BayesianEnvironmentSensor(
         env_config: EnvironmentConfig,
         description: GrowspaceBinarySensorDescription,
         strategy_class: type[BayesianEvaluatorStrategy],
+        get_growspace: Callable[[str], Growspace | None],
+        get_plants: Callable[[str], list[Plant]],
+        add_event: Callable[[str, GrowspaceEvent], None],
+        notification_manager: NotificationManager | None,
+        strain_library: StrainLibrary | None,
+        options: dict[str, Any],
     ) -> None:
         """Initialize the Bayesian environment sensor."""
         super().__init__(coordinator)
@@ -254,7 +284,17 @@ class BayesianEnvironmentSensor(
         self.strategy = strategy_class(self)
         self._attr_should_poll = False
 
-        growspace = coordinator.growspaces[growspace_id]
+        # Store injected dependencies
+        self._get_growspace = get_growspace
+        self._get_plants = get_plants
+        self._add_event = add_event
+        self._strain_library = strain_library
+        self._options = options
+
+        growspace = get_growspace(growspace_id)
+        if not growspace:
+            raise ValueError(f"Growspace {growspace_id} not found")
+
         self._attr_unique_id = f"{DOMAIN}_{growspace_id}_{description.sensor_type}"
 
         # Access bayesian_options from EnvironmentConfig object
@@ -285,8 +325,8 @@ class BayesianEnvironmentSensor(
         self._event_max_prob: float = 0.0
         self._last_light_state: bool | None = None
 
-        self.trend_analyzer = TrendAnalyzer(self.coordinator.hass)
-        if notification_manager := self.coordinator.notification_manager:
+        self.trend_analyzer = TrendAnalyzer(self.hass)
+        if notification_manager:
             self.notification_manager = notification_manager
 
     @property
@@ -300,13 +340,13 @@ class BayesianEnvironmentSensor(
         return self._reasons
 
     @property
-    @override
+    @override  # type: ignore[misc]
     def is_on(self) -> bool:
         """Return true if the sensor is on (probability > threshold)."""
         return self._probability >= self.threshold
 
     @property
-    @override
+    @override  # type: ignore[misc]
     def extra_state_attributes(self) -> dict[str, Any]:
         """Return the state attributes."""
         attrs = {
@@ -324,14 +364,20 @@ class BayesianEnvironmentSensor(
     def _get_base_environment_state(self) -> EnvironmentState:
         """Fetch sensor values and return a structured EnvironmentState object."""
         # Always fetch the latest config from the coordinator
-        growspace = self.coordinator.growspaces.get(self.growspace_id)
+        growspace = self._get_growspace(self.growspace_id)
         if growspace and growspace.environment_config:
             self.env_config = growspace.environment_config
 
-        # With strict typing, access attributes directly from dataclass
-        temp = self._get_sensor_value(self.env_config.temperature_sensor)
-        humidity = self._get_sensor_value(self.env_config.humidity_sensor)
-        vpd = self._get_sensor_value(self.env_config.vpd_sensor)
+        # Aggregate sensors with fallback to singular if needed
+        temp = self._get_aggregated_sensor_value(
+            self.env_config.temperature_sensors or [self.env_config.temperature_sensor]
+        )
+        humidity = self._get_aggregated_sensor_value(
+            self.env_config.humidity_sensors or [self.env_config.humidity_sensor]
+        )
+        vpd = self._get_aggregated_sensor_value(
+            self.env_config.vpd_sensors or [self.env_config.vpd_sensor]
+        )
 
         # Fallback: Calculate VPD if sensor is missing but Temp/Hum are available
         if vpd is None and temp is not None and humidity is not None:
@@ -456,6 +502,9 @@ class BayesianEnvironmentSensor(
         ]
 
         # Extend with multi-device lists
+        sensors.extend(c.temperature_sensors)
+        sensors.extend(c.humidity_sensors)
+        sensors.extend(c.vpd_sensors)
         sensors.extend(c.light_sensors)
         sensors.extend(c.circulation_fan_entities)
         sensors.extend(c.dehumidifier_entities)
@@ -504,6 +553,22 @@ class BayesianEnvironmentSensor(
         except (ValueError, TypeError):
             return None
 
+    def _get_aggregated_sensor_value(self, sensor_ids: list[str]) -> float | None:
+        """Get the average value from a list of sensor entity IDs."""
+        if not sensor_ids:
+            return None
+
+        values = []
+        for sensor_id in sensor_ids:
+            val = self._get_sensor_value(sensor_id)
+            if val is not None:
+                values.append(val)
+
+        if not values:
+            return None
+
+        return sum(values) / len(values)
+
     @staticmethod
     def _days_since(date_str: str) -> int:
         """Calculate the number of days since a given date string."""
@@ -511,7 +576,7 @@ class BayesianEnvironmentSensor(
 
     def _get_growth_stage_info(self) -> dict[str, int]:
         """Get the current growth stage duration for the growspace."""
-        growspace = self.coordinator.growspaces.get(self.growspace_id)
+        growspace = self._get_growspace(self.growspace_id)
         if growspace and growspace.growspace_type in (
             GrowspaceType.DRY,
             GrowspaceType.CURE,
@@ -523,7 +588,7 @@ class BayesianEnvironmentSensor(
                 "clone_days": 0,
             }
 
-        plants = self.coordinator.get_growspace_plants(self.growspace_id)
+        plants = self._get_plants(self.growspace_id)
 
         if not plants:
             return {
@@ -596,17 +661,16 @@ class BayesianEnvironmentSensor(
         try:
             # Check for AI Auto Alerts
             final_message = message
-            coordinator_options = getattr(self.coordinator, "options", {})
-            ai_alerts_enabled = coordinator_options.get(CONF_AI_AUTO_ALERTS, False)
+            ai_alerts_enabled = self._options.get(CONF_AI_AUTO_ALERTS, False)
 
             if (
                 ai_alerts_enabled
                 and self._probability >= self.threshold
-                and self.coordinator.strain_library
+                and self._strain_library
             ):
                 try:
                     assistant = GrowAssistant(
-                        self.hass, self.coordinator, self.coordinator.strain_library
+                        self.hass, self.coordinator, self._strain_library
                     )
                     ai_message = await assistant.generate_alert_message(
                         self.growspace_id,
@@ -709,8 +773,8 @@ class BayesianEnvironmentSensor(
                 reasons=[r[1] for r in sorted(self._reasons, reverse=True)[:5]],
             )
 
-            # Add to coordinator
-            self.coordinator.add_event(self.growspace_id, event)
+            # Add event via injected callback
+            self._add_event(self.growspace_id, event)
 
             # Reset event tracking
             self._event_start_time = None
@@ -809,11 +873,17 @@ class LightCycleVerificationSensor(
         coordinator: GrowspaceCoordinator,
         growspace_id: str,
         env_config: EnvironmentConfig,
+        get_plants: Callable[[str], list[Plant]],
+        calculate_days: Callable[[str], int],
     ) -> None:
         """Initialize."""
         super().__init__(coordinator)
         self.growspace_id = growspace_id
         self.env_config = env_config
+
+        # Store injected dependencies
+        self._get_plants = get_plants
+        self._calculate_days = calculate_days
 
         growspace = coordinator.growspaces.get(growspace_id)
         name = growspace.name if growspace else growspace_id
@@ -901,7 +971,7 @@ class LightCycleVerificationSensor(
 
     def _get_growth_stage_info(self) -> dict[str, int]:
         """Get the current growth stage duration for the growspace."""
-        plants = self.coordinator.get_growspace_plants(self.growspace_id)
+        plants = self._get_plants(self.growspace_id)
         if not plants:
             return {
                 "veg_days": 0,
@@ -912,7 +982,7 @@ class LightCycleVerificationSensor(
 
         max_veg = max(
             (
-                self.coordinator.calculate_days(p.veg_start)
+                self._calculate_days(p.veg_start)
                 for p in plants
                 if isinstance(p.veg_start, str)
             ),
@@ -920,7 +990,7 @@ class LightCycleVerificationSensor(
         )
         max_flower = max(
             (
-                self.coordinator.calculate_days(p.flower_start)
+                self._calculate_days(p.flower_start)
                 for p in plants
                 if p.flower_start
             ),

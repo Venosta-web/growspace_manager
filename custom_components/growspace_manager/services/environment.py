@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import fields
 import logging
 from typing import cast
 
@@ -27,7 +28,11 @@ from custom_components.growspace_manager.const import (
     CONF_VPD_SENSOR,
 )
 from custom_components.growspace_manager.coordinator import GrowspaceCoordinator
-from custom_components.growspace_manager.models import EnvironmentConfig
+from custom_components.growspace_manager.models import (
+    EnvironmentConfig,
+    IrrigationTank,
+    SensorGroup,
+)
 from homeassistant.core import HomeAssistant, ServiceCall
 from homeassistant.exceptions import ServiceValidationError
 
@@ -56,6 +61,34 @@ async def handle_configure_environment(
             return cast(list[str], [val] if isinstance(val, str) else val)
         return []
 
+    # Process Sensor Groups
+    sensor_groups_data = call.data.get("sensor_groups", [])
+    sensor_groups = []
+
+    valid_keys = {f.name for f in fields(SensorGroup)}
+
+    for g_data in sensor_groups_data:
+        try:
+            # Filter keys
+            filtered_data = {k: v for k, v in g_data.items() if k in valid_keys}
+            # simple dict to SensorGroup conversion
+            sensor_groups.append(SensorGroup.from_dict(filtered_data))
+        except (TypeError, ValueError, LookupError) as e:
+            _LOGGER.warning("Invalid sensor group data: %s (%s)", g_data, e)
+
+    # Process Irrigation Tanks
+    tanks_data = call.data.get("irrigation_tanks", [])
+    irrigation_tanks = []
+
+    tank_valid_keys = {f.name for f in fields(IrrigationTank)}
+
+    for t_data in tanks_data:
+        try:
+            filtered_tank = {k: v for k, v in t_data.items() if k in tank_valid_keys}
+            irrigation_tanks.append(IrrigationTank.from_dict(filtered_tank))
+        except (TypeError, ValueError, LookupError) as e:
+            _LOGGER.warning("Invalid irrigation tank data: %s (%s)", t_data, e)
+
     # Build environment config from service call
     env_config = EnvironmentConfig(
         temperature_sensor=call.data.get(CONF_TEMP_SENSOR),
@@ -76,6 +109,14 @@ async def handle_configure_environment(
         dehumidifier_thresholds=call.data.get(CONF_DEHUMIDIFIER_THRESHOLDS, {}),
         stress_threshold=call.data.get(CONF_STRESS_THRESHOLD, 0.70),
         mold_threshold=call.data.get(CONF_MOLD_THRESHOLD, 0.75),
+        veg_day_hours=call.data.get("veg_day_hours", 18),
+        flower_day_hours=call.data.get("flower_day_hours", 12),
+        minimum_source_air_temperature=call.data.get(
+            "minimum_source_air_temperature", 18.0
+        ),
+        sensor_groups=sensor_groups,
+        sensor_coordinates=call.data.get("sensor_coordinates", {}),
+        irrigation_tanks=irrigation_tanks,
     )
 
     # Store in growspace

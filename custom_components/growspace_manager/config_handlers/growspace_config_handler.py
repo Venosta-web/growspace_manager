@@ -14,7 +14,7 @@ from custom_components.growspace_manager.coordinator import GrowspaceCoordinator
 from homeassistant.config_entries import ConfigFlowResult
 from homeassistant.helpers import selector
 
-from . import BaseConfigHandler
+from . import AbortFlow, BaseConfigHandler
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -26,7 +26,7 @@ class GrowspaceConfigHandler(BaseConfigHandler[dict[str, Any]]):
         self, coordinator: GrowspaceCoordinator
     ) -> vol.Schema:
         """Build the schema for the growspace management menu."""
-        growspace_options = coordinator.get_sorted_growspace_options()
+        growspace_options = coordinator.growspace_service.get_sorted_growspace_options()
 
         schema: dict[Any, Any] = {
             vol.Required("action", default="add"): selector.SelectSelector(
@@ -74,6 +74,27 @@ class GrowspaceConfigHandler(BaseConfigHandler[dict[str, Any]]):
                     min=1, max=20, mode=selector.NumberSelectorMode.BOX
                 )
             ),
+            vol.Required("length", default=120): selector.NumberSelector(
+                selector.NumberSelectorConfig(
+                    min=1,
+                    mode=selector.NumberSelectorMode.BOX,
+                    unit_of_measurement="cm",
+                )
+            ),
+            vol.Required("width", default=120): selector.NumberSelector(
+                selector.NumberSelectorConfig(
+                    min=1,
+                    mode=selector.NumberSelectorMode.BOX,
+                    unit_of_measurement="cm",
+                )
+            ),
+            vol.Required("height", default=200): selector.NumberSelector(
+                selector.NumberSelectorConfig(
+                    min=1,
+                    mode=selector.NumberSelectorMode.BOX,
+                    unit_of_measurement="cm",
+                )
+            ),
             vol.Optional("notification_target"): selector.TextSelector(),
         }
 
@@ -105,11 +126,10 @@ class GrowspaceConfigHandler(BaseConfigHandler[dict[str, Any]]):
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
         """Handle growspace management step."""
-        if self.config_entry is None:
-            return self.flow.async_abort(reason="setup_error")
-        coordinator = self.config_entry.runtime_data
-        if coordinator is None:
-            return self.flow.async_abort(reason="setup_error")
+        try:
+            coordinator = self.get_coordinator()
+        except AbortFlow as e:
+            return self.flow.async_abort(reason=e.reason)
 
         if user_input is not None:
             action = user_input.get("action")
@@ -146,11 +166,10 @@ class GrowspaceConfigHandler(BaseConfigHandler[dict[str, Any]]):
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
         """Show the form for adding a new growspace."""
-        if self.config_entry is None:
-            return self.flow.async_abort(reason="setup_error")
-        coordinator = self.config_entry.runtime_data
-        if coordinator is None:
-            return self.flow.async_abort(reason="setup_error")
+        try:
+            coordinator = self.get_coordinator()
+        except AbortFlow as e:
+            return self.flow.async_abort(reason=e.reason)
 
         if user_input is not None:
             try:
@@ -183,20 +202,22 @@ class GrowspaceConfigHandler(BaseConfigHandler[dict[str, Any]]):
             rows=user_input["rows"],
             plants_per_row=user_input["plants_per_row"],
             notification_target=user_input.get("notification_target"),
+            dimensions={
+                "length": user_input["length"],
+                "width": user_input["width"],
+                "height": user_input["height"],
+                "unit": "cm",
+            },
         )
-
-        # Save changes
-        await coordinator.async_save()
 
     async def async_step_confirm_remove_growspace(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
         """Confirm removal of a growspace."""
-        if self.config_entry is None:
-            return self.flow.async_abort(reason="setup_error")
-        coordinator = self.config_entry.runtime_data
-        if coordinator is None:
-            return self.flow.async_abort(reason="setup_error")
+        try:
+            coordinator = self.get_coordinator()
+        except AbortFlow as e:
+            return self.flow.async_abort(reason=e.reason)
         growspace_id = self.flow.selected_growspace_id
         growspace = coordinator.growspaces.get(growspace_id)
 
@@ -262,6 +283,42 @@ class GrowspaceConfigHandler(BaseConfigHandler[dict[str, Any]]):
                     min=1, max=20, mode=selector.NumberSelectorMode.BOX
                 )
             ),
+            vol.Optional(
+                "length",
+                default=growspace.dimensions.get("length", 120)
+                if growspace.dimensions
+                else 120,
+            ): selector.NumberSelector(
+                selector.NumberSelectorConfig(
+                    min=1,
+                    mode=selector.NumberSelectorMode.BOX,
+                    unit_of_measurement="cm",
+                )
+            ),
+            vol.Optional(
+                "width",
+                default=growspace.dimensions.get("width", 120)
+                if growspace.dimensions
+                else 120,
+            ): selector.NumberSelector(
+                selector.NumberSelectorConfig(
+                    min=1,
+                    mode=selector.NumberSelectorMode.BOX,
+                    unit_of_measurement="cm",
+                )
+            ),
+            vol.Optional(
+                "height",
+                default=growspace.dimensions.get("height", 200)
+                if growspace.dimensions
+                else 200,
+            ): selector.NumberSelector(
+                selector.NumberSelectorConfig(
+                    min=1,
+                    mode=selector.NumberSelectorMode.BOX,
+                    unit_of_measurement="cm",
+                )
+            ),
         }
 
         if notification_options:
@@ -303,17 +360,26 @@ class GrowspaceConfigHandler(BaseConfigHandler[dict[str, Any]]):
         # Filter out empty values
         update_data = {k: v for k, v in user_input.items() if v}
 
+        # Handle dimensions update if present
+        if "length" in user_input and "width" in user_input and "height" in user_input:
+            dimensions = {
+                "length": user_input.pop("length"),
+                "width": user_input.pop("width"),
+                "height": user_input.pop("height"),
+                "unit": "cm",
+            }
+            update_data["dimensions"] = dimensions
+
         await coordinator.async_update_growspace(growspace_id, **update_data)
 
     async def async_step_update_growspace(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
         """Show the form for updating an existing growspace."""
-        if self.config_entry is None:
-            return self.flow.async_abort(reason="setup_error")
-        coordinator = self.config_entry.runtime_data
-        if coordinator is None:
-            return self.flow.async_abort(reason="setup_error")
+        try:
+            coordinator = self.get_coordinator()
+        except AbortFlow as e:
+            return self.flow.async_abort(reason=e.reason)
         growspace_id = self.flow.selected_growspace_id
         growspace = coordinator.growspaces.get(growspace_id)
 

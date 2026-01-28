@@ -14,7 +14,7 @@ from custom_components.growspace_manager.schemas import ADD_STRAIN_SCHEMA
 from homeassistant.config_entries import ConfigFlowResult
 from homeassistant.helpers import selector
 
-from . import BaseConfigHandler
+from . import AbortFlow, BaseConfigHandler
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -26,11 +26,10 @@ class StrainConfigHandler(BaseConfigHandler[dict[str, Any]]):
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
         """Manage the strain library."""
-        if self.config_entry is None:
-            return self.flow.async_abort(reason="setup_error")
-        coordinator = self.config_entry.runtime_data
-        if coordinator is None:
-            return self.flow.async_abort(reason="setup_error")
+        try:
+            coordinator = self.get_coordinator()
+        except AbortFlow as e:
+            return self.flow.async_abort(reason=e.reason)
 
         if user_input is not None:
             action = user_input.get("action")

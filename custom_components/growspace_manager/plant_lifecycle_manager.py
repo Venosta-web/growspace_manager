@@ -2,22 +2,26 @@
 
 from __future__ import annotations
 
+import asyncio
+from collections.abc import Awaitable, Callable
 from datetime import date, datetime
 import logging
-from typing import TYPE_CHECKING, Any
+from typing import Any
 import uuid
 
 from .const import DATE_FIELDS, PLANT_STAGES, SPECIAL_GROWSPACES, PlantStage
+from .data_access.growspace_repository import GrowspaceRepository
+from .domain import calculate_days_in_stage
 from .exceptions import (
     GrowspaceNotFoundError,
     PlantNotFoundError,
     ValidationChangeError,
 )
+from .growspace_validator import GrowspaceValidator
 from .models import Plant, PlantGenetics
+from .services.growspace_service import GrowspaceService
+from .strain_library import StrainLibrary
 from .utils import calculate_plant_stage, format_date
-
-if TYPE_CHECKING:
-    from .coordinator import GrowspaceCoordinator
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -25,9 +29,22 @@ _LOGGER = logging.getLogger(__name__)
 class PlantLifecycleManager:
     """Manages plant lifecycle transitions, CRUD operations, and complex logic."""
 
-    def __init__(self, coordinator: GrowspaceCoordinator) -> None:
+    def __init__(
+        self,
+        repository: GrowspaceRepository,
+        validator: GrowspaceValidator,
+        growspace_service: GrowspaceService,
+        strain_library: StrainLibrary,
+        save_callback: Callable[[], Awaitable[None]],
+        lock: asyncio.Lock,
+    ) -> None:
         """Initialize the manager."""
-        self.coordinator = coordinator
+        self.repository = repository
+        self.validator = validator
+        self.growspace_service = growspace_service
+        self.strain_library = strain_library
+        self.save_callback = save_callback
+        self.lock = lock
 
     # =========================================================================
     # PLANT CRUD OPERATIONS
@@ -47,11 +64,9 @@ class PlantLifecycleManager:
         **kwargs: Any,
     ) -> Plant:
         """Add a new plant to the system."""
-        async with self.coordinator.lock:  # Accessing generic lock from coordinator
+        async with self.lock:
             try:
-                self.coordinator.validator.validate_position_not_occupied(
-                    growspace_id, row, col
-                )
+                self.validator.validate_position_not_occupied(growspace_id, row, col)
                 final_row, final_col = row, col
             except ValidationChangeError:
                 _LOGGER.info(
@@ -60,10 +75,8 @@ class PlantLifecycleManager:
                     col,
                     growspace_id,
                 )
-                found_row, found_col = (
-                    self.coordinator.validator.find_first_available_position(
-                        growspace_id
-                    )
+                found_row, found_col = self.validator.find_first_available_position(
+                    growspace_id
                 )
 
                 if found_row is None or found_col is None:
@@ -107,15 +120,15 @@ class PlantLifecycleManager:
             if not plant.stage:
                 plant.stage = calculate_plant_stage(plant)
 
-            self.coordinator.plants[plant.plant_id] = plant
-            await self.coordinator.async_commit()
+            self.repository.plants[plant.plant_id] = plant
+            await self.save_callback()
 
             return plant
 
     async def async_update_plant(self, plant_id: str, **updates: Any) -> Plant:
         """Update attributes of an existing plant."""
-        async with self.coordinator.lock:
-            plant = self.coordinator.plants.get(plant_id)
+        async with self.lock:
+            plant = self.repository.plants.get(plant_id)
             if not plant:
                 raise PlantNotFoundError(f"Plant {plant_id} does not exist")
 
@@ -135,17 +148,17 @@ class PlantLifecycleManager:
                     setattr(plant, key, value)
 
             plant.updated_at = date.today().isoformat()
-            await self.coordinator.async_commit()
+            await self.save_callback()
             return plant
 
     async def async_remove_plant(self, plant_id: str) -> bool:
         """Remove a plant and its associated entities."""
-        async with self.coordinator.lock:
-            if plant_id in self.coordinator.plants:
-                del self.coordinator.plants[plant_id]
-                if plant_id in self.coordinator.notifications_sent:
-                    del self.coordinator.notifications_sent[plant_id]
-                await self.coordinator.async_commit()
+        async with self.lock:
+            if plant_id in self.repository.plants:
+                del self.repository.plants[plant_id]
+                if plant_id in self.repository.notifications_sent:
+                    del self.repository.notifications_sent[plant_id]
+                await self.save_callback()
                 return True
             return False
 
@@ -155,12 +168,12 @@ class PlantLifecycleManager:
 
     async def async_switch_plants(self, plant1_id: str, plant2_id: str) -> None:
         """Switch the positions of two plants."""
-        async with self.coordinator.lock:
-            self.coordinator.validator.validate_plant_exists(plant1_id)
-            self.coordinator.validator.validate_plant_exists(plant2_id)
+        async with self.lock:
+            self.validator.validate_plant_exists(plant1_id)
+            self.validator.validate_plant_exists(plant2_id)
 
-            plant1 = self.coordinator.plants[plant1_id]
-            plant2 = self.coordinator.plants[plant2_id]
+            plant1 = self.repository.plants[plant1_id]
+            plant2 = self.repository.plants[plant2_id]
 
             if plant1.growspace_id != plant2.growspace_id:
                 raise ValidationChangeError(
@@ -177,7 +190,7 @@ class PlantLifecycleManager:
             plant1.updated_at = now
             plant2.updated_at = now
 
-            await self.coordinator.async_commit()
+            await self.save_callback()
 
     # =========================================================================
     # HARVEST & TRANSITION LOGIC
@@ -193,7 +206,7 @@ class PlantLifecycleManager:
     ) -> bool:
         """Determine harvest workflow and execute it."""
         if target_growspace_id:
-            if target_growspace_id not in self.coordinator.growspaces:
+            if target_growspace_id not in self.repository.growspaces:
                 raise GrowspaceNotFoundError(
                     f"Target growspace {target_growspace_id} not found"
                 )
@@ -219,9 +232,7 @@ class PlantLifecycleManager:
     ) -> bool:
         """Move harvested plant to explicit target."""
         try:
-            pos = self.coordinator.validator.find_first_available_position(
-                target_growspace_id
-            )
+            pos = self.validator.find_first_available_position(target_growspace_id)
             new_row, new_col = pos
         except ValueError as e:
             _LOGGER.warning(
@@ -300,15 +311,13 @@ class PlantLifecycleManager:
         if record_harvest_analytics:
             await self._record_analytics(plant)
 
-        gs_id = self.coordinator.ensure_special_growspace(
-            target_stage, target_stage.value
+        gs_id = self.growspace_service.ensure_special_growspace(
+            target_stage.value, target_stage.value
         )
-        target_gs = self.coordinator.growspaces.get(gs_id)
+        target_gs = self.repository.growspaces.get(gs_id)
 
         try:
-            new_row, new_col = self.coordinator.validator.find_first_available_position(
-                gs_id
-            )
+            new_row, new_col = self.validator.find_first_available_position(gs_id)
         except ValueError as e:
             _LOGGER.warning(
                 "Failed to find position in %s growspace: %s",
@@ -331,8 +340,7 @@ class PlantLifecycleManager:
             PlantStage.MOTHER: "mother_start",
             PlantStage.VEG: "veg_start",
         }
-        if target_gs:
-            updates["device_id"] = target_gs.device_id
+        updates["device_id"] = target_gs.device_id if target_gs else None
         if target_stage in date_map:
             updates[date_map[target_stage]] = transition_date
 
@@ -341,15 +349,11 @@ class PlantLifecycleManager:
 
     async def _record_analytics(self, plant: Plant) -> None:
         """Helper to record harvest analytics."""
-        veg_days = self.coordinator.serializer.calculate_days_in_stage(
-            plant, PlantStage.VEG
-        )
-        flower_days = self.coordinator.serializer.calculate_days_in_stage(
-            plant, PlantStage.FLOWER
-        )
-        if self.coordinator.strain_library and (veg_days > 0 or flower_days > 0):
+        veg_days = calculate_days_in_stage(plant, PlantStage.VEG)
+        flower_days = calculate_days_in_stage(plant, PlantStage.FLOWER)
+        if self.strain_library and (veg_days > 0 or flower_days > 0):
             try:
-                await self.coordinator.strain_library.record_harvest(
+                await self.strain_library.record_harvest(
                     plant.strain, plant.phenotype, veg_days, flower_days
                 )
             except Exception as e:  # noqa: BLE001
@@ -443,7 +447,7 @@ class PlantLifecycleManager:
         if new_stage in stage_map:
             updates[stage_map[new_stage]] = trans_date_str
 
-        plant = self.coordinator.plants.get(plant_id)
+        plant = self.repository.plants.get(plant_id)
         if plant:
             # Prepare the NEW history list for update
             new_history = [dict(item) for item in plant.stage_history]
@@ -462,7 +466,7 @@ class PlantLifecycleManager:
 
         await self.async_update_plant(plant_id, **updates)
 
-        plant = self.coordinator.plants.get(plant_id)
+        plant = self.repository.plants.get(plant_id)
         if plant:
             if new_stage == PlantStage.DRY:
                 await self.move_to_dry_growspace(plant_id, plant, trans_date_str)

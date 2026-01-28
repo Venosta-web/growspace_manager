@@ -13,6 +13,90 @@ from typing import TYPE_CHECKING, Any
 
 from homeassistant.core import State
 
+from .bayesian_constants import (
+    CO2_ACCEPTABLE_MAX,
+    CO2_ACCEPTABLE_MIN,
+    CO2_GOOD_MAX,
+    CO2_GOOD_MIN,
+    CO2_HIGH_THRESHOLD,
+    CO2_LATE_FLOWER_ACCEPTABLE_MAX,
+    CO2_LATE_FLOWER_ACCEPTABLE_MIN,
+    CO2_LATE_FLOWER_OPTIMAL_MAX,
+    CO2_LATE_FLOWER_OPTIMAL_MIN,
+    CO2_LOW_THRESHOLD,
+    CO2_PERFECT_MAX,
+    CO2_PERFECT_MIN,
+    DEFAULT_TREND_DURATION,
+    DEFAULT_TREND_SENSITIVITY,
+    DEFAULT_TREND_THRESHOLD_TEMP,
+    FLOWER_EARLY_MAX_DAYS,
+    FLOWER_LATE_MIN_DAYS,
+    FLOWER_MID_MAX_DAYS,
+    FLOWER_MID_MIN_DAYS,
+    HUMIDIFIER_ACTIVE_THRESHOLD,
+    HUMIDITY_ACTIVE_DESICCATION_THRESHOLD,
+    HUMIDITY_CHANGE_THRESHOLD,
+    HUMIDITY_FLOWER_LATE_MAX,
+    HUMIDITY_FLOWER_LATE_MIN,
+    HUMIDITY_FLOWER_MID_MAX,
+    HUMIDITY_FLOWER_MID_MIN,
+    HUMIDITY_HIGH_VEG_THRESHOLD,
+    HUMIDITY_SATURATION_FLOWER_THRESHOLD,
+    HUMIDITY_SATURATION_VEG_THRESHOLD,
+    HUMIDITY_TOO_DRY_THRESHOLD,
+    MOLD_TREND_THRESHOLD_HUMIDITY,
+    MOLD_TREND_THRESHOLD_VPD,
+    PROB_ACTIVE_DESICCATION,
+    PROB_ACTIVE_SATURATION,
+    PROB_CO2_HIGH,
+    PROB_CO2_LATE_FLOWER_ACCEPTABLE,
+    PROB_CO2_LATE_FLOWER_OPTIMAL,
+    PROB_CO2_LOW,
+    PROB_HUMIDITY_FLOWER_LATE_OUT_OF_RANGE,
+    PROB_HUMIDITY_FLOWER_MID_OUT_OF_RANGE,
+    PROB_HUMIDITY_HIGH_VEG,
+    PROB_HUMIDITY_TOO_DRY,
+    PROB_NIGHT_TEMP_HIGH,
+    PROB_TEMP_COLD,
+    PROB_TEMP_EXTREME_COLD,
+    PROB_TEMP_EXTREME_HEAT,
+    PROB_TEMP_HIGH_HEAT,
+    PROB_TEMP_WARM,
+    PROB_TEMP_WARM_LATE_FLOWER,
+    PROB_TREND_EXTERNAL,
+    PROB_TREND_FAST_RISE,
+    PROB_TREND_SLOW_RISE,
+    PROB_TREND_STATS,
+    SENSITIVITY_BASE_PROB,
+    SENSITIVITY_FALSE_MULTIPLIER,
+    SENSITIVITY_TRUE_MULTIPLIER,
+    SOIL_MOISTURE_HIGH_THRESHOLD,
+    SOIL_MOISTURE_LOW_THRESHOLD,
+    TEMP_COLD_THRESHOLD,
+    TEMP_EXTREME_COLD_THRESHOLD,
+    TEMP_EXTREME_HEAT_THRESHOLD,
+    TEMP_HIGH_HEAT_THRESHOLD,
+    TEMP_LATE_FLOWER_MAX,
+    TEMP_LATE_FLOWER_MIN,
+    TEMP_LIGHTS_OFF_PERFECT_MAX,
+    TEMP_LIGHTS_OFF_PERFECT_MIN,
+    TEMP_LIGHTS_ON_ACCEPTABLE_MAX,
+    TEMP_LIGHTS_ON_ACCEPTABLE_MIN,
+    TEMP_LIGHTS_ON_GOOD_MAX,
+    TEMP_LIGHTS_ON_GOOD_MIN,
+    TEMP_LIGHTS_ON_PERFECT_MAX,
+    TEMP_LIGHTS_ON_PERFECT_MIN,
+    TEMP_NIGHT_HIGH_THRESHOLD,
+    TEMP_WARM_LATE_FLOWER_THRESHOLD,
+    TEMP_WARM_THRESHOLD,
+    TREND_FALLBACK_THRESHOLD,
+    TREND_GRADIENT_FAST_THRESHOLD,
+    TREND_SIGNIFICANCE_THRESHOLD,
+    VPD_ACTIVE_DESICCATION_THRESHOLD,
+    VPD_CHANGE_THRESHOLD,
+    VPD_DANGER_ZONE_FLOWER,
+    VPD_DANGER_ZONE_VEG,
+)
 from .bayesian_data import (
     PROB_ACCEPTABLE,
     PROB_GOOD,
@@ -77,12 +161,12 @@ async def async_evaluate_stress_trend(
                 local_trends[trend_key] = "rising"
                 gradient = trend_state.attributes.get("gradient", 0)
                 prob = (
-                    env_config.get("prob_trend_fast_rise", (0.95, 0.15))
-                    if gradient > 0.1
-                    else env_config.get("prob_trend_slow_rise", (0.75, 0.30))
+                    env_config.get("prob_trend_fast_rise", PROB_TREND_FAST_RISE)
+                    if gradient > TREND_GRADIENT_FAST_THRESHOLD
+                    else env_config.get("prob_trend_slow_rise", PROB_TREND_SLOW_RISE)
                 )
                 local_obs.append(prob)
-                reason_suffix = " fast" if gradient > 0.1 else ""
+                reason_suffix = " fast" if gradient > TREND_GRADIENT_FAST_THRESHOLD else ""
                 local_reasons.append(
                     (prob[0], f"{sensor_key.capitalize()} rising{reason_suffix}")
                 )
@@ -93,25 +177,25 @@ async def async_evaluate_stress_trend(
                 stats_state
                 and (change := stats_state.attributes.get("change")) is not None
             ):
-                threshold = 0.2 if sensor_key == "vpd" else 1.0
+                threshold = TREND_SIGNIFICANCE_THRESHOLD if sensor_key == "vpd" else TREND_FALLBACK_THRESHOLD
                 if change > threshold:
                     local_trends[trend_key] = "rising"
-                    prob = (0.85, 0.25)
+                    prob = PROB_TREND_STATS
                     local_obs.append(prob)
                     local_reasons.append((prob[0], f"{sensor_key.capitalize()} rising"))
 
         else:  # Fallback to manual analysis (Requires await)
-            duration = env_config.get(f"{sensor_key}_trend_duration", 30)
-            threshold = env_config.get(f"{sensor_key}_trend_threshold", 26.0)
-            sensitivity = env_config.get(f"{sensor_key}_trend_sensitivity", 0.5)
+            duration = env_config.get(f"{sensor_key}_trend_duration", DEFAULT_TREND_DURATION)
+            threshold = env_config.get(f"{sensor_key}_trend_threshold", DEFAULT_TREND_THRESHOLD_TEMP)
+            sensitivity = env_config.get(f"{sensor_key}_trend_sensitivity", DEFAULT_TREND_SENSITIVITY)
             if env_config.get(f"{sensor_key}_sensor"):
                 analysis = await analyze_trend(
                     env_config[f"{sensor_key}_sensor"], duration, threshold
                 )
                 local_trends[trend_key] = analysis["trend"]
                 if analysis["trend"] == "rising" and analysis["crossed_threshold"]:
-                    p_true = 0.5 + (sensitivity * 0.45)
-                    p_false = 0.5 - (sensitivity * 0.4)
+                    p_true = SENSITIVITY_BASE_PROB + (sensitivity * SENSITIVITY_TRUE_MULTIPLIER)
+                    p_false = SENSITIVITY_BASE_PROB - (sensitivity * SENSITIVITY_FALSE_MULTIPLIER)
                     prob = (p_true, p_false)
                     local_obs.append(prob)
                     local_reasons.append((prob[0], f"{sensor_key.capitalize()} rising"))
@@ -165,7 +249,7 @@ async def _async_evaluate_external_mold_trend_sensor(
             trend_states[trend_key] = (
                 "rising" if sensor_key == "humidity" else "falling"
             )
-            prob = (0.90, 0.20)
+            prob = PROB_TREND_EXTERNAL
             observations.append(prob)
             reasons.append(
                 (
@@ -176,8 +260,8 @@ async def _async_evaluate_external_mold_trend_sensor(
     elif stats_sensor_id:
         stats_state: State | None = sensor_instance.hass.states.get(stats_sensor_id)
         if stats_state and (change := stats_state.attributes.get("change")) is not None:
-            if (sensor_key == "humidity" and change > 1.0) or (
-                sensor_key == "vpd" and change < -0.1
+            if (sensor_key == "humidity" and change > HUMIDITY_CHANGE_THRESHOLD) or (
+                sensor_key == "vpd" and change < VPD_CHANGE_THRESHOLD
             ):
                 # VPD Falling Trend Gating (Stats Sensor)
                 if sensor_key == "vpd" and _is_vpd_trend_gated(state):
@@ -186,7 +270,7 @@ async def _async_evaluate_external_mold_trend_sensor(
                 trend_states[trend_key] = (
                     "rising" if sensor_key == "humidity" else "falling"
                 )
-                prob = (0.85, 0.25)
+                prob = PROB_TREND_STATS
                 observations.append(prob)
                 reasons.append(
                     (
@@ -200,8 +284,8 @@ def _is_vpd_trend_gated(state: EnvironmentState) -> bool:
     """Determine if a falling VPD trend should be ignored because current VPD is safe."""
     if state.vpd is None:
         return False
-    # Danger Zone: Veg < 0.5, Flower < 0.8
-    danger_zone = 0.5 if state.flower_days == 0 else 0.8
+    # Danger Zone: Veg < VPD_DANGER_ZONE_VEG, Flower < VPD_DANGER_ZONE_FLOWER
+    danger_zone = VPD_DANGER_ZONE_VEG if state.flower_days == 0 else VPD_DANGER_ZONE_FLOWER
     return state.vpd >= danger_zone
 
 
@@ -220,9 +304,9 @@ async def _async_evaluate_fallback_mold_trend_analysis(
     if not env_config.get(f"{sensor_key}_trend_sensor") and not env_config.get(
         f"{sensor_key}_stats_sensor"
     ):
-        duration = env_config.get(f"{sensor_key}_trend_duration", 30)
-        threshold = 101 if sensor_key == "humidity" else -1
-        sensitivity = env_config.get(f"{sensor_key}_trend_sensitivity", 0.5)
+        duration = env_config.get(f"{sensor_key}_trend_duration", DEFAULT_TREND_DURATION)
+        threshold = MOLD_TREND_THRESHOLD_HUMIDITY if sensor_key == "humidity" else MOLD_TREND_THRESHOLD_VPD
+        sensitivity = env_config.get(f"{sensor_key}_trend_sensitivity", DEFAULT_TREND_SENSITIVITY)
         if env_config.get(f"{sensor_key}_sensor"):
             analysis = await analyze_trend(
                 env_config[f"{sensor_key}_sensor"], duration, threshold
@@ -232,13 +316,13 @@ async def _async_evaluate_fallback_mold_trend_analysis(
 
             # VPD Falling Trend Logic (Professional Gating)
             if sensor_key == "vpd" and analysis["trend"] == "falling":
-                # Danger Zone: Veg < 0.5, Flower < 0.8
-                danger_zone = 0.5 if state.flower_days == 0 else 0.8
+                # Danger Zone: Veg < VPD_DANGER_ZONE_VEG, Flower < VPD_DANGER_ZONE_FLOWER
+                danger_zone = VPD_DANGER_ZONE_VEG if state.flower_days == 0 else VPD_DANGER_ZONE_FLOWER
 
                 # Only penalize if we are already approaching the danger zone
                 if state.vpd is not None and state.vpd < danger_zone:
-                    p_true = 0.5 + (sensitivity * 0.45)
-                    p_false = 0.5 - (sensitivity * 0.4)
+                    p_true = SENSITIVITY_BASE_PROB + (sensitivity * SENSITIVITY_TRUE_MULTIPLIER)
+                    p_false = SENSITIVITY_BASE_PROB - (sensitivity * SENSITIVITY_FALSE_MULTIPLIER)
                     prob = (p_true, p_false)
                     observations.append(prob)
                     reasons.append(
@@ -337,11 +421,11 @@ def _determine_stage_key(state: EnvironmentState) -> str | None:
     """Determine the current grow stage key."""
     if state.flower_days == 0:
         return "veg"
-    if 0 < state.flower_days < 21:
+    if 0 < state.flower_days < FLOWER_EARLY_MAX_DAYS:
         return "flower_early"
-    if 21 <= state.flower_days < 42:
+    if FLOWER_MID_MIN_DAYS <= state.flower_days < FLOWER_MID_MAX_DAYS:
         return "flower_mid"
-    if state.flower_days >= 42:
+    if state.flower_days >= FLOWER_LATE_MIN_DAYS:
         return "flower_late"
     return None
 
@@ -365,35 +449,35 @@ def evaluate_direct_temp_stress(
 
     # 1: Night High Temp Check (Independent IF)
     # Only check if we KNOW lights are off. If None (unknown), skip this check.
-    if state.is_lights_on is False and temp > 24:
-        prob = env_config.get("prob_night_temp_high", (0.80, 0.20))
+    if state.is_lights_on is False and temp > TEMP_NIGHT_HIGH_THRESHOLD:
+        prob = env_config.get("prob_night_temp_high", PROB_NIGHT_TEMP_HIGH)
         observations.append(prob)
         reasons.append((prob[0], f"Night Temp High ({temp})"))
 
     # 2: General Stress/Warm/Cold Checks (Modernized with pattern matching)
     match temp:
-        case t if t > 32:
-            prob = env_config.get("prob_temp_extreme_heat", (0.98, 0.05))
+        case t if t > TEMP_EXTREME_HEAT_THRESHOLD:
+            prob = env_config.get("prob_temp_extreme_heat", PROB_TEMP_EXTREME_HEAT)
             observations.append(prob)
             reasons.append((prob[0], f"Extreme Heat ({temp})"))
-        case t if t > 30:
-            prob = env_config.get("prob_temp_high_heat", (0.85, 0.15))
+        case t if t > TEMP_HIGH_HEAT_THRESHOLD:
+            prob = env_config.get("prob_temp_high_heat", PROB_TEMP_HIGH_HEAT)
             observations.append(prob)
             reasons.append((prob[0], f"High Heat ({temp})"))
-        case t if state.flower_days >= 42 and t > 27:
-            prob = (0.70, 0.30)
+        case t if state.flower_days >= FLOWER_LATE_MIN_DAYS and t > TEMP_WARM_LATE_FLOWER_THRESHOLD:
+            prob = PROB_TEMP_WARM_LATE_FLOWER
             observations.append(prob)
             reasons.append((prob[0], f"Temp Warm ({temp})"))
-        case t if t > 28:
-            prob = env_config.get("prob_temp_warm", (0.65, 0.30))
+        case t if t > TEMP_WARM_THRESHOLD:
+            prob = env_config.get("prob_temp_warm", PROB_TEMP_WARM)
             observations.append(prob)
             reasons.append((prob[0], f"Temp Warm ({temp})"))
-        case t if t < 15:
-            prob = env_config.get("prob_temp_extreme_cold", (0.95, 0.08))
+        case t if t < TEMP_EXTREME_COLD_THRESHOLD:
+            prob = env_config.get("prob_temp_extreme_cold", PROB_TEMP_EXTREME_COLD)
             observations.append(prob)
             reasons.append((prob[0], f"Extreme Cold ({temp})"))
-        case t if t < 18:
-            prob = env_config.get("prob_temp_cold", (0.80, 0.20))
+        case t if t < TEMP_COLD_THRESHOLD:
+            prob = env_config.get("prob_temp_cold", PROB_TEMP_COLD)
             observations.append(prob)
             reasons.append((prob[0], f"Temp Cold ({temp})"))
 
@@ -413,25 +497,25 @@ def evaluate_direct_humidity_stress(
     hum = state.humidity
 
     # Universal low humidity check
-    if hum < 35:
-        prob = env_config.get("prob_humidity_too_dry", (0.85, 0.20))
+    if hum < HUMIDITY_TOO_DRY_THRESHOLD:
+        prob = env_config.get("prob_humidity_too_dry", PROB_HUMIDITY_TOO_DRY)
         observations.append(prob)
         reasons.append((prob[0], f"Humidity Dry ({hum})"))
 
     # Stage-dependent high humidity/out-of-range checks (Modernized with pattern matching)
-    match (state.flower_days == 0, 0 < state.flower_days < 42, state.flower_days >= 42):
-        case (True, _, _) if hum > 80:
-            prob = env_config.get("prob_humidity_high_veg", (0.80, 0.20))
+    match (state.flower_days == 0, 0 < state.flower_days < FLOWER_MID_MAX_DAYS, state.flower_days >= FLOWER_LATE_MIN_DAYS):
+        case (True, _, _) if hum > HUMIDITY_HIGH_VEG_THRESHOLD:
+            prob = env_config.get("prob_humidity_high_veg", PROB_HUMIDITY_HIGH_VEG)
             observations.append(prob)
             reasons.append((prob[0], f"Humidity High ({hum})"))
-        case (_, True, _) if hum > 60 or hum < 45:
-            prob = (0.75, 0.25)
+        case (_, True, _) if hum > HUMIDITY_FLOWER_MID_MAX or hum < HUMIDITY_FLOWER_MID_MIN:
+            prob = PROB_HUMIDITY_FLOWER_MID_OUT_OF_RANGE
             observations.append(prob)
-            reasons.append((prob[0], f"Humidity out of range (<45 or >60) ({hum})"))
-        case (_, _, True) if hum > 60 or hum < 40:
-            prob = (0.85, 0.15)
+            reasons.append((prob[0], f"Humidity out of range (<{HUMIDITY_FLOWER_MID_MIN} or >{HUMIDITY_FLOWER_MID_MAX}) ({hum})"))
+        case (_, _, True) if hum > HUMIDITY_FLOWER_LATE_MAX or hum < HUMIDITY_FLOWER_LATE_MIN:
+            prob = PROB_HUMIDITY_FLOWER_LATE_OUT_OF_RANGE
             observations.append(prob)
-            reasons.append((prob[0], f"Humidity out of range (<40 or >60) ({hum})"))
+            reasons.append((prob[0], f"Humidity out of range (<{HUMIDITY_FLOWER_LATE_MIN} or >{HUMIDITY_FLOWER_LATE_MAX}) ({hum})"))
 
     return observations, reasons
 
@@ -485,12 +569,12 @@ def evaluate_direct_co2_stress(
     co2 = state.co2
 
     # Universal CO2 stress checks (not stage-dependent in this sensor's logic)
-    if co2 < 400:
-        prob = (0.80, 0.25)
+    if co2 < CO2_LOW_THRESHOLD:
+        prob = PROB_CO2_LOW
         observations.append(prob)
         reasons.append((prob[0], f"CO2 Low ({co2})"))
-    elif co2 > 1600:
-        prob = (0.95, 0.10)
+    elif co2 > CO2_HIGH_THRESHOLD:
+        prob = PROB_CO2_HIGH
         observations.append(prob)
         reasons.append((prob[0], f"CO2 High ({co2})"))
 
@@ -510,12 +594,12 @@ def evaluate_soil_moisture_stress(
     moisture = state.soil_moisture
     prob_stress = PROB_SOIL_MOISTURE_STRESS
 
-    # Simple thresholds for now: < 20% (Dry) or > 60% (Wet)
+    # Simple thresholds: < SOIL_MOISTURE_LOW_THRESHOLD (Dry) or > SOIL_MOISTURE_HIGH_THRESHOLD (Wet)
     # These could be made configurable in the future
-    if moisture < 20:
+    if moisture < SOIL_MOISTURE_LOW_THRESHOLD:
         observations.append(prob_stress)
         reasons.append((prob_stress[0], f"Soil Moisture Low ({moisture}%)"))
-    elif moisture > 60:
+    elif moisture > SOIL_MOISTURE_HIGH_THRESHOLD:
         observations.append(prob_stress)
         reasons.append((prob_stress[0], f"Soil Moisture High ({moisture}%)"))
 
@@ -539,9 +623,9 @@ def evaluate_optimal_temperature(
 
     # Match against (is_lights_on, flower_days) for branching logic
     match (state.is_lights_on, state.flower_days):
-        # Case A: Lights ON & Late Flower (Days >= 42)
+        # Case A: Lights ON & Late Flower (Days >= FLOWER_LATE_MIN_DAYS)
         # Treat None (unknown) as Lights ON for fallback
-        case (True | None, days) if days >= 42:
+        case (True | None, days) if days >= FLOWER_LATE_MIN_DAYS:
             _evaluate_optimal_temp_late_flower(state.temp, observations, reasons)
 
         # Case B: Lights ON & Normal (Days < 42 or Veg)
@@ -561,7 +645,7 @@ def _evaluate_optimal_temp_late_flower(
 ) -> None:
     """Evaluate optimal temperature for late flower stage."""
     prob_out_of_range = PROB_STRESS_OUT_OF_RANGE
-    if 22 <= temp <= 26:  # Perfect range for late flower
+    if TEMP_LATE_FLOWER_MIN <= temp <= TEMP_LATE_FLOWER_MAX:  # Perfect range for late flower
         observations.append(PROB_PERFECT)
     else:
         observations.append(prob_out_of_range)
@@ -578,11 +662,11 @@ def _evaluate_optimal_temp_lights_on(
 ) -> None:
     """Evaluate optimal temperature for lights on (normal/veg)."""
     prob_out_of_range = PROB_STRESS_OUT_OF_RANGE
-    if 24 <= temp <= 26:
+    if TEMP_LIGHTS_ON_PERFECT_MIN <= temp <= TEMP_LIGHTS_ON_PERFECT_MAX:
         observations.append(PROB_PERFECT)
-    elif 22 <= temp <= 28:
+    elif TEMP_LIGHTS_ON_GOOD_MIN <= temp <= TEMP_LIGHTS_ON_GOOD_MAX:
         observations.append(PROB_GOOD)
-    elif 20 <= temp <= 29:
+    elif TEMP_LIGHTS_ON_ACCEPTABLE_MIN <= temp <= TEMP_LIGHTS_ON_ACCEPTABLE_MAX:
         observations.append(PROB_ACCEPTABLE)
     else:
         observations.append(prob_out_of_range)
@@ -594,7 +678,7 @@ def _evaluate_optimal_temp_lights_off(
 ) -> None:
     """Evaluate optimal temperature for lights off (night)."""
     prob_out_of_range = PROB_STRESS_OUT_OF_RANGE
-    if 20 <= temp <= 23:
+    if TEMP_LIGHTS_OFF_PERFECT_MIN <= temp <= TEMP_LIGHTS_OFF_PERFECT_MAX:
         observations.append(PROB_PERFECT)
     else:
         observations.append(prob_out_of_range)
@@ -657,24 +741,24 @@ def evaluate_optimal_co2(
     co2 = state.co2
 
     # Use match/case on the result of the stage check (True or False)
-    match state.flower_days >= 42:
+    match state.flower_days >= FLOWER_LATE_MIN_DAYS:
         case True:  # Late Flower Logic (Prefers lower CO2)
-            if 400 <= co2 <= 800:
-                observations.append((0.90, 0.25))
-            elif 800 < co2 <= 1200:
-                observations.append((0.4, 0.6))
+            if CO2_LATE_FLOWER_OPTIMAL_MIN <= co2 <= CO2_LATE_FLOWER_OPTIMAL_MAX:
+                observations.append(PROB_CO2_LATE_FLOWER_OPTIMAL)
+            elif CO2_LATE_FLOWER_ACCEPTABLE_MIN < co2 <= CO2_LATE_FLOWER_ACCEPTABLE_MAX:
+                observations.append(PROB_CO2_LATE_FLOWER_ACCEPTABLE)
             # Else: fall through (no observation is added if outside of these two ranges)
 
         case False:  # Normal/Veg/Early Flower logic
-            if 1000 <= co2 <= 1400:
+            if CO2_PERFECT_MIN <= co2 <= CO2_PERFECT_MAX:
                 observations.append(PROB_PERFECT)
-            elif 800 <= co2 <= 1500:
+            elif CO2_GOOD_MIN <= co2 <= CO2_GOOD_MAX:
                 observations.append(PROB_GOOD)
-            elif 400 <= co2 <= 600:
+            elif CO2_ACCEPTABLE_MIN <= co2 <= CO2_ACCEPTABLE_MAX:
                 observations.append(PROB_ACCEPTABLE)
             else:
                 observations.append(prob_out_of_range)
-                reason_detail = "CO2 Low" if co2 < 400 else "CO2 High"
+                reason_detail = "CO2 Low" if co2 < CO2_LOW_THRESHOLD else "CO2 High"
                 reasons.append((prob_out_of_range[1], f"{reason_detail} ({co2})"))
     return observations, reasons
 
@@ -688,14 +772,14 @@ def evaluate_active_desiccation(
 
     if state.dehumidifier_on:
         # High probability of stress if dehumidifier is running while already dry
-        if state.humidity is not None and state.humidity < 40:
-            prob = (0.95, 0.05)
+        if state.humidity is not None and state.humidity < HUMIDITY_ACTIVE_DESICCATION_THRESHOLD:
+            prob = PROB_ACTIVE_DESICCATION
             observations.append(prob)
             reasons.append(
                 (prob[0], "Active Desiccation (Dehumidifier on with low humidity)")
             )
-        elif state.vpd is not None and state.vpd > 1.6:
-            prob = (0.95, 0.05)
+        elif state.vpd is not None and state.vpd > VPD_ACTIVE_DESICCATION_THRESHOLD:
+            prob = PROB_ACTIVE_DESICCATION
             observations.append(prob)
             reasons.append(
                 (prob[0], "Active Desiccation (Dehumidifier on with high VPD)")
@@ -711,8 +795,8 @@ def evaluate_active_saturation(
     observations: ObservationList = []
     reasons: ReasonList = []
 
-    # Check if humidifier is active (value > 0 implies it's running/consuming power)
-    if state.humidifier_value is not None and state.humidifier_value > 0:
+    # Check if humidifier is active (value > HUMIDIFIER_ACTIVE_THRESHOLD implies it's running/consuming power)
+    if state.humidifier_value is not None and state.humidifier_value > HUMIDIFIER_ACTIVE_THRESHOLD:
         if state.humidity is None:
             return observations, reasons
 
@@ -722,11 +806,11 @@ def evaluate_active_saturation(
         veg = state.flower_days == 0
         flower = state.flower_days > 0
 
-        if (veg and hum > 80) or (flower and hum > 60):
+        if (veg and hum > HUMIDITY_SATURATION_VEG_THRESHOLD) or (flower and hum > HUMIDITY_SATURATION_FLOWER_THRESHOLD):
             is_saturated = True
 
         if is_saturated:
-            prob = (0.85, 0.15)
+            prob = PROB_ACTIVE_SATURATION
             observations.append(prob)
             reasons.append(
                 (prob[0], "Active Saturation (Humidifier on with high humidity)")

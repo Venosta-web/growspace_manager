@@ -598,6 +598,13 @@ configure_environment:
       selector:
         boolean:
 
+    sensor_groups:
+      name: Sensor Groups
+      description: List of sensor groups for 3D heatmap
+      required: false
+      selector:
+        object:
+
 remove_environment:
   description: Remove environment configuration for a growspace
   fields:

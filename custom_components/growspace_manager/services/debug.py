@@ -146,7 +146,9 @@ async def _handle_reset_dry_growspace(
         coordinator.growspaces.pop(dry_id, None)
         _LOGGER.debug("Removed dry growspace %s", dry_id)
 
-    canonical_dry = coordinator.ensure_special_growspace(CANONICAL_ID_DRY, "dry")
+    canonical_dry = coordinator._growspace_service.ensure_special_growspace(
+        CANONICAL_ID_DRY, "dry"
+    )
 
     if preserve_plants and dry_plants_data_to_restore:
         await _restore_plants_to_canonical_growspace(
@@ -182,7 +184,9 @@ async def _handle_reset_cure_growspace(
         coordinator.growspaces.pop(cure_id, None)
         _LOGGER.debug("Removed cure growspace %s", cure_id)
 
-    canonical_cure = coordinator.ensure_special_growspace(CANONICAL_ID_CURE, "cure")
+    canonical_cure = coordinator._growspace_service.ensure_special_growspace(
+        CANONICAL_ID_CURE, "cure"
+    )
 
     if preserve_plants and cure_plants_data_to_restore:
         await _restore_plants_to_canonical_growspace(
@@ -226,7 +230,9 @@ async def handle_debug_consolidate_duplicate_special(
             )
 
             if canonical_dry not in coordinator.growspaces:
-                coordinator.ensure_special_growspace(CANONICAL_ID_DRY, "dry")
+                coordinator._growspace_service.ensure_special_growspace(
+                    CANONICAL_ID_DRY, "dry"
+                )
 
             await _consolidate_plants_to_canonical_growspace(
                 coordinator, duplicate_ids, canonical_dry, CANONICAL_ID_DRY
@@ -245,7 +251,9 @@ async def handle_debug_consolidate_duplicate_special(
             )
 
             if canonical_cure not in coordinator.growspaces:
-                coordinator.ensure_special_growspace(CANONICAL_ID_CURE, "cure")
+                coordinator._growspace_service.ensure_special_growspace(
+                    CANONICAL_ID_CURE, "cure"
+                )
 
             await _consolidate_plants_to_canonical_growspace(
                 coordinator, duplicate_ids, canonical_cure, CANONICAL_ID_CURE

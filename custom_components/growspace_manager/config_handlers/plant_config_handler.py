@@ -13,7 +13,7 @@ from custom_components.growspace_manager.models import Growspace, Plant
 from homeassistant.config_entries import ConfigFlowResult
 from homeassistant.helpers import selector
 
-from . import BaseConfigHandler
+from . import AbortFlow, BaseConfigHandler
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -25,11 +25,10 @@ class PlantConfigHandler(BaseConfigHandler[dict[str, Any]]):
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
         """Handle plant management step."""
-        if self.config_entry is None:
-            return self.flow.async_abort(reason="setup_error")
-        coordinator = self.config_entry.runtime_data
-        if coordinator is None:
-            return self.flow.async_abort(reason="setup_error")
+        try:
+            coordinator = self.get_coordinator()
+        except AbortFlow as e:
+            return self.flow.async_abort(reason=e.reason)
 
         if user_input is not None:
             action = user_input.get("action")
@@ -43,7 +42,9 @@ class PlantConfigHandler(BaseConfigHandler[dict[str, Any]]):
                 try:
                     plant = coordinator.plants.get(user_input["plant_id"])
                     if plant:
-                        await self.async_destroy_plant(plant.growspace_id, plant.id)
+                        await self.async_destroy_plant(
+                            plant.growspace_id, plant.plant_id
+                        )
                 except Exception:
                     _LOGGER.exception("Error removing plant")
                     return self.flow.async_show_form(
@@ -63,17 +64,16 @@ class PlantConfigHandler(BaseConfigHandler[dict[str, Any]]):
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
         """Handle growspace selection for plant step."""
-        if self.config_entry is None:
-            return self.flow.async_abort(reason="setup_error")
-        coordinator = self.config_entry.runtime_data
-        if coordinator is None:
-            return self.flow.async_abort(reason="setup_error")
+        try:
+            coordinator = self.get_coordinator()
+        except AbortFlow as e:
+            return self.flow.async_abort(reason=e.reason)
 
         if user_input is not None:
             self.flow.selected_growspace_id = user_input["growspace_id"]
             return await self.async_step_add_plant()
 
-        growspace_options = coordinator.get_sorted_growspace_options()
+        growspace_options = coordinator.growspace_service.get_sorted_growspace_options()
         if not growspace_options:
             return self.flow.async_abort(reason="no_growspaces")
 
@@ -98,11 +98,10 @@ class PlantConfigHandler(BaseConfigHandler[dict[str, Any]]):
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
         """Handle adding a plant step."""
-        if self.config_entry is None:
-            return self.flow.async_abort(reason="setup_error")
-        coordinator = self.config_entry.runtime_data
-        if coordinator is None:
-            return self.flow.async_abort(reason="setup_error")
+        try:
+            coordinator = self.get_coordinator()
+        except AbortFlow as e:
+            return self.flow.async_abort(reason=e.reason)
         growspace_id = self.flow.selected_growspace_id
         growspace = coordinator.growspaces.get(growspace_id)
 
@@ -135,11 +134,10 @@ class PlantConfigHandler(BaseConfigHandler[dict[str, Any]]):
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
         """Handle updating a plant step."""
-        if self.config_entry is None:
-            return self.flow.async_abort(reason="setup_error")
-        coordinator = self.config_entry.runtime_data
-        if coordinator is None:
-            return self.flow.async_abort(reason="setup_error")
+        try:
+            coordinator = self.get_coordinator()
+        except AbortFlow as e:
+            return self.flow.async_abort(reason=e.reason)
         plant_id = self.flow.selected_plant_id
         plant = coordinator.plants.get(plant_id)
 

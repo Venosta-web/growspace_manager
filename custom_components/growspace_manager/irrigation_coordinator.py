@@ -12,7 +12,7 @@ from typing import TYPE_CHECKING, Any, override
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.event import async_track_time_change
-from homeassistant.util.dt import utcnow
+from homeassistant.util.dt import now as dt_now, utcnow
 
 if TYPE_CHECKING:
     from .coordinator import GrowspaceCoordinator
@@ -38,6 +38,12 @@ class BaseIrrigationCoordinator:
         self._main_coordinator = main_coordinator
         self._listeners: list[Callable[[], None]] = []
         self._running_tasks: dict[str, asyncio.Task[Any]] = {}
+        self._active_events: dict[str, dict[str, Any]] = {}
+
+    @property
+    def active_events(self) -> dict[str, dict[str, Any]]:
+        """Return currently active events (start_time, duration)."""
+        return self._active_events
 
     @property
     def growspace(self) -> Growspace:
@@ -297,11 +303,15 @@ class IrrigationCoordinator(BaseIrrigationCoordinator):
         if drain_times:
             _LOGGER.debug("Drain schedule: %s", drain_times)
 
-        # Deduplicate events based on time
+        # Deduplicate events based on time, skipping malformed records
         unique_irrigation_times = {
-            event["time"]: event for event in irrigation_times
+            t: event
+            for event in irrigation_times
+            if (t := event.get("time")) is not None
         }.values()
-        unique_drain_times = {event["time"]: event for event in drain_times}.values()
+        unique_drain_times = {
+            t: event for event in drain_times if (t := event.get("time")) is not None
+        }.values()
 
         for event in unique_irrigation_times:
             self._schedule_event(event, "irrigation")
@@ -400,6 +410,12 @@ class IrrigationCoordinator(BaseIrrigationCoordinator):
         event_data: Mapping[str, Any],
     ) -> None:
         """Run the on-off cycle for a pump and send notifications."""
+        # Track active event for frontend animation
+        self._active_events[event_type] = {
+            "start": dt_now().isoformat(),
+            "duration": duration,
+        }
+
         start_dt = None
         moisture_before = None
 
@@ -443,6 +459,9 @@ class IrrigationCoordinator(BaseIrrigationCoordinator):
             )
         finally:
             try:
+                # Clear active event
+                self._active_events.pop(event_type, None)
+
                 end_dt = utcnow()
                 # Ensure start_dt is defined
                 if start_dt:

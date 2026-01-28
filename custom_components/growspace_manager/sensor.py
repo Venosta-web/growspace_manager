@@ -34,9 +34,6 @@ from .const import (
     ATTR_ROW,
     ATTR_STAGE,
     ATTR_STRAIN,
-    CONF_HUMIDITY_SENSOR,
-    CONF_TEMP_SENSOR,
-    CONF_VPD_SENSOR,
     DOMAIN,
     METRIC_HUMIDITY,
     METRIC_TEMPERATURE,
@@ -85,9 +82,10 @@ async def _async_create_derivative_sensors(
         domain: str,
         s_type: str,
         s_source: str,
+        display_name: str | None = None,
     ) -> None:
         unique_id = await sensor_cls_setup(
-            hass, s_source, growspace.id, growspace.name, s_type
+            hass, s_source, growspace.id, display_name or growspace.name, s_type
         )
         if unique_id:
             entity_key = (platform, domain, unique_id)
@@ -95,35 +93,48 @@ async def _async_create_derivative_sensors(
                 created_entity_ids.append(entity_key)
 
     metric_map = {
-        METRIC_TEMPERATURE: CONF_TEMP_SENSOR,
-        METRIC_HUMIDITY: CONF_HUMIDITY_SENSOR,
-        METRIC_VPD: CONF_VPD_SENSOR,
+        METRIC_TEMPERATURE: ("temperature_sensor", "temperature_sensors"),
+        METRIC_HUMIDITY: ("humidity_sensor", "humidity_sensors"),
+        METRIC_VPD: ("vpd_sensor", "vpd_sensors"),
     }
 
-    for sensor_type, conf_key in metric_map.items():
-        # Support both dict (legacy/mock) and dataclass
+    # Helper to safely get from dataclass or dict
+    def get_val(key: str, default: Any = None) -> Any:
         if isinstance(growspace.environment_config, dict):
-            source_sensor = growspace.environment_config.get(conf_key)
-        else:
-            source_sensor = getattr(growspace.environment_config, conf_key, None)
+            return growspace.environment_config.get(key, default)
+        return getattr(growspace.environment_config, key, default)
 
-        if not source_sensor:
-            continue
+    for sensor_type, (singular_key, plural_key) in metric_map.items():
+        # Get all sensors for this metric
+        sensors = list(get_val(plural_key, []))
+        singular_val = get_val(singular_key)
+        if singular_val and singular_val not in sensors:
+            sensors.insert(0, singular_val)
 
-        await _create_and_track(
-            async_setup_trend_sensor,
-            "binary_sensor",
-            "trend",
-            sensor_type,
-            source_sensor,
-        )
-        await _create_and_track(
-            async_setup_statistics_sensor,
-            "sensor",
-            "statistics",
-            sensor_type,
-            source_sensor,
-        )
+        for i, source_sensor in enumerate(sensors):
+            if not source_sensor:
+                continue
+
+            # Add index suffix if there are multiple sensors of the same type
+            suffix = f" {i + 1}" if len(sensors) > 1 else ""
+            display_name = f"{growspace.name}{suffix}"
+
+            await _create_and_track(
+                async_setup_trend_sensor,
+                "binary_sensor",
+                "trend",
+                sensor_type,
+                source_sensor,
+                display_name=display_name,
+            )
+            await _create_and_track(
+                async_setup_statistics_sensor,
+                "sensor",
+                "statistics",
+                sensor_type,
+                source_sensor,
+                display_name=display_name,
+            )
 
 
 async def async_setup_entry(
@@ -241,10 +252,10 @@ async def _create_initial_entities(
         growspace_entities[growspace_id] = gs_entity
         initial_entities.append(gs_entity)
 
-        vpd_entity = _check_calculated_vpd_sensor(coordinator, growspace)
-        if vpd_entity:
+        vpd_entities = _check_calculated_vpd_sensor(coordinator, growspace)
+        for vpd_entity in vpd_entities:
             initial_entities.append(vpd_entity)
-            calculated_vpd_growspace_ids.add(growspace_id)
+            calculated_vpd_growspace_ids.add(vpd_entity.unique_id)
 
         await _async_create_derivative_sensors(hass, config_entry, growspace)
 
@@ -277,14 +288,17 @@ async def _update_growspace_entities(
         # Check for new derivative/calculated sensors for ALL growspaces
         await _async_create_derivative_sensors(hass, config_entry, growspace)
 
-        if growspace_id not in calculated_vpd_growspace_ids:
-            vpd_entity = _check_calculated_vpd_sensor(coordinator, growspace)
-            if vpd_entity:
-                async_add_entities([vpd_entity])
-                calculated_vpd_growspace_ids.add(growspace_id)
-                # Request a refresh so the coordinator can use the newly created sensor data
-                # for its derived calculations (mold risk, etc.)
-                hass.async_create_task(coordinator.async_request_refresh())
+        vpd_entities = _check_calculated_vpd_sensor(coordinator, growspace)
+        new_calculated_vpds = [
+            v for v in vpd_entities if v.unique_id not in calculated_vpd_growspace_ids
+        ]
+        if new_calculated_vpds:
+            async_add_entities(new_calculated_vpds)
+            for v in new_calculated_vpds:
+                calculated_vpd_growspace_ids.add(v.unique_id)
+            # Request a refresh so the coordinator can use the newly created sensor data
+            # for its derived calculations (mold risk, etc.)
+            hass.async_create_task(coordinator.async_request_refresh())
 
     # Remove deleted
     for removed_gs_id in list(growspace_entities.keys()):
@@ -326,42 +340,66 @@ async def _update_plant_entities(
 def _check_calculated_vpd_sensor(
     coordinator: GrowspaceCoordinator,
     growspace: Growspace,
-) -> CalculatedVpdSensor | None:
-    """Create calculated VPD sensor if needed."""
+) -> list[CalculatedVpdSensor]:
+    """Create calculated VPD sensors if needed."""
     env_config = growspace.environment_config
     if not env_config:
-        return None
+        return []
 
-    def get_val(key: str) -> Any:
+    # Helper to safely get from dataclass or dict
+    def get_val(key: str, default: Any = None) -> Any:
         if isinstance(env_config, dict):
-            return env_config.get(key)
-        return getattr(env_config, key, None)
+            return env_config.get(key, default)
+        return getattr(env_config, key, default)
 
-    temp_sensor = get_val(CONF_TEMP_SENSOR)
-    humidity_sensor = get_val(CONF_HUMIDITY_SENSOR)
-    vpd_sensor = get_val(CONF_VPD_SENSOR)
+    # Ensure we are working with the plural lists
+    temp_sensors = get_val("temperature_sensors", [])
+    hum_sensors = get_val("humidity_sensors", [])
+    vpd_sensors = get_val("vpd_sensors", [])
 
-    # Create calculated VPD if temp and humidity exist but no VPD sensor
-    # OR if the configured sensor appears to be one we generated (contains calculated_vpd)
-    should_create = False
-    if temp_sensor and humidity_sensor:
-        if not vpd_sensor or "calculated_vpd" in vpd_sensor:
-            should_create = True
+    # If lists are empty, fallback to singular fields
+    if not temp_sensors and (ts := get_val("temperature_sensor")):
+        temp_sensors = [ts]
+    if not hum_sensors and (hs := get_val("humidity_sensor")):
+        hum_sensors = [hs]
+    if not vpd_sensors and (vs := get_val("vpd_sensor")):
+        vpd_sensors = [vs]
 
-    if should_create:
-        lst_offset = get_val("lst_offset")
-        if lst_offset is None:
-            lst_offset = -2.0
-        return CalculatedVpdSensor(
-            coordinator,
-            growspace.id,
-            growspace.name,
-            temp_sensor,
-            humidity_sensor,
-            lst_offset,
-        )
+    entities: list[CalculatedVpdSensor] = []
 
-    return None
+    # We create a calculated VPD for each T/H pair that lacks a dedicated VPD sensor
+    # or where the dedicated VPD sensor is one of our previous 'calculated' ones.
+    num_pairs = min(len(temp_sensors), len(hum_sensors))
+
+    lst_offset = get_val("lst_offset", 0.0)
+
+    for i in range(num_pairs):
+        t_sensor = temp_sensors[i]
+        h_sensor = hum_sensors[i]
+
+        # Check if we already have a VPD sensor at this position
+        existing_vpd = vpd_sensors[i] if i < len(vpd_sensors) else None
+
+        should_create = False
+        if t_sensor and h_sensor:
+            if not existing_vpd or "calculated_vpd" in existing_vpd:
+                should_create = True
+
+        if should_create:
+            index = i if num_pairs > 1 else None
+            entities.append(
+                CalculatedVpdSensor(
+                    coordinator,
+                    growspace.id,
+                    growspace.name,
+                    t_sensor,
+                    h_sensor,
+                    lst_offset,
+                    index=index,
+                )
+            )
+
+    return entities
 
 
 class BaseVpdSensor(SensorEntity):  # type: ignore[misc]
@@ -486,15 +524,18 @@ class CalculatedVpdSensor(BaseVpdSensor):
         temp_sensor: str,
         humidity_sensor: str,
         lst_offset: float = -2.0,
+        index: int | None = None,
     ) -> None:
         """Initialize the calculated VPD sensor."""
         self._coordinator = coordinator
         self._growspace_id = growspace_id
-        self._attr_name = f"{growspace_name} Calculated VPD"
-        self._attr_unique_id = generate_vpd_sensor_unique_id(growspace_id)
+        suffix = f" {index + 1}" if index is not None else ""
+        self._attr_name = f"{growspace_name} Calculated VPD{suffix}"
+        self._attr_unique_id = generate_vpd_sensor_unique_id(growspace_id, index)
         self._temp_sensor = temp_sensor
         self._humidity_sensor = humidity_sensor
         self._lst_offset = lst_offset
+        self._index = index
         self._attr_translation_key = "calculated_vpd"
 
         self._attr_device_info = DeviceInfo(
@@ -528,8 +569,8 @@ class CalculatedVpdSensor(BaseVpdSensor):
     def extra_state_attributes(self) -> dict[str, Any]:
         """Return additional state attributes."""
         return {
-            CONF_TEMP_SENSOR: self._temp_sensor,
-            CONF_HUMIDITY_SENSOR: self._humidity_sensor,
+            "temperature_sensor": self._temp_sensor,
+            "humidity_sensor": self._humidity_sensor,
             "lst_offset": self._lst_offset,
             "calculation_method": "Calculated from temperature and humidity",
         }
@@ -865,7 +906,10 @@ class GrowspaceListSensor(SensorEntity):  # type: ignore[misc]
 
     def _update_growspaces(self) -> None:
         """Update the internal list of growspaces from the coordinator."""
-        self._growspaces = self.coordinator.get_growspace_options()
+        self._growspaces = {
+            gs_id: getattr(gs, "name", gs_id)
+            for gs_id, gs in self.coordinator.growspaces.items()
+        }
 
     @property
     @override  # type: ignore[misc]

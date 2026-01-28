@@ -272,6 +272,12 @@ class VWCIrrigationCoordinator(BaseIrrigationCoordinator):
         self, pump_entity: str, duration: int, phase: str
     ) -> None:
         """Execute the pump cycle."""
+        # Track active event for frontend animation
+        self._active_events["irrigation"] = {
+            "start": now().isoformat(),
+            "duration": duration,
+        }
+
         start_time = utcnow()
         try:
             await self.hass.services.async_call(
@@ -281,6 +287,9 @@ class VWCIrrigationCoordinator(BaseIrrigationCoordinator):
         except asyncio.CancelledError:
             pass
         finally:
+            # Clear active event
+            self._active_events.pop("irrigation", None)
+
             end_time = utcnow()
             await self.hass.services.async_call(
                 "switch", "turn_off", {"entity_id": pump_entity}, blocking=True

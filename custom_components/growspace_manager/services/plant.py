@@ -37,6 +37,10 @@ from custom_components.growspace_manager.const import (
     DATE_FIELDS,
     EVENT_GROWSPACE_LOG_ENTRY,
 )
+from custom_components.growspace_manager.exceptions import GrowspaceError
+from custom_components.growspace_manager.growspace_validator import GrowspaceValidator
+from custom_components.growspace_manager.strain_library import StrainLibrary
+from custom_components.growspace_manager.utils import parse_date_field
 from homeassistant.components.persistent_notification import (
     async_create as create_notification,
 )
@@ -46,10 +50,6 @@ from homeassistant.helpers import entity_registry as er
 
 if TYPE_CHECKING:
     from custom_components.growspace_manager.coordinator import GrowspaceCoordinator
-from custom_components.growspace_manager.exceptions import GrowspaceError
-from custom_components.growspace_manager.growspace_validator import GrowspaceValidator
-from custom_components.growspace_manager.strain_library import StrainLibrary
-from custom_components.growspace_manager.utils import parse_date_field
 
 # from ..models import Plant # Potentially needed for type hinting if desired
 
@@ -209,7 +209,7 @@ async def handle_add_plant(
 
         # Call coordinator directly, catching validation errors
         try:
-            plant_id = await coordinator.async_add_plant(
+            plant_id = await coordinator._plant_service.add_plant(
                 growspace_id=growspace_id,
                 strain=call.data[ATTR_STRAIN],
                 row=row,
@@ -304,7 +304,7 @@ async def handle_add_plants(
 
             # Add the plant
             try:
-                await coordinator.async_add_plant(
+                await coordinator._plant_service.add_plant(
                     growspace_id=growspace_id,
                     strain=strain,
                     row=free_row,
@@ -486,7 +486,7 @@ async def handle_update_plant(
             # Let's assume we need to ensure it exists.
             await strain_library.add_strain(strain=strain_key, phenotype=pheno_key)
 
-        await coordinator.async_update_plant(plant_id, **update_data)
+        await coordinator._plant_service.update_plant(plant_id, **update_data)
         _LOGGER.info("Updated plant %s with data: %s", plant_id, update_data)
 
     except GrowspaceError as err:
@@ -546,7 +546,7 @@ async def handle_switch_plants(
         raise ServiceValidationError(f"Plant {plant_id_2} does not exist.")
 
     try:
-        await coordinator.async_switch_plants(plant_id_1, plant_id_2)
+        await coordinator._plant_service.switch_plants(plant_id_1, plant_id_2)
         _LOGGER.info("Plants %s and %s switched successfully", plant_id_1, plant_id_2)
 
     except GrowspaceError as err:
@@ -615,7 +615,7 @@ async def handle_move_plant(
             )
 
             # Use the dedicated switch method
-            await coordinator.async_switch_plants(plant_id, occupying_plant_id)
+            await coordinator._plant_service.switch_plants(plant_id, occupying_plant_id)
 
             _LOGGER.info(
                 "Successfully switched positions for %s and %s",
@@ -624,7 +624,7 @@ async def handle_move_plant(
             )
         else:
             # Position is empty, just move normally
-            await coordinator.async_move_plant(plant_id, new_row, new_col)
+            await coordinator._plant_service.move_plant(plant_id, new_row, new_col)
             _LOGGER.info(
                 "Plant %s moved to (%d,%d) in growspace %s",
                 plant.strain,
@@ -668,7 +668,7 @@ async def handle_transition_plant_stage(
             )
 
     try:
-        await coordinator.async_transition_plant_stage(
+        await coordinator._plant_service.transition_plant_stage(
             plant_id=plant_id,
             new_stage=new_stage,
             transition_date=transition_date if transition_date else None,

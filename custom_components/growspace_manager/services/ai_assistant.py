@@ -7,19 +7,23 @@ conversation/LLM integration for grow advice, diagnostics, and recommendations.
 from __future__ import annotations
 
 import logging
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from custom_components.growspace_manager.const import (
     CONF_AI_ENABLED,
     CONF_ASSISTANT_ID,
     PlantStage,
 )
-from custom_components.growspace_manager.coordinator import GrowspaceCoordinator
-from custom_components.growspace_manager.strain_library import StrainLibrary
+from custom_components.growspace_manager.domain import calculate_days_in_stage
 from homeassistant.components import conversation
 from homeassistant.const import STATE_UNAVAILABLE, STATE_UNKNOWN
 from homeassistant.core import Context, HomeAssistant, ServiceCall
 from homeassistant.exceptions import ServiceValidationError
+
+from .strain_library import StrainLibrary
+
+if TYPE_CHECKING:
+    from .coordinator import GrowspaceCoordinator
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -185,7 +189,7 @@ class GrowAssistant:
             "strains": list(strains),
             "max_veg_days": max(
                 (
-                    self.coordinator.serializer.calculate_days_in_stage(
+                    calculate_days_in_stage(
                         p, PlantStage.VEG
                     )
                     for p in plants
@@ -195,7 +199,7 @@ class GrowAssistant:
             ),
             "max_flower_days": max(
                 (
-                    self.coordinator.serializer.calculate_days_in_stage(
+                    calculate_days_in_stage(
                         p, PlantStage.FLOWER
                     )
                     for p in plants

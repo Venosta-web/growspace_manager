@@ -19,6 +19,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.event import async_track_state_change_event
 
 from .const import DEFAULT_DEHUMIDIFIER_MIN_OFFTIME, DEFAULT_DEHUMIDIFIER_MIN_RUNTIME
+from .domain import calculate_days_in_stage
 
 if TYPE_CHECKING:
     from .coordinator import GrowspaceCoordinator
@@ -266,19 +267,19 @@ class DehumidifierCoordinator:
         max_cure_days = 0
 
         for plant in plants:
-            s_days = self.main_coordinator.serializer.calculate_days_in_stage(
+            s_days = calculate_days_in_stage(
                 plant, "seedling"
             )
-            v_days = self.main_coordinator.serializer.calculate_days_in_stage(
+            v_days = calculate_days_in_stage(
                 plant, "veg"
             )
-            f_days = self.main_coordinator.serializer.calculate_days_in_stage(
+            f_days = calculate_days_in_stage(
                 plant, "flower"
             )
-            d_days = self.main_coordinator.serializer.calculate_days_in_stage(
+            d_days = calculate_days_in_stage(
                 plant, "dry"
             )
-            c_days = self.main_coordinator.serializer.calculate_days_in_stage(
+            c_days = calculate_days_in_stage(
                 plant, "cure"
             )
 
