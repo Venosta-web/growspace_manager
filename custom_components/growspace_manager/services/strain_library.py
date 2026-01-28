@@ -371,7 +371,7 @@ async def handle_print_label(
     if not strain_name:
         raise HomeAssistantError(f"Plant {plant_id} has no strain name")
 
-    phenotype_name = plant.genetics.phenotype_name or "-"
+    phenotype_name = plant.genetics.phenotype_name or "default"
     if phenotype_name == "default":
         phenotype_name = "-"
     # Ensure library is loaded to get meta
@@ -385,76 +385,97 @@ async def handle_print_label(
     breeder_logo = strain_meta.get("breeder_logo")
 
     # Construct Niimbot payload
+    # Construct Niimbot payload based on the "Perfect Label" mockup
     payload = []
 
-    # Strain Name (Header)
+    # 1. Main Header: Strain Name (Large and Bold)
     payload.append(
         {
             "type": "text",
-            "value": strain_name.upper(),  # Caps look more professional for headers
-            "x": 15,
-            "y": 15,
-            "size": 55,
+            "value": strain_name.upper(),
+            "x": 20,
+            "y": 20,
+            "size": 50,
+            "width": 250,
+            "height": 50,
+            "fit": True,
             "font": "ppb.ttf",
         }
     )
-    # A thin rectangle acting as a separator
+
+    # 2. Horizontal Divider Line (under header)
     payload.append(
         {
             "type": "rectangle",
-            "x_start": 15,
-            "x_end": 270,
-            "y_start": 75,
-            "y_end": 78,
+            "x_start": 20,
+            "x_end": 260,
+            "y_start": 85,
+            "y_end": 88,
             "fill": "black",
         }
     )
-    multiline_value = f"{phenotype_name}\n{breeder}\n{lineage}"
 
-    # Multiline text with auto-fit
+    # 3. Multiline Info (Pheno, Breeder, Lineage)
+    multiline_value = f"{phenotype_name}\n{breeder}\n{lineage}"
     payload.append(
         {
             "type": "new_multiline",
-            "x": 15,
-            "y": 85,
-            "size": 80,
-            "width": 260,
-            "height": 140,
+            "x": 20,
+            "y": 100,
+            "size": 35,
+            "width": 250,
+            "height": 100,
             "fit": True,
             "font": "rbm.ttf",
             "value": multiline_value,
         }
     )
 
-    # 4. Breeder Logo with a subtle "frame" if it exists
+    # 4. Breeder Logo (Framed)
     if breeder_logo:
-        # Optional: Add a small rectangle border around the logo area
-        payload.append(
-            {
-                "type": "rectangle",
-                "x_start": 285,
-                "x_end": 390,
-                "y_start": 15,
-                "y_end": 120,
-                "fill": None,  # Outline only
-                "width": 1,  # Border thickness
-            }
-        )
         payload.append(
             {
                 "type": "dlimg",
                 "url": breeder_logo,
                 "x": 290,
                 "y": 20,
-                "xsize": 95,
-                "ysize": 95,
+                "xsize": 100,
+                "ysize": 100,
             }
         )
+
+    # 5. QR Code (Dynamic linking to HA or Strain Info)
+    # Using the plant_id or a URL as the value
+    payload.append(
+        {
+            "type": "qrcode",
+            "data": f"https://your-ha-link.com/plant/{plant_id}",
+            "x": 290,
+            "y": 130,
+            "size": 100,
+        }
+    )
+
+    # 6. Small Timestamp (Bottom Right)
+    import datetime
+
+    now = datetime.datetime.now().strftime("%d.%m.%Y")
+    payload.append(
+        {
+            "type": "text",
+            "value": now,
+            "x": 290,
+            "y": 232,
+            "size": 6,
+            "font": "rbm.ttf",
+        }
+    )
     # Call Niimbot service
     service_data = {
         "width": 400,
         "height": 240,
         "rotate": 0,
+        "density": 5,
         "payload": payload,
         "preview": preview,
     }
