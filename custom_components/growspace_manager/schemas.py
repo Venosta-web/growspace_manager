@@ -283,7 +283,12 @@ UPDATE_STRAIN_META_SCHEMA = vol.Schema(
 # Print Label
 PRINT_LABEL_SCHEMA = vol.Schema(
     {
-        vol.Required(ATTR_PLANT_ID): str,
+        vol.Optional(ATTR_PLANT_ID): str,
+        vol.Optional(ATTR_STRAIN): str,
+        vol.Optional(ATTR_PHENOTYPE): str,
+        vol.Optional("breeder"): str,
+        vol.Optional("lineage"): str,
+        vol.Optional("breeder_logo"): str,
         vol.Optional("device_id"): str,
         vol.Optional("preview", default=False): bool,
     }

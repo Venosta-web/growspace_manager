@@ -363,28 +363,44 @@ async def handle_print_label(
     device_id = call.data.get("device_id")
     preview = call.data.get("preview", False)
 
-    plant = coordinator.plants.get(plant_id)
-    if not plant:
-        raise HomeAssistantError(f"Plant {plant_id} not found")
+    strain_name = None
+    phenotype_name = None
+    breeder = None
+    lineage = None
+    breeder_logo = None
 
-    strain_name = plant.genetics.strain_name
+    if plant_id:
+        plant = coordinator.plants.get(plant_id)
+        if not plant:
+            raise HomeAssistantError(f"Plant {plant_id} not found")
+
+        strain_name = plant.genetics.strain_name
+        phenotype_name = plant.genetics.phenotype_name or "default"
+    else:
+        strain_name = call.data.get("strain")
+        phenotype_name = call.data.get("phenotype") or "default"
+        breeder = call.data.get("breeder")
+        lineage = call.data.get("lineage")
+        breeder_logo = call.data.get("breeder_logo")
+
     if not strain_name:
-        raise HomeAssistantError(f"Plant {plant_id} has no strain name")
+        raise HomeAssistantError(
+            "Neither plant_id nor strain name provided for label printing"
+        )
 
-    phenotype_name = plant.genetics.phenotype_name or "default"
     if phenotype_name == "default":
         phenotype_name = "-"
-    # Ensure library is loaded to get meta
+
+    # Ensure library is loaded to get meta if not provided or to augment plant data
     await strain_library.load()
     library_data = strain_library.get_all()
     strain_meta = library_data.get(strain_name, {}).get("meta", {})
 
-    # Breeder
-    breeder = strain_meta.get("breeder", "-")
-    lineage = strain_meta.get("lineage", "-")
-    breeder_logo = strain_meta.get("breeder_logo")
+    # Use provided values or fall back to library meta
+    breeder = breeder or strain_meta.get("breeder", "-")
+    lineage = lineage or strain_meta.get("lineage", "-")
+    breeder_logo = breeder_logo or strain_meta.get("breeder_logo")
 
-    # Construct Niimbot payload
     # Construct Niimbot payload based on the "Perfect Label" mockup
     payload = []
 
@@ -444,17 +460,17 @@ async def handle_print_label(
             }
         )
 
-    # 5. QR Code (Dynamic linking to HA or Strain Info)
-    # Using the plant_id or a URL as the value
-    payload.append(
-        {
-            "type": "qrcode",
-            "data": f"https://your-ha-link.com/plant/{plant_id}",
-            "x": 290,
-            "y": 130,
-            "size": 100,
-        }
-    )
+    # 5. QR Code (Dynamic linking to HA or Strain Info) - Only if plant_id is present
+    if plant_id:
+        payload.append(
+            {
+                "type": "qrcode",
+                "data": f"https://your-ha-link.com/plant/{plant_id}",
+                "x": 290,
+                "y": 130,
+                "size": 100,
+            }
+        )
 
     # 6. Small Timestamp (Bottom Right)
     import datetime
@@ -490,5 +506,6 @@ async def handle_print_label(
         _LOGGER.error("Failed to print Niimbot label: %s", err)
         raise HomeAssistantError(f"Failed to print Niimbot label: {err}") from err
     else:
-        _LOGGER.info("Sent label to Niimbot for plant %s", plant_id)
+        log_id = plant_id or strain_name
+        _LOGGER.info("Sent label to Niimbot for %s", log_id)
         return response
