@@ -40,6 +40,7 @@ from .services import (
     IMPORT_STRAIN_LIBRARY_SCHEMA,
     MOVE_CLONE_SCHEMA,
     MOVE_PLANT_SCHEMA,
+    PRINT_LABEL_SCHEMA,
     REMOVE_DRAIN_TIME_SCHEMA,
     REMOVE_ENVIRONMENT_SCHEMA,
     REMOVE_GROWSPACE_SCHEMA,
@@ -328,6 +329,11 @@ async def register_services(
             wrap(plant.handle_add_timeline_note, True),
             ADD_TIMELINE_NOTE_SCHEMA,
         ),
+        (
+            GrowspaceService.PRINT_LABEL,
+            wrap(strain_library.handle_print_label, True),
+            PRINT_LABEL_SCHEMA,
+        ),
     ]
 
     for service_name, handler, schema in services:
@@ -343,6 +349,14 @@ async def register_services(
                 cast(Any, handler),
                 schema=schema,
                 supports_response=SupportsResponse.ONLY,
+            )
+        elif service_name == GrowspaceService.PRINT_LABEL:
+            hass.services.async_register(
+                DOMAIN,
+                service_name,
+                cast(Any, handler),
+                schema=schema,
+                supports_response=SupportsResponse.OPTIONAL,
             )
         else:
             hass.services.async_register(

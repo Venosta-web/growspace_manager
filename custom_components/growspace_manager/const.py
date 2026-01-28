@@ -248,6 +248,7 @@ class GrowspaceService(StrEnum):
     STRAIN_RECOMMENDATION = "strain_recommendation"
     ASK_GROW_ADVICE = "ask_grow_advice"
     ANALYZE_ALL_GROWSPACES = "analyze_all_growspaces"
+    PRINT_LABEL = "print_label"
     CONFIGURE_ENVIRONMENT = "configure_environment"
     REMOVE_ENVIRONMENT = "remove_environment"
     SET_DEHUMIDIFIER_CONTROL = "set_dehumidifier_control"

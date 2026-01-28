@@ -3,6 +3,7 @@
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from syrupy.assertion import SnapshotAssertion
 
 from custom_components.growspace_manager.exceptions import GrowspaceNotFoundError
 from custom_components.growspace_manager.models import (
@@ -56,6 +57,12 @@ def save_callback_mock():
 
 
 @pytest.fixture
+def cache_mock():
+    """Mock the cache."""
+    return MagicMock()
+
+
+@pytest.fixture
 def service(
     hass,
     repository_mock,
@@ -63,9 +70,10 @@ def service(
     view_model_builder_mock,
     save_callback_mock,
     lock_mock,
+    cache_mock,
 ):
     """GrowspaceService fixture."""
-    return GrowspaceService(
+    svc = GrowspaceService(
         hass=hass,
         repository=repository_mock,
         validator=validator_mock,
@@ -73,14 +81,20 @@ def service(
         save_callback=save_callback_mock,
         lock=lock_mock,
     )
+    svc.cache = cache_mock
+    return svc
 
 
 @pytest.mark.asyncio
-async def test_add_growspace_no_notification_target(service, repository_mock) -> None:
+async def test_add_growspace_no_notification_target(
+    service, repository_mock, snapshot: SnapshotAssertion
+) -> None:
     """Test add_growspace with empty notification target."""
-    await service.add_growspace("Test", notification_target="")
+    with patch("uuid.uuid4", return_value="test-uuid"):
+        await service.add_growspace("Test", notification_target="")
     gs = list(repository_mock.growspaces.values())[0]
     assert gs.notification_target is None
+    assert gs.to_dict() == snapshot
 
 
 @pytest.mark.asyncio
@@ -95,19 +109,24 @@ async def test_update_growspace_no_changes(
 
 
 @pytest.mark.asyncio
-async def test_resize_growspace_with_invalid_plants(service, repository_mock) -> None:
+async def test_resize_growspace_with_invalid_plants(
+    service, repository_mock, caplog: pytest.LogCaptureFixture
+) -> None:
     """Test resizing growspace when plants become out of bounds."""
     gs = Growspace(id="gs1", name="Test", rows=2, plants_per_row=2)
     repository_mock.growspaces = {"gs1": gs}
 
+    # Use actual plant objects since service uses values()
     plant = Plant(plant_id="p1", growspace_id="gs1", row=2, col=2)
-    repository_mock.get_growspace_plants.return_value = [plant]
+    repository_mock.plants = {"p1": plant}
 
     # Resize to 1x1
     await service.update_growspace("gs1", rows=1, plants_per_row=1)
-    # Should log warning (we just verify it completes)
+
     assert gs.rows == 1
     assert gs.plants_per_row == 1
+    assert "Found 1 plants outside new grid boundaries" in caplog.text
+    assert "Plant p1" in caplog.text
 
 
 def test_generate_unique_name(service, repository_mock) -> None:
@@ -330,3 +349,36 @@ def test_update_special_growspace_name_logic(service, repository_mock) -> None:
     repository_mock.growspaces = {"dry": gs}
     service._update_special_growspace_name("dry", "New")
     assert gs.name == "New"
+
+
+def test_ensure_special_growspace_with_cache(
+    service, repository_mock, cache_mock
+) -> None:
+    """Test ensure_special_growspace invalidates cache on creation and update."""
+    # 1. Creation path
+    service.ensure_special_growspace("dry", "dry", growspace_type=GrowspaceType.DRY)
+    cache_mock.invalidate.assert_called_with("dry")
+    cache_mock.invalidate.reset_mock()
+
+    # 2. Update path (name remains same, but we force it to check)
+    service.ensure_special_growspace("dry", "dry", growspace_type=GrowspaceType.DRY)
+    # Even if name same, the method checks type and then invalidates if update_data is True?
+    # Actually looking at code:
+    # if self.cache: self.cache.invalidate(canonical_id) is in else block too.
+    cache_mock.invalidate.assert_called_with("dry")
+
+
+def test_ensure_calculated_sensors_with_cache(
+    service, repository_mock, cache_mock
+) -> None:
+    """Test ensure_calculated_sensors invalidates cache on update."""
+    env = EnvironmentConfig(
+        temperature_sensors=["sensor.t1"],
+        humidity_sensors=["sensor.h1"],
+        vpd_sensors=[],
+    )
+    gs = Growspace(id="gs1", name="GS", environment_config=env)
+    repository_mock.growspaces = {"gs1": gs}
+
+    service.ensure_calculated_sensors()
+    cache_mock.invalidate.assert_called_with("gs1")

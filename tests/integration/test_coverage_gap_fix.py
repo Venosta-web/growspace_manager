@@ -376,6 +376,7 @@ async def test_strain_library_webp_migration(hass: HomeAssistant) -> None:
     mock_db = MagicMock()
     # Ensure executescript is awaitable
     mock_db.executescript = AsyncMock()
+    mock_db.execute = AsyncMock()
     mock_db.commit = AsyncMock()
 
     async def connect_side_effect(*args, **kwargs):

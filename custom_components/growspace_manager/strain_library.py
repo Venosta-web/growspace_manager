@@ -30,6 +30,7 @@ CREATE TABLE IF NOT EXISTS strains (
     strain_id INTEGER PRIMARY KEY,
     strain_name TEXT UNIQUE NOT NULL,
     breeder TEXT,
+    breeder_logo TEXT,
     type TEXT,
     lineage TEXT,
     sex TEXT,
@@ -89,14 +90,25 @@ class StrainLibrary:
         self._db.row_factory = aiosqlite.Row
         await self._db.executescript(STRAIN_LIBRARY_SCHEMA)
         await self._db.commit()
+
+        # Ensure breeder_logo column exists before first load
+        try:
+            await self._db.execute("ALTER TABLE strains ADD COLUMN breeder_logo TEXT")
+            await self._db.commit()
+            _LOGGER.info("Successfully added breeder_logo column to strains table")
+        except aiosqlite.OperationalError:
+            # Column already exists
+            pass
+
         await self.load()
+
         # Asynchronously migrate any existing JPG images to WebP
         migrated = await self.image_manager.async_migrate_to_webp(self._db)
         # Reload to pick up updated WebP paths if migration happened
         if migrated:
             await self.load()
-            return True
-        return False
+
+        return migrated
 
     async def async_close(self) -> None:
         """Close the database connection."""
@@ -129,7 +141,7 @@ class StrainLibrary:
         new_strains: dict[str, dict[str, Any]] = {}
         query = """
             SELECT
-                s.strain_id, s.strain_name, s.breeder, s.type, s.lineage, s.sex,
+                s.strain_id, s.strain_name, s.breeder, s.breeder_logo, s.type, s.lineage, s.sex,
                 s.sativa_percentage, s.indica_percentage,
                 p.phenotype_id, p.phenotype_name, p.description, p.image_path,
                 p.image_crop_meta, p.flower_days_min, p.flower_days_max
@@ -147,6 +159,7 @@ class StrainLibrary:
                             k: row[k]
                             for k in [
                                 "breeder",
+                                "breeder_logo",
                                 "type",
                                 "lineage",
                                 "sex",
@@ -279,6 +292,7 @@ class StrainLibrary:
         strain: str,
         phenotype: str | None = None,
         breeder: str | None = None,
+        breeder_logo: str | None = None,
         strain_type: str | None = None,
         lineage: str | None = None,
         sex: str | None = None,
@@ -314,6 +328,7 @@ class StrainLibrary:
         # Insert/replace strain metadata
         strain_data = {
             "breeder": breeder,
+            "breeder_logo": breeder_logo,
             "type": strain_type,
             "lineage": lineage,
             "sex": sex,
@@ -321,6 +336,19 @@ class StrainLibrary:
             "indica_percentage": indica_percentage,
         }
         strain_data = {k: v for k, v in strain_data.items() if v is not None}
+
+        # If breeder_logo is provided, update all strains from this breeder
+        if breeder and breeder_logo:
+            update_logo_query = "UPDATE strains SET breeder_logo = ? WHERE breeder = ?"
+            await self._db.execute(update_logo_query, (breeder_logo, breeder))
+        # If breeder is set but breeder_logo is NOT provided, try to find an existing one
+        elif breeder and not breeder_logo:
+            find_logo_query = "SELECT breeder_logo FROM strains WHERE breeder = ? AND breeder_logo IS NOT NULL LIMIT 1"
+            async with self._db.execute(find_logo_query, (breeder,)) as cursor:
+                row = await cursor.fetchone()
+                if row and row[0]:
+                    strain_data["breeder_logo"] = row[0]
+
         fields = ", ".join(["strain_name", *list(strain_data)])
         placeholders = ", ".join(["?"] * (len(strain_data) + 1))
         query = f"""
@@ -328,6 +356,7 @@ class StrainLibrary:
             VALUES ({placeholders})
             ON CONFLICT(strain_name) DO UPDATE SET
                 breeder=COALESCE(excluded.breeder, breeder),
+                breeder_logo=COALESCE(excluded.breeder_logo, breeder_logo),
                 type=COALESCE(excluded.type, type),
                 lineage=COALESCE(excluded.lineage, lineage),
                 sex=COALESCE(excluded.sex, sex),
@@ -412,6 +441,7 @@ class StrainLibrary:
         strain: str,
         phenotype: str | None = None,
         breeder: str | None = None,
+        breeder_logo: str | None = None,
         strain_type: str | None = None,
         lineage: str | None = None,
         sex: str | None = None,
@@ -431,6 +461,7 @@ class StrainLibrary:
             strain=strain,
             phenotype=phenotype,
             breeder=breeder,
+            breeder_logo=breeder_logo,
             strain_type=strain_type,
             lineage=lineage,
             sex=sex,
@@ -618,6 +649,7 @@ class StrainLibrary:
             await self.add_strain(
                 strain=strain_name,
                 breeder=meta.get("breeder"),
+                breeder_logo=meta.get("breeder_logo"),
                 strain_type=meta.get("type"),
                 lineage=meta.get("lineage"),
                 sex=meta.get("sex"),
