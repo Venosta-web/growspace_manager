@@ -392,6 +392,8 @@ async def handle_print_label(
         lineage = call.data.get(ATTR_LINEAGE)
         breeder_logo = call.data.get(ATTR_BREEDER_LOGO)
 
+    base_url = call.data.get("base_url")
+
     if not strain_name:
         raise HomeAssistantError(
             "Neither plant_id nor strain name provided for label printing"
@@ -416,10 +418,11 @@ async def handle_print_label(
     # 1. Main Header: Strain Name (Large and Bold)
     payload.append(
         {
-            "type": "text",
+            "type": "new_multiline",
             "value": strain_name.upper(),
             "x": 20,
             "y": 20,
+            "x_end": 260,
             "size": 50,
             "width": 250,
             "height": 50,
@@ -447,7 +450,8 @@ async def handle_print_label(
             "type": "new_multiline",
             "x": 20,
             "y": 100,
-            "size": 35,
+            "x_end": 260,
+            "size": 40,
             "width": 250,
             "height": 100,
             "fit": True,
@@ -471,10 +475,15 @@ async def handle_print_label(
 
     # 5. QR Code (Dynamic linking to HA or Strain Info) - Only if plant_id is present
     if plant_id:
+        qr_data = (
+            f"{base_url}?plantId={plant_id}"
+            if base_url
+            else f"{get_url(hass)}/plant/{plant_id}"
+        )
         payload.append(
             {
                 "type": "qrcode",
-                "data": f"{get_url(hass)}/plant/{plant_id}",
+                "data": qr_data,
                 "x": 290,
                 "y": 130,
                 "size": 100,
