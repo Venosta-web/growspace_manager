@@ -265,6 +265,19 @@ def test_deduct_from_inventory(manager) -> None:
     )
 
 
+def test_deduct_from_inventory_exception(manager) -> None:
+    """Test exception handling in deduct_from_inventory."""
+    # Mock inventory service to raise an exception
+    manager.inventory_service = MagicMock()
+    manager.inventory_service.deduct_nutrients.side_effect = Exception("Test exception")
+
+    nutrients = {"A": 2.0}
+    # This should not raise an exception as it's caught inside deduct_from_inventory
+    manager.deduct_from_inventory(nutrients, 1.0)
+
+    manager.inventory_service.deduct_nutrients.assert_called_once()
+
+
 def test_get_serialization_data(manager) -> None:
     p1 = NutrientPreset(id="p1", name="P1", items=[], created_at="2024-01-01")
     i1 = IPMPreset(id="i1", name="I1", type="spray", items=[], created_at="2024-01-01")

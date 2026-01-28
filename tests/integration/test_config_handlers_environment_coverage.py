@@ -623,3 +623,16 @@ async def test_parse_advanced_bayesian_input_success(handler) -> None:
     user_input = {"key": "(0.9, 0.1)"}
     result = handler.parse_advanced_bayesian_input(user_input)
     assert result["key"] == (0.9, 0.1)
+
+
+@pytest.mark.asyncio
+async def test_collect_sensors_to_configure_empty_after_filtering(handler) -> None:
+    """Test _collect_sensors_to_configure when filtering results in empty list. Covers line 398."""
+    gs = Growspace(id="gs1", name="GS1")
+    handler.config_entry.runtime_data.growspaces = {"gs1": gs}
+    handler.flow.selected_growspace_id = "gs1"
+    # Provide a non-string in a list - this should trigger the 'continue' on line 398
+    handler.flow.env_config_step1 = {"temperature_sensors": [123]}
+
+    result = await handler.async_step_configure_sensor_placement()
+    assert result["type"] == "create_entry"  # Since no sensors to configure

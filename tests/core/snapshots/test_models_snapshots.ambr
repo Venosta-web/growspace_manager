@@ -1,0 +1,195 @@
+# serializer version: 1
+# name: test_diagnostics_snapshot
+  dict({
+    'coordinator_data': dict({
+      'growspaces': dict({
+        'gs1': dict({
+          'name': 'Test Growspace',
+          'unique_id': '**REDACTED**',
+        }),
+      }),
+      'plants': dict({
+      }),
+    }),
+    'entry': dict({
+      'data': dict({
+        'latitude': '**REDACTED**',
+        'some': 'data',
+      }),
+      'entry_id': 'test_entry',
+    }),
+    'integration_version': '0.3.3',
+    'subsystems': dict({
+      'dehumidifier': dict({
+      }),
+      'irrigation': dict({
+      }),
+    }),
+    'system_stats': dict({
+      'growspace_count': 0,
+      'plant_count': 0,
+      'strain_library_count': 0,
+    }),
+  })
+# ---
+# name: test_environment_config_serialization_snapshot
+  dict({
+    'bayesian_options': dict({
+    }),
+    'circulation_fan_entities': list([
+    ]),
+    'co2_sensor': None,
+    'control_dehumidifier': True,
+    'dehumidifier_entities': list([
+    ]),
+    'dehumidifier_thresholds': dict({
+    }),
+    'exhaust_fan_entities': list([
+    ]),
+    'flower_day_hours': 12,
+    'humidifier_entities': list([
+    ]),
+    'humidity_sensor': 'sensor.hum',
+    'humidity_sensors': list([
+      'sensor.hum',
+    ]),
+    'irrigation_tanks': list([
+    ]),
+    'light_sensors': list([
+    ]),
+    'lst_offset': -2.0,
+    'minimum_source_air_temperature': 18.0,
+    'mold_threshold': 0.75,
+    'sensor_coordinates': dict({
+    }),
+    'sensor_groups': list([
+    ]),
+    'soil_moisture_sensor': None,
+    'stress_threshold': 0.7,
+    'temperature_sensor': 'sensor.temp',
+    'temperature_sensors': list([
+      'sensor.temp',
+    ]),
+    'veg_day_hours': 18,
+    'vpd_sensor': 'sensor.vpd',
+    'vpd_sensors': list([
+      'sensor.vpd',
+    ]),
+  })
+# ---
+# name: test_growspace_serialization_snapshot
+  dict({
+    'created_at': '2026-01-12T12:00:00',
+    'dehumidifier_config': dict({
+    }),
+    'device_id': None,
+    'dimensions': dict({
+      'depth': 120,
+      'height': 200,
+      'unit': 'cm',
+      'width': 120,
+    }),
+    'environment_config': dict({
+      'bayesian_options': dict({
+      }),
+      'circulation_fan_entities': list([
+      ]),
+      'co2_sensor': None,
+      'control_dehumidifier': False,
+      'dehumidifier_entities': list([
+      ]),
+      'dehumidifier_thresholds': dict({
+      }),
+      'exhaust_fan_entities': list([
+      ]),
+      'flower_day_hours': 12,
+      'humidifier_entities': list([
+      ]),
+      'humidity_sensor': None,
+      'humidity_sensors': list([
+      ]),
+      'irrigation_tanks': list([
+      ]),
+      'light_sensors': list([
+      ]),
+      'lst_offset': -2.0,
+      'minimum_source_air_temperature': 18.0,
+      'mold_threshold': 0.75,
+      'sensor_coordinates': dict({
+      }),
+      'sensor_groups': list([
+      ]),
+      'soil_moisture_sensor': None,
+      'stress_threshold': 0.7,
+      'temperature_sensor': None,
+      'temperature_sensors': list([
+      ]),
+      'veg_day_hours': 18,
+      'vpd_sensor': None,
+      'vpd_sensors': list([
+      ]),
+    }),
+    'growspace_type': 'veg',
+    'id': 'gs_test',
+    'irrigation_config': dict({
+      'drain_duration': None,
+      'drain_pump_entity': None,
+      'drain_times': list([
+      ]),
+      'irrigation_duration': None,
+      'irrigation_pump_entity': None,
+      'irrigation_times': list([
+      ]),
+      'veg_day_hours': 12,
+    }),
+    'irrigation_strategy': dict({
+      'enabled': False,
+      'lights_on_time': '06:00:00',
+      'maintenance_dryback_percent': 2.0,
+      'p0_duration_minutes': 60,
+      'p2_stop_before_lights_off_minutes': 120,
+      'shot_duration_seconds': 10,
+      'shot_interval_minutes': 15,
+      'target_vwc_percent': 55.0,
+    }),
+    'name': 'Test Growspace',
+    'notification_target': None,
+    'plants_per_row': 4,
+    'rows': 2,
+  })
+# ---
+# name: test_plant_serialization_snapshot
+  dict({
+    'clone_start': None,
+    'col': 2,
+    'created_at': None,
+    'cure_start': None,
+    'device_id': None,
+    'dry_start': None,
+    'flower_start': None,
+    'genetics': dict({
+      'phenotype_id': None,
+      'phenotype_name': '',
+      'strain_id': None,
+      'strain_name': '',
+    }),
+    'growspace_id': 'gs_test',
+    'last_ipm': None,
+    'last_ipm_type': None,
+    'last_trained': None,
+    'last_training_technique': None,
+    'last_watered': None,
+    'mother_start': None,
+    'plant_id': 'plant_1',
+    'row': 1,
+    'seedling_start': None,
+    'source_mother': None,
+    'stage': 'veg',
+    'stage_history': list([
+    ]),
+    'transition_date': None,
+    'type': 'normal',
+    'updated_at': None,
+    'veg_start': None,
+  })
+# ---

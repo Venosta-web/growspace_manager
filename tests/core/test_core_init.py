@@ -45,6 +45,7 @@ from custom_components.growspace_manager.schemas import (
     LOG_TRAINING_EVENT_SCHEMA,
     MOVE_CLONE_SCHEMA,
     MOVE_PLANT_SCHEMA,
+    PRINT_LABEL_SCHEMA,
     REMOVE_DRAIN_TIME_SCHEMA,
     REMOVE_ENVIRONMENT_SCHEMA,
     REMOVE_GROWSPACE_SCHEMA,
@@ -255,6 +256,7 @@ async def test_register_services(mock_hass, mock_strain_library_for_services) ->
         "apply_ipm": APPLY_IPM_SCHEMA,
         "batch_action": BATCH_ACTION_SCHEMA,
         "add_timeline_note": ADD_TIMELINE_NOTE_SCHEMA,
+        "print_label": PRINT_LABEL_SCHEMA,
     }
 
     # Verify call count

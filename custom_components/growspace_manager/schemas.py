@@ -238,6 +238,7 @@ CLEAR_STRAIN_LIBRARY_SCHEMA = vol.Schema(
 STRAIN_BASE_FIELDS: dict[Any, Any] = {
     vol.Optional("phenotype"): str,
     vol.Optional("breeder"): str,
+    vol.Optional("breeder_logo"): str,
     vol.Optional("type"): str,
     vol.Optional("lineage"): str,
     vol.Optional("sex"): str,
@@ -276,6 +277,15 @@ UPDATE_STRAIN_META_SCHEMA = vol.Schema(
     {
         vol.Required("strain"): str,
         **STRAIN_BASE_FIELDS,
+    }
+)
+
+# Print Label
+PRINT_LABEL_SCHEMA = vol.Schema(
+    {
+        vol.Required(ATTR_PLANT_ID): str,
+        vol.Optional("device_id"): str,
+        vol.Optional("preview", default=False): bool,
     }
 )
 

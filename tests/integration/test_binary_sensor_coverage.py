@@ -185,7 +185,7 @@ async def test_ai_alert_exception_handling(
     sensor.notification_manager.async_send_notification = AsyncMock()
     sensor.coordinator.strain_library = MagicMock()
 
-    mock_coordinator.options = {"ai_auto_alerts": True}
+    sensor._options["ai_auto_alerts"] = True
 
     with patch(
         "custom_components.growspace_manager.binary_sensor.GrowAssistant"
@@ -398,3 +398,27 @@ async def test_light_verification_async_update_unavailable(
         await sensor.async_update()
         assert sensor._is_correct is False
         mock_write.assert_called()
+
+
+def test_missing_growspace_raises_error(mock_coordinator) -> None:
+    """Test that initializing a sensor with a missing growspace raises ValueError."""
+    env_config = mock_coordinator.growspaces["gs1"].environment_config
+    with pytest.raises(ValueError, match="Growspace missing_gs not found"):
+        create_test_sensor(
+            mock_coordinator,
+            "missing_gs",
+            GrowspaceSensorType.STRESS,
+            StressEvaluatorStrategy,
+            env_config=env_config,
+        )
+
+
+def test_get_aggregated_sensor_value_empty(mock_coordinator) -> None:
+    """Test _get_aggregated_sensor_value with empty list."""
+    sensor = create_test_sensor(
+        mock_coordinator,
+        "gs1",
+        GrowspaceSensorType.STRESS,
+        StressEvaluatorStrategy,
+    )
+    assert sensor._get_aggregated_sensor_value([]) is None

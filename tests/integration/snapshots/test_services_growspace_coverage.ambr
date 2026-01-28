@@ -1,0 +1,82 @@
+# serializer version: 1
+# name: test_add_growspace_no_notification_target
+  dict({
+    'created_at': '2026-01-12T12:00:00',
+    'dehumidifier_config': dict({
+    }),
+    'device_id': None,
+    'dimensions': dict({
+      'depth': 120,
+      'height': 200,
+      'unit': 'cm',
+      'width': 120,
+    }),
+    'environment_config': dict({
+      'bayesian_options': dict({
+      }),
+      'circulation_fan_entities': list([
+      ]),
+      'co2_sensor': None,
+      'control_dehumidifier': False,
+      'dehumidifier_entities': list([
+      ]),
+      'dehumidifier_thresholds': dict({
+      }),
+      'exhaust_fan_entities': list([
+      ]),
+      'flower_day_hours': 12,
+      'humidifier_entities': list([
+      ]),
+      'humidity_sensor': None,
+      'humidity_sensors': list([
+      ]),
+      'irrigation_tanks': list([
+      ]),
+      'light_sensors': list([
+      ]),
+      'lst_offset': -2.0,
+      'minimum_source_air_temperature': 18.0,
+      'mold_threshold': 0.75,
+      'sensor_coordinates': dict({
+      }),
+      'sensor_groups': list([
+      ]),
+      'soil_moisture_sensor': None,
+      'stress_threshold': 0.7,
+      'temperature_sensor': None,
+      'temperature_sensors': list([
+      ]),
+      'veg_day_hours': 18,
+      'vpd_sensor': None,
+      'vpd_sensors': list([
+      ]),
+    }),
+    'growspace_type': 'flower',
+    'id': 'test-uuid',
+    'irrigation_config': dict({
+      'drain_duration': None,
+      'drain_pump_entity': None,
+      'drain_times': list([
+      ]),
+      'irrigation_duration': None,
+      'irrigation_pump_entity': None,
+      'irrigation_times': list([
+      ]),
+      'veg_day_hours': 12,
+    }),
+    'irrigation_strategy': dict({
+      'enabled': False,
+      'lights_on_time': '06:00:00',
+      'maintenance_dryback_percent': 2.0,
+      'p0_duration_minutes': 60,
+      'p2_stop_before_lights_off_minutes': 120,
+      'shot_duration_seconds': 10,
+      'shot_interval_minutes': 15,
+      'target_vwc_percent': 55.0,
+    }),
+    'name': 'Test',
+    'notification_target': None,
+    'plants_per_row': 4,
+    'rows': 4,
+  })
+# ---

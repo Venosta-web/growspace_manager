@@ -7,6 +7,7 @@ from common import create_plant
 import pytest
 
 from custom_components.growspace_manager.const import PlantStage
+from custom_components.growspace_manager.exceptions import ValidationChangeError
 from custom_components.growspace_manager.models import Growspace
 from custom_components.growspace_manager.plant_lifecycle_manager import (
     PlantLifecycleManager,
@@ -174,3 +175,49 @@ async def test_transition_plant_stage_to_clone(
 
     # Verify move_to_clone_growspace was called via service
     gs_service_mock.ensure_special_growspace.assert_called()
+
+
+@pytest.mark.asyncio
+async def test_async_add_plant_full_growspace(manager, validator_mock) -> None:
+    """Test async_add_plant when growspace is full."""
+
+    # Mock validator to simulate occupied position and no available space
+    validator_mock.validate_position_not_occupied.side_effect = ValidationChangeError(
+        "Occupied"
+    )
+    validator_mock.find_first_available_position.return_value = (None, None)
+
+    # Adding a plant should raise ValidationChangeError with the "full" message
+    with pytest.raises(ValidationChangeError, match="is full, cannot add/move plant"):
+        await manager.async_add_plant(
+            growspace_id="test_growspace",
+            strain="Test Strain",
+            row=1,
+            col=1,
+        )
+
+
+@pytest.mark.asyncio
+async def test_async_update_plant_genetics(
+    manager, repository_mock, save_callback_mock
+) -> None:
+    """Test async_update_plant covers strain and phenotype updates."""
+    # Create a plant
+    plant_id = "test_plant"
+    plant = create_plant(
+        plant_id=plant_id,
+        growspace_id="test_growspace",
+        strain="Old Strain",
+        phenotype="Old Pheno",
+    )
+    repository_mock.plants[plant_id] = plant
+
+    # Update strain and phenotype
+    updated_plant = await manager.async_update_plant(
+        plant_id, strain="New Strain", phenotype="New Pheno"
+    )
+
+    # Verify updates
+    assert updated_plant.genetics.strain_name == "New Strain"
+    assert updated_plant.genetics.phenotype_name == "New Pheno"
+    save_callback_mock.assert_awaited_once()

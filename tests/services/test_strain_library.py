@@ -509,3 +509,51 @@ async def test_ensure_strain_and_phenotype_exist_strain_creation_failure(
         await strain_library._ensure_strain_and_phenotype_exist(
             "Failing Strain", "Pheno"
         )
+
+
+@pytest.mark.asyncio
+async def test_breeder_logo_propagation(strain_library: StrainLibrary) -> None:
+    """Test that breeder logos are propagated across strains from the same breeder."""
+    # 1. Add first strain with breeder and logo
+    await strain_library.add_strain(
+        strain="Strain 1",
+        breeder="Paradise Seeds",
+        breeder_logo="https://www.paradise-seeds.com/wp-content/uploads/Logo-paradise-seeds-Gold.webp",
+    )
+
+    assert "Strain 1" in strain_library.strains
+    assert (
+        strain_library.strains["Strain 1"]["meta"]["breeder_logo"]
+        == "https://www.paradise-seeds.com/wp-content/uploads/Logo-paradise-seeds-Gold.webp"
+    )
+
+    # 2. Add second strain with same breeder but NO logo
+    await strain_library.add_strain(
+        strain="Strain 2",
+        breeder="Paradise Seeds",
+    )
+
+    assert "Strain 2" in strain_library.strains
+    # Should have automatically picked up the logo from Strain 1
+    assert (
+        strain_library.strains["Strain 2"]["meta"]["breeder_logo"]
+        == "https://www.paradise-seeds.com/wp-content/uploads/Logo-paradise-seeds-Gold.webp"
+    )
+
+    # 3. Update logo for Strain 1
+    await strain_library.add_strain(
+        strain="Strain 1",
+        breeder="Paradise Seeds",
+        breeder_logo="https://www.paradise-seeds.com/wp-content/uploads/Logo-paradise-seeds-Black.webp",
+    )
+
+    # Strain 2 should have been updated as well
+    await strain_library.load()
+    assert (
+        strain_library.strains["Strain 1"]["meta"]["breeder_logo"]
+        == "https://www.paradise-seeds.com/wp-content/uploads/Logo-paradise-seeds-Black.webp"
+    )
+    assert (
+        strain_library.strains["Strain 2"]["meta"]["breeder_logo"]
+        == "https://www.paradise-seeds.com/wp-content/uploads/Logo-paradise-seeds-Black.webp"
+    )

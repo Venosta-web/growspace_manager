@@ -207,6 +207,7 @@ async def handle_add_strain(
     image_crop_meta = call.data.get("image_crop_meta")
     sativa_percentage = call.data.get("sativa_percentage")
     indica_percentage = call.data.get("indica_percentage")
+    breeder_logo = call.data.get("breeder_logo")
 
     if not strain:
         _LOGGER.warning("Service call add_strain missing required 'strain' parameter")
@@ -228,6 +229,7 @@ async def handle_add_strain(
             image_crop_meta=image_crop_meta,
             sativa_percentage=sativa_percentage,
             indica_percentage=indica_percentage,
+            breeder_logo=breeder_logo,
         )
     except ValueError as err:
         raise HomeAssistantError(str(err)) from err
@@ -266,6 +268,7 @@ async def handle_update_strain_meta(
     image_crop_meta = call.data.get("image_crop_meta")
     sativa_percentage = call.data.get("sativa_percentage")
     indica_percentage = call.data.get("indica_percentage")
+    breeder_logo = call.data.get("breeder_logo")
 
     if not strain:
         _LOGGER.warning(
@@ -289,6 +292,7 @@ async def handle_update_strain_meta(
             image_crop_meta=image_crop_meta,
             sativa_percentage=sativa_percentage,
             indica_percentage=indica_percentage,
+            breeder_logo=breeder_logo,
         )
     except ValueError as err:
         raise HomeAssistantError(str(err)) from err
@@ -346,3 +350,99 @@ async def handle_clear_strain_library(
             title="Growspace Manager Error",
         )
         raise
+
+
+async def handle_print_label(
+    hass: HomeAssistant,
+    coordinator: GrowspaceCoordinator,
+    strain_library: StrainLibrary,
+    call: ServiceCall,
+) -> None:
+    """Handle the print_label service call."""
+    plant_id = call.data.get("plant_id")
+    device_id = call.data.get("device_id")
+    preview = call.data.get("preview", False)
+
+    plant = coordinator.plants.get(plant_id)
+    if not plant:
+        raise HomeAssistantError(f"Plant {plant_id} not found")
+
+    strain_name = plant.genetics.strain_name
+    phenotype_name = plant.genetics.phenotype_name or "default"
+
+    # Ensure library is loaded to get meta
+    await strain_library.load()
+    library_data = strain_library.get_all()
+    strain_meta = library_data.get(strain_name, {}).get("meta", {})
+
+    # Breeder
+    breeder = strain_meta.get("breeder", "Unknown")
+    lineage = strain_meta.get("lineage", "N/A")
+    breeder_logo = strain_meta.get("breeder_logo")
+
+    # Construct Niimbot payload
+    payload = []
+
+    # Strain Name (Header)
+    payload.append(
+        {
+            "type": "text",
+            "value": strain_name,
+            "x": 10,
+            "y": 10,
+            "size": 40,
+            "font": "ppb.ttf",
+        }
+    )
+
+    # Body fields
+    fields = [
+        ("STRAIN", strain_name),
+        ("PHENO", phenotype_name),
+        ("BREEDER", breeder),
+        ("LINEAGE", lineage),
+    ]
+
+    for i, (label, value) in enumerate(fields):
+        y_pos = 60 + (i * 30)
+        payload.append(
+            {
+                "type": "text",
+                "value": f"{label}: {value}",
+                "x": 10,
+                "y": y_pos,
+                "size": 25,
+            }
+        )
+
+    # Breeder Logo if available - move it to the right
+    if breeder_logo:
+        payload.append(
+            {
+                "type": "dlimg",
+                "url": breeder_logo,
+                "x": 350,
+                "y": 10,
+                "xsize": 100,
+                "ysize": 100,
+            }
+        )
+
+    # Call Niimbot service
+    service_data = {
+        "payload": payload,
+        "preview": preview,
+    }
+    if device_id:
+        service_data["device_id"] = device_id
+
+    try:
+        response = await hass.services.async_call(
+            "niimbot", "print", service_data, blocking=True, return_response=True
+        )
+    except Exception as err:
+        _LOGGER.error("Failed to print Niimbot label: %s", err)
+        raise HomeAssistantError(f"Failed to print Niimbot label: {err}") from err
+    else:
+        _LOGGER.info("Sent label to Niimbot for plant %s", plant_id)
+        return response
