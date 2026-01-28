@@ -13,6 +13,7 @@ from custom_components.growspace_manager.services.strain_library import (
     handle_export_strain_library,
     handle_get_strain_library,
     handle_import_strain_library,
+    handle_print_label,
     handle_remove_strain,
     handle_update_strain_meta,
 )
@@ -56,6 +57,8 @@ def mock_hass() -> MagicMock:
     hass.bus.async_fire = MagicMock()
     hass.config = MagicMock()
     hass.config.path = MagicMock(side_effect=lambda *args: "/".join(args))
+    hass.services = MagicMock()
+    hass.services.async_call = AsyncMock()
     return hass
 
 
@@ -532,3 +535,79 @@ async def test_handle_remove_strain_no_strain(
     await handle_remove_strain(mock_hass, mock_coordinator, mock_strain_library, call)
     mock_strain_library.remove_strain.assert_not_awaited()
     mock_strain_library.remove_strain_phenotype.assert_not_awaited()
+
+
+async def test_handle_print_label_no_plant_id(
+    mock_hass, mock_coordinator, mock_strain_library
+) -> None:
+    """Test printing label without plant_id (using strain name)."""
+    call = ServiceCall(
+        mock_hass,
+        DOMAIN,
+        "print_label",
+        {
+            "strain": "Strain A",
+            "phenotype": "Pheno 1",
+            "breeder": "Breeder A",
+            "lineage": "Lineage A",
+        },
+        context=MagicMock(),
+    )
+
+    with patch(
+        "custom_components.growspace_manager.services.strain_library.get_url",
+        return_value="http://ha.url",
+    ):
+        await handle_print_label(mock_hass, mock_coordinator, mock_strain_library, call)
+
+    mock_hass.services.async_call.assert_awaited_once()
+    args, _ = mock_hass.services.async_call.call_args
+    assert args[0] == "niimbot"
+    assert args[1] == "print"
+
+
+async def test_handle_print_label_error_no_id_no_strain(
+    mock_hass, mock_coordinator, mock_strain_library
+) -> None:
+    """Test printing label with neither plant_id nor strain name."""
+    call = ServiceCall(
+        mock_hass,
+        DOMAIN,
+        "print_label",
+        {},
+        context=MagicMock(),
+    )
+
+    with pytest.raises(
+        HomeAssistantError,
+        match="Neither plant_id nor strain name provided for label printing",
+    ):
+        await handle_print_label(mock_hass, mock_coordinator, mock_strain_library, call)
+
+
+async def test_handle_print_label_default_phenotype(
+    mock_hass, mock_coordinator, mock_strain_library
+) -> None:
+    """Test printing label with 'default' phenotype."""
+    call = ServiceCall(
+        mock_hass,
+        DOMAIN,
+        "print_label",
+        {
+            "strain": "Strain A",
+            "phenotype": "default",
+        },
+        context=MagicMock(),
+    )
+
+    with patch(
+        "custom_components.growspace_manager.services.strain_library.get_url",
+        return_value="http://ha.url",
+    ):
+        await handle_print_label(mock_hass, mock_coordinator, mock_strain_library, call)
+
+    # Verify that payload values were processed (phenotype became "-")
+    args, _ = mock_hass.services.async_call.call_args
+    payload = args[2]["payload"]
+    values = [item.get("value") for item in payload]
+    assert "-\n-\n-" in values
