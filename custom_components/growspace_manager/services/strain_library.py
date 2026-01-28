@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import base64
 import binascii
+from datetime import datetime
 import logging
 from pathlib import Path
 import tempfile
@@ -15,9 +16,17 @@ from homeassistant.components.persistent_notification import (
 )
 from homeassistant.core import HomeAssistant, ServiceCall
 from homeassistant.exceptions import HomeAssistantError
+from homeassistant.helpers.network import get_url
 
 if TYPE_CHECKING:
     from custom_components.growspace_manager.coordinator import GrowspaceCoordinator
+from custom_components.growspace_manager.const import (
+    ATTR_BREEDER,
+    ATTR_BREEDER_LOGO,
+    ATTR_LINEAGE,
+    ATTR_PHENOTYPE,
+    ATTR_STRAIN,
+)
 from custom_components.growspace_manager.strain_library import StrainLibrary
 
 _LOGGER = logging.getLogger(__name__)
@@ -377,11 +386,11 @@ async def handle_print_label(
         strain_name = plant.genetics.strain_name
         phenotype_name = plant.genetics.phenotype_name or "default"
     else:
-        strain_name = call.data.get("strain")
-        phenotype_name = call.data.get("phenotype") or "default"
-        breeder = call.data.get("breeder")
-        lineage = call.data.get("lineage")
-        breeder_logo = call.data.get("breeder_logo")
+        strain_name = call.data.get(ATTR_STRAIN)
+        phenotype_name = call.data.get(ATTR_PHENOTYPE) or "default"
+        breeder = call.data.get(ATTR_BREEDER)
+        lineage = call.data.get(ATTR_LINEAGE)
+        breeder_logo = call.data.get(ATTR_BREEDER_LOGO)
 
     if not strain_name:
         raise HomeAssistantError(
@@ -465,7 +474,7 @@ async def handle_print_label(
         payload.append(
             {
                 "type": "qrcode",
-                "data": f"https://your-ha-link.com/plant/{plant_id}",
+                "data": f"{get_url(hass)}/plant/{plant_id}",
                 "x": 290,
                 "y": 130,
                 "size": 100,
@@ -473,9 +482,7 @@ async def handle_print_label(
         )
 
     # 6. Small Timestamp (Bottom Right)
-    import datetime
-
-    now = datetime.datetime.now().strftime("%d.%m.%Y")
+    now = datetime.now().strftime("%d.%m.%Y")
     payload.append(
         {
             "type": "text",
