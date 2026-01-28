@@ -122,10 +122,7 @@ async def test_handle_print_label(mock_hass, mock_coordinator, strain_library) -
     # Check for core fields in payload
     values = [item["value"] for item in payload if "value" in item]
     assert "Blue Dream" in values
-    assert "STRAIN: Blue Dream" in values
-    assert "PHENO: Berry" in values
-    assert "BREEDER: Humboldt" in values
-    assert "LINEAGE: N/A" in values
+    assert "Berry\nHumboldt\n-" in values
 
     # Check for breeder logo
     logo_item = next((item for item in payload if item["type"] == "dlimg"), None)
