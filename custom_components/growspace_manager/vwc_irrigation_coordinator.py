@@ -65,9 +65,9 @@ class VWCIrrigationCoordinator(BaseIrrigationCoordinator):
 
     @callback
     @override
-    def async_cancel_listeners(self) -> None:
+    def async_cancel_listeners(self, cancel_tasks: bool = True) -> None:
         """Cancel all scheduled listeners."""
-        super().async_cancel_listeners()
+        super().async_cancel_listeners(cancel_tasks=cancel_tasks)
         if self._remove_update_listener:
             self._remove_update_listener()
             self._remove_update_listener = None

@@ -66,6 +66,17 @@ def test_determine_granular_stage(analyzer: EnvironmentAnalyzer) -> None:
     assert analyzer.determine_granular_stage(10, 0, 0, 0) == "veg"
     # Veg Late
     assert analyzer.determine_granular_stage(30, 0, 0, 0) == "veg"
+    # Seedling
+    assert analyzer.determine_granular_stage(0, 0, 0, 0, 5, 0) == "seedling"
+    # Clone
+    assert analyzer.determine_granular_stage(0, 0, 0, 0, 0, 5) == "clone"
+
+    # Case _ (Line 187) - Trigger with non-bool comparison
+    class NonBool:
+        def __gt__(self, other):
+            return "not_a_bool"
+
+    assert analyzer.determine_granular_stage(0, 0, 0, NonBool()) == "veg"
     # Default Veg Early (all 0)
     assert analyzer.determine_granular_stage(0, 0, 0, 0) == "veg"
 
@@ -147,6 +158,21 @@ def test_get_sensor_value_exceptions(
     assert analyzer._get_sensor_value("sensor.test") is None
     assert analyzer._get_sensor_value(None) is None
     assert analyzer._get_sensor_value("") is None
+    # Test unknown state (Line 252)
+    hass.states.async_set("sensor.unknown", "unknown")
+    assert analyzer._get_sensor_value("sensor.unknown") is None
+    # Test missing entity (Line 252)
+    assert analyzer._get_sensor_value("sensor.missing") is None
+
+
+def test_get_aggregated_sensor_value_edge_cases(analyzer: EnvironmentAnalyzer) -> None:
+    """Test edge cases for _get_aggregated_sensor_value."""
+    # No sensor IDs (Line 257)
+    assert analyzer._get_aggregated_sensor_value([]) is None
+
+    # Sensor IDs provided but no values returned (Line 266)
+    with patch.object(analyzer, "_get_sensor_value", return_value=None):
+        assert analyzer._get_aggregated_sensor_value(["sensor.v1", "sensor.v2"]) is None
 
 
 def test_calculate_recommendation_missing_growspace(

@@ -10,7 +10,7 @@ from homeassistant.helpers import entity_registry as er
 
 from .bayesian_data import VPD_STRESS_THRESHOLDS
 from .const import DEFAULT_FLOWER_EARLY_DAYS, DOMAIN
-from .utils import VPDCalculator
+from .utils import VPDCalculator, calculate_stage_transition, interpolate_value
 
 if TYPE_CHECKING:
     from homeassistant.core import HomeAssistant
@@ -41,6 +41,8 @@ class EnvironmentAnalyzer:
         max_flower: int,
         max_dry: int,
         max_cure: int,
+        max_seedling: int = 0,
+        max_clone: int = 0,
     ) -> dict[str, Any]:
         """Calculate biological target metrics for the growspace.
 
@@ -50,38 +52,59 @@ class EnvironmentAnalyzer:
              max_flower: Max days in flower stage.
              max_dry: Max days in dry stage.
              max_cure: Max days in cure stage.
+             max_seedling: Max days in seedling stage.
+             max_clone: Max days in clone stage.
 
         Returns:
             Dictionary containing stage-specific VPD targets and status.
         """
         granular_stage = self.determine_granular_stage(
-            max_veg, max_flower, max_dry, max_cure
+            max_veg, max_flower, max_dry, max_cure, max_seedling, max_clone
         )
         is_day = self.determine_is_day(growspace)
 
-        threshold_data = VPD_STRESS_THRESHOLDS.get(
-            granular_stage, VPD_STRESS_THRESHOLDS["veg"]
-        )
-        threshold_data = VPD_STRESS_THRESHOLDS.get(
-            granular_stage, VPD_STRESS_THRESHOLDS["veg"]
+        # Use transition factor for flower stages
+        stage_a, stage_b, factor = calculate_stage_transition(
+            max_flower, max_veg, max_seedling, max_clone
         )
 
-        # Get Day Targets
-        day_data = threshold_data.get("day", threshold_data["day"])
-        day_target_min, day_target_max = day_data.get("mild", (0.8, 1.2))
-        day_danger_min, day_danger_max = day_data.get("stress", (0.6, 1.4))
+        # Get thresholds for both stages
+        thr_a = VPD_STRESS_THRESHOLDS.get(stage_a, VPD_STRESS_THRESHOLDS["veg"])
+        thr_b = VPD_STRESS_THRESHOLDS.get(stage_b, VPD_STRESS_THRESHOLDS["veg"])
 
-        # Get Night Targets
-        night_data = threshold_data.get(
-            "night", threshold_data["day"]
-        )  # Fallback to day if no night config
-        night_target_min, night_target_max = night_data.get("mild", (0.8, 1.2))
-        night_danger_min, night_danger_max = night_data.get("stress", (0.6, 1.4))
+        # Interpolate targets specifically for Day and Night
+        def interpolate_targets(data_a, data_b, f):
+            stress_a = data_a.get("stress", (0.8, 1.4))
+            stress_b = data_b.get("stress", (0.8, 1.4))
+            mild_a = data_a.get("mild", (1.0, 1.2))
+            mild_b = data_b.get("mild", (1.0, 1.2))
+
+            return (
+                interpolate_value(stress_a[0], stress_b[0], f),
+                interpolate_value(stress_a[1], stress_b[1], f),
+                interpolate_value(mild_a[0], mild_b[0], f),
+                interpolate_value(mild_a[1], mild_b[1], f),
+            )
+
+        # Day Targets
+        day_a = thr_a.get("day", thr_a["day"])
+        day_b = thr_b.get("day", thr_b["day"])
+        d_danger_min, d_danger_max, d_target_min, d_target_max = interpolate_targets(
+            day_a, day_b, factor
+        )
+
+        # Night Targets
+        night_a = thr_a.get("night", thr_a["day"])
+        night_b = thr_b.get("night", thr_b["day"])
+        n_danger_min, n_danger_max, n_target_min, n_target_max = interpolate_targets(
+            night_a, night_b, factor
+        )
 
         # Determine current active targets based on is_day
-        cycle_data = day_data if is_day else night_data
-        target_min, target_max = cycle_data.get("mild", (0.8, 1.2))
-        danger_min, danger_max = cycle_data.get("stress", (0.6, 1.4))
+        danger_min = d_danger_min if is_day else n_danger_min
+        danger_max = d_danger_max if is_day else n_danger_max
+        target_min = d_target_min if is_day else n_target_min
+        target_max = d_target_max if is_day else n_target_max
 
         vpd_status = "unknown"
         env_config = growspace.environment_config
@@ -108,18 +131,26 @@ class EnvironmentAnalyzer:
             "vpd_danger_max": danger_max,
             "vpd_status": vpd_status,
             # Expose specific day/night targets for frontend graphs
-            "day_vpd_target_min": day_target_min,
-            "day_vpd_target_max": day_target_max,
-            "day_vpd_danger_min": day_danger_min,
-            "day_vpd_danger_max": day_danger_max,
-            "night_vpd_target_min": night_target_min,
-            "night_vpd_target_max": night_target_max,
-            "night_vpd_danger_min": night_danger_min,
-            "night_vpd_danger_max": night_danger_max,
+            "day_vpd_target_min": d_target_min,
+            "day_vpd_target_max": d_target_max,
+            "day_vpd_danger_min": d_danger_min,
+            "day_vpd_danger_max": d_danger_max,
+            "night_vpd_target_min": n_target_min,
+            "night_vpd_target_max": n_target_max,
+            "night_vpd_danger_min": n_danger_min,
+            "night_vpd_danger_max": n_danger_max,
+            "transition_factor": factor,
+            "transition_stages": (stage_a, stage_b),
         }
 
     def determine_granular_stage(
-        self, max_veg: int, max_flower: int, max_dry: int, max_cure: int
+        self,
+        max_veg: int,
+        max_flower: int,
+        max_dry: int,
+        max_cure: int,
+        max_seedling: int = 0,
+        max_clone: int = 0,
     ) -> str:
         """Determine granular growth stage based on days using pattern matching.
 
@@ -128,6 +159,8 @@ class EnvironmentAnalyzer:
             max_flower: Max days in flower stage.
             max_dry: Max days in dry stage.
             max_cure: Max days in cure stage.
+            max_seedling: Max days in seedling stage.
+            max_clone: Max days in clone stage.
 
         Returns:
             Detailed stage string (e.g. 'veg_early', 'flower_late').
@@ -143,6 +176,14 @@ class EnvironmentAnalyzer:
                 if max_flower <= (DEFAULT_FLOWER_EARLY_DAYS + 21):
                     return "flower_mid"
                 return "flower_late"
+            case (False, False, False):
+                if max_veg > 0:
+                    return "veg"
+                if max_seedling > 0:
+                    return "seedling"
+                if max_clone > 0:
+                    return "clone"
+                return "veg"
             case _:
                 return "veg"
 

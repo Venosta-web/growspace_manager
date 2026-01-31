@@ -1,0 +1,7 @@
+# serializer version: 1
+# name: test_calculate_days_in_stage_ongoing
+  dict({
+    'days': 10,
+    'stage': 'veg',
+  })
+# ---

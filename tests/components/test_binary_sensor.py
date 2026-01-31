@@ -615,7 +615,7 @@ def test_mold_risk_sensor_notification_returns_none_when_on_and_growspace_does_n
         ({"temp": 14}, "Extreme Cold"),
         ({"temp": 25, "is_lights_on": False}, "Night Temp High"),
         ({"humidity": 30}, "Humidity Dry"),
-        ({"humidity": 85, "veg_days": 20, "flower_days": 0}, "Humidity High"),
+        ({"humidity": 85, "veg_days": 20, "flower_days": 0}, "Humidity out of range"),
         ({"vpd": 0.2, "veg_days": 10, "flower_days": 0}, "VPD out of range"),
         ({"vpd": 1.7, "flower_days": 10}, "VPD out of range"),
         ({"co2": 350}, "CO2 Low"),
@@ -1219,7 +1219,7 @@ def test_determine_light_state_unavailable(
         (
             {"temp": 25, "humidity": 90, "vpd": 1.3, "light": "on"},
             {"veg_days": 20, "flower_days": 0},
-            "Humidity High",
+            "Humidity out of range",
         ),
         # Case 3: High humidity in late flower
         (
@@ -1301,7 +1301,7 @@ async def test_stress_sensor_stage_and_time_logic(
         (
             {"temp": 20, "humidity": 61, "vpd": 1.0, "light": "off"},
             {"veg_days": 30, "flower_days": 40},
-            "Night Humidity High",
+            "Humidity out of range",
         ),
         # Case 2: Circulation fan is off in late flower
         (
@@ -1325,7 +1325,7 @@ async def test_stress_sensor_stage_and_time_logic(
         (
             {"temp": 22, "humidity": 65, "vpd": 1.0, "light": "on"},
             {"veg_days": 30, "flower_days": 40},
-            "Day Humidity High",
+            "Humidity out of range",
         ),
     ],
 )

@@ -13,16 +13,20 @@ import pytest
 from custom_components.growspace_manager.const import DOMAIN
 from custom_components.growspace_manager.models import Growspace
 from custom_components.growspace_manager.utils import (
+    BayesianStage,
     VPDCalculator,
     calculate_days_since,
     calculate_plant_stage,
+    calculate_stage_transition,
     days_to_week,
     find_first_free_position,
     format_date,
     generate_growspace_grid,
     generate_growspace_overview_unique_id,
     generate_vpd_sensor_unique_id,
+    interpolate_value,
     parse_date_field,
+    parse_date_field_v2,
 )
 from homeassistant.util.dt import as_local
 
@@ -49,6 +53,12 @@ def test_parse_date_field(input_value, expected) -> None:
         expected: The expected `datetime` object or None.
     """
     assert parse_date_field(input_value) == expected
+
+
+def test_parse_date_field_v2() -> None:
+    """Test the `parse_date_field_v2` function (covers line 39)."""
+    val = "2025-11-03"
+    assert parse_date_field_v2(val) == as_local(datetime(2025, 11, 3, 0, 0))
 
 
 # ----------------------------
@@ -109,6 +119,10 @@ def test_find_first_free_position() -> None:
     # all positions occupied: returns bottom-right
     occupied = {(1, 1), (1, 2), (2, 1), (2, 2)}
     assert find_first_free_position(growspace, occupied) == (2, 2)
+
+    # Empty growspace: returns None, None (covers line 95)
+    gs_empty = Growspace(id="none", name="None", rows=0, plants_per_row=0)
+    assert find_first_free_position(gs_empty, set()) == (None, None)
 
 
 # ----------------------------
@@ -198,6 +212,10 @@ def test_calculate_plant_stage() -> None:
     p = create_plant(plant_id="p1", growspace_id="g1", strain="A")
     assert calculate_plant_stage(p) == "seedling"
 
+    # No growspace_id (covers line 227)
+    p = create_plant(plant_id="p1", growspace_id=None, strain="A")
+    assert calculate_plant_stage(p) == "seedling"
+
 
 # ----------------------------
 # VPDCalculator tests
@@ -245,3 +263,103 @@ def test_generate_unique_ids() -> None:
 
     assert generate_vpd_sensor_unique_id("g1") == f"{DOMAIN}_g1_calculated_vpd"
     assert generate_growspace_overview_unique_id("g1") == f"{DOMAIN}_g1"
+
+
+def test_interpolate_value() -> None:
+    """Test the `interpolate_value` function (covers line 323)."""
+    assert interpolate_value(10.0, 20.0, 0.5) == 15.0
+    assert interpolate_value(10.0, 20.0, 0.0) == 10.0
+    assert interpolate_value(10.0, 20.0, -1.0) == 10.0
+    assert interpolate_value(10.0, 20.0, 1.0) == 20.0
+    assert interpolate_value(10.0, 20.0, 2.0) == 20.0
+
+
+def test_calculate_stage_transition() -> None:
+    """Test calculate_stage_transition for all branches (covers 246-315)."""
+    # 1. Flower branch
+    # Early flower
+    s1, s2, f = calculate_stage_transition(flower_days=10)
+    assert s1 == BayesianStage.FLOWER_EARLY
+    assert s2 == BayesianStage.FLOWER_EARLY
+    assert f == 0.0
+
+    # Transition to mid (window is 3, b1 is 21)
+    s1, s2, f = calculate_stage_transition(flower_days=20)
+    assert s1 == BayesianStage.FLOWER_EARLY
+    assert s2 == BayesianStage.FLOWER_MID
+    assert f == 0.67
+
+    # Mid flower
+    s1, s2, f = calculate_stage_transition(flower_days=25)
+    assert s1 == BayesianStage.FLOWER_MID
+    assert s2 == BayesianStage.FLOWER_MID
+    assert f == 0.0
+
+    # Transition to late (b2 is 42)
+    s1, s2, f = calculate_stage_transition(flower_days=41)
+    assert s1 == BayesianStage.FLOWER_MID
+    assert s2 == BayesianStage.FLOWER_LATE
+    assert f == 0.67
+
+    # Late flower
+    s1, s2, f = calculate_stage_transition(flower_days=50)
+    assert s1 == BayesianStage.FLOWER_LATE
+    assert s2 == BayesianStage.FLOWER_LATE
+    assert f == 0.0
+
+    # 2. Veg branch
+    # Transition to veg (window is 3)
+    s1, s2, f = calculate_stage_transition(veg_days=1)
+    assert s1 == BayesianStage.SEEDLING_STANDARD
+    assert s2 == BayesianStage.VEG
+    assert f == 0.33
+
+    # Stable veg
+    s1, s2, f = calculate_stage_transition(veg_days=5)
+    assert s1 == BayesianStage.VEG
+    assert s2 == BayesianStage.VEG
+    assert f == 0.0
+
+    # 3. Seedling branch
+    # Seedling acclimation (start is 3, end is 7)
+    s1, s2, f = calculate_stage_transition(seedling_days=2)
+    assert s1 == BayesianStage.SEEDLING
+    assert s2 == BayesianStage.SEEDLING
+    assert f == 0.0
+
+    s1, s2, f = calculate_stage_transition(seedling_days=5)
+    assert s1 == BayesianStage.SEEDLING
+    assert s2 == BayesianStage.SEEDLING_STANDARD
+    assert f == 0.5
+
+    s1, s2, f = calculate_stage_transition(seedling_days=8)
+    assert s1 == BayesianStage.SEEDLING_STANDARD
+    assert s2 == BayesianStage.SEEDLING_STANDARD
+    assert f == 0.0
+
+    # 4. Clone branch
+    # Clone acclimation start
+    s1, s2, f = calculate_stage_transition(clone_days=2)
+    assert s1 == BayesianStage.CLONE
+    assert s2 == BayesianStage.CLONE
+    assert f == 0.0
+
+    # Clone mid-acclimation (acclimation is 3-7 days)
+    # window = 7 - 3 = 4
+    # clone_days = 5 -> (5 - 3) / 4 = 0.5
+    s1, s2, f = calculate_stage_transition(clone_days=5)
+    assert s1 == BayesianStage.CLONE
+    assert s2 == BayesianStage.CLONE_STANDARD
+    assert f == 0.5
+
+    # Clone post-acclimation
+    s1, s2, f = calculate_stage_transition(clone_days=8)
+    assert s1 == BayesianStage.CLONE_STANDARD
+    assert s2 == BayesianStage.CLONE_STANDARD
+    assert f == 0.0
+
+    # 5. Default branch
+    s1, s2, f = calculate_stage_transition()
+    assert s1 == BayesianStage.VEG
+    assert s2 == BayesianStage.VEG
+    assert f == 0.0

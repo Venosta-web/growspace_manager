@@ -37,6 +37,7 @@ async def test_evaluate_humidity_risk_branches(mock_sensor) -> None:
     state.humidity = 87.0
     state.seedling_days = 0
     state.clone_days = 0
+    state.veg_days = 0
     state.flower_days = 43  # Late flower
 
     # Late flower critical humidity is 65.0, high is 60.0
@@ -65,18 +66,19 @@ async def test_evaluate_circulation_risk_branches(mock_sensor) -> None:
     # Initialize all stage attributes to integers to avoid MagicMock comparison errors
     state.seedling_days = 0
     state.clone_days = 0
+    state.veg_days = 0
     state.flower_days = 0
 
-    # 1. Early stage threshold (90.0)
+    # 1. Early stage threshold (Acclimation: 100.0)
     state.seedling_days = 1
     state.flower_days = 0
-    state.humidity = 89.0  # Below 90
+    state.humidity = 95.0  # Below 100
     obs = []
     reasons = []
     strategy._evaluate_circulation_risk(state, obs, reasons)
     assert len(obs) == 0  # Should return early
 
-    state.humidity = 91.0
+    state.humidity = 101.0
     strategy._evaluate_circulation_risk(state, obs, reasons)
     assert len(obs) == 1
 
@@ -102,6 +104,7 @@ async def test_evaluate_humidifier_risk_branches(mock_sensor) -> None:
     # Initialize all stage attributes to integers
     state.seedling_days = 0
     state.clone_days = 0
+    state.veg_days = 0
     state.flower_days = 0
 
     # 1. Early stage safe zone (< 90)

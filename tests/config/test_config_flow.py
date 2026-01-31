@@ -3394,3 +3394,40 @@ async def test_options_flow_strain_library_delete_success(
     assert result["step_id"] == "manage_strain_library"
     assert "errors" not in result or not result["errors"]
     mock_coordinator.strain_library.remove_strain.assert_called_once_with("s1")
+
+@pytest.mark.asyncio
+async def test_options_flow_init_configure_general(
+    hass: HomeAssistant, mock_coordinator
+) -> None:
+    """Test navigating to 'Configure General' from the main menu."""
+    config_entry = MockConfigEntry(domain=DOMAIN, data={"name": "Test"}, options={})
+    config_entry.add_to_hass(hass)
+    config_entry.runtime_data = mock_coordinator
+
+    flow = OptionsFlowHandler(config_entry)
+    flow.hass = hass
+
+    result = await flow.async_step_init(user_input={"action": "configure_general"})
+
+    assert result.get("type") == FlowResultType.FORM
+    assert result.get("step_id") == "configure_general"
+
+
+@pytest.mark.asyncio
+async def test_options_flow_configure_general_submit(
+    hass: HomeAssistant, mock_coordinator
+) -> None:
+    """Test submitting data to the 'Configure General' step."""
+    config_entry = MockConfigEntry(
+        domain=DOMAIN, data={"name": "Test"}, options={"show_sidebar": True}
+    )
+    config_entry.add_to_hass(hass)
+    config_entry.runtime_data = mock_coordinator
+
+    flow = OptionsFlowHandler(config_entry)
+    flow.hass = hass
+
+    result = await flow.async_step_configure_general(user_input={"show_sidebar": False})
+
+    assert result.get("type") == FlowResultType.CREATE_ENTRY
+    assert flow.current_options["show_sidebar"] is False

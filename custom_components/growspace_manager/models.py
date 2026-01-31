@@ -23,6 +23,7 @@ from .const import (
     CONF_LIGHT_SENSORS,
     PlantStage,
 )
+from .domain.stage import STAGE_REGISTRY
 
 # Import type aliases from centralized types module
 from .types import BayesianOptions, DehumidifierThresholds, NutrientMap
@@ -534,20 +535,12 @@ class Plant(BaseModel):
         if "stage_history" not in data:
             history = []
 
-            # Collect all start dates
+            # Collect all start dates using registry
             starts = []
-            for field_name in [
-                "seedling_start",
-                "mother_start",
-                "clone_start",
-                "veg_start",
-                "flower_start",
-                "dry_start",
-                "cure_start",
-            ]:
+            for stage_def in STAGE_REGISTRY.values():
+                field_name = stage_def.start_field
                 if date_val := data.get(field_name):
-                    stage_name = field_name.replace("_start", "")
-                    starts.append((date_val, stage_name))
+                    starts.append((date_val, stage_def.id.value))
 
             # Sort by date
             starts.sort(key=lambda x: x[0])

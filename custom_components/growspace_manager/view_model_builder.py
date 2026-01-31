@@ -90,6 +90,8 @@ class ViewModelBuilder:
 
         # Calculate aggregated stats for the growspace
         stage_attr_map = {
+            "seedling_start": "max_seedling_days",
+            "clone_start": "max_clone_days",
             "veg_start": "max_veg_days",
             "flower_start": "max_flower_days",
             "dry_start": "max_dry_days",
@@ -117,7 +119,13 @@ class ViewModelBuilder:
         # Calculate biological metrics via EnvironmentAnalyzer (View Model assembly)
         biological_metrics = (
             self.coordinator.environment_analyzer.calculate_biological_metrics(
-                growspace, max_veg_days, max_flower_days, max_dry_days, max_cure_days
+                growspace,
+                max_days["max_veg_days"],
+                max_days["max_flower_days"],
+                max_days["max_dry_days"],
+                max_days["max_cure_days"],
+                max_days["max_seedling_days"],
+                max_days["max_clone_days"],
             )
         )
 

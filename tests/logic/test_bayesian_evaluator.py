@@ -3,6 +3,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
+from custom_components.growspace_manager import bayesian_evaluator
 from custom_components.growspace_manager.bayesian_data import (
     PROB_ACCEPTABLE,
     PROB_GOOD,
@@ -156,7 +157,7 @@ def test_evaluate_direct_humidity_stress_veg_early_high_humidity() -> None:
     observations, reasons = evaluate_direct_humidity_stress(state, env_config)
     assert len(observations) == 1
     assert len(reasons) == 1
-    assert "Humidity High (85)" in reasons[0][1]
+    assert "Humidity out of range (<0 or >80) (85)" in reasons[0][1]
     assert observations[0] == (0.80, 0.20)
 
 
@@ -458,13 +459,6 @@ async def test_async_evaluate_stress_trend(
     assert reasons[0][1] == expected_reason
 
 
-def test_determine_stage_key_none() -> None:
-    """Test _determine_stage_key when no stage key is determined."""
-    state = MagicMock(spec=EnvironmentState, flower_days=-1, veg_days=0)
-    result = _determine_stage_key(state)
-    assert result is None
-
-
 @pytest.mark.parametrize(
     (
         "temp",
@@ -607,3 +601,155 @@ async def test_async_evaluate_fallback_mold_trend_analysis_late_flower_unsafe() 
     # assert observations[0][0] == pytest.approx(0.725)
     # p_false = 0.5 - (0.5 * 0.4) = 0.3
     # assert observations[0][1] == pytest.approx(0.3)
+
+
+@pytest.mark.parametrize(
+    ("flower_days", "vpd", "expected_status", "expected_limit"),
+    [
+        (
+            19,
+            0.82,
+            "stress",
+            0.83,
+        ),  # Early->Mid transition (factor 0.33), stress_low=0.83
+        (19, 1.02, "mild", 1.03),  # Early->Mid transition (factor 0.33), mild_low=1.03
+        (
+            40,
+            0.92,
+            "stress",
+            0.93,
+        ),  # Mid->Late transition (factor 0.33), stress_low=0.93
+        (40, 1.12, "mild", 1.13),  # Mid->Late transition (factor 0.33), mild_low=1.13
+    ],
+)
+def test_evaluate_direct_vpd_stress_interpolation(
+    flower_days, vpd, expected_status, expected_limit
+) -> None:
+    """Test evaluate_direct_vpd_stress interpolation between flower stages."""
+    state = MagicMock(
+        spec=EnvironmentState, vpd=vpd, flower_days=flower_days, is_lights_on=True
+    )
+    env_config: dict[str, Any] = {}
+    observations, reasons = evaluate_direct_vpd_stress(state, env_config)
+
+    assert len(observations) == 1
+    # Check if we got the expected status in the reason
+    assert "VPD out of range" in reasons[0][1]
+
+    # Verify probability corresponds to the expected status
+    # Factor is 0.33, so it should use probabilities from stage_a
+    # For 19: stage_a is early. For 40: stage_a is mid.
+    if flower_days == 19:
+        expected_prob = (0.85, 0.15) if expected_status == "stress" else (0.60, 0.30)
+    else:
+        expected_prob = (0.88, 0.14) if expected_status == "stress" else (0.62, 0.29)
+
+    assert observations[0] == expected_prob
+
+
+def test_evaluate_direct_humidity_stress_interpolation() -> None:
+    """Test evaluate_direct_humidity_stress interpolation between veg and flower_early."""
+    # Transition Veg -> Early Flower (factor 0.0 since days=0 is strictly veg)
+    # Wait, if days=1, factor = (1 - 0) / 3? No, b1=21 in const.py but 7 in environment_analyzer?
+    # Actually, calculate_stage_transition(state.flower_days)
+    # If flower_days=1, factor = (1 - (21-3)) / 3 is negative? No, it returns 0.0.
+
+    # Transition Early -> Mid: b1=21, window=3.
+    # days=20 -> factor = (20 - 18) / 3 = 0.67
+    # stage_a=early, stage_b=mid
+    # Early limits: (45, 60) (since we default early to mid constants)
+    # Mid limits: (45, 60)
+    # Late limits: (40, 60)
+
+    # Transition Mid -> Late: b2=42, window=3.
+    # days=40 -> factor = (40 - 39) / 3 = 0.33
+    # stage_a=mid, stage_b=late
+    # low_a=45, low_b=40 -> low = 45 + (40-45)*0.33 = 43.35
+
+    state = MagicMock(spec=EnvironmentState, humidity=43.5, flower_days=40)
+    observations, reasons = evaluate_direct_humidity_stress(state, {})
+    assert len(observations) == 0
+
+    state.humidity = 43.0
+    observations, reasons = evaluate_direct_humidity_stress(state, {})
+    # 43.0 is < 43.35, so it should be STRESS.
+    assert len(observations) == 1
+    assert "Humidity out of range (<43.35 or >60.0) (43.0)" in reasons[0][1]
+
+
+@pytest.mark.parametrize(
+    ("flower_days", "veg_days", "seedling_days", "clone_days", "expected_key"),
+    [
+        (50, 0, 0, 0, "flower_late"),
+        (25, 0, 0, 0, "flower_mid"),
+        (8, 0, 0, 0, "flower_early"),
+        (5, 0, 0, 0, "flower_early"),
+        (0, 7, 0, 0, "veg"),
+        (0, 0, 5, 0, "seedling"),
+        (0, 0, 0, 3, "clone"),
+        (0, 0, 0, 0, "veg"),
+    ],
+)
+def test_determine_stage_key(
+    flower_days, veg_days, seedling_days, clone_days, expected_key, monkeypatch
+) -> None:
+    """Test _determine_stage_key for all growth stages."""
+    # Mock DEFAULT_FLOWER_EARLY_DAYS to 7 to allow covering branch at line 136
+    monkeypatch.setattr(bayesian_evaluator, "DEFAULT_FLOWER_EARLY_DAYS", 7)
+
+    state = MagicMock(
+        spec=EnvironmentState,
+        flower_days=flower_days,
+        veg_days=veg_days,
+        seedling_days=seedling_days,
+        clone_days=clone_days,
+    )
+    assert _determine_stage_key(state) == expected_key
+
+
+def test_evaluate_direct_humidity_stress_mid_to_late_transition() -> None:
+    """Test evaluate_direct_humidity_stress for mid to late flower transition."""
+    # Flower days = 41 (b2=42, window=3). factor = (41-39)/3 = 0.67 (> 0.5)
+    # stage_a = Mid, stage_b = Late.
+    state = MagicMock(
+        spec=EnvironmentState,
+        humidity=65,
+        flower_days=41,
+        veg_days=0,
+        seedling_days=0,
+        clone_days=0,
+    )
+    observations, reasons = evaluate_direct_humidity_stress(state, {})
+    assert len(observations) == 1
+    assert observations[0] == (0.85, 0.15)  # PROB_HUMIDITY_FLOWER_LATE_OUT_OF_RANGE
+    assert "Humidity out of range" in reasons[0][1]
+
+
+def test_evaluate_optimal_co2_seedling_clone_ranges() -> None:
+    """Test evaluate_optimal_co2 for seedling/clone specific ranges."""
+    # Seedling stage (seedling_days > 0, flower_days = 0)
+    state = MagicMock(
+        spec=EnvironmentState,
+        seedling_days=5,
+        flower_days=0,
+        veg_days=0,
+        clone_days=0,
+        co2=900,
+    )
+    observations, reasons = evaluate_optimal_co2(state, {})
+    assert len(observations) == 1
+    assert observations[0] == PROB_GOOD
+
+    # Out of range low
+    state.co2 = 300
+    observations, reasons = evaluate_optimal_co2(state, {})
+    assert len(observations) == 1
+    assert observations[0] == PROB_STRESS_OUT_OF_RANGE
+    assert "CO2 Low" in reasons[0][1]
+
+    # Out of range high
+    state.co2 = 1700
+    observations, reasons = evaluate_optimal_co2(state, {})
+    assert len(observations) == 1
+    assert observations[0] == PROB_STRESS_OUT_OF_RANGE
+    assert "CO2 High" in reasons[0][1]

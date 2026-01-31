@@ -24,7 +24,8 @@
           "manage_plants": "Manage Plants",
           "configure_environment": "Configure Growspace Environment",
           "configure_global": "Configure Global Sensors",
-          "configure_irrigation": "Configure Irrigation"
+          "configure_irrigation": "Configure Irrigation",
+          "configure_general": "General Settings"
         }
       },
       "select_growspace_for_irrigation": {
@@ -98,6 +99,13 @@
           "weather_entity": "Outside Weather Entity",
           "lung_room_temp_sensor": "Lung Room Temperature Sensor",
           "lung_room_humidity_sensor": "Lung Room Humidity Sensor"
+        }
+      },
+      "configure_general": {
+        "title": "General Settings",
+        "description": "Configure general integration behavior",
+        "data": {
+          "show_sidebar": "Show Growspace Manager in sidebar"
         }
       },
       "configure_environment": {

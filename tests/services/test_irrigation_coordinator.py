@@ -713,3 +713,19 @@ async def test_irrigation_coordinator_coverage_gaps(
         with patch("asyncio.sleep", new_callable=AsyncMock):
             await coordinator._run_pump_cycle("irrigation", "switch.pump", 30, {})
         # Should catch exception and log error (covered)
+
+        # 7. Test active_events property (Line 46)
+        assert isinstance(coordinator.active_events, dict)
+
+        # 8. Test async_remove_schedule_item exception (Lines 271-272)
+        with (
+            patch(
+                "custom_components.growspace_manager.irrigation_coordinator.hasattr",
+                return_value=True,
+            ),
+            patch(
+                "custom_components.growspace_manager.irrigation_coordinator.getattr",
+                side_effect=Exception("Unexpected"),
+            ),
+        ):
+            await coordinator.async_remove_schedule_item("irrigation_times", "10:00:00")

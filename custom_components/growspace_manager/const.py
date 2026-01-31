@@ -3,6 +3,8 @@
 from enum import StrEnum
 from typing import Final
 
+from .domain.stage import PLANT_STAGES, PlantStage
+
 DOMAIN: Final = "growspace_manager"
 STORAGE_VERSION: Final = 1
 STORAGE_KEY: Final = f"{DOMAIN}_storage"  # Legacy Key
@@ -193,18 +195,7 @@ DEFAULT_NOTIFICATION_EVENTS = {
 }
 
 
-class PlantStage(StrEnum):
-    """Stages of plant growth."""
-
-    SEEDLING = "seedling"
-    CLONE = "clone"
-    MOTHER = "mother"
-    VEG = "veg"
-    FLOWER = "flower"
-    DRY = "dry"
-    CURE = "cure"
-
-
+# Dehumidifier Stages (Unified)
 DEHUMIDIFIER_STAGES: Final = [
     PlantStage.SEEDLING.value,
     PlantStage.VEG.value,
@@ -353,7 +344,11 @@ MAX_PLANTS_PER_ROW = 20
 # Strain Library defaults
 DB_FILE_STRAIN_LIBRARY = "strain_library.db"
 STORAGE_KEY_STRAIN_LIBRARY = "strain_library"
+CONF_STRAIN_LIBRARY: Final = "strain_library"
+CONF_UNIT_SYSTEM: Final = "unit_system"
+CONF_SHOW_SIDEBAR: Final = "show_sidebar"
 
+# State Constants
 DEFAULT_BAYESIAN_PRIORS = {
     "stress": 0.15,
     "mold_risk": 0.10,
