@@ -108,6 +108,9 @@ dmypy.json
 .vscode/
 .gemini/
 
+# Git worktrees
+.worktrees/
+
 # hacs
 custom_components/hacs/
 docs/plans/*
