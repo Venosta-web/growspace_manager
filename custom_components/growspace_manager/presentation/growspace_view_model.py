@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import logging
 from typing import TYPE_CHECKING, Any
 
@@ -280,13 +281,19 @@ class GrowspaceViewModelBuilder:
             attributes[CONF_DEHUMIDIFIER_ENTITY] = dehumidifier_entity
             attributes["dehumidifier_state"] = state_obj.state if state_obj else None
             if state_obj:
-                attributes["dehumidifier_humidity"] = state_obj.attributes.get("humidity")
+                attributes["dehumidifier_humidity"] = state_obj.attributes.get(
+                    "humidity"
+                )
                 attributes["dehumidifier_current_humidity"] = state_obj.attributes.get(
                     "current_humidity"
                 )
                 attributes["dehumidifier_mode"] = state_obj.attributes.get("mode")
-                attributes["dehumidifier_control_enabled"] = env_config.control_dehumidifier
-                attributes["dehumidifier_thresholds"] = env_config.dehumidifier_thresholds
+                attributes["dehumidifier_control_enabled"] = (
+                    env_config.control_dehumidifier
+                )
+                attributes["dehumidifier_thresholds"] = (
+                    env_config.dehumidifier_thresholds
+                )
 
         # Exhaust Fan
         exhaust_entity = env_config.exhaust_fan_entity
@@ -358,7 +365,9 @@ class GrowspaceViewModelBuilder:
             irr_cfg = growspace.irrigation_config
             if irr_cfg.irrigation_pump_entity:
                 state_obj = self.hass.states.get(irr_cfg.irrigation_pump_entity)
-                attributes["irrigation_pump_state"] = state_obj.state if state_obj else None
+                attributes["irrigation_pump_state"] = (
+                    state_obj.state if state_obj else None
+                )
             if irr_cfg.drain_pump_entity:
                 state_obj = self.hass.states.get(irr_cfg.drain_pump_entity)
                 attributes["drain_pump_state"] = state_obj.state if state_obj else None
@@ -376,6 +385,27 @@ class GrowspaceViewModelBuilder:
                     if state_obj
                     else None
                 )
+
+                # Query TankDepletionSensor for depletion data
+                depletion_sensor_id = (
+                    f"sensor.{growspace.id}_tank_depletion_{tank.name}"
+                )
+                depletion_state = self.hass.states.get(depletion_sensor_id)
+
+                hours_remaining = None
+                depletion_status = None
+
+                if depletion_state and depletion_state.state not in (
+                    "unknown",
+                    "unavailable",
+                ):
+                    with contextlib.suppress(ValueError, TypeError):
+                        hours_remaining = float(depletion_state.state)
+
+                    # Get status from attributes
+                    if depletion_state.attributes:
+                        depletion_status = depletion_state.attributes.get("status")
+
                 tanks_data.append(
                     {
                         "sensor_entity": tank.sensor_entity,
@@ -384,6 +414,8 @@ class GrowspaceViewModelBuilder:
                         "fill_level": fill_level,
                         "is_warning": fill_level is not None
                         and fill_level <= tank.warning_level,
+                        "hours_remaining": hours_remaining,
+                        "depletion_status": depletion_status,
                     }
                 )
             attributes["irrigation_tanks"] = tanks_data
@@ -392,7 +424,9 @@ class GrowspaceViewModelBuilder:
 
         # Sensor Groups
         if env_config.sensor_groups:
-            attributes["sensor_groups"] = [g.to_dict() for g in env_config.sensor_groups]
+            attributes["sensor_groups"] = [
+                g.to_dict() for g in env_config.sensor_groups
+            ]
         else:
             attributes["sensor_groups"] = []
 
