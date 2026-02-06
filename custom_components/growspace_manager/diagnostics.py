@@ -9,6 +9,7 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_LATITUDE, CONF_LONGITUDE
 from homeassistant.core import HomeAssistant
 
+from .const import VERSION
 from .coordinator import GrowspaceCoordinator
 
 TO_REDACT = {
@@ -56,5 +57,5 @@ async def async_get_config_entry_diagnostics(
             "irrigation": irrigation_states,
             "dehumidifier": dehumidifier_states,
         },
-        "integration_version": "0.3.3",
+        "integration_version": VERSION,
     }

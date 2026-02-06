@@ -26,6 +26,7 @@ def mock_image_manager():
     manager.save_strain_image = AsyncMock(return_value="/abs/path/to/image.jpg")
     manager.delete_image = MagicMock()
     manager.async_migrate_to_webp = AsyncMock(return_value=False)
+    manager.async_setup = AsyncMock()
     return manager
 
 

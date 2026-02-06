@@ -61,7 +61,7 @@ class BaseIrrigationCoordinator:
 
     async def async_unload(self) -> None:
         """Unload the coordinator and stop listeners."""
-        self.async_cancel_listeners()
+        self.async_cancel_listeners(cancel_tasks=True)
 
     async def _async_send_cycle_notification(
         self, event_type: str, duration: int, event_data: Mapping[str, Any]
@@ -82,16 +82,17 @@ class BaseIrrigationCoordinator:
             )
 
     @callback
-    def async_cancel_listeners(self) -> None:
+    def async_cancel_listeners(self, cancel_tasks: bool = True) -> None:
         """Cancel all scheduled listeners."""
         for listener in self._listeners:
             listener()
         self._listeners = []
 
-        for task in self._running_tasks.values():
-            if task and not task.done():
-                task.cancel()
-        self._running_tasks = {}
+        if cancel_tasks:
+            for task in self._running_tasks.values():
+                if task and not task.done():
+                    task.cancel()
+            self._running_tasks = {}
         _LOGGER.debug(
             "Cancelled all irrigation listeners for growspace %s", self._growspace_id
         )
@@ -281,7 +282,7 @@ class IrrigationCoordinator(BaseIrrigationCoordinator):
 
     async def async_update_listeners(self, *args: Any) -> None:
         """Remove old listeners and create new ones based on current config."""
-        self.async_cancel_listeners()
+        self.async_cancel_listeners(cancel_tasks=False)
 
         # Get irrigation options from growspace object
         options = self.growspace.irrigation_config

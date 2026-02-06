@@ -5,12 +5,14 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 from common import create_plant
 import pytest
+from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.growspace_manager.const import (
     ATTR_GROWSPACE_ID,
     ATTR_NOTES,
     ATTR_TECHNIQUE,
     CATEGORY_TRAINING,
+    DOMAIN,
     TrainingTechnique,
 )
 from custom_components.growspace_manager.coordinator import GrowspaceCoordinator
@@ -46,10 +48,6 @@ def mock_plants():
 
 @pytest.fixture
 def mock_coordinator(hass: HomeAssistant, mock_plants):
-    from pytest_homeassistant_custom_component.common import MockConfigEntry
-
-    from custom_components.growspace_manager.const import DOMAIN
-
     # Use real coordinator instead of MagicMock to support delegation to services
     entry = MockConfigEntry(domain=DOMAIN, data={}, options={})
     entry.add_to_hass(hass)

@@ -326,35 +326,36 @@ async def test_coordinator_extended_coverage(
 
     # 4. _update_growspace_structure (lines 909-923)
     gs = Growspace(id="gs1", name="GS1", rows=1, plants_per_row=1)
+    coord.growspaces = {"gs1": gs}
     changes: list[str] = []
     # No changes
-    assert not coord._update_growspace_structure(gs, {}, changes)
+    assert not coord._update_growspace_structure("gs1", changes=changes)
     # Rows change
-    assert coord._update_growspace_structure(gs, {"rows": 5}, changes)
+    assert coord._update_growspace_structure("gs1", rows=5, changes=changes)
     assert gs.rows == 5
     assert "rows: 1 -> 5" in changes[0]
     # PPR change
-    assert coord._update_growspace_structure(gs, {"plants_per_row": 10}, changes)
+    assert coord._update_growspace_structure("gs1", plants_per_row=10, changes=changes)
     assert gs.plants_per_row == 10
     assert "plants_per_row: 1 -> 10" in changes[1]
 
     # 5. _update_growspace_config (lines 929-956)
     changes = []
     # Name change
-    assert coord._update_growspace_config(gs, {"name": "New Name"}, changes)
+    assert coord._update_growspace_config("gs1", name="New Name", changes=changes)
     assert gs.name == "New Name"
     # Notification target
     assert coord._update_growspace_config(
-        gs, {"notification_target": " notify.me "}, changes
+        "gs1", notification_target=" notify.me ", changes=changes
     )
     assert gs.notification_target == "notify.me"
     # Env config
     assert coord._update_growspace_config(
-        gs, {"environment_config": EnvironmentConfig()}, changes
+        "gs1", environment_config=EnvironmentConfig(), changes=changes
     )
     # Irrigation config
     assert coord._update_growspace_config(
-        gs, {"irrigation_config": IrrigationConfig()}, changes
+        "gs1", irrigation_config=IrrigationConfig(), changes=changes
     )
 
     # 6. Timed Notification CRUD (lines 1061, 1071-1112)

@@ -101,3 +101,39 @@ def test_find_first_available_position(validator, mock_coordinator) -> None:
     }
 
     assert validator.find_first_available_position("g1") == (1, 2)
+
+
+def test_validate_plants_after_resize_no_invalid(
+    validator, mock_coordinator, caplog
+) -> None:
+    """Test validate_plants_after_resize with no invalid plants."""
+    p1 = create_plant(plant_id="p1", growspace_id="g1", row=1, col=1, strain="A")
+    mock_coordinator.plants = {"p1": p1}
+
+    # All within bounds (2x2)
+    validator.validate_plants_after_resize("g1", 2, 2)
+
+    # Verify no warnings logged
+    assert "Found 0 plants outside new grid boundaries" not in caplog.text
+
+
+def test_validate_plants_after_resize_with_invalid(
+    validator, mock_coordinator, caplog
+) -> None:
+    """Test validate_plants_after_resize with invalid plants."""
+    p1 = create_plant(plant_id="p1", growspace_id="g1", row=3, col=1, strain="A")
+    p2 = create_plant(plant_id="p2", growspace_id="g1", row=1, col=3, strain="B")
+    p3 = create_plant(plant_id="p3", growspace_id="g1", row=1, col=1, strain="C")
+    mock_coordinator.plants = {"p1": p1, "p2": p2, "p3": p3}
+
+    # p1 and p2 are outside 2x2 grid
+    validator.validate_plants_after_resize("g1", 2, 2)
+
+    # Verify warnings logged
+    assert "Found 2 plants outside new grid boundaries" in caplog.text
+    assert "Plant p1 (A) at position (3,1) is outside new grid" in caplog.text
+    assert "Plant p2 (B) at position (1,3) is outside new grid" in caplog.text
+    assert (
+        "Please update these plants' positions manually or they may not display correctly"
+        in caplog.text
+    )

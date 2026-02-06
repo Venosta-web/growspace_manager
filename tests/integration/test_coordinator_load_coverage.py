@@ -61,12 +61,14 @@ async def test_load_initial_data_deserialization_failure(
     coordinator = GrowspaceCoordinator(hass, entry, data=data)
 
     # Verify that errors were logged
-    assert "Failed to load growspace gs_fail" in caplog.text
+    assert (
+        "Failed to load growspace gs_fail due to data structure mismatch" in caplog.text
+    )
     assert (
         "Failed to load growspace gs_invalid_type (invalid type: <class 'str'>)"
         in caplog.text
     )
-    assert "Failed to load plant p_fail" in caplog.text
+    assert "Failed to load plant p_fail due to data structure mismatch" in caplog.text
     assert (
         "Failed to load plant p_invalid_type (invalid type: <class 'str'>)"
         in caplog.text

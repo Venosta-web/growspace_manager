@@ -194,13 +194,21 @@ class StorageManager:
                             pid,
                             type(pdata),
                         )
+                except (ValueError, KeyError, TypeError):
+                    _LOGGER.exception(
+                        "Failed to load plant %s due to data structure mismatch", pid
+                    )
                 except Exception:
-                    _LOGGER.exception("Failed to load plant %s", pid)
+                    _LOGGER.exception("Unexpected error loading plant %s", pid)
 
             self.repository.plants = plants
             _LOGGER.info("Loaded %d plants", len(self.repository.plants))
+        except (ValueError, KeyError, TypeError):
+            _LOGGER.exception("Critical data structure error loading plants")
+            self._backup_corrupt_data("plants", data)
+            self.repository.plants = {}
         except Exception:
-            _LOGGER.exception("Error loading plants")
+            _LOGGER.exception("Unexpected error loading plants")
             self._backup_corrupt_data("plants", data)
             self.repository.plants = {}
 
@@ -230,15 +238,24 @@ class StorageManager:
                             gid,
                             type(gdata),
                         )
+                except (ValueError, KeyError, TypeError):
+                    _LOGGER.exception(
+                        "Failed to load growspace %s due to data structure mismatch",
+                        gid,
+                    )
                 except Exception:
-                    _LOGGER.exception("Failed to load growspace %s", gid)
+                    _LOGGER.exception("Unexpected error loading growspace %s", gid)
 
             self.repository.growspaces = growspaces
             _LOGGER.info("Loaded %d growspaces", len(self.repository.growspaces))
 
             self._apply_options_to_growspaces(options)
+        except (ValueError, KeyError, TypeError):
+            _LOGGER.exception("Critical data structure error loading growspaces")
+            self._backup_corrupt_data("growspaces", data)
+            self.repository.growspaces = {}
         except Exception:
-            _LOGGER.exception("Error loading growspaces")
+            _LOGGER.exception("Unexpected error loading growspaces")
             self._backup_corrupt_data("growspaces", data)
             self.repository.growspaces = {}
 

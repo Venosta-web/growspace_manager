@@ -23,12 +23,11 @@ def mock_managers():
         patch("custom_components.growspace_manager.coordinator.EnvironmentAnalyzer"),
         patch("custom_components.growspace_manager.coordinator.NotificationManager"),
         patch("custom_components.growspace_manager.coordinator.ImportExportManager"),
-        patch("custom_components.growspace_manager.coordinator.PlantLifecycleManager"),
+        patch("custom_components.growspace_manager.coordinator.PlantManager"),
         patch("custom_components.growspace_manager.coordinator.NutrientManager"),
         patch("custom_components.growspace_manager.coordinator.GrowspaceRepository"),
         patch("custom_components.growspace_manager.coordinator.SubsystemManager"),
-        patch("custom_components.growspace_manager.coordinator.PlantService"),
-        patch("custom_components.growspace_manager.coordinator.GrowspaceService"),
+        patch("custom_components.growspace_manager.coordinator.GrowspaceManager"),
     ):
         yield
 

@@ -6,15 +6,14 @@ import pytest
 from syrupy.assertion import SnapshotAssertion
 
 from custom_components.growspace_manager.exceptions import GrowspaceNotFoundError
+from custom_components.growspace_manager.managers.growspace import GrowspaceManager
 from custom_components.growspace_manager.models import (
     EnvironmentConfig,
     Growspace,
     GrowspaceType,
     Plant,
 )
-from custom_components.growspace_manager.services.growspace_service import (
-    GrowspaceService,
-)
+from homeassistant.core import HomeAssistant
 
 
 @pytest.fixture
@@ -64,7 +63,7 @@ def cache_mock():
 
 @pytest.fixture
 def service(
-    hass,
+    hass: HomeAssistant | None,
     repository_mock,
     validator_mock,
     view_model_builder_mock,
@@ -72,8 +71,8 @@ def service(
     lock_mock,
     cache_mock,
 ):
-    """GrowspaceService fixture."""
-    svc = GrowspaceService(
+    """GrowspaceManager fixture."""
+    svc = GrowspaceManager(
         hass=hass,
         repository=repository_mock,
         validator=validator_mock,
@@ -382,3 +381,30 @@ def test_ensure_calculated_sensors_with_cache(
 
     service.ensure_calculated_sensors()
     cache_mock.invalidate.assert_called_with("gs1")
+
+
+def test_update_special_growspace_name_not_found(
+    service, repository_mock, caplog: pytest.LogCaptureFixture
+) -> None:
+    """Test _update_special_growspace_name when growspace is not found."""
+    repository_mock.growspaces = {}
+    service._update_special_growspace_name("unknown", "New Name")
+    assert "Special growspace unknown not found, skipping name update" in caplog.text
+
+
+def test_get_canonical_special(service, repository_mock) -> None:
+    """Test get_canonical_special for various scenarios."""
+    # Special cases
+    assert service.get_canonical_special("dry") == ("dry", "Dry Room")
+    assert service.get_canonical_special("dry_room") == ("dry", "Dry Room")
+    assert service.get_canonical_special("cure") == ("cure", "Cure Room")
+    assert service.get_canonical_special("clone") == ("clone", "Clone Room")
+    assert service.get_canonical_special("mother") == ("mother", "Mother Room")
+
+    # Existing growspace
+    gs = Growspace(id="gs1", name="My Room")
+    repository_mock.growspaces = {"gs1": gs}
+    assert service.get_canonical_special("gs1") == ("gs1", "My Room")
+
+    # Not found
+    assert service.get_canonical_special("unknown") == ("unknown", "unknown")

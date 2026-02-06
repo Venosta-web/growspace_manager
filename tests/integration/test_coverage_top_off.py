@@ -30,6 +30,7 @@ from custom_components.growspace_manager.coordinator import GrowspaceCoordinator
 from custom_components.growspace_manager.dehumidifier_coordinator import (
     DehumidifierCoordinator,
 )
+from custom_components.growspace_manager.managers.plant import PlantManager
 from custom_components.growspace_manager.models import (
     BaseModel,
     EnvironmentConfig,
@@ -37,9 +38,6 @@ from custom_components.growspace_manager.models import (
     Growspace,
     NutrientInventory,
     Plant,
-)
-from custom_components.growspace_manager.plant_lifecycle_manager import (
-    PlantLifecycleManager,
 )
 from custom_components.growspace_manager.services.plant import (
     handle_add_plants,
@@ -252,11 +250,13 @@ async def test_lifecycle_history_closing_coverage(hass: HomeAssistant) -> None:
     )
     repository.plants = {"p1": plant}
 
-    manager = PlantLifecycleManager(
+    manager = PlantManager(
+        hass=hass,
         repository=repository,
         validator=validator,
-        growspace_service=gs_service,
+        growspace_manager=gs_service,
         strain_library=strain_library,
+        plant_view_builder=MagicMock(),
         save_callback=save_callback,
         lock=lock,
     )
@@ -778,11 +778,13 @@ async def test_lifecycle_history_stages_coverage(hass: HomeAssistant) -> None:
     )
     repository.plants = {"p1": plant}
 
-    manager = PlantLifecycleManager(
+    manager = PlantManager(
+        hass=hass,
         repository=repository,
         validator=validator,
-        growspace_service=gs_service,
+        growspace_manager=gs_service,
         strain_library=strain_library,
+        plant_view_builder=MagicMock(),
         save_callback=save_callback,
         lock=lock,
     )

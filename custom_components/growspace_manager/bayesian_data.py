@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from typing import Any, Final
 
+from .domain.stage import BayesianStage
+
 # =========================================================================
 # GENERAL PROBABILITY CONSTANTS (P(Obs|True), P(Obs|False))
 # =========================================================================
@@ -38,7 +40,87 @@ DryingCuringThresholds = dict[
 # =========================================================================
 
 VPD_STRESS_THRESHOLDS: Final[VpdThresholdsDict] = {
-    "veg": {
+    BayesianStage.SEEDLING: {
+        "day": {
+            "stress": (-0.1, 0.3),
+            "mild": (0.0, 0.2),
+            "prob_keys": (
+                "prob_vpd_stress_seedling_acclimation",
+                "prob_vpd_mild_stress_seedling_acclimation",
+            ),
+            "prob_defaults": ((0.95, 0.05), (0.80, 0.20)),
+        },
+        "night": {
+            "stress": (-0.1, 0.3),
+            "mild": (0.0, 0.2),
+            "prob_keys": (
+                "prob_vpd_stress_seedling_acclimation",
+                "prob_vpd_mild_stress_seedling_acclimation",
+            ),
+            "prob_defaults": ((0.95, 0.05), (0.80, 0.20)),
+        },
+    },
+    BayesianStage.SEEDLING_STANDARD: {
+        "day": {
+            "stress": (0.3, 1.2),
+            "mild": (0.4, 1.0),
+            "prob_keys": (
+                "prob_vpd_stress_seedling",
+                "prob_vpd_mild_stress_seedling",
+            ),
+            "prob_defaults": ((0.85, 0.15), (0.60, 0.30)),
+        },
+        "night": {
+            "stress": (0.4, 1.1),
+            "mild": (0.5, 0.9),
+            "prob_keys": (
+                "prob_vpd_stress_seedling",
+                "prob_vpd_mild_stress_seedling",
+            ),
+            "prob_defaults": ((0.85, 0.15), (0.60, 0.30)),
+        },
+    },
+    BayesianStage.CLONE: {
+        "day": {
+            "stress": (-0.1, 0.3),
+            "mild": (0.0, 0.2),
+            "prob_keys": (
+                "prob_vpd_stress_clone_acclimation",
+                "prob_vpd_mild_stress_clone_acclimation",
+            ),
+            "prob_defaults": ((0.98, 0.02), (0.85, 0.15)),
+        },
+        "night": {
+            "stress": (-0.1, 0.3),
+            "mild": (0.0, 0.2),
+            "prob_keys": (
+                "prob_vpd_stress_clone_acclimation",
+                "prob_vpd_mild_stress_clone_acclimation",
+            ),
+            "prob_defaults": ((0.98, 0.02), (0.85, 0.15)),
+        },
+    },
+    BayesianStage.CLONE_STANDARD: {
+        "day": {
+            "stress": (0.2, 1.0),
+            "mild": (0.3, 0.8),
+            "prob_keys": (
+                "prob_vpd_stress_clone",
+                "prob_vpd_mild_stress_clone",
+            ),
+            "prob_defaults": ((0.85, 0.15), (0.60, 0.30)),
+        },
+        "night": {
+            "stress": (0.3, 0.9),
+            "mild": (0.4, 0.7),
+            "prob_keys": (
+                "prob_vpd_stress_clone",
+                "prob_vpd_mild_stress_clone",
+            ),
+            "prob_defaults": ((0.85, 0.15), (0.60, 0.30)),
+        },
+    },
+    BayesianStage.VEG: {
         "day": {
             "stress": (0.4, 1.4),
             "mild": (0.6, 1.2),
@@ -58,7 +140,7 @@ VPD_STRESS_THRESHOLDS: Final[VpdThresholdsDict] = {
             "prob_defaults": ((0.85, 0.15), (0.60, 0.30)),
         },
     },
-    "flower_early": {
+    BayesianStage.FLOWER_EARLY: {
         "day": {
             "stress": (0.8, 1.6),
             "mild": (1.0, 1.5),
@@ -78,7 +160,7 @@ VPD_STRESS_THRESHOLDS: Final[VpdThresholdsDict] = {
             "prob_defaults": ((0.85, 0.15), (0.60, 0.30)),
         },
     },
-    "flower_mid": {
+    BayesianStage.FLOWER_MID: {
         "day": {
             "stress": (0.9, 1.6),
             "mild": (1.1, 1.5),
@@ -98,7 +180,7 @@ VPD_STRESS_THRESHOLDS: Final[VpdThresholdsDict] = {
             "prob_defaults": ((0.88, 0.14), (0.62, 0.29)),
         },
     },
-    "flower_late": {
+    BayesianStage.FLOWER_LATE: {
         "day": {
             "stress": (1.0, 1.6),
             "mild": (1.2, 1.5),
@@ -118,7 +200,7 @@ VPD_STRESS_THRESHOLDS: Final[VpdThresholdsDict] = {
             "prob_defaults": ((0.90, 0.12), (0.65, 0.28)),
         },
     },
-    "dry": {
+    BayesianStage.DRY: {
         "day": {
             "stress": (0.6, 1.3),
             "mild": (0.8, 1.1),
@@ -132,7 +214,7 @@ VPD_STRESS_THRESHOLDS: Final[VpdThresholdsDict] = {
             "prob_defaults": ((0.95, 0.10), (0.90, 0.10)),
         },
     },
-    "cure": {
+    BayesianStage.CURE: {
         "day": {
             "stress": (0.5, 1.1),
             "mild": (0.7, 0.9),
@@ -172,20 +254,48 @@ CURING_THRESHOLDS: Final[DryingCuringThresholds] = {
 VPD_OPTIMAL_THRESHOLDS: Final[
     dict[str, dict[str, list[tuple[float, float, tuple[float, float]]]]]
 ] = {
-    "veg": {
+    BayesianStage.SEEDLING: {
+        "day": [(-0.1, 0.3, (0.98, 0.10)), (0.0, 0.4, (0.85, 0.20))],
+        "night": [(-0.1, 0.3, (0.95, 0.15))],
+    },
+    BayesianStage.SEEDLING_STANDARD: {
+        "day": [(0.4, 0.8, (0.95, 0.18)), (0.3, 0.9, (0.80, 0.28))],
+        "night": [(0.4, 0.8, (0.90, 0.20))],
+    },
+    BayesianStage.CLONE: {
+        "day": [(-0.1, 0.3, (0.98, 0.10)), (0.0, 0.4, (0.85, 0.20))],
+        "night": [(-0.1, 0.3, (0.95, 0.15))],
+    },
+    BayesianStage.CLONE_STANDARD: {
+        "day": [(0.3, 0.7, (0.95, 0.18)), (0.2, 0.8, (0.80, 0.28))],
+        "night": [(0.3, 0.7, (0.90, 0.20))],
+    },
+    BayesianStage.VEG: {
         "day": [(0.5, 0.9, (0.95, 0.18)), (0.4, 0.8, (0.80, 0.28))],
         "night": [(0.4, 0.8, (0.90, 0.20))],
     },
-    "flower_early": {
+    BayesianStage.FLOWER_EARLY: {
         "day": [(0.9, 1.4, (0.95, 0.18)), (1.0, 1.5, (0.85, 0.25))],
         "night": [(0.8, 1.2, (0.90, 0.20))],
     },
-    "flower_mid": {
+    BayesianStage.FLOWER_MID: {
         "day": [(0.95, 1.45, (0.95, 0.17)), (1.1, 1.55, (0.85, 0.24))],
         "night": [(0.85, 1.2, (0.90, 0.20))],
     },
-    "flower_late": {
+    BayesianStage.FLOWER_LATE: {
         "day": [(1.0, 1.5, (0.95, 0.15)), (1.2, 1.6, (0.85, 0.22))],
         "night": [(0.9, 1.2, (0.90, 0.20))],
     },
+}
+
+# structure: stage -> { 'critical': float, 'high': float }
+CRITICAL_HUMIDITY_THRESHOLDS: Final[dict[str, dict[str, float]]] = {
+    BayesianStage.SEEDLING: {"critical": 102.0, "high": 100.0},
+    BayesianStage.CLONE: {"critical": 102.0, "high": 100.0},
+    BayesianStage.SEEDLING_STANDARD: {"critical": 92.0, "high": 88.0},
+    BayesianStage.CLONE_STANDARD: {"critical": 92.0, "high": 88.0},
+    BayesianStage.VEG: {"critical": 85.0, "high": 80.0},
+    BayesianStage.FLOWER_EARLY: {"critical": 75.0, "high": 70.0},
+    BayesianStage.FLOWER_MID: {"critical": 75.0, "high": 70.0},
+    BayesianStage.FLOWER_LATE: {"critical": 65.0, "high": 60.0},
 }

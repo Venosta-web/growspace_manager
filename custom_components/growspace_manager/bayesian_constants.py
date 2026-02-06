@@ -184,6 +184,20 @@ HUMIDITY_SATURATION_FLOWER_THRESHOLD = 60
 HUMIDITY_CHANGE_THRESHOLD = 1.0
 """Humidity change threshold for stats sensor (%)."""
 
+
+# Acclimation period for seedlings and clones
+ACCLIMATION_START_DAYS = 3
+"""End of full acclimation (start of transition)."""
+
+ACCLIMATION_END_DAYS = 7
+"""End of transition to standard stage."""
+
+HUMIDITY_ACCLIMATION_MIN = 95
+"""Minimum humidity for acclimation stage."""
+
+HUMIDITY_ACCLIMATION_MAX = 100
+"""Maximum humidity for acclimation stage."""
+
 # =========================================================================
 # VPD THRESHOLDS (kPa)
 # =========================================================================

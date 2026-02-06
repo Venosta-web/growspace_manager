@@ -28,16 +28,22 @@ def mock_hass() -> MagicMock:
     return hass
 
 
+@pytest.fixture
+async def image_manager(mock_hass, tmp_path):
+    """Fixture for an initialized ImageManager."""
+    manager = ImageManager(mock_hass, str(tmp_path))
+    await manager.async_setup()
+    return manager
+
+
 async def test_db_path_update_with_jpg_entries(
-    mock_hass: MagicMock, tmp_path: Path
+    image_manager: ImageManager, tmp_path: Path
 ) -> None:
     """Test database path update logic using real aiosqlite."""
     # Create JPG file
     jpg_path = tmp_path / "test_strain_pheno.jpg"
     test_img = PILImage.new("RGB", (100, 100))
     test_img.save(jpg_path, "JPEG")
-
-    image_manager = ImageManager(mock_hass, str(tmp_path))
 
     # Create real aiosqlite database
     async with aiosqlite.connect(":memory:") as db:
@@ -75,11 +81,8 @@ async def test_db_path_update_with_jpg_entries(
             )
 
 
-async def test_db_path_update_no_jpg_entries(
-    mock_hass: MagicMock, tmp_path: Path
-) -> None:
+async def test_db_path_update_no_jpg_entries(image_manager: ImageManager) -> None:
     """Test database update returns 0 when no .jpg paths exist."""
-    image_manager = ImageManager(mock_hass, str(tmp_path))
 
     async with aiosqlite.connect(":memory:") as db:
         db.row_factory = aiosqlite.Row
@@ -106,7 +109,7 @@ async def test_db_path_update_no_jpg_entries(
 
 
 async def test_db_path_update_multiple_entries(
-    mock_hass: MagicMock, tmp_path: Path
+    image_manager: ImageManager, tmp_path: Path
 ) -> None:
     """Test database update with multiple .jpg entries."""
     # Create JPG files
@@ -114,8 +117,6 @@ async def test_db_path_update_multiple_entries(
         jpg_path = tmp_path / f"strain_{i}.jpg"
         test_img = PILImage.new("RGB", (50, 50))
         test_img.save(jpg_path, "JPEG")
-
-    image_manager = ImageManager(mock_hass, str(tmp_path))
 
     async with aiosqlite.connect(":memory:") as db:
         db.row_factory = aiosqlite.Row
@@ -148,11 +149,8 @@ async def test_db_path_update_multiple_entries(
                 assert row["image_path"].endswith(".webp")
 
 
-async def test_db_path_update_handles_error(
-    mock_hass: MagicMock, tmp_path: Path
-) -> None:
+async def test_db_path_update_handles_error(image_manager: ImageManager) -> None:
     """Test database update handles exceptions gracefully."""
-    image_manager = ImageManager(mock_hass, str(tmp_path))
 
     # Create mock db that raises error
     mock_db = MagicMock()
@@ -170,6 +168,7 @@ async def test_migration_nonexistent_storage_dir(
 
     storage_path = tmp_path / "to_be_deleted"
     image_manager = ImageManager(mock_hass, str(storage_path))
+    await image_manager.async_setup()
 
     # Delete the directory AFTER initialization (simulates directory being deleted)
     shutil.rmtree(storage_path)
@@ -180,10 +179,10 @@ async def test_migration_nonexistent_storage_dir(
     assert result is False
 
 
-async def test_save_image_with_grayscale(mock_hass: MagicMock, tmp_path: Path) -> None:
+async def test_save_image_with_grayscale(
+    image_manager: ImageManager, tmp_path: Path
+) -> None:
     """Test saving a grayscale image (needs RGB conversion)."""
-
-    image_manager = ImageManager(mock_hass, str(tmp_path))
 
     # Create a grayscale PNG and encode as base64
     gray_img = PILImage.new("L", (50, 50), color=128)

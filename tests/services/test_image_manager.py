@@ -24,18 +24,23 @@ def mock_hass() -> MagicMock:
 
 
 @pytest.fixture
-def image_manager(mock_hass: MagicMock, tmp_path: Path) -> ImageManager:
+async def image_manager(mock_hass: MagicMock, tmp_path: Path) -> ImageManager:
     """Fixture for ImageManager using a temporary directory."""
-    return ImageManager(mock_hass, str(tmp_path))
+    manager = ImageManager(mock_hass, str(tmp_path))
+    await manager.async_setup()
+    return manager
 
 
-def test_initialization(mock_hass: MagicMock, tmp_path: Path) -> None:
+@pytest.mark.asyncio
+async def test_initialization(mock_hass: MagicMock, tmp_path: Path) -> None:
     """Test initialization creates storage directory if it doesn't exist."""
     # tmp_path already exists, so let's use a subdir
     storage_dir = tmp_path / "subdir"
     assert not storage_dir.exists()
 
-    ImageManager(mock_hass, str(storage_dir))
+    manager = ImageManager(mock_hass, str(storage_dir))
+    assert not storage_dir.exists()
+    await manager.async_setup()
 
     assert storage_dir.exists()
     assert storage_dir.is_dir()
@@ -107,7 +112,10 @@ async def test_save_strain_image_error(image_manager: ImageManager) -> None:
         await image_manager.save_strain_image("id", None, "bad_data")
 
 
-def test_get_image_path_exists(image_manager: ImageManager, tmp_path: Path) -> None:
+@pytest.mark.asyncio
+async def test_get_image_path_exists(
+    image_manager: ImageManager, tmp_path: Path
+) -> None:
     """Test getting path for an existing image."""
     strain_id = "strain_123"
     filename = f"{strain_id}.jpg"
@@ -122,13 +130,17 @@ def test_get_image_path_exists(image_manager: ImageManager, tmp_path: Path) -> N
     assert path == str(file_path.absolute())
 
 
-def test_get_image_path_not_exists(image_manager: ImageManager) -> None:
+@pytest.mark.asyncio
+async def test_get_image_path_not_exists(image_manager: ImageManager) -> None:
     """Test getting path for a non-existent image."""
     path = image_manager.get_image_path("strain_123", None)
     assert path is None
 
 
-def test_delete_image_success(image_manager: ImageManager, tmp_path: Path) -> None:
+@pytest.mark.asyncio
+async def test_delete_image_success(
+    image_manager: ImageManager, tmp_path: Path
+) -> None:
     """Test successfully deleting an image."""
     strain_id = "strain_123"
     filename = f"{strain_id}.jpg"
@@ -145,7 +157,10 @@ def test_delete_image_success(image_manager: ImageManager, tmp_path: Path) -> No
     assert not file_path.exists()
 
 
-def test_delete_image_not_found(image_manager: ImageManager, tmp_path: Path) -> None:
+@pytest.mark.asyncio
+async def test_delete_image_not_found(
+    image_manager: ImageManager, tmp_path: Path
+) -> None:
     """Test deleting a non-existent image."""
     strain_id = "strain_123"
     filename = f"{strain_id}.jpg"
@@ -156,7 +171,8 @@ def test_delete_image_not_found(image_manager: ImageManager, tmp_path: Path) -> 
     image_manager.delete_image(strain_id, None)
 
 
-def test_delete_image_error(image_manager: ImageManager, tmp_path: Path) -> None:
+@pytest.mark.asyncio
+async def test_delete_image_error(image_manager: ImageManager, tmp_path: Path) -> None:
     """Test error handling during image deletion."""
     strain_id = "strain_123"
     filename = f"{strain_id}.jpg"
@@ -177,15 +193,18 @@ def test_delete_image_error(image_manager: ImageManager, tmp_path: Path) -> None
         assert file_path.exists()  # Should still exist if unlink failed
 
 
-def test_build_cache_error(mock_hass: MagicMock, tmp_path: Path) -> None:
+@pytest.mark.asyncio
+async def test_build_cache_error(mock_hass: MagicMock, tmp_path: Path) -> None:
     """Test error handling during cache build."""
     with patch("pathlib.Path.glob", side_effect=OSError("Disk error")):
         # Should not raise
         manager = ImageManager(mock_hass, str(tmp_path))
+        await manager.async_setup()
         assert manager._image_cache == set()
 
 
-def test_get_image_path_with_phenotype(
+@pytest.mark.asyncio
+async def test_get_image_path_with_phenotype(
     image_manager: ImageManager, tmp_path: Path
 ) -> None:
     """Test getting path for an existing image with phenotype."""
@@ -201,7 +220,8 @@ def test_get_image_path_with_phenotype(
     assert path == str(file_path.absolute())
 
 
-def test_delete_image_with_phenotype(
+@pytest.mark.asyncio
+async def test_delete_image_with_phenotype(
     image_manager: ImageManager, tmp_path: Path
 ) -> None:
     """Test deleting an image with phenotype."""

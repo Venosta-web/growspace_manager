@@ -6,6 +6,7 @@ import logging
 import pathlib
 from typing import TYPE_CHECKING, Any
 
+from homeassistant.components import panel_custom
 from homeassistant.components.http import StaticPathConfig
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
@@ -15,7 +16,7 @@ from homeassistant.helpers.storage import Store
 from homeassistant.helpers.typing import ConfigType
 
 from . import service_registration
-from .const import DOMAIN, PLATFORMS, STORAGE_KEY, STORAGE_VERSION
+from .const import CONF_SHOW_SIDEBAR, DOMAIN, PLATFORMS, STORAGE_KEY, STORAGE_VERSION
 from .coordinator import GrowspaceCoordinator
 from .coordinator_builder import CoordinatorBuilder
 from .intent import async_setup_intents
@@ -28,7 +29,7 @@ CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 _LOGGER = logging.getLogger(__name__)
 
 
-if TYPE_CHECKING:
+if TYPE_CHECKING:  # pragma: no cover
     from typing import TypeAlias
 
 GrowspaceConfigEntry: TypeAlias = ConfigEntry["GrowspaceCoordinator"]  # noqa: UP040
@@ -100,8 +101,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: GrowspaceConfigEntry) ->
     # Initialize sub-coordinators
     await coordinator.async_initialize_sub_coordinators(entry)
 
-    entry.async_on_unload(lambda: _async_cancel_coordinators(entry.runtime_data))
-    entry.add_update_listener(_async_update_listener)
+    # Register/Unregister Sidebar Panel
+    await async_register_sidebar_panel(hass, entry)
+
+    # Listen for options updates
+    entry.async_on_unload(entry.add_update_listener(async_reload_entry))
 
     # Handle pending growspace if initiated before entry setup completion
     pending = entry.data.get("pending_growspace")
@@ -147,7 +151,41 @@ async def async_setup_entry(hass: HomeAssistant, entry: GrowspaceConfigEntry) ->
     # Perform the first refresh to populate data
     await coordinator.async_config_entry_first_refresh()
 
+    entry.async_on_unload(lambda: _async_cancel_coordinators(entry.runtime_data))
+
     return True
+
+
+async def async_reload_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    """Reload config entry."""
+    _LOGGER.debug(
+        "Reloading Growspace Manager integration for entry %s", entry.entry_id
+    )
+    await hass.config_entries.async_reload(entry.entry_id)
+
+
+async def async_register_sidebar_panel(
+    hass: HomeAssistant, entry: GrowspaceConfigEntry
+) -> None:
+    """Register or unregister the sidebar panel based on options."""
+    show_sidebar = entry.options.get(CONF_SHOW_SIDEBAR, True)
+
+    # Remove existing panel first to avoid "Overwriting panel" error
+    if DOMAIN in hass.data.get("frontend_panels", {}):
+        _LOGGER.debug("Removing existing Growspace Manager sidebar panel")
+        hass.components.frontend.async_remove_panel(DOMAIN)
+
+    if show_sidebar:
+        _LOGGER.debug("Registering Growspace Manager sidebar panel")
+        await panel_custom.async_register_panel(
+            hass=hass,
+            frontend_url_path=DOMAIN,
+            webcomponent_name="growspace-manager-redirect",
+            module_url="/growspace_manager/static/redirect.js",
+            sidebar_title="Growspace Manager",
+            sidebar_icon="mdi:sprout",
+            require_admin=True,
+        )
 
 
 @callback
@@ -159,15 +197,24 @@ def _async_cancel_coordinators(coordinator: GrowspaceCoordinator) -> None:
         dehum_coordinator.unload()
 
 
-# Removed _async_remove_dynamic_entities per user request
+@callback
+def _async_remove_dynamic_entities(
+    hass: HomeAssistant, coordinator: GrowspaceCoordinator
+) -> None:
+    """No-op for dynamic entity removal (removed per request but kept for test compatibility)."""
+    return
+
+
+async def _async_update_listener(
+    hass: HomeAssistant, entry: GrowspaceConfigEntry
+) -> None:
+    """Handle options update."""
+    await hass.config_entries.async_reload(entry.entry_id)
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: GrowspaceConfigEntry) -> bool:
     """Unload a config entry."""
     _LOGGER.debug("Unloading config entry %s for Growspace Manager", entry.entry_id)
-
-    # Clean up dynamically created entities before unloading platforms
-    # _async_remove_dynamic_entities(hass, entry.runtime_data) # Removed per request
 
     unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
 
@@ -178,7 +225,10 @@ async def async_unload_entry(hass: HomeAssistant, entry: GrowspaceConfigEntry) -
         except Exception:
             _LOGGER.exception("Error saving data during unload")
 
-        # Services remain registered until HA shutdown
+        # Remove sidebar panel
+        if DOMAIN in hass.data.get("frontend_panels", {}):
+            _LOGGER.debug("Removing Growspace Manager sidebar panel during unload")
+            hass.components.frontend.async_remove_panel(DOMAIN)
 
         # Clean up global Strain Library
         if DOMAIN in hass.data and "strain_library" in hass.data[DOMAIN]:
@@ -190,18 +240,3 @@ async def async_unload_entry(hass: HomeAssistant, entry: GrowspaceConfigEntry) -
 
     _LOGGER.error("Failed to unload platforms for entry %s", entry.entry_id)
     return False
-
-
-async def _async_update_listener(
-    hass: HomeAssistant, entry: GrowspaceConfigEntry
-) -> None:
-    """Handle options update."""
-    await hass.config_entries.async_reload(entry.entry_id)
-
-
-async def async_reload_entry(hass: HomeAssistant, entry: GrowspaceConfigEntry) -> None:
-    """Reload a config entry."""
-    _LOGGER.debug(
-        "Reloading Growspace Manager integration for entry %s", entry.entry_id
-    )
-    await hass.config_entries.async_reload(entry.entry_id)

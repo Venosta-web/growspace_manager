@@ -276,6 +276,8 @@ class OptionsFlowHandler(OptionsFlow):
                 return await self.async_step_select_growspace_for_irrigation()
             if action == "configure_global":
                 return await self.async_step_configure_global()
+            if action == "configure_general":
+                return await self.async_step_configure_general()
 
             return self.async_create_entry(title="", data=user_input)
 
@@ -342,6 +344,26 @@ class OptionsFlowHandler(OptionsFlow):
         """Delegate growspace removal confirmation to the handler."""
         return await self.growspace_handler.async_step_confirm_remove_growspace(
             user_input
+        )
+
+    async def async_step_configure_general(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Handle general integration settings."""
+        if user_input is not None:
+            self.current_options.update(user_input)
+            return self.async_create_entry(title="", data=self.current_options)
+
+        return self.async_show_form(
+            step_id="configure_general",
+            data_schema=vol.Schema(
+                {
+                    vol.Optional(
+                        "show_sidebar",
+                        default=self.current_options.get("show_sidebar", True),
+                    ): cv.boolean,
+                }
+            ),
         )
 
     async def async_step_select_growspace_for_env(
@@ -523,8 +545,17 @@ class OptionsFlowHandler(OptionsFlow):
                                 value="configure_irrigation",
                                 label="Configure Irrigation",
                             ),
+                            selector.SelectOptionDict(
+                                value="manage_strain_library",
+                                label="Manage Strain Library",
+                            ),
+                            selector.SelectOptionDict(
+                                value="configure_general",
+                                label="General Settings",
+                            ),
                         ],
-                        mode=selector.SelectSelectorMode.DROPDOWN,
+                        mode=selector.SelectSelectorMode.LIST,
+                        translation_key="menu_options",
                     )
                 )
             }

@@ -7,10 +7,8 @@ from common import create_plant
 import pytest
 
 from custom_components.growspace_manager.const import EVENT_GROWSPACE_LOG_ENTRY
+from custom_components.growspace_manager.managers.plant import PlantManager
 from custom_components.growspace_manager.models import PlantStage
-from custom_components.growspace_manager.plant_lifecycle_manager import (
-    PlantLifecycleManager,
-)
 from custom_components.growspace_manager.services.plant import async_add_timeline_note
 from homeassistant.core import HomeAssistant
 
@@ -69,6 +67,7 @@ def save_callback_mock():
 
 @pytest.fixture
 def manager(
+    hass,
     repository_mock,
     validator_mock,
     gs_service_mock,
@@ -76,12 +75,14 @@ def manager(
     save_callback_mock,
     lock_mock,
 ):
-    """Fixture for PlantLifecycleManager."""
-    return PlantLifecycleManager(
+    """Fixture for PlantManager."""
+    return PlantManager(
+        hass=hass,
         repository=repository_mock,
         validator=validator_mock,
-        growspace_service=gs_service_mock,
+        growspace_manager=gs_service_mock,
         strain_library=strain_library_mock,
+        plant_view_builder=MagicMock(),
         save_callback=save_callback_mock,
         lock=lock_mock,
     )

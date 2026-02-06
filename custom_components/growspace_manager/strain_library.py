@@ -86,6 +86,7 @@ class StrainLibrary:
             True if WebP migration ran and updated paths, False otherwise.
         """
         _LOGGER.debug("Setting up StrainLibrary DB at %s", self._db_path)
+        await self.image_manager.async_setup()
         self._db = await aiosqlite.connect(self._db_path)
         self._db.row_factory = aiosqlite.Row
         await self._db.executescript(STRAIN_LIBRARY_SCHEMA)

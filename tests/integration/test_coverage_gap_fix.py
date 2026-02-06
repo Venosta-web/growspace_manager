@@ -8,7 +8,6 @@ from common import create_plant
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.growspace_manager.bayesian_evaluator import (
-    _determine_stage_key,
     evaluate_active_saturation,
     evaluate_direct_co2_stress,
     evaluate_optimal_temperature,
@@ -294,21 +293,6 @@ async def test_growspace_overview_sensor_tracking(hass: HomeAssistant) -> None:
 # -----------------------------------------------------------------------------
 # bayesian_evaluator.py Coverage
 # -----------------------------------------------------------------------------
-
-
-def test_determine_stage_key_mid_flower() -> None:
-    """Test stage key for mid flower."""
-    state = EnvironmentState(
-        temp=25.0,
-        humidity=50.0,
-        vpd=1.0,
-        co2=800.0,
-        veg_days=0,
-        flower_days=30,
-        is_lights_on=True,
-        fan_off=False,
-    )
-    assert _determine_stage_key(state) == "flower_mid"
 
 
 def test_calculated_vpd_native_value() -> None:

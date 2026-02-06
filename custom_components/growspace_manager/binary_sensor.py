@@ -62,7 +62,7 @@ from .strategies.mold import MoldRiskEvaluatorStrategy
 from .strategies.optimal import OptimalConditionsEvaluatorStrategy
 from .strategies.stress import StressEvaluatorStrategy
 from .trend_analyzer import TrendAnalyzer
-from .utils import VPDCalculator, calculate_days_since
+from .utils import VPDCalculator, calculate_days_since, calculate_stage_transition
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -325,7 +325,8 @@ class BayesianEnvironmentSensor(
         self._event_max_prob: float = 0.0
         self._last_light_state: bool | None = None
 
-        self.trend_analyzer = TrendAnalyzer(self.hass)
+        # TrendAnalyzer will be initialized in async_added_to_hass when self.hass is available
+        self.trend_analyzer: TrendAnalyzer | None = None
         if notification_manager:
             self.notification_manager = notification_manager
 
@@ -489,6 +490,9 @@ class BayesianEnvironmentSensor(
         """Register callbacks when the entity is added to Home Assistant."""
         await super().async_added_to_hass()
 
+        # Initialize TrendAnalyzer now that self.hass is available
+        self.trend_analyzer = TrendAnalyzer(self.hass)
+
         # Register for batched notifications
         self.notification_manager.attach_sensor(self.growspace_id, self)
 
@@ -642,6 +646,13 @@ class BayesianEnvironmentSensor(
         self, sensor_id: str, duration_minutes: int, threshold: float
     ) -> dict[str, Any]:
         """Analyze the trend of a sensor's history to detect rising or falling patterns."""
+        if not self.trend_analyzer:
+            _LOGGER.error(
+                "TrendAnalyzer not initialized for %s. Entity may not be fully added to HA",
+                self.entity_id,
+            )
+            return {"trend": "unknown", "crossed_threshold": False}
+
         try:
             return await self.trend_analyzer.async_analyze_sensor_trend(
                 sensor_id, duration_minutes, threshold
@@ -989,11 +1000,7 @@ class LightCycleVerificationSensor(
             default=0,
         )
         max_flower = max(
-            (
-                self._calculate_days(p.flower_start)
-                for p in plants
-                if p.flower_start
-            ),
+            (self._calculate_days(p.flower_start) for p in plants if p.flower_start),
             default=0,
         )
         return {"veg_days": max_veg, "flower_days": max_flower}
@@ -1001,16 +1008,14 @@ class LightCycleVerificationSensor(
     def _get_current_stage_key(self, stage_info: dict[str, int]) -> str:
         """Determine the current stage key based on day counts."""
         flower_days = stage_info["flower_days"]
-
-        if flower_days == 0:
-            return PlantStage.VEG
-        if 0 < flower_days < 21:
-            return "flower_early"
-        if 21 <= flower_days < 42:
-            return "flower_mid"
-        if flower_days >= 42:
-            return "flower_late"
-        return PlantStage.VEG
+        _, stage_b, _ = calculate_stage_transition(flower_days)
+        # Use stage_b if we are more than halfway through transition,
+        # but for light cycles we usually want a clean jump.
+        # Original boundaries were 21 and 42 (inclusive/exclusive boundary).
+        # calculate_stage_transition(21) returns ('flower_early', 'flower_mid', 1.0)
+        # calculate_stage_transition(42) returns ('flower_mid', 'flower_late', 1.0)
+        # So we just take stage_b which represents the "current or next" target.
+        return stage_b
 
     @callback
     def _async_light_sensor_changed(self, event: Event[EventStateChangedData]) -> None:

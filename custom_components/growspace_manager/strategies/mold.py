@@ -5,11 +5,16 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from custom_components.growspace_manager.bayesian_data import (
+    CRITICAL_HUMIDITY_THRESHOLDS,
     PROB_MOLD_HUMIDIFIER_ON,
     PROB_MOLD_STAGNANT_AIR,
 )
 from custom_components.growspace_manager.bayesian_evaluator import (
     async_evaluate_mold_risk_trend,
+)
+from custom_components.growspace_manager.utils import (
+    calculate_stage_transition,
+    interpolate_value,
 )
 
 from .evaluator_strategy import BayesianEvaluatorStrategy
@@ -61,23 +66,30 @@ class MoldRiskEvaluatorStrategy(BayesianEvaluatorStrategy):
         if state.humidity is None:
             return
 
-        # Define thresholds based on growth stage
-        # Seedlings and clones need high humidity (up to 90%)
-        is_early_stage = (state.seedling_days > 0 or state.clone_days > 0) and (
-            state.flower_days == 0
+        # Use transition logic for smoother mold risk thresholds
+        stage_a, stage_b, factor = calculate_stage_transition(
+            state.flower_days, state.veg_days, state.seedling_days, state.clone_days
         )
 
-        if is_early_stage:
-            critical_humidity = 92.0
-            high_humidity = 88.0
-        elif state.flower_days > 0:
-            # Late flower is more sensitive
-            critical_humidity = 65.0 if state.flower_days > 42 else 75.0
-            high_humidity = 60.0 if state.flower_days > 42 else 70.0
-        else:
-            # Veg stage
-            critical_humidity = 85.0
-            high_humidity = 80.0
+        crit_a = CRITICAL_HUMIDITY_THRESHOLDS[stage_a]["critical"]
+        crit_b = CRITICAL_HUMIDITY_THRESHOLDS[stage_b]["critical"]
+        high_a = CRITICAL_HUMIDITY_THRESHOLDS[stage_a]["high"]
+        high_b = CRITICAL_HUMIDITY_THRESHOLDS[stage_b]["high"]
+
+        critical_humidity = interpolate_value(crit_a, crit_b, factor)
+        high_humidity = interpolate_value(high_a, high_b, factor)
+
+        is_early_stage = stage_a in (
+            "seedling",
+            "clone",
+            "seedling_standard",
+            "clone_standard",
+        ) or stage_b in (
+            "seedling",
+            "clone",
+            "seedling_standard",
+            "clone_standard",
+        )
 
         if not is_early_stage and state.humidity > 90.0:
             # Extra penalty for extremely high humidity in non-early stages
@@ -101,17 +113,14 @@ class MoldRiskEvaluatorStrategy(BayesianEvaluatorStrategy):
             return
 
         # Define thresholds based on growth stage
-        is_early_stage = (state.seedling_days > 0 or state.clone_days > 0) and (
-            state.flower_days == 0
+        stage_a, stage_b, factor = calculate_stage_transition(
+            state.flower_days, state.veg_days, state.seedling_days, state.clone_days
         )
 
-        threshold = 0.0
-        if is_early_stage:
-            threshold = 90.0
-        elif state.flower_days == 0:  # Veg
-            threshold = 80.0
-        else:  # Flower
-            threshold = 70.0
+        # Use high humidity threshold as a safe point for air circulation
+        thr_a = CRITICAL_HUMIDITY_THRESHOLDS[stage_a]["high"]
+        thr_b = CRITICAL_HUMIDITY_THRESHOLDS[stage_b]["high"]
+        threshold = interpolate_value(thr_a, thr_b, factor)
 
         if state.humidity is None or state.humidity < threshold:
             return
@@ -135,22 +144,19 @@ class MoldRiskEvaluatorStrategy(BayesianEvaluatorStrategy):
             return
 
         # Define thresholds based on growth stage
-        is_early_stage = (state.seedling_days > 0 or state.clone_days > 0) and (
-            state.flower_days == 0
+        stage_a, stage_b, factor = calculate_stage_transition(
+            state.flower_days, state.veg_days, state.seedling_days, state.clone_days
         )
 
-        is_risk = True
-        if is_early_stage:
-            if state.humidity is None or state.humidity < 90:
-                is_risk = False
-        elif state.flower_days == 0:  # Veg
-            if state.humidity is None or state.humidity < 85:
-                is_risk = False
-        elif state.flower_days > 40:  # Late Flower
-            if state.humidity is None or state.humidity < 60:
-                is_risk = False
-        elif state.humidity is None or state.humidity < 70:
+        # Use critical humidity threshold
+        thr_a = CRITICAL_HUMIDITY_THRESHOLDS[stage_a]["critical"]
+        thr_b = CRITICAL_HUMIDITY_THRESHOLDS[stage_b]["critical"]
+        threshold = interpolate_value(thr_a, thr_b, factor)
+
+        if state.humidity is None or state.humidity < threshold:
             is_risk = False
+        else:
+            is_risk = True
 
         if not is_risk:
             return

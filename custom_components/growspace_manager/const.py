@@ -3,8 +3,11 @@
 from enum import StrEnum
 from typing import Final
 
+from .domain.stage import PLANT_STAGES, PlantStage
+
 DOMAIN: Final = "growspace_manager"
 STORAGE_VERSION: Final = 1
+VERSION: Final = "0.3.5"
 STORAGE_KEY: Final = f"{DOMAIN}_storage"  # Legacy Key
 STORAGE_KEY_CONFIG: Final = f"{DOMAIN}.config"
 STORAGE_KEY_PLANTS: Final = f"{DOMAIN}.plants"
@@ -58,6 +61,12 @@ CONF_SOIL_MOISTURE_SENSOR = "soil_moisture_sensor"
 CONF_IRRIGATION_TANK_SENSORS = "irrigation_tank_sensors"
 CONF_IRRIGATION_TANK_WARNING_LEVEL = "irrigation_tank_warning_level"
 CONF_CONTROL_DEHUMIDIFIER = "control_dehumidifier"
+
+# Tank Depletion Predictor Defaults
+DEFAULT_PREDICTION_WINDOW_HOURS = 72
+DEPLETION_DEADBAND_THRESHOLD = 0.1  # %/hour
+VPD_WEIGHTING_BASE = 1.2  # kPa threshold for multiplier
+
 
 # Multi-Device Config Keys
 CONF_LIGHT_SENSORS = "light_sensors"
@@ -193,18 +202,7 @@ DEFAULT_NOTIFICATION_EVENTS = {
 }
 
 
-class PlantStage(StrEnum):
-    """Stages of plant growth."""
-
-    SEEDLING = "seedling"
-    CLONE = "clone"
-    MOTHER = "mother"
-    VEG = "veg"
-    FLOWER = "flower"
-    DRY = "dry"
-    CURE = "cure"
-
-
+# Dehumidifier Stages (Unified)
 DEHUMIDIFIER_STAGES: Final = [
     PlantStage.SEEDLING.value,
     PlantStage.VEG.value,
@@ -353,7 +351,11 @@ MAX_PLANTS_PER_ROW = 20
 # Strain Library defaults
 DB_FILE_STRAIN_LIBRARY = "strain_library.db"
 STORAGE_KEY_STRAIN_LIBRARY = "strain_library"
+CONF_STRAIN_LIBRARY: Final = "strain_library"
+CONF_UNIT_SYSTEM: Final = "unit_system"
+CONF_SHOW_SIDEBAR: Final = "show_sidebar"
 
+# State Constants
 DEFAULT_BAYESIAN_PRIORS = {
     "stress": 0.15,
     "mold_risk": 0.10,
