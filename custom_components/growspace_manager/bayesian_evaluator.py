@@ -14,18 +14,8 @@ from typing import TYPE_CHECKING, Any
 from homeassistant.core import State
 
 from .bayesian_constants import (
-    CO2_ACCEPTABLE_MAX,
-    CO2_ACCEPTABLE_MIN,
-    CO2_GOOD_MAX,
-    CO2_GOOD_MIN,
     CO2_HIGH_THRESHOLD,
-    CO2_LATE_FLOWER_ACCEPTABLE_MAX,
-    CO2_LATE_FLOWER_ACCEPTABLE_MIN,
-    CO2_LATE_FLOWER_OPTIMAL_MAX,
-    CO2_LATE_FLOWER_OPTIMAL_MIN,
     CO2_LOW_THRESHOLD,
-    CO2_PERFECT_MAX,
-    CO2_PERFECT_MIN,
     DEFAULT_TREND_DURATION,
     DEFAULT_TREND_SENSITIVITY,
     DEFAULT_TREND_THRESHOLD_TEMP,
@@ -49,8 +39,6 @@ from .bayesian_constants import (
     PROB_ACTIVE_DESICCATION,
     PROB_ACTIVE_SATURATION,
     PROB_CO2_HIGH,
-    PROB_CO2_LATE_FLOWER_ACCEPTABLE,
-    PROB_CO2_LATE_FLOWER_OPTIMAL,
     PROB_CO2_LOW,
     PROB_HUMIDITY_FLOWER_LATE_OUT_OF_RANGE,
     PROB_HUMIDITY_FLOWER_MID_OUT_OF_RANGE,
@@ -98,6 +86,7 @@ from .bayesian_constants import (
     VPD_DANGER_ZONE_VEG,
 )
 from .bayesian_data import (
+    CO2_OPTIMAL_THRESHOLDS,
     PROB_ACCEPTABLE,
     PROB_GOOD,
     PROB_PERFECT,
@@ -829,45 +818,45 @@ def evaluate_optimal_co2(
 
     prob_out_of_range = PROB_STRESS_OUT_OF_RANGE
     co2 = state.co2
+    co2_optimal = False
 
-    # Use stage key for discrete CO2 logic
-    stage = _determine_stage_key(state)
+    # Use stage transition logic for smooth interpolation
+    stage_a, stage_b, factor = calculate_stage_transition(
+        state.flower_days, state.veg_days, state.seedling_days, state.clone_days
+    )
 
-    match stage:
-        case "flower_late":  # Late Flower Logic (Prefers lower CO2)
-            if CO2_LATE_FLOWER_OPTIMAL_MIN <= co2 <= CO2_LATE_FLOWER_OPTIMAL_MAX:
-                observations.append(PROB_CO2_LATE_FLOWER_OPTIMAL)
-            elif CO2_LATE_FLOWER_ACCEPTABLE_MIN < co2 <= CO2_LATE_FLOWER_ACCEPTABLE_MAX:
-                observations.append(PROB_CO2_LATE_FLOWER_ACCEPTABLE)
-            # Else: fall through
+    limits_a = CO2_OPTIMAL_THRESHOLDS.get(stage_a, [])
+    limits_b = CO2_OPTIMAL_THRESHOLDS.get(stage_b, [])
 
-        case (
-            "seedling" | "clone"
-        ):  # Early stages (Ambient CO2 is fine, high not needed)
-            # For now, use the same logic as veg but maybe more restrictive?
-            # Actually, standard logic is fine for now but we call it out.
-            if CO2_PERFECT_MIN <= co2 <= CO2_PERFECT_MAX:
-                observations.append(PROB_PERFECT)
-            elif CO2_GOOD_MIN <= co2 <= CO2_GOOD_MAX:
-                observations.append(PROB_GOOD)
-            elif CO2_ACCEPTABLE_MIN <= co2 <= CO2_ACCEPTABLE_MAX:
-                observations.append(PROB_ACCEPTABLE)
-            else:
-                observations.append(prob_out_of_range)
-                reason_detail = "CO2 Low" if co2 < CO2_LOW_THRESHOLD else "CO2 High"
-                reasons.append((prob_out_of_range[1], f"{reason_detail} ({co2})"))
+    # Interpolate ranges
+    for i in range(min(len(limits_a), len(limits_b))):
+        co2_low_a, co2_high_a, prob_a = limits_a[i]
+        co2_low_b, co2_high_b, prob_b = limits_b[i]
 
-        case _:  # Normal/Veg/Early Flower logic
-            if CO2_PERFECT_MIN <= co2 <= CO2_PERFECT_MAX:
-                observations.append(PROB_PERFECT)
-            elif CO2_GOOD_MIN <= co2 <= CO2_GOOD_MAX:
-                observations.append(PROB_GOOD)
-            elif CO2_ACCEPTABLE_MIN <= co2 <= CO2_ACCEPTABLE_MAX:
-                observations.append(PROB_ACCEPTABLE)
-            else:
-                observations.append(prob_out_of_range)
-                reason_detail = "CO2 Low" if co2 < CO2_LOW_THRESHOLD else "CO2 High"
-                reasons.append((prob_out_of_range[1], f"{reason_detail} ({co2})"))
+        co2_low = interpolate_value(co2_low_a, co2_low_b, factor)
+        co2_high = interpolate_value(co2_high_a, co2_high_b, factor)
+        prob = prob_a if factor < 0.5 else prob_b
+
+        if co2_low <= co2 <= co2_high:
+            co2_optimal = True
+            observations.append(prob)
+            break
+
+    # If no optimal range was met, reduce probability
+    # Note: Late flower stages don't penalize out-of-range CO2 (backward compatibility)
+    if not co2_optimal:
+        # Check if we're in late flower stage (either stage_a or stage_b is FLOWER_LATE)
+        from .domain.stage import BayesianStage
+
+        is_late_flower = (
+            stage_a == BayesianStage.FLOWER_LATE or stage_b == BayesianStage.FLOWER_LATE
+        )
+
+        if not is_late_flower:
+            observations.append(prob_out_of_range)
+            reason_detail = "CO2 Low" if co2 < CO2_LOW_THRESHOLD else "CO2 High"
+            reasons.append((prob_out_of_range[1], f"{reason_detail} ({co2})"))
+
     return observations, reasons
 
 

@@ -288,6 +288,52 @@ VPD_OPTIMAL_THRESHOLDS: Final[
     },
 }
 
+# Structure: stage -> [ (low, high, prob), ... ]
+# CO2 optimal ranges for each growth stage
+CO2_OPTIMAL_THRESHOLDS: Final[
+    dict[str, list[tuple[float, float, tuple[float, float]]]]
+] = {
+    BayesianStage.SEEDLING: [
+        (1000, 1400, PROB_PERFECT),  # Perfect range
+        (800, 1500, PROB_GOOD),  # Good range
+        (400, 600, PROB_ACCEPTABLE),  # Acceptable range
+    ],
+    BayesianStage.SEEDLING_STANDARD: [
+        (1000, 1400, PROB_PERFECT),
+        (800, 1500, PROB_GOOD),
+        (400, 600, PROB_ACCEPTABLE),
+    ],
+    BayesianStage.CLONE: [
+        (1000, 1400, PROB_PERFECT),
+        (800, 1500, PROB_GOOD),
+        (400, 600, PROB_ACCEPTABLE),
+    ],
+    BayesianStage.CLONE_STANDARD: [
+        (1000, 1400, PROB_PERFECT),
+        (800, 1500, PROB_GOOD),
+        (400, 600, PROB_ACCEPTABLE),
+    ],
+    BayesianStage.VEG: [
+        (1000, 1400, PROB_PERFECT),
+        (800, 1500, PROB_GOOD),
+        (400, 600, PROB_ACCEPTABLE),
+    ],
+    BayesianStage.FLOWER_EARLY: [
+        (1000, 1400, PROB_PERFECT),
+        (800, 1500, PROB_GOOD),
+        (400, 600, PROB_ACCEPTABLE),
+    ],
+    BayesianStage.FLOWER_MID: [
+        (1000, 1400, PROB_PERFECT),
+        (800, 1500, PROB_GOOD),
+        (400, 600, PROB_ACCEPTABLE),
+    ],
+    BayesianStage.FLOWER_LATE: [
+        (400, 800, (0.90, 0.25)),  # Late flower optimal (lower CO2)
+        (800, 1200, (0.4, 0.6)),  # Late flower acceptable
+    ],
+}
+
 # structure: stage -> { 'critical': float, 'high': float }
 CRITICAL_HUMIDITY_THRESHOLDS: Final[dict[str, dict[str, float]]] = {
     BayesianStage.SEEDLING: {"critical": 102.0, "high": 100.0},
