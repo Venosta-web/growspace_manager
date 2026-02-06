@@ -18,8 +18,10 @@ jobs:
       - name: install dependencies
         run: pip install --upgrade -r requirements.txt
       - name: Run Unit Tests
+        env:
+          PYTHONPATH: .
         run: pytest --cov
       - name: Upload coverage reports to Codecov
-        uses: codecov/codecov-action@v3
+        uses: codecov/codecov-action@v5
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
