@@ -68,6 +68,7 @@ class TestTankDepletionPredictor:
 
         assert len(predictor._buffer) == 1
         assert predictor._buffer[0][1] == 85.5
+        assert predictor._buffer[0][2] is False  # Default when no light sensor
 
     async def test_async_update_with_unavailable_sensor(self, mock_hass, basic_tank):
         """Test updating predictor with unavailable sensor."""
@@ -100,7 +101,7 @@ class TestTankDepletionPredictor:
         now = utcnow()
 
         # Add old data point
-        predictor._buffer.append((now - timedelta(hours=2), 90.0))
+        predictor._buffer.append((now - timedelta(hours=2), 90.0, False))
 
         # Add current data point
         mock_state = State("sensor.tank_level", "85.0")
@@ -137,7 +138,7 @@ class TestTankDepletionPredictor:
         # Simulate depleting tank over 12 hours (100% -> 70%)
         for i in range(13):
             level = 100 - (i * 2.5)  # Depleting at ~2.5%/hour
-            predictor._buffer.append((now - timedelta(hours=12 - i), level))
+            predictor._buffer.append((now - timedelta(hours=12 - i), level, False))
 
         prediction = predictor.get_prediction()
 
@@ -156,7 +157,7 @@ class TestTankDepletionPredictor:
         # Simulate refilling tank (50% -> 80%)
         for i in range(13):
             level = 50 + (i * 2.5)  # Refilling at ~2.5%/hour
-            predictor._buffer.append((now - timedelta(hours=12 - i), level))
+            predictor._buffer.append((now - timedelta(hours=12 - i), level, False))
 
         prediction = predictor.get_prediction()
 
@@ -172,7 +173,7 @@ class TestTankDepletionPredictor:
 
         # Simulate static tank
         for i in range(13):
-            predictor._buffer.append((now - timedelta(hours=12 - i), 75.0))
+            predictor._buffer.append((now - timedelta(hours=12 - i), 75.0, False))
 
         prediction = predictor.get_prediction()
 
@@ -273,7 +274,7 @@ class TestTankDepletionPredictor:
 
         now = utcnow()
         for i in range(13):
-            predictor._buffer.append((now - timedelta(hours=12 - i), 100 - i))
+            predictor._buffer.append((now - timedelta(hours=12 - i), 100 - i, False))
 
         prediction = predictor.get_prediction()
 
@@ -286,7 +287,7 @@ class TestTankDepletionPredictor:
 
         now = utcnow()
         for i in range(10):
-            predictor._buffer.append((now - timedelta(hours=i), 90 - i))
+            predictor._buffer.append((now - timedelta(hours=i), 90 - i, False))
 
         prediction = predictor.get_prediction()
 
@@ -302,7 +303,7 @@ class TestTankDepletionPredictor:
         # Current level: 50%, threshold: 30%, expected: (50-30)/2 = 10 hours
         for i in range(13):
             level = 74 - (i * 2)
-            predictor._buffer.append((now - timedelta(hours=12 - i), level))
+            predictor._buffer.append((now - timedelta(hours=12 - i), level, False))
 
         prediction = predictor.get_prediction()
 
@@ -336,7 +337,7 @@ class TestTankDepletionPredictor:
         # Simulate depleting tank from 80% to 50% over 12 hours at ~2.5%/hour
         for i in range(13):
             level = 80 - (i * 2.5)
-            predictor._buffer.append((now - timedelta(hours=12 - i), level))
+            predictor._buffer.append((now - timedelta(hours=12 - i), level, False))
 
         # Mock high VPD (>1.2) to trigger multiplier
         mock_vpd_state = State("sensor.vpd", "2.0")
@@ -370,18 +371,15 @@ class TestTankDepletionPredictor:
         now = utcnow()
 
         # Add enough data points for segregation
+        # Add enough data points for segregation
         for i in range(20):
             level = 100 - (i * 1.5)
-            predictor._buffer.append((now - timedelta(hours=19 - i), level))
+            # Simulate lights on
+            predictor._buffer.append((now - timedelta(hours=19 - i), level, True))
 
-        # Mock light sensor - the code iterates through buffer and checks current state
-        # It uses the current state for all historical points (simplified implementation)
-        # When light is "on", all points go to lights_on_data
-        # When light is "off", all points go to lights_off_data
-        # So we can't test both rates with current implementation
-        # Test just the active rate when lights are on
-        mock_light_state = State("light.grow_light", "on")
-        mock_hass.states.get.return_value = mock_light_state
+        # Correctly test the newly implemented historical state logic
+        # Buffer has True for all points, so active rate should be calculated
+        # No mock needed for hass state as we use internal buffer
 
         prediction = predictor.get_prediction()
 
@@ -403,11 +401,12 @@ class TestTankDepletionPredictor:
         # Add enough data points
         for i in range(20):
             level = 100 - (i * 1.5)
-            predictor._buffer.append((now - timedelta(hours=19 - i), level))
+            # Simulate alternating lights with mostly off
+            is_on = i % 4 == 0  # Mostly off
+            predictor._buffer.append((now - timedelta(hours=19 - i), level, is_on))
 
-        # Test with lights off - should only calculate dormant rate
-        mock_light_state = State("light.grow_light", "off")
-        mock_hass.states.get.return_value = mock_light_state
+        # Test with mixed buffer - should calculate dormant rate
+        # No mock needed for hass state as we use internal buffer
 
         prediction = predictor.get_prediction()
 
@@ -422,7 +421,7 @@ class TestTankDepletionPredictor:
 
         now = utcnow()
         for i in range(10):
-            predictor._buffer.append((now - timedelta(hours=9 - i), 100 - i * 2))
+            predictor._buffer.append((now - timedelta(hours=9 - i), 100 - i * 2, True))
 
         prediction = predictor.get_prediction()
 
@@ -443,7 +442,7 @@ class TestTankDepletionPredictor:
 
         now = utcnow()
         for i in range(10):
-            predictor._buffer.append((now - timedelta(hours=9 - i), 100 - i * 2))
+            predictor._buffer.append((now - timedelta(hours=9 - i), 100 - i * 2, True))
 
         prediction = predictor.get_prediction()
 
@@ -463,7 +462,7 @@ class TestTankDepletionPredictor:
 
         now = utcnow()
         for i in range(10):
-            predictor._buffer.append((now - timedelta(hours=9 - i), 100 - i * 2))
+            predictor._buffer.append((now - timedelta(hours=9 - i), 100 - i * 2, True))
 
         # Mock light sensor as non-existent
         mock_hass.states.get.return_value = None

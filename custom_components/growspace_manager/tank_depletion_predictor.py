@@ -72,8 +72,8 @@ class TankDepletionPredictor:
         self.window_hours = window_hours
         self.environment_config = environment_config
 
-        # Rolling buffer: (timestamp, level_pct)
-        self._buffer: deque[tuple[datetime, float]] = deque(
+        # Rolling buffer: (timestamp, level_pct, is_light_on)
+        self._buffer: deque[tuple[datetime, float, bool]] = deque(
             maxlen=window_hours * 4  # 4 readings per hour max
         )
 
@@ -105,8 +105,16 @@ class TankDepletionPredictor:
             )
             return
 
+        # Determine light state
+        is_light_on = False
+        if self.environment_config and self.environment_config.light_sensors:
+            light_entity = self.environment_config.light_sensors[0]
+            light_state = self.hass.states.get(light_entity)
+            if light_state and light_state.state == "on":
+                is_light_on = True
+
         now = utcnow()
-        self._buffer.append((now, level))
+        self._buffer.append((now, level, is_light_on))
         self._last_update = now
 
         # Expire old data points
@@ -115,10 +123,11 @@ class TankDepletionPredictor:
             self._buffer.popleft()
 
         _LOGGER.debug(
-            "Updated tank %s buffer: %d points, level=%.1f%%",
+            "Updated tank %s buffer: %d points, level=%.1f%%, light=%s",
             self.tank.name,
             len(self._buffer),
             level,
+            is_light_on,
         )
 
     def get_prediction(self) -> TankPrediction:
@@ -138,8 +147,9 @@ class TankDepletionPredictor:
                 data_points=len(self._buffer),
             )
 
-        # Apply SMA filter to reduce noise
-        filtered_data = self._apply_sma_filter(list(self._buffer))
+        # Apply SMA filter to reduce noise (strip metadata first)
+        raw_data = [(ts, lvl) for ts, lvl, _ in self._buffer]
+        filtered_data = self._apply_sma_filter(raw_data)
 
         # Calculate slope using OLS
         slope = self._calculate_slope(filtered_data)
@@ -286,20 +296,14 @@ class TankDepletionPredictor:
             return
 
         light_entity = self.environment_config.light_sensors[0]
-        light_state = self.hass.states.get(light_entity)
-
-        if not light_state:
+        if not self.hass.states.get(light_entity):
             return
 
-        # Segregate buffer by light state
+        # Segregate buffer by stored light state
         lights_on_data = []
         lights_off_data = []
 
-        for timestamp, level in self._buffer:
-            # Get historical light state (simplified - uses current state)
-            # In production, would need to query history for exact state at timestamp
-            is_on = light_state.state == "on"
-
+        for timestamp, level, is_on in self._buffer:
             if is_on:
                 lights_on_data.append((timestamp, level))
             else:
