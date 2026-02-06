@@ -31,14 +31,16 @@ def mock_predictor():
 
 
 @pytest.fixture
-def sensor(mock_coordinator, mock_predictor):
+def sensor(hass: HomeAssistant, mock_coordinator, mock_predictor):
     """Create a TankDepletionSensor instance."""
-    return TankDepletionSensor(
+    sensor = TankDepletionSensor(
         coordinator=mock_coordinator,
         growspace_id="gs1",
         tank_name="Main Tank",
         predictor=mock_predictor,
     )
+    sensor.hass = hass
+    return sensor
 
 
 class TestTankDepletionSensor:
@@ -118,6 +120,23 @@ class TestTankDepletionSensor:
         """Test async_update calls predictor."""
         await sensor.async_update()
         mock_predictor.async_update.assert_awaited_once()
+
+    def test_handle_coordinator_update_calls_predictor(self, sensor, mock_predictor):
+        """Test that coordinator updates trigger predictor refresh."""
+        # Reset the mock to clear any previous calls
+        mock_predictor.async_update.reset_mock()
+
+        # Mock async_write_ha_state to avoid entity registration issues
+        sensor.async_write_ha_state = MagicMock()
+        sensor.hass.async_create_task = MagicMock()
+
+        # Trigger coordinator update
+        sensor._handle_coordinator_update()
+
+        # Verify async_create_task was called (predictor update was scheduled)
+        sensor.hass.async_create_task.assert_called_once()
+        # Verify async_write_ha_state was called by super()
+        sensor.async_write_ha_state.assert_called_once()
 
 
 @pytest.mark.asyncio

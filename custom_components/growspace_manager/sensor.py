@@ -652,6 +652,11 @@ class TankDepletionSensor(CoordinatorEntity, SensorEntity):
         """Update the predictor buffer."""
         await self._predictor.async_update()
 
+    def _handle_coordinator_update(self) -> None:
+        """Handle coordinator updates by refreshing predictor buffer."""
+        self.hass.async_create_task(self._predictor.async_update())
+        super()._handle_coordinator_update()
+
 
 class CalculatedVpdSensor(BaseVpdSensor):
     """A sensor that calculates VPD from temperature and humidity with LST offset.
