@@ -343,6 +343,8 @@ CONFIGURE_ENVIRONMENT_SCHEMA = vol.Schema(
         vol.Optional(CONF_HUMIDIFIER_ENTITIES): cv.ensure_list,
         vol.Optional(CONF_EXHAUST_FAN_ENTITIES): cv.ensure_list,
         vol.Optional("sensor_groups"): list,
+        vol.Optional("sensor_coordinates"): dict,
+        vol.Optional("irrigation_tanks"): list,
     }
 )
 

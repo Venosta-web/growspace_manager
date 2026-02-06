@@ -170,6 +170,11 @@ async def async_register_sidebar_panel(
     """Register or unregister the sidebar panel based on options."""
     show_sidebar = entry.options.get(CONF_SHOW_SIDEBAR, True)
 
+    # Remove existing panel first to avoid "Overwriting panel" error
+    if DOMAIN in hass.data.get("frontend_panels", {}):
+        _LOGGER.debug("Removing existing Growspace Manager sidebar panel")
+        hass.components.frontend.async_remove_panel(DOMAIN)
+
     if show_sidebar:
         _LOGGER.debug("Registering Growspace Manager sidebar panel")
         await panel_custom.async_register_panel(
@@ -181,14 +186,6 @@ async def async_register_sidebar_panel(
             sidebar_icon="mdi:sprout",
             require_admin=True,
         )
-    else:
-        _LOGGER.debug("Unregistering Growspace Manager sidebar panel")
-        if DOMAIN in hass.data.get("frontend_panels", {}):
-            # No public API for removing panel easily, but we can try to use frontend's internal structure
-            # or just let HA handle it if we don't register it on next setup.
-            # Actually, frontend has async_remove_panel
-            if hasattr(hass.components.frontend, "async_remove_panel"):
-                hass.components.frontend.async_remove_panel(DOMAIN)
 
 
 @callback
@@ -205,7 +202,7 @@ def _async_remove_dynamic_entities(
     hass: HomeAssistant, coordinator: GrowspaceCoordinator
 ) -> None:
     """No-op for dynamic entity removal (removed per request but kept for test compatibility)."""
-    pass
+    return
 
 
 async def _async_update_listener(
@@ -227,6 +224,11 @@ async def async_unload_entry(hass: HomeAssistant, entry: GrowspaceConfigEntry) -
             await entry.runtime_data.async_shutdown()
         except Exception:
             _LOGGER.exception("Error saving data during unload")
+
+        # Remove sidebar panel
+        if DOMAIN in hass.data.get("frontend_panels", {}):
+            _LOGGER.debug("Removing Growspace Manager sidebar panel during unload")
+            hass.components.frontend.async_remove_panel(DOMAIN)
 
         # Clean up global Strain Library
         if DOMAIN in hass.data and "strain_library" in hass.data[DOMAIN]:

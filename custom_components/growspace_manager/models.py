@@ -161,7 +161,10 @@ class IrrigationTank(BaseModel):
 
     sensor_entity: str
     name: str = "Tank"
-    warning_level: float = 30.0  # Percentage threshold for warnings
+    warning_level: float = 30.0  # Percentage threshold for warnings and prediction
+    enable_prediction: bool = True  # Enable depletion prediction
+    enable_lights_bias: bool = False  # Segregate rates by lights on/off
+    enable_vpd_weighting: bool = False  # Apply VPD-based multiplier
 
 
 @dataclass(slots=True)

@@ -54,8 +54,6 @@ from . import (
     strain_library,
     training,
 )
-from .growspace_service import GrowspaceService
-from .plant_service import PlantService
 from .training import handle_log_training_event
 
 __all__ = [

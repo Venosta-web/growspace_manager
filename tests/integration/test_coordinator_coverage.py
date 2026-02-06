@@ -123,10 +123,15 @@ async def test_async_update_growspace_delegation(
     """Test async_update_growspace delegation."""
     # Line 541
     coordinator._growspace_service.update_growspace = AsyncMock()
-    await coordinator.async_update_growspace("gs1", name="New Name")
+    gs = Growspace(id="gs1", name="Old Name")
+    coordinator.growspaces = {"gs1": gs}
+
+    result = await coordinator.async_update_growspace("gs1", name="New Name")
+
     coordinator._growspace_service.update_growspace.assert_called_once_with(
         "gs1", name="New Name"
     )
+    assert result is gs
 
 
 @pytest.mark.asyncio

@@ -23,12 +23,21 @@ def mock_hass() -> MagicMock:
     return hass
 
 
+@pytest.fixture
+async def image_manager(mock_hass, tmp_path):
+    """Fixture for an initialized ImageManager."""
+    manager = ImageManager(mock_hass, str(tmp_path))
+    await manager.async_setup()
+    return manager
+
+
 async def test_migration_with_no_storage_dir(
     mock_hass: MagicMock, tmp_path: Path
 ) -> None:
     """Test migration when storage directory doesn't exist."""
     storage_path = tmp_path / "nonexistent"
     image_manager = ImageManager(mock_hass, str(storage_path))
+    # We DON'T call async_setup here because we want to test nonexistent dir handling in migration
 
     # Create mock DB
     mock_db = MagicMock()
@@ -39,11 +48,8 @@ async def test_migration_with_no_storage_dir(
     assert result is False
 
 
-async def test_migration_with_no_jpg_files(
-    mock_hass: MagicMock, tmp_path: Path
-) -> None:
+async def test_migration_with_no_jpg_files(image_manager: ImageManager) -> None:
     """Test migration when no JPG files exist."""
-    image_manager = ImageManager(mock_hass, str(tmp_path))
     mock_db = MagicMock()
     mock_db.execute = MagicMock(return_value=AsyncMock())
 
@@ -52,7 +58,7 @@ async def test_migration_with_no_jpg_files(
 
 
 async def test_migration_skips_existing_webp(
-    mock_hass: MagicMock, tmp_path: Path
+    image_manager: ImageManager, tmp_path: Path
 ) -> None:
     """Test that migration skips files that already have WebP versions."""
     # Create JPG file
@@ -66,7 +72,6 @@ async def test_migration_skips_existing_webp(
     test_img.save(webp_path, "WEBP")
     test_img.save(small_webp_path, "WEBP")
 
-    image_manager = ImageManager(mock_hass, str(tmp_path))
     mock_db = MagicMock()
     mock_db.execute = MagicMock(return_value=AsyncMock())
 
@@ -76,14 +81,13 @@ async def test_migration_skips_existing_webp(
 
 
 async def test_migration_handles_image_conversion_error(
-    mock_hass: MagicMock, tmp_path: Path
+    image_manager: ImageManager, tmp_path: Path
 ) -> None:
     """Test that migration handles image conversion errors gracefully."""
     # Create a corrupted JPG file
     jpg_path = tmp_path / "corrupted.jpg"
     jpg_path.write_bytes(b"not a valid image")
 
-    image_manager = ImageManager(mock_hass, str(tmp_path))
     mock_db = MagicMock()
     mock_db.execute = MagicMock(return_value=AsyncMock())
 
@@ -94,7 +98,7 @@ async def test_migration_handles_image_conversion_error(
 
 
 async def test_migration_handles_rgba_mode(
-    mock_hass: MagicMock, tmp_path: Path
+    image_manager: ImageManager, tmp_path: Path
 ) -> None:
     """Test migration with RGBA images (converts to RGB first)."""
     jpg_path = tmp_path / "rgba_test.jpg"
@@ -102,7 +106,6 @@ async def test_migration_handles_rgba_mode(
     test_img = PILImage.new("RGB", (50, 50), color=(255, 0, 0))
     test_img.save(jpg_path, "JPEG")
 
-    image_manager = ImageManager(mock_hass, str(tmp_path))
     mock_db = MagicMock()
     mock_cursor = AsyncMock()
     mock_cursor.fetchall.return_value = []
@@ -120,15 +123,13 @@ async def test_migration_handles_rgba_mode(
 
 
 async def test_migration_with_grayscale_image(
-    mock_hass: MagicMock, tmp_path: Path
+    image_manager: ImageManager, tmp_path: Path
 ) -> None:
     """Test migration with grayscale images (needs RGB conversion)."""
     jpg_path = tmp_path / "gray_test.jpg"
     # Create grayscale image
     test_img = PILImage.new("L", (50, 50), color=128)
     test_img.save(jpg_path, "JPEG")
-
-    image_manager = ImageManager(mock_hass, str(tmp_path))
 
     # Should not crash, converts to RGB
     await image_manager.async_migrate_to_webp(None)
@@ -139,14 +140,12 @@ async def test_migration_with_grayscale_image(
 
 
 async def test_migration_without_db_connection(
-    mock_hass: MagicMock, tmp_path: Path
+    image_manager: ImageManager, tmp_path: Path
 ) -> None:
     """Test migration without database connection."""
     jpg_path = tmp_path / "test.jpg"
     test_img = PILImage.new("RGB", (50, 50))
     test_img.save(jpg_path, "JPEG")
-
-    image_manager = ImageManager(mock_hass, str(tmp_path))
 
     # Call without db_connection
     result = await image_manager.async_migrate_to_webp(None)
@@ -158,15 +157,13 @@ async def test_migration_without_db_connection(
 
 
 async def test_migration_exception_handling(
-    mock_hass: MagicMock, tmp_path: Path
+    image_manager: ImageManager, tmp_path: Path
 ) -> None:
     """Test that migration handles exceptions gracefully."""
     # Create a JPG file
     jpg_path = tmp_path / "test.jpg"
     test_img = PILImage.new("RGB", (50, 50))
     test_img.save(jpg_path, "JPEG")
-
-    image_manager = ImageManager(mock_hass, str(tmp_path))
 
     # Mock glob to raise an exception
     with patch.object(Path, "glob", side_effect=Exception("Glob error")):
@@ -175,10 +172,9 @@ async def test_migration_exception_handling(
 
 
 async def test_save_strain_image_with_data_uri_prefix(
-    mock_hass: MagicMock, tmp_path: Path
+    image_manager: ImageManager,
 ) -> None:
     """Test saving strain image with data URI prefix."""
-    image_manager = ImageManager(mock_hass, str(tmp_path))
 
     # Use data URI format (with prefix)
     image_base64 = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
@@ -190,7 +186,7 @@ async def test_save_strain_image_with_data_uri_prefix(
 
 
 async def test_get_image_path_webp_fallback(
-    mock_hass: MagicMock, tmp_path: Path
+    image_manager: ImageManager, tmp_path: Path
 ) -> None:
     """Test get_image_path falls back to WebP when JPG not found."""
     # Create only WebP file
@@ -198,13 +194,16 @@ async def test_get_image_path_webp_fallback(
     test_img = PILImage.new("RGB", (50, 50))
     test_img.save(webp_path, "WEBP")
 
-    image_manager = ImageManager(mock_hass, str(tmp_path))
+    # REBUILD CACHE manually for this test because we just added a file
+    await image_manager.async_setup()
 
     path = image_manager.get_image_path("test", None)
     assert path == str(webp_path.absolute())
 
 
-def test_delete_image_webp_variants(mock_hass: MagicMock, tmp_path: Path) -> None:
+def test_delete_image_webp_variants(
+    image_manager: ImageManager, tmp_path: Path
+) -> None:
     """Test that delete_image removes both full and thumbnail WebP."""
     # Create WebP files
     webp_path = tmp_path / "test.webp"
@@ -214,7 +213,6 @@ def test_delete_image_webp_variants(mock_hass: MagicMock, tmp_path: Path) -> Non
     test_img.save(webp_path, "WEBP")
     test_img.save(small_webp_path, "WEBP")
 
-    image_manager = ImageManager(mock_hass, str(tmp_path))
     image_manager._image_cache.add("test.webp")
     image_manager._image_cache.add("test_small.webp")
 
@@ -234,10 +232,9 @@ def test_build_cache_handles_errors(mock_hass: MagicMock, tmp_path: Path) -> Non
 
 
 async def test_save_timeline_image_with_data_uri_prefix(
-    mock_hass: MagicMock, tmp_path: Path
+    image_manager: ImageManager,
 ) -> None:
     """Test saving timeline image with data URI prefix (covers strip split)."""
-    image_manager = ImageManager(mock_hass, str(tmp_path))
 
     # Use data URI format (1x1 transparent PNG)
     image_base64 = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
@@ -252,10 +249,9 @@ async def test_save_timeline_image_with_data_uri_prefix(
 
 
 async def test_save_timeline_image_grayscale_conversion(
-    mock_hass: MagicMock, tmp_path: Path
+    image_manager: ImageManager,
 ) -> None:
     """Test saving grayscale timeline image (covers RGB conversion)."""
-    image_manager = ImageManager(mock_hass, str(tmp_path))
 
     # Create valid base64 for a grayscale image
     img = PILImage.new("L", (10, 10), color=128)
@@ -272,10 +268,9 @@ async def test_save_timeline_image_grayscale_conversion(
 
 
 async def test_save_timeline_image_exception_handling(
-    mock_hass: MagicMock, tmp_path: Path
+    image_manager: ImageManager,
 ) -> None:
     """Test exception handling in save_timeline_image."""
-    image_manager = ImageManager(mock_hass, str(tmp_path))
 
     # Mock base64 decode to fail
     with (

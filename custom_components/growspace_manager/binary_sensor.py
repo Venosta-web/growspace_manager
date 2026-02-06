@@ -325,7 +325,8 @@ class BayesianEnvironmentSensor(
         self._event_max_prob: float = 0.0
         self._last_light_state: bool | None = None
 
-        self.trend_analyzer = TrendAnalyzer(self.hass)
+        # TrendAnalyzer will be initialized in async_added_to_hass when self.hass is available
+        self.trend_analyzer: TrendAnalyzer | None = None
         if notification_manager:
             self.notification_manager = notification_manager
 
@@ -489,6 +490,9 @@ class BayesianEnvironmentSensor(
         """Register callbacks when the entity is added to Home Assistant."""
         await super().async_added_to_hass()
 
+        # Initialize TrendAnalyzer now that self.hass is available
+        self.trend_analyzer = TrendAnalyzer(self.hass)
+
         # Register for batched notifications
         self.notification_manager.attach_sensor(self.growspace_id, self)
 
@@ -642,6 +646,13 @@ class BayesianEnvironmentSensor(
         self, sensor_id: str, duration_minutes: int, threshold: float
     ) -> dict[str, Any]:
         """Analyze the trend of a sensor's history to detect rising or falling patterns."""
+        if not self.trend_analyzer:
+            _LOGGER.error(
+                "TrendAnalyzer not initialized for %s. Entity may not be fully added to HA",
+                self.entity_id,
+            )
+            return {"trend": "unknown", "crossed_threshold": False}
+
         try:
             return await self.trend_analyzer.async_analyze_sensor_trend(
                 sensor_id, duration_minutes, threshold

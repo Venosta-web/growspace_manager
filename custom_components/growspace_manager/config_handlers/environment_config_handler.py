@@ -177,6 +177,9 @@ class EnvironmentConfigHandler(BaseConfigHandler[dict[str, Any]]):
                         "sensor_entity": sensor_entity,
                         "name": tank_name,
                         "warning_level": warning_level,
+                        "enable_prediction": True,  # Enable by default
+                        "enable_lights_bias": False,  # Opt-in feature
+                        "enable_vpd_weighting": False,  # Opt-in feature
                     }
                 )
             env_config["irrigation_tanks"] = irrigation_tanks

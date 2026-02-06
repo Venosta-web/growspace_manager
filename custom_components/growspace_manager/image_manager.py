@@ -30,8 +30,15 @@ class ImageManager:
         self.hass = hass
         self.storage_dir = Path(storage_dir)
         self._image_cache: set[str] = set()
-        self._ensure_storage_dir()
-        self._build_cache()
+
+    async def async_setup(self) -> None:
+        """Set up the ImageManager asynchronously.
+
+        This ensures the storage directory exists and populates the cache
+        without blocking the event loop.
+        """
+        await self.hass.async_add_executor_job(self._ensure_storage_dir)
+        await self.hass.async_add_executor_job(self._build_cache)
 
     def _ensure_storage_dir(self) -> None:
         """Ensure the storage directory exists."""

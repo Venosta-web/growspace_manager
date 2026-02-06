@@ -34,6 +34,7 @@ from custom_components.growspace_manager.strategies.optimal import (
 from custom_components.growspace_manager.strategies.stress import (
     StressEvaluatorStrategy,
 )
+from custom_components.growspace_manager.trend_analyzer import TrendAnalyzer
 from homeassistant.const import STATE_UNAVAILABLE, STATE_UNKNOWN
 from homeassistant.core import Event, HomeAssistant, State
 from homeassistant.util.dt import utcnow
@@ -836,6 +837,9 @@ async def test_async_analyze_sensor_trend(
     sensor.hass = hass
     sensor.platform = MagicMock()
     sensor.entity_id = "binary_sensor.test_trend"
+    # Initialize TrendAnalyzer (normally done in async_added_to_hass)
+
+    sensor.trend_analyzer = TrendAnalyzer(hass)
 
     analysis = await sensor.async_analyze_sensor_trend(
         "sensor.temp", duration, threshold

@@ -8,10 +8,8 @@ import pytest
 
 from custom_components.growspace_manager.const import PlantStage
 from custom_components.growspace_manager.exceptions import ValidationChangeError
+from custom_components.growspace_manager.managers.plant import PlantManager
 from custom_components.growspace_manager.models import Growspace
-from custom_components.growspace_manager.plant_lifecycle_manager import (
-    PlantLifecycleManager,
-)
 
 
 @pytest.fixture
@@ -70,6 +68,7 @@ def save_callback_mock():
 
 @pytest.fixture
 def manager(
+    hass,
     repository_mock,
     validator_mock,
     gs_service_mock,
@@ -77,12 +76,14 @@ def manager(
     save_callback_mock,
     lock_mock,
 ):
-    """Fixture for PlantLifecycleManager."""
-    return PlantLifecycleManager(
+    """Fixture for PlantManager."""
+    return PlantManager(
+        hass=hass,
         repository=repository_mock,
         validator=validator_mock,
-        growspace_service=gs_service_mock,
+        growspace_manager=gs_service_mock,
         strain_library=strain_library_mock,
+        plant_view_builder=MagicMock(),
         save_callback=save_callback_mock,
         lock=lock_mock,
     )
@@ -139,7 +140,7 @@ async def test_record_analytics_exception_handling(
 
     # Patch calculate_days_in_stage to return positive days
     with patch(
-        "custom_components.growspace_manager.plant_lifecycle_manager.calculate_days_in_stage",
+        "custom_components.growspace_manager.managers.plant.calculate_days_in_stage",
         side_effect=[30, 60],
     ):
         # Mock strain_library.record_harvest to raise exception

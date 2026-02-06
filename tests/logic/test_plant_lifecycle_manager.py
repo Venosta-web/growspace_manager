@@ -5,11 +5,13 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from custom_components.growspace_manager.const import PlantStage
-from custom_components.growspace_manager.exceptions import GrowspaceNotFoundError
-from custom_components.growspace_manager.models import Plant
-from custom_components.growspace_manager.plant_lifecycle_manager import (
-    PlantLifecycleManager,
+from custom_components.growspace_manager.exceptions import (
+    GrowspaceNotFoundError,
+    ValidationChangeError,
 )
+from custom_components.growspace_manager.managers.plant import PlantManager
+from custom_components.growspace_manager.models import Plant
+from homeassistant.core import HomeAssistant
 
 
 @pytest.fixture
@@ -65,6 +67,7 @@ def save_callback_mock():
 
 @pytest.fixture
 def manager(
+    hass: HomeAssistant,
     repository_mock,
     validator_mock,
     gs_service_mock,
@@ -72,12 +75,14 @@ def manager(
     save_callback_mock,
     lock_mock,
 ):
-    """Fixture for PlantLifecycleManager."""
-    return PlantLifecycleManager(
+    """Fixture for PlantManager."""
+    return PlantManager(
+        hass=hass,
         repository=repository_mock,
         validator=validator_mock,
-        growspace_service=gs_service_mock,
+        growspace_manager=gs_service_mock,
         strain_library=strain_library_mock,
+        plant_view_builder=MagicMock(),
         save_callback=save_callback_mock,
         lock=lock_mock,
     )
@@ -217,3 +222,102 @@ async def test_handle_harvest_logic_fallthrough(manager, repository_mock) -> Non
         await manager.handle_harvest_logic(
             "p1", plant, "invalid_gs", "Invalid Name", "2023-01-01"
         )
+
+
+@pytest.mark.asyncio
+async def test_remove_plant_not_found(manager, repository_mock) -> None:
+    """Test remove_plant returns False when plant does not exist."""
+    repository_mock.plants = {}
+    result = await manager.remove_plant("non_existent_plant")
+    assert result is False
+
+
+@pytest.mark.asyncio
+async def test_remove_plant_race_condition(manager, repository_mock) -> None:
+    """Test remove_plant returns False if plant disappears before lock acquisition."""
+    plant_id = "race_plant"
+    plant = MagicMock()
+
+    # Initially present for the first check
+    repository_mock.plants = {plant_id: plant}
+
+    # Define a side effect for the lock that removes the plant
+    original_lock = manager.lock
+
+    async def side_effect_enter():
+        # Remove plant from repository when lock is acquired
+        if plant_id in repository_mock.plants:
+            del repository_mock.plants[plant_id]
+
+    # We need to mock the lock so we can inject the side effect
+    # But manager.lock is already a MagicMock from fixture 'lock_mock'
+    # The fixture mock.__aenter__ returns None.
+    manager.lock.__aenter__.side_effect = side_effect_enter
+
+    # We also need to ensure the initial get works (it uses repository_mock.plants.get which references the dict)
+    # The dict is updated in place, so the initial check will pass if we set it up right.
+
+    result = await manager.remove_plant(plant_id)
+    assert result is False
+
+    # Verify the fallback path was taken (line 229) logic
+
+
+@pytest.mark.asyncio
+async def test_harvest_plant_defensive_check(manager, repository_mock) -> None:
+    """Test harvest_plant handles invalid plant objects gracefully."""
+    plant = MagicMock()
+    # Explicitly remove growspace_id to trigger the defensive check
+    del plant.growspace_id
+    repository_mock.plants = {"p1": plant}
+
+    # Needs to exist in validator check
+    manager.validator.validate_plant_exists = MagicMock()
+
+    # Patch async_fire_plant_event to avoid crash when accessing missing attributes
+    with (
+        patch(
+            "custom_components.growspace_manager.managers.plant.async_fire_plant_event"
+        ),
+        patch.object(
+            manager, "_harvest_auto_flow", new_callable=AsyncMock
+        ) as mock_harvest_flow,
+    ):
+        mock_harvest_flow.return_value = True
+
+        await manager.harvest_plant("p1", plant=plant)
+
+        # Should still proceed to call the flow
+        mock_harvest_flow.assert_awaited()
+
+
+@pytest.mark.asyncio
+async def test_promote_clone_target_full(manager, repository_mock) -> None:
+    """Test promote_clone raises ValidationChangeError when target is full."""
+    clone_plant = MagicMock(spec=Plant)
+    clone_plant.stage = PlantStage.CLONE
+    clone_plant.plant_id = "c1"
+
+    repository_mock.plants = {"c1": clone_plant}
+
+    # Mock find_first_available_position returning (None, None)
+    manager.validator.find_first_available_position.return_value = (None, None)
+
+    # Mock update_plant to avoid actual logic running if it somehow bypassed
+    with (
+        patch.object(
+            manager.lifecycle_manager, "async_update_plant", new_callable=AsyncMock
+        ),
+        pytest.raises(ValidationChangeError, match="Target growspace .* is full"),
+    ):
+        await manager.promote_clone("c1", target_growspace_id="veg")
+
+
+@pytest.mark.asyncio
+async def test_handle_harvest_logic_kwargs(manager) -> None:
+    """Test handle_harvest_logic passes through kwargs correctly."""
+    with patch.object(manager, "harvest_plant", new_callable=AsyncMock) as mock_harvest:
+        # Call with keyword args only
+        await manager.handle_harvest_logic(plant_id="p1", custom_arg=True)
+
+        mock_harvest.assert_awaited_with(plant_id="p1", custom_arg=True)

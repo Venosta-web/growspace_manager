@@ -71,6 +71,24 @@ ask_grow_advice:
       selector:
         text:
           multiline: true
+    context_type:
+      description: Type of advice context (general, diagnostic, optimization, planning)
+      required: false
+      default: "general"
+      selector:
+        select:
+          options:
+            - "general"
+            - "diagnostic"
+            - "optimization"
+            - "planning"
+    max_length:
+      description: Maximum length for the response
+      required: false
+      selector:
+        number:
+          min: 50
+          max: 2000
 
 remove_growspace:
   description: Remove a growspace
@@ -605,6 +623,20 @@ configure_environment:
       selector:
         object:
 
+    sensor_coordinates:
+      name: Sensor Coordinates
+      description: Dictionary of sensor coordinates for 3D mapping
+      required: false
+      selector:
+        object:
+
+    irrigation_tanks:
+      name: Irrigation Tanks
+      description: Configuration for irrigation tanks
+      required: false
+      selector:
+        object:
+
 remove_environment:
   description: Remove environment configuration for a growspace
   fields:
@@ -670,6 +702,35 @@ add_strain:
       required: false
       selector:
         text:
+    image_path:
+      description: Path to local image file
+      required: false
+      selector:
+        text:
+    image_crop_meta:
+      description: Metadata for image cropping
+      required: false
+      selector:
+        object:
+    sativa_percentage:
+      description: Sativa percentage (0-100)
+      required: false
+      selector:
+        number:
+          min: 0
+          max: 100
+    indica_percentage:
+      description: Indica percentage (0-100)
+      required: false
+      selector:
+        number:
+          min: 0
+          max: 100
+    breeder_logo:
+      description: URL or path to breeder logo
+      required: false
+      selector:
+        text:
 
 update_strain_meta:
   description: Update metadata for a strain
@@ -724,6 +785,35 @@ update_strain_meta:
           multiline: true
     image_base64:
       description: Base64 encoded image
+      required: false
+      selector:
+        text:
+    image_path:
+      description: Path to local image file
+      required: false
+      selector:
+        text:
+    image_crop_meta:
+      description: Metadata for image cropping
+      required: false
+      selector:
+        object:
+    sativa_percentage:
+      description: Sativa percentage (0-100)
+      required: false
+      selector:
+        number:
+          min: 0
+          max: 100
+    indica_percentage:
+      description: Indica percentage (0-100)
+      required: false
+      selector:
+        number:
+          min: 0
+          max: 100
+    breeder_logo:
+      description: URL or path to breeder logo
       required: false
       selector:
         text:
@@ -790,6 +880,14 @@ debug_consolidate_growspaces:
 
 analyze_all_growspaces:
   description: Analyze all growspaces and provide a comprehensive facility report
+  fields:
+    max_length:
+      description: Maximum length for the response
+      required: false
+      selector:
+        number:
+          min: 50
+          max: 4000
 
 strain_recommendation:
   description: Get AI recommendations for strain selection based on your goals and history. Returns strain recommendations with reasoning.
@@ -810,6 +908,13 @@ strain_recommendation:
       selector:
         text:
           multiline: true
+    max_length:
+      description: Maximum length for the response
+      required: false
+      selector:
+        number:
+          min: 50
+          max: 2000
 
 set_irrigation_settings:
   description: Set irrigation and drain pump settings for a growspace.
@@ -953,3 +1058,231 @@ batch_action:
       required: false
       selector:
         object:
+
+update_growspace:
+  description: Update configuration of an existing growspace
+  fields:
+    growspace_id:
+      description: ID of the growspace to update
+      required: true
+      selector:
+        text:
+    name:
+      description: New name for the growspace
+      required: false
+      selector:
+        text:
+    rows:
+      description: New number of rows
+      required: false
+      selector:
+        number:
+          min: 1
+          max: 20
+    plants_per_row:
+      description: New number of plants per row
+      required: false
+      selector:
+        number:
+          min: 1
+          max: 20
+    notification_target:
+      description: Notification service target (e.g., mobile_app_your_phone)
+      required: false
+      selector:
+        text:
+
+print_label:
+  description: Print a label for a plant or strain using Niimbot printer
+  fields:
+    plant_id:
+      description: ID of the plant (optional if strain info provided)
+      required: false
+      selector:
+        text:
+    strain:
+      description: Name of the strain (if not using plant_id)
+      required: false
+      selector:
+        text:
+    phenotype:
+      description: Phenotype name (if not using plant_id)
+      required: false
+      selector:
+        text:
+    breeder:
+      description: Breeder name (override or if not in library)
+      required: false
+      selector:
+        text:
+    lineage:
+      description: Strain lineage (override or if not in library)
+      required: false
+      selector:
+        text:
+    breeder_logo:
+      description: URL to breeder logo (override)
+      required: false
+      selector:
+        text:
+    device_id:
+      description: Specific bluetooth address of the printer (optional)
+      required: false
+      selector:
+        text:
+    preview:
+      description: Return image preview instead of printing
+      required: false
+      default: false
+      selector:
+        boolean:
+    base_url:
+      description: Base URL for QR code (defaults to Home Assistant external URL)
+      required: false
+      selector:
+        text:
+
+log_training_event:
+  description: Log a training event for a plant or growspace
+  fields:
+    technique:
+      description: Name of the training technique (e.g. Topping, LST)
+      required: true
+      selector:
+        text:
+    growspace_id:
+      description: Growspace ID (optional if plant_ids provided)
+      required: false
+      selector:
+        text:
+    plant_ids:
+      description: List of specific plant IDs to apply to
+      required: false
+      selector:
+        object:
+    notes:
+      description: Additional notes about the training
+      required: false
+      selector:
+        text:
+          multiline: true
+
+save_nutrient_preset:
+  description: Save a nutrient schedule preset
+  fields:
+    name:
+      description: Name of the preset
+      required: true
+      selector:
+        text:
+    nutrients:
+      description: Nutrient definitions (dictionary)
+      required: true
+      selector:
+        object:
+    preset_id:
+      description: ID to update existing preset (optional)
+      required: false
+      selector:
+        text:
+    stage:
+      description: Applicable stage (optional)
+      required: false
+      selector:
+        select:
+          options:
+            - seedling
+            - mother
+            - clone
+            - veg
+            - flower
+    min_days_in_stage:
+      description: Minimum days in stage required (optional)
+      required: false
+      selector:
+        number:
+          min: 0
+
+remove_nutrient_preset:
+  description: Remove a nutrient preset
+  fields:
+    preset_id:
+      description: ID of the preset to remove
+      required: true
+      selector:
+        text:
+
+save_ipm_preset:
+  description: Save an IPM schedule preset
+  fields:
+    name:
+      description: Name of the preset
+      required: true
+      selector:
+        text:
+    type:
+      description: Type of IPM (preventative, treatment, etc)
+      required: true
+      selector:
+        text:
+    items:
+      description: List of IPM items/tasks
+      required: true
+      selector:
+        object:
+    preset_id:
+      description: ID to update existing preset (optional)
+      required: false
+      selector:
+        text:
+    stage:
+      description: Applicable stage (optional)
+      required: false
+      selector:
+        select:
+          options:
+            - seedling
+            - mother
+            - clone
+            - veg
+            - flower
+    min_days_in_stage:
+      description: Minimum days in stage required (optional)
+      required: false
+      selector:
+        number:
+          min: 0
+
+remove_ipm_preset:
+  description: Remove an IPM preset
+  fields:
+    preset_id:
+      description: ID of the preset to remove
+      required: true
+      selector:
+        text:
+
+apply_ipm:
+  description: Log an IPM application
+  fields:
+    preset_id:
+      description: ID of the IPM preset applied
+      required: true
+      selector:
+        text:
+    growspace_id:
+      description: Growspace ID (optional if plant_ids provided)
+      required: false
+      selector:
+        text:
+    plant_ids:
+      description: List of plant IDs treated (optional)
+      required: false
+      selector:
+        object:
+    notes:
+      description: Notes about the application
+      required: false
+      selector:
+        text:
+          multiline: true

@@ -1,8 +1,4 @@
-"""Growspace service for the Growspace Manager integration.
-
-This service handles all growspace-related CRUD operations,
-extracted from the coordinator to reduce complexity.
-"""
+"""Growspace Manager."""
 
 from __future__ import annotations
 
@@ -47,8 +43,8 @@ if TYPE_CHECKING:
 _LOGGER = logging.getLogger(__name__)
 
 
-class GrowspaceService:
-    """Handles all growspace CRUD operations."""
+class GrowspaceManager:
+    """Handles all growspace CRUD operations and management logic."""
 
     def __init__(
         self,
@@ -59,23 +55,14 @@ class GrowspaceService:
         save_callback: Callable[[], Awaitable[None]],
         lock: asyncio.Lock,
     ) -> None:
-        """Initialize the growspace service.
-
-        Args:
-            hass: Home Assistant instance.
-            repository: Data repository.
-            validator: Growspace validator.
-            view_model_builder: View model builder.
-            save_callback: Callback to save data.
-            lock: Async lock for thread safety.
-        """
+        """Initialize the growspace manager."""
         self.hass = hass
         self.repository = repository
         self.validator = validator
         self.view_model_builder = view_model_builder
         self.save_callback = save_callback
         self.lock = lock
-        self.cache: Any = None  # Will be set later if needed, or injected
+        self.cache: Any = None  # To be injected if needed
 
     async def add_growspace(
         self,
@@ -89,19 +76,7 @@ class GrowspaceService:
         environment_config: dict[str, Any] | None = None,
         irrigation_config: dict[str, Any] | None = None,
     ) -> Growspace:
-        """Add a new growspace to the coordinator.
-
-        Args:
-            name: The display name for the new growspace.
-            rows: The number of rows in the grid.
-            plants_per_row: The number of plants per row.
-            notification_target: The notification service to use (optional).
-            device_id: The device ID to associate with the growspace (optional).
-            growspace_type: The type of growspace.
-            dimensions: Physical dimensions (optional).
-            environment_config: Environment configuration (optional).
-            irrigation_config: Irrigation configuration (optional).
-        """
+        """Add a new growspace."""
         async with self.lock:
             # Normalize notification target
             if not notification_target or notification_target in ("None", "none", ""):
@@ -123,7 +98,6 @@ class GrowspaceService:
                 "growspace_type": growspace_type,
             }
 
-            # Only add these if they're not None to preserve default factories
             if dimensions is not None:
                 growspace_kwargs["dimensions"] = dimensions
             if environment_config is not None:
@@ -139,15 +113,21 @@ class GrowspaceService:
 
             await self.save_callback()
 
+            # Delegate device registration to here or keep in coordinator?
+            # Original service didn't do device registry. Coordinator did.
+            # I will keep it pure for now to match the service, and maybe move
+            # device registration logic here later or let coordinator handle it
+            # to decouple Manager from HA specifics like Device Registry?
+            # Actually, `remove_growspace` DOES handle device registry removal (lines 173-182 in service).
+            # So `add_growspace` SHOULD probably handle device registry creation too for symmetry.
+            # But `add_growspace` in service DID NOT have `device_registry` logic.
+            # I will keep it as is (matching Service) for step 1 of refactor.
+
             async_fire_growspace_event(self.hass, EVENT_GROWSPACE_ADDED, growspace)
             return growspace
 
     async def remove_growspace(self, growspace_id: str) -> None:
-        """Remove a growspace and all plants contained within it.
-
-        Args:
-            growspace_id: The ID of the growspace to remove.
-        """
+        """Remove a growspace and all plants contained within it."""
         async with self.lock:
             self.validator.validate_growspace_exists(growspace_id)
 
@@ -295,13 +275,7 @@ class GrowspaceService:
     async def _validate_plants_after_growspace_resize(
         self, growspace_id: str, new_rows: int, new_plants_per_row: int
     ) -> None:
-        """Log a warning if any plants are outside the new grid boundaries after a resize.
-
-        Args:
-            growspace_id: The ID of the growspace that was resized.
-            new_rows: The new number of rows.
-            new_plants_per_row: The new number of plants per row.
-        """
+        """Log a warning if any plants are outside the new grid boundaries after a resize."""
         # Get all plants in this growspace
         plants_to_check = [
             p for p in self.repository.plants.values() if p.growspace_id == growspace_id
@@ -333,14 +307,7 @@ class GrowspaceService:
                 )
 
     def generate_unique_name(self, base_name: str) -> str:
-        """Generate a unique growspace name by appending a counter if necessary.
-
-        Args:
-            base_name: The desired base name for the growspace.
-
-        Returns:
-            A unique name that does not conflict with existing growspace names.
-        """
+        """Generate a unique growspace name."""
         existing_names = {gs.name.lower() for gs in self.repository.growspaces.values()}
         name = base_name
         counter = 1
@@ -352,24 +319,14 @@ class GrowspaceService:
         return name
 
     def get_growspace_options(self) -> dict[str, str]:
-        """Return growspaces for dropdown selection in the editor.
-
-        Returns:
-            A dictionary mapping growspace IDs to growspace names.
-        """
+        """Return growspaces for dropdown selection."""
         return {
             gs_id: getattr(gs, "name", gs_id)
             for gs_id, gs in self.repository.growspaces.items()
         }
 
     def get_sorted_growspace_options(self) -> list[tuple[str, str]]:
-        """Return a sorted list of growspaces for dropdown selection.
-
-        The list is sorted alphabetically by growspace name.
-
-        Returns:
-            A list of tuples, where each tuple contains a growspace ID and name.
-        """
+        """Return a sorted list of growspaces for dropdown selection."""
         return sorted(
             (
                 (gs_id, getattr(gs, "name", gs_id))
@@ -387,23 +344,7 @@ class GrowspaceService:
         growspace_type: GrowspaceType = GrowspaceType.FLOWER,
         update_data: bool = True,
     ) -> str:
-        """Ensure a special growspace (e.g., 'dry', 'cure') exists.
-
-        If the growspace does not exist, it will be created with the specified
-        parameters. This method also handles migration from legacy aliases.
-
-        Returns:
-            The canonical ID of the special growspace.
-        """
-        # Get canonical form
-        # We need a helper for canonical_special or move it to a more central place
-        # For now, let's assume we can use a helper or re-implement
-        # In the original coordinator it was:
-        # def canonical_special(self, gs_id: str) -> tuple[str, str | None]:
-        #     # ... logic ...
-        # I'll re-implement it briefly or use a static helper if available.
-        # Actually, let's just use the logic directly or add a helper to utils.
-
+        """Ensure a special growspace (e.g., 'dry', 'cure') exists."""
         canonical_id = growspace_id
         if growspace_id.lower() in ["dry", "drying"]:
             canonical_id = "dry"
@@ -416,23 +357,18 @@ class GrowspaceService:
         elif growspace_id.lower() in ["veg", "vegetative"]:
             canonical_id = "veg"
 
-        # Create or update the canonical growspace
         if canonical_id not in self.repository.growspaces:
             self._create_special_growspace(
                 canonical_id, name, rows, plants_per_row, growspace_type
             )
-            # Enable notifications by default for new special growspace
             self.repository.notifications_enabled[canonical_id] = True
-            # Cache invalidation for new space
             if self.cache:
                 self.cache.invalidate(canonical_id)
         else:
             self._update_special_growspace_name(canonical_id, name)
-            # Ensure type is correct even if existing (for migration)
             start_type = self.repository.growspaces[canonical_id].growspace_type
             if start_type != growspace_type:
                 self.repository.growspaces[canonical_id].growspace_type = growspace_type
-            # Name or Type changed -> Invalidate
             if self.cache:
                 self.cache.invalidate(canonical_id)
 
@@ -448,7 +384,7 @@ class GrowspaceService:
         plants_per_row: int,
         growspace_type: GrowspaceType,
     ) -> None:
-        """Create a new special growspace with the given parameters."""
+        """Create a new special growspace."""
         self.repository.growspaces[canonical_id] = Growspace(
             id=canonical_id,
             name=canonical_name,
@@ -465,7 +401,12 @@ class GrowspaceService:
     def _update_special_growspace_name(
         self, canonical_id: str, canonical_name: str
     ) -> None:
-        """Update the name of an existing special growspace if it has changed."""
+        """Update the name of an existing special growspace."""
+        if canonical_id not in self.repository.growspaces:
+            _LOGGER.debug(
+                "Special growspace %s not found, skipping name update", canonical_id
+            )
+            return
         existing = self.repository.growspaces[canonical_id]
         if existing.name != canonical_name:
             existing.name = canonical_name
@@ -474,11 +415,7 @@ class GrowspaceService:
             )
 
     def ensure_mother_growspace(self) -> str:
-        """Ensure the 'mother' growspace exists, creating it if necessary.
-
-        Returns:
-            The ID of the mother growspace.
-        """
+        """Ensure the 'mother' growspace exists."""
         return self.ensure_special_growspace(
             PlantStage.MOTHER,
             "mother",
@@ -487,16 +424,8 @@ class GrowspaceService:
             growspace_type=GrowspaceType.MOTHER,
         )
 
-    # =========================================================================
-    # INITIALIZATION METHODS
-    # =========================================================================
-
     async def ensure_default_growspaces(self) -> None:
-        """Ensure that the default special growspaces (dry, cure, etc.) exist.
-
-        Creates standard growspaces if they don't already exist:
-        - dry, cure, mother, clone, veg
-        """
+        """Ensure that the default special growspaces exist."""
         default_growspaces = [
             (
                 CANONICAL_ID_DRY,
@@ -530,7 +459,6 @@ class GrowspaceService:
             plants_per_row,
             gs_type,
         ) in default_growspaces:
-            # Use the service's method to ensure special growspaces
             self.ensure_special_growspace(
                 growspace_id,
                 name,
@@ -543,25 +471,17 @@ class GrowspaceService:
         self.repository.data = self.view_model_builder.build_data_property()
 
     def ensure_calculated_sensors(self) -> None:
-        """Ensure default calculated sensors are configured in growspace config.
-
-        Automatically configures VPD sensors for growspaces that have
-        temperature and humidity sensors but no VPD sensor configured.
-        """
-
+        """Ensure default calculated sensors are configured."""
         for growspace in list(self.repository.growspaces.values()):
             env_config = growspace.environment_config
             if not env_config:
                 continue
 
             updated = False
-
-            # Work with plural lists
             temps = env_config.temperature_sensors
             hums = env_config.humidity_sensors
             vpds = env_config.vpd_sensors
 
-            # Sync lengths if necessary (though migration should have handled it)
             if not temps and env_config.temperature_sensor:
                 temps = [env_config.temperature_sensor]
                 updated = True
@@ -576,8 +496,6 @@ class GrowspaceService:
             if num_pairs == 0:
                 continue
 
-            # Ensure vpd_sensors list is at least long enough
-            # We don't want to overwrite explicitly configured sensors, so we pad with None
             while len(vpds) < num_pairs:
                 vpds.append(None)
 
@@ -602,10 +520,37 @@ class GrowspaceService:
 
             if updated:
                 env_config.vpd_sensors = vpds
-                # Also update singular for backward compat if it was the first one
                 if len(vpds) > 0:
                     env_config.vpd_sensor = vpds[0]
-
-                # Config changed
                 if self.cache:
                     self.cache.invalidate(growspace.id)
+
+    def get_canonical_special(self, gs_id: str) -> tuple[str, str]:
+        """Return the canonical ID and name for a special growspace.
+
+        This helps resolve handling linked entities or names for special growspaces.
+
+        Args:
+            gs_id: The growspace ID to look up.
+
+        Returns:
+            A tuple containing the canonical ID and canonical name.
+        """
+        if gs_id in {"dry", "dry_room"}:
+            return "dry", "Dry Room"
+        if gs_id in {"cure", "cure_room"}:
+            return "cure", "Cure Room"
+        if gs_id in {"clone", "clone_room"}:
+            return "clone", "Clone Room"
+        if gs_id in {"mother", "mother_room"}:
+            return "mother", "Mother Room"
+        growspace = self.repository.growspaces.get(gs_id)
+        if growspace:
+            return gs_id, growspace.name
+        return gs_id, gs_id
+
+    # Aliases for compatibility
+    async_add_growspace = add_growspace
+    async_remove_growspace = remove_growspace
+    async_update_growspace = update_growspace
+    ensure_special_growspaces = ensure_default_growspaces

@@ -13,11 +13,14 @@ from datetime import datetime
 import logging
 from typing import Any, override
 
-# Third-party / external
 # Home Assistant
-from homeassistant.components.sensor import SensorEntity, SensorStateClass
+from homeassistant.components.sensor import (
+    SensorDeviceClass,
+    SensorEntity,
+    SensorStateClass,
+)
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import EntityCategory
+from homeassistant.const import EntityCategory, UnitOfTime
 from homeassistant.core import Event, HomeAssistant
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.device_registry import DeviceInfo
@@ -45,6 +48,7 @@ from .const import (
 from .coordinator import GrowspaceCoordinator
 from .helpers import async_setup_statistics_sensor, async_setup_trend_sensor
 from .models import Growspace, Plant
+from .tank_depletion_predictor import TankDepletionPredictor
 from .utils import (
     VPDCalculator,
     calculate_plant_stage,
@@ -256,6 +260,62 @@ async def _create_initial_entities(
         for vpd_entity in vpd_entities:
             initial_entities.append(vpd_entity)
             calculated_vpd_growspace_ids.add(vpd_entity.unique_id)
+
+        # Create tank depletion sensors if environment config has tanks
+        if growspace.environment_config:
+            env_config = growspace.environment_config
+
+            # Safely get irrigation_tanks (handle both dict and dataclass)
+            irrigation_tanks = []
+            if isinstance(env_config, dict):
+                irrigation_tanks = env_config.get("irrigation_tanks", [])
+            elif hasattr(env_config, "irrigation_tanks"):
+                irrigation_tanks = env_config.irrigation_tanks or []
+
+            for tank in irrigation_tanks:
+                # Check if prediction is enabled
+                enable_prediction = True
+                if isinstance(tank, dict):
+                    enable_prediction = tank.get("enable_prediction", True)
+                elif hasattr(tank, "enable_prediction"):
+                    enable_prediction = tank.enable_prediction
+
+                if enable_prediction:
+                    # Convert dict to IrrigationTank if needed
+                    from .models import IrrigationTank
+
+                    tank_obj = (
+                        IrrigationTank.from_dict(tank)
+                        if isinstance(tank, dict)
+                        else tank
+                    )
+
+                    # Only pass environment_config if it's a dataclass
+                    env_cfg_for_predictor = (
+                        None if isinstance(env_config, dict) else env_config
+                    )
+
+                    predictor = TankDepletionPredictor(
+                        hass,
+                        tank_obj,
+                        environment_config=env_cfg_for_predictor,
+                    )
+
+                    tank_name = (
+                        tank.get("name", "Tank")
+                        if isinstance(tank, dict)
+                        else tank.name
+                    )
+
+                    sensor = TankDepletionSensor(
+                        coordinator,
+                        growspace_id,
+                        tank_name,
+                        predictor,
+                    )
+                    initial_entities.append(sensor)
+                    # Perform initial update
+                    await predictor.async_update()
 
         await _async_create_derivative_sensors(hass, config_entry, growspace)
 
@@ -506,6 +566,91 @@ class VpdSensor(BaseVpdSensor):
         if temp is not None and humidity is not None:
             return VPDCalculator.calculate_vpd(temp, humidity)
         return None
+
+
+class TankDepletionSensor(CoordinatorEntity, SensorEntity):
+    """Sensor predicting time until tank needs refill.
+
+    Uses sliding window linear regression to predict when an irrigation tank
+    will reach its warning level based on historical depletion patterns.
+    """
+
+    _attr_device_class = SensorDeviceClass.DURATION
+    _attr_native_unit_of_measurement = UnitOfTime.HOURS
+    _attr_state_class = SensorStateClass.MEASUREMENT
+    _attr_icon = "mdi:water-alert"
+
+    def __init__(
+        self,
+        coordinator: GrowspaceCoordinator,
+        growspace_id: str,
+        tank_name: str,
+        predictor: Any,  # TankDepletionPredictor
+    ) -> None:
+        """Initialize the tank depletion sensor.
+
+        Args:
+            coordinator: Growspace coordinator instance
+            growspace_id: ID of the growspace containing this tank
+            tank_name: Name of the tank
+            predictor: TankDepletionPredictor instance
+        """
+        super().__init__(coordinator)
+        self._growspace_id = growspace_id
+        self._tank_name = tank_name
+        self._predictor = predictor
+        self._attr_name = f"{growspace_id} Tank Depletion {tank_name}"
+        self._attr_unique_id = f"{DOMAIN}_{growspace_id}_tank_depletion_{tank_name}"
+
+    @property
+    def available(self) -> bool:
+        """Return if sensor is available."""
+        return self.coordinator.last_update_success
+
+    @property
+    def native_value(self) -> float | None:
+        """Return hours remaining until refill threshold."""
+        prediction = self._predictor.get_prediction()
+
+        if prediction.status == "insufficient_data":
+            return None
+
+        if prediction.status in ("refilling", "static"):
+            return None
+
+        return prediction.hours_remaining
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Return prediction details as attributes."""
+        prediction = self._predictor.get_prediction()
+
+        attributes = {
+            "status": prediction.status,
+            "data_points": prediction.data_points,
+        }
+
+        if prediction.slope_pct_per_hour is not None:
+            attributes["slope_pct_per_hour"] = round(prediction.slope_pct_per_hour, 3)
+
+        if prediction.daily_usage_rate is not None:
+            attributes["daily_usage_rate"] = round(prediction.daily_usage_rate, 2)
+
+        if prediction.active_consumption_rate is not None:
+            attributes["active_consumption_rate"] = round(
+                prediction.active_consumption_rate, 2
+            )
+
+        if prediction.dormant_consumption_rate is not None:
+            attributes["dormant_consumption_rate"] = round(
+                prediction.dormant_consumption_rate, 2
+            )
+
+        return attributes
+
+    async def async_update(self) -> None:
+        """Update the predictor buffer."""
+        await self._predictor.async_update()
 
 
 class CalculatedVpdSensor(BaseVpdSensor):

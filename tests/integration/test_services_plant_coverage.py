@@ -5,8 +5,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from custom_components.growspace_manager.managers.plant import PlantManager
 from custom_components.growspace_manager.models import Plant, PlantGenetics
-from custom_components.growspace_manager.services.plant_service import PlantService
 from homeassistant.core import HomeAssistant
 
 
@@ -22,6 +22,12 @@ def repository_mock():
 @pytest.fixture
 def validator_mock():
     """Mock the GrowspaceValidator."""
+    return MagicMock()
+
+
+@pytest.fixture
+def strain_library_mock():
+    """Mock the StrainLibrary."""
     return MagicMock()
 
 
@@ -74,19 +80,19 @@ def service(
     hass: HomeAssistant,
     repository_mock,
     validator_mock,
-    lifecycle_manager_mock,
     gs_service_mock,
+    strain_library_mock,
     plant_view_builder_mock,
     save_callback_mock,
     lock_mock,
 ):
-    """PlantService fixture."""
-    svc = PlantService(
+    """PlantManager fixture."""
+    svc = PlantManager(
         hass=hass,
         repository=repository_mock,
         validator=validator_mock,
-        lifecycle_manager=lifecycle_manager_mock,
-        growspace_service=gs_service_mock,
+        growspace_manager=gs_service_mock,
+        strain_library=strain_library_mock,
         plant_view_builder=plant_view_builder_mock,
         save_callback=save_callback_mock,
         lock=lock_mock,
@@ -97,15 +103,15 @@ def service(
 
 
 @pytest.mark.asyncio
-async def test_add_plant(service, lifecycle_manager_mock) -> None:
+async def test_add_plant(service, repository_mock) -> None:
     """Test adding a plant."""
-    plant = Plant(
-        plant_id="p1", growspace_id="gs1", genetics=PlantGenetics(strain_name="S1")
-    )
-    lifecycle_manager_mock.async_add_plant.return_value = plant
+    with patch("uuid.uuid4", return_value="p1"):
+        result = await service.add_plant("gs1", "S1")
 
-    result = await service.add_plant("gs1", "S1")
-    assert result == plant
+    assert result.plant_id == "p1"
+    assert result.growspace_id == "gs1"
+    assert result.strain == "S1"
+    assert "p1" in repository_mock.plants
     service._fire_event.assert_called()
 
 
@@ -131,7 +137,7 @@ async def test_add_mother_plant(service, gs_service_mock) -> None:
 
 @pytest.mark.asyncio
 async def test_take_clones_default(
-    service, repository_mock, gs_service_mock, validator_mock, lifecycle_manager_mock
+    service, repository_mock, gs_service_mock, validator_mock
 ) -> None:
     """Test taking clones with default target."""
     mother = Plant(
@@ -143,22 +149,13 @@ async def test_take_clones_default(
     gs_service_mock.ensure_special_growspace.return_value = "clone"
     validator_mock.find_first_available_position.return_value = (1, 1)
 
-    # Mock lifecycle manager returning a clone ID
-    lifecycle_manager_mock.handle_clone_creation.return_value = "c1"
-    clone = Plant(
-        plant_id="c1",
-        growspace_id="clone",
-        genetics=PlantGenetics(strain_name="S1"),
-        row=1,
-        col=1,
-        stage="clone",
-        type="clone",
-    )
-    repository_mock.plants["c1"] = clone
+    with patch("uuid.uuid4", return_value="c1"):
+        results = await service.take_clones("mom", 1)
 
-    results = await service.take_clones("mom", 1)
     assert len(results) == 1
-    assert results[0] == clone
+    assert results[0].plant_id == "c1"
+    assert results[0].growspace_id == "clone"
+    assert results[0].strain == "S1"
 
 
 @pytest.mark.asyncio
@@ -204,7 +201,7 @@ async def test_update_plant_move(
 
 
 @pytest.mark.asyncio
-async def test_move_plant(service, repository_mock, lifecycle_manager_mock) -> None:
+async def test_move_plant(service, repository_mock) -> None:
     """Test moving a plant."""
     plant = Plant(
         plant_id="p1",
@@ -216,11 +213,13 @@ async def test_move_plant(service, repository_mock, lifecycle_manager_mock) -> N
     )
     repository_mock.plants = {"p1": plant}
     await service.move_plant("p1", 2, 2)
-    lifecycle_manager_mock.async_move_plant.assert_called_with("p1", 2, 2)
+    assert plant.row == 2
+    assert plant.col == 2
+    service._fire_event.assert_called()
 
 
 @pytest.mark.asyncio
-async def test_switch_plants(service, repository_mock, lifecycle_manager_mock) -> None:
+async def test_switch_plants(service, repository_mock) -> None:
     """Test switching two plants."""
     p1 = Plant(
         plant_id="p1",
@@ -232,15 +231,18 @@ async def test_switch_plants(service, repository_mock, lifecycle_manager_mock) -
     )
     p2 = Plant(
         plant_id="p2",
-        growspace_id="gs2",
-        row=1,
-        col=1,
+        growspace_id="gs1",
+        row=2,
+        col=2,
         stage="flowering",
         type="normal",
     )
     repository_mock.plants = {"p1": p1, "p2": p2}
     await service.switch_plants("p1", "p2")
-    lifecycle_manager_mock.async_switch_plants.assert_called_with("p1", "p2")
+    assert p1.row == 2
+    assert p1.col == 2
+    assert p2.row == 1
+    assert p2.col == 1
 
 
 @pytest.mark.asyncio
@@ -278,9 +280,7 @@ def test_get_plant(service, repository_mock) -> None:
 
 
 @pytest.mark.asyncio
-async def test_transition_plant_stage_actual(
-    service, repository_mock, lifecycle_manager_mock
-) -> None:
+async def test_transition_plant_stage_actual(service, repository_mock) -> None:
     """Test actual transition_plant_stage execution."""
     plant = Plant(
         plant_id="p1",
@@ -292,7 +292,8 @@ async def test_transition_plant_stage_actual(
     )
     repository_mock.plants = {"p1": plant}
     await service.transition_plant_stage("p1", "flower")
-    lifecycle_manager_mock.transition_plant_stage.assert_called()
+    assert plant.stage == "flower"
+    service._fire_event.assert_called()
 
 
 @pytest.mark.asyncio
@@ -318,9 +319,7 @@ async def test_convenience_methods(service, repository_mock) -> None:
 
 
 @pytest.mark.asyncio
-async def test_harvest_orchestration(
-    service, repository_mock, lifecycle_manager_mock
-) -> None:
+async def test_harvest_orchestration(service, repository_mock) -> None:
     """Test harvest_plant orchestration."""
     plant = Plant(
         plant_id="p1",
@@ -332,13 +331,15 @@ async def test_harvest_orchestration(
         type="normal",
     )
     repository_mock.plants = {"p1": plant}
-    lifecycle_manager_mock.handle_harvest_logic.return_value = True
+    # Mock repository.growspaces to include dry_room
+    repository_mock.growspaces = {"dry_room": MagicMock()}
 
     # Mock calculate_plant_stage to avoid issues with mocked plants if any
     with patch(
-        "custom_components.growspace_manager.services.plant_service.calculate_plant_stage",
+        "custom_components.growspace_manager.managers.plant.calculate_plant_stage",
         return_value="Flower",
     ):
         await service.harvest_plant("p1", target_growspace_id="dry_room")
 
-    lifecycle_manager_mock.handle_harvest_logic.assert_called()
+    assert plant.growspace_id == "dry_room"
+    service._fire_event.assert_called()

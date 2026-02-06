@@ -190,3 +190,23 @@ def test_air_exchange_recommendation(hass: HomeAssistant, builder):
     ):
         result = builder.build(growspace, [], {})
         assert result["air_exchange"] == "High"
+
+
+def test_missing_environment_config(builder):
+    """Test functionality when environment_config is missing."""
+    growspace = Growspace(id="gs1", name="Test Room", environment_config=None)
+
+    # Line 194: _get_sensor_types
+    sensor_types = builder._get_sensor_types(growspace)
+    assert sensor_types == {}
+
+    # Line 270: _get_environment_attributes
+    attrs = builder._get_environment_attributes(growspace)
+    assert attrs == {}
+
+    # Verify build still works
+    builder.entity_queries = MagicMock()
+    builder.entity_queries.lookup_overview_entity_id.return_value = "sensor.ov"
+    result = builder.build(growspace, [], {})
+    assert result["growspace_id"] == "gs1"
+    assert result["sensor_types"] == {}

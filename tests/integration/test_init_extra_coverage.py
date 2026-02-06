@@ -167,3 +167,28 @@ def test_async_remove_dynamic_entities_coverage(hass: HomeAssistant) -> None:
     coordinator = MagicMock()
     _async_remove_dynamic_entities(hass, coordinator)
     # It's a no-op, just ensure it runs
+
+
+async def test_async_unload_entry_removes_panel(hass: HomeAssistant) -> None:
+    """Test async_unload_entry removes sidebar panel if present (Line 231)."""
+    entry = MagicMock()
+    entry.entry_id = "test"
+    entry.runtime_data = MagicMock()
+    entry.runtime_data.async_shutdown = AsyncMock()
+
+    # Create mock hass with frontend panels
+    hass.data = {}
+    hass.data[DOMAIN] = {}  # Needed for line 234 check to pass or fail gracefully?
+    # Actually line 229: if DOMAIN in hass.data.get("frontend_panels", {}):
+    hass.data["frontend_panels"] = {DOMAIN: MagicMock()}
+
+    # Mock frontend component
+    hass.components = MagicMock()
+    hass.components.frontend = MagicMock()
+    hass.components.frontend.async_remove_panel = MagicMock()
+
+    with patch.object(hass.config_entries, "async_unload_platforms", return_value=True):
+        assert await async_unload_entry(hass, entry) is True
+
+    # Verify remove_panel was called
+    hass.components.frontend.async_remove_panel.assert_called_once_with(DOMAIN)
