@@ -10,13 +10,17 @@ from custom_components.growspace_manager.const import (
     CONF_AI_ENABLED,
     CONF_ASSISTANT_ID,
     CONF_NOTIFICATION_PERSONALITY,
+    NotificationTier,
 )
 from custom_components.growspace_manager.models import (
     EnvironmentConfig,
     Growspace,
     IrrigationTank,
 )
-from custom_components.growspace_manager.notification_manager import NotificationManager
+from custom_components.growspace_manager.notification_manager import (
+    NotificationManager,
+    PendingAlert,
+)
 from homeassistant.core import HomeAssistant
 from homeassistant.util import dt as dt_util
 
@@ -644,3 +648,72 @@ async def test_async_send_notification_disabled_cases(
     mock_coordinator.growspaces[GROWSPACE_ID].notification_target = None
     await manager.async_send_notification(GROWSPACE_ID, "T", "M")
     mock_hass.services.async_call.assert_not_called()
+
+
+def test_pending_alert_creation() -> None:
+    """Test PendingAlert dataclass creation and defaults."""
+    now = dt_util.utcnow()
+    alert = PendingAlert(
+        first_triggered=now,
+        last_probability=0.72,
+        peak_probability=0.78,
+        sensor_name="Stress Sensor",
+    )
+    assert alert.first_triggered == now
+    assert alert.last_probability == 0.72
+    assert alert.peak_probability == 0.78
+    assert alert.sensor_name == "Stress Sensor"
+    assert alert.notified is False
+    assert alert.escalated is False
+    assert alert.notified_as_critical is False
+
+
+def test_pending_alert_duration() -> None:
+    """Test PendingAlert duration calculation."""
+    now = dt_util.utcnow()
+    alert = PendingAlert(
+        first_triggered=now - timedelta(minutes=25),
+        last_probability=0.72,
+        peak_probability=0.78,
+        sensor_name="Stress Sensor",
+    )
+    duration = (now - alert.first_triggered).total_seconds() / 60
+    assert duration == pytest.approx(25.0, abs=0.1)
+
+
+def test_initialization_has_new_state(manager: NotificationManager) -> None:
+    """Test initialization includes pending alerts and cooldowns."""
+    assert manager._pending_alerts == {}
+    assert manager._cooldowns == {}
+
+
+async def test_tier_cooldown_critical(manager: NotificationManager) -> None:
+    """Test that critical cooldown blocks critical but not warning."""
+    now = dt_util.utcnow()
+    with patch(
+        "custom_components.growspace_manager.notification_manager.utcnow",
+        return_value=now,
+    ):
+        manager._set_cooldown(GROWSPACE_ID, NotificationTier.CRITICAL)
+
+    # Critical should be blocked
+    assert manager._is_on_cooldown(GROWSPACE_ID, NotificationTier.CRITICAL, now + timedelta(minutes=5))
+    # Warning should NOT be blocked by critical cooldown
+    assert not manager._is_on_cooldown(GROWSPACE_ID, NotificationTier.WARNING, now + timedelta(minutes=5))
+    # Critical should expire after 30 min
+    assert not manager._is_on_cooldown(GROWSPACE_ID, NotificationTier.CRITICAL, now + timedelta(minutes=31))
+
+
+async def test_tier_cooldown_warning(manager: NotificationManager) -> None:
+    """Test that warning cooldown is 2 hours."""
+    now = dt_util.utcnow()
+    with patch(
+        "custom_components.growspace_manager.notification_manager.utcnow",
+        return_value=now,
+    ):
+        manager._set_cooldown(GROWSPACE_ID, NotificationTier.WARNING)
+
+    # Warning blocked at 1 hour
+    assert manager._is_on_cooldown(GROWSPACE_ID, NotificationTier.WARNING, now + timedelta(hours=1))
+    # Warning expires after 2 hours
+    assert not manager._is_on_cooldown(GROWSPACE_ID, NotificationTier.WARNING, now + timedelta(hours=2, minutes=1))

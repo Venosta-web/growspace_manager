@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import datetime, timedelta
 import logging
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any, ClassVar, cast
 
 from homeassistant.components import conversation
 from homeassistant.core import CALLBACK_TYPE, Context, HomeAssistant, callback
@@ -16,9 +17,16 @@ from .const import (
     CONF_AI_ENABLED,
     CONF_ASSISTANT_ID,
     CONF_NOTIFICATION_PERSONALITY,
+    CRITICAL_COOLDOWN_MINUTES,
+    CRITICAL_PROBABILITY_THRESHOLD,
     DEFAULT_COOLDOWN_MINUTES,
+    ESCALATION_DELAY_MINUTES,
     MAX_NOTIFICATION_LENGTH,
     NOTIFICATION_DEBOUNCE_SECONDS,
+    NotificationTier,
+    RECOVERY_COOLDOWN_MINUTES,
+    WARNING_COOLDOWN_MINUTES,
+    WARNING_PERSISTENCE_MINUTES,
 )
 from .domain import calculate_days_in_stage
 
@@ -26,6 +34,19 @@ if TYPE_CHECKING:
     from .coordinator import GrowspaceCoordinator
 
 _LOGGER = logging.getLogger(__name__)
+
+
+@dataclass
+class PendingAlert:
+    """Tracks the state of an active alert for a sensor."""
+
+    first_triggered: datetime
+    last_probability: float
+    peak_probability: float
+    sensor_name: str
+    notified: bool = False
+    escalated: bool = False
+    notified_as_critical: bool = False
 
 
 class NotificationManager:
@@ -39,6 +60,29 @@ class NotificationManager:
         self._notification_cooldown = timedelta(minutes=DEFAULT_COOLDOWN_MINUTES)
         self._registered_sensors: dict[str, set[Any]] = {}
         self._batch_timers: dict[str, CALLBACK_TYPE] = {}
+        self._pending_alerts: dict[str, PendingAlert] = {}
+        self._cooldowns: dict[str, dict[str, datetime]] = {}
+
+    _TIER_COOLDOWNS: ClassVar[dict[str, timedelta]] = {
+        NotificationTier.CRITICAL: timedelta(minutes=CRITICAL_COOLDOWN_MINUTES),
+        NotificationTier.WARNING: timedelta(minutes=WARNING_COOLDOWN_MINUTES),
+        "recovery": timedelta(minutes=RECOVERY_COOLDOWN_MINUTES),
+    }
+
+    def _set_cooldown(self, growspace_id: str, tier: str) -> None:
+        """Set cooldown timestamp for a specific tier and growspace."""
+        if growspace_id not in self._cooldowns:
+            self._cooldowns[growspace_id] = {}
+        self._cooldowns[growspace_id][tier] = utcnow()
+
+    def _is_on_cooldown(self, growspace_id: str, tier: str, now: datetime) -> bool:
+        """Check if a specific tier is on cooldown for a growspace."""
+        cooldown_map = self._cooldowns.get(growspace_id, {})
+        last_sent = cooldown_map.get(tier)
+        if not last_sent:
+            return False
+        cooldown_duration = self._TIER_COOLDOWNS.get(tier, timedelta(minutes=30))
+        return (now - last_sent) < cooldown_duration
 
     def attach_sensor(self, growspace_id: str, sensor: Any) -> None:
         """Register a sensor for batch notification tracking."""

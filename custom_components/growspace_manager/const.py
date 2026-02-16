@@ -173,6 +173,24 @@ CONF_AI_AUTO_ALERTS = "ai_auto_alerts"
 # Notification Defaults
 DEFAULT_COOLDOWN_MINUTES = 5
 
+CRITICAL_PROBABILITY_THRESHOLD: Final = 0.9
+"""Probability at or above which an alert is considered critical."""
+
+WARNING_PERSISTENCE_MINUTES: Final = 20
+"""Minutes a warning-tier alert must persist before notification is sent."""
+
+CRITICAL_COOLDOWN_MINUTES: Final = 30
+"""Cooldown after sending a critical notification (per growspace)."""
+
+WARNING_COOLDOWN_MINUTES: Final = 120
+"""Cooldown after sending a warning notification (per growspace)."""
+
+RECOVERY_COOLDOWN_MINUTES: Final = 10
+"""Cooldown after sending a recovery notification (per growspace)."""
+
+ESCALATION_DELAY_MINUTES: Final = 30
+"""Minutes after critical notification before sending escalation reminder."""
+
 AI_PERSONALITIES = [
     "Standard",
     "Scientific",
@@ -212,6 +230,14 @@ DEHUMIDIFIER_STAGES: Final = [
     PlantStage.DRY.value,
     PlantStage.CURE.value,
 ]
+
+
+class NotificationTier(StrEnum):
+    """Notification severity tiers."""
+
+    CRITICAL = "critical"
+    WARNING = "warning"
+    INFO = "info"
 
 
 class GrowspaceSensorType(StrEnum):
