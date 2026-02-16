@@ -40,6 +40,7 @@ _LOGGER = logging.getLogger(__name__)
 class PendingAlert:
     """Tracks the state of an active alert for a sensor."""
 
+    growspace_id: str
     first_triggered: datetime
     last_probability: float
     peak_probability: float
@@ -109,6 +110,7 @@ class NotificationManager:
             alert.peak_probability = max(alert.peak_probability, probability)
         else:
             alert = PendingAlert(
+                growspace_id=growspace_id,
                 first_triggered=now,
                 last_probability=probability,
                 peak_probability=probability,
@@ -511,9 +513,7 @@ class NotificationManager:
         now = utcnow()
 
         for alert_key, alert in list(self._pending_alerts.items()):
-            # Parse growspace_id from alert_key ("growspace_id_sensortype")
-            parts = alert_key.rsplit("_", 1)
-            growspace_id = parts[0] if len(parts) == 2 else alert_key
+            growspace_id = alert.growspace_id
 
             # Escalation check: critical, notified, not yet escalated, 30+ min
             if (

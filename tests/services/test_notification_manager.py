@@ -649,11 +649,13 @@ def test_pending_alert_creation() -> None:
     """Test PendingAlert dataclass creation and defaults."""
     now = dt_util.utcnow()
     alert = PendingAlert(
+        growspace_id="gs1",
         first_triggered=now,
         last_probability=0.72,
         peak_probability=0.78,
         sensor_name="Stress Sensor",
     )
+    assert alert.growspace_id == "gs1"
     assert alert.first_triggered == now
     assert alert.last_probability == 0.72
     assert alert.peak_probability == 0.78
@@ -667,6 +669,7 @@ def test_pending_alert_duration() -> None:
     """Test PendingAlert duration calculation."""
     now = dt_util.utcnow()
     alert = PendingAlert(
+        growspace_id="gs1",
         first_triggered=now - timedelta(minutes=25),
         last_probability=0.72,
         peak_probability=0.78,
@@ -742,6 +745,7 @@ async def test_update_pending_alert_updates_existing(manager: NotificationManage
     now = dt_util.utcnow()
     alert_key = f"{GROWSPACE_ID}_stress"
     manager._pending_alerts[alert_key] = PendingAlert(
+        growspace_id=GROWSPACE_ID,
         first_triggered=now - timedelta(minutes=5),
         last_probability=0.72,
         peak_probability=0.72,
@@ -767,6 +771,7 @@ async def test_update_pending_alert_removes_on_off(manager: NotificationManager)
     now = dt_util.utcnow()
     alert_key = f"{GROWSPACE_ID}_stress"
     manager._pending_alerts[alert_key] = PendingAlert(
+        growspace_id=GROWSPACE_ID,
         first_triggered=now - timedelta(minutes=5),
         last_probability=0.72,
         peak_probability=0.72,
@@ -820,6 +825,7 @@ async def test_check_pending_alerts_warning_persistence_not_met(
     now = dt_util.utcnow()
     alert_key = f"{GROWSPACE_ID}_stress"
     manager._pending_alerts[alert_key] = PendingAlert(
+        growspace_id=GROWSPACE_ID,
         first_triggered=now - timedelta(minutes=10),
         last_probability=0.75,
         peak_probability=0.75,
@@ -844,6 +850,7 @@ async def test_check_pending_alerts_warning_persistence_met(
     now = dt_util.utcnow()
     alert_key = f"{GROWSPACE_ID}_stress"
     manager._pending_alerts[alert_key] = PendingAlert(
+        growspace_id=GROWSPACE_ID,
         first_triggered=now - timedelta(minutes=25),
         last_probability=0.75,
         peak_probability=0.80,
@@ -873,6 +880,7 @@ async def test_check_pending_alerts_skip_already_notified(
     now = dt_util.utcnow()
     alert_key = f"{GROWSPACE_ID}_stress"
     manager._pending_alerts[alert_key] = PendingAlert(
+        growspace_id=GROWSPACE_ID,
         first_triggered=now - timedelta(minutes=30),
         last_probability=0.75,
         peak_probability=0.80,
@@ -898,6 +906,7 @@ async def test_check_pending_alerts_escalation(
     now = dt_util.utcnow()
     alert_key = f"{GROWSPACE_ID}_stress"
     manager._pending_alerts[alert_key] = PendingAlert(
+        growspace_id=GROWSPACE_ID,
         first_triggered=now - timedelta(minutes=35),
         last_probability=0.95,
         peak_probability=0.95,
@@ -929,6 +938,7 @@ async def test_check_pending_alerts_no_escalation_if_dropped_to_warning(
     now = dt_util.utcnow()
     alert_key = f"{GROWSPACE_ID}_stress"
     manager._pending_alerts[alert_key] = PendingAlert(
+        growspace_id=GROWSPACE_ID,
         first_triggered=now - timedelta(minutes=35),
         last_probability=0.75,
         peak_probability=0.95,
@@ -956,6 +966,7 @@ async def test_check_pending_alerts_no_double_escalation(
     now = dt_util.utcnow()
     alert_key = f"{GROWSPACE_ID}_stress"
     manager._pending_alerts[alert_key] = PendingAlert(
+        growspace_id=GROWSPACE_ID,
         first_triggered=now - timedelta(minutes=65),
         last_probability=0.95,
         peak_probability=0.95,
@@ -986,6 +997,7 @@ async def test_recovery_notification_on_critical_resolve(
     now = dt_util.utcnow()
     alert_key = f"{GROWSPACE_ID}_stress"
     manager._pending_alerts[alert_key] = PendingAlert(
+        growspace_id=GROWSPACE_ID,
         first_triggered=now - timedelta(minutes=45),
         last_probability=0.92,
         peak_probability=0.95,
@@ -1015,6 +1027,7 @@ async def test_no_recovery_for_warning_resolve(
     now = dt_util.utcnow()
     alert_key = f"{GROWSPACE_ID}_stress"
     manager._pending_alerts[alert_key] = PendingAlert(
+        growspace_id=GROWSPACE_ID,
         first_triggered=now - timedelta(minutes=25),
         last_probability=0.75,
         peak_probability=0.80,
@@ -1072,6 +1085,7 @@ async def test_send_recovery_notification(
     """Test the actual recovery notification send."""
     now = dt_util.utcnow()
     alert = PendingAlert(
+        growspace_id=GROWSPACE_ID,
         first_triggered=now - timedelta(minutes=45),
         last_probability=0.3,
         peak_probability=0.95,
