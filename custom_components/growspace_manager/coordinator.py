@@ -586,6 +586,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self.data = self.view_model_builder.build_data_property()
         await self.notification_manager.async_check_timed_notifications()
         await self.notification_manager.async_check_tank_levels()
+        await self.notification_manager.async_check_pending_alerts()
         await self.environment_analyzer.async_update_air_exchange_recommendations()
 
         return self.data
@@ -862,7 +863,6 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self, growspace_id: str, new_rows: int, new_plants_per_row: int
     ) -> None:
         """Compatibility alias for GrowspaceManager legacy method."""
-        import asyncio
 
         asyncio.create_task(
             self.growspace_manager._validate_plants_after_growspace_resize(

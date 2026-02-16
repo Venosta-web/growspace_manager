@@ -99,7 +99,7 @@ async def test_multiple_sensors_aggregation(manager, hass: HomeAssistant) -> Non
         s_states = mock_send.call_args[1].get("sensor_states")
 
         # Check title
-        assert "Multiple Issues" in title
+        assert "Multiple Critical" in title
         # Check message contains both reasons
         assert "Hot" in msg
         assert "Dry" in msg
@@ -109,8 +109,10 @@ async def test_multiple_sensors_aggregation(manager, hass: HomeAssistant) -> Non
 
 
 async def test_cooldown_respected_globally(manager) -> None:
-    """Test that global cooldown prevents batching."""
-    manager.trigger_cooldown(GROWSPACE_ID)
+    """Test that critical cooldown prevents batching."""
+    from custom_components.growspace_manager.const import NotificationTier
+
+    manager._set_cooldown(GROWSPACE_ID, NotificationTier.CRITICAL)
 
     with patch.object(manager, "async_send_notification") as mock_send:
         await manager._async_send_batched_notification(GROWSPACE_ID)
@@ -125,3 +127,22 @@ async def test_empty_active_sensors(manager) -> None:
     with patch.object(manager, "async_send_notification") as mock_send:
         await manager._async_send_batched_notification(GROWSPACE_ID)
         mock_send.assert_not_awaited()
+
+
+async def test_batched_critical_title_format(manager, hass: HomeAssistant) -> None:
+    """Test that critical batched notifications use red circle title format."""
+    sensor = MagicMock()
+    sensor.name = "Stress Sensor"
+    sensor.is_on = True
+    sensor._probability = 0.95
+    sensor.reasons = [(0.95, "Extreme heat")]
+    sensor.sensor_states = {"temp": 40.0}
+    sensor.get_notification_title_message.return_value = None
+
+    manager.attach_sensor(GROWSPACE_ID, sensor)
+
+    with patch.object(manager, "async_send_notification") as mock_send:
+        await manager._async_send_batched_notification(GROWSPACE_ID)
+        mock_send.assert_awaited_once()
+        title = mock_send.call_args[0][1]
+        assert "\U0001f534" in title

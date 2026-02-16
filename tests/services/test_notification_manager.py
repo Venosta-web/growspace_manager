@@ -1,7 +1,7 @@
 """Tests for the NotificationManager."""
 
 from datetime import timedelta
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, PropertyMock, patch
 
 from common import create_plant
 import pytest
@@ -10,13 +10,17 @@ from custom_components.growspace_manager.const import (
     CONF_AI_ENABLED,
     CONF_ASSISTANT_ID,
     CONF_NOTIFICATION_PERSONALITY,
+    NotificationTier,
 )
 from custom_components.growspace_manager.models import (
     EnvironmentConfig,
     Growspace,
     IrrigationTank,
 )
-from custom_components.growspace_manager.notification_manager import NotificationManager
+from custom_components.growspace_manager.notification_manager import (
+    NotificationManager,
+    PendingAlert,
+)
 from homeassistant.core import HomeAssistant
 from homeassistant.util import dt as dt_util
 
@@ -536,7 +540,7 @@ async def test_async_send_batched_notification_multiple_sensors(
         await manager._async_send_batched_notification(GROWSPACE_ID)
         # Line 139-140 path
         args = mock_send.call_args[0]
-        assert "Multiple Issues" in args[1]
+        assert "Multiple Critical" in args[1]
         assert "Sensor 1" in args[2]
         assert "Sensor 2" in args[2]
 
@@ -596,18 +600,13 @@ async def test_async_send_batched_notification_unique_reasons(
 async def test_async_send_batched_notification_cooldown(
     manager: NotificationManager, mock_coordinator: MagicMock
 ) -> None:
-    """Test global cooldown in _async_send_batched_notification."""
+    """Test critical tier cooldown in _async_send_batched_notification."""
 
-    now = dt_util.utcnow()
-    manager._last_notification_sent[GROWSPACE_ID] = now
+    manager._set_cooldown(GROWSPACE_ID, NotificationTier.CRITICAL)
 
-    with patch(
-        "custom_components.growspace_manager.notification_manager.utcnow",
-        return_value=now + timedelta(seconds=5),
-    ):
-        # Cooldown is 1 min, so 5s later should still be active
-        await manager._async_send_batched_notification(GROWSPACE_ID)
-        # Should return early (line 98)
+    # Cooldown is 30 min, so immediate call should still be active
+    await manager._async_send_batched_notification(GROWSPACE_ID)
+    # Should return early due to critical cooldown
 
 
 async def test_async_send_batched_notification_empty_active(
@@ -644,3 +643,464 @@ async def test_async_send_notification_disabled_cases(
     mock_coordinator.growspaces[GROWSPACE_ID].notification_target = None
     await manager.async_send_notification(GROWSPACE_ID, "T", "M")
     mock_hass.services.async_call.assert_not_called()
+
+
+def test_pending_alert_creation() -> None:
+    """Test PendingAlert dataclass creation and defaults."""
+    now = dt_util.utcnow()
+    alert = PendingAlert(
+        growspace_id="gs1",
+        first_triggered=now,
+        last_probability=0.72,
+        peak_probability=0.78,
+        sensor_name="Stress Sensor",
+    )
+    assert alert.growspace_id == "gs1"
+    assert alert.first_triggered == now
+    assert alert.last_probability == 0.72
+    assert alert.peak_probability == 0.78
+    assert alert.sensor_name == "Stress Sensor"
+    assert alert.notified is False
+    assert alert.escalated is False
+    assert alert.notified_as_critical is False
+
+
+def test_pending_alert_duration() -> None:
+    """Test PendingAlert duration calculation."""
+    now = dt_util.utcnow()
+    alert = PendingAlert(
+        growspace_id="gs1",
+        first_triggered=now - timedelta(minutes=25),
+        last_probability=0.72,
+        peak_probability=0.78,
+        sensor_name="Stress Sensor",
+    )
+    duration = (now - alert.first_triggered).total_seconds() / 60
+    assert duration == pytest.approx(25.0, abs=0.1)
+
+
+def test_initialization_has_new_state(manager: NotificationManager) -> None:
+    """Test initialization includes pending alerts and cooldowns."""
+    assert manager._pending_alerts == {}
+    assert manager._cooldowns == {}
+
+
+async def test_tier_cooldown_critical(manager: NotificationManager) -> None:
+    """Test that critical cooldown blocks critical but not warning."""
+    now = dt_util.utcnow()
+    with patch(
+        "custom_components.growspace_manager.notification_manager.utcnow",
+        return_value=now,
+    ):
+        manager._set_cooldown(GROWSPACE_ID, NotificationTier.CRITICAL)
+
+    # Critical should be blocked
+    assert manager._is_on_cooldown(GROWSPACE_ID, NotificationTier.CRITICAL, now + timedelta(minutes=5))
+    # Warning should NOT be blocked by critical cooldown
+    assert not manager._is_on_cooldown(GROWSPACE_ID, NotificationTier.WARNING, now + timedelta(minutes=5))
+    # Critical should expire after 30 min
+    assert not manager._is_on_cooldown(GROWSPACE_ID, NotificationTier.CRITICAL, now + timedelta(minutes=31))
+
+
+async def test_tier_cooldown_warning(manager: NotificationManager) -> None:
+    """Test that warning cooldown is 2 hours."""
+    now = dt_util.utcnow()
+    with patch(
+        "custom_components.growspace_manager.notification_manager.utcnow",
+        return_value=now,
+    ):
+        manager._set_cooldown(GROWSPACE_ID, NotificationTier.WARNING)
+
+    # Warning blocked at 1 hour
+    assert manager._is_on_cooldown(GROWSPACE_ID, NotificationTier.WARNING, now + timedelta(hours=1))
+    # Warning expires after 2 hours
+    assert not manager._is_on_cooldown(GROWSPACE_ID, NotificationTier.WARNING, now + timedelta(hours=2, minutes=1))
+
+
+# --- Task 4: update_pending_alert tests ---
+
+
+async def test_update_pending_alert_creates_entry(manager: NotificationManager) -> None:
+    """Test that update_pending_alert creates a new entry when sensor turns on."""
+    sensor = MagicMock()
+    sensor.is_on = True
+    sensor.name = "Stress Sensor"
+    sensor._probability = 0.75
+    sensor.entity_description = MagicMock()
+    sensor.entity_description.sensor_type = "stress"
+
+    manager.update_pending_alert(GROWSPACE_ID, sensor)
+
+    alert_key = f"{GROWSPACE_ID}_stress"
+    assert alert_key in manager._pending_alerts
+    alert = manager._pending_alerts[alert_key]
+    assert alert.last_probability == 0.75
+    assert alert.peak_probability == 0.75
+    assert alert.sensor_name == "Stress Sensor"
+    assert alert.notified is False
+
+
+async def test_update_pending_alert_updates_existing(manager: NotificationManager) -> None:
+    """Test that update_pending_alert updates peak probability on existing entry."""
+    now = dt_util.utcnow()
+    alert_key = f"{GROWSPACE_ID}_stress"
+    manager._pending_alerts[alert_key] = PendingAlert(
+        growspace_id=GROWSPACE_ID,
+        first_triggered=now - timedelta(minutes=5),
+        last_probability=0.72,
+        peak_probability=0.72,
+        sensor_name="Stress Sensor",
+    )
+
+    sensor = MagicMock()
+    sensor.is_on = True
+    sensor.name = "Stress Sensor"
+    sensor._probability = 0.85
+    sensor.entity_description = MagicMock()
+    sensor.entity_description.sensor_type = "stress"
+
+    manager.update_pending_alert(GROWSPACE_ID, sensor)
+
+    alert = manager._pending_alerts[alert_key]
+    assert alert.last_probability == 0.85
+    assert alert.peak_probability == 0.85
+
+
+async def test_update_pending_alert_removes_on_off(manager: NotificationManager) -> None:
+    """Test that update_pending_alert removes entry when sensor turns off."""
+    now = dt_util.utcnow()
+    alert_key = f"{GROWSPACE_ID}_stress"
+    manager._pending_alerts[alert_key] = PendingAlert(
+        growspace_id=GROWSPACE_ID,
+        first_triggered=now - timedelta(minutes=5),
+        last_probability=0.72,
+        peak_probability=0.72,
+        sensor_name="Stress Sensor",
+    )
+
+    sensor = MagicMock()
+    sensor.is_on = False
+    sensor.name = "Stress Sensor"
+    sensor._probability = 0.3
+    sensor.entity_description = MagicMock()
+    sensor.entity_description.sensor_type = "stress"
+
+    manager.update_pending_alert(GROWSPACE_ID, sensor)
+
+    assert alert_key not in manager._pending_alerts
+
+
+async def test_update_pending_alert_critical_immediate_notification(
+    manager: NotificationManager, mock_hass: MagicMock
+) -> None:
+    """Test that critical probability triggers immediate notification via debounced batch."""
+    sensor = MagicMock()
+    sensor.is_on = True
+    sensor.name = "Stress Sensor"
+    sensor._probability = 0.95
+    sensor.entity_description = MagicMock()
+    sensor.entity_description.sensor_type = "stress"
+    sensor.reasons = [(0.95, "Extreme heat")]
+    sensor.sensor_states = {"temp": 40.0}
+    sensor.get_notification_title_message.return_value = None
+
+    manager.attach_sensor(GROWSPACE_ID, sensor)
+
+    with patch.object(manager, "async_schedule_notification") as mock_schedule:
+        manager.update_pending_alert(GROWSPACE_ID, sensor)
+        mock_schedule.assert_called_once_with(GROWSPACE_ID)
+
+    alert_key = f"{GROWSPACE_ID}_stress"
+    alert = manager._pending_alerts[alert_key]
+    assert alert.notified_as_critical is True
+
+
+# --- Task 5: async_check_pending_alerts tests ---
+
+
+async def test_check_pending_alerts_warning_persistence_not_met(
+    manager: NotificationManager, mock_hass: MagicMock
+) -> None:
+    """Test that warning alert is not sent before persistence period."""
+    now = dt_util.utcnow()
+    alert_key = f"{GROWSPACE_ID}_stress"
+    manager._pending_alerts[alert_key] = PendingAlert(
+        growspace_id=GROWSPACE_ID,
+        first_triggered=now - timedelta(minutes=10),
+        last_probability=0.75,
+        peak_probability=0.75,
+        sensor_name="Stress Sensor",
+    )
+
+    with (
+        patch(
+            "custom_components.growspace_manager.notification_manager.utcnow",
+            return_value=now,
+        ),
+        patch.object(manager, "async_send_notification", new_callable=AsyncMock) as mock_send,
+    ):
+        await manager.async_check_pending_alerts()
+        mock_send.assert_not_awaited()
+
+
+async def test_check_pending_alerts_warning_persistence_met(
+    manager: NotificationManager, mock_hass: MagicMock
+) -> None:
+    """Test that warning alert is sent after persistence period."""
+    now = dt_util.utcnow()
+    alert_key = f"{GROWSPACE_ID}_stress"
+    manager._pending_alerts[alert_key] = PendingAlert(
+        growspace_id=GROWSPACE_ID,
+        first_triggered=now - timedelta(minutes=25),
+        last_probability=0.75,
+        peak_probability=0.80,
+        sensor_name="Stress Sensor",
+    )
+
+    with (
+        patch(
+            "custom_components.growspace_manager.notification_manager.utcnow",
+            return_value=now,
+        ),
+        patch.object(manager, "async_send_notification", new_callable=AsyncMock) as mock_send,
+    ):
+        await manager.async_check_pending_alerts()
+        mock_send.assert_awaited_once()
+        call_kwargs = mock_send.call_args
+        assert "\u26a0\ufe0f" in call_kwargs[0][1]
+        assert "25 minutes" in call_kwargs[0][2]
+
+    assert manager._pending_alerts[alert_key].notified is True
+
+
+async def test_check_pending_alerts_skip_already_notified(
+    manager: NotificationManager, mock_hass: MagicMock
+) -> None:
+    """Test that already-notified warning alerts are not resent."""
+    now = dt_util.utcnow()
+    alert_key = f"{GROWSPACE_ID}_stress"
+    manager._pending_alerts[alert_key] = PendingAlert(
+        growspace_id=GROWSPACE_ID,
+        first_triggered=now - timedelta(minutes=30),
+        last_probability=0.75,
+        peak_probability=0.80,
+        sensor_name="Stress Sensor",
+        notified=True,
+    )
+
+    with (
+        patch(
+            "custom_components.growspace_manager.notification_manager.utcnow",
+            return_value=now,
+        ),
+        patch.object(manager, "async_send_notification", new_callable=AsyncMock) as mock_send,
+    ):
+        await manager.async_check_pending_alerts()
+        mock_send.assert_not_awaited()
+
+
+async def test_check_pending_alerts_escalation(
+    manager: NotificationManager, mock_hass: MagicMock
+) -> None:
+    """Test escalation reminder for critical alerts after 30 minutes."""
+    now = dt_util.utcnow()
+    alert_key = f"{GROWSPACE_ID}_stress"
+    manager._pending_alerts[alert_key] = PendingAlert(
+        growspace_id=GROWSPACE_ID,
+        first_triggered=now - timedelta(minutes=35),
+        last_probability=0.95,
+        peak_probability=0.95,
+        sensor_name="Stress Sensor",
+        notified=True,
+        notified_as_critical=True,
+        escalated=False,
+    )
+
+    with (
+        patch(
+            "custom_components.growspace_manager.notification_manager.utcnow",
+            return_value=now,
+        ),
+        patch.object(manager, "async_send_notification", new_callable=AsyncMock) as mock_send,
+    ):
+        await manager.async_check_pending_alerts()
+        mock_send.assert_awaited_once()
+        title = mock_send.call_args[0][1]
+        assert "Still active" in title
+
+    assert manager._pending_alerts[alert_key].escalated is True
+
+
+async def test_check_pending_alerts_no_escalation_if_dropped_to_warning(
+    manager: NotificationManager, mock_hass: MagicMock
+) -> None:
+    """Test no escalation if probability dropped below critical."""
+    now = dt_util.utcnow()
+    alert_key = f"{GROWSPACE_ID}_stress"
+    manager._pending_alerts[alert_key] = PendingAlert(
+        growspace_id=GROWSPACE_ID,
+        first_triggered=now - timedelta(minutes=35),
+        last_probability=0.75,
+        peak_probability=0.95,
+        sensor_name="Stress Sensor",
+        notified=True,
+        notified_as_critical=True,
+        escalated=False,
+    )
+
+    with (
+        patch(
+            "custom_components.growspace_manager.notification_manager.utcnow",
+            return_value=now,
+        ),
+        patch.object(manager, "async_send_notification", new_callable=AsyncMock) as mock_send,
+    ):
+        await manager.async_check_pending_alerts()
+        mock_send.assert_not_awaited()
+
+
+async def test_check_pending_alerts_no_double_escalation(
+    manager: NotificationManager, mock_hass: MagicMock
+) -> None:
+    """Test escalation only fires once."""
+    now = dt_util.utcnow()
+    alert_key = f"{GROWSPACE_ID}_stress"
+    manager._pending_alerts[alert_key] = PendingAlert(
+        growspace_id=GROWSPACE_ID,
+        first_triggered=now - timedelta(minutes=65),
+        last_probability=0.95,
+        peak_probability=0.95,
+        sensor_name="Stress Sensor",
+        notified=True,
+        notified_as_critical=True,
+        escalated=True,
+    )
+
+    with (
+        patch(
+            "custom_components.growspace_manager.notification_manager.utcnow",
+            return_value=now,
+        ),
+        patch.object(manager, "async_send_notification", new_callable=AsyncMock) as mock_send,
+    ):
+        await manager.async_check_pending_alerts()
+        mock_send.assert_not_awaited()
+
+
+# --- Task 6: Recovery notification tests ---
+
+
+async def test_recovery_notification_on_critical_resolve(
+    manager: NotificationManager, mock_hass: MagicMock
+) -> None:
+    """Test that recovery notification is sent when a critical alert resolves."""
+    now = dt_util.utcnow()
+    alert_key = f"{GROWSPACE_ID}_stress"
+    manager._pending_alerts[alert_key] = PendingAlert(
+        growspace_id=GROWSPACE_ID,
+        first_triggered=now - timedelta(minutes=45),
+        last_probability=0.92,
+        peak_probability=0.95,
+        sensor_name="Stress Sensor",
+        notified=True,
+        notified_as_critical=True,
+    )
+
+    sensor = MagicMock()
+    sensor.is_on = False
+    sensor.name = "Stress Sensor"
+    sensor._probability = 0.3
+    sensor.entity_description = MagicMock()
+    sensor.entity_description.sensor_type = "stress"
+
+    with patch.object(manager, "_schedule_recovery") as mock_recovery:
+        manager.update_pending_alert(GROWSPACE_ID, sensor)
+        mock_recovery.assert_called_once()
+
+    assert alert_key not in manager._pending_alerts
+
+
+async def test_no_recovery_for_warning_resolve(
+    manager: NotificationManager, mock_hass: MagicMock
+) -> None:
+    """Test that no recovery notification for warning-only alerts."""
+    now = dt_util.utcnow()
+    alert_key = f"{GROWSPACE_ID}_stress"
+    manager._pending_alerts[alert_key] = PendingAlert(
+        growspace_id=GROWSPACE_ID,
+        first_triggered=now - timedelta(minutes=25),
+        last_probability=0.75,
+        peak_probability=0.80,
+        sensor_name="Stress Sensor",
+        notified=True,
+        notified_as_critical=False,
+    )
+
+    sensor = MagicMock()
+    sensor.is_on = False
+    sensor.name = "Stress Sensor"
+    sensor._probability = 0.3
+    sensor.entity_description = MagicMock()
+    sensor.entity_description.sensor_type = "stress"
+
+    with patch.object(manager, "_schedule_recovery") as mock_recovery:
+        manager.update_pending_alert(GROWSPACE_ID, sensor)
+        mock_recovery.assert_not_called()
+
+
+async def test_tank_level_uses_critical_tier(
+    manager: NotificationManager, mock_coordinator: MagicMock, mock_hass: MagicMock
+) -> None:
+    """Test that tank level alerts use critical tier."""
+    tank = IrrigationTank(
+        sensor_entity="sensor.tank1", name="Water Tank", warning_level=30.0
+    )
+    gs = mock_coordinator.growspaces[GROWSPACE_ID]
+    gs.environment_config = EnvironmentConfig(irrigation_tanks=[tank])
+
+    mock_state = MagicMock()
+    mock_state.state = "10.0 %"
+    mock_hass.states = MagicMock()
+    mock_hass.states.get.return_value = mock_state
+
+    with (
+        patch(
+            "custom_components.growspace_manager.presentation.entity_queries.EntityQueries"
+        ) as mock_queries,
+        patch.object(
+            manager, "async_send_notification", new_callable=AsyncMock
+        ) as mock_send,
+    ):
+        mock_instance = mock_queries.return_value
+        mock_instance.parse_tank_level.return_value = 10.0
+        await manager.async_check_tank_levels()
+        mock_send.assert_awaited_once()
+        call_kwargs = mock_send.call_args[1]
+        assert call_kwargs.get("tier") == "critical"
+
+
+async def test_send_recovery_notification(
+    manager: NotificationManager, mock_hass: MagicMock
+) -> None:
+    """Test the actual recovery notification send."""
+    now = dt_util.utcnow()
+    alert = PendingAlert(
+        growspace_id=GROWSPACE_ID,
+        first_triggered=now - timedelta(minutes=45),
+        last_probability=0.3,
+        peak_probability=0.95,
+        sensor_name="Stress Sensor",
+        notified=True,
+        notified_as_critical=True,
+    )
+
+    with patch.object(
+        manager, "async_send_notification", new_callable=AsyncMock
+    ) as mock_send:
+        await manager._async_send_recovery(GROWSPACE_ID, alert)
+        mock_send.assert_awaited_once()
+        title = mock_send.call_args[0][1]
+        message = mock_send.call_args[0][2]
+        assert "\u2705" in title
+        assert "resolved" in message.lower()
+        assert "45 minutes" in message
