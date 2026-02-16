@@ -1,7 +1,7 @@
 """Tests for the NotificationManager."""
 
 from datetime import timedelta
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, PropertyMock, patch
 
 from common import create_plant
 import pytest
@@ -540,7 +540,7 @@ async def test_async_send_batched_notification_multiple_sensors(
         await manager._async_send_batched_notification(GROWSPACE_ID)
         # Line 139-140 path
         args = mock_send.call_args[0]
-        assert "Multiple Issues" in args[1]
+        assert "Multiple Critical" in args[1]
         assert "Sensor 1" in args[2]
         assert "Sensor 2" in args[2]
 
@@ -600,18 +600,13 @@ async def test_async_send_batched_notification_unique_reasons(
 async def test_async_send_batched_notification_cooldown(
     manager: NotificationManager, mock_coordinator: MagicMock
 ) -> None:
-    """Test global cooldown in _async_send_batched_notification."""
+    """Test critical tier cooldown in _async_send_batched_notification."""
 
-    now = dt_util.utcnow()
-    manager._last_notification_sent[GROWSPACE_ID] = now
+    manager._set_cooldown(GROWSPACE_ID, NotificationTier.CRITICAL)
 
-    with patch(
-        "custom_components.growspace_manager.notification_manager.utcnow",
-        return_value=now + timedelta(seconds=5),
-    ):
-        # Cooldown is 1 min, so 5s later should still be active
-        await manager._async_send_batched_notification(GROWSPACE_ID)
-        # Should return early (line 98)
+    # Cooldown is 30 min, so immediate call should still be active
+    await manager._async_send_batched_notification(GROWSPACE_ID)
+    # Should return early due to critical cooldown
 
 
 async def test_async_send_batched_notification_empty_active(
@@ -979,3 +974,88 @@ async def test_check_pending_alerts_no_double_escalation(
     ):
         await manager.async_check_pending_alerts()
         mock_send.assert_not_awaited()
+
+
+# --- Task 6: Recovery notification tests ---
+
+
+async def test_recovery_notification_on_critical_resolve(
+    manager: NotificationManager, mock_hass: MagicMock
+) -> None:
+    """Test that recovery notification is sent when a critical alert resolves."""
+    now = dt_util.utcnow()
+    alert_key = f"{GROWSPACE_ID}_stress"
+    manager._pending_alerts[alert_key] = PendingAlert(
+        first_triggered=now - timedelta(minutes=45),
+        last_probability=0.92,
+        peak_probability=0.95,
+        sensor_name="Stress Sensor",
+        notified=True,
+        notified_as_critical=True,
+    )
+
+    sensor = MagicMock()
+    sensor.is_on = False
+    sensor.name = "Stress Sensor"
+    sensor._probability = 0.3
+    sensor.entity_description = MagicMock()
+    sensor.entity_description.sensor_type = "stress"
+
+    with patch.object(manager, "_schedule_recovery") as mock_recovery:
+        manager.update_pending_alert(GROWSPACE_ID, sensor)
+        mock_recovery.assert_called_once()
+
+    assert alert_key not in manager._pending_alerts
+
+
+async def test_no_recovery_for_warning_resolve(
+    manager: NotificationManager, mock_hass: MagicMock
+) -> None:
+    """Test that no recovery notification for warning-only alerts."""
+    now = dt_util.utcnow()
+    alert_key = f"{GROWSPACE_ID}_stress"
+    manager._pending_alerts[alert_key] = PendingAlert(
+        first_triggered=now - timedelta(minutes=25),
+        last_probability=0.75,
+        peak_probability=0.80,
+        sensor_name="Stress Sensor",
+        notified=True,
+        notified_as_critical=False,
+    )
+
+    sensor = MagicMock()
+    sensor.is_on = False
+    sensor.name = "Stress Sensor"
+    sensor._probability = 0.3
+    sensor.entity_description = MagicMock()
+    sensor.entity_description.sensor_type = "stress"
+
+    with patch.object(manager, "_schedule_recovery") as mock_recovery:
+        manager.update_pending_alert(GROWSPACE_ID, sensor)
+        mock_recovery.assert_not_called()
+
+
+async def test_send_recovery_notification(
+    manager: NotificationManager, mock_hass: MagicMock
+) -> None:
+    """Test the actual recovery notification send."""
+    now = dt_util.utcnow()
+    alert = PendingAlert(
+        first_triggered=now - timedelta(minutes=45),
+        last_probability=0.3,
+        peak_probability=0.95,
+        sensor_name="Stress Sensor",
+        notified=True,
+        notified_as_critical=True,
+    )
+
+    with patch.object(
+        manager, "async_send_notification", new_callable=AsyncMock
+    ) as mock_send:
+        await manager._async_send_recovery(GROWSPACE_ID, alert)
+        mock_send.assert_awaited_once()
+        title = mock_send.call_args[0][1]
+        message = mock_send.call_args[0][2]
+        assert "\u2705" in title
+        assert "resolved" in message.lower()
+        assert "45 minutes" in message

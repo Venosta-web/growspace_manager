@@ -126,7 +126,30 @@ class NotificationManager:
     @callback
     def _schedule_recovery(self, growspace_id: str, alert: PendingAlert) -> None:
         """Schedule a recovery notification for a resolved critical alert."""
-        # Will be fully implemented in Task 6
+        self.hass.async_create_task(
+            self._async_send_recovery(growspace_id, alert)
+        )
+
+    async def _async_send_recovery(
+        self, growspace_id: str, alert: PendingAlert
+    ) -> None:
+        """Send a recovery notification for a resolved critical alert."""
+        now = utcnow()
+        if self._is_on_cooldown(growspace_id, "recovery", now):
+            return
+
+        growspace = self.coordinator.growspaces.get(growspace_id)
+        gs_name = growspace.name if growspace else growspace_id
+
+        elapsed = (now - alert.first_triggered).total_seconds() / 60
+        title = f"\u2705 Resolved: {gs_name}"
+        message = (
+            f"{alert.sensor_name} in {gs_name} has resolved "
+            f"after {int(elapsed)} minutes"
+        )
+
+        self._set_cooldown(growspace_id, "recovery")
+        await self.async_send_notification(growspace_id, title, message)
 
     def attach_sensor(self, growspace_id: str, sensor: Any) -> None:
         """Register a sensor for batch notification tracking."""
@@ -182,12 +205,11 @@ class NotificationManager:
         self._batch_timers.pop(growspace_id, None)
 
         now = utcnow()
-        last_sent = self._last_notification_sent.get(growspace_id)
 
-        # Check global cooldown for this growspace
-        if last_sent and (now - last_sent) < self._notification_cooldown:
+        # Check tier-aware cooldown for critical (batched notifications are always critical)
+        if self._is_on_cooldown(growspace_id, NotificationTier.CRITICAL, now):
             _LOGGER.debug(
-                "Global notification cooldown active for %s, skipping batch",
+                "Critical cooldown active for %s, skipping batch",
                 growspace_id,
             )
             return
@@ -200,7 +222,7 @@ class NotificationManager:
 
         # Aggregate unique reasons across all sensors
         combined_reasons: list[tuple[float, str]] = []
-        seen_reasons = set()
+        seen_reasons: set[str] = set()
         sensor_names: list[str] = []
         all_sensor_states: dict[str, Any] = {}
 
@@ -210,7 +232,6 @@ class NotificationManager:
             except AttributeError:
                 name = sensor.entity_id
             sensor_names.append(name)
-            # Access public sensor properties
             all_sensor_states.update(sensor.sensor_states)
             for r_prob, r_text in sensor.reasons:
                 if r_text not in seen_reasons:
@@ -223,29 +244,23 @@ class NotificationManager:
 
         if len(active_sensors) == 1:
             sensor = active_sensors[0]
-            # Use specialized title logic from sensor if available
             title_msg = sensor.get_notification_title_message(True)
             if title_msg and len(title_msg) == 2:
                 title, base_message = title_msg
             else:
-                title = f"{getattr(sensor, 'name', sensor.entity_id)}: {gs_name}"
+                title = f"\U0001f534 {getattr(sensor, 'name', sensor.entity_id)}: {gs_name}"
                 base_message = f"Issue detected in {gs_name}"
         else:
-            title = f"Multiple Issues: {gs_name}"
+            title = f"\U0001f534 Multiple Critical: {gs_name}"
             base_message = f"Critical alerts in {gs_name} ({', '.join(sensor_names)})"
 
         message = self.generate_notification_message(base_message, combined_reasons)
 
-        # Actually send via the non-batched method which handles AI/Service calls
-        # We manually update _last_notification_sent here so that async_send_notification
-        # correctly passes the cooldown check (if we let it check it again).
-        # Actually, async_send_notification checks cooldown at the start.
-        # So we should be careful.
-        # Let's call the low-level logic or just bypass the internal cooldown check in async_send_notification
-        # by NOT updating self._last_notification_sent yet.
-
+        self._set_cooldown(growspace_id, NotificationTier.CRITICAL)
         await self.async_send_notification(
-            growspace_id, title, message, sensor_states=all_sensor_states
+            growspace_id, title, message,
+            sensor_states=all_sensor_states,
+            tier=NotificationTier.CRITICAL,
         )
 
     async def async_send_notification(
