@@ -84,7 +84,7 @@ class NotificationManager:
         last_sent = cooldown_map.get(tier)
         if not last_sent:
             return False
-        cooldown_duration = self._TIER_COOLDOWNS.get(tier, timedelta(minutes=30))
+        cooldown_duration = self._TIER_COOLDOWNS.get(tier, timedelta(minutes=CRITICAL_COOLDOWN_MINUTES))
         return (now - last_sent) < cooldown_duration
 
     @callback
