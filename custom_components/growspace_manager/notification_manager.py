@@ -259,7 +259,6 @@ class NotificationManager:
 
         message = self.generate_notification_message(base_message, combined_reasons)
 
-        self._set_cooldown(growspace_id, NotificationTier.CRITICAL)
         await self.async_send_notification(
             growspace_id,
             title,
@@ -339,6 +338,9 @@ class NotificationManager:
                 title,
                 final_message,
             )
+            # Set cooldown after successful send (not before)
+            if tier:
+                self._set_cooldown(growspace_id, tier)
         except (AttributeError, TypeError, ValueError) as e:
             _LOGGER.error(
                 "Failed to send notification to %s: %s", notification_service, e
@@ -552,7 +554,6 @@ class NotificationManager:
             f"for {int(elapsed_minutes)} minutes"
         )
 
-        self._set_cooldown(growspace_id, NotificationTier.WARNING)
         await self.async_send_notification(
             growspace_id, title, message, tier=NotificationTier.WARNING
         )
@@ -570,7 +571,6 @@ class NotificationManager:
             f"(peak: {int(alert.peak_probability * 100)}%)"
         )
 
-        self._set_cooldown(growspace_id, NotificationTier.CRITICAL)
         await self.async_send_notification(
             growspace_id, title, message, tier=NotificationTier.CRITICAL
         )
