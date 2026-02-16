@@ -278,6 +278,10 @@ class VWCIrrigationCoordinator(BaseIrrigationCoordinator):
             "duration": duration,
         }
 
+        # Initialize timing variables
+        start_time: datetime | None = None
+        end_time: datetime | None = None
+
         try:
             await self.hass.services.async_call(
                 "switch", "turn_on", {"entity_id": pump_entity}, blocking=True
@@ -302,9 +306,10 @@ class VWCIrrigationCoordinator(BaseIrrigationCoordinator):
             await self.hass.services.async_call(
                 "switch", "turn_off", {"entity_id": pump_entity}, blocking=True
             )
-            # Log Event
-            actual_duration = int((end_time - start_time).total_seconds())
-            await self._log_event(phase, actual_duration, start_time, end_time)
+            # Log Event - only if we have a valid start time
+            if start_time:
+                actual_duration = int((end_time - start_time).total_seconds())
+                await self._log_event(phase, actual_duration, start_time, end_time)
 
     async def _log_event(
         self, phase: str, duration: int, start_time: datetime, end_time: datetime

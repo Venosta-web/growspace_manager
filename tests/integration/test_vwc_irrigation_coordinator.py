@@ -25,6 +25,17 @@ def mock_sleep():
         yield mock_sleep
 
 
+# Patch _async_wait_for_switch_state globally for this test module
+@pytest.fixture(autouse=True)
+def mock_wait_for_switch_state():
+    with patch(
+        "custom_components.growspace_manager.vwc_irrigation_coordinator.VWCIrrigationCoordinator._async_wait_for_switch_state",
+        new_callable=AsyncMock,
+        return_value=True,
+    ) as mock:
+        yield mock
+
+
 @pytest.fixture
 def mock_hass():
     hass = MagicMock()
