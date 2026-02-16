@@ -1,26 +1,23 @@
-# Home Assistant Core
-# Pin homeassistant; let it manage its own transitive deps (voluptuous, etc.)
+# Home Assistant Core — pin this; it manages voluptuous, Pillow, etc.
 homeassistant==2026.1.3
 
-# Test Dependencies — pinned to prevent pip backtracking in CI
+# Test framework — pin this; it manages pytest, coverage, pytest-asyncio, etc.
 pytest-homeassistant-custom-component==0.13.205
-pytest==9.0.2
-pytest-asyncio==1.3.0
-pytest-cov==7.0.0
-pytest-xdist==3.8.0
-coverage==7.13.4
+
+# Independent test utilities (NOT managed by either root package above)
 syrupy==5.1.0
 freezegun==1.5.5
 requests-mock==1.12.1
+pytest-xdist==3.8.0
 
-# Lint / QA
+# Lint / QA (independent tools)
 ruff==0.15.1
 pre-commit==4.5.1
 pylint==4.0.4
 yamllint==1.38.0
 codespell==2.4.1
 
-# Utilities
+# Utilities (independent)
 pydantic==2.12.5
 pipdeptree==2.30.0
 aiodhcpwatcher==1.2.1
