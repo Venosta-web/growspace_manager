@@ -23,10 +23,10 @@ from .const import (
     ESCALATION_DELAY_MINUTES,
     MAX_NOTIFICATION_LENGTH,
     NOTIFICATION_DEBOUNCE_SECONDS,
-    NotificationTier,
     RECOVERY_COOLDOWN_MINUTES,
     WARNING_COOLDOWN_MINUTES,
     WARNING_PERSISTENCE_MINUTES,
+    NotificationTier,
 )
 from .domain import calculate_days_in_stage
 
@@ -56,6 +56,7 @@ class NotificationManager:
         """Initialize the notification manager."""
         self.hass = hass
         self.coordinator = coordinator
+        # Legacy cooldown for timed notifications (non-tiered)
         self._last_notification_sent: dict[str, datetime] = {}
         self._notification_cooldown = timedelta(minutes=DEFAULT_COOLDOWN_MINUTES)
         self._registered_sensors: dict[str, set[Any]] = {}
@@ -99,7 +100,7 @@ class NotificationManager:
                 self._schedule_recovery(growspace_id, alert)
             return
 
-        probability = sensor._probability
+        probability = sensor._probability  # noqa: SLF001
         now = utcnow()
 
         if alert_key in self._pending_alerts:
@@ -126,9 +127,7 @@ class NotificationManager:
     @callback
     def _schedule_recovery(self, growspace_id: str, alert: PendingAlert) -> None:
         """Schedule a recovery notification for a resolved critical alert."""
-        self.hass.async_create_task(
-            self._async_send_recovery(growspace_id, alert)
-        )
+        self.hass.async_create_task(self._async_send_recovery(growspace_id, alert))
 
     async def _async_send_recovery(
         self, growspace_id: str, alert: PendingAlert
@@ -163,7 +162,9 @@ class NotificationManager:
             self._registered_sensors[growspace_id].discard(sensor)
 
     def trigger_cooldown(self, growspace_id: str) -> None:
-        """Manually trigger the notification cooldown for a growspace."""
+        """Manually trigger notification cooldown for a growspace (e.g., light switch)."""
+        self._set_cooldown(growspace_id, NotificationTier.CRITICAL)
+        self._set_cooldown(growspace_id, NotificationTier.WARNING)
         self._last_notification_sent[growspace_id] = utcnow()
         _LOGGER.debug("Notification cooldown triggered for %s", growspace_id)
 
@@ -248,7 +249,9 @@ class NotificationManager:
             if title_msg and len(title_msg) == 2:
                 title, base_message = title_msg
             else:
-                title = f"\U0001f534 {getattr(sensor, 'name', sensor.entity_id)}: {gs_name}"
+                title = (
+                    f"\U0001f534 {getattr(sensor, 'name', sensor.entity_id)}: {gs_name}"
+                )
                 base_message = f"Issue detected in {gs_name}"
         else:
             title = f"\U0001f534 Multiple Critical: {gs_name}"
@@ -258,7 +261,9 @@ class NotificationManager:
 
         self._set_cooldown(growspace_id, NotificationTier.CRITICAL)
         await self.async_send_notification(
-            growspace_id, title, message,
+            growspace_id,
+            title,
+            message,
             sensor_states=all_sensor_states,
             tier=NotificationTier.CRITICAL,
         )
@@ -493,6 +498,7 @@ class NotificationManager:
                         growspace.id,
                         title="⚠️ Low Irrigation Tank Level",
                         message=f"{tank.name} in {growspace.name} is at {level:.0f}% (warning at {tank.warning_level:.0f}%)",
+                        tier=NotificationTier.CRITICAL,
                     )
 
     async def async_check_pending_alerts(self) -> None:
@@ -614,9 +620,7 @@ class NotificationManager:
         message: str,
     ) -> None:
         """Check and trigger notification for a specific plant."""
-        days_in_stage = calculate_days_in_stage(
-            plant, trigger_type
-        )
+        days_in_stage = calculate_days_in_stage(plant, trigger_type)
 
         if days_in_stage >= day_to_trigger:
             notification_key = f"timed_{notification_id}"

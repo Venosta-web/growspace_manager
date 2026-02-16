@@ -791,9 +791,12 @@ class BayesianEnvironmentSensor(
             self._event_start_time = None
             self._event_max_prob = 0.0
 
-        if new_state_on != old_state_on:
-            # Trigger debounced batched notification instead of direct sending
-            self.notification_manager.async_schedule_notification(self.growspace_id)
+        # Update pending alert state on every probability update
+        # (replaces direct async_schedule_notification call on state change)
+        if self.entity_description.sensor_type != GrowspaceSensorType.OPTIMAL:
+            self.notification_manager.update_pending_alert(
+                self.growspace_id, self
+            )
 
         self.async_write_ha_state()
 

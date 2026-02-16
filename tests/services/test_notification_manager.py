@@ -1035,6 +1035,37 @@ async def test_no_recovery_for_warning_resolve(
         mock_recovery.assert_not_called()
 
 
+async def test_tank_level_uses_critical_tier(
+    manager: NotificationManager, mock_coordinator: MagicMock, mock_hass: MagicMock
+) -> None:
+    """Test that tank level alerts use critical tier."""
+    tank = IrrigationTank(
+        sensor_entity="sensor.tank1", name="Water Tank", warning_level=30.0
+    )
+    gs = mock_coordinator.growspaces[GROWSPACE_ID]
+    gs.environment_config = EnvironmentConfig(irrigation_tanks=[tank])
+
+    mock_state = MagicMock()
+    mock_state.state = "10.0 %"
+    mock_hass.states = MagicMock()
+    mock_hass.states.get.return_value = mock_state
+
+    with (
+        patch(
+            "custom_components.growspace_manager.presentation.entity_queries.EntityQueries"
+        ) as mock_queries,
+        patch.object(
+            manager, "async_send_notification", new_callable=AsyncMock
+        ) as mock_send,
+    ):
+        mock_instance = mock_queries.return_value
+        mock_instance.parse_tank_level.return_value = 10.0
+        await manager.async_check_tank_levels()
+        mock_send.assert_awaited_once()
+        call_kwargs = mock_send.call_args[1]
+        assert call_kwargs.get("tier") == "critical"
+
+
 async def test_send_recovery_notification(
     manager: NotificationManager, mock_hass: MagicMock
 ) -> None:

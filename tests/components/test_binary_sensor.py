@@ -309,8 +309,8 @@ async def test_notification_sending(
     await hass.async_block_till_done()
     # Use real NotificationManager to allow awaiting its internal methods
     sensor.notification_manager = NotificationManager(hass, mock_coordinator)
-    # But mock the schedule call to verify it was called by the sensor
-    sensor.notification_manager.async_schedule_notification = MagicMock()
+    # Mock update_pending_alert to verify it was called by the sensor
+    sensor.notification_manager.update_pending_alert = MagicMock()
 
     with (
         patch.object(sensor, "async_write_ha_state", new_callable=MagicMock),
@@ -319,6 +319,7 @@ async def test_notification_sending(
     assert not sensor.is_on
 
     # Second update - trigger notification by state change
+    sensor.notification_manager.update_pending_alert.reset_mock()
     with (
         patch.object(
             sensor, "get_notification_title_message", return_value=("Title", "Message")
@@ -330,9 +331,9 @@ async def test_notification_sending(
         await hass.async_block_till_done()
         await sensor.async_update_and_notify()
 
-        # Verify notification was scheduled
-        sensor.notification_manager.async_schedule_notification.assert_called_once_with(
-            "gs1"
+        # Verify pending alert was updated (replaces async_schedule_notification)
+        sensor.notification_manager.update_pending_alert.assert_called_with(
+            "gs1", sensor
         )
 
         # Manually trigger batch to verify content integration
@@ -433,14 +434,17 @@ async def test_stress_sensor_notification_on_state_change(
     ):
         await sensor.async_update_and_notify()
         assert sensor.is_on
-        sensor.notification_manager.async_schedule_notification.assert_called_once_with(
-            "gs1"
+        sensor.notification_manager.update_pending_alert.assert_called_with(
+            "gs1", sensor
         )
 
-        sensor.notification_manager.async_schedule_notification.reset_mock()
+        sensor.notification_manager.update_pending_alert.reset_mock()
         await sensor.async_update_and_notify()
         assert sensor.is_on
-        sensor.notification_manager.async_schedule_notification.assert_not_called()
+        # update_pending_alert is called on every update, not just state changes
+        sensor.notification_manager.update_pending_alert.assert_called_with(
+            "gs1", sensor
+        )
 
 
 @pytest.mark.asyncio
@@ -472,9 +476,8 @@ async def test_optimal_conditions_notification_on_state_change(
     ):
         await sensor.async_update_and_notify()
         assert not sensor.is_on
-        sensor.notification_manager.async_schedule_notification.assert_called_once_with(
-            "gs1"
-        )
+        # OPTIMAL sensors are excluded from update_pending_alert
+        sensor.notification_manager.update_pending_alert.assert_not_called()
 
 
 def testgenerate_notification_message_truncation(
@@ -653,8 +656,8 @@ async def test_bayesian_stress_sensor_granular(
 
     # Use real NotificationManager to allow awaiting its internal methods
     sensor.notification_manager = NotificationManager(hass, mock_coordinator)
-    # But mock the schedule call to verify it was called by the sensor
-    sensor.notification_manager.async_schedule_notification = MagicMock()
+    # But mock the update_pending_alert call to verify it was called by the sensor
+    sensor.notification_manager.update_pending_alert = MagicMock()
 
     # Mock sensor states
     set_sensor_state(hass, "sensor.temp", sensor_readings.get("temp", 25))
@@ -693,9 +696,9 @@ async def test_bayesian_stress_sensor_granular(
             f"Probability: {sensor._probability}. Reasons: {sensor._reasons}"
         )
 
-        # 2. Assert the notification was scheduled
-        sensor.notification_manager.async_schedule_notification.assert_called_once_with(
-            "gs1"
+        # 2. Assert the pending alert was updated
+        sensor.notification_manager.update_pending_alert.assert_called_with(
+            "gs1", sensor
         )
 
         # 3. Check that the expected reason fragment is in the notification message

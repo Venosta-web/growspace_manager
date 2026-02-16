@@ -586,6 +586,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self.data = self.view_model_builder.build_data_property()
         await self.notification_manager.async_check_timed_notifications()
         await self.notification_manager.async_check_tank_levels()
+        await self.notification_manager.async_check_pending_alerts()
         await self.environment_analyzer.async_update_air_exchange_recommendations()
 
         return self.data
