@@ -278,19 +278,27 @@ class VWCIrrigationCoordinator(BaseIrrigationCoordinator):
             "duration": duration,
         }
 
-        start_time = utcnow()
         try:
             await self.hass.services.async_call(
                 "switch", "turn_on", {"entity_id": pump_entity}, blocking=True
             )
+
+            # Wait for switch to confirm ON state (critical for Matter smart plugs)
+            await self._async_wait_for_switch_state(pump_entity, "on")
+
+            # Start timing AFTER switch confirms ON
+            start_time = utcnow()
+
             await asyncio.sleep(duration)
         except asyncio.CancelledError:
             pass
         finally:
+            # Record end time BEFORE turning off (to exclude turn-off latency)
+            end_time = utcnow()
+
             # Clear active event
             self._active_events.pop("irrigation", None)
 
-            end_time = utcnow()
             await self.hass.services.async_call(
                 "switch", "turn_off", {"entity_id": pump_entity}, blocking=True
             )

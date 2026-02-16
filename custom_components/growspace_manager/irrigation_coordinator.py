@@ -10,7 +10,8 @@ import logging
 from typing import TYPE_CHECKING, Any, override
 
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.core import HomeAssistant, callback
+from homeassistant.const import EVENT_STATE_CHANGED
+from homeassistant.core import Event, HomeAssistant, callback
 from homeassistant.helpers.event import async_track_time_change
 from homeassistant.util.dt import now as dt_now, utcnow
 
@@ -106,6 +107,73 @@ class BaseIrrigationCoordinator:
             return float(state.state)
         except ValueError:
             return None
+
+    async def _async_wait_for_switch_state(
+        self, entity_id: str, target_state: str, timeout: float = 10.0
+    ) -> bool:
+        """Wait for entity to reach target state.
+
+        This is critical for Matter smart plugs and other devices with high latency.
+        We don't start the irrigation timer until the device confirms it's ON.
+
+        Args:
+            entity_id: The entity to monitor
+            target_state: The state to wait for ("on" or "off")
+            timeout: Maximum time to wait in seconds
+
+        Returns:
+            True if state was confirmed, False if timed out
+        """
+        # Check if already in target state
+        current_state = self.hass.states.get(entity_id)
+        if current_state and current_state.state == target_state:
+            _LOGGER.debug(
+                "%s is already in state '%s'",
+                entity_id,
+                target_state,
+            )
+            return True
+
+        # Set up event to signal when state changes
+        state_reached = asyncio.Event()
+
+        @callback
+        def state_change_listener(event: Event) -> None:
+            """Listen for state changes."""
+            event_entity_id = event.data.get("entity_id")
+            if event_entity_id != entity_id:
+                return
+
+            new_state = event.data.get("new_state")
+            if new_state and new_state.state == target_state:
+                state_reached.set()
+
+        # Subscribe to state change events
+        remove_listener = self.hass.bus.async_listen(
+            EVENT_STATE_CHANGED, state_change_listener
+        )
+
+        try:
+            # Wait for state change or timeout
+            await asyncio.wait_for(state_reached.wait(), timeout=timeout)
+            _LOGGER.debug(
+                "%s confirmed state '%s'",
+                entity_id,
+                target_state,
+            )
+            return True
+        except TimeoutError:
+            _LOGGER.warning(
+                "%s did not confirm state '%s' within %s seconds. "
+                "This may indicate high device latency (e.g., Matter smart plug). "
+                "Proceeding anyway, but irrigation duration may be inaccurate",
+                entity_id,
+                target_state,
+                timeout,
+            )
+            return False
+        finally:
+            remove_listener()
 
 
 class IrrigationCoordinator(BaseIrrigationCoordinator):
@@ -427,7 +495,6 @@ class IrrigationCoordinator(BaseIrrigationCoordinator):
                     self.growspace.environment_config.soil_moisture_sensor
                 )
 
-            start_dt = utcnow()
             _LOGGER.info(
                 "Starting %s for %s (entity: %s), running for %s seconds",
                 event_type,
@@ -438,6 +505,12 @@ class IrrigationCoordinator(BaseIrrigationCoordinator):
             await self.hass.services.async_call(
                 "switch", "turn_on", {"entity_id": pump_entity}, blocking=True
             )
+
+            # Wait for switch to confirm ON state (critical for Matter smart plugs)
+            await self._async_wait_for_switch_state(pump_entity, "on")
+
+            # Start timing AFTER switch confirms ON
+            start_dt = utcnow()
 
             await self._async_send_cycle_notification(event_type, duration, event_data)
 
@@ -459,11 +532,13 @@ class IrrigationCoordinator(BaseIrrigationCoordinator):
                 e,
             )
         finally:
+            # Record end time BEFORE turning off (to exclude turn-off latency)
+            end_dt = utcnow()
+
             try:
                 # Clear active event
                 self._active_events.pop(event_type, None)
 
-                end_dt = utcnow()
                 # Ensure start_dt is defined
                 if start_dt:
                     duration_sec = (end_dt - start_dt).total_seconds()
