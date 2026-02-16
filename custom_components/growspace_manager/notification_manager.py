@@ -29,6 +29,7 @@ from .const import (
     NotificationTier,
 )
 from .domain import calculate_days_in_stage
+from .presentation import EntityQueries
 
 if TYPE_CHECKING:
     from .coordinator import GrowspaceCoordinator
@@ -478,7 +479,6 @@ class NotificationManager:
 
     async def async_check_tank_levels(self) -> None:
         """Check all irrigation tank levels and notify if below warning threshold."""
-        from .presentation import EntityQueries
 
         entity_queries = EntityQueries(self.hass)
 

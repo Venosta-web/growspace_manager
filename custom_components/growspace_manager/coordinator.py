@@ -863,7 +863,6 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self, growspace_id: str, new_rows: int, new_plants_per_row: int
     ) -> None:
         """Compatibility alias for GrowspaceManager legacy method."""
-        import asyncio
 
         asyncio.create_task(
             self.growspace_manager._validate_plants_after_growspace_resize(
