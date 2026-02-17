@@ -25,3 +25,4 @@ freezegun
 requests-mock
 hassil
 home-assistant-intents
+syrupy>=4.0.0
