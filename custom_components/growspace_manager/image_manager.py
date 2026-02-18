@@ -430,6 +430,6 @@ class ImageManager:
             # Return absolute path as string
             return str(file_path.absolute())
 
-        except Exception as e:
+        except (binascii.Error, UnidentifiedImageError, OSError) as e:
             _LOGGER.error("Error saving breeder logo: %s", e)
             raise
