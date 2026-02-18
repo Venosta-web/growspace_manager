@@ -897,6 +897,74 @@ async def _get_history_with_binary_search_downsample(
     return await hass.async_add_executor_job(_downsample_with_binary_search)  # type: ignore[no-any-return]  # executor returns Any
 
 
+# Breeder Management WebSockets
+WS_TYPE_UPDATE_BREEDER = f"{DOMAIN}/update_breeder"
+SCHEMA_WS_UPDATE_BREEDER = websocket_api.BASE_COMMAND_MESSAGE_SCHEMA.extend(
+    {
+        vol.Required("type"): WS_TYPE_UPDATE_BREEDER,
+        vol.Required("original_name"): str,
+        vol.Required("new_name"): str,
+        vol.Optional("logo"): str,
+    }
+)
+
+WS_TYPE_DELETE_BREEDER = f"{DOMAIN}/delete_breeder"
+SCHEMA_WS_DELETE_BREEDER = websocket_api.BASE_COMMAND_MESSAGE_SCHEMA.extend(
+    {
+        vol.Required("type"): WS_TYPE_DELETE_BREEDER,
+        vol.Required("breeder_name"): str,
+    }
+)
+
+
+async def websocket_update_breeder(
+    hass: HomeAssistant,
+    connection: websocket_api.ActiveConnection,
+    msg: dict[str, Any],
+) -> None:
+    """Handle updating breeder info across all strains."""
+    try:
+        if DOMAIN not in hass.data or "strain_library" not in hass.data[DOMAIN]:
+            connection.send_error(
+                msg["id"], "not_loaded", "Growspace Manager strain library not loaded"
+            )
+            return
+
+        strain_library: StrainLibrary = hass.data[DOMAIN]["strain_library"]
+        count = await strain_library.update_breeder(
+            original_name=msg["original_name"],
+            new_name=msg["new_name"],
+            logo=msg.get("logo"),
+        )
+        connection.send_result(msg["id"], {"updated": count})
+    except Exception as err:
+        _LOGGER.exception("Error handling websocket_update_breeder")
+        connection.send_error(msg["id"], "unknown_error", str(err))
+
+
+async def websocket_delete_breeder(
+    hass: HomeAssistant,
+    connection: websocket_api.ActiveConnection,
+    msg: dict[str, Any],
+) -> None:
+    """Handle removing breeder association from all strains."""
+    try:
+        if DOMAIN not in hass.data or "strain_library" not in hass.data[DOMAIN]:
+            connection.send_error(
+                msg["id"], "not_loaded", "Growspace Manager strain library not loaded"
+            )
+            return
+
+        strain_library: StrainLibrary = hass.data[DOMAIN]["strain_library"]
+        count = await strain_library.delete_breeder(
+            breeder_name=msg["breeder_name"],
+        )
+        connection.send_result(msg["id"], {"deleted": count})
+    except Exception as err:
+        _LOGGER.exception("Error handling websocket_delete_breeder")
+        connection.send_error(msg["id"], "unknown_error", str(err))
+
+
 @callback
 def async_register_websocket_api(hass: HomeAssistant) -> None:
     """Register WebSocket API commands."""
@@ -985,4 +1053,18 @@ def async_register_websocket_api(hass: HomeAssistant) -> None:
         WS_TYPE_REMOVE_TIMELINE_EVENT,
         websocket_api.async_response(websocket_remove_timeline_event),
         SCHEMA_WS_REMOVE_TIMELINE_EVENT,
+    )
+
+    websocket_api.async_register_command(
+        hass,
+        WS_TYPE_UPDATE_BREEDER,
+        websocket_api.async_response(websocket_update_breeder),
+        SCHEMA_WS_UPDATE_BREEDER,
+    )
+
+    websocket_api.async_register_command(
+        hass,
+        WS_TYPE_DELETE_BREEDER,
+        websocket_api.async_response(websocket_delete_breeder),
+        SCHEMA_WS_DELETE_BREEDER,
     )

@@ -288,6 +288,90 @@ class StrainLibrary:
                 )
             return int(phenotype_row[0])
 
+    async def update_breeder(
+        self,
+        original_name: str,
+        new_name: str,
+        logo: str | None = None,
+    ) -> int:
+        """Update breeder name and/or logo across all strains.
+
+        Args:
+            original_name: Current breeder name to match.
+            new_name: New breeder name (can be same as original for logo-only update).
+            logo: New breeder logo (base64 or path). None means no change.
+
+        Returns:
+            Number of strains updated.
+        """
+        if self._db is None:
+            _LOGGER.warning("Database not connected, cannot update breeder")
+            return 0
+
+        original_name = original_name.strip()
+        new_name = new_name.strip()
+
+        if not original_name or not new_name:
+            return 0
+
+        # Handle logo: if base64, save via image manager
+        logo_path = logo
+        if logo and logo.startswith("data:"):
+            safe_breeder = slugify(new_name)
+            abs_path = await self.image_manager.save_breeder_logo(safe_breeder, logo)
+            logo_path = f"/local/growspace_manager/strains/{Path(abs_path).name}"
+
+        # Build update query
+        if logo == "":
+            # Explicitly clear logo
+            query = "UPDATE strains SET breeder = ?, breeder_logo = NULL WHERE breeder = ?"
+            await self._db.execute(query, (new_name, original_name))
+        elif logo_path is not None:
+            query = "UPDATE strains SET breeder = ?, breeder_logo = ? WHERE breeder = ?"
+            await self._db.execute(query, (new_name, logo_path, original_name))
+        else:
+            # This branch is taken when logo is None (no change to logo)
+            query = "UPDATE strains SET breeder = ? WHERE breeder = ?"
+            await self._db.execute(query, (new_name, original_name))
+
+        changes = self._db.total_changes
+        await self._db.commit()
+        await self.load()
+
+        _LOGGER.info(
+            "Updated breeder '%s' → '%s' across %d strains",
+            original_name,
+            new_name,
+            changes,
+        )
+        return changes
+
+    async def delete_breeder(self, breeder_name: str) -> int:
+        """Remove breeder association from all strains.
+
+        Args:
+            breeder_name: Breeder name to clear.
+
+        Returns:
+            Number of strains updated.
+        """
+        if self._db is None:
+            _LOGGER.warning("Database not connected, cannot delete breeder")
+            return 0
+
+        breeder_name = breeder_name.strip()
+        if not breeder_name:
+            return 0
+
+        query = "UPDATE strains SET breeder = NULL, breeder_logo = NULL WHERE breeder = ?"
+        await self._db.execute(query, (breeder_name,))
+        changes = self._db.total_changes
+        await self._db.commit()
+        await self.load()
+
+        _LOGGER.info("Cleared breeder '%s' from %d strains", breeder_name, changes)
+        return changes
+
     async def add_strain(
         self,
         strain: str,

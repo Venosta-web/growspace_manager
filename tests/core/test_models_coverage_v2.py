@@ -6,7 +6,7 @@ from custom_components.growspace_manager.models import Growspace, NutrientPreset
 
 
 def test_growspace_irrigation_config_invalid_duration_seconds() -> None:
-    """Test Growspace deserialization with invalid duration_seconds in irrigation config."""
+    """Test Growspace deserialization with invalid duration_seconds normalizes to duration=60."""
     data = {
         "id": "gs1",
         "name": "Test",
@@ -15,8 +15,11 @@ def test_growspace_irrigation_config_invalid_duration_seconds() -> None:
         },
     }
     gs = Growspace.from_dict(data)
-    # Should fallback to 60
-    assert gs.irrigation_config.irrigation_times[0]["duration_seconds"] == 60
+    # start_time normalized to time, duration_seconds (invalid) normalized to duration=60
+    assert gs.irrigation_config.irrigation_times[0]["time"] == "08:00"
+    assert gs.irrigation_config.irrigation_times[0]["duration"] == 60
+    assert "start_time" not in gs.irrigation_config.irrigation_times[0]
+    assert "duration_seconds" not in gs.irrigation_config.irrigation_times[0]
 
 
 def test_plant_get_days_since_watering_with_value() -> None:

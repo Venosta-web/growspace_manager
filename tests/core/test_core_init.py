@@ -895,7 +895,7 @@ async def test_async_register_websocket_api(mock_hass) -> None:
         "homeassistant.components.websocket_api.async_register_command"
     ) as mock_reg:
         async_register_websocket_api(mock_hass)
-        assert mock_reg.call_count == 13
+        assert mock_reg.call_count == 15
 
 
 @pytest.mark.asyncio

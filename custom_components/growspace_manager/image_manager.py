@@ -376,3 +376,60 @@ class ImageManager:
                     self._image_cache.discard(filename)
                 except OSError as e:
                     _LOGGER.error("Error deleting image %s: %s", file_path, e)
+
+    async def save_breeder_logo(self, breeder_slug: str, base64_data: str) -> str:
+        """Save a breeder logo image.
+
+        Args:
+            breeder_slug: Slugified breeder name for filename.
+            base64_data: Base64-encoded image data.
+
+        Returns:
+            Absolute path to saved image file.
+        """
+        return cast(
+            str,
+            await self.hass.async_add_executor_job(
+                self._save_breeder_logo_sync, breeder_slug, base64_data
+            ),
+        )
+
+    def _save_breeder_logo_sync(self, breeder_slug: str, base64_data: str) -> str:
+        """Synchronous helper to save breeder logo as WebP with a thumbnail."""
+        try:
+            # Remove header if present
+            if "," in base64_data:
+                base64_data = base64_data.split(",")[1]
+
+            image_data = base64.b64decode(base64_data)
+            image = Image.open(BytesIO(image_data))
+
+            # Convert to RGB (WebP supports RGBA, but RGB is safer for photos)
+            if image.mode not in ("RGB", "RGBA"):
+                image = image.convert("RGB")
+
+            # Generate base filename
+            filename = f"breeder_{breeder_slug}.webp"
+            small_filename = f"breeder_{breeder_slug}_small.webp"
+
+            file_path = self.storage_dir / filename
+            small_file_path = self.storage_dir / small_filename
+
+            # 1. Save Full Size Optimized WebP
+            image.save(file_path, "WEBP", quality=85, method=4)
+
+            # 2. Save Thumbnail (Resize to ~320px width for cards)
+            thumb_img = image.copy()
+            thumb_img.thumbnail((320, 320))
+            thumb_img.save(small_file_path, "WEBP", quality=80, method=4)
+
+            # Update cache
+            self._image_cache.add(filename)
+            self._image_cache.add(small_filename)
+
+            # Return absolute path as string
+            return str(file_path.absolute())
+
+        except (binascii.Error, UnidentifiedImageError, OSError) as e:
+            _LOGGER.error("Error saving breeder logo: %s", e)
+            raise
