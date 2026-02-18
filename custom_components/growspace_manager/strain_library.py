@@ -322,14 +322,15 @@ class StrainLibrary:
             logo_path = f"/local/growspace_manager/strains/{Path(abs_path).name}"
 
         # Build update query
-        if logo_path is not None:
-            query = "UPDATE strains SET breeder = ?, breeder_logo = ? WHERE breeder = ?"
-            await self._db.execute(query, (new_name, logo_path, original_name))
-        elif logo == "":
+        if logo == "":
             # Explicitly clear logo
             query = "UPDATE strains SET breeder = ?, breeder_logo = NULL WHERE breeder = ?"
             await self._db.execute(query, (new_name, original_name))
+        elif logo_path is not None:
+            query = "UPDATE strains SET breeder = ?, breeder_logo = ? WHERE breeder = ?"
+            await self._db.execute(query, (new_name, logo_path, original_name))
         else:
+            # This branch is taken when logo is None (no change to logo)
             query = "UPDATE strains SET breeder = ? WHERE breeder = ?"
             await self._db.execute(query, (new_name, original_name))
 
