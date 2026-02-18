@@ -116,15 +116,17 @@ def test_nutrient_preset_nutrients_setter() -> None:
 
 
 def test_irrigation_config_deserialize_migration() -> None:
-    """Test IrrigationConfig migration logic."""
+    """Test IrrigationConfig migration normalizes to time/duration format."""
     data = {
         "id": "gs1",
         "name": "Test",
         "irrigation_config": {
             "veg_day_hours": "18.5",  # String float
             "irrigation_times": [
+                # Old format with time/duration keys - kept as-is
                 {"time": "08:00", "duration": "60.5"},
-                {"duration_seconds": "120.5"},
+                # New format with start_time/duration_seconds - normalized to time/duration
+                {"start_time": "09:00", "duration_seconds": "120.5"},
             ],
             "drain_times": [
                 {"duration": "invalid"}  # Should default to 60
@@ -135,14 +137,21 @@ def test_irrigation_config_deserialize_migration() -> None:
 
     assert gs.irrigation_config.veg_day_hours == 18
 
-    # Check irrigation_times migration
+    # Check irrigation_times normalization - all items should use time/duration keys
     times = gs.irrigation_config.irrigation_times
     assert len(times) == 2
-    assert times[0]["start_time"] == "08:00"
-    assert times[0]["duration_seconds"] == 60
-    assert times[1]["duration_seconds"] == 120
+    # Old format entry: time/duration keys kept, values coerced to int
+    assert times[0]["time"] == "08:00"
+    assert times[0]["duration"] == 60
+    assert "start_time" not in times[0]
+    assert "duration_seconds" not in times[0]
+    # New format entry: start_time/duration_seconds normalized to time/duration
+    assert times[1]["time"] == "09:00"
+    assert times[1]["duration"] == 120
+    assert "start_time" not in times[1]
+    assert "duration_seconds" not in times[1]
 
     # Check drain_times defaults
     drains = gs.irrigation_config.drain_times
     assert len(drains) == 1
-    assert drains[0]["duration_seconds"] == 60
+    assert drains[0]["duration"] == 60

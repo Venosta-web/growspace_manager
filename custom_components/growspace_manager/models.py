@@ -375,7 +375,7 @@ class Growspace(BaseModel):
 
         Handles:
         - Sanitization: rows/plants_per_row strings → integers
-        - Migration: irrigation_config legacy format (time → start_time, duration → duration_seconds)
+        - Migration: irrigation_config normalize to time/duration format (start_time → time, duration_seconds → duration)
         - Sanitization: irrigation_strategy integer fields
         """
         data = data.copy()
@@ -408,27 +408,32 @@ class Growspace(BaseModel):
                     for item in irr_config[list_key]:
                         if isinstance(item, dict):
                             item = item.copy()
-                            # Migrate 'time' -> 'start_time'
-                            if "time" in item and "start_time" not in item:
-                                item["start_time"] = item.pop("time")
+                            # Normalize to time/duration format (coordinator reads these keys).
+                            # Migrate 'start_time' -> 'time'
+                            if "start_time" in item and "time" not in item:
+                                item["time"] = item.pop("start_time")
+                            # Remove stale start_time if both keys exist
+                            elif "start_time" in item and "time" in item:
+                                del item["start_time"]
 
-                            # Migrate 'duration' -> 'duration_seconds'
-                            if "duration" in item and "duration_seconds" not in item:
+                            # Migrate 'duration_seconds' -> 'duration'
+                            if "duration_seconds" in item and "duration" not in item:
                                 try:
-                                    item["duration_seconds"] = int(
-                                        float(item.pop("duration"))
+                                    item["duration"] = int(
+                                        float(item.pop("duration_seconds"))
                                     )
                                 except (ValueError, TypeError):
-                                    item["duration_seconds"] = 60
+                                    item["duration"] = 60
+                            # Remove stale duration_seconds if both keys exist
+                            elif "duration_seconds" in item and "duration" in item:
+                                del item["duration_seconds"]
 
-                            # Ensure duration_seconds is int
-                            if "duration_seconds" in item:
+                            # Ensure duration is int
+                            if "duration" in item:
                                 try:
-                                    item["duration_seconds"] = int(
-                                        float(item["duration_seconds"])
-                                    )
+                                    item["duration"] = int(float(item["duration"]))
                                 except (ValueError, TypeError):
-                                    item["duration_seconds"] = 60
+                                    item["duration"] = 60
 
                         new_list.append(item)
                     irr_config[list_key] = new_list
