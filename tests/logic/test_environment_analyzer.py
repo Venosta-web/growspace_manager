@@ -76,9 +76,9 @@ def test_determine_granular_stage(analyzer: EnvironmentAnalyzer) -> None:
         def __gt__(self, other):
             return "not_a_bool"
 
-    assert analyzer.determine_granular_stage(0, 0, 0, NonBool()) == "veg"
+    assert analyzer.determine_granular_stage(0, 0, 0, NonBool()) == "empty"
     # Default Veg Early (all 0)
-    assert analyzer.determine_granular_stage(0, 0, 0, 0) == "veg"
+    assert analyzer.determine_granular_stage(0, 0, 0, 0) == "empty"
 
 
 def test_determine_is_day(

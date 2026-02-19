@@ -189,9 +189,9 @@ class EnvironmentAnalyzer:
                     return "seedling"
                 if max_clone > 0:
                     return "clone"
-                return "veg"
+                return "empty"
             case _:
-                return "veg"
+                return "empty"
 
     def determine_is_day(self, growspace: Growspace) -> bool:
         """Determine if it is currently day or night in the growspace.
