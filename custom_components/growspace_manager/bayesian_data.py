@@ -140,6 +140,27 @@ VPD_STRESS_THRESHOLDS: Final[VpdThresholdsDict] = {
             "prob_defaults": ((0.85, 0.15), (0.60, 0.30)),
         },
     },
+    # Mother plants follow VEG-like environmental targets
+    BayesianStage.MOTHER: {
+        "day": {
+            "stress": (0.4, 1.4),
+            "mild": (0.6, 1.2),
+            "prob_keys": (
+                "prob_vpd_stress_mother",
+                "prob_vpd_mild_stress_mother",
+            ),
+            "prob_defaults": ((0.85, 0.15), (0.60, 0.30)),
+        },
+        "night": {
+            "stress": (0.6, 1.2),
+            "mild": (0.8, 1.1),
+            "prob_keys": (
+                "prob_vpd_stress_mother",
+                "prob_vpd_mild_stress_mother",
+            ),
+            "prob_defaults": ((0.85, 0.15), (0.60, 0.30)),
+        },
+    },
     BayesianStage.FLOWER_EARLY: {
         "day": {
             "stress": (0.8, 1.6),
@@ -274,6 +295,11 @@ VPD_OPTIMAL_THRESHOLDS: Final[
         "day": [(0.5, 0.9, (0.95, 0.18)), (0.4, 0.8, (0.80, 0.28))],
         "night": [(0.4, 0.8, (0.90, 0.20))],
     },
+    # Mother plants — VEG-like VPD targets
+    BayesianStage.MOTHER: {
+        "day": [(0.5, 0.9, (0.95, 0.18)), (0.4, 0.8, (0.80, 0.28))],
+        "night": [(0.4, 0.8, (0.90, 0.20))],
+    },
     BayesianStage.FLOWER_EARLY: {
         "day": [(0.9, 1.4, (0.95, 0.18)), (1.0, 1.5, (0.85, 0.25))],
         "night": [(0.8, 1.2, (0.90, 0.20))],
@@ -285,6 +311,16 @@ VPD_OPTIMAL_THRESHOLDS: Final[
     BayesianStage.FLOWER_LATE: {
         "day": [(1.0, 1.5, (0.95, 0.15)), (1.2, 1.6, (0.85, 0.22))],
         "night": [(0.9, 1.2, (0.90, 0.20))],
+    },
+    # Dry — 0.8–1.1 kPa optimal; environment runs 24 h uniform
+    BayesianStage.DRY: {
+        "day": [(0.8, 1.1, (0.95, 0.10)), (0.7, 1.2, (0.85, 0.15))],
+        "night": [(0.8, 1.1, (0.95, 0.10))],
+    },
+    # Cure — 0.6–0.9 kPa optimal; lower VPD to preserve terpenes
+    BayesianStage.CURE: {
+        "day": [(0.6, 0.9, (0.95, 0.10)), (0.5, 1.0, (0.85, 0.15))],
+        "night": [(0.6, 0.9, (0.95, 0.10))],
     },
 }
 
@@ -332,6 +368,21 @@ CO2_OPTIMAL_THRESHOLDS: Final[
         (400, 800, (0.90, 0.25)),  # Late flower optimal (lower CO2)
         (800, 1200, (0.4, 0.6)),  # Late flower acceptable
     ],
+    # Mother — same as VEG, CO2 enrichment beneficial
+    BayesianStage.MOTHER: [
+        (1000, 1400, PROB_PERFECT),
+        (800, 1500, PROB_GOOD),
+        (400, 600, PROB_ACCEPTABLE),
+    ],
+    # Dry/Cure — CO2 enrichment irrelevant post-harvest; ambient range accepted
+    BayesianStage.DRY: [
+        (400, 700, (0.90, 0.15)),
+        (300, 800, (0.70, 0.30)),
+    ],
+    BayesianStage.CURE: [
+        (400, 700, (0.90, 0.15)),
+        (300, 800, (0.70, 0.30)),
+    ],
 }
 
 # structure: stage -> { 'critical': float, 'high': float }
@@ -340,8 +391,13 @@ CRITICAL_HUMIDITY_THRESHOLDS: Final[dict[str, dict[str, float]]] = {
     BayesianStage.CLONE: {"critical": 102.0, "high": 100.0},
     BayesianStage.SEEDLING_STANDARD: {"critical": 92.0, "high": 88.0},
     BayesianStage.CLONE_STANDARD: {"critical": 92.0, "high": 88.0},
+    BayesianStage.MOTHER: {"critical": 85.0, "high": 80.0},
     BayesianStage.VEG: {"critical": 85.0, "high": 80.0},
     BayesianStage.FLOWER_EARLY: {"critical": 75.0, "high": 70.0},
     BayesianStage.FLOWER_MID: {"critical": 75.0, "high": 70.0},
     BayesianStage.FLOWER_LATE: {"critical": 65.0, "high": 60.0},
+    # Dry — critical RH is much lower to prevent mold on buds
+    BayesianStage.DRY: {"critical": 60.0, "high": 55.0},
+    # Cure — slightly higher acceptable RH range in jars
+    BayesianStage.CURE: {"critical": 68.0, "high": 65.0},
 }

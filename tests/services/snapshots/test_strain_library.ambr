@@ -1,0 +1,31 @@
+# serializer version: 1
+# name: test_analytics_snapshot
+  dict({
+    'strain_list': list([
+      'Blue Dream',
+    ]),
+    'strains': dict({
+      'Blue Dream': dict({
+        'analytics': dict({
+          'avg_flower_days': 60,
+          'avg_veg_days': 30,
+          'total_harvests': 1,
+        }),
+        'meta': dict({
+          'breeder': 'Humboldt',
+          'indica_percentage': 40,
+          'sativa_percentage': 60,
+          'type': 'Hybrid',
+        }),
+        'phenotypes': dict({
+          'default': dict({
+            'avg_flower_days': 60,
+            'avg_veg_days': 30,
+            'phenotype_id': 1,
+            'total_harvests': 1,
+          }),
+        }),
+      }),
+    }),
+  })
+# ---

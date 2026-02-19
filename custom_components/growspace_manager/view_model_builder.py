@@ -96,6 +96,7 @@ class ViewModelBuilder:
             "flower_start": "max_flower_days",
             "dry_start": "max_dry_days",
             "cure_start": "max_cure_days",
+            "mother_start": "max_mother_days",
         }
 
         # Calculate max days for each stage
@@ -126,6 +127,7 @@ class ViewModelBuilder:
                 max_days["max_cure_days"],
                 max_days["max_seedling_days"],
                 max_days["max_clone_days"],
+                max_days["max_mother_days"],
             )
         )
 

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import base64
+import binascii
 from datetime import datetime
 import hashlib
 from io import BytesIO
@@ -10,7 +11,7 @@ import logging
 from pathlib import Path
 from typing import Any, cast
 
-from PIL import Image
+from PIL import Image, UnidentifiedImageError
 
 from homeassistant.core import HomeAssistant
 

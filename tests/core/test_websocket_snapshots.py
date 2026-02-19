@@ -8,6 +8,8 @@ from syrupy.assertion import SnapshotAssertion
 
 from custom_components.growspace_manager.const import DOMAIN
 from custom_components.growspace_manager.websocket import (
+    websocket_add_timeline_note,
+    websocket_delete_breeder,
     websocket_get_alerts,
     websocket_get_event_log,
     websocket_get_growspace_data,
@@ -16,10 +18,9 @@ from custom_components.growspace_manager.websocket import (
     websocket_get_nutrient_inventory,
     websocket_get_nutrient_presets,
     websocket_get_strain_library,
-    websocket_add_timeline_note,
+    websocket_update_breeder,
 )
 from homeassistant.core import HomeAssistant
-from homeassistant.util import dt as dt_util
 
 
 @pytest.fixture
@@ -349,3 +350,45 @@ async def test_websocket_get_history_stats_snapshot(
         mock_connection.send_result.assert_called_once()
         result = mock_connection.send_result.call_args[0][1]
         assert result == snapshot
+
+
+@pytest.mark.asyncio
+async def test_websocket_update_breeder_snapshot(
+    hass: HomeAssistant, mock_connection, snapshot: SnapshotAssertion
+) -> None:
+    """Test websocket_update_breeder output matches snapshot."""
+    strain_library = AsyncMock()
+    strain_library.update_breeder.return_value = 5
+    hass.data[DOMAIN] = {"strain_library": strain_library}
+
+    msg = {
+        "id": 10,
+        "type": f"{DOMAIN}/update_breeder",
+        "original_name": "Old Breeder",
+        "new_name": "New Breeder",
+        "logo": "new_logo.png",
+    }
+    await websocket_update_breeder(hass, mock_connection, msg)
+
+    mock_connection.send_result.assert_called_once_with(10, {"updated": 5})
+    assert snapshot == {"updated": 5}
+
+
+@pytest.mark.asyncio
+async def test_websocket_delete_breeder_snapshot(
+    hass: HomeAssistant, mock_connection, snapshot: SnapshotAssertion
+) -> None:
+    """Test websocket_delete_breeder output matches snapshot."""
+    strain_library = AsyncMock()
+    strain_library.delete_breeder.return_value = 3
+    hass.data[DOMAIN] = {"strain_library": strain_library}
+
+    msg = {
+        "id": 11,
+        "type": f"{DOMAIN}/delete_breeder",
+        "breeder_name": "Breeder to Delete",
+    }
+    await websocket_delete_breeder(hass, mock_connection, msg)
+
+    mock_connection.send_result.assert_called_once_with(11, {"deleted": 3})
+    assert snapshot == {"deleted": 3}

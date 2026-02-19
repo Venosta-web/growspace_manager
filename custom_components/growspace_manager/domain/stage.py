@@ -34,6 +34,7 @@ class BayesianStage(StrEnum):
     SEEDLING_STANDARD = "seedling_standard"
     CLONE = "clone"
     CLONE_STANDARD = "clone_standard"
+    MOTHER = "mother"
     VEG = "veg"
     FLOWER_EARLY = "flower_early"
     FLOWER_MID = "flower_mid"

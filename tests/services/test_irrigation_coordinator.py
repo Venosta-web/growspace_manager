@@ -14,7 +14,7 @@ from custom_components.growspace_manager.irrigation_coordinator import (
 )
 from custom_components.growspace_manager.models import Growspace, IrrigationConfig
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, callback
 
 GROWSPACE_ID = "test_growspace"
 ENTRY_ID = "test_entry_id"
@@ -54,6 +54,8 @@ def mock_hass(mock_main_coordinator) -> MagicMock:
     """Mock Home Assistant instance."""
     hass = MagicMock(spec=HomeAssistant)
     hass.services = AsyncMock()
+    hass.bus = MagicMock()
+    hass.states = MagicMock()
     # Ensure async_create_task creates a real task for tests to await
     hass.async_create_task = asyncio.create_task
     # Mock loop property
@@ -180,7 +182,6 @@ async def test_async_wait_for_switch_state_already_in_target(
     mock_hass.bus.async_listen.assert_not_called()
 
 
-@pytest.mark.skip(reason="Async timeout test causes pytest to hang")
 async def test_async_wait_for_switch_state_timeout(
     mock_hass: MagicMock, mock_config_entry: MagicMock, mock_main_coordinator: MagicMock
 ) -> None:
@@ -195,10 +196,11 @@ async def test_async_wait_for_switch_state_timeout(
     mock_hass.bus = MagicMock()
     mock_hass.bus.async_listen.return_value = Mock()
 
-    # Wait for state with very short timeout - state never changes so it should timeout
-    result = await coordinator._async_wait_for_switch_state(
-        "switch.test_pump", "on", timeout=0.1
-    )
+    # We need to simulate the timeout without actually waiting a long time
+    with patch("asyncio.wait_for", side_effect=asyncio.TimeoutError):
+        result = await coordinator._async_wait_for_switch_state(
+            "switch.test_pump", "on", timeout=0.1
+        )
 
     assert result is False
 
@@ -694,7 +696,15 @@ async def test_run_pump_cycle_cleanup(
     coordinator._running_tasks["irrigation"] = Mock()
 
     # Run pump cycle
-    with patch("asyncio.sleep", new_callable=AsyncMock):
+    with (
+        patch("asyncio.sleep", new_callable=AsyncMock),
+        patch.object(
+            coordinator,
+            "_async_wait_for_switch_state",
+            new_callable=AsyncMock,
+            return_value=True,
+        ),
+    ):
         await coordinator._run_pump_cycle("irrigation", "switch.pump", 0, {})
 
     # Verify task is removed
@@ -830,9 +840,9 @@ async def test_irrigation_coordinator_coverage_gaps(
         coordinator.async_update_listeners.assert_called_once()  # Line 115
 
         # 5. Base class async_setup/unload (trivial but ensures execution)
-
         await BaseIrrigationCoordinator.async_setup(coordinator)
         await BaseIrrigationCoordinator.async_request_refresh(coordinator)
+        await BaseIrrigationCoordinator.async_unload(coordinator)  # Line 65
 
         # 6. Test _run_pump_cycle exception handling
         mock_main_coordinator.add_event.side_effect = Exception("Test Error")
@@ -840,14 +850,22 @@ async def test_irrigation_coordinator_coverage_gaps(
         mock_hass.states.get.side_effect = None
         mock_hass.states.get.return_value = MagicMock(state="50.0")
 
-        with patch("asyncio.sleep", new_callable=AsyncMock):
+        with (
+            patch("asyncio.sleep", new_callable=AsyncMock),
+            patch.object(
+                coordinator,
+                "_async_wait_for_switch_state",
+                new_callable=AsyncMock,
+                return_value=True,
+            ),
+        ):
             await coordinator._run_pump_cycle("irrigation", "switch.pump", 30, {})
         # Should catch exception and log error (covered)
 
         # 7. Test active_events property (Line 46)
         assert isinstance(coordinator.active_events, dict)
 
-        # 8. Test async_remove_schedule_item exception (Lines 271-272)
+        # 8. Test async_remove_schedule_item exception (Lines 340-341)
         with (
             patch(
                 "custom_components.growspace_manager.irrigation_coordinator.hasattr",
@@ -859,3 +877,52 @@ async def test_irrigation_coordinator_coverage_gaps(
             ),
         ):
             await coordinator.async_remove_schedule_item("irrigation_times", "10:00:00")
+
+        # 9. Test _async_wait_for_switch_state with irrelevant entity event (Line 145)
+        mock_hass.states.get.return_value = Mock(state="off")
+
+        @callback
+        def mock_listen(event_type, listener):
+            # Send irrelevant event
+            mock_event = Mock()
+            mock_event.data = {
+                "entity_id": "other.entity",
+                "new_state": Mock(state="on"),
+            }
+            listener(mock_event)
+            # Send correct event
+            mock_event_correct = Mock()
+            mock_event_correct.data = {
+                "entity_id": "switch.test_pump",
+                "new_state": Mock(state="on"),
+            }
+            listener(mock_event_correct)
+            return Mock()
+
+        mock_hass.bus.async_listen.side_effect = mock_listen
+        assert (
+            await coordinator._async_wait_for_switch_state("switch.test_pump", "on")
+            is True
+        )
+
+        # 10. Test _run_pump_cycle exception in finally block (Lines 581-582)
+        # Force exception when popping from _running_tasks at the end
+        with (
+            patch("asyncio.sleep", new_callable=AsyncMock),
+            patch.object(
+                coordinator,
+                "_async_wait_for_switch_state",
+                new_callable=AsyncMock,
+                return_value=True,
+            ),
+        ):
+            # Inject a dict that raises on pop
+            class ExplodingDict(dict):
+                def pop(self, key, default=None):
+                    if key == "irrigation":
+                        raise Exception("Logging Fail")
+                    return super().pop(key, default)
+
+            coordinator._running_tasks = ExplodingDict()
+            await coordinator._run_pump_cycle("irrigation", "switch.pump", 30, {})
+            # Should catch and log error

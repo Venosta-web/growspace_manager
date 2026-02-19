@@ -152,7 +152,15 @@ def test_evaluate_direct_humidity_stress_no_humidity() -> None:
 
 def test_evaluate_direct_humidity_stress_veg_early_high_humidity() -> None:
     """Test evaluate_direct_humidity_stress for veg_early and high humidity."""
-    state = MagicMock(spec=EnvironmentState, humidity=85, flower_days=0, veg_days=7)
+    state = MagicMock(
+        spec=EnvironmentState,
+        humidity=85,
+        flower_days=0,
+        veg_days=7,
+        dry_days=0,
+        cure_days=0,
+        mother_days=0,
+    )
     env_config: dict[str, Any] = {}
     observations, reasons = evaluate_direct_humidity_stress(state, env_config)
     assert len(observations) == 1
@@ -212,6 +220,12 @@ def test_evaluate_optimal_co2_branches(
         spec=EnvironmentState,
         co2=co2,
         flower_days=flower_days,
+        dry_days=0,
+        cure_days=0,
+        mother_days=0,
+        veg_days=0,
+        seedling_days=0,
+        clone_days=0,
     )
     env_config: dict[str, Any] = {}
     observations, reasons = evaluate_optimal_co2(state, env_config)
@@ -627,7 +641,16 @@ def test_evaluate_direct_vpd_stress_interpolation(
 ) -> None:
     """Test evaluate_direct_vpd_stress interpolation between flower stages."""
     state = MagicMock(
-        spec=EnvironmentState, vpd=vpd, flower_days=flower_days, is_lights_on=True
+        spec=EnvironmentState,
+        vpd=vpd,
+        flower_days=flower_days,
+        is_lights_on=True,
+        dry_days=0,
+        cure_days=0,
+        mother_days=0,
+        veg_days=0,
+        seedling_days=0,
+        clone_days=0,
     )
     env_config: dict[str, Any] = {}
     observations, reasons = evaluate_direct_vpd_stress(state, env_config)
@@ -666,7 +689,17 @@ def test_evaluate_direct_humidity_stress_interpolation() -> None:
     # stage_a=mid, stage_b=late
     # low_a=45, low_b=40 -> low = 45 + (40-45)*0.33 = 43.35
 
-    state = MagicMock(spec=EnvironmentState, humidity=43.5, flower_days=40)
+    state = MagicMock(
+        spec=EnvironmentState,
+        humidity=43.5,
+        flower_days=40,
+        dry_days=0,
+        cure_days=0,
+        mother_days=0,
+        veg_days=0,
+        seedling_days=0,
+        clone_days=0,
+    )
     observations, reasons = evaluate_direct_humidity_stress(state, {})
     assert len(observations) == 0
 
@@ -703,6 +736,9 @@ def test_determine_stage_key(
         veg_days=veg_days,
         seedling_days=seedling_days,
         clone_days=clone_days,
+        dry_days=0,
+        cure_days=0,
+        mother_days=0,
     )
     assert _determine_stage_key(state) == expected_key
 
@@ -718,6 +754,9 @@ def test_evaluate_direct_humidity_stress_mid_to_late_transition() -> None:
         veg_days=0,
         seedling_days=0,
         clone_days=0,
+        dry_days=0,
+        cure_days=0,
+        mother_days=0,
     )
     observations, reasons = evaluate_direct_humidity_stress(state, {})
     assert len(observations) == 1
@@ -735,6 +774,9 @@ def test_evaluate_optimal_co2_seedling_clone_ranges() -> None:
         veg_days=0,
         clone_days=0,
         co2=900,
+        dry_days=0,
+        cure_days=0,
+        mother_days=0,
     )
     observations, reasons = evaluate_optimal_co2(state, {})
     assert len(observations) == 1

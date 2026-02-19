@@ -43,6 +43,7 @@ class EnvironmentAnalyzer:
         max_cure: int,
         max_seedling: int = 0,
         max_clone: int = 0,
+        max_mother: int = 0,
     ) -> dict[str, Any]:
         """Calculate biological target metrics for the growspace.
 
@@ -54,18 +55,19 @@ class EnvironmentAnalyzer:
              max_cure: Max days in cure stage.
              max_seedling: Max days in seedling stage.
              max_clone: Max days in clone stage.
+             max_mother: Max days in mother stage.
 
         Returns:
             Dictionary containing stage-specific VPD targets and status.
         """
         granular_stage = self.determine_granular_stage(
-            max_veg, max_flower, max_dry, max_cure, max_seedling, max_clone
+            max_veg, max_flower, max_dry, max_cure, max_seedling, max_clone, max_mother
         )
         is_day = self.determine_is_day(growspace)
 
         # Use transition factor for flower stages
         stage_a, stage_b, factor = calculate_stage_transition(
-            max_flower, max_veg, max_seedling, max_clone
+            max_flower, max_veg, max_seedling, max_clone, max_dry, max_cure, max_mother
         )
 
         # Get thresholds for both stages
@@ -151,6 +153,7 @@ class EnvironmentAnalyzer:
         max_cure: int,
         max_seedling: int = 0,
         max_clone: int = 0,
+        max_mother: int = 0,
     ) -> str:
         """Determine granular growth stage based on days using pattern matching.
 
@@ -161,6 +164,7 @@ class EnvironmentAnalyzer:
             max_cure: Max days in cure stage.
             max_seedling: Max days in seedling stage.
             max_clone: Max days in clone stage.
+            max_mother: Max days in mother stage.
 
         Returns:
             Detailed stage string (e.g. 'veg_early', 'flower_late').
@@ -177,6 +181,8 @@ class EnvironmentAnalyzer:
                     return "flower_mid"
                 return "flower_late"
             case (False, False, False):
+                if max_mother > 0:
+                    return "mother"
                 if max_veg > 0:
                     return "veg"
                 if max_seedling > 0:
