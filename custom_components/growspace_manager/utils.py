@@ -238,9 +238,20 @@ def calculate_stage_transition(
     veg_days: int = 0,
     seedling_days: int = 0,
     clone_days: int = 0,
+    dry_days: int = 0,
+    cure_days: int = 0,
+    mother_days: int = 0,
 ) -> tuple[BayesianStage, BayesianStage, float]:
     """Calculate the current stage transition and interpolation factor."""
-    # Logic moved to BayesianStage specific logic in 2025.1 refactor
+    # Post-harvest stages — no interpolation needed
+    if cure_days > 0:
+        return BayesianStage.CURE, BayesianStage.CURE, 0.0
+    if dry_days > 0:
+        return BayesianStage.DRY, BayesianStage.DRY, 0.0
+
+    # Mother plants — perpetual vegetative, no sub-stage interpolation
+    if mother_days > 0:
+        return BayesianStage.MOTHER, BayesianStage.MOTHER, 0.0
 
     # Primary progression: Flower takes precedence
     if flower_days > 0:

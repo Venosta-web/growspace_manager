@@ -33,6 +33,10 @@ DEFAULT_THRESHOLDS = {
         "day": {"on": 0.5, "off": 0.6},
         "night": {"on": 0.55, "off": 0.65},
     },
+    "mother": {
+        "day": {"on": 0.6, "off": 0.7},
+        "night": {"on": 0.65, "off": 0.75},
+    },
     "veg": {
         "day": {"on": 0.6, "off": 0.7},
         "night": {"on": 0.65, "off": 0.75},
@@ -265,31 +269,24 @@ class DehumidifierCoordinator:
         max_flower_days = 0
         max_dry_days = 0
         max_cure_days = 0
+        max_mother_days = 0
 
         for plant in plants:
-            s_days = calculate_days_in_stage(
-                plant, "seedling"
-            )
-            v_days = calculate_days_in_stage(
-                plant, "veg"
-            )
-            f_days = calculate_days_in_stage(
-                plant, "flower"
-            )
-            d_days = calculate_days_in_stage(
-                plant, "dry"
-            )
-            c_days = calculate_days_in_stage(
-                plant, "cure"
-            )
+            s_days = calculate_days_in_stage(plant, "seedling")
+            v_days = calculate_days_in_stage(plant, "veg")
+            f_days = calculate_days_in_stage(plant, "flower")
+            d_days = calculate_days_in_stage(plant, "dry")
+            c_days = calculate_days_in_stage(plant, "cure")
+            m_days = calculate_days_in_stage(plant, "mother")
 
             max_seedling_days = max(max_seedling_days, s_days)
             max_veg_days = max(max_veg_days, v_days)
             max_flower_days = max(max_flower_days, f_days)
             max_dry_days = max(max_dry_days, d_days)
             max_cure_days = max(max_cure_days, c_days)
+            max_mother_days = max(max_mother_days, m_days)
 
-        # Priority: Cure > Dry > Flower > Veg > Seedling
+        # Priority: Cure > Dry > Flower > Mother > Veg > Seedling
         if max_cure_days > 0:
             return "cure"
         if max_dry_days > 0:
@@ -300,6 +297,8 @@ class DehumidifierCoordinator:
             return "mid_flower"
         if max_flower_days > 0:
             return "early_flower"
+        if max_mother_days > 0:
+            return "mother"
         if max_veg_days > 0:
             return "veg"
         if max_seedling_days > 0:

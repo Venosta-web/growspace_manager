@@ -115,25 +115,33 @@ ReasonList = list[Reason]
 
 def _determine_stage_key(state: EnvironmentState) -> str:
     """Return the stage key for the current environment state."""
-    # Flower takes precedence
+    # Post-harvest stages take highest priority
+    if state.cure_days > 0:
+        return BayesianStage.CURE
+    if state.dry_days > 0:
+        return BayesianStage.DRY
+
+    # Mother plants — perpetual veg with own environmental targets
+    if state.mother_days > 0:
+        return BayesianStage.MOTHER
+
+    # Flower takes precedence over standard vegetative stages
     if state.flower_days > 0:
         if state.flower_days >= FLOWER_LATE_MIN_DAYS:
-            return "flower_late"
+            return BayesianStage.FLOWER_LATE
         if state.flower_days >= FLOWER_MID_MIN_DAYS:
-            return "flower_mid"
-        if state.flower_days >= DEFAULT_FLOWER_EARLY_DAYS:
-            return "flower_early"
-        return "flower_early"
+            return BayesianStage.FLOWER_MID
+        return BayesianStage.FLOWER_EARLY
 
     # Before flower
     if state.veg_days > 0:
-        return "veg"
+        return BayesianStage.VEG
     if state.seedling_days > 0:
-        return "seedling"
+        return BayesianStage.SEEDLING
     if state.clone_days > 0:
-        return "clone"
+        return BayesianStage.CLONE
 
-    return "veg"
+    return BayesianStage.VEG
 
 
 async def async_evaluate_stress_trend(
@@ -538,7 +546,13 @@ def evaluate_direct_humidity_stress(
 
     # Stage-dependent transition logic
     stage_a, stage_b, factor = calculate_stage_transition(
-        state.flower_days, state.veg_days, state.seedling_days, state.clone_days
+        state.flower_days,
+        state.veg_days,
+        state.seedling_days,
+        state.clone_days,
+        state.dry_days,
+        state.cure_days,
+        state.mother_days,
     )
 
     def get_hum_limits(stage):
@@ -597,7 +611,13 @@ def evaluate_direct_vpd_stress(
 
     # Use transition logic
     stage_a, stage_b, factor = calculate_stage_transition(
-        state.flower_days, state.veg_days, state.seedling_days, state.clone_days
+        state.flower_days,
+        state.veg_days,
+        state.seedling_days,
+        state.clone_days,
+        state.dry_days,
+        state.cure_days,
+        state.mother_days,
     )
     time_of_day = "night" if state.is_lights_on is False else "day"
 
@@ -777,7 +797,13 @@ def evaluate_optimal_vpd(
     prob_vpd_out_of_range = PROB_VPD_STRESS_OUT_OF_RANGE  # Reuse stress probability
 
     stage_a, stage_b, factor = calculate_stage_transition(
-        state.flower_days, state.veg_days, state.seedling_days, state.clone_days
+        state.flower_days,
+        state.veg_days,
+        state.seedling_days,
+        state.clone_days,
+        state.dry_days,
+        state.cure_days,
+        state.mother_days,
     )
     time_of_day = "night" if state.is_lights_on is False else "day"
 
@@ -822,7 +848,13 @@ def evaluate_optimal_co2(
 
     # Use stage transition logic for smooth interpolation
     stage_a, stage_b, factor = calculate_stage_transition(
-        state.flower_days, state.veg_days, state.seedling_days, state.clone_days
+        state.flower_days,
+        state.veg_days,
+        state.seedling_days,
+        state.clone_days,
+        state.dry_days,
+        state.cure_days,
+        state.mother_days,
     )
 
     limits_a = CO2_OPTIMAL_THRESHOLDS.get(stage_a, [])
@@ -846,8 +878,6 @@ def evaluate_optimal_co2(
     # Note: Late flower stages don't penalize out-of-range CO2 (backward compatibility)
     if not co2_optimal:
         # Check if we're in late flower stage (either stage_a or stage_b is FLOWER_LATE)
-        from .domain.stage import BayesianStage
-
         is_late_flower = (
             stage_a == BayesianStage.FLOWER_LATE or stage_b == BayesianStage.FLOWER_LATE
         )

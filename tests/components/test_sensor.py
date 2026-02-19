@@ -1176,6 +1176,8 @@ def test_growspace_overview_sensor_get_trackable_sensors(
 
     # Test with environment config containing sensors
     env_config = EnvironmentConfig(
+        temperature_sensor="sensor.temp",
+        humidity_sensor="sensor.humidity",
         soil_moisture_sensor="sensor.moisture",
         vpd_sensor="sensor.vpd",
         dehumidifier_entities=["switch.dehumidifier"],
@@ -1188,13 +1190,15 @@ def test_growspace_overview_sensor_get_trackable_sensors(
     sensors = sensor._get_trackable_sensors()
 
     # Should include all configured sensors
+    assert "sensor.temp" in sensors
+    assert "sensor.humidity" in sensors
     assert "sensor.moisture" in sensors
     assert "sensor.vpd" in sensors
     assert "switch.dehumidifier" in sensors
     assert "fan.exhaust" in sensors
     assert "fan.circulation" in sensors
     # Should not include None values
-    assert len(sensors) == 5
+    assert len(sensors) == 7
 
 
 def test_growspace_overview_sensor_trackable_attrs_constant() -> None:
@@ -1202,6 +1206,8 @@ def test_growspace_overview_sensor_trackable_attrs_constant() -> None:
     # Verify the constant exists and contains expected attributes
     expected_attrs = (
         "soil_moisture_sensor",
+        "temperature_sensor",
+        "humidity_sensor",
         "vpd_sensor",
         "dehumidifier_entities",
         "exhaust_fan_entities",

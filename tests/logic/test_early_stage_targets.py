@@ -18,19 +18,40 @@ def test_determine_stage_key_early_stages() -> None:
     """Test that seedling and clone stages are correctly identified."""
     # Seedling
     state = MagicMock(
-        spec=EnvironmentState, flower_days=0, veg_days=0, seedling_days=5, clone_days=0
+        spec=EnvironmentState,
+        flower_days=0,
+        veg_days=0,
+        seedling_days=5,
+        clone_days=0,
+        dry_days=0,
+        cure_days=0,
+        mother_days=0,
     )
     assert _determine_stage_key(state) == "seedling"
 
     # Clone
     state = MagicMock(
-        spec=EnvironmentState, flower_days=0, veg_days=0, seedling_days=0, clone_days=5
+        spec=EnvironmentState,
+        flower_days=0,
+        veg_days=0,
+        seedling_days=0,
+        clone_days=5,
+        dry_days=0,
+        cure_days=0,
+        mother_days=0,
     )
     assert _determine_stage_key(state) == "clone"
 
     # Veg (should take precedence over seedling/clone if veg_days > 0)
     state = MagicMock(
-        spec=EnvironmentState, flower_days=0, veg_days=1, seedling_days=14, clone_days=0
+        spec=EnvironmentState,
+        flower_days=0,
+        veg_days=1,
+        seedling_days=14,
+        clone_days=0,
+        dry_days=0,
+        cure_days=0,
+        mother_days=0,
     )
     assert _determine_stage_key(state) == "veg"
 
@@ -47,6 +68,9 @@ def test_evaluate_direct_vpd_stress_seedling() -> None:
         clone_days=0,
         vpd=0.5,
         is_lights_on=True,
+        dry_days=0,
+        cure_days=0,
+        mother_days=0,
     )
     observations, reasons = evaluate_direct_vpd_stress(state, {})
     assert len(observations) == 1
@@ -71,6 +95,9 @@ def test_evaluate_optimal_vpd_seedling() -> None:
         clone_days=0,
         vpd=0.1,
         is_lights_on=True,
+        dry_days=0,
+        cure_days=0,
+        mother_days=0,
     )
     observations, _ = evaluate_optimal_vpd(state, {})
     assert len(observations) == 1
@@ -94,6 +121,9 @@ def test_evaluate_direct_humidity_stress_seedling() -> None:
         seedling_days=1,
         clone_days=0,
         humidity=92,
+        dry_days=0,
+        cure_days=0,
+        mother_days=0,
     )
     observations, reasons = evaluate_direct_humidity_stress(state, {})
     assert len(observations) == 1
@@ -118,6 +148,9 @@ def test_evaluate_direct_humidity_stress_interpolation_seedling_to_veg() -> None
         seedling_days=8,  # Must be > 7 to be in seedling_standard
         clone_days=0,
         humidity=86,
+        dry_days=0,
+        cure_days=0,
+        mother_days=0,
     )
     observations, reasons = evaluate_direct_humidity_stress(state, {})
     assert len(observations) == 1
@@ -138,6 +171,9 @@ def test_evaluate_optimal_co2_early_stages() -> None:
         seedling_days=5,
         clone_days=0,
         co2=600,
+        dry_days=0,
+        cure_days=0,
+        mother_days=0,
     )
     observations, _ = evaluate_optimal_co2(state, {})
     assert len(observations) == 1
@@ -151,6 +187,9 @@ def test_evaluate_optimal_co2_early_stages() -> None:
         seedling_days=0,
         clone_days=5,
         co2=1200,
+        dry_days=0,
+        cure_days=0,
+        mother_days=0,
     )
     observations, _ = evaluate_optimal_co2(state, {})
     assert len(observations) == 1

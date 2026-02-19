@@ -784,6 +784,8 @@ class GrowspaceOverviewSensor(CoordinatorEntity[GrowspaceCoordinator], SensorEnt
     # Environment sensor attributes to track for real-time updates
     TRACKABLE_ENVIRONMENT_ATTRS: tuple[str, ...] = (
         "soil_moisture_sensor",
+        "temperature_sensor",
+        "humidity_sensor",
         "vpd_sensor",
         "dehumidifier_entities",
         "exhaust_fan_entities",

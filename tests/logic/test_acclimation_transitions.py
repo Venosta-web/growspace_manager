@@ -18,6 +18,9 @@ def test_seedling_acclimation_humidity_stress():
         veg_days=0,
         seedling_days=1,
         clone_days=0,
+        dry_days=0,
+        cure_days=0,
+        mother_days=0,
     )
     obs, reasons = evaluate_direct_humidity_stress(state, {})
     assert len(obs) == 0  # SAFE
@@ -45,6 +48,9 @@ def test_seedling_transition_humidity_stress():
         veg_days=0,
         seedling_days=5,
         clone_days=0,
+        dry_days=0,
+        cure_days=0,
+        mother_days=0,
     )
     obs, reasons = evaluate_direct_humidity_stress(state, {})
     assert len(obs) == 0  # 70 is between 47.5 and 95.0
@@ -66,6 +72,9 @@ def test_clone_acclimation_vpd_stress():
         seedling_days=0,
         clone_days=2,
         is_lights_on=True,
+        dry_days=0,
+        cure_days=0,
+        mother_days=0,
     )
     obs, reasons = evaluate_direct_vpd_stress(state, {})
     assert len(obs) == 0  # SAFE

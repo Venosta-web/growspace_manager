@@ -630,6 +630,9 @@ class EnvironmentState:
     flower_days: int = 0
     seedling_days: int = 0
     clone_days: int = 0
+    dry_days: int = 0
+    cure_days: int = 0
+    mother_days: int = 0
     is_lights_on: bool | None = None
     fan_off: bool | None = None
     humidifier_on: bool | None = None

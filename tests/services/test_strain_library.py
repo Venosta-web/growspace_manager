@@ -558,3 +558,224 @@ async def test_breeder_logo_propagation(strain_library: StrainLibrary) -> None:
         strain_library.strains["Strain 2"]["meta"]["breeder_logo"]
         == "https://www.paradise-seeds.com/wp-content/uploads/Logo-paradise-seeds-Black.webp"
     )
+
+
+@pytest.mark.asyncio
+async def test_update_breeder(strain_library: StrainLibrary) -> None:
+    """Test updating breeder name and logo."""
+    await strain_library.add_strain("Strain 1", breeder="Breeder A")
+    await strain_library.add_strain("Strain 2", breeder="Breeder A")
+
+    # Update name
+    await strain_library.update_breeder("Breeder A", "Breeder B")
+    assert strain_library.strains["Strain 1"]["meta"]["breeder"] == "Breeder B"
+    assert strain_library.strains["Strain 2"]["meta"]["breeder"] == "Breeder B"
+
+    # Update logo (path)
+    await strain_library.update_breeder(
+        "Breeder B", "Breeder B", logo="/local/logo.png"
+    )
+    assert (
+        strain_library.strains["Strain 1"]["meta"]["breeder_logo"] == "/local/logo.png"
+    )
+
+    # Update logo (base64)
+    with patch.object(
+        strain_library.image_manager,
+        "save_breeder_logo",
+        AsyncMock(return_value="/abs/path/to/logo.webp"),
+    ):
+        await strain_library.update_breeder(
+            "Breeder B", "Breeder C", logo="data:image/webp;base64,..."
+        )
+        assert strain_library.strains["Strain 1"]["meta"]["breeder"] == "Breeder C"
+        assert (
+            strain_library.strains["Strain 1"]["meta"]["breeder_logo"]
+            == "/local/growspace_manager/strains/logo.webp"
+        )
+
+    # Clear logo
+    await strain_library.update_breeder("Breeder C", "Breeder C", logo="")
+    assert "breeder_logo" not in strain_library.strains["Strain 1"]["meta"]
+
+
+@pytest.mark.asyncio
+async def test_delete_breeder(strain_library: StrainLibrary) -> None:
+    """Test deleting breeder association."""
+    await strain_library.add_strain("Strain 1", breeder="Breeder A", breeder_logo="L")
+    await strain_library.delete_breeder("Breeder A")
+
+    assert "breeder" not in strain_library.strains["Strain 1"]["meta"]
+    assert "breeder_logo" not in strain_library.strains["Strain 1"]["meta"]
+
+
+@pytest.mark.asyncio
+async def test_delete_breeder_invalid(strain_library: StrainLibrary) -> None:
+    """Test deleting breeder with empty name."""
+    assert await strain_library.delete_breeder("") == 0
+    assert await strain_library.delete_breeder("  ") == 0
+
+
+@pytest.mark.asyncio
+async def test_update_breeder_invalid(strain_library: StrainLibrary) -> None:
+    """Test updating breeder with empty names."""
+    assert await strain_library.update_breeder("", "New") == 0
+    assert await strain_library.update_breeder("Old", "") == 0
+
+
+@pytest.mark.asyncio
+async def test_db_migration_breeder_logo(mock_hass, mock_image_manager) -> None:
+    """Test that breeder_logo column is added if missing."""
+    # Create schema without breeder_logo
+    LEGACY_SCHEMA = """
+    CREATE TABLE strains (
+        strain_id INTEGER PRIMARY KEY,
+        strain_name TEXT UNIQUE NOT NULL,
+        breeder TEXT,
+        type TEXT,
+        lineage TEXT,
+        sex TEXT,
+        sativa_percentage INTEGER,
+        indica_percentage INTEGER
+    );
+    """
+
+    real_connect = aiosqlite.connect
+
+    async def mock_connect(database, **kwargs):
+        conn = await real_connect(":memory:", **kwargs)
+        await conn.executescript(LEGACY_SCHEMA)
+        await conn.commit()
+        return conn
+
+    with (
+        patch(
+            "custom_components.growspace_manager.strain_library.ImageManager",
+            return_value=mock_image_manager,
+        ),
+        patch(
+            "custom_components.growspace_manager.strain_library.aiosqlite.connect",
+            side_effect=mock_connect,
+        ),
+    ):
+        library = StrainLibrary(mock_hass)
+        # async_setup should run ALTER TABLE
+        await library.async_setup()
+
+        # Check if column exists
+        async with library._db.execute("PRAGMA table_info(strains)") as cursor:
+            columns = [row["name"] for row in await cursor.fetchall()]
+            assert "breeder_logo" in columns
+
+        await library.async_close()
+
+
+@pytest.mark.asyncio
+async def test_async_setup_with_migration_reload(
+    mock_hass, mock_image_manager, mock_import_export_manager
+) -> None:
+    """Test load() is called again if migration happens."""
+    mock_image_manager.async_migrate_to_webp.return_value = True
+
+    real_connect = aiosqlite.connect
+
+    async def mock_connect(database, **kwargs):
+        return await real_connect(":memory:", **kwargs)
+
+    with (
+        patch(
+            "custom_components.growspace_manager.strain_library.ImageManager",
+            return_value=mock_image_manager,
+        ),
+        patch(
+            "custom_components.growspace_manager.strain_library.ImportExportManager",
+            return_value=mock_import_export_manager,
+        ),
+        patch(
+            "custom_components.growspace_manager.strain_library.aiosqlite.connect",
+            side_effect=mock_connect,
+        ),
+        patch.object(StrainLibrary, "load", AsyncMock()) as mock_load,
+    ):
+        library = StrainLibrary(mock_hass)
+        await library.async_setup()
+
+        # Should be called during async_setup AND after migration
+        assert mock_load.call_count == 2
+        await library.async_close()
+
+
+@pytest.mark.asyncio
+async def test_record_harvest_no_db(mock_hass) -> None:
+    """Test record_harvest when DB is not connected."""
+    library = StrainLibrary(mock_hass)
+    assert library._db is None
+    await library.record_harvest("S", "P", 1, 1)
+    # Should log warning and return
+
+
+@pytest.mark.asyncio
+async def test_update_breeder_no_db(mock_hass) -> None:
+    """Test update_breeder when DB is not connected."""
+    library = StrainLibrary(mock_hass)
+    assert await library.update_breeder("O", "N") == 0
+
+
+@pytest.mark.asyncio
+async def test_delete_breeder_no_db(mock_hass) -> None:
+    """Test delete_breeder when DB is not connected."""
+    library = StrainLibrary(mock_hass)
+    assert await library.delete_breeder("B") == 0
+
+
+@pytest.mark.asyncio
+async def test_add_strain_no_db(mock_hass) -> None:
+    """Test add_strain when DB is not connected."""
+    library = StrainLibrary(mock_hass)
+    await library.add_strain("S")
+    # Should log warning and return
+
+
+@pytest.mark.asyncio
+async def test_remove_strain_phenotype_no_db(mock_hass) -> None:
+    """Test remove_strain_phenotype when DB is not connected."""
+    library = StrainLibrary(mock_hass)
+    await library.remove_strain_phenotype("S", "P")
+    # Should log warning and return
+
+
+@pytest.mark.asyncio
+async def test_remove_strain_no_db(mock_hass) -> None:
+    """Test remove_strain when DB is not connected."""
+    library = StrainLibrary(mock_hass)
+    await library.remove_strain("S")
+    # Should log warning and return
+
+
+@pytest.mark.asyncio
+async def test_import_library_no_db(mock_hass) -> None:
+    """Test import_library when DB is not connected."""
+    library = StrainLibrary(mock_hass)
+    assert await library.import_library({}) == 0
+
+
+@pytest.mark.asyncio
+async def test_clear_no_db(mock_hass) -> None:
+    """Test clear when DB is not connected."""
+    library = StrainLibrary(mock_hass)
+    assert await library.clear() == 0
+
+
+@pytest.mark.asyncio
+async def test_analytics_snapshot(strain_library: StrainLibrary, snapshot) -> None:
+    """Test analytics output with snapshot."""
+    await strain_library.add_strain(
+        "Blue Dream",
+        breeder="Humboldt",
+        strain_type="Hybrid",
+        sativa_percentage=60,
+    )
+    await strain_library.record_harvest("Blue Dream", "default", 30, 60)
+
+    analytics = strain_library.get_analytics()
+    assert analytics == snapshot

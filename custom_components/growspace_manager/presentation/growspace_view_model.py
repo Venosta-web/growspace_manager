@@ -322,6 +322,18 @@ class GrowspaceViewModelBuilder:
             attributes[CONF_CIRCULATION_FAN_ENTITY] = circulation_fan_entity
             attributes["circulation_fan_state"] = state_obj.state if state_obj else None
 
+        # Temperature Sensor
+        temp_entity = env_config.temperature_sensor
+        if temp_entity:
+            state_obj = self.hass.states.get(temp_entity)
+            attributes["temperature"] = state_obj.state if state_obj else None
+
+        # Humidity Sensor
+        hum_entity = env_config.humidity_sensor
+        if hum_entity:
+            state_obj = self.hass.states.get(hum_entity)
+            attributes["humidity"] = state_obj.state if state_obj else None
+
         # VPD Sensor
         vpd_entity = env_config.vpd_sensor
         if vpd_entity:

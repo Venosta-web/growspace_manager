@@ -1,4 +1,9 @@
 # serializer version: 1
+# name: test_websocket_delete_breeder_snapshot
+  dict({
+    'deleted': 3,
+  })
+# ---
 # name: test_websocket_get_alerts_snapshot
   dict({
     'gs1': list([
@@ -117,5 +122,10 @@
         'type': 'Indica',
       }),
     }),
+  })
+# ---
+# name: test_websocket_update_breeder_snapshot
+  dict({
+    'updated': 5,
   })
 # ---

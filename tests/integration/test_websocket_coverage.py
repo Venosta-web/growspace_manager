@@ -11,12 +11,14 @@ from custom_components.growspace_manager.websocket import (
     ATTR_NOTES,
     ATTR_PLANT_ID,
     websocket_add_timeline_note,
+    websocket_delete_breeder,
     websocket_get_alerts,
     websocket_get_event_log,
     websocket_get_history_stats,
     websocket_get_nutrient_inventory,
     websocket_remove_nutrient_stock,
     websocket_remove_timeline_event,
+    websocket_update_breeder,
     websocket_update_nutrient_stock,
 )
 from homeassistant.core import HomeAssistant
@@ -457,3 +459,69 @@ async def test_websocket_get_history_stats_empty(
     ):
         await websocket_get_history_stats(hass, mock_connection, msg)
         mock_fallback.assert_awaited()
+
+
+async def test_websocket_breeder_commands_strain_library_missing(
+    hass: HomeAssistant, mock_connection
+) -> None:
+    """Test breeder commands when strain library is not loaded."""
+    if DOMAIN in hass.data:
+        hass.data[DOMAIN].pop("strain_library", None)
+    else:
+        hass.data[DOMAIN] = {}
+
+    msg_update = {
+        "id": 12,
+        "type": f"{DOMAIN}/update_breeder",
+        "original_name": "O",
+        "new_name": "N",
+    }
+    await websocket_update_breeder(hass, mock_connection, msg_update)
+    mock_connection.send_error.assert_called_with(
+        12, "not_loaded", "Growspace Manager strain library not loaded"
+    )
+
+    mock_connection.reset_mock()
+
+    msg_delete = {
+        "id": 13,
+        "type": f"{DOMAIN}/delete_breeder",
+        "breeder_name": "B",
+    }
+    await websocket_delete_breeder(hass, mock_connection, msg_delete)
+    mock_connection.send_error.assert_called_with(
+        13, "not_loaded", "Growspace Manager strain library not loaded"
+    )
+
+
+async def test_websocket_breeder_commands_generic_error(
+    hass: HomeAssistant, mock_connection
+) -> None:
+    """Test breeder commands generic exceptions."""
+    strain_library = AsyncMock()
+    strain_library.update_breeder.side_effect = Exception("Breeder Update Fail")
+    strain_library.delete_breeder.side_effect = Exception("Breeder Delete Fail")
+    hass.data[DOMAIN] = {"strain_library": strain_library}
+
+    msg_update = {
+        "id": 14,
+        "type": f"{DOMAIN}/update_breeder",
+        "original_name": "O",
+        "new_name": "N",
+    }
+    await websocket_update_breeder(hass, mock_connection, msg_update)
+    mock_connection.send_error.assert_called_with(
+        14, "unknown_error", "Breeder Update Fail"
+    )
+
+    mock_connection.reset_mock()
+
+    msg_delete = {
+        "id": 15,
+        "type": f"{DOMAIN}/delete_breeder",
+        "breeder_name": "B",
+    }
+    await websocket_delete_breeder(hass, mock_connection, msg_delete)
+    mock_connection.send_error.assert_called_with(
+        15, "unknown_error", "Breeder Delete Fail"
+    )
