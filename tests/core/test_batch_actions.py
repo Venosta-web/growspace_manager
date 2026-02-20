@@ -21,8 +21,8 @@ def mock_hass() -> MagicMock:
 @pytest.fixture
 def mock_coordinator() -> MagicMock:
     coord = MagicMock()
-    coord._plant_service = MagicMock()
-    coord._plant_service.transition_plant_stage = AsyncMock()
+    coord.plant_manager = MagicMock()
+    coord.plant_manager.transition_plant_stage = AsyncMock()
     coord.async_harvest_plant = AsyncMock()
     coord.async_remove_plant = AsyncMock()
     return coord
@@ -42,11 +42,11 @@ async def test_batch_transition(
 
     await handle_batch_action(mock_hass, mock_coordinator, call)
 
-    assert mock_coordinator._plant_service.transition_plant_stage.call_count == 2
-    mock_coordinator._plant_service.transition_plant_stage.assert_any_call(
+    assert mock_coordinator.plant_manager.transition_plant_stage.call_count == 2
+    mock_coordinator.plant_manager.transition_plant_stage.assert_any_call(
         plant_id="plant1", new_stage="flower", transition_date="2023-01-01"
     )
-    mock_coordinator._plant_service.transition_plant_stage.assert_any_call(
+    mock_coordinator.plant_manager.transition_plant_stage.assert_any_call(
         plant_id="plant2", new_stage="flower", transition_date="2023-01-01"
     )
 
@@ -115,6 +115,6 @@ async def test_unknown_action(
         await handle_batch_action(mock_hass, mock_coordinator, call)
 
     # Should result in no coordinator calls
-    mock_coordinator._plant_service.transition_plant_stage.assert_not_called()
+    mock_coordinator.plant_manager.transition_plant_stage.assert_not_called()
     mock_coordinator.async_harvest_plant.assert_not_called()
     mock_coordinator.async_remove_plant.assert_not_called()

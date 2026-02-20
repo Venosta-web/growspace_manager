@@ -12,7 +12,7 @@ import logging
 from typing import TYPE_CHECKING
 
 from custom_components.growspace_manager.event_builder import EventBuilder
-from custom_components.growspace_manager.models import Plant
+from custom_components.growspace_manager.models import GrowspaceEvent, Plant
 from homeassistant.core import HomeAssistant
 from homeassistant.util import dt as dt_util
 

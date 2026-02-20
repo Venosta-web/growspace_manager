@@ -45,7 +45,7 @@ async def test_handle_add_plant_wraps_error(
 ) -> None:
     """Test handle_add_plant wraps generic exceptions."""
     # Setup - simulate generic exception
-    mock_coordinator._plant_service.add_plant.side_effect = Exception("Boom")
+    mock_coordinator.plant_manager.add_plant.side_effect = Exception("Boom")
 
     call = MagicMock()
     call.data = {
@@ -64,7 +64,7 @@ async def test_handle_add_plants_wraps_error(
 ) -> None:
     """Test handle_add_plants wraps generic exceptions."""
     # Setup - simulate exception
-    mock_coordinator._plant_service.add_plant.side_effect = Exception("Boom Batch")
+    mock_coordinator.plant_manager.add_plant.side_effect = Exception("Boom Batch")
     # Need to mock find_first_available_position to prevent early exit
     mock_coordinator.validator.find_first_available_position.return_value = (1, 1)
 

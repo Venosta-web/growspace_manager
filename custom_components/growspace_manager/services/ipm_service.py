@@ -13,7 +13,7 @@ from typing import TYPE_CHECKING, Any
 import uuid
 
 from custom_components.growspace_manager.event_builder import EventBuilder
-from custom_components.growspace_manager.models import IPMPreset, Plant
+from custom_components.growspace_manager.models import GrowspaceEvent, IPMPreset, Plant
 from homeassistant.core import HomeAssistant
 from homeassistant.util import dt as dt_util
 

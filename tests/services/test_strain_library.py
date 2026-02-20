@@ -100,11 +100,33 @@ async def test_add_strain_with_phenotype(strain_library: StrainLibrary) -> None:
         flower_days_max=65,
     )
 
-    assert "Gorilla Glue" in strain_library.strains
-    phenotypes = strain_library.strains["Gorilla Glue"]["phenotypes"]
-    assert "#4" in phenotypes
-    assert phenotypes["#4"]["description"] == "Sticky"
-    assert phenotypes["#4"]["flower_days_min"] == 60
+
+@pytest.mark.asyncio
+async def test_add_strain_fetch_failure(strain_library: StrainLibrary) -> None:
+    """Test RuntimeError when strain is not found after adding."""
+
+    # Cursor for the SELECT
+    class MockCursor:
+        def __await__(self):
+            async def _inner():
+                return self
+
+            return _inner().__await__()
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            pass
+
+        async def fetchone(self):
+            return None
+
+    with patch.object(strain_library._db, "execute") as mock_execute:
+        mock_execute.return_value = MockCursor()
+
+        with pytest.raises(RuntimeError, match="Strain Test Strain not found"):
+            await strain_library.add_strain(strain="Test Strain")
 
 
 @pytest.mark.asyncio

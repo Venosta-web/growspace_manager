@@ -34,7 +34,7 @@ def mock_hass():
 def obsolete_mock_coordinator():
     """Fixture for a mock GrowspaceCoordinator instance."""
     coordinator = MagicMock(spec=GrowspaceCoordinator)
-    coordinator._growspace_service.add_growspace = AsyncMock(return_value="gs1")
+    coordinator.growspace_manager.add_growspace = AsyncMock(return_value="gs1")
     coordinator.async_remove_growspace = AsyncMock()
     # Mock growspaces dict
     mock_gs = MagicMock()
@@ -91,7 +91,7 @@ async def test_handle_add_growspace(
         mock_hass, mock_coordinator, mock_strain_library, mock_call
     )
 
-    mock_coordinator._growspace_service.add_growspace.assert_awaited_once_with(
+    mock_coordinator.growspace_manager.add_growspace.assert_awaited_once_with(
         name="Test GS", rows=2, plants_per_row=3, notification_target="mobile_app_test"
     )
     mock_hass.bus.async_fire.assert_not_called()
@@ -116,7 +116,7 @@ async def test_handle_update_growspace(
         mock_hass, mock_coordinator, mock_strain_library, mock_call
     )
 
-    mock_coordinator._growspace_service.update_growspace.assert_awaited_once_with(
+    mock_coordinator.growspace_manager.update_growspace.assert_awaited_once_with(
         growspace_id="gs1",
         name="Updated GS",
         rows=5,
@@ -147,10 +147,10 @@ async def test_handle_add_growspace_no_mobile_app_notification(
         mock_hass, mock_coordinator, mock_strain_library, mock_call
     )
 
-    mock_coordinator._growspace_service.add_growspace.assert_awaited_once_with(
+    mock_coordinator.growspace_manager.add_growspace.assert_awaited_once_with(
         name="Test GS", rows=2, plants_per_row=3, notification_target=None
     )
-    mock_coordinator._growspace_service.add_growspace.assert_awaited_once_with(
+    mock_coordinator.growspace_manager.add_growspace.assert_awaited_once_with(
         name="Test GS", rows=2, plants_per_row=3, notification_target=None
     )
     mock_hass.bus.async_fire.assert_not_called()
@@ -168,7 +168,7 @@ async def test_handle_add_growspace_exception(
 ) -> None:
     """Test handle_add_growspace with an exception."""
     mock_call.data = {"name": "Test GS", "rows": 2, "plants_per_row": 3}
-    mock_coordinator._growspace_service.add_growspace.side_effect = Exception(
+    mock_coordinator.growspace_manager.add_growspace.side_effect = Exception(
         "Add failed"
     )
     mock_async_get.return_value.devices = {}
@@ -366,7 +366,7 @@ async def test_handle_add_growspace_growspace_error(
 ) -> None:
     """Test handle_add_growspace with a GrowspaceError."""
     mock_call.data = {"name": "Test GS", "rows": 2, "plants_per_row": 3}
-    mock_coordinator._growspace_service.add_growspace.side_effect = GrowspaceError(
+    mock_coordinator.growspace_manager.add_growspace.side_effect = GrowspaceError(
         "Specific error"
     )
     mock_async_get.return_value.devices = {}
@@ -386,7 +386,7 @@ async def test_handle_update_growspace_exception(
 ) -> None:
     """Test handle_update_growspace with an exception."""
     mock_call.data = {"growspace_id": "gs1", "name": "Test GS"}
-    mock_coordinator._growspace_service.update_growspace.side_effect = Exception(
+    mock_coordinator.growspace_manager.update_growspace.side_effect = Exception(
         "Update failed"
     )
 
@@ -407,7 +407,7 @@ async def test_handle_update_growspace_growspace_error(
 ) -> None:
     """Test handle_update_growspace with a GrowspaceError."""
     mock_call.data = {"growspace_id": "gs1", "name": "Test GS"}
-    mock_coordinator._growspace_service.update_growspace.side_effect = GrowspaceError(
+    mock_coordinator.growspace_manager.update_growspace.side_effect = GrowspaceError(
         "Update error"
     )
 

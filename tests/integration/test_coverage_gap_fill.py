@@ -64,7 +64,7 @@ def mock_coordinator(
     coordinator.config_entry = mock_entry
     coordinator.growspaces = {}
     coordinator.plants = {}
-    coordinator._growspace_service.get_sorted_growspace_options = MagicMock(
+    coordinator.growspace_manager.get_sorted_growspace_options = MagicMock(
         return_value=[]
     )
     mock_entry.runtime_data = coordinator
@@ -149,12 +149,12 @@ async def test_growspace_config_handler_gaps(
     mock_entry.runtime_data = mock_coordinator
 
     # 2. Add growspace exception branch
-    mock_coordinator._growspace_service.add_growspace = AsyncMock(  # type: ignore[method-assign]
+    mock_coordinator.growspace_manager.add_growspace = AsyncMock(  # type: ignore[method-assign]
         side_effect=Exception("Test Error")
     )
 
     # 2. Add growspace exception branch
-    mock_coordinator._growspace_service.add_growspace = AsyncMock(  # type: ignore[method-assign]
+    mock_coordinator.growspace_manager.add_growspace = AsyncMock(  # type: ignore[method-assign]
         side_effect=Exception("Test Error")
     )
     # mock_entry already has runtime_data restored above

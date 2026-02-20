@@ -90,8 +90,8 @@
     ]),
     'light_sensors': list([
     ]),
-    'max_flower_days': 0,
-    'max_stage_summary': 'Veg: 15d (W3), Flower: 0d (W0)',
+    'max_flower_days': -1,
+    'max_stage_summary': 'Veg: 15d (W3), Flower: -1d (W0)',
     'max_veg_days': 15,
     'name': 'Test Room',
     'notification_target': None,

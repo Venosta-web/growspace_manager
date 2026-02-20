@@ -6,7 +6,7 @@ import contextlib
 import logging
 from typing import TYPE_CHECKING, Any
 
-from ..const import (
+from custom_components.growspace_manager.const import (
     CONF_CIRCULATION_FAN_ENTITIES,
     CONF_CIRCULATION_FAN_ENTITY,
     CONF_CO2_SENSOR,
@@ -26,14 +26,14 @@ from ..const import (
     CONF_VPD_SENSORS,
     DOMAIN,
 )
-from ..utils import days_to_week
+from custom_components.growspace_manager.utils import days_to_week
+
 from .entity_queries import EntityQueries
 from .plant_view_model import PlantViewModelBuilder
 
 if TYPE_CHECKING:
+    from custom_components.growspace_manager.models import Growspace, Plant
     from homeassistant.core import HomeAssistant
-
-    from ..models import Growspace, Plant
 
 _LOGGER = logging.getLogger(__name__)
 

@@ -6,7 +6,6 @@ from dataclasses import dataclass
 from enum import StrEnum
 from typing import Final
 
-
 # Constants for stage logic and transitions
 DEFAULT_FLOWER_EARLY_DAYS: Final = 21
 DEFAULT_FLOWER_MID_DAYS: Final = 21
@@ -126,12 +125,9 @@ SPECIAL_GROWSPACE_STAGES: Final[list[str]] = [
 
 def get_stage_definition(stage: str | PlantStage) -> StageDefinition | None:
     """Retrieve stage definition by ID or string."""
-    if isinstance(stage, str):
-        try:
-            stage_enum = PlantStage(stage)
-        except ValueError:
-            return None
-    else:
-        stage_enum = stage
+    try:
+        stage_enum = PlantStage(stage)
+    except ValueError:
+        return None
 
     return STAGE_REGISTRY.get(stage_enum)

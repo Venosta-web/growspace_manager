@@ -36,7 +36,7 @@ def mock_sensor_instance(hass: HomeAssistant) -> MagicMock:
 def mock_env_state() -> MagicMock:
     """Fixture for EnvironmentState."""
     state = MagicMock(spec=EnvironmentState)
-    state.flower_days = 0  # Default to Veg
+    state.flower_days = -1  # Default to Veg
     state.temp = 25.0
     state.humidity = 60.0
     state.vpd = 1.0
@@ -49,7 +49,7 @@ async def test_fallback_mold_trend_vpd_falling_veg_danger(
     mock_sensor_instance: MagicMock, mock_env_state: MagicMock
 ) -> None:
     """Test VPD falling trend in Veg stage approaching danger zone."""
-    mock_env_state.flower_days = 0  # Veg
+    mock_env_state.flower_days = -1  # Veg
     mock_env_state.vpd = 0.4  # Below 0.5 danger zone
 
     # Mock analysis returning "falling"
@@ -84,7 +84,7 @@ async def test_fallback_mold_trend_vpd_falling_veg_safe(
     mock_sensor_instance: MagicMock, mock_env_state: MagicMock
 ) -> None:
     """Test VPD falling trend in Veg stage in safe zone."""
-    mock_env_state.flower_days = 0  # Veg
+    mock_env_state.flower_days = -1  # Veg
     mock_env_state.vpd = 0.8  # Above 0.5 danger zone
 
     async def mock_analyze(
@@ -210,7 +210,7 @@ async def test_async_evaluate_mold_risk_trend_integration(
 ) -> None:
     """Test the full evaluation function ignores humidity trends but passes VPD."""
     # Setup mocks
-    mock_env_state.flower_days = 0
+    mock_env_state.flower_days = -1
     mock_env_state.vpd = 0.4  # Danger
 
     async def mock_analyze(

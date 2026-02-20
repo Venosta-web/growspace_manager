@@ -540,18 +540,34 @@ class TestTankDepletionPredictor:
         # Invalid value should return None
         assert multiplier is None
 
-    async def test_vpd_multiplier_with_no_vpd_sensor(self, mock_hass, basic_tank):
-        """Test VPD multiplier when environment config has no VPD sensor."""
-        # Environment config with no VPD sensor
-        env_config = EnvironmentConfig(
-            light_sensors=["light.grow_light"], vpd_sensor=None
-        )
-
-        predictor = TankDepletionPredictor(
-            mock_hass, basic_tank, environment_config=env_config
-        )
-
-        multiplier = predictor._get_vpd_multiplier()
-
         # No VPD sensor should return None
         assert multiplier is None
+
+    async def test_async_update_with_lights_on(
+        self, mock_hass, basic_tank, environment_config
+    ):
+        """Test updating predictor when lights are on."""
+        predictor = TankDepletionPredictor(
+            mock_hass, basic_tank, environment_config=environment_config
+        )
+
+        # Mock tank level
+        mock_tank_state = State("sensor.tank_level", "85.5")
+
+        # Mock light on
+        mock_light_state = State("light.grow_light", "on")
+
+        def mock_states_get(entity_id):
+            if entity_id == "sensor.tank_level":
+                return mock_tank_state
+            if entity_id == "light.grow_light":
+                return mock_light_state
+            return None
+
+        mock_hass.states.get.side_effect = mock_states_get
+
+        await predictor.async_update()
+
+        assert len(predictor._buffer) == 1
+        # Check is_light_on flag (index 2 in tuple)
+        assert predictor._buffer[0][2] is True

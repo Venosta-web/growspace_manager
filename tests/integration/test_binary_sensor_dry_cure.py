@@ -134,8 +134,8 @@ def test_get_growth_stage_info_dry_growspace(mock_coordinator) -> None:
 
     # NOTE: This assertion is designed to PASS AFTER the fix.
     # Before the fix, it would be 50.
-    assert info["flower_days"] == 0
-    assert info["veg_days"] == 0
+    assert info["flower_days"] == -1
+    assert info["veg_days"] == -1
 
 
 def test_get_growth_stage_info_cure_growspace(mock_coordinator) -> None:
@@ -158,5 +158,5 @@ def test_get_growth_stage_info_cure_growspace(mock_coordinator) -> None:
     )
 
     info = sensor._get_growth_stage_info()
-    assert info["flower_days"] == 0
-    assert info["veg_days"] == 0
+    assert info["flower_days"] == -1
+    assert info["veg_days"] == -1

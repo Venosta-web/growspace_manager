@@ -752,7 +752,7 @@ class PlantManager:
                 await self.strain_library.record_harvest(
                     plant.strain, plant.phenotype, veg_days, flower_days
                 )
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001
                 _LOGGER.warning(
                     "Failed to record harvest analytics for %s: %s",
                     plant.plant_id,

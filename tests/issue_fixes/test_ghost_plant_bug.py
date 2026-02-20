@@ -14,8 +14,8 @@ async def test_ghost_plant_bug(hass: HomeAssistant) -> None:
     # Mock the async_refresh method properly to avoid "Cannot assign to a method" error
     with patch.object(coordinator, "async_refresh", new_callable=AsyncMock):
         # Setup initial state
-        gs = await coordinator._growspace_service.add_growspace("Test Growspace")
-        plant = await coordinator._plant_service.add_plant(gs.id, "Test Plant")
+        gs = await coordinator.growspace_manager.add_growspace("Test Growspace")
+        plant = await coordinator.plant_manager.add_plant(gs.id, "Test Plant")
 
         assert plant.plant_id in coordinator.plants
 

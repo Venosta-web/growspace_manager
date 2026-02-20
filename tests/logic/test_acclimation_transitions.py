@@ -14,13 +14,13 @@ def test_seedling_acclimation_humidity_stress():
     state = MagicMock(
         spec=EnvironmentState,
         humidity=97,
-        flower_days=0,
-        veg_days=0,
+        flower_days=-1,
+        veg_days=-1,
         seedling_days=1,
-        clone_days=0,
-        dry_days=0,
-        cure_days=0,
-        mother_days=0,
+        clone_days=-1,
+        dry_days=-1,
+        cure_days=-1,
+        mother_days=-1,
     )
     obs, reasons = evaluate_direct_humidity_stress(state, {})
     assert len(obs) == 0  # SAFE
@@ -44,13 +44,13 @@ def test_seedling_transition_humidity_stress():
     state = MagicMock(
         spec=EnvironmentState,
         humidity=70,
-        flower_days=0,
-        veg_days=0,
+        flower_days=-1,
+        veg_days=-1,
         seedling_days=5,
-        clone_days=0,
-        dry_days=0,
-        cure_days=0,
-        mother_days=0,
+        clone_days=-1,
+        dry_days=-1,
+        cure_days=-1,
+        mother_days=-1,
     )
     obs, reasons = evaluate_direct_humidity_stress(state, {})
     assert len(obs) == 0  # 70 is between 47.5 and 95.0
@@ -67,14 +67,14 @@ def test_clone_acclimation_vpd_stress():
     state = MagicMock(
         spec=EnvironmentState,
         vpd=0.1,
-        flower_days=0,
-        veg_days=0,
-        seedling_days=0,
+        flower_days=-1,
+        veg_days=-1,
+        seedling_days=-1,
         clone_days=2,
         is_lights_on=True,
-        dry_days=0,
-        cure_days=0,
-        mother_days=0,
+        dry_days=-1,
+        cure_days=-1,
+        mother_days=-1,
     )
     obs, reasons = evaluate_direct_vpd_stress(state, {})
     assert len(obs) == 0  # SAFE
@@ -91,31 +91,31 @@ def test_clone_acclimation_vpd_stress():
 def test_stage_transition_logic():
     """Verify the stage transition factors for acclimation."""
     # Day 1
-    s, t, f = calculate_stage_transition(0, 0, 1, 0)
+    s, t, f = calculate_stage_transition(-1, -1, 1, -1)
     assert s == "seedling"
     assert t == "seedling"
     assert f == 0.0
 
     # Day 3 (Edge of full acclimation)
-    s, t, f = calculate_stage_transition(0, 0, 3, 0)
+    s, t, f = calculate_stage_transition(-1, -1, 3, -1)
     assert s == "seedling"
     assert t == "seedling"
     assert f == 0.0
 
     # Day 5 (Midpoint)
-    s, t, f = calculate_stage_transition(0, 0, 5, 0)
+    s, t, f = calculate_stage_transition(-1, -1, 5, -1)
     assert s == "seedling"
     assert t == "seedling_standard"
     assert f == 0.5
 
     # Day 7 (End of transition)
-    s, t, f = calculate_stage_transition(0, 0, 7, 0)
+    s, t, f = calculate_stage_transition(-1, -1, 7, -1)
     assert s == "seedling"
     assert t == "seedling_standard"
     assert f == 1.0
 
     # Day 8 (Standard)
-    s, t, f = calculate_stage_transition(0, 0, 8, 0)
+    s, t, f = calculate_stage_transition(-1, -1, 8, -1)
     assert s == "seedling_standard"
     assert t == "seedling_standard"
     assert f == 0.0

@@ -35,9 +35,9 @@ async def test_evaluate_humidity_risk_branches(mock_sensor) -> None:
     strategy = MoldRiskEvaluatorStrategy(mock_sensor)
     state = MagicMock(spec=EnvironmentState)
     state.humidity = 87.0
-    state.seedling_days = 0
-    state.clone_days = 0
-    state.veg_days = 0
+    state.seedling_days = -1
+    state.clone_days = -1
+    state.veg_days = -1
     state.flower_days = 43  # Late flower
 
     # Late flower critical humidity is 65.0, high is 60.0
@@ -47,7 +47,7 @@ async def test_evaluate_humidity_risk_branches(mock_sensor) -> None:
     # but we need to hit specific stage branches.
 
     # Test explicit "Veg" branch with high humidity but not extreme
-    state.flower_days = 0
+    state.flower_days = -1
     state.humidity = 82.0  # High > 80, Critical > 85
     # Should hit "High humidity" branch
     obs_list = []
@@ -64,14 +64,14 @@ async def test_evaluate_circulation_risk_branches(mock_sensor) -> None:
     state = MagicMock(spec=EnvironmentState)
     state.fan_off = True
     # Initialize all stage attributes to integers to avoid MagicMock comparison errors
-    state.seedling_days = 0
-    state.clone_days = 0
-    state.veg_days = 0
-    state.flower_days = 0
+    state.seedling_days = -1
+    state.clone_days = -1
+    state.veg_days = -1
+    state.flower_days = -1
 
     # 1. Early stage threshold (Acclimation: 100.0)
     state.seedling_days = 1
-    state.flower_days = 0
+    state.flower_days = -1
     state.humidity = 95.0  # Below 100
     obs = []
     reasons = []
@@ -83,8 +83,8 @@ async def test_evaluate_circulation_risk_branches(mock_sensor) -> None:
     assert len(obs) == 1
 
     # 2. Veg threshold (80.0)
-    state.seedling_days = 0
-    state.flower_days = 0
+    state.seedling_days = -1
+    state.flower_days = -1
     state.humidity = 79.0
     obs = []
     strategy._evaluate_circulation_risk(state, obs, [])
@@ -102,22 +102,22 @@ async def test_evaluate_humidifier_risk_branches(mock_sensor) -> None:
     state = MagicMock(spec=EnvironmentState)
     state.humidifier_on = True
     # Initialize all stage attributes to integers
-    state.seedling_days = 0
-    state.clone_days = 0
-    state.veg_days = 0
-    state.flower_days = 0
+    state.seedling_days = -1
+    state.clone_days = -1
+    state.veg_days = -1
+    state.flower_days = -1
 
     # 1. Early stage safe zone (< 90)
     state.seedling_days = 1
-    state.flower_days = 0
+    state.flower_days = -1
     state.humidity = 89.0
     obs = []
     strategy._evaluate_humidifier_risk(state, obs, [])
     assert len(obs) == 0
 
     # 2. Veg safe zone (< 85)
-    state.seedling_days = 0
-    state.flower_days = 0
+    state.seedling_days = -1
+    state.flower_days = -1
     state.humidity = 84.0
     obs = []
     strategy._evaluate_humidifier_risk(state, obs, [])

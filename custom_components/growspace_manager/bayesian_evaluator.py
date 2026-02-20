@@ -96,7 +96,6 @@ from .bayesian_data import (
     VPD_OPTIMAL_THRESHOLDS,
     VPD_STRESS_THRESHOLDS,
 )
-from .const import DEFAULT_FLOWER_EARLY_DAYS
 from .domain.stage import BayesianStage
 from .models import EnvironmentState
 from .utils import calculate_stage_transition, interpolate_value
@@ -325,7 +324,7 @@ def _is_vpd_trend_gated(state: EnvironmentState) -> bool:
         return False
     # Danger Zone: Veg < VPD_DANGER_ZONE_VEG, Flower < VPD_DANGER_ZONE_FLOWER
     danger_zone = (
-        VPD_DANGER_ZONE_VEG if state.flower_days == 0 else VPD_DANGER_ZONE_FLOWER
+        VPD_DANGER_ZONE_VEG if state.flower_days < 0 else VPD_DANGER_ZONE_FLOWER
     )
     return state.vpd >= danger_zone
 
@@ -368,7 +367,7 @@ async def _async_evaluate_fallback_mold_trend_analysis(
                 # Danger Zone: Veg < VPD_DANGER_ZONE_VEG, Flower < VPD_DANGER_ZONE_FLOWER
                 danger_zone = (
                     VPD_DANGER_ZONE_VEG
-                    if state.flower_days == 0
+                    if state.flower_days < 0
                     else VPD_DANGER_ZONE_FLOWER
                 )
 
@@ -580,9 +579,7 @@ def evaluate_direct_humidity_stress(
         and factor < 0.5
     ):
         prob = env_config.get("prob_humidity_high_veg", PROB_HUMIDITY_HIGH_VEG)
-    elif (
-        stage_a == BayesianStage.FLOWER_LATE or stage_b == BayesianStage.FLOWER_LATE
-    ) and factor > 0.5:
+    elif (BayesianStage.FLOWER_LATE in (stage_a, stage_b)) and factor > 0.5:
         prob = PROB_HUMIDITY_FLOWER_LATE_OUT_OF_RANGE
     else:
         prob = PROB_HUMIDITY_FLOWER_MID_OUT_OF_RANGE
@@ -878,9 +875,7 @@ def evaluate_optimal_co2(
     # Note: Late flower stages don't penalize out-of-range CO2 (backward compatibility)
     if not co2_optimal:
         # Check if we're in late flower stage (either stage_a or stage_b is FLOWER_LATE)
-        is_late_flower = (
-            stage_a == BayesianStage.FLOWER_LATE or stage_b == BayesianStage.FLOWER_LATE
-        )
+        is_late_flower = BayesianStage.FLOWER_LATE in (stage_a, stage_b)
 
         if not is_late_flower:
             observations.append(prob_out_of_range)
@@ -936,8 +931,8 @@ def evaluate_active_saturation(
         hum = state.humidity
         is_saturated = False
 
-        veg = state.flower_days == 0
-        flower = state.flower_days > 0
+        veg = state.flower_days < 0
+        flower = state.flower_days >= 0
 
         if (veg and hum > HUMIDITY_SATURATION_VEG_THRESHOLD) or (
             flower and hum > HUMIDITY_SATURATION_FLOWER_THRESHOLD

@@ -78,7 +78,7 @@ def test_growspace_view_model_snapshot(
             plants=plants,
             biological_metrics={"daily_avg_temp": 24.5, "daily_avg_hum": 55.0},
             max_veg_days=15,
-            max_flower_days=0,
+            max_flower_days=-1,
         )
 
         # Sort keys or exclude timestamp if it were here (it's not yet)

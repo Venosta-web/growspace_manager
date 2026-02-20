@@ -44,41 +44,41 @@ def mock_growspace():
 def test_determine_granular_stage(analyzer: EnvironmentAnalyzer) -> None:
     """Test determining the granular growth stage."""
     # Cure
-    assert analyzer.determine_granular_stage(0, 0, 0, 5) == "cure"
+    assert analyzer.determine_granular_stage(-1, -1, -1, 5) == "cure"
     # Dry
-    assert analyzer.determine_granular_stage(0, 0, 5, 0) == "dry"
+    assert analyzer.determine_granular_stage(-1, -1, 5, -1) == "dry"
     # Flower Early
     assert (
-        analyzer.determine_granular_stage(0, DEFAULT_FLOWER_EARLY_DAYS, 0, 0)
+        analyzer.determine_granular_stage(-1, DEFAULT_FLOWER_EARLY_DAYS, -1, -1)
         == "flower_early"
     )
     # Flower Mid
     assert (
-        analyzer.determine_granular_stage(0, DEFAULT_FLOWER_EARLY_DAYS + 5, 0, 0)
+        analyzer.determine_granular_stage(-1, DEFAULT_FLOWER_EARLY_DAYS + 5, -1, -1)
         == "flower_mid"
     )
     # Flower Late
     assert (
-        analyzer.determine_granular_stage(0, DEFAULT_FLOWER_EARLY_DAYS + 30, 0, 0)
+        analyzer.determine_granular_stage(-1, DEFAULT_FLOWER_EARLY_DAYS + 30, -1, -1)
         == "flower_late"
     )
     # Veg Early
-    assert analyzer.determine_granular_stage(10, 0, 0, 0) == "veg"
+    assert analyzer.determine_granular_stage(10, -1, -1, -1) == "veg"
     # Veg Late
-    assert analyzer.determine_granular_stage(30, 0, 0, 0) == "veg"
+    assert analyzer.determine_granular_stage(30, -1, -1, -1) == "veg"
     # Seedling
-    assert analyzer.determine_granular_stage(0, 0, 0, 0, 5, 0) == "seedling"
+    assert analyzer.determine_granular_stage(-1, -1, -1, -1, 5, -1) == "seedling"
     # Clone
-    assert analyzer.determine_granular_stage(0, 0, 0, 0, 0, 5) == "clone"
+    assert analyzer.determine_granular_stage(-1, -1, -1, -1, -1, 5) == "clone"
 
     # Case _ (Line 187) - Trigger with non-bool comparison
     class NonBool:
-        def __gt__(self, other):
+        def __ge__(self, other):
             return "not_a_bool"
 
-    assert analyzer.determine_granular_stage(0, 0, 0, NonBool()) == "empty"
+    assert analyzer.determine_granular_stage(-1, -1, -1, NonBool()) == "empty"
     # Default Veg Early (all 0)
-    assert analyzer.determine_granular_stage(0, 0, 0, 0) == "empty"
+    assert analyzer.determine_granular_stage(-1, -1, -1, -1) == "empty"
 
 
 def test_determine_is_day(
@@ -112,7 +112,7 @@ def test_calculate_biological_metrics(
     hass.states.async_set("sensor.light", "on")  # Day
 
     # Veg Early Day
-    metrics = analyzer.calculate_biological_metrics(mock_growspace, 5, 0, 0, 0)
+    metrics = analyzer.calculate_biological_metrics(mock_growspace, 5, -1, -1, -1)
     assert metrics["granular_stage"] == "veg"
     assert metrics["is_day"] is True
     # veg_early day mild is (0.6, 1.2), stress is (0.4, 1.4).
@@ -130,13 +130,13 @@ def test_calculate_biological_metrics(
 
     # Test Danger
     hass.states.async_set("sensor.vpd", "1.5")  # > 1.0
-    metrics = analyzer.calculate_biological_metrics(mock_growspace, 5, 0, 0, 0)
+    metrics = analyzer.calculate_biological_metrics(mock_growspace, 5, -1, -1, -1)
     assert metrics["vpd_status"] == "danger"
 
     # Test Optimal
     # veg mild: (0.4, 0.8)
     hass.states.async_set("sensor.vpd", "0.6")
-    metrics = analyzer.calculate_biological_metrics(mock_growspace, 5, 0, 0, 0)
+    metrics = analyzer.calculate_biological_metrics(mock_growspace, 5, -1, -1, -1)
     assert metrics["vpd_status"] == "optimal"
 
 

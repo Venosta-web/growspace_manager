@@ -27,10 +27,10 @@ async def test_mold_risk_seedling_high_humidity(mock_sensor) -> None:
         humidity=88.0,
         vpd=0.8,
         co2=400,
-        veg_days=0,
-        flower_days=0,
+        veg_days=-1,
+        flower_days=-1,
         seedling_days=10,
-        clone_days=0,
+        clone_days=-1,
         is_lights_on=True,
         fan_off=False,
         dehumidifier_on=False,
@@ -61,9 +61,9 @@ async def test_mold_risk_veg_high_humidity(mock_sensor) -> None:
         vpd=0.8,
         co2=400,
         veg_days=20,
-        flower_days=0,
-        seedling_days=0,
-        clone_days=0,
+        flower_days=-1,
+        seedling_days=-1,
+        clone_days=-1,
         is_lights_on=True,
         fan_off=False,
         dehumidifier_on=False,
@@ -92,9 +92,9 @@ async def test_mold_risk_extreme_humidity_penalty(mock_sensor) -> None:
         vpd=0.8,
         co2=400,
         veg_days=20,
-        flower_days=0,
-        seedling_days=0,
-        clone_days=0,
+        flower_days=-1,
+        seedling_days=-1,
+        clone_days=-1,
         is_lights_on=True,
         fan_off=False,
         dehumidifier_on=False,
@@ -110,7 +110,7 @@ async def test_mold_risk_extreme_humidity_penalty(mock_sensor) -> None:
 
     # Seedling stage, 91% humidity -> No extreme penalty (91 < 92)
     state.seedling_days = 10
-    state.veg_days = 0
+    state.veg_days = -1
     _obs, rsn = await strategy.async_evaluate(state)
     has_extreme_reason = any("Extreme humidity risk" in r[1] for r in rsn)
     assert not has_extreme_reason

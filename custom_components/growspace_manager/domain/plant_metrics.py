@@ -4,10 +4,10 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from ..utils import calculate_days_since, format_date
+from custom_components.growspace_manager.utils import calculate_days_since, format_date
 
 if TYPE_CHECKING:
-    from ..models import Plant
+    from custom_components.growspace_manager.models import Plant
 
 
 def get_days_since_watering(plant: Plant) -> int:

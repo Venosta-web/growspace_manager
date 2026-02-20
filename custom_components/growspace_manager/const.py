@@ -3,7 +3,7 @@
 from enum import StrEnum
 from typing import Final
 
-from .domain.stage import PLANT_STAGES, PlantStage
+from .domain.stage import PLANT_STAGES, PlantStage  # noqa: F401
 
 DOMAIN: Final = "growspace_manager"
 STORAGE_VERSION: Final = 1
@@ -330,7 +330,6 @@ CATEGORY_WATERING = "watering"
 
 
 # Plant stages
-PLANT_STAGES = [stage.value for stage in PlantStage]
 VALID_STAGES = [stage.value for stage in PlantStage]
 
 # Existing DATE_FIELDS - Ensure consistency with schema definitions if adding more

@@ -148,7 +148,7 @@ async def test_stress_sensor_high_heat(
         patch.object(
             sensor,
             "_get_growth_stage_info",
-            return_value={"veg_days": 1, "flower_days": 0},
+            return_value={"veg_days": 1, "flower_days": -1},
         ),
         patch.object(sensor, "async_write_ha_state", new_callable=MagicMock),
     ):
@@ -245,7 +245,7 @@ async def test_optimal_conditions_sensor(
         patch.object(
             sensor,
             "_get_growth_stage_info",
-            return_value={"veg_days": 20, "flower_days": 0},
+            return_value={"veg_days": 20, "flower_days": -1},
         ),
         patch.object(sensor, "async_write_ha_state", new_callable=MagicMock),
     ):

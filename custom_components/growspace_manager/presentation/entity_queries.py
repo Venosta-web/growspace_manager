@@ -8,12 +8,13 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING
 
+from custom_components.growspace_manager.const import DOMAIN
+from custom_components.growspace_manager.utils import (
+    generate_growspace_overview_unique_id,
+)
 from homeassistant.const import STATE_UNAVAILABLE, STATE_UNKNOWN
 from homeassistant.helpers import entity_registry as er
 from homeassistant.util import slugify
-
-from ..const import DOMAIN
-from ..utils import generate_growspace_overview_unique_id
 
 if TYPE_CHECKING:
     from homeassistant.core import HomeAssistant
@@ -55,7 +56,9 @@ class EntityQueries:
             Entity ID string or None if not found.
         """
         unique_id = generate_growspace_overview_unique_id(growspace_id)
-        entity_id = self._entity_registry.async_get_entity_id("sensor", DOMAIN, unique_id)
+        entity_id = self._entity_registry.async_get_entity_id(
+            "sensor", DOMAIN, unique_id
+        )
 
         # Fallback for special growspaces (legacy support)
         if not entity_id and growspace_id in ("mother", "clone", "dry", "cure"):

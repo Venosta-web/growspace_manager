@@ -152,9 +152,9 @@ async def test_mold_sensor_stage_aware_thresholds(
             "_get_growth_stage_info",
             return_value={
                 "veg_days": 20,
-                "flower_days": 0,
-                "seedling_days": 0,
-                "clone_days": 0,
+                "flower_days": -1,
+                "seedling_days": -1,
+                "clone_days": -1,
             },
         ):
             set_sensor_state(hass, "sensor.humidity", 84)
@@ -172,9 +172,9 @@ async def test_mold_sensor_stage_aware_thresholds(
             "_get_growth_stage_info",
             return_value={
                 "veg_days": 20,
-                "flower_days": 0,
-                "seedling_days": 0,
-                "clone_days": 0,
+                "flower_days": -1,
+                "seedling_days": -1,
+                "clone_days": -1,
             },
         ):
             set_sensor_state(hass, "sensor.humidity", 86)
@@ -298,9 +298,9 @@ async def test_veg_stage_scenario_false_positive_prevention(
             "_get_growth_stage_info",
             return_value={
                 "veg_days": 20,
-                "flower_days": 0,
-                "seedling_days": 0,
-                "clone_days": 0,
+                "flower_days": -1,
+                "seedling_days": -1,
+                "clone_days": -1,
             },
         ),
         patch.object(sensor, "async_analyze_sensor_trend", side_effect=mock_analyze),
@@ -375,7 +375,7 @@ async def test_user_reported_veg_scenario(
         patch.object(
             sensor,
             "_get_growth_stage_info",
-            return_value={"veg_days": 34, "flower_days": 0},
+            return_value={"veg_days": 34, "flower_days": -1},
         ),
         patch.object(sensor, "async_analyze_sensor_trend", side_effect=mock_analyze),
         patch.object(sensor, "async_write_ha_state", new_callable=MagicMock),
@@ -419,9 +419,9 @@ async def test_veg_fan_off_safe(
             "_get_growth_stage_info",
             return_value={
                 "veg_days": 20,
-                "flower_days": 0,
-                "seedling_days": 0,
-                "clone_days": 0,
+                "flower_days": -1,
+                "seedling_days": -1,
+                "clone_days": -1,
             },
         ),
         patch.object(sensor, "async_write_ha_state", new_callable=MagicMock),
@@ -464,9 +464,9 @@ async def test_veg_fan_off_risk(
             "_get_growth_stage_info",
             return_value={
                 "veg_days": 20,
-                "flower_days": 0,
-                "seedling_days": 0,
-                "clone_days": 0,
+                "flower_days": -1,
+                "seedling_days": -1,
+                "clone_days": -1,
             },
         ),
         patch.object(sensor, "async_write_ha_state", new_callable=MagicMock),

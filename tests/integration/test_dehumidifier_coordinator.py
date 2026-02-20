@@ -552,6 +552,12 @@ async def test_growth_stage_detection_cure_dry_seedling(
     ):
         assert coordinator._get_growth_stage() == "seedling"
 
+    with patch(
+        "custom_components.growspace_manager.dehumidifier_coordinator.calculate_days_in_stage",
+        side_effect=lambda p, stage: 1 if stage == "mother" else 0,
+    ):
+        assert coordinator._get_growth_stage() == "mother"
+
 
 async def test_control_domain_fallback(
     mock_hass, mock_main_coordinator, mock_growspace, mock_track_state_change_event

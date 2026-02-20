@@ -49,10 +49,10 @@ async def test_coordinator_getters_setters(coordinator: GrowspaceCoordinator) ->
     assert coordinator.data_repository.notifications_enabled == new_enabled
 
     # Line 234: growspace_service getter
-    assert coordinator.growspace_service == coordinator._growspace_service
+    assert coordinator.growspace_service == coordinator.growspace_manager
 
     # Line 239: plant_service getter
-    assert coordinator.plant_service == coordinator._plant_service
+    assert coordinator.plant_service == coordinator.plant_manager
 
 
 @pytest.mark.asyncio
@@ -96,13 +96,13 @@ async def test_async_add_growspace_coverage(
     mock_gs.name = "New GS"
     mock_gs.growspace_type = GrowspaceType.FLOWER
 
-    coordinator._growspace_service.add_growspace = AsyncMock(return_value=mock_gs)
+    coordinator.growspace_manager.add_growspace = AsyncMock(return_value=mock_gs)
     coordinator.subsystem_manager.async_setup_growspace_sub_coordinators = AsyncMock()
 
     result = await coordinator.async_add_growspace(name="New GS")
 
     assert result == mock_gs
-    coordinator._growspace_service.add_growspace.assert_called_once()
+    coordinator.growspace_manager.add_growspace.assert_called_once()
 
     # Verify device registration
     device_registry = dr.async_get(hass)
@@ -122,13 +122,13 @@ async def test_async_update_growspace_delegation(
 ) -> None:
     """Test async_update_growspace delegation."""
     # Line 541
-    coordinator._growspace_service.update_growspace = AsyncMock()
+    coordinator.growspace_manager.update_growspace = AsyncMock()
     gs = Growspace(id="gs1", name="Old Name")
     coordinator.growspaces = {"gs1": gs}
 
     result = await coordinator.async_update_growspace("gs1", name="New Name")
 
-    coordinator._growspace_service.update_growspace.assert_called_once_with(
+    coordinator.growspace_manager.update_growspace.assert_called_once_with(
         "gs1", name="New Name"
     )
     assert result is gs

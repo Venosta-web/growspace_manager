@@ -324,7 +324,9 @@ class StrainLibrary:
         # Build update query
         if logo == "":
             # Explicitly clear logo
-            query = "UPDATE strains SET breeder = ?, breeder_logo = NULL WHERE breeder = ?"
+            query = (
+                "UPDATE strains SET breeder = ?, breeder_logo = NULL WHERE breeder = ?"
+            )
             await self._db.execute(query, (new_name, original_name))
         elif logo_path is not None:
             query = "UPDATE strains SET breeder = ?, breeder_logo = ? WHERE breeder = ?"
@@ -363,7 +365,9 @@ class StrainLibrary:
         if not breeder_name:
             return 0
 
-        query = "UPDATE strains SET breeder = NULL, breeder_logo = NULL WHERE breeder = ?"
+        query = (
+            "UPDATE strains SET breeder = NULL, breeder_logo = NULL WHERE breeder = ?"
+        )
         await self._db.execute(query, (breeder_name,))
         changes = self._db.total_changes
         await self._db.commit()

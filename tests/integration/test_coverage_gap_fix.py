@@ -314,7 +314,7 @@ def test_bayesian_branches() -> None:
         "vpd": 1.0,
         "co2": 800.0,
         "veg_days": 10,
-        "flower_days": 0,
+        "flower_days": -1,
         "is_lights_on": True,
         "fan_off": False,
     }
@@ -332,7 +332,7 @@ def test_bayesian_branches() -> None:
     state = EnvironmentState(
         **cast(
             dict[str, Any],
-            base_args | {"humidifier_value": 1, "humidity": 90, "flower_days": 0},
+            base_args | {"humidifier_value": 1, "humidity": 90, "flower_days": -1},
         )
     )
     obs, _reasons = evaluate_active_saturation(state, {})
@@ -483,7 +483,7 @@ async def test_light_cycle_sensor_stages(hass: HomeAssistant) -> None:
     )
 
     # Mock 0 flower days -> Veg
-    assert sensor._get_current_stage_key({"flower_days": 0}) == "veg"
+    assert sensor._get_current_stage_key({"flower_days": -1}) == "veg"
     # Mock < 21 -> flower_early
     assert sensor._get_current_stage_key({"flower_days": 10}) == "flower_early"
     # Mock < 42 -> flower_mid
@@ -505,8 +505,8 @@ def test_bayesian_none_checks() -> None:
         humidity=None,
         vpd=None,
         co2=None,
-        veg_days=0,
-        flower_days=0,
+        veg_days=-1,
+        flower_days=-1,
         is_lights_on=None,
         fan_off=None,
     )
@@ -521,8 +521,8 @@ def test_bayesian_none_checks() -> None:
         humidity=None,
         vpd=1.0,
         co2=800,
-        veg_days=0,
-        flower_days=0,
+        veg_days=-1,
+        flower_days=-1,
         is_lights_on=True,
         fan_off=False,
         humidifier_value=1,
@@ -541,7 +541,7 @@ def test_bayesian_none_checks() -> None:
         vpd=1.0,
         co2=800,
         veg_days=10,  # Ensure we are clearly in Veg
-        flower_days=0,
+        flower_days=-1,
         is_lights_on=None,
         fan_off=False,
     )
@@ -723,7 +723,7 @@ async def test_promote_clone_custom_target(hass: HomeAssistant) -> None:
     coordinator = GrowspaceCoordinator(hass, MagicMock())
     coordinator.lifecycle_manager = AsyncMock()
     # Inject mock into internal service
-    coordinator._plant_service.lifecycle_manager = coordinator.lifecycle_manager
+    coordinator.plant_manager.lifecycle_manager = coordinator.lifecycle_manager
 
     coordinator.async_save = AsyncMock()  # type: ignore[method-assign]
     coordinator.invalidate_cache = MagicMock()  # type: ignore[method-assign]
