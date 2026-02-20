@@ -14,25 +14,24 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0 # Important for tagging/pushing
+          fetch-depth: 0 
 
       - name: Update version in manifest.json
+        id: vars
         run: |
+          # Strip 'v' from tag (e.g., v1.0.0 -> 1.0.0)
           VERSION="${GITHUB_REF_NAME#v}"
-          echo "Updating version to $VERSION"
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
           cd custom_components/growspace_manager
           jq --arg v "$VERSION" '.version = $v' manifest.json > manifest.json.tmp && mv manifest.json.tmp manifest.json
           
-      # OPTIONAL: Commit the change back to the repo 
-      # This ensures the 'Source Code' zip matches your 'Release' zip
       - name: Commit and Push manifest change
         run: |
           git config --local user.email "action@github.com"
           git config --local user.name "GitHub Action"
           git add custom_components/growspace_manager/manifest.json
-          git commit -m "chore: bump version to ${{ github.ref_name }}"
-          # We push to the branch the tag was created from
-          git push origin HEAD:main 
+          # If nothing changed, don't fail the workflow
+          git diff --quiet && git diff --staged --quiet || (git commit -m "chore: bump version to ${{ github.ref_name }}" && git push origin HEAD:main)
 
       - name: ZIP Release
         run: |
@@ -44,6 +43,8 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.ref_name }}
+          # This tells GitHub the release belongs to the commit we just pushed to main
+          target_commitish: main 
           files: growspace_manager.zip
-          generate_release_notes: true # Bonus: automatically describes the changes
+          generate_release_notes: true
           fail_on_unmatched_files: true
