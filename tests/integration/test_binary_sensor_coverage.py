@@ -315,7 +315,7 @@ def test_get_current_stage_key_branches(mock_coordinator: MagicMock) -> None:
     )
 
     # 1. Vega (0 days)
-    assert sensor._get_current_stage_key({"flower_days": 0}) == PlantStage.VEG
+    assert sensor._get_current_stage_key({"flower_days": -1}) == PlantStage.VEG
 
     # 2. Early Flower (10 days)
     assert sensor._get_current_stage_key({"flower_days": 10}) == "flower_early"

@@ -591,9 +591,26 @@ async def test_async_update_data(coordinator: GrowspaceCoordinator) -> None:
     # Call the async method
     result = await coordinator._async_update_data()
 
-    # Assertions
     assert called, "build_data_property should be called"
     assert result == coordinator.data, "Returned data should match coordinator.data"
+
+
+@pytest.mark.asyncio
+async def test_update_growspace_structure_invalid_id(
+    coordinator: GrowspaceCoordinator,
+) -> None:
+    """Test updating growspace structure with an invalid ID."""
+    result = coordinator._update_growspace_structure("invalid_id")
+    assert result is False
+
+
+@pytest.mark.asyncio
+async def test_update_growspace_config_invalid_id(
+    coordinator: GrowspaceCoordinator,
+) -> None:
+    """Test updating growspace config with an invalid ID."""
+    result = coordinator._update_growspace_config("invalid_id")
+    assert result is False
 
 
 @pytest.mark.asyncio
@@ -1589,9 +1606,7 @@ async def test_async_move_plant(hass: HomeAssistant) -> None:
     gs = await coordinator.growspace_manager.add_growspace(
         "Test GS", rows=2, plants_per_row=2
     )
-    plant = await coordinator.plant_manager.add_plant(
-        gs.id, "Test Plant", row=1, col=1
-    )
+    plant = await coordinator.plant_manager.add_plant(gs.id, "Test Plant", row=1, col=1)
 
     await coordinator.plant_manager.move_plant(plant.plant_id, 2, 2)
 

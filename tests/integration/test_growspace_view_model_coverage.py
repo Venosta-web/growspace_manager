@@ -210,3 +210,59 @@ def test_missing_environment_config(builder):
     result = builder.build(growspace, [], {})
     assert result["growspace_id"] == "gs1"
     assert result["sensor_types"] == {}
+
+
+def test_get_environment_attributes_malformed_depletion_state(
+    hass: HomeAssistant, builder
+):
+    """Test _get_environment_attributes with non-float depletion sensor state."""
+    env_config = EnvironmentConfig(
+        irrigation_tanks=[
+            IrrigationTank(
+                sensor_entity="sensor.tank", name="Test Tank", warning_level=20
+            )
+        ],
+    )
+    growspace = Growspace(
+        id="gs1",
+        name="Test",
+        environment_config=env_config,
+    )
+
+    # Mock depletion sensor with non-float state
+    depletion_sensor_id = "sensor.gs1_tank_depletion_test_tank"
+    hass.states.async_set(depletion_sensor_id, "invalid_float")
+    hass.states.async_set("sensor.tank", "15")
+
+    with patch.object(builder.entity_queries, "parse_tank_level", return_value=15.0):
+        attrs = builder._get_environment_attributes(growspace)
+        # hours_remaining should remain None due to ValueError
+        assert attrs["irrigation_tanks"][0]["hours_remaining"] is None
+
+
+def test_get_environment_attributes_depletion_status(hass: HomeAssistant, builder):
+    """Test _get_environment_attributes covers depletion status line."""
+    env_config = EnvironmentConfig(
+        irrigation_tanks=[
+            IrrigationTank(
+                sensor_entity="sensor.tank", name="testtank", warning_level=20
+            )
+        ],
+    )
+    growspace = Growspace(
+        id="gs1",
+        name="Test",
+        environment_config=env_config,
+    )
+
+    # Mock depletion sensor with valid float state and status attribute
+    # Note: entity IDs are normalized to lowercase by hass.states.async_set
+    depletion_sensor_id = "sensor.gs1_tank_depletion_testtank"
+    hass.states.async_set(depletion_sensor_id, "10.5", {"status": "discharging"})
+    hass.states.async_set("sensor.tank", "15")
+
+    with patch.object(builder.entity_queries, "parse_tank_level", return_value=15.0):
+        attrs = builder._get_environment_attributes(growspace)
+        tank_data = attrs["irrigation_tanks"][0]
+        assert tank_data["hours_remaining"] == 10.5
+        assert tank_data["depletion_status"] == "discharging"

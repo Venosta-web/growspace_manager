@@ -41,9 +41,9 @@ class EnvironmentAnalyzer:
         max_flower: int,
         max_dry: int,
         max_cure: int,
-        max_seedling: int = 0,
-        max_clone: int = 0,
-        max_mother: int = 0,
+        max_seedling: int = -1,
+        max_clone: int = -1,
+        max_mother: int = -1,
     ) -> dict[str, Any]:
         """Calculate biological target metrics for the growspace.
 
@@ -151,9 +151,9 @@ class EnvironmentAnalyzer:
         max_flower: int,
         max_dry: int,
         max_cure: int,
-        max_seedling: int = 0,
-        max_clone: int = 0,
-        max_mother: int = 0,
+        max_seedling: int = -1,
+        max_clone: int = -1,
+        max_mother: int = -1,
     ) -> str:
         """Determine granular growth stage based on days using pattern matching.
 
@@ -169,7 +169,7 @@ class EnvironmentAnalyzer:
         Returns:
             Detailed stage string (e.g. 'veg_early', 'flower_late').
         """
-        match (max_cure > 0, max_dry > 0, max_flower > 0):
+        match (max_cure >= 0, max_dry >= 0, max_flower >= 0):
             case (True, _, _):
                 return "cure"
             case (False, True, _):
@@ -181,13 +181,13 @@ class EnvironmentAnalyzer:
                     return "flower_mid"
                 return "flower_late"
             case (False, False, False):
-                if max_mother > 0:
+                if max_mother >= 0:
                     return "mother"
-                if max_veg > 0:
+                if max_veg >= 0:
                     return "veg"
-                if max_seedling > 0:
+                if max_seedling >= 0:
                     return "seedling"
-                if max_clone > 0:
+                if max_clone >= 0:
                     return "clone"
                 return "empty"
             case _:

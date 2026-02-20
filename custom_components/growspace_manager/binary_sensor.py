@@ -586,20 +586,20 @@ class BayesianEnvironmentSensor(
             GrowspaceType.CURE,
         ):
             return {
-                "veg_days": 0,
-                "flower_days": 0,
-                "seedling_days": 0,
-                "clone_days": 0,
+                "veg_days": -1,
+                "flower_days": -1,
+                "seedling_days": -1,
+                "clone_days": -1,
             }
 
         plants = self._get_plants(self.growspace_id)
 
         if not plants:
             return {
-                "veg_days": 0,
-                "flower_days": 0,
-                "seedling_days": 0,
-                "clone_days": 0,
+                "veg_days": -1,
+                "flower_days": -1,
+                "seedling_days": -1,
+                "clone_days": -1,
             }
 
         max_veg = max(
@@ -608,7 +608,7 @@ class BayesianEnvironmentSensor(
                 for p in plants
                 if isinstance(p.veg_start, str)
             ),
-            default=0,
+            default=-1,
         )
         max_flower = max(
             (
@@ -616,7 +616,7 @@ class BayesianEnvironmentSensor(
                 for p in plants
                 if isinstance(p.flower_start, str)
             ),
-            default=0,
+            default=-1,
         )
         max_seedling = max(
             (
@@ -624,7 +624,7 @@ class BayesianEnvironmentSensor(
                 for p in plants
                 if isinstance(p.seedling_start, str)
             ),
-            default=0,
+            default=-1,
         )
         max_clone = max(
             (
@@ -632,7 +632,7 @@ class BayesianEnvironmentSensor(
                 for p in plants
                 if isinstance(p.clone_start, str)
             ),
-            default=0,
+            default=-1,
         )
 
         return {

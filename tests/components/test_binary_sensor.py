@@ -121,7 +121,7 @@ def mock_coordinator(mock_growspace):
 
     def _calculate_days_side_effect(start_date_str):
         if not start_date_str:
-            return 0
+            return -1
         dt = date.fromisoformat(start_date_str.split("T")[0])
         return (date.today() - dt).days
 
@@ -302,7 +302,7 @@ async def test_notification_sending(
 
     # Set initial state to "off" (no stress)
     set_sensor_state(hass, "sensor.temp", 25)  # Optimal temp
-    set_sensor_state(hass, "sensor.humidity", 70)
+    set_sensor_state(hass, "sensor.humidity", 50)  # Optimal humidity for early flower
     set_sensor_state(hass, "sensor.vpd", 1.0)
     set_sensor_state(hass, "sensor.co2", 800)  # Add CO2 to prevent early return
     set_sensor_state(hass, "light.grow_light", "on")
@@ -619,8 +619,8 @@ def test_mold_risk_sensor_notification_returns_none_when_on_and_growspace_does_n
         ({"temp": 14}, "Extreme Cold"),
         ({"temp": 25, "is_lights_on": False}, "Night Temp High"),
         ({"humidity": 30}, "Humidity Dry"),
-        ({"humidity": 85, "veg_days": 20, "flower_days": 0}, "Humidity out of range"),
-        ({"vpd": 0.2, "veg_days": 10, "flower_days": 0}, "VPD out of range"),
+        ({"humidity": 85, "veg_days": 20, "flower_days": -1}, "Humidity out of range"),
+        ({"vpd": 0.2, "veg_days": 10, "flower_days": -1}, "VPD out of range"),
         ({"vpd": 1.7, "flower_days": 10}, "VPD out of range"),
         ({"co2": 350}, "CO2 Low"),
         ({"co2": 1900, "humidity": 50}, "CO2 High"),
@@ -1068,9 +1068,9 @@ async def test_mold_risk_specifics(
             "_get_growth_stage_info",
             return_value={
                 "veg_days": 20,
-                "flower_days": 0,
-                "seedling_days": 0,
-                "clone_days": 0,
+                "flower_days": -1,
+                "seedling_days": -1,
+                "clone_days": -1,
             },
         ),
     ):
@@ -1097,9 +1097,9 @@ async def test_mold_risk_specifics(
             "_get_growth_stage_info",
             return_value={
                 "veg_days": 20,
-                "flower_days": 0,
-                "seedling_days": 0,
-                "clone_days": 0,
+                "flower_days": -1,
+                "seedling_days": -1,
+                "clone_days": -1,
             },
         ),
     ):
@@ -1219,13 +1219,13 @@ def test_determine_light_state_unavailable(
         # Case 1: High temp at night
         (
             {"temp": 30, "humidity": 60, "vpd": 0.8, "light": "off"},
-            {"veg_days": 20, "flower_days": 0},
+            {"veg_days": 20, "flower_days": -1},
             "Night Temp High",
         ),
         # Case 2: High humidity in late veg
         (
             {"temp": 25, "humidity": 90, "vpd": 1.3, "light": "on"},
-            {"veg_days": 20, "flower_days": 0},
+            {"veg_days": 20, "flower_days": -1},
             "Humidity out of range",
         ),
         # Case 3: High humidity in late flower
@@ -1405,13 +1405,13 @@ async def test_mold_risk_sensor_triggers(
         # Case 2: VPD too low in veg (day)
         (
             {"temp": 25, "humidity": 80, "vpd": 0.3, "light": "on"},
-            {"veg_days": 10, "flower_days": 0},
+            {"veg_days": 10, "flower_days": -1},
             "VPD out of range",
         ),
         # Case 3: CO2 too low
         (
             {"temp": 28, "humidity": 60, "vpd": 1.0, "co2": 10, "light": "on"},
-            {"veg_days": 20, "flower_days": 0},
+            {"veg_days": 20, "flower_days": -1},
             "CO2 Low",
         ),
     ],
@@ -1644,7 +1644,7 @@ def test_light_cycle_verification_sensor_extra_state_attributes_veg_stage(
     with patch.object(
         sensor,
         "_get_growth_stage_info",
-        return_value={"veg_days": 20, "flower_days": 0},
+        return_value={"veg_days": 20, "flower_days": -1},
     ):
         attrs = sensor.extra_state_attributes
         assert attrs["expected_schedule"] == "18/6"
@@ -1727,10 +1727,10 @@ async def test_light_cycle_verification_sensor_async_update_light_state_unavaila
     ("stage_info", "light_state", "time_since_last_changed", "expected_is_correct"),
     [
         # Veg Stage
-        ({"veg_days": 20, "flower_days": 0}, "on", timedelta(hours=17), True),
-        ({"veg_days": 20, "flower_days": 0}, "on", timedelta(hours=19), False),
-        ({"veg_days": 20, "flower_days": 0}, "off", timedelta(hours=5), True),
-        ({"veg_days": 20, "flower_days": 0}, "off", timedelta(hours=7), False),
+        ({"veg_days": 20, "flower_days": -1}, "on", timedelta(hours=17), True),
+        ({"veg_days": 20, "flower_days": -1}, "on", timedelta(hours=19), False),
+        ({"veg_days": 20, "flower_days": -1}, "off", timedelta(hours=5), True),
+        ({"veg_days": 20, "flower_days": -1}, "off", timedelta(hours=7), False),
         # Flower Stage
         ({"veg_days": 30, "flower_days": 40}, "on", timedelta(hours=11), True),
         ({"veg_days": 30, "flower_days": 40}, "on", timedelta(hours=13), False),
@@ -2117,10 +2117,10 @@ class TestBayesianEnvironmentSensor:
         base_sensor.coordinator.get_growspace_plants.return_value = []
         result = base_sensor._get_growth_stage_info()
         assert result == {
-            "veg_days": 0,
-            "flower_days": 0,
-            "seedling_days": 0,
-            "clone_days": 0,
+            "veg_days": -1,
+            "flower_days": -1,
+            "seedling_days": -1,
+            "clone_days": -1,
         }
 
     @pytest.mark.asyncio
@@ -2269,7 +2269,7 @@ class TestBayesianEnvironmentSensor:
         ) as mock_get_value:
             # Mock _get_growth_stage_info
             base_sensor._get_growth_stage_info = MagicMock(
-                return_value={"veg_days": 20, "flower_days": 0}
+                return_value={"veg_days": 20, "flower_days": -1}
             )
 
             # Test with sensor_value > 0
@@ -2682,9 +2682,9 @@ async def test_soil_moisture_stress(
             "_get_growth_stage_info",
             side_effect=lambda: {
                 "veg_days": 20,
-                "flower_days": 0,
-                "seedling_days": 0,
-                "clone_days": 0,
+                "flower_days": -1,
+                "seedling_days": -1,
+                "clone_days": -1,
             },
         ),
     ):

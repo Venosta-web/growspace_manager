@@ -107,7 +107,7 @@ class ViewModelBuilder:
                     for p in plants
                     if getattr(p, attr)
                 ),
-                default=0,
+                default=-1,
             )
             for attr, target_var in stage_attr_map.items()
         }

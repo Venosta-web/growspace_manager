@@ -63,8 +63,6 @@ class MoldRiskEvaluatorStrategy(BayesianEvaluatorStrategy):
         reasons: list[tuple[float, str]],
     ) -> None:
         """Evaluate mold risk based on humidity and growth stage."""
-        if state.humidity is None:
-            return
 
         # Use transition logic for smoother mold risk thresholds
         stage_a, stage_b, factor = calculate_stage_transition(
@@ -122,7 +120,7 @@ class MoldRiskEvaluatorStrategy(BayesianEvaluatorStrategy):
         thr_b = CRITICAL_HUMIDITY_THRESHOLDS[stage_b]["high"]
         threshold = interpolate_value(thr_a, thr_b, factor)
 
-        if state.humidity is None or state.humidity < threshold:
+        if state.humidity < threshold:
             return
 
         prob = (

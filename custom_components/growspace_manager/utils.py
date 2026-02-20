@@ -234,27 +234,27 @@ def _get_stage_from_growspace(plant: Plant) -> str | None:
 
 
 def calculate_stage_transition(
-    flower_days: int = 0,
-    veg_days: int = 0,
-    seedling_days: int = 0,
-    clone_days: int = 0,
-    dry_days: int = 0,
-    cure_days: int = 0,
-    mother_days: int = 0,
+    flower_days: int = -1,
+    veg_days: int = -1,
+    seedling_days: int = -1,
+    clone_days: int = -1,
+    dry_days: int = -1,
+    cure_days: int = -1,
+    mother_days: int = -1,
 ) -> tuple[BayesianStage, BayesianStage, float]:
     """Calculate the current stage transition and interpolation factor."""
     # Post-harvest stages — no interpolation needed
-    if cure_days > 0:
+    if cure_days >= 0:
         return BayesianStage.CURE, BayesianStage.CURE, 0.0
-    if dry_days > 0:
+    if dry_days >= 0:
         return BayesianStage.DRY, BayesianStage.DRY, 0.0
 
     # Mother plants — perpetual vegetative, no sub-stage interpolation
-    if mother_days > 0:
+    if mother_days >= 0:
         return BayesianStage.MOTHER, BayesianStage.MOTHER, 0.0
 
     # Primary progression: Flower takes precedence
-    if flower_days > 0:
+    if flower_days >= 0:
         b1 = DEFAULT_FLOWER_EARLY_DAYS
         b2 = DEFAULT_FLOWER_EARLY_DAYS + 21
 
@@ -280,7 +280,7 @@ def calculate_stage_transition(
 
         return BayesianStage.FLOWER_LATE, BayesianStage.FLOWER_LATE, 0.0
 
-    if veg_days > 0:
+    if veg_days >= 0:
         if veg_days < TRANSITION_WINDOW:
             # Transition from seedling/clone standard to veg
             factor = veg_days / TRANSITION_WINDOW
@@ -291,7 +291,7 @@ def calculate_stage_transition(
             )
         return BayesianStage.VEG, BayesianStage.VEG, 0.0
 
-    if seedling_days > 0:
+    if seedling_days >= 0:
         ac_start = ACCLIMATION_START_DAYS
         ac_end = ACCLIMATION_END_DAYS
         if seedling_days <= ac_end:
@@ -307,7 +307,7 @@ def calculate_stage_transition(
             )
         return BayesianStage.SEEDLING_STANDARD, BayesianStage.SEEDLING_STANDARD, 0.0
 
-    if clone_days > 0:
+    if clone_days >= 0:
         ac_start = ACCLIMATION_START_DAYS
         ac_end = ACCLIMATION_END_DAYS
         if clone_days <= ac_end:

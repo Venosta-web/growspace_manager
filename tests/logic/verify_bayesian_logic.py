@@ -57,7 +57,7 @@ def test_evaluate_optimal_vpd_missing_light_sensor() -> None:
     state = MagicMock(
         spec=EnvironmentState,
         vpd=0.6,
-        flower_days=0,
+        flower_days=-1,
         veg_days=10,  # veg_early
         is_lights_on=None,
     )

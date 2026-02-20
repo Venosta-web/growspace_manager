@@ -3,6 +3,7 @@
 from unittest.mock import patch
 
 from common import create_plant
+import pytest
 
 from custom_components.growspace_manager.models import (
     EnvironmentConfig,
@@ -122,9 +123,9 @@ def test_environment_state_basic() -> None:
         vpd=1.2,
         co2=400.0,
         veg_days=10,
-        flower_days=0,
-        seedling_days=0,
-        clone_days=0,
+        flower_days=-1,
+        seedling_days=-1,
+        clone_days=-1,
         is_lights_on=True,
         fan_off=False,
     )
@@ -133,9 +134,9 @@ def test_environment_state_basic() -> None:
     assert env_state.vpd == 1.2
     assert env_state.co2 == 400.0
     assert env_state.veg_days == 10
-    assert env_state.flower_days == 0
-    assert env_state.seedling_days == 0
-    assert env_state.clone_days == 0
+    assert env_state.flower_days == -1
+    assert env_state.seedling_days == -1
+    assert env_state.clone_days == -1
     assert env_state.is_lights_on is True
     assert env_state.fan_off is False
 
@@ -147,10 +148,10 @@ def test_environment_state_none_values() -> None:
         humidity=None,
         vpd=None,
         co2=None,
-        veg_days=0,
-        flower_days=0,
-        seedling_days=0,
-        clone_days=0,
+        veg_days=-1,
+        flower_days=-1,
+        seedling_days=-1,
+        clone_days=-1,
         is_lights_on=False,
         fan_off=True,
     )
@@ -158,10 +159,10 @@ def test_environment_state_none_values() -> None:
     assert env_state.humidity is None
     assert env_state.vpd is None
     assert env_state.co2 is None
-    assert env_state.veg_days == 0
-    assert env_state.flower_days == 0
-    assert env_state.seedling_days == 0
-    assert env_state.clone_days == 0
+    assert env_state.veg_days == -1
+    assert env_state.flower_days == -1
+    assert env_state.seedling_days == -1
+    assert env_state.clone_days == -1
     assert env_state.is_lights_on is False
     assert env_state.fan_off is True
 
@@ -392,3 +393,29 @@ def test_environment_config_migration() -> None:
     # Properties should return first element
     assert config_lists.light_sensor == "sensor.light_1"
     assert config_lists.exhaust_fan_entity == "fan.exhaust_1"
+
+
+@pytest.mark.asyncio
+async def test_growspace_migration_redundant_irrigation_fields() -> None:
+    """Test Growspace migration when redundant legacy fields exist."""
+    data = {
+        "id": "gs1",
+        "name": "GS",
+        "irrigation_config": {
+            "irrigation_times": [
+                {
+                    "time": "10:00",
+                    "start_time": "10:00",
+                    "duration": 60,
+                    "duration_seconds": 60,
+                }
+            ]
+        },
+    }
+    gs = Growspace.from_dict(data)
+    # The migration should delete 'start_time' and 'duration_seconds'
+    # because 'time' and 'duration' already exist.
+    assert gs.irrigation_config.irrigation_times[0]["time"] == "10:00"
+    assert "start_time" not in gs.irrigation_config.irrigation_times[0]
+    assert gs.irrigation_config.irrigation_times[0]["duration"] == 60
+    assert "duration_seconds" not in gs.irrigation_config.irrigation_times[0]
