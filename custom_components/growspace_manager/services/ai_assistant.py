@@ -7,16 +7,23 @@ conversation/LLM integration for grow advice, diagnostics, and recommendations.
 from __future__ import annotations
 
 import logging
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
+from custom_components.growspace_manager.const import (
+    CONF_AI_ENABLED,
+    CONF_ASSISTANT_ID,
+    PlantStage,
+)
+from custom_components.growspace_manager.domain import calculate_days_in_stage
 from homeassistant.components import conversation
 from homeassistant.const import STATE_UNAVAILABLE, STATE_UNKNOWN
 from homeassistant.core import Context, HomeAssistant, ServiceCall
 from homeassistant.exceptions import ServiceValidationError
 
-from ..const import CONF_AI_ENABLED, CONF_ASSISTANT_ID, DOMAIN
-from ..coordinator import GrowspaceCoordinator
-from ..strain_library import StrainLibrary
+from .strain_library import StrainLibrary
+
+if TYPE_CHECKING:
+    from .coordinator import GrowspaceCoordinator
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -29,60 +36,70 @@ class GrowAssistant:
         hass: HomeAssistant,
         coordinator: GrowspaceCoordinator,
         strain_library: StrainLibrary,
-    ):
+    ) -> None:
         """Initialize the grow assistant."""
         self.hass = hass
         self.coordinator = coordinator
         self.strain_library = strain_library
 
-    def _get_ai_settings(self) -> dict[str, Any]:
+    def get_ai_settings(self) -> dict[str, Any] | None:
         """Get and validate AI settings from coordinator options."""
         ai_settings = self.coordinator.options.get("ai_settings", {})
+        _LOGGER.debug("Retrieved AI settings from coordinator: %s", ai_settings)
 
         if not ai_settings.get(CONF_AI_ENABLED):
-            raise ServiceValidationError(
-                "AI assistant is not enabled. Please enable it in integration settings."
-            )
+            _LOGGER.debug("AI features are disabled in settings")
+            return None
 
         agent_id = ai_settings.get(CONF_ASSISTANT_ID)
         if not agent_id:
-            raise ServiceValidationError(
-                "No AI assistant configured. Please select an assistant in integration settings."
-            )
+            _LOGGER.warning("AI enabled but no assistant ID configured")
+            return None
 
-        return ai_settings
+        return ai_settings  # type: ignore[no-any-return]
 
-    def _gather_growspace_data(self, growspace_id: str) -> dict[str, Any]:
+    def gather_growspace_data(self, growspace_id: str) -> dict[str, Any]:
         """Gather comprehensive data about a growspace for AI analysis."""
         growspace = self.coordinator.growspaces.get(growspace_id)
         if not growspace:
             raise ServiceValidationError(f"Growspace {growspace_id} not found.")
 
         # Environment sensor data
-        env_config = getattr(growspace, "environment_config", {})
+        env_config = getattr(growspace, "environment_config", None)
         sensor_data = {}
         sensor_states = {}
 
-        for key in [
-            "temperature_sensor",
-            "humidity_sensor",
-            "vpd_sensor",
-            "co2_sensor",
-            "light_sensor",
-            "circulation_fan",
-        ]:
-            entity_id = env_config.get(key)
-            if entity_id:
-                state = self.hass.states.get(entity_id)
-                if state and state.state not in (STATE_UNAVAILABLE, STATE_UNKNOWN):
-                    value = state.state
-                    unit = state.attributes.get("unit_of_measurement", "")
-                    sensor_data[key] = f"{value} {unit}".strip()
-                    sensor_states[key] = {
-                        "value": value,
-                        "unit": unit,
-                        "attributes": dict(state.attributes),
-                    }
+        if env_config:
+            # Map of context key -> attribute name in EnvironmentConfig
+            # Note: 'circulation_fan' became 'circulation_fan_entity' in the recent refactor
+            sensor_map = [
+                ("temperature_sensor", "temperature_sensor"),
+                ("humidity_sensor", "humidity_sensor"),
+                ("vpd_sensor", "vpd_sensor"),
+                ("co2_sensor", "co2_sensor"),
+                ("light_sensor", "light_sensor"),
+                ("circulation_fan", "circulation_fan_entity"),
+                ("soil_moisture_sensor", "soil_moisture_sensor"),
+            ]
+
+            for context_key, attr_name in sensor_map:
+                # Robustly handle both legacy dict and new dataclass
+                if isinstance(env_config, dict):
+                    entity_id = env_config.get(attr_name) or env_config.get(context_key)
+                else:
+                    entity_id = getattr(env_config, attr_name, None)
+
+                if entity_id:
+                    state = self.hass.states.get(entity_id)
+                    if state and state.state not in (STATE_UNAVAILABLE, STATE_UNKNOWN):
+                        value = state.state
+                        unit = state.attributes.get("unit_of_measurement", "")
+                        sensor_data[context_key] = f"{value} {unit}".strip()
+                        sensor_states[context_key] = {
+                            "value": value,
+                            "unit": unit,
+                            "attributes": dict(state.attributes),
+                        }
 
         # Bayesian sensor analysis
         bayesian_data = self._gather_bayesian_sensor_data(growspace_id)
@@ -112,7 +129,7 @@ class GrowAssistant:
 
     def _gather_bayesian_sensor_data(self, growspace_id: str) -> dict[str, Any]:
         """Gather data from Bayesian environmental sensors."""
-        bayesian_data = {
+        bayesian_data: dict[str, Any] = {
             "stress": {"active": False, "reasons": []},
             "mold_risk": {"active": False, "reasons": []},
             "optimal": {"active": False, "reasons": []},
@@ -124,7 +141,6 @@ class GrowAssistant:
             "mold_risk": "high_mold_risk",
             "optimal": "optimal_conditions",
         }
-        
 
         for key, sensor_suffix in sensor_types.items():
             entity_id = f"binary_sensor.{growspace_id}_{sensor_suffix}"
@@ -149,12 +165,12 @@ class GrowAssistant:
 
         return bayesian_data
 
-    def _summarize_plants(self, plants: list) -> dict[str, Any]:
+    def _summarize_plants(self, plants: list[Any]) -> dict[str, Any]:
         """Create a summary of plants in the growspace."""
         if not plants:
             return {"count": 0, "stages": {}, "strains": []}
 
-        stages = {}
+        stages: dict[str, int] = {}
         strains = set()
 
         for plant in plants:
@@ -163,8 +179,9 @@ class GrowAssistant:
             strains.add(plant.strain)
 
             # Calculate stage durations
-            veg_days = self.coordinator.calculate_days_in_stage(plant, "veg")
-            flower_days = self.coordinator.calculate_days_in_stage(plant, "flower")
+            # Calculate stage durations (unused but potentially useful for future)
+            # veg_days = self.coordinator.calculate_days_in_stage(plant, "veg")
+            # flower_days = self.coordinator.calculate_days_in_stage(plant, "flower")
 
         return {
             "count": len(plants),
@@ -172,7 +189,9 @@ class GrowAssistant:
             "strains": list(strains),
             "max_veg_days": max(
                 (
-                    self.coordinator.calculate_days_in_stage(p, "veg")
+                    calculate_days_in_stage(
+                        p, PlantStage.VEG
+                    )
                     for p in plants
                     if p.veg_start
                 ),
@@ -180,7 +199,9 @@ class GrowAssistant:
             ),
             "max_flower_days": max(
                 (
-                    self.coordinator.calculate_days_in_stage(p, "flower")
+                    calculate_days_in_stage(
+                        p, PlantStage.FLOWER
+                    )
                     for p in plants
                     if p.flower_start
                 ),
@@ -188,7 +209,7 @@ class GrowAssistant:
             ),
         }
 
-    def _get_strain_analytics(self, plants: list) -> dict[str, Any]:
+    def _get_strain_analytics(self, plants: list[Any]) -> dict[str, Any]:
         """Get analytics for strains currently growing."""
         analytics = {}
         all_strains = self.strain_library.get_all()
@@ -220,6 +241,67 @@ class GrowAssistant:
                     }
 
         return analytics
+
+    def _get_strain_specific_context(self, plants: list[Any]) -> str:
+        """Build strain-specific context from breeder notes for AI prompts.
+
+        Extracts breeder notes, flowering time preferences, and genetic lineage
+        for active strains to give the AI more targeted cultivation advice.
+        """
+        if not plants:
+            return ""
+
+        all_strains = self.strain_library.get_all()
+        contexts = []
+        seen_strains: set[str] = set()
+
+        for plant in plants:
+            strain_name = plant.strain
+            if strain_name in seen_strains or strain_name not in all_strains:
+                continue
+            seen_strains.add(strain_name)
+
+            strain_data = all_strains[strain_name]
+            context = self._build_single_strain_context(strain_name, strain_data)
+            if context:
+                contexts.append(context)
+
+        return "\n".join(contexts) if contexts else ""
+
+    def _build_single_strain_context(
+        self, strain_name: str, strain_data: dict[str, Any]
+    ) -> str | None:
+        """Build context string for a single strain."""
+        meta = strain_data.get("meta", {})
+        phenotypes = strain_data.get("phenotypes", {})
+
+        lines = [f"**{strain_name}**:"]
+
+        if breeder_notes := meta.get("breeder_notes"):
+            lines.append(f"  Breeder Notes: {breeder_notes}")
+
+        flower_min = meta.get("flowering_days_min")
+        flower_max = meta.get("flowering_days_max")
+        if flower_min and flower_max:
+            lines.append(f"  Expected Flowering: {flower_min}-{flower_max} days")
+
+        if temp_pref := meta.get("ideal_temp_range"):
+            lines.append(f"  Ideal Temp: {temp_pref}")
+        if humidity_pref := meta.get("ideal_humidity_range"):
+            lines.append(f"  Ideal Humidity: {humidity_pref}")
+
+        if lineage := meta.get("lineage"):
+            lines.append(f"  Lineage: {lineage}")
+
+        for pheno_name, pheno_data in phenotypes.items():
+            if pheno_notes := pheno_data.get("notes"):
+                # Truncate long notes
+                display_notes = (
+                    f"{pheno_notes[:100]}..." if len(pheno_notes) > 100 else pheno_notes
+                )
+                lines.append(f"  Pheno '{pheno_name}': {display_notes}")
+
+        return "\n".join(lines) if len(lines) > 1 else None
 
     def _build_system_prompt(self, context_type: str) -> str:
         """Build the system prompt based on context type."""
@@ -260,192 +342,23 @@ class GrowAssistant:
         ]
 
         # Add sensor readings
-        for sensor, reading in data["environment"]["sensors"].items():
-            sensor_name = sensor.replace("_sensor", "").replace("_", " ").title()
-            lines.append(f"  {sensor_name}: {reading}")
-
+        lines.extend(self._format_sensor_data(data["environment"]["sensors"]))
         lines.append("")
 
         # Add Bayesian analysis
-        analysis = data["analysis"]
-        if analysis["stress"]["active"]:
-            lines.append("⚠️ STRESS DETECTED:")
-            for reason in analysis["stress"]["reasons"]:
-                lines.append(f"  - {reason}")
-            lines.append("")
-
-        if analysis["mold_risk"]["active"]:
-            lines.append("🍄 MOLD RISK DETECTED:")
-            for reason in analysis["mold_risk"]["reasons"]:
-                lines.append(f"  - {reason}")
-            lines.append("")
-
-        if analysis["optimal"]["active"]:
-            lines.append("✅ Optimal conditions achieved")
-            lines.append("")
+        lines.extend(self._format_analysis_data(data["analysis"]))
 
         # Add plant summary
-        plants = data["plants"]
-        if plants["count"] > 0:
-            lines.append("PLANTS:")
-            lines.append(f"  Total: {plants['count']}")
-            lines.append(f"  Strains: {', '.join(plants['strains'])}")
-            if plants["max_veg_days"] > 0:
-                lines.append(f"  Max Veg: Day {plants['max_veg_days']}")
-            if plants["max_flower_days"] > 0:
-                lines.append(
-                    f"  Max Flower: Day {plants['max_flower_days']} (Week {plants['max_flower_days'] // 7})"
-                )
-            lines.append("")
+        lines.extend(self._format_plant_data(data["plants"]))
 
-        sensor_types = {
-            "stress": "plants_under_stress",
-            "mold_risk": "high_mold_risk",
-            "optimal": "optimal_conditions",
-        }
-
-        for key, sensor_suffix in sensor_types.items():
-            entity_id = f"binary_sensor.{growspace_id}_{sensor_suffix}"
-            state = self.hass.states.get(entity_id)
-
-            if state:
-                is_on = state.state == "on"
-                bayesian_data[key]["active"] = is_on
-                bayesian_data[key]["probability"] = state.attributes.get(
-                    "probability", 0
-                )
-                bayesian_data[key]["reasons"] = state.attributes.get("reasons", [])
-
-        # Light schedule verification
-        light_entity_id = f"binary_sensor.{growspace_id}_light_schedule_correct"
-        light_state = self.hass.states.get(light_entity_id)
-        if light_state:
-            bayesian_data["light_schedule"]["correct"] = light_state.state == "on"
-            bayesian_data["light_schedule"]["expected"] = light_state.attributes.get(
-                "expected_schedule", "Unknown"
-            )
-
-        return bayesian_data
-
-    def _summarize_plants(self, plants: list) -> dict[str, Any]:
-        """Create a summary of plants in the growspace."""
-        if not plants:
-            return {"count": 0, "stages": {}, "strains": []}
-
-        stages = {}
-        strains = set()
-
-        for plant in plants:
-            stage = getattr(plant, "stage", "unknown")
-            stages[stage] = stages.get(stage, 0) + 1
-            strains.add(plant.strain)
-
-            # Calculate stage durations
-            veg_days = self.coordinator.calculate_days_in_stage(plant, "veg")
-            flower_days = self.coordinator.calculate_days_in_stage(plant, "flower")
-
-        return {
-            "count": len(plants),
-            "stages": stages,
-            "strains": list(strains),
-            "max_veg_days": max(
-                (
-                    self.coordinator.calculate_days_in_stage(p, "veg")
-                    for p in plants
-                    if p.veg_start
-                ),
-                default=0,
-            ),
-            "max_flower_days": max(
-                (
-                    self.coordinator.calculate_days_in_stage(p, "flower")
-                    for p in plants
-                    if p.flower_start
-                ),
-                default=0,
-            ),
-        }
-
-    def _get_strain_analytics(self, plants: list) -> dict[str, Any]:
-        """Get analytics for strains currently growing."""
-        analytics = {}
-        all_strains = self.strain_library.get_all()
-
-        for plant in plants:
-            strain_name = plant.strain
-            if strain_name not in analytics and strain_name in all_strains:
-                strain_data = all_strains[strain_name]
-                phenotypes = strain_data.get("phenotypes", {})
-
-                # Calculate averages across all phenotypes
-                all_harvests = []
-                for pheno_data in phenotypes.values():
-                    all_harvests.extend(pheno_data.get("harvests", []))
-
-                if all_harvests:
-                    avg_veg = sum(h.get("veg_days", 0) for h in all_harvests) / len(
-                        all_harvests
-                    )
-                    avg_flower = sum(
-                        h.get("flower_days", 0) for h in all_harvests
-                    ) / len(all_harvests)
-
-                    analytics[strain_name] = {
-                        "avg_veg_days": round(avg_veg),
-                        "avg_flower_days": round(avg_flower),
-                        "total_harvests": len(all_harvests),
-                        "meta": strain_data.get("meta", {}),
-                    }
-
-        return analytics
-
-    def _format_context_data(self, data: dict[str, Any]) -> str:
-        """Format growspace data into a clear context string for the AI."""
-        lines = [
-            f"GROWSPACE: {data['growspace']['name']} ({data['growspace']['size']})",
-            f"TOTAL PLANTS: {data['growspace']['total_plants']}",
-            "",
-            "CURRENT ENVIRONMENT:",
-        ]
-
-        # Add sensor readings
-        for sensor, reading in data["environment"]["sensors"].items():
-            sensor_name = sensor.replace("_sensor", "").replace("_", " ").title()
-            lines.append(f"  {sensor_name}: {reading}")
-
-        lines.append("")
-
-        # Add Bayesian analysis
-        analysis = data["analysis"]
-        if analysis["stress"]["active"]:
-            lines.append("⚠️ STRESS DETECTED:")
-            for reason in analysis["stress"]["reasons"]:
-                lines.append(f"  - {reason}")
-            lines.append("")
-
-        if analysis["mold_risk"]["active"]:
-            lines.append("🍄 MOLD RISK DETECTED:")
-            for reason in analysis["mold_risk"]["reasons"]:
-                lines.append(f"  - {reason}")
-            lines.append("")
-
-        if analysis["optimal"]["active"]:
-            lines.append("✅ Optimal conditions achieved")
-            lines.append("")
-
-        # Add plant summary
-        plants = data["plants"]
-        if plants["count"] > 0:
-            lines.append("PLANTS:")
-            lines.append(f"  Total: {plants['count']}")
-            lines.append(f"  Strains: {', '.join(plants['strains'])}")
-            if plants["max_veg_days"] > 0:
-                lines.append(f"  Max Veg: Day {plants['max_veg_days']}")
-            if plants["max_flower_days"] > 0:
-                lines.append(
-                    f"  Max Flower: Day {plants['max_flower_days']} (Week {plants['max_flower_days'] // 7})"
-                )
-            lines.append("")
+        # Add strain-specific context (breeder notes, preferences)
+        if data["plants"]["count"] > 0:
+            plants = self.coordinator.get_growspace_plants(data["growspace"]["id"])
+            strain_context = self._get_strain_specific_context(plants)
+            if strain_context:
+                lines.append("STRAIN-SPECIFIC GUIDANCE:")
+                lines.append(strain_context)
+                lines.append("")
 
         # Add strain analytics if available
         if data["strain_analytics"]:
@@ -457,6 +370,66 @@ class GrowAssistant:
                 )
 
         return "\n".join(lines)
+
+    def _format_sensor_data(self, sensors: dict[str, Any]) -> list[str]:
+        """Format sensor data."""
+        lines = []
+        for sensor, reading in sensors.items():
+            sensor_name = sensor.replace("_sensor", "").replace("_", " ").title()
+            lines.append(f"  {sensor_name}: {reading}")
+        return lines
+
+    def _format_analysis_data(self, analysis: dict[str, Any]) -> list[str]:
+        """Format analysis data."""
+        lines = []
+        if analysis["stress"]["active"]:
+            lines.append("⚠️ STRESS DETECTED:")
+            lines.extend(f"  - {reason}" for reason in analysis["stress"]["reasons"])
+            lines.append("")
+
+        if analysis["mold_risk"]["active"]:
+            lines.append("🍄 MOLD RISK DETECTED:")
+            lines.extend(f"  - {reason}" for reason in analysis["mold_risk"]["reasons"])
+            lines.append("")
+
+        if analysis["optimal"]["active"]:
+            lines.append("✅ Optimal conditions achieved")
+            lines.append("")
+        return lines
+
+    def _format_plant_data(self, plants: dict[str, Any]) -> list[str]:
+        """Format plant data."""
+        lines = []
+        if plants["count"] > 0:
+            lines.append("PLANTS:")
+            lines.append(f"  Total: {plants['count']}")
+            lines.append(f"  Strains: {', '.join(plants['strains'])}")
+            if plants["max_veg_days"] > 0:
+                lines.append(f"  Max Veg: Day {plants['max_veg_days']}")
+            if plants["max_flower_days"] > 0:
+                lines.append(
+                    f"  Max Flower: Day {plants['max_flower_days']} (Week {plants['max_flower_days'] // 7})"
+                )
+            lines.append("")
+        return lines
+
+    async def generate_alert_message(
+        self, growspace_id: str, risk_type: str, reasons: list[str]
+    ) -> str:
+        """Generate a concise, urgent alert message using the AI."""
+        # Setup minimal context for speed and clarity
+        reasons_str = ", ".join(reasons)
+        user_query = (
+            f"URGENT: {risk_type} risk detected due to: {reasons_str}. "
+            "Provide ONE clear, actionable recommendation to fix this immediately."
+        )
+
+        return await self.get_grow_advice(
+            growspace_id=growspace_id,
+            user_query=user_query,
+            context_type="diagnostic",
+            max_length=150,  # Keep it short for notifications
+        )
 
     async def get_grow_advice(
         self,
@@ -476,11 +449,22 @@ class GrowAssistant:
         Returns:
             AI-generated advice string
         """
-        ai_settings = self._get_ai_settings()
+        ai_settings = self.get_ai_settings()
+        self._validate_ai_settings(ai_settings)
+
+        if ai_settings is None:
+            return "AI settings not configured."
         agent_id = ai_settings.get(CONF_ASSISTANT_ID)
+        if not agent_id:
+            return "AI Assistant ID not configured."
+
+        if max_length is None:
+            max_length = (
+                ai_settings.get("max_response_length", 250) if ai_settings else 250
+            )
 
         # Gather all relevant data
-        data = self._gather_growspace_data(growspace_id)
+        data = self.gather_growspace_data(growspace_id)
         context = self._format_context_data(data)
 
         # Build the prompt
@@ -498,38 +482,67 @@ class GrowAssistant:
 
         # Call the conversation API
         try:
-            result = await conversation.async_converse(
-                self.hass,
-                text=full_prompt,
-                conversation_id=None,
-                context=Context(),
-                agent_id=agent_id,
+            return await self._execute_conversation(
+                full_prompt, agent_id, max_length, growspace_id
             )
 
-            if (
-                result
-                and result.response
-                and result.response.speech
-                and result.response.speech.get("plain")
-            ):
-                response = result.response.speech["plain"]["speech"]
-                
-                # Enforce max length truncation if specified
-                if max_length and len(response) > max_length:
-                    response = response[:max_length].rsplit(' ', 1)[0] + "..."
-                    
-                _LOGGER.info(
-                    "AI assistant provided advice for growspace %s", growspace_id
-                )
-                return response
-            else:
-                raise ServiceValidationError(
-                    "AI assistant returned an empty response"
-                )
-
-        except Exception as err:
+        except ServiceValidationError:
+            raise
+        except Exception as err:  # noqa: BLE001
             _LOGGER.error("Error getting AI advice: %s", err)
-            raise ServiceValidationError(f"Failed to get AI advice: {str(err)}")
+            # Fallback to context if AI fails
+            return f"AI Assistant Error: {err}\n\nRaw Data:\n\n{context}"
+
+    def _validate_ai_settings(self, ai_settings: dict[str, Any] | None) -> None:
+        """Validate AI settings and raise specific errors if invalid."""
+        if not ai_settings:
+            # Check raw options to give better feedback
+            raw_settings = self.coordinator.options.get("ai_settings", {})
+            if not raw_settings.get(CONF_AI_ENABLED):
+                raise ServiceValidationError(
+                    "AI assistant is not enabled. Please go to the Growspace Manager integration settings to enable it."
+                )
+            if not raw_settings.get(CONF_ASSISTANT_ID):
+                raise ServiceValidationError(
+                    "AI assistant enabled but no assistant ID selected. Please configure an assistant in settings."
+                )
+            # Fallback
+            raise ServiceValidationError("AI settings are invalid or incomplete.")
+
+    async def _execute_conversation(
+        self, full_prompt: str, agent_id: str, max_length: int | None, growspace_id: str
+    ) -> str:
+        """Execute the conversation and process the response."""
+        if not agent_id:
+            # Should be caught above, but double check
+            raise ServiceValidationError(
+                "AI assistant is not enabled. Please go to the Growspace Manager integration settings to enable it."
+            )
+
+        result = await conversation.async_converse(
+            self.hass,
+            text=full_prompt,
+            conversation_id=None,
+            context=Context(),
+            agent_id=agent_id,
+        )
+
+        if (
+            result
+            and result.response
+            and result.response.speech
+            and result.response.speech.get("plain")
+            and result.response.speech["plain"].get("speech")
+        ):
+            response = result.response.speech["plain"]["speech"]
+
+            # Enforce max length truncation if specified
+            if max_length and len(response) > max_length:
+                response = response[:max_length].rsplit(" ", 1)[0] + "..."
+
+            _LOGGER.info("AI assistant provided advice for growspace %s", growspace_id)
+            return str(response)
+        raise ServiceValidationError("AI assistant returned an empty response")
 
 
 async def handle_ask_grow_advice(
@@ -537,7 +550,7 @@ async def handle_ask_grow_advice(
     coordinator: GrowspaceCoordinator,
     strain_library: StrainLibrary,
     call: ServiceCall,
-) -> dict:
+) -> dict[str, Any]:
     """Handle the ask_grow_advice service call.
 
     This service provides AI-powered analysis and recommendations for a growspace.
@@ -548,7 +561,9 @@ async def handle_ask_grow_advice(
     max_length = call.data.get("max_length")
 
     assistant = GrowAssistant(hass, coordinator, strain_library)
-    response = await assistant.get_grow_advice(growspace_id, user_query, context_type, max_length)
+    response = await assistant.get_grow_advice(
+        growspace_id, user_query, context_type, max_length
+    )
 
     return {"response": response}
 
@@ -558,62 +573,36 @@ async def handle_analyze_all_growspaces(
     coordinator: GrowspaceCoordinator,
     strain_library: StrainLibrary,
     call: ServiceCall,
-) -> dict:
+) -> dict[str, Any]:
     """Analyze all growspaces and provide a comprehensive report.
 
     This service scans all active growspaces and provides prioritized recommendations.
     """
     assistant = GrowAssistant(hass, coordinator, strain_library)
-    ai_settings = assistant._get_ai_settings()
-    agent_id = ai_settings.get(CONF_ASSISTANT_ID)
+    ai_settings = assistant.get_ai_settings()
+    agent_id = None
+    if ai_settings:
+        agent_id = ai_settings.get(CONF_ASSISTANT_ID)
+
     max_length = call.data.get("max_length")
+
+    if max_length is None:
+        max_length = ai_settings.get("max_response_length", 250) if ai_settings else 250
 
     # Gather data for all growspaces
     all_data = []
     issues_found = []
 
-    for growspace_id, growspace in coordinator.growspaces.items():
+    for growspace_id in coordinator.growspaces:
         try:
-            data = assistant._gather_growspace_data(growspace_id)
+            data = assistant.gather_growspace_data(growspace_id)
             all_data.append(data)
-
-            # Flag issues
-            if data["analysis"]["stress"]["active"]:
-                issues_found.append(
-                    f"{data['growspace']['name']}: Stress detected - "
-                    f"{', '.join(data['analysis']['stress']['reasons'][:2])}"
-                )
-            if data["analysis"]["mold_risk"]["active"]:
-                issues_found.append(
-                    f"{data['growspace']['name']}: Mold risk - "
-                    f"{', '.join(data['analysis']['mold_risk']['reasons'][:2])}"
-                )
-        except Exception as err:
+            issues_found.extend(_analyze_growspace_issues(data))
+        except Exception as err:  # noqa: BLE001
             _LOGGER.warning("Error analyzing growspace %s: %s", growspace_id, err)
 
     # Build comprehensive summary
-    summary_lines = ["FACILITY OVERVIEW:", f"Total Growspaces: {len(all_data)}", ""]
-
-    if issues_found:
-        summary_lines.append("⚠️ ISSUES REQUIRING ATTENTION:")
-        for issue in issues_found:
-            summary_lines.append(f"  - {issue}")
-        summary_lines.append("")
-
-    for data in all_data:
-        summary_lines.append(f"• {data['growspace']['name']}:")
-        summary_lines.append(f"  Plants: {data['plants']['count']}")
-        if data["analysis"]["optimal"]["active"]:
-            summary_lines.append("  Status: ✅ Optimal")
-        elif data["analysis"]["stress"]["active"] or data["analysis"]["mold_risk"][
-            "active"
-        ]:
-            summary_lines.append("  Status: ⚠️ Needs Attention")
-        else:
-            summary_lines.append("  Status: 📊 Normal")
-        summary_lines.append("")
-
-    context = "\n".join(summary_lines)
+    context = _build_facility_summary(all_data, issues_found)
 
     # Ask AI for comprehensive analysis
     length_instruction = ""
@@ -631,7 +620,16 @@ async def handle_analyze_all_growspaces(
         f"Provide a structured report with specific, actionable recommendations.{length_instruction}"
     )
 
+    analysis_result = None
     try:
+        if not agent_id:
+            _LOGGER.info("AI assistant not configured, returning summary report")
+            return {
+                "response": f"AI Assistant not configured. Summary Report:\n\n{context}",
+                "issues_count": len(issues_found),
+                "growspaces_analyzed": len(all_data),
+            }
+
         result = await conversation.async_converse(
             hass,
             text=prompt,
@@ -647,22 +645,78 @@ async def handle_analyze_all_growspaces(
             and result.response.speech.get("plain")
         ):
             response = result.response.speech["plain"]["speech"]
-            
+
             # Enforce max length truncation if specified
             if max_length and len(response) > max_length:
-                response = response[:max_length].rsplit(' ', 1)[0] + "..."
-                
-            return {
+                response = response[:max_length].rsplit(" ", 1)[0] + "..."
+
+            analysis_result = {
                 "response": response,
                 "issues_count": len(issues_found),
                 "growspaces_analyzed": len(all_data),
             }
-        else:
-            raise ServiceValidationError("AI assistant returned an empty response")
 
-    except Exception as err:
+    except Exception as err:  # noqa: BLE001
         _LOGGER.error("Error analyzing all growspaces: %s", err)
-        raise ServiceValidationError(f"Failed to analyze growspaces: {str(err)}")
+        # Fallback to summary
+        return {
+            "response": f"Error analyzing growspaces: {err}\n\nSummary Report:\n\n{context}",
+            "issues_count": len(issues_found),
+            "growspaces_analyzed": len(all_data),
+        }
+
+    if analysis_result:
+        return analysis_result
+
+    return {
+        "response": f"Error analyzing growspaces: AI assistant returned an empty response. Summary Report:\n\n{context}",
+        "issues_count": len(issues_found),
+        "growspaces_analyzed": len(all_data),
+    }
+
+
+def _analyze_growspace_issues(data: dict[str, Any]) -> list[str]:
+    """Analyze a single growspace for issues."""
+    issues = []
+    if data["analysis"]["stress"]["active"]:
+        issues.append(
+            f"{data['growspace']['name']}: Stress detected - "
+            f"{', '.join(data['analysis']['stress']['reasons'][:2])}"
+        )
+    if data["analysis"]["mold_risk"]["active"]:
+        issues.append(
+            f"{data['growspace']['name']}: Mold risk - "
+            f"{', '.join(data['analysis']['mold_risk']['reasons'][:2])}"
+        )
+    return issues
+
+
+def _build_facility_summary(
+    all_data: list[dict[str, Any]], issues_found: list[str]
+) -> str:
+    """Build a text summary of the facility status."""
+    summary_lines = ["FACILITY OVERVIEW:", f"Total Growspaces: {len(all_data)}", ""]
+
+    if issues_found:
+        summary_lines.append("⚠️ ISSUES REQUIRING ATTENTION:")
+        summary_lines.extend(f"  - {issue}" for issue in issues_found)
+        summary_lines.append("")
+
+    for data in all_data:
+        summary_lines.append(f"• {data['growspace']['name']}:")
+        summary_lines.append(f"  Plants: {data['plants']['count']}")
+        if data["analysis"]["optimal"]["active"]:
+            summary_lines.append("  Status: ✅ Optimal")
+        elif (
+            data["analysis"]["stress"]["active"]
+            or data["analysis"]["mold_risk"]["active"]
+        ):
+            summary_lines.append("  Status: ⚠️ Needs Attention")
+        else:
+            summary_lines.append("  Status: 📊 Normal")
+        summary_lines.append("")
+
+    return "\n".join(summary_lines)
 
 
 async def handle_strain_recommendation(
@@ -670,15 +724,21 @@ async def handle_strain_recommendation(
     coordinator: GrowspaceCoordinator,
     strain_library: StrainLibrary,
     call: ServiceCall,
-) -> dict:
+) -> dict[str, Any]:
     """Recommend strains based on user preferences and historical data.
 
     This service analyzes the strain library and suggests strains for the next grow.
     """
     assistant = GrowAssistant(hass, coordinator, strain_library)
-    ai_settings = assistant._get_ai_settings()
-    agent_id = ai_settings.get(CONF_ASSISTANT_ID)
+    ai_settings = assistant.get_ai_settings()
+    agent_id = None
+    if ai_settings:
+        agent_id = ai_settings.get(CONF_ASSISTANT_ID)
+
     max_length = call.data.get("max_length")
+
+    if max_length is None:
+        max_length = ai_settings.get("max_response_length", 250) if ai_settings else 250
 
     preferences = call.data.get("preferences", {})
     growspace_id = call.data.get("growspace_id")
@@ -688,60 +748,84 @@ async def handle_strain_recommendation(
     all_strains = strain_library.get_all()
 
     # Build strain summary
-    strain_lines = ["AVAILABLE STRAINS:"]
-    for strain_name, strain_data in all_strains.items():
-        meta = strain_data.get("meta", {})
-        phenotypes = strain_data.get("phenotypes", {})
+    context = _build_strain_context(all_strains)
 
-        # Calculate average performance
-        all_harvests = []
-        est_flower_min = None
-        est_flower_max = None
-        description = meta.get("description", "")
-
-        for pheno_name, pheno_data in phenotypes.items():
-            all_harvests.extend(pheno_data.get("harvests", []))
-            # Capture estimates from phenotypes if available
-            if not est_flower_min and pheno_data.get("flower_days_min"):
-                est_flower_min = pheno_data["flower_days_min"]
-            if not est_flower_max and pheno_data.get("flower_days_max"):
-                est_flower_max = pheno_data["flower_days_max"]
-            if not description and pheno_data.get("description"):
-                description = pheno_data["description"]
-
-        # Start building strain info string
-        strain_info = f"\n{strain_name}:"
-        strain_info += f"\n  Type: {meta.get('type', 'Unknown')}"
-        strain_info += f"\n  Breeder: {meta.get('breeder', 'Unknown')}"
-        if description:
-             strain_info += f"\n  Description: {description[:100]}..." # Truncate for token limit
-
-        # Add Performance OR Estimates
-        if all_harvests:
-            avg_veg = sum(h.get("veg_days", 0) for h in all_harvests) / len(
-                all_harvests
+    # Include growspace context if provided
+    growspace_context = ""
+    if growspace_id:
+        try:
+            gs_data = assistant.gather_growspace_data(growspace_id)
+            growspace_context = f"\nTARGET GROWSPACE: {gs_data['growspace']['name']} ({gs_data['growspace']['size']})"
+        except Exception as e:  # noqa: BLE001
+            _LOGGER.warning(
+                "Failed to gather growspace data for strain recommendation for growspace %s: %s",
+                growspace_id,
+                e,
             )
-            avg_flower = sum(h.get("flower_days", 0) for h in all_harvests) / len(
-                all_harvests
-            )
-            total_days = avg_veg + avg_flower
 
-            strain_info += (
-                f"\n  Avg Total Time: {round(total_days)} days "
-                f"({round(avg_veg)}d veg + {round(avg_flower)}d flower)"
-                f"\n  Harvests Recorded: {len(all_harvests)}"
-            )
-        else:
-            # No history, use estimates if available
-            if est_flower_min or est_flower_max:
-                strain_info += f"\n  Est. Flowering: {est_flower_min or '?'}-{est_flower_max or '?'} days"
-            else:
-                strain_info += "\n  History: No harvests recorded yet"
+    # Build prompt
+    prompt = _build_recommendation_prompt(
+        context, preferences, user_query, growspace_context, max_length
+    )
 
-        strain_lines.append(strain_info)
+    recommendation_result = None
+    try:
+        if not agent_id:
+            _LOGGER.info("AI assistant not configured, returning strain context")
+            return {
+                "response": f"AI Assistant not configured. Strain Data:\n\n{context}",
+                "strains_analyzed": len(all_strains),
+            }
 
-    context = "\n".join(strain_lines)
+        result = await conversation.async_converse(
+            hass,
+            text=prompt,
+            conversation_id=None,
+            context=Context(),
+            agent_id=agent_id,
+        )
 
+        if (
+            result
+            and result.response
+            and result.response.speech
+            and result.response.speech.get("plain")
+        ):
+            response = result.response.speech["plain"]["speech"]
+
+            # Enforce max length truncation if specified
+            if max_length and len(response) > max_length:
+                response = response[:max_length].rsplit(" ", 1)[0] + "..."
+
+            recommendation_result = {
+                "response": response,
+                "strains_analyzed": len(all_strains),
+            }
+
+    except Exception as err:  # noqa: BLE001
+        _LOGGER.error("Error getting strain recommendations: %s", err)
+        return {
+            "response": f"Error getting recommendations: {err}\n\nStrain Data:\n\n{context}",
+            "strains_analyzed": len(all_strains),
+        }
+
+    if recommendation_result:
+        return recommendation_result
+
+    return {
+        "response": f"Error getting recommendations: AI assistant returned an empty response. Strain Data:\n\n{context}",
+        "strains_analyzed": len(all_strains),
+    }
+
+
+def _build_recommendation_prompt(
+    context: str,
+    preferences: dict[str, Any],
+    user_query: str | None,
+    growspace_context: str,
+    max_length: int | None,
+) -> str:
+    """Build the prompt for strain recommendations."""
     # Build preferences string
     pref_str = ""
     if preferences:
@@ -753,22 +837,13 @@ async def handle_strain_recommendation(
     # Build User Query String
     query_str = ""
     if user_query:
-        query_str = f"\nUSER REQUEST: {user_query}" # <--- ADD THIS
-
-    # Include growspace context if provided
-    growspace_context = ""
-    if growspace_id:
-        try:
-            gs_data = assistant._gather_growspace_data(growspace_id)
-            growspace_context = f"\nTARGET GROWSPACE: {gs_data['growspace']['name']} ({gs_data['growspace']['size']})"
-        except Exception as e:
-            _LOGGER.warning("Failed to gather growspace data for strain recommendation for growspace %s: %s", growspace_id, e)
+        query_str = f"\nUSER REQUEST: {user_query}"
 
     length_instruction = ""
     if max_length:
         length_instruction = f"\n\nIMPORTANT: Keep your response concise and under {max_length} characters."
 
-    prompt = (
+    return (
         "You are a cannabis cultivation expert helping select strains for the next grow. "
         "Based on historical performance data and user preferences, recommend the best strains.\n\n"
         f"{context}\n\n"
@@ -783,31 +858,68 @@ async def handle_strain_recommendation(
         f"{length_instruction}"
     )
 
-    try:
-        result = await conversation.async_converse(
-            hass,
-            text=prompt,
-            conversation_id=None,
-            context=Context(),
-            agent_id=agent_id,
+
+def _build_strain_context(all_strains: dict[str, Any]) -> str:
+    """Build a context string from strain library data."""
+    strain_lines = ["AVAILABLE STRAINS:"]
+    for strain_name, strain_data in all_strains.items():
+        strain_info = _build_strain_performance_summary(strain_name, strain_data)
+        strain_lines.append(strain_info)
+
+    return "\n".join(strain_lines)
+
+
+def _build_strain_performance_summary(
+    strain_name: str, strain_data: dict[str, Any]
+) -> str:
+    """Build a summary string for a strain's performance."""
+    meta = strain_data.get("meta", {})
+    phenotypes = strain_data.get("phenotypes", {})
+
+    # Calculate average performance
+    all_harvests = []
+    est_flower_min = None
+    est_flower_max = None
+    description = meta.get("description", "")
+
+    for pheno_data in phenotypes.values():
+        all_harvests.extend(pheno_data.get("harvests", []))
+        # Capture estimates from phenotypes if available
+        if not est_flower_min and pheno_data.get("flower_days_min"):
+            est_flower_min = pheno_data["flower_days_min"]
+        if not est_flower_max and pheno_data.get("flower_days_max"):
+            est_flower_max = pheno_data["flower_days_max"]
+        if not description and pheno_data.get("description"):
+            description = pheno_data["description"]
+
+    # Start building strain info string
+    strain_info = f"\n{strain_name}:"
+    strain_info += f"\n  Type: {meta.get('type', 'Unknown')}"
+    strain_info += f"\n  Breeder: {meta.get('breeder', 'Unknown')}"
+    if description:
+        strain_info += (
+            f"\n  Description: {description[:100]}..."  # Truncate for token limit
         )
 
-        if (
-            result
-            and result.response
-            and result.response.speech
-            and result.response.speech.get("plain")
-        ):
-            response = result.response.speech["plain"]["speech"]
-            
-            # Enforce max length truncation if specified
-            if max_length and len(response) > max_length:
-                response = response[:max_length].rsplit(' ', 1)[0] + "..."
-                
-            return {"response": response, "strains_analyzed": len(all_strains)}
-        else:
-            raise ServiceValidationError("AI assistant returned an empty response")
+    # Add Performance OR Estimates
+    if all_harvests:
+        avg_veg = sum(h.get("veg_days", 0) for h in all_harvests) / len(all_harvests)
+        avg_flower = sum(h.get("flower_days", 0) for h in all_harvests) / len(
+            all_harvests
+        )
+        total_days = avg_veg + avg_flower
 
-    except Exception as err:
-        _LOGGER.error("Error getting strain recommendations: %s", err)
-        raise ServiceValidationError(f"Failed to get recommendations: {str(err)}")
+        strain_info += (
+            f"\n  Avg Total Time: {round(total_days)} days "
+            f"({round(avg_veg)}d veg + {round(avg_flower)}d flower)"
+            f"\n  Harvests Recorded: {len(all_harvests)}"
+        )
+    # No history, use estimates if available
+    elif est_flower_min or est_flower_max:
+        strain_info += (
+            f"\n  Est. Flowering: {est_flower_min or '?'}-{est_flower_max or '?'} days"
+        )
+    else:
+        strain_info += "\n  History: No harvests recorded yet"
+
+    return strain_info

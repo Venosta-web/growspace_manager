@@ -24,7 +24,8 @@
           "manage_plants": "Manage Plants",
           "configure_environment": "Configure Growspace Environment",
           "configure_global": "Configure Global Sensors",
-          "configure_irrigation": "Configure Irrigation"
+          "configure_irrigation": "Configure Irrigation",
+          "configure_general": "General Settings"
         }
       },
       "select_growspace_for_irrigation": {
@@ -100,11 +101,37 @@
           "lung_room_humidity_sensor": "Lung Room Humidity Sensor"
         }
       },
+      "configure_general": {
+        "title": "General Settings",
+        "description": "Configure general integration behavior",
+        "data": {
+          "show_sidebar": "Show Growspace Manager in sidebar"
+        }
+      },
       "configure_environment": {
         "title": "Configure Environment for {growspace_name}",
         "description": "Set up and fine-tune the environmental sensors and thresholds for this growspace.",
         "data": {
-          "minimum_source_air_temperature": "Minimum Source Air Temperature (°C)"
+          "minimum_source_air_temperature": "Minimum Source Air Temperature (°C)",
+          "temperature_sensor": "Temperature Sensor",
+          "humidity_sensor": "Humidity Sensor",
+          "vpd_sensor": "VPD Sensor (Optional)",
+          "lst_offset": "Leaf Surface Temp Offset (°C)",
+          "configure_light": "Enable Light Monitoring",
+          "light_sensor": "Light Status Sensor",
+          "configure_fan": "Enable Circulation Fan",
+          "circulation_fan": "Circulation Fan Device",
+          "configure_co2": "Enable CO2 Monitoring",
+          "co2_sensor": "CO2 Sensor",
+          "exhaust_fan_entity": "Exhaust Fan Device (Control)",
+          "configure_exhaust": "Enable Exhaust Monitoring",
+          "exhaust_sensor": "Exhaust Airflow/Speed Sensor",
+          "humidifier_entity": "Humidifier Device (Control)",
+          "configure_humidifier": "Enable Humidifier Monitoring",
+          "humidifier_sensor": "Humidifier Power/Status Sensor",
+          "configure_dehumidifier": "Enable Dehumidifier",
+          "dehumidifier_entity": "Dehumidifier Device",
+          "control_dehumidifier": "Enable Dehumidifier Automation"
         }
       },
       "manage_growspaces": {
@@ -294,6 +321,25 @@
           "name": "Plant ID",
           "description": "ID of the plant to remove"
         }
+      }
+    }
+  },
+  "issues": {
+    "pending_growspace_fail": {
+      "title": "Failed to create pending growspace",
+      "description": "The system failed to create the pending growspace {name}. Error: {error}. Please check the logs for more details."
+    }
+  },
+  "entity": {
+    "sensor": {
+      "vpd": {
+        "name": "VPD"
+      },
+      "growspaces_list": {
+        "name": "Growspaces List"
+      },
+      "strain_library": {
+        "name": "Strain Library"
       }
     }
   }

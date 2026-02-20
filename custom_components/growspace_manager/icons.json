@@ -1,0 +1,52 @@
+{
+  "entity": {
+    "binary_sensor": {
+      "stress": {
+        "default": "mdi:alert-circle"
+      },
+      "mold": {
+        "default": "mdi:bacteria"
+      },
+      "optimal": {
+        "default": "mdi:check-circle"
+      },
+      "drying": {
+        "default": "mdi:weather-windy"
+      },
+      "curing": {
+        "default": "mdi:glass-jar"
+      },
+      "light_verification": {
+        "default": "mdi:lightbulb-clock"
+      }
+    },
+    "sensor": {
+      "air_exchange": {
+        "default": "mdi:air-filter"
+      },
+      "calculated_vpd": {
+        "default": "mdi:cloud-percent"
+      },
+      "growspaces_list": {
+        "default": "mdi:home-group"
+      },
+      "overview": {
+        "default": "mdi:home-group"
+      },
+      "plant": {
+        "default": "mdi:cannabis"
+      },
+      "strain_library": {
+        "default": "mdi:leaf"
+      },
+      "vpd": {
+        "default": "mdi:cloud-check-variant"
+      }
+    },
+    "switch": {
+      "notifications": {
+        "default": "mdi:bell"
+      }
+    }
+  }
+}

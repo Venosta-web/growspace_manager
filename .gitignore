@@ -44,9 +44,12 @@ htmlcov/
 .cache
 nosetests.xml
 coverage.xml
+coverage*.txt
 *.cover
 .pytest_cache/
 .hypothesis/
+.pytest_cache/
+tests*.txt
 
 # Translations
 *.mo
@@ -105,5 +108,11 @@ dmypy.json
 .vscode/
 .gemini/
 
+# Git worktrees
+.worktrees/
+
 # hacs
 custom_components/hacs/
+docs/plans/*
+
+gha-creds-*.json

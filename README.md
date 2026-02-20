@@ -6,6 +6,10 @@
 
 *   **Detailed Plant Tracking**: Monitor individual plants from seed to cure, tracking their strain, phenotype, position, and key dates (veg, flower, etc.).
 *   **Visual Growspace Layouts**: Organize your plants in a grid system for each growspace. Visualize your entire setup at a glance using the companion Lovelace card.
+*   **AI Assistant**: Built-in AI integration (powered by Home Assistant's conversation agents) provides:
+    *   **Diagnostics**: Analyze sensor data to identify issues like heat stress or VPD imbalances.
+    *   **Optimization**: Get tailored advice on how to improve your environment for the specific growth stage.
+    *   **Planning**: Ask for help with scheduling, training techniques, or harvest timing.
 *   **Advanced Environmental Monitoring**: Utilizes a sophisticated Bayesian inference engine to provide intelligent binary sensors for:
     *   **Plant Stress**: Detects when conditions like temperature, humidity, or VPD are likely causing stress to your plants.
     *   **Mold Risk**: Proactively warns you of conditions favorable to mold growth, especially during the critical late-flowering stage.
@@ -90,7 +94,17 @@ This is where the magic happens. By linking your existing sensors, you enable th
 *   **Optional**: A light or switch to determine if the lights are on/off, a CO2 sensor, and a circulation fan switch. Linking a light sensor enables more accurate day/night logic and activates the `LightCycleVerificationSensor`.
 5.  Click **Submit** to save. The Bayesian binary sensors will be created automatically.
 
-### Step 5: Add the Card to Your Dashboard
+### Step 5: Configure AI Assistant (Optional)
+Unlock intelligent insights by connecting a conversation agent.
+1.  Go back to the integration's **Configure** menu.
+2.  Select **Configure AI Assistant** and click **Submit**.
+3.  **Enable AI Assistant**: Toggle this on.
+4.  **Select Assistant**: Choose your preferred conversation agent (e.g., OpenAI, Google Generative AI, or a local LLM).
+5.  **Personality**: Choose a personality style (e.g., "Professional", "Friendly", "Scientist").
+6.  **Max Response Length**: Set a limit for the advice length to keep it concise.
+7.  Click **Submit**.
+
+### Step 6: Add the Card to Your Dashboard
 1.  Navigate to the dashboard where you want to display your growspace.
 2.  Click the three dots in the top right and select **Edit Dashboard**.
 3.  Click **+ Add Card** and search for the **Custom: Growspace Card**.
@@ -110,7 +124,17 @@ This integration will create the following entities for you:
 *   **Notification Switch**: (`switch.<growspace_name>_notifications`) Allows you to enable or disable notifications for a specific growspace.
 *   **Strain Library Sensor**: (`sensor.growspace_strain_library`) A sensor whose state is the number of unique strains and whose attributes contain detailed harvest analytics, including average veg/flower times.
 *   **Growspaces List Sensor**: (`sensor.growspaces_list`) A sensor whose attributes contain a list of all your configured growspaces.
-*   **Task Calendar**: (`calendar.<growspace_name>_tasks`) A calendar entity for each growspace that displays scheduled tasks based on timed notifications.
+*   **Task Calendar**: (`calendar.<growspace_name>_tasks`) A calendar entity for each growspace that displays scheduled tasks based on your timed notifications.
+
+### Services
+The integration exposes the following services:
+
+*   **`growspace_manager.ask_grow_advice`**: Ask the AI assistant for advice on a specific growspace.
+    *   **Targets**: A growspace overview sensor (e.g., `sensor.4x4_tent`).
+    *   **Fields**:
+        *   `user_query` (Optional): A specific question to ask. If omitted, the AI provides a general status update.
+        *   `context_type`: The type of advice needed (`general`, `diagnostic`, `optimization`, `planning`).
+        *   `max_length`: Maximum length of the response.
 
 ### Environmental Monitoring Sensors
 When you configure environmental sensors for a growspace, the following powerful binary sensors are created:
@@ -119,3 +143,70 @@ When you configure environmental sensors for a growspace, the following powerful
 *   **High Mold Risk**: (`binary_sensor.<growspace_name>_high_mold_risk`) This sensor turns **ON** when conditions are favorable for mold and bud rot, particularly during the lights-off period in late flower. It monitors for high humidity, low VPD, and poor air circulation.
 *   **Optimal Conditions**: (`binary_sensor.<growspace_name>_optimal_conditions`) This sensor turns **ON** when your environment is perfectly dialed in for the current growth stage. When this sensor is on, you know your plants are happy. It turns **OFF** as a warning that conditions have drifted out of the ideal range.
 *   **Light Schedule Correct**: (`binary_sensor.<growspace_name>_light_schedule_correct`) An optional sensor (created when a light entity is configured) that turns **ON** if the light's on/off cycle duration is correct for the current growth stage.
+
+## Automation Examples
+
+Maximize the power of Growspace Manager with these automation ideas:
+
+**1. High Heat Alert**
+Send a critical notification to your phone if the "Plant Stress" sensor is triggered for more than 5 minutes.
+
+```yaml
+trigger:
+  - platform: state
+    entity_id: binary_sensor.4x4_tent_plants_under_stress
+    to: "on"
+    for: "00:05:00"
+action:
+  - service: notify.mobile_app_your_phone
+    data:
+      message: "CRITICAL: Plants in 4x4 Tent are under stress! Check environment immediately."
+      title: "🔥 High Heat Stress"
+```
+
+**2. Auto-Adjustment for VPD**
+If the "Optimal Conditions" sensor turns off, automatically toggle your humidifier (if connected to a smart plug).
+
+```yaml
+trigger:
+  - platform: state
+    entity_id: binary_sensor.4x4_tent_optimal_conditions
+    to: "off"
+    for: "00:10:00"
+condition:
+  - condition: numeric_state
+    entity_id: sensor.4x4_tent_vpd
+    above: 1.5 # Too dry
+action:
+  - service: switch.turn_on
+    target:
+      entity_id: switch.humidifier_plug
+```
+
+## Troubleshooting
+
+**Q: My "Plants Under Stress" sensor is stuck on "Unknown".**
+*   **Cause**: One or more of the required source sensors (Temperature, Humidity, VPD) is unavailable or not configured.
+*   **Fix**: Go to **Configure** > **Configure Environment Sensors** and ensure all required sensors are linked and currently providing data.
+
+**Q: I don't see the "Light Schedule Correct" sensor.**
+*   **Cause**: You haven't linked a light entity to your growspace.
+*   **Fix**: Go to **Configure** > **Configure Environment Sensors** > **Enable Light Monitoring** and select your light entity.
+
+**Q: The AI Assistant isn't responding.**
+*   **Cause**: The notification target might be invalid or the AI agent service is down.
+*   **Fix**: Check your Home Assistant logs for "Growspace Manager" errors. Ensure the correct "Notification Target" service string is used in the growspace configuration.
+
+## Known Limitations
+
+*   **Manual Entity Deletion**: If you remove a growspace, you may need to manually delete some orphan entities from Home Assistant's entity registry if they were not cleaned up automatically.
+*   **Restart Required**: Renaming a growspace currently requires a Home Assistant restart to fully update all related entity names.
+
+## Data Updates
+
+*   **Sensors**: Data from linked environmental sensors (temperature, humidity, etc.) is updated in real-time as Home Assistant receives state changes.
+*   **Bayesian Sensors**: Stress and Mold risk probabilities are recalculated immediately upon any change in the underlying environmental sensors.
+*   **Calculated Sensors**: VPD and other derived metrics are updated whenever their source sensors change.
+*   **Plant Age**: Plant age (days in veg/flower) is recalculated daily at midnight.
+
+

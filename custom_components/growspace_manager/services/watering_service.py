@@ -1,0 +1,180 @@
+"""Watering service for the Growspace Manager integration.
+
+This service handles all watering-related operations,
+extracted from the coordinator to reduce complexity.
+"""
+
+from __future__ import annotations
+
+import asyncio
+from collections.abc import Awaitable, Callable
+import logging
+from typing import TYPE_CHECKING
+
+from custom_components.growspace_manager.event_builder import EventBuilder
+from custom_components.growspace_manager.exceptions import GrowspaceError
+from custom_components.growspace_manager.models import Plant
+from homeassistant.core import HomeAssistant
+from homeassistant.util import dt as dt_util
+
+if TYPE_CHECKING:
+    from custom_components.growspace_manager.data_access.growspace_repository import (
+        GrowspaceRepository,
+    )
+    from custom_components.growspace_manager.growspace_validator import (
+        GrowspaceValidator,
+    )
+    from custom_components.growspace_manager.managers.nutrient import NutrientManager
+
+_LOGGER = logging.getLogger(__name__)
+
+
+class WateringService:
+    """Handles all watering operations."""
+
+    def __init__(
+        self,
+        hass: HomeAssistant,
+        repository: GrowspaceRepository,
+        validator: GrowspaceValidator,
+        nutrient_manager: NutrientManager,
+        save_callback: Callable[[], Awaitable[None]],
+        lock: asyncio.Lock,
+        add_event_callback: Callable[[str, GrowspaceEvent], None],
+        invalidate_cache_callback: Callable[[str | None], None],
+    ) -> None:
+        """Initialize the watering service.
+
+        Args:
+            hass: Home Assistant instance.
+            repository: Data repository.
+            validator: Growspace validator.
+            nutrient_manager: Nutrient manager for preset resolution.
+            save_callback: Callback to save data.
+            lock: Async lock for thread safety.
+            add_event_callback: Callback to add events to logbook.
+            invalidate_cache_callback: Callback to invalidate cache.
+        """
+        self.hass = hass
+        self.repository = repository
+        self.validator = validator
+        self.nutrient_manager = nutrient_manager
+        self.save_callback = save_callback
+        self.lock = lock
+        self.add_event = add_event_callback
+        self.invalidate_cache = invalidate_cache_callback
+
+    async def async_water_plant(
+        self,
+        plant_id: str,
+        amount: float,
+        nutrients: dict[str, float] | None = None,
+        preset_id: str | None = None,
+    ) -> Plant:
+        """Record a watering event for a single plant.
+
+        Args:
+            plant_id: The ID of the plant to water.
+            amount: The amount of water in liters.
+            nutrients: Optional dict of nutrient name to concentration (ml/L).
+            preset_id: Optional ID of a nutrient preset to apply.
+
+        Returns:
+            The updated Plant object.
+        """
+        plant = await self._water_plant_internal(
+            plant_id, amount, nutrients, preset_id, invalidate_cache=True
+        )
+        await self.save_callback()
+        return plant
+
+    async def _water_plant_internal(
+        self,
+        plant_id: str,
+        amount: float,
+        nutrients: dict[str, float] | None = None,
+        preset_id: str | None = None,
+        invalidate_cache: bool = True,
+    ) -> Plant:
+        """Internal watering logic with optional cache invalidation."""
+        self.validator.validate_plant_exists(plant_id)
+        plant = self.repository.plants[plant_id]
+
+        final_nutrients, preset_name = self.nutrient_manager.resolve_nutrient_mix(
+            nutrients, preset_id
+        )
+
+        # Deduct nutrients from inventory using manager
+        self.nutrient_manager.deduct_from_inventory(final_nutrients, amount)
+
+        # Update plant's last_watered timestamp
+        now_iso = dt_util.now().isoformat()
+        plant.last_watered = now_iso
+
+        # Invalidate cache for the growspace if requested
+        if invalidate_cache:
+            self.invalidate_cache(plant.growspace_id)
+
+        # Create and log the watering event
+        event = EventBuilder.create_watering_event(
+            plant, amount, preset_name, final_nutrients
+        )
+        self.add_event(plant.growspace_id, event)
+
+        _LOGGER.info(
+            "Watered plant %s (%s) with %sL%s%s",
+            plant_id,
+            plant.strain,
+            amount,
+            f" using preset '{preset_name}'" if preset_name else "",
+            f" + manual nutrients: {nutrients}" if nutrients else "",
+        )
+
+        return plant
+
+    async def async_water_growspace(
+        self,
+        growspace_id: str,
+        amount_per_plant: float | None = None,
+        nutrients: dict[str, float] | None = None,
+        preset_id: str | None = None,
+        amount: float | None = None,
+    ) -> int:
+        """Record a watering event for all plants in a growspace."""
+        self.validator.validate_growspace_exists(growspace_id)
+        plants = self.repository.get_growspace_plants(growspace_id)
+
+        if not plants:
+            return 0
+
+        # Determine amount per plant if total amount is provided
+        if amount is not None:
+            amount_per_plant = amount / len(plants)
+        elif amount_per_plant is None:
+            raise GrowspaceError(
+                "Either 'amount' (total) or 'amount_per_plant' is required"
+            )
+
+        for plant in plants:
+            await self._water_plant_internal(
+                plant.plant_id,
+                amount_per_plant,
+                nutrients,
+                preset_id,
+                invalidate_cache=False,
+            )
+
+        # Bulk invalidation
+        self.invalidate_cache(growspace_id)
+
+        _LOGGER.info(
+            "Watered %d plants in growspace %s with %sL each%s",
+            len(plants),
+            growspace_id,
+            amount_per_plant,
+            f" using preset '{preset_id}'" if preset_id else "",
+        )
+
+        await self.save_callback()
+
+        return len(plants)

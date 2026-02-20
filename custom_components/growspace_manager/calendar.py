@@ -4,10 +4,11 @@ This file defines the calendar entities for the Growspace Manager integration.
 Each growspace gets its own calendar, which displays scheduled tasks and reminders
 based on the timed notifications configured by the user.
 """
+
 from __future__ import annotations
 
-import logging
 from datetime import datetime, timedelta
+import logging
 
 from homeassistant.components.calendar import CalendarEntity, CalendarEvent
 from homeassistant.config_entries import ConfigEntry
@@ -37,7 +38,7 @@ async def async_setup_entry(
         config_entry: The configuration entry.
         async_add_entities: A callback function for adding new entities.
     """
-    coordinator = hass.data[DOMAIN][config_entry.entry_id]["coordinator"]
+    coordinator = config_entry.runtime_data
     calendars = [
         GrowspaceCalendar(coordinator, growspace_id)
         for growspace_id in coordinator.growspaces
@@ -45,7 +46,7 @@ async def async_setup_entry(
     async_add_entities(calendars, True)
 
 
-class GrowspaceCalendar(CalendarEntity):
+class GrowspaceCalendar(CalendarEntity):  # type: ignore[misc]
     """A calendar entity for a growspace.
 
     This calendar displays events that are generated from the user-configured
@@ -120,12 +121,24 @@ class GrowspaceCalendar(CalendarEntity):
                     continue
 
                 try:
-                    start_date = dt_util.parse_datetime(start_date_str).date()
+                    start_dt = dt_util.parse_datetime(start_date_str)
+                    if start_dt is None:
+                        _LOGGER.warning(
+                            "Could not generate calendar event for plant %s: Invalid date format %s",
+                            plant.plant_id,
+                            start_date_str,
+                        )
+                        continue
+                    start_date = start_dt.date()
                     event_date = start_date + timedelta(days=days_offset)
 
                     # Create an all-day event and make it timezone-aware
-                    event_start = dt_util.as_local(datetime.combine(event_date, datetime.min.time()))
-                    event_end = dt_util.as_local(datetime.combine(event_date, datetime.max.time()))
+                    event_start = dt_util.as_local(
+                        datetime.combine(event_date, datetime.min.time())
+                    )
+                    event_end = dt_util.as_local(
+                        datetime.combine(event_date, datetime.max.time())
+                    )
 
                     event = CalendarEvent(
                         start=event_start,
@@ -135,7 +148,7 @@ class GrowspaceCalendar(CalendarEntity):
                         uid=f"{plant.plant_id}_{notification['id']}",
                     )
                     events.append(event)
-                except Exception as e:
+                except (ValueError, TypeError) as e:
                     _LOGGER.warning(
                         "Could not generate calendar event for plant %s: %s",
                         plant.plant_id,
@@ -143,7 +156,6 @@ class GrowspaceCalendar(CalendarEntity):
                     )
 
         self._events = sorted(events, key=lambda e: e.start_datetime_local)
-
 
     async def async_update(self) -> None:
         """Update the calendar's list of events."""

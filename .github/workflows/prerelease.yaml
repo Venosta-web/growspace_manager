@@ -15,9 +15,11 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Update version
+        id: version_step
         run: |
           VERSION="0.2.$(date +%Y%m%d%H%M%S)"
           echo "New version: $VERSION"
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
           cd custom_components/growspace_manager
           # Use jq to reliably update the version
           if ! jq --arg v "$VERSION" '.version = $v' manifest.json > manifest.json.tmp; then
@@ -40,9 +42,19 @@ jobs:
 
       # 3. Creates the GitHub Pre-release and attaches the new zip file
       - name: Create Pre-release
-        uses: softprops/action-gh-release@v1
+        uses: softprops/action-gh-release@v2
         with:
           prerelease: true
-          tag_name: prerelease-${{ github.sha }}
-          name: Pre-release-${{ github.ref_name }}-${{ github.sha_short }}
+          tag_name: v${{ steps.version_step.outputs.version }}-beta
+          name: Pre-release-${{ github.ref_name }}-${{ github.sha }}
           files: growspace_manager.zip
+
+      # 4. Delete Older Pre-releases
+      - name: Delete Older Pre-releases
+        uses: dev-drprasad/delete-older-releases@v0.3.3
+        with:
+          keep_latest: 5                # Number of most recent pre-releases to keep
+          delete_tag_pattern: "^prerelease-" # Regex pattern to match your tags
+          delete_tags: true             # Also delete the tags associated with the releases
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

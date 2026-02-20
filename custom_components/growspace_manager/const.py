@@ -1,25 +1,195 @@
 """Constants for the Growspace Manager integration."""
 
-from datetime import date, datetime
+from enum import StrEnum
+from typing import Final
 
-import voluptuous as vol
+from .domain.stage import PLANT_STAGES, PlantStage
 
-DOMAIN = "growspace_manager"
-STORAGE_VERSION = 1
-STORAGE_KEY = f"{DOMAIN}_storage"
-PLATFORMS: list[str] = [
+DOMAIN: Final = "growspace_manager"
+STORAGE_VERSION: Final = 1
+VERSION: Final = "0.3.5"
+STORAGE_KEY: Final = f"{DOMAIN}_storage"  # Legacy Key
+STORAGE_KEY_CONFIG: Final = f"{DOMAIN}.config"
+STORAGE_KEY_PLANTS: Final = f"{DOMAIN}.plants"
+PLATFORMS: Final[list[str]] = [
     "binary_sensor",
     "sensor",
     "switch",
 ]
 
+PARALLEL_UPDATES: Final = 0
+
+# Coordinator Update Interval
+COORDINATOR_UPDATE_INTERVAL_MINUTES = 15  # How often coordinator refreshes data
+
+# WebSocket Event Log Lookback Periods
+EVENT_LOG_LOOKBACK_DAYS = 30  # Days to look back for manual event logs
+ALERT_LOG_LOOKBACK_DAYS = 120  # Days to look back for environmental alerts
+
+# Dehumidifier Control Timing Defaults
+DEFAULT_DEHUMIDIFIER_MIN_RUNTIME = 300  # 5 minutes in seconds
+DEFAULT_DEHUMIDIFIER_MIN_OFFTIME = 300  # 5 minutes in seconds
+DEFAULT_VPD_HYSTERESIS = 0.2  # kPa (fallback if not using stage thresholds)
+
 DEFAULT_NAME = "Growspace Manager"
+
+# Canonical IDs for special growspaces
+CANONICAL_ID_DRY: Final = "dry"
+CANONICAL_ID_CURE: Final = "cure"
+CANONICAL_ID_MOTHER: Final = "mother"
+CANONICAL_ID_CLONE: Final = "clone"
+CANONICAL_ID_VEG: Final = "veg"
+
+# Configuration Keys
+CONF_TEMP_SENSOR = "temperature_sensor"
+CONF_HUMIDITY_SENSOR = "humidity_sensor"
+CONF_VPD_SENSOR = "vpd_sensor"
+CONF_CO2_SENSOR = "co2_sensor"
+CONF_DEHUMIDIFIER_ENTITY = "dehumidifier_entity"
+CONF_CIRCULATION_FAN_ENTITY = "circulation_fan_entity"
+CONF_LIGHT_SENSOR = "light_sensor"
+CONF_STRESS_THRESHOLD = "stress_threshold"
+CONF_MOLD_THRESHOLD = "mold_threshold"
+CONF_DEHUMIDIFIER_THRESHOLDS = "dehumidifier_thresholds"
+CONF_AI_ENABLED = "ai_enabled"
+CONF_ASSISTANT_ID = "assistant_id"
+CONF_GROWSPACE = "growspace"
+CONF_EXHAUST_ENTITY = "exhaust_entity"
+CONF_EXHAUST_FAN_ENTITY = "exhaust_fan_entity"
+CONF_HUMIDIFIER_ENTITY = "humidifier_entity"
+CONF_SOIL_MOISTURE_SENSOR = "soil_moisture_sensor"
+CONF_IRRIGATION_TANK_SENSORS = "irrigation_tank_sensors"
+CONF_IRRIGATION_TANK_WARNING_LEVEL = "irrigation_tank_warning_level"
+CONF_CONTROL_DEHUMIDIFIER = "control_dehumidifier"
+
+# Tank Depletion Predictor Defaults
+DEFAULT_PREDICTION_WINDOW_HOURS = 72
+DEPLETION_DEADBAND_THRESHOLD = 0.1  # %/hour
+VPD_WEIGHTING_BASE = 1.2  # kPa threshold for multiplier
+
+
+# Multi-Device Config Keys
+CONF_LIGHT_SENSORS = "light_sensors"
+CONF_DEHUMIDIFIER_ENTITIES = "dehumidifier_entities"
+CONF_CIRCULATION_FAN_ENTITIES = "circulation_fan_entities"
+CONF_HUMIDIFIER_ENTITIES = "humidifier_entities"
+CONF_EXHAUST_FAN_ENTITIES = "exhaust_fan_entities"
+CONF_TEMP_SENSORS = "temperature_sensors"
+CONF_HUMIDITY_SENSORS = "humidity_sensors"
+CONF_VPD_SENSORS = "vpd_sensors"
+
+# Metric Names
+METRIC_STRESS = "stress"
+METRIC_MOLD_RISK = "mold_risk"
+METRIC_OPTIMAL = "optimal"
+METRIC_DRYING = "drying"
+METRIC_CURING = "curing"
+METRIC_LIGHT_MANAGEMENT = "light_management"
+METRIC_AIR_EXCHANGE = "air_exchange"
+METRIC_VPD = "vpd"
+METRIC_TEMPERATURE = "temperature"
+METRIC_HUMIDITY = "humidity"
+
+# Attributes
+ATTR_GROWSPACE_ID = "growspace_id"
+ATTR_PLANT_ID = "plant_id"
+ATTR_STRAIN = "strain"
+ATTR_PHENOTYPE = "phenotype"
+ATTR_BREEDER = "breeder"
+ATTR_LINEAGE = "lineage"
+ATTR_BREEDER_LOGO = "breeder_logo"
+ATTR_ROW = "row"
+ATTR_COL = "col"
+ATTR_STAGE = "stage"
+ATTR_TRANSITION_DATE = "transition_date"
+ATTR_MOTHER_PLANT_ID = "mother_plant_id"
+ATTR_TARGET_GROWSPACE_ID = "target_growspace_id"
+ATTR_NUM_CLONES = "num_clones"
+
 ATTR_TOTAL_DAYS = "total_days"
+
+ATTR_PROBABILITY = "probability"
+ATTR_THRESHOLD = "threshold"
+ATTR_OBSERVATIONS = "observations"
+ATTR_REASONS = "reasons"
+ATTR_EXPECTED_SCHEDULE = "expected_schedule"
+ATTR_LIGHT_ENTITY_ID = "light_entity_id"
+ATTR_TIME_IN_CURRENT_STATE = "time_in_current_state"
+
+ATTR_NAME = "name"
+ATTR_ROWS = "rows"
+ATTR_PLANTS_PER_ROW = "plants_per_row"
+ATTR_NOTIFICATION_TARGET = "notification_target"
+
+# Watering Attributes
+ATTR_WATER_AMOUNT = "amount"
+ATTR_NUTRIENTS = "nutrients"
+ATTR_AMOUNT_PER_PLANT = "amount_per_plant"
+ATTR_PRESET_ID = "preset_id"
+ATTR_PRESET_NAME = "preset_name"
+ATTR_MIN_DAYS_IN_STAGE = "min_days_in_stage"
+
+# Timeline Attributes
+ATTR_IMAGES = "images"
+ATTR_TAGS = "tags"
+ATTR_METADATA = "metadata"
+ATTR_AMOUNT_ML = "amount_ml"
+ATTR_PH = "ph"
+ATTR_EC = "ec"
+ATTR_TRIGGER_TYPE = "trigger_type"
+ATTR_AMOUNT = "amount"
+ATTR_START_NUMBER = "start_number"
+ATTR_PLANT1_ID = "plant1_id"
+ATTR_PLANT2_ID = "plant2_id"
+ATTR_NEW_ROW = "new_row"
+ATTR_NEW_COL = "new_col"
+ATTR_NEW_STAGE = "new_stage"
+ATTR_DURATION = "duration"
+ATTR_TIME = "time"
+ATTR_IRRIGATION_TIMES = "irrigation_times"
+ATTR_DRAIN_TIMES = "drain_times"
+
+# Events
+EVENT_GROWSPACE_LOG_ENTRY: Final = f"{DOMAIN}_log_entry"
+
+# Icons
+ICON_NOTIFICATION = "mdi:bell"
+
+# Default Photoperiods (Hours of Light)
+DEFAULT_VEG_DAY_HOURS = 18
+DEFAULT_FLOWER_DAY_HOURS = 12
+
+# Stage Durations (Days)
+DEFAULT_VEG_EARLY_DAYS = 14
+DEFAULT_FLOWER_EARLY_DAYS = 21
+DEFAULT_FLOWER_MID_DAYS = 21  # Duration of mid flower (21-42 days)
 
 # AI Configuration
 CONF_AI_ENABLED = "ai_enabled"
 CONF_ASSISTANT_ID = "assistant_id"
 CONF_NOTIFICATION_PERSONALITY = "notification_personality"
+CONF_AI_AUTO_ALERTS = "ai_auto_alerts"
+
+# Notification Defaults
+DEFAULT_COOLDOWN_MINUTES = 5
+
+CRITICAL_PROBABILITY_THRESHOLD: Final = 0.9
+"""Probability at or above which an alert is considered critical."""
+
+WARNING_PERSISTENCE_MINUTES: Final = 20
+"""Minutes a warning-tier alert must persist before notification is sent."""
+
+CRITICAL_COOLDOWN_MINUTES: Final = 30
+"""Cooldown after sending a critical notification (per growspace)."""
+
+WARNING_COOLDOWN_MINUTES: Final = 120
+"""Cooldown after sending a warning notification (per growspace)."""
+
+RECOVERY_COOLDOWN_MINUTES: Final = 10
+"""Cooldown after sending a recovery notification (per growspace)."""
+
+ESCALATION_DELAY_MINUTES: Final = 30
+"""Minutes after critical notification before sending escalation reminder."""
 
 AI_PERSONALITIES = [
     "Standard",
@@ -49,9 +219,119 @@ DEFAULT_NOTIFICATION_EVENTS = {
     "day_7_dry": {"days": 7, "stage": "dry", "message": "Day 7 in dry"},
 }
 
+
+# Dehumidifier Stages (Unified)
+DEHUMIDIFIER_STAGES: Final = [
+    PlantStage.SEEDLING.value,
+    PlantStage.VEG.value,
+    "early_flower",
+    "mid_flower",
+    "late_flower",
+    PlantStage.DRY.value,
+    PlantStage.CURE.value,
+]
+
+
+class NotificationTier(StrEnum):
+    """Notification severity tiers."""
+
+    CRITICAL = "critical"
+    WARNING = "warning"
+    INFO = "info"
+
+
+class GrowspaceSensorType(StrEnum):
+    """Types of growspace sensors."""
+
+    STRESS = "stress"
+    MOLD = "mold"
+    OPTIMAL = "optimal"
+    DRYING = "drying"
+    CURING = "curing"
+
+
+class GrowspaceService(StrEnum):
+    """Growspace Manager Services."""
+
+    ADD_GROWSPACE = "add_growspace"
+    REMOVE_GROWSPACE = "remove_growspace"
+    UPDATE_GROWSPACE = "update_growspace"
+    ADD_PLANT = "add_plant"
+    ADD_PLANTS = "add_plants"
+    REMOVE_PLANT = "remove_plant"
+    UPDATE_PLANT = "update_plant"
+    MOVE_PLANT = "move_plant"
+    SWITCH_PLANTS = "switch_plants"
+    TAKE_CLONE = "take_clone"
+    MOVE_CLONE = "move_clone"
+    TRANSITION_PLANT_STAGE = "transition_plant_stage"
+    HARVEST_PLANT = "harvest_plant"
+    ADD_STRAIN = "add_strain"
+    REMOVE_STRAIN = "remove_strain"
+    UPDATE_STRAIN_META = "update_strain_meta"
+    IMPORT_STRAIN_LIBRARY = "import_strain_library"
+    EXPORT_STRAIN_LIBRARY = "export_strain_library"
+    CLEAR_STRAIN_LIBRARY = "clear_strain_library"
+    STRAIN_RECOMMENDATION = "strain_recommendation"
+    ASK_GROW_ADVICE = "ask_grow_advice"
+    ANALYZE_ALL_GROWSPACES = "analyze_all_growspaces"
+    PRINT_LABEL = "print_label"
+    CONFIGURE_ENVIRONMENT = "configure_environment"
+    REMOVE_ENVIRONMENT = "remove_environment"
+    SET_DEHUMIDIFIER_CONTROL = "set_dehumidifier_control"
+    SET_IRRIGATION_SETTINGS = "set_irrigation_settings"
+    ADD_IRRIGATION_TIME = "add_irrigation_time"
+    REMOVE_IRRIGATION_TIME = "remove_irrigation_time"
+    ADD_DRAIN_TIME = "add_drain_time"
+    REMOVE_DRAIN_TIME = "remove_drain_time"
+    DEBUG_LIST_GROWSPACES = "debug_list_growspaces"
+    DEBUG_RESET_SPECIAL_GROWSPACES = "debug_reset_special_growspaces"
+    DEBUG_CONSOLIDATE_DUPLICATE_SPECIAL = "debug_consolidate_duplicate_special"
+
+    TEST_NOTIFICATION = "test_notification"
+    GET_STRAIN_LIBRARY = "get_strain_library"
+    # Watering Services
+    WATER_PLANT = "water_plant"
+    WATER_GROWSPACE = "water_growspace"
+    # Nutrient Preset Services
+    SAVE_NUTRIENT_PRESET = "save_nutrient_preset"
+    REMOVE_NUTRIENT_PRESET = "remove_nutrient_preset"
+    # Training Services
+    LOG_TRAINING_EVENT = "log_training_event"
+    # IPM Services
+    SAVE_IPM_PRESET = "save_ipm_preset"
+    REMOVE_IPM_PRESET = "remove_ipm_preset"
+    APPLY_IPM = "apply_ipm"
+    BATCH_ACTION = "batch_action"
+    ADD_TIMELINE_NOTE = "add_timeline_note"
+
+
+class TrainingTechnique(StrEnum):
+    """Horticultural training techniques."""
+
+    TOPPING = "topping"
+    FIM = "fim"
+    LST = "lst"
+    SUPER_CROPPING = "super_cropping"
+    SCROG = "scrog"
+    DEFOLIATING = "defoliating"
+    LOLLIPOPPING = "lollipopping"
+
+
+# Training Attributes
+ATTR_TECHNIQUE = "technique"
+ATTR_NOTES = "notes"
+ATTR_ITEMS = "items"
+ATTR_TYPE = "type"
+CATEGORY_TRAINING = "training"
+CATEGORY_IPM = "ipm"
+CATEGORY_NOTE = "note"
+CATEGORY_WATERING = "watering"
+
+
 # Plant stages
-PLANT_STAGES = ["seedling", "clone", "mother", "veg", "flower", "dry", "cure"]
-VALID_STAGES = ["seedling", "clone", "mother", "veg", "flower", "dry", "cure"]
+PLANT_STAGES = [stage.value for stage in PlantStage]
+VALID_STAGES = [stage.value for stage in PlantStage]
 
 # Existing DATE_FIELDS - Ensure consistency with schema definitions if adding more
 DATE_FIELDS = [
@@ -89,13 +369,19 @@ SPECIAL_GROWSPACES = {
     "veg": {"canonical_id": "veg", "canonical_name": "veg", "aliases": []},
 }
 # Grid layout options
+DEFAULT_ROWS = 4
+DEFAULT_PLANTS_PER_ROW = 4
 MAX_ROWS = 20
 MAX_PLANTS_PER_ROW = 20
 
 # Strain Library defaults
 DB_FILE_STRAIN_LIBRARY = "strain_library.db"
 STORAGE_KEY_STRAIN_LIBRARY = "strain_library"
+CONF_STRAIN_LIBRARY: Final = "strain_library"
+CONF_UNIT_SYSTEM: Final = "unit_system"
+CONF_SHOW_SIDEBAR: Final = "show_sidebar"
 
+# State Constants
 DEFAULT_BAYESIAN_PRIORS = {
     "stress": 0.15,
     "mold_risk": 0.10,
@@ -105,377 +391,23 @@ DEFAULT_BAYESIAN_PRIORS = {
 }
 
 DEFAULT_BAYESIAN_THRESHOLDS = {
-    "stress": 0.70,
-    "mold_risk": 0.75,
-    "optimal": 0.80,
+    "stress": 0.80,
+    "mold_risk": 0.80,
+    "optimal": 0.90,
     "drying": 0.80,
     "curing": 0.80,
 }
 
+# Notification constants
+MAX_NOTIFICATION_LENGTH: Final = 240
+"""Maximum notification message length for modern mobile displays."""
 
-# --- Service Schemas ---
+NOTIFICATION_DEBOUNCE_SECONDS: Final = 5
+"""Debounce time for batched notifications in seconds."""
 
-
-# Helper for common date/datetime parsing
-def valid_date_or_none(value):
-    """Validate that a value is a valid date or None for voluptuous schemas.
-
-    Args:
-        value: The value to validate.
-
-    Returns:
-        The parsed date object or None.
-
-    Raises:
-        vol.Invalid: If the value is not a valid date format.
-    """
-    if value is None or value == "":
-        return None
-    if isinstance(value, datetime):
-        return value
-    if isinstance(value, date):
-        return value
-    
-    value_str = str(value).replace("Z", "")
-    
-    # Try parsing as datetime first (most specific)
-    try:
-        return datetime.fromisoformat(value_str)
-    except ValueError:
-        pass
-
-    # Try parsing as date
-    try:
-        return date.fromisoformat(value_str)
-    except ValueError:
-        raise vol.Invalid(
-            f"'{value}' is not a valid date or ISO format string"
-        ) from None
-
-def valid_growspace_id(value):
-    """Validate that a value is a non-empty string for a growspace ID.
-
-    Args:
-        value: The value to validate.
-
-    Returns:
-        The validated string.
-
-    Raises:
-        vol.Invalid: If the value is not a valid growspace ID.
-    """
-    if not isinstance(value, str) or not value:
-        raise vol.Invalid("Growspace ID cannot be empty")
-    return value
+# WebSocket constants
+MERGE_ALERT_GAP_SECONDS: Final = 600
+"""Maximum time gap (in seconds) between alerts for merging (10 minutes)."""
 
 
-# Add Growspace
-ADD_GROWSPACE_SCHEMA = vol.Schema(
-    {
-        vol.Required("name"): str,
-        vol.Required("rows"): vol.All(int, vol.Range(min=1)),
-        vol.Required("plants_per_row"): vol.All(int, vol.Range(min=1)),
-        vol.Optional("notification_target"): str,
-    }
-)
-
-# Remove Growspace
-REMOVE_GROWSPACE_SCHEMA = vol.Schema(
-    {
-        vol.Required("growspace_id"): vol.All(str, valid_growspace_id),
-    }
-)
-
-# Add Plant
-ADD_PLANT_SCHEMA = vol.Schema(
-    {
-        vol.Required("growspace_id"): vol.All(str, valid_growspace_id),
-        vol.Required("strain"): str,
-        vol.Required("row"): vol.All(int, vol.Range(min=1)),
-        vol.Required("col"): vol.All(int, vol.Range(min=1)),
-        vol.Optional("phenotype"): str,
-        vol.Optional("seedling_start"): valid_date_or_none,
-        vol.Optional("mother_start"): valid_date_or_none,
-        vol.Optional("clone_start"): valid_date_or_none,
-        vol.Optional("veg_start"): valid_date_or_none,
-        vol.Optional("flower_start"): valid_date_or_none,
-        vol.Optional("dry_start"): valid_date_or_none,
-        vol.Optional("cure_start"): valid_date_or_none,
-    }
-)
-
-# Update Plant
-UPDATE_PLANT_SCHEMA = vol.Schema(
-    {
-        vol.Required("plant_id"): str,
-        vol.Optional("growspace_id"): str,
-        vol.Optional("strain"): str,
-        vol.Optional("phenotype"): str,
-        vol.Optional("position"): str,
-        vol.Optional("row"): vol.All(int, vol.Range(min=1)),
-        vol.Optional("col"): vol.All(int, vol.Range(min=1)),
-        vol.Optional("stage"): str,  # Assuming stage can be updated
-        vol.Optional("seedling_start"): valid_date_or_none,
-        vol.Optional("mother_start"): valid_date_or_none,
-        vol.Optional("clone_start"): valid_date_or_none,
-        vol.Optional("veg_start"): valid_date_or_none,
-        vol.Optional("flower_start"): valid_date_or_none,
-        vol.Optional("dry_start"): valid_date_or_none,
-        vol.Optional("cure_start"): valid_date_or_none,
-        vol.Optional("seedling_days"): vol.All(vol.Coerce(int)),
-        vol.Optional("veg_days"): vol.All(vol.Coerce(int)),
-        vol.Optional("flower_days"): vol.All(vol.Coerce(int)),
-        vol.Optional("dry_days"): vol.All(vol.Coerce(int)),
-        vol.Optional("cure_days"): vol.All(vol.Coerce(int)),
-        vol.Optional("mother_days"): vol.All(vol.Coerce(int)),
-        vol.Optional("clone_days"): vol.All(vol.Coerce(int)),
-    },
-    extra=vol.ALLOW_EXTRA,
-)
-
-
-# Remove Plant
-REMOVE_PLANT_SCHEMA = vol.Schema(
-    {
-        vol.Required("plant_id"): str,
-    }
-)
-
-# Move Plant
-MOVE_PLANT_SCHEMA = vol.Schema(
-    {
-        vol.Required("plant_id"): str,
-        vol.Required("new_row"): vol.All(int, vol.Range(min=1)),
-        vol.Required("new_col"): vol.All(int, vol.Range(min=1)),
-    }
-)
-
-# Switch Plants
-SWITCH_PLANT_SCHEMA = vol.Schema(
-    {
-        vol.Required("plant1_id"): str,
-        vol.Required("plant2_id"): str,
-    }
-)
-
-# Transition Plant Stage
-TRANSITION_PLANT_SCHEMA = vol.Schema(
-    {
-        vol.Required("plant_id"): str,
-        vol.Required("new_stage"): str,
-        vol.Optional("transition_date"): valid_date_or_none,
-    }
-)
-
-# Take Clone
-TAKE_CLONE_SCHEMA = vol.Schema(
-    {
-        vol.Required("mother_plant_id"): str,
-        vol.Optional("num_clones"): vol.All(int, vol.Range(min=1)),
-        vol.Optional(
-            "target_growspace_id"
-        ): str,  # If you want to specify where clones go
-        vol.Optional(
-            "transition_date"
-        ): valid_date_or_none,  # Date for when clone starts
-    }
-)
-
-# Move Clone (typically from clone stage to veg)
-MOVE_CLONE_SCHEMA = vol.Schema(
-    {
-        vol.Required("plant_id"): str,  # The ID of the clone to move
-        vol.Required(
-            "target_growspace_id"
-        ): str,  # Where to move it (e.g., 'veg_stage_growspace')
-        vol.Optional(
-            "transition_date"
-        ): valid_date_or_none,  # Date to transition to next stage (e.g., veg_start)
-    }
-)
-
-# Harvest Plant
-HARVEST_PLANT_SCHEMA = vol.Schema(
-    {
-        vol.Required("plant_id"): str,
-        vol.Optional(
-            "target_growspace_id"
-        ): str,  # Optional: where to move harvested material (e.g., 'dry_stage_growspace')
-        vol.Optional("transition_date"): valid_date_or_none,  # Date of harvest
-    }
-)
-
-# Strain Library Schemas
-EXPORT_STRAIN_LIBRARY_SCHEMA = vol.Schema(
-    {
-        # No required parameters for export, usually just triggers action
-        # Optionally, could specify which strains to export, but current logic exports all
-    }
-)
-
-IMPORT_STRAIN_LIBRARY_SCHEMA = vol.Schema(
-    {
-        vol.Optional("file_path"): str,
-        vol.Optional("zip_base64"): str,
-        vol.Optional("replace", default=False): bool,
-    }
-)
-
-CLEAR_STRAIN_LIBRARY_SCHEMA = vol.Schema(
-    {
-        # No parameters needed to clear all strains
-    }
-)
-
-ADD_STRAIN_SCHEMA = vol.Schema(
-    {
-        vol.Required("strain"): str,
-        vol.Optional("phenotype"): str,
-        vol.Optional("breeder"): str,
-        vol.Optional("type"): str,
-        vol.Optional("lineage"): str,
-        vol.Optional("sex"): str,
-        vol.Optional("flower_days_min"): vol.All(vol.Coerce(int), vol.Range(min=0)),
-        vol.Optional("flower_days_max"): vol.All(vol.Coerce(int), vol.Range(min=0)),
-        vol.Optional("flowering_days_min"): vol.All(vol.Coerce(int), vol.Range(min=0)),
-        vol.Optional("flowering_days_max"): vol.All(vol.Coerce(int), vol.Range(min=0)),
-        vol.Optional("description"): str,
-        vol.Optional("image_base64"): str,
-        vol.Optional("image"): str,
-        vol.Optional("image_path"): str,
-        vol.Optional("image_crop_meta"): dict,
-        vol.Optional("sativa_percentage"): vol.All(vol.Coerce(int), vol.Range(min=0, max=100)),
-        vol.Optional("indica_percentage"): vol.All(vol.Coerce(int), vol.Range(min=0, max=100)),
-    }
-)
-
-REMOVE_STRAIN_SCHEMA = vol.Schema(
-    {
-        vol.Required("strain"): str,
-        vol.Optional("phenotype"): str,
-    }
-)
-
-UPDATE_STRAIN_META_SCHEMA = vol.Schema(
-    {
-        vol.Required("strain"): str,
-        vol.Optional("phenotype"): str,
-        vol.Optional("breeder"): str,
-        vol.Optional("type"): str,
-        vol.Optional("lineage"): str,
-        vol.Optional("sex"): str,
-        vol.Optional("flower_days_min"): vol.All(vol.Coerce(int), vol.Range(min=0)),
-        vol.Optional("flower_days_max"): vol.All(vol.Coerce(int), vol.Range(min=0)),
-        vol.Optional("flowering_days_min"): vol.All(vol.Coerce(int), vol.Range(min=0)),
-        vol.Optional("flowering_days_max"): vol.All(vol.Coerce(int), vol.Range(min=0)),
-        vol.Optional("description"): str,
-        vol.Optional("image_base64"): str,
-        vol.Optional("image"): str,
-        vol.Optional("image_path"): str,
-        vol.Optional("image_crop_meta"): dict,
-        vol.Optional("sativa_percentage"): vol.All(vol.Coerce(int), vol.Range(min=0, max=100)),
-        vol.Optional("indica_percentage"): vol.All(vol.Coerce(int), vol.Range(min=0, max=100)),
-    }
-)
-
-# Debug Schemas
-DEBUG_CLEANUP_LEGACY_SCHEMA = vol.Schema(
-    {
-        vol.Optional("dry_only", default=False): bool,
-        vol.Optional("cure_only", default=False): bool,
-    }
-)
-
-DEBUG_LIST_GROWSPACES_SCHEMA = vol.Schema({})  # No parameters
-
-DEBUG_RESET_SPECIAL_GROWSPACES_SCHEMA = vol.Schema(
-    {
-        vol.Optional("reset_dry", default=True): bool,
-        vol.Optional("reset_cure", default=True): bool,
-        vol.Optional("preserve_plants", default=True): bool,
-    }
-)
-
-DEBUG_CONSOLIDATE_DUPLICATE_SPECIAL_SCHEMA = vol.Schema({})  # No parameters
-
-CONFIGURE_ENVIRONMENT_SCHEMA = vol.Schema(
-    {
-        vol.Required("growspace_id"): str,
-        vol.Required("temperature_sensor"): str,
-        vol.Required("humidity_sensor"): str,
-        vol.Required("vpd_sensor"): str,
-        vol.Optional("co2_sensor"): str,
-        vol.Optional("dehumidifier_entity"): str,
-        vol.Optional("circulation_fan"): str,
-        vol.Optional("light_sensor"): str,
-        vol.Optional("stress_threshold", default=0.70): vol.All(
-            vol.Coerce(float), vol.Range(min=0.0, max=1.0)
-        ),
-        vol.Optional("mold_threshold", default=0.75): vol.All(
-            vol.Coerce(float), vol.Range(min=0.0, max=1.0)
-        ),
-    }
-)
-
-REMOVE_ENVIRONMENT_SCHEMA = vol.Schema(
-    {
-        # Erfordert nur die ID des Growspace, um die Konfiguration zu entfernen.
-        vol.Required("growspace_id"): str
-    }
-)
-
-# AI Service Schemas
-ASK_GROW_ADVICE_SCHEMA = vol.Schema(
-    {
-        vol.Required("growspace_id"): vol.All(str, valid_growspace_id),
-        vol.Optional("user_query"): str,
-        vol.Optional("context_type", default="general"): vol.In(
-            ["general", "diagnostic", "optimization", "planning"]
-        ),
-        vol.Optional("max_length"): vol.All(vol.Coerce(int), vol.Range(min=1)),
-    }
-)
-
-ANALYZE_ALL_GROWSPACES_SCHEMA = vol.Schema(
-    {
-        vol.Optional("max_length"): vol.All(vol.Coerce(int), vol.Range(min=1)),
-    }
-)
-
-STRAIN_RECOMMENDATION_SCHEMA = vol.Schema(
-    {
-        vol.Optional("preferences"): dict,
-        vol.Optional("growspace_id"): str,
-        vol.Optional("user_query"): str,
-        vol.Optional("max_length"): vol.All(vol.Coerce(int), vol.Range(min=1)),
-    }
-)
-
-# --- Irrigation Service Schemas ---
-
-SET_IRRIGATION_SETTINGS_SCHEMA = vol.Schema(
-    {
-        vol.Required("growspace_id"): vol.All(str, valid_growspace_id),
-        vol.Optional("irrigation_pump_entity"): str,
-        vol.Optional("drain_pump_entity"): str,
-        vol.Optional("irrigation_duration"): vol.All(vol.Coerce(int), vol.Range(min=1)),
-        vol.Optional("drain_duration"): vol.All(vol.Coerce(int), vol.Range(min=1)),
-    }
-)
-
-_ADD_SCHEDULE_TIME_BASE = {
-    vol.Required("growspace_id"): vol.All(str, valid_growspace_id),
-    vol.Required("time"): str, # Use string for HH:MM:SS format
-    vol.Optional("duration"): vol.All(vol.Coerce(int), vol.Range(min=1)),
-}
-
-ADD_IRRIGATION_TIME_SCHEMA = vol.Schema(_ADD_SCHEDULE_TIME_BASE)
-ADD_DRAIN_TIME_SCHEMA = vol.Schema(_ADD_SCHEDULE_TIME_BASE)
-
-REMOVE_TIME_BASE = {
-    vol.Required("growspace_id"): vol.All(str, valid_growspace_id),
-    vol.Required("time"): str,
-}
-
-REMOVE_IRRIGATION_TIME_SCHEMA = vol.Schema(REMOVE_TIME_BASE)
-REMOVE_DRAIN_TIME_SCHEMA = vol.Schema(REMOVE_TIME_BASE)
+# --- Service Schemas (Moved to schemas.py) ---

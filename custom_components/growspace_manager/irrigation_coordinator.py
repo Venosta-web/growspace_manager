@@ -1,71 +1,231 @@
 """Coordinator for handling irrigation and drain schedules."""
+
 from __future__ import annotations
 
 import asyncio
-import logging
+from collections.abc import Callable, Mapping
 from datetime import datetime
 from functools import partial
-from typing import Any, TYPE_CHECKING
+import logging
+from typing import TYPE_CHECKING, Any, override
 
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.core import HomeAssistant, callback
+from homeassistant.const import EVENT_STATE_CHANGED
+from homeassistant.core import Event, HomeAssistant, callback
 from homeassistant.helpers.event import async_track_time_change
-
-from .const import DOMAIN
+from homeassistant.util.dt import now as dt_now, utcnow
 
 if TYPE_CHECKING:
     from .coordinator import GrowspaceCoordinator
+from .models import Growspace, GrowspaceEvent
 
 _LOGGER = logging.getLogger(__name__)
 
 
-class IrrigationCoordinator:
-    """Manages irrigation and drain schedules for a specific growspace."""
+class BaseIrrigationCoordinator:
+    """Base class for irrigation coordinators."""
 
     def __init__(
-        self, hass: HomeAssistant, config_entry: ConfigEntry, growspace_id: str, main_coordinator: "GrowspaceCoordinator"
-    ):
-        """Initialize the irrigation coordinator."""
+        self,
+        hass: HomeAssistant,
+        config_entry: ConfigEntry,
+        growspace_id: str,
+        main_coordinator: GrowspaceCoordinator,
+    ) -> None:
+        """Initialize the base irrigation coordinator."""
         self.hass = hass
         self._config_entry = config_entry
         self._growspace_id = growspace_id
         self._main_coordinator = main_coordinator
-        self._listeners: list[callable] = []
+        self._listeners: list[Callable[[], None]] = []
         self._running_tasks: dict[str, asyncio.Task[Any]] = {}
+        self._active_events: dict[str, dict[str, Any]] = {}
+
+    @property
+    def active_events(self) -> dict[str, dict[str, Any]]:
+        """Return currently active events (start_time, duration)."""
+        return self._active_events
+
+    @property
+    def growspace(self) -> Growspace:
+        """Return the growspace object."""
+        return self._main_coordinator.growspaces[self._growspace_id]
+
+    async def async_request_refresh(self) -> None:
+        """Refresh listeners when configuration changes.
+
+        Subclasses can override this if they need specific refresh logic.
+        """
+
+    async def async_setup(self) -> None:
+        """Set up the coordinator."""
+
+    async def async_unload(self) -> None:
+        """Unload the coordinator and stop listeners."""
+        self.async_cancel_listeners(cancel_tasks=True)
+
+    async def _async_send_cycle_notification(
+        self, event_type: str, duration: int, event_data: Mapping[str, Any]
+    ) -> None:
+        """Send a notification for the start of a pump cycle."""
+        coordinator = self._config_entry.runtime_data
+        growspace = coordinator.growspaces.get(self._growspace_id)
+        if growspace and growspace.notification_target:
+            time_str = event_data.get("time", "Unknown Time")
+            message = f"{event_type.capitalize()} Event Started at {time_str}, running for {duration} seconds."
+            title = f"Growspace: {growspace.name}"
+
+            await self.hass.services.async_call(
+                "notify",
+                growspace.notification_target,
+                {"message": message, "title": title},
+                blocking=False,
+            )
+
+    @callback
+    def async_cancel_listeners(self, cancel_tasks: bool = True) -> None:
+        """Cancel all scheduled listeners."""
+        for listener in self._listeners:
+            listener()
+        self._listeners = []
+
+        if cancel_tasks:
+            for task in self._running_tasks.values():
+                if task and not task.done():
+                    task.cancel()
+            self._running_tasks = {}
+        _LOGGER.debug(
+            "Cancelled all irrigation listeners for growspace %s", self._growspace_id
+        )
+
+    def _get_sensor_value(self, entity_id: str) -> float | None:
+        """Get float value from sensor state."""
+        state = self.hass.states.get(entity_id)
+        if not state or state.state in ("unknown", "unavailable"):
+            return None
+        try:
+            return float(state.state)
+        except ValueError:
+            return None
+
+    async def _async_wait_for_switch_state(
+        self, entity_id: str, target_state: str, timeout: float = 10.0
+    ) -> bool:
+        """Wait for entity to reach target state.
+
+        This is critical for Matter smart plugs and other devices with high latency.
+        We don't start the irrigation timer until the device confirms it's ON.
+
+        Args:
+            entity_id: The entity to monitor
+            target_state: The state to wait for ("on" or "off")
+            timeout: Maximum time to wait in seconds
+
+        Returns:
+            True if state was confirmed, False if timed out
+        """
+        # Check if already in target state
+        current_state = self.hass.states.get(entity_id)
+        if current_state and current_state.state == target_state:
+            _LOGGER.debug(
+                "%s is already in state '%s'",
+                entity_id,
+                target_state,
+            )
+            return True
+
+        # Set up event to signal when state changes
+        state_reached = asyncio.Event()
+
+        @callback
+        def state_change_listener(event: Event) -> None:
+            """Listen for state changes."""
+            event_entity_id = event.data.get("entity_id")
+            if event_entity_id != entity_id:
+                return
+
+            new_state = event.data.get("new_state")
+            if new_state and new_state.state == target_state:
+                state_reached.set()
+
+        # Subscribe to state change events
+        remove_listener = self.hass.bus.async_listen(
+            EVENT_STATE_CHANGED, state_change_listener
+        )
+
+        try:
+            # Wait for state change or timeout
+            await asyncio.wait_for(state_reached.wait(), timeout=timeout)
+            _LOGGER.debug(
+                "%s confirmed state '%s'",
+                entity_id,
+                target_state,
+            )
+            return True
+        except TimeoutError:
+            _LOGGER.warning(
+                "%s did not confirm state '%s' within %s seconds. "
+                "This may indicate high device latency (e.g., Matter smart plug). "
+                "Proceeding anyway, but irrigation duration may be inaccurate",
+                entity_id,
+                target_state,
+                timeout,
+            )
+            return False
+        finally:
+            remove_listener()
+
+
+class IrrigationCoordinator(BaseIrrigationCoordinator):
+    """Manages irrigation and drain schedules for a specific growspace."""
+
+    # Removed useless __init__ delegation
 
     def get_default_duration(self, event_type: str) -> int | None:
         """Get the default duration for a given event type."""
         try:
-            growspace = self._main_coordinator.growspaces[self._growspace_id]
-            return growspace.irrigation_config.get(f"{event_type}_duration")
+            # Use getattr for dynamic field access on dataclass
+            return getattr(
+                self.growspace.irrigation_config, f"{event_type}_duration", None
+            )
         except (KeyError, AttributeError):
             return None
 
+    @override
+    async def async_request_refresh(self) -> None:
+        """Refresh listeners when configuration changes."""
+        await self.async_update_listeners()
+
     async def _save_and_reload(self, reload_listeners: bool = True) -> None:
         """Save changes to storage and reload listeners."""
+        # Refresh the growspace data (invalidates cache and updates data property)
+        await self._main_coordinator.async_refresh_growspace_data(self._growspace_id)
+
         # Save to custom storage via main coordinator
         await self._main_coordinator.async_save()
-        
+
         # Notify listeners of update
         self._main_coordinator.async_set_updated_data(self._main_coordinator.data)
-        
+
         # Reload the irrigation listeners with new schedule
         if reload_listeners:
             await self.async_update_listeners()
 
     async def async_set_settings(self, new_settings: dict[str, Any]) -> None:
         """Update the irrigation settings for the growspace."""
-        growspace = self._main_coordinator.growspaces[self._growspace_id]
-        
-        # Update settings in growspace object
-        growspace.irrigation_config.update(new_settings)
+        # Update settings in growspace irrigation_config dataclass
+        for key, value in new_settings.items():
+            if hasattr(self.growspace.irrigation_config, key):
+                setattr(self.growspace.irrigation_config, key, value)
+            else:
+                _LOGGER.warning("Unknown irrigation setting: %s", key)
 
         _LOGGER.debug(
             "Updating irrigation settings for %s with: %s",
             self._growspace_id,
             new_settings,
         )
-        
+
         # Persist the changes
         await self._save_and_reload()
 
@@ -78,68 +238,93 @@ class IrrigationCoordinator:
 
         if len(time_str) == 5:
             time_str = f"{time_str}:00"
-        
-        growspace = self._main_coordinator.growspaces[self._growspace_id]
-        
-        if schedule_key not in growspace.irrigation_config:
-            growspace.irrigation_config[schedule_key] = []
+
+        if not hasattr(self.growspace.irrigation_config, schedule_key):
+            _LOGGER.error("Invalid schedule key %s", schedule_key)
+            return
+
+        # Get current list
+        current_schedule: list[dict[str, Any]] = getattr(
+            self.growspace.irrigation_config, schedule_key
+        )
 
         # Check if item with same time already exists
         existing_item = next(
-            (item for item in growspace.irrigation_config[schedule_key] if item.get("time") == time_str),
-            None
+            (item for item in current_schedule if item.get("time") == time_str),
+            None,
         )
 
         if existing_item:
             # Update existing item
             existing_item["duration"] = duration
             _LOGGER.info(
-                "Updated %s in %s for growspace %s. Duration set to %s.",
+                "Updated %s in %s for growspace %s. Duration set to %s",
                 time_str,
                 schedule_key,
                 self._growspace_id,
-                duration
+                duration,
             )
+            # Reference copy trick not strictly needed for dataclasses if we mutate the list
+            # inside the object, unless we want to trigger some setter change logic.
+            # But let's keep the pattern of creating a new list to be safe.
+            new_list = list(current_schedule)
+            # Re-find index to update in new list? Or since dicts are mutable references...
+            # The existing_item is a ref to the dict in the list.
+            # So creating a new list with same dicts means existing_item update is reflected.
+
+            # Explicitly setting the attribute to the new list
+            setattr(self.growspace.irrigation_config, schedule_key, new_list)
         else:
             # Add new schedule item
-            growspace.irrigation_config[schedule_key].append({"time": time_str, "duration": duration})
+            new_list = list(current_schedule)
+            new_list.append({"time": time_str, "duration": duration})
+            setattr(self.growspace.irrigation_config, schedule_key, new_list)
+
             _LOGGER.info(
-                "Added %s to %s for growspace %s. Schedule now has %d items.",
+                "Added %s to %s for growspace %s. Schedule now has %d items",
                 {"time": time_str, "duration": duration},
                 schedule_key,
                 self._growspace_id,
-                len(growspace.irrigation_config[schedule_key])
+                len(new_list),
             )
 
         # Persist the changes
         await self._save_and_reload()
 
-    async def async_remove_schedule_item(self, schedule_key: str, time_str: str) -> None:
+    async def async_remove_schedule_item(
+        self, schedule_key: str, time_str: str
+    ) -> None:
         """Remove all matching time entries from a schedule."""
         if not time_str:
             raise ValueError("Time cannot be empty")
 
-        growspace = self._main_coordinator.growspaces[self._growspace_id]
+        if not hasattr(self.growspace.irrigation_config, schedule_key):
+            _LOGGER.warning(
+                "Cannot remove item: schedule '%s' not found for growspace %s",
+                schedule_key,
+                self._growspace_id,
+            )
+            return
 
         try:
-            schedule = growspace.irrigation_config.get(schedule_key, [])
+            schedule = getattr(self.growspace.irrigation_config, schedule_key)
             items_before = len(schedule)
-            
+
             # Filter out matching times
-            growspace.irrigation_config[schedule_key] = [
-                item for item in schedule if item.get("time") != time_str
-            ]
-            items_after = len(growspace.irrigation_config[schedule_key])
+            new_schedule = [item for item in schedule if item.get("time") != time_str]
+            setattr(self.growspace.irrigation_config, schedule_key, new_schedule)
+
+            items_after = len(new_schedule)
 
             if items_before == items_after:
                 _LOGGER.warning(
-                    "Time %s not found in %s for growspace %s. No items removed.",
+                    "Time %s not found in %s for growspace %s. No items removed",
                     time_str,
                     schedule_key,
                     self._growspace_id,
                 )
                 return
-            
+
             _LOGGER.info(
                 "Removed %d item(s) with time %s from %s for growspace %s",
                 items_before - items_after,
@@ -151,61 +336,51 @@ class IrrigationCoordinator:
             # Persist the changes
             await self._save_and_reload()
 
-        except KeyError:
-            _LOGGER.warning(
-                "Cannot remove item: schedule '%s' not found for growspace %s.",
-                schedule_key,
-                self._growspace_id,
+        except Exception:
+            _LOGGER.exception(
+                "Unexpected error removing schedule item from %s", schedule_key
             )
 
-    async def async_setup(self):
+    @override
+    async def async_setup(self) -> None:
         """Set up the irrigation schedules."""
-        # MIGRATION: Check if we have legacy options in config entry but empty growspace config
-        growspace = self._main_coordinator.growspaces[self._growspace_id]
-        
-        if not growspace.irrigation_config:
-            legacy_options = self._config_entry.options.get("irrigation", {}).get(
-                self._growspace_id, {}
-            )
-            if legacy_options:
-                _LOGGER.info(
-                    "Migrating irrigation settings for %s from ConfigEntry to Storage",
-                    self._growspace_id
-                )
-                growspace.irrigation_config = dict(legacy_options)
-                await self._main_coordinator.async_save()
 
         # Load schedules without triggering updates
         await self.async_update_listeners()
 
-    async def async_update_listeners(self, *args):
+    async def async_update_listeners(self, *args: Any) -> None:
         """Remove old listeners and create new ones based on current config."""
-        self.async_cancel_listeners()
+        self.async_cancel_listeners(cancel_tasks=False)
 
         # Get irrigation options from growspace object
-        growspace = self._main_coordinator.growspaces[self._growspace_id]
-        options = growspace.irrigation_config
-        
+        options = self.growspace.irrigation_config
+
         # Make defensive copies to avoid reference issues
-        irrigation_times = list(options.get("irrigation_times", []))
-        drain_times = list(options.get("drain_times", []))
+        irrigation_times = list(options.irrigation_times)
+        drain_times = list(options.drain_times)
 
         _LOGGER.debug(
             "Setting up listeners for growspace %s: %d irrigation times, %d drain times",
             self._growspace_id,
             len(irrigation_times),
-            len(drain_times)
+            len(drain_times),
         )
-        
+
         # Log the actual schedule data for debugging
         if irrigation_times:
             _LOGGER.debug("Irrigation schedule: %s", irrigation_times)
         if drain_times:
             _LOGGER.debug("Drain schedule: %s", drain_times)
 
-        # Deduplicate events based on time
-        unique_irrigation_times = {event["time"]: event for event in irrigation_times}.values()
-        unique_drain_times = {event["time"]: event for event in drain_times}.values()
+        # Deduplicate events based on time, skipping malformed records
+        unique_irrigation_times = {
+            t: event
+            for event in irrigation_times
+            if (t := event.get("time")) is not None
+        }.values()
+        unique_drain_times = {
+            t: event for event in drain_times if (t := event.get("time")) is not None
+        }.values()
 
         for event in unique_irrigation_times:
             self._schedule_event(event, "irrigation")
@@ -213,7 +388,7 @@ class IrrigationCoordinator:
         for event in unique_drain_times:
             self._schedule_event(event, "drain")
 
-    def _schedule_event(self, event: dict[str, Any], event_type: str):
+    def _schedule_event(self, event: Mapping[str, Any], event_type: str) -> None:
         """Helper to schedule a single irrigation or drain event."""
         try:
             time_str = event.get("time")
@@ -224,10 +399,10 @@ class IrrigationCoordinator:
                     time_str,
                 )
                 return
-            
+
             if len(time_str) == 5:
                 time_str = f"{time_str}:00"
-                
+
             time_obj = datetime.strptime(time_str, "%H:%M:%S").time()
 
             handler = partial(
@@ -241,9 +416,9 @@ class IrrigationCoordinator:
                 minute=time_obj.minute,
                 second=time_obj.second,
             )
-            
+
             self._listeners.append(listener)
-            
+
             _LOGGER.debug(
                 "Scheduled %s event for growspace %s at %s",
                 event_type,
@@ -259,24 +434,9 @@ class IrrigationCoordinator:
                 e,
             )
 
-    @callback
-    def async_cancel_listeners(self):
-        """Cancel all scheduled listeners."""
-        for listener in self._listeners:
-            listener()
-        self._listeners = []
-
-        for task in self._running_tasks.values():
-            if task and not task.done():
-                task.cancel()
-        self._running_tasks = {}
-        _LOGGER.debug(
-            "Cancelled all irrigation listeners for growspace %s", self._growspace_id
-        )
-
     async def _handle_event(
-        self, now: datetime, *, event_type: str, event_data: dict[str, Any]
-    ):
+        self, now: datetime, *, event_type: str, event_data: Mapping[str, Any]
+    ) -> None:
         """Handle a scheduled event."""
         if (
             event_type in self._running_tasks
@@ -284,20 +444,23 @@ class IrrigationCoordinator:
             and not self._running_tasks[event_type].done()
         ):
             _LOGGER.warning(
-                "Cancelling previous %s event for growspace %s as a new one is starting.",
+                "Cancelling previous %s event for growspace %s as a new one is starting",
                 event_type,
                 self._growspace_id,
             )
             self._running_tasks[event_type].cancel()
 
-        growspace = self._main_coordinator.growspaces[self._growspace_id]
-        options = growspace.irrigation_config
-        pump_entity = options.get(f"{event_type}_pump_entity")
-        duration = event_data.get("duration") or options.get(f"{event_type}_duration")
+        options = self.growspace.irrigation_config
+
+        # Use getattr to fetch config entities dynamically
+        pump_entity = getattr(options, f"{event_type}_pump_entity", None)
+        default_duration = getattr(options, f"{event_type}_duration", None)
+
+        duration = event_data.get("duration") or default_duration
 
         if not pump_entity or not duration:
             _LOGGER.warning(
-                "%s event for growspace %s is not fully configured. Missing entity or duration.",
+                "%s event for growspace %s is not fully configured. Missing entity or duration",
                 event_type.capitalize(),
                 self._growspace_id,
             )
@@ -313,12 +476,27 @@ class IrrigationCoordinator:
         event_type: str,
         pump_entity: str,
         duration: int,
-        event_data: dict[str, Any],
-    ):
+        event_data: Mapping[str, Any],
+    ) -> None:
         """Run the on-off cycle for a pump and send notifications."""
+        # Track active event for frontend animation
+        self._active_events[event_type] = {
+            "start": dt_now().isoformat(),
+            "duration": duration,
+        }
+
+        start_dt = None
+        moisture_before = None
+
         try:
+            # Capture moisture before starting
+            if self.growspace.environment_config.soil_moisture_sensor:
+                moisture_before = self._get_sensor_value(
+                    self.growspace.environment_config.soil_moisture_sensor
+                )
+
             _LOGGER.info(
-                "Starting %s for %s (entity: %s), running for %s seconds.",
+                "Starting %s for %s (entity: %s), running for %s seconds",
                 event_type,
                 self._growspace_id,
                 pump_entity,
@@ -328,35 +506,24 @@ class IrrigationCoordinator:
                 "switch", "turn_on", {"entity_id": pump_entity}, blocking=True
             )
 
-            # Send notification
-            coordinator = self.hass.data[DOMAIN][self._config_entry.entry_id][
-                "coordinator"
-            ]
-            growspace = coordinator.growspaces.get(self._growspace_id)
-            if growspace and growspace.notification_target:
-                time_str = event_data.get("time", "Unknown Time")
-                message = (
-                    f"{event_type.capitalize()} Event Started at {time_str}, running for {duration} seconds."
-                )
-                title = f"Growspace: {growspace.name}"
+            # Wait for switch to confirm ON state (critical for Matter smart plugs)
+            await self._async_wait_for_switch_state(pump_entity, "on")
 
-                await self.hass.services.async_call(
-                    "notify",
-                    growspace.notification_target,
-                    {"message": message, "title": title},
-                    blocking=False,
-                )
+            # Start timing AFTER switch confirms ON
+            start_dt = utcnow()
+
+            await self._async_send_cycle_notification(event_type, duration, event_data)
 
             await asyncio.sleep(duration)
 
         except asyncio.CancelledError:
             _LOGGER.info(
-                "%s event for %s (entity: %s) was cancelled.",
+                "%s event for %s (entity: %s) was cancelled",
                 event_type.capitalize(),
                 self._growspace_id,
                 pump_entity,
             )
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             _LOGGER.error(
                 "Error during %s cycle for %s (entity: %s): %s",
                 event_type,
@@ -365,8 +532,57 @@ class IrrigationCoordinator:
                 e,
             )
         finally:
+            # Record end time BEFORE turning off (to exclude turn-off latency)
+            end_dt = utcnow()
+
+            try:
+                # Clear active event
+                self._active_events.pop(event_type, None)
+
+                # Ensure start_dt is defined
+                if start_dt:
+                    duration_sec = (end_dt - start_dt).total_seconds()
+
+                    # Capture moisture after
+                    moisture_after = None
+                    if self.growspace.environment_config.soil_moisture_sensor:
+                        moisture_after = self._get_sensor_value(
+                            self.growspace.environment_config.soil_moisture_sensor
+                        )
+
+                    # Build reasons
+                    reasons = [f"{event_type.capitalize()} cycle completed"]
+
+                    # Add Duration
+                    reasons.append(f"Duration: {int(duration_sec)}s")
+
+                    # Add Moisture Data
+                    if moisture_before is not None and moisture_after is not None:
+                        reasons.append(
+                            f"Moisture: {moisture_before:.1f}% -> {moisture_after:.1f}%"
+                        )
+                    elif moisture_after is not None:
+                        reasons.append(f"Moisture: {moisture_after:.1f}%")
+
+                    # Create and add the event
+                    event = GrowspaceEvent(
+                        sensor_type="irrigation"
+                        if event_type == "irrigation"
+                        else "drain",
+                        growspace_id=self._growspace_id,
+                        start_time=start_dt.isoformat(),
+                        end_time=end_dt.isoformat(),
+                        duration_sec=int(duration_sec),
+                        severity=1.0,
+                        category="irrigation",
+                        reasons=reasons,
+                    )
+                    self._main_coordinator.add_event(self._growspace_id, event)
+            except Exception as e:  # noqa: BLE001
+                _LOGGER.error("Failed to log %s event: %s", event_type, e)
+
             _LOGGER.info(
-                "Stopping %s for %s (entity: %s).",
+                "Stopping %s for %s (entity: %s)",
                 event_type,
                 self._growspace_id,
                 pump_entity,

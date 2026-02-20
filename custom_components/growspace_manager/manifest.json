@@ -7,13 +7,22 @@
   "config_flow": true,
   "dependencies": [
     "recorder",
-    "conversation",
-    "http",
-    "intent"
+    "intent",
+    "http"
   ],
   "documentation": "https://github.com/Venosta-web/growspace_manager",
-  "iot_class": "local_polling",
+  "integration_type": "hub",
+  "iot_class": "local_push",
   "issue_tracker": "https://github.com/Venosta-web/growspace-manager/issues",
-  "requirements": [],
-  "version": "0.2.2.1"
+  "loggers": [
+    "custom_components.growspace_manager"
+  ],
+  "quality_scale": "gold",
+  "requirements": [
+    "aiosqlite>=0.17.0",
+    "Pillow>=11.0.0",
+    "mashumaro>=3.10"
+  ],
+  "single_config_entry": true,
+  "version": "0.3.5"
 }

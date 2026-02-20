@@ -1,10 +1,13 @@
 # Home Assistant Core (Minimal)
-homeassistant
+homeassistant==2026.1.3
 aiosqlite
+Pillow
+python-dateutil
 voluptuous
 
 # Test Dependencies
 aiodhcpwatcher
+pycares<5
 ruff
 coverage
 pre-commit
@@ -12,7 +15,7 @@ pydantic
 pylint
 pipdeptree
 pytest-asyncio
-pytest-homeassistant-custom-component
+pytest-homeassistant-custom-component>=0.13.80
 pytest-cov
 pytest
 yamllint
@@ -20,3 +23,6 @@ codespell
 pytest-xdist
 freezegun
 requests-mock
+hassil
+home-assistant-intents
+syrupy>=5.0.0

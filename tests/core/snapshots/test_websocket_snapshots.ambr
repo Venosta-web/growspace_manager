@@ -1,0 +1,131 @@
+# serializer version: 1
+# name: test_websocket_delete_breeder_snapshot
+  dict({
+    'deleted': 3,
+  })
+# ---
+# name: test_websocket_get_alerts_snapshot
+  dict({
+    'gs1': list([
+      dict({
+        'category': 'alert',
+        'duration_sec': 300,
+        'end_time': '2023-01-01T00:05:00',
+        'event_id': 456,
+        'growspace_id': 'gs1',
+        'sensor_type': 'temp',
+        'severity': 0.9,
+        'start_time': '2023-01-01T00:00:00',
+        'timestamp': 1672531200000,
+      }),
+    ]),
+  })
+# ---
+# name: test_websocket_get_event_log_snapshot
+  dict({
+    'gs1': list([
+      dict({
+        'category': 'manual',
+        'event_id': 123,
+        'growspace_id': 'gs1',
+        'notes': 'Manual log entry',
+        'timestamp': 1672531200000,
+      }),
+    ]),
+  })
+# ---
+# name: test_websocket_get_growspace_data_snapshot
+  dict({
+    'id': 'gs1',
+    'name': 'Test Growspace',
+    'plants': list([
+      dict({
+        'id': 'p1',
+        'strain': 'Northern Lights',
+      }),
+      dict({
+        'id': 'p2',
+        'strain': 'Blueberry',
+      }),
+    ]),
+  })
+# ---
+# name: test_websocket_get_history_stats_snapshot
+  dict({
+    'sensor.temp': list([
+      dict({
+        'lu': '2026-01-12T12:00:00+00:00',
+        's': '22.5',
+      }),
+      dict({
+        'lu': '2026-01-12T12:05:00+00:00',
+        's': '23.0',
+      }),
+    ]),
+  })
+# ---
+# name: test_websocket_get_ipm_presets_snapshot
+  list([
+    dict({
+      'application_type': 'foliar',
+      'name': 'Neem Oil Spray',
+    }),
+  ])
+# ---
+# name: test_websocket_get_nutrient_inventory_snapshot
+  dict({
+    'stocks': dict({
+      'n1': dict({
+        'current_ml': 500,
+        'initial_ml': 1000,
+        'name': 'Nutri-Plus A',
+      }),
+      'n2': dict({
+        'current_ml': 450,
+        'initial_ml': 1000,
+        'name': 'Nutri-Plus B',
+      }),
+    }),
+  })
+# ---
+# name: test_websocket_get_nutrient_presets_snapshot
+  list([
+    dict({
+      'name': 'Early Veg',
+      'nutrients': dict({
+        'n1': 2.0,
+        'n2': 2.0,
+      }),
+    }),
+    dict({
+      'name': 'Late Veg',
+      'nutrients': dict({
+        'n1': 4.0,
+        'n2': 4.0,
+      }),
+    }),
+  ])
+# ---
+# name: test_websocket_get_strain_library_snapshot
+  dict({
+    'strain_list': list([
+      'Northern Lights',
+      'Blueberry',
+    ]),
+    'strains': dict({
+      'Blueberry': dict({
+        'flowering_weeks': 9,
+        'type': 'Indica/Sativa',
+      }),
+      'Northern Lights': dict({
+        'flowering_weeks': 8,
+        'type': 'Indica',
+      }),
+    }),
+  })
+# ---
+# name: test_websocket_update_breeder_snapshot
+  dict({
+    'updated': 5,
+  })
+# ---

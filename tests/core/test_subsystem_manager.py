@@ -1,0 +1,145 @@
+"""Tests for the Growspace SubsystemManager."""
+
+from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
+
+from custom_components.growspace_manager.managers.subsystem import SubsystemManager
+from custom_components.growspace_manager.models import Growspace, IrrigationStrategy
+
+
+@pytest.fixture
+def mock_hass():
+    """ReturnType mock Home Assistant instance."""
+    return MagicMock()
+
+
+@pytest.fixture
+def mock_coordinator():
+    """Return mock GrowspaceCoordinator."""
+    return MagicMock()
+
+
+@pytest.fixture
+def mock_entry():
+    """Return mock ConfigEntry."""
+    return MagicMock()
+
+
+@pytest.fixture
+def subsystem_manager(mock_hass, mock_coordinator, mock_entry):
+    """Return SubsystemManager instance."""
+    return SubsystemManager(mock_hass, mock_coordinator, mock_entry)
+
+
+@pytest.mark.asyncio
+async def test_initialization(subsystem_manager) -> None:
+    """Test initialization."""
+    assert subsystem_manager.irrigation_coordinators == {}
+    assert subsystem_manager.dehumidifier_coordinators == {}
+
+
+@pytest.mark.asyncio
+async def test_async_initialize_sub_coordinators(subsystem_manager) -> None:
+    """Test initializing sub-coordinators for growspaces."""
+
+    # Define growspaces
+    gs1 = Growspace(
+        id="gs1",
+        name="Growspace 1",
+        irrigation_strategy=IrrigationStrategy(enabled=False),
+    )
+    gs2 = Growspace(
+        id="gs2",
+        name="Growspace 2",
+        irrigation_strategy=IrrigationStrategy(enabled=True),
+    )
+    growspaces = {"gs1": gs1, "gs2": gs2}
+
+    # Mock the coordinator classes
+    with (
+        patch(
+            "custom_components.growspace_manager.managers.subsystem.IrrigationCoordinator",
+            autospec=True,
+        ) as mock_irrigation,
+        patch(
+            "custom_components.growspace_manager.managers.subsystem.VWCIrrigationCoordinator",
+            autospec=True,
+        ) as mock_vwc,
+        patch(
+            "custom_components.growspace_manager.managers.subsystem.DehumidifierCoordinator",
+            autospec=True,
+        ) as mock_dehum,
+    ):
+        # Setup async_setup mocks
+        mock_irrigation.return_value.async_setup = AsyncMock()
+        mock_vwc.return_value.async_setup = AsyncMock()
+        mock_dehum.return_value.async_setup = (
+            AsyncMock()
+        )  # Dehumidifier doesn't strictly have async_setup in snippet, but might
+        # Re-checking snippet: Dehumidifier is just instantiated.
+
+        await subsystem_manager.async_initialize_sub_coordinators(growspaces)
+
+        # Verify IrrigationCoordinator creation (gs1)
+        mock_irrigation.assert_called_with(
+            subsystem_manager.hass,
+            subsystem_manager.entry,
+            "gs1",
+            subsystem_manager.coordinator,
+        )
+        assert "gs1" in subsystem_manager.irrigation_coordinators
+
+        # Verify VWCIrrigationCoordinator creation (gs2)
+        mock_vwc.assert_called_with(
+            subsystem_manager.hass,
+            subsystem_manager.entry,
+            "gs2",
+            subsystem_manager.coordinator,
+        )
+        assert "gs2" in subsystem_manager.irrigation_coordinators
+
+        # Verify DehumidifierCoordinator creation
+        assert mock_dehum.call_count == 2
+        assert "gs1" in subsystem_manager.dehumidifier_coordinators
+        assert "gs2" in subsystem_manager.dehumidifier_coordinators
+
+
+@pytest.mark.asyncio
+async def test_async_initialize_sub_coordinators_failure(subsystem_manager) -> None:
+    """Test failure resilience during initialization."""
+    gs1 = Growspace(id="gs1", name="Growspace 1")
+    growspaces = {"gs1": gs1}
+
+    with patch(
+        "custom_components.growspace_manager.managers.subsystem.IrrigationCoordinator",
+        autospec=True,
+    ) as mock_irrigation:
+        # Simulate setup failure
+        mock_irrigation.return_value.async_setup = AsyncMock(
+            side_effect=ValueError("Setup failed")
+        )
+
+        # Should catch exception and log warning (no crash)
+        await subsystem_manager.async_initialize_sub_coordinators(growspaces)
+
+        # Should not have added to dict if failed (logic check: logic adds to dict AFTER await async_setup)
+        assert "gs1" not in subsystem_manager.irrigation_coordinators
+
+
+@pytest.mark.asyncio
+async def test_async_cancel_all(subsystem_manager) -> None:
+    """Test cancellation of all coordinators."""
+    # Setup dummy coordinators
+    mock_irr = MagicMock()
+    mock_irr.async_cancel_listeners = MagicMock()
+    subsystem_manager.irrigation_coordinators["gs1"] = mock_irr
+
+    mock_dehum = MagicMock()
+    mock_dehum.unload = MagicMock()
+    subsystem_manager.dehumidifier_coordinators["gs1"] = mock_dehum
+
+    subsystem_manager.async_cancel_all()
+
+    mock_irr.async_cancel_listeners.assert_called_once()
+    mock_dehum.unload.assert_called_once()
