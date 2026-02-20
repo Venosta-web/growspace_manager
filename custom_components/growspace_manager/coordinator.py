@@ -864,7 +864,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     ) -> None:
         """Compatibility alias for GrowspaceManager legacy method."""
 
-        asyncio.create_task(  # noqa: RUF006
+        self.hass.async_create_task(
             self.growspace_manager._validate_plants_after_growspace_resize(  # noqa: SLF001
                 growspace_id, new_rows, new_plants_per_row
             )
