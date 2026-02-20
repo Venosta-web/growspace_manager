@@ -13,38 +13,37 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # Important for tagging/pushing
 
       - name: Update version in manifest.json
         run: |
-          # Strip 'v' prefix from tag name
           VERSION="${GITHUB_REF_NAME#v}"
           echo "Updating version to $VERSION"
           cd custom_components/growspace_manager
-          # Use jq to reliably update the version
-          if ! jq --arg v "$VERSION" '.version = $v' manifest.json > manifest.json.tmp; then
-            echo "jq command failed"
-            exit 1
-          fi
-          mv manifest.json.tmp manifest.json
-          cd ../..
+          jq --arg v "$VERSION" '.version = $v' manifest.json > manifest.json.tmp && mv manifest.json.tmp manifest.json
+          
+      # OPTIONAL: Commit the change back to the repo 
+      # This ensures the 'Source Code' zip matches your 'Release' zip
+      - name: Commit and Push manifest change
+        run: |
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          git add custom_components/growspace_manager/manifest.json
+          git commit -m "chore: bump version to ${{ github.ref_name }}"
+          # We push to the branch the tag was created from
+          git push origin HEAD:main 
 
-      # 2. Creates the ZIP file
       - name: ZIP Release
         run: |
           cd custom_components/growspace_manager
           zip -r ../../growspace_manager.zip . \
-            -x ".github/*" \
-            -x ".coverage" \
-            -x ".gitignore" \
-            -x "pytest.ini" \
-            -x "module.json"
+            -x ".github/*" -x ".coverage" -x ".gitignore" -x "pytest.ini" -x "module.json"
 
-      # 3. Creates the GitHub Release and attaches the new zip file
       - name: Create Release
         uses: softprops/action-gh-release@v2
-        if: startsWith(github.ref, 'refs/tags/')
         with:
           tag_name: ${{ github.ref_name }}
-          files: |
-            growspace_manager.zip
+          files: growspace_manager.zip
+          generate_release_notes: true # Bonus: automatically describes the changes
           fail_on_unmatched_files: true
