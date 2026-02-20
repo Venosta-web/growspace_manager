@@ -43,8 +43,8 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.ref_name }}
-          # This tells GitHub the release belongs to the commit we just pushed to main
-          target_commitish: main 
+          # Use the specific commit SHA we just pushed instead of 'main'
+          target_commitish: ${{ github.sha }} 
           files: growspace_manager.zip
           generate_release_notes: true
           fail_on_unmatched_files: true
