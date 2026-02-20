@@ -4,9 +4,9 @@ from __future__ import annotations
 
 from datetime import datetime
 import math
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
-from homeassistant.util.dt import as_local, now
+from homeassistant.util.dt import now
 
 from .bayesian_constants import ACCLIMATION_END_DAYS, ACCLIMATION_START_DAYS
 from .const import DOMAIN

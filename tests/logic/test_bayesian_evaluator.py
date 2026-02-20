@@ -3,7 +3,6 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from custom_components.growspace_manager import bayesian_evaluator
 from custom_components.growspace_manager.bayesian_data import (
     PROB_ACCEPTABLE,
     PROB_GOOD,
@@ -724,11 +723,9 @@ def test_evaluate_direct_humidity_stress_interpolation() -> None:
     ],
 )
 def test_determine_stage_key(
-    flower_days, veg_days, seedling_days, clone_days, expected_key, monkeypatch
+    flower_days, veg_days, seedling_days, clone_days, expected_key
 ) -> None:
     """Test _determine_stage_key for all growth stages."""
-    # Mock DEFAULT_FLOWER_EARLY_DAYS to 7 to allow covering branch at line 136
-    monkeypatch.setattr(bayesian_evaluator, "DEFAULT_FLOWER_EARLY_DAYS", 7)
 
     state = MagicMock(
         spec=EnvironmentState,

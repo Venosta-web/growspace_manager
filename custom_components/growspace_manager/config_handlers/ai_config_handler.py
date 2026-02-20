@@ -137,7 +137,7 @@ class AIConfigHandler(BaseConfigHandler[dict[str, Any]]):
     ) -> ConfigFlowResult:
         """Show the form for configuring AI settings."""
         try:
-            coordinator = self.get_coordinator()
+            self.get_coordinator()
         except AbortFlow as e:
             return self.flow.async_abort(reason=e.reason)
 

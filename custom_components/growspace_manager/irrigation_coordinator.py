@@ -156,12 +156,6 @@ class BaseIrrigationCoordinator:
         try:
             # Wait for state change or timeout
             await asyncio.wait_for(state_reached.wait(), timeout=timeout)
-            _LOGGER.debug(
-                "%s confirmed state '%s'",
-                entity_id,
-                target_state,
-            )
-            return True
         except TimeoutError:
             _LOGGER.warning(
                 "%s did not confirm state '%s' within %s seconds. "
@@ -172,6 +166,13 @@ class BaseIrrigationCoordinator:
                 timeout,
             )
             return False
+        else:
+            _LOGGER.debug(
+                "%s confirmed state '%s'",
+                entity_id,
+                target_state,
+            )
+            return True
         finally:
             remove_listener()
 

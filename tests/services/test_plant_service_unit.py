@@ -36,7 +36,7 @@ def mock_lifecycle_manager():
 
 
 @pytest.fixture
-def mock_growspace_service():
+def mockgrowspace_manager():
     return Mock()
 
 
@@ -56,7 +56,7 @@ def plant_service(
     mock_repository,
     mock_validator,
     mock_lifecycle_manager,
-    mock_growspace_service,
+    mockgrowspace_manager,
     mock_plant_view_builder,
     mock_save_callback,
 ):
@@ -65,7 +65,7 @@ def plant_service(
         hass=mock_hass,
         repository=mock_repository,
         validator=mock_validator,
-        growspace_manager=mock_growspace_service,
+        growspace_manager=mockgrowspace_manager,
         strain_library=MagicMock(),
         plant_view_builder=mock_plant_view_builder,
         save_callback=mock_save_callback,
@@ -78,7 +78,7 @@ async def test_take_clones_growspace_full(
     plant_service,
     mock_repository,
     mock_validator,
-    mock_growspace_service,
+    mockgrowspace_manager,
 ):
     """Test take_clones raises ValueError when growspace is full."""
     # Setup mother plant

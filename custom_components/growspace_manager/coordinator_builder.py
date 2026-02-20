@@ -59,7 +59,7 @@ class CoordinatorBuilder:
             Fully initialized GrowspaceCoordinator instance
         """
         # Import here to avoid circular dependency
-        from .coordinator import GrowspaceCoordinator
+        from .coordinator import GrowspaceCoordinator  # noqa: PLC0415
 
         _LOGGER.debug(
             "Building GrowspaceCoordinator for entry %s with options: %s",

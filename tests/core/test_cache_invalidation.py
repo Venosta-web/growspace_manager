@@ -54,7 +54,7 @@ async def test_async_commit_rebuilds_cache(hass: HomeAssistant) -> None:
         )
 
         # Add a growspace manually to avoid triggering async_commit loop logic in setup
-        gs = await coordinator._growspace_service.add_growspace("Test GS")
+        gs = await coordinator.growspace_manager.add_growspace("Test GS")
 
         # Verify it's in cache (async_add calls commit)
         assert gs.id in coordinator.cache._cache

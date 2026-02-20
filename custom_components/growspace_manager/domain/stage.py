@@ -6,7 +6,6 @@ from dataclasses import dataclass
 from enum import StrEnum
 from typing import Final
 
-
 # Constants for stage logic and transitions
 DEFAULT_FLOWER_EARLY_DAYS: Final = 21
 DEFAULT_FLOWER_MID_DAYS: Final = 21

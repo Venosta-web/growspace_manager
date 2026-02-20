@@ -3,16 +3,16 @@
 from __future__ import annotations
 
 from datetime import date, datetime
-from typing import TYPE_CHECKING, TypeAlias
+from typing import TYPE_CHECKING
 
 from dateutil import parser
 
 from homeassistant.util.dt import as_local, now
 
 if TYPE_CHECKING:
-    from ..models import Plant
+    from custom_components.growspace_manager.models import Plant
 
-DateInput: TypeAlias = date | datetime | str | None
+type DateInput = date | datetime | str | None
 
 
 def parse_date_field(date_value: DateInput) -> datetime | None:
@@ -77,7 +77,7 @@ def format_date(date_value: DateInput) -> str | None:
 
 def calculate_days_in_stage(plant: Plant, stage: str) -> int:
     """Calculate how many days a plant has been in a specific growth stage."""
-    from .stage import PlantStage
+    from .stage import PlantStage  # noqa: PLC0415
 
     start_date = getattr(plant, f"{stage}_start", None)
 

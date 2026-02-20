@@ -286,7 +286,7 @@ async def test_batch_add_mother_auto_date_coverage(hass: HomeAssistant) -> None:
     with patch.object(
         mock_coordinator.validator, "find_first_available_position", return_value=(1, 1)
     ):
-        mock_coordinator._plant_service.add_plant = AsyncMock()
+        mock_coordinator.plant_manager.add_plant = AsyncMock()
 
         call = MagicMock()
         call.data = {
@@ -296,7 +296,7 @@ async def test_batch_add_mother_auto_date_coverage(hass: HomeAssistant) -> None:
         }
 
         await handle_add_plants(hass, mock_coordinator, MagicMock(), call)
-        _args, kwargs = mock_coordinator._plant_service.add_plant.call_args
+        _args, kwargs = mock_coordinator.plant_manager.add_plant.call_args
         assert kwargs.get("mother_start") is not None
 
 

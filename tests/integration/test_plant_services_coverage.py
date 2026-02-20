@@ -224,8 +224,8 @@ async def test_handle_add_plants_success(
 ) -> None:
     """Test handle_add_plants service."""
     mock_coordinator = MagicMock()
-    mock_coordinator._plant_service = MagicMock()
-    mock_coordinator._plant_service.add_plant = AsyncMock()
+    mock_coordinator.plant_manager = MagicMock()
+    mock_coordinator.plant_manager.add_plant = AsyncMock()
     mock_coordinator.growspaces = {"gs1": MagicMock()}
     mock_coordinator.validator.find_first_available_position.return_value = (1, 1)
 
@@ -241,9 +241,9 @@ async def test_handle_add_plants_success(
 
     await handle_add_plants(hass, mock_coordinator, mock_strain_library, mock_call)
 
-    assert mock_coordinator._plant_service.add_plant.call_count == 2
+    assert mock_coordinator.plant_manager.add_plant.call_count == 2
     # Check that phenotype uses start_number
-    args = mock_coordinator._plant_service.add_plant.call_args_list[0].kwargs
+    args = mock_coordinator.plant_manager.add_plant.call_args_list[0].kwargs
     assert args["phenotype"] == "Strain A #10"
 
 
@@ -352,12 +352,12 @@ async def test_handle_add_plants_errors(hass: HomeAssistant) -> None:
 
     # 2. GrowspaceError during add (297-299)
     mock_call.data = {"growspace_id": "gs1", "strain": "S1", "amount": 2}
-    mock_coordinator._plant_service.add_plant = AsyncMock(
+    mock_coordinator.plant_manager.add_plant = AsyncMock(
         side_effect=GrowspaceError("Fail")
     )
     await handle_add_plants(hass, mock_coordinator, MagicMock(), mock_call)
     assert (
-        mock_coordinator._plant_service.add_plant.call_count == 1
+        mock_coordinator.plant_manager.add_plant.call_count == 1
     )  # Stopped after first error
 
     # 3. Unexpected exception (308-310)
@@ -372,8 +372,8 @@ async def test_handle_add_plants_errors(hass: HomeAssistant) -> None:
 async def test_handle_add_plants_full(hass: HomeAssistant) -> None:
     """Test handle_add_plants when growspace is full (276-284)."""
     mock_coordinator = MagicMock()
-    mock_coordinator._plant_service = MagicMock()
-    mock_coordinator._plant_service.add_plant = AsyncMock()
+    mock_coordinator.plant_manager = MagicMock()
+    mock_coordinator.plant_manager.add_plant = AsyncMock()
     mock_coordinator.growspaces = {"gs1": MagicMock()}
     mock_call = MagicMock(spec=ServiceCall)
     mock_call.data = {"growspace_id": "gs1", "strain": "S1", "amount": 2}
@@ -393,4 +393,4 @@ async def test_handle_add_plants_full(hass: HomeAssistant) -> None:
         (None, None),
     ]
     await handle_add_plants(hass, mock_coordinator, MagicMock(), mock_call)
-    assert mock_coordinator._plant_service.add_plant.call_count == 1
+    assert mock_coordinator.plant_manager.add_plant.call_count == 1

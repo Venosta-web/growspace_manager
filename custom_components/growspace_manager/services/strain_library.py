@@ -84,7 +84,7 @@ async def handle_export_strain_library(
             title="Strain Library Export",
         )
 
-    except Exception as err:
+    except Exception as err:  # noqa: BLE001
         _LOGGER.exception("Failed to export strain library")
         create_notification(
             hass,
@@ -167,7 +167,7 @@ async def handle_import_strain_library(
             title="Strain Library Import",
         )
 
-    except Exception as err:
+    except Exception as err:  # noqa: BLE001
         _LOGGER.exception("Failed to import strain library")
         create_notification(
             hass,
@@ -351,7 +351,7 @@ async def handle_clear_strain_library(
         hass.bus.async_fire(
             f"{DOMAIN}_strain_library_cleared", {"cleared_count": cleared_count}
         )
-    except Exception as err:
+    except Exception as err:  # noqa: BLE001
         _LOGGER.exception("Failed to clear strain library")
         create_notification(
             hass,
@@ -517,7 +517,7 @@ async def handle_print_label(
         response = await hass.services.async_call(
             "niimbot", "print", service_data, blocking=True, return_response=True
         )
-    except Exception as err:
+    except Exception as err:  # noqa: BLE001
         _LOGGER.error("Failed to print Niimbot label: %s", err)
         raise HomeAssistantError(f"Failed to print Niimbot label: {err}") from err
     else:

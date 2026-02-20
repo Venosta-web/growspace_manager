@@ -723,7 +723,7 @@ async def test_promote_clone_custom_target(hass: HomeAssistant) -> None:
     coordinator = GrowspaceCoordinator(hass, MagicMock())
     coordinator.lifecycle_manager = AsyncMock()
     # Inject mock into internal service
-    coordinator._plant_service.lifecycle_manager = coordinator.lifecycle_manager
+    coordinator.plant_manager.lifecycle_manager = coordinator.lifecycle_manager
 
     coordinator.async_save = AsyncMock()  # type: ignore[method-assign]
     coordinator.invalidate_cache = MagicMock()  # type: ignore[method-assign]

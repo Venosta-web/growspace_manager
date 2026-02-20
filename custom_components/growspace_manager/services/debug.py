@@ -146,7 +146,7 @@ async def _handle_reset_dry_growspace(
         coordinator.growspaces.pop(dry_id, None)
         _LOGGER.debug("Removed dry growspace %s", dry_id)
 
-    canonical_dry = coordinator._growspace_service.ensure_special_growspace(
+    canonical_dry = coordinator.growspace_manager.ensure_special_growspace(
         CANONICAL_ID_DRY, "dry"
     )
 
@@ -184,7 +184,7 @@ async def _handle_reset_cure_growspace(
         coordinator.growspaces.pop(cure_id, None)
         _LOGGER.debug("Removed cure growspace %s", cure_id)
 
-    canonical_cure = coordinator._growspace_service.ensure_special_growspace(
+    canonical_cure = coordinator.growspace_manager.ensure_special_growspace(
         CANONICAL_ID_CURE, "cure"
     )
 
@@ -230,7 +230,7 @@ async def handle_debug_consolidate_duplicate_special(
             )
 
             if canonical_dry not in coordinator.growspaces:
-                coordinator._growspace_service.ensure_special_growspace(
+                coordinator.growspace_manager.ensure_special_growspace(
                     CANONICAL_ID_DRY, "dry"
                 )
 
@@ -251,7 +251,7 @@ async def handle_debug_consolidate_duplicate_special(
             )
 
             if canonical_cure not in coordinator.growspaces:
-                coordinator._growspace_service.ensure_special_growspace(
+                coordinator.growspace_manager.ensure_special_growspace(
                     CANONICAL_ID_CURE, "cure"
                 )
 

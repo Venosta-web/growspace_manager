@@ -794,9 +794,7 @@ class BayesianEnvironmentSensor(
         # Update pending alert state on every probability update
         # (replaces direct async_schedule_notification call on state change)
         if self.entity_description.sensor_type != GrowspaceSensorType.OPTIMAL:
-            self.notification_manager.update_pending_alert(
-                self.growspace_id, self
-            )
+            self.notification_manager.update_pending_alert(self.growspace_id, self)
 
         self.async_write_ha_state()
 

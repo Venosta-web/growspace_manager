@@ -1,11 +1,9 @@
 """Tests for the ImageManager."""
 
+import base64
+from io import BytesIO
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
-import json
-import base64
-import binascii
-from io import BytesIO
 
 from PIL import Image, UnidentifiedImageError
 import pytest

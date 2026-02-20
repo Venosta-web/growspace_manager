@@ -5,15 +5,21 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, Any
 
-from ..domain import calculate_days_in_stage, get_days_since_watering
-from ..domain.plant_metrics import format_plant_position, get_formatted_dates
-from ..utils import calculate_plant_stage
+from custom_components.growspace_manager.domain import (
+    calculate_days_in_stage,
+    get_days_since_watering,
+)
+from custom_components.growspace_manager.domain.plant_metrics import (
+    format_plant_position,
+    get_formatted_dates,
+)
+from custom_components.growspace_manager.utils import calculate_plant_stage
+
 from .entity_queries import EntityQueries
 
 if TYPE_CHECKING:
+    from custom_components.growspace_manager.models import Plant
     from homeassistant.core import HomeAssistant
-
-    from ..models import Plant
 
 _LOGGER = logging.getLogger(__name__)
 

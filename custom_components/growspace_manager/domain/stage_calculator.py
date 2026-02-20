@@ -4,11 +4,11 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from ..const import PlantStage
-from ..utils import calculate_days_since
+from custom_components.growspace_manager.const import PlantStage
+from custom_components.growspace_manager.utils import calculate_days_since
 
 if TYPE_CHECKING:
-    from ..models import Plant
+    from custom_components.growspace_manager.models import Plant
 
 
 def calculate_days_in_stage(plant: Plant, stage: str) -> int:

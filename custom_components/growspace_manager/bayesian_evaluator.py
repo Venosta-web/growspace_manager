@@ -96,7 +96,6 @@ from .bayesian_data import (
     VPD_OPTIMAL_THRESHOLDS,
     VPD_STRESS_THRESHOLDS,
 )
-from .const import DEFAULT_FLOWER_EARLY_DAYS
 from .domain.stage import BayesianStage
 from .models import EnvironmentState
 from .utils import calculate_stage_transition, interpolate_value
@@ -581,7 +580,7 @@ def evaluate_direct_humidity_stress(
     ):
         prob = env_config.get("prob_humidity_high_veg", PROB_HUMIDITY_HIGH_VEG)
     elif (
-        stage_a == BayesianStage.FLOWER_LATE or stage_b == BayesianStage.FLOWER_LATE
+        BayesianStage.FLOWER_LATE in (stage_a, stage_b)
     ) and factor > 0.5:
         prob = PROB_HUMIDITY_FLOWER_LATE_OUT_OF_RANGE
     else:
@@ -879,7 +878,7 @@ def evaluate_optimal_co2(
     if not co2_optimal:
         # Check if we're in late flower stage (either stage_a or stage_b is FLOWER_LATE)
         is_late_flower = (
-            stage_a == BayesianStage.FLOWER_LATE or stage_b == BayesianStage.FLOWER_LATE
+            BayesianStage.FLOWER_LATE in (stage_a, stage_b)
         )
 
         if not is_late_flower:

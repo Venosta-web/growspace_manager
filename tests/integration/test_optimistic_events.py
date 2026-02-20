@@ -17,11 +17,11 @@ def mock_coordinator(hass: HomeAssistant):
 
     # Mock lifecycle manager and inject it into the service
     coordinator.lifecycle_manager = AsyncMock()
-    coordinator._plant_service.lifecycle_manager = coordinator.lifecycle_manager
+    coordinator.plant_manager.lifecycle_manager = coordinator.lifecycle_manager
 
     # Mock plant_view_builder behavior
-    coordinator._plant_service.plant_view_builder = MagicMock()
-    coordinator._plant_service.plant_view_builder.build.return_value = {
+    coordinator.plant_manager.plant_view_builder = MagicMock()
+    coordinator.plant_manager.plant_view_builder.build.return_value = {
         "plant_id": "test_plant",
         "stage": "veg",
         "veg_days": 10,
@@ -58,7 +58,7 @@ async def test_async_add_plant_fires_event(
     hass.bus.async_listen("growspace_manager_updated", event_listener)
 
     # Execute
-    await mock_coordinator._plant_service.add_plant(
+    await mock_coordinator.plant_manager.add_plant(
         growspace_id="test_gs", strain="Test Strain"
     )
     await hass.async_block_till_done()
@@ -96,7 +96,7 @@ async def test_async_update_plant_fires_event(
     hass.bus.async_listen("growspace_manager_updated", event_listener)
 
     # Execute
-    await mock_coordinator._plant_service.update_plant(
+    await mock_coordinator.plant_manager.update_plant(
         plant_id="test_plant", stage="flower"
     )
     await hass.async_block_till_done()

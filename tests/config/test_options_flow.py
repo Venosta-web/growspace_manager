@@ -32,15 +32,15 @@ def mock_coordinator(hass: HomeAssistant):
     coordinator.get_growspace_plants.return_value = []
 
     # Mock services
-    coordinator._growspace_service = MagicMock()
-    coordinator._growspace_service.add_growspace = AsyncMock()
-    coordinator._growspace_service.update_growspace = AsyncMock()
-    coordinator._growspace_service.get_sorted_growspace_options = Mock(return_value=[])
-    coordinator._growspace_service.get_growspace_options = Mock(return_value={})
+    coordinator.growspace_manager = MagicMock()
+    coordinator.growspace_manager.add_growspace = AsyncMock()
+    coordinator.growspace_manager.update_growspace = AsyncMock()
+    coordinator.growspace_manager.get_sorted_growspace_options = Mock(return_value=[])
+    coordinator.growspace_manager.get_growspace_options = Mock(return_value={})
 
-    coordinator._plant_service = MagicMock()
-    coordinator._plant_service.add_plant = AsyncMock()
-    coordinator._plant_service.update_plant = AsyncMock()
+    coordinator.plant_manager = MagicMock()
+    coordinator.plant_manager.add_plant = AsyncMock()
+    coordinator.plant_manager.update_plant = AsyncMock()
 
     coordinator.async_remove_growspace = AsyncMock()
     coordinator.async_remove_plant = AsyncMock()
@@ -48,8 +48,8 @@ def mock_coordinator(hass: HomeAssistant):
     coordinator.async_refresh = AsyncMock()
 
     # Public properties for services
-    type(coordinator).growspace_service = property(lambda self: self._growspace_service)
-    type(coordinator).plant_service = property(lambda self: self._plant_service)
+    type(coordinator).growspace_service = property(lambda self: self.growspace_manager)
+    type(coordinator).plant_service = property(lambda self: self.plant_manager)
 
     return coordinator
 
@@ -512,7 +512,7 @@ async def test_options_flow_manage_plants_add(
     """Test the add plant action in the options flow."""
     # Given
     mock_coordinator.growspaces = {"test_grow": Mock(name="Test Growspace")}
-    mock_coordinator._growspace_service.get_sorted_growspace_options.return_value = [
+    mock_coordinator.growspace_manager.get_sorted_growspace_options.return_value = [
         ("test_grow", "Test Growspace")
     ]
     mock_coordinator.get_strain_options.return_value = ["Strain A", "Strain B"]

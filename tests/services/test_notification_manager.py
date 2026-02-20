@@ -1,7 +1,7 @@
 """Tests for the NotificationManager."""
 
 from datetime import timedelta
-from unittest.mock import AsyncMock, MagicMock, PropertyMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 from common import create_plant
 import pytest
@@ -695,11 +695,17 @@ async def test_tier_cooldown_critical(manager: NotificationManager) -> None:
         manager._set_cooldown(GROWSPACE_ID, NotificationTier.CRITICAL)
 
     # Critical should be blocked
-    assert manager._is_on_cooldown(GROWSPACE_ID, NotificationTier.CRITICAL, now + timedelta(minutes=5))
+    assert manager._is_on_cooldown(
+        GROWSPACE_ID, NotificationTier.CRITICAL, now + timedelta(minutes=5)
+    )
     # Warning should NOT be blocked by critical cooldown
-    assert not manager._is_on_cooldown(GROWSPACE_ID, NotificationTier.WARNING, now + timedelta(minutes=5))
+    assert not manager._is_on_cooldown(
+        GROWSPACE_ID, NotificationTier.WARNING, now + timedelta(minutes=5)
+    )
     # Critical should expire after 30 min
-    assert not manager._is_on_cooldown(GROWSPACE_ID, NotificationTier.CRITICAL, now + timedelta(minutes=31))
+    assert not manager._is_on_cooldown(
+        GROWSPACE_ID, NotificationTier.CRITICAL, now + timedelta(minutes=31)
+    )
 
 
 async def test_tier_cooldown_warning(manager: NotificationManager) -> None:
@@ -712,9 +718,13 @@ async def test_tier_cooldown_warning(manager: NotificationManager) -> None:
         manager._set_cooldown(GROWSPACE_ID, NotificationTier.WARNING)
 
     # Warning blocked at 1 hour
-    assert manager._is_on_cooldown(GROWSPACE_ID, NotificationTier.WARNING, now + timedelta(hours=1))
+    assert manager._is_on_cooldown(
+        GROWSPACE_ID, NotificationTier.WARNING, now + timedelta(hours=1)
+    )
     # Warning expires after 2 hours
-    assert not manager._is_on_cooldown(GROWSPACE_ID, NotificationTier.WARNING, now + timedelta(hours=2, minutes=1))
+    assert not manager._is_on_cooldown(
+        GROWSPACE_ID, NotificationTier.WARNING, now + timedelta(hours=2, minutes=1)
+    )
 
 
 # --- Task 4: update_pending_alert tests ---
@@ -740,7 +750,9 @@ async def test_update_pending_alert_creates_entry(manager: NotificationManager) 
     assert alert.notified is False
 
 
-async def test_update_pending_alert_updates_existing(manager: NotificationManager) -> None:
+async def test_update_pending_alert_updates_existing(
+    manager: NotificationManager,
+) -> None:
     """Test that update_pending_alert updates peak probability on existing entry."""
     now = dt_util.utcnow()
     alert_key = f"{GROWSPACE_ID}_stress"
@@ -766,7 +778,9 @@ async def test_update_pending_alert_updates_existing(manager: NotificationManage
     assert alert.peak_probability == 0.85
 
 
-async def test_update_pending_alert_removes_on_off(manager: NotificationManager) -> None:
+async def test_update_pending_alert_removes_on_off(
+    manager: NotificationManager,
+) -> None:
     """Test that update_pending_alert removes entry when sensor turns off."""
     now = dt_util.utcnow()
     alert_key = f"{GROWSPACE_ID}_stress"
@@ -837,7 +851,9 @@ async def test_check_pending_alerts_warning_persistence_not_met(
             "custom_components.growspace_manager.notification_manager.utcnow",
             return_value=now,
         ),
-        patch.object(manager, "async_send_notification", new_callable=AsyncMock) as mock_send,
+        patch.object(
+            manager, "async_send_notification", new_callable=AsyncMock
+        ) as mock_send,
     ):
         await manager.async_check_pending_alerts()
         mock_send.assert_not_awaited()
@@ -862,7 +878,9 @@ async def test_check_pending_alerts_warning_persistence_met(
             "custom_components.growspace_manager.notification_manager.utcnow",
             return_value=now,
         ),
-        patch.object(manager, "async_send_notification", new_callable=AsyncMock) as mock_send,
+        patch.object(
+            manager, "async_send_notification", new_callable=AsyncMock
+        ) as mock_send,
     ):
         await manager.async_check_pending_alerts()
         mock_send.assert_awaited_once()
@@ -893,7 +911,9 @@ async def test_check_pending_alerts_skip_already_notified(
             "custom_components.growspace_manager.notification_manager.utcnow",
             return_value=now,
         ),
-        patch.object(manager, "async_send_notification", new_callable=AsyncMock) as mock_send,
+        patch.object(
+            manager, "async_send_notification", new_callable=AsyncMock
+        ) as mock_send,
     ):
         await manager.async_check_pending_alerts()
         mock_send.assert_not_awaited()
@@ -921,7 +941,9 @@ async def test_check_pending_alerts_escalation(
             "custom_components.growspace_manager.notification_manager.utcnow",
             return_value=now,
         ),
-        patch.object(manager, "async_send_notification", new_callable=AsyncMock) as mock_send,
+        patch.object(
+            manager, "async_send_notification", new_callable=AsyncMock
+        ) as mock_send,
     ):
         await manager.async_check_pending_alerts()
         mock_send.assert_awaited_once()
@@ -953,7 +975,9 @@ async def test_check_pending_alerts_no_escalation_if_dropped_to_warning(
             "custom_components.growspace_manager.notification_manager.utcnow",
             return_value=now,
         ),
-        patch.object(manager, "async_send_notification", new_callable=AsyncMock) as mock_send,
+        patch.object(
+            manager, "async_send_notification", new_callable=AsyncMock
+        ) as mock_send,
     ):
         await manager.async_check_pending_alerts()
         mock_send.assert_not_awaited()
@@ -981,7 +1005,9 @@ async def test_check_pending_alerts_no_double_escalation(
             "custom_components.growspace_manager.notification_manager.utcnow",
             return_value=now,
         ),
-        patch.object(manager, "async_send_notification", new_callable=AsyncMock) as mock_send,
+        patch.object(
+            manager, "async_send_notification", new_callable=AsyncMock
+        ) as mock_send,
     ):
         await manager.async_check_pending_alerts()
         mock_send.assert_not_awaited()
@@ -1104,3 +1130,176 @@ async def test_send_recovery_notification(
         assert "\u2705" in title
         assert "resolved" in message.lower()
         assert "45 minutes" in message
+
+
+async def test_schedule_recovery(
+    manager: NotificationManager, mock_hass: MagicMock
+) -> None:
+    """Test scheduling recovery notification."""
+    alert = PendingAlert(
+        growspace_id=GROWSPACE_ID,
+        first_triggered=dt_util.utcnow(),
+        last_probability=0.9,
+        peak_probability=0.95,
+        sensor_name="Test Sensor",
+    )
+
+    with patch.object(manager, "_async_send_recovery", new_callable=AsyncMock):
+        manager._schedule_recovery(GROWSPACE_ID, alert)
+        mock_hass.async_create_task.assert_called_once()
+        # Verify call arguments if needed
+        # args = mock_hass.async_create_task.call_args[0]
+        # assert args[0] == mock_send_recovery.return_value
+
+
+async def test_async_send_recovery_cooldown(
+    manager: NotificationManager, mock_hass: MagicMock
+) -> None:
+    """Test recovery notification cooldown."""
+    alert = PendingAlert(
+        growspace_id=GROWSPACE_ID,
+        first_triggered=dt_util.utcnow(),
+        last_probability=0.9,
+        peak_probability=0.95,
+        sensor_name="Test Sensor",
+    )
+
+    # Set recovery cooldown
+    manager._set_cooldown(GROWSPACE_ID, "recovery")
+
+    with patch.object(
+        manager, "async_send_notification", new_callable=AsyncMock
+    ) as mock_send:
+        await manager._async_send_recovery(GROWSPACE_ID, alert)
+        mock_send.assert_not_awaited()
+
+
+def test_detach_sensor(manager: NotificationManager) -> None:
+    """Test detaching a sensor."""
+    sensor = MagicMock()
+    manager.attach_sensor(GROWSPACE_ID, sensor)
+    assert sensor in manager._registered_sensors[GROWSPACE_ID]
+
+    manager.detach_sensor(GROWSPACE_ID, sensor)
+    assert sensor not in manager._registered_sensors[GROWSPACE_ID]
+
+
+def test_trigger_cooldown(manager: NotificationManager) -> None:
+    """Test manually triggering cooldown."""
+    now = dt_util.utcnow()
+    with patch(
+        "custom_components.growspace_manager.notification_manager.utcnow",
+        return_value=now,
+    ):
+        manager.trigger_cooldown(GROWSPACE_ID)
+
+    assert manager._is_on_cooldown(GROWSPACE_ID, NotificationTier.CRITICAL, now)
+    assert manager._is_on_cooldown(GROWSPACE_ID, NotificationTier.WARNING, now)
+    assert manager._last_notification_sent[GROWSPACE_ID] == now
+
+
+async def test_async_schedule_notification_execution(
+    manager: NotificationManager, mock_hass: MagicMock
+) -> None:
+    """Test that scheduled notification callback executes."""
+    # We need to simulate the callback execution
+    callback_func = None
+
+    def mock_call_later(hass, delay, action):
+        nonlocal callback_func
+        callback_func = action
+        return MagicMock()
+
+    with patch(
+        "custom_components.growspace_manager.notification_manager.async_call_later",
+        side_effect=mock_call_later,
+    ):
+        manager.async_schedule_notification(GROWSPACE_ID)
+
+    assert callback_func is not None
+
+    with patch.object(
+        manager, "_async_send_batched_notification", new_callable=AsyncMock
+    ):
+        # Execute the callback
+        callback_func(dt_util.utcnow())
+        mock_hass.async_create_task.assert_called_once()
+
+
+async def test_async_send_notification_tier_cooldown_debug(
+    manager: NotificationManager, mock_hass: MagicMock
+) -> None:
+    """Test debug logging when tier cooldown is active."""
+    manager._set_cooldown(GROWSPACE_ID, NotificationTier.CRITICAL)
+
+    with patch(
+        "custom_components.growspace_manager.notification_manager._LOGGER.debug"
+    ) as mock_debug:
+        await manager.async_send_notification(
+            GROWSPACE_ID, "Title", "Message", tier=NotificationTier.CRITICAL
+        )
+        mock_debug.assert_called_with(
+            "Tier %s cooldown active for %s, skipping notification",
+            NotificationTier.CRITICAL,
+            GROWSPACE_ID,
+        )
+
+
+async def test_async_send_notification_with_tier_sets_cooldown(
+    manager: NotificationManager, mock_hass: MagicMock, mock_coordinator: MagicMock
+) -> None:
+    """Test sending notification with tier sets the cooldown."""
+    with patch.object(manager, "_set_cooldown") as mock_set_cooldown:
+        await manager.async_send_notification(
+            GROWSPACE_ID, "Title", "Message", tier=NotificationTier.WARNING
+        )
+        mock_set_cooldown.assert_called_with(GROWSPACE_ID, NotificationTier.WARNING)
+
+
+async def test_check_and_trigger_plant_notification_init(
+    manager: NotificationManager, mock_coordinator: MagicMock
+) -> None:
+    """Test initialization of notifications_sent dict for new plant."""
+    plant = MagicMock()
+    plant.plant_id = "new_plant"
+    growspace = MagicMock()
+    growspace.id = GROWSPACE_ID
+    growspace.name = GROWSPACE_NAME
+
+    # Ensure plant not in notifications_sent
+    mock_coordinator.notifications_sent = {}
+
+    with (
+        patch(
+            "custom_components.growspace_manager.notification_manager.calculate_days_in_stage",
+            return_value=10,
+        ),
+        patch.object(manager, "async_send_notification", new_callable=AsyncMock),
+    ):
+        await manager._check_and_trigger_plant_notification(
+            plant, growspace, "notify_1", "veg", 10, "Message"
+        )
+
+    assert "new_plant" in mock_coordinator.notifications_sent
+    assert mock_coordinator.notifications_sent["new_plant"]["timed_notify_1"] is True
+
+    # Test fallback to growspace.growspace_id if id not present
+    del growspace.id
+    growspace.growspace_id = GROWSPACE_ID + "_alt"
+
+    mock_coordinator.notifications_sent = {}  # Reset
+
+    with (
+        patch(
+            "custom_components.growspace_manager.notification_manager.calculate_days_in_stage",
+            return_value=10,
+        ),
+        patch.object(
+            manager, "async_send_notification", new_callable=AsyncMock
+        ) as mock_send,
+    ):
+        await manager._check_and_trigger_plant_notification(
+            plant, growspace, "notify_1", "veg", 10, "Message"
+        )
+        mock_send.assert_awaited()
+        assert mock_send.call_args[0][0] == GROWSPACE_ID + "_alt"

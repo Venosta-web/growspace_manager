@@ -32,7 +32,7 @@ def create_test_coordinator(
     )
     coord.storage_manager = MagicMock()
     coord.storage_manager.async_save = AsyncMock()
-    # Don't mock _plant_service - let real service logic run for cache invalidation tests
+    # Don't mock plant_manager - let real service logic run for cache invalidation tests
     return coord
 
 
@@ -40,7 +40,7 @@ def create_test_coordinator(
 async def test_cache_invalidation_add_plant(hass: HomeAssistant) -> None:
     """Test that adding a plant invalidates the growspace cache."""
     coordinator = create_test_coordinator(hass, data={})
-    gs = await coordinator._growspace_service.add_growspace("Test GS")
+    gs = await coordinator.growspace_manager.add_growspace("Test GS")
 
     # 1. Get initial data
     data1 = coordinator.get_growspace_data(gs.id)
@@ -66,12 +66,12 @@ async def test_cache_invalidation_add_plant(hass: HomeAssistant) -> None:
 async def test_cache_invalidation_update_growspace(hass: HomeAssistant) -> None:
     """Test that updating growspace invalidates cache."""
     coordinator = create_test_coordinator(hass, data={})
-    gs = await coordinator._growspace_service.add_growspace("Test GS")
+    gs = await coordinator.growspace_manager.add_growspace("Test GS")
 
     data1 = coordinator.get_growspace_data(gs.id)
     assert data1["name"] == "Test GS"
 
-    await coordinator._growspace_service.update_growspace(gs.id, name="Renamed GS")
+    await coordinator.growspace_manager.update_growspace(gs.id, name="Renamed GS")
 
     data2 = coordinator.get_growspace_data(gs.id)
     assert data2["name"] == "Renamed GS"
@@ -81,7 +81,7 @@ async def test_cache_invalidation_update_growspace(hass: HomeAssistant) -> None:
 async def test_cache_invalidation_update_plant(hass: HomeAssistant) -> None:
     """Test that updating a plant invalidates cache."""
     coordinator = create_test_coordinator(hass, data={})
-    gs = await coordinator._growspace_service.add_growspace("Test GS")
+    gs = await coordinator.growspace_manager.add_growspace("Test GS")
 
     mock_plant = create_plant(
         plant_id="p1",

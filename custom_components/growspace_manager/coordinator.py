@@ -525,7 +525,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         growspace_type: GrowspaceType,
     ) -> None:
         """Compatibility alias for GrowspaceManager legacy method."""
-        self.growspace_manager._create_special_growspace(
+        self.growspace_manager._create_special_growspace(  # noqa: SLF001
             canonical_id, canonical_name, rows, plants_per_row, growspace_type
         )
 
@@ -539,7 +539,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 canonical_id, canonical_name
             )
         else:
-            self.growspace_manager._update_special_growspace_name(
+            self.growspace_manager._update_special_growspace_name(  # noqa: SLF001
                 canonical_id, canonical_name
             )
 
@@ -549,7 +549,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         if not growspace:
             return False
         changes = kwargs.pop("changes", [])
-        return self.growspace_manager._update_growspace_structure(
+        return self.growspace_manager._update_growspace_structure(  # noqa: SLF001
             growspace, kwargs, changes
         )
 
@@ -559,7 +559,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         if not growspace:
             return False
         changes = kwargs.pop("changes", [])
-        return self.growspace_manager._update_growspace_config(
+        return self.growspace_manager._update_growspace_config(  # noqa: SLF001
             growspace, kwargs, changes
         )
 
@@ -864,8 +864,8 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     ) -> None:
         """Compatibility alias for GrowspaceManager legacy method."""
 
-        asyncio.create_task(
-            self.growspace_manager._validate_plants_after_growspace_resize(
+        asyncio.create_task(  # noqa: RUF006
+            self.growspace_manager._validate_plants_after_growspace_resize(  # noqa: SLF001
                 growspace_id, new_rows, new_plants_per_row
             )
         )

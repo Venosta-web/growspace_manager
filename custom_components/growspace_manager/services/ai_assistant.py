@@ -189,9 +189,7 @@ class GrowAssistant:
             "strains": list(strains),
             "max_veg_days": max(
                 (
-                    calculate_days_in_stage(
-                        p, PlantStage.VEG
-                    )
+                    calculate_days_in_stage(p, PlantStage.VEG)
                     for p in plants
                     if p.veg_start
                 ),
@@ -199,9 +197,7 @@ class GrowAssistant:
             ),
             "max_flower_days": max(
                 (
-                    calculate_days_in_stage(
-                        p, PlantStage.FLOWER
-                    )
+                    calculate_days_in_stage(p, PlantStage.FLOWER)
                     for p in plants
                     if p.flower_start
                 ),

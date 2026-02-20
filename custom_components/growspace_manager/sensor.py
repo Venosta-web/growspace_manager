@@ -282,7 +282,7 @@ async def _create_initial_entities(
 
                 if enable_prediction:
                     # Convert dict to IrrigationTank if needed
-                    from .models import IrrigationTank
+                    from .models import IrrigationTank  # noqa: PLC0415
 
                     tank_obj = (
                         IrrigationTank.from_dict(tank)
