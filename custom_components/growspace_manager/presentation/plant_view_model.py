@@ -84,4 +84,20 @@ class PlantViewModelBuilder:
             "last_training_technique": plant.last_training_technique,
             "last_ipm_type": plant.last_ipm_type,
             "days_since_last_watering": get_days_since_watering(plant),
+            # Harvest data — included so the frontend plant overview dialog can read them
+            "harvest_metrics": {
+                "wet_weight": plant.harvest_metrics.wet_weight,
+                "dry_weight": plant.harvest_metrics.dry_weight,
+                "trim_weight": plant.harvest_metrics.trim_weight,
+                "thc_percentage": plant.harvest_metrics.thc_percentage,
+                "cbd_percentage": plant.harvest_metrics.cbd_percentage,
+                "terpene_profile": plant.harvest_metrics.terpene_profile,
+            },
+            "scores": {
+                "vigor": plant.scores.vigor,
+                "structure": plant.scores.structure,
+                "aroma": plant.scores.aroma,
+                "resin": plant.scores.resin,
+                "pest_resistance": plant.scores.pest_resistance,
+            },
         }

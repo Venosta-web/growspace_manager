@@ -404,12 +404,18 @@ class BayesianEnvironmentSensor(
 
         humidifier_on = self._determine_humidifier_state()
 
+        # Substrate temperature (average of configured sensors)
+        substrate_temp = self._get_aggregated_sensor_value(
+            self.env_config.substrate_temperature_sensors
+        )
+
         self._sensor_states = {
             "temperature": temp,
             "humidity": humidity,
             "vpd": vpd,
             "co2": co2,
             "soil_moisture": soil_moisture,
+            "substrate_temp": substrate_temp,
             "veg_days": veg_days,
             "flower_days": flower_days,
             "seedling_days": seedling_days,
@@ -438,6 +444,7 @@ class BayesianEnvironmentSensor(
             humidifier_value=humidifier_value,
             humidifier_on=humidifier_on,
             soil_moisture=soil_moisture,
+            substrate_temp=substrate_temp,
         )
 
     def _determine_light_state(self) -> bool | None:

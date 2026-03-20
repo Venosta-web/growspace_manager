@@ -240,6 +240,11 @@ class IrrigationCoordinator(BaseIrrigationCoordinator):
         if len(time_str) == 5:
             time_str = f"{time_str}:00"
 
+        try:
+            datetime.strptime(time_str, "%H:%M:%S")
+        except ValueError as err:
+            raise ValueError(f"Invalid time '{time_str}': hours must be 00-23") from err
+
         if not hasattr(self.growspace.irrigation_config, schedule_key):
             _LOGGER.error("Invalid schedule key %s", schedule_key)
             return

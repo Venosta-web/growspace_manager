@@ -11,9 +11,24 @@
       'unit': 'cm',
       'width': 120,
     }),
+    'drain_config': dict({
+      'enabled': False,
+      'max_ec_delta': 0.7,
+      'max_readings': 100,
+      'readings': list([
+      ]),
+      'target_runoff_percent': 20.0,
+    }),
+    'energy_tracking': dict({
+      'cycle_start_date': '',
+      'cycle_start_kwh': 0.0,
+      'last_kwh_reading': 0.0,
+    }),
     'environment_config': dict({
       'bayesian_options': dict({
       }),
+      'camera_entities': list([
+      ]),
       'circulation_fan_entities': list([
       ]),
       'co2_sensor': None,
@@ -22,13 +37,24 @@
       ]),
       'dehumidifier_thresholds': dict({
       }),
+      'dli_target_flower': 45.0,
+      'dli_target_veg': 30.0,
+      'drain_volume_sensors': list([
+      ]),
+      'electricity_cost_per_kwh': 0.0,
+      'energy_sensors': list([
+      ]),
       'exhaust_fan_entities': list([
+      ]),
+      'feed_ec_sensors': list([
       ]),
       'flower_day_hours': 12,
       'humidifier_entities': list([
       ]),
       'humidity_sensor': None,
       'humidity_sensors': list([
+      ]),
+      'irrigation_flow_sensors': list([
       ]),
       'irrigation_tanks': list([
       ]),
@@ -37,12 +63,23 @@
       'lst_offset': -2.0,
       'minimum_source_air_temperature': 18.0,
       'mold_threshold': 0.75,
+      'ph_sensors': list([
+      ]),
+      'power_sensors': list([
+      ]),
+      'runoff_ec_sensors': list([
+      ]),
       'sensor_coordinates': dict({
       }),
       'sensor_groups': list([
       ]),
+      'snapshot_interval_hours': 24,
       'soil_moisture_sensor': None,
       'stress_threshold': 0.7,
+      'substrate_ec_sensors': list([
+      ]),
+      'substrate_temperature_sensors': list([
+      ]),
       'temperature_sensor': None,
       'temperature_sensors': list([
       ]),
@@ -62,6 +99,7 @@
       'irrigation_pump_entity': None,
       'irrigation_times': list([
       ]),
+      'pump_flow_rate_ml_per_sec': 0.0,
       'veg_day_hours': 12,
     }),
     'irrigation_strategy': dict({
@@ -78,5 +116,12 @@
     'notification_target': None,
     'plants_per_row': 4,
     'rows': 4,
+    'water_usage': dict({
+      'cycle_start_date': '',
+      'daily_readings': list([
+      ]),
+      'max_daily_readings': 365,
+      'total_liters': 0.0,
+    }),
   })
 # ---

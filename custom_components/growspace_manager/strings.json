@@ -131,7 +131,17 @@
           "humidifier_sensor": "Humidifier Power/Status Sensor",
           "configure_dehumidifier": "Enable Dehumidifier",
           "dehumidifier_entity": "Dehumidifier Device",
-          "control_dehumidifier": "Enable Dehumidifier Automation"
+          "control_dehumidifier": "Enable Dehumidifier Automation",
+          "ph_sensors": "PH Sensors",
+          "feed_ec_sensors": "Feed EC Sensors",
+          "substrate_ec_sensors": "Substrate EC Sensors",
+          "runoff_ec_sensors": "Runoff EC Sensors",
+          "drain_volume_sensors": "Drain Volume Sensors",
+          "irrigation_flow_sensors": "Irrigation Flow Sensors",
+          "camera_entities": "Camera Entities",
+          "snapshot_interval_hours": "Snapshot Interval (Hours)",
+          "power_sensors": "Power Sensors",
+          "energy_sensors": "Energy Sensors"
         }
       },
       "manage_growspaces": {
@@ -340,7 +350,27 @@
       },
       "strain_library": {
         "name": "Strain Library"
+      },
+      "dli": {
+        "name": "Daily Light Integral"
+      },
+      "crop_steering": {
+        "name": "Crop Steering Score"
+      },
+      "energy_usage": {
+        "name": "Energy Usage"
+      },
+      "water_usage": {
+        "name": "Water Usage"
+      },
+      "ec_target": {
+        "name": "EC Target"
       }
+    }
+  },
+  "exceptions": {
+    "phi_not_cleared": {
+      "message": "Cannot harvest {plant_id}: pre-harvest interval not cleared until {clearance_date} ({days_remaining} days remaining)."
     }
   }
 }

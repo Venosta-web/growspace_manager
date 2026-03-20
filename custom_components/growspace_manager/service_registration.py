@@ -15,9 +15,16 @@ from .coordinator import GrowspaceCoordinator
 from .exceptions import GrowspaceError
 from .schemas import (
     APPLY_IPM_SCHEMA,
+    CONFIGURE_DRAIN_MONITORING_SCHEMA,
+    LOG_DRAIN_READING_SCHEMA,
     LOG_TRAINING_EVENT_SCHEMA,
+    REMOVE_EC_RAMP_CURVE_SCHEMA,
     REMOVE_IPM_PRESET_SCHEMA,
+    RESET_WATER_TRACKING_SCHEMA,
+    SAVE_EC_RAMP_CURVE_SCHEMA,
     SAVE_IPM_PRESET_SCHEMA,
+    SCORE_PLANT_SCHEMA,
+    UPDATE_HARVEST_METRICS_SCHEMA,
 )
 from .services import (
     ADD_DRAIN_TIME_SCHEMA,
@@ -35,6 +42,7 @@ from .services import (
     DEBUG_CONSOLIDATE_DUPLICATE_SPECIAL_SCHEMA,
     DEBUG_LIST_GROWSPACES_SCHEMA,
     DEBUG_RESET_SPECIAL_GROWSPACES_SCHEMA,
+    EXPORT_GROW_REPORT_SCHEMA,
     EXPORT_STRAIN_LIBRARY_SCHEMA,
     HARVEST_PLANT_SCHEMA,
     IMPORT_STRAIN_LIBRARY_SCHEMA,
@@ -63,6 +71,8 @@ from .services import (
     ai_assistant,
     batch,
     debug,
+    drain_ec,
+    ec_ramp,
     environment,
     growspace,
     ipm,
@@ -70,8 +80,10 @@ from .services import (
     irrigation_watering,
     nutrient_presets,
     plant,
+    report,
     strain_library,
     training,
+    water_analytics,
 )
 from .strain_library import StrainLibrary
 
@@ -170,6 +182,16 @@ async def register_services(
             HARVEST_PLANT_SCHEMA,
         ),
         (
+            GrowspaceService.UPDATE_HARVEST_METRICS,
+            wrap(plant.handle_update_harvest_metrics, True),
+            UPDATE_HARVEST_METRICS_SCHEMA,
+        ),
+        (
+            GrowspaceService.SCORE_PLANT,
+            wrap(plant.handle_score_plant, True),
+            SCORE_PLANT_SCHEMA,
+        ),
+        (
             GrowspaceService.ADD_STRAIN,
             wrap(strain_library.handle_add_strain, True),
             ADD_STRAIN_SCHEMA,
@@ -198,6 +220,11 @@ async def register_services(
             GrowspaceService.CLEAR_STRAIN_LIBRARY,
             wrap(strain_library.handle_clear_strain_library, True),
             CLEAR_STRAIN_LIBRARY_SCHEMA,
+        ),
+        (
+            GrowspaceService.EXPORT_GROW_REPORT,
+            wrap(report.handle_export_grow_report, False),
+            EXPORT_GROW_REPORT_SCHEMA,
         ),
         (
             GrowspaceService.STRAIN_RECOMMENDATION,
@@ -333,6 +360,31 @@ async def register_services(
             GrowspaceService.PRINT_LABEL,
             wrap(strain_library.handle_print_label, True),
             PRINT_LABEL_SCHEMA,
+        ),
+        (
+            GrowspaceService.LOG_DRAIN_READING,
+            wrap(drain_ec.handle_log_drain_reading, False),
+            LOG_DRAIN_READING_SCHEMA,
+        ),
+        (
+            GrowspaceService.CONFIGURE_DRAIN_MONITORING,
+            wrap(drain_ec.handle_configure_drain_monitoring, False),
+            CONFIGURE_DRAIN_MONITORING_SCHEMA,
+        ),
+        (
+            GrowspaceService.RESET_WATER_TRACKING,
+            wrap(water_analytics.handle_reset_water_tracking, False),
+            RESET_WATER_TRACKING_SCHEMA,
+        ),
+        (
+            GrowspaceService.SAVE_EC_RAMP_CURVE,
+            wrap(ec_ramp.handle_save_ec_ramp_curve, False),
+            SAVE_EC_RAMP_CURVE_SCHEMA,
+        ),
+        (
+            GrowspaceService.REMOVE_EC_RAMP_CURVE,
+            wrap(ec_ramp.handle_remove_ec_ramp_curve, False),
+            REMOVE_EC_RAMP_CURVE_SCHEMA,
         ),
     ]
 

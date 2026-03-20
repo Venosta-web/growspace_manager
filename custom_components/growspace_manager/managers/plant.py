@@ -476,12 +476,43 @@ class PlantManager:
         target_growspace_id: str | None = None,
         target_growspace_name: str | None = None,
         transition_date: str | None = None,
+        wet_weight: float | None = None,
+        dry_weight: float | None = None,
+        trim_weight: float | None = None,
+        thc_percentage: float | None = None,
+        cbd_percentage: float | None = None,
+        terpene_profile: str | None = None,
         **kwargs: Any,
     ) -> None:
         """Harvest a plant."""
         self.validator.validate_plant_exists(plant_id)
         if plant is None:
             plant = self.repository.plants[plant_id]
+
+        # PHI safety check - prevent harvest before pre-harvest interval clears
+        if plant.phi_clearance_date:
+            today_str = date.today().isoformat()
+            if today_str < plant.phi_clearance_date:
+                days_remaining = (
+                    datetime.fromisoformat(plant.phi_clearance_date).date()
+                    - date.today()
+                ).days
+                from custom_components.growspace_manager.const import (  # noqa: PLC0415
+                    DOMAIN,
+                )
+                from homeassistant.exceptions import (  # noqa: PLC0415
+                    ServiceValidationError,
+                )
+
+                raise ServiceValidationError(
+                    translation_domain=DOMAIN,
+                    translation_key="phi_not_cleared",
+                    translation_placeholders={
+                        "plant_id": plant_id,
+                        "clearance_date": plant.phi_clearance_date,
+                        "days_remaining": str(days_remaining),
+                    },
+                )
 
         # Defensive check for mock/corrupted data
         if not hasattr(plant, "growspace_id"):
@@ -493,6 +524,21 @@ class PlantManager:
             stage_before = calculate_plant_stage(plant)
 
         transition_date_str = transition_date or date.today().isoformat()
+
+        # Store yield/lab metrics on the plant before analytics recording
+        if hasattr(plant, "harvest_metrics"):
+            if wet_weight is not None:
+                plant.harvest_metrics.wet_weight = wet_weight
+            if dry_weight is not None:
+                plant.harvest_metrics.dry_weight = dry_weight
+            if trim_weight is not None:
+                plant.harvest_metrics.trim_weight = trim_weight
+            if thc_percentage is not None:
+                plant.harvest_metrics.thc_percentage = thc_percentage
+            if cbd_percentage is not None:
+                plant.harvest_metrics.cbd_percentage = cbd_percentage
+            if terpene_profile is not None:
+                plant.harvest_metrics.terpene_profile = terpene_profile
 
         # Log harvest start
         _LOGGER.info(
@@ -749,8 +795,23 @@ class PlantManager:
         flower_days = calculate_days_in_stage(plant, PlantStage.FLOWER)
         if self.strain_library and (veg_days > 0 or flower_days > 0):
             try:
+                metrics = getattr(plant, "harvest_metrics", None)
                 await self.strain_library.record_harvest(
-                    plant.strain, plant.phenotype, veg_days, flower_days
+                    plant.strain,
+                    plant.phenotype,
+                    veg_days,
+                    flower_days,
+                    plant.scores.vigor,
+                    plant.scores.structure,
+                    plant.scores.aroma,
+                    plant.scores.resin,
+                    plant.scores.pest_resistance,
+                    wet_weight=metrics.wet_weight if metrics else None,
+                    dry_weight=metrics.dry_weight if metrics else None,
+                    trim_weight=metrics.trim_weight if metrics else None,
+                    thc_percentage=metrics.thc_percentage if metrics else None,
+                    cbd_percentage=metrics.cbd_percentage if metrics else None,
+                    terpene_profile=metrics.terpene_profile if metrics else None,
                 )
             except Exception as e:  # noqa: BLE001
                 _LOGGER.warning(

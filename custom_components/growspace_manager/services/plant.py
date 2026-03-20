@@ -10,7 +10,10 @@ from typing import TYPE_CHECKING, Any
 from custom_components.growspace_manager.const import (
     ATTR_AMOUNT,
     ATTR_AMOUNT_ML,
+    ATTR_AROMA,
+    ATTR_CBD_PERCENTAGE,
     ATTR_COL,
+    ATTR_DRY_WEIGHT,
     ATTR_EC,
     ATTR_GROWSPACE_ID,
     ATTR_IMAGES,
@@ -21,17 +24,25 @@ from custom_components.growspace_manager.const import (
     ATTR_NEW_STAGE,
     ATTR_NOTES,
     ATTR_NUM_CLONES,
+    ATTR_PEST_RESISTANCE,
     ATTR_PH,
     ATTR_PHENOTYPE,
     ATTR_PLANT1_ID,
     ATTR_PLANT2_ID,
     ATTR_PLANT_ID,
+    ATTR_RESIN,
     ATTR_ROW,
     ATTR_START_NUMBER,
     ATTR_STRAIN,
+    ATTR_STRUCTURE,
     ATTR_TAGS,
     ATTR_TARGET_GROWSPACE_ID,
+    ATTR_TERPENE_PROFILE,
+    ATTR_THC_PERCENTAGE,
     ATTR_TRANSITION_DATE,
+    ATTR_TRIM_WEIGHT,
+    ATTR_VIGOR,
+    ATTR_WET_WEIGHT,
     CANONICAL_ID_MOTHER,
     CATEGORY_NOTE,
     DATE_FIELDS,
@@ -704,6 +715,14 @@ async def handle_harvest_plant(
     transition_date_str = call.data.get(ATTR_TRANSITION_DATE)
     transition_date = None
 
+    # Yield & lab fields (all optional)
+    wet_weight: float | None = call.data.get(ATTR_WET_WEIGHT)
+    dry_weight: float | None = call.data.get(ATTR_DRY_WEIGHT)
+    trim_weight: float | None = call.data.get(ATTR_TRIM_WEIGHT)
+    thc_percentage: float | None = call.data.get(ATTR_THC_PERCENTAGE)
+    cbd_percentage: float | None = call.data.get(ATTR_CBD_PERCENTAGE)
+    terpene_profile: str | None = call.data.get(ATTR_TERPENE_PROFILE)
+
     if transition_date_str:
         transition_date_dt = parse_date_field(transition_date_str)
         if transition_date_dt:
@@ -722,6 +741,12 @@ async def handle_harvest_plant(
             target_growspace_id=target_growspace_id,
             target_growspace_name=None,
             transition_date=transition_date.isoformat() if transition_date else None,
+            wet_weight=wet_weight,
+            dry_weight=dry_weight,
+            trim_weight=trim_weight,
+            thc_percentage=thc_percentage,
+            cbd_percentage=cbd_percentage,
+            terpene_profile=terpene_profile,
         )
         _LOGGER.info("Plant %s harvested successfully", plant_id)
 
@@ -862,3 +887,86 @@ async def handle_add_timeline_note(
         amount_ml=call.data.get(ATTR_AMOUNT_ML),
         external_metadata=call.data.get(ATTR_METADATA, {}),
     )
+
+
+async def handle_score_plant(
+    hass: HomeAssistant,
+    coordinator: GrowspaceCoordinator,
+    strain_library: StrainLibrary,
+    call: ServiceCall,
+) -> None:
+    """Handle the score_plant service call."""
+    plant_id = call.data[ATTR_PLANT_ID]
+    await _ensure_plant_loaded(hass, coordinator, plant_id)
+
+    plant = coordinator.plants.get(plant_id)
+    if plant is None:
+        raise ServiceValidationError(f"Plant {plant_id} not found")
+
+    # Build a partial PlantScores update from the call data
+    scores = plant.scores
+    if ATTR_VIGOR in call.data:
+        scores.vigor = call.data[ATTR_VIGOR]
+    if ATTR_STRUCTURE in call.data:
+        scores.structure = call.data[ATTR_STRUCTURE]
+    if ATTR_AROMA in call.data:
+        scores.aroma = call.data[ATTR_AROMA]
+    if ATTR_RESIN in call.data:
+        scores.resin = call.data[ATTR_RESIN]
+    if ATTR_PEST_RESISTANCE in call.data:
+        scores.pest_resistance = call.data[ATTR_PEST_RESISTANCE]
+
+    await coordinator.plant_manager.update_plant(plant_id, scores=scores)
+
+    _LOGGER.info(
+        "Plant %s scores updated: vigor=%s structure=%s aroma=%s resin=%s pest_resistance=%s",
+        plant_id,
+        scores.vigor,
+        scores.structure,
+        scores.aroma,
+        scores.resin,
+        scores.pest_resistance,
+    )
+
+
+async def handle_update_harvest_metrics(
+    hass: HomeAssistant,
+    coordinator: GrowspaceCoordinator,
+    strain_library: StrainLibrary,
+    call: ServiceCall,
+) -> None:
+    """Handle the update_harvest_metrics service call."""
+    plant_id = call.data[ATTR_PLANT_ID]
+    await _ensure_plant_loaded(hass, coordinator, plant_id)
+
+    plant = coordinator.plants.get(plant_id)
+    if plant is None:
+        raise ServiceValidationError(f"Plant {plant_id} not found")
+
+    metrics = plant.harvest_metrics
+    updated = False
+
+    for attr in (
+        ATTR_WET_WEIGHT,
+        ATTR_DRY_WEIGHT,
+        ATTR_TRIM_WEIGHT,
+        ATTR_THC_PERCENTAGE,
+        ATTR_CBD_PERCENTAGE,
+        ATTR_TERPENE_PROFILE,
+    ):
+        if attr in call.data:
+            setattr(metrics, attr, call.data[attr])
+            updated = True
+
+    if updated:
+        await coordinator.plant_manager.update_plant(plant_id, harvest_metrics=metrics)
+        _LOGGER.info(
+            "Plant %s harvest metrics updated: wet=%s dry=%s trim=%s thc=%s cbd=%s terpene=%s",
+            plant_id,
+            metrics.wet_weight,
+            metrics.dry_weight,
+            metrics.trim_weight,
+            metrics.thc_percentage,
+            metrics.cbd_percentage,
+            metrics.terpene_profile,
+        )

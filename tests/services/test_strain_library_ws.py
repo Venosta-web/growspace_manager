@@ -5,9 +5,11 @@ import pytest
 
 from custom_components.growspace_manager.const import DOMAIN
 from custom_components.growspace_manager.websocket import (
+    WS_TYPE_GET_EC_RAMP_CURVES,
     WS_TYPE_GET_IPM_PRESETS,
     WS_TYPE_GET_NUTRIENT_PRESETS,
     WS_TYPE_GET_STRAIN_LIBRARY,
+    websocket_get_ec_ramp_curves,
     websocket_get_ipm_presets,
     websocket_get_nutrient_presets,
     websocket_get_strain_library,
@@ -121,4 +123,24 @@ async def test_websocket_get_ipm_presets_success(mock_connection) -> None:
     ):
         msg = {"id": 1, "type": WS_TYPE_GET_IPM_PRESETS}
         websocket_get_ipm_presets(hass, mock_connection, msg)
+        mock_connection.send_result.assert_called_once_with(1, expected_data)
+
+
+@pytest.mark.asyncio
+async def test_websocket_get_ec_ramp_curves_success(mock_connection) -> None:
+    """Test successful retrieval of EC ramp curves via WebSocket."""
+    hass = Mock(spec=HomeAssistant)
+
+    coordinator = Mock()
+    expected_data = [{"id": "curve_1", "name": "Standard Curve"}]
+    coordinator.nutrient_manager.get_serialization_data.return_value = {
+        "ec_ramp_curves": expected_data
+    }
+
+    with patch(
+        "custom_components.growspace_manager.GrowspaceCoordinator.get_for_service_call",
+        return_value=coordinator,
+    ):
+        msg = {"id": 1, "type": WS_TYPE_GET_EC_RAMP_CURVES}
+        websocket_get_ec_ramp_curves(hass, mock_connection, msg)
         mock_connection.send_result.assert_called_once_with(1, expected_data)

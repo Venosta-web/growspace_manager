@@ -62,6 +62,10 @@ async def test_handle_configure_environment_success(
         circulation_fan_entities=["switch.fan"],
         stress_threshold=0.8,
         mold_threshold=0.85,
+        substrate_temperature_sensors=[],
+        camera_entities=[],
+        energy_sensors=[],
+        electricity_cost_per_kwh=None,
     )
     mock_coordinator.async_save.assert_called_once()
     mock_coordinator.async_refresh.assert_called_once()

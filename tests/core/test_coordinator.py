@@ -1655,6 +1655,7 @@ async def test_handle_harvest_logic_explicit_target(hass: HomeAssistant) -> None
 
     coordinator = create_test_coordinator(hass, data={})
     plant = MagicMock()
+    plant.phi_clearance_date = None
     coordinator.growspaces["gs1"] = Growspace(id="gs1", name="gs1_name")
     coordinator.growspaces["target_gs"] = Growspace(id="target_gs", name="Target GS")
     coordinator.plants["p1"] = plant
@@ -1683,6 +1684,7 @@ async def test_handle_harvest_logic_auto_flow(hass: HomeAssistant) -> None:
 
     coordinator = create_test_coordinator(hass, data={})
     plant = MagicMock()
+    plant.phi_clearance_date = None
     coordinator.plants["p1"] = plant
 
     with patch.object(

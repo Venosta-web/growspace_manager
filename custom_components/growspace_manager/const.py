@@ -13,6 +13,7 @@ STORAGE_KEY_CONFIG: Final = f"{DOMAIN}.config"
 STORAGE_KEY_PLANTS: Final = f"{DOMAIN}.plants"
 PLATFORMS: Final[list[str]] = [
     "binary_sensor",
+    "calendar",
     "sensor",
     "switch",
 ]
@@ -62,6 +63,28 @@ CONF_IRRIGATION_TANK_SENSORS = "irrigation_tank_sensors"
 CONF_IRRIGATION_TANK_WARNING_LEVEL = "irrigation_tank_warning_level"
 CONF_CONTROL_DEHUMIDIFIER = "control_dehumidifier"
 
+# DLI Tracking Defaults
+DEFAULT_DLI_TARGET_VEG: Final = 30.0
+DEFAULT_DLI_TARGET_FLOWER: Final = 45.0
+
+# Substrate Temperature Thresholds
+SUBSTRATE_TEMP_OPTIMAL_MIN: Final = 18.0
+SUBSTRATE_TEMP_OPTIMAL_MAX: Final = 22.0
+SUBSTRATE_TEMP_STRESS_LOW: Final = 15.0
+SUBSTRATE_TEMP_STRESS_HIGH: Final = 26.0
+
+# Drain EC Defaults
+DEFAULT_MAX_EC_DELTA: Final = 0.7
+DEFAULT_TARGET_RUNOFF_PERCENT: Final = 20.0
+
+# Multi-Device Config Keys (new)
+CONF_SUBSTRATE_TEMP_SENSORS = "substrate_temperature_sensors"
+CONF_CAMERA_ENTITIES = "camera_entities"
+CONF_SNAPSHOT_INTERVAL = "snapshot_interval_hours"
+CONF_POWER_SENSORS = "power_sensors"
+CONF_ENERGY_SENSORS = "energy_sensors"
+CONF_ELECTRICITY_COST = "electricity_cost_per_kwh"
+
 # Tank Depletion Predictor Defaults
 DEFAULT_PREDICTION_WINDOW_HOURS = 72
 DEPLETION_DEADBAND_THRESHOLD = 0.1  # %/hour
@@ -77,6 +100,12 @@ CONF_EXHAUST_FAN_ENTITIES = "exhaust_fan_entities"
 CONF_TEMP_SENSORS = "temperature_sensors"
 CONF_HUMIDITY_SENSORS = "humidity_sensors"
 CONF_VPD_SENSORS = "vpd_sensors"
+CONF_PH_SENSORS = "ph_sensors"
+CONF_FEED_EC_SENSORS = "feed_ec_sensors"
+CONF_SUBSTRATE_EC_SENSORS = "substrate_ec_sensors"
+CONF_RUNOFF_EC_SENSORS = "runoff_ec_sensors"
+CONF_DRAIN_VOLUME_SENSORS = "drain_volume_sensors"
+CONF_IRRIGATION_FLOW_SENSORS = "irrigation_flow_sensors"
 
 # Metric Names
 METRIC_STRESS = "stress"
@@ -107,6 +136,71 @@ ATTR_TARGET_GROWSPACE_ID = "target_growspace_id"
 ATTR_NUM_CLONES = "num_clones"
 
 ATTR_TOTAL_DAYS = "total_days"
+
+# Plant Scores
+ATTR_VIGOR = "vigor"
+ATTR_STRUCTURE = "structure"
+ATTR_AROMA = "aroma"
+ATTR_RESIN = "resin"
+ATTR_PEST_RESISTANCE = "pest_resistance"
+
+# Harvest Yield & Lab Results
+ATTR_WET_WEIGHT = "wet_weight"
+ATTR_DRY_WEIGHT = "dry_weight"
+ATTR_TRIM_WEIGHT = "trim_weight"
+ATTR_THC_PERCENTAGE = "thc_percentage"
+ATTR_CBD_PERCENTAGE = "cbd_percentage"
+ATTR_TERPENE_PROFILE = "terpene_profile"
+
+# DLI Attributes
+ATTR_DLI = "dli"
+ATTR_DLI_TARGET = "target_dli"
+ATTR_DLI_PERCENTAGE = "percentage_of_target"
+ATTR_DLI_ESTIMATED_FINAL = "estimated_final_dli"
+ATTR_PPFD_CURRENT = "ppfd_current"
+
+# PHI Attributes
+ATTR_PHI_CLEARANCE_DATE = "phi_clearance_date"
+ATTR_PHI_DAYS_REMAINING = "phi_days_remaining"
+
+# Substrate Temperature
+ATTR_SUBSTRATE_TEMP = "substrate_temp"
+
+# Crop Steering Attributes
+ATTR_DRYBACK_PERCENT = "dryback_percent"
+ATTR_PEAK_VWC = "peak_vwc"
+ATTR_TROUGH_VWC = "trough_vwc"
+ATTR_STEERING_MODE = "steering_mode"
+ATTR_EC_TREND = "ec_trend"
+
+# Drain EC Attributes
+ATTR_FEED_EC = "feed_ec"
+ATTR_DRAIN_EC = "drain_ec"
+ATTR_DRAIN_VOLUME_ML = "drain_volume_ml"
+ATTR_FEED_VOLUME_ML = "feed_volume_ml"
+ATTR_MAX_EC_DELTA = "max_ec_delta"
+ATTR_TARGET_RUNOFF_PERCENT = "target_runoff_percent"
+
+# Energy Monitoring Attributes
+ATTR_DAILY_KWH = "daily_kwh"
+ATTR_COST_TOTAL = "cost_total"
+ATTR_COST_PER_GRAM = "cost_per_gram"
+ATTR_CYCLE_START_DATE = "cycle_start_date"
+
+# Water Usage Attributes
+ATTR_LITERS_PER_PLANT_PER_DAY = "liters_per_plant_per_day"
+ATTR_LITERS_TODAY = "liters_today"
+ATTR_WATER_EFFICIENCY = "water_efficiency"
+
+# EC Ramp Curve Attributes
+ATTR_EC_MIN = "ec_min"
+ATTR_EC_MAX = "ec_max"
+ATTR_CURRENT_WEEK = "current_week"
+ATTR_CURVE_NAME = "curve_name"
+ATTR_LAST_MEASURED_EC = "last_measured_ec"
+ATTR_DEVIATION = "deviation"
+ATTR_CURVE_ID = "curve_id"
+ATTR_POINTS = "points"
 
 ATTR_PROBABILITY = "probability"
 ATTR_THRESHOLD = "threshold"
@@ -248,6 +342,11 @@ class GrowspaceSensorType(StrEnum):
     OPTIMAL = "optimal"
     DRYING = "drying"
     CURING = "curing"
+    DLI = "dli"
+    CROP_STEERING = "crop_steering"
+    ENERGY_USAGE = "energy_usage"
+    WATER_USAGE = "water_usage"
+    EC_TARGET = "ec_target"
 
 
 class GrowspaceService(StrEnum):
@@ -266,11 +365,14 @@ class GrowspaceService(StrEnum):
     MOVE_CLONE = "move_clone"
     TRANSITION_PLANT_STAGE = "transition_plant_stage"
     HARVEST_PLANT = "harvest_plant"
+    UPDATE_HARVEST_METRICS = "update_harvest_metrics"
+    SCORE_PLANT = "score_plant"
     ADD_STRAIN = "add_strain"
     REMOVE_STRAIN = "remove_strain"
     UPDATE_STRAIN_META = "update_strain_meta"
     IMPORT_STRAIN_LIBRARY = "import_strain_library"
     EXPORT_STRAIN_LIBRARY = "export_strain_library"
+    EXPORT_GROW_REPORT = "export_grow_report"
     CLEAR_STRAIN_LIBRARY = "clear_strain_library"
     STRAIN_RECOMMENDATION = "strain_recommendation"
     ASK_GROW_ADVICE = "ask_grow_advice"
@@ -304,6 +406,14 @@ class GrowspaceService(StrEnum):
     APPLY_IPM = "apply_ipm"
     BATCH_ACTION = "batch_action"
     ADD_TIMELINE_NOTE = "add_timeline_note"
+    # Drain EC Services
+    LOG_DRAIN_READING = "log_drain_reading"
+    CONFIGURE_DRAIN_MONITORING = "configure_drain_monitoring"
+    # Water Tracking Services
+    RESET_WATER_TRACKING = "reset_water_tracking"
+    # EC Ramp Curve Services
+    SAVE_EC_RAMP_CURVE = "save_ec_ramp_curve"
+    REMOVE_EC_RAMP_CURVE = "remove_ec_ramp_curve"
 
 
 class TrainingTechnique(StrEnum):

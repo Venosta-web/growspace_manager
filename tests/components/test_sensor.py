@@ -119,7 +119,7 @@ async def test_async_setup_entry_adds_entities(mock_coordinator: MagicMock) -> N
             name="Growspace 1",
             rows=2,
             plants_per_row=2,
-            environment_config={},
+            environment_config=EnvironmentConfig(),
         )
     }
     mock_coordinator.get_growspace_plants = Mock(
@@ -172,12 +172,11 @@ async def test_async_setup_entry_calculated_vpd(mock_coordinator: MagicMock) -> 
         id="gs1",
         rows=2,
         plants_per_row=2,
-        environment_config={
-            "temperature_sensor": "sensor.temp",
-            "humidity_sensor": "sensor.humidity",
-            # "vpd_sensor": "sensor.vpd", # Missing
-            "lst_offset": -1.5,
-        },
+        environment_config=EnvironmentConfig(
+            temperature_sensor="sensor.temp",
+            humidity_sensor="sensor.humidity",
+            lst_offset=-1.5,
+        ),
     )
     gs_mock.name = "Growspace 1"
     mock_coordinator.growspaces = {"gs1": gs_mock}
@@ -339,7 +338,12 @@ async def test_async_setup_entry_dynamic_updates(mock_coordinator: MagicMock) ->
     assert listener_callback is not None
 
     # 1. Add a growspace and a plant
-    new_gs = Mock(id="gs_new", name="New Growspace", environment_config={})
+    new_gs = Mock(
+        id="gs_new",
+        name="New Growspace",
+        environment_config=EnvironmentConfig(),
+        irrigation_strategy=Mock(enabled=False),
+    )
     new_plant = Mock(
         plant_id="p_new", growspace_id="gs_new", strain="New Strain", row=1, col=1
     )
@@ -418,11 +422,11 @@ async def test_async_create_derivative_sensors(mock_coordinator: MagicMock) -> N
     config_entry = Mock(entry_id="entry_1")
     growspace = Mock(id="gs1")
     growspace.name = "Growspace 1"
-    growspace.environment_config = {
-        "temperature_sensor": "sensor.temp",
-        "humidity_sensor": "sensor.humidity",
-        "vpd_sensor": "sensor.vpd",
-    }
+    growspace.environment_config = EnvironmentConfig(
+        temperature_sensor="sensor.temp",
+        humidity_sensor="sensor.humidity",
+        vpd_sensor="sensor.vpd",
+    )
     config_entry.runtime_data = mock_coordinator
 
     with (
@@ -557,7 +561,7 @@ def test_growspace_overview_sensor_state_and_attributes(mock_coordinator) -> Non
     """
     gs_mock = mock_coordinator.growspaces["gs1"]
     gs_mock.irrigation_config = {"irrigation_times": [], "drain_times": []}
-    gs_mock.environment_config = {}  # Ensure this is also a dict
+    gs_mock.environment_config = EnvironmentConfig()
 
     gs = GrowspaceOverviewSensor(
         coordinator=mock_coordinator,
@@ -1069,12 +1073,12 @@ async def test_async_setup_entry_recreates_calculated_vpd(
         id="gs1",
         rows=2,
         plants_per_row=2,
-        environment_config={
-            "temperature_sensor": "sensor.temp",
-            "humidity_sensor": "sensor.humidity",
-            "vpd_sensor": "sensor.growspace_1_calculated_vpd",  # Matches expected ID format
-            "lst_offset": -1.5,
-        },
+        environment_config=EnvironmentConfig(
+            temperature_sensor="sensor.temp",
+            humidity_sensor="sensor.humidity",
+            vpd_sensor="sensor.growspace_1_calculated_vpd",  # Matches expected ID format
+            lst_offset=-1.5,
+        ),
     )
     gs_mock.name = "Growspace 1"
     mock_coordinator.growspaces = {"gs1": gs_mock}

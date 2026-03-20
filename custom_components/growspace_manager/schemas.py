@@ -8,26 +8,46 @@ from homeassistant.helpers import config_validation as cv
 
 from .const import (
     ATTR_AMOUNT_ML,
+    ATTR_AROMA,
+    ATTR_CBD_PERCENTAGE,
     ATTR_COL,
+    ATTR_CURVE_ID,
+    ATTR_DRAIN_EC,
+    ATTR_DRAIN_VOLUME_ML,
+    ATTR_DRY_WEIGHT,
     ATTR_EC,
+    ATTR_FEED_EC,
+    ATTR_FEED_VOLUME_ML,
     ATTR_GROWSPACE_ID,
     ATTR_IMAGES,
     ATTR_ITEMS,
+    ATTR_MAX_EC_DELTA,
     ATTR_METADATA,
     ATTR_MIN_DAYS_IN_STAGE,
     ATTR_NAME,
     ATTR_NOTES,
+    ATTR_PEST_RESISTANCE,
     ATTR_PH,
     ATTR_PHENOTYPE,
     ATTR_PLANT_ID,
+    ATTR_POINTS,
     ATTR_PRESET_ID,
+    ATTR_RESIN,
     ATTR_ROW,
     ATTR_STAGE,
     ATTR_STRAIN,
+    ATTR_STRUCTURE,
     ATTR_TAGS,
+    ATTR_TARGET_RUNOFF_PERCENT,
     ATTR_TECHNIQUE,
+    ATTR_TERPENE_PROFILE,
+    ATTR_THC_PERCENTAGE,
     ATTR_TRANSITION_DATE,
+    ATTR_TRIM_WEIGHT,
     ATTR_TYPE,
+    ATTR_VIGOR,
+    ATTR_WET_WEIGHT,
+    CONF_CAMERA_ENTITIES,
     CONF_CIRCULATION_FAN_ENTITIES,
     CONF_CIRCULATION_FAN_ENTITY,
     CONF_CO2_SENSOR,
@@ -35,6 +55,8 @@ from .const import (
     CONF_DEHUMIDIFIER_ENTITIES,
     CONF_DEHUMIDIFIER_ENTITY,
     CONF_DEHUMIDIFIER_THRESHOLDS,
+    CONF_ELECTRICITY_COST,
+    CONF_ENERGY_SENSORS,
     CONF_EXHAUST_ENTITY,
     CONF_EXHAUST_FAN_ENTITIES,
     CONF_HUMIDIFIER_ENTITIES,
@@ -45,6 +67,7 @@ from .const import (
     CONF_MOLD_THRESHOLD,
     CONF_SOIL_MOISTURE_SENSOR,
     CONF_STRESS_THRESHOLD,
+    CONF_SUBSTRATE_TEMP_SENSORS,
     CONF_TEMP_SENSOR,
     CONF_VPD_SENSOR,
     DATE_FIELDS,
@@ -209,6 +232,48 @@ HARVEST_PLANT_SCHEMA = vol.Schema(
             "target_growspace_id"
         ): str,  # Optional: where to move harvested material (e.g., 'dry_stage_growspace')
         vol.Optional("transition_date"): valid_date_or_none,  # Date of harvest
+        # Yield metrics
+        vol.Optional(ATTR_WET_WEIGHT): vol.All(vol.Coerce(float), vol.Range(min=0)),
+        vol.Optional(ATTR_DRY_WEIGHT): vol.All(vol.Coerce(float), vol.Range(min=0)),
+        vol.Optional(ATTR_TRIM_WEIGHT): vol.All(vol.Coerce(float), vol.Range(min=0)),
+        # Lab results
+        vol.Optional(ATTR_THC_PERCENTAGE): vol.All(
+            vol.Coerce(float), vol.Range(min=0, max=100)
+        ),
+        vol.Optional(ATTR_CBD_PERCENTAGE): vol.All(
+            vol.Coerce(float), vol.Range(min=0, max=100)
+        ),
+        vol.Optional(ATTR_TERPENE_PROFILE): str,
+    }
+)
+
+# Update Harvest Metrics
+UPDATE_HARVEST_METRICS_SCHEMA = vol.Schema(
+    {
+        vol.Required(ATTR_PLANT_ID): str,
+        vol.Optional(ATTR_WET_WEIGHT): vol.Any(None, vol.All(vol.Coerce(float), vol.Range(min=0))),
+        vol.Optional(ATTR_DRY_WEIGHT): vol.Any(None, vol.All(vol.Coerce(float), vol.Range(min=0))),
+        vol.Optional(ATTR_TRIM_WEIGHT): vol.Any(None, vol.All(vol.Coerce(float), vol.Range(min=0))),
+        vol.Optional(ATTR_THC_PERCENTAGE): vol.Any(
+            None, vol.All(vol.Coerce(float), vol.Range(min=0, max=100))
+        ),
+        vol.Optional(ATTR_CBD_PERCENTAGE): vol.Any(
+            None, vol.All(vol.Coerce(float), vol.Range(min=0, max=100))
+        ),
+        vol.Optional(ATTR_TERPENE_PROFILE): vol.Any(None, str),
+    }
+)
+
+# Score Plant
+_SCORE_VALIDATOR = vol.Any(None, vol.All(vol.Coerce(int), vol.Range(min=1, max=5)))
+SCORE_PLANT_SCHEMA = vol.Schema(
+    {
+        vol.Required(ATTR_PLANT_ID): str,
+        vol.Optional(ATTR_VIGOR): _SCORE_VALIDATOR,
+        vol.Optional(ATTR_STRUCTURE): _SCORE_VALIDATOR,
+        vol.Optional(ATTR_AROMA): _SCORE_VALIDATOR,
+        vol.Optional(ATTR_RESIN): _SCORE_VALIDATOR,
+        vol.Optional(ATTR_PEST_RESISTANCE): _SCORE_VALIDATOR,
     }
 )
 
@@ -217,6 +282,14 @@ EXPORT_STRAIN_LIBRARY_SCHEMA = vol.Schema(
     {
         # No required parameters for export, usually just triggers action
         # Optionally, could specify which strains to export, but current logic exports all
+    }
+)
+
+EXPORT_GROW_REPORT_SCHEMA = vol.Schema(
+    {
+        vol.Optional(ATTR_PLANT_ID): str,
+        vol.Optional(ATTR_GROWSPACE_ID): str,
+        vol.Optional("format", default="pdf"): vol.In(["pdf", "json"]),
     }
 )
 
@@ -345,6 +418,10 @@ CONFIGURE_ENVIRONMENT_SCHEMA = vol.Schema(
         vol.Optional("sensor_groups"): list,
         vol.Optional("sensor_coordinates"): dict,
         vol.Optional("irrigation_tanks"): list,
+        vol.Optional(CONF_SUBSTRATE_TEMP_SENSORS): cv.ensure_list,
+        vol.Optional(CONF_CAMERA_ENTITIES): cv.ensure_list,
+        vol.Optional(CONF_ENERGY_SENSORS): cv.ensure_list,
+        vol.Optional(CONF_ELECTRICITY_COST): vol.Coerce(float),
     }
 )
 
@@ -473,6 +550,7 @@ IPM_ITEM_SCHEMA = vol.Schema(
         vol.Required(ATTR_NAME): str,
         vol.Required("dose_amount"): vol.All(vol.Coerce(float), vol.Range(min=0.0)),
         vol.Required("dose_unit"): str,
+        vol.Optional("phi_days", default=0): vol.All(vol.Coerce(int), vol.Range(min=0)),
     }
 )
 
@@ -522,5 +600,65 @@ ADD_TIMELINE_NOTE_SCHEMA = vol.Schema(
         vol.Optional(ATTR_EC): vol.Coerce(float),
         vol.Optional(ATTR_AMOUNT_ML): vol.Coerce(float),
         vol.Optional(ATTR_METADATA): dict,
+    }
+)
+
+# --- Drain EC Monitoring Schemas ---
+
+LOG_DRAIN_READING_SCHEMA = vol.Schema(
+    {
+        vol.Required(ATTR_GROWSPACE_ID): vol.All(str, valid_growspace_id),
+        vol.Required(ATTR_FEED_EC): vol.All(vol.Coerce(float), vol.Range(min=0.0)),
+        vol.Required(ATTR_DRAIN_EC): vol.All(vol.Coerce(float), vol.Range(min=0.0)),
+        vol.Optional(ATTR_DRAIN_VOLUME_ML): vol.All(
+            vol.Coerce(float), vol.Range(min=0.0)
+        ),
+        vol.Optional(ATTR_FEED_VOLUME_ML): vol.All(
+            vol.Coerce(float), vol.Range(min=0.0)
+        ),
+    }
+)
+
+CONFIGURE_DRAIN_MONITORING_SCHEMA = vol.Schema(
+    {
+        vol.Required(ATTR_GROWSPACE_ID): vol.All(str, valid_growspace_id),
+        vol.Optional("enabled"): bool,
+        vol.Optional(ATTR_MAX_EC_DELTA): vol.All(vol.Coerce(float), vol.Range(min=0.0)),
+        vol.Optional(ATTR_TARGET_RUNOFF_PERCENT): vol.All(
+            vol.Coerce(float), vol.Range(min=0.0, max=100.0)
+        ),
+    }
+)
+
+# --- Water Tracking Schemas ---
+
+RESET_WATER_TRACKING_SCHEMA = vol.Schema(
+    {
+        vol.Required(ATTR_GROWSPACE_ID): vol.All(str, valid_growspace_id),
+    }
+)
+
+# --- EC Ramp Curve Schemas ---
+
+EC_RAMP_POINT_SCHEMA = vol.Schema(
+    {
+        vol.Required("week"): vol.All(vol.Coerce(int), vol.Range(min=1)),
+        vol.Required("ec_min"): vol.All(vol.Coerce(float), vol.Range(min=0.0)),
+        vol.Required("ec_max"): vol.All(vol.Coerce(float), vol.Range(min=0.0)),
+    }
+)
+
+SAVE_EC_RAMP_CURVE_SCHEMA = vol.Schema(
+    {
+        vol.Required(ATTR_NAME): str,
+        vol.Required(ATTR_STAGE): str,
+        vol.Required(ATTR_POINTS): vol.All([EC_RAMP_POINT_SCHEMA], vol.Length(min=1)),
+        vol.Optional(ATTR_CURVE_ID): str,
+    }
+)
+
+REMOVE_EC_RAMP_CURVE_SCHEMA = vol.Schema(
+    {
+        vol.Required(ATTR_CURVE_ID): str,
     }
 )

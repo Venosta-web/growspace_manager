@@ -13,6 +13,7 @@ from custom_components.growspace_manager.bayesian_evaluator import (
     evaluate_direct_temp_stress,
     evaluate_direct_vpd_stress,
     evaluate_soil_moisture_stress,
+    evaluate_substrate_temp_stress,
 )
 
 from .evaluator_strategy import BayesianEvaluatorStrategy
@@ -46,6 +47,7 @@ class StressEvaluatorStrategy(BayesianEvaluatorStrategy):
             evaluate_active_desiccation,
             evaluate_active_saturation,
             evaluate_soil_moisture_stress,
+            evaluate_substrate_temp_stress,
         ]
 
         for check_func in checks:

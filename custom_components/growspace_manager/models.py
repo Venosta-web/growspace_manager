@@ -207,6 +207,21 @@ class EnvironmentConfig(BaseModel):
     sensor_coordinates: dict[str, dict[str, float]] = field(default_factory=dict)
     sensor_groups: list[SensorGroup] = field(default_factory=list)
 
+    substrate_temperature_sensors: list[str] = field(default_factory=list)
+    camera_entities: list[str] = field(default_factory=list)
+    snapshot_interval_hours: int = 24
+    ph_sensors: list[str] = field(default_factory=list)
+    feed_ec_sensors: list[str] = field(default_factory=list)
+    substrate_ec_sensors: list[str] = field(default_factory=list)
+    runoff_ec_sensors: list[str] = field(default_factory=list)
+    drain_volume_sensors: list[str] = field(default_factory=list)
+    irrigation_flow_sensors: list[str] = field(default_factory=list)
+    power_sensors: list[str] = field(default_factory=list)
+    energy_sensors: list[str] = field(default_factory=list)
+    electricity_cost_per_kwh: float = 0.0
+    dli_target_veg: float = 30.0
+    dli_target_flower: float = 45.0
+
     lst_offset: float = -2.0
     control_dehumidifier: bool = False
     dehumidifier_thresholds: DehumidifierThresholds = field(default_factory=dict)
@@ -281,6 +296,12 @@ class EnvironmentConfig(BaseModel):
             "temperature_sensor": "temperature_sensors",
             "humidity_sensor": "humidity_sensors",
             "vpd_sensor": "vpd_sensors",
+            "ph_sensor": "ph_sensors",
+            "feed_ec_sensor": "feed_ec_sensors",
+            "substrate_ec_sensor": "substrate_ec_sensors",
+            "runoff_ec_sensor": "runoff_ec_sensors",
+            "drain_volume_sensor": "drain_volume_sensors",
+            "irrigation_flow_sensor": "irrigation_flow_sensors",
         }
         for old_key, new_key in migrations.items():
             # If we have the old key but NOT the new key, migrate
@@ -331,6 +352,90 @@ class IrrigationConfig(BaseModel):
     irrigation_times: list[IrrigationScheduleItem] = field(default_factory=list)
     drain_times: list[IrrigationScheduleItem] = field(default_factory=list)
     veg_day_hours: int = 12
+    pump_flow_rate_ml_per_sec: float = 0.0
+
+
+@dataclass(slots=True)
+class DLIState(BaseModel):
+    """Tracks daily DLI accumulation for a growspace."""
+
+    accumulated_mol: float = 0.0
+    last_reset: str = ""
+    last_ppfd: float = 0.0
+    last_sample_time: str = ""
+
+
+@dataclass(slots=True)
+class DrainReading(BaseModel):
+    """A single drain/runoff measurement."""
+
+    timestamp: str = ""
+    feed_ec: float = 0.0
+    drain_ec: float = 0.0
+    drain_volume_ml: float | None = None
+    feed_volume_ml: float | None = None
+
+
+@dataclass(slots=True)
+class DrainConfig(BaseModel):
+    """Drain EC monitoring configuration per growspace."""
+
+    enabled: bool = False
+    max_ec_delta: float = 0.7
+    target_runoff_percent: float = 20.0
+    readings: list[DrainReading] = field(default_factory=list)
+    max_readings: int = 100
+
+
+@dataclass(slots=True)
+class CropSteeringState(BaseModel):
+    """Tracks crop steering metrics for a growspace."""
+
+    score: float = 0.0
+    dryback_percent: float = 0.0
+    peak_vwc: float = 0.0
+    trough_vwc: float = 0.0
+    ec_trend: str = "stable"
+    last_updated: str = ""
+
+
+@dataclass(slots=True)
+class EnergyTracking(BaseModel):
+    """Tracks cumulative energy usage per growspace."""
+
+    cycle_start_kwh: float = 0.0
+    cycle_start_date: str = ""
+    last_kwh_reading: float = 0.0
+
+
+@dataclass(slots=True)
+class WaterUsageData(BaseModel):
+    """Tracks cumulative water usage per growspace."""
+
+    total_liters: float = 0.0
+    cycle_start_date: str = ""
+    daily_readings: list[dict[str, Any]] = field(default_factory=list)
+    max_daily_readings: int = 365
+
+
+@dataclass(slots=True)
+class ECRampPoint(BaseModel):
+    """A single point on an EC ramp curve."""
+
+    week: int = 1
+    ec_min: float = 0.0
+    ec_max: float = 0.0
+
+
+@dataclass(slots=True)
+class ECRampCurve(BaseModel):
+    """EC target curve for a growth stage."""
+
+    id: str = ""
+    name: str = ""
+    stage: str = ""
+    points: list[ECRampPoint] = field(default_factory=list)
+    created_at: str = field(default_factory=lambda: datetime.now().isoformat())
 
 
 class GrowspaceType(StrEnum):
@@ -368,6 +473,9 @@ class Growspace(BaseModel):
     dehumidifier_config: dict[str, Any] = field(default_factory=dict)
     irrigation_strategy: IrrigationStrategy = field(default_factory=IrrigationStrategy)
     growspace_type: GrowspaceType = field(default=GrowspaceType.FLOWER)
+    drain_config: DrainConfig = field(default_factory=lambda: DrainConfig())
+    energy_tracking: EnergyTracking = field(default_factory=lambda: EnergyTracking())
+    water_usage: WaterUsageData = field(default_factory=lambda: WaterUsageData())
 
     @classmethod
     def __pre_deserialize__(cls, data: dict[str, Any]) -> dict[str, Any]:
@@ -484,6 +592,29 @@ class PlantGenetics(BaseModel):
 
 
 @dataclass(slots=True)
+class PlantScores(BaseModel):
+    """Scores for a plant's phenotype selection."""
+
+    vigor: int | None = None
+    structure: int | None = None
+    aroma: int | None = None
+    resin: int | None = None
+    pest_resistance: int | None = None
+
+
+@dataclass(slots=True)
+class HarvestMetrics(BaseModel):
+    """Quantitative yield and quality data recorded at harvest."""
+
+    wet_weight: float | None = None
+    dry_weight: float | None = None
+    trim_weight: float | None = None
+    thc_percentage: float | None = None
+    cbd_percentage: float | None = None
+    terpene_profile: str | None = None
+
+
+@dataclass(slots=True)
 class Plant(BaseModel):
     """Represents a single plant."""
 
@@ -511,7 +642,10 @@ class Plant(BaseModel):
     last_training_technique: str | None = None
     last_ipm: str | None = None
     last_ipm_type: str | None = None
+    phi_clearance_date: str | None = None
     stage_history: list[StageHistoryItem] = field(default_factory=list)
+    scores: PlantScores = field(default_factory=PlantScores)
+    harvest_metrics: HarvestMetrics = field(default_factory=HarvestMetrics)
 
     @classmethod
     def __pre_deserialize__(cls, data: dict[str, Any]) -> dict[str, Any]:
@@ -640,6 +774,7 @@ class EnvironmentState:
     exhaust_value: float | None = None
     humidifier_value: float | None = None
     soil_moisture: float | None = None
+    substrate_temp: float | None = None
 
 
 @dataclass(slots=True)
@@ -712,12 +847,13 @@ class IPMType(StrEnum):
     OTHER = "other"
 
 
-class IPMPresetItem(TypedDict):
+class IPMPresetItem(TypedDict, total=False):
     """A single item in an IPM preset recipe."""
 
-    name: str
-    dose_amount: float
-    dose_unit: str  # e.g. "ml/L", "g/L", "tsp/gal"
+    name: str  # type: ignore[assignment]
+    dose_amount: float  # type: ignore[assignment]
+    dose_unit: str  # type: ignore[assignment]
+    phi_days: int  # Pre-harvest interval in days, default 0
 
 
 @dataclass(slots=True, kw_only=True)

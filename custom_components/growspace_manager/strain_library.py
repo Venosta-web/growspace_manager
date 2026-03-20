@@ -55,6 +55,17 @@ CREATE TABLE IF NOT EXISTS harvests (
     veg_days INTEGER NOT NULL,
     flower_days INTEGER NOT NULL,
     harvest_date TEXT NOT NULL,
+    vigor INTEGER,
+    structure INTEGER,
+    aroma INTEGER,
+    resin INTEGER,
+    pest_resistance INTEGER,
+    wet_weight REAL,
+    dry_weight REAL,
+    trim_weight REAL,
+    thc_percentage REAL,
+    cbd_percentage REAL,
+    terpene_profile TEXT,
     FOREIGN KEY(phenotype_id) REFERENCES phenotypes(phenotype_id)
 );
 """
@@ -101,6 +112,36 @@ class StrainLibrary:
             # Column already exists
             pass
 
+        # Ensure score columns exist in harvests table (backwards compatibility)
+        for col in ["vigor", "structure", "aroma", "resin", "pest_resistance"]:
+            try:
+                await self._db.execute(f"ALTER TABLE harvests ADD COLUMN {col} INTEGER")
+                await self._db.commit()
+                _LOGGER.info("Added column '%s' to harvests table", col)
+            except aiosqlite.OperationalError:
+                # Column already exists
+                pass
+
+        # Ensure yield/lab columns exist in harvests table (backwards compatibility)
+        _harvest_new_cols: list[tuple[str, str]] = [
+            ("wet_weight", "REAL"),
+            ("dry_weight", "REAL"),
+            ("trim_weight", "REAL"),
+            ("thc_percentage", "REAL"),
+            ("cbd_percentage", "REAL"),
+            ("terpene_profile", "TEXT"),
+        ]
+        for col_name, col_type in _harvest_new_cols:
+            try:
+                await self._db.execute(
+                    f"ALTER TABLE harvests ADD COLUMN {col_name} {col_type}"
+                )
+                await self._db.commit()
+                _LOGGER.info("Added column '%s' to harvests table", col_name)
+            except aiosqlite.OperationalError:
+                # Column already exists
+                pass
+
         await self.load()
 
         # Asynchronously migrate any existing JPG images to WebP
@@ -125,7 +166,10 @@ class StrainLibrary:
         # Fetch all harvests first to avoid N+1 queries and async calls in the loop
         harvests_by_pheno: dict[int, list[dict[str, Any]]] = {}
         async with self._db.execute(
-            "SELECT phenotype_id, veg_days, flower_days, harvest_date FROM harvests"
+            "SELECT phenotype_id, veg_days, flower_days, harvest_date,"
+            " vigor, structure, aroma, resin, pest_resistance,"
+            " wet_weight, dry_weight, trim_weight,"
+            " thc_percentage, cbd_percentage, terpene_profile FROM harvests"
         ) as cursor:
             async for row in cursor:
                 pheno_id = row["phenotype_id"]
@@ -136,6 +180,17 @@ class StrainLibrary:
                         "veg_days": row["veg_days"],
                         "flower_days": row["flower_days"],
                         "harvest_date": row["harvest_date"],
+                        "vigor": row["vigor"],
+                        "structure": row["structure"],
+                        "aroma": row["aroma"],
+                        "resin": row["resin"],
+                        "pest_resistance": row["pest_resistance"],
+                        "wet_weight": row["wet_weight"],
+                        "dry_weight": row["dry_weight"],
+                        "trim_weight": row["trim_weight"],
+                        "thc_percentage": row["thc_percentage"],
+                        "cbd_percentage": row["cbd_percentage"],
+                        "terpene_profile": row["terpene_profile"],
                     }
                 )
 
@@ -212,7 +267,22 @@ class StrainLibrary:
         """No-op for SQLite implementation - changes are committed immediately."""
 
     async def record_harvest(
-        self, strain: str, phenotype: str, veg_days: int, flower_days: int
+        self,
+        strain: str,
+        phenotype: str,
+        veg_days: int,
+        flower_days: int,
+        vigor: int | None = None,
+        structure: int | None = None,
+        aroma: int | None = None,
+        resin: int | None = None,
+        pest_resistance: int | None = None,
+        wet_weight: float | None = None,
+        dry_weight: float | None = None,
+        trim_weight: float | None = None,
+        thc_percentage: float | None = None,
+        cbd_percentage: float | None = None,
+        terpene_profile: str | None = None,
     ) -> None:
         """Record a harvest event for a specific strain and phenotype."""
         strain = strain.strip()
@@ -223,22 +293,54 @@ class StrainLibrary:
         phenotype_id = await self._ensure_strain_and_phenotype_exist(strain, phenotype)
         harvest_date = datetime.datetime.now().isoformat()
         query = """
-            INSERT INTO harvests (phenotype_id, veg_days, flower_days, harvest_date)
-            VALUES (?, ?, ?, ?)
+            INSERT INTO harvests
+                (phenotype_id, veg_days, flower_days, harvest_date,
+                 vigor, structure, aroma, resin, pest_resistance,
+                 wet_weight, dry_weight, trim_weight,
+                 thc_percentage, cbd_percentage, terpene_profile)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """
         await self._db.execute(
-            query, (phenotype_id, veg_days, flower_days, harvest_date)
+            query,
+            (
+                phenotype_id,
+                veg_days,
+                flower_days,
+                harvest_date,
+                vigor,
+                structure,
+                aroma,
+                resin,
+                pest_resistance,
+                wet_weight,
+                dry_weight,
+                trim_weight,
+                thc_percentage,
+                cbd_percentage,
+                terpene_profile,
+            ),
         )
         await self._db.commit()
         # Invalidate analytics cache
         self._analytics_cache = None
-        # Update in‑memory cache for immediate sensor use
+        # Update in-memory cache for immediate sensor use
         if strain in self.strains and phenotype in self.strains[strain]["phenotypes"]:
             self.strains[strain]["phenotypes"][phenotype]["harvests"].append(
                 {
                     "veg_days": veg_days,
                     "flower_days": flower_days,
                     "harvest_date": harvest_date,
+                    "vigor": vigor,
+                    "structure": structure,
+                    "aroma": aroma,
+                    "resin": resin,
+                    "pest_resistance": pest_resistance,
+                    "wet_weight": wet_weight,
+                    "dry_weight": dry_weight,
+                    "trim_weight": trim_weight,
+                    "thc_percentage": thc_percentage,
+                    "cbd_percentage": cbd_percentage,
+                    "terpene_profile": terpene_profile,
                 }
             )
         _LOGGER.info(
@@ -672,11 +774,30 @@ class StrainLibrary:
                 if num:
                     total_veg = sum(h.get("veg_days", 0) for h in harvests)
                     total_flower = sum(h.get("flower_days", 0) for h in harvests)
-                    stats = {
+                    dry_weights = [
+                        h["dry_weight"]
+                        for h in harvests
+                        if h.get("dry_weight") is not None
+                    ]
+                    wet_weights = [
+                        h["wet_weight"]
+                        for h in harvests
+                        if h.get("wet_weight") is not None
+                    ]
+                    stats: dict[str, Any] = {
                         "avg_veg_days": round(total_veg / num),
                         "avg_flower_days": round(total_flower / num),
                         "total_harvests": num,
                     }
+                    if dry_weights:
+                        stats["avg_dry_weight"] = round(
+                            sum(dry_weights) / len(dry_weights), 1
+                        )
+                        stats["total_dry_yield"] = round(sum(dry_weights), 1)
+                    if wet_weights:
+                        stats["avg_wet_weight"] = round(
+                            sum(wet_weights) / len(wet_weights), 1
+                        )
                 else:
                     stats = {
                         "avg_veg_days": 0,

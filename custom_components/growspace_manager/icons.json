@@ -41,6 +41,21 @@
       },
       "vpd": {
         "default": "mdi:cloud-check-variant"
+      },
+      "dli": {
+        "default": "mdi:white-balance-sunny"
+      },
+      "crop_steering": {
+        "default": "mdi:chart-timeline-variant-shimmer"
+      },
+      "energy_usage": {
+        "default": "mdi:lightning-bolt"
+      },
+      "water_usage": {
+        "default": "mdi:water-pump"
+      },
+      "ec_target": {
+        "default": "mdi:chart-bell-curve-cumulative"
       }
     },
     "switch": {

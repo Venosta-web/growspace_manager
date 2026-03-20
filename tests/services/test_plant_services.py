@@ -1349,9 +1349,7 @@ async def test_transition_plant_stage_with_timezone(
         hass, mock_coordinator, mock_strain_library, call
     )
 
-    call_kwargs = (
-        mock_coordinator.plant_manager.transition_plant_stage.call_args.kwargs
-    )
+    call_kwargs = mock_coordinator.plant_manager.transition_plant_stage.call_args.kwargs
     # Date strings are parsed to datetime objects. Input was 12:00:00Z.
     # We strip tzinfo for comparison as the test fixture might not have timezone setup perfectly or we want to compare naive.
     # Actually, let's just compare with what we expect: 12:00:00
@@ -1425,6 +1423,12 @@ async def test_harvest_plant_success(
         target_growspace_id="dry",
         target_growspace_name=None,
         transition_date="2024-01-15",
+        wet_weight=None,
+        dry_weight=None,
+        trim_weight=None,
+        thc_percentage=None,
+        cbd_percentage=None,
+        terpene_profile=None,
     )
     # mock_coordinator.async_save.assert_called_once()
     # mock_coordinator.async_request_refresh.assert_called_once()
@@ -1482,6 +1486,12 @@ async def test_harvest_plant_entity_id_resolution(
         target_growspace_id="dry",
         target_growspace_name=None,
         transition_date=None,
+        wet_weight=None,
+        dry_weight=None,
+        trim_weight=None,
+        thc_percentage=None,
+        cbd_percentage=None,
+        terpene_profile=None,
     )
     # mock_coordinator.async_save.assert_called_once()
     # mock_coordinator.async_request_refresh.assert_called_once()
