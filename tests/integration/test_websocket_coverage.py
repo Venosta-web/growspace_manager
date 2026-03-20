@@ -142,7 +142,7 @@ async def test_websocket_nutrient_inventory_service_missing(
     mock_coord.nutrient_inventory_service = None
 
     with patch(
-        "custom_components.growspace_manager.coordinator.GrowspaceCoordinator.get_for_service_call",
+        "custom_components.growspace_manager.coordinator.GrowspaceCoordinator.get_any",
         return_value=mock_coord,
     ):
         # 1. get_nutrient_inventory
@@ -179,7 +179,7 @@ async def test_websocket_nutrient_inventory_success(
     mock_coord.async_save = AsyncMock()
 
     with patch(
-        "custom_components.growspace_manager.coordinator.GrowspaceCoordinator.get_for_service_call",
+        "custom_components.growspace_manager.coordinator.GrowspaceCoordinator.get_any",
         return_value=mock_coord,
     ):
         # Update Stock Success
@@ -410,7 +410,7 @@ async def test_websocket_get_nutrient_inventory_success_get(
     mock_service.get_inventory.return_value = MockInventory(stocks={})
 
     with patch(
-        "custom_components.growspace_manager.coordinator.GrowspaceCoordinator.get_for_service_call",
+        "custom_components.growspace_manager.coordinator.GrowspaceCoordinator.get_any",
         return_value=mock_coord,
     ):
         websocket_get_nutrient_inventory(hass, mock_connection, mock_msg)

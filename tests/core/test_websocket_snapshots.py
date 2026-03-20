@@ -97,7 +97,7 @@ async def test_websocket_get_nutrient_inventory_snapshot(
 
     with (
         patch(
-            "custom_components.growspace_manager.GrowspaceCoordinator.get_for_service_call",
+            "custom_components.growspace_manager.GrowspaceCoordinator.get_any",
             return_value=coordinator,
         ),
         patch(

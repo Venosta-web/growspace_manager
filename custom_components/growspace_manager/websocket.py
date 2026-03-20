@@ -468,9 +468,7 @@ def websocket_get_nutrient_inventory(
 ) -> None:
     """Handle get nutrient inventory command."""
     try:
-        coordinator: GrowspaceCoordinator = GrowspaceCoordinator.get_for_service_call(
-            hass, msg
-        )
+        coordinator: GrowspaceCoordinator = GrowspaceCoordinator.get_any(hass)
         if coordinator.nutrient_inventory_service:
             inventory = coordinator.nutrient_inventory_service.get_inventory()
             connection.send_result(msg["id"], asdict(inventory))
@@ -487,9 +485,7 @@ def websocket_update_nutrient_stock(
 ) -> None:
     """Handle update nutrient stock command."""
     try:
-        coordinator: GrowspaceCoordinator = GrowspaceCoordinator.get_for_service_call(
-            hass, msg
-        )
+        coordinator: GrowspaceCoordinator = GrowspaceCoordinator.get_any(hass)
         if coordinator.nutrient_inventory_service:
             coordinator.nutrient_inventory_service.update_stock(
                 nutrient_id=msg["nutrient_id"],
@@ -513,9 +509,7 @@ def websocket_remove_nutrient_stock(
 ) -> None:
     """Handle remove nutrient stock command."""
     try:
-        coordinator: GrowspaceCoordinator = GrowspaceCoordinator.get_for_service_call(
-            hass, msg
-        )
+        coordinator: GrowspaceCoordinator = GrowspaceCoordinator.get_any(hass)
         if coordinator.nutrient_inventory_service:
             coordinator.nutrient_inventory_service.remove_stock(msg["nutrient_id"])
             # Persist changes

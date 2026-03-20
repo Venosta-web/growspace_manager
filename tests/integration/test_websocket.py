@@ -1142,10 +1142,10 @@ async def test_websocket_nutrient_inventory_service_not_ready(
     async_register_websocket_api(hass)
     client = await hass_ws_client(hass)
 
-    # We must patch get_for_service_call to return our modified mock_coordinator
+    # We must patch get_any to return our modified mock_coordinator
     # otherwise it tries to run real logic and fails validation
     with patch(
-        "custom_components.growspace_manager.websocket.GrowspaceCoordinator.get_for_service_call",
+        "custom_components.growspace_manager.websocket.GrowspaceCoordinator.get_any",
         return_value=mock_coordinator,
     ):
         # 1. Get Inventory - returns empty
@@ -1186,9 +1186,15 @@ async def test_websocket_exceptions(
     client = await hass_ws_client(hass)
 
     # Mock coordinator raising exception
-    with patch(
-        "custom_components.growspace_manager.websocket.GrowspaceCoordinator.get_for_service_call",
-        side_effect=Exception("Boom"),
+    with (
+        patch(
+            "custom_components.growspace_manager.websocket.GrowspaceCoordinator.get_for_service_call",
+            side_effect=Exception("Boom"),
+        ),
+        patch(
+            "custom_components.growspace_manager.websocket.GrowspaceCoordinator.get_any",
+            side_effect=Exception("Boom"),
+        ),
     ):
         commands = [
             {"id": 1, "type": WS_TYPE_GET_NUTRIENT_INVENTORY},

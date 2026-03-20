@@ -131,6 +131,21 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         """
         return ServiceCoordinatorLocator.get_for_service_call(hass, call)
 
+    @staticmethod
+    def get_any(hass: HomeAssistant) -> GrowspaceCoordinator:
+        """Get any loaded coordinator, for commands that don't target a specific entity.
+
+        Args:
+            hass: The Home Assistant instance.
+
+        Returns:
+            Any loaded GrowspaceCoordinator instance.
+
+        Raises:
+            ServiceValidationError: If no coordinator is loaded.
+        """
+        return ServiceCoordinatorLocator.get_any(hass)
+
     @property
     def irrigation_coordinators(
         self,
