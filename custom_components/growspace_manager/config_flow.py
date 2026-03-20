@@ -538,10 +538,6 @@ class OptionsFlowHandler(OptionsFlow):
                                 label="Timed Notifications",
                             ),
                             selector.SelectOptionDict(
-                                value="manage_strain_library",
-                                label="Manage Strain Library",
-                            ),
-                            selector.SelectOptionDict(
                                 value="configure_irrigation",
                                 label="Configure Irrigation",
                             ),

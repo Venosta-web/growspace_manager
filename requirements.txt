@@ -5,6 +5,10 @@ Pillow
 python-dateutil
 voluptuous
 
+# Integration dependencies
+fpdf2>=2.7.9
+mashumaro>=3.10
+
 # Test Dependencies
 aiodhcpwatcher
 pycares<5

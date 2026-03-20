@@ -35,18 +35,22 @@ from custom_components.growspace_manager.schemas import (
     ASK_GROW_ADVICE_SCHEMA,
     BATCH_ACTION_SCHEMA,
     CLEAR_STRAIN_LIBRARY_SCHEMA,
+    CONFIGURE_DRAIN_MONITORING_SCHEMA,
     CONFIGURE_ENVIRONMENT_SCHEMA,
     DEBUG_CONSOLIDATE_DUPLICATE_SPECIAL_SCHEMA,
     DEBUG_LIST_GROWSPACES_SCHEMA,
     DEBUG_RESET_SPECIAL_GROWSPACES_SCHEMA,
+    EXPORT_GROW_REPORT_SCHEMA,
     EXPORT_STRAIN_LIBRARY_SCHEMA,
     HARVEST_PLANT_SCHEMA,
     IMPORT_STRAIN_LIBRARY_SCHEMA,
+    LOG_DRAIN_READING_SCHEMA,
     LOG_TRAINING_EVENT_SCHEMA,
     MOVE_CLONE_SCHEMA,
     MOVE_PLANT_SCHEMA,
     PRINT_LABEL_SCHEMA,
     REMOVE_DRAIN_TIME_SCHEMA,
+    REMOVE_EC_RAMP_CURVE_SCHEMA,
     REMOVE_ENVIRONMENT_SCHEMA,
     REMOVE_GROWSPACE_SCHEMA,
     REMOVE_IPM_PRESET_SCHEMA,
@@ -54,8 +58,11 @@ from custom_components.growspace_manager.schemas import (
     REMOVE_NUTRIENT_PRESET_SCHEMA,
     REMOVE_PLANT_SCHEMA,
     REMOVE_STRAIN_SCHEMA,
+    RESET_WATER_TRACKING_SCHEMA,
+    SAVE_EC_RAMP_CURVE_SCHEMA,
     SAVE_IPM_PRESET_SCHEMA,
     SAVE_NUTRIENT_PRESET_SCHEMA,
+    SCORE_PLANT_SCHEMA,
     SET_DEHUMIDIFIER_CONTROL_SCHEMA,
     SET_IRRIGATION_SETTINGS_SCHEMA,
     STRAIN_RECOMMENDATION_SCHEMA,
@@ -63,6 +70,7 @@ from custom_components.growspace_manager.schemas import (
     TAKE_CLONE_SCHEMA,
     TRANSITION_PLANT_SCHEMA,
     UPDATE_GROWSPACE_SCHEMA,
+    UPDATE_HARVEST_METRICS_SCHEMA,
     UPDATE_PLANT_SCHEMA,
     UPDATE_STRAIN_META_SCHEMA,
     WATER_GROWSPACE_SCHEMA,
@@ -224,6 +232,7 @@ async def test_register_services(mock_hass, mock_strain_library_for_services) ->
         "take_clone": TAKE_CLONE_SCHEMA,
         "move_clone": MOVE_CLONE_SCHEMA,
         "harvest_plant": HARVEST_PLANT_SCHEMA,
+        "export_grow_report": EXPORT_GROW_REPORT_SCHEMA,
         "export_strain_library": EXPORT_STRAIN_LIBRARY_SCHEMA,
         "import_strain_library": IMPORT_STRAIN_LIBRARY_SCHEMA,
         "clear_strain_library": CLEAR_STRAIN_LIBRARY_SCHEMA,
@@ -257,6 +266,13 @@ async def test_register_services(mock_hass, mock_strain_library_for_services) ->
         "batch_action": BATCH_ACTION_SCHEMA,
         "add_timeline_note": ADD_TIMELINE_NOTE_SCHEMA,
         "print_label": PRINT_LABEL_SCHEMA,
+        "score_plant": SCORE_PLANT_SCHEMA,
+        "update_harvest_metrics": UPDATE_HARVEST_METRICS_SCHEMA,
+        "log_drain_reading": LOG_DRAIN_READING_SCHEMA,
+        "configure_drain_monitoring": CONFIGURE_DRAIN_MONITORING_SCHEMA,
+        "reset_water_tracking": RESET_WATER_TRACKING_SCHEMA,
+        "save_ec_ramp_curve": SAVE_EC_RAMP_CURVE_SCHEMA,
+        "remove_ec_ramp_curve": REMOVE_EC_RAMP_CURVE_SCHEMA,
     }
 
     # Verify call count
@@ -895,7 +911,7 @@ async def test_async_register_websocket_api(mock_hass) -> None:
         "homeassistant.components.websocket_api.async_register_command"
     ) as mock_reg:
         async_register_websocket_api(mock_hass)
-        assert mock_reg.call_count == 15
+        assert mock_reg.call_count == 19
 
 
 @pytest.mark.asyncio

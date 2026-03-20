@@ -7,10 +7,15 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
+from custom_components.growspace_manager.bayesian_constants import (
+    PROB_SUBSTRATE_TEMP_EXTREME,
+    PROB_SUBSTRATE_TEMP_STRESS,
+)
 from custom_components.growspace_manager.bayesian_evaluator import (
     _async_evaluate_external_mold_trend_sensor,
     _async_evaluate_fallback_mold_trend_analysis,
     async_evaluate_mold_risk_trend,
+    evaluate_substrate_temp_stress,
 )
 from custom_components.growspace_manager.binary_sensor import BayesianEnvironmentSensor
 from custom_components.growspace_manager.models import (
@@ -299,6 +304,50 @@ async def test_external_mold_stats_sensor_vpd_falling_safe(
         mock_env_state,
     )
 
+
     # Should be ignored due to gating
     assert len(observations) == 0
     assert len(reasons) == 0
+
+
+def test_evaluate_substrate_temp_stress_none() -> None:
+    """Test evaluate_substrate_temp_stress when substrate_temp is None."""
+    state = MagicMock(spec=EnvironmentState, substrate_temp=None)
+    observations, reasons = evaluate_substrate_temp_stress(state, {})
+    assert observations == []
+    assert reasons == []
+
+
+@pytest.mark.parametrize(
+    ("substrate_temp", "expected_prob", "expected_reason_substring"),
+    [
+        # Critically low: temp < 15 → EXTREME
+        (10.0, PROB_SUBSTRATE_TEMP_EXTREME, "critically low"),
+        # Below optimal: 15 <= temp < 18 → STRESS
+        (16.0, PROB_SUBSTRATE_TEMP_STRESS, "below optimal"),
+        # Critically high: temp > 26 → EXTREME
+        (30.0, PROB_SUBSTRATE_TEMP_EXTREME, "critically high"),
+        # Above optimal: 22 < temp <= 26 → STRESS
+        (24.0, PROB_SUBSTRATE_TEMP_STRESS, "above optimal"),
+    ],
+)
+def test_evaluate_substrate_temp_stress_branches(
+    substrate_temp: float,
+    expected_prob: tuple[float, float],
+    expected_reason_substring: str,
+) -> None:
+    """Test all stress branches of evaluate_substrate_temp_stress."""
+    state = MagicMock(spec=EnvironmentState, substrate_temp=substrate_temp)
+    observations, reasons = evaluate_substrate_temp_stress(state, {})
+    assert len(observations) == 1
+    assert observations[0] == expected_prob
+    assert len(reasons) == 1
+    assert expected_reason_substring in reasons[0][1]
+
+
+def test_evaluate_substrate_temp_stress_optimal_no_observations() -> None:
+    """Test evaluate_substrate_temp_stress produces no observations when temp is in optimal range."""
+    state = MagicMock(spec=EnvironmentState, substrate_temp=20.0)  # 18 <= 20 <= 22
+    observations, reasons = evaluate_substrate_temp_stress(state, {})
+    assert observations == []
+    assert reasons == []

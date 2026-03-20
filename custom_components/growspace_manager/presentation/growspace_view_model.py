@@ -135,6 +135,36 @@ class GrowspaceViewModelBuilder:
             "max_stage_summary": f"Veg: {max_veg_days}d (W{veg_week}), Flower: {max_flower_days}d (W{flower_week})",
             "irrigation_config": irrigation_options,
             "irrigation_strategy": irrigation_strategy_dict,
+            "drain_config": {
+                "enabled": growspace.drain_config.enabled,
+                "max_ec_delta": growspace.drain_config.max_ec_delta,
+                "target_runoff_percent": growspace.drain_config.target_runoff_percent,
+                "readings": [
+                    {
+                        "timestamp": r.timestamp,
+                        "feed_ec": r.feed_ec,
+                        "drain_ec": r.drain_ec,
+                        "drain_volume_ml": r.drain_volume_ml,
+                        "feed_volume_ml": r.feed_volume_ml,
+                    }
+                    for r in growspace.drain_config.readings
+                ],
+            }
+            if getattr(growspace, "drain_config", None)
+            else None,
+            "energy_tracking": {
+                "cycle_start_date": growspace.energy_tracking.cycle_start_date,
+                "cycle_start_kwh": growspace.energy_tracking.cycle_start_kwh,
+            }
+            if getattr(growspace, "energy_tracking", None)
+            else None,
+            "water_usage": {
+                "total_liters": growspace.water_usage.total_liters,
+                "cycle_start_date": growspace.water_usage.cycle_start_date,
+                "daily_readings": growspace.water_usage.daily_readings,
+            }
+            if getattr(growspace, "water_usage", None)
+            else None,
             "grid": grid,
             "air_exchange": air_exchange,
             "sensor_types": self._get_sensor_types(growspace),
@@ -371,6 +401,14 @@ class GrowspaceViewModelBuilder:
         attributes[CONF_TEMP_SENSORS] = env_config.temperature_sensors
         attributes[CONF_HUMIDITY_SENSORS] = env_config.humidity_sensors
         attributes[CONF_VPD_SENSORS] = env_config.vpd_sensors
+
+        # New sensor arrays and scalars
+        attributes["substrate_temperature_sensors"] = (
+            env_config.substrate_temperature_sensors
+        )
+        attributes["energy_sensors"] = env_config.energy_sensors
+        attributes["electricity_cost_per_kwh"] = env_config.electricity_cost_per_kwh
+        attributes["camera_entities"] = env_config.camera_entities
 
         # Irrigation Pumps (States for change detection in 3D heatmap)
         if growspace.irrigation_config:

@@ -7,6 +7,7 @@ import logging
 from typing import cast
 
 from custom_components.growspace_manager.const import (
+    CONF_CAMERA_ENTITIES,
     CONF_CIRCULATION_FAN_ENTITIES,
     CONF_CIRCULATION_FAN_ENTITY,
     CONF_CO2_SENSOR,
@@ -14,6 +15,8 @@ from custom_components.growspace_manager.const import (
     CONF_DEHUMIDIFIER_ENTITIES,
     CONF_DEHUMIDIFIER_ENTITY,
     CONF_DEHUMIDIFIER_THRESHOLDS,
+    CONF_ELECTRICITY_COST,
+    CONF_ENERGY_SENSORS,
     CONF_EXHAUST_ENTITY,
     CONF_EXHAUST_FAN_ENTITIES,
     CONF_HUMIDIFIER_ENTITIES,
@@ -24,6 +27,7 @@ from custom_components.growspace_manager.const import (
     CONF_MOLD_THRESHOLD,
     CONF_SOIL_MOISTURE_SENSOR,
     CONF_STRESS_THRESHOLD,
+    CONF_SUBSTRATE_TEMP_SENSORS,
     CONF_TEMP_SENSOR,
     CONF_VPD_SENSOR,
 )
@@ -117,6 +121,10 @@ async def handle_configure_environment(
         sensor_groups=sensor_groups,
         sensor_coordinates=call.data.get("sensor_coordinates", {}),
         irrigation_tanks=irrigation_tanks,
+        substrate_temperature_sensors=call.data.get(CONF_SUBSTRATE_TEMP_SENSORS, []),
+        camera_entities=call.data.get(CONF_CAMERA_ENTITIES, []),
+        energy_sensors=call.data.get(CONF_ENERGY_SENSORS, []),
+        electricity_cost_per_kwh=call.data.get(CONF_ELECTRICITY_COST),
     )
 
     # Store in growspace

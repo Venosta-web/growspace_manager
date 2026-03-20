@@ -41,6 +41,7 @@ from .const import (
 )
 from .coordinator import GrowspaceCoordinator
 from .services.plant import async_add_timeline_note
+from .services.report import async_websocket_get_grow_report
 from .strain_library import StrainLibrary
 
 _LOGGER = logging.getLogger(__name__)
@@ -71,6 +72,7 @@ SCHEMA_WS_GET_LOG = websocket_api.BASE_COMMAND_MESSAGE_SCHEMA.extend(
     {
         vol.Required("type"): WS_TYPE_GET_LOG,
         vol.Optional("growspace_id"): str,
+        vol.Optional("plant_id"): str,
         vol.Optional("limit"): vol.Any(int, None),
     }
 )
@@ -80,6 +82,7 @@ SCHEMA_WS_GET_ALERTS = websocket_api.BASE_COMMAND_MESSAGE_SCHEMA.extend(
     {
         vol.Required("type"): WS_TYPE_GET_ALERTS,
         vol.Optional("growspace_id"): str,
+        vol.Optional("plant_id"): str,
         vol.Optional("limit"): vol.Any(int, None),
     }
 )
@@ -89,6 +92,16 @@ SCHEMA_WS_GET_DATA = websocket_api.BASE_COMMAND_MESSAGE_SCHEMA.extend(
     {
         vol.Required("type"): WS_TYPE_GET_DATA,
         vol.Optional("growspace_id"): str,
+    }
+)
+
+WS_TYPE_GET_GROW_REPORT = f"{DOMAIN}/get_grow_report"
+SCHEMA_WS_GET_GROW_REPORT = websocket_api.BASE_COMMAND_MESSAGE_SCHEMA.extend(
+    {
+        vol.Required("type"): WS_TYPE_GET_GROW_REPORT,
+        vol.Optional("growspace_id"): str,
+        vol.Optional("plant_id"): str,
+        vol.Optional("include_history", default=True): bool,
     }
 )
 
@@ -163,6 +176,7 @@ def _query_logbook_events_impl(
     end_time: datetime,
     limit: int,
     growspace_id: str | None,
+    plant_id: str | None = None,
     exclude_categories: set[str] | None = None,
     include_categories: set[str] | None = None,
     limit_multiplier: int = 2,
@@ -209,7 +223,15 @@ def _query_logbook_events_impl(
                 continue
             try:
                 d = json.loads(d_row.shared_data)
-                if growspace_id and d.get("growspace_id") != growspace_id:
+                if plant_id:
+                    # Show all events for this plant across all growspaces,
+                    # plus shared (no plant_id) events from the current growspace.
+                    event_plant_id = d.get("plant_id")
+                    if event_plant_id is not None and event_plant_id != plant_id:
+                        continue
+                    if event_plant_id is None and growspace_id and d.get("growspace_id") != growspace_id:
+                        continue
+                elif growspace_id and d.get("growspace_id") != growspace_id:
                     continue
 
                 if include_categories and d.get("category") not in include_categories:
@@ -239,6 +261,7 @@ async def websocket_get_event_log(
     Excludes high-frequency environmental alerts (optimal, stress, mold).
     """
     growspace_id = msg.get("growspace_id")
+    plant_id = msg.get("plant_id")
     limit = msg.get("limit", 50)
     # Categories to EXCLUDE from the main log
     spam_cats = {"optimal", "stress", "mold", "alert", "environment"}
@@ -256,13 +279,15 @@ async def websocket_get_event_log(
             end_time,
             limit,
             growspace_id,
+            plant_id,
             spam_cats,
             None,
             2,
         )
         res = {}
-        if growspace_id:
-            res[growspace_id] = evts
+        response_key = plant_id if plant_id else growspace_id
+        if response_key:
+            res[response_key] = evts
         else:
             for v in evts:
                 gid = v.get("growspace_id", "global")
@@ -272,7 +297,8 @@ async def websocket_get_event_log(
 
     except (ImportError, KeyError) as err:
         _LOGGER.warning("Recorder not available: %s", err)
-        connection.send_result(msg["id"], {growspace_id: []} if growspace_id else {})
+        response_key = plant_id if plant_id else growspace_id
+        connection.send_result(msg["id"], {response_key: []} if response_key else {})
     except Exception as err:
         _LOGGER.exception("Error handling websocket_get_event_log")
         connection.send_error(msg["id"], "unknown_error", str(err))
@@ -286,6 +312,7 @@ async def websocket_get_alerts(
     ONLY includes high-frequency environmental alerts (optimal, stress, mold).
     """
     growspace_id = msg.get("growspace_id")
+    plant_id = msg.get("plant_id")
     limit = msg.get("limit", 200)
     # Categories to INCLUDE in the alerts log
     alert_cats = {"optimal", "stress", "mold", "alert", "environment"}
@@ -302,13 +329,15 @@ async def websocket_get_alerts(
             end_time,
             limit,
             growspace_id,
+            plant_id,
             None,
             alert_cats,
             5,
         )
         res = {}
-        if growspace_id:
-            res[growspace_id] = evts
+        response_key = plant_id if plant_id else growspace_id
+        if response_key:
+            res[response_key] = evts
         else:
             for v in evts:
                 gid = v.get("growspace_id", "global")
@@ -318,7 +347,8 @@ async def websocket_get_alerts(
 
     except (ImportError, KeyError) as err:
         _LOGGER.warning("Recorder not available: %s", err)
-        connection.send_result(msg["id"], {growspace_id: []} if growspace_id else {})
+        response_key = plant_id if plant_id else growspace_id
+        connection.send_result(msg["id"], {response_key: []} if response_key else {})
     except Exception as err:
         _LOGGER.exception("Error handling websocket_get_alerts")
         connection.send_error(msg["id"], "unknown_error", str(err))
@@ -343,6 +373,13 @@ WS_TYPE_GET_IPM_PRESETS = f"{DOMAIN}/get_ipm_presets"
 SCHEMA_WS_GET_IPM_PRESETS = websocket_api.BASE_COMMAND_MESSAGE_SCHEMA.extend(
     {
         vol.Required("type"): WS_TYPE_GET_IPM_PRESETS,
+    }
+)
+
+WS_TYPE_GET_EC_RAMP_CURVES = f"{DOMAIN}/get_ec_ramp_curves"
+SCHEMA_WS_GET_EC_RAMP_CURVES = websocket_api.BASE_COMMAND_MESSAGE_SCHEMA.extend(
+    {
+        vol.Required("type"): WS_TYPE_GET_EC_RAMP_CURVES,
     }
 )
 
@@ -524,6 +561,23 @@ def websocket_get_ipm_presets(
         connection.send_result(msg["id"], data["ipm_presets"])
     except Exception as err:
         _LOGGER.exception("Error handling websocket_get_ipm_presets")
+        connection.send_error(msg["id"], "unknown_error", str(err))
+
+
+@callback
+def websocket_get_ec_ramp_curves(
+    hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
+) -> None:
+    """Handle get EC ramp curves command via WebSocket."""
+    try:
+        coordinator: GrowspaceCoordinator = GrowspaceCoordinator.get_for_service_call(
+            hass, msg
+        )
+
+        data = coordinator.nutrient_manager.get_serialization_data()
+        connection.send_result(msg["id"], data.get("ec_ramp_curves", []))
+    except Exception as err:
+        _LOGGER.exception("Error handling websocket_get_ec_ramp_curves")
         connection.send_error(msg["id"], "unknown_error", str(err))
 
 
@@ -965,6 +1019,152 @@ async def websocket_delete_breeder(
         connection.send_error(msg["id"], "unknown_error", str(err))
 
 
+WS_TYPE_CAPTURE_SNAPSHOT = f"{DOMAIN}/capture_snapshot"
+SCHEMA_WS_CAPTURE_SNAPSHOT = websocket_api.BASE_COMMAND_MESSAGE_SCHEMA.extend(
+    {
+        vol.Required("type"): WS_TYPE_CAPTURE_SNAPSHOT,
+        vol.Required("growspace_id"): str,
+    }
+)
+
+WS_TYPE_GET_SNAPSHOTS = f"{DOMAIN}/get_snapshots"
+SCHEMA_WS_GET_SNAPSHOTS = websocket_api.BASE_COMMAND_MESSAGE_SCHEMA.extend(
+    {
+        vol.Required("type"): WS_TYPE_GET_SNAPSHOTS,
+        vol.Required("growspace_id"): str,
+        vol.Optional("limit"): int,
+        vol.Optional("offset"): int,
+    }
+)
+
+
+async def websocket_capture_snapshot(
+    hass: HomeAssistant,
+    connection: websocket_api.ActiveConnection,
+    msg: dict[str, Any],
+) -> None:
+    """Handle manual snapshot capture for a growspace.
+
+    Calls the camera.snapshot service for each configured camera entity,
+    saving images to www/growspace_manager/snapshots/{growspace_id}/.
+    Returns the list of captured image paths and current environment state.
+    """
+    from pathlib import Path  # noqa: PLC0415
+
+    growspace_id: str = msg["growspace_id"]
+
+    try:
+        coordinator = GrowspaceCoordinator.get_for_service_call(hass, msg)
+    except ServiceValidationError as err:
+        connection.send_error(msg["id"], "not_loaded", str(err))
+        return
+
+    growspace = coordinator.growspaces.get(growspace_id)
+    if not growspace:
+        connection.send_error(
+            msg["id"], "not_found", f"Growspace '{growspace_id}' not found"
+        )
+        return
+
+    camera_entities = growspace.environment_config.camera_entities
+    if not camera_entities:
+        connection.send_error(
+            msg["id"],
+            "no_cameras",
+            f"No cameras configured for growspace '{growspace_id}'",
+        )
+        return
+
+    snapshot_dir = (
+        Path(hass.config.path("www")) / "growspace_manager" / "snapshots" / growspace_id
+    )
+    snapshot_dir.mkdir(parents=True, exist_ok=True)
+
+    timestamp = dt_util.now().strftime("%Y%m%d_%H%M%S")
+    captured_paths: list[str] = []
+
+    for camera_entity_id in camera_entities:
+        safe_name = camera_entity_id.replace(".", "_").replace(" ", "_")
+        filename = f"{timestamp}_{safe_name}.jpg"
+        file_path = str(snapshot_dir / filename)
+
+        try:
+            await hass.services.async_call(
+                "camera",
+                "snapshot",
+                {"entity_id": camera_entity_id, "filename": file_path},
+                blocking=True,
+            )
+            # Public path for serving via HA www
+            public_path = (
+                f"/local/growspace_manager/snapshots/{growspace_id}/{filename}"
+            )
+            captured_paths.append(public_path)
+        except Exception:
+            _LOGGER.exception(
+                "Failed to capture snapshot from camera %s", camera_entity_id
+            )
+
+    connection.send_result(
+        msg["id"],
+        {
+            "growspace_id": growspace_id,
+            "timestamp": timestamp,
+            "snapshots": captured_paths,
+        },
+    )
+
+
+async def websocket_get_snapshots(
+    hass: HomeAssistant,
+    connection: websocket_api.ActiveConnection,
+    msg: dict[str, Any],
+) -> None:
+    """Handle listing snapshots for a growspace.
+
+    Returns a paginated list of snapshot image paths sorted by newest first.
+    """
+    from pathlib import Path  # noqa: PLC0415
+
+    growspace_id: str = msg["growspace_id"]
+    limit: int = msg.get("limit", 50)
+    offset: int = msg.get("offset", 0)
+
+    snapshot_dir = (
+        Path(hass.config.path("www")) / "growspace_manager" / "snapshots" / growspace_id
+    )
+
+    try:
+        if not snapshot_dir.exists():
+            connection.send_result(msg["id"], {"snapshots": [], "total": 0})
+            return
+
+        all_files = sorted(
+            snapshot_dir.glob("*.jpg"),
+            key=lambda p: p.stat().st_mtime,
+            reverse=True,
+        )
+        total = len(all_files)
+        paged_files = all_files[offset : offset + limit]
+
+        snapshots = [
+            {
+                "path": f"/local/growspace_manager/snapshots/{growspace_id}/{f.name}",
+                "filename": f.name,
+                "timestamp": f.name[:15],  # YYYYMMDD_HHmmss prefix
+            }
+            for f in paged_files
+        ]
+
+        connection.send_result(
+            msg["id"],
+            {"growspace_id": growspace_id, "snapshots": snapshots, "total": total},
+        )
+    except Exception as err:
+        _LOGGER.exception("Error listing snapshots for %s", growspace_id)
+        connection.send_error(msg["id"], "unknown_error", str(err))
+
+
 @callback
 def async_register_websocket_api(hass: HomeAssistant) -> None:
     """Register WebSocket API commands."""
@@ -990,6 +1190,12 @@ def async_register_websocket_api(hass: HomeAssistant) -> None:
     )
     websocket_api.async_register_command(
         hass,
+        WS_TYPE_GET_GROW_REPORT,
+        websocket_api.async_response(async_websocket_get_grow_report),
+        SCHEMA_WS_GET_GROW_REPORT,
+    )
+    websocket_api.async_register_command(
+        hass,
         WS_TYPE_GET_NUTRIENT_PRESETS,
         websocket_get_nutrient_presets,
         SCHEMA_WS_GET_NUTRIENT_PRESETS,
@@ -999,6 +1205,12 @@ def async_register_websocket_api(hass: HomeAssistant) -> None:
         WS_TYPE_GET_IPM_PRESETS,
         websocket_get_ipm_presets,
         SCHEMA_WS_GET_IPM_PRESETS,
+    )
+    websocket_api.async_register_command(
+        hass,
+        WS_TYPE_GET_EC_RAMP_CURVES,
+        websocket_get_ec_ramp_curves,
+        SCHEMA_WS_GET_EC_RAMP_CURVES,
     )
 
     websocket_api.async_register_command(
@@ -1067,4 +1279,18 @@ def async_register_websocket_api(hass: HomeAssistant) -> None:
         WS_TYPE_DELETE_BREEDER,
         websocket_api.async_response(websocket_delete_breeder),
         SCHEMA_WS_DELETE_BREEDER,
+    )
+
+    websocket_api.async_register_command(
+        hass,
+        WS_TYPE_CAPTURE_SNAPSHOT,
+        websocket_api.async_response(websocket_capture_snapshot),
+        SCHEMA_WS_CAPTURE_SNAPSHOT,
+    )
+
+    websocket_api.async_register_command(
+        hass,
+        WS_TYPE_GET_SNAPSHOTS,
+        websocket_api.async_response(websocket_get_snapshots),
+        SCHEMA_WS_GET_SNAPSHOTS,
     )

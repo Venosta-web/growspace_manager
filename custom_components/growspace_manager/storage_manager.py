@@ -14,6 +14,7 @@ from homeassistant.helpers.storage import Store
 
 from .const import STORAGE_KEY, STORAGE_KEY_CONFIG, STORAGE_KEY_PLANTS, STORAGE_VERSION
 from .models import (
+    ECRampCurve,
     EnvironmentConfig,
     Growspace,
     IPMPreset,
@@ -132,8 +133,11 @@ class StorageManager:
         nutrient_presets = self._load_nutrient_presets(data)
         ipm_presets = self._load_ipm_presets(data)
         inventory = self._load_nutrient_inventory(data)
+        ec_ramp_curves = self._load_ec_ramp_curves(data)
 
-        self.nutrient_manager.load_data(nutrient_presets, ipm_presets, inventory)
+        self.nutrient_manager.load_data(
+            nutrient_presets, ipm_presets, inventory, ec_ramp_curves
+        )
 
         # Load notification tracking
         self.repository.notifications_sent = data.get("notifications_sent", {})
@@ -292,6 +296,17 @@ class StorageManager:
             }
         except Exception:
             _LOGGER.exception("Error loading IPM presets")
+            return {}
+
+    def _load_ec_ramp_curves(self, data: dict[str, Any]) -> dict[str, ECRampCurve]:
+        """Load EC ramp curves from storage data."""
+        try:
+            return {
+                cid: ECRampCurve.from_dict(c)
+                for cid, c in data.get("ec_ramp_curves", {}).items()
+            }
+        except Exception:
+            _LOGGER.exception("Error loading EC ramp curves")
             return {}
 
     def _load_nutrient_inventory(self, data: dict[str, Any]) -> NutrientInventory:

@@ -694,6 +694,51 @@ def evaluate_soil_moisture_stress(
     return observations, reasons
 
 
+def evaluate_substrate_temp_stress(
+    state: EnvironmentState, env_config: dict[str, Any]
+) -> tuple[ObservationList, ReasonList]:
+    """Evaluate substrate temperature against stress thresholds."""
+    from .bayesian_constants import (  # noqa: PLC0415
+        PROB_SUBSTRATE_TEMP_EXTREME,
+        PROB_SUBSTRATE_TEMP_STRESS,
+        SUBSTRATE_TEMP_OPTIMAL_MAX,
+        SUBSTRATE_TEMP_OPTIMAL_MIN,
+        SUBSTRATE_TEMP_STRESS_HIGH,
+        SUBSTRATE_TEMP_STRESS_LOW,
+    )
+
+    observations: ObservationList = []
+    reasons: ReasonList = []
+
+    if state.substrate_temp is None:
+        return observations, reasons
+
+    temp = state.substrate_temp
+
+    if temp < SUBSTRATE_TEMP_STRESS_LOW:
+        observations.append(PROB_SUBSTRATE_TEMP_EXTREME)
+        reasons.append(
+            (PROB_SUBSTRATE_TEMP_EXTREME[0], f"Substrate temp critically low ({temp}°C)")
+        )
+    elif temp < SUBSTRATE_TEMP_OPTIMAL_MIN:
+        observations.append(PROB_SUBSTRATE_TEMP_STRESS)
+        reasons.append(
+            (PROB_SUBSTRATE_TEMP_STRESS[0], f"Substrate temp below optimal ({temp}°C)")
+        )
+    elif temp > SUBSTRATE_TEMP_STRESS_HIGH:
+        observations.append(PROB_SUBSTRATE_TEMP_EXTREME)
+        reasons.append(
+            (PROB_SUBSTRATE_TEMP_EXTREME[0], f"Substrate temp critically high ({temp}°C)")
+        )
+    elif temp > SUBSTRATE_TEMP_OPTIMAL_MAX:
+        observations.append(PROB_SUBSTRATE_TEMP_STRESS)
+        reasons.append(
+            (PROB_SUBSTRATE_TEMP_STRESS[0], f"Substrate temp above optimal ({temp}°C)")
+        )
+
+    return observations, reasons
+
+
 # =========================================================================
 # OPTIMAL CONDITIONS SENSOR EVALUATION
 # =========================================================================

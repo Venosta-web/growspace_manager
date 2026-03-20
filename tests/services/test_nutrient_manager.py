@@ -6,6 +6,8 @@ import pytest
 
 from custom_components.growspace_manager.managers.nutrient import NutrientManager
 from custom_components.growspace_manager.models import (
+    ECRampCurve,
+    ECRampPoint,
     IPMPreset,
     NutrientInventory,
     NutrientPreset,
@@ -55,6 +57,18 @@ async def test_load_data(manager) -> None:
     assert manager.ipm_presets == ipm
     assert manager.inventory == inv
     assert manager.inventory_service is not None
+
+
+@pytest.mark.asyncio
+async def test_load_data_with_ec_ramp_curves(manager) -> None:
+    """Test that ec_ramp_curves are loaded when provided."""
+    curves = {
+        "c1": ECRampCurve(id="c1", name="Curve 1", stage="veg", created_at="2024-01-01")
+    }
+
+    manager.load_data({}, {}, None, ec_ramp_curves=curves)
+
+    assert manager.ec_ramp_curves == curves
 
 
 @pytest.mark.asyncio
@@ -292,6 +306,77 @@ def test_get_serialization_data(manager) -> None:
     assert "p1" in data["nutrient_presets"]
     assert "i1" in data["ipm_presets"]
     assert "stocks" in data["nutrient_inventory"]
+
+
+@pytest.mark.asyncio
+async def test_save_ec_ramp_curve_new(manager, save_callback_mock) -> None:
+    """Test creating a new EC ramp curve."""
+    curve = await manager.async_save_ec_ramp_curve(
+        name="Bloom EC",
+        stage="flower",
+        points=[{"week": 1, "ec_min": 1.2, "ec_max": 1.6}],
+    )
+
+    assert curve.id in manager.ec_ramp_curves
+    assert curve.name == "Bloom EC"
+    assert curve.stage == "flower"
+    assert len(curve.points) == 1
+    assert curve.points[0].week == 1
+    assert curve.points[0].ec_min == 1.2
+    assert curve.points[0].ec_max == 1.6
+    save_callback_mock.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_save_ec_ramp_curve_update(manager, save_callback_mock) -> None:
+    """Test updating an existing EC ramp curve."""
+    existing = ECRampCurve(
+        id="c1",
+        name="Old Curve",
+        stage="veg",
+        points=[ECRampPoint(week=1, ec_min=0.8, ec_max=1.0)],
+        created_at="2024-01-01",
+    )
+    manager.ec_ramp_curves = {"c1": existing}
+
+    curve = await manager.async_save_ec_ramp_curve(
+        curve_id="c1",
+        name="Updated Curve",
+        stage="flower",
+        points=[{"week": 2, "ec_min": 1.4, "ec_max": 1.8}],
+    )
+
+    assert curve is existing
+    assert curve.name == "Updated Curve"
+    assert curve.stage == "flower"
+    assert len(curve.points) == 1
+    assert curve.points[0].week == 2
+    save_callback_mock.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_remove_ec_ramp_curve(manager, save_callback_mock) -> None:
+    """Test removing an existing EC ramp curve."""
+    existing = ECRampCurve(
+        id="c1",
+        name="My Curve",
+        stage="veg",
+        points=[],
+        created_at="2024-01-01",
+    )
+    manager.ec_ramp_curves = {"c1": existing}
+
+    await manager.async_remove_ec_ramp_curve("c1")
+
+    assert "c1" not in manager.ec_ramp_curves
+    save_callback_mock.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_remove_ec_ramp_curve_not_found(manager) -> None:
+    """Test that removing a non-existent EC ramp curve raises KeyError."""
+    with pytest.raises(KeyError):
+        await manager.async_remove_ec_ramp_curve("missing")
 
 
 @pytest.mark.asyncio

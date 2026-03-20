@@ -37,6 +37,7 @@ from .const import (
     ATTR_ROW,
     ATTR_STAGE,
     ATTR_STRAIN,
+    DEFAULT_DLI_TARGET_FLOWER,
     DOMAIN,
     METRIC_HUMIDITY,
     METRIC_TEMPERATURE,
@@ -318,6 +319,34 @@ async def _create_initial_entities(
                     await predictor.async_update()
 
         await _async_create_derivative_sensors(hass, config_entry, growspace)
+
+        # DLI sensor - only if light sensors configured
+        if growspace.environment_config and growspace.environment_config.light_sensors:
+            initial_entities.append(
+                DLISensor(coordinator, growspace_id, growspace.name)
+            )
+
+        # Crop steering sensor - only if VWC strategy is enabled
+        if growspace.irrigation_strategy and growspace.irrigation_strategy.enabled:
+            initial_entities.append(
+                CropSteeringSensor(coordinator, growspace_id, growspace.name)
+            )
+
+        # Energy usage sensor - only if energy sensors configured
+        if growspace.environment_config and growspace.environment_config.energy_sensors:
+            initial_entities.append(
+                EnergyUsageSensor(coordinator, growspace_id, growspace.name)
+            )
+
+        # Water usage sensor - always created per growspace
+        initial_entities.append(
+            WaterUsageSensor(coordinator, growspace_id, growspace.name)
+        )
+
+        # EC target sensor - always created (will be None if no curve active)
+        initial_entities.append(
+            ECTargetSensor(coordinator, growspace_id, growspace.name)
+        )
 
         for plant in coordinator.get_growspace_plants(growspace_id):
             pe = PlantEntity(coordinator, plant)
@@ -953,6 +982,12 @@ class PlantEntity(CoordinatorEntity[GrowspaceCoordinator], SensorEntity):  # typ
             ATTR_ROW: plant.row,
             ATTR_COL: plant.col,
             "position": f"({int(plant.row)},{int(plant.col)})",
+            "scores": plant.scores.to_dict()
+            if hasattr(plant.scores, "to_dict")
+            else {},
+            "harvest_metrics": plant.harvest_metrics.to_dict()
+            if hasattr(plant.harvest_metrics, "to_dict")
+            else {},
         }
 
         # Dynamic Stage Attributes
@@ -972,6 +1007,18 @@ class PlantEntity(CoordinatorEntity[GrowspaceCoordinator], SensorEntity):  # typ
         # Watering attributes
         attributes["last_watered"] = plant.last_watered
         attributes["days_since_last_watering"] = plant.get_days_since_watering()
+
+        # PHI (Pre-Harvest Interval) attributes
+        if plant.phi_clearance_date:
+            from datetime import date as date_cls  # noqa: PLC0415
+
+            attributes["phi_clearance_date"] = plant.phi_clearance_date
+            try:
+                clearance = date_cls.fromisoformat(plant.phi_clearance_date)
+                remaining = (clearance - date_cls.today()).days
+                attributes["phi_days_remaining"] = max(0, remaining)
+            except (ValueError, TypeError):
+                attributes["phi_days_remaining"] = None
 
         return attributes
 
@@ -1075,3 +1122,428 @@ class GrowspaceListSensor(SensorEntity):  # type: ignore[misc]
     def extra_state_attributes(self) -> dict[str, dict[str, Any]]:
         """Return the list of growspaces as a state attribute."""
         return {"growspaces": self._growspaces}
+
+
+# =============================================================================
+# NEW FEATURE SENSORS
+# =============================================================================
+
+
+class DLISensor(CoordinatorEntity[GrowspaceCoordinator], SensorEntity):  # type: ignore[misc]
+    """Sensor tracking Daily Light Integral (mol/m2/day) for a growspace."""
+
+    _attr_has_entity_name = True
+    _attr_translation_key = "dli"
+    _attr_native_unit_of_measurement = "mol/m²/d"
+    _attr_state_class = SensorStateClass.TOTAL_INCREASING
+    _attr_icon = "mdi:white-balance-sunny"
+
+    def __init__(
+        self,
+        coordinator: GrowspaceCoordinator,
+        growspace_id: str,
+        growspace_name: str,
+    ) -> None:
+        """Initialize the DLI sensor."""
+        super().__init__(coordinator)
+        self._growspace_id = growspace_id
+        self._attr_unique_id = f"{DOMAIN}_{growspace_id}_dli"
+        self._accumulated_mol: float = 0.0
+        self._last_sample_time: datetime | None = None
+        self._last_reset_date: str = ""
+
+        self._attr_device_info = DeviceInfo(
+            identifiers={(DOMAIN, growspace_id)},
+            name=growspace_name,
+            model="Growspace",
+            manufacturer="Growspace Manager",
+        )
+
+    def _get_current_ppfd(self) -> float | None:
+        """Get current PPFD from configured light sensors."""
+        growspace = self.coordinator.growspaces.get(self._growspace_id)
+        if not growspace or not growspace.environment_config:
+            return None
+        for sensor_id in growspace.environment_config.light_sensors:
+            state = self.hass.states.get(sensor_id)
+            if state and state.state not in ("unknown", "unavailable"):
+                try:
+                    return float(state.state)
+                except (ValueError, TypeError):
+                    continue
+        return None
+
+    @property
+    @override  # type: ignore[misc]
+    def native_value(self) -> float | None:
+        """Return current day's accumulated DLI."""
+        return round(self._accumulated_mol, 1) if self._accumulated_mol > 0 else 0.0
+
+    @property
+    @override  # type: ignore[misc]
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Return DLI attributes."""
+        growspace = self.coordinator.growspaces.get(self._growspace_id)
+        ppfd = self._get_current_ppfd()
+
+        # Determine target based on growspace type
+        target = DEFAULT_DLI_TARGET_FLOWER
+        if growspace and growspace.environment_config:
+            if growspace.growspace_type.value == "veg":
+                target = growspace.environment_config.dli_target_veg
+            else:
+                target = growspace.environment_config.dli_target_flower
+
+        pct = (self._accumulated_mol / target * 100) if target > 0 else 0.0
+
+        # Estimate final DLI based on current rate
+        estimated_final = None
+        if ppfd is not None and growspace and growspace.environment_config:
+            day_hours = growspace.environment_config.flower_day_hours
+            if growspace.growspace_type.value == "veg":
+                day_hours = growspace.environment_config.veg_day_hours
+            estimated_final = round(ppfd * day_hours * 3600 / 1_000_000, 1)
+
+        return {
+            "target_dli": target,
+            "percentage_of_target": round(pct, 1),
+            "estimated_final_dli": estimated_final,
+            "ppfd_current": ppfd,
+        }
+
+    def _handle_coordinator_update(self) -> None:
+        """Handle coordinator updates by accumulating DLI."""
+        now = datetime.now()
+        today = now.date().isoformat()
+
+        # Reset at midnight
+        if self._last_reset_date != today:
+            self._accumulated_mol = 0.0
+            self._last_reset_date = today
+            self._last_sample_time = now
+
+        ppfd = self._get_current_ppfd()
+        if ppfd is not None and self._last_sample_time is not None:
+            elapsed_seconds = (now - self._last_sample_time).total_seconds()
+            if elapsed_seconds > 0:
+                delta_mol = ppfd * elapsed_seconds / 1_000_000
+                self._accumulated_mol += delta_mol
+
+        self._last_sample_time = now
+        super()._handle_coordinator_update()
+
+
+class CropSteeringSensor(CoordinatorEntity[GrowspaceCoordinator], SensorEntity):  # type: ignore[misc]
+    """Sensor calculating a vegetative-to-generative crop steering score."""
+
+    _attr_has_entity_name = True
+    _attr_translation_key = "crop_steering"
+    _attr_state_class = SensorStateClass.MEASUREMENT
+    _attr_icon = "mdi:chart-timeline-variant-shimmer"
+
+    def __init__(
+        self,
+        coordinator: GrowspaceCoordinator,
+        growspace_id: str,
+        growspace_name: str,
+    ) -> None:
+        """Initialize the crop steering sensor."""
+        super().__init__(coordinator)
+        self._growspace_id = growspace_id
+        self._attr_unique_id = f"{DOMAIN}_{growspace_id}_crop_steering"
+
+        self._attr_device_info = DeviceInfo(
+            identifiers={(DOMAIN, growspace_id)},
+            name=growspace_name,
+            model="Growspace",
+            manufacturer="Growspace Manager",
+        )
+
+    @property
+    @override  # type: ignore[misc]
+    def native_value(self) -> float | None:
+        """Return the crop steering score (-1.0 to 1.0)."""
+        from .crop_steering import get_crop_steering_state  # noqa: PLC0415
+
+        state = get_crop_steering_state(self.coordinator, self._growspace_id)
+        return round(state.score, 2) if state else None
+
+    @property
+    @override  # type: ignore[misc]
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Return crop steering details."""
+        from .crop_steering import get_crop_steering_state  # noqa: PLC0415
+
+        state = get_crop_steering_state(self.coordinator, self._growspace_id)
+        if not state:
+            return {}
+
+        # Determine mode from score
+        if state.score > 0.3:
+            mode = "generative"
+        elif state.score < -0.3:
+            mode = "vegetative"
+        else:
+            mode = "balanced"
+
+        return {
+            "dryback_percent": round(state.dryback_percent, 1),
+            "peak_vwc": round(state.peak_vwc, 1),
+            "trough_vwc": round(state.trough_vwc, 1),
+            "steering_mode": mode,
+            "ec_trend": state.ec_trend,
+        }
+
+
+class EnergyUsageSensor(CoordinatorEntity[GrowspaceCoordinator], SensorEntity):  # type: ignore[misc]
+    """Sensor tracking electricity consumption per growspace."""
+
+    _attr_has_entity_name = True
+    _attr_translation_key = "energy_usage"
+    _attr_device_class = SensorDeviceClass.ENERGY
+    _attr_native_unit_of_measurement = "kWh"
+    _attr_state_class = SensorStateClass.TOTAL_INCREASING
+    _attr_icon = "mdi:lightning-bolt"
+
+    def __init__(
+        self,
+        coordinator: GrowspaceCoordinator,
+        growspace_id: str,
+        growspace_name: str,
+    ) -> None:
+        """Initialize the energy usage sensor."""
+        super().__init__(coordinator)
+        self._growspace_id = growspace_id
+        self._attr_unique_id = f"{DOMAIN}_{growspace_id}_energy_usage"
+
+        self._attr_device_info = DeviceInfo(
+            identifiers={(DOMAIN, growspace_id)},
+            name=growspace_name,
+            model="Growspace",
+            manufacturer="Growspace Manager",
+        )
+
+    def _get_total_kwh(self) -> float:
+        """Sum current kWh from configured energy sensors."""
+        growspace = self.coordinator.growspaces.get(self._growspace_id)
+        if not growspace or not growspace.environment_config:
+            return 0.0
+        total = 0.0
+        for sensor_id in growspace.environment_config.energy_sensors:
+            state = self.hass.states.get(sensor_id)
+            if state and state.state not in ("unknown", "unavailable"):
+                try:
+                    total += float(state.state)
+                except (ValueError, TypeError):
+                    continue
+        return total
+
+    @property
+    @override  # type: ignore[misc]
+    def native_value(self) -> float | None:
+        """Return total kWh for current grow cycle."""
+        growspace = self.coordinator.growspaces.get(self._growspace_id)
+        if not growspace:
+            return None
+        current_kwh = self._get_total_kwh()
+        cycle_start = growspace.energy_tracking.cycle_start_kwh
+        return round(max(0.0, current_kwh - cycle_start), 2)
+
+    @property
+    @override  # type: ignore[misc]
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Return energy details."""
+        growspace = self.coordinator.growspaces.get(self._growspace_id)
+        if not growspace:
+            return {}
+        cycle_kwh = self.native_value or 0.0
+        cost_per_kwh = growspace.environment_config.electricity_cost_per_kwh
+        return {
+            "cost_total": round(cycle_kwh * cost_per_kwh, 2) if cost_per_kwh else None,
+            "cycle_start_date": growspace.energy_tracking.cycle_start_date or None,
+        }
+
+
+class WaterUsageSensor(CoordinatorEntity[GrowspaceCoordinator], SensorEntity):  # type: ignore[misc]
+    """Sensor tracking water consumption per growspace."""
+
+    _attr_has_entity_name = True
+    _attr_translation_key = "water_usage"
+    _attr_device_class = SensorDeviceClass.WATER
+    _attr_native_unit_of_measurement = "L"
+    _attr_state_class = SensorStateClass.TOTAL_INCREASING
+    _attr_icon = "mdi:water-pump"
+
+    def __init__(
+        self,
+        coordinator: GrowspaceCoordinator,
+        growspace_id: str,
+        growspace_name: str,
+    ) -> None:
+        """Initialize the water usage sensor."""
+        super().__init__(coordinator)
+        self._growspace_id = growspace_id
+        self._attr_unique_id = f"{DOMAIN}_{growspace_id}_water_usage"
+
+        self._attr_device_info = DeviceInfo(
+            identifiers={(DOMAIN, growspace_id)},
+            name=growspace_name,
+            model="Growspace",
+            manufacturer="Growspace Manager",
+        )
+
+    @property
+    @override  # type: ignore[misc]
+    def native_value(self) -> float | None:
+        """Return total liters used in current cycle."""
+        growspace = self.coordinator.growspaces.get(self._growspace_id)
+        if not growspace:
+            return None
+        return round(growspace.water_usage.total_liters, 2)
+
+    @property
+    @override  # type: ignore[misc]
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Return water usage details."""
+        growspace = self.coordinator.growspaces.get(self._growspace_id)
+        if not growspace:
+            return {}
+
+        usage = growspace.water_usage
+        plant_count = len(self.coordinator.get_growspace_plants(self._growspace_id))
+        days = 1
+        if usage.cycle_start_date:
+            from datetime import date as date_cls  # noqa: PLC0415
+
+            try:
+                start = date_cls.fromisoformat(usage.cycle_start_date)
+                days = max(1, (date_cls.today() - start).days)
+            except (ValueError, TypeError):
+                pass
+
+        liters_per_plant = (
+            round(usage.total_liters / plant_count / days, 2)
+            if plant_count > 0
+            else 0.0
+        )
+
+        # Today's usage from daily_readings
+        today_str = datetime.now().date().isoformat()
+        liters_today = 0.0
+        for reading in usage.daily_readings:
+            if reading.get("date") == today_str:
+                liters_today = reading.get("liters", 0.0)
+                break
+
+        return {
+            "liters_per_plant_per_day": liters_per_plant,
+            "liters_today": round(liters_today, 2),
+            "cycle_start_date": usage.cycle_start_date or None,
+        }
+
+
+class ECTargetSensor(CoordinatorEntity[GrowspaceCoordinator], SensorEntity):  # type: ignore[misc]
+    """Sensor showing current EC target from an EC ramp curve."""
+
+    _attr_has_entity_name = True
+    _attr_translation_key = "ec_target"
+    _attr_state_class = SensorStateClass.MEASUREMENT
+    _attr_icon = "mdi:chart-bell-curve-cumulative"
+
+    def __init__(
+        self,
+        coordinator: GrowspaceCoordinator,
+        growspace_id: str,
+        growspace_name: str,
+    ) -> None:
+        """Initialize the EC target sensor."""
+        super().__init__(coordinator)
+        self._growspace_id = growspace_id
+        self._attr_unique_id = f"{DOMAIN}_{growspace_id}_ec_target"
+
+        self._attr_device_info = DeviceInfo(
+            identifiers={(DOMAIN, growspace_id)},
+            name=growspace_name,
+            model="Growspace",
+            manufacturer="Growspace Manager",
+        )
+
+    def _get_active_curve(self) -> Any:
+        """Get the active EC ramp curve for this growspace's current stage."""
+        if not hasattr(self.coordinator, "nutrient_manager"):
+            return None
+        nm = self.coordinator.nutrient_manager
+        if not hasattr(nm, "ec_ramp_curves"):
+            return None
+
+        # Find a curve matching current growspace stage
+        growspace = self.coordinator.growspaces.get(self._growspace_id)
+        if not growspace:
+            return None
+
+        plants = self.coordinator.get_growspace_plants(self._growspace_id)
+        if not plants:
+            return None
+
+        # Use the dominant stage
+        current_stage = calculate_plant_stage(plants[0])
+
+        for curve in nm.ec_ramp_curves.values():
+            if curve.stage == current_stage:
+                return curve
+        return None
+
+    def _get_current_week(self) -> int:
+        """Get the current week number in the active stage."""
+        plants = self.coordinator.get_growspace_plants(self._growspace_id)
+        if not plants:
+            return 1
+        stage = calculate_plant_stage(plants[0])
+        days = plants[0].get_days_in_stage(stage)
+        return max(1, (days // 7) + 1)
+
+    @property
+    @override  # type: ignore[misc]
+    def native_value(self) -> float | None:
+        """Return current target EC midpoint."""
+        curve = self._get_active_curve()
+        if not curve or not curve.points:
+            return None
+        week = self._get_current_week()
+        for point in curve.points:
+            if point.week == week:
+                return round((point.ec_min + point.ec_max) / 2, 2)
+        # If no exact match, use the last point
+        last = curve.points[-1]
+        if week >= last.week:
+            return round((last.ec_min + last.ec_max) / 2, 2)
+        return None
+
+    @property
+    @override  # type: ignore[misc]
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Return EC target details."""
+        curve = self._get_active_curve()
+        if not curve:
+            return {}
+
+        week = self._get_current_week()
+        ec_min = ec_max = None
+        for point in curve.points:
+            if point.week == week:
+                ec_min = point.ec_min
+                ec_max = point.ec_max
+                break
+        if ec_min is None and curve.points:
+            last = curve.points[-1]
+            if week >= last.week:
+                ec_min = last.ec_min
+                ec_max = last.ec_max
+
+        return {
+            "ec_min": ec_min,
+            "ec_max": ec_max,
+            "current_week": week,
+            "stage": curve.stage,
+            "curve_name": curve.name,
+        }

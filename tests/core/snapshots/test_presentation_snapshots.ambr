@@ -4,6 +4,8 @@
     'active_events': dict({
     }),
     'air_exchange': None,
+    'camera_entities': list([
+    ]),
     'circulation_fan_entities': list([
     ]),
     'daily_avg_hum': 55.0,
@@ -16,7 +18,21 @@
       'unit': 'cm',
       'width': 120,
     }),
+    'drain_config': dict({
+      'enabled': False,
+      'max_ec_delta': 0.7,
+      'readings': list([
+      ]),
+      'target_runoff_percent': 20.0,
+    }),
     'drain_pump_state': None,
+    'electricity_cost_per_kwh': 0.0,
+    'energy_sensors': list([
+    ]),
+    'energy_tracking': dict({
+      'cycle_start_date': '',
+      'cycle_start_kwh': 0.0,
+    }),
     'exhaust_fan_entities': list([
     ]),
     'flower_week': 0,
@@ -34,6 +50,14 @@
         'flower_days': 0,
         'flower_start': None,
         'growspace_id': 'gs_test',
+        'harvest_metrics': dict({
+          'cbd_percentage': None,
+          'dry_weight': None,
+          'terpene_profile': None,
+          'thc_percentage': None,
+          'trim_weight': None,
+          'wet_weight': None,
+        }),
         'last_ipm': None,
         'last_ipm_type': None,
         'last_trained': None,
@@ -45,6 +69,13 @@
         'plant_id': 'p1',
         'position': '(1,1)',
         'row': 1,
+        'scores': dict({
+          'aroma': None,
+          'pest_resistance': None,
+          'resin': None,
+          'structure': None,
+          'vigor': None,
+        }),
         'seedling_days': 0,
         'seedling_start': None,
         'stage': 'veg',
@@ -109,6 +140,8 @@
       'switch.drain': 'drain_pump',
       'switch.pump': 'irrigation_pump',
     }),
+    'substrate_temperature_sensors': list([
+    ]),
     'temperature': None,
     'temperature_sensor': 'sensor.temp',
     'temperature_sensors': list([
@@ -122,6 +155,12 @@
     'vpd_sensors': list([
       'sensor.vpd',
     ]),
+    'water_usage': dict({
+      'cycle_start_date': '',
+      'daily_readings': list([
+      ]),
+      'total_liters': 0.0,
+    }),
   })
 # ---
 # name: test_plant_view_model_snapshot
@@ -138,6 +177,14 @@
     'flower_days': 0,
     'flower_start': None,
     'growspace_id': 'gs_test',
+    'harvest_metrics': dict({
+      'cbd_percentage': None,
+      'dry_weight': None,
+      'terpene_profile': None,
+      'thc_percentage': None,
+      'trim_weight': None,
+      'wet_weight': None,
+    }),
     'last_ipm': None,
     'last_ipm_type': None,
     'last_trained': None,
@@ -149,6 +196,13 @@
     'plant_id': 'p1',
     'position': '(1,2)',
     'row': 1,
+    'scores': dict({
+      'aroma': None,
+      'pest_resistance': None,
+      'resin': None,
+      'structure': None,
+      'vigor': None,
+    }),
     'seedling_days': 0,
     'seedling_start': None,
     'stage': 'flower',

@@ -213,6 +213,7 @@ async def test_handle_harvest_logic_fallthrough(manager, repository_mock) -> Non
     """Test that invalid target_growspace_id raises ValueError and does not fall through."""
     plant = MagicMock(spec=Plant)
     plant.plant_id = "p1"
+    plant.phi_clearance_date = None
     # Mock growspaces not containing 'invalid_gs'
     repository_mock.growspaces = {"valid_gs": MagicMock()}
 
@@ -242,7 +243,6 @@ async def test_remove_plant_race_condition(manager, repository_mock) -> None:
     repository_mock.plants = {plant_id: plant}
 
     # Define a side effect for the lock that removes the plant
-    original_lock = manager.lock
 
     async def side_effect_enter():
         # Remove plant from repository when lock is acquired
@@ -267,6 +267,7 @@ async def test_remove_plant_race_condition(manager, repository_mock) -> None:
 async def test_harvest_plant_defensive_check(manager, repository_mock) -> None:
     """Test harvest_plant handles invalid plant objects gracefully."""
     plant = MagicMock()
+    plant.phi_clearance_date = None
     # Explicitly remove growspace_id to trigger the defensive check
     del plant.growspace_id
     repository_mock.plants = {"p1": plant}

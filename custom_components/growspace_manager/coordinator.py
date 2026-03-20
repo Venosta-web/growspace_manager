@@ -152,6 +152,15 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         return self.subsystem_manager.dehumidifier_coordinators
 
     @property
+    def ec_ramp_curves(self) -> dict[str, Any]:
+        """Return all EC ramp curves.
+
+        Returns:
+            Dictionary mapping curve IDs to ECRampCurve objects.
+        """
+        return self.nutrient_manager.ec_ramp_curves
+
+    @property
     def nutrient_presets(self) -> dict[str, NutrientPreset]:
         """Return all configured nutrient presets.
 
@@ -1186,6 +1195,120 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             preset_id, growspace_id, plant_ids, notes
         )
 
+    async def async_log_drain_reading(
+        self,
+        growspace_id: str,
+        feed_ec: float,
+        drain_ec: float,
+        drain_volume_ml: float | None = None,
+        feed_volume_ml: float | None = None,
+    ) -> None:
+        """Log a drain EC reading for a growspace and alert if delta exceeds threshold."""
+        from .models import DrainReading  # noqa: PLC0415
+
+        growspace = self.growspaces.get(growspace_id)
+        if not growspace:
+            from homeassistant.exceptions import ServiceValidationError  # noqa: PLC0415
+
+            raise ServiceValidationError(f"Growspace '{growspace_id}' not found")
+
+        from homeassistant.util import dt as dt_util  # noqa: PLC0415
+
+        reading = DrainReading(
+            timestamp=dt_util.now().isoformat(),
+            feed_ec=feed_ec,
+            drain_ec=drain_ec,
+            drain_volume_ml=drain_volume_ml,
+            feed_volume_ml=feed_volume_ml,
+        )
+
+        drain_config = growspace.drain_config
+        drain_config.readings.append(reading)
+        # Enforce rolling window
+        if len(drain_config.readings) > drain_config.max_readings:
+            drain_config.readings = drain_config.readings[-drain_config.max_readings :]
+
+        await self.async_commit()
+
+        # Fire alert if drain EC delta exceeds threshold
+        ec_delta = drain_ec - feed_ec
+        if drain_config.enabled and ec_delta > drain_config.max_ec_delta:
+            _LOGGER.warning(
+                "Drain EC alert for %s: drain=%.2f, feed=%.2f, delta=%.2f exceeds threshold %.2f",
+                growspace_id,
+                drain_ec,
+                feed_ec,
+                ec_delta,
+                drain_config.max_ec_delta,
+            )
+            await self.notification_manager.async_send_notification(
+                growspace_id,
+                f"\u26a0\ufe0f High drain EC in {growspace.name}",
+                (
+                    f"Drain EC ({drain_ec:.2f}) exceeds feed EC ({feed_ec:.2f}) "
+                    f"by {ec_delta:.2f} (threshold: {drain_config.max_ec_delta:.2f}). "
+                    "Consider flushing to prevent salt buildup."
+                ),
+            )
+
+    async def async_configure_drain_monitoring(
+        self,
+        growspace_id: str,
+        enabled: bool | None = None,
+        max_ec_delta: float | None = None,
+        target_runoff_percent: float | None = None,
+    ) -> None:
+        """Configure drain EC monitoring settings for a growspace."""
+        growspace = self.growspaces.get(growspace_id)
+        if not growspace:
+            from homeassistant.exceptions import ServiceValidationError  # noqa: PLC0415
+
+            raise ServiceValidationError(f"Growspace '{growspace_id}' not found")
+
+        drain_config = growspace.drain_config
+        if enabled is not None:
+            drain_config.enabled = enabled
+        if max_ec_delta is not None:
+            drain_config.max_ec_delta = max_ec_delta
+        if target_runoff_percent is not None:
+            drain_config.target_runoff_percent = target_runoff_percent
+
+        await self.async_commit()
+
+    async def async_reset_water_tracking(self, growspace_id: str) -> None:
+        """Reset water usage counters for a growspace."""
+        from homeassistant.util import dt as dt_util  # noqa: PLC0415
+
+        from .models import WaterUsageData  # noqa: PLC0415
+
+        growspace = self.growspaces.get(growspace_id)
+        if not growspace:
+            from homeassistant.exceptions import ServiceValidationError  # noqa: PLC0415
+
+            raise ServiceValidationError(f"Growspace '{growspace_id}' not found")
+
+        growspace.water_usage = WaterUsageData(
+            cycle_start_date=dt_util.now().date().isoformat()
+        )
+        await self.async_commit()
+        _LOGGER.info("Reset water tracking for growspace %s", growspace_id)
+
+    async def async_save_ec_ramp_curve(
+        self,
+        name: str,
+        stage: str,
+        points: list[dict[str, Any]],
+        curve_id: str | None = None,
+    ) -> None:
+        """Create or update an EC ramp curve (delegated to NutrientManager)."""
+        await self.nutrient_manager.async_save_ec_ramp_curve(
+            name=name, stage=stage, points=points, curve_id=curve_id
+        )
+
+    async def async_remove_ec_ramp_curve(self, curve_id: str) -> None:
+        """Remove an EC ramp curve (delegated to NutrientManager)."""
+        await self.nutrient_manager.async_remove_ec_ramp_curve(curve_id)
+
     async def async_harvest(self, plant_id: str) -> Plant:
         """Mark a plant as harvested."""
         return await self.plant_manager.harvest(plant_id)
@@ -1196,6 +1319,12 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         target_growspace_id: str | None = None,
         target_growspace_name: str | None = None,
         transition_date: str | None = None,
+        wet_weight: float | None = None,
+        dry_weight: float | None = None,
+        trim_weight: float | None = None,
+        thc_percentage: float | None = None,
+        cbd_percentage: float | None = None,
+        terpene_profile: str | None = None,
     ) -> None:
         """Harvest a plant with full orchestration."""
         await self.plant_manager.harvest_plant(
@@ -1203,6 +1332,12 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             target_growspace_id=target_growspace_id,
             target_growspace_name=target_growspace_name,
             transition_date=transition_date,
+            wet_weight=wet_weight,
+            dry_weight=dry_weight,
+            trim_weight=trim_weight,
+            thc_percentage=thc_percentage,
+            cbd_percentage=cbd_percentage,
+            terpene_profile=terpene_profile,
         )
 
     async def async_remove_plant(self, plant_id: str) -> bool:
@@ -1270,6 +1405,15 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             A list of Plant objects.
         """
         return self.data_repository.get_growspace_plants(growspace_id)
+
+    def get_plant(self, plant_id: str) -> Plant | None:
+        """Retrieve a plant by its ID."""
+        return self.data_repository.get_plant(plant_id)
+
+    def get_growspace(self, growspace_id: str) -> Growspace | None:
+        """Retrieve a growspace by its ID."""
+        return self.data_repository.get_growspace(growspace_id)
+
 
     def get_growspace_grid(self, growspace_id: str) -> list[list[str | None]]:
         """Generate a 2D grid representation of a growspace's plant layout.

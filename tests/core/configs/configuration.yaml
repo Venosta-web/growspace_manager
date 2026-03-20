@@ -16,7 +16,7 @@ frontend:
 
 # Lovelace resources for custom cards
 lovelace:
-  mode: storage
+  mode: yaml
   resources:
     - url: /local/growspace-manager-card.js
       type: module
@@ -88,7 +88,6 @@ template:
       - name: "Test PPFD"
         unique_id: test_ppfd_sensor
         unit_of_measurement: "µmol/m²/s"
-        device_class: illuminance
         state_class: measurement
         state: >
           {% set hour = now().hour %}
@@ -107,7 +106,4 @@ template:
         state: >
           {{ 40 + (range(0, 30) | random) }}
 
-# Growspace Manager Integration
-# Configure this through the UI after setup
-growspace_manager:
 

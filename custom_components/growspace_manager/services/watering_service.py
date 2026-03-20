@@ -111,6 +111,34 @@ class WateringService:
         now_iso = dt_util.now().isoformat()
         plant.last_watered = now_iso
 
+        # Track water usage on the growspace
+        growspace = self.repository.get_growspace(plant.growspace_id)
+        if growspace is not None:
+            today = dt_util.now().date().isoformat()
+            water_usage = growspace.water_usage
+            water_usage.total_liters += amount
+            # Append or update today's daily reading
+            daily = water_usage.daily_readings
+            if daily and daily[-1].get("date") == today:
+                daily[-1]["liters"] = daily[-1].get("liters", 0.0) + amount
+                daily[-1]["plant_count"] = len(
+                    self.repository.get_growspace_plants(plant.growspace_id)
+                )
+            else:
+                daily.append(
+                    {
+                        "date": today,
+                        "liters": amount,
+                        "plant_count": len(
+                            self.repository.get_growspace_plants(plant.growspace_id)
+                        ),
+                    }
+                )
+            # Enforce rolling window
+            max_readings = water_usage.max_daily_readings
+            if len(daily) > max_readings:
+                water_usage.daily_readings = daily[-max_readings:]
+
         # Invalidate cache for the growspace if requested
         if invalidate_cache:
             self.invalidate_cache(plant.growspace_id)

@@ -10,22 +10,31 @@ from typing import Any
 import voluptuous as vol
 
 from custom_components.growspace_manager.const import (
+    CONF_CAMERA_ENTITIES,
     CONF_CIRCULATION_FAN_ENTITIES,
     CONF_CIRCULATION_FAN_ENTITY,
     CONF_CO2_SENSOR,
     CONF_DEHUMIDIFIER_ENTITIES,
     CONF_DEHUMIDIFIER_ENTITY,
+    CONF_DRAIN_VOLUME_SENSORS,
+    CONF_ENERGY_SENSORS,
     CONF_EXHAUST_FAN_ENTITIES,
+    CONF_FEED_EC_SENSORS,
     CONF_HUMIDIFIER_ENTITIES,
     CONF_HUMIDIFIER_ENTITY,
     CONF_HUMIDITY_SENSOR,
+    CONF_IRRIGATION_FLOW_SENSORS,
     CONF_IRRIGATION_TANK_SENSORS,
     CONF_IRRIGATION_TANK_WARNING_LEVEL,
     CONF_LIGHT_SENSOR,
     CONF_LIGHT_SENSORS,
     CONF_MOLD_THRESHOLD,
+    CONF_PH_SENSORS,
+    CONF_POWER_SENSORS,
+    CONF_RUNOFF_EC_SENSORS,
     CONF_SOIL_MOISTURE_SENSOR,
     CONF_STRESS_THRESHOLD,
+    CONF_SUBSTRATE_EC_SENSORS,
     CONF_TEMP_SENSOR,
     CONF_VPD_SENSOR,
     DEFAULT_FLOWER_DAY_HOURS,
@@ -391,6 +400,15 @@ class EnvironmentConfigHandler(BaseConfigHandler[dict[str, Any]]):
             "humidifier_entity",
             "dehumidifier_entities",
             "dehumidifier_entity",
+            CONF_PH_SENSORS,
+            CONF_FEED_EC_SENSORS,
+            CONF_SUBSTRATE_EC_SENSORS,
+            CONF_RUNOFF_EC_SENSORS,
+            CONF_DRAIN_VOLUME_SENSORS,
+            CONF_IRRIGATION_FLOW_SENSORS,
+            CONF_POWER_SENSORS,
+            CONF_ENERGY_SENSORS,
+            CONF_CAMERA_ENTITIES,
         ]:
             val = env_config.get(key)
             if not val:
@@ -403,7 +421,20 @@ class EnvironmentConfigHandler(BaseConfigHandler[dict[str, Any]]):
             sensors_to_configure.extend(entities)
 
             # Check if this key belongs to allowed outside types
-            if any(k in key for k in ["humidifier", "dehumidifier", "tank", "pump"]):
+            if any(
+                k in key
+                for k in [
+                    "humidifier",
+                    "dehumidifier",
+                    "tank",
+                    "pump",
+                    "camera",
+                    "power",
+                    "energy",
+                    "drain",
+                    "flow",
+                ]
+            ):
                 sensors_allowed_outside.update(entities)
 
         # Add irrigation tanks
@@ -527,6 +558,8 @@ class EnvironmentConfigHandler(BaseConfigHandler[dict[str, Any]]):
         self._add_optional_features_to_schema(schema_dict, growspace_options)
         self._add_exhaust_humidifier_to_schema(schema_dict, growspace_options)
         self._add_dehumidifier_to_schema(schema_dict, growspace_options)
+        self._add_advanced_sensors_to_schema(schema_dict, growspace_options)
+        self._add_camera_config_to_schema(schema_dict, growspace_options)
 
         return vol.Schema(schema_dict)
 
@@ -540,6 +573,15 @@ class EnvironmentConfigHandler(BaseConfigHandler[dict[str, Any]]):
             CONF_CIRCULATION_FAN_ENTITIES,
             CONF_HUMIDIFIER_ENTITIES,
             CONF_DEHUMIDIFIER_ENTITIES,
+            CONF_PH_SENSORS,
+            CONF_FEED_EC_SENSORS,
+            CONF_SUBSTRATE_EC_SENSORS,
+            CONF_RUNOFF_EC_SENSORS,
+            CONF_DRAIN_VOLUME_SENSORS,
+            CONF_IRRIGATION_FLOW_SENSORS,
+            CONF_CAMERA_ENTITIES,
+            CONF_POWER_SENSORS,
+            CONF_ENERGY_SENSORS,
         ]
 
         # Explicitly check for specific optional sensors and preserve None/empty if present in user_input
@@ -1081,3 +1123,53 @@ class EnvironmentConfigHandler(BaseConfigHandler[dict[str, Any]]):
             else:
                 parsed_user_input[key] = value
         return parsed_user_input
+
+    def _add_advanced_sensors_to_schema(
+        self, schema_dict: dict[Any, Any], growspace_options: dict[str, Any]
+    ) -> None:
+        """Add advanced sensors to the schema."""
+        for key, device_class in [
+            (CONF_PH_SENSORS, "ph"),
+            (CONF_FEED_EC_SENSORS, None),
+            (CONF_SUBSTRATE_EC_SENSORS, None),
+            (CONF_RUNOFF_EC_SENSORS, None),
+            (CONF_DRAIN_VOLUME_SENSORS, "water"),
+            (CONF_IRRIGATION_FLOW_SENSORS, "water"),
+            (CONF_POWER_SENSORS, "power"),
+            (CONF_ENERGY_SENSORS, "energy"),
+        ]:
+            suggested_val = growspace_options.get(key, [])
+            selector_config = selector.EntitySelectorConfig(
+                domain=["sensor", "input_number", "number"],
+                multiple=True,
+                device_class=device_class if device_class else None,
+            )
+
+            schema_dict[
+                vol.Optional(key, description={"suggested_value": suggested_val})
+            ] = selector.EntitySelector(selector_config)
+
+    def _add_camera_config_to_schema(
+        self, schema_dict: dict[Any, Any], growspace_options: dict[str, Any]
+    ) -> None:
+        """Add camera configuration to the schema."""
+        suggested_cameras = growspace_options.get(CONF_CAMERA_ENTITIES, [])
+        schema_dict[
+            vol.Optional(
+                CONF_CAMERA_ENTITIES,
+                description={"suggested_value": suggested_cameras},
+            )
+        ] = selector.EntitySelector(
+            selector.EntitySelectorConfig(domain="camera", multiple=True)
+        )
+
+        schema_dict[
+            vol.Optional(
+                "snapshot_interval_hours",
+                default=growspace_options.get("snapshot_interval_hours", 24),
+            )
+        ] = selector.NumberSelector(
+            selector.NumberSelectorConfig(
+                min=1, max=168, step=1, mode=selector.NumberSelectorMode.BOX
+            )
+        )

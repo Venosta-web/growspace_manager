@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Awaitable, Callable
+from datetime import timedelta
 import logging
 from typing import TYPE_CHECKING, Any
 import uuid
@@ -148,10 +149,27 @@ class IPMService:
         now = dt_util.now().isoformat()
         target_plants = self._get_target_plants(growspace_id, plant_ids)
 
+        # Calculate max PHI from preset items
+        max_phi_days = max(
+            (item.get("phi_days", 0) for item in preset.items), default=0
+        )
+
         # Update plant state
         for plant in target_plants:
             plant.last_ipm = now
             plant.last_ipm_type = preset.type
+
+            # Update PHI clearance date if this preset has phi_days
+            if max_phi_days > 0:
+                clearance = (
+                    dt_util.now().date() + timedelta(days=max_phi_days)
+                ).isoformat()
+                # Only update if new clearance is later than existing
+                if (
+                    not plant.phi_clearance_date
+                    or clearance > plant.phi_clearance_date
+                ):
+                    plant.phi_clearance_date = clearance
 
         # Group by growspace for event logging
         affected_gids = {p.growspace_id for p in target_plants}

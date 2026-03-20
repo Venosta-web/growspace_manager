@@ -5,6 +5,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from custom_components.growspace_manager.const import DOMAIN
+from custom_components.growspace_manager.models import EnvironmentConfig, IrrigationTank
 from custom_components.growspace_manager.sensor import (
     TankDepletionSensor,
     async_setup_entry,
@@ -163,7 +164,9 @@ async def test_async_setup_entry_with_tanks(hass: HomeAssistant, mock_coordinato
         gs_mock = MagicMock()
         gs_mock.id = "gs1"
         gs_mock.name = "Growspace 1"
-        gs_mock.environment_config = {"irrigation_tanks": [tank_data]}
+        gs_mock.environment_config = EnvironmentConfig(
+            irrigation_tanks=[IrrigationTank(**tank_data)]
+        )
 
         mock_coordinator.growspaces = {"gs1": gs_mock}
         mock_coordinator.get_growspace_plants.return_value = []

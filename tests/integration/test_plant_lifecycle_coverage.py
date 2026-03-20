@@ -151,9 +151,23 @@ async def test_record_analytics_exception_handling(
         # Should not raise, exception is caught and logged
         await manager._record_analytics(plant)
 
-    # Verify record_harvest was called
+    # Verify record_harvest was called with scores (all None since plant has no scores set)
     strain_library_mock.record_harvest.assert_awaited_once_with(
-        "Test Strain", "", 30, 60
+        "Test Strain",
+        "",
+        30,
+        60,
+        None,
+        None,
+        None,
+        None,
+        None,
+        wet_weight=None,
+        dry_weight=None,
+        trim_weight=None,
+        thc_percentage=None,
+        cbd_percentage=None,
+        terpene_profile=None,
     )
 
 

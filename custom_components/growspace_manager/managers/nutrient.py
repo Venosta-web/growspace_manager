@@ -9,6 +9,8 @@ from typing import TYPE_CHECKING, Any
 import uuid
 
 from custom_components.growspace_manager.models import (
+    ECRampCurve,
+    ECRampPoint,
     IPMPreset,
     IPMPresetItem,
     NutrientInventory,
@@ -42,6 +44,7 @@ class NutrientManager:
         self.save_callback = save_callback
         self.nutrient_presets: dict[str, NutrientPreset] = {}
         self.ipm_presets: dict[str, IPMPreset] = {}
+        self.ec_ramp_curves: dict[str, ECRampCurve] = {}
         self.inventory_service: NutrientInventoryService | None = None
         self.inventory: NutrientInventory | None = None
 
@@ -50,10 +53,13 @@ class NutrientManager:
         nutrient_presets: dict[str, NutrientPreset],
         ipm_presets: dict[str, IPMPreset],
         inventory: NutrientInventory | None,
+        ec_ramp_curves: dict[str, ECRampCurve] | None = None,
     ) -> None:
         """Load data into the manager."""
         self.nutrient_presets = nutrient_presets
         self.ipm_presets = ipm_presets
+        if ec_ramp_curves is not None:
+            self.ec_ramp_curves = ec_ramp_curves
         if inventory:
             self.inventory = inventory
             self.inventory_service = NutrientInventoryService(inventory)
@@ -181,6 +187,55 @@ class NutrientManager:
             await self.save_callback()
         _LOGGER.info("Removed IPM preset '%s' (id=%s)", preset_name, preset_id)
 
+    async def async_save_ec_ramp_curve(
+        self,
+        name: str,
+        stage: str,
+        points: list[dict[str, Any]],
+        curve_id: str | None = None,
+    ) -> ECRampCurve:
+        """Create or update an EC ramp curve."""
+        if curve_id and curve_id in self.ec_ramp_curves:
+            curve = self.ec_ramp_curves[curve_id]
+            curve.name = name
+            curve.stage = stage
+            curve.points = [
+                ECRampPoint(week=p["week"], ec_min=p["ec_min"], ec_max=p["ec_max"])
+                for p in points
+            ]
+        else:
+            cid = curve_id or str(uuid.uuid4())
+            curve = ECRampCurve(
+                id=cid,
+                name=name,
+                stage=stage,
+                points=[
+                    ECRampPoint(week=p["week"], ec_min=p["ec_min"], ec_max=p["ec_max"])
+                    for p in points
+                ],
+                created_at=dt_util.now().isoformat(),
+            )
+            self.ec_ramp_curves[cid] = curve
+
+        await self.save_callback()
+        _LOGGER.info(
+            "Saved EC ramp curve '%s' for stage %s with %d points",
+            name,
+            stage,
+            len(points),
+        )
+        return curve
+
+    async def async_remove_ec_ramp_curve(self, curve_id: str) -> None:
+        """Remove an EC ramp curve."""
+        if curve_id not in self.ec_ramp_curves:
+            raise KeyError(f"EC ramp curve '{curve_id}' not found")
+
+        curve_name = self.ec_ramp_curves[curve_id].name
+        del self.ec_ramp_curves[curve_id]
+        await self.save_callback()
+        _LOGGER.info("Removed EC ramp curve '%s' (id=%s)", curve_name, curve_id)
+
     def get_applicable_presets(self, plant_id: str) -> list[NutrientPreset]:
         """Get all presets applicable to a plant based on its current stage and days."""
         # Validate plant existence via coordinator or pass plant object
@@ -257,8 +312,13 @@ class NutrientManager:
                 ipm_preset_dict["items"] = ipm_preset_dict["items"]
             ipm_presets_serialized[ipm_pid] = ipm_preset_dict
 
+        ec_ramp_curves_serialized = {
+            cid: asdict(curve) for cid, curve in self.ec_ramp_curves.items()
+        }
+
         return {
             "nutrient_presets": nutrient_presets_serialized,
             "ipm_presets": ipm_presets_serialized,
             "nutrient_inventory": asdict(self.inventory) if self.inventory else {},
+            "ec_ramp_curves": ec_ramp_curves_serialized,
         }

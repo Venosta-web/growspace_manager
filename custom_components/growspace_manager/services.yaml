@@ -425,6 +425,53 @@ harvest_plant:
       required: false
       selector:
         date:
+    wet_weight:
+      description: Wet weight at harvest in grams (pre-dry)
+      required: false
+      selector:
+        number:
+          min: 0
+          step: 0.1
+          unit_of_measurement: g
+    dry_weight:
+      description: Dry weight after drying in grams
+      required: false
+      selector:
+        number:
+          min: 0
+          step: 0.1
+          unit_of_measurement: g
+    trim_weight:
+      description: Trim / sugar-leaf weight in grams
+      required: false
+      selector:
+        number:
+          min: 0
+          step: 0.1
+          unit_of_measurement: g
+    thc_percentage:
+      description: THC percentage from lab test (0–100)
+      required: false
+      selector:
+        number:
+          min: 0
+          max: 100
+          step: 0.1
+          unit_of_measurement: "%"
+    cbd_percentage:
+      description: CBD percentage from lab test (0–100)
+      required: false
+      selector:
+        number:
+          min: 0
+          max: 100
+          step: 0.1
+          unit_of_measurement: "%"
+    terpene_profile:
+      description: Terpene profile (free text, e.g. "myrcene, limonene, caryophyllene")
+      required: false
+      selector:
+        text:
 
 take_clone:
   description: Clone a plant and move it to the appropriate clone growspace
@@ -1286,3 +1333,118 @@ apply_ipm:
       selector:
         text:
           multiline: true
+
+log_drain_reading:
+  description: Log a drain/runoff EC measurement for a growspace
+  fields:
+    growspace_id:
+      description: The ID of the growspace
+      required: true
+      selector:
+        text:
+    feed_ec:
+      description: EC of the feed water (mS/cm)
+      required: true
+      selector:
+        number:
+          min: 0
+          max: 10
+          step: 0.01
+    drain_ec:
+      description: EC of the drain/runoff water (mS/cm)
+      required: true
+      selector:
+        number:
+          min: 0
+          max: 10
+          step: 0.01
+    drain_volume_ml:
+      description: Volume of drain water collected (mL, optional)
+      required: false
+      selector:
+        number:
+          min: 0
+          max: 10000
+          step: 1
+    feed_volume_ml:
+      description: Volume of feed water applied (mL, optional)
+      required: false
+      selector:
+        number:
+          min: 0
+          max: 10000
+          step: 1
+
+configure_drain_monitoring:
+  description: Configure drain EC monitoring settings for a growspace
+  fields:
+    growspace_id:
+      description: The ID of the growspace
+      required: true
+      selector:
+        text:
+    enabled:
+      description: Enable or disable drain EC monitoring
+      required: false
+      selector:
+        boolean:
+    max_ec_delta:
+      description: Maximum allowed EC difference (drain - feed) before alert (mS/cm)
+      required: false
+      selector:
+        number:
+          min: 0
+          max: 5
+          step: 0.1
+    target_runoff_percent:
+      description: Target drainage as a percentage of feed volume
+      required: false
+      selector:
+        number:
+          min: 0
+          max: 100
+          step: 1
+
+reset_water_tracking:
+  description: Reset water consumption counters for a growspace
+  fields:
+    growspace_id:
+      description: The ID of the growspace to reset water tracking for
+      required: true
+      selector:
+        text:
+
+save_ec_ramp_curve:
+  description: Create or update an EC ramp curve for a growth stage
+  fields:
+    name:
+      description: Name of the EC ramp curve
+      required: true
+      selector:
+        text:
+    stage:
+      description: The growth stage this curve applies to (e.g. flower)
+      required: true
+      selector:
+        text:
+    points:
+      description: >
+        List of EC target points, each with week (int), ec_min (float), ec_max (float).
+        Example: [{week: 1, ec_min: 1.2, ec_max: 1.6}, {week: 2, ec_min: 1.4, ec_max: 1.8}]
+      required: true
+      selector:
+        object:
+    curve_id:
+      description: Existing curve ID to update (omit to create a new curve)
+      required: false
+      selector:
+        text:
+
+remove_ec_ramp_curve:
+  description: Remove an EC ramp curve
+  fields:
+    curve_id:
+      description: The ID of the EC ramp curve to remove
+      required: true
+      selector:
+        text:
