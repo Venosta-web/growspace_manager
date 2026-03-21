@@ -11,8 +11,10 @@ from custom_components.growspace_manager.const import (
     AI_PERSONALITIES,
     CONF_AI_AUTO_ALERTS,
     CONF_AI_ENABLED,
+    CONF_AI_TASK_ENTITY_ID,
     CONF_ASSISTANT_ID,
     CONF_NOTIFICATION_PERSONALITY,
+    CONF_VISION_CHECKUP_ENABLED,
 )
 from homeassistant.config_entries import ConfigFlowResult
 from homeassistant.helpers import selector
@@ -129,6 +131,57 @@ class AIConfigHandler(BaseConfigHandler[dict[str, Any]]):
                 mode=selector.NumberSelectorMode.BOX,
             )
         )
+
+        # Add vision checkup toggle
+        schema[
+            vol.Optional(
+                CONF_VISION_CHECKUP_ENABLED,
+                default=current_settings.get(CONF_VISION_CHECKUP_ENABLED, False),
+            )
+        ] = selector.BooleanSelector()
+
+        # Get available ai_task entities from the state machine
+        ai_task_entities: dict[str, str] = {}
+        try:
+            ai_task_states = self.hass.states.async_all("ai_task")
+            ai_task_entities = {
+                state.entity_id: state.attributes.get("friendly_name", state.entity_id)
+                for state in ai_task_states
+            }
+            _LOGGER.debug("Found %d ai_task entities", len(ai_task_entities))
+        except Exception as err:  # noqa: BLE001
+            _LOGGER.warning("Could not fetch ai_task entities: %s", err)
+
+        if ai_task_entities:
+            ai_task_options = [
+                selector.SelectOptionDict(value="", label="— None —"),
+                *[
+                    selector.SelectOptionDict(value=entity_id, label=friendly_name)
+                    for entity_id, friendly_name in ai_task_entities.items()
+                ],
+            ]
+            schema[
+                vol.Optional(
+                    CONF_AI_TASK_ENTITY_ID,
+                    default=current_settings.get(CONF_AI_TASK_ENTITY_ID, ""),
+                )
+            ] = selector.SelectSelector(
+                selector.SelectSelectorConfig(
+                    options=ai_task_options,
+                    mode=selector.SelectSelectorMode.DROPDOWN,
+                )
+            )
+        else:
+            schema[
+                vol.Optional(
+                    CONF_AI_TASK_ENTITY_ID,
+                    default=current_settings.get(CONF_AI_TASK_ENTITY_ID, ""),
+                )
+            ] = selector.TextSelector(
+                selector.TextSelectorConfig(
+                    type=selector.TextSelectorType.TEXT,
+                )
+            )
 
         return vol.Schema(schema)
 
