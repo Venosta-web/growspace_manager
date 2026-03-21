@@ -11,7 +11,8 @@ import logging
 from typing import TYPE_CHECKING, Any
 
 from homeassistant.components.ai_task import async_generate_data
-from homeassistant.util.dt import utcnow
+from homeassistant.helpers.event import async_track_point_in_utc_time
+from homeassistant.util.dt import now as ha_now, utcnow
 
 from .const import PlantStage
 from .models import VisionCheckupResult
@@ -163,6 +164,141 @@ class VisionCheckupScheduler:
             "- severity: One of 'none', 'low', 'medium', 'high', 'critical'\n"
             "- recommendations: A list of specific, actionable recommendations. Use empty list if no action needed.\n"
         )
+
+    def _cancel_growspace_timers(self, growspace_id: str) -> None:
+        """Cancel all scheduled timers for a specific growspace."""
+        for unsub in self._unsub_timers.pop(growspace_id, []):
+            unsub()
+
+    def async_stop(self) -> None:
+        """Cancel all scheduled timers for all growspaces."""
+        for growspace_id in list(self._unsub_timers):
+            self._cancel_growspace_timers(growspace_id)
+
+    def schedule_growspace(self, growspace_id: str) -> None:
+        """Schedule vision checkups for a specific growspace.
+
+        Calculates the next occurrence of each checkup time today (or tomorrow
+        if the time has already passed) and registers a one-shot timer for each.
+        After each check fires, the callback reschedules for the next day.
+        """
+        self._cancel_growspace_timers(growspace_id)
+
+        growspace = self.coordinator.growspaces.get(growspace_id)
+        if not growspace:
+            return
+
+        vision_config = growspace.environment_config.vision_checkup_config
+        if not vision_config.enabled:
+            _LOGGER.debug("Vision checkup disabled for growspace %s", growspace_id)
+            return
+
+        if not growspace.environment_config.camera_entities:
+            _LOGGER.debug(
+                "No cameras configured for %s, skipping vision scheduling", growspace_id
+            )
+            return
+
+        lights_on = self._get_lights_on_time(growspace)
+        day_hours = self._get_active_day_hours(growspace)
+
+        checkup_times = calculate_checkup_times(
+            lights_on_time=lights_on,
+            day_hours=day_hours,
+            early_offset_minutes=vision_config.early_check_offset_minutes,
+            mid_check_hours=vision_config.mid_check_hours,
+            late_offset_minutes=vision_config.late_check_offset_minutes,
+        )
+
+        current = ha_now()
+        unsubs: list[CALLBACK_TYPE] = []
+
+        for check_type, check_time in checkup_times.items():
+            next_run = current.replace(
+                hour=check_time.hour,
+                minute=check_time.minute,
+                second=0,
+                microsecond=0,
+            )
+            if next_run <= current:
+                next_run += timedelta(days=1)
+
+            _LOGGER.debug(
+                "Scheduling %s vision checkup for %s at %s",
+                check_type,
+                growspace_id,
+                next_run.isoformat(),
+            )
+
+            unsub = async_track_point_in_utc_time(
+                self.hass,
+                self._create_checkup_callback(growspace_id, check_type),
+                next_run,
+            )
+            unsubs.append(unsub)
+
+        self._unsub_timers[growspace_id] = unsubs
+
+    def schedule_all_growspaces(self) -> None:
+        """Schedule vision checkups for all growspaces."""
+        for growspace_id in self.coordinator.growspaces:
+            self.schedule_growspace(growspace_id)
+
+    def _create_checkup_callback(self, growspace_id: str, check_type: str):
+        """Create a callback for a scheduled checkup that reschedules after running."""
+
+        async def _callback(_now: datetime) -> None:
+            """Execute vision checkup and reschedule for next day."""
+            _LOGGER.info(
+                "Running scheduled %s vision checkup for %s",
+                check_type,
+                growspace_id,
+            )
+            try:
+                result = await self.run_vision_analysis(growspace_id, check_type)
+                if result and result.severity in ("high", "critical"):
+                    await self._send_vision_notification(growspace_id, result)
+            except Exception:
+                _LOGGER.exception(
+                    "Error during scheduled %s vision checkup for %s",
+                    check_type,
+                    growspace_id,
+                )
+            # Reschedule for the next day (one-shot timers need re-registration)
+            self.schedule_growspace(growspace_id)
+
+        return _callback
+
+    async def _send_vision_notification(
+        self, growspace_id: str, result: VisionCheckupResult
+    ) -> None:
+        """Send a notification when vision analysis detects high/critical issues."""
+        growspace = self.coordinator.growspaces.get(growspace_id)
+        if not growspace or not growspace.notification_target:
+            return
+
+        issues_str = ", ".join(result.issues_detected) if result.issues_detected else "unknown"
+        recommendations_str = "\n".join(
+            f"- {r}" for r in result.recommendations[:3]
+        )
+
+        message = (
+            f"Vision checkup ({result.check_type}) for {growspace.name}:\n"
+            f"Severity: {result.severity}\n"
+            f"Issues: {issues_str}\n"
+            f"Recommendations:\n{recommendations_str}"
+        )
+
+        try:
+            await self.hass.services.async_call(
+                "notify",
+                growspace.notification_target.replace("notify.", ""),
+                {"message": message, "title": f"Vision Alert: {growspace.name}"},
+            )
+        except Exception:
+            _LOGGER.exception(
+                "Failed to send vision notification for growspace %s", growspace_id
+            )
 
     async def run_vision_analysis(
         self,

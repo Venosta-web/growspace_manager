@@ -309,3 +309,92 @@ async def test_run_vision_analysis_ai_failure_returns_none(mock_hass, mock_coord
         result = await scheduler.run_vision_analysis("tent1", "mid")
 
     assert result is None
+
+
+def test_schedule_growspace_creates_three_timers(mock_hass, mock_coordinator):
+    """Test that scheduling a growspace creates 3 timers (early, mid, late)."""
+    from custom_components.growspace_manager.vision_checkup_scheduler import (
+        VisionCheckupScheduler,
+    )
+
+    gs = _make_mock_growspace(vision_enabled=True)
+    mock_coordinator.growspaces = {"tent1": gs}
+
+    scheduler = VisionCheckupScheduler(mock_hass, mock_coordinator)
+
+    with patch(
+        "custom_components.growspace_manager.vision_checkup_scheduler.async_track_point_in_utc_time",
+    ) as mock_track:
+        mock_track.return_value = MagicMock()
+        with patch(
+            "custom_components.growspace_manager.vision_checkup_scheduler.ha_now",
+        ) as mock_now:
+            from datetime import datetime, timezone
+            mock_now.return_value = datetime(2026, 3, 21, 10, 0, 0, tzinfo=timezone.utc)
+            scheduler.schedule_growspace("tent1")
+
+    assert mock_track.call_count == 3
+    assert "tent1" in scheduler._unsub_timers
+    assert len(scheduler._unsub_timers["tent1"]) == 3
+
+
+def test_schedule_growspace_skips_disabled_vision(mock_hass, mock_coordinator):
+    """Test that scheduling skips growspaces with vision disabled."""
+    from custom_components.growspace_manager.vision_checkup_scheduler import (
+        VisionCheckupScheduler,
+    )
+
+    gs = _make_mock_growspace(vision_enabled=False)
+    mock_coordinator.growspaces = {"tent1": gs}
+
+    scheduler = VisionCheckupScheduler(mock_hass, mock_coordinator)
+
+    with patch(
+        "custom_components.growspace_manager.vision_checkup_scheduler.async_track_point_in_utc_time",
+    ) as mock_track:
+        scheduler.schedule_growspace("tent1")
+
+    mock_track.assert_not_called()
+    assert "tent1" not in scheduler._unsub_timers
+
+
+def test_schedule_growspace_skips_no_cameras(mock_hass, mock_coordinator):
+    """Test that scheduling skips growspaces with no cameras."""
+    from custom_components.growspace_manager.vision_checkup_scheduler import (
+        VisionCheckupScheduler,
+    )
+
+    gs = _make_mock_growspace(camera_entities=[])
+    mock_coordinator.growspaces = {"tent1": gs}
+
+    scheduler = VisionCheckupScheduler(mock_hass, mock_coordinator)
+
+    with patch(
+        "custom_components.growspace_manager.vision_checkup_scheduler.async_track_point_in_utc_time",
+    ) as mock_track:
+        scheduler.schedule_growspace("tent1")
+
+    mock_track.assert_not_called()
+
+
+def test_async_stop_cancels_all_timers(mock_hass, mock_coordinator):
+    """Test that async_stop cancels all registered timers."""
+    from custom_components.growspace_manager.vision_checkup_scheduler import (
+        VisionCheckupScheduler,
+    )
+
+    mock_unsub_1 = MagicMock()
+    mock_unsub_2 = MagicMock()
+    mock_unsub_3 = MagicMock()
+
+    scheduler = VisionCheckupScheduler(mock_hass, mock_coordinator)
+    scheduler._unsub_timers = {
+        "tent1": [mock_unsub_1, mock_unsub_2, mock_unsub_3],
+    }
+
+    scheduler.async_stop()
+
+    mock_unsub_1.assert_called_once()
+    mock_unsub_2.assert_called_once()
+    mock_unsub_3.assert_called_once()
+    assert scheduler._unsub_timers == {}
