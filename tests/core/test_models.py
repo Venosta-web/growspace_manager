@@ -12,6 +12,8 @@ from custom_components.growspace_manager.models import (
     GrowspaceEvent,
     IrrigationStrategy,
     Plant,
+    VisionCheckupConfig,
+    VisionCheckupResult,
 )
 
 # --------------------
@@ -428,8 +430,6 @@ async def test_growspace_migration_redundant_irrigation_fields() -> None:
 
 def test_vision_checkup_result_creation():
     """Test VisionCheckupResult dataclass creation."""
-    from custom_components.growspace_manager.models import VisionCheckupResult
-
     result = VisionCheckupResult(
         timestamp="2026-03-21T07:00:00",
         growspace_id="tent1",
@@ -448,8 +448,6 @@ def test_vision_checkup_result_creation():
 
 def test_vision_checkup_result_defaults():
     """Test VisionCheckupResult default values."""
-    from custom_components.growspace_manager.models import VisionCheckupResult
-
     result = VisionCheckupResult(
         timestamp="2026-03-21T07:00:00",
         growspace_id="tent1",
@@ -464,8 +462,6 @@ def test_vision_checkup_result_defaults():
 
 def test_vision_checkup_config_creation():
     """Test VisionCheckupConfig dataclass creation."""
-    from custom_components.growspace_manager.models import VisionCheckupConfig
-
     config = VisionCheckupConfig()
     assert config.enabled is False
     assert config.early_check_offset_minutes == 60
@@ -476,8 +472,6 @@ def test_vision_checkup_config_creation():
 
 def test_vision_checkup_config_serialization():
     """Test VisionCheckupConfig round-trips through mashumaro."""
-    from custom_components.growspace_manager.models import VisionCheckupConfig
-
     config = VisionCheckupConfig(enabled=True, history_limit=5)
     data = config.to_dict()
     restored = VisionCheckupConfig.from_dict(data)
@@ -487,8 +481,6 @@ def test_vision_checkup_config_serialization():
 
 def test_vision_checkup_result_serialization():
     """Test VisionCheckupResult serializes and deserializes correctly."""
-    from custom_components.growspace_manager.models import VisionCheckupResult
-
     original = VisionCheckupResult(
         timestamp="2026-03-21T07:00:00",
         growspace_id="tent1",
