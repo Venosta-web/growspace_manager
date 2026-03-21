@@ -95,6 +95,13 @@
       'sensor.temp',
     ]),
     'veg_day_hours': 18,
+    'vision_checkup_config': dict({
+      'early_check_offset_minutes': 60,
+      'enabled': False,
+      'history_limit': 10,
+      'late_check_offset_minutes': 60,
+      'mid_check_hours': 6,
+    }),
     'vpd_sensor': 'sensor.vpd',
     'vpd_sensors': list([
       'sensor.vpd',
@@ -186,6 +193,13 @@
       'temperature_sensors': list([
       ]),
       'veg_day_hours': 18,
+      'vision_checkup_config': dict({
+        'early_check_offset_minutes': 60,
+        'enabled': False,
+        'history_limit': 10,
+        'late_check_offset_minutes': 60,
+        'mid_check_hours': 6,
+      }),
       'vpd_sensor': None,
       'vpd_sensors': list([
       ]),
@@ -218,6 +232,8 @@
     'notification_target': None,
     'plants_per_row': 4,
     'rows': 2,
+    'vision_checkup_history': list([
+    ]),
     'water_usage': dict({
       'cycle_start_date': '',
       'daily_readings': list([

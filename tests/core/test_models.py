@@ -495,3 +495,37 @@ def test_vision_checkup_result_serialization():
     assert restored.analysis == "Spider mites detected on lower leaves."
     assert restored.issues_detected == ["spider_mites"]
     assert restored.severity == "medium"
+
+
+def test_environment_config_has_vision_checkup_config():
+    """Test EnvironmentConfig includes vision checkup config."""
+    env = EnvironmentConfig()
+    assert isinstance(env.vision_checkup_config, VisionCheckupConfig)
+    assert env.vision_checkup_config.enabled is False
+
+
+def test_growspace_has_vision_checkup_history():
+    """Test Growspace model includes vision checkup history defaulting to empty."""
+    gs = Growspace(id="tent1", name="Tent 1")
+    assert gs.vision_checkup_history == []
+
+
+def test_growspace_vision_checkup_history_serialization():
+    """Test Growspace with vision checkup history round-trips through serialization."""
+    result = VisionCheckupResult(
+        timestamp="2026-03-21T07:00:00",
+        growspace_id="tent1",
+        check_type="early",
+        analysis="All good.",
+        issues_detected=[],
+        severity="none",
+        recommendations=[],
+    )
+    gs = Growspace(id="tent1", name="Tent 1")
+    gs.vision_checkup_history = [result]
+
+    data = gs.to_dict()
+    restored = Growspace.from_dict(data)
+    assert len(restored.vision_checkup_history) == 1
+    assert restored.vision_checkup_history[0].growspace_id == "tent1"
+    assert restored.vision_checkup_history[0].severity == "none"

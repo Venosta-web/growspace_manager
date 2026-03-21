@@ -182,6 +182,31 @@ class SensorGroup(BaseModel):
 
 
 @dataclass(slots=True)
+class VisionCheckupResult(BaseModel):
+    """Result of an AI vision checkup analysis."""
+
+    timestamp: str
+    growspace_id: str
+    check_type: str  # "early", "mid", "late", "manual"
+    snapshot_paths: list[str] = field(default_factory=list)
+    analysis: str = ""
+    issues_detected: list[str] = field(default_factory=list)
+    severity: str = "none"  # "none", "low", "medium", "high", "critical"
+    recommendations: list[str] = field(default_factory=list)
+
+
+@dataclass(slots=True)
+class VisionCheckupConfig(BaseModel):
+    """Configuration for AI vision checkup scheduling."""
+
+    enabled: bool = False
+    early_check_offset_minutes: int = 60  # Minutes after lights on
+    mid_check_hours: int = 6  # Hours into light cycle
+    late_check_offset_minutes: int = 60  # Minutes before lights off
+    history_limit: int = 10  # Max stored results per growspace
+
+
+@dataclass(slots=True)
 class EnvironmentConfig(BaseModel):
     """Configuration for environment sensors and devices."""
 
@@ -230,6 +255,7 @@ class EnvironmentConfig(BaseModel):
     mold_threshold: float = 0.75
     bayesian_options: BayesianOptions = field(default_factory=dict)
     irrigation_tanks: list[IrrigationTank] = field(default_factory=list)
+    vision_checkup_config: VisionCheckupConfig = field(default_factory=VisionCheckupConfig)
 
     def __post_init__(self) -> None:
         """Sync singular fields to plural lists for initialization support."""
@@ -419,31 +445,6 @@ class WaterUsageData(BaseModel):
 
 
 @dataclass(slots=True)
-class VisionCheckupResult(BaseModel):
-    """Result of an AI vision checkup analysis."""
-
-    timestamp: str
-    growspace_id: str
-    check_type: str  # "early", "mid", "late", "manual"
-    snapshot_paths: list[str] = field(default_factory=list)
-    analysis: str = ""
-    issues_detected: list[str] = field(default_factory=list)
-    severity: str = "none"  # "none", "low", "medium", "high", "critical"
-    recommendations: list[str] = field(default_factory=list)
-
-
-@dataclass(slots=True)
-class VisionCheckupConfig(BaseModel):
-    """Configuration for AI vision checkup scheduling."""
-
-    enabled: bool = False
-    early_check_offset_minutes: int = 60  # Minutes after lights on
-    mid_check_hours: int = 6  # Hours into light cycle
-    late_check_offset_minutes: int = 60  # Minutes before lights off
-    history_limit: int = 10  # Max stored results per growspace
-
-
-@dataclass(slots=True)
 class ECRampPoint(BaseModel):
     """A single point on an EC ramp curve."""
 
@@ -501,6 +502,7 @@ class Growspace(BaseModel):
     drain_config: DrainConfig = field(default_factory=lambda: DrainConfig())
     energy_tracking: EnergyTracking = field(default_factory=lambda: EnergyTracking())
     water_usage: WaterUsageData = field(default_factory=lambda: WaterUsageData())
+    vision_checkup_history: list[VisionCheckupResult] = field(default_factory=list)
 
     @classmethod
     def __pre_deserialize__(cls, data: dict[str, Any]) -> dict[str, Any]:
