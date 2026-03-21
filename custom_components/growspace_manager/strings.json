@@ -375,6 +375,9 @@
       },
       "ec_target": {
         "name": "EC Target"
+      },
+      "vision_checkup": {
+        "name": "Vision checkup"
       }
     }
   },
