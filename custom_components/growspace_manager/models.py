@@ -419,6 +419,31 @@ class WaterUsageData(BaseModel):
 
 
 @dataclass(slots=True)
+class VisionCheckupResult(BaseModel):
+    """Result of an AI vision checkup analysis."""
+
+    timestamp: str
+    growspace_id: str
+    check_type: str  # "early", "mid", "late", "manual"
+    snapshot_paths: list[str] = field(default_factory=list)
+    analysis: str = ""
+    issues_detected: list[str] = field(default_factory=list)
+    severity: str = "none"  # "none", "low", "medium", "high", "critical"
+    recommendations: list[str] = field(default_factory=list)
+
+
+@dataclass(slots=True)
+class VisionCheckupConfig(BaseModel):
+    """Configuration for AI vision checkup scheduling."""
+
+    enabled: bool = False
+    early_check_offset_minutes: int = 60  # Minutes after lights on
+    mid_check_hours: int = 6  # Hours into light cycle
+    late_check_offset_minutes: int = 60  # Minutes before lights off
+    history_limit: int = 10  # Max stored results per growspace
+
+
+@dataclass(slots=True)
 class ECRampPoint(BaseModel):
     """A single point on an EC ramp curve."""
 
