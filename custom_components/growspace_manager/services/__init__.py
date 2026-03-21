@@ -63,6 +63,7 @@ from . import (
     report,
     strain_library,
     training,
+    vision_checkup,
     water_analytics,
 )
 from .training import handle_log_training_event
@@ -128,5 +129,6 @@ __all__ = [
     "report",
     "strain_library",
     "training",
+    "vision_checkup",
     "water_analytics",
 ]

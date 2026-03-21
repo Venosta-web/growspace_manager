@@ -662,3 +662,11 @@ REMOVE_EC_RAMP_CURVE_SCHEMA = vol.Schema(
         vol.Required(ATTR_CURVE_ID): str,
     }
 )
+
+# --- Vision Checkup Schemas ---
+
+SERVICE_TRIGGER_VISION_CHECKUP_SCHEMA = vol.Schema(
+    {
+        vol.Required(ATTR_GROWSPACE_ID): cv.string,
+    }
+)

@@ -422,6 +422,8 @@ class GrowspaceService(StrEnum):
     # EC Ramp Curve Services
     SAVE_EC_RAMP_CURVE = "save_ec_ramp_curve"
     REMOVE_EC_RAMP_CURVE = "remove_ec_ramp_curve"
+    # Vision Checkup Services
+    TRIGGER_VISION_CHECKUP = "trigger_vision_checkup"
 
 
 class TrainingTechnique(StrEnum):

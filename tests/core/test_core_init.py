@@ -63,6 +63,7 @@ from custom_components.growspace_manager.schemas import (
     SAVE_IPM_PRESET_SCHEMA,
     SAVE_NUTRIENT_PRESET_SCHEMA,
     SCORE_PLANT_SCHEMA,
+    SERVICE_TRIGGER_VISION_CHECKUP_SCHEMA,
     SET_DEHUMIDIFIER_CONTROL_SCHEMA,
     SET_IRRIGATION_SETTINGS_SCHEMA,
     STRAIN_RECOMMENDATION_SCHEMA,
@@ -273,6 +274,7 @@ async def test_register_services(mock_hass, mock_strain_library_for_services) ->
         "reset_water_tracking": RESET_WATER_TRACKING_SCHEMA,
         "save_ec_ramp_curve": SAVE_EC_RAMP_CURVE_SCHEMA,
         "remove_ec_ramp_curve": REMOVE_EC_RAMP_CURVE_SCHEMA,
+        "trigger_vision_checkup": SERVICE_TRIGGER_VISION_CHECKUP_SCHEMA,
     }
 
     # Verify call count

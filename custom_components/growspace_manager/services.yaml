@@ -1448,3 +1448,16 @@ remove_ec_ramp_curve:
       required: true
       selector:
         text:
+
+trigger_vision_checkup:
+  name: Trigger vision checkup
+  description: >-
+    Capture camera snapshot(s) and run AI vision analysis to detect plant
+    health issues like drooping, pests, or nutrient deficiencies.
+  fields:
+    growspace_id:
+      name: Growspace ID
+      description: The ID of the growspace to analyze.
+      required: true
+      selector:
+        text:

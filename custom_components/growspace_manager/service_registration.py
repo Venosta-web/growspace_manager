@@ -24,6 +24,7 @@ from .schemas import (
     SAVE_EC_RAMP_CURVE_SCHEMA,
     SAVE_IPM_PRESET_SCHEMA,
     SCORE_PLANT_SCHEMA,
+    SERVICE_TRIGGER_VISION_CHECKUP_SCHEMA,
     UPDATE_HARVEST_METRICS_SCHEMA,
 )
 from .services import (
@@ -83,6 +84,7 @@ from .services import (
     report,
     strain_library,
     training,
+    vision_checkup,
     water_analytics,
 )
 from .strain_library import StrainLibrary
@@ -386,6 +388,11 @@ async def register_services(
             wrap(ec_ramp.handle_remove_ec_ramp_curve, False),
             REMOVE_EC_RAMP_CURVE_SCHEMA,
         ),
+        (
+            GrowspaceService.TRIGGER_VISION_CHECKUP,
+            wrap(vision_checkup.handle_trigger_vision_checkup, False),
+            SERVICE_TRIGGER_VISION_CHECKUP_SCHEMA,
+        ),
     ]
 
     for service_name, handler, schema in services:
@@ -394,6 +401,7 @@ async def register_services(
             GrowspaceService.STRAIN_RECOMMENDATION,
             GrowspaceService.ASK_GROW_ADVICE,
             GrowspaceService.ANALYZE_ALL_GROWSPACES,
+            GrowspaceService.TRIGGER_VISION_CHECKUP,
         ]:
             hass.services.async_register(
                 DOMAIN,
