@@ -55,6 +55,7 @@ from .services.training_service import TrainingService
 from .services.watering_service import WateringService
 from .storage_manager import StorageManager
 from .strain_library import StrainLibrary
+from .tank_water_tracker import TankWaterTracker
 from .types import DateInput
 from .utils import generate_growspace_overview_unique_id
 from .view_model_builder import ViewModelBuilder
@@ -449,6 +450,9 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
         # Track created entities (platform, entity_id, unique_id) for lifecycle management
         self.created_entity_ids: list[tuple[str, str, str]] = []
+
+        # Runtime tank water trackers keyed by growspace_id → tank_entity
+        self._tank_water_trackers: dict[str, dict[str, TankWaterTracker]] = {}
 
         # Options and state initialization
 
@@ -1331,6 +1335,51 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     async def async_remove_ec_ramp_curve(self, curve_id: str) -> None:
         """Remove an EC ramp curve (delegated to NutrientManager)."""
         await self.nutrient_manager.async_remove_ec_ramp_curve(curve_id)
+
+    async def async_configure_tank(
+        self,
+        growspace_id: str,
+        tank_entity: str,
+        *,
+        volume_liters: float | None = None,
+    ) -> None:
+        """Update runtime configuration for an irrigation tank."""
+        growspace = self.get_growspace(growspace_id)
+        tank = next(
+            (
+                t
+                for t in growspace.environment_config.irrigation_tanks
+                if t.sensor_entity == tank_entity
+            ),
+            None,
+        )
+        if tank is None:
+            return
+        if volume_liters is not None:
+            tank.volume_liters = volume_liters
+        await self.storage_manager.async_save()
+
+    def get_tank_tracker(
+        self, growspace_id: str, tank_entity: str
+    ) -> TankWaterTracker | None:
+        """Return the TankWaterTracker for a tank, or None if not configured."""
+        growspace = self.get_growspace(growspace_id)
+        if growspace is None:
+            return None
+        tank = next(
+            (
+                t
+                for t in growspace.environment_config.irrigation_tanks
+                if t.sensor_entity == tank_entity
+            ),
+            None,
+        )
+        if tank is None or tank.volume_liters is None:
+            return None
+        gs_trackers = self._tank_water_trackers.setdefault(growspace_id, {})
+        if tank_entity not in gs_trackers:
+            gs_trackers[tank_entity] = TankWaterTracker(tank)
+        return gs_trackers[tank_entity]
 
     async def async_harvest(self, plant_id: str) -> Plant:
         """Mark a plant as harvested."""
