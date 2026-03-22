@@ -35,13 +35,13 @@ def _make_coordinator(volume: float = 200.0, flow_sensors=None, drain_sensors=No
 
 
 def test_native_value_liters_today():
-    coordinator, growspace, tank = _make_coordinator()
+    coordinator, _, tank = _make_coordinator()
     sensor = TankDerivedWaterSensor(coordinator, "gs_1", tank)
     assert sensor.native_value == pytest.approx(8.5)
 
 
 def test_extra_attrs_keys():
-    coordinator, growspace, tank = _make_coordinator()
+    coordinator, _, tank = _make_coordinator()
     sensor = TankDerivedWaterSensor(coordinator, "gs_1", tank)
     attrs = sensor.extra_state_attributes
     assert "liters_today" in attrs
@@ -50,10 +50,11 @@ def test_extra_attrs_keys():
     assert "history_7d" in attrs
     assert "volume_liters" in attrs
     assert attrs["volume_liters"] == 200.0
+    assert "events" in attrs
 
 
 def test_unique_id_format():
-    coordinator, growspace, tank = _make_coordinator()
+    coordinator, _, tank = _make_coordinator()
     sensor = TankDerivedWaterSensor(coordinator, "gs_1", tank)
     assert "gs_1" in sensor.unique_id
     assert "tank_derived_water" in sensor.unique_id
@@ -61,7 +62,7 @@ def test_unique_id_format():
 
 
 def test_unavailable_when_tracker_none():
-    coordinator, growspace, tank = _make_coordinator()
+    coordinator, _, tank = _make_coordinator()
     coordinator.get_tank_tracker.return_value = None
     sensor = TankDerivedWaterSensor(coordinator, "gs_1", tank)
     assert sensor.available is False
@@ -69,17 +70,17 @@ def test_unavailable_when_tracker_none():
 
 
 def test_should_create_when_no_flow_or_drain_sensors():
-    coordinator, growspace, tank = _make_coordinator()
+    _, growspace, tank = _make_coordinator()
     assert _should_create_derived_water_sensor(growspace, tank) is True
 
 
 def test_should_not_create_when_flow_sensors_present():
-    coordinator, growspace, tank = _make_coordinator(flow_sensors=["sensor.flow"])
+    _, growspace, tank = _make_coordinator(flow_sensors=["sensor.flow"])
     assert _should_create_derived_water_sensor(growspace, tank) is False
 
 
 def test_should_not_create_when_drain_sensors_present():
-    coordinator, growspace, tank = _make_coordinator(drain_sensors=["sensor.drain"])
+    _, growspace, tank = _make_coordinator(drain_sensors=["sensor.drain"])
     assert _should_create_derived_water_sensor(growspace, tank) is False
 
 
