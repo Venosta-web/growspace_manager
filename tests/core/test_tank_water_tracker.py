@@ -1,12 +1,21 @@
 """Tests for TankWaterTracker."""
+from datetime import UTC, datetime
+from unittest.mock import MagicMock, patch
+
 import pytest
 
 from custom_components.growspace_manager.const import (
     TANK_MAX_EVENTS,
     TANK_MAX_SNAPSHOTS,
+    TANK_REFILL_THRESHOLD_PCT,
 )
 from custom_components.growspace_manager.models import IrrigationTank
-from custom_components.growspace_manager.tank_water_tracker import TankWaterTracker
+from custom_components.growspace_manager.tank_water_tracker import (
+    _BUCKET_15MIN,
+    TankWaterTracker,
+    _fill_buckets,
+    _parse_ts,
+)
 
 
 def _make_tank(volume: float = 200.0) -> IrrigationTank:
@@ -128,3 +137,265 @@ def test_consumption_placed_in_correct_bucket():
     history = t.get_history_24h(reference_ts="2026-03-22T12:00:00+00:00")
     consumed = sum(b["liters_consumed"] for b in history)
     assert abs(consumed - 4.0) < 0.01
+
+
+# ── _parse_ts: naive datetime gets UTC tzinfo ────────────────────────────────
+
+def test_parse_ts_naive_datetime_gets_utc():
+    """_parse_ts must attach UTC tzinfo to naive ISO-8601 strings."""
+    dt = _parse_ts("2026-03-22T10:00:00")  # no tzinfo
+    assert dt.tzinfo is not None
+    assert dt.tzinfo == UTC
+
+
+# ── edge cases: no reference_ts (uses datetime.now) ──────────────────────────
+
+def test_get_history_24h_no_reference_ts_uses_now():
+    """get_history_24h without reference_ts falls back to datetime.now."""
+    t = _tracker()
+    history = t.get_history_24h()  # reference_ts=None
+    assert len(history) == 96
+
+
+def test_get_history_7d_no_reference_ts_uses_now():
+    """get_history_7d without reference_ts falls back to datetime.now."""
+    t = _tracker()
+    history = t.get_history_7d()  # reference_ts=None
+    assert len(history) == 168
+
+
+def test_get_total_liters_today_no_reference_ts():
+    """get_total_liters_today without reference_ts uses datetime.now."""
+    t = _tracker()
+    t.record_level(60.0, "2026-03-22T08:00:00+00:00")
+    t.record_level(55.0, "2026-03-22T10:00:00+00:00")  # 10 L consumption
+    # With no reference_ts the method uses now; result may be 0 if "today" is
+    # different, but the method must not raise.
+    result = t.get_total_liters_today()
+    assert isinstance(result, float)
+
+
+def test_get_total_liters_7d_no_reference_ts():
+    """get_total_liters_7d without reference_ts uses datetime.now."""
+    t = _tracker()
+    result = t.get_total_liters_7d()
+    assert isinstance(result, (int, float))
+
+
+# ── small positive change below refill threshold is ignored ──────────────────
+
+def test_small_positive_change_below_refill_threshold_ignored():
+    """A rise smaller than TANK_REFILL_THRESHOLD_PCT must not emit a refill event."""
+    t = _tracker()
+    t.record_level(50.0, "2026-03-22T10:00:00+00:00")
+    # Rise exactly one tick below the refill threshold (above noise floor)
+    small_rise = TANK_REFILL_THRESHOLD_PCT - 0.01
+    t.record_level(50.0 + small_rise, "2026-03-22T10:05:00+00:00")
+    assert t.tank.water_history.events == []
+
+
+# ── consumption event without volume_liters falls back to pct_delta ──────────
+
+def test_consumption_without_volume_liters_uses_pct_delta():
+    """When volume_liters is None the event liters field equals abs pct_delta."""
+    tank = IrrigationTank(sensor_entity="sensor.tank", volume_liters=None)
+    t = TankWaterTracker(tank)
+    t.record_level(50.0, "2026-03-22T10:00:00+00:00")
+    t.record_level(46.0, "2026-03-22T10:15:00+00:00")  # −4%
+    ev = t.tank.water_history.events[0]
+    assert ev["event_type"] == "consumption"
+    assert ev["liters"] == pytest.approx(4.0)
+
+
+def test_refill_without_volume_liters_uses_pct_delta():
+    """When volume_liters is None the refill liters field equals abs pct_delta."""
+    tank = IrrigationTank(sensor_entity="sensor.tank", volume_liters=None)
+    t = TankWaterTracker(tank)
+    t.record_level(40.0, "2026-03-22T10:00:00+00:00")
+    t.record_level(80.0, "2026-03-22T11:00:00+00:00")  # +40%
+    ev = t.tank.water_history.events[0]
+    assert ev["event_type"] == "refill"
+    assert ev["liters"] == pytest.approx(40.0)
+
+
+# ── _fill_buckets edge cases ──────────────────────────────────────────────────
+
+def test_fill_buckets_ignores_events_outside_range():
+    """Events outside the bucket window must not appear in any bucket."""
+    t = _tracker()
+    # Record a consumption event far in the past (well outside 24h window)
+    t.record_level(60.0, "2020-01-01T00:00:00+00:00")
+    t.record_level(55.0, "2020-01-01T01:00:00+00:00")  # 10 L, ancient
+    history = t.get_history_24h(reference_ts="2026-03-22T12:00:00+00:00")
+    consumed = sum(b["liters_consumed"] for b in history)
+    assert consumed == pytest.approx(0.0)
+
+
+def test_fill_buckets_refill_in_bucket():
+    """Refill events must accumulate in liters_refilled for the correct bucket."""
+    t = _tracker()
+    t.record_level(40.0, "2026-03-22T10:00:00+00:00")
+    t.record_level(80.0, "2026-03-22T10:05:00+00:00")  # +40% refill = 80 L
+    history = t.get_history_24h(reference_ts="2026-03-22T12:00:00+00:00")
+    refilled = sum(b["liters_refilled"] for b in history)
+    assert abs(refilled - 80.0) < 0.01
+
+
+def test_fill_buckets_empty_buckets_list_is_safe():
+    """_fill_buckets with an empty bucket list must not raise."""
+    _fill_buckets([], [{"timestamp": "2026-03-22T10:00:00+00:00", "event_type": "consumption", "liters": 5.0}], _BUCKET_15MIN)
+
+
+# ── HA subscription: async_setup / async_unsubscribe ─────────────────────────
+
+@pytest.mark.asyncio
+async def test_async_setup_subscribes_to_state_changes():
+    """async_setup must register a state-change listener and return the unsub callable."""
+    t = _tracker()
+    hass = MagicMock()
+    on_change = MagicMock()
+    mock_unsub = MagicMock()
+
+    with patch(
+        "custom_components.growspace_manager.tank_water_tracker.async_track_state_change_event",
+        return_value=mock_unsub,
+    ) as mock_track:
+        result = await t.async_setup(hass, on_change)
+
+    mock_track.assert_called_once()
+    assert result is mock_unsub
+
+
+@pytest.mark.asyncio
+async def test_async_unsubscribe_calls_unsub():
+    """async_unsubscribe must call the stored unsub callable exactly once."""
+    t = _tracker()
+    hass = MagicMock()
+    mock_unsub = MagicMock()
+
+    with patch(
+        "custom_components.growspace_manager.tank_water_tracker.async_track_state_change_event",
+        return_value=mock_unsub,
+    ):
+        await t.async_setup(hass, MagicMock())
+
+    await t.async_unsubscribe()
+    mock_unsub.assert_called_once()
+    assert t._unsub is None
+
+
+@pytest.mark.asyncio
+async def test_async_unsubscribe_safe_before_setup():
+    """Calling async_unsubscribe before async_setup must not raise."""
+    t = _tracker()
+    await t.async_unsubscribe()  # Should not raise
+
+
+@pytest.mark.asyncio
+async def test_async_setup_records_level_on_state_change():
+    """The state-change callback must record the level and call on_change."""
+    t = _tracker()
+    hass = MagicMock()
+    on_change = MagicMock()
+    captured: dict = {}
+
+    def _fake_track(hass, entities, callback):
+        captured["fn"] = callback
+        return MagicMock()
+
+    with patch(
+        "custom_components.growspace_manager.tank_water_tracker.async_track_state_change_event",
+        side_effect=_fake_track,
+    ):
+        await t.async_setup(hass, on_change)
+
+    # Simulate a valid state-change event
+    new_state = MagicMock()
+    new_state.state = "75.5"
+    new_state.last_updated = datetime(2026, 3, 22, 10, 0, 0, tzinfo=UTC)
+    event = MagicMock()
+    event.data = {"new_state": new_state}
+
+    captured["fn"](event)
+
+    assert len(t.tank.water_history.snapshots) == 1
+    assert t.tank.water_history.snapshots[0]["level_pct"] == pytest.approx(75.5)
+    on_change.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_async_setup_ignores_none_new_state():
+    """The callback must silently ignore events where new_state is None."""
+    t = _tracker()
+    hass = MagicMock()
+    captured: dict = {}
+
+    def _fake_track(hass, entities, callback):
+        captured["fn"] = callback
+        return MagicMock()
+
+    with patch(
+        "custom_components.growspace_manager.tank_water_tracker.async_track_state_change_event",
+        side_effect=_fake_track,
+    ):
+        await t.async_setup(hass, MagicMock())
+
+    event = MagicMock()
+    event.data = {"new_state": None}
+    captured["fn"](event)
+
+    assert t.tank.water_history.snapshots == []
+
+
+@pytest.mark.asyncio
+async def test_async_setup_ignores_non_numeric_state():
+    """The callback must silently ignore state values that are not numeric."""
+    t = _tracker()
+    hass = MagicMock()
+    captured: dict = {}
+
+    def _fake_track(hass, entities, callback):
+        captured["fn"] = callback
+        return MagicMock()
+
+    with patch(
+        "custom_components.growspace_manager.tank_water_tracker.async_track_state_change_event",
+        side_effect=_fake_track,
+    ):
+        await t.async_setup(hass, MagicMock())
+
+    bad_state = MagicMock()
+    bad_state.state = "unavailable"
+    bad_state.last_updated = datetime(2026, 3, 22, 10, 0, 0, tzinfo=UTC)
+    event = MagicMock()
+    event.data = {"new_state": bad_state}
+    captured["fn"](event)
+
+    assert t.tank.water_history.snapshots == []
+
+
+@pytest.mark.asyncio
+async def test_async_setup_on_change_not_called_when_none():
+    """When on_change is None the callback must not raise."""
+    t = _tracker()
+    hass = MagicMock()
+    captured: dict = {}
+
+    def _fake_track(hass, entities, callback):
+        captured["fn"] = callback
+        return MagicMock()
+
+    with patch(
+        "custom_components.growspace_manager.tank_water_tracker.async_track_state_change_event",
+        side_effect=_fake_track,
+    ):
+        await t.async_setup(hass, None)  # on_change=None
+
+    new_state = MagicMock()
+    new_state.state = "60.0"
+    new_state.last_updated = datetime(2026, 3, 22, 10, 0, 0, tzinfo=UTC)
+    event = MagicMock()
+    event.data = {"new_state": new_state}
+
+    captured["fn"](event)  # Must not raise even though on_change is None
+    assert len(t.tank.water_history.snapshots) == 1
