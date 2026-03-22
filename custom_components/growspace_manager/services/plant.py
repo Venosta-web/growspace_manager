@@ -682,7 +682,7 @@ async def handle_transition_plant_stage(
         await coordinator.plant_manager.transition_plant_stage(
             plant_id=plant_id,
             new_stage=new_stage,
-            transition_date=transition_date if transition_date else None,
+            transition_date=transition_date or None,
         )
         _LOGGER.info("Plant %s transitioned to %s stage", plant_id, new_stage)
 

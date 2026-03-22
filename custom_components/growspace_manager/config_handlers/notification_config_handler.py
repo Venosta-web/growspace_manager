@@ -67,7 +67,7 @@ class NotificationConfigHandler(BaseConfigHandler[dict[str, Any]]):
                 user_input["day"],
                 user_input.get("growspace_ids"),
             )
-            return self.flow.async_create_entry(title="", data={})
+            return self.flow.async_create_entry(title="", data=self.config_entry.options)
 
         return self.flow.async_show_form(
             step_id="add_timed_notification",
@@ -102,7 +102,7 @@ class NotificationConfigHandler(BaseConfigHandler[dict[str, Any]]):
                 user_input["day"],
                 user_input.get("growspace_ids"),
             )
-            return self.flow.async_create_entry(title="", data={})
+            return self.flow.async_create_entry(title="", data=self.config_entry.options)
 
         return self.flow.async_show_form(
             step_id="edit_timed_notification",

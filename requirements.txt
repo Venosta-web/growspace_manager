@@ -22,6 +22,7 @@ pytest-asyncio
 pytest-homeassistant-custom-component>=0.13.80
 pytest-cov
 pytest
+PyTurboJPEG
 yamllint
 codespell
 pytest-xdist

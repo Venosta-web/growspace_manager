@@ -7,6 +7,9 @@ import pathlib
 from typing import TYPE_CHECKING, Any
 
 from homeassistant.components import panel_custom
+from homeassistant.components.frontend import (
+    async_remove_panel as frontend_async_remove_panel,
+)
 from homeassistant.components.http import StaticPathConfig
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
@@ -173,7 +176,7 @@ async def async_register_sidebar_panel(
     # Remove existing panel first to avoid "Overwriting panel" error
     if DOMAIN in hass.data.get("frontend_panels", {}):
         _LOGGER.debug("Removing existing Growspace Manager sidebar panel")
-        hass.components.frontend.async_remove_panel(DOMAIN)
+        frontend_async_remove_panel(hass, DOMAIN)
 
     if show_sidebar:
         _LOGGER.debug("Registering Growspace Manager sidebar panel")
@@ -228,7 +231,7 @@ async def async_unload_entry(hass: HomeAssistant, entry: GrowspaceConfigEntry) -
         # Remove sidebar panel
         if DOMAIN in hass.data.get("frontend_panels", {}):
             _LOGGER.debug("Removing Growspace Manager sidebar panel during unload")
-            hass.components.frontend.async_remove_panel(DOMAIN)
+            frontend_async_remove_panel(hass, DOMAIN)
 
         # Clean up global Strain Library
         if DOMAIN in hass.data and "strain_library" in hass.data[DOMAIN]:

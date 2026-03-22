@@ -79,6 +79,26 @@ class ServiceCoordinatorLocator:
         )
 
     @staticmethod
+    def get_any(hass: HomeAssistant) -> GrowspaceCoordinator:
+        """Get any loaded coordinator, for commands that don't target a specific entity.
+
+        Args:
+            hass: The Home Assistant instance.
+
+        Returns:
+            Any loaded GrowspaceCoordinator instance.
+
+        Raises:
+            ServiceValidationError: If no coordinator is loaded.
+        """
+        coordinators = ServiceCoordinatorLocator._get_loaded_coordinators(hass)
+        if not coordinators:
+            raise ServiceValidationError(
+                "No Growspace Manager instance is currently loaded."
+            )
+        return coordinators[0]
+
+    @staticmethod
     def _get_loaded_coordinators(hass: HomeAssistant) -> list[GrowspaceCoordinator]:
         """Get all loaded GrowspaceCoordinator instances.
 

@@ -12,6 +12,8 @@ from custom_components.growspace_manager.models import (
     GrowspaceEvent,
     IrrigationStrategy,
     Plant,
+    VisionCheckupConfig,
+    VisionCheckupResult,
 )
 
 # --------------------
@@ -419,3 +421,111 @@ async def test_growspace_migration_redundant_irrigation_fields() -> None:
     assert "start_time" not in gs.irrigation_config.irrigation_times[0]
     assert gs.irrigation_config.irrigation_times[0]["duration"] == 60
     assert "duration_seconds" not in gs.irrigation_config.irrigation_times[0]
+
+
+# --------------------
+# VisionCheckup Model Tests
+# --------------------
+
+
+def test_vision_checkup_result_creation():
+    """Test VisionCheckupResult dataclass creation."""
+    result = VisionCheckupResult(
+        timestamp="2026-03-21T07:00:00",
+        growspace_id="tent1",
+        check_type="early",
+        snapshot_paths=["/local/growspace_manager/snapshots/tent1/20260321_070000_cam1.jpg"],
+        analysis="Plants look healthy, no issues detected.",
+        issues_detected=[],
+        severity="none",
+        recommendations=[],
+    )
+    assert result.growspace_id == "tent1"
+    assert result.check_type == "early"
+    assert result.severity == "none"
+    assert result.issues_detected == []
+
+
+def test_vision_checkup_result_defaults():
+    """Test VisionCheckupResult default values."""
+    result = VisionCheckupResult(
+        timestamp="2026-03-21T07:00:00",
+        growspace_id="tent1",
+        check_type="mid",
+    )
+    assert result.snapshot_paths == []
+    assert result.analysis == ""
+    assert result.issues_detected == []
+    assert result.severity == "none"
+    assert result.recommendations == []
+
+
+def test_vision_checkup_config_creation():
+    """Test VisionCheckupConfig dataclass creation."""
+    config = VisionCheckupConfig()
+    assert config.enabled is False
+    assert config.early_check_offset_minutes == 60
+    assert config.mid_check_hours == 6
+    assert config.late_check_offset_minutes == 60
+    assert config.history_limit == 10
+
+
+def test_vision_checkup_config_serialization():
+    """Test VisionCheckupConfig round-trips through mashumaro."""
+    config = VisionCheckupConfig(enabled=True, history_limit=5)
+    data = config.to_dict()
+    restored = VisionCheckupConfig.from_dict(data)
+    assert restored.enabled is True
+    assert restored.history_limit == 5
+
+
+def test_vision_checkup_result_serialization():
+    """Test VisionCheckupResult serializes and deserializes correctly."""
+    original = VisionCheckupResult(
+        timestamp="2026-03-21T07:00:00",
+        growspace_id="tent1",
+        check_type="mid",
+        analysis="Spider mites detected on lower leaves.",
+        issues_detected=["spider_mites"],
+        severity="medium",
+        recommendations=["Apply neem oil spray immediately."],
+    )
+    data = original.to_dict()
+    restored = VisionCheckupResult.from_dict(data)
+    assert restored.analysis == "Spider mites detected on lower leaves."
+    assert restored.issues_detected == ["spider_mites"]
+    assert restored.severity == "medium"
+
+
+def test_environment_config_has_vision_checkup_config():
+    """Test EnvironmentConfig includes vision checkup config."""
+    env = EnvironmentConfig()
+    assert isinstance(env.vision_checkup_config, VisionCheckupConfig)
+    assert env.vision_checkup_config.enabled is False
+
+
+def test_growspace_has_vision_checkup_history():
+    """Test Growspace model includes vision checkup history defaulting to empty."""
+    gs = Growspace(id="tent1", name="Tent 1")
+    assert gs.vision_checkup_history == []
+
+
+def test_growspace_vision_checkup_history_serialization():
+    """Test Growspace with vision checkup history round-trips through serialization."""
+    result = VisionCheckupResult(
+        timestamp="2026-03-21T07:00:00",
+        growspace_id="tent1",
+        check_type="early",
+        analysis="All good.",
+        issues_detected=[],
+        severity="none",
+        recommendations=[],
+    )
+    gs = Growspace(id="tent1", name="Tent 1")
+    gs.vision_checkup_history = [result]
+
+    data = gs.to_dict()
+    restored = Growspace.from_dict(data)
+    assert len(restored.vision_checkup_history) == 1
+    assert restored.vision_checkup_history[0].growspace_id == "tent1"
+    assert restored.vision_checkup_history[0].severity == "none"

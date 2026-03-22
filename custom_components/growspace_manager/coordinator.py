@@ -58,6 +58,7 @@ from .strain_library import StrainLibrary
 from .types import DateInput
 from .utils import generate_growspace_overview_unique_id
 from .view_model_builder import ViewModelBuilder
+from .vision_checkup_scheduler import VisionCheckupScheduler
 from .vwc_irrigation_coordinator import VWCIrrigationCoordinator
 
 _LOGGER = logging.getLogger(__name__)
@@ -130,6 +131,21 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             ServiceValidationError: If no matching coordinator can be found.
         """
         return ServiceCoordinatorLocator.get_for_service_call(hass, call)
+
+    @staticmethod
+    def get_any(hass: HomeAssistant) -> GrowspaceCoordinator:
+        """Get any loaded coordinator, for commands that don't target a specific entity.
+
+        Args:
+            hass: The Home Assistant instance.
+
+        Returns:
+            Any loaded GrowspaceCoordinator instance.
+
+        Raises:
+            ServiceValidationError: If no coordinator is loaded.
+        """
+        return ServiceCoordinatorLocator.get_any(hass)
 
     @property
     def irrigation_coordinators(
@@ -427,6 +443,9 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
         # Initialize Subsystem Manager
         self.subsystem_manager = SubsystemManager(hass, self, entry)
+
+        # Initialize Vision Checkup Scheduler
+        self.vision_scheduler = VisionCheckupScheduler(hass, self)
 
         # Track created entities (platform, entity_id, unique_id) for lifecycle management
         self.created_entity_ids: list[tuple[str, str, str]] = []
@@ -786,6 +805,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         """
         if hasattr(self, "environment_reporter"):
             self.environment_reporter.unload()
+        self.vision_scheduler.async_stop()
         await self.storage_manager.async_force_save()
 
     async def async_load(self) -> None:
@@ -808,6 +828,9 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         # Ensure default special growspaces exist
         await self.growspace_manager.ensure_default_growspaces()
         await self.async_save()
+
+        # Schedule vision checkups for all loaded growspaces
+        self.vision_scheduler.schedule_all_growspaces()
 
         # Initialize environment reporter after data load
         if hasattr(self, "environment_reporter"):

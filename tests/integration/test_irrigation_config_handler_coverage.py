@@ -50,6 +50,7 @@ def mock_hass() -> MagicMock:
 def mock_config_entry() -> MagicMock:
     """Mock Config Entry."""
     entry = MagicMock(spec=ConfigEntry)
+    entry.options = {}
     entry.entry_id = "test_entry"
     entry.runtime_data = MagicMock()
     return entry

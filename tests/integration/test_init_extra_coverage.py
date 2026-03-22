@@ -131,17 +131,15 @@ async def test_async_register_sidebar_panel_remove(hass: HomeAssistant) -> None:
     """Test unregistering the sidebar panel (Line 185-191)."""
     entry = MockConfigEntry(domain=DOMAIN, options={CONF_SHOW_SIDEBAR: False})
 
-    # Mock frontend component
-    hass.components = MagicMock()
-    hass.components.frontend = MagicMock()
-    hass.components.frontend.async_remove_panel = MagicMock()
-
     # Set up panel in hass.data
     hass.data["frontend_panels"] = {DOMAIN: MagicMock()}
 
-    await async_register_sidebar_panel(hass, entry)
+    with patch(
+        "custom_components.growspace_manager.frontend_async_remove_panel"
+    ) as mock_remove_panel:
+        await async_register_sidebar_panel(hass, entry)
 
-    hass.components.frontend.async_remove_panel.assert_called_once_with(DOMAIN)
+    mock_remove_panel.assert_called_once_with(hass, DOMAIN)
 
 
 async def test_async_unload_entry_domain_checks(hass: HomeAssistant) -> None:
@@ -182,13 +180,13 @@ async def test_async_unload_entry_removes_panel(hass: HomeAssistant) -> None:
     # Actually line 229: if DOMAIN in hass.data.get("frontend_panels", {}):
     hass.data["frontend_panels"] = {DOMAIN: MagicMock()}
 
-    # Mock frontend component
-    hass.components = MagicMock()
-    hass.components.frontend = MagicMock()
-    hass.components.frontend.async_remove_panel = MagicMock()
-
-    with patch.object(hass.config_entries, "async_unload_platforms", return_value=True):
+    with (
+        patch.object(hass.config_entries, "async_unload_platforms", return_value=True),
+        patch(
+            "custom_components.growspace_manager.frontend_async_remove_panel"
+        ) as mock_remove_panel,
+    ):
         assert await async_unload_entry(hass, entry) is True
 
     # Verify remove_panel was called
-    hass.components.frontend.async_remove_panel.assert_called_once_with(DOMAIN)
+    mock_remove_panel.assert_called_once_with(hass, DOMAIN)

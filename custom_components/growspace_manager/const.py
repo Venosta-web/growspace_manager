@@ -264,6 +264,15 @@ CONF_ASSISTANT_ID = "assistant_id"
 CONF_NOTIFICATION_PERSONALITY = "notification_personality"
 CONF_AI_AUTO_ALERTS = "ai_auto_alerts"
 
+# Vision Checkup Constants
+CONF_VISION_CHECKUP_ENABLED = "vision_checkup_enabled"
+CONF_AI_TASK_ENTITY_ID = "ai_task_entity_id"
+CONF_VISION_DEBUG_ENABLED = "vision_debug_enabled"
+DEFAULT_VISION_EARLY_OFFSET_MINUTES = 60
+DEFAULT_VISION_MID_CHECK_HOURS = 6
+DEFAULT_VISION_LATE_OFFSET_MINUTES = 60
+DEFAULT_VISION_HISTORY_LIMIT = 10
+
 # Notification Defaults
 DEFAULT_COOLDOWN_MINUTES = 5
 
@@ -414,6 +423,8 @@ class GrowspaceService(StrEnum):
     # EC Ramp Curve Services
     SAVE_EC_RAMP_CURVE = "save_ec_ramp_curve"
     REMOVE_EC_RAMP_CURVE = "remove_ec_ramp_curve"
+    # Vision Checkup Services
+    TRIGGER_VISION_CHECKUP = "trigger_vision_checkup"
 
 
 class TrainingTechnique(StrEnum):

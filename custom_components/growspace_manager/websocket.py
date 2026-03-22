@@ -61,7 +61,7 @@ def _extract_ts(state_obj: Any) -> datetime:
         return _EPOCH_SENTINEL
     if isinstance(ts_raw, str):
         parsed = dt_util.parse_datetime(ts_raw)
-        return parsed if parsed else _EPOCH_SENTINEL  # type: ignore[no-any-return]
+        return parsed or _EPOCH_SENTINEL  # type: ignore[no-any-return]
     if isinstance(ts_raw, datetime):
         return ts_raw
     return _EPOCH_SENTINEL
@@ -229,7 +229,11 @@ def _query_logbook_events_impl(
                     event_plant_id = d.get("plant_id")
                     if event_plant_id is not None and event_plant_id != plant_id:
                         continue
-                    if event_plant_id is None and growspace_id and d.get("growspace_id") != growspace_id:
+                    if (
+                        event_plant_id is None
+                        and growspace_id
+                        and d.get("growspace_id") != growspace_id
+                    ):
                         continue
                 elif growspace_id and d.get("growspace_id") != growspace_id:
                     continue
@@ -285,7 +289,7 @@ async def websocket_get_event_log(
             2,
         )
         res = {}
-        response_key = plant_id if plant_id else growspace_id
+        response_key = plant_id or growspace_id
         if response_key:
             res[response_key] = evts
         else:
@@ -297,7 +301,7 @@ async def websocket_get_event_log(
 
     except (ImportError, KeyError) as err:
         _LOGGER.warning("Recorder not available: %s", err)
-        response_key = plant_id if plant_id else growspace_id
+        response_key = plant_id or growspace_id
         connection.send_result(msg["id"], {response_key: []} if response_key else {})
     except Exception as err:
         _LOGGER.exception("Error handling websocket_get_event_log")
@@ -335,7 +339,7 @@ async def websocket_get_alerts(
             5,
         )
         res = {}
-        response_key = plant_id if plant_id else growspace_id
+        response_key = plant_id or growspace_id
         if response_key:
             res[response_key] = evts
         else:
@@ -347,7 +351,7 @@ async def websocket_get_alerts(
 
     except (ImportError, KeyError) as err:
         _LOGGER.warning("Recorder not available: %s", err)
-        response_key = plant_id if plant_id else growspace_id
+        response_key = plant_id or growspace_id
         connection.send_result(msg["id"], {response_key: []} if response_key else {})
     except Exception as err:
         _LOGGER.exception("Error handling websocket_get_alerts")
@@ -468,9 +472,7 @@ def websocket_get_nutrient_inventory(
 ) -> None:
     """Handle get nutrient inventory command."""
     try:
-        coordinator: GrowspaceCoordinator = GrowspaceCoordinator.get_for_service_call(
-            hass, msg
-        )
+        coordinator: GrowspaceCoordinator = GrowspaceCoordinator.get_any(hass)
         if coordinator.nutrient_inventory_service:
             inventory = coordinator.nutrient_inventory_service.get_inventory()
             connection.send_result(msg["id"], asdict(inventory))
@@ -487,9 +489,7 @@ def websocket_update_nutrient_stock(
 ) -> None:
     """Handle update nutrient stock command."""
     try:
-        coordinator: GrowspaceCoordinator = GrowspaceCoordinator.get_for_service_call(
-            hass, msg
-        )
+        coordinator: GrowspaceCoordinator = GrowspaceCoordinator.get_any(hass)
         if coordinator.nutrient_inventory_service:
             coordinator.nutrient_inventory_service.update_stock(
                 nutrient_id=msg["nutrient_id"],
@@ -513,9 +513,7 @@ def websocket_remove_nutrient_stock(
 ) -> None:
     """Handle remove nutrient stock command."""
     try:
-        coordinator: GrowspaceCoordinator = GrowspaceCoordinator.get_for_service_call(
-            hass, msg
-        )
+        coordinator: GrowspaceCoordinator = GrowspaceCoordinator.get_any(hass)
         if coordinator.nutrient_inventory_service:
             coordinator.nutrient_inventory_service.remove_stock(msg["nutrient_id"])
             # Persist changes
@@ -1019,6 +1017,27 @@ async def websocket_delete_breeder(
         connection.send_error(msg["id"], "unknown_error", str(err))
 
 
+WS_TYPE_GET_VISION_HISTORY = f"{DOMAIN}/get_vision_history"
+SCHEMA_WS_GET_VISION_HISTORY = websocket_api.BASE_COMMAND_MESSAGE_SCHEMA.extend(
+    {
+        vol.Required("type"): WS_TYPE_GET_VISION_HISTORY,
+        vol.Required("growspace_id"): str,
+        vol.Optional("limit", default=10): vol.All(int, vol.Range(min=1, max=50)),
+    }
+)
+
+WS_TYPE_UPDATE_VISION_CHECKUP_CONFIG = f"{DOMAIN}/update_vision_checkup_config"
+SCHEMA_WS_UPDATE_VISION_CHECKUP_CONFIG = websocket_api.BASE_COMMAND_MESSAGE_SCHEMA.extend(
+    {
+        vol.Required("type"): WS_TYPE_UPDATE_VISION_CHECKUP_CONFIG,
+        vol.Required("growspace_id"): str,
+        vol.Optional("enabled"): bool,
+        vol.Optional("early_check_offset_minutes"): vol.All(int, vol.Range(min=1)),
+        vol.Optional("mid_check_hours"): vol.All(int, vol.Range(min=1)),
+        vol.Optional("late_check_offset_minutes"): vol.All(int, vol.Range(min=1)),
+    }
+)
+
 WS_TYPE_CAPTURE_SNAPSHOT = f"{DOMAIN}/capture_snapshot"
 SCHEMA_WS_CAPTURE_SNAPSHOT = websocket_api.BASE_COMMAND_MESSAGE_SCHEMA.extend(
     {
@@ -1165,6 +1184,97 @@ async def websocket_get_snapshots(
         connection.send_error(msg["id"], "unknown_error", str(err))
 
 
+async def websocket_get_vision_history(
+    hass: HomeAssistant,
+    connection: websocket_api.ActiveConnection,
+    msg: dict[str, Any],
+) -> None:
+    """Return vision checkup history for a growspace."""
+    growspace_id: str = msg["growspace_id"]
+    limit: int = msg.get("limit", 10)
+
+    try:
+        coordinator = GrowspaceCoordinator.get_for_service_call(hass, msg)
+    except ServiceValidationError as err:
+        connection.send_error(msg["id"], "not_loaded", str(err))
+        return
+
+    growspace = coordinator.growspaces.get(growspace_id)
+    if not growspace:
+        connection.send_error(
+            msg["id"], "not_found", f"Growspace {growspace_id} not found"
+        )
+        return
+
+    history = [
+        {
+            "timestamp": r.timestamp,
+            "check_type": r.check_type,
+            "analysis": r.analysis,
+            "issues_detected": r.issues_detected,
+            "severity": r.severity,
+            "recommendations": r.recommendations,
+            "snapshot_paths": r.snapshot_paths,
+        }
+        for r in growspace.vision_checkup_history[:limit]
+    ]
+
+    connection.send_result(
+        msg["id"],
+        {"history": history, "total": len(growspace.vision_checkup_history)},
+    )
+
+
+async def websocket_update_vision_checkup_config(
+    hass: HomeAssistant,
+    connection: websocket_api.ActiveConnection,
+    msg: dict[str, Any],
+) -> None:
+    """Update vision checkup configuration for a growspace.
+
+    Only fields present in the message are applied (partial update).
+    Triggers schedule_all_growspaces after saving so the scheduler
+    reflects the new enabled state and timing offsets.
+    """
+    growspace_id: str = msg["growspace_id"]
+
+    try:
+        coordinator = GrowspaceCoordinator.get_for_service_call(hass, msg)
+    except ServiceValidationError as err:
+        connection.send_error(msg["id"], "not_loaded", str(err))
+        return
+
+    growspace = coordinator.growspaces.get(growspace_id)
+    if not growspace:
+        connection.send_error(
+            msg["id"], "not_found", f"Growspace {growspace_id!r} not found"
+        )
+        return
+
+    if not growspace.environment_config:
+        connection.send_error(
+            msg["id"],
+            "no_environment",
+            f"No environment config for growspace {growspace_id!r}",
+        )
+        return
+
+    vision_config = growspace.environment_config.vision_checkup_config
+    if "enabled" in msg:
+        vision_config.enabled = msg["enabled"]
+    if "early_check_offset_minutes" in msg:
+        vision_config.early_check_offset_minutes = msg["early_check_offset_minutes"]
+    if "mid_check_hours" in msg:
+        vision_config.mid_check_hours = msg["mid_check_hours"]
+    if "late_check_offset_minutes" in msg:
+        vision_config.late_check_offset_minutes = msg["late_check_offset_minutes"]
+
+    await coordinator.async_commit()
+    coordinator.vision_scheduler.schedule_all_growspaces()
+
+    connection.send_result(msg["id"], {"success": True})
+
+
 @callback
 def async_register_websocket_api(hass: HomeAssistant) -> None:
     """Register WebSocket API commands."""
@@ -1293,4 +1403,18 @@ def async_register_websocket_api(hass: HomeAssistant) -> None:
         WS_TYPE_GET_SNAPSHOTS,
         websocket_api.async_response(websocket_get_snapshots),
         SCHEMA_WS_GET_SNAPSHOTS,
+    )
+
+    websocket_api.async_register_command(
+        hass,
+        WS_TYPE_GET_VISION_HISTORY,
+        websocket_api.async_response(websocket_get_vision_history),
+        SCHEMA_WS_GET_VISION_HISTORY,
+    )
+
+    websocket_api.async_register_command(
+        hass,
+        WS_TYPE_UPDATE_VISION_CHECKUP_CONFIG,
+        websocket_api.async_response(websocket_update_vision_checkup_config),
+        SCHEMA_WS_UPDATE_VISION_CHECKUP_CONFIG,
     )

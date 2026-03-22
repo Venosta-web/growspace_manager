@@ -529,6 +529,7 @@ class TestSensorRegistrationCoverage:
 
         # We need a mock config entry
         mock_entry = MagicMock(spec=ConfigEntry)
+        mock_entry.options = {}
         mock_entry.runtime_data = preset_coordinator
 
         await _create_initial_entities(

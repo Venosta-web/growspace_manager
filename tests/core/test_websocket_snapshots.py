@@ -18,6 +18,7 @@ from custom_components.growspace_manager.websocket import (
     websocket_get_nutrient_inventory,
     websocket_get_nutrient_presets,
     websocket_get_strain_library,
+    websocket_get_vision_history,
     websocket_update_breeder,
 )
 from homeassistant.core import HomeAssistant
@@ -97,7 +98,7 @@ async def test_websocket_get_nutrient_inventory_snapshot(
 
     with (
         patch(
-            "custom_components.growspace_manager.GrowspaceCoordinator.get_for_service_call",
+            "custom_components.growspace_manager.GrowspaceCoordinator.get_any",
             return_value=coordinator,
         ),
         patch(
@@ -392,3 +393,152 @@ async def test_websocket_delete_breeder_snapshot(
 
     mock_connection.send_result.assert_called_once_with(11, {"deleted": 3})
     assert snapshot == {"deleted": 3}
+
+
+@pytest.mark.asyncio
+async def test_websocket_get_vision_history_empty(
+    hass: HomeAssistant, mock_connection
+) -> None:
+    """Test get_vision_history returns empty list when growspace has no history."""
+    coordinator = MagicMock()
+    growspace = MagicMock()
+    growspace.vision_checkup_history = []
+    coordinator.growspaces = {"tent1": growspace}
+
+    with patch(
+        "custom_components.growspace_manager.GrowspaceCoordinator.get_for_service_call",
+        return_value=coordinator,
+    ):
+        msg = {
+            "id": 12,
+            "type": f"{DOMAIN}/get_vision_history",
+            "growspace_id": "tent1",
+        }
+        await websocket_get_vision_history(hass, mock_connection, msg)
+
+    mock_connection.send_result.assert_called_once_with(
+        12, {"history": [], "total": 0}
+    )
+
+
+@pytest.mark.asyncio
+async def test_websocket_get_vision_history_with_results(
+    hass: HomeAssistant, mock_connection
+) -> None:
+    """Test get_vision_history returns paginated history with correct fields."""
+    coordinator = MagicMock()
+    growspace = MagicMock()
+
+    result1 = MagicMock()
+    result1.timestamp = "2026-03-21T10:00:00"
+    result1.check_type = "early"
+    result1.analysis = "Plants look healthy."
+    result1.issues_detected = []
+    result1.severity = "none"
+    result1.recommendations = ["Keep it up"]
+    result1.snapshot_paths = ["/local/snap1.jpg"]
+
+    result2 = MagicMock()
+    result2.timestamp = "2026-03-21T14:00:00"
+    result2.check_type = "mid"
+    result2.analysis = "Minor yellowing detected."
+    result2.issues_detected = ["yellowing"]
+    result2.severity = "low"
+    result2.recommendations = ["Check pH", "Adjust nutrients"]
+    result2.snapshot_paths = ["/local/snap2.jpg"]
+
+    growspace.vision_checkup_history = [result1, result2]
+    coordinator.growspaces = {"tent1": growspace}
+
+    with patch(
+        "custom_components.growspace_manager.GrowspaceCoordinator.get_for_service_call",
+        return_value=coordinator,
+    ):
+        msg = {
+            "id": 13,
+            "type": f"{DOMAIN}/get_vision_history",
+            "growspace_id": "tent1",
+            "limit": 10,
+        }
+        await websocket_get_vision_history(hass, mock_connection, msg)
+
+    mock_connection.send_result.assert_called_once()
+    call_id, result = mock_connection.send_result.call_args[0]
+    assert call_id == 13
+    assert result["total"] == 2
+    assert len(result["history"]) == 2
+
+    first = result["history"][0]
+    assert first["timestamp"] == "2026-03-21T10:00:00"
+    assert first["check_type"] == "early"
+    assert first["analysis"] == "Plants look healthy."
+    assert first["issues_detected"] == []
+    assert first["severity"] == "none"
+    assert first["recommendations"] == ["Keep it up"]
+    assert first["snapshot_paths"] == ["/local/snap1.jpg"]
+
+
+@pytest.mark.asyncio
+async def test_websocket_get_vision_history_growspace_not_found(
+    hass: HomeAssistant, mock_connection
+) -> None:
+    """Test get_vision_history returns error when growspace does not exist."""
+    coordinator = MagicMock()
+    coordinator.growspaces = {}
+
+    with patch(
+        "custom_components.growspace_manager.GrowspaceCoordinator.get_for_service_call",
+        return_value=coordinator,
+    ):
+        msg = {
+            "id": 14,
+            "type": f"{DOMAIN}/get_vision_history",
+            "growspace_id": "nonexistent",
+        }
+        await websocket_get_vision_history(hass, mock_connection, msg)
+
+    mock_connection.send_error.assert_called_once_with(
+        14, "not_found", "Growspace nonexistent not found"
+    )
+
+
+@pytest.mark.asyncio
+async def test_websocket_get_vision_history_limit(
+    hass: HomeAssistant, mock_connection
+) -> None:
+    """Test get_vision_history respects the limit parameter."""
+    coordinator = MagicMock()
+    growspace = MagicMock()
+
+    results = []
+    for i in range(5):
+        r = MagicMock()
+        r.timestamp = f"2026-03-21T{10 + i:02d}:00:00"
+        r.check_type = "mid"
+        r.analysis = f"Analysis {i}"
+        r.issues_detected = []
+        r.severity = "none"
+        r.recommendations = []
+        r.snapshot_paths = []
+        results.append(r)
+
+    growspace.vision_checkup_history = results
+    coordinator.growspaces = {"tent1": growspace}
+
+    with patch(
+        "custom_components.growspace_manager.GrowspaceCoordinator.get_for_service_call",
+        return_value=coordinator,
+    ):
+        msg = {
+            "id": 15,
+            "type": f"{DOMAIN}/get_vision_history",
+            "growspace_id": "tent1",
+            "limit": 2,
+        }
+        await websocket_get_vision_history(hass, mock_connection, msg)
+
+    mock_connection.send_result.assert_called_once()
+    call_id, result = mock_connection.send_result.call_args[0]
+    assert call_id == 15
+    assert result["total"] == 5
+    assert len(result["history"]) == 2

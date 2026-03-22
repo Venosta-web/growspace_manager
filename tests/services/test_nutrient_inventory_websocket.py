@@ -42,7 +42,7 @@ def mock_coordinator(hass: HomeAssistant):
     coordinator.nutrient_inventory_service.remove_stock.return_value = None
 
     with patch(
-        "custom_components.growspace_manager.coordinator.GrowspaceCoordinator.get_for_service_call",
+        "custom_components.growspace_manager.coordinator.GrowspaceCoordinator.get_any",
         return_value=coordinator,
     ):
         async_register_websocket_api(hass)
