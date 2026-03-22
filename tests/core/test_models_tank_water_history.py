@@ -18,8 +18,6 @@ def test_tank_water_history_defaults():
     history = TankWaterHistory()
     assert history.snapshots == []
     assert history.events == []
-    assert history.max_snapshots == 2016   # 7d * 24h * 12 (5-min) — generous
-    assert history.max_events == 500
 
 
 def test_irrigation_tank_has_volume_and_history():

@@ -13,6 +13,7 @@ import shutil
 from typing import TYPE_CHECKING, Any
 
 from homeassistant.components.ai_task import async_generate_data
+from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
 from homeassistant.helpers.event import async_track_point_in_utc_time
 from homeassistant.util.dt import now as ha_now, utcnow
 
@@ -424,16 +425,18 @@ class VisionCheckupScheduler:
         growspace = self.coordinator.growspaces.get(growspace_id)
         if not growspace:
             _LOGGER.warning("Growspace %s not found for vision checkup", growspace_id)
-            return None
+            raise ServiceValidationError(f"Growspace '{growspace_id}' not found")
 
         camera_entities = growspace.environment_config.camera_entities
         if not camera_entities:
             _LOGGER.debug(
                 "No cameras configured for %s, skipping vision checkup", growspace_id
             )
-            return None
+            raise ServiceValidationError("No cameras configured for this growspace. Please add cameras in the environment settings.")
 
         entity_id = self._get_ai_task_entity_id()
+        if not entity_id:
+            raise ServiceValidationError("No AI task entity configured. Please set up an AI agent in the integration options.")
 
         # Gather growspace context for the AI prompt
         try:
@@ -496,11 +499,11 @@ class VisionCheckupScheduler:
                 instructions=prompt,
                 attachments=attachments,
             )
-        except Exception:
+        except Exception as err:
             _LOGGER.exception(
                 "AI vision analysis failed for growspace %s", growspace_id
             )
-            return None
+            raise HomeAssistantError(f"AI vision analysis failed: {err}") from err
         finally:
             ai_settings = self.coordinator.options.get("ai_settings", {})
             debug_enabled = ai_settings.get("vision_debug_enabled", False)
