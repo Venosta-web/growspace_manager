@@ -20,7 +20,7 @@ from homeassistant.components.sensor import (
     SensorStateClass,
 )
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import EntityCategory, UnitOfTime
+from homeassistant.const import EntityCategory, UnitOfTime, UnitOfVolume
 from homeassistant.core import Event, HomeAssistant
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.device_registry import DeviceInfo
@@ -354,6 +354,17 @@ async def _create_initial_entities(
         ):
             initial_entities.append(
                 VisionCheckupSensor(coordinator, growspace_id, growspace.name)
+            )
+
+        # Tank-derived water inference sensors (fallback when no flow/drain sensors)
+        if growspace.environment_config:
+            initial_entities.extend(
+                TankDerivedWaterSensor(coordinator, growspace_id, tank)
+                for tank in getattr(
+                    growspace.environment_config, "irrigation_tanks", []
+                )
+                if not isinstance(tank, dict)
+                and _should_create_derived_water_sensor(growspace, tank)
             )
 
         for plant in coordinator.get_growspace_plants(growspace_id):
@@ -693,6 +704,109 @@ class TankDepletionSensor(CoordinatorEntity, SensorEntity):
         """Handle coordinator updates by refreshing predictor buffer."""
         self.hass.async_create_task(self._predictor.async_update())
         super()._handle_coordinator_update()
+
+
+def _should_create_derived_water_sensor(
+    growspace: Growspace,
+    tank: Any,
+) -> bool:
+    """Return True only when tank-derived water inference should activate.
+
+    This sensor is a fallback: it infers water consumption from tank level
+    changes when no dedicated flow or drain volume sensors are configured.
+    """
+    env = growspace.environment_config
+    return (
+        tank.volume_liters is not None
+        and not env.irrigation_flow_sensors
+        and not env.drain_volume_sensors
+    )
+
+
+class TankDerivedWaterSensor(CoordinatorEntity, SensorEntity):
+    """Sensor reporting water consumption inferred from tank level changes.
+
+    Used as a fallback when no dedicated irrigation flow or drain volume
+    sensors are present. Consumption is calculated from the difference
+    in measured tank level readings over time, scaled by the tank volume.
+    """
+
+    _attr_device_class = SensorDeviceClass.WATER
+    _attr_native_unit_of_measurement = UnitOfVolume.LITERS
+    _attr_state_class = SensorStateClass.TOTAL_INCREASING
+    _attr_icon = "mdi:water-pump"
+    _attr_has_entity_name = True
+    _attr_translation_key = "tank_derived_water"
+
+    def __init__(
+        self,
+        coordinator: GrowspaceCoordinator,
+        growspace_id: str,
+        tank: Any,
+    ) -> None:
+        """Initialize the tank-derived water sensor.
+
+        Args:
+            coordinator: Growspace coordinator instance
+            growspace_id: ID of the growspace containing the tank
+            tank: IrrigationTank instance to track
+        """
+        super().__init__(coordinator)
+        self._growspace_id = growspace_id
+        self._tank = tank
+        tank_slug = tank.sensor_entity.replace(".", "_").replace(" ", "_")
+        self._attr_unique_id = (
+            f"{DOMAIN}_{growspace_id}_tank_derived_water_{tank_slug}"
+        )
+
+    @property
+    def _tracker(self) -> Any:
+        """Return the TankWaterTracker for this tank, or None."""
+        return self.coordinator.get_tank_tracker(
+            self._growspace_id, self._tank.sensor_entity
+        )
+
+    @property
+    def available(self) -> bool:
+        """Return True when coordinator is healthy and the tracker exists."""
+        return self.coordinator.last_update_success and self._tracker is not None
+
+    @property
+    def native_value(self) -> float | None:
+        """Return litres consumed today (rolling 24-hour window)."""
+        if (tracker := self._tracker) is None:
+            return None
+        return round(tracker.get_total_liters_today(), 2)
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Return history and tank configuration as attributes."""
+        if (tracker := self._tracker) is None:
+            return {}
+        return {
+            "liters_today": round(tracker.get_total_liters_today(), 2),
+            "liters_7d": round(tracker.get_total_liters_7d(), 2),
+            "volume_liters": self._tank.volume_liters,
+            "tank_entity": self._tank.sensor_entity,
+            "history_24h": tracker.get_history_24h(),
+            "history_7d": tracker.get_history_7d(),
+            "events": tracker.tank.water_history.events[-50:],
+        }
+
+    async def async_added_to_hass(self) -> None:
+        """Subscribe to tank sensor state changes via the tracker."""
+        await super().async_added_to_hass()
+        tracker = self.coordinator.get_tank_tracker(
+            self._growspace_id, self._tank.sensor_entity
+        )
+        if tracker is None:
+            return
+
+        def _on_change() -> None:
+            self.async_write_ha_state()
+
+        unsub = tracker.async_setup(self.hass, _on_change)
+        self.async_on_remove(unsub)
 
 
 class CalculatedVpdSensor(BaseVpdSensor):

@@ -392,6 +392,9 @@
       },
       "vision_checkup": {
         "name": "Vision checkup"
+      },
+      "tank_derived_water": {
+        "name": "Tank water consumption"
       }
     }
   },
