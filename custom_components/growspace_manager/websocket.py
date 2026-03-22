@@ -1026,6 +1026,18 @@ SCHEMA_WS_GET_VISION_HISTORY = websocket_api.BASE_COMMAND_MESSAGE_SCHEMA.extend(
     }
 )
 
+WS_TYPE_UPDATE_VISION_CHECKUP_CONFIG = f"{DOMAIN}/update_vision_checkup_config"
+SCHEMA_WS_UPDATE_VISION_CHECKUP_CONFIG = websocket_api.BASE_COMMAND_MESSAGE_SCHEMA.extend(
+    {
+        vol.Required("type"): WS_TYPE_UPDATE_VISION_CHECKUP_CONFIG,
+        vol.Required("growspace_id"): str,
+        vol.Optional("enabled"): bool,
+        vol.Optional("early_check_offset_minutes"): vol.All(int, vol.Range(min=1)),
+        vol.Optional("mid_check_hours"): vol.All(int, vol.Range(min=1)),
+        vol.Optional("late_check_offset_minutes"): vol.All(int, vol.Range(min=1)),
+    }
+)
+
 WS_TYPE_CAPTURE_SNAPSHOT = f"{DOMAIN}/capture_snapshot"
 SCHEMA_WS_CAPTURE_SNAPSHOT = websocket_api.BASE_COMMAND_MESSAGE_SCHEMA.extend(
     {
@@ -1213,6 +1225,51 @@ async def websocket_get_vision_history(
     )
 
 
+async def websocket_update_vision_checkup_config(
+    hass: HomeAssistant,
+    connection: websocket_api.ActiveConnection,
+    msg: dict[str, Any],
+) -> None:
+    """Update vision checkup configuration for a growspace."""
+    growspace_id: str = msg["growspace_id"]
+
+    try:
+        coordinator = GrowspaceCoordinator.get_for_service_call(hass, msg)
+    except ServiceValidationError as err:
+        connection.send_error(msg["id"], "not_loaded", str(err))
+        return
+
+    growspace = coordinator.growspaces.get(growspace_id)
+    if not growspace:
+        connection.send_error(
+            msg["id"], "not_found", f"Growspace {growspace_id!r} not found"
+        )
+        return
+
+    if not growspace.environment_config:
+        connection.send_error(
+            msg["id"],
+            "no_environment",
+            f"No environment config for growspace {growspace_id!r}",
+        )
+        return
+
+    vision_config = growspace.environment_config.vision_checkup_config
+    if "enabled" in msg:
+        vision_config.enabled = msg["enabled"]
+    if "early_check_offset_minutes" in msg:
+        vision_config.early_check_offset_minutes = msg["early_check_offset_minutes"]
+    if "mid_check_hours" in msg:
+        vision_config.mid_check_hours = msg["mid_check_hours"]
+    if "late_check_offset_minutes" in msg:
+        vision_config.late_check_offset_minutes = msg["late_check_offset_minutes"]
+
+    await coordinator.async_commit()
+    coordinator.vision_scheduler.schedule_all_growspaces()
+
+    connection.send_result(msg["id"], {"success": True})
+
+
 @callback
 def async_register_websocket_api(hass: HomeAssistant) -> None:
     """Register WebSocket API commands."""
@@ -1348,4 +1405,11 @@ def async_register_websocket_api(hass: HomeAssistant) -> None:
         WS_TYPE_GET_VISION_HISTORY,
         websocket_api.async_response(websocket_get_vision_history),
         SCHEMA_WS_GET_VISION_HISTORY,
+    )
+
+    websocket_api.async_register_command(
+        hass,
+        WS_TYPE_UPDATE_VISION_CHECKUP_CONFIG,
+        websocket_api.async_response(websocket_update_vision_checkup_config),
+        SCHEMA_WS_UPDATE_VISION_CHECKUP_CONFIG,
     )
