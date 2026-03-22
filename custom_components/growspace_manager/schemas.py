@@ -38,6 +38,7 @@ from .const import (
     ATTR_STRAIN,
     ATTR_STRUCTURE,
     ATTR_TAGS,
+    ATTR_TANK_ENTITY,
     ATTR_TARGET_RUNOFF_PERCENT,
     ATTR_TECHNIQUE,
     ATTR_TERPENE_PROFILE,
@@ -46,6 +47,7 @@ from .const import (
     ATTR_TRIM_WEIGHT,
     ATTR_TYPE,
     ATTR_VIGOR,
+    ATTR_VOLUME_LITERS,
     ATTR_WET_WEIGHT,
     CONF_CAMERA_ENTITIES,
     CONF_CIRCULATION_FAN_ENTITIES,
@@ -626,6 +628,18 @@ CONFIGURE_DRAIN_MONITORING_SCHEMA = vol.Schema(
         vol.Optional(ATTR_MAX_EC_DELTA): vol.All(vol.Coerce(float), vol.Range(min=0.0)),
         vol.Optional(ATTR_TARGET_RUNOFF_PERCENT): vol.All(
             vol.Coerce(float), vol.Range(min=0.0, max=100.0)
+        ),
+    }
+)
+
+# --- Tank Configuration Schemas ---
+
+CONFIGURE_TANK_SCHEMA = vol.Schema(
+    {
+        vol.Required(ATTR_GROWSPACE_ID): vol.All(str, valid_growspace_id),
+        vol.Required(ATTR_TANK_ENTITY): cv.string,
+        vol.Optional(ATTR_VOLUME_LITERS): vol.All(
+            vol.Coerce(float), vol.Range(min=0.1)
         ),
     }
 )

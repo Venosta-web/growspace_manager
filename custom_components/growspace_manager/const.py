@@ -436,6 +436,8 @@ class GrowspaceService(StrEnum):
     REMOVE_EC_RAMP_CURVE = "remove_ec_ramp_curve"
     # Vision Checkup Services
     TRIGGER_VISION_CHECKUP = "trigger_vision_checkup"
+    # Tank Configuration Services
+    CONFIGURE_TANK = "configure_tank"
 
 
 class TrainingTechnique(StrEnum):
