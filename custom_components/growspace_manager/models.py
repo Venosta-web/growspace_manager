@@ -156,6 +156,29 @@ class IrrigationStrategy(BaseModel):
 
 
 @dataclass(slots=True)
+class TankWaterEvent(BaseModel):
+    """A single water event derived from tank level change."""
+
+    timestamp: str = ""
+    liters: float = 0.0
+    pct_delta: float = 0.0  # positive = refill, negative = consumption
+    event_type: str = "consumption"  # "consumption" | "refill"
+
+
+@dataclass(slots=True)
+class TankWaterHistory(BaseModel):
+    """Rolling 7-day history of tank level snapshots and water events."""
+
+    # Raw level readings: [{"timestamp": ISO, "level_pct": float}]
+    snapshots: list[dict[str, Any]] = field(default_factory=list)
+    # Derived consumption / refill events
+    events: list[dict[str, Any]] = field(default_factory=list)
+    # 7d * 24h * 12 readings/h = 2016 (allows ~5-min sensor updates)
+    max_snapshots: int = 2016
+    max_events: int = 500
+
+
+@dataclass(slots=True)
 class IrrigationTank(BaseModel):
     """Configuration for an irrigation tank."""
 
@@ -165,6 +188,8 @@ class IrrigationTank(BaseModel):
     enable_prediction: bool = True  # Enable depletion prediction
     enable_lights_bias: bool = False  # Segregate rates by lights on/off
     enable_vpd_weighting: bool = False  # Apply VPD-based multiplier
+    volume_liters: float | None = None
+    water_history: TankWaterHistory = field(default_factory=TankWaterHistory)
 
 
 @dataclass(slots=True)
