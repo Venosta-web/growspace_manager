@@ -34,68 +34,17 @@ class AIConfigHandler(BaseConfigHandler[dict[str, Any]]):
         else:
             current_settings = self.config_entry.options.get("ai_settings", {})
 
-        # Get available conversation entities from the state machine
-        assistants = []
-        try:
-            # Get all conversation entities from the state machine
-            states = self.hass.states.async_all("conversation")
-            assistants = [
-                {
-                    "id": state.entity_id,
-                    "name": state.attributes.get("friendly_name", state.entity_id),
-                }
-                for state in states
-            ]
-            _LOGGER.debug("Found %d conversation entities", len(assistants))
-        except Exception as err:  # noqa: BLE001
-            _LOGGER.warning("Could not fetch conversation entities: %s", err)
-
-        # Filter to valid assistants with id and name
-        valid_assistants = [
-            a for a in assistants if isinstance(a, dict) and "id" in a and "name" in a
-        ]
-
-        if not valid_assistants:
-            # If no conversation entities found, log a warning
-            _LOGGER.warning(
-                "No conversation entities found. Please add a conversation integration "
-                "(like Google Generative AI, OpenAI, etc.) to Home Assistant"
-            )
-
-        assistant_options = [
-            selector.SelectOptionDict(value=assistant["id"], label=assistant["name"])
-            for assistant in valid_assistants
-        ]
-
         schema: dict[Any, Any] = {
             vol.Required(
                 CONF_AI_ENABLED, default=current_settings.get(CONF_AI_ENABLED, False)
             ): selector.BooleanSelector(),
+            vol.Optional(
+                CONF_ASSISTANT_ID,
+                default=current_settings.get(CONF_ASSISTANT_ID),
+            ): selector.EntitySelector(
+                selector.EntitySelectorConfig(domain="conversation")
+            ),
         }
-
-        if assistant_options:
-            schema[
-                vol.Optional(
-                    CONF_ASSISTANT_ID,
-                    default=current_settings.get(CONF_ASSISTANT_ID),
-                )
-            ] = selector.SelectSelector(
-                selector.SelectSelectorConfig(
-                    options=assistant_options,
-                    mode=selector.SelectSelectorMode.DROPDOWN,
-                )
-            )
-        else:
-            # Show a text field if no assistants detected
-            schema[
-                vol.Optional(
-                    CONF_ASSISTANT_ID, default=current_settings.get(CONF_ASSISTANT_ID)
-                )
-            ] = selector.TextSelector(
-                selector.TextSelectorConfig(
-                    type=selector.TextSelectorType.TEXT,
-                )
-            )
 
         schema[
             vol.Optional(
@@ -140,48 +89,14 @@ class AIConfigHandler(BaseConfigHandler[dict[str, Any]]):
             )
         ] = selector.BooleanSelector()
 
-        # Get available ai_task entities from the state machine
-        ai_task_entities: dict[str, str] = {}
-        try:
-            ai_task_states = self.hass.states.async_all("ai_task")
-            ai_task_entities = {
-                state.entity_id: state.attributes.get("friendly_name", state.entity_id)
-                for state in ai_task_states
-            }
-            _LOGGER.debug("Found %d ai_task entities", len(ai_task_entities))
-        except Exception as err:  # noqa: BLE001
-            _LOGGER.warning("Could not fetch ai_task entities: %s", err)
-
-        if ai_task_entities:
-            ai_task_options = [
-                selector.SelectOptionDict(value="", label="— None —"),
-                *[
-                    selector.SelectOptionDict(value=entity_id, label=friendly_name)
-                    for entity_id, friendly_name in ai_task_entities.items()
-                ],
-            ]
-            schema[
-                vol.Optional(
-                    CONF_AI_TASK_ENTITY_ID,
-                    default=current_settings.get(CONF_AI_TASK_ENTITY_ID, ""),
-                )
-            ] = selector.SelectSelector(
-                selector.SelectSelectorConfig(
-                    options=ai_task_options,
-                    mode=selector.SelectSelectorMode.DROPDOWN,
-                )
+        schema[
+            vol.Optional(
+                CONF_AI_TASK_ENTITY_ID,
+                default=current_settings.get(CONF_AI_TASK_ENTITY_ID),
             )
-        else:
-            schema[
-                vol.Optional(
-                    CONF_AI_TASK_ENTITY_ID,
-                    default=current_settings.get(CONF_AI_TASK_ENTITY_ID, ""),
-                )
-            ] = selector.TextSelector(
-                selector.TextSelectorConfig(
-                    type=selector.TextSelectorType.TEXT,
-                )
-            )
+        ] = selector.EntitySelector(
+            selector.EntitySelectorConfig(domain="ai_task")
+        )
 
         return vol.Schema(schema)
 

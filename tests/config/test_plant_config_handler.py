@@ -66,6 +66,7 @@ def mock_hass(mock_coordinator) -> MagicMock:
 def mock_config_entry(mock_coordinator) -> MagicMock:
     """Mock Config Entry."""
     entry = MagicMock(spec=ConfigEntry)
+    entry.options = {}
     entry.entry_id = ENTRY_ID
     entry.runtime_data = MagicMock()
     entry.runtime_data = mock_coordinator

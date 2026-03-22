@@ -545,7 +545,7 @@ class EnvironmentConfigHandler(BaseConfigHandler[dict[str, Any]]):
             growspace.name,
             env_config,
         )
-        return self.flow.async_create_entry(title="", data={})
+        return self.flow.async_create_entry(title="", data=self.config_entry.options)
 
     def get_environment_schema_step1(
         self, growspace_options: dict[str, Any]
@@ -1142,7 +1142,7 @@ class EnvironmentConfigHandler(BaseConfigHandler[dict[str, Any]]):
             selector_config = selector.EntitySelectorConfig(
                 domain=["sensor", "input_number", "number"],
                 multiple=True,
-                device_class=device_class if device_class else None,
+                device_class=device_class or None,
             )
 
             schema_dict[

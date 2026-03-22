@@ -815,6 +815,27 @@ async def test_websocket_get_growspace_data_validation_error(
         assert response["error"]["code"] == "invalid_args"
 
 
+async def test_websocket_get_vision_history_validation_error(
+    hass: HomeAssistant, hass_ws_client: WebSocketGenerator
+) -> None:
+    """Test getting vision history with validation error (not loaded)."""
+
+    with patch(
+        "custom_components.growspace_manager.websocket.GrowspaceCoordinator.get_for_service_call",
+        side_effect=ServiceValidationError("Integration not loaded"),
+    ):
+        async_register_websocket_api(hass)
+        client = await hass_ws_client(hass)
+
+        await client.send_json(
+            {"id": 1, "type": "growspace_manager/get_vision_history", "growspace_id": "tent1"}
+        )
+
+        response = await client.receive_json()
+        assert not response["success"]
+        assert response["error"]["code"] == "not_loaded"
+
+
 async def test_websocket_get_event_log_internals_no_type(
     hass: HomeAssistant, hass_ws_client: WebSocketGenerator
 ) -> None:

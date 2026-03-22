@@ -229,6 +229,66 @@ async def test_async_setup_entry_calculated_vpd(mock_coordinator: MagicMock) -> 
 
 
 @pytest.mark.asyncio
+async def test_async_setup_entry_vision_sensor(mock_coordinator: MagicMock) -> None:
+    """Test that async_setup_entry creates VisionCheckupSensor."""
+    from custom_components.growspace_manager.sensor import VisionCheckupSensor
+    
+    hass = MagicMock()
+    hass.config.config_dir = "/config"
+
+    # Growspace with camera_entities
+    gs_mock = Mock(
+        id="gs_vision",
+        name="Vision Growspace",
+        rows=2,
+        plants_per_row=2,
+        environment_config=EnvironmentConfig(
+            camera_entities=["camera.cam1"]
+        ),
+    )
+    mock_coordinator.growspaces = {"gs_vision": gs_mock}
+    mock_coordinator.get_growspace_plants = Mock(return_value=[])
+    mock_coordinator.async_save = AsyncMock()
+    mock_coordinator.growspace_manager.ensure_special_growspace = Mock(
+        side_effect=lambda x, y, rows, plants_per_row: x
+    )
+    mock_coordinator.async_set_updated_data = AsyncMock()
+    mock_coordinator.options = {}
+
+    added_entities = []
+
+    def async_add_entities(entities, update_before_add=False):
+        added_entities.extend(entities)
+
+    with (
+        patch(
+            "custom_components.growspace_manager.sensor.async_setup_trend_sensor",
+            new_callable=AsyncMock,
+        ),
+        patch(
+            "custom_components.growspace_manager.sensor.async_setup_statistics_sensor",
+            new_callable=AsyncMock,
+        ),
+    ):
+        await async_setup_entry(
+            hass,
+            Mock(
+                entry_id="entry_1",
+                options={},
+                runtime_data=mock_coordinator,
+            ),
+            async_add_entities,
+        )
+
+    # Check for VisionCheckupSensor
+    vision_sensor = next(
+        (e for e in added_entities if isinstance(e, VisionCheckupSensor)), None
+    )
+    assert vision_sensor is not None
+    assert vision_sensor.unique_id == "gs_vision_vision_checkup"
+
+
+@pytest.mark.asyncio
 async def test_async_setup_entry_global_vpd(mock_coordinator: MagicMock) -> None:
     """Test that `async_setup_entry` creates global VPD sensors."""
     hass = MagicMock()

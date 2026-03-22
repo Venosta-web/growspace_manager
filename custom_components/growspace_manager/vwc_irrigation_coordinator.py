@@ -332,9 +332,7 @@ class VWCIrrigationCoordinator(BaseIrrigationCoordinator):
         growspace = self.growspace
         # Ensure we return a string or None, explicitly cast if needed or rely on typed access
         return (
-            growspace.irrigation_config.irrigation_pump_entity
-            if growspace.irrigation_config.irrigation_pump_entity
-            else None
+            growspace.irrigation_config.irrigation_pump_entity or None
         )
 
     def _set_phase(self, phase: str) -> None:

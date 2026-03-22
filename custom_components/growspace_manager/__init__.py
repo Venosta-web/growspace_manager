@@ -7,7 +7,9 @@ import pathlib
 from typing import TYPE_CHECKING, Any
 
 from homeassistant.components import panel_custom
-from homeassistant.components.frontend import async_remove_panel as frontend_async_remove_panel
+from homeassistant.components.frontend import (
+    async_remove_panel as frontend_async_remove_panel,
+)
 from homeassistant.components.http import StaticPathConfig
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback

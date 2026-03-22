@@ -116,7 +116,7 @@ class PlantConfigHandler(BaseConfigHandler[dict[str, Any]]):
                     veg_start=user_input.get("veg_start"),
                     flower_start=user_input.get("flower_start"),
                 )
-                return self.flow.async_create_entry(title="", data={})
+                return self.flow.async_create_entry(title="", data=self.config_entry.options)
             except Exception as err:
                 _LOGGER.exception("Error adding plant")
                 return self.flow.async_show_form(
@@ -149,7 +149,7 @@ class PlantConfigHandler(BaseConfigHandler[dict[str, Any]]):
                 # Filter out empty values
                 update_data = {k: v for k, v in user_input.items() if v}
                 await self.async_update_plant(plant_id, **update_data)
-                return self.flow.async_create_entry(title="", data={})
+                return self.flow.async_create_entry(title="", data=self.config_entry.options)
             except Exception as err:
                 _LOGGER.exception("Error updating plant")
                 return self.flow.async_show_form(

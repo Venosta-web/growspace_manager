@@ -2,17 +2,16 @@
 
 from __future__ import annotations
 
-from datetime import time
+from datetime import UTC, time
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-
-from homeassistant.core import HomeAssistant
 
 from custom_components.growspace_manager.vision_checkup_scheduler import (
     VisionCheckupScheduler,
     calculate_checkup_times,
 )
+from homeassistant.core import HomeAssistant
 
 
 def test_calculate_checkup_times_veg_18_6():
@@ -28,9 +27,9 @@ def test_calculate_checkup_times_veg_18_6():
         late_offset_minutes=60,
     )
 
-    assert times["early"] == time(7, 0)   # 06:00 + 1h
-    assert times["mid"] == time(12, 0)    # 06:00 + 6h
-    assert times["late"] == time(23, 0)   # 06:00 + 18h - 1h = 23:00
+    assert times["early"] == time(7, 0)  # 06:00 + 1h
+    assert times["mid"] == time(12, 0)  # 06:00 + 6h
+    assert times["late"] == time(23, 0)  # 06:00 + 18h - 1h = 23:00
 
 
 def test_calculate_checkup_times_flower_12_12():
@@ -43,9 +42,9 @@ def test_calculate_checkup_times_flower_12_12():
         late_offset_minutes=60,
     )
 
-    assert times["early"] == time(7, 0)   # 06:00 + 1h
-    assert times["mid"] == time(12, 0)    # 06:00 + 6h
-    assert times["late"] == time(17, 0)   # 06:00 + 12h - 1h = 17:00
+    assert times["early"] == time(7, 0)  # 06:00 + 1h
+    assert times["mid"] == time(12, 0)  # 06:00 + 6h
+    assert times["late"] == time(17, 0)  # 06:00 + 12h - 1h = 17:00
 
 
 def test_calculate_checkup_times_wraps_midnight():
@@ -60,8 +59,8 @@ def test_calculate_checkup_times_wraps_midnight():
     )
 
     assert times["early"] == time(21, 0)  # 20:00 + 1h
-    assert times["mid"] == time(2, 0)     # 20:00 + 6h = 02:00 next day
-    assert times["late"] == time(13, 0)   # 20:00 + 18h - 1h = 13:00 next day
+    assert times["mid"] == time(2, 0)  # 20:00 + 6h = 02:00 next day
+    assert times["late"] == time(13, 0)  # 20:00 + 18h - 1h = 13:00 next day
 
 
 def test_calculate_checkup_times_flower_night_schedule():
@@ -75,8 +74,8 @@ def test_calculate_checkup_times_flower_night_schedule():
     )
 
     assert times["early"] == time(19, 0)  # 18:00 + 1h
-    assert times["mid"] == time(0, 0)     # 18:00 + 6h = 00:00
-    assert times["late"] == time(5, 0)    # 18:00 + 12h - 1h = 05:00
+    assert times["mid"] == time(0, 0)  # 18:00 + 6h = 00:00
+    assert times["late"] == time(5, 0)  # 18:00 + 12h - 1h = 05:00
 
 
 def test_vision_checkup_scheduler_initializes():
@@ -138,7 +137,9 @@ def _make_mock_growspace(
     gs.vision_checkup_history = []
 
     env_config = MagicMock(spec=EnvironmentConfig)
-    env_config.camera_entities = camera_entities if camera_entities is not None else ["camera.tent1_cam"]
+    env_config.camera_entities = (
+        camera_entities if camera_entities is not None else ["camera.tent1_cam"]
+    )
     env_config.veg_day_hours = veg_day_hours
     env_config.flower_day_hours = flower_day_hours
     env_config.vision_checkup_config = VisionCheckupConfig(enabled=vision_enabled)
@@ -159,7 +160,12 @@ async def test_run_vision_analysis_calls_ai_task(mock_hass, mock_coordinator):
     mock_coordinator.growspaces = {"tent1": gs}
 
     minimal_context = {
-        "growspace": {"id": "tent1", "name": "Test Tent", "size": "3x3", "total_plants": 4},
+        "growspace": {
+            "id": "tent1",
+            "name": "Test Tent",
+            "size": "3x3",
+            "total_plants": 4,
+        },
         "environment": {"sensors": {"temperature_sensor": "25.5 C"}},
         "analysis": {
             "stress": {"active": False, "reasons": []},
@@ -233,7 +239,9 @@ async def test_run_vision_analysis_growspace_not_found(mock_hass, mock_coordinat
 
 
 @pytest.mark.asyncio
-async def test_run_vision_analysis_stores_result_in_history(mock_hass, mock_coordinator):
+async def test_run_vision_analysis_stores_result_in_history(
+    mock_hass, mock_coordinator
+):
     """Test that vision analysis result is stored in growspace history."""
     gs = _make_mock_growspace()
     mock_coordinator.growspaces = {"tent1": gs}
@@ -249,7 +257,12 @@ async def test_run_vision_analysis_stores_result_in_history(mock_hass, mock_coor
     scheduler = VisionCheckupScheduler(mock_hass, mock_coordinator)
 
     minimal_context = {
-        "growspace": {"id": "tent1", "name": "Test Tent", "size": "3x3", "total_plants": 0},
+        "growspace": {
+            "id": "tent1",
+            "name": "Test Tent",
+            "size": "3x3",
+            "total_plants": 0,
+        },
         "environment": {"sensors": {}},
         "analysis": {
             "stress": {"active": False, "reasons": []},
@@ -257,7 +270,13 @@ async def test_run_vision_analysis_stores_result_in_history(mock_hass, mock_coor
             "optimal": {"active": False, "reasons": []},
             "light_schedule": {"correct": True},
         },
-        "plants": {"count": 0, "stages": {}, "strains": [], "max_veg_days": 0, "max_flower_days": 0},
+        "plants": {
+            "count": 0,
+            "stages": {},
+            "strains": [],
+            "max_veg_days": 0,
+            "max_flower_days": 0,
+        },
         "strain_analytics": {},
     }
 
@@ -284,7 +303,12 @@ async def test_run_vision_analysis_ai_failure_returns_none(mock_hass, mock_coord
     mock_coordinator.growspaces = {"tent1": gs}
 
     minimal_context = {
-        "growspace": {"id": "tent1", "name": "Test Tent", "size": "3x3", "total_plants": 0},
+        "growspace": {
+            "id": "tent1",
+            "name": "Test Tent",
+            "size": "3x3",
+            "total_plants": 0,
+        },
         "environment": {"sensors": {}},
         "analysis": {
             "stress": {"active": False, "reasons": []},
@@ -292,7 +316,13 @@ async def test_run_vision_analysis_ai_failure_returns_none(mock_hass, mock_coord
             "optimal": {"active": False, "reasons": []},
             "light_schedule": {"correct": True},
         },
-        "plants": {"count": 0, "stages": {}, "strains": [], "max_veg_days": 0, "max_flower_days": 0},
+        "plants": {
+            "count": 0,
+            "stages": {},
+            "strains": [],
+            "max_veg_days": 0,
+            "max_flower_days": 0,
+        },
         "strain_analytics": {},
     }
 
@@ -329,8 +359,9 @@ def test_schedule_growspace_creates_three_timers(mock_hass, mock_coordinator):
         with patch(
             "custom_components.growspace_manager.vision_checkup_scheduler.ha_now",
         ) as mock_now:
-            from datetime import datetime, timezone
-            mock_now.return_value = datetime(2026, 3, 21, 10, 0, 0, tzinfo=timezone.utc)
+            from datetime import datetime
+
+            mock_now.return_value = datetime(2026, 3, 21, 10, 0, 0, tzinfo=UTC)
             scheduler.schedule_growspace("tent1")
 
     assert mock_track.call_count == 3
@@ -398,3 +429,229 @@ def test_async_stop_cancels_all_timers(mock_hass, mock_coordinator):
     mock_unsub_2.assert_called_once()
     mock_unsub_3.assert_called_once()
     assert scheduler._unsub_timers == {}
+
+
+@pytest.mark.asyncio
+async def test_get_active_day_hours_flower(mock_hass, mock_coordinator):
+    """Test getting active day hours when a plant is in flower."""
+    from custom_components.growspace_manager.vision_checkup_scheduler import (
+        VisionCheckupScheduler,
+    )
+
+    gs = _make_mock_growspace()
+    plant = MagicMock()
+    plant.stage = "flower"
+    mock_coordinator.get_growspace_plants.return_value = [plant]
+    scheduler = VisionCheckupScheduler(mock_hass, mock_coordinator)
+    assert scheduler._get_active_day_hours(gs) == 12
+
+
+def test_get_lights_on_time_fallback(mock_hass, mock_coordinator):
+    """Test fallback when lights on time misses seconds."""
+    from custom_components.growspace_manager.vision_checkup_scheduler import (
+        VisionCheckupScheduler,
+    )
+
+    gs = _make_mock_growspace(lights_on_time="06:30")
+    scheduler = VisionCheckupScheduler(mock_hass, mock_coordinator)
+    assert scheduler._get_lights_on_time(gs) == time(6, 30)
+
+
+@pytest.mark.asyncio
+async def test_run_vision_analysis_context_exception(mock_hass, mock_coordinator):
+    """Test fallback context when context gathering fails."""
+    from custom_components.growspace_manager.vision_checkup_scheduler import (
+        VisionCheckupScheduler,
+    )
+
+    gs = _make_mock_growspace()
+    mock_coordinator.growspaces = {"tent1": gs}
+    scheduler = VisionCheckupScheduler(mock_hass, mock_coordinator)
+
+    with (
+        patch.object(
+            scheduler, "_gather_context_data", side_effect=Exception("DB Error")
+        ),
+        patch(
+            "custom_components.growspace_manager.vision_checkup_scheduler.async_generate_data",
+            new_callable=AsyncMock,
+        ) as mock_gen,
+    ):
+        mock_result = MagicMock()
+        mock_result.data = {"analysis": "Fallback analysis", "severity": "none"}
+        mock_gen.return_value = mock_result
+
+        result = await scheduler.run_vision_analysis("tent1", "early")
+
+        # Verify it still runs and returns a result using the fallback context
+        assert result is not None
+        assert result.analysis == "Fallback analysis"
+
+
+def test_build_vision_prompt_with_history(mock_hass, mock_coordinator):
+    """Test prompt building includes previous trend history."""
+    from custom_components.growspace_manager.models import VisionCheckupResult
+    from custom_components.growspace_manager.vision_checkup_scheduler import (
+        VisionCheckupScheduler,
+    )
+
+    scheduler = VisionCheckupScheduler(mock_hass, mock_coordinator)
+
+    context = {"growspace": {"name": "test", "id": "t1"}}
+
+    prev = VisionCheckupResult(
+        timestamp="2026-03-21T12:00:00",
+        growspace_id="t1",
+        check_type="mid",
+        snapshot_paths=[],
+        analysis="Good",
+        issues_detected=["spot"],
+        severity="low",
+        recommendations=[],
+    )
+
+    with patch(
+        "custom_components.growspace_manager.services.ai_assistant.GrowAssistant._format_context_data",
+        return_value="Context Formatting",
+    ):
+        prompt = scheduler._build_vision_prompt("t1", "early", context, [prev])
+        assert "PREVIOUS CHECKUP HISTORY" in prompt
+        assert "severity=low" in prompt
+        assert "issues=spot" in prompt
+
+
+def test_schedule_growspace_missing_growspace(mock_hass, mock_coordinator):
+    """Test scheduling handles missing growspace."""
+    from custom_components.growspace_manager.vision_checkup_scheduler import (
+        VisionCheckupScheduler,
+    )
+
+    mock_coordinator.growspaces = {}
+    scheduler = VisionCheckupScheduler(mock_hass, mock_coordinator)
+
+    with patch(
+        "custom_components.growspace_manager.vision_checkup_scheduler.async_track_point_in_utc_time"
+    ) as mock_track:
+        scheduler.schedule_growspace("missing")
+        mock_track.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_callback_exception_reschedules(mock_hass, mock_coordinator):
+    """Test callback catches exceptions and still reschedules."""
+    from datetime import datetime
+
+    from custom_components.growspace_manager.vision_checkup_scheduler import (
+        VisionCheckupScheduler,
+    )
+
+    gs = _make_mock_growspace()
+    mock_coordinator.growspaces = {"tent1": gs}
+    scheduler = VisionCheckupScheduler(mock_hass, mock_coordinator)
+
+    callback = scheduler._create_checkup_callback("tent1", "early")
+
+    with (
+        patch.object(
+            scheduler, "run_vision_analysis", side_effect=Exception("API Error")
+        ),
+        patch.object(scheduler, "schedule_growspace") as mock_schedule,
+    ):
+        await callback(datetime.now())
+        mock_schedule.assert_called_once_with("tent1")
+
+
+@pytest.mark.asyncio
+async def test_send_vision_notification_no_target(mock_hass, mock_coordinator):
+    """Test notification exits if no target configured."""
+    from custom_components.growspace_manager.vision_checkup_scheduler import (
+        VisionCheckupScheduler,
+    )
+
+    gs = _make_mock_growspace()
+    gs.notification_target = None
+    mock_coordinator.growspaces = {"tent1": gs}
+    scheduler = VisionCheckupScheduler(mock_hass, mock_coordinator)
+
+    result = MagicMock()
+    mock_call = AsyncMock()
+    mock_hass.services = MagicMock()
+    mock_hass.services.async_call = mock_call
+    await scheduler._send_vision_notification("tent1", result)
+    mock_call.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_send_vision_notification_exception(mock_hass, mock_coordinator):
+    """Test notification handles exceptions gracefully."""
+    from custom_components.growspace_manager.models import VisionCheckupResult
+    from custom_components.growspace_manager.vision_checkup_scheduler import (
+        VisionCheckupScheduler,
+    )
+
+    gs = _make_mock_growspace()
+    gs.notification_target = "notify.mobile_app"
+    mock_coordinator.growspaces = {"tent1": gs}
+    scheduler = VisionCheckupScheduler(mock_hass, mock_coordinator)
+
+    result = VisionCheckupResult(
+        timestamp="2026-03-21T12:00:00",
+        growspace_id="tent1",
+        check_type="mid",
+        snapshot_paths=[],
+        analysis="Bad",
+        issues_detected=["bug"],
+        severity="critical",
+        recommendations=["fix"],
+    )
+
+    mock_call = AsyncMock(side_effect=Exception("Call failed"))
+    mock_hass.services = MagicMock()
+    mock_hass.services.async_call = mock_call
+    await scheduler._send_vision_notification("tent1", result)
+    mock_call.assert_called_once()
+    # Should complete without raising
+
+
+def test_gather_context_data(mock_hass, mock_coordinator):
+    """Test gathering context data uses the assistant."""
+    from custom_components.growspace_manager.vision_checkup_scheduler import (
+        VisionCheckupScheduler,
+    )
+
+    scheduler = VisionCheckupScheduler(mock_hass, mock_coordinator)
+    with patch(
+        "custom_components.growspace_manager.services.ai_assistant.GrowAssistant.gather_growspace_data"
+    ) as mock_gather:
+        mock_gather.return_value = {"a": 1}
+        res = scheduler._gather_context_data("tent1")
+        assert res == {"a": 1}
+        mock_gather.assert_called_once_with("tent1")
+
+
+@pytest.mark.asyncio
+async def test_callback_triggers_notification(mock_hass, mock_coordinator):
+    """Test callback triggers notification on high severity."""
+    from datetime import datetime
+
+    from custom_components.growspace_manager.vision_checkup_scheduler import (
+        VisionCheckupScheduler,
+    )
+
+    gs = _make_mock_growspace()
+    mock_coordinator.growspaces = {"tent1": gs}
+    scheduler = VisionCheckupScheduler(mock_hass, mock_coordinator)
+    callback = scheduler._create_checkup_callback("tent1", "early")
+
+    mock_result = MagicMock()
+    mock_result.severity = "critical"
+
+    with (
+        patch.object(scheduler, "run_vision_analysis", return_value=mock_result),
+        patch.object(
+            scheduler, "_send_vision_notification", new_callable=AsyncMock
+        ) as mock_notify,
+        patch.object(scheduler, "schedule_growspace"),
+    ):
+        await callback(datetime.now())
+        mock_notify.assert_called_once_with("tent1", mock_result)
