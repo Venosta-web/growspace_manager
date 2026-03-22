@@ -386,6 +386,10 @@ class EnvironmentConfig(BaseModel):
             if k in data:
                 del data[k]
 
+        # Ensure electricity_cost_per_kwh is a float (mashumaro fix)
+        if data.get("electricity_cost_per_kwh") is None:
+            data["electricity_cost_per_kwh"] = 0.0
+
         return data
 
 
