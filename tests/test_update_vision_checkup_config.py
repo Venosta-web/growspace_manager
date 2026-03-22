@@ -134,3 +134,26 @@ async def test_update_vision_checkup_config_partial_update(mock_coordinator, moc
     assert cfg.enabled is True
     # early_check_offset_minutes should remain 60 (not updated)
     assert cfg.early_check_offset_minutes == 60
+
+
+@pytest.mark.asyncio
+async def test_update_vision_checkup_config_coordinator_not_loaded():
+    from custom_components.growspace_manager.websocket import (
+        websocket_update_vision_checkup_config,
+    )
+    from homeassistant.exceptions import ServiceValidationError
+
+    connection = MagicMock()
+    connection.send_error = MagicMock()
+    msg = {"id": 5, "growspace_id": "tent1", "enabled": True}
+
+    with patch(
+        "custom_components.growspace_manager.coordinator.GrowspaceCoordinator.get_for_service_call",
+        side_effect=ServiceValidationError("Integration not loaded"),
+    ):
+        await websocket_update_vision_checkup_config(MagicMock(), connection, msg)
+
+    connection.send_error.assert_called_once()
+    args = connection.send_error.call_args[0]
+    assert args[0] == 5
+    assert args[1] == "not_loaded"
