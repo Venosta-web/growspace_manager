@@ -1345,6 +1345,8 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     ) -> None:
         """Update runtime configuration for an irrigation tank."""
         growspace = self.get_growspace(growspace_id)
+        if growspace is None:
+            return
         tank = next(
             (
                 t
@@ -1357,7 +1359,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             return
         if volume_liters is not None:
             tank.volume_liters = volume_liters
-        await self.storage_manager.async_save()
+            await self.storage_manager.async_save()
 
     def get_tank_tracker(
         self, growspace_id: str, tank_entity: str

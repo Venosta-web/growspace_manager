@@ -96,6 +96,16 @@ async def test_async_configure_tank_volume_none_does_not_overwrite(hass: HomeAss
     assert tank.volume_liters == 60.0
 
 
+@pytest.mark.asyncio
+async def test_async_configure_tank_unknown_growspace_is_noop(hass: HomeAssistant) -> None:
+    """async_configure_tank with unknown growspace_id must not raise."""
+    coordinator = _make_coordinator(hass)
+    # Should not raise AttributeError
+    await coordinator.async_configure_tank(
+        "nonexistent_gs", "sensor.tank", volume_liters=100.0
+    )
+
+
 # ── get_tank_tracker ──────────────────────────────────────────────────────────
 
 
