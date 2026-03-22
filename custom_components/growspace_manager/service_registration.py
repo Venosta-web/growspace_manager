@@ -16,6 +16,7 @@ from .exceptions import GrowspaceError
 from .schemas import (
     APPLY_IPM_SCHEMA,
     CONFIGURE_DRAIN_MONITORING_SCHEMA,
+    CONFIGURE_TANK_SCHEMA,
     LOG_DRAIN_READING_SCHEMA,
     LOG_TRAINING_EVENT_SCHEMA,
     REMOVE_EC_RAMP_CURVE_SCHEMA,
@@ -83,6 +84,7 @@ from .services import (
     plant,
     report,
     strain_library,
+    tank_config,
     training,
     vision_checkup,
     water_analytics,
@@ -392,6 +394,11 @@ async def register_services(
             GrowspaceService.TRIGGER_VISION_CHECKUP,
             wrap(vision_checkup.handle_trigger_vision_checkup, False),
             SERVICE_TRIGGER_VISION_CHECKUP_SCHEMA,
+        ),
+        (
+            GrowspaceService.CONFIGURE_TANK,
+            wrap(tank_config.handle_configure_tank, False),
+            CONFIGURE_TANK_SCHEMA,
         ),
     ]
 

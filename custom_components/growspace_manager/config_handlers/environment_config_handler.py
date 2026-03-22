@@ -25,6 +25,7 @@ from custom_components.growspace_manager.const import (
     CONF_HUMIDITY_SENSOR,
     CONF_IRRIGATION_FLOW_SENSORS,
     CONF_IRRIGATION_TANK_SENSORS,
+    CONF_IRRIGATION_TANK_VOLUME,
     CONF_IRRIGATION_TANK_WARNING_LEVEL,
     CONF_LIGHT_SENSOR,
     CONF_LIGHT_SENSORS,
@@ -119,6 +120,12 @@ class EnvironmentConfigHandler(BaseConfigHandler[dict[str, Any]]):
                 )
                 growspace_options[CONF_IRRIGATION_TANK_SENSORS] = tank_sensors
                 growspace_options[CONF_IRRIGATION_TANK_WARNING_LEVEL] = warning_level
+                # Restore volume_liters from first tank (shared across all tanks)
+                volume_liters = growspace_options["irrigation_tanks"][0].get(
+                    "volume_liters"
+                )
+                if volume_liters is not None:
+                    growspace_options[CONF_IRRIGATION_TANK_VOLUME] = volume_liters
                 # Remove the irrigation_tanks as it's not a form field
                 growspace_options.pop("irrigation_tanks", None)
         else:
@@ -170,6 +177,7 @@ class EnvironmentConfigHandler(BaseConfigHandler[dict[str, Any]]):
         """Convert irrigation tank sensors to IrrigationTank instances."""
         tank_sensors = env_config.get(CONF_IRRIGATION_TANK_SENSORS, [])
         warning_level = env_config.get(CONF_IRRIGATION_TANK_WARNING_LEVEL, 30.0)
+        volume_liters = env_config.get(CONF_IRRIGATION_TANK_VOLUME)
 
         if tank_sensors:
             irrigation_tanks = []
@@ -189,6 +197,7 @@ class EnvironmentConfigHandler(BaseConfigHandler[dict[str, Any]]):
                         "enable_prediction": True,  # Enable by default
                         "enable_lights_bias": False,  # Opt-in feature
                         "enable_vpd_weighting": False,  # Opt-in feature
+                        "volume_liters": volume_liters,
                     }
                 )
             env_config["irrigation_tanks"] = irrigation_tanks
@@ -198,6 +207,7 @@ class EnvironmentConfigHandler(BaseConfigHandler[dict[str, Any]]):
         # Remove temporary config flow fields
         env_config.pop(CONF_IRRIGATION_TANK_SENSORS, None)
         env_config.pop(CONF_IRRIGATION_TANK_WARNING_LEVEL, None)
+        env_config.pop(CONF_IRRIGATION_TANK_VOLUME, None)
 
         return env_config
 
@@ -720,6 +730,18 @@ class EnvironmentConfigHandler(BaseConfigHandler[dict[str, Any]]):
                 mode=selector.NumberSelectorMode.SLIDER,
                 unit_of_measurement="%",
             )
+        )
+
+        # Irrigation tank volume - optional, used for tank-based water consumption tracking
+        suggested_volume = growspace_options.get(CONF_IRRIGATION_TANK_VOLUME)
+        schema_dict[
+            vol.Optional(
+                CONF_IRRIGATION_TANK_VOLUME,
+                description={"suggested_value": suggested_volume},
+            )
+        ] = vol.Any(
+            None,
+            vol.All(vol.Coerce(float), vol.Range(min=0.1)),
         )
 
     def _add_lst_offset_to_schema(

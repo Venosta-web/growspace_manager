@@ -37,6 +37,7 @@ from custom_components.growspace_manager.schemas import (
     CLEAR_STRAIN_LIBRARY_SCHEMA,
     CONFIGURE_DRAIN_MONITORING_SCHEMA,
     CONFIGURE_ENVIRONMENT_SCHEMA,
+    CONFIGURE_TANK_SCHEMA,
     DEBUG_CONSOLIDATE_DUPLICATE_SPECIAL_SCHEMA,
     DEBUG_LIST_GROWSPACES_SCHEMA,
     DEBUG_RESET_SPECIAL_GROWSPACES_SCHEMA,
@@ -275,6 +276,7 @@ async def test_register_services(mock_hass, mock_strain_library_for_services) ->
         "save_ec_ramp_curve": SAVE_EC_RAMP_CURVE_SCHEMA,
         "remove_ec_ramp_curve": REMOVE_EC_RAMP_CURVE_SCHEMA,
         "trigger_vision_checkup": SERVICE_TRIGGER_VISION_CHECKUP_SCHEMA,
+        "configure_tank": CONFIGURE_TANK_SCHEMA,
     }
 
     # Verify call count

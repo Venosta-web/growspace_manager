@@ -61,7 +61,12 @@ CONF_HUMIDIFIER_ENTITY = "humidifier_entity"
 CONF_SOIL_MOISTURE_SENSOR = "soil_moisture_sensor"
 CONF_IRRIGATION_TANK_SENSORS = "irrigation_tank_sensors"
 CONF_IRRIGATION_TANK_WARNING_LEVEL = "irrigation_tank_warning_level"
+CONF_IRRIGATION_TANK_VOLUME = "irrigation_tank_volume"  # litres
 CONF_CONTROL_DEHUMIDIFIER = "control_dehumidifier"
+
+# Tank water inference service attributes
+ATTR_TANK_ENTITY = "tank_entity"
+ATTR_VOLUME_LITERS = "volume_liters"
 
 # DLI Tracking Defaults
 DEFAULT_DLI_TARGET_VEG: Final = 30.0
@@ -89,6 +94,12 @@ CONF_ELECTRICITY_COST = "electricity_cost_per_kwh"
 DEFAULT_PREDICTION_WINDOW_HOURS = 72
 DEPLETION_DEADBAND_THRESHOLD = 0.1  # %/hour
 VPD_WEIGHTING_BASE = 1.2  # kPa threshold for multiplier
+
+# Tank water tracker thresholds (capacity limits and detection)
+TANK_MAX_SNAPSHOTS = 2016     # 7d * 24h * 12 readings/h (5-min updates)
+TANK_MAX_EVENTS = 500         # rolling event window
+TANK_REFILL_THRESHOLD_PCT = 3.0   # % rise → classified as refill
+TANK_NOISE_FLOOR_PCT = 0.3        # % change too small to record
 
 
 # Multi-Device Config Keys
@@ -425,6 +436,8 @@ class GrowspaceService(StrEnum):
     REMOVE_EC_RAMP_CURVE = "remove_ec_ramp_curve"
     # Vision Checkup Services
     TRIGGER_VISION_CHECKUP = "trigger_vision_checkup"
+    # Tank Configuration Services
+    CONFIGURE_TANK = "configure_tank"
 
 
 class TrainingTechnique(StrEnum):
