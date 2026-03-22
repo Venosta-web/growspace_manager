@@ -1,6 +1,5 @@
 """Tests for async_configure_tank and get_tank_tracker coordinator methods."""
 
-from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
