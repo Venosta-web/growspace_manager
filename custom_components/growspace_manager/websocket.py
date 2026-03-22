@@ -1230,7 +1230,12 @@ async def websocket_update_vision_checkup_config(
     connection: websocket_api.ActiveConnection,
     msg: dict[str, Any],
 ) -> None:
-    """Update vision checkup configuration for a growspace."""
+    """Update vision checkup configuration for a growspace.
+
+    Only fields present in the message are applied (partial update).
+    Triggers schedule_all_growspaces after saving so the scheduler
+    reflects the new enabled state and timing offsets.
+    """
     growspace_id: str = msg["growspace_id"]
 
     try:

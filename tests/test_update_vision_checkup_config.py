@@ -120,7 +120,7 @@ async def test_update_vision_checkup_config_partial_update(mock_coordinator, moc
 
     # Pre-set values
     mock_growspace.environment_config.vision_checkup_config.enabled = False
-    mock_growspace.environment_config.vision_checkup_config.early_check_offset_minutes = 60
+    mock_growspace.environment_config.vision_checkup_config.early_check_offset_minutes = 999
 
     connection = MagicMock()
     msg = {"id": 4, "growspace_id": "tent1", "enabled": True}  # Only update enabled
@@ -132,8 +132,8 @@ async def test_update_vision_checkup_config_partial_update(mock_coordinator, moc
 
     cfg = mock_growspace.environment_config.vision_checkup_config
     assert cfg.enabled is True
-    # early_check_offset_minutes should remain 60 (not updated)
-    assert cfg.early_check_offset_minutes == 60
+    # early_check_offset_minutes should remain 999 (not updated)
+    assert cfg.early_check_offset_minutes == 999
 
 
 @pytest.mark.asyncio
