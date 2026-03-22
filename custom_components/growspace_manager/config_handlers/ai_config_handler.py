@@ -15,6 +15,7 @@ from custom_components.growspace_manager.const import (
     CONF_ASSISTANT_ID,
     CONF_NOTIFICATION_PERSONALITY,
     CONF_VISION_CHECKUP_ENABLED,
+    CONF_VISION_DEBUG_ENABLED,
 )
 from homeassistant.config_entries import ConfigFlowResult
 from homeassistant.helpers import selector
@@ -86,6 +87,14 @@ class AIConfigHandler(BaseConfigHandler[dict[str, Any]]):
             vol.Optional(
                 CONF_VISION_CHECKUP_ENABLED,
                 default=current_settings.get(CONF_VISION_CHECKUP_ENABLED, False),
+            )
+        ] = selector.BooleanSelector()
+
+        # Add vision debug toggle
+        schema[
+            vol.Optional(
+                CONF_VISION_DEBUG_ENABLED,
+                default=current_settings.get(CONF_VISION_DEBUG_ENABLED, False),
             )
         ] = selector.BooleanSelector()
 

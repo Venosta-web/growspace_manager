@@ -8,6 +8,8 @@ from __future__ import annotations
 
 from datetime import datetime, time, timedelta
 import logging
+from pathlib import Path
+import shutil
 from typing import TYPE_CHECKING, Any
 
 from homeassistant.components.ai_task import async_generate_data
@@ -15,6 +17,7 @@ from homeassistant.helpers.event import async_track_point_in_utc_time
 from homeassistant.util.dt import now as ha_now, utcnow
 
 from .const import PlantStage
+from .image_processor import GrowspaceImageProcessor
 from .models import VisionCheckupResult
 
 if TYPE_CHECKING:
@@ -113,6 +116,7 @@ class VisionCheckupScheduler:
         check_type: str,
         context_data: dict[str, Any],
         previous_results: list[VisionCheckupResult],
+        canopy_coverage: float | None = None,
     ) -> str:
         """Build the vision analysis prompt with full growspace context."""
         from .services.ai_assistant import GrowAssistant  # noqa: PLC0415
@@ -141,11 +145,23 @@ class VisionCheckupScheduler:
         }
         timing_desc = check_type_descriptions.get(check_type, check_type)
 
+        canopy_line = (
+            f"CANOPY COVERAGE: {canopy_coverage}% of the image area is green plant matter "
+            "(calculated via HSV color filtering before this message was sent).\n\n"
+            if canopy_coverage is not None
+            else ""
+        )
+
         return (
             "You are an expert cannabis plant health analyst performing a visual inspection.\n\n"
             f"TIMING: This is a {check_type} checkup ({timing_desc}).\n\n"
             f"{env_context}\n\n"
+            f"{canopy_line}"
             f"{trend_context}"
+            "GRID REFERENCE: The attached image has a 4x4 grid overlay with sectors labeled "
+            "A1–A4 (top row) through D1–D4 (bottom row). When you identify any issue, you MUST "
+            "specify the exact grid sector(s) where it is visible (e.g., 'yellowing in B2 and C3'). "
+            "This helps the grower locate the problem quickly.\n\n"
             "Analyze the attached camera image(s) from this growspace. Look carefully for:\n"
             "1. **Leaf health**: drooping, curling (up or down), yellowing, browning, spots, necrosis\n"
             "2. **Pest signs**: visible insects, webbing (spider mites), white powder (powdery mildew), "
@@ -158,12 +174,103 @@ class VisionCheckupScheduler:
             "6. **General vigor**: canopy uniformity, color consistency, stem thickness\n\n"
             "Compare with the sensor data above when interpreting what you see.\n\n"
             "Return your analysis as structured data with these fields:\n"
-            "- analysis: A concise paragraph describing what you see\n"
+            "- analysis: A concise paragraph describing what you see, referencing grid sectors for any issues\n"
             "- issues_detected: A list of issue keywords (e.g., leaf_drooping, nitrogen_deficiency). "
             "Use empty list if no issues.\n"
             "- severity: One of 'none', 'low', 'medium', 'high', 'critical'\n"
             "- recommendations: A list of specific, actionable recommendations. Use empty list if no action needed.\n"
         )
+
+    async def _process_camera_images(
+        self,
+        growspace_id: str,
+        camera_entities: list[str],
+    ) -> tuple[list[dict[str, str]], float | None, list[Path]]:
+        """Fetch, process, and save camera snapshots for vision analysis.
+
+        Fetches a live image from each camera entity, runs the image processor
+        (green-pixel coverage + 4x4 grid overlay) in a thread, then writes the
+        result to ``config/media/growspace_vision/`` so it can be referenced via
+        a ``media-source://media_source/local/`` URI in the AI task attachment.
+
+        Args:
+            growspace_id: Used to namespace the saved filenames.
+            camera_entities: List of camera entity IDs to capture.
+
+        Returns:
+            Tuple of:
+            - attachment dicts ready for ``async_generate_data``
+            - average canopy coverage across all processed cameras (or None)
+            - list of Path objects for saved files (for cleanup after the AI call)
+
+        """
+        from homeassistant.components.camera import async_get_image  # noqa: PLC0415
+
+        processor = GrowspaceImageProcessor()
+        timestamp = utcnow().strftime("%Y%m%d_%H%M%S")
+
+        media_dir = Path(self.hass.config.path("media", "growspace_vision"))
+        try:
+            await self.hass.async_add_executor_job(
+                lambda: media_dir.mkdir(parents=True, exist_ok=True)
+            )
+        except OSError:
+            _LOGGER.exception(
+                "Failed to create media directory %s, skipping image processing",
+                media_dir,
+            )
+            return [], None, []
+
+        attachments: list[dict[str, str]] = []
+        coverages: list[float] = []
+        temp_paths: list[Path] = []
+
+        for i, cam_entity in enumerate(camera_entities):
+            try:
+                image = await async_get_image(self.hass, cam_entity)
+            except Exception:
+                _LOGGER.warning(
+                    "Failed to fetch snapshot from camera %s, skipping", cam_entity
+                )
+                continue
+
+            try:
+                processed_bytes, coverage = await self.hass.async_add_executor_job(
+                    processor.process_snapshot, image.content
+                )
+            except Exception:
+                _LOGGER.warning(
+                    "Image processing failed for camera %s, skipping", cam_entity
+                )
+                continue
+
+            filename = f"{growspace_id}_{timestamp}_{i}.jpg"
+            file_path = media_dir / filename
+
+            try:
+                await self.hass.async_add_executor_job(file_path.write_bytes, processed_bytes)
+            except OSError:
+                _LOGGER.exception("Failed to save processed image to %s", file_path)
+                continue
+
+            temp_paths.append(file_path)
+            attachments.append(
+                {
+                    "media_content_id": (
+                        f"media-source://media_source/local/growspace_vision/{filename}"
+                    )
+                }
+            )
+            coverages.append(coverage)
+            _LOGGER.debug(
+                "Processed camera %s: coverage=%.1f%%, saved to %s",
+                cam_entity,
+                coverage,
+                file_path,
+            )
+
+        avg_coverage = round(sum(coverages) / len(coverages), 1) if coverages else None
+        return attachments, avg_coverage, temp_paths
 
     def _cancel_growspace_timers(self, growspace_id: str) -> None:
         """Cancel all scheduled timers for a specific growspace."""
@@ -357,17 +464,29 @@ class VisionCheckupScheduler:
                 "strain_analytics": {},
             }
 
+        # Process camera images: apply green-coverage analysis and grid overlay.
+        # Falls back to direct camera URIs if processing fails for all cameras.
+        attachments, avg_coverage, temp_paths = await self._process_camera_images(
+            growspace_id, camera_entities
+        )
+        if not attachments:
+            _LOGGER.warning(
+                "Image processing yielded no results for %s; using raw camera URIs",
+                growspace_id,
+            )
+            attachments = [
+                {"media_content_id": f"media-source://camera/{cam}"}
+                for cam in camera_entities
+            ]
+            avg_coverage = None
+
         prompt = self._build_vision_prompt(
             growspace_id,
             check_type,
             context_data,
             growspace.vision_checkup_history,
+            avg_coverage,
         )
-
-        attachments = [
-            {"media_content_id": f"media-source://camera/{cam}"}
-            for cam in camera_entities
-        ]
 
         try:
             task_result = await async_generate_data(
@@ -382,6 +501,28 @@ class VisionCheckupScheduler:
                 "AI vision analysis failed for growspace %s", growspace_id
             )
             return None
+        finally:
+            ai_settings = self.coordinator.options.get("ai_settings", {})
+            debug_enabled = ai_settings.get("vision_debug_enabled", False)
+            if debug_enabled and temp_paths:
+                debug_dir = Path(self.hass.config.path("openCVDebug"))
+                try:
+                    await self.hass.async_add_executor_job(
+                        lambda: debug_dir.mkdir(parents=True, exist_ok=True)
+                    )
+                    for path in temp_paths:
+                        debug_path = debug_dir / path.name
+                        await self.hass.async_add_executor_job(
+                            shutil.copy2, path, debug_path
+                        )
+                except Exception:
+                    _LOGGER.exception("Failed to save openCVDebug images")
+
+            for path in temp_paths:
+                try:
+                    path.unlink(missing_ok=True)
+                except OSError:
+                    _LOGGER.debug("Could not remove temp vision file %s", path)
 
         data = task_result.data or {}
 
