@@ -1,12 +1,11 @@
 """Tests for TankWaterTracker."""
 import pytest
+
 from custom_components.growspace_manager.const import (
-    TANK_NOISE_FLOOR_PCT,
-    TANK_REFILL_THRESHOLD_PCT,
-    TANK_MAX_SNAPSHOTS,
     TANK_MAX_EVENTS,
+    TANK_MAX_SNAPSHOTS,
 )
-from custom_components.growspace_manager.models import IrrigationTank, TankWaterHistory
+from custom_components.growspace_manager.models import IrrigationTank
 from custom_components.growspace_manager.tank_water_tracker import TankWaterTracker
 
 
@@ -64,7 +63,6 @@ def test_rolling_snapshot_window_enforced():
     # Override on the history object itself
     t.tank.water_history.snapshots = []  # ensure empty
     # Use TANK_MAX_SNAPSHOTS constant and push over the limit
-    from custom_components.growspace_manager.const import TANK_MAX_SNAPSHOTS
     for i in range(TANK_MAX_SNAPSHOTS + 5):
         t.record_level(float(50 - (i % 10)), f"2026-03-22T{i % 24:02d}:00:00+00:00")
     assert len(t.tank.water_history.snapshots) == TANK_MAX_SNAPSHOTS
@@ -72,7 +70,6 @@ def test_rolling_snapshot_window_enforced():
 
 def test_rolling_event_window_enforced():
     t = _tracker()
-    from custom_components.growspace_manager.const import TANK_MAX_EVENTS
     # Generate many consumption events (alternating 50/45 -> 5% drops each pair)
     for i in range(TANK_MAX_EVENTS + 10):
         t.record_level(50.0, f"2026-03-22T00:{i % 60:02d}:00+00:00")
