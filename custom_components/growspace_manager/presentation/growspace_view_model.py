@@ -461,11 +461,16 @@ class GrowspaceViewModelBuilder:
                         "sensor_entity": tank.sensor_entity,
                         "name": tank.name,
                         "warning_level": tank.warning_level,
+                        "volume_liters": tank.volume_liters,
                         "fill_level": fill_level,
                         "is_warning": fill_level is not None
                         and fill_level <= tank.warning_level,
                         "hours_remaining": hours_remaining,
                         "depletion_status": depletion_status,
+                        "water_history": {
+                            "snapshots": tank.water_history.snapshots[-96:],
+                            "events": tank.water_history.events[-200:],
+                        },
                     }
                 )
             attributes["irrigation_tanks"] = tanks_data
