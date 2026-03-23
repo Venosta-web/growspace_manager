@@ -128,6 +128,20 @@ class StageHistoryItem(TypedDict):
 class BaseModel(DataClassDictMixin):
     """Base class providing generic serialization methods."""
 
+    @classmethod
+    def __pre_deserialize__(cls, data: dict[str, Any]) -> dict[str, Any]:
+        """Generic pre-deserialization to handle None values for numeric fields."""
+        data = data.copy()
+        for f in fields(cls):
+            if f.name in data and data[f.name] is None:
+                # If field is float/int but gets None, try to use default
+                if f.type is float or f.type is int:
+                    if f.default is not field.MISSING:
+                        data[f.name] = f.default
+                    else:
+                        data[f.name] = 0.0 if f.type is float else 0
+        return data
+
 
 @dataclass(slots=True, kw_only=True)
 class BasePreset(BaseModel):
@@ -326,13 +340,8 @@ class EnvironmentConfig(BaseModel):
 
     @classmethod
     def __pre_deserialize__(cls, data: dict[str, Any]) -> dict[str, Any]:
-        """Mashumaro hook: transform data before deserialization.
-
-        Handles:
-        - Migration: singular sensor fields → plural lists
-        - Catch-all: unknown fields → bayesian_options dict
-        """
-        data = data.copy()
+        """Mashumaro hook: transform data before deserialization."""
+        data = super().__pre_deserialize__(data)
 
         # Migration: singular -> plural list
         migrations = {
@@ -385,10 +394,6 @@ class EnvironmentConfig(BaseModel):
         for k in extras:
             if k in data:
                 del data[k]
-
-        # Ensure electricity_cost_per_kwh is a float (mashumaro fix)
-        if data.get("electricity_cost_per_kwh") is None:
-            data["electricity_cost_per_kwh"] = 0.0
 
         return data
 
@@ -532,14 +537,8 @@ class Growspace(BaseModel):
 
     @classmethod
     def __pre_deserialize__(cls, data: dict[str, Any]) -> dict[str, Any]:
-        """Mashumaro hook: transform data before deserialization.
-
-        Handles:
-        - Sanitization: rows/plants_per_row strings → integers
-        - Migration: irrigation_config normalize to time/duration format (start_time → time, duration_seconds → duration)
-        - Sanitization: irrigation_strategy integer fields
-        """
-        data = data.copy()
+        """Mashumaro hook: transform data before deserialization."""
+        data = super().__pre_deserialize__(data)
 
         # Sanitize integer fields
         for field_name in ["rows", "plants_per_row"]:
@@ -702,14 +701,8 @@ class Plant(BaseModel):
 
     @classmethod
     def __pre_deserialize__(cls, data: dict[str, Any]) -> dict[str, Any]:
-        """Mashumaro hook: transform data before deserialization.
-
-        Handles:
-        - Migration: flat strain/phenotype → PlantGenetics
-        - Sanitization: row/col strings ("30.0") → integers
-        - Migration: build stage_history from start dates
-        """
-        data = data.copy()
+        """Mashumaro hook: transform data before deserialization."""
+        data = super().__pre_deserialize__(data)
 
         # Sanitize integer fields - handle "30.0" strings
         for field_name in ["row", "col"]:
