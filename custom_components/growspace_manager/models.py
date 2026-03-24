@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 from dataclasses import MISSING, dataclass, field, fields
 from datetime import datetime
 from enum import StrEnum
@@ -124,10 +125,8 @@ class StageHistoryItem(TypedDict):
     end: str | None
 
 
-def _sanitize_none_numeric_fields(
-    cls: type, data: dict[str, Any]
-) -> dict[str, Any]:
-    """Coerce None values to defaults for float/int fields before deserialization.
+def _sanitize_numeric_fields(cls: type, data: dict[str, Any]) -> dict[str, Any]:
+    """Coerce None and float values to proper types for int fields before deserialization.
 
     With `from __future__ import annotations`, field types are stored as strings,
     so we compare against 'float'/'int' string literals rather than actual types.
@@ -135,12 +134,23 @@ def _sanitize_none_numeric_fields(
     """
     data = data.copy()
     for f in fields(cls):
-        if f.name in data and data[f.name] is None:
-            if f.type in ("float", "int"):
-                if f.default is not MISSING:
-                    data[f.name] = f.default
-                else:
-                    data[f.name] = 0.0 if f.type == "float" else 0
+        if f.name in data:
+            val = data[f.name]
+            if val is None:
+                if f.type in ("float", "int"):
+                    if f.default is not MISSING:
+                        data[f.name] = f.default
+                    else:
+                        data[f.name] = 0.0 if f.type == "float" else 0
+            elif f.type == "int" and isinstance(val, (float, str)):
+                try:
+                    data[f.name] = int(float(val))
+                except (ValueError, TypeError):
+                    # On conversion error, fall back to the field's default or 0.
+                    if f.default is not MISSING:
+                        data[f.name] = f.default
+                    else:
+                        data[f.name] = 0
     return data
 
 
@@ -151,7 +161,7 @@ class BaseModel(DataClassDictMixin):
     @classmethod
     def __pre_deserialize__(cls, data: dict[str, Any]) -> dict[str, Any]:
         """Generic pre-deserialization to handle None values for numeric fields."""
-        return _sanitize_none_numeric_fields(cls, data)
+        return _sanitize_numeric_fields(cls, data)
 
 
 @dataclass(slots=True, kw_only=True)
@@ -352,7 +362,7 @@ class EnvironmentConfig(BaseModel):
     @classmethod
     def __pre_deserialize__(cls, data: dict[str, Any]) -> dict[str, Any]:
         """Mashumaro hook: transform data before deserialization."""
-        data = _sanitize_none_numeric_fields(cls, data)
+        data = _sanitize_numeric_fields(cls, data)
 
         # Migration: singular -> plural list
         migrations = {
@@ -549,7 +559,7 @@ class Growspace(BaseModel):
     @classmethod
     def __pre_deserialize__(cls, data: dict[str, Any]) -> dict[str, Any]:
         """Mashumaro hook: transform data before deserialization."""
-        data = _sanitize_none_numeric_fields(cls, data)
+        data = _sanitize_numeric_fields(cls, data)
 
         # Sanitize integer fields
         for field_name in ["rows", "plants_per_row"]:
@@ -713,7 +723,7 @@ class Plant(BaseModel):
     @classmethod
     def __pre_deserialize__(cls, data: dict[str, Any]) -> dict[str, Any]:
         """Mashumaro hook: transform data before deserialization."""
-        data = _sanitize_none_numeric_fields(cls, data)
+        data = _sanitize_numeric_fields(cls, data)
 
         # Sanitize integer fields - handle "30.0" strings
         for field_name in ["row", "col"]:
