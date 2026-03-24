@@ -1,4 +1,8 @@
-from custom_components.growspace_manager.models import EnvironmentConfig, Growspace
+from custom_components.growspace_manager.models import (
+    EnvironmentConfig,
+    Growspace,
+    IrrigationStrategy,
+)
 
 
 def test_environment_config_none_fix():
@@ -37,17 +41,16 @@ def test_growspace_none_fix():
 
 
 def test_nested_model_none_fix():
-    """Test that nested models (like IrrigationConfig) also benefit from the fix."""
-    from custom_components.growspace_manager.models import IrrigationConfig
+    """Test that nested models (like IrrigationStrategy) also benefit from the fix."""
 
     data = {
-        "veg_day_hours": None,  # int
+        "p0_duration_minutes": None,  # int
         "target_vwc_percent": None,  # float
     }
-    # IrrigationConfig inherits from BaseModel and doesn't have its own __pre_deserialize__
+    # IrrigationStrategy inherits from BaseModel and doesn't have its own __pre_deserialize__
     # so it uses the one I added to BaseModel.
-    config = IrrigationConfig.from_dict(data)
-    assert config.veg_day_hours == 12  # Default value
+    config = IrrigationStrategy.from_dict(data)
+    assert config.p0_duration_minutes == 60  # Default value
     assert config.target_vwc_percent == 55.0  # Default value
 
 
