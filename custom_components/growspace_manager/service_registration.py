@@ -14,9 +14,12 @@ from .const import DOMAIN, GrowspaceService
 from .coordinator import GrowspaceCoordinator
 from .exceptions import GrowspaceError
 from .schemas import (
+    ADD_SEED_BATCH_SCHEMA,
     APPLY_IPM_SCHEMA,
     CONFIGURE_DRAIN_MONITORING_SCHEMA,
+    HARVEST_SEEDS_SCHEMA,
     LOG_DRAIN_READING_SCHEMA,
+    LOG_POLLINATION_SCHEMA,
     LOG_TRAINING_EVENT_SCHEMA,
     REMOVE_EC_RAMP_CURVE_SCHEMA,
     REMOVE_IPM_PRESET_SCHEMA,
@@ -75,6 +78,7 @@ from .services import (
     drain_ec,
     ec_ramp,
     environment,
+    genetics,
     growspace,
     ipm,
     irrigation,
@@ -392,6 +396,21 @@ async def register_services(
             GrowspaceService.TRIGGER_VISION_CHECKUP,
             wrap(vision_checkup.handle_trigger_vision_checkup, False),
             SERVICE_TRIGGER_VISION_CHECKUP_SCHEMA,
+        ),
+        (
+            GrowspaceService.ADD_SEED_BATCH,
+            wrap(genetics.handle_add_seed_batch, False),
+            ADD_SEED_BATCH_SCHEMA,
+        ),
+        (
+            GrowspaceService.LOG_POLLINATION,
+            wrap(genetics.handle_log_pollination, False),
+            LOG_POLLINATION_SCHEMA,
+        ),
+        (
+            GrowspaceService.HARVEST_SEEDS,
+            wrap(genetics.handle_harvest_seeds, False),
+            HARVEST_SEEDS_SCHEMA,
         ),
     ]
 

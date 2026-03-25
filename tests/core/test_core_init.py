@@ -10,9 +10,6 @@ import tempfile
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from aiohttp import BodyPartReader
-import pytest
-from pytest_homeassistant_custom_component.common import MockConfigEntry
-
 from custom_components.growspace_manager import (
     _async_cancel_coordinators,
     _async_update_listener,
@@ -28,6 +25,7 @@ from custom_components.growspace_manager.schemas import (
     ADD_IRRIGATION_TIME_SCHEMA,
     ADD_PLANT_SCHEMA,
     ADD_PLANTS_SCHEMA,
+    ADD_SEED_BATCH_SCHEMA,
     ADD_STRAIN_SCHEMA,
     ADD_TIMELINE_NOTE_SCHEMA,
     ANALYZE_ALL_GROWSPACES_SCHEMA,
@@ -43,8 +41,10 @@ from custom_components.growspace_manager.schemas import (
     EXPORT_GROW_REPORT_SCHEMA,
     EXPORT_STRAIN_LIBRARY_SCHEMA,
     HARVEST_PLANT_SCHEMA,
+    HARVEST_SEEDS_SCHEMA,
     IMPORT_STRAIN_LIBRARY_SCHEMA,
     LOG_DRAIN_READING_SCHEMA,
+    LOG_POLLINATION_SCHEMA,
     LOG_TRAINING_EVENT_SCHEMA,
     MOVE_CLONE_SCHEMA,
     MOVE_PLANT_SCHEMA,
@@ -85,6 +85,9 @@ from custom_components.growspace_manager.websocket import (
     websocket_get_growspace_data,
     websocket_get_history_stats,
 )
+import pytest
+from pytest_homeassistant_custom_component.common import MockConfigEntry
+
 from homeassistant.components.recorder.db_schema import Events
 from homeassistant.config_entries import ConfigEntryState
 from homeassistant.core import HomeAssistant
@@ -275,6 +278,9 @@ async def test_register_services(mock_hass, mock_strain_library_for_services) ->
         "save_ec_ramp_curve": SAVE_EC_RAMP_CURVE_SCHEMA,
         "remove_ec_ramp_curve": REMOVE_EC_RAMP_CURVE_SCHEMA,
         "trigger_vision_checkup": SERVICE_TRIGGER_VISION_CHECKUP_SCHEMA,
+        "add_seed_batch": ADD_SEED_BATCH_SCHEMA,
+        "log_pollination": LOG_POLLINATION_SCHEMA,
+        "harvest_seeds": HARVEST_SEEDS_SCHEMA,
     }
 
     # Verify call count
