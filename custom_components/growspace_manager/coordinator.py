@@ -32,6 +32,7 @@ from .growspace_validator import GrowspaceValidator
 from .import_export_manager import ImportExportManager
 from .irrigation_coordinator import IrrigationCoordinator
 from .managers.growspace import GrowspaceManager
+from .managers.genetics import GeneticsManager
 from .managers.nutrient import NutrientManager
 from .managers.plant import PlantManager
 from .managers.subsystem import SubsystemManager
@@ -373,8 +374,11 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self.nutrient_manager = NutrientManager(
             self.data_repository, self._save_callback
         )
+        self.genetics_manager = GeneticsManager(
+            self.data_repository, self._save_callback
+        )
         self.storage_manager = StorageManager(
-            self.hass, self.data_repository, self.nutrient_manager
+            self.hass, self.data_repository, self.nutrient_manager, self.genetics_manager
         )
 
         # 4. Initialize Managers (replacing services)
