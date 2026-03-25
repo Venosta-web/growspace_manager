@@ -387,6 +387,13 @@ SCHEMA_WS_GET_EC_RAMP_CURVES = websocket_api.BASE_COMMAND_MESSAGE_SCHEMA.extend(
     }
 )
 
+WS_TYPE_GET_GENETICS_DATA = f"{DOMAIN}/get_genetics_data"
+SCHEMA_WS_GET_GENETICS_DATA = websocket_api.BASE_COMMAND_MESSAGE_SCHEMA.extend(
+    {
+        vol.Required("type"): WS_TYPE_GET_GENETICS_DATA,
+    }
+)
+
 WS_TYPE_ADD_TIMELINE_NOTE = f"{DOMAIN}/add_timeline_note"
 SCHEMA_WS_ADD_TIMELINE_NOTE = websocket_api.BASE_COMMAND_MESSAGE_SCHEMA.extend(
     {
@@ -576,6 +583,26 @@ def websocket_get_ec_ramp_curves(
         connection.send_result(msg["id"], data.get("ec_ramp_curves", []))
     except Exception as err:
         _LOGGER.exception("Error handling websocket_get_ec_ramp_curves")
+        connection.send_error(msg["id"], "unknown_error", str(err))
+
+
+@callback
+def websocket_get_genetics_data(
+    hass: HomeAssistant,
+    connection: websocket_api.ActiveConnection,
+    msg: dict[str, Any],
+) -> None:
+    """Handle get genetics data command via WebSocket."""
+    try:
+        coordinator: GrowspaceCoordinator = GrowspaceCoordinator.get_for_service_call(
+            hass, msg
+        )
+        connection.send_result(
+            msg["id"],
+            coordinator.genetics_manager.get_serialization_data(),
+        )
+    except Exception as err:
+        _LOGGER.exception("Error handling websocket_get_genetics_data")
         connection.send_error(msg["id"], "unknown_error", str(err))
 
 
@@ -1321,6 +1348,12 @@ def async_register_websocket_api(hass: HomeAssistant) -> None:
         WS_TYPE_GET_EC_RAMP_CURVES,
         websocket_get_ec_ramp_curves,
         SCHEMA_WS_GET_EC_RAMP_CURVES,
+    )
+    websocket_api.async_register_command(
+        hass,
+        WS_TYPE_GET_GENETICS_DATA,
+        websocket_get_genetics_data,
+        SCHEMA_WS_GET_GENETICS_DATA,
     )
 
     websocket_api.async_register_command(
