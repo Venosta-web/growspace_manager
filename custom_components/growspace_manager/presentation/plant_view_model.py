@@ -93,11 +93,14 @@ class PlantViewModelBuilder:
                 "cbd_percentage": plant.harvest_metrics.cbd_percentage,
                 "terpene_profile": plant.harvest_metrics.terpene_profile,
             },
-            "scores": {
-                "vigor": plant.scores.vigor,
-                "structure": plant.scores.structure,
-                "aroma": plant.scores.aroma,
-                "resin": plant.scores.resin,
-                "pest_resistance": plant.scores.pest_resistance,
+            "phenotype_score": {
+                "vigor": plant.phenotype_score.vigor,
+                "internodal_spacing": plant.phenotype_score.internodal_spacing,
+                "terpene_intensity": plant.phenotype_score.terpene_intensity,
+                "resin": plant.phenotype_score.resin,
+                "mold_resistance": plant.phenotype_score.mold_resistance,
+                "yield_potential": plant.phenotype_score.yield_potential,
+                "keeper": plant.phenotype_score.keeper,
+                "total_score": plant.phenotype_score.total_score,
             },
         }

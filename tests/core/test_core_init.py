@@ -28,6 +28,7 @@ from custom_components.growspace_manager.schemas import (
     ADD_IRRIGATION_TIME_SCHEMA,
     ADD_PLANT_SCHEMA,
     ADD_PLANTS_SCHEMA,
+    ADD_SEED_BATCH_SCHEMA,
     ADD_STRAIN_SCHEMA,
     ADD_TIMELINE_NOTE_SCHEMA,
     ANALYZE_ALL_GROWSPACES_SCHEMA,
@@ -44,8 +45,10 @@ from custom_components.growspace_manager.schemas import (
     EXPORT_GROW_REPORT_SCHEMA,
     EXPORT_STRAIN_LIBRARY_SCHEMA,
     HARVEST_PLANT_SCHEMA,
+    HARVEST_SEEDS_SCHEMA,
     IMPORT_STRAIN_LIBRARY_SCHEMA,
     LOG_DRAIN_READING_SCHEMA,
+    LOG_POLLINATION_SCHEMA,
     LOG_TRAINING_EVENT_SCHEMA,
     MOVE_CLONE_SCHEMA,
     MOVE_PLANT_SCHEMA,
@@ -63,6 +66,7 @@ from custom_components.growspace_manager.schemas import (
     SAVE_EC_RAMP_CURVE_SCHEMA,
     SAVE_IPM_PRESET_SCHEMA,
     SAVE_NUTRIENT_PRESET_SCHEMA,
+    SCORE_PHENOTYPE_SCHEMA,
     SCORE_PLANT_SCHEMA,
     SERVICE_TRIGGER_VISION_CHECKUP_SCHEMA,
     SET_DEHUMIDIFIER_CONTROL_SCHEMA,
@@ -277,6 +281,10 @@ async def test_register_services(mock_hass, mock_strain_library_for_services) ->
         "remove_ec_ramp_curve": REMOVE_EC_RAMP_CURVE_SCHEMA,
         "trigger_vision_checkup": SERVICE_TRIGGER_VISION_CHECKUP_SCHEMA,
         "configure_tank": CONFIGURE_TANK_SCHEMA,
+        "add_seed_batch": ADD_SEED_BATCH_SCHEMA,
+        "log_pollination": LOG_POLLINATION_SCHEMA,
+        "score_phenotype": SCORE_PHENOTYPE_SCHEMA,
+        "harvest_seeds": HARVEST_SEEDS_SCHEMA,
     }
 
     # Verify call count

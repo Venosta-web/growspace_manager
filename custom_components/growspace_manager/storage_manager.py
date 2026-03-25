@@ -12,7 +12,13 @@ from typing import TYPE_CHECKING, Any
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.storage import Store
 
-from .const import STORAGE_KEY, STORAGE_KEY_CONFIG, STORAGE_KEY_PLANTS, STORAGE_VERSION
+from .const import (
+    STORAGE_KEY,
+    STORAGE_KEY_CONFIG,
+    STORAGE_KEY_GENETICS,
+    STORAGE_KEY_PLANTS,
+    STORAGE_VERSION,
+)
 from .models import (
     ECRampCurve,
     EnvironmentConfig,
@@ -21,10 +27,13 @@ from .models import (
     NutrientInventory,
     NutrientPreset,
     Plant,
+    PollinationEvent,
+    SeedBatch,
 )
 
 if TYPE_CHECKING:
     from .data_access.growspace_repository import GrowspaceRepository
+    from .managers.genetics import GeneticsManager
     from .managers.nutrient import NutrientManager
 
 _LOGGER = logging.getLogger(__name__)
@@ -38,6 +47,7 @@ class StorageManager:
         hass: HomeAssistant,
         repository: GrowspaceRepository,
         nutrient_manager: NutrientManager,
+        genetics_manager: GeneticsManager | None = None,
     ) -> None:
         """Initialize the StorageManager.
 
@@ -45,10 +55,12 @@ class StorageManager:
             hass: The Home Assistant instance.
             repository: The data repository.
             nutrient_manager: The nutrient manager.
+            genetics_manager: The genetics manager (optional for backward compat).
         """
         self.hass = hass
         self.repository = repository
         self.nutrient_manager = nutrient_manager
+        self.genetics_manager = genetics_manager
 
         # Segmented stores
         self.config_store: Store[dict[str, Any]] = Store(
@@ -56,6 +68,9 @@ class StorageManager:
         )
         self.plants_store: Store[dict[str, Any]] = Store(
             hass, STORAGE_VERSION, STORAGE_KEY_PLANTS
+        )
+        self.genetics_store: Store[dict[str, Any]] = Store(
+            hass, STORAGE_VERSION, STORAGE_KEY_GENETICS
         )
 
         # Legacy store for migration
@@ -68,11 +83,15 @@ class StorageManager:
         # debounce delay of 10 seconds as requested
         self.config_store.async_delay_save(self._get_config_data, 10)
         self.plants_store.async_delay_save(self._get_plants_data, 10)
+        if self.genetics_manager is not None:
+            self.genetics_store.async_delay_save(self._get_genetics_data, 10)
 
     async def async_force_save(self) -> None:
         """Force save immediately (ignoring delay) to ensure data integrity."""
         await self.config_store.async_save(self._get_config_data())
         await self.plants_store.async_save(self._get_plants_data())
+        if self.genetics_manager is not None:
+            await self.genetics_store.async_save(self._get_genetics_data())
 
     def _get_config_data(self) -> dict[str, Any]:
         """Gather configuration data for storage."""
@@ -96,10 +115,17 @@ class StorageManager:
             "plants": {pid: asdict(p) for pid, p in self.repository.plants.items()},
         }
 
+    def _get_genetics_data(self) -> dict[str, Any]:
+        """Gather genetics data for storage."""
+        if self.genetics_manager is None:
+            return {}
+        return self.genetics_manager.get_serialization_data()
+
     async def async_load(self, options: dict[str, Any] | None = None) -> None:
         """Load data from persistent storage and handle migrations."""
         config_data = await self.config_store.async_load()
         plants_data = await self.plants_store.async_load()
+        genetics_data = await self.genetics_store.async_load()
 
         if config_data or plants_data:
             _LOGGER.info("Loading data from segmented storage")
@@ -122,6 +148,9 @@ class StorageManager:
                 _LOGGER.info("No stored data found, starting fresh")
                 # Ensure files are created even if empty
                 await self.async_save()
+
+        if genetics_data and self.genetics_manager is not None:
+            self._load_genetics(genetics_data)
 
     def _load_config(
         self, data: dict[str, Any], options: dict[str, Any] | None = None
@@ -308,6 +337,28 @@ class StorageManager:
         except Exception:
             _LOGGER.exception("Error loading EC ramp curves")
             return {}
+
+    def _load_genetics(self, data: dict[str, Any]) -> None:
+        """Load genetics data (seed batches and pollination events)."""
+        if self.genetics_manager is None:
+            return
+        try:
+            seed_batches = {
+                bid: SeedBatch.from_dict(b)
+                for bid, b in data.get("seed_batches", {}).items()
+            }
+            pollination_events = {
+                eid: PollinationEvent.from_dict(e)
+                for eid, e in data.get("pollination_events", {}).items()
+            }
+            self.genetics_manager.load_data(seed_batches, pollination_events)
+            _LOGGER.info(
+                "Loaded %d seed batches and %d pollination events",
+                len(seed_batches),
+                len(pollination_events),
+            )
+        except Exception:
+            _LOGGER.exception("Error loading genetics data")
 
     def _load_nutrient_inventory(self, data: dict[str, Any]) -> NutrientInventory:
         """Load nutrient inventory from storage data."""

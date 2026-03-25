@@ -9,6 +9,7 @@ from __future__ import annotations
 
 # Standard library
 import asyncio
+from dataclasses import asdict
 from datetime import datetime
 import logging
 from typing import Any, override
@@ -250,6 +251,9 @@ async def _create_initial_entities(
     """Create initial entities for the platform."""
     # Strain Library
     initial_entities.append(StrainLibrarySensor(coordinator))
+
+    # Seed inventory
+    initial_entities.append(SeedInventorySensor(coordinator))
 
     # Growspaces and Plants
     for growspace_id, growspace in coordinator.growspaces.items():
@@ -805,7 +809,7 @@ class TankDerivedWaterSensor(CoordinatorEntity, SensorEntity):
         def _on_change() -> None:
             self.async_write_ha_state()
 
-        unsub = tracker.async_setup(self.hass, _on_change)
+        unsub = await tracker.async_setup(self.hass, _on_change)
         self.async_on_remove(unsub)
 
 
@@ -1104,8 +1108,8 @@ class PlantEntity(CoordinatorEntity[GrowspaceCoordinator], SensorEntity):  # typ
             ATTR_ROW: plant.row,
             ATTR_COL: plant.col,
             "position": f"({int(plant.row)},{int(plant.col)})",
-            "scores": plant.scores.to_dict()
-            if hasattr(plant.scores, "to_dict")
+            "phenotype_score": plant.phenotype_score.to_dict()
+            if hasattr(plant.phenotype_score, "to_dict")
             else {},
             "harvest_metrics": plant.harvest_metrics.to_dict()
             if hasattr(plant.harvest_metrics, "to_dict")
@@ -1739,4 +1743,41 @@ class VisionCheckupSensor(CoordinatorEntity[GrowspaceCoordinator], SensorEntity)
             "recommendations": result.recommendations,
             "last_checkup_time": result.timestamp,
             "total_checkups": len(gs.vision_checkup_history) if gs else 0,
+        }
+
+
+class SeedInventorySensor(CoordinatorEntity[GrowspaceCoordinator], SensorEntity):  # type: ignore[misc]
+    """Sensor exposing the total seed count across all batches."""
+
+    _attr_has_entity_name = True
+    _attr_translation_key = "seed_inventory"
+    _attr_icon = "mdi:seed"
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+
+    def __init__(self, coordinator: GrowspaceCoordinator) -> None:
+        """Initialize the seed inventory sensor."""
+        super().__init__(coordinator)
+        self._attr_unique_id = f"{DOMAIN}_seed_inventory"
+        self._attr_device_info = DeviceInfo(
+            identifiers={(DOMAIN, "service")},
+            name="Growspace Manager Service",
+            model="Service",
+            manufacturer="Growspace Manager",
+        )
+
+    @property
+    @override  # type: ignore[misc]
+    def native_value(self) -> int:
+        """Return total number of seeds across all batches."""
+        return self.coordinator.genetics_manager.get_total_seed_count()
+
+    @property
+    @override  # type: ignore[misc]
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Return each seed batch as a list of dicts."""
+        return {
+            "seed_batches": [
+                asdict(batch)
+                for batch in self.coordinator.genetics_manager.seed_batches.values()
+            ],
         }

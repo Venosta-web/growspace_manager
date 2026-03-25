@@ -31,6 +31,7 @@ from .exceptions import GrowspaceNotFoundError
 from .growspace_validator import GrowspaceValidator
 from .import_export_manager import ImportExportManager
 from .irrigation_coordinator import IrrigationCoordinator
+from .managers.genetics import GeneticsManager
 from .managers.growspace import GrowspaceManager
 from .managers.nutrient import NutrientManager
 from .managers.plant import PlantManager
@@ -370,12 +371,18 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         else:
             self.strain_library = strain_library
 
-        # 3. Initialize storage (depends on repository, nutrient_manager)
+        # 3. Initialize storage (depends on repository, nutrient_manager, genetics_manager)
         self.nutrient_manager = NutrientManager(
             self.data_repository, self._save_callback
         )
+        self.genetics_manager = GeneticsManager(
+            self.data_repository, self._save_callback
+        )
         self.storage_manager = StorageManager(
-            self.hass, self.data_repository, self.nutrient_manager
+            self.hass,
+            self.data_repository,
+            self.nutrient_manager,
+            self.genetics_manager,
         )
 
         # 4. Initialize Managers (replacing services)
@@ -1487,7 +1494,6 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     def get_growspace(self, growspace_id: str) -> Growspace | None:
         """Retrieve a growspace by its ID."""
         return self.data_repository.get_growspace(growspace_id)
-
 
     def get_growspace_grid(self, growspace_id: str) -> list[list[str | None]]:
         """Generate a 2D grid representation of a growspace's plant layout.

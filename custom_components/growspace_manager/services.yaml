@@ -1461,3 +1461,156 @@ trigger_vision_checkup:
       required: true
       selector:
         text:
+
+add_seed_batch:
+  description: Add a seed batch to the genetics inventory
+  fields:
+    strain_name:
+      description: Name of the strain
+      required: true
+      selector:
+        text:
+    breeder:
+      description: Breeder or seed company
+      required: true
+      selector:
+        text:
+    quantity:
+      description: Number of seeds in this batch
+      required: true
+      selector:
+        number:
+          min: 1
+          mode: box
+    acquisition_date:
+      description: Date the seeds were acquired (YYYY-MM-DD)
+      required: true
+      selector:
+        text:
+    generation:
+      description: Genetic generation (e.g. F1, S1, IBL)
+      required: true
+      selector:
+        text:
+    lineage:
+      description: Lineage or cross description
+      required: true
+      selector:
+        text:
+    notes:
+      description: Optional notes
+      required: false
+      selector:
+        text:
+
+log_pollination:
+  description: Record a pollination event between two plants
+  fields:
+    date:
+      description: Date the pollination occurred (YYYY-MM-DD)
+      required: true
+      selector:
+        text:
+    donor_plant_id:
+      description: ID of the pollen donor plant
+      required: true
+      selector:
+        text:
+    receiver_plant_id:
+      description: ID of the seed-bearing receiver plant
+      required: true
+      selector:
+        text:
+    notes:
+      description: Optional notes
+      required: false
+      selector:
+        text:
+
+score_phenotype:
+  description: Score a plant's phenotype characteristics
+  fields:
+    plant_id:
+      description: The ID of the plant to score
+      required: true
+      selector:
+        text:
+    vigor:
+      description: Vigor score 1-10
+      required: false
+      selector:
+        number:
+          min: 1
+          max: 10
+          mode: box
+    internodal_spacing:
+      description: Internodal spacing score 1-10
+      required: false
+      selector:
+        number:
+          min: 1
+          max: 10
+          mode: box
+    terpene_intensity:
+      description: Terpene intensity score 1-10
+      required: false
+      selector:
+        number:
+          min: 1
+          max: 10
+          mode: box
+    resin:
+      description: Resin production score 1-10
+      required: false
+      selector:
+        number:
+          min: 1
+          max: 10
+          mode: box
+    mold_resistance:
+      description: Mold resistance score 1-10
+      required: false
+      selector:
+        number:
+          min: 1
+          max: 10
+          mode: box
+    yield_potential:
+      description: Yield potential score 1-10
+      required: false
+      selector:
+        number:
+          min: 1
+          max: 10
+          mode: box
+    keeper:
+      description: Mark this plant as a keeper
+      required: false
+      selector:
+        boolean:
+    notes:
+      description: Optional notes
+      required: false
+      selector:
+        text:
+
+harvest_seeds:
+  description: Convert a pollination event into a seed batch
+  fields:
+    event_id:
+      description: The ID of the pollination event to harvest
+      required: true
+      selector:
+        text:
+    quantity:
+      description: Number of seeds harvested
+      required: true
+      selector:
+        number:
+          min: 1
+          mode: box
+    notes:
+      description: Optional notes
+      required: false
+      selector:
+        text:

@@ -117,19 +117,16 @@ class TankWaterTracker:
         history = self.tank.water_history
         snapshot: dict[str, Any] = {"timestamp": timestamp, "level_pct": level_pct}
 
-        prev_level: float | None = None
-        if history.snapshots:
-            prev_level = history.snapshots[-1]["level_pct"]
-
         # Append snapshot and prune window
         history.snapshots.append(snapshot)
         if len(history.snapshots) > TANK_MAX_SNAPSHOTS:
             history.snapshots = history.snapshots[-TANK_MAX_SNAPSHOTS:]
 
-        if prev_level is None:
-            return  # First reading — no delta to compute
+        if self.tank.last_recorded_level is None:
+            self.tank.last_recorded_level = level_pct
+            return  # First reading — initialize baseline
 
-        delta = level_pct - prev_level
+        delta = round(level_pct - self.tank.last_recorded_level, 4)
         abs_delta = abs(delta)
 
         if abs_delta < TANK_NOISE_FLOOR_PCT:
@@ -159,6 +156,8 @@ class TankWaterTracker:
             return  # Small positive change — noise, not a refill
 
         history.events.append(event)
+        self.tank.last_recorded_level = level_pct
+
         if len(history.events) > TANK_MAX_EVENTS:
             history.events = history.events[-TANK_MAX_EVENTS:]
 
