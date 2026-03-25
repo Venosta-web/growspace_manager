@@ -1461,3 +1461,116 @@ trigger_vision_checkup:
       required: true
       selector:
         text:
+
+add_seed_batch:
+  name: Add seed batch
+  description: Add a batch of seeds to the genetics inventory.
+  fields:
+    strain_name:
+      name: Strain name
+      description: Name of the strain.
+      required: true
+      example: "Blue Dream"
+      selector:
+        text:
+    breeder:
+      name: Breeder
+      description: Breeder or source of the seeds.
+      required: true
+      example: "Humboldt Seed Co"
+      selector:
+        text:
+    quantity:
+      name: Quantity
+      description: Number of seeds in the batch.
+      required: true
+      example: 10
+      selector:
+        number:
+          min: 1
+    acquisition_date:
+      name: Acquisition date
+      description: Date the seeds were acquired (YYYY-MM-DD).
+      required: true
+      example: "2026-01-15"
+      selector:
+        text:
+    generation:
+      name: Generation
+      description: "Seed generation (e.g. F1, S1, BX1)."
+      required: true
+      example: "F1"
+      selector:
+        text:
+    lineage:
+      name: Lineage
+      description: "Parent strains (e.g. OG Kush x Blueberry)."
+      required: true
+      example: "OG Kush x Blueberry"
+      selector:
+        text:
+    notes:
+      name: Notes
+      description: Optional notes about this batch.
+      required: false
+      example: "Purchased at local dispensary"
+      selector:
+        text:
+
+log_pollination:
+  name: Log pollination
+  description: Record a pollination event between two plants.
+  fields:
+    date:
+      name: Date
+      description: Date of pollination (YYYY-MM-DD).
+      required: true
+      example: "2026-03-10"
+      selector:
+        text:
+    donor_plant_id:
+      name: Donor plant ID
+      description: Plant ID of the pollen donor (male or reversed female).
+      required: true
+      example: "abc123"
+      selector:
+        text:
+    receiver_plant_id:
+      name: Receiver plant ID
+      description: Plant ID of the female plant being pollinated.
+      required: true
+      example: "def456"
+      selector:
+        text:
+    notes:
+      name: Notes
+      description: Optional notes.
+      required: false
+      selector:
+        text:
+
+harvest_seeds:
+  name: Harvest seeds
+  description: Convert a logged pollination event into a new seed batch.
+  fields:
+    event_id:
+      name: Event ID
+      description: ID of the pollination event to harvest.
+      required: true
+      example: "550e8400-e29b-41d4-a716-446655440000"
+      selector:
+        text:
+    quantity:
+      name: Quantity
+      description: Number of seeds harvested.
+      required: true
+      example: 25
+      selector:
+        number:
+          min: 1
+    notes:
+      name: Notes
+      description: Optional notes about the harvest.
+      required: false
+      selector:
+        text:
