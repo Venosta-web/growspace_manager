@@ -7,20 +7,28 @@ import voluptuous as vol
 from homeassistant.helpers import config_validation as cv
 
 from .const import (
+    ATTR_ACQUISITION_DATE,
     ATTR_AMOUNT_ML,
     ATTR_AROMA,
+    ATTR_BATCH_ID,
+    ATTR_BREEDER,
     ATTR_CBD_PERCENTAGE,
     ATTR_COL,
     ATTR_CURVE_ID,
+    ATTR_DATE,
+    ATTR_DONOR_PLANT_ID,
     ATTR_DRAIN_EC,
     ATTR_DRAIN_VOLUME_ML,
     ATTR_DRY_WEIGHT,
     ATTR_EC,
+    ATTR_EVENT_ID,
     ATTR_FEED_EC,
     ATTR_FEED_VOLUME_ML,
+    ATTR_GENERATION,
     ATTR_GROWSPACE_ID,
     ATTR_IMAGES,
     ATTR_ITEMS,
+    ATTR_LINEAGE,
     ATTR_MAX_EC_DELTA,
     ATTR_METADATA,
     ATTR_MIN_DAYS_IN_STAGE,
@@ -32,10 +40,13 @@ from .const import (
     ATTR_PLANT_ID,
     ATTR_POINTS,
     ATTR_PRESET_ID,
+    ATTR_QUANTITY,
+    ATTR_RECEIVER_PLANT_ID,
     ATTR_RESIN,
     ATTR_ROW,
     ATTR_STAGE,
     ATTR_STRAIN,
+    ATTR_STRAIN_NAME,
     ATTR_STRUCTURE,
     ATTR_TAGS,
     ATTR_TARGET_RUNOFF_PERCENT,
@@ -668,5 +679,36 @@ REMOVE_EC_RAMP_CURVE_SCHEMA = vol.Schema(
 SERVICE_TRIGGER_VISION_CHECKUP_SCHEMA = vol.Schema(
     {
         vol.Required(ATTR_GROWSPACE_ID): cv.string,
+    }
+)
+
+# --- Genetics & Seed Schemas ---
+
+ADD_SEED_BATCH_SCHEMA = vol.Schema(
+    {
+        vol.Required(ATTR_STRAIN_NAME): cv.string,
+        vol.Required(ATTR_BREEDER): cv.string,
+        vol.Required(ATTR_QUANTITY): vol.All(vol.Coerce(int), vol.Range(min=1)),
+        vol.Required(ATTR_ACQUISITION_DATE): cv.string,
+        vol.Required(ATTR_GENERATION): cv.string,
+        vol.Required(ATTR_LINEAGE): cv.string,
+        vol.Optional(ATTR_NOTES, default=""): cv.string,
+    }
+)
+
+LOG_POLLINATION_SCHEMA = vol.Schema(
+    {
+        vol.Required(ATTR_DATE): cv.string,
+        vol.Required(ATTR_DONOR_PLANT_ID): cv.string,
+        vol.Required(ATTR_RECEIVER_PLANT_ID): cv.string,
+        vol.Optional(ATTR_NOTES, default=""): cv.string,
+    }
+)
+
+HARVEST_SEEDS_SCHEMA = vol.Schema(
+    {
+        vol.Required(ATTR_EVENT_ID): cv.string,
+        vol.Required(ATTR_QUANTITY): vol.All(vol.Coerce(int), vol.Range(min=1)),
+        vol.Optional(ATTR_NOTES, default=""): cv.string,
     }
 )
