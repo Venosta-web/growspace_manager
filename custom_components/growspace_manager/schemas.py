@@ -726,7 +726,7 @@ ADD_SEED_BATCH_SCHEMA = vol.Schema(
 
 LOG_POLLINATION_SCHEMA = vol.Schema(
     {
-        vol.Required(ATTR_DATE): cv.string,
+        vol.Required(ATTR_DATE): cv.date,
         vol.Required(ATTR_DONOR_PLANT_ID): cv.string,
         vol.Required(ATTR_RECEIVER_PLANT_ID): cv.string,
         vol.Optional(ATTR_NOTES, default=""): cv.string,
