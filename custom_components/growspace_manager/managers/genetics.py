@@ -4,15 +4,13 @@ from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
 from dataclasses import asdict
-from datetime import date
-from homeassistant.util import dt as dt_util
 import logging
 from typing import TYPE_CHECKING, Any
 import uuid
 
 from custom_components.growspace_manager.models import PollinationEvent, SeedBatch
 from homeassistant.exceptions import ServiceValidationError
-import homeassistant.util.dt as dt_util
+from homeassistant.util import dt as dt_util
 
 if TYPE_CHECKING:
     from custom_components.growspace_manager.data_access.growspace_repository import (

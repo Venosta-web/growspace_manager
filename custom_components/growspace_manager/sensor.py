@@ -759,9 +759,7 @@ class TankDerivedWaterSensor(CoordinatorEntity, SensorEntity):
         self._growspace_id = growspace_id
         self._tank = tank
         tank_slug = tank.sensor_entity.replace(".", "_").replace(" ", "_")
-        self._attr_unique_id = (
-            f"{DOMAIN}_{growspace_id}_tank_derived_water_{tank_slug}"
-        )
+        self._attr_unique_id = f"{DOMAIN}_{growspace_id}_tank_derived_water_{tank_slug}"
 
     @property
     def _tracker(self) -> Any:
@@ -1278,6 +1276,7 @@ class DLISensor(CoordinatorEntity[GrowspaceCoordinator], SensorEntity):  # type:
         self._accumulated_mol: float = 0.0
         self._last_sample_time: datetime | None = None
         self._last_reset_date: str = ""
+        self._photoperiod: float | None = None
 
         self._attr_device_info = DeviceInfo(
             identifiers={(DOMAIN, growspace_id)},
@@ -1333,9 +1332,12 @@ class DLISensor(CoordinatorEntity[GrowspaceCoordinator], SensorEntity):  # type:
 
         return {
             "target_dli": target,
+            "accumulated_dli": self._accumulated_mol,
             "percentage_of_target": round(pct, 1),
             "estimated_final_dli": estimated_final,
             "ppfd_current": ppfd,
+            "photoperiod": self._photoperiod,
+            "last_reset": self._last_reset_date,
         }
 
     def _handle_coordinator_update(self) -> None:

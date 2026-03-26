@@ -434,3 +434,34 @@ async def test_storage_backup_corrupt_data_exception(
         # This should log an error but not raise
         storage._backup_corrupt_data("test", {"some": "data"})
         mock_logger.assert_called_once()
+
+
+def test_get_genetics_data_returns_empty_when_no_manager(
+    hass: HomeAssistant, repository_mock, nutrient_manager_mock
+) -> None:
+    """Test _get_genetics_data returns {} when genetics_manager is None (storage_manager.py:124)."""
+    storage = StorageManager(hass, repository_mock, nutrient_manager_mock, genetics_manager=None)
+    result = storage._get_genetics_data()
+    assert result == {}
+
+
+def test_load_genetics_early_return_when_no_manager(
+    hass: HomeAssistant, repository_mock, nutrient_manager_mock
+) -> None:
+    """Test _load_genetics returns early when genetics_manager is None (storage_manager.py:358)."""
+    storage = StorageManager(hass, repository_mock, nutrient_manager_mock, genetics_manager=None)
+    # Should not raise - early return when genetics_manager is None
+    storage._load_genetics({"seed_batches": {}, "pollination_events": {}})
+
+
+def test_load_genetics_exception_is_caught(
+    hass: HomeAssistant,
+    repository_mock,
+    nutrient_manager_mock,
+    genetics_manager_mock,
+) -> None:
+    """Test _load_genetics catches exceptions and logs them (storage_manager.py:374-375)."""
+    storage = StorageManager(hass, repository_mock, nutrient_manager_mock, genetics_manager_mock)
+    genetics_manager_mock.load_data.side_effect = Exception("Unexpected error")
+    # Should not raise - exception is caught and logged
+    storage._load_genetics({"seed_batches": {}, "pollination_events": {}})

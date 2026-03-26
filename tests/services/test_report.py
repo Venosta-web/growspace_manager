@@ -1,6 +1,8 @@
 """Tests for the Growspace Manager report service."""
 
+import importlib
 import json
+import sys
 from datetime import datetime, timezone
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, PropertyMock, patch
@@ -16,6 +18,33 @@ from custom_components.growspace_manager.services.report import (
 )
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
+
+
+@pytest.fixture
+def real_fpdf():
+    """Restore the real fpdf module for tests that generate actual PDF files.
+
+    The global conftest mocks sys.modules["fpdf"] to prevent collection errors,
+    which causes FPDF to be a MagicMock. This fixture temporarily restores the
+    real fpdf.FPDF class into the report module so PDF generation actually works.
+    """
+    fpdf_mock = sys.modules.pop("fpdf", None)
+    try:
+        real_fpdf_module = importlib.import_module("fpdf")
+        real_fpdf_class = real_fpdf_module.FPDF
+    except ImportError:
+        if fpdf_mock is not None:
+            sys.modules["fpdf"] = fpdf_mock
+        pytest.skip("fpdf2 not available")
+        return
+    finally:
+        if fpdf_mock is not None:
+            sys.modules["fpdf"] = fpdf_mock
+
+    import custom_components.growspace_manager.services.report as report_mod
+
+    with patch.object(report_mod, "FPDF", real_fpdf_class):
+        yield
 
 
 @pytest.fixture
@@ -146,7 +175,11 @@ async def test_export_grow_report_json(
 
 
 async def test_export_grow_report_pdf(
-    hass: HomeAssistant, mock_plant: Plant, mock_growspace: Growspace, tmp_path: Path
+    hass: HomeAssistant,
+    mock_plant: Plant,
+    mock_growspace: Growspace,
+    tmp_path: Path,
+    real_fpdf: None,
 ) -> None:
     """Test generating a PDF report."""
     mock_coordinator = MagicMock()
@@ -473,7 +506,10 @@ async def test_export_growspace_json(
 
 @pytest.mark.asyncio
 async def test_export_growspace_pdf(
-    hass: HomeAssistant, mock_growspace: Growspace, tmp_path: Path
+    hass: HomeAssistant,
+    mock_growspace: Growspace,
+    tmp_path: Path,
+    real_fpdf: None,
 ) -> None:
     """Test generating a PDF report for growspace."""
     mock_coordinator = MagicMock()

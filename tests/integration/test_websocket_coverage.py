@@ -14,6 +14,7 @@ from custom_components.growspace_manager.websocket import (
     websocket_delete_breeder,
     websocket_get_alerts,
     websocket_get_event_log,
+    websocket_get_genetics_data,
     websocket_get_history_stats,
     websocket_get_nutrient_inventory,
     websocket_remove_nutrient_stock,
@@ -525,3 +526,39 @@ async def test_websocket_breeder_commands_generic_error(
     mock_connection.send_error.assert_called_with(
         15, "unknown_error", "Breeder Delete Fail"
     )
+
+
+def test_websocket_get_genetics_data_success(
+    mock_connection: MagicMock, mock_msg: dict
+) -> None:
+    """Test websocket_get_genetics_data sends result on success (websocket.py:596-603)."""
+    hass = MagicMock()
+    coordinator = MagicMock()
+    coordinator.genetics_manager.get_serialization_data.return_value = {"seed_batches": {}}
+
+    with patch(
+        "custom_components.growspace_manager.websocket.GrowspaceCoordinator.get_for_service_call",
+        return_value=coordinator,
+    ):
+        websocket_get_genetics_data(hass, mock_connection, mock_msg)
+
+    mock_connection.send_result.assert_called_once_with(1, {"seed_batches": {}})
+    mock_connection.send_error.assert_not_called()
+
+
+def test_websocket_get_genetics_data_error(
+    mock_connection: MagicMock, mock_msg: dict
+) -> None:
+    """Test websocket_get_genetics_data sends error on exception (websocket.py:604-606)."""
+    hass = MagicMock()
+
+    with patch(
+        "custom_components.growspace_manager.websocket.GrowspaceCoordinator.get_for_service_call",
+        side_effect=Exception("Something went wrong"),
+    ):
+        websocket_get_genetics_data(hass, mock_connection, mock_msg)
+
+    mock_connection.send_error.assert_called_once_with(
+        1, "unknown_error", "Something went wrong"
+    )
+    mock_connection.send_result.assert_not_called()

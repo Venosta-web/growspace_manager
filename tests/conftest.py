@@ -2,7 +2,12 @@
 
 from __future__ import annotations
 
+import sys
 from unittest.mock import MagicMock
+
+# Aggressively mock fpdf and turbojpeg to prevent collection errors across all tests
+sys.modules["turbojpeg"] = MagicMock()
+sys.modules["fpdf"] = MagicMock()
 
 from custom_components.growspace_manager.binary_sensor import (
     SENSOR_TYPES,

@@ -13,6 +13,7 @@ from custom_components.growspace_manager.models import (
     PollinationEvent,
     SeedBatch,
 )
+from homeassistant.exceptions import ServiceValidationError
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -241,7 +242,6 @@ class TestLogPollination:
         self, manager_with_plants: GeneticsManager
     ) -> None:
         """log_pollination raises ServiceValidationError if donor plant is missing."""
-        from homeassistant.exceptions import ServiceValidationError
 
         with pytest.raises(ServiceValidationError, match="donor"):
             await manager_with_plants.async_log_pollination(
@@ -254,7 +254,6 @@ class TestLogPollination:
         self, manager_with_plants: GeneticsManager
     ) -> None:
         """log_pollination raises ServiceValidationError if receiver plant is missing."""
-        from homeassistant.exceptions import ServiceValidationError
 
         with pytest.raises(ServiceValidationError, match="receiver"):
             await manager_with_plants.async_log_pollination(
@@ -267,7 +266,6 @@ class TestLogPollination:
         self, manager_with_plants: GeneticsManager
     ) -> None:
         """log_pollination raises if donor plant has already been harvested."""
-        from homeassistant.exceptions import ServiceValidationError
 
         manager_with_plants.repository.plants["plant-donor"].stage = "harvested"
 
@@ -282,7 +280,6 @@ class TestLogPollination:
         self, manager_with_plants: GeneticsManager
     ) -> None:
         """log_pollination raises if receiver plant has already been harvested."""
-        from homeassistant.exceptions import ServiceValidationError
 
         manager_with_plants.repository.plants["plant-receiver"].stage = "harvested"
 
@@ -370,7 +367,6 @@ class TestHarvestSeeds:
 
     async def test_raises_if_event_not_found(self, manager: GeneticsManager) -> None:
         """harvest_seeds raises ServiceValidationError for unknown event IDs."""
-        from homeassistant.exceptions import ServiceValidationError
 
         with pytest.raises(ServiceValidationError, match="event"):
             await manager.async_harvest_seeds(event_id="no-such-event", quantity=10)
@@ -379,7 +375,6 @@ class TestHarvestSeeds:
         self, manager_with_event: GeneticsManager
     ) -> None:
         """harvest_seeds raises if the event already has a linked seed batch."""
-        from homeassistant.exceptions import ServiceValidationError
 
         manager_with_event.pollination_events[
             "event-001"
@@ -484,7 +479,6 @@ class TestScorePhenotype:
 
     async def test_raises_if_plant_not_found(self, manager: GeneticsManager) -> None:
         """score_phenotype raises ServiceValidationError for unknown plant IDs."""
-        from homeassistant.exceptions import ServiceValidationError
 
         with pytest.raises(ServiceValidationError, match="plant"):
             await manager.async_score_phenotype(plant_id="missing-plant", vigor=5)
