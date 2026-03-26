@@ -1375,6 +1375,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         """Return the TankWaterTracker for a tank, or None if not configured."""
         growspace = self.get_growspace(growspace_id)
         if growspace is None:
+            _LOGGER.debug("No growspace found for %s", growspace_id)
             return None
         tank = next(
             (
@@ -1384,10 +1385,24 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             ),
             None,
         )
-        if tank is None or tank.volume_liters is None:
+        if tank is None:
+            _LOGGER.debug(
+                "No tank found for entity %s in growspace %s", tank_entity, growspace_id
+            )
             return None
+        if tank.volume_liters is None:
+            _LOGGER.debug(
+                "Tank %s in growspace %s has no volume defined",
+                tank_entity,
+                growspace_id,
+            )
+            return None
+
         gs_trackers = self._tank_water_trackers.setdefault(growspace_id, {})
         if tank_entity not in gs_trackers:
+            _LOGGER.debug(
+                "Creating new TankWaterTracker for %s in %s", tank_entity, growspace_id
+            )
             gs_trackers[tank_entity] = TankWaterTracker(tank)
         return gs_trackers[tank_entity]
 

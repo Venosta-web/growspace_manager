@@ -3,6 +3,7 @@ score_phenotype, harvest_seeds)."""
 
 from __future__ import annotations
 
+from datetime import date
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -118,7 +119,7 @@ class TestHandleAddSeedBatch:
             strain_name="OG Kush",
             breeder="DNA Genetics",
             quantity=10,
-            acquisition_date="2026-03-01",
+            acquisition_date=date(2026, 3, 1),
             generation="F1",
             lineage="Chemdawg x Hindu Kush",
             notes="Expo purchase",
@@ -147,7 +148,7 @@ class TestHandleAddSeedBatch:
             strain_name="X",
             breeder="B",
             quantity=5,
-            acquisition_date="2026-01-01",
+            acquisition_date=date(2026, 1, 1),
             generation="S1",
             lineage="X x X",
         )

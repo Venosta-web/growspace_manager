@@ -97,10 +97,10 @@ DEPLETION_DEADBAND_THRESHOLD = 0.1  # %/hour
 VPD_WEIGHTING_BASE = 1.2  # kPa threshold for multiplier
 
 # Tank water tracker thresholds (capacity limits and detection)
-TANK_MAX_SNAPSHOTS = 2016     # 7d * 24h * 12 readings/h (5-min updates)
-TANK_MAX_EVENTS = 500         # rolling event window
-TANK_REFILL_THRESHOLD_PCT = 3.0   # % rise → classified as refill
-TANK_NOISE_FLOOR_PCT = 0.3        # % change too small to record
+TANK_MAX_SNAPSHOTS = 2016  # 7d * 24h * 12 readings/h (5-min updates)
+TANK_MAX_EVENTS = 500  # rolling event window
+TANK_REFILL_THRESHOLD_PCT = 3.0  # % rise → classified as refill
+TANK_NOISE_FLOOR_PCT = 0.3  # % change too small to record
 
 
 # Multi-Device Config Keys
@@ -448,9 +448,6 @@ class GrowspaceService(StrEnum):
     REMOVE_EC_RAMP_CURVE = "remove_ec_ramp_curve"
     # Vision Checkup Services
     TRIGGER_VISION_CHECKUP = "trigger_vision_checkup"
-    # Genetics & Seed Services
-    ADD_SEED_BATCH = "add_seed_batch"
-    LOG_POLLINATION = "log_pollination"
     # Tank Configuration Services
     CONFIGURE_TANK = "configure_tank"
     # Genetics Services
