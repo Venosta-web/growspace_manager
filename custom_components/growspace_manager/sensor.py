@@ -787,14 +787,15 @@ class TankDerivedWaterSensor(CoordinatorEntity, SensorEntity):
         """Return history and tank configuration as attributes."""
         if (tracker := self._tracker) is None:
             return {}
+        # Keep only scalar summaries here.  The large history arrays
+        # (96-bucket history_24h, 168-bucket history_7d, raw events) are
+        # excluded to stay within HA's 16 384-byte entity-attribute limit.
+        # Full history is available via the growspace overview entity.
         return {
             "liters_today": round(tracker.get_total_liters_today(), 2),
             "liters_7d": round(tracker.get_total_liters_7d(), 2),
             "volume_liters": self._tank.volume_liters,
             "tank_entity": self._tank.sensor_entity,
-            "history_24h": tracker.get_history_24h(),
-            "history_7d": tracker.get_history_7d(),
-            "events": tracker.tank.water_history.events[-50:],
         }
 
     async def async_added_to_hass(self) -> None:
@@ -807,7 +808,7 @@ class TankDerivedWaterSensor(CoordinatorEntity, SensorEntity):
             return
 
         def _on_change() -> None:
-            self.async_write_ha_state()
+            self.schedule_update_ha_state()
 
         unsub = await tracker.async_setup(self.hass, _on_change)
         self.async_on_remove(unsub)

@@ -468,8 +468,11 @@ class GrowspaceViewModelBuilder:
                         "hours_remaining": hours_remaining,
                         "depletion_status": depletion_status,
                         "water_history": {
-                            "snapshots": tank.water_history.snapshots[-96:],
-                            "events": tank.water_history.events[-200:],
+                            # Limit to 24 snapshots (6 h at 15-min intervals)
+                            # and 20 events to stay within HA's 16 384-byte
+                            # entity-attribute size limit.
+                            "snapshots": tank.water_history.snapshots[-24:],
+                            "events": tank.water_history.events[-20:],
                         },
                     }
                 )
