@@ -88,16 +88,16 @@ async def test_handle_score_plant_all_fields(
     # Check that update_plant was called
     mock_coordinator.plant_manager.update_plant.assert_called_once()
 
-    # Verify the scores object passed to update_plant
+    # Verify the phenotype_score object passed to update_plant (new field names)
     call_args = mock_coordinator.plant_manager.update_plant.call_args[1]
-    assert "scores" in call_args
-    scores = call_args["scores"]
+    assert "phenotype_score" in call_args
+    ps = call_args["phenotype_score"]
 
-    assert scores.vigor == 5
-    assert scores.structure == 4
-    assert scores.aroma == 3
-    assert scores.resin == 2
-    assert scores.pest_resistance == 1
+    assert ps.vigor == 5
+    assert ps.internodal_spacing == 4   # legacy 'structure'
+    assert ps.terpene_intensity == 3    # legacy 'aroma'
+    assert ps.resin == 2
+    assert ps.mold_resistance == 1      # legacy 'pest_resistance'
 
 
 @pytest.mark.asyncio
@@ -112,7 +112,7 @@ async def test_handle_score_plant_partial(
     }
 
     plant = mock_coordinator.plants["test_plant_1"]
-    plant.scores.structure = 3  # Pretend this was set previously
+    plant.phenotype_score.internodal_spacing = 3  # Pretend previously set
 
     with patch(
         "custom_components.growspace_manager.services.plant._ensure_plant_loaded",
@@ -124,11 +124,11 @@ async def test_handle_score_plant_partial(
     mock_coordinator.plant_manager.update_plant.assert_called_once()
 
     call_args = mock_coordinator.plant_manager.update_plant.call_args[1]
-    scores = call_args["scores"]
+    ps = call_args["phenotype_score"]
 
-    assert scores.vigor == 5
-    assert scores.structure == 3  # Retained
-    assert scores.aroma is None
+    assert ps.vigor == 5
+    assert ps.internodal_spacing == 3  # Retained
+    assert ps.terpene_intensity is None
 
 
 @pytest.mark.asyncio
@@ -144,9 +144,9 @@ async def test_handle_score_plant_clear_fields(
     }
 
     plant = mock_coordinator.plants["test_plant_1"]
-    plant.scores.vigor = 5
-    plant.scores.aroma = 4
-    plant.scores.resin = 3
+    plant.phenotype_score.vigor = 5
+    plant.phenotype_score.terpene_intensity = 4
+    plant.phenotype_score.resin = 3
 
     with patch(
         "custom_components.growspace_manager.services.plant._ensure_plant_loaded",
@@ -158,11 +158,11 @@ async def test_handle_score_plant_clear_fields(
     mock_coordinator.plant_manager.update_plant.assert_called_once()
 
     call_args = mock_coordinator.plant_manager.update_plant.call_args[1]
-    scores = call_args["scores"]
+    ps = call_args["phenotype_score"]
 
-    assert scores.vigor is None
-    assert scores.aroma is None
-    assert scores.resin == 3  # Unchanged
+    assert ps.vigor is None
+    assert ps.terpene_intensity is None
+    assert ps.resin == 3  # Unchanged
 
 
 @pytest.mark.asyncio

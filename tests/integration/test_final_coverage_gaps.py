@@ -370,7 +370,8 @@ def storage_manager(hass: HomeAssistant) -> StorageManager:
     repo.growspaces = {}
     repo.plants = {}
     nutrient_manager = MagicMock()
-    return StorageManager(hass, repo, nutrient_manager)
+    genetics_manager = MagicMock()
+    return StorageManager(hass, repo, nutrient_manager, genetics_manager)
 
 
 def test_load_ec_ramp_curves_handles_corrupt_data(

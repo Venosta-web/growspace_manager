@@ -11,6 +11,7 @@ VERSION: Final = "0.3.5"
 STORAGE_KEY: Final = f"{DOMAIN}_storage"  # Legacy Key
 STORAGE_KEY_CONFIG: Final = f"{DOMAIN}.config"
 STORAGE_KEY_PLANTS: Final = f"{DOMAIN}.plants"
+STORAGE_KEY_GENETICS: Final = f"{DOMAIN}.genetics"
 PLATFORMS: Final[list[str]] = [
     "binary_sensor",
     "calendar",
@@ -96,10 +97,10 @@ DEPLETION_DEADBAND_THRESHOLD = 0.1  # %/hour
 VPD_WEIGHTING_BASE = 1.2  # kPa threshold for multiplier
 
 # Tank water tracker thresholds (capacity limits and detection)
-TANK_MAX_SNAPSHOTS = 2016     # 7d * 24h * 12 readings/h (5-min updates)
-TANK_MAX_EVENTS = 500         # rolling event window
-TANK_REFILL_THRESHOLD_PCT = 3.0   # % rise → classified as refill
-TANK_NOISE_FLOOR_PCT = 0.3        # % change too small to record
+TANK_MAX_SNAPSHOTS = 2016  # 7d * 24h * 12 readings/h (5-min updates)
+TANK_MAX_EVENTS = 500  # rolling event window
+TANK_REFILL_THRESHOLD_PCT = 3.0  # % rise → classified as refill
+TANK_NOISE_FLOOR_PCT = 0.3  # % change too small to record
 
 
 # Multi-Device Config Keys
@@ -212,6 +213,17 @@ ATTR_LAST_MEASURED_EC = "last_measured_ec"
 ATTR_DEVIATION = "deviation"
 ATTR_CURVE_ID = "curve_id"
 ATTR_POINTS = "points"
+
+# Genetics & Seed Attributes
+ATTR_ACQUISITION_DATE = "acquisition_date"
+ATTR_GENERATION = "generation"
+ATTR_DONOR_PLANT_ID = "donor_plant_id"
+ATTR_RECEIVER_PLANT_ID = "receiver_plant_id"
+ATTR_EVENT_ID = "event_id"
+ATTR_BATCH_ID = "batch_id"
+ATTR_STRAIN_NAME = "strain_name"
+ATTR_DATE = "date"
+ATTR_QUANTITY = "quantity"
 
 ATTR_PROBABILITY = "probability"
 ATTR_THRESHOLD = "threshold"
@@ -438,6 +450,11 @@ class GrowspaceService(StrEnum):
     TRIGGER_VISION_CHECKUP = "trigger_vision_checkup"
     # Tank Configuration Services
     CONFIGURE_TANK = "configure_tank"
+    # Genetics Services
+    ADD_SEED_BATCH = "add_seed_batch"
+    LOG_POLLINATION = "log_pollination"
+    SCORE_PHENOTYPE = "score_phenotype"
+    HARVEST_SEEDS = "harvest_seeds"
 
 
 class TrainingTechnique(StrEnum):
@@ -457,6 +474,24 @@ ATTR_TECHNIQUE = "technique"
 ATTR_NOTES = "notes"
 ATTR_ITEMS = "items"
 ATTR_TYPE = "type"
+
+# Genetics Attributes
+ATTR_STRAIN_NAME = "strain_name"
+ATTR_BREEDER = "breeder"
+ATTR_QUANTITY = "quantity"
+ATTR_ACQUISITION_DATE = "acquisition_date"
+ATTR_GENERATION = "generation"
+ATTR_LINEAGE = "lineage"
+ATTR_DONOR_PLANT_ID = "donor_plant_id"
+ATTR_RECEIVER_PLANT_ID = "receiver_plant_id"
+ATTR_EVENT_ID = "event_id"
+ATTR_DATE = "date"
+# PhenotypeScore rubric fields (1-10 scale)
+ATTR_INTERNODAL_SPACING = "internodal_spacing"
+ATTR_TERPENE_INTENSITY = "terpene_intensity"
+ATTR_MOLD_RESISTANCE = "mold_resistance"
+ATTR_YIELD_POTENTIAL = "yield_potential"
+ATTR_KEEPER = "keeper"
 CATEGORY_TRAINING = "training"
 CATEGORY_IPM = "ipm"
 CATEGORY_NOTE = "note"

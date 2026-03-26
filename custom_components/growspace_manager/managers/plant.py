@@ -801,11 +801,11 @@ class PlantManager:
                     plant.phenotype,
                     veg_days,
                     flower_days,
-                    plant.scores.vigor,
-                    plant.scores.structure,
-                    plant.scores.aroma,
-                    plant.scores.resin,
-                    plant.scores.pest_resistance,
+                    plant.phenotype_score.vigor,
+                    plant.phenotype_score.internodal_spacing,  # maps to legacy 'structure' param
+                    plant.phenotype_score.terpene_intensity,   # maps to legacy 'aroma' param
+                    plant.phenotype_score.resin,
+                    plant.phenotype_score.mold_resistance,     # maps to legacy 'pest_resistance' param
                     wet_weight=metrics.wet_weight if metrics else None,
                     dry_weight=metrics.dry_weight if metrics else None,
                     trim_weight=metrics.trim_weight if metrics else None,

@@ -9,6 +9,7 @@ from __future__ import annotations
 
 # Standard library
 import asyncio
+from dataclasses import asdict
 from datetime import datetime
 import logging
 from typing import Any, override
@@ -250,6 +251,9 @@ async def _create_initial_entities(
     """Create initial entities for the platform."""
     # Strain Library
     initial_entities.append(StrainLibrarySensor(coordinator))
+
+    # Seed inventory
+    initial_entities.append(SeedInventorySensor(coordinator))
 
     # Growspaces and Plants
     for growspace_id, growspace in coordinator.growspaces.items():
@@ -755,9 +759,7 @@ class TankDerivedWaterSensor(CoordinatorEntity, SensorEntity):
         self._growspace_id = growspace_id
         self._tank = tank
         tank_slug = tank.sensor_entity.replace(".", "_").replace(" ", "_")
-        self._attr_unique_id = (
-            f"{DOMAIN}_{growspace_id}_tank_derived_water_{tank_slug}"
-        )
+        self._attr_unique_id = f"{DOMAIN}_{growspace_id}_tank_derived_water_{tank_slug}"
 
     @property
     def _tracker(self) -> Any:
@@ -783,14 +785,15 @@ class TankDerivedWaterSensor(CoordinatorEntity, SensorEntity):
         """Return history and tank configuration as attributes."""
         if (tracker := self._tracker) is None:
             return {}
+        # Keep only scalar summaries here.  The large history arrays
+        # (96-bucket history_24h, 168-bucket history_7d, raw events) are
+        # excluded to stay within HA's 16 384-byte entity-attribute limit.
+        # Full history is available via the growspace overview entity.
         return {
             "liters_today": round(tracker.get_total_liters_today(), 2),
             "liters_7d": round(tracker.get_total_liters_7d(), 2),
             "volume_liters": self._tank.volume_liters,
             "tank_entity": self._tank.sensor_entity,
-            "history_24h": tracker.get_history_24h(),
-            "history_7d": tracker.get_history_7d(),
-            "events": tracker.tank.water_history.events[-50:],
         }
 
     async def async_added_to_hass(self) -> None:
@@ -803,9 +806,9 @@ class TankDerivedWaterSensor(CoordinatorEntity, SensorEntity):
             return
 
         def _on_change() -> None:
-            self.async_write_ha_state()
+            self.schedule_update_ha_state()
 
-        unsub = tracker.async_setup(self.hass, _on_change)
+        unsub = await tracker.async_setup(self.hass, _on_change)
         self.async_on_remove(unsub)
 
 
@@ -1104,8 +1107,8 @@ class PlantEntity(CoordinatorEntity[GrowspaceCoordinator], SensorEntity):  # typ
             ATTR_ROW: plant.row,
             ATTR_COL: plant.col,
             "position": f"({int(plant.row)},{int(plant.col)})",
-            "scores": plant.scores.to_dict()
-            if hasattr(plant.scores, "to_dict")
+            "phenotype_score": plant.phenotype_score.to_dict()
+            if hasattr(plant.phenotype_score, "to_dict")
             else {},
             "harvest_metrics": plant.harvest_metrics.to_dict()
             if hasattr(plant.harvest_metrics, "to_dict")
@@ -1273,6 +1276,7 @@ class DLISensor(CoordinatorEntity[GrowspaceCoordinator], SensorEntity):  # type:
         self._accumulated_mol: float = 0.0
         self._last_sample_time: datetime | None = None
         self._last_reset_date: str = ""
+        self._photoperiod: float | None = None
 
         self._attr_device_info = DeviceInfo(
             identifiers={(DOMAIN, growspace_id)},
@@ -1328,9 +1332,12 @@ class DLISensor(CoordinatorEntity[GrowspaceCoordinator], SensorEntity):  # type:
 
         return {
             "target_dli": target,
+            "accumulated_dli": self._accumulated_mol,
             "percentage_of_target": round(pct, 1),
             "estimated_final_dli": estimated_final,
             "ppfd_current": ppfd,
+            "photoperiod": self._photoperiod,
+            "last_reset": self._last_reset_date,
         }
 
     def _handle_coordinator_update(self) -> None:
@@ -1739,4 +1746,41 @@ class VisionCheckupSensor(CoordinatorEntity[GrowspaceCoordinator], SensorEntity)
             "recommendations": result.recommendations,
             "last_checkup_time": result.timestamp,
             "total_checkups": len(gs.vision_checkup_history) if gs else 0,
+        }
+
+
+class SeedInventorySensor(CoordinatorEntity[GrowspaceCoordinator], SensorEntity):  # type: ignore[misc]
+    """Sensor exposing the total seed count across all batches."""
+
+    _attr_has_entity_name = True
+    _attr_translation_key = "seed_inventory"
+    _attr_icon = "mdi:seed"
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+
+    def __init__(self, coordinator: GrowspaceCoordinator) -> None:
+        """Initialize the seed inventory sensor."""
+        super().__init__(coordinator)
+        self._attr_unique_id = f"{DOMAIN}_seed_inventory"
+        self._attr_device_info = DeviceInfo(
+            identifiers={(DOMAIN, "service")},
+            name="Growspace Manager Service",
+            model="Service",
+            manufacturer="Growspace Manager",
+        )
+
+    @property
+    @override  # type: ignore[misc]
+    def native_value(self) -> int:
+        """Return total number of seeds across all batches."""
+        return self.coordinator.genetics_manager.get_total_seed_count()
+
+    @property
+    @override  # type: ignore[misc]
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Return each seed batch as a list of dicts."""
+        return {
+            "seed_batches": [
+                asdict(batch)
+                for batch in self.coordinator.genetics_manager.seed_batches.values()
+            ],
         }

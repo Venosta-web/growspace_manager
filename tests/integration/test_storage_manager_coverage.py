@@ -1,6 +1,6 @@
 """Coverage tests for StorageManager."""
 
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -32,15 +32,25 @@ def nutrient_manager_mock():
 
 
 @pytest.fixture
-def storage(hass: HomeAssistant, repository_mock, nutrient_manager_mock):
+def genetics_manager_mock():
+    """Mock the GeneticsManager."""
+    mock = MagicMock()
+    mock.get_serialization_data.return_value = {}
+    return mock
+
+
+@pytest.fixture
+def storage(hass: HomeAssistant, repository_mock, nutrient_manager_mock, genetics_manager_mock):
     """Provide a StorageManager instance."""
-    return StorageManager(hass, repository_mock, nutrient_manager_mock)
+    return StorageManager(hass, repository_mock, nutrient_manager_mock, genetics_manager_mock)
 
 
 @pytest.mark.asyncio
 async def test_storage_async_save(storage) -> None:
     """Test async_save debounced."""
     with (
+        patch.object(storage, "_get_config_data", return_value={}),
+        patch.object(storage, "_get_plants_data", return_value={}),
         patch.object(storage.config_store, "async_delay_save") as mock_config_save,
         patch.object(storage.plants_store, "async_delay_save") as mock_plants_save,
     ):
@@ -53,12 +63,14 @@ async def test_storage_async_save(storage) -> None:
 async def test_storage_async_force_save(storage) -> None:
     """Test async_force_save immediate."""
     with (
-        patch.object(storage.config_store, "async_save") as mock_config_save,
-        patch.object(storage.plants_store, "async_save") as mock_plants_save,
+        patch.object(storage, "_get_config_data", return_value={}),
+        patch.object(storage, "_get_plants_data", return_value={}),
+        patch.object(storage.config_store, "async_save", new_callable=AsyncMock) as mock_config_save,
+        patch.object(storage.plants_store, "async_save", new_callable=AsyncMock) as mock_plants_save,
     ):
         await storage.async_force_save()
-        mock_config_save.assert_called_once()
-        mock_plants_save.assert_called_once()
+        mock_config_save.assert_awaited_once()
+        mock_plants_save.assert_awaited_once()
 
 
 def test_storage_get_config_data(
@@ -422,3 +434,34 @@ async def test_storage_backup_corrupt_data_exception(
         # This should log an error but not raise
         storage._backup_corrupt_data("test", {"some": "data"})
         mock_logger.assert_called_once()
+
+
+def test_get_genetics_data_returns_empty_when_no_manager(
+    hass: HomeAssistant, repository_mock, nutrient_manager_mock
+) -> None:
+    """Test _get_genetics_data returns {} when genetics_manager is None (storage_manager.py:124)."""
+    storage = StorageManager(hass, repository_mock, nutrient_manager_mock, genetics_manager=None)
+    result = storage._get_genetics_data()
+    assert result == {}
+
+
+def test_load_genetics_early_return_when_no_manager(
+    hass: HomeAssistant, repository_mock, nutrient_manager_mock
+) -> None:
+    """Test _load_genetics returns early when genetics_manager is None (storage_manager.py:358)."""
+    storage = StorageManager(hass, repository_mock, nutrient_manager_mock, genetics_manager=None)
+    # Should not raise - early return when genetics_manager is None
+    storage._load_genetics({"seed_batches": {}, "pollination_events": {}})
+
+
+def test_load_genetics_exception_is_caught(
+    hass: HomeAssistant,
+    repository_mock,
+    nutrient_manager_mock,
+    genetics_manager_mock,
+) -> None:
+    """Test _load_genetics catches exceptions and logs them (storage_manager.py:374-375)."""
+    storage = StorageManager(hass, repository_mock, nutrient_manager_mock, genetics_manager_mock)
+    genetics_manager_mock.load_data.side_effect = Exception("Unexpected error")
+    # Should not raise - exception is caught and logged
+    storage._load_genetics({"seed_batches": {}, "pollination_events": {}})

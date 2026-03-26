@@ -239,3 +239,24 @@ def test_process_snapshot_output_dimensions_unchanged():
     out_bytes, _ = GrowspaceImageProcessor().process_snapshot(data)
     out_img = Image.open(io.BytesIO(out_bytes))
     assert out_img.size == (160, 120)
+
+
+def test_process_snapshot_old_pillow_font_fallback():
+    """Test font fallback for Pillow < 10.1 where load_default doesn't accept size (image_processor.py:129-131)."""
+    from unittest.mock import patch
+
+    from PIL import ImageFont
+
+    data = _make_solid_image(160, 120, _GREEN_RGB)
+
+    original_load_default = ImageFont.load_default
+
+    def _raise_on_size(**kwargs):
+        if "size" in kwargs:
+            raise TypeError("load_default() got an unexpected keyword argument 'size'")
+        return original_load_default()
+
+    with patch("custom_components.growspace_manager.image_processor.ImageFont.load_default", side_effect=_raise_on_size):
+        out_bytes, _ = GrowspaceImageProcessor().process_snapshot(data)
+
+    assert len(out_bytes) > 0

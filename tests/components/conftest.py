@@ -1,8 +1,15 @@
 """Global fixtures for integration tests."""
 
-from unittest.mock import AsyncMock, Mock
+import sys
+from unittest.mock import AsyncMock, MagicMock, Mock
 
 from freezegun.api import FrozenDateTimeFactory
+
+# Mock turbojpeg and fpdf to prevent RuntimeError during fpdf2/vision imports
+sys.modules["turbojpeg"] = MagicMock()
+sys.modules["fpdf"] = MagicMock()
+
+
 import pytest
 
 from custom_components.growspace_manager.date_time_helper import DateTimeHelper
@@ -23,7 +30,6 @@ def freeze_time(freezer: FrozenDateTimeFactory) -> None:
 @pytest.fixture
 def mock_coordinator():
     """Create a comprehensive mock coordinator with all services mocked."""
-    from unittest.mock import MagicMock
 
     coordinator = MagicMock()
     coordinator.hass = MagicMock()

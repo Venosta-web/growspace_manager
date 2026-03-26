@@ -636,3 +636,28 @@ async def test_collect_sensors_to_configure_empty_after_filtering(handler) -> No
 
     result = await handler.async_step_configure_sensor_placement()
     assert result["type"] == "create_entry"  # Since no sensors to configure
+
+
+@pytest.mark.asyncio
+async def test_configure_environment_with_tank_volume_liters(handler) -> None:
+    """Test async_step_configure_environment with a tank that has volume_liters set (environment_config_handler.py:128)."""
+    from custom_components.growspace_manager.models import IrrigationTank
+
+    gs = Growspace(
+        id="gs1",
+        name="GS1",
+        environment_config=EnvironmentConfig(
+            irrigation_tanks=[
+                IrrigationTank(
+                    sensor_entity="sensor.tank1",
+                    warning_level=25.0,
+                    volume_liters=200.0,
+                )
+            ]
+        ),
+    )
+    handler.config_entry.runtime_data.growspaces = {"gs1": gs}
+    handler.flow.selected_growspace_id = "gs1"
+
+    result = await handler.async_step_configure_environment()
+    assert result["type"] == "form"

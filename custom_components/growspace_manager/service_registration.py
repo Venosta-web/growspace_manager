@@ -14,10 +14,12 @@ from .const import DOMAIN, GrowspaceService
 from .coordinator import GrowspaceCoordinator
 from .exceptions import GrowspaceError
 from .schemas import (
+    ADD_SEED_BATCH_SCHEMA,
     APPLY_IPM_SCHEMA,
     CONFIGURE_DRAIN_MONITORING_SCHEMA,
     CONFIGURE_TANK_SCHEMA,
     LOG_DRAIN_READING_SCHEMA,
+    LOG_POLLINATION_SCHEMA,
     LOG_TRAINING_EVENT_SCHEMA,
     REMOVE_EC_RAMP_CURVE_SCHEMA,
     REMOVE_IPM_PRESET_SCHEMA,
@@ -47,6 +49,7 @@ from .services import (
     EXPORT_GROW_REPORT_SCHEMA,
     EXPORT_STRAIN_LIBRARY_SCHEMA,
     HARVEST_PLANT_SCHEMA,
+    HARVEST_SEEDS_SCHEMA,
     IMPORT_STRAIN_LIBRARY_SCHEMA,
     MOVE_CLONE_SCHEMA,
     MOVE_PLANT_SCHEMA,
@@ -59,6 +62,7 @@ from .services import (
     REMOVE_PLANT_SCHEMA,
     REMOVE_STRAIN_SCHEMA,
     SAVE_NUTRIENT_PRESET_SCHEMA,
+    SCORE_PHENOTYPE_SCHEMA,
     SET_DEHUMIDIFIER_CONTROL_SCHEMA,
     SET_IRRIGATION_SETTINGS_SCHEMA,
     STRAIN_RECOMMENDATION_SCHEMA,
@@ -76,6 +80,7 @@ from .services import (
     drain_ec,
     ec_ramp,
     environment,
+    genetics,
     growspace,
     ipm,
     irrigation,
@@ -399,6 +404,26 @@ async def register_services(
             GrowspaceService.CONFIGURE_TANK,
             wrap(tank_config.handle_configure_tank, False),
             CONFIGURE_TANK_SCHEMA,
+        ),
+        (
+            GrowspaceService.ADD_SEED_BATCH,
+            wrap(genetics.handle_add_seed_batch, False),
+            ADD_SEED_BATCH_SCHEMA,
+        ),
+        (
+            GrowspaceService.LOG_POLLINATION,
+            wrap(genetics.handle_log_pollination, False),
+            LOG_POLLINATION_SCHEMA,
+        ),
+        (
+            GrowspaceService.SCORE_PHENOTYPE,
+            wrap(genetics.handle_score_phenotype, False),
+            SCORE_PHENOTYPE_SCHEMA,
+        ),
+        (
+            GrowspaceService.HARVEST_SEEDS,
+            wrap(genetics.handle_harvest_seeds, False),
+            HARVEST_SEEDS_SCHEMA,
         ),
     ]
 

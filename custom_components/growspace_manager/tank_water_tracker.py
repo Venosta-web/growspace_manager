@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
+import logging
 from typing import TYPE_CHECKING, Any
 
 from homeassistant.helpers.event import async_track_state_change_event
@@ -21,6 +22,8 @@ if TYPE_CHECKING:
 
 _BUCKET_15MIN = timedelta(minutes=15)
 _BUCKET_1H = timedelta(hours=1)
+
+_LOGGER = logging.getLogger(__name__)
 
 
 def _parse_ts(ts: str) -> datetime:
@@ -114,22 +117,25 @@ class TankWaterTracker:
             level_pct: Current fill level as a percentage (0-100).
             timestamp: ISO-8601 timestamp string for this reading.
         """
+        _LOGGER.debug(
+            "TankWaterTracker(%s) recording level: %s%% at %s",
+            self.tank.sensor_entity,
+            level_pct,
+            timestamp,
+        )
         history = self.tank.water_history
         snapshot: dict[str, Any] = {"timestamp": timestamp, "level_pct": level_pct}
-
-        prev_level: float | None = None
-        if history.snapshots:
-            prev_level = history.snapshots[-1]["level_pct"]
 
         # Append snapshot and prune window
         history.snapshots.append(snapshot)
         if len(history.snapshots) > TANK_MAX_SNAPSHOTS:
             history.snapshots = history.snapshots[-TANK_MAX_SNAPSHOTS:]
 
-        if prev_level is None:
-            return  # First reading — no delta to compute
+        if self.tank.last_recorded_level is None:
+            self.tank.last_recorded_level = level_pct
+            return  # First reading — initialize baseline
 
-        delta = level_pct - prev_level
+        delta = round(level_pct - self.tank.last_recorded_level, 4)
         abs_delta = abs(delta)
 
         if abs_delta < TANK_NOISE_FLOOR_PCT:
@@ -159,6 +165,15 @@ class TankWaterTracker:
             return  # Small positive change — noise, not a refill
 
         history.events.append(event)
+        _LOGGER.debug(
+            "TankWaterTracker(%s) recorded event: %s (delta: %s%%, liters: %s)",
+            self.tank.sensor_entity,
+            event["event_type"],
+            event["pct_delta"],
+            event["liters"],
+        )
+        self.tank.last_recorded_level = level_pct
+
         if len(history.events) > TANK_MAX_EVENTS:
             history.events = history.events[-TANK_MAX_EVENTS:]
 
@@ -233,6 +248,11 @@ class TankWaterTracker:
             try:
                 level_pct = float(new_state.state)
             except (ValueError, TypeError):
+                _LOGGER.debug(
+                    "TankWaterTracker(%s) received invalid state: %s",
+                    self.tank.sensor_entity,
+                    new_state.state,
+                )
                 return
             self.record_level(level_pct, new_state.last_updated.isoformat())
             if on_change is not None:

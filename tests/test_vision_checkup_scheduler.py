@@ -1289,3 +1289,17 @@ async def test_run_vision_analysis_debug_images_exception(
     # Should handle exceptions and complete gracefully
     assert fake_temp.exists()  # Could not be deleted due to OSError
 
+
+
+@pytest.mark.asyncio
+async def test_run_vision_analysis_no_ai_entity(mock_hass, mock_coordinator):
+    """Test that vision analysis raises ServiceValidationError when no AI entity configured (vision_checkup_scheduler.py:439)."""
+    from homeassistant.exceptions import ServiceValidationError
+
+    mock_coordinator.options = {"ai_settings": {}}  # No ai_task_entity_id
+    gs = _make_mock_growspace(camera_entities=["camera.tent1_cam"])
+    mock_coordinator.growspaces = {"tent1": gs}
+
+    scheduler = VisionCheckupScheduler(mock_hass, mock_coordinator)
+    with pytest.raises(ServiceValidationError, match="No AI task entity configured"):
+        await scheduler.run_vision_analysis("tent1", "mid")

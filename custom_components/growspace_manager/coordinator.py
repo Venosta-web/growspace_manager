@@ -31,6 +31,7 @@ from .exceptions import GrowspaceNotFoundError
 from .growspace_validator import GrowspaceValidator
 from .import_export_manager import ImportExportManager
 from .irrigation_coordinator import IrrigationCoordinator
+from .managers.genetics import GeneticsManager
 from .managers.growspace import GrowspaceManager
 from .managers.nutrient import NutrientManager
 from .managers.plant import PlantManager
@@ -370,12 +371,18 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         else:
             self.strain_library = strain_library
 
-        # 3. Initialize storage (depends on repository, nutrient_manager)
+        # 3. Initialize storage (depends on repository, nutrient_manager, genetics_manager)
         self.nutrient_manager = NutrientManager(
             self.data_repository, self._save_callback
         )
+        self.genetics_manager = GeneticsManager(
+            self.data_repository, self._save_callback
+        )
         self.storage_manager = StorageManager(
-            self.hass, self.data_repository, self.nutrient_manager
+            self.hass,
+            self.data_repository,
+            self.nutrient_manager,
+            self.genetics_manager,
         )
 
         # 4. Initialize Managers (replacing services)
@@ -1367,6 +1374,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         """Return the TankWaterTracker for a tank, or None if not configured."""
         growspace = self.get_growspace(growspace_id)
         if growspace is None:
+            _LOGGER.debug("No growspace found for %s", growspace_id)
             return None
         tank = next(
             (
@@ -1376,10 +1384,24 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             ),
             None,
         )
-        if tank is None or tank.volume_liters is None:
+        if tank is None:
+            _LOGGER.debug(
+                "No tank found for entity %s in growspace %s", tank_entity, growspace_id
+            )
             return None
+        if tank.volume_liters is None:
+            _LOGGER.debug(
+                "Tank %s in growspace %s has no volume defined",
+                tank_entity,
+                growspace_id,
+            )
+            return None
+
         gs_trackers = self._tank_water_trackers.setdefault(growspace_id, {})
         if tank_entity not in gs_trackers:
+            _LOGGER.debug(
+                "Creating new TankWaterTracker for %s in %s", tank_entity, growspace_id
+            )
             gs_trackers[tank_entity] = TankWaterTracker(tank)
         return gs_trackers[tank_entity]
 
@@ -1487,7 +1509,6 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     def get_growspace(self, growspace_id: str) -> Growspace | None:
         """Retrieve a growspace by its ID."""
         return self.data_repository.get_growspace(growspace_id)
-
 
     def get_growspace_grid(self, growspace_id: str) -> list[list[str | None]]:
         """Generate a 2D grid representation of a growspace's plant layout.

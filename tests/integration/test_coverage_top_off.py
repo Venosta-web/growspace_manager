@@ -561,21 +561,34 @@ async def test_storage_manager_force_save_coverage(hass: HomeAssistant) -> None:
     nutrient_manager = MagicMock()
     nutrient_manager.get_serialization_data.return_value = {}
 
-    serializer = MagicMock()
+    genetics_manager = MagicMock()
+    genetics_manager.get_serialization_data.return_value = {}
 
     with patch(
         "custom_components.growspace_manager.storage_manager.Store"
     ) as mock_store_cls:
         mock_config_store = MagicMock()
         mock_plants_store = MagicMock()
-        mock_store_cls.side_effect = [mock_config_store, mock_plants_store, MagicMock()]
+        mock_genetics_store = MagicMock()
+        mock_genetics_store.async_save = AsyncMock()
+        # StorageManager now creates 4 stores: config, plants, genetics, legacy
+        mock_store_cls.side_effect = [
+            mock_config_store,
+            mock_plants_store,
+            mock_genetics_store,
+            MagicMock(),
+        ]
 
-        storage = StorageManager(hass, repository, nutrient_manager)
+        storage = StorageManager(hass, repository, nutrient_manager, genetics_manager)
 
         mock_config_store.async_save = AsyncMock()
         mock_plants_store.async_save = AsyncMock()
 
-        await storage.async_force_save()
+        with (
+            patch.object(storage, "_get_config_data", return_value={}),
+            patch.object(storage, "_get_plants_data", return_value={}),
+        ):
+            await storage.async_force_save()
 
         mock_config_store.async_save.assert_awaited_once()
         mock_plants_store.async_save.assert_awaited_once()
@@ -586,14 +599,23 @@ async def test_storage_manager_force_save_coverage(hass: HomeAssistant) -> None:
     ) as mock_store_cls:
         mock_config_store = MagicMock()
         mock_plants_store = MagicMock()
-        mock_store_cls.side_effect = [mock_config_store, mock_plants_store, MagicMock()]
+        mock_store_cls.side_effect = [
+            mock_config_store,
+            mock_plants_store,
+            MagicMock(),
+            MagicMock(),
+        ]
 
-        storage = StorageManager(hass, repository, nutrient_manager)
+        storage = StorageManager(hass, repository, nutrient_manager, genetics_manager)
 
         mock_config_store.async_delay_save = MagicMock()
         mock_plants_store.async_delay_save = MagicMock()
 
-        await storage.async_save()
+        with (
+            patch.object(storage, "_get_config_data", return_value={}),
+            patch.object(storage, "_get_plants_data", return_value={}),
+        ):
+            await storage.async_save()
 
         mock_config_store.async_delay_save.assert_called_once()
 
@@ -606,6 +628,7 @@ async def test_storage_manager_load_coverage(hass: HomeAssistant) -> None:
     repository.plants = {}
 
     nutrient_manager = MagicMock()
+    genetics_manager = MagicMock()
     serializer = MagicMock()
 
     with patch(
@@ -613,14 +636,18 @@ async def test_storage_manager_load_coverage(hass: HomeAssistant) -> None:
     ) as mock_store_cls:
         mock_config_store = MagicMock()
         mock_plants_store = MagicMock()
+        mock_genetics_store = MagicMock()
         mock_legacy_store = MagicMock()
+        # StorageManager now creates 4 stores: config, plants, genetics, legacy
         mock_store_cls.side_effect = [
             mock_config_store,
             mock_plants_store,
+            mock_genetics_store,
             mock_legacy_store,
         ]
+        mock_genetics_store.async_load = AsyncMock(return_value=None)
 
-        storage = StorageManager(hass, repository, nutrient_manager)
+        storage = StorageManager(hass, repository, nutrient_manager, genetics_manager)
 
         # Mock serializer to return objects
         serializer.deserialize_growspaces.return_value = {
@@ -720,8 +747,9 @@ async def test_storage_manager_load_plants_error(hass: HomeAssistant) -> None:
     repository = MagicMock()
     repository.plants = {}
     nutrient_manager = MagicMock()
+    genetics_manager = MagicMock()
     serializer = MagicMock()
-    storage = StorageManager(hass, repository, nutrient_manager)
+    storage = StorageManager(hass, repository, nutrient_manager, genetics_manager)
 
     # Trigger exception in _load_plants
     data = {"plants": {"p1": "MALFORMED"}}

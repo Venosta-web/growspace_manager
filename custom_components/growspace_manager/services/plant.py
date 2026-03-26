@@ -903,29 +903,29 @@ async def handle_score_plant(
     if plant is None:
         raise ServiceValidationError(f"Plant {plant_id} not found")
 
-    # Build a partial PlantScores update from the call data
-    scores = plant.scores
+    # Map legacy attr names → new PhenotypeScore fields (partial update)
+    ps = plant.phenotype_score
     if ATTR_VIGOR in call.data:
-        scores.vigor = call.data[ATTR_VIGOR]
+        ps.vigor = call.data[ATTR_VIGOR]
     if ATTR_STRUCTURE in call.data:
-        scores.structure = call.data[ATTR_STRUCTURE]
+        ps.internodal_spacing = call.data[ATTR_STRUCTURE]
     if ATTR_AROMA in call.data:
-        scores.aroma = call.data[ATTR_AROMA]
+        ps.terpene_intensity = call.data[ATTR_AROMA]
     if ATTR_RESIN in call.data:
-        scores.resin = call.data[ATTR_RESIN]
+        ps.resin = call.data[ATTR_RESIN]
     if ATTR_PEST_RESISTANCE in call.data:
-        scores.pest_resistance = call.data[ATTR_PEST_RESISTANCE]
+        ps.mold_resistance = call.data[ATTR_PEST_RESISTANCE]
 
-    await coordinator.plant_manager.update_plant(plant_id, scores=scores)
+    await coordinator.plant_manager.update_plant(plant_id, phenotype_score=ps)
 
     _LOGGER.info(
-        "Plant %s scores updated: vigor=%s structure=%s aroma=%s resin=%s pest_resistance=%s",
+        "Plant %s phenotype scored: vigor=%s internodal=%s terpenes=%s resin=%s mold_res=%s",
         plant_id,
-        scores.vigor,
-        scores.structure,
-        scores.aroma,
-        scores.resin,
-        scores.pest_resistance,
+        ps.vigor,
+        ps.internodal_spacing,
+        ps.terpene_intensity,
+        ps.resin,
+        ps.mold_resistance,
     )
 
 
