@@ -46,7 +46,7 @@ async def handle_add_seed_batch(
         strain_name=call.data[ATTR_STRAIN_NAME],
         breeder=call.data[ATTR_BREEDER],
         quantity=call.data[ATTR_QUANTITY],
-        acquisition_date=call.data[ATTR_ACQUISITION_DATE],
+        acquisition_date=call.data[ATTR_ACQUISITION_DATE].isoformat(),
         generation=call.data[ATTR_GENERATION],
         lineage=call.data[ATTR_LINEAGE],
         notes=call.data.get(ATTR_NOTES, ""),

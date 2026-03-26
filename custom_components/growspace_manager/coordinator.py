@@ -33,6 +33,7 @@ from .import_export_manager import ImportExportManager
 from .irrigation_coordinator import IrrigationCoordinator
 from .managers.genetics import GeneticsManager
 from .managers.growspace import GrowspaceManager
+from .managers.genetics import GeneticsManager
 from .managers.nutrient import NutrientManager
 from .managers.plant import PlantManager
 from .managers.subsystem import SubsystemManager

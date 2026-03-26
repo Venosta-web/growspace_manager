@@ -561,6 +561,9 @@ async def test_storage_manager_force_save_coverage(hass: HomeAssistant) -> None:
     nutrient_manager = MagicMock()
     nutrient_manager.get_serialization_data.return_value = {}
 
+    genetics_manager = MagicMock()
+    genetics_manager.get_serialization_data.return_value = {}
+
     serializer = MagicMock()
 
     with patch(
@@ -576,7 +579,7 @@ async def test_storage_manager_force_save_coverage(hass: HomeAssistant) -> None:
             MagicMock(),
         ]
 
-        storage = StorageManager(hass, repository, nutrient_manager)
+        storage = StorageManager(hass, repository, nutrient_manager, genetics_manager)
 
         mock_config_store.async_save = AsyncMock()
         mock_plants_store.async_save = AsyncMock()
@@ -599,7 +602,7 @@ async def test_storage_manager_force_save_coverage(hass: HomeAssistant) -> None:
             MagicMock(),
         ]
 
-        storage = StorageManager(hass, repository, nutrient_manager)
+        storage = StorageManager(hass, repository, nutrient_manager, genetics_manager)
 
         mock_config_store.async_delay_save = MagicMock()
         mock_plants_store.async_delay_save = MagicMock()
@@ -617,6 +620,7 @@ async def test_storage_manager_load_coverage(hass: HomeAssistant) -> None:
     repository.plants = {}
 
     nutrient_manager = MagicMock()
+    genetics_manager = MagicMock()
     serializer = MagicMock()
 
     with patch(
@@ -635,7 +639,7 @@ async def test_storage_manager_load_coverage(hass: HomeAssistant) -> None:
         ]
         mock_genetics_store.async_load = AsyncMock(return_value=None)
 
-        storage = StorageManager(hass, repository, nutrient_manager)
+        storage = StorageManager(hass, repository, nutrient_manager, genetics_manager)
 
         # Mock serializer to return objects
         serializer.deserialize_growspaces.return_value = {
@@ -735,8 +739,9 @@ async def test_storage_manager_load_plants_error(hass: HomeAssistant) -> None:
     repository = MagicMock()
     repository.plants = {}
     nutrient_manager = MagicMock()
+    genetics_manager = MagicMock()
     serializer = MagicMock()
-    storage = StorageManager(hass, repository, nutrient_manager)
+    storage = StorageManager(hass, repository, nutrient_manager, genetics_manager)
 
     # Trigger exception in _load_plants
     data = {"plants": {"p1": "MALFORMED"}}

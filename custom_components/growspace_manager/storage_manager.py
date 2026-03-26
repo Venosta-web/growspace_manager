@@ -97,6 +97,7 @@ class StorageManager:
         """Gather configuration data for storage."""
         # Use nutrient manager for serialization data
         nutrient_data = self.nutrient_manager.get_serialization_data()
+        genetics_data = self.genetics_manager.get_serialization_data()
 
         config = {
             "growspaces": {
@@ -107,6 +108,8 @@ class StorageManager:
         }
         # Merge nutrient data (presets and inventory)
         config.update(nutrient_data)
+        # Merge genetics data (seed batches and pollination events)
+        config.update(genetics_data)
         return config
 
     def _get_plants_data(self) -> dict[str, Any]:
@@ -167,6 +170,17 @@ class StorageManager:
         self.nutrient_manager.load_data(
             nutrient_presets, ipm_presets, inventory, ec_ramp_curves
         )
+
+        # Load genetics data into manager
+        seed_batches = {
+            bid: SeedBatch.from_dict(b)
+            for bid, b in data.get("seed_batches", {}).items()
+        }
+        pollination_events = {
+            eid: PollinationEvent.from_dict(e)
+            for eid, e in data.get("pollination_events", {}).items()
+        }
+        self.genetics_manager.load_data(seed_batches, pollination_events)
 
         # Load notification tracking
         self.repository.notifications_sent = data.get("notifications_sent", {})

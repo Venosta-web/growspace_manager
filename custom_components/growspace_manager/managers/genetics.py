@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
 from dataclasses import asdict
+from datetime import date
+from homeassistant.util import dt as dt_util
 import logging
 from typing import TYPE_CHECKING, Any
 import uuid

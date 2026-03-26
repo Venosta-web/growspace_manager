@@ -214,6 +214,17 @@ ATTR_DEVIATION = "deviation"
 ATTR_CURVE_ID = "curve_id"
 ATTR_POINTS = "points"
 
+# Genetics & Seed Attributes
+ATTR_ACQUISITION_DATE = "acquisition_date"
+ATTR_GENERATION = "generation"
+ATTR_DONOR_PLANT_ID = "donor_plant_id"
+ATTR_RECEIVER_PLANT_ID = "receiver_plant_id"
+ATTR_EVENT_ID = "event_id"
+ATTR_BATCH_ID = "batch_id"
+ATTR_STRAIN_NAME = "strain_name"
+ATTR_DATE = "date"
+ATTR_QUANTITY = "quantity"
+
 ATTR_PROBABILITY = "probability"
 ATTR_THRESHOLD = "threshold"
 ATTR_OBSERVATIONS = "observations"
@@ -437,6 +448,9 @@ class GrowspaceService(StrEnum):
     REMOVE_EC_RAMP_CURVE = "remove_ec_ramp_curve"
     # Vision Checkup Services
     TRIGGER_VISION_CHECKUP = "trigger_vision_checkup"
+    # Genetics & Seed Services
+    ADD_SEED_BATCH = "add_seed_batch"
+    LOG_POLLINATION = "log_pollination"
     # Tank Configuration Services
     CONFIGURE_TANK = "configure_tank"
     # Genetics Services

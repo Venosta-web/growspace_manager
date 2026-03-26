@@ -518,6 +518,32 @@ class ECRampCurve(BaseModel):
     created_at: str = field(default_factory=lambda: datetime.now().isoformat())
 
 
+@dataclass(slots=True)
+class SeedBatch(BaseModel):
+    """A batch of seeds tracked in the genetics inventory."""
+
+    batch_id: str = ""
+    strain_name: str = ""
+    breeder: str = ""
+    quantity: int = 0
+    acquisition_date: str = ""  # ISO date YYYY-MM-DD
+    generation: str = ""  # e.g. F1, S1, BX1
+    lineage: str = ""
+    notes: str = ""
+
+
+@dataclass(slots=True)
+class PollinationEvent(BaseModel):
+    """Records a pollination between two plants."""
+
+    event_id: str = ""
+    date: str = ""  # ISO date YYYY-MM-DD
+    donor_plant_id: str = ""
+    receiver_plant_id: str = ""
+    notes: str = ""
+    result_seed_batch_id: str | None = None
+
+
 class GrowspaceType(StrEnum):
     """Enumeration of growspace types."""
 

@@ -14,10 +14,12 @@ from .const import DOMAIN, GrowspaceService
 from .coordinator import GrowspaceCoordinator
 from .exceptions import GrowspaceError
 from .schemas import (
+    ADD_SEED_BATCH_SCHEMA,
     APPLY_IPM_SCHEMA,
     CONFIGURE_DRAIN_MONITORING_SCHEMA,
     CONFIGURE_TANK_SCHEMA,
     LOG_DRAIN_READING_SCHEMA,
+    LOG_POLLINATION_SCHEMA,
     LOG_TRAINING_EVENT_SCHEMA,
     REMOVE_EC_RAMP_CURVE_SCHEMA,
     REMOVE_IPM_PRESET_SCHEMA,

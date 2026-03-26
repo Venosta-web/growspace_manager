@@ -10,9 +10,6 @@ import tempfile
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from aiohttp import BodyPartReader
-import pytest
-from pytest_homeassistant_custom_component.common import MockConfigEntry
-
 from custom_components.growspace_manager import (
     _async_cancel_coordinators,
     _async_update_listener,
@@ -90,6 +87,9 @@ from custom_components.growspace_manager.websocket import (
     websocket_get_growspace_data,
     websocket_get_history_stats,
 )
+import pytest
+from pytest_homeassistant_custom_component.common import MockConfigEntry
+
 from homeassistant.components.recorder.db_schema import Events
 from homeassistant.config_entries import ConfigEntryState
 from homeassistant.core import HomeAssistant
@@ -923,7 +923,7 @@ async def test_async_register_websocket_api(mock_hass) -> None:
         "homeassistant.components.websocket_api.async_register_command"
     ) as mock_reg:
         async_register_websocket_api(mock_hass)
-        assert mock_reg.call_count == 21
+        assert mock_reg.call_count == 22
 
 
 @pytest.mark.asyncio
