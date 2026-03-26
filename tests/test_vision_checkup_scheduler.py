@@ -223,25 +223,28 @@ async def test_run_vision_analysis_calls_ai_task(mock_hass, mock_coordinator):
 
 
 @pytest.mark.asyncio
-async def test_run_vision_analysis_no_cameras_returns_none(mock_hass, mock_coordinator):
-    """Test that vision analysis returns None when no cameras configured."""
+async def test_run_vision_analysis_no_cameras_raises_error(mock_hass, mock_coordinator):
+    """Test that vision analysis raises ServiceValidationError when no cameras configured."""
+    from homeassistant.exceptions import ServiceValidationError
+
     gs = _make_mock_growspace(camera_entities=[])
     mock_coordinator.growspaces = {"tent1": gs}
 
     scheduler = VisionCheckupScheduler(mock_hass, mock_coordinator)
-    result = await scheduler.run_vision_analysis("tent1", "mid")
-
-    assert result is None
+    with pytest.raises(ServiceValidationError, match="No cameras configured"):
+        await scheduler.run_vision_analysis("tent1", "mid")
 
 
 @pytest.mark.asyncio
 async def test_run_vision_analysis_growspace_not_found(mock_hass, mock_coordinator):
-    """Test that vision analysis returns None when growspace not found."""
+    """Test that vision analysis raises ServiceValidationError when growspace not found."""
+    from homeassistant.exceptions import ServiceValidationError
+
     mock_coordinator.growspaces = {}
     scheduler = VisionCheckupScheduler(mock_hass, mock_coordinator)
-    result = await scheduler.run_vision_analysis("nonexistent", "mid")
-
-    assert result is None
+    
+    with pytest.raises(ServiceValidationError, match="Growspace 'nonexistent' not found"):
+        await scheduler.run_vision_analysis("nonexistent", "mid")
 
 
 @pytest.mark.asyncio
@@ -309,8 +312,10 @@ async def test_run_vision_analysis_stores_result_in_history(
 
 
 @pytest.mark.asyncio
-async def test_run_vision_analysis_ai_failure_returns_none(mock_hass, mock_coordinator):
-    """Test that AI failure returns None gracefully."""
+async def test_run_vision_analysis_ai_failure_raises_error(mock_hass, mock_coordinator):
+    """Test that AI failure raises HomeAssistantError."""
+    from homeassistant.exceptions import HomeAssistantError
+
     gs = _make_mock_growspace()
     mock_coordinator.growspaces = {"tent1": gs}
 
@@ -354,9 +359,8 @@ async def test_run_vision_analysis_ai_failure_returns_none(mock_hass, mock_coord
         ),
         patch.object(scheduler, "_gather_context_data", return_value=minimal_context),
     ):
-        result = await scheduler.run_vision_analysis("tent1", "mid")
-
-    assert result is None
+        with pytest.raises(HomeAssistantError, match="AI vision analysis failed"):
+            await scheduler.run_vision_analysis("tent1", "mid")
 
 
 def test_schedule_growspace_creates_three_timers(mock_hass, mock_coordinator):
@@ -1093,9 +1097,10 @@ async def test_run_vision_analysis_deletes_temp_files_after_ai_failure(
         ),
         patch.object(scheduler, "_gather_context_data", return_value=_minimal_context()),
     ):
-        result = await scheduler.run_vision_analysis("tent1", "mid")
+        from homeassistant.exceptions import HomeAssistantError
+        with pytest.raises(HomeAssistantError, match="AI vision analysis failed"):
+            await scheduler.run_vision_analysis("tent1", "mid")
 
-    assert result is None
     assert not fake_temp.exists()
 
 

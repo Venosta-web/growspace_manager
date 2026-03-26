@@ -11,6 +11,7 @@ VERSION: Final = "0.3.5"
 STORAGE_KEY: Final = f"{DOMAIN}_storage"  # Legacy Key
 STORAGE_KEY_CONFIG: Final = f"{DOMAIN}.config"
 STORAGE_KEY_PLANTS: Final = f"{DOMAIN}.plants"
+STORAGE_KEY_GENETICS: Final = f"{DOMAIN}.genetics"
 PLATFORMS: Final[list[str]] = [
     "binary_sensor",
     "calendar",
@@ -61,7 +62,12 @@ CONF_HUMIDIFIER_ENTITY = "humidifier_entity"
 CONF_SOIL_MOISTURE_SENSOR = "soil_moisture_sensor"
 CONF_IRRIGATION_TANK_SENSORS = "irrigation_tank_sensors"
 CONF_IRRIGATION_TANK_WARNING_LEVEL = "irrigation_tank_warning_level"
+CONF_IRRIGATION_TANK_VOLUME = "irrigation_tank_volume"  # litres
 CONF_CONTROL_DEHUMIDIFIER = "control_dehumidifier"
+
+# Tank water inference service attributes
+ATTR_TANK_ENTITY = "tank_entity"
+ATTR_VOLUME_LITERS = "volume_liters"
 
 # DLI Tracking Defaults
 DEFAULT_DLI_TARGET_VEG: Final = 30.0
@@ -89,6 +95,12 @@ CONF_ELECTRICITY_COST = "electricity_cost_per_kwh"
 DEFAULT_PREDICTION_WINDOW_HOURS = 72
 DEPLETION_DEADBAND_THRESHOLD = 0.1  # %/hour
 VPD_WEIGHTING_BASE = 1.2  # kPa threshold for multiplier
+
+# Tank water tracker thresholds (capacity limits and detection)
+TANK_MAX_SNAPSHOTS = 2016     # 7d * 24h * 12 readings/h (5-min updates)
+TANK_MAX_EVENTS = 500         # rolling event window
+TANK_REFILL_THRESHOLD_PCT = 3.0   # % rise → classified as refill
+TANK_NOISE_FLOOR_PCT = 0.3        # % change too small to record
 
 
 # Multi-Device Config Keys
@@ -439,6 +451,12 @@ class GrowspaceService(StrEnum):
     # Genetics & Seed Services
     ADD_SEED_BATCH = "add_seed_batch"
     LOG_POLLINATION = "log_pollination"
+    # Tank Configuration Services
+    CONFIGURE_TANK = "configure_tank"
+    # Genetics Services
+    ADD_SEED_BATCH = "add_seed_batch"
+    LOG_POLLINATION = "log_pollination"
+    SCORE_PHENOTYPE = "score_phenotype"
     HARVEST_SEEDS = "harvest_seeds"
 
 
@@ -459,6 +477,24 @@ ATTR_TECHNIQUE = "technique"
 ATTR_NOTES = "notes"
 ATTR_ITEMS = "items"
 ATTR_TYPE = "type"
+
+# Genetics Attributes
+ATTR_STRAIN_NAME = "strain_name"
+ATTR_BREEDER = "breeder"
+ATTR_QUANTITY = "quantity"
+ATTR_ACQUISITION_DATE = "acquisition_date"
+ATTR_GENERATION = "generation"
+ATTR_LINEAGE = "lineage"
+ATTR_DONOR_PLANT_ID = "donor_plant_id"
+ATTR_RECEIVER_PLANT_ID = "receiver_plant_id"
+ATTR_EVENT_ID = "event_id"
+ATTR_DATE = "date"
+# PhenotypeScore rubric fields (1-10 scale)
+ATTR_INTERNODAL_SPACING = "internodal_spacing"
+ATTR_TERPENE_INTENSITY = "terpene_intensity"
+ATTR_MOLD_RESISTANCE = "mold_resistance"
+ATTR_YIELD_POTENTIAL = "yield_potential"
+ATTR_KEEPER = "keeper"
 CATEGORY_TRAINING = "training"
 CATEGORY_IPM = "ipm"
 CATEGORY_NOTE = "note"

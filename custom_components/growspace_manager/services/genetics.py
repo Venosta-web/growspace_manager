@@ -1,7 +1,8 @@
-"""Service handlers for genetics and seed inventory operations."""
+"""Service handlers for genetics tracking (seed batches, pollination, scoring)."""
 
 from __future__ import annotations
 
+import logging
 from typing import TYPE_CHECKING
 
 from custom_components.growspace_manager.const import (
@@ -11,26 +12,33 @@ from custom_components.growspace_manager.const import (
     ATTR_DONOR_PLANT_ID,
     ATTR_EVENT_ID,
     ATTR_GENERATION,
+    ATTR_INTERNODAL_SPACING,
+    ATTR_KEEPER,
     ATTR_LINEAGE,
+    ATTR_MOLD_RESISTANCE,
     ATTR_NOTES,
+    ATTR_PLANT_ID,
     ATTR_QUANTITY,
     ATTR_RECEIVER_PLANT_ID,
+    ATTR_RESIN,
     ATTR_STRAIN_NAME,
+    ATTR_TERPENE_INTENSITY,
+    ATTR_VIGOR,
+    ATTR_YIELD_POTENTIAL,
 )
 from custom_components.growspace_manager.services.utils import handle_service_errors
 from homeassistant.core import HomeAssistant, ServiceCall
-from homeassistant.exceptions import ServiceValidationError
 
 if TYPE_CHECKING:
-    from custom_components.growspace_manager.coordinator import GrowspaceCoordinator
-    from custom_components.growspace_manager.strain_library import StrainLibrary
+    from growspace_manager.coordinator import GrowspaceCoordinator
+
+_LOGGER = logging.getLogger(__name__)
 
 
 @handle_service_errors
 async def handle_add_seed_batch(
     hass: HomeAssistant,
     coordinator: GrowspaceCoordinator,
-    strain_library: StrainLibrary,
     call: ServiceCall,
 ) -> None:
     """Handle the add_seed_batch service call."""
@@ -49,12 +57,11 @@ async def handle_add_seed_batch(
 async def handle_log_pollination(
     hass: HomeAssistant,
     coordinator: GrowspaceCoordinator,
-    strain_library: StrainLibrary,
     call: ServiceCall,
 ) -> None:
     """Handle the log_pollination service call."""
     await coordinator.genetics_manager.async_log_pollination(
-        event_date=call.data[ATTR_DATE],
+        date=call.data[ATTR_DATE],
         donor_plant_id=call.data[ATTR_DONOR_PLANT_ID],
         receiver_plant_id=call.data[ATTR_RECEIVER_PLANT_ID],
         notes=call.data.get(ATTR_NOTES, ""),
@@ -62,18 +69,34 @@ async def handle_log_pollination(
 
 
 @handle_service_errors
+async def handle_score_phenotype(
+    hass: HomeAssistant,
+    coordinator: GrowspaceCoordinator,
+    call: ServiceCall,
+) -> None:
+    """Handle the score_phenotype service call."""
+    await coordinator.genetics_manager.async_score_phenotype(
+        plant_id=call.data[ATTR_PLANT_ID],
+        vigor=call.data.get(ATTR_VIGOR),
+        internodal_spacing=call.data.get(ATTR_INTERNODAL_SPACING),
+        terpene_intensity=call.data.get(ATTR_TERPENE_INTENSITY),
+        resin=call.data.get(ATTR_RESIN),
+        mold_resistance=call.data.get(ATTR_MOLD_RESISTANCE),
+        yield_potential=call.data.get(ATTR_YIELD_POTENTIAL),
+        keeper=call.data.get(ATTR_KEEPER),
+        notes=call.data.get(ATTR_NOTES),
+    )
+
+
+@handle_service_errors
 async def handle_harvest_seeds(
     hass: HomeAssistant,
     coordinator: GrowspaceCoordinator,
-    strain_library: StrainLibrary,
     call: ServiceCall,
 ) -> None:
     """Handle the harvest_seeds service call."""
-    try:
-        await coordinator.genetics_manager.async_harvest_seeds(
-            event_id=call.data[ATTR_EVENT_ID],
-            quantity=call.data[ATTR_QUANTITY],
-            notes=call.data.get(ATTR_NOTES, ""),
-        )
-    except ValueError as err:
-        raise ServiceValidationError(str(err)) from err
+    await coordinator.genetics_manager.async_harvest_seeds(
+        event_id=call.data[ATTR_EVENT_ID],
+        quantity=call.data[ATTR_QUANTITY],
+        notes=call.data.get(ATTR_NOTES, ""),
+    )

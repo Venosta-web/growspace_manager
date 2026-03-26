@@ -36,8 +36,7 @@ async def handle_trigger_vision_checkup(
 
     if result is None:
         raise ServiceValidationError(
-            f"Vision checkup could not be performed for '{growspace_id}'. "
-            "Ensure cameras are configured and an AI task entity is set up."
+            f"Vision checkup could not be performed for '{growspace_id}'."
         )
 
     return {

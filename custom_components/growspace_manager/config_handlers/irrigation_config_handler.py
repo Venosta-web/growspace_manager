@@ -124,15 +124,18 @@ class IrrigationConfigHandler(BaseConfigHandler[dict[str, Any]]):
 
         schema_dict = {
             # R/W Fields: Pump Settings (User edits and submits these)
+            # Use description/suggested_value (not default) so that clearing the
+            # EntitySelector omits the key from user_input — allowing the coordinator
+            # to set it to None rather than voluptuous restoring the old value.
             vol.Optional(
                 "irrigation_pump_entity",
-                default=irrigation_pump_default,
+                description={"suggested_value": irrigation_pump_default},
             ): selector.EntitySelector(
                 selector.EntitySelectorConfig(domain=["switch", "input_boolean"])
             ),
             vol.Optional(
                 "drain_pump_entity",
-                default=drain_pump_default,
+                description={"suggested_value": drain_pump_default},
             ): selector.EntitySelector(
                 selector.EntitySelectorConfig(domain=["switch", "input_boolean"])
             ),

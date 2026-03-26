@@ -1463,114 +1463,154 @@ trigger_vision_checkup:
         text:
 
 add_seed_batch:
-  name: Add seed batch
-  description: Add a batch of seeds to the genetics inventory.
+  description: Add a seed batch to the genetics inventory
   fields:
     strain_name:
-      name: Strain name
-      description: Name of the strain.
+      description: Name of the strain
       required: true
-      example: "Blue Dream"
       selector:
         text:
     breeder:
-      name: Breeder
-      description: Breeder or source of the seeds.
+      description: Breeder or seed company
       required: true
-      example: "Humboldt Seed Co"
       selector:
         text:
     quantity:
-      name: Quantity
-      description: Number of seeds in the batch.
+      description: Number of seeds in this batch
       required: true
-      example: 10
       selector:
         number:
           min: 1
+          mode: box
     acquisition_date:
-      name: Acquisition date
-      description: Date the seeds were acquired (YYYY-MM-DD).
+      description: Date the seeds were acquired (YYYY-MM-DD)
       required: true
-      example: "2026-01-15"
       selector:
         text:
     generation:
-      name: Generation
-      description: "Seed generation (e.g. F1, S1, BX1)."
+      description: Genetic generation (e.g. F1, S1, IBL)
       required: true
-      example: "F1"
       selector:
         text:
     lineage:
-      name: Lineage
-      description: "Parent strains (e.g. OG Kush x Blueberry)."
+      description: Lineage or cross description
       required: true
-      example: "OG Kush x Blueberry"
       selector:
         text:
     notes:
-      name: Notes
-      description: Optional notes about this batch.
+      description: Optional notes
       required: false
-      example: "Purchased at local dispensary"
       selector:
         text:
 
 log_pollination:
-  name: Log pollination
-  description: Record a pollination event between two plants.
+  description: Record a pollination event between two plants
   fields:
     date:
-      name: Date
-      description: Date of pollination (YYYY-MM-DD).
+      description: Date the pollination occurred (YYYY-MM-DD)
       required: true
-      example: "2026-03-10"
       selector:
         text:
     donor_plant_id:
-      name: Donor plant ID
-      description: Plant ID of the pollen donor (male or reversed female).
+      description: ID of the pollen donor plant
       required: true
-      example: "abc123"
       selector:
         text:
     receiver_plant_id:
-      name: Receiver plant ID
-      description: Plant ID of the female plant being pollinated.
+      description: ID of the seed-bearing receiver plant
       required: true
-      example: "def456"
       selector:
         text:
     notes:
-      name: Notes
-      description: Optional notes.
+      description: Optional notes
+      required: false
+      selector:
+        text:
+
+score_phenotype:
+  description: Score a plant's phenotype characteristics
+  fields:
+    plant_id:
+      description: The ID of the plant to score
+      required: true
+      selector:
+        text:
+    vigor:
+      description: Vigor score 1-10
+      required: false
+      selector:
+        number:
+          min: 1
+          max: 10
+          mode: box
+    internodal_spacing:
+      description: Internodal spacing score 1-10
+      required: false
+      selector:
+        number:
+          min: 1
+          max: 10
+          mode: box
+    terpene_intensity:
+      description: Terpene intensity score 1-10
+      required: false
+      selector:
+        number:
+          min: 1
+          max: 10
+          mode: box
+    resin:
+      description: Resin production score 1-10
+      required: false
+      selector:
+        number:
+          min: 1
+          max: 10
+          mode: box
+    mold_resistance:
+      description: Mold resistance score 1-10
+      required: false
+      selector:
+        number:
+          min: 1
+          max: 10
+          mode: box
+    yield_potential:
+      description: Yield potential score 1-10
+      required: false
+      selector:
+        number:
+          min: 1
+          max: 10
+          mode: box
+    keeper:
+      description: Mark this plant as a keeper
+      required: false
+      selector:
+        boolean:
+    notes:
+      description: Optional notes
       required: false
       selector:
         text:
 
 harvest_seeds:
-  name: Harvest seeds
-  description: Convert a logged pollination event into a new seed batch.
+  description: Convert a pollination event into a seed batch
   fields:
     event_id:
-      name: Event ID
-      description: ID of the pollination event to harvest.
+      description: The ID of the pollination event to harvest
       required: true
-      example: "550e8400-e29b-41d4-a716-446655440000"
       selector:
         text:
     quantity:
-      name: Quantity
-      description: Number of seeds harvested.
+      description: Number of seeds harvested
       required: true
-      example: 25
       selector:
         number:
           min: 1
+          mode: box
     notes:
-      name: Notes
-      description: Optional notes about the harvest.
+      description: Optional notes
       required: false
       selector:
         text:

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field, fields
+from dataclasses import MISSING, dataclass, field, fields
 from datetime import datetime
 from enum import StrEnum
 import logging
@@ -124,9 +124,43 @@ class StageHistoryItem(TypedDict):
     end: str | None
 
 
+def _sanitize_numeric_fields(cls: type, data: dict[str, Any]) -> dict[str, Any]:
+    """Coerce None and float values to proper types for int fields before deserialization.
+
+    With `from __future__ import annotations`, field types are stored as strings,
+    so we compare against 'float'/'int' string literals rather than actual types.
+    Avoids super() which is broken inside @dataclass(slots=True) classmethods.
+    """
+    data = data.copy()
+    for f in fields(cls):
+        if f.name in data:
+            val = data[f.name]
+            if val is None:
+                if f.type in ("float", "int"):
+                    if f.default is not MISSING:
+                        data[f.name] = f.default
+                    else:
+                        data[f.name] = 0.0 if f.type == "float" else 0
+            elif f.type == "int" and isinstance(val, (float, str)):
+                try:
+                    data[f.name] = int(float(val))
+                except (ValueError, TypeError):
+                    # On conversion error, fall back to the field's default or 0.
+                    if f.default is not MISSING:
+                        data[f.name] = f.default
+                    else:
+                        data[f.name] = 0
+    return data
+
+
 @dataclass(slots=True)
 class BaseModel(DataClassDictMixin):
     """Base class providing generic serialization methods."""
+
+    @classmethod
+    def __pre_deserialize__(cls, data: dict[str, Any]) -> dict[str, Any]:
+        """Generic pre-deserialization to handle None values for numeric fields."""
+        return _sanitize_numeric_fields(cls, data)
 
 
 @dataclass(slots=True, kw_only=True)
@@ -156,6 +190,26 @@ class IrrigationStrategy(BaseModel):
 
 
 @dataclass(slots=True)
+class TankWaterEvent(BaseModel):
+    """A single water event derived from tank level change."""
+
+    timestamp: str = ""
+    liters: float = 0.0
+    pct_delta: float = 0.0  # positive = refill, negative = consumption
+    event_type: str = "consumption"  # "consumption" | "refill"
+
+
+@dataclass(slots=True)
+class TankWaterHistory(BaseModel):
+    """Rolling 7-day history of tank level snapshots and water events."""
+
+    # Raw level readings: [{"timestamp": ISO, "level_pct": float}]
+    snapshots: list[dict[str, Any]] = field(default_factory=list)
+    # Derived consumption / refill events
+    events: list[dict[str, Any]] = field(default_factory=list)
+
+
+@dataclass(slots=True)
 class IrrigationTank(BaseModel):
     """Configuration for an irrigation tank."""
 
@@ -165,6 +219,9 @@ class IrrigationTank(BaseModel):
     enable_prediction: bool = True  # Enable depletion prediction
     enable_lights_bias: bool = False  # Segregate rates by lights on/off
     enable_vpd_weighting: bool = False  # Apply VPD-based multiplier
+    volume_liters: float | None = None
+    last_recorded_level: float | None = None
+    water_history: TankWaterHistory = field(default_factory=TankWaterHistory)
 
 
 @dataclass(slots=True)
@@ -255,7 +312,9 @@ class EnvironmentConfig(BaseModel):
     mold_threshold: float = 0.75
     bayesian_options: BayesianOptions = field(default_factory=dict)
     irrigation_tanks: list[IrrigationTank] = field(default_factory=list)
-    vision_checkup_config: VisionCheckupConfig = field(default_factory=VisionCheckupConfig)
+    vision_checkup_config: VisionCheckupConfig = field(
+        default_factory=VisionCheckupConfig
+    )
 
     def __post_init__(self) -> None:
         """Sync singular fields to plural lists for initialization support."""
@@ -304,13 +363,8 @@ class EnvironmentConfig(BaseModel):
 
     @classmethod
     def __pre_deserialize__(cls, data: dict[str, Any]) -> dict[str, Any]:
-        """Mashumaro hook: transform data before deserialization.
-
-        Handles:
-        - Migration: singular sensor fields → plural lists
-        - Catch-all: unknown fields → bayesian_options dict
-        """
-        data = data.copy()
+        """Mashumaro hook: transform data before deserialization."""
+        data = _sanitize_numeric_fields(cls, data)
 
         # Migration: singular -> plural list
         migrations = {
@@ -532,14 +586,8 @@ class Growspace(BaseModel):
 
     @classmethod
     def __pre_deserialize__(cls, data: dict[str, Any]) -> dict[str, Any]:
-        """Mashumaro hook: transform data before deserialization.
-
-        Handles:
-        - Sanitization: rows/plants_per_row strings → integers
-        - Migration: irrigation_config normalize to time/duration format (start_time → time, duration_seconds → duration)
-        - Sanitization: irrigation_strategy integer fields
-        """
-        data = data.copy()
+        """Mashumaro hook: transform data before deserialization."""
+        data = _sanitize_numeric_fields(cls, data)
 
         # Sanitize integer fields
         for field_name in ["rows", "plants_per_row"]:
@@ -645,14 +693,71 @@ class PlantGenetics(BaseModel):
 
 
 @dataclass(slots=True)
-class PlantScores(BaseModel):
-    """Scores for a plant's phenotype selection."""
+class PhenotypeScore(BaseModel):
+    """Fused phenotype-selection rubric scored on a 1–10 scale.
 
+    Replaces the legacy PlantScores model, merging its fields with the
+    genetics-tracking rubric.  Old field names are migrated in
+    Plant.__pre_deserialize__.
+    """
+
+    # Rubric fields (1-10, None = not yet scored)
     vigor: int | None = None
-    structure: int | None = None
-    aroma: int | None = None
+    internodal_spacing: int | None = None  # replaces legacy 'structure'
+    terpene_intensity: int | None = None  # replaces legacy 'aroma'
     resin: int | None = None
-    pest_resistance: int | None = None
+    mold_resistance: int | None = None  # replaces legacy 'pest_resistance'
+    yield_potential: int | None = None
+
+    # Meta
+    keeper: bool = False
+    notes: str = ""
+    updated_at: str | None = None
+
+    @property
+    def total_score(self) -> float | None:
+        """Average of all rubric fields that have been set."""
+        scored = [
+            v
+            for v in (
+                self.vigor,
+                self.internodal_spacing,
+                self.terpene_intensity,
+                self.resin,
+                self.mold_resistance,
+                self.yield_potential,
+            )
+            if v is not None
+        ]
+        if not scored:
+            return None
+        return sum(scored) / len(scored)
+
+
+@dataclass(slots=True)
+class SeedBatch(BaseModel):
+    """A batch of seeds tracked in the genetics inventory."""
+
+    batch_id: str
+    strain_name: str
+    breeder: str
+    quantity: int
+    acquisition_date: str  # ISO date string (YYYY-MM-DD)
+    generation: str  # e.g. "F1", "S1", "BX1"
+    lineage: str
+    notes: str = ""
+
+
+@dataclass(slots=True)
+class PollinationEvent(BaseModel):
+    """Records a single pollination between two plants."""
+
+    event_id: str
+    date: str  # ISO date string (YYYY-MM-DD)
+    donor_plant_id: str  # Male or reversed-female
+    receiver_plant_id: str  # Female being pollinated
+    notes: str = ""
+    result_seed_batch_id: str | None = None  # Set when seeds are harvested
 
 
 @dataclass(slots=True)
@@ -697,19 +802,13 @@ class Plant(BaseModel):
     last_ipm_type: str | None = None
     phi_clearance_date: str | None = None
     stage_history: list[StageHistoryItem] = field(default_factory=list)
-    scores: PlantScores = field(default_factory=PlantScores)
+    phenotype_score: PhenotypeScore = field(default_factory=PhenotypeScore)
     harvest_metrics: HarvestMetrics = field(default_factory=HarvestMetrics)
 
     @classmethod
     def __pre_deserialize__(cls, data: dict[str, Any]) -> dict[str, Any]:
-        """Mashumaro hook: transform data before deserialization.
-
-        Handles:
-        - Migration: flat strain/phenotype → PlantGenetics
-        - Sanitization: row/col strings ("30.0") → integers
-        - Migration: build stage_history from start dates
-        """
-        data = data.copy()
+        """Mashumaro hook: transform data before deserialization."""
+        data = _sanitize_numeric_fields(cls, data)
 
         # Sanitize integer fields - handle "30.0" strings
         for field_name in ["row", "col"]:
@@ -718,6 +817,20 @@ class Plant(BaseModel):
                     data[field_name] = int(float(data[field_name]))
                 except (ValueError, TypeError):
                     data[field_name] = 1  # Safe default
+
+        # Migration: old 'scores' dict → new 'phenotype_score' with renamed fields.
+        # If phenotype_score is already present (new format), discard stale scores key.
+        if "scores" in data and "phenotype_score" not in data:
+            old: dict[str, Any] = data.pop("scores") or {}
+            data["phenotype_score"] = {
+                "vigor": old.get("vigor"),
+                "internodal_spacing": old.get("structure"),
+                "terpene_intensity": old.get("aroma"),
+                "resin": old.get("resin"),
+                "mold_resistance": old.get("pest_resistance"),
+            }
+        elif "scores" in data:
+            data.pop("scores")
 
         # Migration: flat fields → PlantGenetics
         if "strain" in data and "genetics" not in data:

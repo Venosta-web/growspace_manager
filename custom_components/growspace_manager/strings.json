@@ -141,7 +141,13 @@
           "camera_entities": "Camera Entities",
           "snapshot_interval_hours": "Snapshot Interval (Hours)",
           "power_sensors": "Power Sensors",
-          "energy_sensors": "Energy Sensors"
+          "energy_sensors": "Energy Sensors",
+          "irrigation_tank_sensors": "Irrigation Tank Sensors",
+          "irrigation_tank_warning_level": "Tank Warning Level (%)",
+          "irrigation_tank_volume": "Tank volume (litres)"
+        },
+        "data_description": {
+          "irrigation_tank_volume": "Total capacity of the tank in litres. Used for tank-based water consumption tracking when no flow sensors are configured. Leave empty to disable."
         }
       },
       "manage_growspaces": {
@@ -392,6 +398,9 @@
       },
       "vision_checkup": {
         "name": "Vision checkup"
+      },
+      "tank_derived_water": {
+        "name": "Tank water consumption"
       }
     }
   },

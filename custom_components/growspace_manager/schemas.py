@@ -10,7 +10,6 @@ from .const import (
     ATTR_ACQUISITION_DATE,
     ATTR_AMOUNT_ML,
     ATTR_AROMA,
-    ATTR_BATCH_ID,
     ATTR_BREEDER,
     ATTR_CBD_PERCENTAGE,
     ATTR_COL,
@@ -27,11 +26,14 @@ from .const import (
     ATTR_GENERATION,
     ATTR_GROWSPACE_ID,
     ATTR_IMAGES,
+    ATTR_INTERNODAL_SPACING,
     ATTR_ITEMS,
+    ATTR_KEEPER,
     ATTR_LINEAGE,
     ATTR_MAX_EC_DELTA,
     ATTR_METADATA,
     ATTR_MIN_DAYS_IN_STAGE,
+    ATTR_MOLD_RESISTANCE,
     ATTR_NAME,
     ATTR_NOTES,
     ATTR_PEST_RESISTANCE,
@@ -49,15 +51,19 @@ from .const import (
     ATTR_STRAIN_NAME,
     ATTR_STRUCTURE,
     ATTR_TAGS,
+    ATTR_TANK_ENTITY,
     ATTR_TARGET_RUNOFF_PERCENT,
     ATTR_TECHNIQUE,
+    ATTR_TERPENE_INTENSITY,
     ATTR_TERPENE_PROFILE,
     ATTR_THC_PERCENTAGE,
     ATTR_TRANSITION_DATE,
     ATTR_TRIM_WEIGHT,
     ATTR_TYPE,
     ATTR_VIGOR,
+    ATTR_VOLUME_LITERS,
     ATTR_WET_WEIGHT,
+    ATTR_YIELD_POTENTIAL,
     CONF_CAMERA_ENTITIES,
     CONF_CIRCULATION_FAN_ENTITIES,
     CONF_CIRCULATION_FAN_ENTITY,
@@ -262,9 +268,15 @@ HARVEST_PLANT_SCHEMA = vol.Schema(
 UPDATE_HARVEST_METRICS_SCHEMA = vol.Schema(
     {
         vol.Required(ATTR_PLANT_ID): str,
-        vol.Optional(ATTR_WET_WEIGHT): vol.Any(None, vol.All(vol.Coerce(float), vol.Range(min=0))),
-        vol.Optional(ATTR_DRY_WEIGHT): vol.Any(None, vol.All(vol.Coerce(float), vol.Range(min=0))),
-        vol.Optional(ATTR_TRIM_WEIGHT): vol.Any(None, vol.All(vol.Coerce(float), vol.Range(min=0))),
+        vol.Optional(ATTR_WET_WEIGHT): vol.Any(
+            None, vol.All(vol.Coerce(float), vol.Range(min=0))
+        ),
+        vol.Optional(ATTR_DRY_WEIGHT): vol.Any(
+            None, vol.All(vol.Coerce(float), vol.Range(min=0))
+        ),
+        vol.Optional(ATTR_TRIM_WEIGHT): vol.Any(
+            None, vol.All(vol.Coerce(float), vol.Range(min=0))
+        ),
         vol.Optional(ATTR_THC_PERCENTAGE): vol.Any(
             None, vol.All(vol.Coerce(float), vol.Range(min=0, max=100))
         ),
@@ -641,6 +653,18 @@ CONFIGURE_DRAIN_MONITORING_SCHEMA = vol.Schema(
     }
 )
 
+# --- Tank Configuration Schemas ---
+
+CONFIGURE_TANK_SCHEMA = vol.Schema(
+    {
+        vol.Required(ATTR_GROWSPACE_ID): vol.All(str, valid_growspace_id),
+        vol.Required(ATTR_TANK_ENTITY): cv.string,
+        vol.Optional(ATTR_VOLUME_LITERS): vol.All(
+            vol.Coerce(float), vol.Range(min=0.1)
+        ),
+    }
+)
+
 # --- Water Tracking Schemas ---
 
 RESET_WATER_TRACKING_SCHEMA = vol.Schema(
@@ -682,7 +706,11 @@ SERVICE_TRIGGER_VISION_CHECKUP_SCHEMA = vol.Schema(
     }
 )
 
-# --- Genetics & Seed Schemas ---
+# --- Genetics Schemas ---
+
+_PHENO_SCORE_VALIDATOR = vol.Any(
+    None, vol.All(vol.Coerce(int), vol.Range(min=1, max=10))
+)
 
 ADD_SEED_BATCH_SCHEMA = vol.Schema(
     {
@@ -702,6 +730,20 @@ LOG_POLLINATION_SCHEMA = vol.Schema(
         vol.Required(ATTR_DONOR_PLANT_ID): cv.string,
         vol.Required(ATTR_RECEIVER_PLANT_ID): cv.string,
         vol.Optional(ATTR_NOTES, default=""): cv.string,
+    }
+)
+
+SCORE_PHENOTYPE_SCHEMA = vol.Schema(
+    {
+        vol.Required(ATTR_PLANT_ID): cv.string,
+        vol.Optional(ATTR_VIGOR): _PHENO_SCORE_VALIDATOR,
+        vol.Optional(ATTR_INTERNODAL_SPACING): _PHENO_SCORE_VALIDATOR,
+        vol.Optional(ATTR_TERPENE_INTENSITY): _PHENO_SCORE_VALIDATOR,
+        vol.Optional(ATTR_RESIN): _PHENO_SCORE_VALIDATOR,
+        vol.Optional(ATTR_MOLD_RESISTANCE): _PHENO_SCORE_VALIDATOR,
+        vol.Optional(ATTR_YIELD_POTENTIAL): _PHENO_SCORE_VALIDATOR,
+        vol.Optional(ATTR_KEEPER): cv.boolean,
+        vol.Optional(ATTR_NOTES): vol.Any(None, cv.string),
     }
 )
 
