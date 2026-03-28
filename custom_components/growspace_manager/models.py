@@ -529,6 +529,10 @@ class SeedBatch(BaseModel):
     acquisition_date: str = ""  # ISO date YYYY-MM-DD
     generation: str = ""  # e.g. F1, S1, BX1
     lineage: str = ""
+    parent_1_strain: str | None = None
+    parent_1_phenotype: str | None = None
+    parent_2_strain: str | None = None
+    parent_2_phenotype: str | None = None
     notes: str = ""
 
 

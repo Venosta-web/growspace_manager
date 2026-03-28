@@ -76,6 +76,46 @@ class TestSeedBatch:
         assert restored.lineage == batch.lineage
         assert restored.notes == batch.notes
 
+    def test_seed_batch_parent_fields_round_trip(self) -> None:
+        """SeedBatch serialises and deserialises parent strain/phenotype fields."""
+        batch = SeedBatch(
+            batch_id="abc",
+            strain_name="OG Kush",
+            breeder="DNA Genetics",
+            quantity=10,
+            acquisition_date="2026-01-01",
+            generation="F1",
+            lineage="",
+            parent_1_strain="OG Kush",
+            parent_1_phenotype="#1",
+            parent_2_strain="Chemdawg",
+            parent_2_phenotype="D",
+            notes="",
+        )
+        data = batch.to_dict()
+        assert data["parent_1_strain"] == "OG Kush"
+        assert data["parent_1_phenotype"] == "#1"
+        assert data["parent_2_strain"] == "Chemdawg"
+        assert data["parent_2_phenotype"] == "D"
+
+        restored = SeedBatch.from_dict(data)
+        assert restored.parent_1_strain == "OG Kush"
+        assert restored.parent_2_phenotype == "D"
+
+    def test_seed_batch_parent_fields_default_none(self) -> None:
+        """SeedBatch parent fields default to None for backward compatibility."""
+        batch = SeedBatch(batch_id="x", strain_name="Blue Dream", breeder="DJ Short",
+                          quantity=5, acquisition_date="2026-01-01", generation="S1",
+                          lineage="", notes="")
+        assert batch.parent_1_strain is None
+        assert batch.parent_2_strain is None
+        # Old dict without parent fields deserialises cleanly
+        old_dict = {"batch_id": "x", "strain_name": "Blue Dream", "breeder": "DJ Short",
+                    "quantity": 5, "acquisition_date": "2026-01-01", "generation": "S1",
+                    "lineage": "", "notes": ""}
+        restored = SeedBatch.from_dict(old_dict)
+        assert restored.parent_1_strain is None
+
 
 # ---------------------------------------------------------------------------
 # PollinationEvent
