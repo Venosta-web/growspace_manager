@@ -17,6 +17,10 @@ from custom_components.growspace_manager.const import (
     ATTR_LINEAGE,
     ATTR_MOLD_RESISTANCE,
     ATTR_NOTES,
+    ATTR_PARENT_1_PHENOTYPE,
+    ATTR_PARENT_1_STRAIN,
+    ATTR_PARENT_2_PHENOTYPE,
+    ATTR_PARENT_2_STRAIN,
     ATTR_PLANT_ID,
     ATTR_QUANTITY,
     ATTR_RECEIVER_PLANT_ID,
@@ -42,14 +46,19 @@ async def handle_add_seed_batch(
     call: ServiceCall,
 ) -> None:
     """Handle the add_seed_batch service call."""
+    data = call.data
     await coordinator.genetics_manager.async_add_seed_batch(
-        strain_name=call.data[ATTR_STRAIN_NAME],
-        breeder=call.data[ATTR_BREEDER],
-        quantity=call.data[ATTR_QUANTITY],
-        acquisition_date=call.data[ATTR_ACQUISITION_DATE].isoformat(),
-        generation=call.data[ATTR_GENERATION],
-        lineage=call.data[ATTR_LINEAGE],
-        notes=call.data.get(ATTR_NOTES, ""),
+        strain_name=data[ATTR_STRAIN_NAME],
+        breeder=data[ATTR_BREEDER],
+        quantity=data[ATTR_QUANTITY],
+        acquisition_date=data[ATTR_ACQUISITION_DATE].isoformat(),
+        generation=data[ATTR_GENERATION],
+        lineage=data.get(ATTR_LINEAGE, ""),
+        parent_1_strain=data.get(ATTR_PARENT_1_STRAIN),
+        parent_1_phenotype=data.get(ATTR_PARENT_1_PHENOTYPE),
+        parent_2_strain=data.get(ATTR_PARENT_2_STRAIN),
+        parent_2_phenotype=data.get(ATTR_PARENT_2_PHENOTYPE),
+        notes=data.get(ATTR_NOTES, ""),
     )
 
 

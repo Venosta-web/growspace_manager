@@ -8,6 +8,17 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
+from custom_components.growspace_manager.const import (
+    ATTR_ACQUISITION_DATE,
+    ATTR_BREEDER,
+    ATTR_GENERATION,
+    ATTR_PARENT_1_PHENOTYPE,
+    ATTR_PARENT_1_STRAIN,
+    ATTR_PARENT_2_PHENOTYPE,
+    ATTR_PARENT_2_STRAIN,
+    ATTR_QUANTITY,
+    ATTR_STRAIN_NAME,
+)
 from custom_components.growspace_manager.models import (
     Plant,
     PlantGenetics,
@@ -134,6 +145,10 @@ class TestHandleAddSeedBatch:
             acquisition_date="2026-03-01",
             generation="F1",
             lineage="Chemdawg x Hindu Kush",
+            parent_1_strain=None,
+            parent_1_phenotype=None,
+            parent_2_strain=None,
+            parent_2_phenotype=None,
             notes="Expo purchase",
         )
 
@@ -157,6 +172,43 @@ class TestHandleAddSeedBatch:
 
         _, kwargs = genetics_manager.async_add_seed_batch.call_args
         assert kwargs["notes"] == ""
+
+    async def test_passes_parent_fields_to_manager(
+        self,
+        mock_hass: AsyncMock,
+        mock_coordinator: MagicMock,
+        genetics_manager: AsyncMock,
+    ) -> None:
+        """Handler forwards parent strain/phenotype fields to genetics_manager."""
+        call = _make_call(
+            **{
+                ATTR_STRAIN_NAME: "Test F1",
+                ATTR_BREEDER: "Tester",
+                ATTR_QUANTITY: 5,
+                ATTR_ACQUISITION_DATE: date(2026, 1, 1),
+                ATTR_GENERATION: "F1",
+                ATTR_PARENT_1_STRAIN: "OG Kush",
+                ATTR_PARENT_1_PHENOTYPE: "#1",
+                ATTR_PARENT_2_STRAIN: "Chemdawg",
+                ATTR_PARENT_2_PHENOTYPE: "D",
+            }
+        )
+
+        await handle_add_seed_batch(mock_hass, mock_coordinator, call)
+
+        genetics_manager.async_add_seed_batch.assert_called_once_with(
+            strain_name="Test F1",
+            breeder="Tester",
+            quantity=5,
+            acquisition_date="2026-01-01",
+            generation="F1",
+            lineage="",
+            parent_1_strain="OG Kush",
+            parent_1_phenotype="#1",
+            parent_2_strain="Chemdawg",
+            parent_2_phenotype="D",
+            notes="",
+        )
 
 
 # ---------------------------------------------------------------------------

@@ -60,7 +60,11 @@ class GeneticsManager:
         quantity: int,
         acquisition_date: str,
         generation: str,
-        lineage: str,
+        lineage: str = "",
+        parent_1_strain: str | None = None,
+        parent_1_phenotype: str | None = None,
+        parent_2_strain: str | None = None,
+        parent_2_phenotype: str | None = None,
         notes: str = "",
     ) -> SeedBatch:
         """Create and store a new seed batch."""
@@ -72,6 +76,10 @@ class GeneticsManager:
             acquisition_date=acquisition_date,
             generation=generation,
             lineage=lineage,
+            parent_1_strain=parent_1_strain,
+            parent_1_phenotype=parent_1_phenotype,
+            parent_2_strain=parent_2_strain,
+            parent_2_phenotype=parent_2_phenotype,
             notes=notes,
         )
         self.seed_batches[batch.batch_id] = batch

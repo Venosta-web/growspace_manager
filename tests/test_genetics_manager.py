@@ -189,6 +189,27 @@ class TestAddSeedBatch:
         )
         assert b1.batch_id != b2.batch_id
 
+    async def test_add_seed_batch_with_parent_fields(
+        self, manager: GeneticsManager
+    ) -> None:
+        """async_add_seed_batch stores parent strain/phenotype fields."""
+        batch = await manager.async_add_seed_batch(
+            strain_name="Test F1",
+            breeder="Tester",
+            quantity=5,
+            acquisition_date="2026-01-01",
+            generation="F1",
+            lineage="",
+            parent_1_strain="OG Kush",
+            parent_1_phenotype="#1",
+            parent_2_strain="Chemdawg",
+            parent_2_phenotype="D",
+        )
+        assert batch.parent_1_strain == "OG Kush"
+        assert batch.parent_1_phenotype == "#1"
+        assert batch.parent_2_strain == "Chemdawg"
+        assert batch.parent_2_phenotype == "D"
+
 
 # ---------------------------------------------------------------------------
 # log_pollination

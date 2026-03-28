@@ -36,6 +36,10 @@ from .const import (
     ATTR_MOLD_RESISTANCE,
     ATTR_NAME,
     ATTR_NOTES,
+    ATTR_PARENT_1_PHENOTYPE,
+    ATTR_PARENT_1_STRAIN,
+    ATTR_PARENT_2_PHENOTYPE,
+    ATTR_PARENT_2_STRAIN,
     ATTR_PEST_RESISTANCE,
     ATTR_PH,
     ATTR_PHENOTYPE,
@@ -719,7 +723,11 @@ ADD_SEED_BATCH_SCHEMA = vol.Schema(
         vol.Required(ATTR_QUANTITY): vol.All(vol.Coerce(int), vol.Range(min=1)),
         vol.Required(ATTR_ACQUISITION_DATE): cv.date,
         vol.Required(ATTR_GENERATION): cv.string,
-        vol.Required(ATTR_LINEAGE): cv.string,
+        vol.Optional(ATTR_LINEAGE, default=""): cv.string,
+        vol.Optional(ATTR_PARENT_1_STRAIN): vol.Any(cv.string, None),
+        vol.Optional(ATTR_PARENT_1_PHENOTYPE): vol.Any(cv.string, None),
+        vol.Optional(ATTR_PARENT_2_STRAIN): vol.Any(cv.string, None),
+        vol.Optional(ATTR_PARENT_2_PHENOTYPE): vol.Any(cv.string, None),
         vol.Optional(ATTR_NOTES, default=""): cv.string,
     }
 )
