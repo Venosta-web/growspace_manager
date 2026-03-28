@@ -104,15 +104,29 @@ class TestSeedBatch:
 
     def test_seed_batch_parent_fields_default_none(self) -> None:
         """SeedBatch parent fields default to None for backward compatibility."""
-        batch = SeedBatch(batch_id="x", strain_name="Blue Dream", breeder="DJ Short",
-                          quantity=5, acquisition_date="2026-01-01", generation="S1",
-                          lineage="", notes="")
+        batch = SeedBatch(
+            batch_id="x",
+            strain_name="Blue Dream",
+            breeder="DJ Short",
+            quantity=5,
+            acquisition_date="2026-01-01",
+            generation="S1",
+            lineage="",
+            notes="",
+        )
         assert batch.parent_1_strain is None
         assert batch.parent_2_strain is None
         # Old dict without parent fields deserialises cleanly
-        old_dict = {"batch_id": "x", "strain_name": "Blue Dream", "breeder": "DJ Short",
-                    "quantity": 5, "acquisition_date": "2026-01-01", "generation": "S1",
-                    "lineage": "", "notes": ""}
+        old_dict = {
+            "batch_id": "x",
+            "strain_name": "Blue Dream",
+            "breeder": "DJ Short",
+            "quantity": 5,
+            "acquisition_date": "2026-01-01",
+            "generation": "S1",
+            "lineage": "",
+            "notes": "",
+        }
         restored = SeedBatch.from_dict(old_dict)
         assert restored.parent_1_strain is None
 
