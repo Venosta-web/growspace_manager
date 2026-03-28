@@ -2,16 +2,23 @@
 
 from __future__ import annotations
 
-from datetime import UTC, time
+from datetime import UTC, datetime, time
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from custom_components.growspace_manager.models import (
+    EnvironmentConfig,
+    IrrigationStrategy,
+    VisionCheckupConfig,
+    VisionCheckupResult,
+)
 from custom_components.growspace_manager.vision_checkup_scheduler import (
     VisionCheckupScheduler,
     calculate_checkup_times,
 )
 from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
 
 
 def test_calculate_checkup_times_veg_18_6():
@@ -125,11 +132,6 @@ def _make_mock_growspace(
     vision_enabled=True,
 ):
     """Create a mock growspace with configurable settings."""
-    from custom_components.growspace_manager.models import (
-        EnvironmentConfig,
-        IrrigationStrategy,
-        VisionCheckupConfig,
-    )
 
     gs = MagicMock()
     gs.id = growspace_id
@@ -225,7 +227,6 @@ async def test_run_vision_analysis_calls_ai_task(mock_hass, mock_coordinator):
 @pytest.mark.asyncio
 async def test_run_vision_analysis_no_cameras_raises_error(mock_hass, mock_coordinator):
     """Test that vision analysis raises ServiceValidationError when no cameras configured."""
-    from homeassistant.exceptions import ServiceValidationError
 
     gs = _make_mock_growspace(camera_entities=[])
     mock_coordinator.growspaces = {"tent1": gs}
@@ -238,12 +239,13 @@ async def test_run_vision_analysis_no_cameras_raises_error(mock_hass, mock_coord
 @pytest.mark.asyncio
 async def test_run_vision_analysis_growspace_not_found(mock_hass, mock_coordinator):
     """Test that vision analysis raises ServiceValidationError when growspace not found."""
-    from homeassistant.exceptions import ServiceValidationError
 
     mock_coordinator.growspaces = {}
     scheduler = VisionCheckupScheduler(mock_hass, mock_coordinator)
-    
-    with pytest.raises(ServiceValidationError, match="Growspace 'nonexistent' not found"):
+
+    with pytest.raises(
+        ServiceValidationError, match="Growspace 'nonexistent' not found"
+    ):
         await scheduler.run_vision_analysis("nonexistent", "mid")
 
 
@@ -314,7 +316,6 @@ async def test_run_vision_analysis_stores_result_in_history(
 @pytest.mark.asyncio
 async def test_run_vision_analysis_ai_failure_raises_error(mock_hass, mock_coordinator):
     """Test that AI failure raises HomeAssistantError."""
-    from homeassistant.exceptions import HomeAssistantError
 
     gs = _make_mock_growspace()
     mock_coordinator.growspaces = {"tent1": gs}
@@ -365,9 +366,6 @@ async def test_run_vision_analysis_ai_failure_raises_error(mock_hass, mock_coord
 
 def test_schedule_growspace_creates_three_timers(mock_hass, mock_coordinator):
     """Test that scheduling a growspace creates 3 timers (early, mid, late)."""
-    from custom_components.growspace_manager.vision_checkup_scheduler import (
-        VisionCheckupScheduler,
-    )
 
     gs = _make_mock_growspace(vision_enabled=True)
     mock_coordinator.growspaces = {"tent1": gs}
@@ -381,8 +379,6 @@ def test_schedule_growspace_creates_three_timers(mock_hass, mock_coordinator):
         with patch(
             "custom_components.growspace_manager.vision_checkup_scheduler.ha_now",
         ) as mock_now:
-            from datetime import datetime
-
             mock_now.return_value = datetime(2026, 3, 21, 10, 0, 0, tzinfo=UTC)
             scheduler.schedule_growspace("tent1")
 
@@ -393,9 +389,6 @@ def test_schedule_growspace_creates_three_timers(mock_hass, mock_coordinator):
 
 def test_schedule_growspace_skips_disabled_vision(mock_hass, mock_coordinator):
     """Test that scheduling skips growspaces with vision disabled."""
-    from custom_components.growspace_manager.vision_checkup_scheduler import (
-        VisionCheckupScheduler,
-    )
 
     gs = _make_mock_growspace(vision_enabled=False)
     mock_coordinator.growspaces = {"tent1": gs}
@@ -413,9 +406,6 @@ def test_schedule_growspace_skips_disabled_vision(mock_hass, mock_coordinator):
 
 def test_schedule_growspace_skips_no_cameras(mock_hass, mock_coordinator):
     """Test that scheduling skips growspaces with no cameras."""
-    from custom_components.growspace_manager.vision_checkup_scheduler import (
-        VisionCheckupScheduler,
-    )
 
     gs = _make_mock_growspace(camera_entities=[])
     mock_coordinator.growspaces = {"tent1": gs}
@@ -432,9 +422,6 @@ def test_schedule_growspace_skips_no_cameras(mock_hass, mock_coordinator):
 
 def test_async_stop_cancels_all_timers(mock_hass, mock_coordinator):
     """Test that async_stop cancels all registered timers."""
-    from custom_components.growspace_manager.vision_checkup_scheduler import (
-        VisionCheckupScheduler,
-    )
 
     mock_unsub_1 = MagicMock()
     mock_unsub_2 = MagicMock()
@@ -456,9 +443,6 @@ def test_async_stop_cancels_all_timers(mock_hass, mock_coordinator):
 @pytest.mark.asyncio
 async def test_get_active_day_hours_flower(mock_hass, mock_coordinator):
     """Test getting active day hours when a plant is in flower."""
-    from custom_components.growspace_manager.vision_checkup_scheduler import (
-        VisionCheckupScheduler,
-    )
 
     gs = _make_mock_growspace()
     plant = MagicMock()
@@ -470,9 +454,6 @@ async def test_get_active_day_hours_flower(mock_hass, mock_coordinator):
 
 def test_get_lights_on_time_fallback(mock_hass, mock_coordinator):
     """Test fallback when lights on time misses seconds."""
-    from custom_components.growspace_manager.vision_checkup_scheduler import (
-        VisionCheckupScheduler,
-    )
 
     gs = _make_mock_growspace(lights_on_time="06:30")
     scheduler = VisionCheckupScheduler(mock_hass, mock_coordinator)
@@ -482,9 +463,6 @@ def test_get_lights_on_time_fallback(mock_hass, mock_coordinator):
 @pytest.mark.asyncio
 async def test_run_vision_analysis_context_exception(mock_hass, mock_coordinator):
     """Test fallback context when context gathering fails."""
-    from custom_components.growspace_manager.vision_checkup_scheduler import (
-        VisionCheckupScheduler,
-    )
 
     gs = _make_mock_growspace()
     mock_coordinator.growspaces = {"tent1": gs}
@@ -518,10 +496,6 @@ async def test_run_vision_analysis_context_exception(mock_hass, mock_coordinator
 
 def test_build_vision_prompt_with_history(mock_hass, mock_coordinator):
     """Test prompt building includes previous trend history."""
-    from custom_components.growspace_manager.models import VisionCheckupResult
-    from custom_components.growspace_manager.vision_checkup_scheduler import (
-        VisionCheckupScheduler,
-    )
 
     scheduler = VisionCheckupScheduler(mock_hass, mock_coordinator)
 
@@ -550,9 +524,6 @@ def test_build_vision_prompt_with_history(mock_hass, mock_coordinator):
 
 def test_schedule_growspace_missing_growspace(mock_hass, mock_coordinator):
     """Test scheduling handles missing growspace."""
-    from custom_components.growspace_manager.vision_checkup_scheduler import (
-        VisionCheckupScheduler,
-    )
 
     mock_coordinator.growspaces = {}
     scheduler = VisionCheckupScheduler(mock_hass, mock_coordinator)
@@ -567,11 +538,6 @@ def test_schedule_growspace_missing_growspace(mock_hass, mock_coordinator):
 @pytest.mark.asyncio
 async def test_callback_exception_reschedules(mock_hass, mock_coordinator):
     """Test callback catches exceptions and still reschedules."""
-    from datetime import datetime
-
-    from custom_components.growspace_manager.vision_checkup_scheduler import (
-        VisionCheckupScheduler,
-    )
 
     gs = _make_mock_growspace()
     mock_coordinator.growspaces = {"tent1": gs}
@@ -592,9 +558,6 @@ async def test_callback_exception_reschedules(mock_hass, mock_coordinator):
 @pytest.mark.asyncio
 async def test_send_vision_notification_no_target(mock_hass, mock_coordinator):
     """Test notification exits if no target configured."""
-    from custom_components.growspace_manager.vision_checkup_scheduler import (
-        VisionCheckupScheduler,
-    )
 
     gs = _make_mock_growspace()
     gs.notification_target = None
@@ -612,10 +575,6 @@ async def test_send_vision_notification_no_target(mock_hass, mock_coordinator):
 @pytest.mark.asyncio
 async def test_send_vision_notification_exception(mock_hass, mock_coordinator):
     """Test notification handles exceptions gracefully."""
-    from custom_components.growspace_manager.models import VisionCheckupResult
-    from custom_components.growspace_manager.vision_checkup_scheduler import (
-        VisionCheckupScheduler,
-    )
 
     gs = _make_mock_growspace()
     gs.notification_target = "notify.mobile_app"
@@ -643,9 +602,6 @@ async def test_send_vision_notification_exception(mock_hass, mock_coordinator):
 
 def test_gather_context_data(mock_hass, mock_coordinator):
     """Test gathering context data uses the assistant."""
-    from custom_components.growspace_manager.vision_checkup_scheduler import (
-        VisionCheckupScheduler,
-    )
 
     scheduler = VisionCheckupScheduler(mock_hass, mock_coordinator)
     with patch(
@@ -894,7 +850,11 @@ def test_build_vision_prompt_injects_canopy_coverage(mock_hass, mock_coordinator
         return_value="",
     ):
         prompt = scheduler._build_vision_prompt(
-            "t1", "mid", {"growspace": {"name": "t", "id": "t1"}}, [], canopy_coverage=64.5
+            "t1",
+            "mid",
+            {"growspace": {"name": "t", "id": "t1"}},
+            [],
+            canopy_coverage=64.5,
         )
 
     assert "64.5%" in prompt
@@ -910,13 +870,19 @@ def test_build_vision_prompt_omits_coverage_when_none(mock_hass, mock_coordinato
         return_value="",
     ):
         prompt = scheduler._build_vision_prompt(
-            "t1", "mid", {"growspace": {"name": "t", "id": "t1"}}, [], canopy_coverage=None
+            "t1",
+            "mid",
+            {"growspace": {"name": "t", "id": "t1"}},
+            [],
+            canopy_coverage=None,
         )
 
     assert "CANOPY COVERAGE" not in prompt
 
 
-def test_build_vision_prompt_includes_grid_sector_instructions(mock_hass, mock_coordinator):
+def test_build_vision_prompt_includes_grid_sector_instructions(
+    mock_hass, mock_coordinator
+):
     """The prompt instructs the AI to reference grid sector labels for any issue."""
     scheduler = VisionCheckupScheduler(mock_hass, mock_coordinator)
 
@@ -974,12 +940,16 @@ async def test_run_vision_analysis_uses_processed_image_attachments(
             new_callable=AsyncMock,
             return_value=mock_ai_result,
         ) as mock_gen,
-        patch.object(scheduler, "_gather_context_data", return_value=_minimal_context()),
+        patch.object(
+            scheduler, "_gather_context_data", return_value=_minimal_context()
+        ),
     ):
         result = await scheduler.run_vision_analysis("tent1", "mid")
 
     assert result is not None
-    assert mock_gen.call_args.kwargs["attachments"] == [{"media_content_id": processed_uri}]
+    assert mock_gen.call_args.kwargs["attachments"] == [
+        {"media_content_id": processed_uri}
+    ]
 
 
 @pytest.mark.asyncio
@@ -1012,7 +982,9 @@ async def test_run_vision_analysis_falls_back_to_raw_camera_uris_when_processing
             new_callable=AsyncMock,
             return_value=mock_ai_result,
         ) as mock_gen,
-        patch.object(scheduler, "_gather_context_data", return_value=_minimal_context()),
+        patch.object(
+            scheduler, "_gather_context_data", return_value=_minimal_context()
+        ),
     ):
         result = await scheduler.run_vision_analysis("tent1", "mid")
 
@@ -1049,7 +1021,11 @@ async def test_run_vision_analysis_deletes_temp_files_after_success(
             "_process_camera_images",
             new_callable=AsyncMock,
             return_value=(
-                [{"media_content_id": "media-source://media_source/local/growspace_vision/tmp.jpg"}],
+                [
+                    {
+                        "media_content_id": "media-source://media_source/local/growspace_vision/tmp.jpg"
+                    }
+                ],
                 50.0,
                 [fake_temp],
             ),
@@ -1059,7 +1035,9 @@ async def test_run_vision_analysis_deletes_temp_files_after_success(
             new_callable=AsyncMock,
             return_value=mock_ai_result,
         ),
-        patch.object(scheduler, "_gather_context_data", return_value=_minimal_context()),
+        patch.object(
+            scheduler, "_gather_context_data", return_value=_minimal_context()
+        ),
     ):
         await scheduler.run_vision_analysis("tent1", "mid")
 
@@ -1095,9 +1073,10 @@ async def test_run_vision_analysis_deletes_temp_files_after_ai_failure(
             new_callable=AsyncMock,
             side_effect=Exception("AI service down"),
         ),
-        patch.object(scheduler, "_gather_context_data", return_value=_minimal_context()),
+        patch.object(
+            scheduler, "_gather_context_data", return_value=_minimal_context()
+        ),
     ):
-        from homeassistant.exceptions import HomeAssistantError
         with pytest.raises(HomeAssistantError, match="AI vision analysis failed"):
             await scheduler.run_vision_analysis("tent1", "mid")
 
@@ -1107,11 +1086,6 @@ async def test_run_vision_analysis_deletes_temp_files_after_ai_failure(
 @pytest.mark.asyncio
 async def test_callback_triggers_notification(mock_hass, mock_coordinator):
     """Test callback triggers notification on high severity."""
-    from datetime import datetime
-
-    from custom_components.growspace_manager.vision_checkup_scheduler import (
-        VisionCheckupScheduler,
-    )
 
     gs = _make_mock_growspace()
     mock_coordinator.growspaces = {"tent1": gs}
@@ -1229,7 +1203,9 @@ async def test_run_vision_analysis_saves_debug_images(
             new_callable=AsyncMock,
             return_value=mock_ai_result,
         ),
-        patch.object(scheduler, "_gather_context_data", return_value=_minimal_context()),
+        patch.object(
+            scheduler, "_gather_context_data", return_value=_minimal_context()
+        ),
     ):
         await scheduler.run_vision_analysis("tent1", "mid")
 
@@ -1280,7 +1256,9 @@ async def test_run_vision_analysis_debug_images_exception(
             new_callable=AsyncMock,
             return_value=mock_ai_result,
         ),
-        patch.object(scheduler, "_gather_context_data", return_value=_minimal_context()),
+        patch.object(
+            scheduler, "_gather_context_data", return_value=_minimal_context()
+        ),
         patch("shutil.copy2", side_effect=Exception("Copy failed")),
         patch("pathlib.Path.unlink", side_effect=OSError("Cannot delete")),
     ):
@@ -1290,11 +1268,9 @@ async def test_run_vision_analysis_debug_images_exception(
     assert fake_temp.exists()  # Could not be deleted due to OSError
 
 
-
 @pytest.mark.asyncio
 async def test_run_vision_analysis_no_ai_entity(mock_hass, mock_coordinator):
     """Test that vision analysis raises ServiceValidationError when no AI entity configured (vision_checkup_scheduler.py:439)."""
-    from homeassistant.exceptions import ServiceValidationError
 
     mock_coordinator.options = {"ai_settings": {}}  # No ai_task_entity_id
     gs = _make_mock_growspace(camera_entities=["camera.tent1_cam"])

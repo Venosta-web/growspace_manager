@@ -735,32 +735,6 @@ class PhenotypeScore(BaseModel):
 
 
 @dataclass(slots=True)
-class SeedBatch(BaseModel):
-    """A batch of seeds tracked in the genetics inventory."""
-
-    batch_id: str
-    strain_name: str
-    breeder: str
-    quantity: int
-    acquisition_date: str  # ISO date string (YYYY-MM-DD)
-    generation: str  # e.g. "F1", "S1", "BX1"
-    lineage: str
-    notes: str = ""
-
-
-@dataclass(slots=True)
-class PollinationEvent(BaseModel):
-    """Records a single pollination between two plants."""
-
-    event_id: str
-    date: str  # ISO date string (YYYY-MM-DD)
-    donor_plant_id: str  # Male or reversed-female
-    receiver_plant_id: str  # Female being pollinated
-    notes: str = ""
-    result_seed_batch_id: str | None = None  # Set when seeds are harvested
-
-
-@dataclass(slots=True)
 class HarvestMetrics(BaseModel):
     """Quantitative yield and quality data recorded at harvest."""
 

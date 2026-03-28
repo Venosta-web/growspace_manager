@@ -22,6 +22,7 @@ from custom_components.growspace_manager.sensor import (
     GrowspaceOverviewSensor,
     PlantEntity,
     StrainLibrarySensor,
+    VisionCheckupSensor,
     VpdSensor,
     async_setup_entry,
 )
@@ -231,8 +232,7 @@ async def test_async_setup_entry_calculated_vpd(mock_coordinator: MagicMock) -> 
 @pytest.mark.asyncio
 async def test_async_setup_entry_vision_sensor(mock_coordinator: MagicMock) -> None:
     """Test that async_setup_entry creates VisionCheckupSensor."""
-    from custom_components.growspace_manager.sensor import VisionCheckupSensor
-    
+
     hass = MagicMock()
     hass.config.config_dir = "/config"
 
@@ -242,9 +242,7 @@ async def test_async_setup_entry_vision_sensor(mock_coordinator: MagicMock) -> N
         name="Vision Growspace",
         rows=2,
         plants_per_row=2,
-        environment_config=EnvironmentConfig(
-            camera_entities=["camera.cam1"]
-        ),
+        environment_config=EnvironmentConfig(camera_entities=["camera.cam1"]),
     )
     mock_coordinator.growspaces = {"gs_vision": gs_mock}
     mock_coordinator.get_growspace_plants = Mock(return_value=[])
