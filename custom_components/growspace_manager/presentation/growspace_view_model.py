@@ -168,7 +168,7 @@ class GrowspaceViewModelBuilder:
             "grid": grid,
             "air_exchange": air_exchange,
             "sensor_types": self._get_sensor_types(growspace),
-            **biological_metrics,
+            **(biological_metrics or {}),
         }
 
         # Add environment attributes

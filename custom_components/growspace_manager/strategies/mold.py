@@ -89,14 +89,14 @@ class MoldRiskEvaluatorStrategy(BayesianEvaluatorStrategy):
             "clone_standard",
         )
 
-        if not is_early_stage and state.humidity > 90.0:
+        if not is_early_stage and state.humidity is not None and state.humidity > 90.0:
             # Extra penalty for extremely high humidity in non-early stages
             observations.append((0.99, 0.01))
             reasons.append((0.95, f"Extreme humidity risk: {state.humidity}%"))
-        elif state.humidity >= critical_humidity:
+        elif state.humidity is not None and state.humidity >= critical_humidity:
             observations.append((0.95, 0.05))
             reasons.append((0.9, f"Critical humidity: {state.humidity}%"))
-        elif state.humidity >= high_humidity:
+        elif state.humidity is not None and state.humidity >= high_humidity:
             observations.append((0.8, 0.2))
             reasons.append((0.7, f"High humidity: {state.humidity}%"))
 
@@ -120,7 +120,7 @@ class MoldRiskEvaluatorStrategy(BayesianEvaluatorStrategy):
         thr_b = CRITICAL_HUMIDITY_THRESHOLDS[stage_b]["high"]
         threshold = interpolate_value(thr_a, thr_b, factor)
 
-        if state.humidity < threshold:
+        if state.humidity is None or state.humidity < threshold:
             return
 
         prob = (

@@ -26,7 +26,7 @@ from .const import (
 from .domain.stage import STAGE_REGISTRY
 
 # Import type aliases from centralized types module
-from .types import BayesianOptions, DehumidifierThresholds, NutrientMap
+from .integration_types import BayesianOptions, DehumidifierThresholds, NutrientMap
 from .utils import calculate_days_since, days_to_week
 
 _LOGGER = logging.getLogger(__name__)

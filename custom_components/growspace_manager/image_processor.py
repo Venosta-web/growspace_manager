@@ -98,7 +98,7 @@ class GrowspaceImageProcessor:
 
         """
         try:
-            img = Image.open(io.BytesIO(image_bytes))
+            img: Image.Image = Image.open(io.BytesIO(image_bytes))
         except Exception as exc:
             raise ValueError(f"Could not decode the supplied image bytes: {exc}") from exc
 

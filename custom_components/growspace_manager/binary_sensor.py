@@ -371,13 +371,13 @@ class BayesianEnvironmentSensor(
 
         # Aggregate sensors with fallback to singular if needed
         temp = self._get_aggregated_sensor_value(
-            self.env_config.temperature_sensors or [self.env_config.temperature_sensor]
+            [s for s in (self.env_config.temperature_sensor, *self.env_config.temperature_sensors) if s is not None]
         )
         humidity = self._get_aggregated_sensor_value(
-            self.env_config.humidity_sensors or [self.env_config.humidity_sensor]
+            [s for s in (self.env_config.humidity_sensor, *self.env_config.humidity_sensors) if s is not None]
         )
         vpd = self._get_aggregated_sensor_value(
-            self.env_config.vpd_sensors or [self.env_config.vpd_sensor]
+            [s for s in (self.env_config.vpd_sensor, *self.env_config.vpd_sensors) if s is not None]
         )
 
         # Fallback: Calculate VPD if sensor is missing but Temp/Hum are available

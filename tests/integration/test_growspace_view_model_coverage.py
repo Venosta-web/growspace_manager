@@ -10,6 +10,7 @@ from custom_components.growspace_manager.models import (
     IrrigationTank,
     Plant,
     SensorGroup,
+    WaterUsageData,
 )
 from custom_components.growspace_manager.presentation.growspace_view_model import (
     GrowspaceViewModelBuilder,
@@ -266,3 +267,92 @@ def test_get_environment_attributes_depletion_status(hass: HomeAssistant, builde
         tank_data = attrs["irrigation_tanks"][0]
         assert tank_data["hours_remaining"] == 10.5
         assert tank_data["depletion_status"] == "discharging"
+
+
+def test_get_sensor_types_fallback(builder: GrowspaceViewModelBuilder) -> None:
+    """Test sensor type mapping fallback for single sensor entities."""
+    config = EnvironmentConfig(
+        temperature_sensors=["sensor.temp1"],
+        temperature_sensor="sensor.temp2",  # Different from list
+        humidity_sensors=["sensor.hum1"],
+        humidity_sensor="sensor.hum2",
+        vpd_sensors=["sensor.vpd1"],
+        vpd_sensor="sensor.vpd2",
+        light_sensors=["sensor.light1", "sensor.light2"],
+        co2_sensor="sensor.co2",
+        soil_moisture_sensor="sensor.soil",
+        exhaust_fan_entities=["fan.exhaust"],
+        circulation_fan_entities=["fan.circ"],
+        humidifier_entities=["humidifier.main"],
+        dehumidifier_entities=["dehumidifier.main"],
+    )
+    gs = Growspace(id="gs1", name="GS1", environment_config=config)
+    gs.irrigation_config = IrrigationConfig(
+        irrigation_pump_entity="switch.pump",
+        drain_pump_entity="switch.drain",
+    )
+    gs.environment_config.irrigation_tanks = [
+        IrrigationTank(name="Tank1", sensor_entity="sensor.tank1")
+    ]
+
+    sensor_types = builder._get_sensor_types(gs)
+
+    assert sensor_types["sensor.temp1"] == "temperature"
+    assert sensor_types["sensor.temp2"] == "temperature"
+    assert sensor_types["sensor.hum1"] == "humidity"
+    assert sensor_types["sensor.hum2"] == "humidity"
+    assert sensor_types["sensor.vpd1"] == "vpd"
+    assert sensor_types["sensor.vpd2"] == "vpd"
+    assert sensor_types["sensor.light2"] == "light"
+    assert sensor_types["sensor.co2"] == "co2"
+    assert sensor_types["sensor.soil"] == "soil_moisture"
+    assert sensor_types["fan.exhaust"] == "exhaust"
+    assert sensor_types["switch.pump"] == "irrigation_pump"
+    assert sensor_types["sensor.tank1"] == "irrigation_tank"
+
+
+def test_get_environment_attributes_more_entities(
+    hass: HomeAssistant, builder: GrowspaceViewModelBuilder
+) -> None:
+    """Test environment attributes with more entities active (humidifier, fans)."""
+    config = EnvironmentConfig(
+        humidifier_entities=["humidifier.test"],
+        circulation_fan_entities=["fan.circ_test"],
+    )
+    gs = Growspace(id="gs1", name="GS1", environment_config=config)
+    gs.irrigation_config = IrrigationConfig(drain_pump_entity="switch.drain_test")
+
+    hass.states.async_set("humidifier.test", "on")
+    hass.states.async_set("fan.circ_test", "off")
+    hass.states.async_set("switch.drain_test", "on")
+
+    attrs = builder._get_environment_attributes(gs)
+
+    assert attrs["humidifier_state"] == "on"
+    assert attrs["circulation_fan_state"] == "off"
+    assert attrs["drain_pump_state"] == "on"
+
+
+def test_build_water_usage_mapping(builder: GrowspaceViewModelBuilder) -> None:
+    """Test that build() correctly maps water usage data from the model."""
+    usage = WaterUsageData(
+        total_liters=250.0,
+        cycle_start_date="2024-03-01",
+        daily_readings=[{"date": "2024-03-01", "liters": 15.0}],
+    )
+    gs = Growspace(id="gs1", name="GS1", water_usage=usage)
+
+    # Mock necessary dependencies for build()
+    with (
+        patch.object(builder, "_build_rich_plant_grid", return_value={}),
+        patch.object(builder, "_get_sensor_types", return_value={}),
+        patch.object(builder, "_get_environment_attributes", return_value={}),
+    ):
+        # Now passing required arguments: plants and biological_metrics
+        data = builder.build(gs, plants=[], biological_metrics={})
+
+        water_usage = data.get("water_usage")
+        assert water_usage is not None
+        assert water_usage["total_liters"] == 250.0
+        assert water_usage["cycle_start_date"] == "2024-03-01"
+        assert len(water_usage["daily_readings"]) == 1

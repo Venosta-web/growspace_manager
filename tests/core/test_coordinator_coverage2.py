@@ -411,11 +411,16 @@ async def test_async_add_plant(hass: HomeAssistant) -> None:
     coordinator = create_test_coordinator(hass)
     gs = await coordinator.async_add_growspace(name="Test GS", rows=3, plants_per_row=3)
 
-    coordinator.plant_manager.add_plant = AsyncMock(return_value=MagicMock())
+    mock_plant = MagicMock()
+    mock_plant.plant_id = "mock-plant-id"
+    mock_plant.growspace_id = gs.id
+    mock_plant.genetics = MagicMock()
+    mock_plant.genetics.strain_name = "OG Kush"
+    coordinator.plant_manager.async_add_plant = AsyncMock(return_value=mock_plant)
     result = await coordinator.async_add_plant(
         growspace_id=gs.id, strain="OG Kush", row=0, col=0
     )
-    coordinator.plant_manager.add_plant.assert_called_once()
+    coordinator.plant_manager.async_add_plant.assert_called_once()
     assert result is not None
 
 

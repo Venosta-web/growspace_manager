@@ -2281,16 +2281,16 @@ class TestBayesianEnvironmentSensor:
             assert env_state.is_lights_on is True
 
             # Test with sensor_value = 0
-            mock_get_value.side_effect = [
-                25.0,
-                60.0,
-                1.0,
-                800.0,
-                0.0,
-                0.0,
-                0.0,
-                0.0,
-            ]  # Light sensor value is 0, plus soil moisture
+            mock_get_value.side_effect = lambda eid: {
+                "sensor.temp": 25.0,
+                "sensor.humidity": 60.0,
+                "sensor.vpd": 1.0,
+                "sensor.co2": 800.0,
+                "sensor.light_level": 0.0,
+                "sensor.exhaust": 0.0,
+                "sensor.humidifier": 0.0,
+                "sensor.soil_moisture": 0.0,
+            }.get(eid, 0.0)  # Light sensor value is 0
             # Reset hysteresis avoidance for new state
             base_sensor._last_light_change_time = utcnow() - timedelta(minutes=10)
             base_sensor._last_light_state = False
@@ -2299,16 +2299,16 @@ class TestBayesianEnvironmentSensor:
             assert env_state.is_lights_on is False
 
             # Test with sensor_value is None
-            mock_get_value.side_effect = [
-                25.0,
-                60.0,
-                1.0,
-                800.0,
-                None,
-                0.0,
-                0.0,
-                0.0,
-            ]  # Light sensor value is None, plus soil moisture
+            mock_get_value.side_effect = lambda eid: {
+                "sensor.temp": 25.0,
+                "sensor.humidity": 60.0,
+                "sensor.vpd": 1.0,
+                "sensor.co2": 800.0,
+                "sensor.light_level": None,
+                "sensor.exhaust": 0.0,
+                "sensor.humidifier": 0.0,
+                "sensor.soil_moisture": 0.0,
+            }.get(eid, 0.0)  # Light sensor value is None
             base_sensor._last_light_change_time = utcnow() - timedelta(minutes=10)
             base_sensor._last_light_state = False
             env_state = base_sensor._get_base_environment_state()

@@ -105,7 +105,7 @@ class GrowspaceManager:
             if irrigation_config is not None:
                 growspace_kwargs["irrigation_config"] = irrigation_config
 
-            growspace = Growspace(**growspace_kwargs)
+            growspace = Growspace.from_dict(growspace_kwargs)
             self.repository.growspaces[growspace_id] = growspace
 
             # Enable notifications by default for new growspace
@@ -173,7 +173,7 @@ class GrowspaceManager:
 
     async def update_growspace(
         self, growspace_id: str, **kwargs: dict[str, Any]
-    ) -> None:
+    ) -> Growspace:
         """Update a growspace."""
         async with self.lock:
             if growspace_id not in self.repository.growspaces:
@@ -213,6 +213,8 @@ class GrowspaceManager:
                 )
             else:
                 _LOGGER.debug("No changes detected for growspace %s", growspace_id)
+
+            return growspace
 
     def _update_growspace_structure(
         self, growspace: Growspace, kwargs: dict[str, Any], changes: list[str]
@@ -372,8 +374,6 @@ class GrowspaceManager:
             if self.cache:
                 self.cache.invalidate(canonical_id)
 
-        if update_data:
-            self.repository.data = self.view_model_builder.build_data_property()
         return canonical_id
 
     def _create_special_growspace(
@@ -468,7 +468,8 @@ class GrowspaceManager:
                 update_data=False,
             )
 
-        self.repository.data = self.view_model_builder.build_data_property()
+        if self.view_model_builder is not None:
+            self.view_model_builder.build_data_property()
 
     def ensure_calculated_sensors(self) -> None:
         """Ensure default calculated sensors are configured."""
@@ -550,7 +551,18 @@ class GrowspaceManager:
         return gs_id, gs_id
 
     # Aliases for compatibility
-    async_add_growspace = add_growspace
-    async_remove_growspace = remove_growspace
-    async_update_growspace = update_growspace
-    ensure_special_growspaces = ensure_default_growspaces
+    async def async_add_growspace(self, *args: Any, **kwargs: Any) -> Growspace:
+        """Alias for add_growspace."""
+        return await self.add_growspace(*args, **kwargs)
+
+    async def async_remove_growspace(self, growspace_id: str) -> None:
+        """Alias for remove_growspace."""
+        await self.remove_growspace(growspace_id)
+
+    async def async_update_growspace(self, *args: Any, **kwargs: Any) -> Growspace:
+        """Alias for update_growspace."""
+        return await self.update_growspace(*args, **kwargs)
+
+    async def ensure_special_growspaces(self) -> None:
+        """Alias for ensure_default_growspaces."""
+        await self.ensure_default_growspaces()
