@@ -34,13 +34,6 @@ def manager(save_callback: AsyncMock) -> GeneticsManager:
     return GeneticsManager(repository=repo, save_callback=save_callback)
 
 
-@pytest.fixture
-def base_manager(save_callback: AsyncMock) -> GeneticsManager:
-    """Alias for manager — a fresh GeneticsManager with an in-memory plant repository."""
-    repo = MagicMock()
-    repo.plants = {}
-    return GeneticsManager(repository=repo, save_callback=save_callback)
-
 
 @pytest.fixture
 def manager_with_plants(save_callback: AsyncMock) -> GeneticsManager:
@@ -570,8 +563,22 @@ class TestUpdatePollination:
     """Tests for async_update_pollination."""
 
     @pytest.fixture
-    def manager_with_event(self, base_manager: GeneticsManager) -> GeneticsManager:
-        """Manager pre-loaded with one pollination event."""
+    def manager_with_event(self, manager: GeneticsManager) -> GeneticsManager:
+        """Manager pre-loaded with one pollination event and two plants."""
+        manager.repository.plants = {
+            "plant-donor": Plant(
+                plant_id="plant-donor",
+                growspace_id="gs-1",
+                genetics=PlantGenetics(strain_name="Pollen Donor"),
+                stage="flower",
+            ),
+            "plant-receiver": Plant(
+                plant_id="plant-receiver",
+                growspace_id="gs-1",
+                genetics=PlantGenetics(strain_name="Female Receiver"),
+                stage="flower",
+            ),
+        }
         event = PollinationEvent(
             event_id="evt-1",
             date="2026-01-10",
@@ -579,8 +586,8 @@ class TestUpdatePollination:
             receiver_plant_id="plant-receiver",
             notes="",
         )
-        base_manager.pollination_events["evt-1"] = event
-        return base_manager
+        manager.pollination_events["evt-1"] = event
+        return manager
 
     async def test_updates_date(self, manager_with_event: GeneticsManager) -> None:
         """Updating date changes the event's date field."""
@@ -624,6 +631,20 @@ class TestUpdatePollination:
                 event_id="nonexistent", date="2026-01-01"
             )
 
+    async def test_updates_donor_plant_id(self, manager_with_event: GeneticsManager) -> None:
+        """Updating donor_plant_id changes the field."""
+        await manager_with_event.async_update_pollination(
+            event_id="evt-1", donor_plant_id="plant-donor"
+        )
+        assert manager_with_event.pollination_events["evt-1"].donor_plant_id == "plant-donor"
+
+    async def test_updates_receiver_plant_id(self, manager_with_event: GeneticsManager) -> None:
+        """Updating receiver_plant_id changes the field."""
+        await manager_with_event.async_update_pollination(
+            event_id="evt-1", receiver_plant_id="plant-receiver"
+        )
+        assert manager_with_event.pollination_events["evt-1"].receiver_plant_id == "plant-receiver"
+
 
 # ---------------------------------------------------------------------------
 # TestDeletePollination
@@ -634,7 +655,7 @@ class TestDeletePollination:
     """Tests for async_delete_pollination."""
 
     @pytest.fixture
-    def manager_with_event(self, base_manager: GeneticsManager) -> GeneticsManager:
+    def manager_with_event(self, manager: GeneticsManager) -> GeneticsManager:
         """Manager pre-loaded with one pollination event."""
         event = PollinationEvent(
             event_id="evt-del",
@@ -642,8 +663,8 @@ class TestDeletePollination:
             donor_plant_id="plant-donor",
             receiver_plant_id="plant-receiver",
         )
-        base_manager.pollination_events["evt-del"] = event
-        return base_manager
+        manager.pollination_events["evt-del"] = event
+        return manager
 
     async def test_removes_event(self, manager_with_event: GeneticsManager) -> None:
         """Deleted event is no longer in pollination_events."""

@@ -200,8 +200,10 @@ class GeneticsManager:
         if date is not None:
             event.date = date
         if donor_plant_id is not None:
+            self._validate_plant_for_pollination(donor_plant_id, "donor")
             event.donor_plant_id = donor_plant_id
         if receiver_plant_id is not None:
+            self._validate_plant_for_pollination(receiver_plant_id, "receiver")
             event.receiver_plant_id = receiver_plant_id
         if notes is not None:
             event.notes = notes
