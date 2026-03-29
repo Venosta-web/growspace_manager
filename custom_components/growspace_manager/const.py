@@ -452,6 +452,7 @@ class GrowspaceService(StrEnum):
     CONFIGURE_TANK = "configure_tank"
     # Genetics Services
     ADD_SEED_BATCH = "add_seed_batch"
+    UPDATE_SEED_BATCH = "update_seed_batch"
     LOG_POLLINATION = "log_pollination"
     SCORE_PHENOTYPE = "score_phenotype"
     HARVEST_SEEDS = "harvest_seeds"

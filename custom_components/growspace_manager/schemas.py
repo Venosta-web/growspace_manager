@@ -10,6 +10,7 @@ from .const import (
     ATTR_ACQUISITION_DATE,
     ATTR_AMOUNT_ML,
     ATTR_AROMA,
+    ATTR_BATCH_ID,
     ATTR_BREEDER,
     ATTR_CBD_PERCENTAGE,
     ATTR_COL,
@@ -760,5 +761,22 @@ HARVEST_SEEDS_SCHEMA = vol.Schema(
         vol.Required(ATTR_EVENT_ID): cv.string,
         vol.Required(ATTR_QUANTITY): vol.All(vol.Coerce(int), vol.Range(min=1)),
         vol.Optional(ATTR_NOTES, default=""): cv.string,
+    }
+)
+
+UPDATE_SEED_BATCH_SCHEMA = vol.Schema(
+    {
+        vol.Required(ATTR_BATCH_ID): cv.string,
+        vol.Optional(ATTR_STRAIN_NAME): cv.string,
+        vol.Optional(ATTR_BREEDER): cv.string,
+        vol.Optional(ATTR_QUANTITY): vol.All(vol.Coerce(int), vol.Range(min=1)),
+        vol.Optional(ATTR_ACQUISITION_DATE): cv.date,
+        vol.Optional(ATTR_GENERATION): cv.string,
+        vol.Optional(ATTR_LINEAGE): cv.string,
+        vol.Optional(ATTR_PARENT_1_STRAIN): vol.Any(cv.string, None),
+        vol.Optional(ATTR_PARENT_1_PHENOTYPE): vol.Any(cv.string, None),
+        vol.Optional(ATTR_PARENT_2_STRAIN): vol.Any(cv.string, None),
+        vol.Optional(ATTR_PARENT_2_PHENOTYPE): vol.Any(cv.string, None),
+        vol.Optional(ATTR_NOTES): cv.string,
     }
 )

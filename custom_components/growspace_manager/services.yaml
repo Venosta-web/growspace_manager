@@ -1503,6 +1503,52 @@ add_seed_batch:
       selector:
         text:
 
+update_seed_batch:
+  description: Update an existing seed batch in the genetics inventory
+  fields:
+    batch_id:
+      description: ID of the seed batch to update
+      required: true
+      selector:
+        text:
+    strain_name:
+      description: Name of the strain
+      required: false
+      selector:
+        text:
+    breeder:
+      description: Breeder or seed company
+      required: false
+      selector:
+        text:
+    quantity:
+      description: Number of seeds in this batch
+      required: false
+      selector:
+        number:
+          min: 1
+          mode: box
+    acquisition_date:
+      description: Date the seeds were acquired (YYYY-MM-DD)
+      required: false
+      selector:
+        text:
+    generation:
+      description: Genetic generation (e.g. F1, S1, IBL)
+      required: false
+      selector:
+        text:
+    lineage:
+      description: Lineage or cross description
+      required: false
+      selector:
+        text:
+    notes:
+      description: Optional notes
+      required: false
+      selector:
+        text:
+
 log_pollination:
   description: Record a pollination event between two plants
   fields:

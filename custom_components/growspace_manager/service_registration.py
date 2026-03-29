@@ -16,6 +16,7 @@ from .exceptions import GrowspaceError
 from .schemas import (
     ADD_SEED_BATCH_SCHEMA,
     APPLY_IPM_SCHEMA,
+    UPDATE_SEED_BATCH_SCHEMA,
     CONFIGURE_DRAIN_MONITORING_SCHEMA,
     CONFIGURE_TANK_SCHEMA,
     LOG_DRAIN_READING_SCHEMA,
@@ -409,6 +410,11 @@ async def register_services(
             GrowspaceService.ADD_SEED_BATCH,
             wrap(genetics.handle_add_seed_batch, False),
             ADD_SEED_BATCH_SCHEMA,
+        ),
+        (
+            GrowspaceService.UPDATE_SEED_BATCH,
+            wrap(genetics.handle_update_seed_batch, False),
+            UPDATE_SEED_BATCH_SCHEMA,
         ),
         (
             GrowspaceService.LOG_POLLINATION,

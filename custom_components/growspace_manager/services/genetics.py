@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING
 
 from custom_components.growspace_manager.const import (
     ATTR_ACQUISITION_DATE,
+    ATTR_BATCH_ID,
     ATTR_BREEDER,
     ATTR_DATE,
     ATTR_DONOR_PLANT_ID,
@@ -59,6 +60,31 @@ async def handle_add_seed_batch(
         parent_2_strain=data.get(ATTR_PARENT_2_STRAIN),
         parent_2_phenotype=data.get(ATTR_PARENT_2_PHENOTYPE),
         notes=data.get(ATTR_NOTES, ""),
+    )
+
+
+@handle_service_errors
+async def handle_update_seed_batch(
+    hass: HomeAssistant,
+    coordinator: GrowspaceCoordinator,
+    call: ServiceCall,
+) -> None:
+    """Handle the update_seed_batch service call."""
+    data = call.data
+    acq_date = data.get(ATTR_ACQUISITION_DATE)
+    await coordinator.genetics_manager.async_update_seed_batch(
+        batch_id=data[ATTR_BATCH_ID],
+        strain_name=data.get(ATTR_STRAIN_NAME),
+        breeder=data.get(ATTR_BREEDER),
+        quantity=data.get(ATTR_QUANTITY),
+        acquisition_date=acq_date.isoformat() if acq_date is not None else None,
+        generation=data.get(ATTR_GENERATION),
+        lineage=data.get(ATTR_LINEAGE),
+        parent_1_strain=data.get(ATTR_PARENT_1_STRAIN),
+        parent_1_phenotype=data.get(ATTR_PARENT_1_PHENOTYPE),
+        parent_2_strain=data.get(ATTR_PARENT_2_STRAIN),
+        parent_2_phenotype=data.get(ATTR_PARENT_2_PHENOTYPE),
+        notes=data.get(ATTR_NOTES),
     )
 
 

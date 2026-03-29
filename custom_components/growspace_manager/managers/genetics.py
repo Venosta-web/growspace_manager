@@ -89,6 +89,57 @@ class GeneticsManager:
         )
         return batch
 
+    async def async_update_seed_batch(
+        self,
+        batch_id: str,
+        strain_name: str | None = None,
+        breeder: str | None = None,
+        quantity: int | None = None,
+        acquisition_date: str | None = None,
+        generation: str | None = None,
+        lineage: str | None = None,
+        parent_1_strain: str | None = None,
+        parent_1_phenotype: str | None = None,
+        parent_2_strain: str | None = None,
+        parent_2_phenotype: str | None = None,
+        notes: str | None = None,
+    ) -> SeedBatch:
+        """Update an existing seed batch (partial overwrite).
+
+        Raises:
+            ServiceValidationError: If the batch is not found.
+        """
+        batch = self.seed_batches.get(batch_id)
+        if batch is None:
+            raise ServiceValidationError(f"Seed batch '{batch_id}' not found")
+
+        if strain_name is not None:
+            batch.strain_name = strain_name
+        if breeder is not None:
+            batch.breeder = breeder
+        if quantity is not None:
+            batch.quantity = quantity
+        if acquisition_date is not None:
+            batch.acquisition_date = acquisition_date
+        if generation is not None:
+            batch.generation = generation
+        if lineage is not None:
+            batch.lineage = lineage
+        if parent_1_strain is not None:
+            batch.parent_1_strain = parent_1_strain
+        if parent_1_phenotype is not None:
+            batch.parent_1_phenotype = parent_1_phenotype
+        if parent_2_strain is not None:
+            batch.parent_2_strain = parent_2_strain
+        if parent_2_phenotype is not None:
+            batch.parent_2_phenotype = parent_2_phenotype
+        if notes is not None:
+            batch.notes = notes
+
+        await self.save_callback()
+        _LOGGER.info("Updated seed batch '%s' (id=%s)", batch.strain_name, batch_id)
+        return batch
+
     def get_total_seed_count(self) -> int:
         """Return the total number of seeds across all batches."""
         return sum(b.quantity for b in self.seed_batches.values())
