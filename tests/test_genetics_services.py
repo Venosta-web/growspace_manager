@@ -27,9 +27,11 @@ from custom_components.growspace_manager.models import (
 )
 from custom_components.growspace_manager.services.genetics import (
     handle_add_seed_batch,
+    handle_delete_pollination,
     handle_harvest_seeds,
     handle_log_pollination,
     handle_score_phenotype,
+    handle_update_pollination,
 )
 from homeassistant.exceptions import ServiceValidationError
 
@@ -459,10 +461,6 @@ class TestHandleUpdatePollination:
         genetics_manager: AsyncMock,
     ) -> None:
         """Handler calls genetics_manager.async_update_pollination."""
-        from custom_components.growspace_manager.services.genetics import (
-            handle_update_pollination,
-        )
-
         call = _make_call(
             event_id="evt-1",
             date=date(2026, 2, 20),
@@ -485,10 +483,6 @@ class TestHandleUpdatePollination:
         genetics_manager: AsyncMock,
     ) -> None:
         """Optional fields omitted from call data are passed as None."""
-        from custom_components.growspace_manager.services.genetics import (
-            handle_update_pollination,
-        )
-
         call = _make_call(event_id="evt-1")
         await handle_update_pollination(mock_hass, mock_coordinator, call)
 
@@ -516,10 +510,6 @@ class TestHandleDeletePollination:
         genetics_manager: AsyncMock,
     ) -> None:
         """Handler calls genetics_manager.async_delete_pollination with event_id."""
-        from custom_components.growspace_manager.services.genetics import (
-            handle_delete_pollination,
-        )
-
         call = _make_call(event_id="evt-del")
         await handle_delete_pollination(mock_hass, mock_coordinator, call)
 
@@ -534,10 +524,6 @@ class TestHandleDeletePollination:
         genetics_manager: AsyncMock,
     ) -> None:
         """ServiceValidationError from manager propagates to caller."""
-        from custom_components.growspace_manager.services.genetics import (
-            handle_delete_pollination,
-        )
-
         genetics_manager.async_delete_pollination.side_effect = (
             ServiceValidationError("Pollination event 'x' not found")
         )
