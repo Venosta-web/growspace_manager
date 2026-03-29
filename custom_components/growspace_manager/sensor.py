@@ -49,7 +49,7 @@ from .const import (
 # Local / relative imports
 from .coordinator import GrowspaceCoordinator
 from .helpers import async_setup_statistics_sensor, async_setup_trend_sensor
-from .models import Growspace, Plant
+from .models import Growspace, GrowspaceType, Plant
 from .tank_depletion_predictor import TankDepletionPredictor
 from .utils import (
     VPDCalculator,
@@ -863,8 +863,17 @@ class CalculatedVpdSensor(BaseVpdSensor):
         humidity = self._get_float_state(self._humidity_sensor)
 
         if temp is not None and humidity is not None:
+            # Check if we should override the LST offset based on growspace type
+            lst_offset = self._lst_offset
+            growspace = self._coordinator.growspaces.get(self._growspace_id)
+            if growspace and growspace.growspace_type in (
+                GrowspaceType.DRY,
+                GrowspaceType.CURE,
+            ):
+                lst_offset = 0.0
+
             return VPDCalculator.calculate_vpd_with_lst_offset(
-                temp, humidity, self._lst_offset
+                temp, humidity, lst_offset
             )
         return None
 
@@ -872,10 +881,20 @@ class CalculatedVpdSensor(BaseVpdSensor):
     @override  # type: ignore[misc]
     def extra_state_attributes(self) -> dict[str, Any]:
         """Return additional state attributes."""
+        # Determine active LST offset
+        active_lst_offset = self._lst_offset
+        growspace = self._coordinator.growspaces.get(self._growspace_id)
+        if growspace and growspace.growspace_type in (
+            GrowspaceType.DRY,
+            GrowspaceType.CURE,
+        ):
+            active_lst_offset = 0.0
+
         return {
             "temperature_sensor": self._temp_sensor,
             "humidity_sensor": self._humidity_sensor,
-            "lst_offset": self._lst_offset,
+            "lst_offset": active_lst_offset,
+            "configured_lst_offset": self._lst_offset,
             "calculation_method": "Calculated from temperature and humidity",
         }
 
