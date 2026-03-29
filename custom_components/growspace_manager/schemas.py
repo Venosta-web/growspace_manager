@@ -780,3 +780,19 @@ UPDATE_SEED_BATCH_SCHEMA = vol.Schema(
         vol.Optional(ATTR_NOTES): cv.string,
     }
 )
+
+UPDATE_POLLINATION_SCHEMA = vol.Schema(
+    {
+        vol.Required(ATTR_EVENT_ID): cv.string,
+        vol.Optional(ATTR_DATE): cv.date,
+        vol.Optional(ATTR_DONOR_PLANT_ID): cv.string,
+        vol.Optional(ATTR_RECEIVER_PLANT_ID): cv.string,
+        vol.Optional(ATTR_NOTES): cv.string,
+    }
+)
+
+DELETE_POLLINATION_SCHEMA = vol.Schema(
+    {
+        vol.Required(ATTR_EVENT_ID): cv.string,
+    }
+)

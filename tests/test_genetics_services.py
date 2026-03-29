@@ -430,3 +430,117 @@ class TestHandleHarvestSeeds:
 
         with pytest.raises(ServiceValidationError, match="already"):
             await handle_harvest_seeds(mock_hass, mock_coordinator, call)
+
+
+# ---------------------------------------------------------------------------
+# handle_update_pollination
+# ---------------------------------------------------------------------------
+
+
+class TestHandleUpdatePollination:
+    """Tests for the update_pollination service handler."""
+
+    @pytest.fixture(autouse=True)
+    def _setup_mock(self, genetics_manager: AsyncMock) -> None:
+        genetics_manager.async_update_pollination = AsyncMock(
+            return_value=PollinationEvent(
+                event_id="evt-1",
+                date="2026-02-20",
+                donor_plant_id="plant-donor",
+                receiver_plant_id="plant-receiver",
+                notes="edited",
+            )
+        )
+
+    async def test_delegates_to_manager(
+        self,
+        mock_hass: AsyncMock,
+        mock_coordinator: MagicMock,
+        genetics_manager: AsyncMock,
+    ) -> None:
+        """Handler calls genetics_manager.async_update_pollination."""
+        from custom_components.growspace_manager.services.genetics import (
+            handle_update_pollination,
+        )
+
+        call = _make_call(
+            event_id="evt-1",
+            date=date(2026, 2, 20),
+            notes="edited",
+        )
+        await handle_update_pollination(mock_hass, mock_coordinator, call)
+
+        genetics_manager.async_update_pollination.assert_called_once_with(
+            event_id="evt-1",
+            date="2026-02-20",
+            donor_plant_id=None,
+            receiver_plant_id=None,
+            notes="edited",
+        )
+
+    async def test_omitted_fields_pass_none(
+        self,
+        mock_hass: AsyncMock,
+        mock_coordinator: MagicMock,
+        genetics_manager: AsyncMock,
+    ) -> None:
+        """Optional fields omitted from call data are passed as None."""
+        from custom_components.growspace_manager.services.genetics import (
+            handle_update_pollination,
+        )
+
+        call = _make_call(event_id="evt-1")
+        await handle_update_pollination(mock_hass, mock_coordinator, call)
+
+        _, kwargs = genetics_manager.async_update_pollination.call_args
+        assert kwargs["date"] is None
+        assert kwargs["notes"] is None
+
+
+# ---------------------------------------------------------------------------
+# handle_delete_pollination
+# ---------------------------------------------------------------------------
+
+
+class TestHandleDeletePollination:
+    """Tests for the delete_pollination service handler."""
+
+    @pytest.fixture(autouse=True)
+    def _setup_mock(self, genetics_manager: AsyncMock) -> None:
+        genetics_manager.async_delete_pollination = AsyncMock()
+
+    async def test_delegates_to_manager(
+        self,
+        mock_hass: AsyncMock,
+        mock_coordinator: MagicMock,
+        genetics_manager: AsyncMock,
+    ) -> None:
+        """Handler calls genetics_manager.async_delete_pollination with event_id."""
+        from custom_components.growspace_manager.services.genetics import (
+            handle_delete_pollination,
+        )
+
+        call = _make_call(event_id="evt-del")
+        await handle_delete_pollination(mock_hass, mock_coordinator, call)
+
+        genetics_manager.async_delete_pollination.assert_called_once_with(
+            event_id="evt-del"
+        )
+
+    async def test_propagates_service_validation_error(
+        self,
+        mock_hass: AsyncMock,
+        mock_coordinator: MagicMock,
+        genetics_manager: AsyncMock,
+    ) -> None:
+        """ServiceValidationError from manager propagates to caller."""
+        from custom_components.growspace_manager.services.genetics import (
+            handle_delete_pollination,
+        )
+
+        genetics_manager.async_delete_pollination.side_effect = (
+            ServiceValidationError("Pollination event 'x' not found")
+        )
+        call = _make_call(event_id="x")
+        with pytest.raises(ServiceValidationError, match="not found"):
+            await handle_delete_pollination(mock_hass, mock_coordinator, call)

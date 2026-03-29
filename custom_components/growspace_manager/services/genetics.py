@@ -135,3 +135,33 @@ async def handle_harvest_seeds(
         quantity=call.data[ATTR_QUANTITY],
         notes=call.data.get(ATTR_NOTES, ""),
     )
+
+
+@handle_service_errors
+async def handle_update_pollination(
+    hass: HomeAssistant,
+    coordinator: GrowspaceCoordinator,
+    call: ServiceCall,
+) -> None:
+    """Handle the update_pollination service call."""
+    data = call.data
+    date_val = data.get(ATTR_DATE)
+    await coordinator.genetics_manager.async_update_pollination(
+        event_id=data[ATTR_EVENT_ID],
+        date=date_val.isoformat() if date_val is not None else None,
+        donor_plant_id=data.get(ATTR_DONOR_PLANT_ID),
+        receiver_plant_id=data.get(ATTR_RECEIVER_PLANT_ID),
+        notes=data.get(ATTR_NOTES),
+    )
+
+
+@handle_service_errors
+async def handle_delete_pollination(
+    hass: HomeAssistant,
+    coordinator: GrowspaceCoordinator,
+    call: ServiceCall,
+) -> None:
+    """Handle the delete_pollination service call."""
+    await coordinator.genetics_manager.async_delete_pollination(
+        event_id=call.data[ATTR_EVENT_ID],
+    )
