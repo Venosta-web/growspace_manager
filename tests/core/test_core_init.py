@@ -11,7 +11,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 from aiohttp import BodyPartReader
 import pytest
-from pytest_homeassistant_custom_component.common import MockConfigEntry
+from tests.common import MockConfigEntry
 
 from custom_components.growspace_manager import (
     _async_cancel_coordinators,
@@ -42,6 +42,7 @@ from custom_components.growspace_manager.schemas import (
     DEBUG_CONSOLIDATE_DUPLICATE_SPECIAL_SCHEMA,
     DEBUG_LIST_GROWSPACES_SCHEMA,
     DEBUG_RESET_SPECIAL_GROWSPACES_SCHEMA,
+    DELETE_POLLINATION_SCHEMA,
     EXPORT_GROW_REPORT_SCHEMA,
     EXPORT_STRAIN_LIBRARY_SCHEMA,
     HARVEST_PLANT_SCHEMA,
@@ -78,6 +79,7 @@ from custom_components.growspace_manager.schemas import (
     UPDATE_GROWSPACE_SCHEMA,
     UPDATE_HARVEST_METRICS_SCHEMA,
     UPDATE_PLANT_SCHEMA,
+    UPDATE_POLLINATION_SCHEMA,
     UPDATE_SEED_BATCH_SCHEMA,
     UPDATE_STRAIN_META_SCHEMA,
     WATER_GROWSPACE_SCHEMA,
@@ -287,6 +289,8 @@ async def test_register_services(mock_hass, mock_strain_library_for_services) ->
         "log_pollination": LOG_POLLINATION_SCHEMA,
         "score_phenotype": SCORE_PHENOTYPE_SCHEMA,
         "harvest_seeds": HARVEST_SEEDS_SCHEMA,
+        "update_pollination": UPDATE_POLLINATION_SCHEMA,
+        "delete_pollination": DELETE_POLLINATION_SCHEMA,
     }
 
     # Verify call count
