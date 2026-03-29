@@ -180,6 +180,49 @@ class GeneticsManager:
         )
         return event
 
+    async def async_update_pollination(
+        self,
+        event_id: str,
+        date: str | None = None,
+        donor_plant_id: str | None = None,
+        receiver_plant_id: str | None = None,
+        notes: str | None = None,
+    ) -> PollinationEvent:
+        """Update an existing pollination event (partial overwrite).
+
+        Raises:
+            ServiceValidationError: If the event is not found.
+        """
+        event = self.pollination_events.get(event_id)
+        if event is None:
+            raise ServiceValidationError(f"Pollination event '{event_id}' not found")
+
+        if date is not None:
+            event.date = date
+        if donor_plant_id is not None:
+            event.donor_plant_id = donor_plant_id
+        if receiver_plant_id is not None:
+            event.receiver_plant_id = receiver_plant_id
+        if notes is not None:
+            event.notes = notes
+
+        await self.save_callback()
+        _LOGGER.info("Updated pollination event %s", event_id)
+        return event
+
+    async def async_delete_pollination(self, event_id: str) -> None:
+        """Remove a pollination event.
+
+        Raises:
+            ServiceValidationError: If the event is not found.
+        """
+        if event_id not in self.pollination_events:
+            raise ServiceValidationError(f"Pollination event '{event_id}' not found")
+
+        del self.pollination_events[event_id]
+        await self.save_callback()
+        _LOGGER.info("Deleted pollination event %s", event_id)
+
     # ------------------------------------------------------------------
     # Seed harvesting
     # ------------------------------------------------------------------

@@ -456,6 +456,8 @@ class GrowspaceService(StrEnum):
     LOG_POLLINATION = "log_pollination"
     SCORE_PHENOTYPE = "score_phenotype"
     HARVEST_SEEDS = "harvest_seeds"
+    UPDATE_POLLINATION = "update_pollination"
+    DELETE_POLLINATION = "delete_pollination"
 
 
 class TrainingTechnique(StrEnum):
