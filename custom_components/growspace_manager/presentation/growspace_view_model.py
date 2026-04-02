@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import contextlib
+from datetime import UTC, datetime, timedelta
 import logging
 from typing import TYPE_CHECKING, Any
 
@@ -36,6 +37,61 @@ if TYPE_CHECKING:
     from homeassistant.core import HomeAssistant
 
 _LOGGER = logging.getLogger(__name__)
+
+_7_DAYS = timedelta(days=7)
+
+
+def _compute_tank_water_summaries(
+    events: list[dict[str, Any]],
+) -> dict[str, Any]:
+    """Compute compact 7-day water summaries from the full event list.
+
+    Returns two compact structures suitable for entity attributes:
+    - ``recent_refills``: up to 20 refill events within the last 7 days.
+    - ``daily_7d``: per-day consumed/refilled totals for the last 7 days.
+    """
+    now = datetime.now(tz=UTC)
+    window_start = now - _7_DAYS
+
+    refills: list[dict[str, Any]] = []
+    daily: dict[str, dict[str, float]] = {}
+
+    for ev in events:
+        try:
+            ts_str: str = ev["timestamp"]
+            ts = datetime.fromisoformat(ts_str)
+            if ts.tzinfo is None:
+                ts = ts.replace(tzinfo=UTC)
+        except (KeyError, ValueError):
+            continue
+
+        if ts < window_start:
+            continue
+
+        date_key = ts.strftime("%Y-%m-%d")
+        if date_key not in daily:
+            daily[date_key] = {"consumed": 0.0, "refilled": 0.0}
+
+        ev_type = ev.get("event_type", "")
+        liters = float(ev.get("liters", 0.0))
+
+        if ev_type == "consumption":
+            daily[date_key]["consumed"] += liters
+        elif ev_type == "refill":
+            daily[date_key]["refilled"] += liters
+            refills.append(ev)
+
+    return {
+        "recent_refills": refills[-20:],
+        "daily_7d": [
+            {
+                "date": k,
+                "consumed": round(v["consumed"], 3),
+                "refilled": round(v["refilled"], 3),
+            }
+            for k, v in sorted(daily.items())
+        ],
+    }
 
 
 class GrowspaceViewModelBuilder:
@@ -468,11 +524,14 @@ class GrowspaceViewModelBuilder:
                         "hours_remaining": hours_remaining,
                         "depletion_status": depletion_status,
                         "water_history": {
-                            # Limit to 24 snapshots (6 h at 15-min intervals)
-                            # and 20 events to stay within HA's 16 384-byte
-                            # entity-attribute size limit.
+                            # Raw snapshots and events are limited to stay
+                            # within HA's 16 384-byte entity-attribute limit.
+                            # Compact pre-computed summaries cover the full 7d.
                             "snapshots": tank.water_history.snapshots[-24:],
                             "events": tank.water_history.events[-20:],
+                            **_compute_tank_water_summaries(
+                                tank.water_history.events
+                            ),
                         },
                     }
                 )

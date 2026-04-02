@@ -4,7 +4,7 @@ from datetime import date
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
-from pytest_homeassistant_custom_component.common import async_capture_events
+from tests.common import async_capture_events
 from test_coordinator import create_test_coordinator
 
 from custom_components.growspace_manager.const import DOMAIN

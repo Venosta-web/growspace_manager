@@ -4,7 +4,7 @@ import datetime
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from pytest_homeassistant_custom_component.common import async_capture_events
+from tests.common import async_capture_events
 
 from custom_components.growspace_manager.const import EVENT_GROWSPACE_LOG_ENTRY
 from custom_components.growspace_manager.coordinator import GrowspaceCoordinator

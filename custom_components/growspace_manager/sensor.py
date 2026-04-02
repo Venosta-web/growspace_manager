@@ -106,13 +106,18 @@ async def _async_create_derivative_sensors(
 
     # Helper to safely get from dataclass or dict
     def get_val(key: str, default: Any = None) -> Any:
-        if isinstance(growspace.environment_config, dict):
-            return growspace.environment_config.get(key, default)
-        return getattr(growspace.environment_config, key, default)
+        try:
+            if isinstance(growspace.environment_config, dict):
+                return growspace.environment_config.get(key, default)
+            return getattr(growspace.environment_config, key, default)
+        except AttributeError:
+            return default
 
     for sensor_type, (singular_key, plural_key) in metric_map.items():
         # Get all sensors for this metric
-        sensors = list(get_val(plural_key, []))
+        raw_sensors = get_val(plural_key, [])
+        # Ensure it's a list even if it's a Mock or other type
+        sensors = list(raw_sensors) if hasattr(raw_sensors, "__iter__") else []
         singular_val = get_val(singular_key)
         if singular_val and singular_val not in sensors:
             sensors.insert(0, singular_val)
@@ -267,8 +272,8 @@ async def _create_initial_entities(
             calculated_vpd_growspace_ids.add(vpd_entity.unique_id)
 
         # Create tank depletion sensors if environment config has tanks
-        if growspace.environment_config:
-            env_config = growspace.environment_config
+        env_config = getattr(growspace, "environment_config", None)
+        if env_config:
 
             # Safely get irrigation_tanks (handle both dict and dataclass)
             irrigation_tanks = []
@@ -460,9 +465,12 @@ def _check_calculated_vpd_sensor(
 
     # Helper to safely get from dataclass or dict
     def get_val(key: str, default: Any = None) -> Any:
-        if isinstance(env_config, dict):
-            return env_config.get(key, default)
-        return getattr(env_config, key, default)
+        try:
+            if isinstance(env_config, dict):
+                return env_config.get(key, default)
+            return getattr(env_config, key, default)
+        except AttributeError:
+            return default
 
     # Ensure we are working with the plural lists
     temp_sensors = get_val("temperature_sensors", [])

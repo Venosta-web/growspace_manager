@@ -1,3 +1,4 @@
+from datetime import UTC, datetime, timedelta
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -14,6 +15,7 @@ from custom_components.growspace_manager.models import (
 )
 from custom_components.growspace_manager.presentation.growspace_view_model import (
     GrowspaceViewModelBuilder,
+    _compute_tank_water_summaries,
 )
 from homeassistant.core import HomeAssistant
 
@@ -356,3 +358,112 @@ def test_build_water_usage_mapping(builder: GrowspaceViewModelBuilder) -> None:
         assert water_usage["total_liters"] == 250.0
         assert water_usage["cycle_start_date"] == "2024-03-01"
         assert len(water_usage["daily_readings"]) == 1
+
+
+def test_compute_tank_water_summaries_empty() -> None:
+    """Empty event list returns empty summaries."""
+    result = _compute_tank_water_summaries([])
+    assert result["recent_refills"] == []
+    assert result["daily_7d"] == []
+
+
+def test_compute_tank_water_summaries_old_events_excluded() -> None:
+    """Events older than 7 days must not appear in the output."""
+    old_ts = (datetime.now(tz=UTC) - timedelta(days=8)).isoformat()
+    events = [
+        {"timestamp": old_ts, "event_type": "consumption", "liters": 5.0},
+        {"timestamp": old_ts, "event_type": "refill", "liters": 50.0},
+    ]
+    result = _compute_tank_water_summaries(events)
+    assert result["recent_refills"] == []
+    assert result["daily_7d"] == []
+
+
+def test_compute_tank_water_summaries_recent_events() -> None:
+    """Recent events within 7 days must appear in output."""
+    now = datetime.now(tz=UTC)
+    today = now.strftime("%Y-%m-%d")
+    yesterday = (now - timedelta(days=1)).strftime("%Y-%m-%d")
+
+    today_ts = now.isoformat()
+    yest_ts = (now - timedelta(days=1)).isoformat()
+
+    events = [
+        {"timestamp": yest_ts, "event_type": "consumption", "liters": 3.0},
+        {"timestamp": today_ts, "event_type": "consumption", "liters": 2.5},
+        {"timestamp": today_ts, "event_type": "refill", "liters": 40.0},
+    ]
+    result = _compute_tank_water_summaries(events)
+
+    # recent_refills must only contain the refill event
+    assert len(result["recent_refills"]) == 1
+    assert result["recent_refills"][0]["event_type"] == "refill"
+
+    # daily_7d must aggregate correctly per day
+    daily_by_date = {d["date"]: d for d in result["daily_7d"]}
+    assert daily_by_date[yesterday]["consumed"] == pytest.approx(3.0)
+    assert daily_by_date[yesterday]["refilled"] == pytest.approx(0.0)
+    assert daily_by_date[today]["consumed"] == pytest.approx(2.5)
+    assert daily_by_date[today]["refilled"] == pytest.approx(40.0)
+
+
+def test_compute_tank_water_summaries_recent_refills_capped_at_20() -> None:
+    """recent_refills must be limited to 20 even when there are many refill events."""
+    now = datetime.now(tz=UTC)
+    events = [
+        {
+            "timestamp": (now - timedelta(hours=i)).isoformat(),
+            "event_type": "refill",
+            "liters": 1.0,
+        }
+        for i in range(30)  # 30 refills within last 7 days
+    ]
+    result = _compute_tank_water_summaries(events)
+    assert len(result["recent_refills"]) == 20
+
+
+def test_compute_tank_water_summaries_invalid_event_skipped() -> None:
+    """Events with missing or invalid timestamps must be skipped gracefully."""
+    good_ts = datetime.now(tz=UTC).isoformat()
+    events = [
+        {"event_type": "consumption", "liters": 1.0},  # no timestamp
+        {"timestamp": "not-a-date", "event_type": "consumption", "liters": 1.0},
+        {"timestamp": good_ts, "event_type": "consumption", "liters": 5.0},
+    ]
+    result = _compute_tank_water_summaries(events)
+    today = datetime.now(tz=UTC).strftime("%Y-%m-%d")
+    daily_by_date = {d["date"]: d for d in result["daily_7d"]}
+    assert daily_by_date[today]["consumed"] == pytest.approx(5.0)
+
+
+def test_water_history_includes_summaries_in_view_model(
+    hass: HomeAssistant, builder: GrowspaceViewModelBuilder
+) -> None:
+    """_get_environment_attributes must include recent_refills and daily_7d in water_history."""
+    now = datetime.now(tz=UTC)
+    events = [
+        {"timestamp": now.isoformat(), "event_type": "consumption", "liters": 2.0},
+        {"timestamp": now.isoformat(), "event_type": "refill", "liters": 30.0},
+    ]
+    tank = IrrigationTank(sensor_entity="sensor.tank1", name="Tank 1", volume_liters=100.0)
+    tank.water_history.events = events
+
+    env_config = EnvironmentConfig(irrigation_tanks=[tank])
+    gs = Growspace(id="gs1", name="GS1", environment_config=env_config)
+
+    # Patch hass.states to avoid real sensor lookups
+    hass.states.async_set("sensor.tank1", "75")
+
+    attrs = builder._get_environment_attributes(gs)
+
+    tank_data = attrs["irrigation_tanks"][0]
+    wh = tank_data["water_history"]
+
+    assert "recent_refills" in wh
+    assert "daily_7d" in wh
+    assert len(wh["recent_refills"]) == 1
+    assert wh["recent_refills"][0]["event_type"] == "refill"
+    assert len(wh["daily_7d"]) == 1
+    today_entry = wh["daily_7d"][0]
+    assert today_entry["consumed"] == pytest.approx(2.0)
+    assert today_entry["refilled"] == pytest.approx(30.0)

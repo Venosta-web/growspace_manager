@@ -100,10 +100,11 @@ async def test_minimal_sensor_vpd_calculation(mock_coordinator) -> None:
     env_state = sensor._get_base_environment_state()
 
     # 5. Assertions
-    # With the fix, VPD should be calculated from 25.0 C and 60.0% RH
-    # Expected VPD approx 1.27 kPa
+    # VPD is calculated using the LST (Leaf Surface Temperature) model with the
+    # default lst_offset=-2.0 from EnvironmentConfig.
+    # leaf_svp(23°C) - air_avp(25°C, 60%) ≈ 2.804 - 1.895 = 0.91 kPa
 
     assert env_state.temp == 25.0
     assert env_state.humidity == 60.0
     assert env_state.vpd is not None
-    assert env_state.vpd == 1.26
+    assert env_state.vpd == 0.91

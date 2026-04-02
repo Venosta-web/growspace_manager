@@ -11,7 +11,7 @@ from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, Mock, patch
 
 import pytest
-from pytest_homeassistant_custom_component.common import MockConfigEntry
+from tests.common import MockConfigEntry
 import voluptuous as vol
 
 from custom_components.growspace_manager.config_flow import (

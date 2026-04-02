@@ -14,7 +14,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from common import create_plant
 from freezegun import freeze_time
 import pytest
-from pytest_homeassistant_custom_component.common import (
+from tests.common import (
     MockConfigEntry,
     async_capture_events,
 )
