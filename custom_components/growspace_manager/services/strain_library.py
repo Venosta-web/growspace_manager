@@ -85,9 +85,8 @@ def _downscale_logo_if_needed(logo_data: str | None) -> str | None:
         # If it's still large due to complexity, convert to 1-bit monochrome
         if len(result) >= 25000:
             if img.mode in ("RGBA", "LA") or (img.mode == "P" and "transparency" in img.info):
+                img = img.convert("RGBA")
                 background = Image.new("RGB", img.size, (255, 255, 255))
-                if img.mode == "P":
-                    img = img.convert("RGBA")
                 background.paste(img, mask=img.split()[3])
                 img = background
 
