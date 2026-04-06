@@ -17,7 +17,7 @@ from custom_components.growspace_manager.vision_checkup_scheduler import (
 
 def test_coordinator_has_vision_scheduler(hass: HomeAssistant) -> None:
     """Test that coordinator has vision_scheduler attribute of correct type."""
-    from pytest_homeassistant_custom_component.common import MockConfigEntry
+    from tests.common import MockConfigEntry
 
     entry = MockConfigEntry(domain=DOMAIN, data={}, options={})
     entry.add_to_hass(hass)

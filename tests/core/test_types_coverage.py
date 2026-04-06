@@ -1,6 +1,9 @@
 """Coverage tests for types.py."""
 
-from custom_components.growspace_manager.types import is_growspace_data, is_plant_data
+from custom_components.growspace_manager.integration_types import (
+    is_growspace_data,
+    is_plant_data,
+)
 
 
 def test_is_plant_data() -> None:

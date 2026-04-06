@@ -7,13 +7,17 @@ import itertools
 import logging
 from typing import Any
 
-from homeassistant.components.recorder import history
 from homeassistant.const import STATE_UNAVAILABLE, STATE_UNKNOWN
 from homeassistant.core import HomeAssistant, State
-from homeassistant.helpers.recorder import get_instance as get_recorder_instance
 from homeassistant.util.dt import utcnow
 
 _LOGGER = logging.getLogger(__name__)
+
+
+def get_recorder_instance(hass: HomeAssistant):
+    """Get the recorder instance (deferred import)."""
+    from homeassistant.helpers.recorder import get_instance
+    return get_instance(hass)
 
 
 class TrendAnalyzer:
@@ -35,6 +39,8 @@ class TrendAnalyzer:
         results = {}
 
         try:
+            from homeassistant.components.recorder import history
+
             # OPTIMIZATION: Fetch ALL sensors in ONE executor job (Single DB Query)
             history_dict = await get_recorder_instance(
                 self.hass

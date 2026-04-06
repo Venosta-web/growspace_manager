@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING
 
 from custom_components.growspace_manager.const import (
     ATTR_ACQUISITION_DATE,
+    ATTR_BATCH_ID,
     ATTR_BREEDER,
     ATTR_DATE,
     ATTR_DONOR_PLANT_ID,
@@ -17,6 +18,10 @@ from custom_components.growspace_manager.const import (
     ATTR_LINEAGE,
     ATTR_MOLD_RESISTANCE,
     ATTR_NOTES,
+    ATTR_PARENT_1_PHENOTYPE,
+    ATTR_PARENT_1_STRAIN,
+    ATTR_PARENT_2_PHENOTYPE,
+    ATTR_PARENT_2_STRAIN,
     ATTR_PLANT_ID,
     ATTR_QUANTITY,
     ATTR_RECEIVER_PLANT_ID,
@@ -42,14 +47,44 @@ async def handle_add_seed_batch(
     call: ServiceCall,
 ) -> None:
     """Handle the add_seed_batch service call."""
+    data = call.data
     await coordinator.genetics_manager.async_add_seed_batch(
-        strain_name=call.data[ATTR_STRAIN_NAME],
-        breeder=call.data[ATTR_BREEDER],
-        quantity=call.data[ATTR_QUANTITY],
-        acquisition_date=call.data[ATTR_ACQUISITION_DATE].isoformat(),
-        generation=call.data[ATTR_GENERATION],
-        lineage=call.data[ATTR_LINEAGE],
-        notes=call.data.get(ATTR_NOTES, ""),
+        strain_name=data[ATTR_STRAIN_NAME],
+        breeder=data[ATTR_BREEDER],
+        quantity=data[ATTR_QUANTITY],
+        acquisition_date=data[ATTR_ACQUISITION_DATE].isoformat(),
+        generation=data[ATTR_GENERATION],
+        lineage=data.get(ATTR_LINEAGE, ""),
+        parent_1_strain=data.get(ATTR_PARENT_1_STRAIN),
+        parent_1_phenotype=data.get(ATTR_PARENT_1_PHENOTYPE),
+        parent_2_strain=data.get(ATTR_PARENT_2_STRAIN),
+        parent_2_phenotype=data.get(ATTR_PARENT_2_PHENOTYPE),
+        notes=data.get(ATTR_NOTES, ""),
+    )
+
+
+@handle_service_errors
+async def handle_update_seed_batch(
+    hass: HomeAssistant,
+    coordinator: GrowspaceCoordinator,
+    call: ServiceCall,
+) -> None:
+    """Handle the update_seed_batch service call."""
+    data = call.data
+    acq_date = data.get(ATTR_ACQUISITION_DATE)
+    await coordinator.genetics_manager.async_update_seed_batch(
+        batch_id=data[ATTR_BATCH_ID],
+        strain_name=data.get(ATTR_STRAIN_NAME),
+        breeder=data.get(ATTR_BREEDER),
+        quantity=data.get(ATTR_QUANTITY),
+        acquisition_date=acq_date.isoformat() if acq_date is not None else None,
+        generation=data.get(ATTR_GENERATION),
+        lineage=data.get(ATTR_LINEAGE),
+        parent_1_strain=data.get(ATTR_PARENT_1_STRAIN),
+        parent_1_phenotype=data.get(ATTR_PARENT_1_PHENOTYPE),
+        parent_2_strain=data.get(ATTR_PARENT_2_STRAIN),
+        parent_2_phenotype=data.get(ATTR_PARENT_2_PHENOTYPE),
+        notes=data.get(ATTR_NOTES),
     )
 
 
@@ -99,4 +134,34 @@ async def handle_harvest_seeds(
         event_id=call.data[ATTR_EVENT_ID],
         quantity=call.data[ATTR_QUANTITY],
         notes=call.data.get(ATTR_NOTES, ""),
+    )
+
+
+@handle_service_errors
+async def handle_update_pollination(
+    hass: HomeAssistant,
+    coordinator: GrowspaceCoordinator,
+    call: ServiceCall,
+) -> None:
+    """Handle the update_pollination service call."""
+    data = call.data
+    date_val = data.get(ATTR_DATE)
+    await coordinator.genetics_manager.async_update_pollination(
+        event_id=data[ATTR_EVENT_ID],
+        date=date_val.isoformat() if date_val is not None else None,
+        donor_plant_id=data.get(ATTR_DONOR_PLANT_ID),
+        receiver_plant_id=data.get(ATTR_RECEIVER_PLANT_ID),
+        notes=data.get(ATTR_NOTES),
+    )
+
+
+@handle_service_errors
+async def handle_delete_pollination(
+    hass: HomeAssistant,
+    coordinator: GrowspaceCoordinator,
+    call: ServiceCall,
+) -> None:
+    """Handle the delete_pollination service call."""
+    await coordinator.genetics_manager.async_delete_pollination(
+        event_id=call.data[ATTR_EVENT_ID],
     )

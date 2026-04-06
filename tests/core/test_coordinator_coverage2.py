@@ -3,22 +3,33 @@
 from __future__ import annotations
 
 from datetime import date
+import logging
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from tests.common import MockConfigEntry
 
+from custom_components.growspace_manager.const import DOMAIN
 from custom_components.growspace_manager.coordinator import GrowspaceCoordinator
 from custom_components.growspace_manager.models import (
+    EnvironmentConfig,
     Growspace,
+    GrowspaceType,
     NutrientInventory,
     NutrientPreset,
     Plant,
+    PlantGenetics,
+)
+from custom_components.growspace_manager.service_coordinator_locator import (
+    ServiceCoordinatorLocator,
+)
+from custom_components.growspace_manager.utils import (
+    generate_growspace_overview_unique_id,
 )
 from homeassistant.core import HomeAssistant
-from pytest_homeassistant_custom_component.common import MockConfigEntry
-
-from custom_components.growspace_manager.const import DOMAIN
+from homeassistant.exceptions import ServiceValidationError
+from homeassistant.helpers import entity_registry as er
 
 
 def create_test_coordinator(
@@ -30,7 +41,18 @@ def create_test_coordinator(
     """Create a coordinator for testing."""
     entry = MockConfigEntry(domain=DOMAIN, data={}, options=options or {})
     entry.add_to_hass(hass)
-    entry.async_create_background_task = MagicMock()
+
+    # Use a lambda that accepts anything and does nothing, or a MagicMock that returns a Task
+    # BUT, the key is that if it's called with a coroutine, we might want to schedule it
+    # OR, if it's a mock, we just want to ensure the coroutine passed is not 'unawaited'
+    def mock_create_task(hass, target, *args, **kwargs):
+        """Mock task creator that avoids unawaited coroutine warnings."""
+        if hasattr(target, "close"):  # It's probably a coroutine
+            target.close()
+        return MagicMock()
+
+    entry.async_create_background_task = MagicMock(side_effect=mock_create_task)
+
     return GrowspaceCoordinator(
         hass,
         entry,
@@ -173,9 +195,6 @@ async def test_plant_service_property(hass: HomeAssistant) -> None:
 @pytest.mark.asyncio
 async def test_get_for_service_call(hass: HomeAssistant) -> None:
     """Test the get_for_service_call static method (line 132)."""
-    from custom_components.growspace_manager.service_coordinator_locator import (
-        ServiceCoordinatorLocator,
-    )
 
     mock_call = MagicMock()
     mock_result = MagicMock()
@@ -216,7 +235,9 @@ async def test_on_nutrient_inventory_loaded(hass: HomeAssistant) -> None:
 
     assert coordinator.nutrient_manager.inventory is inv
     # IPM presets should be synced
-    assert coordinator._ipm_service.ipm_presets is coordinator.nutrient_manager.ipm_presets
+    assert (
+        coordinator._ipm_service.ipm_presets is coordinator.nutrient_manager.ipm_presets
+    )
 
 
 # =============================================================================
@@ -243,12 +264,13 @@ async def test_to_date(hass: HomeAssistant) -> None:
 @pytest.mark.asyncio
 async def test_create_special_growspace_delegates(hass: HomeAssistant) -> None:
     """Test _create_special_growspace delegates to growspace_manager (line 537)."""
-    from custom_components.growspace_manager.models import GrowspaceType
 
     coordinator = create_test_coordinator(hass)
     coordinator.growspace_manager._create_special_growspace = MagicMock()
 
-    coordinator._create_special_growspace("mother", "Mother", 2, 5, GrowspaceType.MOTHER)
+    coordinator._create_special_growspace(
+        "mother", "Mother", 2, 5, GrowspaceType.MOTHER
+    )
 
     coordinator.growspace_manager._create_special_growspace.assert_called_once_with(
         "mother", "Mother", 2, 5, GrowspaceType.MOTHER
@@ -271,7 +293,9 @@ async def test_update_special_growspace_name_public_method(hass: HomeAssistant) 
 
     coordinator._update_special_growspace_name("mother", "New Name")
 
-    mock_manager.update_special_growspace_name.assert_called_once_with("mother", "New Name")
+    mock_manager.update_special_growspace_name.assert_called_once_with(
+        "mother", "New Name"
+    )
 
 
 # =============================================================================
@@ -289,7 +313,9 @@ async def test_update_growspace_structure_success(hass: HomeAssistant) -> None:
         return_value=True
     )
 
-    result = coordinator._update_growspace_structure(gs.id, name="New Name", changes=["name"])
+    result = coordinator._update_growspace_structure(
+        gs.id, name="New Name", changes=["name"]
+    )
     assert result is True
     coordinator.growspace_manager._update_growspace_structure.assert_called_once()
 
@@ -311,9 +337,13 @@ async def test_update_growspace_structure_not_found(hass: HomeAssistant) -> None
 async def test_update_growspace_config_success(hass: HomeAssistant) -> None:
     """Test _update_growspace_config when growspace exists (lines 570-571)."""
     coordinator = create_test_coordinator(hass)
-    gs = await coordinator.async_add_growspace(name="Config GS", rows=2, plants_per_row=2)
+    gs = await coordinator.async_add_growspace(
+        name="Config GS", rows=2, plants_per_row=2
+    )
 
-    coordinator.growspace_manager._update_growspace_config = MagicMock(return_value=True)
+    coordinator.growspace_manager._update_growspace_config = MagicMock(
+        return_value=True
+    )
 
     result = coordinator._update_growspace_config(gs.id, rows=3, changes=["rows"])
     assert result is True
@@ -336,7 +366,6 @@ async def test_update_growspace_config_not_found(hass: HomeAssistant) -> None:
 @pytest.mark.asyncio
 async def test_load_initial_data_growspace_object_directly(hass: HomeAssistant) -> None:
     """Test _load_initial_data with an already-instantiated Growspace (line 618)."""
-    from custom_components.growspace_manager.models import GrowspaceType
 
     gs = Growspace(
         id="direct_gs",
@@ -355,7 +384,6 @@ async def test_load_initial_data_growspace_deserialization_error(
     hass: HomeAssistant, caplog: pytest.LogCaptureFixture
 ) -> None:
     """Test _load_initial_data logs exception on bad growspace dict (lines 622-625)."""
-    import logging
 
     caplog.set_level(logging.ERROR)
 
@@ -370,7 +398,6 @@ async def test_load_initial_data_growspace_deserialization_error(
 @pytest.mark.asyncio
 async def test_load_initial_data_plant_object_directly(hass: HomeAssistant) -> None:
     """Test _load_initial_data with an already-instantiated Plant (line 641)."""
-    from custom_components.growspace_manager.models import PlantGenetics
 
     plant = Plant(
         plant_id="direct_plant",
@@ -389,7 +416,6 @@ async def test_load_initial_data_plant_deserialization_error(
     hass: HomeAssistant, caplog: pytest.LogCaptureFixture
 ) -> None:
     """Test _load_initial_data logs exception on bad plant dict (lines 641-644)."""
-    import logging
 
     caplog.set_level(logging.ERROR)
 
@@ -411,11 +437,16 @@ async def test_async_add_plant(hass: HomeAssistant) -> None:
     coordinator = create_test_coordinator(hass)
     gs = await coordinator.async_add_growspace(name="Test GS", rows=3, plants_per_row=3)
 
-    coordinator.plant_manager.add_plant = AsyncMock(return_value=MagicMock())
+    mock_plant = MagicMock()
+    mock_plant.plant_id = "mock-plant-id"
+    mock_plant.growspace_id = gs.id
+    mock_plant.genetics = MagicMock()
+    mock_plant.genetics.strain_name = "OG Kush"
+    coordinator.plant_manager.async_add_plant = AsyncMock(return_value=mock_plant)
     result = await coordinator.async_add_plant(
         growspace_id=gs.id, strain="OG Kush", row=0, col=0
     )
-    coordinator.plant_manager.add_plant.assert_called_once()
+    coordinator.plant_manager.async_add_plant.assert_called_once()
     assert result is not None
 
 
@@ -461,7 +492,9 @@ async def test_async_shutdown(hass: HomeAssistant) -> None:
 async def test_get_timed_notifications(hass: HomeAssistant) -> None:
     """Test get_timed_notifications delegates (line 918)."""
     coordinator = create_test_coordinator(hass)
-    coordinator.notification_settings.get_timed_notifications = MagicMock(return_value=[])
+    coordinator.notification_settings.get_timed_notifications = MagicMock(
+        return_value=[]
+    )
 
     result = coordinator.get_timed_notifications()
     coordinator.notification_settings.get_timed_notifications.assert_called_once()
@@ -472,7 +505,9 @@ async def test_get_timed_notifications(hass: HomeAssistant) -> None:
 async def test_async_add_timed_notification(hass: HomeAssistant) -> None:
     """Test async_add_timed_notification (lines 931-936)."""
     coordinator = create_test_coordinator(hass)
-    coordinator.notification_settings.get_timed_notifications = MagicMock(return_value=[])
+    coordinator.notification_settings.get_timed_notifications = MagicMock(
+        return_value=[]
+    )
     mock_notif = {"id": "n1", "message": "Test"}
     coordinator.notification_settings.create_timed_notification = MagicMock(
         return_value=mock_notif
@@ -517,7 +552,9 @@ async def test_async_update_timed_notification(hass: HomeAssistant) -> None:
 async def test_async_remove_timed_notification(hass: HomeAssistant) -> None:
     """Test async_remove_timed_notification (lines 961-964)."""
     coordinator = create_test_coordinator(hass)
-    coordinator.notification_settings.get_timed_notifications = MagicMock(return_value=[])
+    coordinator.notification_settings.get_timed_notifications = MagicMock(
+        return_value=[]
+    )
     coordinator.notification_settings.remove_timed_notification_from_list = MagicMock(
         return_value=[]
     )
@@ -526,7 +563,9 @@ async def test_async_remove_timed_notification(hass: HomeAssistant) -> None:
     await coordinator.async_remove_timed_notification("n1")
 
     coordinator.notification_settings.remove_timed_notification_from_list.assert_called_once()
-    coordinator.async_update_options.assert_called_once_with({"timed_notifications": []})
+    coordinator.async_update_options.assert_called_once_with(
+        {"timed_notifications": []}
+    )
 
 
 @pytest.mark.asyncio
@@ -549,7 +588,9 @@ async def test_async_water_plant(hass: HomeAssistant) -> None:
     """Test async_water_plant delegates to WateringService (line 1102)."""
     coordinator = create_test_coordinator(hass)
     mock_result = MagicMock()
-    coordinator._watering_service.async_water_plant = AsyncMock(return_value=mock_result)
+    coordinator._watering_service.async_water_plant = AsyncMock(
+        return_value=mock_result
+    )
 
     result = await coordinator.async_water_plant("plant_1", 500.0)
 
@@ -616,7 +657,9 @@ async def test_get_applicable_presets(hass: HomeAssistant) -> None:
 
     result = coordinator.get_applicable_presets("plant_1")
 
-    coordinator.nutrient_manager.get_applicable_presets.assert_called_once_with("plant_1")
+    coordinator.nutrient_manager.get_applicable_presets.assert_called_once_with(
+        "plant_1"
+    )
     assert result == []
 
 
@@ -708,7 +751,6 @@ async def test_async_apply_ipm(hass: HomeAssistant) -> None:
 @pytest.mark.asyncio
 async def test_async_log_drain_reading_not_found(hass: HomeAssistant) -> None:
     """Test async_log_drain_reading raises when growspace not found."""
-    from homeassistant.exceptions import ServiceValidationError
 
     coordinator = create_test_coordinator(hass)
 
@@ -720,7 +762,9 @@ async def test_async_log_drain_reading_not_found(hass: HomeAssistant) -> None:
 async def test_async_log_drain_reading_success(hass: HomeAssistant) -> None:
     """Test async_log_drain_reading logs reading and commits (lines 1207-1232)."""
     coordinator = create_test_coordinator(hass)
-    gs = await coordinator.async_add_growspace(name="Drain GS", rows=2, plants_per_row=2)
+    gs = await coordinator.async_add_growspace(
+        name="Drain GS", rows=2, plants_per_row=2
+    )
     coordinator.async_commit = AsyncMock()
 
     await coordinator.async_log_drain_reading(gs.id, feed_ec=2.0, drain_ec=2.3)
@@ -733,7 +777,9 @@ async def test_async_log_drain_reading_success(hass: HomeAssistant) -> None:
 async def test_async_log_drain_reading_rolling_window(hass: HomeAssistant) -> None:
     """Test async_log_drain_reading trims readings to max_readings (line 1229)."""
     coordinator = create_test_coordinator(hass)
-    gs = await coordinator.async_add_growspace(name="Rolling GS", rows=2, plants_per_row=2)
+    gs = await coordinator.async_add_growspace(
+        name="Rolling GS", rows=2, plants_per_row=2
+    )
     coordinator.async_commit = AsyncMock()
 
     # Set a small max_readings to trigger the rolling window trim
@@ -741,7 +787,9 @@ async def test_async_log_drain_reading_rolling_window(hass: HomeAssistant) -> No
 
     # Add 3 readings - the third should trigger the trim
     for i in range(3):
-        await coordinator.async_log_drain_reading(gs.id, feed_ec=1.0 + i, drain_ec=1.1 + i)
+        await coordinator.async_log_drain_reading(
+            gs.id, feed_ec=1.0 + i, drain_ec=1.1 + i
+        )
 
     # Only the last 2 readings should be kept
     assert len(coordinator.growspaces[gs.id].drain_config.readings) == 2
@@ -751,7 +799,9 @@ async def test_async_log_drain_reading_rolling_window(hass: HomeAssistant) -> No
 async def test_async_log_drain_reading_alert(hass: HomeAssistant) -> None:
     """Test async_log_drain_reading fires alert when ec_delta exceeds threshold (lines 1233-1253)."""
     coordinator = create_test_coordinator(hass)
-    gs = await coordinator.async_add_growspace(name="Alert GS", rows=2, plants_per_row=2)
+    gs = await coordinator.async_add_growspace(
+        name="Alert GS", rows=2, plants_per_row=2
+    )
 
     # Enable drain monitoring and set a low threshold
     gs.drain_config.enabled = True
@@ -769,7 +819,6 @@ async def test_async_log_drain_reading_alert(hass: HomeAssistant) -> None:
 @pytest.mark.asyncio
 async def test_async_configure_drain_monitoring_not_found(hass: HomeAssistant) -> None:
     """Test async_configure_drain_monitoring raises when growspace not found."""
-    from homeassistant.exceptions import ServiceValidationError
 
     coordinator = create_test_coordinator(hass)
 
@@ -781,7 +830,9 @@ async def test_async_configure_drain_monitoring_not_found(hass: HomeAssistant) -
 async def test_async_configure_drain_monitoring_success(hass: HomeAssistant) -> None:
     """Test async_configure_drain_monitoring updates drain config (lines 1262-1276)."""
     coordinator = create_test_coordinator(hass)
-    gs = await coordinator.async_add_growspace(name="Drain Config GS", rows=2, plants_per_row=2)
+    gs = await coordinator.async_add_growspace(
+        name="Drain Config GS", rows=2, plants_per_row=2
+    )
     coordinator.async_commit = AsyncMock()
 
     await coordinator.async_configure_drain_monitoring(
@@ -798,7 +849,6 @@ async def test_async_configure_drain_monitoring_success(hass: HomeAssistant) -> 
 @pytest.mark.asyncio
 async def test_async_reset_water_tracking_not_found(hass: HomeAssistant) -> None:
     """Test async_reset_water_tracking raises when growspace not found."""
-    from homeassistant.exceptions import ServiceValidationError
 
     coordinator = create_test_coordinator(hass)
 
@@ -810,7 +860,9 @@ async def test_async_reset_water_tracking_not_found(hass: HomeAssistant) -> None
 async def test_async_reset_water_tracking_success(hass: HomeAssistant) -> None:
     """Test async_reset_water_tracking resets water usage (lines 1280-1294)."""
     coordinator = create_test_coordinator(hass)
-    gs = await coordinator.async_add_growspace(name="Water GS", rows=2, plants_per_row=2)
+    gs = await coordinator.async_add_growspace(
+        name="Water GS", rows=2, plants_per_row=2
+    )
     coordinator.async_commit = AsyncMock()
 
     await coordinator.async_reset_water_tracking(gs.id)
@@ -850,7 +902,9 @@ async def test_async_remove_ec_ramp_curve(hass: HomeAssistant) -> None:
 
     await coordinator.async_remove_ec_ramp_curve("curve_1")
 
-    coordinator.nutrient_manager.async_remove_ec_ramp_curve.assert_called_once_with("curve_1")
+    coordinator.nutrient_manager.async_remove_ec_ramp_curve.assert_called_once_with(
+        "curve_1"
+    )
 
 
 # =============================================================================
@@ -931,13 +985,10 @@ async def test_guess_overview_entity_id_special_no_entity(hass: HomeAssistant) -
 
 
 @pytest.mark.asyncio
-async def test_guess_overview_entity_id_special_with_entity(hass: HomeAssistant) -> None:
+async def test_guess_overview_entity_id_special_with_entity(
+    hass: HomeAssistant,
+) -> None:
     """Test _guess_overview_entity_id returns the real entity_id when found in registry (line 1435)."""
-    from homeassistant.helpers import entity_registry as er
-
-    from custom_components.growspace_manager.utils import (
-        generate_growspace_overview_unique_id,
-    )
 
     coordinator = create_test_coordinator(hass)
 
@@ -978,3 +1029,35 @@ async def test_fire_event(hass: HomeAssistant) -> None:
     assert len(events) == 1
     assert events[0].data["event_type"] == "test_event"
     assert events[0].data["data"] == {"key": "value"}
+
+
+@pytest.mark.asyncio
+async def test_async_set_lighting_schedule(hass: HomeAssistant) -> None:
+    """Test setting the lighting schedule (line 1008)."""
+    coordinator = create_test_coordinator(hass)
+
+    env = EnvironmentConfig()
+    gs = Growspace(id="gs1", name="Test GS", environment_config=env)
+    coordinator.growspaces["gs1"] = gs
+
+    # Test successful set
+    await coordinator.async_set_lighting_schedule("gs1", 18, 12, 35.5)
+    assert gs.environment_config.veg_day_hours == 18
+    assert gs.environment_config.flower_day_hours == 12
+    assert gs.environment_config.dli_target_veg == pytest.approx(35.5)
+
+    # Test without DLI (should remain unchanged or be None)
+    await coordinator.async_set_lighting_schedule("gs1", 20, 10, None)
+    assert gs.environment_config.veg_day_hours == 20
+    assert gs.environment_config.flower_day_hours == 10
+    assert gs.environment_config.dli_target_veg == pytest.approx(
+        35.5
+    )  # Still 35.5 from previous call
+
+    # Test with None dli_veg
+    await coordinator.async_set_lighting_schedule("gs1", 18, 12)
+    assert gs.environment_config.veg_day_hours == 18
+
+    # Test missing growspace
+    with pytest.raises(ServiceValidationError):
+        await coordinator.async_set_lighting_schedule("nonexistent", 18, 12)

@@ -254,6 +254,8 @@ async def test_ensure_default_growspaces(
 @pytest.mark.asyncio
 async def test_add_growspace_with_configs(service, repository_mock) -> None:
     """Test add_growspace with optional configs."""
+    from custom_components.growspace_manager.models import EnvironmentConfig
+
     await service.add_growspace(
         "Test",
         dimensions={"h": 200},
@@ -262,8 +264,10 @@ async def test_add_growspace_with_configs(service, repository_mock) -> None:
     )
     gs = list(repository_mock.growspaces.values())[0]
     assert gs.dimensions == {"h": 200}
-    assert gs.environment_config == {"temp": "sensor.t1"}
-    assert gs.irrigation_config == {"pump": "switch.p1"}
+    # environment_config and irrigation_config get converted to typed objects by from_dict
+    assert gs.environment_config is not None
+    assert isinstance(gs.environment_config, EnvironmentConfig)
+    assert gs.irrigation_config is not None
 
 
 @pytest.mark.asyncio

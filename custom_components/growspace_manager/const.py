@@ -452,9 +452,12 @@ class GrowspaceService(StrEnum):
     CONFIGURE_TANK = "configure_tank"
     # Genetics Services
     ADD_SEED_BATCH = "add_seed_batch"
+    UPDATE_SEED_BATCH = "update_seed_batch"
     LOG_POLLINATION = "log_pollination"
     SCORE_PHENOTYPE = "score_phenotype"
     HARVEST_SEEDS = "harvest_seeds"
+    UPDATE_POLLINATION = "update_pollination"
+    DELETE_POLLINATION = "delete_pollination"
 
 
 class TrainingTechnique(StrEnum):
@@ -482,6 +485,10 @@ ATTR_QUANTITY = "quantity"
 ATTR_ACQUISITION_DATE = "acquisition_date"
 ATTR_GENERATION = "generation"
 ATTR_LINEAGE = "lineage"
+ATTR_PARENT_1_STRAIN = "parent_1_strain"
+ATTR_PARENT_1_PHENOTYPE = "parent_1_phenotype"
+ATTR_PARENT_2_STRAIN = "parent_2_strain"
+ATTR_PARENT_2_PHENOTYPE = "parent_2_phenotype"
 ATTR_DONOR_PLANT_ID = "donor_plant_id"
 ATTR_RECEIVER_PLANT_ID = "receiver_plant_id"
 ATTR_EVENT_ID = "event_id"

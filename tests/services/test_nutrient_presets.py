@@ -11,7 +11,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 from common import create_plant
 import pytest
-from pytest_homeassistant_custom_component.common import (
+from tests.common import (
     MockConfigEntry,
     async_capture_events,
 )

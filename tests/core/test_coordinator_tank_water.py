@@ -1,9 +1,10 @@
 """Tests for async_configure_tank and get_tank_tracker coordinator methods."""
 
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
-from pytest_homeassistant_custom_component.common import MockConfigEntry
+from tests.common import MockConfigEntry
 
 from custom_components.growspace_manager.const import DOMAIN
 from custom_components.growspace_manager.coordinator import GrowspaceCoordinator
@@ -20,7 +21,17 @@ def _make_coordinator(hass: HomeAssistant) -> GrowspaceCoordinator:
     """Create a minimal GrowspaceCoordinator for testing."""
     entry = MockConfigEntry(domain=DOMAIN, data={}, options={})
     entry.add_to_hass(hass)
-    entry.async_create_background_task = MagicMock()
+
+    def mock_create_task(
+        hass: HomeAssistant, target: Any, *args: Any, **kwargs: Any
+    ) -> Any:
+        """Mock task creator that avoids unawaited coroutine warnings."""
+        if hasattr(target, "close"):  # It's probably a coroutine
+            target.close()
+        return MagicMock()
+
+    entry.async_create_background_task = MagicMock(side_effect=mock_create_task)
+
     return GrowspaceCoordinator(hass, entry, data={})
 
 
@@ -33,7 +44,9 @@ def _add_growspace_with_tank(
     """Add a growspace with a single irrigation tank to the coordinator."""
     tank = IrrigationTank(sensor_entity=tank_entity, volume_liters=volume_liters)
     env_config = EnvironmentConfig(irrigation_tanks=[tank])
-    growspace = Growspace(id=growspace_id, name="Test Tent", environment_config=env_config)
+    growspace = Growspace(
+        id=growspace_id, name="Test Tent", environment_config=env_config
+    )
     coordinator.growspaces[growspace_id] = growspace
     return growspace
 
@@ -76,14 +89,18 @@ async def test_async_configure_tank_unknown_entity_is_noop(hass: HomeAssistant) 
 
     coordinator.storage_manager.async_save = AsyncMock()
 
-    await coordinator.async_configure_tank("gs_1", "sensor.unknown_tank", volume_liters=80.0)
+    await coordinator.async_configure_tank(
+        "gs_1", "sensor.unknown_tank", volume_liters=80.0
+    )
 
     # Storage should not be called since tank was not found
     coordinator.storage_manager.async_save.assert_not_awaited()
 
 
 @pytest.mark.asyncio
-async def test_async_configure_tank_volume_none_does_not_overwrite(hass: HomeAssistant) -> None:
+async def test_async_configure_tank_volume_none_does_not_overwrite(
+    hass: HomeAssistant,
+) -> None:
     """Test that passing volume_liters=None leaves the existing value unchanged."""
     coordinator = _make_coordinator(hass)
     growspace = _add_growspace_with_tank(coordinator, volume_liters=60.0)
@@ -97,7 +114,9 @@ async def test_async_configure_tank_volume_none_does_not_overwrite(hass: HomeAss
 
 
 @pytest.mark.asyncio
-async def test_async_configure_tank_unknown_growspace_is_noop(hass: HomeAssistant) -> None:
+async def test_async_configure_tank_unknown_growspace_is_noop(
+    hass: HomeAssistant,
+) -> None:
     """async_configure_tank with unknown growspace_id must not raise."""
     coordinator = _make_coordinator(hass)
     # Should not raise AttributeError
@@ -139,7 +158,9 @@ def test_get_tank_tracker_returns_none_for_unknown_entity(hass: HomeAssistant) -
     assert tracker is None
 
 
-def test_get_tank_tracker_returns_none_for_unknown_growspace(hass: HomeAssistant) -> None:
+def test_get_tank_tracker_returns_none_for_unknown_growspace(
+    hass: HomeAssistant,
+) -> None:
     """Test get_tank_tracker returns None when growspace_id is not found."""
     coordinator = _make_coordinator(hass)
 
@@ -148,7 +169,9 @@ def test_get_tank_tracker_returns_none_for_unknown_growspace(hass: HomeAssistant
     assert tracker is None
 
 
-def test_get_tank_tracker_returns_same_instance_on_repeated_calls(hass: HomeAssistant) -> None:
+def test_get_tank_tracker_returns_same_instance_on_repeated_calls(
+    hass: HomeAssistant,
+) -> None:
     """Test that get_tank_tracker returns the same TankWaterTracker instance (lazy init)."""
     coordinator = _make_coordinator(hass)
     _add_growspace_with_tank(coordinator, volume_liters=150.0)

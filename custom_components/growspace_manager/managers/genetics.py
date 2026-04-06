@@ -60,7 +60,11 @@ class GeneticsManager:
         quantity: int,
         acquisition_date: str,
         generation: str,
-        lineage: str,
+        lineage: str = "",
+        parent_1_strain: str | None = None,
+        parent_1_phenotype: str | None = None,
+        parent_2_strain: str | None = None,
+        parent_2_phenotype: str | None = None,
         notes: str = "",
     ) -> SeedBatch:
         """Create and store a new seed batch."""
@@ -72,6 +76,10 @@ class GeneticsManager:
             acquisition_date=acquisition_date,
             generation=generation,
             lineage=lineage,
+            parent_1_strain=parent_1_strain,
+            parent_1_phenotype=parent_1_phenotype,
+            parent_2_strain=parent_2_strain,
+            parent_2_phenotype=parent_2_phenotype,
             notes=notes,
         )
         self.seed_batches[batch.batch_id] = batch
@@ -79,6 +87,57 @@ class GeneticsManager:
         _LOGGER.info(
             "Added seed batch '%s' x%d (id=%s)", strain_name, quantity, batch.batch_id
         )
+        return batch
+
+    async def async_update_seed_batch(
+        self,
+        batch_id: str,
+        strain_name: str | None = None,
+        breeder: str | None = None,
+        quantity: int | None = None,
+        acquisition_date: str | None = None,
+        generation: str | None = None,
+        lineage: str | None = None,
+        parent_1_strain: str | None = None,
+        parent_1_phenotype: str | None = None,
+        parent_2_strain: str | None = None,
+        parent_2_phenotype: str | None = None,
+        notes: str | None = None,
+    ) -> SeedBatch:
+        """Update an existing seed batch (partial overwrite).
+
+        Raises:
+            ServiceValidationError: If the batch is not found.
+        """
+        batch = self.seed_batches.get(batch_id)
+        if batch is None:
+            raise ServiceValidationError(f"Seed batch '{batch_id}' not found")
+
+        if strain_name is not None:
+            batch.strain_name = strain_name
+        if breeder is not None:
+            batch.breeder = breeder
+        if quantity is not None:
+            batch.quantity = quantity
+        if acquisition_date is not None:
+            batch.acquisition_date = acquisition_date
+        if generation is not None:
+            batch.generation = generation
+        if lineage is not None:
+            batch.lineage = lineage
+        if parent_1_strain is not None:
+            batch.parent_1_strain = parent_1_strain
+        if parent_1_phenotype is not None:
+            batch.parent_1_phenotype = parent_1_phenotype
+        if parent_2_strain is not None:
+            batch.parent_2_strain = parent_2_strain
+        if parent_2_phenotype is not None:
+            batch.parent_2_phenotype = parent_2_phenotype
+        if notes is not None:
+            batch.notes = notes
+
+        await self.save_callback()
+        _LOGGER.info("Updated seed batch '%s' (id=%s)", batch.strain_name, batch_id)
         return batch
 
     def get_total_seed_count(self) -> int:
@@ -120,6 +179,51 @@ class GeneticsManager:
             event.event_id,
         )
         return event
+
+    async def async_update_pollination(
+        self,
+        event_id: str,
+        date: str | None = None,
+        donor_plant_id: str | None = None,
+        receiver_plant_id: str | None = None,
+        notes: str | None = None,
+    ) -> PollinationEvent:
+        """Update an existing pollination event (partial overwrite).
+
+        Raises:
+            ServiceValidationError: If the event is not found.
+        """
+        event = self.pollination_events.get(event_id)
+        if event is None:
+            raise ServiceValidationError(f"Pollination event '{event_id}' not found")
+
+        if date is not None:
+            event.date = date
+        if donor_plant_id is not None:
+            self._validate_plant_for_pollination(donor_plant_id, "donor")
+            event.donor_plant_id = donor_plant_id
+        if receiver_plant_id is not None:
+            self._validate_plant_for_pollination(receiver_plant_id, "receiver")
+            event.receiver_plant_id = receiver_plant_id
+        if notes is not None:
+            event.notes = notes
+
+        await self.save_callback()
+        _LOGGER.info("Updated pollination event %s", event_id)
+        return event
+
+    async def async_delete_pollination(self, event_id: str) -> None:
+        """Remove a pollination event.
+
+        Raises:
+            ServiceValidationError: If the event is not found.
+        """
+        if event_id not in self.pollination_events:
+            raise ServiceValidationError(f"Pollination event '{event_id}' not found")
+
+        del self.pollination_events[event_id]
+        await self.save_callback()
+        _LOGGER.info("Deleted pollination event %s", event_id)
 
     # ------------------------------------------------------------------
     # Seed harvesting

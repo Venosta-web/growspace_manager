@@ -5,7 +5,7 @@ from typing import Any, cast
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from common import create_plant
-from pytest_homeassistant_custom_component.common import MockConfigEntry
+from tests.common import MockConfigEntry
 
 from custom_components.growspace_manager.bayesian_evaluator import (
     evaluate_active_saturation,

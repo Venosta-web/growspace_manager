@@ -1,7 +1,7 @@
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from pytest_homeassistant_custom_component.common import MockConfigEntry
+from tests.common import MockConfigEntry
 
 from custom_components.growspace_manager import DOMAIN, async_unload_entry
 from custom_components.growspace_manager.coordinator import GrowspaceCoordinator

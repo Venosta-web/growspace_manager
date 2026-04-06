@@ -9,6 +9,7 @@ from typing import Any
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, ServiceCall
+from homeassistant.exceptions import ServiceValidationError
 from homeassistant.helpers import device_registry as dr, entity_registry as er
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 from homeassistant.util import slugify
@@ -30,6 +31,7 @@ from .event_bus_pkg import GrowspaceEventBus
 from .exceptions import GrowspaceNotFoundError
 from .growspace_validator import GrowspaceValidator
 from .import_export_manager import ImportExportManager
+from .integration_types import DateInput
 from .irrigation_coordinator import IrrigationCoordinator
 from .managers.genetics import GeneticsManager
 from .managers.growspace import GrowspaceManager
@@ -50,6 +52,7 @@ from .notifications import NotificationSettingsManager
 from .presentation import PlantViewModelBuilder
 from .service_coordinator_locator import ServiceCoordinatorLocator
 from .services.environment_reporter import EnvironmentReporter
+from .services.facade import ServiceFacade
 from .services.ipm_service import IPMService
 from .services.nutrient_inventory import NutrientInventoryService
 from .services.training_service import TrainingService
@@ -57,7 +60,6 @@ from .services.watering_service import WateringService
 from .storage_manager import StorageManager
 from .strain_library import StrainLibrary
 from .tank_water_tracker import TankWaterTracker
-from .types import DateInput
 from .utils import generate_growspace_overview_unique_id
 from .view_model_builder import ViewModelBuilder
 from .vision_checkup_scheduler import VisionCheckupScheduler
@@ -442,7 +444,6 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             self.cache.invalidate,
         )
 
-        # 4. Initialize analysis and notification (still depend on coordinator for now)
         self.environment_analyzer = EnvironmentAnalyzer(hass, self)
         self.environment_reporter = EnvironmentReporter(hass, self)
         self.notification_manager = NotificationManager(hass, self)
@@ -451,6 +452,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
         # Initialize Subsystem Manager
         self.subsystem_manager = SubsystemManager(hass, self, entry)
+        self.services = ServiceFacade(self)
 
         # Initialize Vision Checkup Scheduler
         self.vision_scheduler = VisionCheckupScheduler(hass, self)
@@ -462,9 +464,23 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._tank_water_trackers: dict[str, dict[str, TankWaterTracker]] = {}
 
         # Options and state initialization
-
         self.options = options or {}
         _LOGGER.info("--- COORDINATOR INITIALIZED WITH OPTIONS: %s ---", self.options)
+
+    @property
+    def watering_service(self) -> WateringService:
+        """Return the watering service."""
+        return self._watering_service
+
+    @property
+    def training_service(self) -> TrainingService:
+        """Return the training service."""
+        return self._training_service
+
+    @property
+    def ipm_service(self) -> IPMService:
+        """Return the IPM service."""
+        return self._ipm_service
 
     def on_nutrient_inventory_loaded(self, inventory: NutrientInventory) -> None:
         """Update inventory and synchronize services after loading from storage.
@@ -726,37 +742,13 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     async def async_add_growspace(self, **kwargs: Any) -> Growspace:
         """Add a new growspace and register it with Home Assistant.
 
-        Creates a new growspace using the GrowspaceService, registers it as a device
-        in Home Assistant's device registry, and initializes any associated
-        sub-coordinators (irrigation, dehumidifier).
-
         Args:
-            **kwargs: Growspace configuration parameters (name, rows, plants_per_row, etc.).
+            **kwargs: Growspace configuration parameters.
 
         Returns:
             The newly created Growspace object.
         """
-        growspace = await self.growspace_manager.add_growspace(**kwargs)
-
-        # Register device in HA registry
-        device_registry = dr.async_get(self.hass)
-        device_registry.async_get_or_create(
-            config_entry_id=self.config_entry.entry_id,
-            identifiers={(DOMAIN, growspace.id)},
-            name=growspace.name,
-            model=growspace.growspace_type.value
-            if growspace.growspace_type
-            else "Growspace",
-            manufacturer="Growspace Manager",
-            sw_version=VERSION,
-        )
-
-        # Initialize sub-coordinators for the new growspace
-        await self.subsystem_manager.async_setup_growspace_sub_coordinators(
-            growspace.id, growspace
-        )
-
-        return growspace
+        return await self.services.add_growspace(**kwargs)
 
     async def async_update_growspace(
         self, growspace_id: str, **kwargs: Any
@@ -770,24 +762,22 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         Returns:
             The updated Growspace object.
         """
-        await self.growspace_manager.update_growspace(growspace_id, **kwargs)
-        # Return the growspace from repo
-        gs = self.growspaces.get(growspace_id)
-        if gs:
-            return gs
-
-        raise GrowspaceNotFoundError(f"Growspace {growspace_id} not found after update")
+        await self.services.update_growspace(growspace_id, **kwargs)
+        growspace = self.data_repository.growspaces.get(growspace_id)
+        if growspace is None:
+            raise GrowspaceNotFoundError(f"Growspace {growspace_id} not found")
+        return growspace
 
     async def async_add_plant(self, **kwargs: Any) -> Plant:
         """Add a new plant to a growspace.
 
         Args:
-            **kwargs: Plant configuration parameters (growspace_id, strain, row, col, etc.).
+            **kwargs: Plant configuration parameters.
 
         Returns:
             The newly created Plant object.
         """
-        return await self.plant_manager.add_plant(**kwargs)
+        return await self.services.add_plant(**kwargs)
 
     async def async_update_plant(self, plant_id: str, **kwargs: Any) -> Plant:
         """Update an existing plant's data.
@@ -799,7 +789,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         Returns:
             The updated Plant object.
         """
-        return await self.plant_manager.update_plant(plant_id, **kwargs)
+        return await self.services.update_plant(plant_id, **kwargs)
 
     def async_fire_growspace_updated(self) -> None:
         """Fire an event to notify that growspace data has been updated (delegates to EventBus)."""
@@ -998,11 +988,55 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         await self.async_update_options({"timed_notifications": notifications})
 
     async def async_update_options(self, options: dict[str, Any]) -> None:
-        """Update config entry options and trigger reload."""
+        """Update integration options and save them.
+
+        Args:
+            options: A dictionary of option keys and values to update.
+        """
+        self.options.update(options)
+
+        # Also update HA config entry options
         new_options = self.config_entry.options.copy()
         new_options.update(options)
         self.hass.config_entries.async_update_entry(
             self.config_entry, options=new_options
+        )
+
+        await self.async_save()
+        _LOGGER.info("Integration options updated: %s", options)
+
+    async def async_set_lighting_schedule(
+        self,
+        growspace_id: str,
+        veg_hours: int,
+        flower_hours: int,
+        dli_veg: float | None = None,
+    ) -> None:
+        """Set the lighting schedule for a growspace.
+
+        Args:
+            growspace_id: The ID of the growspace to update.
+            veg_hours: The number of day hours during vegetative stage.
+            flower_hours: The number of day hours during flowering stage.
+            dli_veg: Optional DLI target for vegetative stage.
+        """
+        if growspace_id not in self.growspaces:
+            raise ServiceValidationError(f"Growspace '{growspace_id}' not found")
+
+        growspace = self.growspaces[growspace_id]
+        growspace.environment_config.veg_day_hours = int(veg_hours)
+        growspace.environment_config.flower_day_hours = int(flower_hours)
+        if dli_veg is not None:
+            growspace.environment_config.dli_target_veg = float(dli_veg)
+
+        await self.async_save()
+        await self.async_refresh()
+        _LOGGER.info(
+            "Lighting schedule updated for %s: Veg=%sh, Flower=%sh, DLI=%s",
+            growspace.name,
+            veg_hours,
+            flower_hours,
+            dli_veg,
         )
 
     # =============================================================================
@@ -1037,7 +1071,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         transition_date: date | None = None,
     ) -> list[Plant]:
         """Create multiple clones from a mother plant."""
-        return await self.plant_manager.take_clones(
+        return await self.services.take_clones(
             mother_plant_id=mother_plant_id,
             num_clones=num_clones,
             target_growspace_id=target_growspace_id,
@@ -1051,16 +1085,8 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         target_growspace_id: str = "veg",
         transition_date: date | None = None,
     ) -> None:
-        """Promote a clone to the vegetative stage, moving it to a new growspace.
-
-        This updates the EXISTING plant record, preserving its ID and history.
-
-        Args:
-            clone_id: The ID of the clone to promote.
-            target_growspace_id: The ID of the target growspace (defaults to 'veg').
-            transition_date: The date of the transition (defaults to today).
-        """
-        await self.plant_manager.promote_clone(
+        """Promote a clone to the vegetative stage."""
+        await self.services.promote_clone(
             clone_id, target_growspace_id, transition_date
         )
 
@@ -1094,13 +1120,8 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             )
 
     async def switch_plants_service(self, plant1_id: str, plant2_id: str) -> None:
-        """Service call wrapper for switching the positions of two plants.
-
-        Args:
-            plant1_id: The ID of the first plant.
-            plant2_id: The ID of the second plant.
-        """
-        await self.plant_manager.switch_plants(plant1_id, plant2_id)
+        """Switch the positions of two plants."""
+        await self.services.switch_plants(plant1_id, plant2_id)
 
     # =============================================================================
     # DATA RETRIEVAL FOR WEBSOCKET API
@@ -1132,10 +1153,8 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         nutrients: dict[str, float] | None = None,
         preset_id: str | None = None,
     ) -> Plant:
-        """Record a watering event for a single plant (delegated to WateringService)."""
-        return await self._watering_service.async_water_plant(
-            plant_id, amount, nutrients, preset_id
-        )
+        """Record a watering event for a single plant."""
+        return await self.services.water_plant(plant_id, amount, nutrients, preset_id)
 
     async def async_water_growspace(
         self,
@@ -1145,8 +1164,8 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         preset_id: str | None = None,
         amount: float | None = None,
     ) -> int:
-        """Record a watering event for all plants in a growspace (delegated to WateringService)."""
-        return await self._watering_service.async_water_growspace(
+        """Record a watering event for all plants in a growspace."""
+        return await self.services.water_growspace(
             growspace_id, amount_per_plant, nutrients, preset_id, amount
         )
 
@@ -1162,26 +1181,55 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         min_days_in_stage: int | None = None,
         preset_id: str | None = None,
     ) -> NutrientPreset:
-        """Create or update a nutrient preset (delegated)."""
-        return await self.nutrient_manager.async_save_nutrient_preset(
+        """Create or update a nutrient preset."""
+        return await self.services.save_nutrient_preset(
             name, nutrients, stage, min_days_in_stage, preset_id
         )
 
     async def async_remove_nutrient_preset(self, preset_id: str) -> None:
-        """Remove a nutrient preset (delegated)."""
-        await self.nutrient_manager.async_remove_nutrient_preset(preset_id)
+        """Remove a nutrient preset."""
+        await self.services.remove_nutrient_preset(preset_id)
 
     def get_applicable_presets(self, plant_id: str) -> list[NutrientPreset]:
-        """Get all presets applicable to a plant (delegated)."""
-        return self.nutrient_manager.get_applicable_presets(plant_id)
+        """Get all presets applicable to a plant."""
+        return self.services.get_applicable_presets(plant_id)
 
     def _resolve_preset_nutrients(self, preset_id: str) -> dict[str, float]:
-        """Resolve a preset ID to its nutrient map (delegated)."""
-        # This helper might not be needed if internal usage is gone,
-        # but kept for potential external compatibility or service usage
-        if preset_id not in self.nutrient_manager.nutrient_presets:
-            raise KeyError(f"Nutrient preset '{preset_id}' not found")
-        return self.nutrient_manager.nutrient_presets[preset_id].get_nutrient_map()
+        """Resolve a nutrient preset to its nutrient name→amount map.
+
+        Args:
+            preset_id: The ID of the nutrient preset to resolve.
+
+        Returns:
+            A mapping of nutrient name to amount.
+
+        Raises:
+            KeyError: If no preset with the given ID exists.
+        """
+        preset = self.nutrient_manager.nutrient_presets.get(preset_id)
+        if preset is None:
+            raise KeyError(preset_id)
+        return preset.get_nutrient_map()
+
+    async def _async_remove_plant_entities(self, plant_id: str) -> None:
+        """Remove all HA entities for a plant from the entity registry.
+
+        Iterates over the entity registry and removes any entries whose
+        unique_id starts with the plant_id prefix, ensuring all platform
+        entities for the plant are cleaned up on removal.
+
+        Args:
+            plant_id: The ID of the plant whose entities should be removed.
+        """
+        registry = er.async_get(self.hass)
+        to_remove = [
+            entity_id
+            for entity_id, entry in registry.entities.items()
+            if entry.unique_id.startswith(plant_id)
+        ]
+        for entity_id in to_remove:
+            registry.async_remove(entity_id)
+            _LOGGER.debug("Removed entity %s for plant %s", entity_id, plant_id)
 
     # =============================================================================
     # IPM METHODS
@@ -1194,8 +1242,8 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         notes: str | None = None,
         plant_ids: list[str] | None = None,
     ) -> None:
-        """Log a training event for specific plants or an entire growspace (delegated to TrainingService)."""
-        await self._training_service.async_log_training_event(
+        """Log a training event for specific plants or an entire growspace."""
+        await self.services.log_training_event(
             growspace_id, technique, notes, plant_ids
         )
 
@@ -1208,14 +1256,14 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         min_days_in_stage: int | None = None,
         preset_id: str | None = None,
     ) -> IPMPreset:
-        """Create or update an IPM preset (delegated to IPMService)."""
-        return await self._ipm_service.async_save_ipm_preset(
+        """Create or update an IPM preset."""
+        return await self.services.save_ipm_preset(
             name, type, items, stage, min_days_in_stage, preset_id
         )
 
     async def async_remove_ipm_preset(self, preset_id: str) -> None:
-        """Remove an IPM preset (delegated to IPMService)."""
-        await self._ipm_service.async_remove_ipm_preset(preset_id)
+        """Remove an IPM preset."""
+        await self.services.remove_ipm_preset(preset_id)
 
     async def async_apply_ipm(
         self,
@@ -1224,10 +1272,8 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         plant_ids: list[str] | None = None,
         notes: str | None = None,
     ) -> list[str]:
-        """Log an IPM application event (delegated to IPMService)."""
-        return await self._ipm_service.async_apply_ipm(
-            preset_id, growspace_id, plant_ids, notes
-        )
+        """Log an IPM application event."""
+        return await self.services.apply_ipm(preset_id, growspace_id, plant_ids, notes)
 
     async def async_log_drain_reading(
         self,
@@ -1237,53 +1283,10 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         drain_volume_ml: float | None = None,
         feed_volume_ml: float | None = None,
     ) -> None:
-        """Log a drain EC reading for a growspace and alert if delta exceeds threshold."""
-        from .models import DrainReading  # noqa: PLC0415
-
-        growspace = self.growspaces.get(growspace_id)
-        if not growspace:
-            from homeassistant.exceptions import ServiceValidationError  # noqa: PLC0415
-
-            raise ServiceValidationError(f"Growspace '{growspace_id}' not found")
-
-        from homeassistant.util import dt as dt_util  # noqa: PLC0415
-
-        reading = DrainReading(
-            timestamp=dt_util.now().isoformat(),
-            feed_ec=feed_ec,
-            drain_ec=drain_ec,
-            drain_volume_ml=drain_volume_ml,
-            feed_volume_ml=feed_volume_ml,
+        """Log a drain EC reading for a growspace."""
+        await self.services.log_drain_reading(
+            growspace_id, feed_ec, drain_ec, drain_volume_ml, feed_volume_ml
         )
-
-        drain_config = growspace.drain_config
-        drain_config.readings.append(reading)
-        # Enforce rolling window
-        if len(drain_config.readings) > drain_config.max_readings:
-            drain_config.readings = drain_config.readings[-drain_config.max_readings :]
-
-        await self.async_commit()
-
-        # Fire alert if drain EC delta exceeds threshold
-        ec_delta = drain_ec - feed_ec
-        if drain_config.enabled and ec_delta > drain_config.max_ec_delta:
-            _LOGGER.warning(
-                "Drain EC alert for %s: drain=%.2f, feed=%.2f, delta=%.2f exceeds threshold %.2f",
-                growspace_id,
-                drain_ec,
-                feed_ec,
-                ec_delta,
-                drain_config.max_ec_delta,
-            )
-            await self.notification_manager.async_send_notification(
-                growspace_id,
-                f"\u26a0\ufe0f High drain EC in {growspace.name}",
-                (
-                    f"Drain EC ({drain_ec:.2f}) exceeds feed EC ({feed_ec:.2f}) "
-                    f"by {ec_delta:.2f} (threshold: {drain_config.max_ec_delta:.2f}). "
-                    "Consider flushing to prevent salt buildup."
-                ),
-            )
 
     async def async_configure_drain_monitoring(
         self,
@@ -1293,38 +1296,13 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         target_runoff_percent: float | None = None,
     ) -> None:
         """Configure drain EC monitoring settings for a growspace."""
-        growspace = self.growspaces.get(growspace_id)
-        if not growspace:
-            from homeassistant.exceptions import ServiceValidationError  # noqa: PLC0415
-
-            raise ServiceValidationError(f"Growspace '{growspace_id}' not found")
-
-        drain_config = growspace.drain_config
-        if enabled is not None:
-            drain_config.enabled = enabled
-        if max_ec_delta is not None:
-            drain_config.max_ec_delta = max_ec_delta
-        if target_runoff_percent is not None:
-            drain_config.target_runoff_percent = target_runoff_percent
-
-        await self.async_commit()
+        await self.services.configure_drain_monitoring(
+            growspace_id, enabled, max_ec_delta, target_runoff_percent
+        )
 
     async def async_reset_water_tracking(self, growspace_id: str) -> None:
         """Reset water usage counters for a growspace."""
-        from homeassistant.util import dt as dt_util  # noqa: PLC0415
-
-        from .models import WaterUsageData  # noqa: PLC0415
-
-        growspace = self.growspaces.get(growspace_id)
-        if not growspace:
-            from homeassistant.exceptions import ServiceValidationError  # noqa: PLC0415
-
-            raise ServiceValidationError(f"Growspace '{growspace_id}' not found")
-
-        growspace.water_usage = WaterUsageData(
-            cycle_start_date=dt_util.now().date().isoformat()
-        )
-        await self.async_commit()
+        await self.services.reset_water_tracking(growspace_id)
         _LOGGER.info("Reset water tracking for growspace %s", growspace_id)
 
     async def async_save_ec_ramp_curve(
@@ -1334,14 +1312,12 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         points: list[dict[str, Any]],
         curve_id: str | None = None,
     ) -> None:
-        """Create or update an EC ramp curve (delegated to NutrientManager)."""
-        await self.nutrient_manager.async_save_ec_ramp_curve(
-            name=name, stage=stage, points=points, curve_id=curve_id
-        )
+        """Save/update an EC ramp curve for a growspace."""
+        await self.services.save_ec_ramp_curve(None, name, stage, points, curve_id)
 
     async def async_remove_ec_ramp_curve(self, curve_id: str) -> None:
-        """Remove an EC ramp curve (delegated to NutrientManager)."""
-        await self.nutrient_manager.async_remove_ec_ramp_curve(curve_id)
+        """Remove an EC ramp curve from a growspace."""
+        await self.services.remove_ec_ramp_curve(None, curve_id)
 
     async def async_configure_tank(
         self,
@@ -1351,22 +1327,9 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         volume_liters: float | None = None,
     ) -> None:
         """Update runtime configuration for an irrigation tank."""
-        growspace = self.get_growspace(growspace_id)
-        if growspace is None:
-            return
-        tank = next(
-            (
-                t
-                for t in growspace.environment_config.irrigation_tanks
-                if t.sensor_entity == tank_entity
-            ),
-            None,
+        await self.services.configure_tank(
+            growspace_id, tank_entity, volume_liters=volume_liters
         )
-        if tank is None:
-            return
-        if volume_liters is not None:
-            tank.volume_liters = volume_liters
-            await self.storage_manager.async_save()
 
     def get_tank_tracker(
         self, growspace_id: str, tank_entity: str
@@ -1407,7 +1370,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
     async def async_harvest(self, plant_id: str) -> Plant:
         """Mark a plant as harvested."""
-        return await self.plant_manager.harvest(plant_id)
+        return await self.services.harvest(plant_id)
 
     async def async_harvest_plant(
         self,
@@ -1423,7 +1386,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         terpene_profile: str | None = None,
     ) -> None:
         """Harvest a plant with full orchestration."""
-        await self.plant_manager.harvest_plant(
+        await self.services.harvest_plant(
             plant_id=plant_id,
             target_growspace_id=target_growspace_id,
             target_growspace_name=target_growspace_name,
@@ -1438,21 +1401,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
     async def async_remove_plant(self, plant_id: str) -> bool:
         """Remove a plant."""
-        return await self.plant_manager.remove_plant(plant_id)
-
-    async def _remove_plant_entities(self, plant_id: str) -> None:
-        """Remove all Home Assistant entities associated with a specific plant.
-
-        Args:
-            plant_id: The ID of the plant whose entities should be removed.
-        """
-        entity_registry = er.async_get(self.hass)
-
-        # Find all entities belonging to this plant
-        for entity_id, entry in list(entity_registry.entities.items()):
-            if entry.unique_id.startswith(plant_id):
-                _LOGGER.info("Removing entity %s for plant %s", entity_id, plant_id)
-                entity_registry.async_remove(entity_id)
+        return await self.services.remove_plant(plant_id)
 
     # =============================================================================
     # STRAIN LIBRARY MANAGEMENT

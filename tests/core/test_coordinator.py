@@ -14,7 +14,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from common import create_plant
 from freezegun import freeze_time
 import pytest
-from pytest_homeassistant_custom_component.common import (
+from tests.common import (
     MockConfigEntry,
     async_capture_events,
 )
@@ -2393,7 +2393,7 @@ async def test_remove_plant_entities(coordinator: GrowspaceCoordinator) -> None:
     with patch(
         "homeassistant.helpers.entity_registry.async_get", return_value=mock_registry
     ):
-        await coordinator._remove_plant_entities("p1")
+        await coordinator._async_remove_plant_entities("p1")
 
         # Verify match removal
         mock_registry.async_remove.assert_called_once_with("sensor.p1_temp")

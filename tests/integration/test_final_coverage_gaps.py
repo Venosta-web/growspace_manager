@@ -3,11 +3,9 @@
 from __future__ import annotations
 
 import asyncio
-import json
 from datetime import date, timedelta
+import json
 from unittest.mock import AsyncMock, MagicMock, patch
-
-from homeassistant.config_entries import ConfigEntryState
 
 import pytest
 
@@ -37,6 +35,7 @@ from custom_components.growspace_manager.websocket import (
     websocket_get_ec_ramp_curves,
     websocket_get_event_log,
 )
+from homeassistant.config_entries import ConfigEntryState
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ServiceValidationError
 
@@ -311,7 +310,9 @@ def watering_service() -> WateringService:
 
 
 @pytest.mark.asyncio
-async def test_watering_enforces_rolling_window(watering_service: WateringService) -> None:
+async def test_watering_enforces_rolling_window(
+    watering_service: WateringService,
+) -> None:
     """Test that daily readings are trimmed when they exceed max_daily_readings."""
     max_readings = 3
     today = date.today().isoformat()

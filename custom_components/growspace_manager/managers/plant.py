@@ -821,14 +821,37 @@ class PlantManager:
                 )
 
     # Aliases for compatibility with old service/lifecycle manager names
-    async_add_plant = add_plant
-    async_remove_plant = remove_plant
-    async_move_plant = move_plant
-    async_switch_plants = switch_plants
-    async_take_clones = take_clones
-    async_transition_plant_stage = transition_plant_stage
-    async_harvest_plant = harvest_plant
-    async_promote_clone = promote_clone
+    async def async_add_plant(self, *args: Any, **kwargs: Any) -> Plant:
+        """Alias for add_plant."""
+        return await self.add_plant(*args, **kwargs)
+
+    async def async_remove_plant(self, *args: Any, **kwargs: Any) -> bool:
+        """Alias for remove_plant."""
+        return await self.remove_plant(*args, **kwargs)
+
+    async def async_move_plant(self, *args: Any, **kwargs: Any) -> Plant:
+        """Alias for move_plant."""
+        return await self.move_plant(*args, **kwargs)
+
+    async def async_switch_plants(self, *args: Any, **kwargs: Any) -> list[Plant]:
+        """Alias for switch_plants."""
+        return await self.switch_plants(*args, **kwargs)
+
+    async def async_take_clones(self, *args: Any, **kwargs: Any) -> list[Plant]:
+        """Alias for take_clones."""
+        return await self.take_clones(*args, **kwargs)
+
+    async def async_transition_plant_stage(self, *args: Any, **kwargs: Any) -> Plant:
+        """Alias for transition_plant_stage."""
+        return await self.transition_plant_stage(*args, **kwargs)
+
+    async def async_harvest_plant(self, *args: Any, **kwargs: Any) -> None:
+        """Alias for harvest_plant."""
+        await self.harvest_plant(*args, **kwargs)
+
+    async def async_promote_clone(self, *args: Any, **kwargs: Any) -> Plant:
+        """Alias for promote_clone."""
+        return await self.promote_clone(*args, **kwargs)
 
     async def handle_clone_creation(self, **kwargs: Any) -> str:
         """Compatibility wrapper for add_plant as a clone."""
@@ -859,9 +882,26 @@ class PlantManager:
         else:
             await self.harvest_plant(*args, **kwargs)
 
-    handle_move_plant = move_plant
-    handle_take_clone = take_clones
-    handle_transition_plant_stage = transition_plant_stage
-    handle_update_plant = update_plant
-    handle_remove_plant = remove_plant
-    handle_switch_plants = switch_plants
+    async def handle_move_plant(self, *args: Any, **kwargs: Any) -> Plant:
+        """Alias for move_plant."""
+        return await self.move_plant(*args, **kwargs)
+
+    async def handle_take_clone(self, *args: Any, **kwargs: Any) -> list[Plant]:
+        """Alias for take_clones."""
+        return await self.take_clones(*args, **kwargs)
+
+    async def handle_transition_plant_stage(self, *args: Any, **kwargs: Any) -> Plant:
+        """Alias for transition_plant_stage."""
+        return await self.transition_plant_stage(*args, **kwargs)
+
+    async def handle_update_plant(self, *args: Any, **kwargs: Any) -> Plant:
+        """Alias for update_plant."""
+        return await self.update_plant(*args, **kwargs)
+
+    async def handle_remove_plant(self, *args: Any, **kwargs: Any) -> None:
+        """Alias for remove_plant."""
+        await self.remove_plant(*args, **kwargs)
+
+    async def handle_switch_plants(self, *args: Any, **kwargs: Any) -> list[Plant]:
+        """Alias for switch_plants."""
+        return await self.switch_plants(*args, **kwargs)

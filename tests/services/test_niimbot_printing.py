@@ -1,7 +1,10 @@
 """Tests for Niimbot label printing services."""
 
+import base64
+from io import BytesIO
 from unittest.mock import AsyncMock, MagicMock, patch
 
+from PIL import Image
 import pytest
 
 from custom_components.growspace_manager.services.strain_library import (
@@ -132,6 +135,13 @@ async def test_handle_print_label(mock_hass, mock_coordinator, strain_library) -
     logo_item = next((item for item in payload if item["type"] == "dlimg"), None)
     assert logo_item is not None
     assert logo_item["url"] == "https://example.com/humboldt.png"
+    assert logo_item["xsize"] == 100
+    assert logo_item["ysize"] == 100
+
+    # Check for QR code
+    qr_item = next((item for item in payload if item["type"] == "qrcode"), None)
+    assert qr_item is not None
+    assert qr_item["boxsize"] == 4
 
 
 @pytest.mark.asyncio
@@ -179,3 +189,57 @@ async def test_handle_print_label_service_error(
         ),
     ):
         await handle_print_label(mock_hass, mock_coordinator, strain_library, call)
+
+
+@pytest.mark.asyncio
+async def test_handle_print_label_with_base64_downscaling(
+    mock_hass, mock_coordinator, strain_library
+) -> None:
+    """Test handle_print_label service downscales large base64 logos."""
+    # Mock plant data
+    plant_id = "plant_1"
+    mock_plant = MagicMock()
+    mock_plant.genetics.strain_name = "Blue Dream"
+    mock_plant.genetics.phenotype_name = "Berry"
+    mock_coordinator.plants = {plant_id: mock_plant}
+
+    # Create a large "image" (mocking base64)
+    # 300x300 white square
+    img = Image.new("RGB", (300, 300), color="white")
+    buff = BytesIO()
+    img.save(buff, format="PNG")
+    large_base64 = f"data:image/png;base64,{base64.b64encode(buff.getvalue()).decode()}"
+
+    strain_library.get_all.return_value = {
+        "Blue Dream": {
+            "meta": {
+                "breeder": "Humboldt",
+                "breeder_logo": large_base64,
+            },
+            "phenotypes": {"Berry": {}},
+        }
+    }
+
+    call = MagicMock()
+    call.data = {"plant_id": plant_id}
+
+    with patch(
+        "custom_components.growspace_manager.services.strain_library.get_url",
+        return_value="http://homeassistant.local",
+    ):
+        await handle_print_label(mock_hass, mock_coordinator, strain_library, call)
+
+    # Verify niimbot.print service call
+    args, _ = mock_hass.services.async_call.call_args
+    payload = args[2]["payload"]
+
+    logo_item = next((item for item in payload if item["type"] == "dlimg"), None)
+    assert logo_item is not None
+    assert logo_item["url"].startswith("data:image/png;base64,")
+    assert logo_item["url"] != large_base64  # Should be changed (downscaled)
+
+    # Decode and check size
+    _, encoded = logo_item["url"].split(",", 1)
+    decoded_img = Image.open(BytesIO(base64.b64decode(encoded)))
+    assert decoded_img.width <= 200
+    assert decoded_img.height <= 200

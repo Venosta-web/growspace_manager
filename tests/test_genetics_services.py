@@ -8,6 +8,17 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
+from custom_components.growspace_manager.const import (
+    ATTR_ACQUISITION_DATE,
+    ATTR_BREEDER,
+    ATTR_GENERATION,
+    ATTR_PARENT_1_PHENOTYPE,
+    ATTR_PARENT_1_STRAIN,
+    ATTR_PARENT_2_PHENOTYPE,
+    ATTR_PARENT_2_STRAIN,
+    ATTR_QUANTITY,
+    ATTR_STRAIN_NAME,
+)
 from custom_components.growspace_manager.models import (
     Plant,
     PlantGenetics,
@@ -16,9 +27,12 @@ from custom_components.growspace_manager.models import (
 )
 from custom_components.growspace_manager.services.genetics import (
     handle_add_seed_batch,
+    handle_delete_pollination,
     handle_harvest_seeds,
     handle_log_pollination,
     handle_score_phenotype,
+    handle_update_pollination,
+    handle_update_seed_batch,
 )
 from homeassistant.exceptions import ServiceValidationError
 
@@ -43,6 +57,17 @@ def genetics_manager() -> AsyncMock:
             strain_name="OG Kush",
             breeder="DNA",
             quantity=10,
+            acquisition_date="2026-03-01",
+            generation="F1",
+            lineage="A x B",
+        )
+    )
+    mgr.async_update_seed_batch = AsyncMock(
+        return_value=SeedBatch(
+            batch_id="batch-upd",
+            strain_name="Updated Kush",
+            breeder="DNA",
+            quantity=15,
             acquisition_date="2026-03-01",
             generation="F1",
             lineage="A x B",
@@ -134,6 +159,10 @@ class TestHandleAddSeedBatch:
             acquisition_date="2026-03-01",
             generation="F1",
             lineage="Chemdawg x Hindu Kush",
+            parent_1_strain=None,
+            parent_1_phenotype=None,
+            parent_2_strain=None,
+            parent_2_phenotype=None,
             notes="Expo purchase",
         )
 
@@ -157,6 +186,113 @@ class TestHandleAddSeedBatch:
 
         _, kwargs = genetics_manager.async_add_seed_batch.call_args
         assert kwargs["notes"] == ""
+
+    async def test_passes_parent_fields_to_manager(
+        self,
+        mock_hass: AsyncMock,
+        mock_coordinator: MagicMock,
+        genetics_manager: AsyncMock,
+    ) -> None:
+        """Handler forwards parent strain/phenotype fields to genetics_manager."""
+        call = _make_call(
+            **{
+                ATTR_STRAIN_NAME: "Test F1",
+                ATTR_BREEDER: "Tester",
+                ATTR_QUANTITY: 5,
+                ATTR_ACQUISITION_DATE: date(2026, 1, 1),
+                ATTR_GENERATION: "F1",
+                ATTR_PARENT_1_STRAIN: "OG Kush",
+                ATTR_PARENT_1_PHENOTYPE: "#1",
+                ATTR_PARENT_2_STRAIN: "Chemdawg",
+                ATTR_PARENT_2_PHENOTYPE: "D",
+            }
+        )
+
+        await handle_add_seed_batch(mock_hass, mock_coordinator, call)
+
+        genetics_manager.async_add_seed_batch.assert_called_once_with(
+            strain_name="Test F1",
+            breeder="Tester",
+            quantity=5,
+            acquisition_date="2026-01-01",
+            generation="F1",
+            lineage="",
+            parent_1_strain="OG Kush",
+            parent_1_phenotype="#1",
+            parent_2_strain="Chemdawg",
+            parent_2_phenotype="D",
+            notes="",
+        )
+
+
+# ---------------------------------------------------------------------------
+# handle_update_seed_batch
+# ---------------------------------------------------------------------------
+
+
+class TestHandleUpdateSeedBatch:
+    """Tests for the update_seed_batch service handler."""
+
+    async def test_delegates_to_genetics_manager(
+        self,
+        mock_hass: AsyncMock,
+        mock_coordinator: MagicMock,
+        genetics_manager: AsyncMock,
+    ) -> None:
+        """Handler calls genetics_manager.async_update_seed_batch with correct args."""
+        call = _make_call(
+            batch_id="batch-test",
+            strain_name="OG Kush Update",
+            breeder="DNA Genetics",
+            quantity=15,
+            acquisition_date=date(2026, 3, 2),
+            generation="F2",
+            lineage="Test Lineage",
+            notes="Updated notes",
+        )
+
+        await handle_update_seed_batch(mock_hass, mock_coordinator, call)
+
+        genetics_manager.async_update_seed_batch.assert_called_once_with(
+            batch_id="batch-test",
+            strain_name="OG Kush Update",
+            breeder="DNA Genetics",
+            quantity=15,
+            acquisition_date="2026-03-02",
+            generation="F2",
+            lineage="Test Lineage",
+            parent_1_strain=None,
+            parent_1_phenotype=None,
+            parent_2_strain=None,
+            parent_2_phenotype=None,
+            notes="Updated notes",
+        )
+
+    async def test_omitted_fields_pass_none(
+        self,
+        mock_hass: AsyncMock,
+        mock_coordinator: MagicMock,
+        genetics_manager: AsyncMock,
+    ) -> None:
+        """Handler passes None for fields that are omitted."""
+        call = _make_call(batch_id="batch-test", quantity=20)
+
+        await handle_update_seed_batch(mock_hass, mock_coordinator, call)
+
+        genetics_manager.async_update_seed_batch.assert_called_once_with(
+            batch_id="batch-test",
+            strain_name=None,
+            breeder=None,
+            quantity=20,
+            acquisition_date=None,
+            generation=None,
+            lineage=None,
+            parent_1_strain=None,
+            parent_1_phenotype=None,
+            parent_2_strain=None,
+            parent_2_phenotype=None,
+            notes=None,
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -378,3 +514,101 @@ class TestHandleHarvestSeeds:
 
         with pytest.raises(ServiceValidationError, match="already"):
             await handle_harvest_seeds(mock_hass, mock_coordinator, call)
+
+
+# ---------------------------------------------------------------------------
+# handle_update_pollination
+# ---------------------------------------------------------------------------
+
+
+class TestHandleUpdatePollination:
+    """Tests for the update_pollination service handler."""
+
+    @pytest.fixture(autouse=True)
+    def _setup_mock(self, genetics_manager: AsyncMock) -> None:
+        genetics_manager.async_update_pollination = AsyncMock(
+            return_value=PollinationEvent(
+                event_id="evt-1",
+                date="2026-02-20",
+                donor_plant_id="plant-donor",
+                receiver_plant_id="plant-receiver",
+                notes="edited",
+            )
+        )
+
+    async def test_delegates_to_manager(
+        self,
+        mock_hass: AsyncMock,
+        mock_coordinator: MagicMock,
+        genetics_manager: AsyncMock,
+    ) -> None:
+        """Handler calls genetics_manager.async_update_pollination."""
+        call = _make_call(
+            event_id="evt-1",
+            date=date(2026, 2, 20),
+            notes="edited",
+        )
+        await handle_update_pollination(mock_hass, mock_coordinator, call)
+
+        genetics_manager.async_update_pollination.assert_called_once_with(
+            event_id="evt-1",
+            date="2026-02-20",
+            donor_plant_id=None,
+            receiver_plant_id=None,
+            notes="edited",
+        )
+
+    async def test_omitted_fields_pass_none(
+        self,
+        mock_hass: AsyncMock,
+        mock_coordinator: MagicMock,
+        genetics_manager: AsyncMock,
+    ) -> None:
+        """Optional fields omitted from call data are passed as None."""
+        call = _make_call(event_id="evt-1")
+        await handle_update_pollination(mock_hass, mock_coordinator, call)
+
+        _, kwargs = genetics_manager.async_update_pollination.call_args
+        assert kwargs["date"] is None
+        assert kwargs["notes"] is None
+
+
+# ---------------------------------------------------------------------------
+# handle_delete_pollination
+# ---------------------------------------------------------------------------
+
+
+class TestHandleDeletePollination:
+    """Tests for the delete_pollination service handler."""
+
+    @pytest.fixture(autouse=True)
+    def _setup_mock(self, genetics_manager: AsyncMock) -> None:
+        genetics_manager.async_delete_pollination = AsyncMock()
+
+    async def test_delegates_to_manager(
+        self,
+        mock_hass: AsyncMock,
+        mock_coordinator: MagicMock,
+        genetics_manager: AsyncMock,
+    ) -> None:
+        """Handler calls genetics_manager.async_delete_pollination with event_id."""
+        call = _make_call(event_id="evt-del")
+        await handle_delete_pollination(mock_hass, mock_coordinator, call)
+
+        genetics_manager.async_delete_pollination.assert_called_once_with(
+            event_id="evt-del"
+        )
+
+    async def test_propagates_service_validation_error(
+        self,
+        mock_hass: AsyncMock,
+        mock_coordinator: MagicMock,
+        genetics_manager: AsyncMock,
+    ) -> None:
+        """ServiceValidationError from manager propagates to caller."""
+        genetics_manager.async_delete_pollination.side_effect = (
+            ServiceValidationError("Pollination event 'x' not found")
+        )
+        call = _make_call(event_id="x")
+        with pytest.raises(ServiceValidationError, match="not found"):
+            await handle_delete_pollination(mock_hass, mock_coordinator, call)

@@ -16,6 +16,7 @@ from .exceptions import GrowspaceError
 from .schemas import (
     ADD_SEED_BATCH_SCHEMA,
     APPLY_IPM_SCHEMA,
+    UPDATE_SEED_BATCH_SCHEMA,
     CONFIGURE_DRAIN_MONITORING_SCHEMA,
     CONFIGURE_TANK_SCHEMA,
     LOG_DRAIN_READING_SCHEMA,
@@ -46,6 +47,7 @@ from .services import (
     DEBUG_CONSOLIDATE_DUPLICATE_SPECIAL_SCHEMA,
     DEBUG_LIST_GROWSPACES_SCHEMA,
     DEBUG_RESET_SPECIAL_GROWSPACES_SCHEMA,
+    DELETE_POLLINATION_SCHEMA,
     EXPORT_GROW_REPORT_SCHEMA,
     EXPORT_STRAIN_LIBRARY_SCHEMA,
     HARVEST_PLANT_SCHEMA,
@@ -71,6 +73,7 @@ from .services import (
     TRANSITION_PLANT_SCHEMA,
     UPDATE_GROWSPACE_SCHEMA,
     UPDATE_PLANT_SCHEMA,
+    UPDATE_POLLINATION_SCHEMA,
     UPDATE_STRAIN_META_SCHEMA,
     WATER_GROWSPACE_SCHEMA,
     WATER_PLANT_SCHEMA,
@@ -411,6 +414,11 @@ async def register_services(
             ADD_SEED_BATCH_SCHEMA,
         ),
         (
+            GrowspaceService.UPDATE_SEED_BATCH,
+            wrap(genetics.handle_update_seed_batch, False),
+            UPDATE_SEED_BATCH_SCHEMA,
+        ),
+        (
             GrowspaceService.LOG_POLLINATION,
             wrap(genetics.handle_log_pollination, False),
             LOG_POLLINATION_SCHEMA,
@@ -424,6 +432,16 @@ async def register_services(
             GrowspaceService.HARVEST_SEEDS,
             wrap(genetics.handle_harvest_seeds, False),
             HARVEST_SEEDS_SCHEMA,
+        ),
+        (
+            GrowspaceService.UPDATE_POLLINATION,
+            wrap(genetics.handle_update_pollination, False),
+            UPDATE_POLLINATION_SCHEMA,
+        ),
+        (
+            GrowspaceService.DELETE_POLLINATION,
+            wrap(genetics.handle_delete_pollination, False),
+            DELETE_POLLINATION_SCHEMA,
         ),
     ]
 

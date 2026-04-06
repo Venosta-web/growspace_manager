@@ -23,7 +23,7 @@ from .domain.stage import (
     BayesianStage,
     PlantStage,
 )
-from .types import DateInput
+from .integration_types import DateInput
 
 if TYPE_CHECKING:
     from .models import Growspace, Plant

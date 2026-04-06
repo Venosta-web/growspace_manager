@@ -3,7 +3,7 @@
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
-from pytest_homeassistant_custom_component.common import MockConfigEntry
+from tests.common import MockConfigEntry
 
 from custom_components.growspace_manager.config_flow import OptionsFlowHandler
 from custom_components.growspace_manager.const import DOMAIN

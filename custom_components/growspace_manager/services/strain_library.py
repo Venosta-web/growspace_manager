@@ -5,10 +5,13 @@ from __future__ import annotations
 import base64
 import binascii
 from datetime import datetime
+from io import BytesIO
 import logging
 from pathlib import Path
 import tempfile
 from typing import TYPE_CHECKING, Any
+
+from PIL import Image
 
 from custom_components.growspace_manager.const import DOMAIN
 from homeassistant.components.persistent_notification import (
@@ -47,6 +50,41 @@ async def handle_get_strain_library(
     hass.bus.async_fire(f"{DOMAIN}_strain_library_fetched", {"strains": strains})
     _LOGGER.debug("Fetched strain library: %d strains", len(strains))
     return strains
+
+
+def _downscale_logo_if_needed(logo_data: str | None) -> str | None:
+    """Downscale breeder logo if it's a large base64 string or return as is.
+
+    This prevents hitting the 32KB Home Assistant event bus limit and
+    possible printer buffer issues.
+    """
+    if not logo_data or not logo_data.startswith("data:image/"):
+        return logo_data
+
+    try:
+        # Extract base64 part
+        _, encoded = logo_data.split(",", 1)
+        image_data = base64.b64decode(encoded)
+
+        # Load image
+        img = Image.open(BytesIO(image_data))
+
+        # Check size - if already small, return original
+        if img.width <= 200 and img.height <= 200:
+            return logo_data
+
+        # Resize
+        img.thumbnail((200, 200))
+
+        # Save back to base64 as PNG (Niimbot handles data URIs)
+        output = BytesIO()
+        img.save(output, format="PNG", optimize=True)
+        new_encoded = base64.b64encode(output.getvalue()).decode("utf-8")
+    except Exception as err:  # noqa: BLE001
+        _LOGGER.warning("Failed to downscale breeder logo: %s", err)
+        return logo_data
+    else:
+        return f"data:image/png;base64,{new_encoded}"
 
 
 async def handle_export_strain_library(
@@ -462,13 +500,17 @@ async def handle_print_label(
 
     # 4. Breeder Logo (Framed)
     if breeder_logo:
+        # Downscale if it's a base64 string to avoid event bus and printer issues
+        breeder_logo = _downscale_logo_if_needed(breeder_logo)
+
         payload.append(
             {
                 "type": "dlimg",
                 "url": breeder_logo,
                 "x": 290,
                 "y": 20,
-                "size": 100,
+                "xsize": 100,
+                "ysize": 100,
             }
         )
 
@@ -485,7 +527,7 @@ async def handle_print_label(
                 "data": qr_data,
                 "x": 290,
                 "y": 130,
-                "size": 100,
+                "boxsize": 4,
             }
         )
 

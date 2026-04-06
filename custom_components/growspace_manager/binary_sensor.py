@@ -371,18 +371,22 @@ class BayesianEnvironmentSensor(
 
         # Aggregate sensors with fallback to singular if needed
         temp = self._get_aggregated_sensor_value(
-            self.env_config.temperature_sensors or [self.env_config.temperature_sensor]
+            [s for s in (self.env_config.temperature_sensor, *self.env_config.temperature_sensors) if s is not None]
         )
         humidity = self._get_aggregated_sensor_value(
-            self.env_config.humidity_sensors or [self.env_config.humidity_sensor]
+            [s for s in (self.env_config.humidity_sensor, *self.env_config.humidity_sensors) if s is not None]
         )
         vpd = self._get_aggregated_sensor_value(
-            self.env_config.vpd_sensors or [self.env_config.vpd_sensor]
+            [s for s in (self.env_config.vpd_sensor, *self.env_config.vpd_sensors) if s is not None]
         )
 
         # Fallback: Calculate VPD if sensor is missing but Temp/Hum are available
+        active_lst_offset = self.env_config.lst_offset
+        if growspace and growspace.growspace_type in (GrowspaceType.DRY, GrowspaceType.CURE):
+            active_lst_offset = 0.0
+
         if vpd is None and temp is not None and humidity is not None:
-            vpd = VPDCalculator.calculate_vpd(temp, humidity)
+            vpd = VPDCalculator.calculate_vpd_with_lst_offset(temp, humidity, active_lst_offset)
 
         co2 = self._get_sensor_value(self.env_config.co2_sensor)
 
@@ -416,6 +420,7 @@ class BayesianEnvironmentSensor(
             "co2": co2,
             "soil_moisture": soil_moisture,
             "substrate_temp": substrate_temp,
+            "lst_offset": active_lst_offset,
             "veg_days": veg_days,
             "flower_days": flower_days,
             "seedling_days": seedling_days,

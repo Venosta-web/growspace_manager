@@ -26,7 +26,7 @@ from .const import (
 from .domain.stage import STAGE_REGISTRY
 
 # Import type aliases from centralized types module
-from .types import BayesianOptions, DehumidifierThresholds, NutrientMap
+from .integration_types import BayesianOptions, DehumidifierThresholds, NutrientMap
 from .utils import calculate_days_since, days_to_week
 
 _LOGGER = logging.getLogger(__name__)
@@ -529,6 +529,10 @@ class SeedBatch(BaseModel):
     acquisition_date: str = ""  # ISO date YYYY-MM-DD
     generation: str = ""  # e.g. F1, S1, BX1
     lineage: str = ""
+    parent_1_strain: str | None = None
+    parent_1_phenotype: str | None = None
+    parent_2_strain: str | None = None
+    parent_2_phenotype: str | None = None
     notes: str = ""
 
 
@@ -732,32 +736,6 @@ class PhenotypeScore(BaseModel):
         if not scored:
             return None
         return sum(scored) / len(scored)
-
-
-@dataclass(slots=True)
-class SeedBatch(BaseModel):
-    """A batch of seeds tracked in the genetics inventory."""
-
-    batch_id: str
-    strain_name: str
-    breeder: str
-    quantity: int
-    acquisition_date: str  # ISO date string (YYYY-MM-DD)
-    generation: str  # e.g. "F1", "S1", "BX1"
-    lineage: str
-    notes: str = ""
-
-
-@dataclass(slots=True)
-class PollinationEvent(BaseModel):
-    """Records a single pollination between two plants."""
-
-    event_id: str
-    date: str  # ISO date string (YYYY-MM-DD)
-    donor_plant_id: str  # Male or reversed-female
-    receiver_plant_id: str  # Female being pollinated
-    notes: str = ""
-    result_seed_batch_id: str | None = None  # Set when seeds are harvested
 
 
 @dataclass(slots=True)

@@ -145,7 +145,9 @@ class EnvironmentConfigHandler(BaseConfigHandler[dict[str, Any]]):
 
         return self.flow.async_show_form(
             step_id="configure_environment",
-            data_schema=self.get_environment_schema_step1(growspace_options),
+            data_schema=self.get_environment_schema_step1(
+                growspace_options, stage=growspace.growspace_type
+            ),
             description_placeholders={"growspace_name": growspace.name},
         )
 
@@ -558,13 +560,13 @@ class EnvironmentConfigHandler(BaseConfigHandler[dict[str, Any]]):
         return self.flow.async_create_entry(title="", data=self.config_entry.options)
 
     def get_environment_schema_step1(
-        self, growspace_options: dict[str, Any]
+        self, growspace_options: dict[str, Any], stage: str | None = None
     ) -> vol.Schema:
         """Build the schema for the first step of environment configuration."""
         schema_dict: dict[Any, Any] = {}
 
         self._add_basic_sensors_to_schema(schema_dict, growspace_options)
-        self._add_lst_offset_to_schema(schema_dict, growspace_options)
+        self._add_lst_offset_to_schema(schema_dict, growspace_options, stage=stage)
         self._add_optional_features_to_schema(schema_dict, growspace_options)
         self._add_exhaust_humidifier_to_schema(schema_dict, growspace_options)
         self._add_dehumidifier_to_schema(schema_dict, growspace_options)
@@ -745,18 +747,34 @@ class EnvironmentConfigHandler(BaseConfigHandler[dict[str, Any]]):
         )
 
     def _add_lst_offset_to_schema(
-        self, schema_dict: dict[Any, Any], growspace_options: dict[str, Any]
+        self,
+        schema_dict: dict[Any, Any],
+        growspace_options: dict[str, Any],
+        stage: str | None = None,
     ) -> None:
         """Add LST offset to the schema if applicable."""
-        has_temp = bool(growspace_options.get(CONF_TEMP_SENSOR))
-        has_humidity = bool(growspace_options.get(CONF_HUMIDITY_SENSOR))
-        has_vpd = bool(growspace_options.get(CONF_VPD_SENSOR))
+        # Check both singular (legacy) and plural keys
+        has_temp = bool(growspace_options.get(CONF_TEMP_SENSOR)) or bool(
+            growspace_options.get("temperature_sensors")
+        )
+        has_humidity = bool(growspace_options.get(CONF_HUMIDITY_SENSOR)) or bool(
+            growspace_options.get("humidity_sensors")
+        )
+        has_vpd = bool(growspace_options.get(CONF_VPD_SENSOR)) or bool(
+            growspace_options.get("vpd_sensors")
+        )
 
+        # Only show LST offset if we are calculating VPD (temp/humidity present, VPD missing)
         if has_temp and has_humidity and not has_vpd:
+            # Default to 0.0 for Dry/Cure stages, otherwise -2.0
+            default_offset = -2.0
+            if stage in ("dry", "cure"):
+                default_offset = 0.0
+
             schema_dict[
                 vol.Optional(
                     "lst_offset",
-                    default=growspace_options.get("lst_offset", -2.0),
+                    default=growspace_options.get("lst_offset", default_offset),
                 )
             ] = selector.NumberSelector(
                 selector.NumberSelectorConfig(

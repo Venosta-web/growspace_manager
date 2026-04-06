@@ -34,6 +34,7 @@ def manager(save_callback: AsyncMock) -> GeneticsManager:
     return GeneticsManager(repository=repo, save_callback=save_callback)
 
 
+
 @pytest.fixture
 def manager_with_plants(save_callback: AsyncMock) -> GeneticsManager:
     """GeneticsManager with two plants pre-loaded (donor + receiver)."""
@@ -188,6 +189,108 @@ class TestAddSeedBatch:
             lineage="C x D",
         )
         assert b1.batch_id != b2.batch_id
+
+    async def test_add_seed_batch_with_parent_fields(
+        self, manager: GeneticsManager
+    ) -> None:
+        """async_add_seed_batch stores parent strain/phenotype fields."""
+        batch = await manager.async_add_seed_batch(
+            strain_name="Test F1",
+            breeder="Tester",
+            quantity=5,
+            acquisition_date="2026-01-01",
+            generation="F1",
+            lineage="",
+            parent_1_strain="OG Kush",
+            parent_1_phenotype="#1",
+            parent_2_strain="Chemdawg",
+            parent_2_phenotype="D",
+        )
+        assert batch.parent_1_strain == "OG Kush"
+        assert batch.parent_1_phenotype == "#1"
+        assert batch.parent_2_strain == "Chemdawg"
+        assert batch.parent_2_phenotype == "D"
+
+
+# ---------------------------------------------------------------------------
+# update_seed_batch
+# ---------------------------------------------------------------------------
+
+
+class TestUpdateSeedBatch:
+    """Tests for the update_seed_batch operation."""
+
+    @pytest.fixture
+    def manager_with_batch(self, manager: GeneticsManager) -> GeneticsManager:
+        """Manager pre-loaded with one seed batch."""
+        batch = SeedBatch(
+            batch_id="batch-upd",
+            strain_name="OG Kush",
+            breeder="DNA Genetics",
+            quantity=10,
+            acquisition_date="2026-03-01",
+            generation="F1",
+            lineage="Chemdawg x Hindu Kush",
+            notes="Original notes",
+        )
+        manager.seed_batches["batch-upd"] = batch
+        return manager
+
+    async def test_raises_if_batch_not_found(self, manager: GeneticsManager) -> None:
+        """ServiceValidationError raised for unknown batch_id."""
+        with pytest.raises(ServiceValidationError, match="not found"):
+            await manager.async_update_seed_batch(batch_id="missing-batch")
+
+    async def test_updates_fields(self, manager_with_batch: GeneticsManager) -> None:
+        """Updating fields sets the correct values on the batch."""
+        await manager_with_batch.async_update_seed_batch(
+            batch_id="batch-upd",
+            strain_name="Updated Kush",
+            breeder="New Breeder",
+            quantity=20,
+            acquisition_date="2026-03-10",
+            generation="F2",
+            lineage="New Lineage",
+            parent_1_strain="P1",
+            parent_1_phenotype="P1 Ph",
+            parent_2_strain="P2",
+            parent_2_phenotype="P2 Ph",
+            notes="Updated notes",
+        )
+        batch = manager_with_batch.seed_batches["batch-upd"]
+        assert batch.strain_name == "Updated Kush"
+        assert batch.breeder == "New Breeder"
+        assert batch.quantity == 20
+        assert batch.acquisition_date == "2026-03-10"
+        assert batch.generation == "F2"
+        assert batch.lineage == "New Lineage"
+        assert batch.parent_1_strain == "P1"
+        assert batch.parent_1_phenotype == "P1 Ph"
+        assert batch.parent_2_strain == "P2"
+        assert batch.parent_2_phenotype == "P2 Ph"
+        assert batch.notes == "Updated notes"
+
+    async def test_partial_update_preserves_other_fields(
+        self, manager_with_batch: GeneticsManager
+    ) -> None:
+        """Updating only one field leaves others unchanged."""
+        await manager_with_batch.async_update_seed_batch(
+            batch_id="batch-upd", quantity=15
+        )
+        batch = manager_with_batch.seed_batches["batch-upd"]
+        assert batch.quantity == 15
+        assert batch.strain_name == "OG Kush"
+        assert batch.breeder == "DNA Genetics"
+
+    async def test_calls_save_callback(
+        self, manager_with_batch: GeneticsManager
+    ) -> None:
+        """Save callback is called after update."""
+        manager_with_batch.save_callback.assert_not_called()  # type: ignore[attr-defined]
+        await manager_with_batch.async_update_seed_batch(
+            batch_id="batch-upd", quantity=15
+        )
+        manager_with_batch.save_callback.assert_called_once()  # type: ignore[attr-defined]
 
 
 # ---------------------------------------------------------------------------
@@ -530,3 +633,145 @@ class TestGetTotalSeedCount:
             lineage="A x A",
         )
         assert manager.get_total_seed_count() == 7
+
+
+# ---------------------------------------------------------------------------
+# TestUpdatePollination
+# ---------------------------------------------------------------------------
+
+
+class TestUpdatePollination:
+    """Tests for async_update_pollination."""
+
+    @pytest.fixture
+    def manager_with_event(self, manager: GeneticsManager) -> GeneticsManager:
+        """Manager pre-loaded with one pollination event and two plants."""
+        manager.repository.plants = {
+            "plant-donor": Plant(
+                plant_id="plant-donor",
+                growspace_id="gs-1",
+                genetics=PlantGenetics(strain_name="Pollen Donor"),
+                stage="flower",
+            ),
+            "plant-receiver": Plant(
+                plant_id="plant-receiver",
+                growspace_id="gs-1",
+                genetics=PlantGenetics(strain_name="Female Receiver"),
+                stage="flower",
+            ),
+        }
+        event = PollinationEvent(
+            event_id="evt-1",
+            date="2026-01-10",
+            donor_plant_id="plant-donor",
+            receiver_plant_id="plant-receiver",
+            notes="",
+        )
+        manager.pollination_events["evt-1"] = event
+        return manager
+
+    async def test_updates_date(self, manager_with_event: GeneticsManager) -> None:
+        """Updating date changes the event's date field."""
+        await manager_with_event.async_update_pollination(
+            event_id="evt-1", date="2026-02-20"
+        )
+        assert manager_with_event.pollination_events["evt-1"].date == "2026-02-20"
+
+    async def test_updates_notes(self, manager_with_event: GeneticsManager) -> None:
+        """Updating notes changes the event's notes field."""
+        await manager_with_event.async_update_pollination(
+            event_id="evt-1", notes="updated note"
+        )
+        assert manager_with_event.pollination_events["evt-1"].notes == "updated note"
+
+    async def test_partial_update_preserves_other_fields(
+        self, manager_with_event: GeneticsManager
+    ) -> None:
+        """Updating only notes leaves date unchanged."""
+        await manager_with_event.async_update_pollination(
+            event_id="evt-1", notes="new note"
+        )
+        assert manager_with_event.pollination_events["evt-1"].date == "2026-01-10"
+
+    async def test_calls_save_callback(
+        self, manager_with_event: GeneticsManager
+    ) -> None:
+        """Save callback is called after update."""
+        manager_with_event.save_callback.assert_not_called()  # type: ignore[attr-defined]
+        await manager_with_event.async_update_pollination(
+            event_id="evt-1", date="2026-03-01"
+        )
+        manager_with_event.save_callback.assert_called_once()  # type: ignore[attr-defined]
+
+    async def test_raises_if_event_not_found(
+        self, manager_with_event: GeneticsManager
+    ) -> None:
+        """ServiceValidationError raised for unknown event_id."""
+        with pytest.raises(ServiceValidationError, match="not found"):
+            await manager_with_event.async_update_pollination(
+                event_id="nonexistent", date="2026-01-01"
+            )
+
+    async def test_updates_donor_plant_id(self, manager_with_event: GeneticsManager) -> None:
+        """Updating donor_plant_id changes the field."""
+        await manager_with_event.async_update_pollination(
+            event_id="evt-1", donor_plant_id="plant-donor"
+        )
+        assert manager_with_event.pollination_events["evt-1"].donor_plant_id == "plant-donor"
+
+    async def test_updates_receiver_plant_id(self, manager_with_event: GeneticsManager) -> None:
+        """Updating receiver_plant_id changes the field."""
+        await manager_with_event.async_update_pollination(
+            event_id="evt-1", receiver_plant_id="plant-receiver"
+        )
+        assert manager_with_event.pollination_events["evt-1"].receiver_plant_id == "plant-receiver"
+
+
+# ---------------------------------------------------------------------------
+# TestDeletePollination
+# ---------------------------------------------------------------------------
+
+
+class TestDeletePollination:
+    """Tests for async_delete_pollination."""
+
+    @pytest.fixture
+    def manager_with_event(self, manager: GeneticsManager) -> GeneticsManager:
+        """Manager pre-loaded with one pollination event."""
+        event = PollinationEvent(
+            event_id="evt-del",
+            date="2026-01-15",
+            donor_plant_id="plant-donor",
+            receiver_plant_id="plant-receiver",
+        )
+        manager.pollination_events["evt-del"] = event
+        return manager
+
+    async def test_removes_event(self, manager_with_event: GeneticsManager) -> None:
+        """Deleted event is no longer in pollination_events."""
+        await manager_with_event.async_delete_pollination(event_id="evt-del")
+        assert "evt-del" not in manager_with_event.pollination_events
+
+    async def test_calls_save_callback(
+        self, manager_with_event: GeneticsManager
+    ) -> None:
+        """Save callback is called after deletion."""
+        await manager_with_event.async_delete_pollination(event_id="evt-del")
+        manager_with_event.save_callback.assert_called_once()  # type: ignore[attr-defined]
+
+    async def test_allows_deleting_harvested_event(
+        self, manager_with_event: GeneticsManager
+    ) -> None:
+        """Events with a linked seed batch can still be deleted."""
+        manager_with_event.pollination_events["evt-del"].result_seed_batch_id = (
+            "batch-xyz"
+        )
+        await manager_with_event.async_delete_pollination(event_id="evt-del")
+        assert "evt-del" not in manager_with_event.pollination_events
+
+    async def test_raises_if_event_not_found(
+        self, manager_with_event: GeneticsManager
+    ) -> None:
+        """ServiceValidationError raised for unknown event_id."""
+        with pytest.raises(ServiceValidationError, match="not found"):
+            await manager_with_event.async_delete_pollination(event_id="ghost")
