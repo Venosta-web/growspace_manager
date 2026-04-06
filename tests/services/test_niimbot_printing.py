@@ -2,6 +2,7 @@
 
 import base64
 from io import BytesIO
+import os
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from PIL import Image
@@ -203,9 +204,9 @@ async def test_handle_print_label_with_base64_downscaling(
     mock_plant.genetics.phenotype_name = "Berry"
     mock_coordinator.plants = {plant_id: mock_plant}
 
-    # Create a large "image" (mocking base64)
-    # 300x300 white square
-    img = Image.new("RGB", (300, 300), color="white")
+    # Create a large "image" (mocking base64) that actually exceeds 25000 bytes.
+    # 300x300 random noise will compress poorly and be realistically large.
+    img = Image.frombytes("RGB", (300, 300), os.urandom(300 * 300 * 3))
     buff = BytesIO()
     img.save(buff, format="PNG")
     large_base64 = f"data:image/png;base64,{base64.b64encode(buff.getvalue()).decode()}"
@@ -241,5 +242,5 @@ async def test_handle_print_label_with_base64_downscaling(
     # Decode and check size
     _, encoded = logo_item["url"].split(",", 1)
     decoded_img = Image.open(BytesIO(base64.b64decode(encoded)))
-    assert decoded_img.width <= 200
-    assert decoded_img.height <= 200
+    assert decoded_img.width <= 100
+    assert decoded_img.height <= 100
