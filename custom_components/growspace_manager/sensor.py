@@ -274,7 +274,6 @@ async def _create_initial_entities(
         # Create tank depletion sensors if environment config has tanks
         env_config = getattr(growspace, "environment_config", None)
         if env_config:
-
             # Safely get irrigation_tanks (handle both dict and dataclass)
             irrigation_tanks = []
             if isinstance(env_config, dict):
@@ -864,6 +863,18 @@ class CalculatedVpdSensor(BaseVpdSensor):
         return [self._temp_sensor, self._humidity_sensor]
 
     @property
+    def _active_lst_offset(self) -> float:
+        """Return the active LST offset, considering the growspace type."""
+        lst_offset = self._lst_offset
+        growspace = self._coordinator.growspaces.get(self._growspace_id)
+        if growspace and growspace.growspace_type in (
+            GrowspaceType.DRY,
+            GrowspaceType.CURE,
+        ):
+            lst_offset = 0.0
+        return lst_offset
+
+    @property
     @override  # type: ignore[misc]
     def native_value(self) -> float | None:
         """Return the calculated VPD value in kPa."""
@@ -871,17 +882,8 @@ class CalculatedVpdSensor(BaseVpdSensor):
         humidity = self._get_float_state(self._humidity_sensor)
 
         if temp is not None and humidity is not None:
-            # Check if we should override the LST offset based on growspace type
-            lst_offset = self._lst_offset
-            growspace = self._coordinator.growspaces.get(self._growspace_id)
-            if growspace and growspace.growspace_type in (
-                GrowspaceType.DRY,
-                GrowspaceType.CURE,
-            ):
-                lst_offset = 0.0
-
             return VPDCalculator.calculate_vpd_with_lst_offset(
-                temp, humidity, lst_offset
+                temp, humidity, self._active_lst_offset
             )
         return None
 
@@ -889,19 +891,10 @@ class CalculatedVpdSensor(BaseVpdSensor):
     @override  # type: ignore[misc]
     def extra_state_attributes(self) -> dict[str, Any]:
         """Return additional state attributes."""
-        # Determine active LST offset
-        active_lst_offset = self._lst_offset
-        growspace = self._coordinator.growspaces.get(self._growspace_id)
-        if growspace and growspace.growspace_type in (
-            GrowspaceType.DRY,
-            GrowspaceType.CURE,
-        ):
-            active_lst_offset = 0.0
-
         return {
             "temperature_sensor": self._temp_sensor,
             "humidity_sensor": self._humidity_sensor,
-            "lst_offset": active_lst_offset,
+            "lst_offset": self._active_lst_offset,
             "configured_lst_offset": self._lst_offset,
             "calculation_method": "Calculated from temperature and humidity",
         }

@@ -32,6 +32,7 @@ from custom_components.growspace_manager.services.genetics import (
     handle_log_pollination,
     handle_score_phenotype,
     handle_update_pollination,
+    handle_update_seed_batch,
 )
 from homeassistant.exceptions import ServiceValidationError
 
@@ -56,6 +57,17 @@ def genetics_manager() -> AsyncMock:
             strain_name="OG Kush",
             breeder="DNA",
             quantity=10,
+            acquisition_date="2026-03-01",
+            generation="F1",
+            lineage="A x B",
+        )
+    )
+    mgr.async_update_seed_batch = AsyncMock(
+        return_value=SeedBatch(
+            batch_id="batch-upd",
+            strain_name="Updated Kush",
+            breeder="DNA",
+            quantity=15,
             acquisition_date="2026-03-01",
             generation="F1",
             lineage="A x B",
@@ -210,6 +222,76 @@ class TestHandleAddSeedBatch:
             parent_2_strain="Chemdawg",
             parent_2_phenotype="D",
             notes="",
+        )
+
+
+# ---------------------------------------------------------------------------
+# handle_update_seed_batch
+# ---------------------------------------------------------------------------
+
+
+class TestHandleUpdateSeedBatch:
+    """Tests for the update_seed_batch service handler."""
+
+    async def test_delegates_to_genetics_manager(
+        self,
+        mock_hass: AsyncMock,
+        mock_coordinator: MagicMock,
+        genetics_manager: AsyncMock,
+    ) -> None:
+        """Handler calls genetics_manager.async_update_seed_batch with correct args."""
+        call = _make_call(
+            batch_id="batch-test",
+            strain_name="OG Kush Update",
+            breeder="DNA Genetics",
+            quantity=15,
+            acquisition_date=date(2026, 3, 2),
+            generation="F2",
+            lineage="Test Lineage",
+            notes="Updated notes",
+        )
+
+        await handle_update_seed_batch(mock_hass, mock_coordinator, call)
+
+        genetics_manager.async_update_seed_batch.assert_called_once_with(
+            batch_id="batch-test",
+            strain_name="OG Kush Update",
+            breeder="DNA Genetics",
+            quantity=15,
+            acquisition_date="2026-03-02",
+            generation="F2",
+            lineage="Test Lineage",
+            parent_1_strain=None,
+            parent_1_phenotype=None,
+            parent_2_strain=None,
+            parent_2_phenotype=None,
+            notes="Updated notes",
+        )
+
+    async def test_omitted_fields_pass_none(
+        self,
+        mock_hass: AsyncMock,
+        mock_coordinator: MagicMock,
+        genetics_manager: AsyncMock,
+    ) -> None:
+        """Handler passes None for fields that are omitted."""
+        call = _make_call(batch_id="batch-test", quantity=20)
+
+        await handle_update_seed_batch(mock_hass, mock_coordinator, call)
+
+        genetics_manager.async_update_seed_batch.assert_called_once_with(
+            batch_id="batch-test",
+            strain_name=None,
+            breeder=None,
+            quantity=20,
+            acquisition_date=None,
+            generation=None,
+            lineage=None,
+            parent_1_strain=None,
+            parent_1_phenotype=None,
+            parent_2_strain=None,
+            parent_2_phenotype=None,
+            notes=None,
         )
 
 

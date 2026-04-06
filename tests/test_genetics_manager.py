@@ -213,6 +213,87 @@ class TestAddSeedBatch:
 
 
 # ---------------------------------------------------------------------------
+# update_seed_batch
+# ---------------------------------------------------------------------------
+
+
+class TestUpdateSeedBatch:
+    """Tests for the update_seed_batch operation."""
+
+    @pytest.fixture
+    def manager_with_batch(self, manager: GeneticsManager) -> GeneticsManager:
+        """Manager pre-loaded with one seed batch."""
+        batch = SeedBatch(
+            batch_id="batch-upd",
+            strain_name="OG Kush",
+            breeder="DNA Genetics",
+            quantity=10,
+            acquisition_date="2026-03-01",
+            generation="F1",
+            lineage="Chemdawg x Hindu Kush",
+            notes="Original notes",
+        )
+        manager.seed_batches["batch-upd"] = batch
+        return manager
+
+    async def test_raises_if_batch_not_found(self, manager: GeneticsManager) -> None:
+        """ServiceValidationError raised for unknown batch_id."""
+        with pytest.raises(ServiceValidationError, match="not found"):
+            await manager.async_update_seed_batch(batch_id="missing-batch")
+
+    async def test_updates_fields(self, manager_with_batch: GeneticsManager) -> None:
+        """Updating fields sets the correct values on the batch."""
+        await manager_with_batch.async_update_seed_batch(
+            batch_id="batch-upd",
+            strain_name="Updated Kush",
+            breeder="New Breeder",
+            quantity=20,
+            acquisition_date="2026-03-10",
+            generation="F2",
+            lineage="New Lineage",
+            parent_1_strain="P1",
+            parent_1_phenotype="P1 Ph",
+            parent_2_strain="P2",
+            parent_2_phenotype="P2 Ph",
+            notes="Updated notes",
+        )
+        batch = manager_with_batch.seed_batches["batch-upd"]
+        assert batch.strain_name == "Updated Kush"
+        assert batch.breeder == "New Breeder"
+        assert batch.quantity == 20
+        assert batch.acquisition_date == "2026-03-10"
+        assert batch.generation == "F2"
+        assert batch.lineage == "New Lineage"
+        assert batch.parent_1_strain == "P1"
+        assert batch.parent_1_phenotype == "P1 Ph"
+        assert batch.parent_2_strain == "P2"
+        assert batch.parent_2_phenotype == "P2 Ph"
+        assert batch.notes == "Updated notes"
+
+    async def test_partial_update_preserves_other_fields(
+        self, manager_with_batch: GeneticsManager
+    ) -> None:
+        """Updating only one field leaves others unchanged."""
+        await manager_with_batch.async_update_seed_batch(
+            batch_id="batch-upd", quantity=15
+        )
+        batch = manager_with_batch.seed_batches["batch-upd"]
+        assert batch.quantity == 15
+        assert batch.strain_name == "OG Kush"
+        assert batch.breeder == "DNA Genetics"
+
+    async def test_calls_save_callback(
+        self, manager_with_batch: GeneticsManager
+    ) -> None:
+        """Save callback is called after update."""
+        manager_with_batch.save_callback.assert_not_called()  # type: ignore[attr-defined]
+        await manager_with_batch.async_update_seed_batch(
+            batch_id="batch-upd", quantity=15
+        )
+        manager_with_batch.save_callback.assert_called_once()  # type: ignore[attr-defined]
+
+
+# ---------------------------------------------------------------------------
 # log_pollination
 # ---------------------------------------------------------------------------
 
