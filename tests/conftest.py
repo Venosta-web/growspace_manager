@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import importlib.util as _ilu
+import pathlib as _pathlib
 import sys
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -12,7 +14,26 @@ sys.modules["fpdf"] = MagicMock()
 
 # Load Home Assistant core test fixtures (hass, mock_recorder, freezer, etc.)
 # This must appear AFTER the sys.modules patching above.
-pytest_plugins = ["tests.conftest"]
+#
+# When running inside the HA core dev environment (PYTHONPATH includes core/),
+# load HA's own conftest to get the real fixture implementations.
+# In the standalone CI repo pytest-homeassistant-custom-component registers
+# the same fixtures automatically via its entry-point plugin – we only
+# load tests.conftest when the HA core source tree is on sys.path.
+#
+# We detect "real HA core" by checking that find_spec("tests.conftest") does
+# NOT resolve to this very file (which would happen when the standalone repo's
+# own tests/ package is on the path).
+_ha_conftest_spec = _ilu.find_spec("tests.conftest")
+_is_ha_core = (
+    _ha_conftest_spec is not None
+    and _ha_conftest_spec.origin is not None
+    # Ensure we didn't just find our *own* conftest (vendored repo).
+    and _pathlib.Path(_ha_conftest_spec.origin).resolve()
+    != _pathlib.Path(__file__).resolve()
+)
+if _is_ha_core:
+    pytest_plugins = ["tests.conftest"]
 
 import pytest  # noqa: E402
 
