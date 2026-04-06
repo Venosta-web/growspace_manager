@@ -61,6 +61,10 @@ def _downscale_logo_if_needed(logo_data: str | None) -> str | None:
     if not logo_data or not logo_data.startswith("data:image/"):
         return logo_data
 
+    # If the string is already small enough, skip processing
+    if len(logo_data) < 25000:
+        return logo_data
+
     try:
         # Extract base64 part
         _, encoded = logo_data.split(",", 1)
@@ -69,22 +73,34 @@ def _downscale_logo_if_needed(logo_data: str | None) -> str | None:
         # Load image
         img = Image.open(BytesIO(image_data))
 
-        # Check size - if already small, return original
-        if img.width <= 200 and img.height <= 200:
-            return logo_data
-
-        # Resize
-        img.thumbnail((200, 200))
+        # Size constraint for Niimbot print label (100x100)
+        img.thumbnail((100, 100))
 
         # Save back to base64 as PNG (Niimbot handles data URIs)
         output = BytesIO()
         img.save(output, format="PNG", optimize=True)
         new_encoded = base64.b64encode(output.getvalue()).decode("utf-8")
+        result = f"data:image/png;base64,{new_encoded}"
+
+        # If it's still large due to complexity, convert to 1-bit monochrome
+        if len(result) >= 25000:
+            if img.mode in ("RGBA", "LA") or (img.mode == "P" and "transparency" in img.info):
+                background = Image.new("RGB", img.size, (255, 255, 255))
+                if img.mode == "P":
+                    img = img.convert("RGBA")
+                background.paste(img, mask=img.split()[3])
+                img = background
+
+            img = img.convert("1")
+            output = BytesIO()
+            img.save(output, format="PNG", optimize=True)
+            new_encoded = base64.b64encode(output.getvalue()).decode("utf-8")
+            result = f"data:image/png;base64,{new_encoded}"
+
+        return result
     except Exception as err:  # noqa: BLE001
         _LOGGER.warning("Failed to downscale breeder logo: %s", err)
         return logo_data
-    else:
-        return f"data:image/png;base64,{new_encoded}"
 
 
 async def handle_export_strain_library(
