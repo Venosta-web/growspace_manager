@@ -402,7 +402,7 @@ class ServiceFacade:
                 growspace_id,
                 f"⚠️ High drain EC in {growspace.name}",
                 f"Drain EC delta ({ec_delta:.2f}) exceeds threshold ({drain_config.max_ec_delta:.2f}).",
-                tier="drain_ec", # Changed from category to tier
+                tier="drain_ec",
             )
 
     async def _async_auto_harvest(self) -> None:
