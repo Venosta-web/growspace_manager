@@ -8,6 +8,8 @@ import sys
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
+from syrupy.assertion import SnapshotAssertion
+
 # Must precede any custom_components import that pulls in fpdf/turbojpeg.
 sys.modules["turbojpeg"] = MagicMock()
 sys.modules["fpdf"] = MagicMock()
@@ -36,6 +38,22 @@ if _is_ha_core:
     pytest_plugins = ["tests.conftest"]
 
 import pytest  # noqa: E402
+
+
+@pytest.fixture
+def snapshot(snapshot: SnapshotAssertion) -> SnapshotAssertion:
+    """Override snapshot fixture to always use HomeAssistantSnapshotExtension.
+
+    This ensures snapshots are stored in 'snapshots/' (not '__snapshots__/')
+    consistently in both HA core and standalone CI environments.
+    """
+    try:
+        from pytest_homeassistant_custom_component.syrupy import (  # noqa: PLC0415
+            HomeAssistantSnapshotExtension,
+        )
+    except ImportError:
+        from tests.syrupy import HomeAssistantSnapshotExtension  # noqa: PLC0415
+    return snapshot.use_extension(HomeAssistantSnapshotExtension)
 
 
 @pytest.fixture
