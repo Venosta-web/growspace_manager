@@ -86,10 +86,24 @@ async def handle_configure_environment(
 
     tank_valid_keys = {f.name for f in fields(IrrigationTank)}
 
+    # Build map of existing tanks to preserve runtime data (water_history, last_recorded_level)
+    existing_tanks_by_entity: dict[str, IrrigationTank] = {}
+    if growspace.environment_config and growspace.environment_config.irrigation_tanks:
+        existing_tanks_by_entity = {
+            t.sensor_entity: t
+            for t in growspace.environment_config.irrigation_tanks
+        }
+
     for t_data in tanks_data:
         try:
             filtered_tank = {k: v for k, v in t_data.items() if k in tank_valid_keys}
-            irrigation_tanks.append(IrrigationTank.from_dict(filtered_tank))
+            new_tank = IrrigationTank.from_dict(filtered_tank)
+            # Preserve accumulated runtime data for tanks that already exist
+            existing = existing_tanks_by_entity.get(new_tank.sensor_entity)
+            if existing is not None:
+                new_tank.water_history = existing.water_history
+                new_tank.last_recorded_level = existing.last_recorded_level
+            irrigation_tanks.append(new_tank)
         except (TypeError, ValueError, LookupError) as e:
             _LOGGER.warning("Invalid irrigation tank data: %s (%s)", t_data, e)
 

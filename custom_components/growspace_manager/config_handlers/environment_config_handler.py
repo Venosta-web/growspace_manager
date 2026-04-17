@@ -139,7 +139,12 @@ class EnvironmentConfigHandler(BaseConfigHandler[dict[str, Any]]):
 
         if user_input is not None:
             env_config = self._clean_and_merge_input(user_input, growspace_options)
-            env_config = self._process_irrigation_tanks(env_config)
+            existing_tanks = (
+                growspace.environment_config.irrigation_tanks
+                if growspace.environment_config
+                else []
+            )
+            env_config = self._process_irrigation_tanks(env_config, existing_tanks=existing_tanks)
             self.flow.env_config_step1 = env_config
             return await self._determine_next_step(user_input)
 
@@ -175,11 +180,23 @@ class EnvironmentConfigHandler(BaseConfigHandler[dict[str, Any]]):
 
         return env_config
 
-    def _process_irrigation_tanks(self, env_config: dict[str, Any]) -> dict[str, Any]:
+    def _process_irrigation_tanks(
+        self,
+        env_config: dict[str, Any],
+        existing_tanks: list | None = None,
+    ) -> dict[str, Any]:
         """Convert irrigation tank sensors to IrrigationTank instances."""
         tank_sensors = env_config.get(CONF_IRRIGATION_TANK_SENSORS, [])
         warning_level = env_config.get(CONF_IRRIGATION_TANK_WARNING_LEVEL, 30.0)
         volume_liters = env_config.get(CONF_IRRIGATION_TANK_VOLUME)
+
+        # Build a lookup of existing tanks so we can preserve accumulated runtime data
+        existing_by_entity: dict[str, Any] = {}
+        if existing_tanks:
+            for t in existing_tanks:
+                entity = t.sensor_entity if hasattr(t, "sensor_entity") else t.get("sensor_entity")
+                if entity:
+                    existing_by_entity[entity] = t
 
         if tank_sensors:
             irrigation_tanks = []
@@ -191,17 +208,36 @@ class EnvironmentConfigHandler(BaseConfigHandler[dict[str, Any]]):
                     if state_obj
                     else f"Tank {i}"
                 )
-                irrigation_tanks.append(
-                    {
-                        "sensor_entity": sensor_entity,
-                        "name": tank_name,
-                        "warning_level": warning_level,
-                        "enable_prediction": True,  # Enable by default
-                        "enable_lights_bias": False,  # Opt-in feature
-                        "enable_vpd_weighting": False,  # Opt-in feature
-                        "volume_liters": volume_liters,
-                    }
-                )
+                tank_dict: dict[str, Any] = {
+                    "sensor_entity": sensor_entity,
+                    "name": tank_name,
+                    "warning_level": warning_level,
+                    "enable_prediction": True,  # Enable by default
+                    "enable_lights_bias": False,  # Opt-in feature
+                    "enable_vpd_weighting": False,  # Opt-in feature
+                    "volume_liters": volume_liters,
+                }
+                # Preserve accumulated runtime data for tanks that already exist
+                existing = existing_by_entity.get(sensor_entity)
+                if existing is not None:
+                    water_history = (
+                        existing.water_history
+                        if hasattr(existing, "water_history")
+                        else existing.get("water_history")
+                    )
+                    last_level = (
+                        existing.last_recorded_level
+                        if hasattr(existing, "last_recorded_level")
+                        else existing.get("last_recorded_level")
+                    )
+                    if water_history is not None:
+                        try:
+                            tank_dict["water_history"] = asdict(water_history)
+                        except TypeError:
+                            tank_dict["water_history"] = water_history
+                    if last_level is not None:
+                        tank_dict["last_recorded_level"] = last_level
+                irrigation_tanks.append(tank_dict)
             env_config["irrigation_tanks"] = irrigation_tanks
         else:
             env_config["irrigation_tanks"] = []
