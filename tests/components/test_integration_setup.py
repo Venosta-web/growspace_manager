@@ -10,12 +10,12 @@ for real.
 from __future__ import annotations
 
 import pytest
+
+from custom_components.growspace_manager.const import DOMAIN
+from custom_components.growspace_manager.coordinator import GrowspaceCoordinator
 from homeassistant.config_entries import ConfigEntryState
 from homeassistant.core import HomeAssistant
 from tests.common import MockConfigEntry
-
-from custom_components.growspace_manager.const import DOMAIN  # noqa: E402
-from custom_components.growspace_manager.coordinator import GrowspaceCoordinator  # noqa: E402
 
 
 @pytest.mark.usefixtures("init_integration")
@@ -50,9 +50,7 @@ async def test_domain_services_registered(
     """Core services are registered on the domain after setup."""
     expected = {"add_growspace", "add_plant", "water_plant", "remove_plant"}
     registered = set(hass.services.async_services_for_domain(DOMAIN))
-    assert expected.issubset(registered), (
-        f"Missing services: {expected - registered}"
-    )
+    assert expected.issubset(registered), f"Missing services: {expected - registered}"
 
 
 @pytest.mark.usefixtures("init_integration")

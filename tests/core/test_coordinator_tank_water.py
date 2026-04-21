@@ -4,7 +4,6 @@ from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
-from tests.common import MockConfigEntry
 
 from custom_components.growspace_manager.const import DOMAIN
 from custom_components.growspace_manager.coordinator import GrowspaceCoordinator
@@ -15,6 +14,7 @@ from custom_components.growspace_manager.models import (
 )
 from custom_components.growspace_manager.tank_water_tracker import TankWaterTracker
 from homeassistant.core import HomeAssistant
+from tests.common import MockConfigEntry
 
 
 def _make_coordinator(hass: HomeAssistant) -> GrowspaceCoordinator:
