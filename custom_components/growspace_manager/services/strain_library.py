@@ -515,8 +515,9 @@ async def handle_print_label(
 
     # 4. Breeder Logo (Framed)
     if breeder_logo:
-        # Downscale if it's a base64 string to avoid event bus and printer issues
-        breeder_logo = _downscale_logo_if_needed(breeder_logo)
+        # Downscale if it's a base64 string to avoid event bus and printer issues.
+        # Run in executor to avoid blocking the event loop on PIL's lazy native lib init.
+        breeder_logo = await hass.async_add_executor_job(_downscale_logo_if_needed, breeder_logo)
 
         payload.append(
             {
