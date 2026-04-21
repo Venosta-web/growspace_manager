@@ -25,6 +25,7 @@ def mock_hass():
     hass.config.path = MagicMock(side_effect=lambda *args: "/".join(args))
     hass.services = MagicMock()
     hass.services.async_call = AsyncMock()
+    hass.async_add_executor_job = AsyncMock(side_effect=lambda func, *args: func(*args))
     return hass
 
 
