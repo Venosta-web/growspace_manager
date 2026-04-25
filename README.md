@@ -4,19 +4,25 @@
 
 ## Features
 
-*   **Detailed Plant Tracking**: Monitor individual plants from seed to cure, tracking their strain, phenotype, position, and key dates (veg, flower, etc.).
-*   **Visual Growspace Layouts**: Organize your plants in a grid system for each growspace. Visualize your entire setup at a glance using the companion Lovelace card.
+*   **Detailed Plant Tracking**: Monitor individual plants from seed to harvest and cure. Track precise dates for each phase, phenotype details, and positional layout.
+*   **Batch Cloning & Seed Management**: Effortlessly generate multiple clones from a single mother, manage seed runs, and track them in batch operations.
+*   **Visual Growspace Layouts & 3D Mapping**: Organize your plants in a grid system for each growspace. Configure sensor coordinates for advanced 3D heatmap visualizations in the companion Lovelace card.
+*   **Nutrient Inventory & Feeding**: Track your liquid nutrient bottles, calculate precise ml/L dosages, set up feeding presets, and execute EC ramps tailored to specific growth phases. 
+*   **Irrigation & Substrate Control**: Leverage Volumetric Water Content (VWC) tracking, crop steering strategies (vegetative/generative), and accurate water tank depletion prediction.
+*   **Plant Harvest Analytics**: Execute detailed harvests logging wet, dry, and trim weights alongside THC/CBD percentages and custom terpene profiles.
 *   **AI Assistant**: Built-in AI integration (powered by Home Assistant's conversation agents) provides:
-    *   **Diagnostics**: Analyze sensor data to identify issues like heat stress or VPD imbalances.
-    *   **Optimization**: Get tailored advice on how to improve your environment for the specific growth stage.
+    *   **Diagnostics**: Analyze sensor data and plant images (via Vision Checkup) to identify issues like heat stress or nutrient lockout.
+    *   **Optimization**: Get tailored advice to improve your environment for the specific growth stage.
     *   **Planning**: Ask for help with scheduling, training techniques, or harvest timing.
-*   **Advanced Environmental Monitoring**: Utilizes a sophisticated Bayesian inference engine to provide intelligent binary sensors for:
-    *   **Plant Stress**: Detects when conditions like temperature, humidity, or VPD are likely causing stress to your plants.
-    *   **Mold Risk**: Proactively warns you of conditions favorable to mold growth, especially during the critical late-flowering stage.
-    *   **Optimal Conditions**: Confirms when your environmental parameters are within the ideal range for the current growth stage.
-    *   **Light-Aware Logic**: Uses an optional light sensor to apply more accurate day/night thresholds and verifies your light schedule is correct for the plant's growth stage.
-*   **Strain Analytics**: Automatically tracks harvest data to provide average veg and flower times for each strain.
-*   **Task Calendar**: Generates a dedicated calendar for each growspace with scheduled tasks based on your timed notifications.
+*   **Advanced Environmental Monitoring & Device Control**: Utilizes a sophisticated Bayesian inference engine to provide intelligent binary sensors for:
+    *   **Plant Stress**: Detects when conditions like temperature, humidity, or VPD are causing stress.
+    *   **Mold Risk**: Proactively warns you of conditions favorable to mold growth.
+    *   **Optimal Conditions**: Confirms when your environmental parameters are within the ideal range.
+    *   **Device Automation**: Direct automated control over humidifiers, dehumidifiers, and circulation fans.
+    *   **Light-Aware Logic**: Uses an optional light sensor to apply more accurate day/night thresholds and verifies your light schedule.
+*   **Strain Analytics & Library Management**: Automatically tracks harvest data. Import/Export your custom Strain Library (including breeder data and images) easily using ZIP files.
+*   **Specialized Growspaces**: Comes with pre-configured logical spaces for managing seedlings, clones, mothers, veg, flower, drying, and curing.
+*   **Task Calendar & Notification Control**: Dedicated Home Assistant Calendar entity generated per growspace, with flexible notification controls.
 *   **Dynamic Entity Creation**: Automatically generates a rich set of sensors and controls for each growspace and plant.
 *   **Notification Control**: Easily toggle notifications for each growspace with a dedicated switch.
 *   **Strain Library**: Automatically catalogs all your unique strains for easy reference.
@@ -24,16 +30,26 @@
 
 ## Advanced Features
 
-### Strain Analytics
-The `StrainLibrarySensor` does more than just list your strains; it automatically compiles harvest data to provide valuable insights. When a plant is moved to the "dry" growspace, its veg and flower durations are recorded. The sensor then calculates and exposes the average veg and flower times for each strain and phenotype, allowing you to refine your cultivation cycles and compare results over time.
+### Strain Library Import/Export
+Share your strain catalog with friends or easily back up your hard work. The integration supports bidirectional `.zip` imports and exports containing all your textual strain metadata, phenotypes, and custom image galleries.
 
-### Task Calendar
-For each growspace, the integration now creates a dedicated Home Assistant calendar entity. This calendar is automatically populated with tasks and reminders based on the timed notifications you configure. For example, if you set a reminder to "Check trichomes" on day 60 of flower, a corresponding all-day event will appear on the calendar, ensuring you never miss a critical task.
+### Crop Steering & Active Irrigation
+Take your cultivation to a commercial level by enabling crop steering. Use connected substrate moisture sensors to schedule automated drybacks and precisely trigger vegetative or generative steering phases. Combine this with the **Nutrient Inventory** capabilities to calculate complex EC ramps automatically.
 
-### Light-Aware Monitoring
-By configuring an optional light sensor for your growspace, you unlock more intelligent environmental monitoring:
+### Water Tank Depletion Predictor
+Know exactly when your irrigation reservoir will run dry. The `Tank Water Tracker` uses historical watering events and current tank volume to predict depletion dates so your plants never miss a feeding.
+
+### Strain Analytics & Harvest Precision
+The `StrainLibrarySensor` does more than just list your strains; it automatically compiles harvest data to provide valuable insights. When a plant is moved to the "dry" growspace, its veg, flower, and total cycle durations are recorded. By entering precise data during the harvest action—like wet/dry/trim weights and lab test results (THC, CBD, Terpenes)—the sensor exposes average yields and timelines for each strain and phenotype.
+
+### Task Calendar & Vision Checkups
+For each growspace, the integration creates a dedicated Home Assistant calendar entity automatically populated with tasks and reminders from your timed configurations. Additionally, **Vision Checkup Schedulers** can be integrated to routinely prompt for image-based analyses using local or cloud AI models.
+
+### Light-Aware & Active Environmental Control
+By configuring an optional light sensor, humidifier, or dehumidifier for your growspace, you unlock more intelligent environmental monitoring:
 *   **Day/Night Logic**: The Bayesian sensors will automatically switch between day and night thresholds for temperature and VPD, leading to more accurate stress and mold risk detection.
-*   **Schedule Verification**: A `LightCycleVerificationSensor` is created to monitor your light's on/off cycles. It verifies that the light is running for the correct duration for the current growth stage (e.g., 18/6 for veg, 12/12 for flower) and will turn off if the schedule is incorrect, alerting you to potential timer malfunctions.
+*   **Schedule Verification**: A `LightCycleVerificationSensor` is created to verify your light's on/off cycles for the current growth stage (e.g., 18/6 for veg, 12/12 for flower).
+*   **Active Climate Intervention**: The integration can proactively command your exhaust, humidifier, or dehumidifier based on its probabilistic inferences before conditions drift out of range.
 
 ## Installation
 

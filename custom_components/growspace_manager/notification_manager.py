@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING, Any, ClassVar, cast
 
 from homeassistant.components import conversation
 from homeassistant.core import CALLBACK_TYPE, Context, HomeAssistant, callback
+from homeassistant.helpers import intent
 from homeassistant.helpers.event import async_call_later
 from homeassistant.util.dt import utcnow
 
@@ -22,7 +23,11 @@ from .const import (
     DEFAULT_COOLDOWN_MINUTES,
     ESCALATION_DELAY_MINUTES,
     MAX_NOTIFICATION_LENGTH,
+    MIN_STRESS_DURATION_SECONDS,
+    NOTIFICATION_CHANNEL,
     NOTIFICATION_DEBOUNCE_SECONDS,
+    NOTIFICATION_GROUP,
+    NOTIFICATION_ICON,
     RECOVERY_COOLDOWN_MINUTES,
     WARNING_COOLDOWN_MINUTES,
     WARNING_PERSISTENCE_MINUTES,
@@ -49,6 +54,7 @@ class PendingAlert:
     notified: bool = False
     escalated: bool = False
     notified_as_critical: bool = False
+    notification_timer: CALLBACK_TYPE | None = None
 
 
 class NotificationManager:
@@ -65,6 +71,7 @@ class NotificationManager:
         self._batch_timers: dict[str, CALLBACK_TYPE] = {}
         self._pending_alerts: dict[str, PendingAlert] = {}
         self._cooldowns: dict[str, dict[str, datetime]] = {}
+        self._ai_cooldown_until: datetime | None = None
 
     _TIER_COOLDOWNS: ClassVar[dict[str, timedelta]] = {
         NotificationTier.CRITICAL: timedelta(minutes=CRITICAL_COOLDOWN_MINUTES),
@@ -100,8 +107,12 @@ class NotificationManager:
 
         if not sensor.is_on:
             alert = self._pending_alerts.pop(alert_key, None)
-            if alert and alert.notified_as_critical:
-                self._schedule_recovery(growspace_id, alert)
+            if alert:
+                if alert.notification_timer is not None:
+                    alert.notification_timer()
+                    alert.notification_timer = None
+                if alert.notified_as_critical:
+                    self._schedule_recovery(growspace_id, alert)
             return
 
         probability = sensor._probability  # noqa: SLF001
@@ -124,10 +135,22 @@ class NotificationManager:
         if (
             probability >= CRITICAL_PROBABILITY_THRESHOLD
             and not alert.notified_as_critical
+            and alert.notification_timer is None
         ):
-            alert.notified_as_critical = True
-            alert.notified = True
-            self.async_schedule_notification(growspace_id)
+
+            @callback
+            def _fire_critical(_now: datetime) -> None:
+                pending = self._pending_alerts.get(alert_key)
+                if pending is None:
+                    return
+                pending.notification_timer = None
+                pending.notified_as_critical = True
+                pending.notified = True
+                self.async_schedule_notification(growspace_id)
+
+            alert.notification_timer = async_call_later(
+                self.hass, MIN_STRESS_DURATION_SECONDS, _fire_critical
+            )
 
     @callback
     def _schedule_recovery(self, growspace_id: str, alert: PendingAlert) -> None:
@@ -139,6 +162,8 @@ class NotificationManager:
     ) -> None:
         """Send a recovery notification for a resolved critical alert."""
         now = utcnow()
+        if (now - alert.first_triggered).total_seconds() < MIN_STRESS_DURATION_SECONDS:
+            return
         if self._is_on_cooldown(growspace_id, "recovery", now):
             return
 
@@ -334,6 +359,12 @@ class NotificationManager:
                 {
                     "message": final_message,
                     "title": title,
+                    "data": {
+                        "group": NOTIFICATION_GROUP,
+                        "channel": NOTIFICATION_CHANNEL,
+                        "notification_icon": NOTIFICATION_ICON,
+                        "push": {"thread-id": NOTIFICATION_GROUP},
+                    },
                 },
                 blocking=False,
             )
@@ -359,6 +390,10 @@ class NotificationManager:
         ai_settings: dict[str, Any],
     ) -> str:
         """Rewrite the notification message using Home Assistant Assist."""
+        if self._ai_cooldown_until and utcnow() < self._ai_cooldown_until:
+            _LOGGER.debug("AI notification generation is on rate-limit cooldown")
+            return original_message
+
         try:
             personality = ai_settings.get(CONF_NOTIFICATION_PERSONALITY, "Standard")
             agent_id = ai_settings.get(CONF_ASSISTANT_ID)
@@ -382,26 +417,50 @@ class NotificationManager:
                 agent_id=agent_id,
             )
 
-            if (
-                result
-                and result.response
-                and result.response.speech
-                and result.response.speech.get("plain")
-            ):
-                rewritten = result.response.speech["plain"]["speech"]
-                # Validate the response isn't too long
-                if len(rewritten) <= max_length:
-                    _LOGGER.info("AI rewrote notification in %s style", personality)
-                    return cast(str, rewritten)
-                # Try to truncate intelligently if it's close
-                if len(rewritten) < max_length + 50:
-                    _LOGGER.info("AI response truncated to fit length limit")
-                    return cast(str, rewritten[:max_length].rsplit(" ", 1)[0] + "...")
-                _LOGGER.warning(
-                    "AI response too long (%d chars > %d), using default",
-                    len(rewritten),
-                    max_length,
-                )
+            if result and result.response:
+                if (
+                    getattr(result.response, "error_code", None) is not None
+                    or getattr(result.response, "response_type", None)
+                    == intent.IntentResponseType.ERROR
+                ):
+                    err_msg = ""
+                    if result.response.speech and result.response.speech.get("plain"):
+                        err_msg = result.response.speech["plain"]["speech"]
+
+                    if (
+                        "429" in err_msg
+                        or "Too Many Requests" in err_msg
+                        or "RESOURCE_EXHAUSTED" in err_msg
+                    ):
+                        _LOGGER.warning(
+                            "AI notification rate limit reached (429), pausing AI features temporarily"
+                        )
+                        self._ai_cooldown_until = utcnow() + timedelta(minutes=15)
+                    else:
+                        _LOGGER.warning(
+                            "AI notification generation failed: %s", err_msg
+                        )
+                    return original_message
+
+                if result.response.speech and result.response.speech.get("plain"):
+                    rewritten = result.response.speech["plain"]["speech"]
+                    # Validate the response isn't too long
+                    if len(rewritten) <= max_length:
+                        _LOGGER.info("AI rewrote notification in %s style", personality)
+                        return cast(str, rewritten)
+                    # Try to truncate intelligently if it's close
+                    if len(rewritten) < max_length + 50:
+                        _LOGGER.info("AI response truncated to fit length limit")
+                        return cast(
+                            str, rewritten[:max_length].rsplit(" ", 1)[0] + "..."
+                        )
+                    _LOGGER.warning(
+                        "AI response too long (%d chars > %d), using default",
+                        len(rewritten),
+                        max_length,
+                    )
+                else:
+                    _LOGGER.warning("AI returned empty speech, using default message")
             else:
                 _LOGGER.warning("AI returned empty response, using default message")
 

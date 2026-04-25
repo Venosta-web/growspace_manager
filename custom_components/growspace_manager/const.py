@@ -580,6 +580,18 @@ MAX_NOTIFICATION_LENGTH: Final = 240
 NOTIFICATION_DEBOUNCE_SECONDS: Final = 5
 """Debounce time for batched notifications in seconds."""
 
+MIN_STRESS_DURATION_SECONDS: Final = 180
+"""Minimum seconds a stress event must persist before any notification is sent."""
+
+NOTIFICATION_GROUP: Final = "growspace-manager"
+"""Notification group/thread identifier for grouping on Android and iOS."""
+
+NOTIFICATION_CHANNEL: Final = "Growspace Manager"
+"""Android notification channel name."""
+
+NOTIFICATION_ICON: Final = "mdi:sprout"
+"""Default Android status bar icon for growspace notifications."""
+
 # WebSocket constants
 MERGE_ALERT_GAP_SECONDS: Final = 600
 """Maximum time gap (in seconds) between alerts for merging (10 minutes)."""

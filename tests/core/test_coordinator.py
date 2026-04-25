@@ -14,10 +14,6 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from common import create_plant
 from freezegun import freeze_time
 import pytest
-from tests.common import (
-    MockConfigEntry,
-    async_capture_events,
-)
 
 from custom_components.growspace_manager.const import DOMAIN, PLANT_STAGES, PlantStage
 from custom_components.growspace_manager.coordinator import GrowspaceCoordinator
@@ -38,6 +34,7 @@ from custom_components.growspace_manager.utils import calculate_plant_stage
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import device_registry as dr, entity_registry as er
 from homeassistant.util.dt import now
+from tests.common import MockConfigEntry, async_capture_events
 
 
 def create_test_coordinator(
@@ -1260,6 +1257,12 @@ async def test_async_check_timed_notifications(
         {
             "message": "Test message",
             "title": "Notify GS - Veg Day 5",
+            "data": {
+                "group": "growspace-manager",
+                "channel": "Growspace Manager",
+                "notification_icon": "mdi:sprout",
+                "push": {"thread-id": "growspace-manager"},
+            },
         },
         blocking=False,
     )
