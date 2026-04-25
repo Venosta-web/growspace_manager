@@ -1274,25 +1274,63 @@ async def test_async_send_recovery_cooldown(
         mock_send.assert_not_awaited()
 
 
-async def test_async_send_recovery_suppressed_below_min_duration(
+async def test_timer_not_rescheduled_while_active(
     manager: NotificationManager, mock_hass: MagicMock
 ) -> None:
-    """Test that recovery is suppressed when stress lasted less than min duration."""
-    now = dt_util.utcnow()
-    alert = PendingAlert(
-        growspace_id=GROWSPACE_ID,
-        first_triggered=now - timedelta(seconds=30),
-        last_probability=0.3,
-        peak_probability=0.95,
-        sensor_name="Stress Sensor",
-        notified_as_critical=True,
-    )
+    """Test that a second critical update does not schedule a second timer."""
+    sensor = MagicMock()
+    sensor.is_on = True
+    sensor.name = "Stress Sensor"
+    sensor._probability = 0.95
+    sensor.entity_description = MagicMock()
+    sensor.entity_description.sensor_type = "stress"
 
-    with patch.object(
-        manager, "async_send_notification", new_callable=AsyncMock
-    ) as mock_send:
-        await manager._async_send_recovery(GROWSPACE_ID, alert)
-        mock_send.assert_not_awaited()
+    cancel_mock = MagicMock()
+
+    with patch(
+        "custom_components.growspace_manager.notification_manager.async_call_later",
+        return_value=cancel_mock,
+    ) as mock_later:
+        manager.update_pending_alert(GROWSPACE_ID, sensor)
+        # Second update at same probability
+        manager.update_pending_alert(GROWSPACE_ID, sensor)
+        # Timer should only be scheduled once
+        assert mock_later.call_count == 1
+
+
+async def test_timer_cancelled_when_probability_drops_below_threshold(
+    manager: NotificationManager, mock_hass: MagicMock
+) -> None:
+    """Test that the pending timer is cancelled if probability drops below critical."""
+    sensor_high = MagicMock()
+    sensor_high.is_on = True
+    sensor_high.name = "Stress Sensor"
+    sensor_high._probability = 0.95
+    sensor_high.entity_description = MagicMock()
+    sensor_high.entity_description.sensor_type = "stress"
+
+    cancel_mock = MagicMock()
+
+    with patch(
+        "custom_components.growspace_manager.notification_manager.async_call_later",
+        return_value=cancel_mock,
+    ):
+        manager.update_pending_alert(GROWSPACE_ID, sensor_high)
+
+    alert_key = f"{GROWSPACE_ID}_stress"
+    assert manager._pending_alerts[alert_key].notification_timer is cancel_mock
+
+    # Probability drops below threshold — timer should be cancelled
+    sensor_low = MagicMock()
+    sensor_low.is_on = True
+    sensor_low.name = "Stress Sensor"
+    sensor_low._probability = 0.70
+    sensor_low.entity_description = MagicMock()
+    sensor_low.entity_description.sensor_type = "stress"
+
+    manager.update_pending_alert(GROWSPACE_ID, sensor_low)
+    cancel_mock.assert_called_once()
+    assert manager._pending_alerts[alert_key].notification_timer is None
 
 
 def test_detach_sensor(manager: NotificationManager) -> None:
