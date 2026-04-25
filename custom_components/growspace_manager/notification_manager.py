@@ -151,6 +151,12 @@ class NotificationManager:
             alert.notification_timer = async_call_later(
                 self.hass, MIN_STRESS_DURATION_SECONDS, _fire_critical
             )
+        elif (
+            probability < CRITICAL_PROBABILITY_THRESHOLD
+            and alert.notification_timer is not None
+        ):
+            alert.notification_timer()
+            alert.notification_timer = None
 
     @callback
     def _schedule_recovery(self, growspace_id: str, alert: PendingAlert) -> None:
@@ -162,8 +168,6 @@ class NotificationManager:
     ) -> None:
         """Send a recovery notification for a resolved critical alert."""
         now = utcnow()
-        if (now - alert.first_triggered).total_seconds() < MIN_STRESS_DURATION_SECONDS:
-            return
         if self._is_on_cooldown(growspace_id, "recovery", now):
             return
 
@@ -427,10 +431,13 @@ class NotificationManager:
                     if result.response.speech and result.response.speech.get("plain"):
                         err_msg = result.response.speech["plain"]["speech"]
 
+                    err_code = getattr(result.response, "error_code", "") or ""
                     if (
-                        "429" in err_msg
-                        or "Too Many Requests" in err_msg
-                        or "RESOURCE_EXHAUSTED" in err_msg
+                        any(
+                            s in err_msg
+                            for s in ("429", "Too Many Requests", "RESOURCE_EXHAUSTED")
+                        )
+                        or "resource_exhausted" in err_code.lower()
                     ):
                         _LOGGER.warning(
                             "AI notification rate limit reached (429), pausing AI features temporarily"

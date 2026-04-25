@@ -24,9 +24,6 @@
 *   **Specialized Growspaces**: Comes with pre-configured logical spaces for managing seedlings, clones, mothers, veg, flower, drying, and curing.
 *   **Task Calendar & Notification Control**: Dedicated Home Assistant Calendar entity generated per growspace, with flexible notification controls.
 *   **Dynamic Entity Creation**: Automatically generates a rich set of sensors and controls for each growspace and plant.
-*   **Notification Control**: Easily toggle notifications for each growspace with a dedicated switch.
-*   **Strain Library**: Automatically catalogs all your unique strains for easy reference.
-*   **Specialized Growspaces**: Comes with pre-configured logical spaces for managing clones, mothers, drying, and curing.
 
 ## Advanced Features
 
