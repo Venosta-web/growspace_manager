@@ -10,6 +10,10 @@ from custom_components.growspace_manager.const import (
     CONF_AI_ENABLED,
     CONF_ASSISTANT_ID,
     CONF_NOTIFICATION_PERSONALITY,
+    MIN_STRESS_DURATION_SECONDS,
+    NOTIFICATION_CHANNEL,
+    NOTIFICATION_GROUP,
+    NOTIFICATION_ICON,
     NotificationTier,
 )
 from custom_components.growspace_manager.models import (
@@ -94,7 +98,16 @@ async def test_async_send_notification_success(
     mock_hass.services.async_call.assert_awaited_once_with(
         "notify",
         "mobile_app_test",
-        {"message": "Test Message", "title": "Test Title"},
+        {
+            "message": "Test Message",
+            "title": "Test Title",
+            "data": {
+                "group": NOTIFICATION_GROUP,
+                "channel": NOTIFICATION_CHANNEL,
+                "notification_icon": NOTIFICATION_ICON,
+                "push": {"thread-id": NOTIFICATION_GROUP},
+            },
+        },
         blocking=False,
     )
 
@@ -161,6 +174,8 @@ async def test_async_send_notification_ai_rewrite(
         new_callable=AsyncMock,
     ) as mock_converse:
         mock_result = MagicMock()
+        mock_result.response.error_code = None
+        mock_result.response.response_type = None
         mock_result.response.speech = {
             "plain": {"speech": "Ahoy! Test Message Rewrite"}
         }
@@ -173,7 +188,16 @@ async def test_async_send_notification_ai_rewrite(
         mock_hass.services.async_call.assert_awaited_once_with(
             "notify",
             "mobile_app_test",
-            {"message": "Ahoy! Test Message Rewrite", "title": "Test Title"},
+            {
+                "message": "Ahoy! Test Message Rewrite",
+                "title": "Test Title",
+                "data": {
+                    "group": NOTIFICATION_GROUP,
+                    "channel": NOTIFICATION_CHANNEL,
+                    "notification_icon": NOTIFICATION_ICON,
+                    "push": {"thread-id": NOTIFICATION_GROUP},
+                },
+            },
             blocking=False,
         )
 
@@ -262,6 +286,8 @@ async def test_rewrite_with_ai_personalities(
             new_callable=AsyncMock,
         ) as mock_converse:
             mock_result = MagicMock()
+            mock_result.response.error_code = None
+            mock_result.response.response_type = None
             mock_result.response.speech = {
                 "plain": {"speech": f"Rewritten as {personality}"}
             }
@@ -308,6 +334,8 @@ async def test_rewrite_with_ai_sensor_formatting(
         new_callable=AsyncMock,
     ) as mock_converse:
         mock_result = MagicMock()
+        mock_result.response.error_code = None
+        mock_result.response.response_type = None
         mock_result.response.speech = {"plain": {"speech": "Rewritten"}}
         mock_converse.return_value = mock_result
 
@@ -342,11 +370,15 @@ async def test_rewrite_with_ai_truncation(
     ) as mock_converse:
         # Case 1: Truncate
         result1 = MagicMock()
+        result1.response.error_code = None
+        result1.response.response_type = None
         long_response = "This is a long response"  # 23 chars. 10 < 23 < 60.
         result1.response.speech = {"plain": {"speech": long_response}}
 
         # Case 2: Too long, use default
         result2 = MagicMock()
+        result2.response.error_code = None
+        result2.response.response_type = None
         very_long_response = "A" * 70  # 70 chars >= 10 + 50
         result2.response.speech = {"plain": {"speech": very_long_response}}
 
@@ -382,6 +414,8 @@ async def test_rewrite_with_ai_empty_response(
         new_callable=AsyncMock,
     ) as mock_converse:
         mock_result = MagicMock()
+        mock_result.response.error_code = None
+        mock_result.response.response_type = None
         mock_result.response.speech = {}  # Empty speech
         mock_converse.return_value = mock_result
 
@@ -663,6 +697,7 @@ def test_pending_alert_creation() -> None:
     assert alert.notified is False
     assert alert.escalated is False
     assert alert.notified_as_critical is False
+    assert alert.notification_timer is None
 
 
 def test_pending_alert_duration() -> None:
@@ -804,10 +839,10 @@ async def test_update_pending_alert_removes_on_off(
     assert alert_key not in manager._pending_alerts
 
 
-async def test_update_pending_alert_critical_immediate_notification(
+async def test_update_pending_alert_critical_schedules_delayed_timer(
     manager: NotificationManager, mock_hass: MagicMock
 ) -> None:
-    """Test that critical probability triggers immediate notification via debounced batch."""
+    """Test that critical probability schedules a delayed timer, not an immediate notification."""
     sensor = MagicMock()
     sensor.is_on = True
     sensor.name = "Stress Sensor"
@@ -820,13 +855,77 @@ async def test_update_pending_alert_critical_immediate_notification(
 
     manager.attach_sensor(GROWSPACE_ID, sensor)
 
-    with patch.object(manager, "async_schedule_notification") as mock_schedule:
+    callback_fn = None
+
+    def capture_call_later(hass, delay, fn):
+        nonlocal callback_fn
+        assert delay == MIN_STRESS_DURATION_SECONDS
+        callback_fn = fn
+        return MagicMock()
+
+    with (
+        patch(
+            "custom_components.growspace_manager.notification_manager.async_call_later",
+            side_effect=capture_call_later,
+        ),
+        patch.object(manager, "async_schedule_notification") as mock_schedule,
+    ):
         manager.update_pending_alert(GROWSPACE_ID, sensor)
-        mock_schedule.assert_called_once_with(GROWSPACE_ID)
+        # Not scheduled immediately
+        mock_schedule.assert_not_called()
 
     alert_key = f"{GROWSPACE_ID}_stress"
     alert = manager._pending_alerts[alert_key]
+    # Not yet marked as critical — timer is pending
+    assert alert.notified_as_critical is False
+    assert alert.notification_timer is not None
+
+    # Simulate the timer firing
+    with patch.object(manager, "async_schedule_notification") as mock_schedule:
+        callback_fn(dt_util.utcnow())
+        mock_schedule.assert_called_once_with(GROWSPACE_ID)
+
     assert alert.notified_as_critical is True
+    assert alert.notification_timer is None
+
+
+async def test_update_pending_alert_timer_cancelled_on_resolve(
+    manager: NotificationManager, mock_hass: MagicMock
+) -> None:
+    """Test that resolving stress before the min-duration timer cancels it without notifying."""
+    sensor_on = MagicMock()
+    sensor_on.is_on = True
+    sensor_on.name = "Stress Sensor"
+    sensor_on._probability = 0.95
+    sensor_on.entity_description = MagicMock()
+    sensor_on.entity_description.sensor_type = "stress"
+
+    cancel_mock = MagicMock()
+
+    with patch(
+        "custom_components.growspace_manager.notification_manager.async_call_later",
+        return_value=cancel_mock,
+    ):
+        manager.update_pending_alert(GROWSPACE_ID, sensor_on)
+
+    alert_key = f"{GROWSPACE_ID}_stress"
+    assert alert_key in manager._pending_alerts
+    assert manager._pending_alerts[alert_key].notification_timer is cancel_mock
+
+    # Now sensor turns off before 180s
+    sensor_off = MagicMock()
+    sensor_off.is_on = False
+    sensor_off.entity_description = MagicMock()
+    sensor_off.entity_description.sensor_type = "stress"
+
+    with patch.object(manager, "_schedule_recovery") as mock_recovery:
+        manager.update_pending_alert(GROWSPACE_ID, sensor_off)
+        # Timer should be cancelled
+        cancel_mock.assert_called_once()
+        # No recovery because notified_as_critical was never set
+        mock_recovery.assert_not_called()
+
+    assert alert_key not in manager._pending_alerts
 
 
 # --- Task 5: async_check_pending_alerts tests ---
@@ -1156,9 +1255,10 @@ async def test_async_send_recovery_cooldown(
     manager: NotificationManager, mock_hass: MagicMock
 ) -> None:
     """Test recovery notification cooldown."""
+    now = dt_util.utcnow()
     alert = PendingAlert(
         growspace_id=GROWSPACE_ID,
-        first_triggered=dt_util.utcnow(),
+        first_triggered=now - timedelta(minutes=10),
         last_probability=0.9,
         peak_probability=0.95,
         sensor_name="Test Sensor",
@@ -1166,6 +1266,27 @@ async def test_async_send_recovery_cooldown(
 
     # Set recovery cooldown
     manager._set_cooldown(GROWSPACE_ID, "recovery")
+
+    with patch.object(
+        manager, "async_send_notification", new_callable=AsyncMock
+    ) as mock_send:
+        await manager._async_send_recovery(GROWSPACE_ID, alert)
+        mock_send.assert_not_awaited()
+
+
+async def test_async_send_recovery_suppressed_below_min_duration(
+    manager: NotificationManager, mock_hass: MagicMock
+) -> None:
+    """Test that recovery is suppressed when stress lasted less than min duration."""
+    now = dt_util.utcnow()
+    alert = PendingAlert(
+        growspace_id=GROWSPACE_ID,
+        first_triggered=now - timedelta(seconds=30),
+        last_probability=0.3,
+        peak_probability=0.95,
+        sensor_name="Stress Sensor",
+        notified_as_critical=True,
+    )
 
     with patch.object(
         manager, "async_send_notification", new_callable=AsyncMock
