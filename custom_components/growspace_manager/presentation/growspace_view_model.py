@@ -466,6 +466,14 @@ class GrowspaceViewModelBuilder:
         attributes["electricity_cost_per_kwh"] = env_config.electricity_cost_per_kwh
         attributes["camera_entities"] = env_config.camera_entities
 
+        # EC / pH / flow sensors (used by frontend for capability detection)
+        attributes["ph_sensors"] = env_config.ph_sensors
+        attributes["feed_ec_sensors"] = env_config.feed_ec_sensors
+        attributes["substrate_ec_sensors"] = env_config.substrate_ec_sensors
+        attributes["runoff_ec_sensors"] = env_config.runoff_ec_sensors
+        attributes["drain_volume_sensors"] = env_config.drain_volume_sensors
+        attributes["irrigation_flow_sensors"] = env_config.irrigation_flow_sensors
+
         # Irrigation Pumps (States for change detection in 3D heatmap)
         if growspace.irrigation_config:
             irr_cfg = growspace.irrigation_config
