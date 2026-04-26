@@ -560,6 +560,7 @@ def test_subarea_from_dict() -> None:
     sub = Subarea.from_dict(data)
     assert sub.id == "sub1"
     assert sub.name == "Undercanopy"
+    assert isinstance(sub.environment_config, EnvironmentConfig)
 
 
 def test_subarea_from_dict_with_environment_config() -> None:
@@ -587,6 +588,7 @@ def test_growspace_with_subareas_roundtrip() -> None:
     restored = Growspace.from_dict(data)
     assert len(restored.subareas) == 1
     assert restored.subareas[0].name == "Undercanopy"
+    assert restored.subareas[0].id == "sub1"
 
 
 def test_growspace_from_dict_legacy_no_subareas() -> None:
