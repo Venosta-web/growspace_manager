@@ -31,13 +31,12 @@ def manager() -> GrowspaceManager:
         save_callback=save_cb,
         lock=asyncio.Lock(),
     )
-    mgr.save_callback = save_cb  # keep ref for assertions
     return mgr
 
 
 @pytest.mark.asyncio
 async def test_add_subarea(manager: GrowspaceManager) -> None:
-    sub = await manager.async_add_subarea("gs1", "Undercanopy")
+    sub = await manager.add_subarea("gs1", "Undercanopy")
     assert sub.name == "Undercanopy"
     assert sub.id
     assert len(manager.repository.growspaces["gs1"].subareas) == 1
@@ -47,43 +46,47 @@ async def test_add_subarea(manager: GrowspaceManager) -> None:
 @pytest.mark.asyncio
 async def test_add_subarea_unknown_growspace(manager: GrowspaceManager) -> None:
     with pytest.raises(GrowspaceNotFoundError):
-        await manager.async_add_subarea("no_such_id", "X")
+        await manager.add_subarea("no_such_id", "X")
 
 
 @pytest.mark.asyncio
 async def test_update_subarea(manager: GrowspaceManager) -> None:
-    sub = await manager.async_add_subarea("gs1", "Undercanopy")
-    updated = await manager.async_update_subarea(
+    sub = await manager.add_subarea("gs1", "Undercanopy")
+    updated = await manager.update_subarea(
         "gs1", sub.id, {"temperature_sensors": ["sensor.t1"]}
     )
     assert updated.environment_config.temperature_sensors == ["sensor.t1"]
+    manager.save_callback.assert_awaited()
 
 
 @pytest.mark.asyncio
 async def test_update_subarea_not_found(manager: GrowspaceManager) -> None:
     with pytest.raises(ServiceValidationError):
-        await manager.async_update_subarea("gs1", "bad_id", {})
+        await manager.update_subarea("gs1", "bad_id", {})
 
 
 @pytest.mark.asyncio
 async def test_remove_subarea(manager: GrowspaceManager) -> None:
-    sub = await manager.async_add_subarea("gs1", "Undercanopy")
-    await manager.async_remove_subarea("gs1", sub.id)
+    sub = await manager.add_subarea("gs1", "Undercanopy")
+    await manager.remove_subarea("gs1", sub.id)
     assert manager.repository.growspaces["gs1"].subareas == []
+    manager.save_callback.assert_awaited()
 
 
 @pytest.mark.asyncio
 async def test_remove_subarea_not_found(manager: GrowspaceManager) -> None:
     with pytest.raises(ServiceValidationError):
-        await manager.async_remove_subarea("gs1", "bad_id")
+        await manager.remove_subarea("gs1", "bad_id")
 
 
 @pytest.mark.asyncio
 async def test_get_subareas(manager: GrowspaceManager) -> None:
-    await manager.async_add_subarea("gs1", "Undercanopy")
-    await manager.async_add_subarea("gs1", "Top Canopy")
+    await manager.add_subarea("gs1", "Undercanopy")
+    await manager.add_subarea("gs1", "Top Canopy")
     subareas = manager.get_subareas("gs1")
     assert len(subareas) == 2
+    assert subareas[0].name == "Undercanopy"
+    assert subareas[1].name == "Top Canopy"
 
 
 @pytest.mark.asyncio

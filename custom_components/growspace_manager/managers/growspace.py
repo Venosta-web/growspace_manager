@@ -222,7 +222,7 @@ class GrowspaceManager:
 
             return growspace
 
-    async def async_add_subarea(self, growspace_id: str, name: str) -> Subarea:
+    async def add_subarea(self, growspace_id: str, name: str) -> Subarea:
         """Add a named subarea to a growspace."""
         async with self.lock:
             if growspace_id not in self.repository.growspaces:
@@ -232,14 +232,14 @@ class GrowspaceManager:
             await self.save_callback()
             return subarea
 
-    async def async_update_subarea(
+    async def update_subarea(
         self, growspace_id: str, subarea_id: str, environment_config: dict[str, Any]
     ) -> Subarea:
         """Update a subarea's environment config."""
         async with self.lock:
-            growspace = self.repository.growspaces.get(growspace_id)
-            if not growspace:
+            if growspace_id not in self.repository.growspaces:
                 raise GrowspaceNotFoundError(f"Growspace {growspace_id} not found")
+            growspace = self.repository.growspaces[growspace_id]
             subarea = next((s for s in growspace.subareas if s.id == subarea_id), None)
             if not subarea:
                 raise ServiceValidationError(f"Subarea {subarea_id} not found")
@@ -247,12 +247,12 @@ class GrowspaceManager:
             await self.save_callback()
             return subarea
 
-    async def async_remove_subarea(self, growspace_id: str, subarea_id: str) -> None:
+    async def remove_subarea(self, growspace_id: str, subarea_id: str) -> None:
         """Remove a subarea from a growspace."""
         async with self.lock:
-            growspace = self.repository.growspaces.get(growspace_id)
-            if not growspace:
+            if growspace_id not in self.repository.growspaces:
                 raise GrowspaceNotFoundError(f"Growspace {growspace_id} not found")
+            growspace = self.repository.growspaces[growspace_id]
             before = len(growspace.subareas)
             growspace.subareas = [s for s in growspace.subareas if s.id != subarea_id]
             if len(growspace.subareas) == before:
@@ -261,10 +261,9 @@ class GrowspaceManager:
 
     def get_subareas(self, growspace_id: str) -> list[Subarea]:
         """Return all subareas for a growspace."""
-        growspace = self.repository.growspaces.get(growspace_id)
-        if not growspace:
+        if growspace_id not in self.repository.growspaces:
             raise GrowspaceNotFoundError(f"Growspace {growspace_id} not found")
-        return growspace.subareas
+        return list(self.repository.growspaces[growspace_id].subareas)
 
     def _update_growspace_structure(
         self, growspace: Growspace, kwargs: dict[str, Any], changes: list[str]
