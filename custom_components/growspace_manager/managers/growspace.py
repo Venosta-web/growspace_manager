@@ -32,9 +32,9 @@ from custom_components.growspace_manager.models import (
     GrowspaceType,
     Subarea,
 )
-from homeassistant.exceptions import ServiceValidationError
 from custom_components.growspace_manager.view_model_builder import ViewModelBuilder
 from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import ServiceValidationError
 from homeassistant.helpers import device_registry as dr
 from homeassistant.util import slugify
 

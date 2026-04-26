@@ -6,24 +6,19 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from custom_components.growspace_manager.managers.growspace import GrowspaceManager
-from custom_components.growspace_manager.models import (
-    EnvironmentConfig,
-    Growspace,
-    Subarea,
+from custom_components.growspace_manager.data_access.growspace_repository import (
+    GrowspaceRepository,
 )
+from custom_components.growspace_manager.exceptions import GrowspaceNotFoundError
+from custom_components.growspace_manager.growspace_validator import GrowspaceValidator
+from custom_components.growspace_manager.managers.growspace import GrowspaceManager
+from custom_components.growspace_manager.models import Growspace
+from custom_components.growspace_manager.view_model_builder import ViewModelBuilder
+from homeassistant.exceptions import ServiceValidationError
 
 
 @pytest.fixture
 def manager() -> GrowspaceManager:
-    from custom_components.growspace_manager.data_access.growspace_repository import (
-        GrowspaceRepository,
-    )
-    from custom_components.growspace_manager.growspace_validator import (
-        GrowspaceValidator,
-    )
-    from custom_components.growspace_manager.view_model_builder import ViewModelBuilder
-
     repo = GrowspaceRepository({}, {})
     gs = Growspace(id="gs1", name="Tent 1")
     repo.growspaces["gs1"] = gs
@@ -51,7 +46,6 @@ async def test_add_subarea(manager: GrowspaceManager) -> None:
 
 @pytest.mark.asyncio
 async def test_add_subarea_unknown_growspace(manager: GrowspaceManager) -> None:
-    from custom_components.growspace_manager.exceptions import GrowspaceNotFoundError
     with pytest.raises(GrowspaceNotFoundError):
         await manager.async_add_subarea("no_such_id", "X")
 
@@ -67,7 +61,6 @@ async def test_update_subarea(manager: GrowspaceManager) -> None:
 
 @pytest.mark.asyncio
 async def test_update_subarea_not_found(manager: GrowspaceManager) -> None:
-    from homeassistant.exceptions import ServiceValidationError
     with pytest.raises(ServiceValidationError):
         await manager.async_update_subarea("gs1", "bad_id", {})
 
@@ -81,7 +74,6 @@ async def test_remove_subarea(manager: GrowspaceManager) -> None:
 
 @pytest.mark.asyncio
 async def test_remove_subarea_not_found(manager: GrowspaceManager) -> None:
-    from homeassistant.exceptions import ServiceValidationError
     with pytest.raises(ServiceValidationError):
         await manager.async_remove_subarea("gs1", "bad_id")
 
@@ -96,6 +88,5 @@ async def test_get_subareas(manager: GrowspaceManager) -> None:
 
 @pytest.mark.asyncio
 async def test_get_subareas_unknown_growspace(manager: GrowspaceManager) -> None:
-    from custom_components.growspace_manager.exceptions import GrowspaceNotFoundError
     with pytest.raises(GrowspaceNotFoundError):
         manager.get_subareas("no_such_id")
