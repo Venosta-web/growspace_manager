@@ -29,6 +29,7 @@ from custom_components.growspace_manager.models import (
     GrowspaceType,
     IrrigationConfig,
     Plant,
+    Subarea,
 )
 from custom_components.growspace_manager.utils import calculate_plant_stage
 from homeassistant.core import HomeAssistant
@@ -2822,8 +2823,6 @@ async def test_update_irrigation_settings_missing_entities(
 @pytest.mark.asyncio
 async def test_coordinator_add_subarea_delegates(coordinator) -> None:
     """Test async_add_subarea delegates to growspace_manager."""
-    from custom_components.growspace_manager.models import Subarea
-
     expected = Subarea(id="s1", name="Undercanopy")
     coordinator._growspace_manager = MagicMock()
     coordinator._growspace_manager.add_subarea = AsyncMock(return_value=expected)
@@ -2835,8 +2834,6 @@ async def test_coordinator_add_subarea_delegates(coordinator) -> None:
 @pytest.mark.asyncio
 async def test_coordinator_update_subarea_delegates(coordinator) -> None:
     """Test async_update_subarea delegates to growspace_manager."""
-    from custom_components.growspace_manager.models import Subarea
-
     expected = Subarea(id="s1", name="Undercanopy")
     coordinator._growspace_manager = MagicMock()
     coordinator._growspace_manager.update_subarea = AsyncMock(return_value=expected)
@@ -2858,8 +2855,6 @@ async def test_coordinator_remove_subarea_delegates(coordinator) -> None:
 
 def test_coordinator_get_subareas_delegates(coordinator) -> None:
     """Test get_subareas delegates to growspace_manager."""
-    from custom_components.growspace_manager.models import Subarea
-
     expected = [Subarea(id="s1", name="Undercanopy")]
     coordinator._growspace_manager = MagicMock()
     coordinator._growspace_manager.get_subareas = MagicMock(return_value=expected)
