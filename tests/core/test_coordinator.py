@@ -2812,3 +2812,57 @@ async def test_update_irrigation_settings_missing_entities(
     assert gs.irrigation_config.irrigation_duration == 60
     assert gs.irrigation_config.irrigation_pump_entity is None
     assert gs.irrigation_config.drain_pump_entity is None
+
+
+# =============================================================================
+# SUBAREA DELEGATION TESTS
+# =============================================================================
+
+
+@pytest.mark.asyncio
+async def test_coordinator_add_subarea_delegates(coordinator) -> None:
+    """Test async_add_subarea delegates to growspace_manager."""
+    from custom_components.growspace_manager.models import Subarea
+
+    expected = Subarea(id="s1", name="Undercanopy")
+    coordinator._growspace_manager = MagicMock()
+    coordinator._growspace_manager.add_subarea = AsyncMock(return_value=expected)
+    result = await coordinator.async_add_subarea("gs1", "Undercanopy")
+    assert result.name == "Undercanopy"
+    coordinator._growspace_manager.add_subarea.assert_awaited_once_with("gs1", "Undercanopy")
+
+
+@pytest.mark.asyncio
+async def test_coordinator_update_subarea_delegates(coordinator) -> None:
+    """Test async_update_subarea delegates to growspace_manager."""
+    from custom_components.growspace_manager.models import Subarea
+
+    expected = Subarea(id="s1", name="Undercanopy")
+    coordinator._growspace_manager = MagicMock()
+    coordinator._growspace_manager.update_subarea = AsyncMock(return_value=expected)
+    result = await coordinator.async_update_subarea("gs1", "s1", {"temperature_sensors": ["sensor.t"]})
+    assert result.id == "s1"
+    coordinator._growspace_manager.update_subarea.assert_awaited_once_with(
+        "gs1", "s1", {"temperature_sensors": ["sensor.t"]}
+    )
+
+
+@pytest.mark.asyncio
+async def test_coordinator_remove_subarea_delegates(coordinator) -> None:
+    """Test async_remove_subarea delegates to growspace_manager."""
+    coordinator._growspace_manager = MagicMock()
+    coordinator._growspace_manager.remove_subarea = AsyncMock()
+    await coordinator.async_remove_subarea("gs1", "s1")
+    coordinator._growspace_manager.remove_subarea.assert_awaited_once_with("gs1", "s1")
+
+
+def test_coordinator_get_subareas_delegates(coordinator) -> None:
+    """Test get_subareas delegates to growspace_manager."""
+    from custom_components.growspace_manager.models import Subarea
+
+    expected = [Subarea(id="s1", name="Undercanopy")]
+    coordinator._growspace_manager = MagicMock()
+    coordinator._growspace_manager.get_subareas = MagicMock(return_value=expected)
+    result = coordinator.get_subareas("gs1")
+    assert result == expected
+    coordinator._growspace_manager.get_subareas.assert_called_once_with("gs1")
