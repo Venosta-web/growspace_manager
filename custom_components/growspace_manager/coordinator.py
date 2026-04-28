@@ -46,6 +46,7 @@ from .models import (
     NutrientInventory,
     NutrientPreset,
     Plant,
+    Subarea,
 )
 from .notification_manager import NotificationManager
 from .notifications import NotificationSettingsManager
@@ -767,6 +768,26 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         if growspace is None:
             raise GrowspaceNotFoundError(f"Growspace {growspace_id} not found")
         return growspace
+
+    async def async_add_subarea(self, growspace_id: str, name: str) -> Subarea:
+        """Add a named subarea to a growspace."""
+        return await self.growspace_manager.add_subarea(growspace_id, name)
+
+    async def async_update_subarea(
+        self, growspace_id: str, subarea_id: str, environment_config: dict[str, Any]
+    ) -> Subarea:
+        """Update a subarea's environment config."""
+        return await self.growspace_manager.update_subarea(
+            growspace_id, subarea_id, environment_config
+        )
+
+    async def async_remove_subarea(self, growspace_id: str, subarea_id: str) -> None:
+        """Remove a subarea from a growspace."""
+        await self.growspace_manager.remove_subarea(growspace_id, subarea_id)
+
+    def get_subareas(self, growspace_id: str) -> list[Subarea]:
+        """Return all subareas for a growspace."""
+        return self.growspace_manager.get_subareas(growspace_id)
 
     async def async_add_plant(self, **kwargs: Any) -> Plant:
         """Add a new plant to a growspace.

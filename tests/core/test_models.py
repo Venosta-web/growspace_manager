@@ -12,6 +12,7 @@ from custom_components.growspace_manager.models import (
     GrowspaceEvent,
     IrrigationStrategy,
     Plant,
+    Subarea,
     VisionCheckupConfig,
     VisionCheckupResult,
 )
@@ -529,3 +530,69 @@ def test_growspace_vision_checkup_history_serialization():
     assert len(restored.vision_checkup_history) == 1
     assert restored.vision_checkup_history[0].growspace_id == "tent1"
     assert restored.vision_checkup_history[0].severity == "none"
+
+
+# --------------------
+# Subarea Model Tests
+# --------------------
+
+
+def test_subarea_creation() -> None:
+    """Test Subarea dataclass creation with defaults."""
+    sub = Subarea(id="sub1", name="Undercanopy")
+    assert sub.id == "sub1"
+    assert sub.name == "Undercanopy"
+    assert isinstance(sub.environment_config, EnvironmentConfig)
+
+
+def test_subarea_to_dict() -> None:
+    """Test Subarea serializes to dict correctly."""
+    sub = Subarea(id="sub1", name="Undercanopy")
+    data = sub.to_dict()
+    assert data["id"] == "sub1"
+    assert data["name"] == "Undercanopy"
+    assert "environment_config" in data
+
+
+def test_subarea_from_dict() -> None:
+    """Test Subarea deserializes from dict correctly."""
+    data = {"id": "sub1", "name": "Undercanopy"}
+    sub = Subarea.from_dict(data)
+    assert sub.id == "sub1"
+    assert sub.name == "Undercanopy"
+    assert isinstance(sub.environment_config, EnvironmentConfig)
+
+
+def test_subarea_from_dict_with_environment_config() -> None:
+    """Test Subarea deserializes with nested environment_config."""
+    data = {
+        "id": "sub1",
+        "name": "Undercanopy",
+        "environment_config": {"temperature_sensors": ["sensor.under_temp"]},
+    }
+    sub = Subarea.from_dict(data)
+    assert sub.environment_config.temperature_sensors == ["sensor.under_temp"]
+
+
+def test_growspace_subareas_default_empty() -> None:
+    """Test that Growspace.subareas defaults to an empty list."""
+    gs = Growspace(id="gs1", name="Tent 1")
+    assert gs.subareas == []
+
+
+def test_growspace_with_subareas_roundtrip() -> None:
+    """Test Growspace with subareas round-trips through serialization."""
+    gs = Growspace(id="gs1", name="Tent 1")
+    gs.subareas = [Subarea(id="sub1", name="Undercanopy")]
+    data = gs.to_dict()
+    restored = Growspace.from_dict(data)
+    assert len(restored.subareas) == 1
+    assert restored.subareas[0].name == "Undercanopy"
+    assert restored.subareas[0].id == "sub1"
+
+
+def test_growspace_from_dict_legacy_no_subareas() -> None:
+    """Test that loading legacy Growspace data without subareas defaults to []."""
+    data = {"id": "gs1", "name": "Old Tent"}
+    gs = Growspace.from_dict(data)
+    assert gs.subareas == []

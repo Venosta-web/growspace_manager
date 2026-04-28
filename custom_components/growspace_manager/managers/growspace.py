@@ -26,9 +26,15 @@ from custom_components.growspace_manager.events import (
     async_fire_growspace_event,
 )
 from custom_components.growspace_manager.exceptions import GrowspaceNotFoundError
-from custom_components.growspace_manager.models import Growspace, GrowspaceType
+from custom_components.growspace_manager.models import (
+    EnvironmentConfig,
+    Growspace,
+    GrowspaceType,
+    Subarea,
+)
 from custom_components.growspace_manager.view_model_builder import ViewModelBuilder
 from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import ServiceValidationError
 from homeassistant.helpers import device_registry as dr
 from homeassistant.util import slugify
 
@@ -215,6 +221,49 @@ class GrowspaceManager:
                 _LOGGER.debug("No changes detected for growspace %s", growspace_id)
 
             return growspace
+
+    async def add_subarea(self, growspace_id: str, name: str) -> Subarea:
+        """Add a named subarea to a growspace."""
+        async with self.lock:
+            if growspace_id not in self.repository.growspaces:
+                raise GrowspaceNotFoundError(f"Growspace {growspace_id} not found")
+            subarea = Subarea(id=str(uuid.uuid4()), name=name.strip())
+            self.repository.growspaces[growspace_id].subareas.append(subarea)
+            await self.save_callback()
+            return subarea
+
+    async def update_subarea(
+        self, growspace_id: str, subarea_id: str, environment_config: dict[str, Any]
+    ) -> Subarea:
+        """Update a subarea's environment config."""
+        async with self.lock:
+            if growspace_id not in self.repository.growspaces:
+                raise GrowspaceNotFoundError(f"Growspace {growspace_id} not found")
+            growspace = self.repository.growspaces[growspace_id]
+            subarea = next((s for s in growspace.subareas if s.id == subarea_id), None)
+            if not subarea:
+                raise ServiceValidationError(f"Subarea {subarea_id} not found")
+            subarea.environment_config = EnvironmentConfig.from_dict(environment_config)
+            await self.save_callback()
+            return subarea
+
+    async def remove_subarea(self, growspace_id: str, subarea_id: str) -> None:
+        """Remove a subarea from a growspace."""
+        async with self.lock:
+            if growspace_id not in self.repository.growspaces:
+                raise GrowspaceNotFoundError(f"Growspace {growspace_id} not found")
+            growspace = self.repository.growspaces[growspace_id]
+            before = len(growspace.subareas)
+            growspace.subareas = [s for s in growspace.subareas if s.id != subarea_id]
+            if len(growspace.subareas) == before:
+                raise ServiceValidationError(f"Subarea {subarea_id} not found")
+            await self.save_callback()
+
+    def get_subareas(self, growspace_id: str) -> list[Subarea]:
+        """Return all subareas for a growspace."""
+        if growspace_id not in self.repository.growspaces:
+            raise GrowspaceNotFoundError(f"Growspace {growspace_id} not found")
+        return list(self.repository.growspaces[growspace_id].subareas)
 
     def _update_growspace_structure(
         self, growspace: Growspace, kwargs: dict[str, Any], changes: list[str]

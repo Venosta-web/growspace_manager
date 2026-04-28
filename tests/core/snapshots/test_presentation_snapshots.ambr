@@ -26,6 +26,8 @@
       'target_runoff_percent': 20.0,
     }),
     'drain_pump_state': None,
+    'drain_volume_sensors': list([
+    ]),
     'electricity_cost_per_kwh': 0.0,
     'energy_sensors': list([
     ]),
@@ -34,6 +36,8 @@
       'cycle_start_kwh': 0.0,
     }),
     'exhaust_fan_entities': list([
+    ]),
+    'feed_ec_sensors': list([
     ]),
     'flower_week': 0,
     'grid': dict({
@@ -109,6 +113,8 @@
       ]),
       'veg_day_hours': 12,
     }),
+    'irrigation_flow_sensors': list([
+    ]),
     'irrigation_pump_state': None,
     'irrigation_strategy': dict({
       'enabled': False,
@@ -130,8 +136,12 @@
     'name': 'Test Room',
     'notification_target': None,
     'overview_entity_id': 'sensor.gs_test_overview',
+    'ph_sensors': list([
+    ]),
     'plants_per_row': 2,
     'rows': 2,
+    'runoff_ec_sensors': list([
+    ]),
     'sensor_coordinates': dict({
     }),
     'sensor_groups': list([
@@ -143,6 +153,8 @@
       'switch.drain': 'drain_pump',
       'switch.pump': 'irrigation_pump',
     }),
+    'substrate_ec_sensors': list([
+    ]),
     'substrate_temperature_sensors': list([
     ]),
     'temperature': None,

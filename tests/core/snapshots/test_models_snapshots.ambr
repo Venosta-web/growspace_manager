@@ -232,6 +232,8 @@
     'notification_target': None,
     'plants_per_row': 4,
     'rows': 2,
+    'subareas': list([
+    ]),
     'vision_checkup_history': list([
     ]),
     'water_usage': dict({

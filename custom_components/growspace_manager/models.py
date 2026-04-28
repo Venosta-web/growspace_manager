@@ -468,6 +468,15 @@ class DrainConfig(BaseModel):
 
 
 @dataclass(slots=True)
+class Subarea(BaseModel):
+    """A named sub-zone within a growspace with its own environment sensors."""
+
+    id: str
+    name: str
+    environment_config: EnvironmentConfig = field(default_factory=EnvironmentConfig)
+
+
+@dataclass(slots=True)
 class CropSteeringState(BaseModel):
     """Tracks crop steering metrics for a growspace."""
 
@@ -587,6 +596,7 @@ class Growspace(BaseModel):
     energy_tracking: EnergyTracking = field(default_factory=lambda: EnergyTracking())
     water_usage: WaterUsageData = field(default_factory=lambda: WaterUsageData())
     vision_checkup_history: list[VisionCheckupResult] = field(default_factory=list)
+    subareas: list[Subarea] = field(default_factory=list)
 
     @classmethod
     def __pre_deserialize__(cls, data: dict[str, Any]) -> dict[str, Any]:
