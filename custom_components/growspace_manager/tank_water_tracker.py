@@ -162,7 +162,12 @@ class TankWaterTracker:
                 "liters": liters if liters is not None else abs_delta,
             }
         else:
-            return  # Small positive change — noise, not a refill
+            # Small positive rise — not a formal refill event, but update the
+            # baseline so future drops are measured from the actual current level.
+            # Without this, a partial top-up would cause the next consumption
+            # reading to appear smaller than it really is.
+            self.tank.last_recorded_level = level_pct
+            return
 
         history.events.append(event)
         _LOGGER.debug(
