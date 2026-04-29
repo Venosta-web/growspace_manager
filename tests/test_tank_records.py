@@ -4,25 +4,17 @@ from custom_components.growspace_manager.models import IrrigationTank
 from custom_components.growspace_manager.tank_water_tracker import TankWaterTracker
 
 
-def test_gradual_refill_detection():
-    """Verify that multiple small increments cross the refill threshold."""
+def test_refill_detection():
+    """Verify that a single jump >= 3% is classified as a refill event."""
     tank = IrrigationTank(sensor_entity="sensor.test_tank", volume_liters=100.0)
     tracker = TankWaterTracker(tank)
 
     ts = datetime.now(tz=UTC).isoformat()
-    # Initial level 50.0
     tracker.record_level(50.0, ts)
     assert tank.last_recorded_level == 50.0
 
-    # Simulate gradual increase: 0.1% steps up to 53.5% (total 3.5% delta)
-    # Refill threshold is 3.0%
-    for i in range(1, 36):
-        level = round(50.0 + (i * 0.1), 1)
-        tracker.record_level(level, ts)
-
-    # At i=30, level=53.0, delta=3.0. Should trigger refill.
-    # At i=35, level=53.5, delta=0.5 from new baseline?
-    # Wait, once refill is triggered, baseline resets to 53.0.
+    # Single reading crosses the 3% refill threshold
+    tracker.record_level(53.0, ts)
 
     events = tank.water_history.events
     assert len(events) >= 1
@@ -31,54 +23,55 @@ def test_gradual_refill_detection():
     assert tank.last_recorded_level == 53.0
 
 
-def test_gradual_consumption_detection():
-    """Verify that multiple small decrements cross the noise floor for consumption."""
+def test_consumption_detection():
+    """Verify that drops >= 1% (noise floor) are recorded as consumption events."""
     tank = IrrigationTank(sensor_entity="sensor.test_tank", volume_liters=100.0)
     tracker = TankWaterTracker(tank)
 
     ts = datetime.now(tz=UTC).isoformat()
     tracker.record_level(50.0, ts)
 
-    # Noise floor is 0.3%
-    # 0.1% steps down to 49.0% (total 1.0% drop)
-    for i in range(1, 11):
-        level = round(50.0 - (i * 0.1), 1)
-        tracker.record_level(level, ts)
+    # Three 1% drops: noise floor is 1.0%
+    for i in range(1, 4):
+        tracker.record_level(50.0 - i, ts)
 
-    # Should trigger consumption at 49.7, 49.4, 49.1
     events = [e for e in tank.water_history.events if e["event_type"] == "consumption"]
     assert len(events) == 3
     for ev in events:
-        assert round(ev["pct_delta"], 1) == -0.3
+        assert round(ev["pct_delta"], 1) == -1.0
 
-    assert tank.last_recorded_level == 49.1
+    assert tank.last_recorded_level == 47.0
 
 
-def test_small_refill_ignored():
-    """Verify that refills below the 3.0% threshold are currently ignored as noise."""
+def test_minor_refill_updates_peak_after_confirmation():
+    """Verify that a minor refill (below 3%) advances the consumption baseline (peak_level)
+    once a second reading confirms the level is stable.
+
+    The trough baseline (last_recorded_level) is preserved so that cumulative rises
+    can still accumulate toward the 3% refill threshold.  A single-reading spike that
+    immediately reverts to the trough zone is discarded (no false consumption).
+    """
     tank = IrrigationTank(sensor_entity="sensor.test_tank", volume_liters=100.0)
     tracker = TankWaterTracker(tank)
 
     ts = datetime.now(tz=UTC).isoformat()
     tracker.record_level(50.0, ts)
 
-    # Add 1% water (below 3% threshold)
+    # Add 1% water (below 3% refill threshold, but >= 1% noise floor)
     tracker.record_level(51.0, ts)
 
-    # No refill event should be created
+    # No refill event — rise is below refill threshold
     events = [e for e in tank.water_history.events if e["event_type"] == "refill"]
     assert len(events) == 0
-    # Baseline should NOT update
+    # Trough baseline (last_recorded_level) must NOT advance — preserved for refill accumulation
     assert tank.last_recorded_level == 50.0
 
-    # Now consume 0.3% (dropping from 51.0 to 50.7)
-    # Relative to baseline 50.0, this is still a net +0.7%
-    tracker.record_level(50.7, ts)
-    events = [e for e in tank.water_history.events if e["event_type"] == "consumption"]
-    assert len(events) == 0
+    # Second reading at the same level confirms the peak
+    tracker.record_level(51.0, ts)
+    assert tank.peak_level == 51.0
 
-    # Now drop to 49.7 (net -0.3% from baseline 50.0)
-    tracker.record_level(49.7, ts)
+    # A 1% drop from the confirmed peak (51.0 → 50.0) is detected as consumption
+    tracker.record_level(50.0, ts)
     events = [e for e in tank.water_history.events if e["event_type"] == "consumption"]
     assert len(events) == 1
-    assert round(events[0]["pct_delta"], 1) == -0.3
+    assert round(events[0]["pct_delta"], 1) == -1.0

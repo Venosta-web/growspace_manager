@@ -230,6 +230,11 @@ class EnvironmentConfigHandler(BaseConfigHandler[dict[str, Any]]):
                         if hasattr(existing, "last_recorded_level")
                         else existing.get("last_recorded_level")
                     )
+                    peak_level = (
+                        existing.peak_level
+                        if hasattr(existing, "peak_level")
+                        else existing.get("peak_level")
+                    )
                     if water_history is not None:
                         try:
                             tank_dict["water_history"] = asdict(water_history)
@@ -237,6 +242,8 @@ class EnvironmentConfigHandler(BaseConfigHandler[dict[str, Any]]):
                             tank_dict["water_history"] = water_history
                     if last_level is not None:
                         tank_dict["last_recorded_level"] = last_level
+                    if peak_level is not None:
+                        tank_dict["peak_level"] = peak_level
                 irrigation_tanks.append(tank_dict)
             env_config["irrigation_tanks"] = irrigation_tanks
         else:
