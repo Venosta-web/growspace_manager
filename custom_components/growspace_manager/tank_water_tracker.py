@@ -106,12 +106,26 @@ class TankWaterTracker:
     def __init__(self, tank: IrrigationTank) -> None:
         """Initialize with a reference to an IrrigationTank instance."""
         self.tank = tank
+        self._pending_peak: float | None = None
         self._unsub: Any | None = None
 
     # ── recording ────────────────────────────────────────────────────────────
 
     def record_level(self, level_pct: float, timestamp: str) -> None:
         """Record a tank level reading and derive consumption/refill events.
+
+        Uses dual baselines to solve two independent problems:
+
+        * ``last_recorded_level`` (trough) — only advances on formal events so
+          cumulative rises can still accumulate to the refill threshold.
+        * ``peak_level`` (consumption baseline) — advances when a minor rise is
+          *confirmed* by a subsequent reading still above trough + noise_floor,
+          so consumption after a partial top-up is measured from the new level
+          rather than the pre-fill trough.
+
+        The pending-peak confirmation step discards single-reading sensor
+        spikes: a rise that reverts to the trough zone in the very next reading
+        never commits as a new peak, preventing false consumption events.
 
         Args:
             level_pct: Current fill level as a percentage (0-100).
@@ -133,41 +147,66 @@ class TankWaterTracker:
 
         if self.tank.last_recorded_level is None:
             self.tank.last_recorded_level = level_pct
-            return  # First reading — initialize baseline
+            self.tank.peak_level = level_pct
+            self._pending_peak = None
+            return  # First reading — initialize baselines
 
-        delta = round(level_pct - self.tank.last_recorded_level, 4)
-        abs_delta = abs(delta)
+        trough = self.tank.last_recorded_level
 
-        if abs_delta < TANK_NOISE_FLOOR_PCT:
-            return  # Too small to act on
+        # ── Confirm or discard any pending (unconfirmed) peak ─────────────────
+        # A pending peak was queued by a minor rise on the previous reading.
+        # Confirm it if the current level is still meaningfully above the trough
+        # (genuine partial refill). Discard it if the level has returned to the
+        # trough zone (sensor spike / round-trip noise).
+        if self._pending_peak is not None:
+            if level_pct >= trough + TANK_NOISE_FLOOR_PCT:
+                # Level still above trough: commit the pending peak
+                if level_pct >= self._pending_peak - TANK_NOISE_FLOOR_PCT:
+                    self.tank.peak_level = self._pending_peak
+            # else: level back near trough → spike, discard (peak_level unchanged)
+            self._pending_peak = None
 
-        liters: float | None = None
-        if self.tank.volume_liters is not None:
-            liters = self.tank.volume_liters * abs_delta / 100.0
+        peak = self.tank.peak_level if self.tank.peak_level is not None else trough
 
-        if delta <= -TANK_NOISE_FLOOR_PCT:
-            # Consumption — level dropped enough to record
-            event: dict[str, Any] = {
-                "timestamp": timestamp,
-                "event_type": "consumption",
-                "pct_delta": delta,
-                "liters": liters if liters is not None else abs_delta,
-            }
-        elif delta >= TANK_REFILL_THRESHOLD_PCT:
-            # Refill — level rose above the refill threshold
+        delta_from_trough = round(level_pct - trough, 4)
+        delta_from_peak = round(level_pct - peak, 4)
+
+        def _liters(abs_pct: float) -> float:
+            if self.tank.volume_liters is not None:
+                return self.tank.volume_liters * abs_pct / 100.0
+            return abs_pct
+
+        event: dict[str, Any] | None = None
+
+        if delta_from_trough >= TANK_REFILL_THRESHOLD_PCT:
+            # Large single rise from trough: formal refill event
             event = {
                 "timestamp": timestamp,
                 "event_type": "refill",
-                "pct_delta": delta,
-                "liters": liters if liters is not None else abs_delta,
+                "pct_delta": delta_from_trough,
+                "liters": _liters(delta_from_trough),
             }
-        else:
-            # Small positive rise — not a formal refill event, but update the
-            # baseline so future drops are measured from the actual current level.
-            # Without this, a partial top-up would cause the next consumption
-            # reading to appear smaller than it really is.
-            self.tank.last_recorded_level = level_pct
+
+        elif delta_from_peak <= -TANK_NOISE_FLOOR_PCT:
+            # Level dropped below confirmed peak: consumption event
+            abs_consumed = abs(delta_from_peak)
+            event = {
+                "timestamp": timestamp,
+                "event_type": "consumption",
+                "pct_delta": delta_from_peak,
+                "liters": _liters(abs_consumed),
+            }
+
+        elif delta_from_trough >= TANK_NOISE_FLOOR_PCT:
+            # Minor rise from trough: queue as pending peak candidate.
+            # Only queue if the level is higher than the already-confirmed peak
+            # (to avoid redundantly re-queuing a level we already track).
+            if level_pct > peak and (self._pending_peak is None or level_pct > self._pending_peak):
+                self._pending_peak = level_pct
             return
+
+        else:
+            return  # Change too small to act on
 
         history.events.append(event)
         _LOGGER.debug(
@@ -178,6 +217,8 @@ class TankWaterTracker:
             event["liters"],
         )
         self.tank.last_recorded_level = level_pct
+        self.tank.peak_level = level_pct
+        self._pending_peak = None
 
         if len(history.events) > TANK_MAX_EVENTS:
             history.events = history.events[-TANK_MAX_EVENTS:]

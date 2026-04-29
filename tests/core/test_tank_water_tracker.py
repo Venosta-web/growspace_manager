@@ -195,19 +195,23 @@ def test_small_positive_change_below_refill_threshold_ignored():
 
 
 def test_partial_refill_updates_baseline_so_consumption_is_accurate():
-    """Small top-ups below the refill threshold must still move last_recorded_level.
+    """Partial top-ups advance the consumption baseline (peak_level) once confirmed.
 
-    Without this, a drop after a partial refill would be measured against the
-    pre-refill baseline and under-report the actual consumption.
+    Two consecutive readings at the refilled level are required to confirm the
+    peak — this prevents single-reading sensor spikes from creating false
+    consumption events (noise ratcheting).  Once confirmed, a subsequent drain
+    is measured from the confirmed peak, not the original trough.
     """
     t = _tracker()  # 200 L tank
-    t.record_level(50.0, "2026-03-22T10:00:00+00:00")  # baseline = 50%
-    # Partial top-up: +2% (< 3% refill threshold) — no event, but baseline must advance
+    t.record_level(50.0, "2026-03-22T10:00:00+00:00")  # trough = 50%
+    # Partial top-up: +2% — queues a pending peak, no event
     t.record_level(52.0, "2026-03-22T11:00:00+00:00")
     assert t.tank.water_history.events == [], "partial refill must not emit an event"
-    assert t.tank.last_recorded_level == pytest.approx(52.0), (
-        "baseline must advance to the actual level after a partial top-up"
-    )
+    assert t.tank.last_recorded_level == pytest.approx(50.0), "trough must not advance on a minor rise"
+    # Second reading at the same level confirms the peak
+    t.record_level(52.0, "2026-03-22T11:05:00+00:00")
+    assert t.tank.water_history.events == [], "confirmation reading must not emit an event"
+    assert t.tank.peak_level == pytest.approx(52.0), "peak_level must be confirmed after two readings"
     # Now a drop of 4% from 52% → 48% should record 4% * 200 L = 8 L, not 4 L
     t.record_level(48.0, "2026-03-22T12:00:00+00:00")
     assert len(t.tank.water_history.events) == 1

@@ -221,6 +221,7 @@ class IrrigationTank(BaseModel):
     enable_vpd_weighting: bool = False  # Apply VPD-based multiplier
     volume_liters: float | None = None
     last_recorded_level: float | None = None
+    peak_level: float | None = None
     water_history: TankWaterHistory = field(default_factory=TankWaterHistory)
 
 

@@ -43,11 +43,13 @@ def test_consumption_detection():
     assert tank.last_recorded_level == 47.0
 
 
-def test_minor_refill_updates_baseline():
-    """Verify that a minor refill (below 3%) updates the baseline for accurate future consumption.
+def test_minor_refill_updates_peak_after_confirmation():
+    """Verify that a minor refill (below 3%) advances the consumption baseline (peak_level)
+    once a second reading confirms the level is stable.
 
-    Since the noise floor is 1.0%, a 1% rise is treated as a baseline adjustment rather
-    than a formal refill event. Subsequent consumption is measured from the updated baseline.
+    The trough baseline (last_recorded_level) is preserved so that cumulative rises
+    can still accumulate toward the 3% refill threshold.  A single-reading spike that
+    immediately reverts to the trough zone is discarded (no false consumption).
     """
     tank = IrrigationTank(sensor_entity="sensor.test_tank", volume_liters=100.0)
     tracker = TankWaterTracker(tank)
@@ -61,11 +63,14 @@ def test_minor_refill_updates_baseline():
     # No refill event — rise is below refill threshold
     events = [e for e in tank.water_history.events if e["event_type"] == "refill"]
     assert len(events) == 0
+    # Trough baseline (last_recorded_level) must NOT advance — preserved for refill accumulation
+    assert tank.last_recorded_level == 50.0
 
-    # Baseline advances to the new actual level
-    assert tank.last_recorded_level == 51.0
+    # Second reading at the same level confirms the peak
+    tracker.record_level(51.0, ts)
+    assert tank.peak_level == 51.0
 
-    # A 1% drop from the updated baseline (51.0 → 50.0) is detected as consumption
+    # A 1% drop from the confirmed peak (51.0 → 50.0) is detected as consumption
     tracker.record_level(50.0, ts)
     events = [e for e in tank.water_history.events if e["event_type"] == "consumption"]
     assert len(events) == 1

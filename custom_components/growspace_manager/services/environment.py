@@ -103,6 +103,7 @@ async def handle_configure_environment(
             if existing is not None:
                 new_tank.water_history = existing.water_history
                 new_tank.last_recorded_level = existing.last_recorded_level
+                new_tank.peak_level = existing.peak_level
             irrigation_tanks.append(new_tank)
         except (TypeError, ValueError, LookupError) as e:
             _LOGGER.warning("Invalid irrigation tank data: %s (%s)", t_data, e)
