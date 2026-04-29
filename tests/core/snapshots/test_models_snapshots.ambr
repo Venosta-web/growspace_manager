@@ -42,6 +42,7 @@
     ]),
     'co2_sensor': None,
     'control_dehumidifier': True,
+    'control_humidifier': False,
     'dehumidifier_entities': list([
     ]),
     'dehumidifier_thresholds': dict({
@@ -60,6 +61,8 @@
     'flower_day_hours': 12,
     'humidifier_entities': list([
     ]),
+    'humidifier_thresholds': dict({
+    }),
     'humidity_sensor': 'sensor.hum',
     'humidity_sensors': list([
       'sensor.hum',
@@ -142,6 +145,7 @@
       ]),
       'co2_sensor': None,
       'control_dehumidifier': False,
+      'control_humidifier': False,
       'dehumidifier_entities': list([
       ]),
       'dehumidifier_thresholds': dict({
@@ -160,6 +164,8 @@
       'flower_day_hours': 12,
       'humidifier_entities': list([
       ]),
+      'humidifier_thresholds': dict({
+      }),
       'humidity_sensor': None,
       'humidity_sensors': list([
       ]),
@@ -205,6 +211,8 @@
       ]),
     }),
     'growspace_type': 'veg',
+    'humidifier_config': dict({
+    }),
     'id': 'gs_test',
     'irrigation_config': dict({
       'drain_duration': None,

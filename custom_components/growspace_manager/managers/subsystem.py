@@ -13,6 +13,9 @@ from typing import TYPE_CHECKING
 from custom_components.growspace_manager.dehumidifier_coordinator import (
     DehumidifierCoordinator,
 )
+from custom_components.growspace_manager.humidifier_coordinator import (
+    HumidifierCoordinator,
+)
 from custom_components.growspace_manager.irrigation_coordinator import (
     IrrigationCoordinator,
 )
@@ -47,6 +50,7 @@ class SubsystemManager:
             str, IrrigationCoordinator | VWCIrrigationCoordinator
         ] = {}
         self.dehumidifier_coordinators: dict[str, DehumidifierCoordinator] = {}
+        self.humidifier_coordinators: dict[str, HumidifierCoordinator] = {}
 
     async def async_initialize_sub_coordinators(
         self, growspaces: dict[str, Growspace]
@@ -94,8 +98,13 @@ class SubsystemManager:
         dehumidifier_coordinator = DehumidifierCoordinator(
             self.hass, self.entry, growspace_id, self.coordinator
         )
-
         self.dehumidifier_coordinators[growspace_id] = dehumidifier_coordinator
+
+        # Humidifier coordinator setup
+        humidifier_coordinator = HumidifierCoordinator(
+            self.hass, self.entry, growspace_id, self.coordinator
+        )
+        self.humidifier_coordinators[growspace_id] = humidifier_coordinator
 
     def async_cancel_all(self) -> None:
         """Cancel all sub-coordinator listeners."""
@@ -103,3 +112,5 @@ class SubsystemManager:
             irr_coordinator.async_cancel_listeners()
         for dehum_coordinator in self.dehumidifier_coordinators.values():
             dehum_coordinator.unload()
+        for hum_coordinator in self.humidifier_coordinators.values():
+            hum_coordinator.unload()

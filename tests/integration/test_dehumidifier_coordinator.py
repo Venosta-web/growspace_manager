@@ -601,6 +601,58 @@ async def test_get_current_vpd_missing_sensor(
     assert coordinator._get_current_vpd() is None
 
 
+async def test_logbook_event_fired_on_turn_on(coordinator, mock_hass) -> None:
+    """Test that a logbook event is fired when dehumidifier turns on."""
+    mock_hass.states.get.side_effect = lambda entity_id: {
+        "sensor.vpd": MagicMock(state="0.5"),
+        "sensor.light": MagicMock(state="100"),
+        "switch.dehumidifier": MagicMock(state=STATE_OFF),
+    }.get(entity_id)
+
+    await coordinator.async_check_and_control()
+
+    coordinator.main_coordinator.add_event.assert_called_once()
+    call_args = coordinator.main_coordinator.add_event.call_args
+    growspace_id, event = call_args[0]
+    assert growspace_id == "gs1"
+    assert event.category == "dehumidifier"
+    assert "Turned ON" in event.reasons
+    assert any("VPD:" in r for r in event.reasons)
+    assert any("Stage:" in r for r in event.reasons)
+
+
+async def test_logbook_event_fired_on_turn_off(coordinator, mock_hass) -> None:
+    """Test that a logbook event is fired when dehumidifier turns off."""
+    mock_hass.states.get.side_effect = lambda entity_id: {
+        "sensor.vpd": MagicMock(state="0.8"),
+        "sensor.light": MagicMock(state="100"),
+        "switch.dehumidifier": MagicMock(state=STATE_ON),
+    }.get(entity_id)
+
+    await coordinator.async_check_and_control()
+
+    coordinator.main_coordinator.add_event.assert_called_once()
+    call_args = coordinator.main_coordinator.add_event.call_args
+    growspace_id, event = call_args[0]
+    assert growspace_id == "gs1"
+    assert event.category == "dehumidifier"
+    assert "Turned OFF" in event.reasons
+    assert any("VPD:" in r for r in event.reasons)
+
+
+async def test_logbook_event_not_fired_when_no_action(coordinator, mock_hass) -> None:
+    """Test that no logbook event is fired when VPD is in deadband."""
+    mock_hass.states.get.side_effect = lambda entity_id: {
+        "sensor.vpd": MagicMock(state="0.65"),
+        "sensor.light": MagicMock(state="100"),
+        "switch.dehumidifier": MagicMock(state=STATE_OFF),
+    }.get(entity_id)
+
+    await coordinator.async_check_and_control()
+
+    coordinator.main_coordinator.add_event.assert_not_called()
+
+
 async def test_determine_is_device_on_exhaust_fans(coordinator, mock_hass) -> None:
     """Test _determine_is_device_on checks exhaust fans."""
     coordinator.dehumidifier_entities = []

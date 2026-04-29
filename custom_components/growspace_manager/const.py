@@ -31,6 +31,8 @@ ALERT_LOG_LOOKBACK_DAYS = 120  # Days to look back for environmental alerts
 # Dehumidifier Control Timing Defaults
 DEFAULT_DEHUMIDIFIER_MIN_RUNTIME = 300  # 5 minutes in seconds
 DEFAULT_DEHUMIDIFIER_MIN_OFFTIME = 300  # 5 minutes in seconds
+DEFAULT_HUMIDIFIER_MIN_RUNTIME = 300  # 5 minutes in seconds
+DEFAULT_HUMIDIFIER_MIN_OFFTIME = 300  # 5 minutes in seconds
 DEFAULT_VPD_HYSTERESIS = 0.2  # kPa (fallback if not using stage thresholds)
 
 DEFAULT_NAME = "Growspace Manager"
@@ -503,6 +505,8 @@ CATEGORY_TRAINING = "training"
 CATEGORY_IPM = "ipm"
 CATEGORY_NOTE = "note"
 CATEGORY_WATERING = "watering"
+CATEGORY_DEHUMIDIFIER = "dehumidifier"
+CATEGORY_HUMIDIFIER = "humidifier"
 
 
 # Plant stages
