@@ -12,6 +12,7 @@ from custom_components.growspace_manager.const import (
     CONF_CIRCULATION_FAN_ENTITY,
     CONF_CO2_SENSOR,
     CONF_CONTROL_DEHUMIDIFIER,
+    CONF_CONTROL_HUMIDIFIER,
     CONF_DEHUMIDIFIER_ENTITIES,
     CONF_DEHUMIDIFIER_ENTITY,
     CONF_DEHUMIDIFIER_THRESHOLDS,
@@ -21,6 +22,7 @@ from custom_components.growspace_manager.const import (
     CONF_EXHAUST_FAN_ENTITIES,
     CONF_HUMIDIFIER_ENTITIES,
     CONF_HUMIDIFIER_ENTITY,
+    CONF_HUMIDIFIER_THRESHOLDS,
     CONF_HUMIDITY_SENSOR,
     CONF_LIGHT_SENSOR,
     CONF_LIGHT_SENSORS,
@@ -90,8 +92,7 @@ async def handle_configure_environment(
     existing_tanks_by_entity: dict[str, IrrigationTank] = {}
     if growspace.environment_config and growspace.environment_config.irrigation_tanks:
         existing_tanks_by_entity = {
-            t.sensor_entity: t
-            for t in growspace.environment_config.irrigation_tanks
+            t.sensor_entity: t for t in growspace.environment_config.irrigation_tanks
         }
 
     for t_data in tanks_data:
@@ -126,6 +127,8 @@ async def handle_configure_environment(
         soil_moisture_sensor=call.data.get(CONF_SOIL_MOISTURE_SENSOR),
         control_dehumidifier=call.data.get(CONF_CONTROL_DEHUMIDIFIER, False),
         dehumidifier_thresholds=call.data.get(CONF_DEHUMIDIFIER_THRESHOLDS, {}),
+        control_humidifier=call.data.get(CONF_CONTROL_HUMIDIFIER, False),
+        humidifier_thresholds=call.data.get(CONF_HUMIDIFIER_THRESHOLDS, {}),
         stress_threshold=call.data.get(CONF_STRESS_THRESHOLD, 0.70),
         mold_threshold=call.data.get(CONF_MOLD_THRESHOLD, 0.75),
         veg_day_hours=call.data.get("veg_day_hours", 18),

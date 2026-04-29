@@ -74,6 +74,7 @@ from .const import (
     CONF_CIRCULATION_FAN_ENTITY,
     CONF_CO2_SENSOR,
     CONF_CONTROL_DEHUMIDIFIER,
+    CONF_CONTROL_HUMIDIFIER,
     CONF_DEHUMIDIFIER_ENTITIES,
     CONF_DEHUMIDIFIER_ENTITY,
     CONF_DEHUMIDIFIER_THRESHOLDS,
@@ -83,6 +84,7 @@ from .const import (
     CONF_EXHAUST_FAN_ENTITIES,
     CONF_HUMIDIFIER_ENTITIES,
     CONF_HUMIDIFIER_ENTITY,
+    CONF_HUMIDIFIER_THRESHOLDS,
     CONF_HUMIDITY_SENSOR,
     CONF_LIGHT_SENSOR,
     CONF_LIGHT_SENSORS,
@@ -431,6 +433,8 @@ CONFIGURE_ENVIRONMENT_SCHEMA = vol.Schema(
         vol.Optional(CONF_SOIL_MOISTURE_SENSOR): str,
         vol.Optional(CONF_CONTROL_DEHUMIDIFIER, default=False): bool,
         vol.Optional(CONF_DEHUMIDIFIER_THRESHOLDS): dict,
+        vol.Optional(CONF_CONTROL_HUMIDIFIER, default=False): bool,
+        vol.Optional(CONF_HUMIDIFIER_THRESHOLDS): dict,
         vol.Optional(CONF_STRESS_THRESHOLD, default=0.70): vol.All(
             vol.Coerce(float), vol.Range(min=0.0, max=1.0)
         ),
