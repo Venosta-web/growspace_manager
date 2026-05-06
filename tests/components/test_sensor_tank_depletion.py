@@ -52,7 +52,7 @@ class TestTankDepletionSensor:
         assert sensor._growspace_id == "gs1"
         assert sensor._tank_name == "Main Tank"
         assert sensor._predictor == mock_predictor
-        assert sensor.name == "gs1 Tank Depletion Main Tank"
+        assert sensor.name == "Tank Depletion Main Tank"
         assert sensor.unique_id == f"{DOMAIN}_gs1_tank_depletion_Main Tank"
 
     def test_available(self, sensor, mock_coordinator):

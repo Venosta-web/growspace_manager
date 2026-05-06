@@ -890,6 +890,7 @@ class LightCycleVerificationSensor(
     """Binary sensor to verify if the light schedule matches the expected plan."""
 
     _attr_should_poll = False
+    _attr_has_entity_name = True
     _attr_translation_key = "light_verification"
 
     def __init__(

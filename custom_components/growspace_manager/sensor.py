@@ -568,6 +568,8 @@ class VpdSensor(BaseVpdSensor):
     spaces like a lung room).
     """
 
+    _attr_has_entity_name = True
+
     def __init__(
         self,
         coordinator: GrowspaceCoordinator,
@@ -638,6 +640,7 @@ class TankDepletionSensor(CoordinatorEntity, SensorEntity):
     _attr_native_unit_of_measurement = UnitOfTime.HOURS
     _attr_state_class = SensorStateClass.MEASUREMENT
     _attr_icon = "mdi:water-alert"
+    _attr_has_entity_name = True
 
     def __init__(
         self,
@@ -658,8 +661,16 @@ class TankDepletionSensor(CoordinatorEntity, SensorEntity):
         self._growspace_id = growspace_id
         self._tank_name = tank_name
         self._predictor = predictor
-        self._attr_name = f"{growspace_id} Tank Depletion {tank_name}"
+        self._attr_name = f"Tank Depletion {tank_name}"
         self._attr_unique_id = f"{DOMAIN}_{growspace_id}_tank_depletion_{tank_name}"
+
+        growspace = coordinator.growspaces.get(growspace_id, {})
+        self._attr_device_info = DeviceInfo(
+            identifiers={(DOMAIN, growspace_id)},
+            name=getattr(growspace, "name", growspace_id),
+            model="Growspace",
+            manufacturer="Growspace Manager",
+        )
 
     @property
     def available(self) -> bool:
@@ -841,13 +852,14 @@ class CalculatedVpdSensor(BaseVpdSensor):
         self._coordinator = coordinator
         self._growspace_id = growspace_id
         suffix = f" {index + 1}" if index is not None else ""
-        self._attr_name = f"{growspace_name} Calculated VPD{suffix}"
+        self._attr_name = f"Calculated VPD{suffix}"
         self._attr_unique_id = generate_vpd_sensor_unique_id(growspace_id, index)
         self._temp_sensor = temp_sensor
         self._humidity_sensor = humidity_sensor
         self._lst_offset = lst_offset
         self._index = index
         self._attr_translation_key = "calculated_vpd"
+        self._attr_has_entity_name = True
 
         self._attr_device_info = DeviceInfo(
             identifiers={(DOMAIN, growspace_id)},
@@ -954,6 +966,13 @@ class GrowspaceOverviewSensor(CoordinatorEntity[GrowspaceCoordinator], SensorEnt
     _attr_has_entity_name = True
     _attr_translation_key = "overview"
     _attr_native_unit_of_measurement = None
+
+    _unrecorded_attributes = frozenset({
+        "environment_config",
+        "notification_config",
+        "irrigation_config",
+        "drain_config",
+    })
 
     # Environment sensor attributes to track for real-time updates
     TRACKABLE_ENVIRONMENT_ATTRS: tuple[str, ...] = (
@@ -1068,6 +1087,9 @@ class PlantEntity(CoordinatorEntity[GrowspaceCoordinator], SensorEntity):  # typ
     'flower'). Its attributes contain all other details about the plant, such as
     strain, position, and the duration of each growth stage.
     """
+
+    _attr_has_entity_name = True
+    _unrecorded_attributes = frozenset({"phenotype_score", "harvest_metrics"})
 
     def __init__(self, coordinator: GrowspaceCoordinator, plant: Plant) -> None:
         """Initialize the plant sensor entity.
@@ -1233,11 +1255,11 @@ class GrowspaceListSensor(SensorEntity):  # type: ignore[misc]
 
     _attr_entity_category = EntityCategory.DIAGNOSTIC
     _attr_native_unit_of_measurement = None
+    _attr_has_entity_name = True
 
     def __init__(self, coordinator: GrowspaceCoordinator) -> None:
         """Initialize the growspace list sensor."""
         self.coordinator = coordinator
-        self._attr_name = "Growspaces List"
         self._attr_unique_id = f"{DOMAIN}_growspaces_list"
         self._attr_translation_key = "growspaces_list"
         self._attr_device_info = DeviceInfo(

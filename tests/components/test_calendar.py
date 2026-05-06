@@ -91,7 +91,7 @@ def test_growspace_calendar_init(mock_coordinator: Mock) -> None:
     """Test the initialization of the GrowspaceCalendar."""
     calendar = GrowspaceCalendar(mock_coordinator, "gs1")
     assert calendar.growspace_id == "gs1"
-    assert calendar.name == "Growspace 1 Tasks"
+    assert calendar.name == "Tasks"
     assert calendar.unique_id == f"{DOMAIN}_gs1_calendar"
 
 
