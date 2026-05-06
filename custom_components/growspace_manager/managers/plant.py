@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Awaitable, Callable
-from datetime import date, datetime
+from datetime import date
 import logging
 from typing import TYPE_CHECKING, Any
 import uuid
@@ -37,6 +37,7 @@ from custom_components.growspace_manager.exceptions import (
 from custom_components.growspace_manager.models import Plant, PlantGenetics
 from custom_components.growspace_manager.utils import calculate_plant_stage, format_date
 from homeassistant.core import HomeAssistant
+from homeassistant.util import dt as dt_util
 
 if TYPE_CHECKING:
     from custom_components.growspace_manager.data_access.growspace_repository import (
@@ -153,8 +154,8 @@ class PlantManager:
                 stage=stage or "",
                 type=plant_type,
                 device_id=device_id,
-                created_at=datetime.now().isoformat(),
-                updated_at=datetime.now().isoformat(),
+                created_at=dt_util.utcnow().isoformat(),
+                updated_at=dt_util.utcnow().isoformat(),
                 **date_fields,  # type: ignore[arg-type]
                 source_mother=kwargs.get("source_mother")
                 or kwargs.get("source_mother_id")
@@ -197,7 +198,7 @@ class PlantManager:
                 if hasattr(plant, key):
                     setattr(plant, key, value)
 
-            plant.updated_at = date.today().isoformat()
+            plant.updated_at = dt_util.now().date().isoformat()
             await self.save_callback()
 
         self._fire_event(
@@ -272,7 +273,7 @@ class PlantManager:
             plant1.row, plant1.col = p2_row, p2_col
             plant2.row, plant2.col = p1_row, p1_col
 
-            now = date.today().isoformat()
+            now = dt_util.now().date().isoformat()
             plant1.updated_at = now
             plant2.updated_at = now
 
@@ -317,7 +318,7 @@ class PlantManager:
         # I used 'plant_type' in add_plant signature above.
 
         if mother_start is None:
-            mother_start = date.today()
+            mother_start = dt_util.now().date()
 
         # Override plant_type via kwargs?
         # The add_plant signature has plant_type="normal".
@@ -359,7 +360,7 @@ class PlantManager:
 
         new_plants: list[Plant] = []
         if transition_date is None:
-            transition_date = date.today()
+            transition_date = dt_util.now().date()
 
         for _ in range(num_clones):
             # This logic was in Service calling Lifecycle.handle_clone_creation.
@@ -418,7 +419,7 @@ class PlantManager:
         if new_stage not in PLANT_STAGES:
             raise ValidationChangeError(f"Invalid stage: {new_stage}")
 
-        transition_date_obj = transition_date or date.today()
+        transition_date_obj = transition_date or dt_util.now().date()
         trans_date_str = (
             transition_date_obj.isoformat()
             if hasattr(transition_date_obj, "isoformat")
@@ -491,12 +492,10 @@ class PlantManager:
 
         # PHI safety check - prevent harvest before pre-harvest interval clears
         if plant.phi_clearance_date:
-            today_str = date.today().isoformat()
-            if today_str < plant.phi_clearance_date:
-                days_remaining = (
-                    datetime.fromisoformat(plant.phi_clearance_date).date()
-                    - date.today()
-                ).days
+            today = dt_util.now().date()
+            phi_date = dt_util.parse_datetime(plant.phi_clearance_date).date()
+            if today < phi_date:
+                days_remaining = (phi_date - today).days
                 from custom_components.growspace_manager.const import (  # noqa: PLC0415
                     DOMAIN,
                 )
@@ -523,7 +522,7 @@ class PlantManager:
         else:
             stage_before = calculate_plant_stage(plant)
 
-        transition_date_str = transition_date or date.today().isoformat()
+        transition_date_str = transition_date or dt_util.now().date().isoformat()
 
         # Store yield/lab metrics on the plant before analytics recording
         if hasattr(plant, "harvest_metrics"):
@@ -725,17 +724,23 @@ class PlantManager:
 
     async def start_flowering(self, plant_id: str) -> Plant:
         """Transition a plant to the 'flower' stage, starting today."""
-        await self.transition_plant_stage(plant_id, PlantStage.FLOWER, date.today())
+        await self.transition_plant_stage(
+            plant_id, PlantStage.FLOWER, dt_util.now().date()
+        )
         return self.repository.plants[plant_id]
 
     async def start_drying(self, plant_id: str) -> Plant:
         """Transition a plant to the 'drying' stage, starting today."""
-        await self.transition_plant_stage(plant_id, PlantStage.DRY, date.today())
+        await self.transition_plant_stage(
+            plant_id, PlantStage.DRY, dt_util.now().date()
+        )
         return self.repository.plants[plant_id]
 
     async def start_curing(self, plant_id: str) -> Plant:
         """Transition a plant to the 'curing' stage, starting today."""
-        await self.transition_plant_stage(plant_id, PlantStage.CURE, date.today())
+        await self.transition_plant_stage(
+            plant_id, PlantStage.CURE, dt_util.now().date()
+        )
         return self.repository.plants[plant_id]
 
     async def harvest(self, plant_id: str) -> Plant:
@@ -786,7 +791,7 @@ class PlantManager:
             row=row,
             col=col,
             stage=PlantStage.VEG,
-            veg_start=transition_date or date.today(),
+            veg_start=transition_date or dt_util.now().date(),
         )
 
     async def _record_analytics(self, plant: Plant) -> None:
@@ -803,9 +808,9 @@ class PlantManager:
                     flower_days,
                     plant.phenotype_score.vigor,
                     plant.phenotype_score.internodal_spacing,  # maps to legacy 'structure' param
-                    plant.phenotype_score.terpene_intensity,   # maps to legacy 'aroma' param
+                    plant.phenotype_score.terpene_intensity,  # maps to legacy 'aroma' param
                     plant.phenotype_score.resin,
-                    plant.phenotype_score.mold_resistance,     # maps to legacy 'pest_resistance' param
+                    plant.phenotype_score.mold_resistance,  # maps to legacy 'pest_resistance' param
                     wet_weight=metrics.wet_weight if metrics else None,
                     dry_weight=metrics.dry_weight if metrics else None,
                     trim_weight=metrics.trim_weight if metrics else None,

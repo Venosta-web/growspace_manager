@@ -29,6 +29,7 @@ from homeassistant.helpers.entity import Entity
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.event import async_track_state_change_event
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
+from homeassistant.util import dt as dt_util
 
 from .const import (
     ATTR_COL,
@@ -968,12 +969,14 @@ class GrowspaceOverviewSensor(CoordinatorEntity[GrowspaceCoordinator], SensorEnt
     _attr_translation_key = "overview"
     _attr_native_unit_of_measurement = None
 
-    _unrecorded_attributes = frozenset({
-        "environment_config",
-        "notification_config",
-        "irrigation_config",
-        "drain_config",
-    })
+    _unrecorded_attributes = frozenset(
+        {
+            "environment_config",
+            "notification_config",
+            "irrigation_config",
+            "drain_config",
+        }
+    )
 
     # Environment sensor attributes to track for real-time updates
     TRACKABLE_ENVIRONMENT_ATTRS: tuple[str, ...] = (
@@ -1240,7 +1243,7 @@ class StrainLibrarySensor(CoordinatorEntity[GrowspaceCoordinator], SensorEntity)
         return {
             "strain_count": len(analytics.get("strains", {})),
             "strain_list": analytics.get("strain_list", []),
-            "last_updated": datetime.now().isoformat(),
+            "last_updated": dt_util.utcnow().isoformat(),
             "note": "Full analytics available via WebSocket API: growspace_manager/get_strain_library",
         }
 
@@ -1385,7 +1388,7 @@ class DLISensor(CoordinatorEntity[GrowspaceCoordinator], SensorEntity):  # type:
 
     def _handle_coordinator_update(self) -> None:
         """Handle coordinator updates by accumulating DLI."""
-        now = datetime.now()
+        now = dt_util.now()
         today = now.date().isoformat()
 
         # Reset at midnight
@@ -1600,7 +1603,7 @@ class WaterUsageSensor(CoordinatorEntity[GrowspaceCoordinator], SensorEntity):  
         )
 
         # Today's usage from daily_readings
-        today_str = datetime.now().date().isoformat()
+        today_str = dt_util.now().date().isoformat()
         liters_today = 0.0
         for reading in usage.daily_readings:
             if reading.get("date") == today_str:

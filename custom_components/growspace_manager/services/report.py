@@ -23,6 +23,7 @@ from homeassistant.components.persistent_notification import (
 from homeassistant.components.recorder import get_instance
 from homeassistant.core import HomeAssistant, ServiceCall
 from homeassistant.exceptions import HomeAssistantError
+from homeassistant.util import dt as dt_util
 
 if TYPE_CHECKING:
     from custom_components.growspace_manager.coordinator import GrowspaceCoordinator
@@ -67,7 +68,7 @@ async def handle_export_grow_report(
         output_dir = Path(hass.config.path("www", "growspace_manager", "reports"))
         output_dir.mkdir(parents=True, exist_ok=True)
 
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        timestamp = dt_util.now().strftime("%Y%m%d_%H%M%S")
         safe_name = safe_name.replace(" ", "_").replace("/", "_")
         filename = f"{safe_name}_{timestamp}.{export_format}"
         file_path = output_dir / filename
@@ -147,9 +148,9 @@ async def _aggregate_plant_data(
         with contextlib.suppress(ValueError):
             start_time = datetime.fromisoformat(plant.created_at)
     if not start_time:
-        start_time = datetime.now()
+        start_time = dt_util.utcnow()
 
-    end_time = datetime.now()
+    end_time = dt_util.utcnow()
 
     # 2. Fetch Timeline Events (Watering, Training, IPM, Notes)
     try:
@@ -211,9 +212,9 @@ async def _aggregate_plant_data(
                 if stats:
                     for stage in plant.stage_history:
                         stage_name = stage["stage"]
-                        s_start = datetime.fromisoformat(stage["start"])
+                        s_start = dt_util.parse_datetime(stage["start"])
                         s_end = (
-                            datetime.fromisoformat(stage["end"])
+                            dt_util.parse_datetime(stage["end"])
                             if stage.get("end")
                             else end_time
                         )
@@ -335,12 +336,12 @@ async def _aggregate_growspace_data(
                 _get_statistics_data,
             )
 
-            end_time = datetime.now()
+            end_time = dt_util.utcnow()
             start_time = end_time - timedelta(days=30)
             if plants:
                 first_plant_date = min(
                     [
-                        datetime.fromisoformat(p.created_at)
+                        dt_util.parse_datetime(p.created_at)
                         for p in plants
                         if p.created_at
                     ]
@@ -441,7 +442,7 @@ def _export_as_pdf(data: dict[str, Any], file_path: str) -> None:
     pdf.cell(
         0,
         10,
-        f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M')}",
+        f"Generated: {dt_util.now().strftime('%Y-%m-%d %H:%M')}",
         align="C",
         new_x="LMARGIN",
         new_y="NEXT",
@@ -510,7 +511,9 @@ def _export_as_pdf(data: dict[str, Any], file_path: str) -> None:
         for evt in sorted(events, key=lambda x: x.get("timestamp", 0))[-50:]:
             ts = evt.get("timestamp")
             date_str = (
-                datetime.fromtimestamp(ts / 1000).strftime("%Y-%m-%d")
+                dt_util.as_local(dt_util.utc_from_timestamp(ts / 1000)).strftime(
+                    "%Y-%m-%d"
+                )
                 if ts
                 else "Unknown"
             )

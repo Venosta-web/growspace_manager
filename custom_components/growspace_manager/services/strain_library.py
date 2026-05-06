@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import base64
 import binascii
-from datetime import datetime
+from homeassistant.util import dt as dt_util
 from io import BytesIO
 import logging
 from pathlib import Path
@@ -548,7 +548,7 @@ async def handle_print_label(
         )
 
     # 6. Small Timestamp (Bottom Right)
-    now = datetime.now().strftime("%d.%m.%Y")
+    now = dt_util.now().strftime("%d.%m.%Y")
     payload.append(
         {
             "type": "text",

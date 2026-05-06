@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from dataclasses import asdict
-from datetime import datetime
 import json
 import logging
 from pathlib import Path
@@ -11,6 +10,7 @@ from typing import TYPE_CHECKING, Any
 
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.storage import Store
+from homeassistant.util import dt as dt_util
 
 from .const import (
     STORAGE_KEY,
@@ -202,7 +202,7 @@ class StorageManager:
     def _backup_corrupt_data(self, key: str, data: dict[str, Any]) -> None:
         """Backup corrupt data to a file before reset."""
         try:
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            timestamp = dt_util.now().strftime("%Y%m%d_%H%M%S")
             backup_filename = f"growspace_manager_{key}_CORRUPT_{timestamp}.json"
             backup_path = Path(self.hass.config.path(".storage")) / backup_filename
 

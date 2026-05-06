@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import contextlib
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta
 import logging
 from typing import TYPE_CHECKING, Any
 
@@ -28,6 +28,7 @@ from custom_components.growspace_manager.const import (
     DOMAIN,
 )
 from custom_components.growspace_manager.utils import days_to_week
+from homeassistant.util import dt as dt_util
 
 from .entity_queries import EntityQueries
 from .plant_view_model import PlantViewModelBuilder
@@ -50,7 +51,7 @@ def _compute_tank_water_summaries(
     - ``recent_refills``: up to 20 refill events within the last 7 days.
     - ``daily_7d``: per-day consumed/refilled totals for the last 7 days.
     """
-    now = datetime.now(tz=UTC)
+    now = dt_util.utcnow()
     window_start = now - _7_DAYS
 
     refills: list[dict[str, Any]] = []
@@ -61,7 +62,7 @@ def _compute_tank_water_summaries(
             ts_str: str = ev["timestamp"]
             ts = datetime.fromisoformat(ts_str)
             if ts.tzinfo is None:
-                ts = ts.replace(tzinfo=UTC)
+                ts = ts.replace(tzinfo=dt_util.UTC)
         except (KeyError, ValueError):
             continue
 
@@ -539,9 +540,7 @@ class GrowspaceViewModelBuilder:
                             # Compact pre-computed summaries cover the full 7d.
                             "snapshots": tank.water_history.snapshots[-24:],
                             "events": tank.water_history.events[-20:],
-                            **_compute_tank_water_summaries(
-                                tank.water_history.events
-                            ),
+                            **_compute_tank_water_summaries(tank.water_history.events),
                         },
                     }
                 )

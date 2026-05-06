@@ -3,12 +3,13 @@
 from __future__ import annotations
 
 from dataclasses import MISSING, dataclass, field, fields
-from datetime import datetime
 from enum import StrEnum
 import logging
 from typing import Any, TypedDict
 
 from mashumaro.mixins.dict import DataClassDictMixin
+
+import homeassistant.util.dt as dt_util
 
 from .const import (
     CONF_CIRCULATION_FAN_ENTITIES,
@@ -172,7 +173,7 @@ class BasePreset(BaseModel):
     items: list[Any]
     stage: PlantStage | str | None = None
     min_days_in_stage: int | None = None
-    created_at: str = field(default_factory=lambda: datetime.now().isoformat())
+    created_at: str = field(default_factory=lambda: dt_util.utcnow().isoformat())
 
 
 @dataclass(slots=True)
@@ -527,7 +528,7 @@ class ECRampCurve(BaseModel):
     name: str = ""
     stage: str = ""
     points: list[ECRampPoint] = field(default_factory=list)
-    created_at: str = field(default_factory=lambda: datetime.now().isoformat())
+    created_at: str = field(default_factory=lambda: dt_util.utcnow().isoformat())
 
 
 @dataclass(slots=True)
@@ -588,7 +589,7 @@ class Growspace(BaseModel):
     rows: int = 3
     plants_per_row: int = 3
     notification_target: str | None = None
-    created_at: str = field(default_factory=lambda: datetime.now().isoformat())
+    created_at: str = field(default_factory=lambda: dt_util.utcnow().isoformat())
     device_id: str | None = None
     environment_config: EnvironmentConfig = field(default_factory=EnvironmentConfig)
     irrigation_config: IrrigationConfig = field(default_factory=IrrigationConfig)
@@ -1030,7 +1031,7 @@ class NutrientStock(BaseModel):
     name: str
     current_ml: float
     initial_ml: float
-    last_updated: str = field(default_factory=lambda: datetime.now().isoformat())
+    last_updated: str = field(default_factory=lambda: dt_util.utcnow().isoformat())
 
 
 @dataclass(slots=True)

@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import base64
 import binascii
-from datetime import datetime
 import hashlib
 from io import BytesIO
 import logging
@@ -14,6 +13,7 @@ from typing import Any, cast
 from PIL import Image, UnidentifiedImageError
 
 from homeassistant.core import HomeAssistant
+from homeassistant.util import dt as dt_util
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -305,9 +305,8 @@ class ImageManager:
             if image.mode not in ("RGB", "RGBA"):
                 image = image.convert("RGB")
 
-            # Generate unique filename using plant_id and timestamp/hash
             if not timestamp:
-                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                timestamp = dt_util.now().strftime("%Y%m%d_%H%M%S")
 
             # Simple hash of image data to prevent duplicates in same timestamp
 

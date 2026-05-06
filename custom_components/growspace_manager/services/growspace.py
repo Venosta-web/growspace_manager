@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from datetime import datetime
 import logging
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -125,7 +124,6 @@ async def async_add_growspace_note(
         ATTR_NOTES: notes,
         ATTR_IMAGES: image_paths,
         "category": CATEGORY_NOTE,
-        "timestamp": datetime.now().isoformat(),
     }
 
     hass.bus.async_fire(EVENT_GROWSPACE_LOG_ENTRY, event_data)

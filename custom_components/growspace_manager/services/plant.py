@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from datetime import datetime
 import logging
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -58,6 +57,7 @@ from homeassistant.components.persistent_notification import (
 from homeassistant.core import HomeAssistant, ServiceCall
 from homeassistant.exceptions import ServiceValidationError
 from homeassistant.helpers import entity_registry as er
+from homeassistant.util import dt as dt_util
 
 if TYPE_CHECKING:
     from custom_components.growspace_manager.coordinator import GrowspaceCoordinator
@@ -212,7 +212,7 @@ async def handle_add_plant(
 
         # Auto-set mother_start if stage is mother and not provided.
         if growspace_id == CANONICAL_ID_MOTHER and not parsed_dates.get("mother_start"):
-            parsed_dates["mother_start"] = datetime.now()
+            parsed_dates["mother_start"] = dt_util.utcnow()
             _LOGGER.debug(
                 "Auto-setting mother_start to now for '%s' growspace",
                 CANONICAL_ID_MOTHER,
@@ -284,7 +284,7 @@ async def handle_add_plants(
 
         # Auto-set mother_start if stage is mother and not provided.
         if growspace_id == CANONICAL_ID_MOTHER and not parsed_dates.get("mother_start"):
-            parsed_dates["mother_start"] = datetime.now()
+            parsed_dates["mother_start"] = dt_util.utcnow()
             _LOGGER.debug(
                 "Auto-setting mother_start to now for '%s' growspace (batch)",
                 CANONICAL_ID_MOTHER,
@@ -349,7 +349,7 @@ async def handle_take_clone(
     """Handle taking clones from a plant."""
     mother_plant_id = call.data[ATTR_MOTHER_PLANT_ID]
     transition_date_raw = call.data.get(ATTR_TRANSITION_DATE)
-    transition_datetime = parse_date_field(transition_date_raw) or datetime.now()
+    transition_datetime = parse_date_field(transition_date_raw) or dt_util.utcnow()
     transition_date = transition_datetime.date()
 
     # Extract target growspace ID (optional)
@@ -409,7 +409,7 @@ async def handle_move_clone(
     target_growspace_id = call.data.get(ATTR_TARGET_GROWSPACE_ID)
 
     transition_date_str = call.data.get(ATTR_TRANSITION_DATE)
-    transition_datetime = parse_date_field(transition_date_str) or datetime.now()
+    transition_datetime = parse_date_field(transition_date_str) or dt_util.utcnow()
     transition_date = transition_datetime.date()
 
     if not plant_id or not target_growspace_id:
@@ -859,8 +859,10 @@ async def async_add_timeline_note(
         ATTR_METADATA: metadata,
         ATTR_IMAGES: image_paths,
         "category": CATEGORY_NOTE,
-        "timestamp": transition_date_raw or datetime.now().isoformat(),
     }
+
+    if transition_date_raw:
+        event_data["timestamp"] = transition_date_raw
 
     hass.bus.async_fire(EVENT_GROWSPACE_LOG_ENTRY, event_data)
     _LOGGER.info("Added timeline note for plant %s", plant_id)

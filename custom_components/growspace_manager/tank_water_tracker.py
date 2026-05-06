@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta
 import logging
 from typing import TYPE_CHECKING, Any
 
 from homeassistant.helpers.event import async_track_state_change_event
+from homeassistant.util import dt as dt_util
 
 from .const import (
     TANK_MAX_EVENTS,
@@ -30,7 +31,7 @@ def _parse_ts(ts: str) -> datetime:
     """Parse an ISO-8601 timestamp string to a timezone-aware datetime."""
     dt = datetime.fromisoformat(ts)
     if dt.tzinfo is None:
-        dt = dt.replace(tzinfo=UTC)
+        dt = dt.replace(tzinfo=dt_util.UTC)
     return dt
 
 
@@ -55,7 +56,7 @@ def _build_buckets(
     if reference_ts is not None:
         ref_dt = _parse_ts(reference_ts)
     else:
-        ref_dt = datetime.now(tz=UTC)
+        ref_dt = dt_util.utcnow()
 
     end_boundary = _floor_to_bucket(ref_dt, bucket_size) + bucket_size
     buckets: list[dict[str, Any]] = []
@@ -201,7 +202,9 @@ class TankWaterTracker:
             # Minor rise from trough: queue as pending peak candidate.
             # Only queue if the level is higher than the already-confirmed peak
             # (to avoid redundantly re-queuing a level we already track).
-            if level_pct > peak and (self._pending_peak is None or level_pct > self._pending_peak):
+            if level_pct > peak and (
+                self._pending_peak is None or level_pct > self._pending_peak
+            ):
                 self._pending_peak = level_pct
             return
 
@@ -225,17 +228,13 @@ class TankWaterTracker:
 
     # ── aggregation ───────────────────────────────────────────────────────────
 
-    def get_history_24h(
-        self, reference_ts: str | None = None
-    ) -> list[dict[str, Any]]:
+    def get_history_24h(self, reference_ts: str | None = None) -> list[dict[str, Any]]:
         """Return 96 15-minute consumption/refill buckets for the last 24 hours."""
         buckets = _build_buckets(reference_ts, 96, _BUCKET_15MIN)
         _fill_buckets(buckets, self.tank.water_history.events, _BUCKET_15MIN)
         return buckets
 
-    def get_history_7d(
-        self, reference_ts: str | None = None
-    ) -> list[dict[str, Any]]:
+    def get_history_7d(self, reference_ts: str | None = None) -> list[dict[str, Any]]:
         """Return 168 hourly consumption/refill buckets for the last 7 days."""
         buckets = _build_buckets(reference_ts, 168, _BUCKET_1H)
         _fill_buckets(buckets, self.tank.water_history.events, _BUCKET_1H)
@@ -246,7 +245,7 @@ class TankWaterTracker:
         if reference_ts is not None:
             ref_dt = _parse_ts(reference_ts)
         else:
-            ref_dt = datetime.now(tz=UTC)
+            ref_dt = dt_util.utcnow()
         day_start = ref_dt.replace(hour=0, minute=0, second=0, microsecond=0)
         return sum(
             ev["liters"]
@@ -260,7 +259,7 @@ class TankWaterTracker:
         if reference_ts is not None:
             ref_dt = _parse_ts(reference_ts)
         else:
-            ref_dt = datetime.now(tz=UTC)
+            ref_dt = dt_util.utcnow()
         window_start = ref_dt - timedelta(days=7)
         return sum(
             ev["liters"]

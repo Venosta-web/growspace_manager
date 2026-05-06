@@ -7,7 +7,6 @@ asynchronous SQLite database (aiosqlite).
 
 from __future__ import annotations
 
-import datetime
 import json
 import logging
 from pathlib import Path
@@ -16,7 +15,7 @@ from typing import Any
 import aiosqlite
 
 from homeassistant.core import HomeAssistant
-from homeassistant.util import slugify
+from homeassistant.util import dt as dt_util, slugify
 
 from .const import DB_FILE_STRAIN_LIBRARY
 from .image_manager import ImageManager
@@ -291,7 +290,7 @@ class StrainLibrary:
             _LOGGER.warning("Database not connected, cannot record harvest")
             return
         phenotype_id = await self._ensure_strain_and_phenotype_exist(strain, phenotype)
-        harvest_date = datetime.datetime.now().isoformat()
+        harvest_date = dt_util.utcnow().isoformat()
         query = """
             INSERT INTO harvests
                 (phenotype_id, veg_days, flower_days, harvest_date,
@@ -894,9 +893,7 @@ class StrainLibrary:
                             phenotype_id,
                             harvest.get("veg_days"),
                             harvest.get("flower_days"),
-                            harvest.get(
-                                "harvest_date", datetime.datetime.now().isoformat()
-                            ),
+                            harvest.get("harvest_date", dt_util.utcnow().isoformat()),
                         ),
                     )
                 await self._db.commit()
