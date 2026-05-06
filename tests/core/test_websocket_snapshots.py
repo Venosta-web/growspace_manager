@@ -8,6 +8,7 @@ from syrupy.assertion import SnapshotAssertion
 
 from custom_components.growspace_manager.const import DOMAIN
 from custom_components.growspace_manager.websocket import (
+    websocket_add_growspace_note,
     websocket_add_timeline_note,
     websocket_delete_breeder,
     websocket_get_alerts,
@@ -200,6 +201,38 @@ async def test_websocket_add_timeline_note_snapshot(
 
         mock_add_note.assert_called_once()
         mock_connection.send_result.assert_called_once_with(6)
+
+
+@pytest.mark.asyncio
+async def test_websocket_add_growspace_note_snapshot(
+    hass: HomeAssistant, mock_connection
+) -> None:
+    """Test websocket_add_growspace_note success."""
+    coordinator = MagicMock()
+    coordinator.growspaces = {"gs1": MagicMock()}
+    hass.data[DOMAIN] = {"strain_library": MagicMock()}
+
+    with (
+        patch(
+            "custom_components.growspace_manager.GrowspaceCoordinator.get_for_service_call",
+            return_value=coordinator,
+        ),
+        patch(
+            "custom_components.growspace_manager.websocket.async_add_growspace_note",
+            new_callable=AsyncMock,
+        ) as mock_add_note,
+    ):
+        msg = {
+            "id": 7,
+            "type": f"{DOMAIN}/add_growspace_note",
+            "growspace_id": "gs1",
+            "notes": "Tent looking healthy today.",
+            "images": [],
+        }
+        await websocket_add_growspace_note(hass, mock_connection, msg)
+
+        mock_add_note.assert_called_once()
+        mock_connection.send_result.assert_called_once_with(7)
 
 
 @pytest.mark.asyncio
