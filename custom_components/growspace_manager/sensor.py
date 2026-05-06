@@ -1181,15 +1181,15 @@ class PlantEntity(CoordinatorEntity[GrowspaceCoordinator], SensorEntity):  # typ
 
         # PHI (Pre-Harvest Interval) attributes
         if plant.phi_clearance_date:
-            from datetime import date as date_cls  # noqa: PLC0415
-
             attributes["phi_clearance_date"] = plant.phi_clearance_date
             try:
-                clearance = date_cls.fromisoformat(plant.phi_clearance_date)
-                remaining = (clearance - date_cls.today()).days
-                attributes["phi_days_remaining"] = max(0, remaining)
+                clearance = dt_util.parse_date(plant.phi_clearance_date)
+                if clearance:
+                    remaining = (clearance - dt_util.now().date()).days
+                    attributes["phi_days_remaining"] = max(0, remaining)
             except (ValueError, TypeError):
                 attributes["phi_days_remaining"] = None
+
 
         return attributes
 

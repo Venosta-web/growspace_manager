@@ -795,6 +795,7 @@ def test_dli_sensor_get_current_ppfd_invalid_state() -> None:
 def test_dli_sensor_handle_coordinator_update_accumulates_ppfd() -> None:
     """Lines 1227-1230: _handle_coordinator_update accumulates mol when elapsed > 0."""
     from datetime import datetime as dt_cls
+    from homeassistant.util import dt as dt_util
 
     sensor, coordinator = _make_dli_sensor()
     growspace = Mock(environment_config=Mock(light_sensors=["sensor.ppfd"]))
@@ -804,12 +805,13 @@ def test_dli_sensor_handle_coordinator_update_accumulates_ppfd() -> None:
     # Already on today's date to skip midnight reset
     sensor._last_reset_date = "2026-01-12"
     # Set last sample to 1 minute before the frozen "2026-01-12 12:00:00"
-    sensor._last_sample_time = dt_cls(2026, 1, 12, 11, 59, 0)
+    sensor._last_sample_time = dt_util.as_local(dt_cls(2026, 1, 12, 11, 59, 0))
 
     sensor._handle_coordinator_update()
 
     # 500 ppfd * 60 seconds / 1_000_000 = 0.03 mol
     assert sensor._accumulated_mol > 0.0
+
 
 
 def test_energy_sensor_native_value_no_growspace() -> None:
