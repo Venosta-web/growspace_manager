@@ -125,4 +125,6 @@ class GrowspaceNotificationSwitch(SwitchEntity):  # type: ignore[misc]  # HA bas
     @override  # type: ignore[misc]  # Entity.async_added_to_hass exists but not detected by mypy
     async def async_added_to_hass(self) -> None:
         """Register a listener when the entity is added to Home Assistant."""
-        self._coordinator.async_add_listener(self.async_write_ha_state)
+        self.async_on_remove(
+            self._coordinator.async_add_listener(self.async_write_ha_state)
+        )

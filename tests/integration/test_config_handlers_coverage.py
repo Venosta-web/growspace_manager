@@ -521,6 +521,8 @@ async def test_growspace_handler_flow_add_step(mock_hass, mock_config_entry) -> 
         "width": 120,
         "height": 200,
     }
+    coordinator.growspace_service.get_sorted_growspace_options.return_value = []
+    handler.flow.async_show_form = MagicMock(return_value={"type": "form"})
     await handler.async_step_add_growspace(user_input)
     coordinator.async_add_growspace.assert_awaited_with(
         name=user_input["name"],
@@ -534,7 +536,7 @@ async def test_growspace_handler_flow_add_step(mock_hass, mock_config_entry) -> 
             "unit": "cm",
         },
     )
-    handler.flow.async_create_entry.assert_called()
+    handler.flow.async_show_form.assert_called()
 
     # 3. Input error
     coordinator.async_add_growspace.side_effect = Exception("Fail")
@@ -558,10 +560,12 @@ async def test_growspace_handler_flow_update_step(mock_hass, mock_config_entry) 
     handler.flow.async_show_form.assert_called()
 
     # 2. Input success
+    coordinator.growspace_service.get_sorted_growspace_options.return_value = []
+    handler.flow.async_show_form = MagicMock(return_value={"type": "form"})
     user_input = {"name": "Updated GS"}
     await handler.async_step_update_growspace(user_input)
     coordinator.async_update_growspace.assert_awaited_with("gs1", **user_input)
-    handler.flow.async_create_entry.assert_called()
+    handler.flow.async_show_form.assert_called()
 
 
 @pytest.mark.asyncio

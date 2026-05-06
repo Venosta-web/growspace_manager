@@ -505,7 +505,8 @@ async def test_options_flow_manage_growspaces_remove(
     result = await flow.async_step_confirm_remove_growspace(user_input={})
 
     mock_coordinator.async_remove_growspace.assert_called_once_with("gs1")
-    assert result.get("type") == FlowResultType.CREATE_ENTRY
+    assert result.get("type") == FlowResultType.FORM
+    assert result.get("step_id") == "manage_growspaces"
 
 
 @pytest.mark.asyncio
@@ -623,7 +624,8 @@ async def test_options_flow_add_growspace_success(
 
     result = await flow.async_step_add_growspace(user_input=user_input)
 
-    assert result.get("type") == FlowResultType.CREATE_ENTRY
+    assert result.get("type") == FlowResultType.FORM
+    assert result.get("step_id") == "manage_growspaces"
     mock_coordinator.async_add_growspace.assert_awaited_once_with(
         name="New Growspace",
         rows=5,
@@ -737,7 +739,8 @@ async def test_options_flow_update_growspace_success(
     }
     result = await flow.async_step_update_growspace(user_input=user_input)
 
-    assert result.get("type") == FlowResultType.CREATE_ENTRY
+    assert result.get("type") == FlowResultType.FORM
+    assert result.get("step_id") == "manage_growspaces"
     mock_coordinator.async_update_growspace.assert_awaited_once()
 
 
@@ -1244,8 +1247,9 @@ async def test_options_flow_empty_update_data(
     user_input = {"name": "", "rows": None}
     result = await flow.async_step_update_growspace(user_input=user_input)
 
-    # Should still succeed (empty updates are filtered)
-    assert result.get("type") == FlowResultType.CREATE_ENTRY
+    # Should still succeed (empty updates are filtered) and return to menu
+    assert result.get("type") == FlowResultType.FORM
+    assert result.get("step_id") == "manage_growspaces"
 
 
 # ============================================================================

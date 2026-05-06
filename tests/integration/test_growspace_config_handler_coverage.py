@@ -122,7 +122,8 @@ async def test_async_step_add_growspace_success(
 ) -> None:
     coordinator = handler.config_entry.runtime_data
     coordinator.async_add_growspace = AsyncMock()
-    handler.flow.async_create_entry = MagicMock(return_value={"type": "create_entry"})
+    coordinator.growspace_service.get_sorted_growspace_options.return_value = []
+    handler.flow.async_show_form = MagicMock(return_value={"type": "form", "step_id": "manage_growspaces"})
 
     user_input = {
         "name": "GS1",
@@ -133,7 +134,7 @@ async def test_async_step_add_growspace_success(
         "height": 200,
     }
     result = await handler.async_step_add_growspace(user_input)
-    assert result["type"] == "create_entry"
+    assert result["type"] == "form"
     coordinator.async_add_growspace.assert_called_once()
 
 
@@ -162,10 +163,11 @@ async def test_async_step_confirm_remove_growspace_success(
     coordinator = handler.config_entry.runtime_data
     coordinator.growspaces = {"gs1": MockGrowspace(id="gs1", name="GS1")}
     coordinator.async_remove_growspace = AsyncMock()
-    handler.flow.async_create_entry = MagicMock(return_value={"type": "create_entry"})
+    coordinator.growspace_service.get_sorted_growspace_options.return_value = []
+    handler.flow.async_show_form = MagicMock(return_value={"type": "form", "step_id": "manage_growspaces"})
 
     result = await handler.async_step_confirm_remove_growspace({"confirm": True})
-    assert result["type"] == "create_entry"
+    assert result["type"] == "form"
     coordinator.async_remove_growspace.assert_called_once_with("gs1")
 
 
@@ -190,7 +192,8 @@ async def test_async_step_update_growspace_success(
     coordinator = handler.config_entry.runtime_data
     coordinator.growspaces = {"gs1": MockGrowspace(id="gs1", name="GS1")}
     coordinator.async_update_growspace = AsyncMock()
-    handler.flow.async_create_entry = MagicMock(return_value={"type": "create_entry"})
+    coordinator.growspace_service.get_sorted_growspace_options.return_value = []
+    handler.flow.async_show_form = MagicMock(return_value={"type": "form", "step_id": "manage_growspaces"})
 
     user_input = {
         "name": "GS2",
@@ -201,7 +204,7 @@ async def test_async_step_update_growspace_success(
         "height": 210,
     }
     result = await handler.async_step_update_growspace(user_input)
-    assert result["type"] == "create_entry"
+    assert result["type"] == "form"
     coordinator.async_update_growspace.assert_called_once()
 
 

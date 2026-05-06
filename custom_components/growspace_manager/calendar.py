@@ -13,6 +13,7 @@ import logging
 from homeassistant.components.calendar import CalendarEntity, CalendarEvent
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.util import dt as dt_util
 
@@ -54,6 +55,9 @@ class GrowspaceCalendar(CalendarEntity):  # type: ignore[misc]
     for the plants within the growspace.
     """
 
+    _attr_has_entity_name = True
+    _attr_name = "Tasks"
+
     def __init__(self, coordinator: GrowspaceCoordinator, growspace_id: str) -> None:
         """Initialize the GrowspaceCalendar.
 
@@ -64,8 +68,13 @@ class GrowspaceCalendar(CalendarEntity):  # type: ignore[misc]
         self.coordinator = coordinator
         self.growspace_id = growspace_id
         self.growspace = coordinator.growspaces[growspace_id]
-        self._attr_name = f"{self.growspace.name} Tasks"
         self._attr_unique_id = f"{DOMAIN}_{self.growspace_id}_calendar"
+        self._attr_device_info = DeviceInfo(
+            identifiers={(DOMAIN, growspace_id)},
+            name=self.growspace.name,
+            model="Growspace",
+            manufacturer="Growspace Manager",
+        )
         self._events: list[CalendarEvent] = []
 
     @property

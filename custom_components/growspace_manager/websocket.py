@@ -27,6 +27,7 @@ from .const import (
     ALERT_LOG_LOOKBACK_DAYS,
     ATTR_AMOUNT_ML,
     ATTR_EC,
+    ATTR_GROWSPACE_ID,
     ATTR_IMAGES,
     ATTR_METADATA,
     ATTR_NOTES,
@@ -40,6 +41,7 @@ from .const import (
     MERGE_ALERT_GAP_SECONDS,
 )
 from .coordinator import GrowspaceCoordinator
+from .services.growspace import async_add_growspace_note
 from .services.plant import async_add_timeline_note
 from .services.report import async_websocket_get_grow_report
 from .strain_library import StrainLibrary
@@ -410,6 +412,16 @@ SCHEMA_WS_ADD_TIMELINE_NOTE = websocket_api.BASE_COMMAND_MESSAGE_SCHEMA.extend(
     }
 )
 
+WS_TYPE_ADD_GROWSPACE_NOTE = f"{DOMAIN}/add_growspace_note"
+SCHEMA_WS_ADD_GROWSPACE_NOTE = websocket_api.BASE_COMMAND_MESSAGE_SCHEMA.extend(
+    {
+        vol.Required("type"): WS_TYPE_ADD_GROWSPACE_NOTE,
+        vol.Required(ATTR_GROWSPACE_ID): str,
+        vol.Required(ATTR_NOTES): str,
+        vol.Optional(ATTR_IMAGES): [str],
+    }
+)
+
 WS_TYPE_REMOVE_TIMELINE_EVENT = f"{DOMAIN}/remove_timeline_event"
 SCHEMA_WS_REMOVE_TIMELINE_EVENT = websocket_api.BASE_COMMAND_MESSAGE_SCHEMA.extend(
     {
@@ -633,6 +645,30 @@ async def websocket_add_timeline_note(
         connection.send_error(msg["id"], "invalid_args", str(err))
     except Exception as err:
         _LOGGER.exception("Error handling websocket_add_timeline_note")
+        connection.send_error(msg["id"], "unknown_error", str(err))
+
+
+async def websocket_add_growspace_note(
+    hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
+) -> None:
+    """Handle add growspace note command via WebSocket."""
+    try:
+        coordinator = GrowspaceCoordinator.get_for_service_call(hass, msg)
+        strain_library = hass.data[DOMAIN]["strain_library"]
+
+        await async_add_growspace_note(
+            hass,
+            coordinator,
+            strain_library,
+            growspace_id=msg[ATTR_GROWSPACE_ID],
+            notes=msg[ATTR_NOTES],
+            images_base64=msg.get(ATTR_IMAGES),
+        )
+        connection.send_result(msg["id"])
+    except ServiceValidationError as err:
+        connection.send_error(msg["id"], "invalid_args", str(err))
+    except Exception as err:
+        _LOGGER.exception("Error handling websocket_add_growspace_note")
         connection.send_error(msg["id"], "unknown_error", str(err))
 
 
@@ -1493,6 +1529,13 @@ def async_register_websocket_api(hass: HomeAssistant) -> None:
         WS_TYPE_ADD_TIMELINE_NOTE,
         websocket_api.async_response(websocket_add_timeline_note),
         SCHEMA_WS_ADD_TIMELINE_NOTE,
+    )
+
+    websocket_api.async_register_command(
+        hass,
+        WS_TYPE_ADD_GROWSPACE_NOTE,
+        websocket_api.async_response(websocket_add_growspace_note),
+        SCHEMA_WS_ADD_GROWSPACE_NOTE,
     )
 
     websocket_api.async_register_command(
