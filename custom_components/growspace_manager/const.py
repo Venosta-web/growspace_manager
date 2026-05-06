@@ -31,6 +31,8 @@ ALERT_LOG_LOOKBACK_DAYS = 120  # Days to look back for environmental alerts
 # Dehumidifier Control Timing Defaults
 DEFAULT_DEHUMIDIFIER_MIN_RUNTIME = 300  # 5 minutes in seconds
 DEFAULT_DEHUMIDIFIER_MIN_OFFTIME = 300  # 5 minutes in seconds
+DEFAULT_HUMIDIFIER_MIN_RUNTIME = 300  # 5 minutes in seconds
+DEFAULT_HUMIDIFIER_MIN_OFFTIME = 300  # 5 minutes in seconds
 DEFAULT_VPD_HYSTERESIS = 0.2  # kPa (fallback if not using stage thresholds)
 
 DEFAULT_NAME = "Growspace Manager"
@@ -64,6 +66,8 @@ CONF_IRRIGATION_TANK_SENSORS = "irrigation_tank_sensors"
 CONF_IRRIGATION_TANK_WARNING_LEVEL = "irrigation_tank_warning_level"
 CONF_IRRIGATION_TANK_VOLUME = "irrigation_tank_volume"  # litres
 CONF_CONTROL_DEHUMIDIFIER = "control_dehumidifier"
+CONF_CONTROL_HUMIDIFIER = "control_humidifier"
+CONF_HUMIDIFIER_THRESHOLDS = "humidifier_thresholds"
 
 # Tank water inference service attributes
 ATTR_TANK_ENTITY = "tank_entity"
@@ -503,6 +507,8 @@ CATEGORY_TRAINING = "training"
 CATEGORY_IPM = "ipm"
 CATEGORY_NOTE = "note"
 CATEGORY_WATERING = "watering"
+CATEGORY_DEHUMIDIFIER = "dehumidifier"
+CATEGORY_HUMIDIFIER = "humidifier"
 
 
 # Plant stages

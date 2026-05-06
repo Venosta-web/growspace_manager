@@ -12,21 +12,30 @@ from custom_components.growspace_manager.const import (
     CONF_CIRCULATION_FAN_ENTITY,
     CONF_CO2_SENSOR,
     CONF_CONTROL_DEHUMIDIFIER,
+    CONF_CONTROL_HUMIDIFIER,
     CONF_DEHUMIDIFIER_ENTITIES,
     CONF_DEHUMIDIFIER_ENTITY,
     CONF_DEHUMIDIFIER_THRESHOLDS,
+    CONF_DRAIN_VOLUME_SENSORS,
     CONF_ELECTRICITY_COST,
     CONF_ENERGY_SENSORS,
     CONF_EXHAUST_ENTITY,
     CONF_EXHAUST_FAN_ENTITIES,
+    CONF_FEED_EC_SENSORS,
     CONF_HUMIDIFIER_ENTITIES,
     CONF_HUMIDIFIER_ENTITY,
+    CONF_HUMIDIFIER_THRESHOLDS,
     CONF_HUMIDITY_SENSOR,
+    CONF_IRRIGATION_FLOW_SENSORS,
     CONF_LIGHT_SENSOR,
     CONF_LIGHT_SENSORS,
     CONF_MOLD_THRESHOLD,
+    CONF_PH_SENSORS,
+    CONF_POWER_SENSORS,
+    CONF_RUNOFF_EC_SENSORS,
     CONF_SOIL_MOISTURE_SENSOR,
     CONF_STRESS_THRESHOLD,
+    CONF_SUBSTRATE_EC_SENSORS,
     CONF_SUBSTRATE_TEMP_SENSORS,
     CONF_TEMP_SENSOR,
     CONF_VPD_SENSOR,
@@ -90,8 +99,7 @@ async def handle_configure_environment(
     existing_tanks_by_entity: dict[str, IrrigationTank] = {}
     if growspace.environment_config and growspace.environment_config.irrigation_tanks:
         existing_tanks_by_entity = {
-            t.sensor_entity: t
-            for t in growspace.environment_config.irrigation_tanks
+            t.sensor_entity: t for t in growspace.environment_config.irrigation_tanks
         }
 
     for t_data in tanks_data:
@@ -111,8 +119,11 @@ async def handle_configure_environment(
     # Build environment config from service call
     env_config = EnvironmentConfig(
         temperature_sensor=call.data.get(CONF_TEMP_SENSOR),
+        temperature_sensors=_get_list(CONF_TEMP_SENSOR, "temperature_sensors"),
         humidity_sensor=call.data.get(CONF_HUMIDITY_SENSOR),
+        humidity_sensors=_get_list(CONF_HUMIDITY_SENSOR, "humidity_sensors"),
         vpd_sensor=call.data.get(CONF_VPD_SENSOR),
+        vpd_sensors=_get_list(CONF_VPD_SENSOR, "vpd_sensors"),
         co2_sensor=call.data.get(CONF_CO2_SENSOR),
         circulation_fan_entities=_get_list(
             CONF_CIRCULATION_FAN_ENTITY, CONF_CIRCULATION_FAN_ENTITIES
@@ -126,6 +137,8 @@ async def handle_configure_environment(
         soil_moisture_sensor=call.data.get(CONF_SOIL_MOISTURE_SENSOR),
         control_dehumidifier=call.data.get(CONF_CONTROL_DEHUMIDIFIER, False),
         dehumidifier_thresholds=call.data.get(CONF_DEHUMIDIFIER_THRESHOLDS, {}),
+        control_humidifier=call.data.get(CONF_CONTROL_HUMIDIFIER, False),
+        humidifier_thresholds=call.data.get(CONF_HUMIDIFIER_THRESHOLDS, {}),
         stress_threshold=call.data.get(CONF_STRESS_THRESHOLD, 0.70),
         mold_threshold=call.data.get(CONF_MOLD_THRESHOLD, 0.75),
         veg_day_hours=call.data.get("veg_day_hours", 18),
@@ -138,6 +151,13 @@ async def handle_configure_environment(
         irrigation_tanks=irrigation_tanks,
         substrate_temperature_sensors=call.data.get(CONF_SUBSTRATE_TEMP_SENSORS, []),
         camera_entities=call.data.get(CONF_CAMERA_ENTITIES, []),
+        ph_sensors=call.data.get(CONF_PH_SENSORS, []),
+        feed_ec_sensors=call.data.get(CONF_FEED_EC_SENSORS, []),
+        substrate_ec_sensors=call.data.get(CONF_SUBSTRATE_EC_SENSORS, []),
+        runoff_ec_sensors=call.data.get(CONF_RUNOFF_EC_SENSORS, []),
+        drain_volume_sensors=call.data.get(CONF_DRAIN_VOLUME_SENSORS, []),
+        irrigation_flow_sensors=call.data.get(CONF_IRRIGATION_FLOW_SENSORS, []),
+        power_sensors=call.data.get(CONF_POWER_SENSORS, []),
         energy_sensors=call.data.get(CONF_ENERGY_SENSORS, []),
         electricity_cost_per_kwh=call.data.get(CONF_ELECTRICITY_COST),
     )

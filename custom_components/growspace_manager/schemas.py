@@ -74,21 +74,30 @@ from .const import (
     CONF_CIRCULATION_FAN_ENTITY,
     CONF_CO2_SENSOR,
     CONF_CONTROL_DEHUMIDIFIER,
+    CONF_CONTROL_HUMIDIFIER,
     CONF_DEHUMIDIFIER_ENTITIES,
     CONF_DEHUMIDIFIER_ENTITY,
     CONF_DEHUMIDIFIER_THRESHOLDS,
+    CONF_DRAIN_VOLUME_SENSORS,
     CONF_ELECTRICITY_COST,
     CONF_ENERGY_SENSORS,
     CONF_EXHAUST_ENTITY,
     CONF_EXHAUST_FAN_ENTITIES,
+    CONF_FEED_EC_SENSORS,
     CONF_HUMIDIFIER_ENTITIES,
     CONF_HUMIDIFIER_ENTITY,
+    CONF_HUMIDIFIER_THRESHOLDS,
     CONF_HUMIDITY_SENSOR,
+    CONF_IRRIGATION_FLOW_SENSORS,
     CONF_LIGHT_SENSOR,
     CONF_LIGHT_SENSORS,
     CONF_MOLD_THRESHOLD,
+    CONF_PH_SENSORS,
+    CONF_POWER_SENSORS,
+    CONF_RUNOFF_EC_SENSORS,
     CONF_SOIL_MOISTURE_SENSOR,
     CONF_STRESS_THRESHOLD,
+    CONF_SUBSTRATE_EC_SENSORS,
     CONF_SUBSTRATE_TEMP_SENSORS,
     CONF_TEMP_SENSOR,
     CONF_VPD_SENSOR,
@@ -419,8 +428,9 @@ DEBUG_CONSOLIDATE_DUPLICATE_SPECIAL_SCHEMA = vol.Schema({})  # No parameters
 CONFIGURE_ENVIRONMENT_SCHEMA = vol.Schema(
     {
         vol.Required("growspace_id"): str,
-        vol.Required(CONF_TEMP_SENSOR): str,
-        vol.Required(CONF_HUMIDITY_SENSOR): str,
+        # Singular (legacy / backward compat)
+        vol.Optional(CONF_TEMP_SENSOR): str,
+        vol.Optional(CONF_HUMIDITY_SENSOR): str,
         vol.Optional(CONF_VPD_SENSOR): str,
         vol.Optional(CONF_CO2_SENSOR): str,
         vol.Optional(CONF_DEHUMIDIFIER_ENTITY): str,
@@ -431,13 +441,18 @@ CONFIGURE_ENVIRONMENT_SCHEMA = vol.Schema(
         vol.Optional(CONF_SOIL_MOISTURE_SENSOR): str,
         vol.Optional(CONF_CONTROL_DEHUMIDIFIER, default=False): bool,
         vol.Optional(CONF_DEHUMIDIFIER_THRESHOLDS): dict,
+        vol.Optional(CONF_CONTROL_HUMIDIFIER, default=False): bool,
+        vol.Optional(CONF_HUMIDIFIER_THRESHOLDS): dict,
         vol.Optional(CONF_STRESS_THRESHOLD, default=0.70): vol.All(
             vol.Coerce(float), vol.Range(min=0.0, max=1.0)
         ),
         vol.Optional(CONF_MOLD_THRESHOLD, default=0.75): vol.All(
             vol.Coerce(float), vol.Range(min=0.0, max=1.0)
         ),
-        # Multi-device support
+        # Multi-device support — basic sensors
+        vol.Optional("temperature_sensors"): cv.ensure_list,
+        vol.Optional("humidity_sensors"): cv.ensure_list,
+        vol.Optional("vpd_sensors"): cv.ensure_list,
         vol.Optional(CONF_LIGHT_SENSORS): cv.ensure_list,
         vol.Optional(CONF_DEHUMIDIFIER_ENTITIES): cv.ensure_list,
         vol.Optional(CONF_CIRCULATION_FAN_ENTITIES): cv.ensure_list,
@@ -448,6 +463,14 @@ CONFIGURE_ENVIRONMENT_SCHEMA = vol.Schema(
         vol.Optional("irrigation_tanks"): list,
         vol.Optional(CONF_SUBSTRATE_TEMP_SENSORS): cv.ensure_list,
         vol.Optional(CONF_CAMERA_ENTITIES): cv.ensure_list,
+        # Advanced / irrigation monitoring sensors
+        vol.Optional(CONF_PH_SENSORS): cv.ensure_list,
+        vol.Optional(CONF_FEED_EC_SENSORS): cv.ensure_list,
+        vol.Optional(CONF_SUBSTRATE_EC_SENSORS): cv.ensure_list,
+        vol.Optional(CONF_RUNOFF_EC_SENSORS): cv.ensure_list,
+        vol.Optional(CONF_DRAIN_VOLUME_SENSORS): cv.ensure_list,
+        vol.Optional(CONF_IRRIGATION_FLOW_SENSORS): cv.ensure_list,
+        vol.Optional(CONF_POWER_SENSORS): cv.ensure_list,
         vol.Optional(CONF_ENERGY_SENSORS): cv.ensure_list,
         vol.Optional(CONF_ELECTRICITY_COST): vol.Coerce(float),
     }

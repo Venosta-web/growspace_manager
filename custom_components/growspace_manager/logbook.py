@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING, Any
 from homeassistant.components.logbook import LOGBOOK_ENTRY_MESSAGE, LOGBOOK_ENTRY_NAME
 from homeassistant.core import HomeAssistant, callback
 
-from .const import CATEGORY_NOTE, DOMAIN, EVENT_GROWSPACE_LOG_ENTRY
+from .const import CATEGORY_DEHUMIDIFIER, CATEGORY_HUMIDIFIER, CATEGORY_NOTE, DOMAIN, EVENT_GROWSPACE_LOG_ENTRY
 
 if TYPE_CHECKING:
     from homeassistant.components.logbook import LazyEventPartialState
@@ -40,6 +40,10 @@ def async_describe_events(
                 return _describe_training_event(data)
             case "ipm":
                 return _describe_ipm_event(data)
+            case category if category == CATEGORY_DEHUMIDIFIER:
+                return _describe_dehumidifier_event(data)
+            case category if category == CATEGORY_HUMIDIFIER:
+                return _describe_humidifier_event(data)
             case _:
                 return _describe_default_event(category, data)
 
@@ -104,6 +108,32 @@ def _describe_ipm_event(data: dict[str, Any]) -> dict[str, Any]:
         LOGBOOK_ENTRY_NAME: "IPM Treatment",
         LOGBOOK_ENTRY_MESSAGE: f"{treatment}: {data.get('notes', 'Applied')}",
     }
+
+
+def _describe_dehumidifier_event(data: dict[str, Any]) -> dict[str, Any]:
+    """Describe a dehumidifier control event."""
+    reasons = data.get("reasons", [])
+    action = next(
+        (r for r in reasons if r in ("Turned ON", "Turned OFF")), "Controlled"
+    )
+    details = [r for r in reasons if r not in ("Turned ON", "Turned OFF")]
+    message = action
+    if details:
+        message += f" • {', '.join(details)}"
+    return {LOGBOOK_ENTRY_NAME: "Dehumidifier Control", LOGBOOK_ENTRY_MESSAGE: message}
+
+
+def _describe_humidifier_event(data: dict[str, Any]) -> dict[str, Any]:
+    """Describe a humidifier control event."""
+    reasons = data.get("reasons", [])
+    action = next(
+        (r for r in reasons if r in ("Turned ON", "Turned OFF")), "Controlled"
+    )
+    details = [r for r in reasons if r not in ("Turned ON", "Turned OFF")]
+    message = action
+    if details:
+        message += f" • {', '.join(details)}"
+    return {LOGBOOK_ENTRY_NAME: "Humidifier Control", LOGBOOK_ENTRY_MESSAGE: message}
 
 
 def _describe_default_event(

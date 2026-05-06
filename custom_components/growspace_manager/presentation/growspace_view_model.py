@@ -393,6 +393,8 @@ class GrowspaceViewModelBuilder:
         # Humidifier
         humidifier_entity = env_config.humidifier_entity
         attributes[CONF_HUMIDIFIER_ENTITIES] = env_config.humidifier_entities
+        attributes["humidifier_control_enabled"] = env_config.control_humidifier
+        attributes["humidifier_thresholds"] = env_config.humidifier_thresholds
 
         if humidifier_entity:
             state_obj = self.hass.states.get(humidifier_entity)

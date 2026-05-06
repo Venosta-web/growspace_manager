@@ -986,6 +986,13 @@ class EnvironmentConfigHandler(BaseConfigHandler[dict[str, Any]]):
 
         schema_dict[
             vol.Optional(
+                "control_humidifier",
+                default=growspace_options.get("control_humidifier", False),
+            )
+        ] = selector.BooleanSelector()
+
+        schema_dict[
+            vol.Optional(
                 "configure_dehumidifier",
                 default=growspace_options.get(
                     "configure_dehumidifier",

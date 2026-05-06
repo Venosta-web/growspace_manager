@@ -95,8 +95,11 @@
       'position_2_2': None,
     }),
     'growspace_id': 'gs_test',
+    'humidifier_control_enabled': False,
     'humidifier_entities': list([
     ]),
+    'humidifier_thresholds': dict({
+    }),
     'humidity': None,
     'humidity_sensor': 'sensor.hum',
     'humidity_sensors': list([

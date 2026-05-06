@@ -308,6 +308,8 @@ class EnvironmentConfig(BaseModel):
     lst_offset: float = -2.0
     control_dehumidifier: bool = False
     dehumidifier_thresholds: DehumidifierThresholds = field(default_factory=dict)
+    control_humidifier: bool = False
+    humidifier_thresholds: dict[str, Any] = field(default_factory=dict)
     minimum_source_air_temperature: float = 18.0
     stress_threshold: float = 0.70
     mold_threshold: float = 0.75
@@ -591,6 +593,7 @@ class Growspace(BaseModel):
     environment_config: EnvironmentConfig = field(default_factory=EnvironmentConfig)
     irrigation_config: IrrigationConfig = field(default_factory=IrrigationConfig)
     dehumidifier_config: dict[str, Any] = field(default_factory=dict)
+    humidifier_config: dict[str, Any] = field(default_factory=dict)
     irrigation_strategy: IrrigationStrategy = field(default_factory=IrrigationStrategy)
     growspace_type: GrowspaceType = field(default=GrowspaceType.FLOWER)
     drain_config: DrainConfig = field(default_factory=lambda: DrainConfig())

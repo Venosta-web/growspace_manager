@@ -198,6 +198,8 @@ def _async_cancel_coordinators(coordinator: GrowspaceCoordinator) -> None:
         irr_coordinator.async_cancel_listeners()
     for dehum_coordinator in coordinator.dehumidifier_coordinators.values():
         dehum_coordinator.unload()
+    for hum_coordinator in coordinator.humidifier_coordinators.values():
+        hum_coordinator.unload()
 
 
 @callback

@@ -30,6 +30,7 @@ from .environment_analyzer import EnvironmentAnalyzer
 from .event_bus_pkg import GrowspaceEventBus
 from .exceptions import GrowspaceNotFoundError
 from .growspace_validator import GrowspaceValidator
+from .humidifier_coordinator import HumidifierCoordinator
 from .import_export_manager import ImportExportManager
 from .integration_types import DateInput
 from .irrigation_coordinator import IrrigationCoordinator
@@ -171,6 +172,15 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             Dictionary mapping growspace IDs to their dehumidifier coordinators.
         """
         return self.subsystem_manager.dehumidifier_coordinators
+
+    @property
+    def humidifier_coordinators(self) -> dict[str, HumidifierCoordinator]:
+        """Return humidifier coordinators for all growspaces.
+
+        Returns:
+            Dictionary mapping growspace IDs to their humidifier coordinators.
+        """
+        return self.subsystem_manager.humidifier_coordinators
 
     @property
     def ec_ramp_curves(self) -> dict[str, Any]:
