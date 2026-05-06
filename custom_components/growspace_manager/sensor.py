@@ -838,6 +838,8 @@ class CalculatedVpdSensor(BaseVpdSensor):
     LST (Leaf Surface Temperature) offset to calculate VPD more accurately.
     """
 
+    _attr_has_entity_name = True
+
     def __init__(
         self,
         coordinator: GrowspaceCoordinator,
@@ -859,7 +861,6 @@ class CalculatedVpdSensor(BaseVpdSensor):
         self._lst_offset = lst_offset
         self._index = index
         self._attr_translation_key = "calculated_vpd"
-        self._attr_has_entity_name = True
 
         self._attr_device_info = DeviceInfo(
             identifiers={(DOMAIN, growspace_id)},
