@@ -2,19 +2,26 @@
 
 from __future__ import annotations
 
+from datetime import datetime
 import logging
-from typing import TYPE_CHECKING
+from pathlib import Path
+from typing import TYPE_CHECKING, Any
 
 from custom_components.growspace_manager.const import (
     ATTR_GROWSPACE_ID,
+    ATTR_IMAGES,
     ATTR_NAME,
+    ATTR_NOTES,
     ATTR_NOTIFICATION_TARGET,
     ATTR_PLANTS_PER_ROW,
     ATTR_ROWS,
+    CATEGORY_NOTE,
+    EVENT_GROWSPACE_LOG_ENTRY,
 )
 from custom_components.growspace_manager.services.utils import handle_service_errors
 from custom_components.growspace_manager.strain_library import StrainLibrary
 from homeassistant.core import HomeAssistant, ServiceCall
+from homeassistant.exceptions import ServiceValidationError
 import homeassistant.helpers.device_registry as dr
 
 if TYPE_CHECKING:
@@ -84,3 +91,42 @@ async def handle_remove_growspace(
     growspace_id = call.data[ATTR_GROWSPACE_ID]
     await coordinator.async_remove_growspace(growspace_id)
     _LOGGER.info("Growspace %s removed successfully", growspace_id)
+
+
+async def async_add_growspace_note(
+    hass: HomeAssistant,
+    coordinator: GrowspaceCoordinator,
+    strain_library: StrainLibrary,
+    growspace_id: str,
+    notes: str,
+    images_base64: list[str] | None = None,
+) -> None:
+    """Add a note to a growspace."""
+    if images_base64 is None:
+        images_base64 = []
+
+    if growspace_id not in coordinator.growspaces:
+        raise ServiceValidationError(f"Growspace '{growspace_id}' not found")
+
+    image_paths: list[str] = []
+    if images_base64 and strain_library.image_manager:
+        for img_b64 in images_base64:
+            try:
+                abs_path = await strain_library.image_manager.save_timeline_image(
+                    plant_id=growspace_id,
+                    image_base64=img_b64,
+                )
+                image_paths.append(f"timeline/{Path(abs_path).name}")
+            except Exception as e:  # noqa: BLE001
+                _LOGGER.error("Failed to save growspace note image: %s", e)
+
+    event_data: dict[str, Any] = {
+        ATTR_GROWSPACE_ID: growspace_id,
+        ATTR_NOTES: notes,
+        ATTR_IMAGES: image_paths,
+        "category": CATEGORY_NOTE,
+        "timestamp": datetime.now().isoformat(),
+    }
+
+    hass.bus.async_fire(EVENT_GROWSPACE_LOG_ENTRY, event_data)
+    _LOGGER.info("Added note for growspace %s", growspace_id)
