@@ -26,6 +26,9 @@
       },
       "curing": {
         "name": "Curing"
+      },
+      "light_verification": {
+        "name": "Light cycle verification"
       }
     },
     "switch": {
@@ -34,14 +37,50 @@
       }
     },
     "sensor": {
+      "vpd": {
+        "name": "VPD"
+      },
       "air_exchange": {
         "name": "Air Exchange"
       },
       "overview": {
         "name": "Overview"
       },
+      "growspaces_list": {
+        "name": "Growspaces List"
+      },
       "strain_library": {
-        "name": "Growspace Strain Library"
+        "name": "Strain Library"
+      },
+      "dli": {
+        "name": "Daily Light Integral"
+      },
+      "crop_steering": {
+        "name": "Crop Steering Score"
+      },
+      "energy_usage": {
+        "name": "Energy Usage"
+      },
+      "water_usage": {
+        "name": "Water Usage"
+      },
+      "ec_target": {
+        "name": "EC Target"
+      },
+      "vision_checkup": {
+        "name": "Vision checkup"
+      },
+      "tank_derived_water": {
+        "name": "Tank water consumption"
+      },
+      "calculated_vpd": {
+        "name": "Calculated VPD"
+      },
+      "plant": {
+        "name": "Plant"
+      },
+      "seed_inventory": {
+        "name": "Seed inventory"
       }
     }
   },
@@ -155,6 +194,17 @@
           "description": "ID of the plant to remove"
         }
       }
+    }
+  },
+  "issues": {
+    "pending_growspace_fail": {
+      "title": "Failed to create pending growspace",
+      "description": "The system failed to create the pending growspace {name}. Error: {error}. Please check the logs for more details."
+    }
+  },
+  "exceptions": {
+    "phi_not_cleared": {
+      "message": "Cannot harvest {plant_id}: pre-harvest interval not cleared until {clearance_date} ({days_remaining} days remaining)."
     }
   }
 }

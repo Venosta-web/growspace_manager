@@ -401,6 +401,20 @@
       },
       "tank_derived_water": {
         "name": "Tank water consumption"
+      },
+      "calculated_vpd": {
+        "name": "Calculated VPD"
+      },
+      "plant": {
+        "name": "Plant"
+      },
+      "seed_inventory": {
+        "name": "Seed inventory"
+      }
+    },
+    "binary_sensor": {
+      "light_verification": {
+        "name": "Light cycle verification"
       }
     }
   },

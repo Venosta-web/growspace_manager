@@ -174,7 +174,7 @@ class GrowspaceConfigHandler(BaseConfigHandler[dict[str, Any]]):
         if user_input is not None:
             try:
                 await self.async_add_growspace(user_input)
-                return self.flow.async_create_entry(title="", data=self.config_entry.options)
+                return await self.async_step_manage_growspaces()
             except Exception:
                 _LOGGER.exception("Error adding growspace")
                 return self.flow.async_show_form(
@@ -227,7 +227,7 @@ class GrowspaceConfigHandler(BaseConfigHandler[dict[str, Any]]):
         if user_input is not None:
             try:
                 await self.async_remove_growspace(growspace_id)
-                return self.flow.async_create_entry(title="", data=self.config_entry.options)
+                return await self.async_step_manage_growspaces()
             except Exception:
                 _LOGGER.exception("Error removing growspace")
                 return self.flow.async_show_form(
@@ -389,7 +389,7 @@ class GrowspaceConfigHandler(BaseConfigHandler[dict[str, Any]]):
         if user_input is not None:
             try:
                 await self.async_update_growspace(growspace_id, user_input)
-                return self.flow.async_create_entry(title="", data=self.config_entry.options)
+                return await self.async_step_manage_growspaces()
             except Exception:
                 _LOGGER.exception("Error updating growspace")
                 return self.flow.async_show_form(
