@@ -46,7 +46,7 @@ def mock_coordinator() -> MagicMock:
     }
     coordinator.options = {}
     coordinator.async_save = AsyncMock()
-    coordinator.get_growspace_plants = MagicMock(return_value=[])
+    coordinator.get_growspace_plants = MagicMock(return_value=[MagicMock()])
     return coordinator
 
 
