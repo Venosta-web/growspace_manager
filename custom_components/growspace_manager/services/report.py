@@ -7,7 +7,7 @@ comprehensive PDF or JSON reports for individual plants.
 from __future__ import annotations
 
 import contextlib
-from datetime import datetime, timedelta
+from datetime import timedelta
 import json
 import logging
 from pathlib import Path
@@ -143,10 +143,10 @@ async def _aggregate_plant_data(
     start_time = None
     if plant.stage_history:
         with contextlib.suppress(ValueError):
-            start_time = datetime.fromisoformat(plant.stage_history[0]["start"])
+            start_time = dt_util.as_utc(dt_util.parse_datetime(plant.stage_history[0]["start"]))
     if not start_time and plant.created_at:
         with contextlib.suppress(ValueError):
-            start_time = datetime.fromisoformat(plant.created_at)
+            start_time = dt_util.as_utc(dt_util.parse_datetime(plant.created_at))
     if not start_time:
         start_time = dt_util.utcnow()
 
@@ -341,7 +341,7 @@ async def _aggregate_growspace_data(
             if plants:
                 first_plant_date = min(
                     [
-                        dt_util.parse_datetime(p.created_at)
+                        dt_util.as_utc(dt_util.parse_datetime(p.created_at))
                         for p in plants
                         if p.created_at
                     ]

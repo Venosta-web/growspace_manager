@@ -1,0 +1,176 @@
+============================= test session starts ==============================
+platform linux -- Python 3.14.2, pytest-9.0.0, pluggy-1.6.0
+rootdir: /home/maxi/core/core/vendor/growspace_manager
+configfile: pytest.ini (WARNING: ignoring pytest config in pyproject.toml!)
+plugins: cov-7.0.0, syrupy-5.0.0, respx-0.22.0, anyio-4.13.0, aiohttp-1.1.0, github-actions-annotate-failures-0.3.0, picked-0.5.1, timeout-2.4.0, xdist-3.8.0, homeassistant-custom-component-0.13.321, unordered-0.7.0, requests-mock-1.12.1, sugar-1.0.0, pytest_freezer-0.4.9, asyncio-1.3.0, socket-0.7.0
+asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=function, asyncio_default_test_loop_scope=function
+collected 1 item
+
+tests/services/test_report.py F                                          [100%]
+
+=================================== FAILURES ===================================
+__________________ test_aggregate_growspace_data_with_plants ___________________
+
+hass = <HomeAssistant RUNNING>
+
+    @pytest.mark.asyncio
+    async def test_aggregate_growspace_data_with_plants(
+        hass: HomeAssistant,
+    ) -> None:
+        """Test data aggregation for growspace report with plants."""
+        mock_coordinator = MagicMock()
+    
+        # Use ISO format for created_at (which is what the code expects)
+        plant1 = MagicMock()
+        plant1.growspace_id = "test_growspace"
+        plant1.genetics.strain_name = "Strain A"
+        plant1.stage = "veg"
+        plant1.created_at = "2024-01-01T00:00:00"
+        plant1.wet_weight = 100
+        plant1.dry_weight = 20
+        plant1.trim_weight = 5
+        plant1.thc_percentage = 18
+    
+        plant2 = MagicMock()
+        plant2.growspace_id = "test_growspace"
+        plant2.genetics.strain_name = "Strain B"
+        plant2.stage = "flower"
+        plant2.created_at = "2024-01-05T00:00:00"
+        plant2.wet_weight = 120
+        plant2.dry_weight = 25
+        plant2.trim_weight = 6
+        plant2.thc_percentage = 22
+    
+        mock_growspace = MagicMock()
+        mock_growspace.id = "test_growspace"
+        mock_growspace.name = "Test Growspace"
+        mock_growspace.environment_config.temperature_sensor = "sensor.test_temp"
+        mock_growspace.environment_config.humidity_sensor = "sensor.test_humidity"
+        mock_growspace.environment_config.vpd_sensor = "sensor.test_vpd"
+    
+        mock_coordinator.get_growspace.return_value = mock_growspace
+        mock_coordinator.plants = {"plant1": plant1, "plant2": plant2}
+    
+        with (
+            patch(
+                "custom_components.growspace_manager.websocket._get_statistics_data",
+                new_callable=AsyncMock,
+            ) as mock_get_stats,
+            patch(
+                "custom_components.growspace_manager.services.report.datetime"
+            ) as mock_dt,
+        ):
+            # Need to mock datetime.fromisoformat as well for proper date parsing
+            mock_dt.now.return_value = datetime(2024, 1, 15, 12, 0, 0)
+            mock_dt.fromisoformat = datetime.fromisoformat
+            mock_get_stats.return_value = {
+                "sensor.test_temp": [
+                    {"lu": "2024-01-15T12:00:00+00:00", "s": 24.5}
+                ],
+                "sensor.test_humidity": [
+                    {"lu": "2024-01-15T12:00:00+00:00", "s": 55.0}
+                ],
+                "sensor.test_vpd": [
+                    {"lu": "2024-01-15T12:00:00+00:00", "s": 1.0}
+                ],
+            }
+    
+>           data = await _aggregate_growspace_data(hass, mock_coordinator, "test_growspace")
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/services/test_report.py:634: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+hass = <HomeAssistant RUNNING>, coordinator = <MagicMock id='138240752230688'>
+growspace_id = 'test_growspace'
+
+    async def _aggregate_growspace_data(
+        hass: HomeAssistant, coordinator: GrowspaceCoordinator, growspace_id: str
+    ) -> dict[str, Any]:
+        """Aggregate data for a whole growspace report."""
+        growspace = coordinator.get_growspace(growspace_id)
+        if not growspace:
+            raise HomeAssistantError(f"Growspace {growspace_id} not found")
+    
+        plants = [p for p in coordinator.plants.values() if p.growspace_id == growspace_id]
+    
+        # Calculate summary
+        strains = sorted({p.genetics.strain_name for p in plants})
+        stages: dict[str, int] = {}
+        for p in plants:
+            stage_str = str(p.stage)
+            stages[stage_str] = stages.get(stage_str, 0) + 1
+    
+        # Calculate harvest totals
+        total_wet = sum(getattr(p, "wet_weight", 0) or 0 for p in plants)
+        total_dry = sum(getattr(p, "dry_weight", 0) or 0 for p in plants)
+        total_trim = sum(getattr(p, "trim_weight", 0) or 0 for p in plants)
+        top_thc = max([getattr(p, "thc_percentage", 0) or 0 for p in plants] + [0])
+    
+        data: dict[str, Any] = {
+            "plant_info": {
+                "id": growspace_id,
+                "strain": "Multiple Strains",
+                "phenotype": "Summary View",
+                "growspace": growspace.name,
+                "stage": "Various",
+                "created_at": None,
+                "harvested_at": None,
+            },
+            "summary": {
+                "plant_count": len(plants),
+                "strains": strains,
+                "stages": stages,
+            },
+            "harvest": {
+                "total_wet_weight": round(total_wet, 2),
+                "total_dry_weight": round(total_dry, 2),
+                "total_trim_weight": round(total_trim, 2),
+                "top_thc": top_thc,
+            },
+            "environment": {
+                "temperature_avg": None,
+                "humidity_avg": None,
+                "vpd_avg": None,
+            },
+            "environmental_averages": {},
+            "timeline_events": [],
+        }
+    
+        # Fetch environmental averages (last 30 days or since first plant)
+        env_config = growspace.environment_config
+        if env_config:
+            entities = []
+            if env_config.temperature_sensor:
+                entities.append(env_config.temperature_sensor)
+            if env_config.humidity_sensor:
+                entities.append(env_config.humidity_sensor)
+            if env_config.vpd_sensor:
+                entities.append(env_config.vpd_sensor)
+    
+            if entities:
+                from custom_components.growspace_manager.websocket import (
+                    _get_statistics_data,
+                )
+    
+                end_time = dt_util.utcnow()
+                start_time = end_time - timedelta(days=30)
+                if plants:
+>                   first_plant_date = min(
+                        [
+                            dt_util.parse_datetime(p.created_at)
+                            for p in plants
+                            if p.created_at
+                        ]
+                        + [end_time]
+                    )
+E                   TypeError: can't compare offset-naive and offset-aware datetimes
+
+custom_components/growspace_manager/services/report.py:342: TypeError
+---------------------------- Captured stderr setup -----------------------------
+INFO:homeassistant.loader:Loaded homeassistant from homeassistant.components.homeassistant
+------------------------------ Captured log setup ------------------------------
+INFO     homeassistant.loader:loader.py:784 Loaded homeassistant from homeassistant.components.homeassistant
+=========================== short test summary info ============================
+FAILED tests/services/test_report.py::test_aggregate_growspace_data_with_plants
+============================== 1 failed in 0.32s ===============================

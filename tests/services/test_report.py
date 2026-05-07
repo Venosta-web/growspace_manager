@@ -148,8 +148,8 @@ async def test_export_grow_report_json(
     mock_coordinator.get_plant.return_value = mock_plant
     mock_coordinator.get_growspace.return_value = mock_growspace
 
-    # Setup config path to point to tmp_path
-    hass.config.path = MagicMock(return_value=str(tmp_path / "www"))
+    # Setup config path mock to handle subdirectories correctly
+    hass.config.path = MagicMock(side_effect=lambda *args: str(tmp_path.joinpath(*args)))
 
     with (
         patch(
@@ -157,17 +157,17 @@ async def test_export_grow_report_json(
             new_callable=AsyncMock,
         ) as mock_aggregate,
         patch(
-            "custom_components.growspace_manager.services.report.datetime"
-        ) as mock_dt,
+            "custom_components.growspace_manager.services.report.dt_util.now"
+        ) as mock_now,
     ):
-        mock_dt.now.return_value.strftime.return_value = "20240101_120000"
+        mock_now.return_value.strftime.return_value = "20240101_120000"
         mock_aggregate.return_value = {"plant_info": {"id": "test_plant"}}
 
         call = MagicMock()
         call.data = {"plant_id": "test_plant", "format": "json"}
         await handle_export_grow_report(hass, mock_coordinator, call)
 
-        expected_file = tmp_path / "www" / "Test_Strain_#1_20240101_120000.json"
+        expected_file = tmp_path / "www" / "growspace_manager" / "reports" / "Test_Strain_#1_20240101_120000.json"
         assert expected_file.exists()
 
         data = json.loads(expected_file.read_text())
@@ -186,7 +186,7 @@ async def test_export_grow_report_pdf(
     mock_coordinator.get_plant.return_value = mock_plant
     mock_coordinator.get_growspace.return_value = mock_growspace
 
-    hass.config.path = MagicMock(return_value=str(tmp_path / "www"))
+    hass.config.path = MagicMock(side_effect=lambda *args: str(tmp_path.joinpath(*args)))
 
     with (
         patch(
@@ -194,11 +194,11 @@ async def test_export_grow_report_pdf(
             new_callable=AsyncMock,
         ) as mock_aggregate,
         patch(
-            "custom_components.growspace_manager.services.report.datetime"
-        ) as mock_dt,
+            "custom_components.growspace_manager.services.report.dt_util.now"
+        ) as mock_now,
     ):
-        mock_dt.now.return_value.strftime.return_value = "20240101_120000"
-        mock_dt.now.return_value.timestamp.return_value = 1704110400
+        mock_now.return_value.strftime.return_value = "20240101_120000"
+        mock_now.return_value.timestamp.return_value = 1704110400
         mock_aggregate.return_value = {
             "plant_info": {
                 "id": "test_plant",
@@ -225,7 +225,7 @@ async def test_export_grow_report_pdf(
         call.data = {"plant_id": "test_plant", "format": "pdf"}
         await handle_export_grow_report(hass, mock_coordinator, call)
 
-        expected_file = tmp_path / "www" / "Test_Strain_#1_20240101_120000.pdf"
+        expected_file = tmp_path / "www" / "growspace_manager" / "reports" / "Test_Strain_#1_20240101_120000.pdf"
         assert expected_file.exists()
         # Verify it's a PDF file (starts with %PDF)
         header = expected_file.read_bytes()[:4]
@@ -450,19 +450,20 @@ async def test_export_growspace_json(
             thc_percentage=22,
         ),
     }
-
-    hass.config.path = MagicMock(return_value=str(tmp_path / "www"))
-
+ 
+    # Setup config path mock to handle subdirectories correctly
+    hass.config.path = MagicMock(side_effect=lambda *args: str(tmp_path.joinpath(*args)))
+ 
     with (
         patch(
             "custom_components.growspace_manager.services.report._aggregate_growspace_data",
             new_callable=AsyncMock,
         ) as mock_aggregate,
         patch(
-            "custom_components.growspace_manager.services.report.datetime"
-        ) as mock_dt,
+            "custom_components.growspace_manager.services.report.dt_util.now"
+        ) as mock_now,
     ):
-        mock_dt.now.return_value.strftime.return_value = "20240101_120000"
+        mock_now.return_value.strftime.return_value = "20240101_120000"
         mock_aggregate.return_value = {
             "plant_info": {
                 "id": "test_growspace",
@@ -495,7 +496,7 @@ async def test_export_growspace_json(
         call.data = {"growspace_id": "test_growspace", "format": "json"}
         await handle_export_grow_report(hass, mock_coordinator, call)
 
-        expected_file = tmp_path / "www" / "Test_Growspace_20240101_120000.json"
+        expected_file = tmp_path / "www" / "growspace_manager" / "reports" / "Test_Growspace_20240101_120000.json"
         assert expected_file.exists()
 
         data = json.loads(expected_file.read_text())
@@ -516,7 +517,8 @@ async def test_export_growspace_pdf(
     mock_coordinator.get_growspace.return_value = mock_growspace
     mock_coordinator.plants = {}
 
-    hass.config.path = MagicMock(return_value=str(tmp_path / "www"))
+    # Setup config path mock to handle subdirectories correctly
+    hass.config.path = MagicMock(side_effect=lambda *args: str(tmp_path.joinpath(*args)))
 
     with (
         patch(
@@ -524,10 +526,10 @@ async def test_export_growspace_pdf(
             new_callable=AsyncMock,
         ) as mock_aggregate,
         patch(
-            "custom_components.growspace_manager.services.report.datetime"
-        ) as mock_dt,
+            "custom_components.growspace_manager.services.report.dt_util.now"
+        ) as mock_now,
     ):
-        mock_dt.now.return_value.strftime.return_value = "20240101_120000"
+        mock_now.return_value.strftime.return_value = "20240101_120000"
         mock_aggregate.return_value = {
             "plant_info": {
                 "id": "test_growspace",
@@ -562,7 +564,7 @@ async def test_export_growspace_pdf(
         call.data = {"growspace_id": "test_growspace", "format": "pdf"}
         await handle_export_grow_report(hass, mock_coordinator, call)
 
-        expected_file = tmp_path / "www" / "Test_Growspace_20240101_120000.pdf"
+        expected_file = tmp_path / "www" / "growspace_manager" / "reports" / "Test_Growspace_20240101_120000.pdf"
         assert expected_file.exists()
         # Verify it's a PDF file
         header = expected_file.read_bytes()[:4]
@@ -581,7 +583,7 @@ async def test_aggregate_growspace_data_with_plants(
     plant1.growspace_id = "test_growspace"
     plant1.genetics.strain_name = "Strain A"
     plant1.stage = "veg"
-    plant1.created_at = "2024-01-01T00:00:00"
+    plant1.created_at = "2024-01-01T00:00:00+00:00"
     plant1.wet_weight = 100
     plant1.dry_weight = 20
     plant1.trim_weight = 5
@@ -591,7 +593,7 @@ async def test_aggregate_growspace_data_with_plants(
     plant2.growspace_id = "test_growspace"
     plant2.genetics.strain_name = "Strain B"
     plant2.stage = "flower"
-    plant2.created_at = "2024-01-05T00:00:00"
+    plant2.created_at = "2024-01-05T00:00:00+00:00"
     plant2.wet_weight = 120
     plant2.dry_weight = 25
     plant2.trim_weight = 6
@@ -613,12 +615,10 @@ async def test_aggregate_growspace_data_with_plants(
             new_callable=AsyncMock,
         ) as mock_get_stats,
         patch(
-            "custom_components.growspace_manager.services.report.datetime"
-        ) as mock_dt,
+            "custom_components.growspace_manager.services.report.dt_util.now"
+        ) as mock_now,
     ):
-        # Need to mock datetime.fromisoformat as well for proper date parsing
-        mock_dt.now.return_value = datetime(2024, 1, 15, 12, 0, 0)
-        mock_dt.fromisoformat = datetime.fromisoformat
+        mock_now.return_value = datetime(2024, 1, 15, 12, 0, 0)
         mock_get_stats.return_value = {
             "sensor.test_temp": [
                 {"lu": "2024-01-15T12:00:00+00:00", "s": 24.5}
@@ -906,7 +906,7 @@ async def test_export_notification_fired(
     mock_coordinator.get_plant.return_value = mock_plant
     mock_coordinator.get_growspace.return_value = mock_growspace
 
-    hass.config.path = MagicMock(return_value=str(tmp_path / "www"))
+    hass.config.path = MagicMock(side_effect=lambda *args: str(tmp_path.joinpath(*args)))
 
     with (
         patch(
@@ -914,13 +914,13 @@ async def test_export_notification_fired(
             new_callable=AsyncMock,
         ) as mock_aggregate,
         patch(
-            "custom_components.growspace_manager.services.report.datetime"
-        ) as mock_dt,
+            "custom_components.growspace_manager.services.report.dt_util.now"
+        ) as mock_now,
         patch(
             "custom_components.growspace_manager.services.report.create_notification"
         ) as mock_notify,
     ):
-        mock_dt.now.return_value.strftime.return_value = "20240101_120000"
+        mock_now.return_value.strftime.return_value = "20240101_120000"
         mock_aggregate.return_value = {"plant_info": {"id": "test_plant"}}
 
         call = MagicMock()
@@ -941,7 +941,7 @@ async def test_export_event_fired(
     mock_coordinator.get_plant.return_value = mock_plant
     mock_coordinator.get_growspace.return_value = mock_growspace
 
-    hass.config.path = MagicMock(return_value=str(tmp_path / "www"))
+    hass.config.path = MagicMock(side_effect=lambda *args: str(tmp_path.joinpath(*args)))
 
     with (
         patch(
@@ -949,13 +949,13 @@ async def test_export_event_fired(
             new_callable=AsyncMock,
         ) as mock_aggregate,
         patch(
-            "custom_components.growspace_manager.services.report.datetime"
-        ) as mock_dt,
+            "custom_components.growspace_manager.services.report.dt_util.now"
+        ) as mock_now,
         patch(
             "custom_components.growspace_manager.services.report.create_notification"
         ),
     ):
-        mock_dt.now.return_value.strftime.return_value = "20240101_120000"
+        mock_now.return_value.strftime.return_value = "20240101_120000"
         mock_aggregate.return_value = {"plant_info": {"id": "test_plant"}}
 
         call = MagicMock()
@@ -980,7 +980,7 @@ async def test_export_with_special_characters_in_name(
     mock_coordinator.get_plant.return_value = mock_plant
     mock_coordinator.get_growspace.return_value = mock_growspace
 
-    hass.config.path = MagicMock(return_value=str(tmp_path / "www"))
+    hass.config.path = MagicMock(side_effect=lambda *args: str(tmp_path.joinpath(*args)))
 
     with (
         patch(
@@ -988,13 +988,13 @@ async def test_export_with_special_characters_in_name(
             new_callable=AsyncMock,
         ) as mock_aggregate,
         patch(
-            "custom_components.growspace_manager.services.report.datetime"
-        ) as mock_dt,
+            "custom_components.growspace_manager.services.report.dt_util.now"
+        ) as mock_now,
         patch(
             "custom_components.growspace_manager.services.report.create_notification"
         ),
     ):
-        mock_dt.now.return_value.strftime.return_value = "20240101_120000"
+        mock_now.return_value.strftime.return_value = "20240101_120000"
         mock_aggregate.return_value = {"plant_info": {"id": "test_plant"}}
 
         call = MagicMock()
@@ -1002,5 +1002,5 @@ async def test_export_with_special_characters_in_name(
         await handle_export_grow_report(hass, mock_coordinator, call)
 
         # Filename should have special chars replaced with underscores
-        expected_file = tmp_path / "www" / "Test_Special_Strain_#1_20240101_120000.json"
+        expected_file = tmp_path / "www" / "growspace_manager" / "reports" / "Test_Special_Strain_#1_20240101_120000.json"
         assert expected_file.exists()

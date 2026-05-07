@@ -113,7 +113,7 @@
 # ---
 # name: test_growspace_serialization_snapshot
   dict({
-    'created_at': '2026-01-12T12:00:00',
+    'created_at': '2026-01-12T12:00:00+00:00',
     'dehumidifier_config': dict({
     }),
     'device_id': None,
@@ -297,6 +297,7 @@
     'phi_clearance_date': None,
     'plant_id': 'plant_1',
     'row': 1,
+    'seed_batch_id': None,
     'seedling_start': None,
     'source_mother': None,
     'stage': 'veg',
