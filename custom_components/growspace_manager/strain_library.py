@@ -746,9 +746,6 @@ class StrainLibrary:
             parent_name = parent.get("name", "")
             source = parent.get("source", "manual")
             if source == "library" and parent_name in self.strains:
-                if parent_name in next_seen:
-                    # Cycle detected: skip this parent entirely to stop the loop
-                    continue
                 resolved = self.get_strain_lineage_tree(
                     parent_name, _seen=next_seen, _depth=_depth + 1
                 )

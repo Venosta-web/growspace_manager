@@ -116,7 +116,8 @@ def test_get_strain_lineage_tree_cycle_protection():
     # Should terminate without infinite recursion
     assert result["name"] == "A"
     assert result["parents"][0]["name"] == "B"
-    assert result["parents"][0]["parents"] == []  # cycle stopped
+    # A appears as a leaf inside B (cycle caught by _seen at depth guard)
+    assert result["parents"][0]["parents"] == [{"name": "A", "source": "library", "parents": []}]
 
 def test_get_strain_lineage_tree_manual_parent_is_leaf():
     from custom_components.growspace_manager.strain_library import StrainLibrary
