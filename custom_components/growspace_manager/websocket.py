@@ -1492,6 +1492,7 @@ SCHEMA_WS_UPDATE_STRAIN_LINEAGE_TREE = websocket_api.BASE_COMMAND_MESSAGE_SCHEMA
             {
                 vol.Required("name"): str,
                 vol.Required("source"): vol.In(["library", "manual"]),
+                vol.Optional("phenotype"): str,
             }
         ],
     }

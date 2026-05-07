@@ -744,13 +744,18 @@ class StrainLibrary:
 
         for parent in parents[:2]:
             parent_name = parent.get("name", "")
+            parent_phenotype = parent.get("phenotype") or None
             source = parent.get("source", "manual")
             if source == "library" and parent_name in self.strains:
                 resolved = self.get_strain_lineage_tree(
                     parent_name, _seen=next_seen, _depth=_depth + 1
                 )
+                if parent_phenotype:
+                    resolved["phenotype"] = parent_phenotype
             else:
                 resolved = {"name": parent_name, "source": source, "parents": []}
+                if parent_phenotype:
+                    resolved["phenotype"] = parent_phenotype
             node["parents"].append(resolved)
 
         return node
@@ -758,6 +763,27 @@ class StrainLibrary:
     def get_strain_names(self) -> list[str]:
         """Return all strain names sorted alphabetically (lightweight, no image data)."""
         return sorted(self.strains.keys())
+
+    def get_strain_entries(self) -> list[dict[str, str | None]]:
+        """Return all strain+phenotype combinations for autocomplete.
+
+        Each entry is {"name": strain_name, "phenotype": phenotype_name_or_None}.
+        The 'default' phenotype is represented as phenotype=None (shown as bare strain name).
+        """
+        entries: list[dict[str, str | None]] = []
+        for strain_name in sorted(self.strains):
+            phenotypes = self.strains[strain_name].get("phenotypes", {})
+            if not phenotypes:
+                entries.append({"name": strain_name, "phenotype": None})
+            else:
+                entries.extend(
+                    {
+                        "name": strain_name,
+                        "phenotype": None if pheno_name == "default" else pheno_name,
+                    }
+                    for pheno_name in sorted(phenotypes)
+                )
+        return entries
 
     async def remove_strain_phenotype(self, strain: str, phenotype: str) -> None:
         """Remove a specific phenotype and its harvests."""
