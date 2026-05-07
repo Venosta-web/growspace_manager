@@ -20,17 +20,11 @@ _orig_async_load = dr.async_load
 
 
 async def patched_async_load(hass: HomeAssistant, *args, **kwargs):
-    """Ensure async_setup is called before async_load to initialize _loaded_event.
-
-    The setup API differs across HA versions available in CI:
-    - HA 2025.12+: module-level async_setup + instance .async_setup()
-    - older CI builds: no async_setup at all (_loaded_event auto-init in __init__)
-    Guard every call with hasattr to stay compatible with all variants.
-    """
+    """Ensure async_setup is called before async_load to initialize _loaded_event."""
     if dr.DATA_REGISTRY not in hass.data:
-        registry = dr.async_get(hass)
-        if hasattr(registry, "async_setup"):
-            registry.async_setup()
+        # Use the instance method directly; the module-level async_setup was
+        # removed in some HA release versions available via the CI package.
+        dr.async_get(hass).async_setup()
     return await _orig_async_load(hass, *args, **kwargs)
 
 
