@@ -676,6 +676,38 @@ class StrainLibrary:
             indica_percentage=indica_percentage,
         )
 
+    async def update_strain_lineage_tree(
+        self,
+        strain_name: str,
+        parents: list[dict[str, str]],
+    ) -> str:
+        """Store immediate parents for a strain and re-derive the flat lineage string.
+
+        Args:
+            strain_name: The strain to update.
+            parents: List of dicts with keys 'name' (str) and 'source' ('library'|'manual').
+                     Maximum 2 entries; extras are silently truncated.
+
+        Returns:
+            The derived flat lineage string (e.g. "OG Kush × Durban Poison").
+        """
+        if self._db is None:
+            _LOGGER.warning("Database not connected, cannot update lineage tree")
+            return ""
+
+        parents = parents[:2]  # max 2 parents
+        flat_lineage = " × ".join(p["name"] for p in parents)
+        tree_json = json.dumps(parents)
+
+        await self._db.execute(
+            "UPDATE strains SET lineage_tree = ?, lineage = ? WHERE strain_name = ?",
+            (tree_json, flat_lineage, strain_name),
+        )
+        await self._db.commit()
+        await self.load()
+        _LOGGER.info("Updated lineage tree for strain '%s'", strain_name)
+        return flat_lineage
+
     async def remove_strain_phenotype(self, strain: str, phenotype: str) -> None:
         """Remove a specific phenotype and its harvests."""
         if self._db is None:
