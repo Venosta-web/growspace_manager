@@ -1239,17 +1239,12 @@ class StrainLibrarySensor(CoordinatorEntity[GrowspaceCoordinator], SensorEntity)
         """Return strain analytics and lineage trees as state attributes."""
         analytics = self.coordinator.strain_library.get_analytics()
 
-        lineage_trees = {
-            name: self.coordinator.strain_library.get_strain_lineage_tree(name)
-            for name in analytics.get("strains", {})
-        }
-
         return {
             "strain_count": len(analytics.get("strains", {})),
             "strain_list": analytics.get("strain_list", []),
             "last_updated": dt_util.utcnow().isoformat(),
             "note": "Full analytics available via WebSocket API: growspace_manager/get_strain_library",
-            "lineage_trees": lineage_trees,
+            "lineage_trees": analytics.get("lineage_trees", {}),
         }
 
     # Register common system sensors (Library, etc.)

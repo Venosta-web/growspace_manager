@@ -23,6 +23,7 @@ if TYPE_CHECKING:
 _LOGGER = logging.getLogger(__name__)
 
 _HARVESTED_STAGES = {"harvested", "dry", "cure"}
+MAX_LINEAGE_DEPTH = 20
 
 
 class GeneticsManager:
@@ -396,7 +397,11 @@ class GeneticsManager:
     # ------------------------------------------------------------------
 
     def get_lineage_tree(
-        self, plant_id: str, exclude_event_id: str | None = None
+        self,
+        plant_id: str,
+        exclude_event_id: str | None = None,
+        visited_events: set[str] | None = None,
+        depth: int = 0,
     ) -> dict[str, Any]:
         """Build a pollination-based lineage tree for a plant.
 
@@ -410,6 +415,8 @@ class GeneticsManager:
             exclude_event_id: Optional event ID to exclude when searching for
                 the producing event — used to avoid including the current cross
                 in its own classification.
+            visited_events: Set of event IDs already visited in this traversal to detect cycles.
+            depth: Current recursion depth.
 
         Returns:
             A nested dict ``{name, parents}`` rooted at the given plant.
@@ -421,30 +428,51 @@ class GeneticsManager:
             which is a known limitation. For classification purposes this is harmless because
             ``_is_ancestor`` does not match the root node of the tree passed to it.
         """
+        if visited_events is None:
+            visited_events = set()
+
         plant = self.repository.plants.get(plant_id)
         plant_name = (
             plant.genetics.strain_name if plant and plant.genetics.strain_name else plant_id
         )
         node: dict[str, Any] = {"name": plant_name, "parents": []}
 
+        if depth >= MAX_LINEAGE_DEPTH:
+            _LOGGER.warning("Max lineage depth reached for plant %s", plant_id)
+            return node
+
         # Find a pollination event where this plant is the receiver
         event = next(
             (
                 e
                 for e in self.pollination_events.values()
-                if e.receiver_plant_id == plant_id and e.event_id != exclude_event_id
+                if e.receiver_plant_id == plant_id
+                and e.event_id != exclude_event_id
+                and e.event_id not in visited_events
             ),
             None,
         )
         if event is None:
             return node
 
+        visited_events.add(event.event_id)
+
         # Receiver plant appears as its own first parent (model limitation — see docstring)
         node["parents"].append(
-            self.get_lineage_tree(event.receiver_plant_id, exclude_event_id=event.event_id)
+            self.get_lineage_tree(
+                event.receiver_plant_id,
+                exclude_event_id=event.event_id,
+                visited_events=visited_events,
+                depth=depth + 1,
+            )
         )
         node["parents"].append(
-            self.get_lineage_tree(event.donor_plant_id, exclude_event_id=event.event_id)
+            self.get_lineage_tree(
+                event.donor_plant_id,
+                exclude_event_id=event.event_id,
+                visited_events=visited_events,
+                depth=depth + 1,
+            )
         )
 
         return node

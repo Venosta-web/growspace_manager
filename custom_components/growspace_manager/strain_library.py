@@ -84,6 +84,7 @@ class StrainLibrary:
         self._db: aiosqlite.Connection | None = None
         self.strains: dict[str, dict[str, Any]] = {}
         self._analytics_cache: dict[str, Any] | None = None
+        self._lineage_cache: dict[str, dict[str, Any]] = {}
         self.image_manager = ImageManager(
             hass, hass.config.path("www", "growspace_manager", "strains")
         )
@@ -279,6 +280,7 @@ class StrainLibrary:
 
         self.strains = new_strains
         self._analytics_cache = None  # Invalidate analytics cache
+        self._lineage_cache = {}  # Invalidate lineage cache
         _LOGGER.info("Loaded strain library metadata for %d strains", len(self.strains))
 
     async def save(self) -> None:
@@ -759,6 +761,8 @@ class StrainLibrary:
             A nested dict: {name, source, parents: [...]}
         """
         if _seen is None:
+            if strain_name in self._lineage_cache:
+                return self._lineage_cache[strain_name]
             _seen = frozenset()
 
         node: dict[str, Any] = {"name": strain_name, "source": "library", "parents": []}
@@ -788,6 +792,9 @@ class StrainLibrary:
                 if parent_phenotype:
                     resolved["phenotype"] = parent_phenotype
             node["parents"].append(resolved)
+
+        if _depth == 0:
+            self._lineage_cache[strain_name] = node
 
         return node
 
@@ -913,6 +920,8 @@ class StrainLibrary:
         if self._analytics_cache is not None:
             return self._analytics_cache
         analytics_data: dict[str, Any] = {}
+        lineage_trees: dict[str, Any] = {}
+
         for strain_name, strain_data in self.strains.items():
             phenotypes = strain_data.get("phenotypes", {})
             strain_harvests: list[dict[str, Any]] = []
@@ -975,6 +984,10 @@ class StrainLibrary:
             else:
                 strain_avg_veg = 0
                 strain_avg_flower = 0
+
+            # Pre-compute lineage tree for this strain
+            lineage_trees[strain_name] = self.get_strain_lineage_tree(strain_name)
+
             analytics_data[strain_name] = {
                 "meta": strain_data.get("meta", {}),
                 "analytics": {
@@ -984,7 +997,12 @@ class StrainLibrary:
                 },
                 "phenotypes": pheno_analytics,
             }
-        result = {"strains": analytics_data, "strain_list": list(self.strains.keys())}
+
+        result = {
+            "strains": analytics_data,
+            "strain_list": list(self.strains.keys()),
+            "lineage_trees": lineage_trees,
+        }
         self._analytics_cache = result
         return result
 
