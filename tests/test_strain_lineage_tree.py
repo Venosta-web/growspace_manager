@@ -185,3 +185,24 @@ async def test_async_update_strain_generation_noop_when_db_none():
 
     # Must not raise
     await lib.async_update_strain_generation("Some Strain", "BX")
+
+
+@pytest.mark.asyncio
+async def test_async_update_strain_generation_updates_in_memory_cache():
+    """async_update_strain_generation also updates the in-memory strains cache."""
+    from custom_components.growspace_manager.strain_library import StrainLibrary
+    from unittest.mock import AsyncMock, MagicMock
+
+    hass = MagicMock()
+    hass.config.path.return_value = "/tmp/test_strain_lib.db"
+    lib = StrainLibrary(hass)
+    lib._db = AsyncMock()
+    lib._db.execute = AsyncMock()
+    lib._db.commit = AsyncMock()
+
+    # Pre-populate in-memory strains cache
+    lib.strains = {"OG Kush": {"meta": {}}}
+
+    await lib.async_update_strain_generation("OG Kush", "BX")
+
+    assert lib.strains["OG Kush"]["meta"]["generation"] == "BX"

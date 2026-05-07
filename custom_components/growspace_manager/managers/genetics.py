@@ -413,6 +413,13 @@ class GeneticsManager:
 
         Returns:
             A nested dict ``{name, parents}`` rooted at the given plant.
+
+        Note:
+            The data model tracks which two plants were crossed to produce seeds, but does not
+            track which live plant was grown from a specific seed batch. As a result, the
+            'receiver parent' node in the returned tree is the plant itself (not its own parent),
+            which is a known limitation. For classification purposes this is harmless because
+            ``_is_ancestor`` does not match the root node of the tree passed to it.
         """
         plant = self.repository.plants.get(plant_id)
         plant_name = (
@@ -432,7 +439,7 @@ class GeneticsManager:
         if event is None:
             return node
 
-        # Exclude the producing event so a plant can't appear as its own parent
+        # Receiver plant appears as its own first parent (model limitation — see docstring)
         node["parents"].append(
             self.get_lineage_tree(event.receiver_plant_id, exclude_event_id=event.event_id)
         )

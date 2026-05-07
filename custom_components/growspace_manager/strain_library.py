@@ -213,7 +213,7 @@ class StrainLibrary:
         query = """
             SELECT
                 s.strain_id, s.strain_name, s.breeder, s.breeder_logo, s.type,
-                s.lineage, s.lineage_tree, s.sex,
+                s.lineage, s.lineage_tree, s.sex, s.generation,
                 s.sativa_percentage, s.indica_percentage,
                 p.phenotype_id, p.phenotype_name, p.description, p.image_path,
                 p.image_crop_meta, p.flower_days_min, p.flower_days_max
@@ -237,7 +237,7 @@ class StrainLibrary:
                         k: row[k]
                         for k in [
                             "breeder", "breeder_logo", "type", "lineage", "sex",
-                            "sativa_percentage", "indica_percentage",
+                            "sativa_percentage", "indica_percentage", "generation",
                         ]
                         if row[k] is not None
                     }
@@ -735,6 +735,8 @@ class StrainLibrary:
             (generation, strain_name),
         )
         await self._db.commit()
+        if strain_name in self.strains:
+            self.strains[strain_name].setdefault("meta", {})["generation"] = generation
         _LOGGER.debug("Set generation '%s' for strain '%s'", generation, strain_name)
 
     def get_strain_lineage_tree(
