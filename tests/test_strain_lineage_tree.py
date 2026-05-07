@@ -1,6 +1,5 @@
 import pytest
 from unittest.mock import AsyncMock, MagicMock
-import json
 
 @pytest.mark.asyncio
 async def test_update_strain_lineage_tree_stores_parents_and_derives_flat_lineage():
@@ -52,4 +51,17 @@ async def test_update_strain_lineage_tree_empty_parents():
     lib.load = AsyncMock()
 
     result = await lib.update_strain_lineage_tree("Unknown", [])
+    assert result == ""
+
+
+@pytest.mark.asyncio
+async def test_update_strain_lineage_tree_no_db_returns_empty():
+    from custom_components.growspace_manager.strain_library import StrainLibrary
+
+    hass = MagicMock()
+    hass.config.path.return_value = "/tmp/test_strain_lib.db"
+    lib = StrainLibrary(hass)
+    lib._db = None
+
+    result = await lib.update_strain_lineage_tree("X", [{"name": "Y", "source": "manual"}])
     assert result == ""
