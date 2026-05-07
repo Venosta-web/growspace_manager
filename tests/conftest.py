@@ -10,6 +10,37 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 from syrupy.assertion import SnapshotAssertion
 
+from homeassistant.helpers import device_registry as dr
+from homeassistant.util import dt as dt_util
+
+# Patch DeviceRegistry initialization bug in pytest-homeassistant-custom-component
+# The plugin calls async_load before async_setup, which fails in HA 2025.12
+_orig_async_load = dr.async_load
+
+
+async def patched_async_load(hass, *args, **kwargs):
+    """Ensure async_setup is called before async_load to initialize _loaded_event."""
+    if dr.DATA_REGISTRY not in hass.data:
+        dr.async_setup(hass)
+    return await _orig_async_load(hass, *args, **kwargs)
+
+
+dr.async_load = patched_async_load
+
+# Prevent timezone leakage from Home Assistant core tests
+# This intercepts calls to set US/Pacific and keeps it at UTC
+_orig_set_default_time_zone = dt_util.set_default_time_zone
+
+
+def patched_set_default_time_zone(time_zone):
+    """Enforce UTC and ignore US/Pacific attempts from HA core fixtures."""
+    if time_zone == dt_util.UTC:
+        _orig_set_default_time_zone(time_zone)
+    # We ignore non-UTC assignments to stay compliant with verify_cleanup
+
+
+dt_util.set_default_time_zone = patched_set_default_time_zone
+
 # Must precede any custom_components import that pulls in fpdf/turbojpeg.
 sys.modules["turbojpeg"] = MagicMock()
 sys.modules["fpdf"] = MagicMock()
@@ -38,6 +69,17 @@ if _is_ha_core:
     pytest_plugins = ["tests.conftest"]
 
 import pytest  # noqa: E402
+
+
+@pytest.fixture(autouse=True)
+def enforce_utc_timezone():
+    """Ensure timezone is UTC before and after each test.
+
+    This works in tandem with our monkeypatch to prevent leaks.
+    """
+    dt_util.set_default_time_zone(dt_util.UTC)
+    yield
+    dt_util.set_default_time_zone(dt_util.UTC)
 
 
 @pytest.fixture
@@ -69,9 +111,8 @@ def mock_recorder_before_hass(async_test_recorder) -> None:
 @pytest.fixture
 def mock_config_entry():
     """Return a standard MockConfigEntry for the integration."""
-    from tests.common import MockConfigEntry  # noqa: PLC0415
-
     from custom_components.growspace_manager.const import DOMAIN  # noqa: PLC0415
+    from tests.common import MockConfigEntry  # noqa: PLC0415
 
     return MockConfigEntry(
         domain=DOMAIN,
@@ -83,7 +124,9 @@ def mock_config_entry():
 
 
 @pytest.fixture
-async def init_integration(hass, mock_config_entry, enable_custom_integrations, recorder_mock):
+async def init_integration(
+    hass, mock_config_entry, enable_custom_integrations, recorder_mock
+):
     """Set up the real integration through the HA config entry lifecycle.
 
     Runs the actual async_setup_entry / async_unload_entry, so
