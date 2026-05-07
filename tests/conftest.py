@@ -10,6 +10,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 from syrupy.assertion import SnapshotAssertion
 
+from homeassistant.core import HomeAssistant
 from homeassistant.helpers import device_registry as dr
 from homeassistant.util import dt as dt_util
 
@@ -18,10 +19,12 @@ from homeassistant.util import dt as dt_util
 _orig_async_load = dr.async_load
 
 
-async def patched_async_load(hass, *args, **kwargs):
+async def patched_async_load(hass: HomeAssistant, *args, **kwargs):
     """Ensure async_setup is called before async_load to initialize _loaded_event."""
     if dr.DATA_REGISTRY not in hass.data:
-        dr.async_setup(hass)
+        # Use the instance method directly; the module-level async_setup was
+        # removed in some HA release versions available via the CI package.
+        dr.async_get(hass).async_setup()
     return await _orig_async_load(hass, *args, **kwargs)
 
 
