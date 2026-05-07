@@ -155,7 +155,6 @@ def test_get_strain_names_returns_sorted_list():
 async def test_async_update_strain_generation_executes_sql():
     """async_update_strain_generation writes generation tag to DB."""
     from custom_components.growspace_manager.strain_library import StrainLibrary
-    from unittest.mock import AsyncMock, MagicMock
 
     hass = MagicMock()
     hass.config.path.return_value = "/tmp/test_strain_lib.db"
@@ -171,13 +170,13 @@ async def test_async_update_strain_generation_executes_sql():
     assert "generation" in call_args[0][0]
     assert "OG Kush F1" in call_args[0][1]
     assert "F1" in call_args[0][1]
+    lib._db.commit.assert_called_once()
 
 
 @pytest.mark.asyncio
 async def test_async_update_strain_generation_noop_when_db_none():
     """Gracefully does nothing when DB is not connected."""
     from custom_components.growspace_manager.strain_library import StrainLibrary
-    from unittest.mock import MagicMock
 
     hass = MagicMock()
     hass.config.path.return_value = "/tmp/test_strain_lib.db"
