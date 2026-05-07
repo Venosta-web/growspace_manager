@@ -562,3 +562,73 @@ def test_websocket_get_genetics_data_error(
         1, "unknown_error", "Something went wrong"
     )
     mock_connection.send_result.assert_not_called()
+
+
+@pytest.fixture
+def mock_hass() -> MagicMock:
+    """Mock Home Assistant instance."""
+    hass = MagicMock(spec=HomeAssistant)
+    hass.data = {}
+    return hass
+
+
+@pytest.mark.asyncio
+async def test_websocket_get_strain_lineage_tree_success(mock_hass: MagicMock) -> None:
+    """Test get_strain_lineage_tree returns resolved tree."""
+    from custom_components.growspace_manager.websocket import websocket_get_strain_lineage_tree
+
+    strain_library = MagicMock()
+    strain_library.get_strain_lineage_tree.return_value = {
+        "name": "Gelato #41",
+        "source": "library",
+        "parents": [],
+    }
+    mock_hass.data[DOMAIN] = {"strain_library": strain_library}
+    connection = MagicMock()
+
+    msg = {"id": 1, "type": f"{DOMAIN}/get_strain_lineage_tree", "strain_name": "Gelato #41"}
+    await websocket_get_strain_lineage_tree(mock_hass, connection, msg)
+
+    connection.send_result.assert_called_once_with(
+        1, {"name": "Gelato #41", "source": "library", "parents": []}
+    )
+
+
+@pytest.mark.asyncio
+async def test_websocket_get_strain_lineage_tree_not_loaded(mock_hass: MagicMock) -> None:
+    """Test get_strain_lineage_tree when strain library not loaded."""
+    from custom_components.growspace_manager.websocket import websocket_get_strain_lineage_tree
+
+    mock_hass.data = {}
+    connection = MagicMock()
+    msg = {"id": 1, "type": f"{DOMAIN}/get_strain_lineage_tree", "strain_name": "X"}
+    await websocket_get_strain_lineage_tree(mock_hass, connection, msg)
+    connection.send_error.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_websocket_update_strain_lineage_tree_success(mock_hass: MagicMock) -> None:
+    """Test update_strain_lineage_tree saves and returns flat lineage."""
+    from custom_components.growspace_manager.websocket import (
+        websocket_update_strain_lineage_tree,
+    )
+
+    strain_library = AsyncMock()
+    strain_library.update_strain_lineage_tree.return_value = "OG Kush × Durban Poison"
+    mock_hass.data[DOMAIN] = {"strain_library": strain_library}
+    connection = MagicMock()
+
+    parents = [
+        {"name": "OG Kush", "source": "library"},
+        {"name": "Durban Poison", "source": "manual"},
+    ]
+    msg = {
+        "id": 2,
+        "type": f"{DOMAIN}/update_strain_lineage_tree",
+        "strain_name": "Hybrid",
+        "parents": parents,
+    }
+    await websocket_update_strain_lineage_tree(mock_hass, connection, msg)
+    connection.send_result.assert_called_once_with(
+        2, {"lineage": "OG Kush × Durban Poison"}
+    )

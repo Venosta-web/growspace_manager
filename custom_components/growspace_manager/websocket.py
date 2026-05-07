@@ -1430,6 +1430,62 @@ async def websocket_remove_subarea(
         connection.send_error(msg["id"], "unknown_error", str(e))
 
 
+WS_TYPE_GET_STRAIN_LINEAGE_TREE = f"{DOMAIN}/get_strain_lineage_tree"
+SCHEMA_WS_GET_STRAIN_LINEAGE_TREE = websocket_api.BASE_COMMAND_MESSAGE_SCHEMA.extend(
+    {
+        vol.Required("type"): WS_TYPE_GET_STRAIN_LINEAGE_TREE,
+        vol.Required("strain_name"): str,
+    }
+)
+
+WS_TYPE_UPDATE_STRAIN_LINEAGE_TREE = f"{DOMAIN}/update_strain_lineage_tree"
+SCHEMA_WS_UPDATE_STRAIN_LINEAGE_TREE = websocket_api.BASE_COMMAND_MESSAGE_SCHEMA.extend(
+    {
+        vol.Required("type"): WS_TYPE_UPDATE_STRAIN_LINEAGE_TREE,
+        vol.Required("strain_name"): str,
+        vol.Required("parents"): [
+            {
+                vol.Required("name"): str,
+                vol.Required("source"): vol.In(["library", "manual"]),
+            }
+        ],
+    }
+)
+
+
+async def websocket_get_strain_lineage_tree(
+    hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
+) -> None:
+    """Handle get_strain_lineage_tree command."""
+    strain_name = msg["strain_name"]
+    try:
+        if DOMAIN not in hass.data or "strain_library" not in hass.data[DOMAIN]:
+            connection.send_error(msg["id"], "not_loaded", "Strain library not loaded")
+            return
+        strain_library = hass.data[DOMAIN]["strain_library"]
+        tree = strain_library.get_strain_lineage_tree(strain_name)
+        connection.send_result(msg["id"], tree)
+    except Exception as e:  # noqa: BLE001
+        connection.send_error(msg["id"], "unknown_error", str(e))
+
+
+async def websocket_update_strain_lineage_tree(
+    hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
+) -> None:
+    """Handle update_strain_lineage_tree command."""
+    strain_name = msg["strain_name"]
+    parents = msg["parents"]
+    try:
+        if DOMAIN not in hass.data or "strain_library" not in hass.data[DOMAIN]:
+            connection.send_error(msg["id"], "not_loaded", "Strain library not loaded")
+            return
+        strain_library = hass.data[DOMAIN]["strain_library"]
+        flat_lineage = await strain_library.update_strain_lineage_tree(strain_name, parents)
+        connection.send_result(msg["id"], {"lineage": flat_lineage})
+    except Exception as e:  # noqa: BLE001
+        connection.send_error(msg["id"], "unknown_error", str(e))
+
+
 @callback
 def async_register_websocket_api(hass: HomeAssistant) -> None:
     """Register WebSocket API commands."""
@@ -1610,4 +1666,16 @@ def async_register_websocket_api(hass: HomeAssistant) -> None:
         WS_TYPE_REMOVE_SUBAREA,
         websocket_api.async_response(websocket_remove_subarea),
         SCHEMA_WS_REMOVE_SUBAREA,
+    )
+    websocket_api.async_register_command(
+        hass,
+        WS_TYPE_GET_STRAIN_LINEAGE_TREE,
+        websocket_api.async_response(websocket_get_strain_lineage_tree),
+        SCHEMA_WS_GET_STRAIN_LINEAGE_TREE,
+    )
+    websocket_api.async_register_command(
+        hass,
+        WS_TYPE_UPDATE_STRAIN_LINEAGE_TREE,
+        websocket_api.async_response(websocket_update_strain_lineage_tree),
+        SCHEMA_WS_UPDATE_STRAIN_LINEAGE_TREE,
     )
