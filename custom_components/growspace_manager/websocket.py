@@ -1430,6 +1430,44 @@ async def websocket_remove_subarea(
         connection.send_error(msg["id"], "unknown_error", str(e))
 
 
+WS_TYPE_GET_LINEAGE_TREE = f"{DOMAIN}/get_lineage_tree"
+SCHEMA_WS_GET_LINEAGE_TREE = websocket_api.BASE_COMMAND_MESSAGE_SCHEMA.extend(
+    {
+        vol.Required("type"): WS_TYPE_GET_LINEAGE_TREE,
+        vol.Required("plant_id"): str,
+    }
+)
+
+
+async def websocket_get_lineage_tree(
+    hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
+) -> None:
+    """Handle get lineage tree command."""
+    plant_id = msg.get("plant_id")
+    try:
+        coordinator = GrowspaceCoordinator.get_for_service_call(hass, msg)
+        if plant_id not in coordinator.plants:
+            raise ServiceValidationError(f"Plant {plant_id} not found")
+        tree = coordinator.genetics_manager.get_lineage_tree(plant_id)
+
+        # If pollination tree has no parents, fall back to strain library lineage
+        if not tree.get("parents") and DOMAIN in hass.data and "strain_library" in hass.data[DOMAIN]:
+            plant = coordinator.plants.get(plant_id)
+            strain_name = plant.genetics.strain_name if plant else None
+            if strain_name:
+                strain_library = hass.data[DOMAIN]["strain_library"]
+                strain_tree = strain_library.get_strain_lineage_tree(strain_name)
+                if strain_tree.get("parents"):
+                    # Graft: keep plant node as root, use strain tree's parents
+                    tree["parents"] = strain_tree["parents"]
+
+        connection.send_result(msg["id"], tree)
+    except ServiceValidationError as err:
+        connection.send_error(msg["id"], "invalid_args", str(err))
+    except Exception as e:  # noqa: BLE001
+        connection.send_error(msg["id"], "unknown_error", str(e))
+
+
 WS_TYPE_GET_STRAIN_LINEAGE_TREE = f"{DOMAIN}/get_strain_lineage_tree"
 SCHEMA_WS_GET_STRAIN_LINEAGE_TREE = websocket_api.BASE_COMMAND_MESSAGE_SCHEMA.extend(
     {
@@ -1666,6 +1704,12 @@ def async_register_websocket_api(hass: HomeAssistant) -> None:
         WS_TYPE_REMOVE_SUBAREA,
         websocket_api.async_response(websocket_remove_subarea),
         SCHEMA_WS_REMOVE_SUBAREA,
+    )
+    websocket_api.async_register_command(
+        hass,
+        WS_TYPE_GET_LINEAGE_TREE,
+        websocket_api.async_response(websocket_get_lineage_tree),
+        SCHEMA_WS_GET_LINEAGE_TREE,
     )
     websocket_api.async_register_command(
         hass,

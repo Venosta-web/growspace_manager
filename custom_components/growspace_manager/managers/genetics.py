@@ -343,6 +343,58 @@ class GeneticsManager:
         )
 
     # ------------------------------------------------------------------
+    # Lineage tree
+    # ------------------------------------------------------------------
+
+    def get_lineage_tree(self, plant_id: str) -> dict[str, Any]:
+        """Build a pollination-based lineage tree for a plant.
+
+        Walks the pollination_events to find which event produced the plant
+        (as a receiver), then recurses to find the donor and receiver parents.
+        Returns a node dict matching the strain-library tree format:
+        ``{name, parents: [...]}``.
+
+        Args:
+            plant_id: The plant whose lineage tree is requested.
+
+        Returns:
+            A nested dict ``{name, parents}`` rooted at the given plant.
+        """
+        plant = self.repository.plants.get(plant_id)
+        plant_name = (
+            plant.genetics.strain_name if plant and plant.genetics.strain_name else plant_id
+        )
+        node: dict[str, Any] = {"name": plant_name, "parents": []}
+
+        # Find a pollination event where this plant is the receiver
+        event = next(
+            (e for e in self.pollination_events.values() if e.receiver_plant_id == plant_id),
+            None,
+        )
+        if event is None:
+            return node
+
+        # Receiver parent
+        receiver = self.repository.plants.get(event.receiver_plant_id)
+        receiver_name = (
+            receiver.genetics.strain_name
+            if receiver and receiver.genetics.strain_name
+            else event.receiver_plant_id
+        )
+        node["parents"].append({"name": receiver_name, "parents": []})
+
+        # Donor parent
+        donor = self.repository.plants.get(event.donor_plant_id)
+        donor_name = (
+            donor.genetics.strain_name
+            if donor and donor.genetics.strain_name
+            else event.donor_plant_id
+        )
+        node["parents"].append({"name": donor_name, "parents": []})
+
+        return node
+
+    # ------------------------------------------------------------------
     # Serialization
     # ------------------------------------------------------------------
 
