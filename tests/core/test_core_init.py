@@ -11,7 +11,6 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 from aiohttp import BodyPartReader
 import pytest
-from tests.common import MockConfigEntry
 
 from custom_components.growspace_manager import (
     _async_cancel_coordinators,
@@ -98,6 +97,7 @@ from homeassistant.config_entries import ConfigEntryState
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ServiceValidationError
 from homeassistant.util import dt as dt_util
+from tests.common import MockConfigEntry
 
 
 @pytest.fixture

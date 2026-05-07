@@ -6,6 +6,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from custom_components.growspace_manager.const import DOMAIN
 from custom_components.growspace_manager.managers.genetics import GeneticsManager
 from custom_components.growspace_manager.models import (
     Plant,
@@ -13,7 +14,6 @@ from custom_components.growspace_manager.models import (
     PollinationEvent,
 )
 from custom_components.growspace_manager.websocket import websocket_get_lineage_tree
-
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -133,7 +133,6 @@ def _make_coordinator(plants: dict, genetics_tree: dict) -> MagicMock:
 @pytest.mark.asyncio
 async def test_fallback_uses_strain_library_when_no_pollination_parents() -> None:
     """When pollination tree has no parents, strain library parents are grafted in."""
-    from custom_components.growspace_manager.const import DOMAIN
 
     strain_library = MagicMock()
     strain_library.get_strain_lineage_tree.return_value = {
@@ -173,7 +172,6 @@ async def test_fallback_uses_strain_library_when_no_pollination_parents() -> Non
 @pytest.mark.asyncio
 async def test_no_fallback_when_pollination_tree_has_parents() -> None:
     """When pollination tree already has parents, strain library is NOT consulted."""
-    from custom_components.growspace_manager.const import DOMAIN
 
     strain_library = MagicMock()
 
@@ -209,7 +207,6 @@ async def test_no_fallback_when_pollination_tree_has_parents() -> None:
 @pytest.mark.asyncio
 async def test_fallback_skipped_when_strain_library_not_loaded() -> None:
     """When strain library is absent from hass.data, no fallback occurs."""
-    from custom_components.growspace_manager.const import DOMAIN
 
     plant = MagicMock()
     plant.genetics.strain_name = "OG Kush"
@@ -236,7 +233,6 @@ async def test_fallback_skipped_when_strain_library_not_loaded() -> None:
 @pytest.mark.asyncio
 async def test_fallback_skipped_when_strain_library_tree_also_empty() -> None:
     """When strain library tree has no parents either, nothing is grafted."""
-    from custom_components.growspace_manager.const import DOMAIN
 
     strain_library = MagicMock()
     strain_library.get_strain_lineage_tree.return_value = {
