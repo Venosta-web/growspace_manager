@@ -117,7 +117,7 @@ class StrainLibrary:
             await self._db.commit()
             _LOGGER.info("Added lineage_tree column to strains table")
         except aiosqlite.OperationalError:
-            pass
+            pass  # Column already exists
 
         # Ensure score columns exist in harvests table (backwards compatibility)
         for col in ["vigor", "structure", "aroma", "resin", "pest_resistance"]:
