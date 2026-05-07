@@ -41,6 +41,14 @@ def mock_msg():
     return {"id": 1, "growspace_id": "gs1", "limit": 50}
 
 
+@pytest.fixture
+def mock_hass() -> MagicMock:
+    """Mock Home Assistant instance."""
+    hass = MagicMock(spec=HomeAssistant)
+    hass.data = {}
+    return hass
+
+
 async def test_websocket_get_event_log_recorder_error(
     hass: HomeAssistant, mock_connection, mock_msg
 ) -> None:
@@ -564,14 +572,6 @@ def test_websocket_get_genetics_data_error(
     mock_connection.send_result.assert_not_called()
 
 
-@pytest.fixture
-def mock_hass() -> MagicMock:
-    """Mock Home Assistant instance."""
-    hass = MagicMock(spec=HomeAssistant)
-    hass.data = {}
-    return hass
-
-
 @pytest.mark.asyncio
 async def test_websocket_get_strain_lineage_tree_success(mock_hass: MagicMock) -> None:
     """Test get_strain_lineage_tree returns resolved tree."""
@@ -632,3 +632,24 @@ async def test_websocket_update_strain_lineage_tree_success(mock_hass: MagicMock
     connection.send_result.assert_called_once_with(
         2, {"lineage": "OG Kush × Durban Poison"}
     )
+
+
+@pytest.mark.asyncio
+async def test_websocket_update_strain_lineage_tree_not_loaded(
+    mock_hass: MagicMock,
+) -> None:
+    """Test update_strain_lineage_tree when strain library not loaded."""
+    from custom_components.growspace_manager.websocket import (
+        websocket_update_strain_lineage_tree,
+    )
+
+    mock_hass.data = {}
+    connection = MagicMock()
+    msg = {
+        "id": 3,
+        "type": f"{DOMAIN}/update_strain_lineage_tree",
+        "strain_name": "X",
+        "parents": [],
+    }
+    await websocket_update_strain_lineage_tree(mock_hass, connection, msg)
+    connection.send_error.assert_called_once()
