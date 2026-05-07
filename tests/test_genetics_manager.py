@@ -1014,7 +1014,6 @@ async def test_update_seed_batch_reclassifies_on_parent_change(
 
     # Two distinct strains, no ancestry → F1
     assert updated.generation == "F1"
-    # Called twice: once on add (explicit gen="F1" set — wait, no, explicit gen skips auto-classify)
-    # Actually: add has generation="F1" (explicit) → no auto-classify call
-    # update has no generation → reclassify → 1 call
+    # add_seed_batch skips auto-classify because generation="F1" is explicit;
+    # only the update call triggers reclassification.
     assert strain_library_mock.async_update_strain_generation.await_count == 1
