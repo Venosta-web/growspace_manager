@@ -708,6 +708,60 @@ class StrainLibrary:
         _LOGGER.info("Updated lineage tree for strain '%s'", strain_name)
         return flat_lineage
 
+    def get_strain_lineage_tree(
+        self,
+        strain_name: str,
+        _seen: frozenset[str] | None = None,
+        _depth: int = 0,
+    ) -> dict[str, Any]:
+        """Recursively resolve the full lineage tree for a strain from the in-memory cache.
+
+        Reads from self.strains (no DB I/O). Stops recursing when a strain is already
+        in the current path (_seen) to prevent infinite loops, or when _depth >= 15.
+
+        Args:
+            strain_name: Strain to resolve.
+            _seen: Strain names already in the current resolution path (cycle detection).
+            _depth: Current recursion depth (hard cap at 15).
+
+        Returns:
+            A nested dict: {name, source, parents: [...]}
+        """
+        if _seen is None:
+            _seen = frozenset()
+
+        node: dict[str, Any] = {"name": strain_name, "source": "library", "parents": []}
+
+        if _depth >= 15 or strain_name in _seen:
+            return node
+
+        strain_data = self.strains.get(strain_name)
+        if strain_data is None:
+            return node
+
+        parents = strain_data.get("meta", {}).get("lineage_tree") or []
+        next_seen = _seen | {strain_name}
+
+        for parent in parents[:2]:
+            parent_name = parent.get("name", "")
+            source = parent.get("source", "manual")
+            if source == "library" and parent_name in self.strains:
+                if parent_name in next_seen:
+                    # Cycle detected: skip this parent entirely to stop the loop
+                    continue
+                resolved = self.get_strain_lineage_tree(
+                    parent_name, _seen=next_seen, _depth=_depth + 1
+                )
+            else:
+                resolved = {"name": parent_name, "source": source, "parents": []}
+            node["parents"].append(resolved)
+
+        return node
+
+    def get_strain_names(self) -> list[str]:
+        """Return all strain names sorted alphabetically (lightweight, no image data)."""
+        return sorted(self.strains.keys())
+
     async def remove_strain_phenotype(self, strain: str, phenotype: str) -> None:
         """Remove a specific phenotype and its harvests."""
         if self._db is None:

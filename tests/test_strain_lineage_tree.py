@@ -65,3 +65,86 @@ async def test_update_strain_lineage_tree_no_db_returns_empty():
 
     result = await lib.update_strain_lineage_tree("X", [{"name": "Y", "source": "manual"}])
     assert result == ""
+
+
+def test_get_strain_lineage_tree_no_lineage_tree():
+    from custom_components.growspace_manager.strain_library import StrainLibrary
+    hass = MagicMock()
+    hass.config.path.return_value = "/tmp/test.db"
+    lib = StrainLibrary(hass)
+    lib.strains = {"OG Kush": {"meta": {}, "phenotypes": {}}}
+
+    result = lib.get_strain_lineage_tree("OG Kush")
+    assert result == {"name": "OG Kush", "source": "library", "parents": []}
+
+def test_get_strain_lineage_tree_resolves_library_parents():
+    from custom_components.growspace_manager.strain_library import StrainLibrary
+    hass = MagicMock()
+    hass.config.path.return_value = "/tmp/test.db"
+    lib = StrainLibrary(hass)
+    lib.strains = {
+        "Gelato #41": {
+            "meta": {
+                "lineage_tree": [
+                    {"name": "Sunset Sherbet", "source": "library"},
+                    {"name": "Thin Mint GSC", "source": "library"},
+                ]
+            },
+            "phenotypes": {},
+        },
+        "Sunset Sherbet": {"meta": {}, "phenotypes": {}},
+        "Thin Mint GSC": {"meta": {}, "phenotypes": {}},
+    }
+
+    result = lib.get_strain_lineage_tree("Gelato #41")
+    assert result["name"] == "Gelato #41"
+    assert len(result["parents"]) == 2
+    assert result["parents"][0]["name"] == "Sunset Sherbet"
+    assert result["parents"][0]["parents"] == []
+
+def test_get_strain_lineage_tree_cycle_protection():
+    from custom_components.growspace_manager.strain_library import StrainLibrary
+    hass = MagicMock()
+    hass.config.path.return_value = "/tmp/test.db"
+    lib = StrainLibrary(hass)
+    # A references B, B references A
+    lib.strains = {
+        "A": {"meta": {"lineage_tree": [{"name": "B", "source": "library"}]}, "phenotypes": {}},
+        "B": {"meta": {"lineage_tree": [{"name": "A", "source": "library"}]}, "phenotypes": {}},
+    }
+    result = lib.get_strain_lineage_tree("A")
+    # Should terminate without infinite recursion
+    assert result["name"] == "A"
+    assert result["parents"][0]["name"] == "B"
+    assert result["parents"][0]["parents"] == []  # cycle stopped
+
+def test_get_strain_lineage_tree_manual_parent_is_leaf():
+    from custom_components.growspace_manager.strain_library import StrainLibrary
+    hass = MagicMock()
+    hass.config.path.return_value = "/tmp/test.db"
+    lib = StrainLibrary(hass)
+    lib.strains = {
+        "Hybrid X": {
+            "meta": {
+                "lineage_tree": [
+                    {"name": "OG Kush", "source": "manual"},
+                ]
+            },
+            "phenotypes": {},
+        },
+    }
+    result = lib.get_strain_lineage_tree("Hybrid X")
+    assert result["parents"][0] == {"name": "OG Kush", "source": "manual", "parents": []}
+
+def test_get_strain_names_returns_sorted_list():
+    from custom_components.growspace_manager.strain_library import StrainLibrary
+    hass = MagicMock()
+    hass.config.path.return_value = "/tmp/test.db"
+    lib = StrainLibrary(hass)
+    lib.strains = {
+        "Gelato #41": {"meta": {}, "phenotypes": {}},
+        "OG Kush": {"meta": {}, "phenotypes": {}},
+        "Blue Dream": {"meta": {}, "phenotypes": {}},
+    }
+    result = lib.get_strain_names()
+    assert result == ["Blue Dream", "Gelato #41", "OG Kush"]
