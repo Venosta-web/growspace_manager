@@ -111,6 +111,14 @@ class StrainLibrary:
             # Column already exists
             pass
 
+        # Ensure lineage_tree column exists (backwards compatibility)
+        try:
+            await self._db.execute("ALTER TABLE strains ADD COLUMN lineage_tree TEXT")
+            await self._db.commit()
+            _LOGGER.info("Added lineage_tree column to strains table")
+        except aiosqlite.OperationalError:
+            pass
+
         # Ensure score columns exist in harvests table (backwards compatibility)
         for col in ["vigor", "structure", "aroma", "resin", "pest_resistance"]:
             try:
@@ -196,7 +204,8 @@ class StrainLibrary:
         new_strains: dict[str, dict[str, Any]] = {}
         query = """
             SELECT
-                s.strain_id, s.strain_name, s.breeder, s.breeder_logo, s.type, s.lineage, s.sex,
+                s.strain_id, s.strain_name, s.breeder, s.breeder_logo, s.type,
+                s.lineage, s.lineage_tree, s.sex,
                 s.sativa_percentage, s.indica_percentage,
                 p.phenotype_id, p.phenotype_name, p.description, p.image_path,
                 p.image_crop_meta, p.flower_days_min, p.flower_days_max
@@ -209,22 +218,24 @@ class StrainLibrary:
                 strain_name = row["strain_name"]
                 phenotype_name = row["phenotype_name"] or "default"
                 if strain_name not in new_strains:
-                    new_strains[strain_name] = {
-                        "meta": {
-                            k: row[k]
-                            for k in [
-                                "breeder",
-                                "breeder_logo",
-                                "type",
-                                "lineage",
-                                "sex",
-                                "sativa_percentage",
-                                "indica_percentage",
-                            ]
-                            if row[k] is not None
-                        },
-                        "phenotypes": {},
+                    raw_tree = row["lineage_tree"]
+                    lineage_tree = None
+                    if raw_tree:
+                        try:
+                            lineage_tree = json.loads(raw_tree)
+                        except json.JSONDecodeError:
+                            lineage_tree = None
+                    meta = {
+                        k: row[k]
+                        for k in [
+                            "breeder", "breeder_logo", "type", "lineage", "sex",
+                            "sativa_percentage", "indica_percentage",
+                        ]
+                        if row[k] is not None
                     }
+                    if lineage_tree is not None:
+                        meta["lineage_tree"] = lineage_tree
+                    new_strains[strain_name] = {"meta": meta, "phenotypes": {}}
                 if row["phenotype_id"] is not None:
                     # Decode image_crop_meta JSON safely
                     image_crop_meta = row["image_crop_meta"]
