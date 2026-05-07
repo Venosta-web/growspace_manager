@@ -64,7 +64,7 @@ class GeneticsManager:
         breeder: str,
         quantity: int,
         acquisition_date: str,
-        generation: str,
+        generation: str = "",
         lineage: str = "",
         parent_1_strain: str | None = None,
         parent_1_phenotype: str | None = None,
@@ -87,6 +87,21 @@ class GeneticsManager:
             parent_2_phenotype=parent_2_phenotype,
             notes=notes,
         )
+        # Auto-classify when both parents are known and generation was not set explicitly
+        if (
+            not generation
+            and parent_1_strain
+            and parent_2_strain
+            and self.strain_library is not None
+        ):
+            tree_a = self.strain_library.get_strain_lineage_tree(parent_1_strain)
+            tree_b = self.strain_library.get_strain_lineage_tree(parent_2_strain)
+            batch.generation = classify_lineage(
+                parent_1_strain, parent_2_strain, tree_a, tree_b
+            )
+            await self.strain_library.async_update_strain_generation(
+                strain_name, batch.generation
+            )
         self.seed_batches[batch.batch_id] = batch
         await self.save_callback()
         _LOGGER.info(
@@ -140,6 +155,24 @@ class GeneticsManager:
             batch.parent_2_phenotype = parent_2_phenotype
         if notes is not None:
             batch.notes = notes
+
+        # Re-classify when parent strains changed and caller did not set generation explicitly
+        parents_changed = parent_1_strain is not None or parent_2_strain is not None
+        if (
+            parents_changed
+            and generation is None
+            and batch.parent_1_strain
+            and batch.parent_2_strain
+            and self.strain_library is not None
+        ):
+            tree_a = self.strain_library.get_strain_lineage_tree(batch.parent_1_strain)
+            tree_b = self.strain_library.get_strain_lineage_tree(batch.parent_2_strain)
+            batch.generation = classify_lineage(
+                batch.parent_1_strain, batch.parent_2_strain, tree_a, tree_b
+            )
+            await self.strain_library.async_update_strain_generation(
+                batch.strain_name, batch.generation
+            )
 
         await self.save_callback()
         _LOGGER.info("Updated seed batch '%s' (id=%s)", batch.strain_name, batch_id)

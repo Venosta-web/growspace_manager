@@ -915,3 +915,106 @@ async def test_harvest_seeds_s1_when_same_plant(
     batch = await mgr.async_harvest_seeds(event_id, quantity=5)
 
     assert batch.generation == "S1"
+
+
+@pytest.mark.asyncio
+async def test_add_seed_batch_auto_classifies_f1(
+    save_callback: AsyncMock,
+    strain_library_mock: MagicMock,
+) -> None:
+    """When both parent strains given and generation is empty, auto-classify."""
+    strain_library_mock.get_strain_lineage_tree = MagicMock(
+        return_value={"name": "Strain", "parents": []}
+    )
+    repo = MagicMock()
+    repo.plants = {}
+    mgr = GeneticsManager(
+        repository=repo,
+        save_callback=save_callback,
+        strain_library=strain_library_mock,
+    )
+
+    batch = await mgr.async_add_seed_batch(
+        strain_name="OG x Diesel",
+        breeder="Self",
+        quantity=10,
+        acquisition_date="2026-05-07",
+        generation="",
+        parent_1_strain="OG Kush",
+        parent_2_strain="Sour Diesel",
+    )
+
+    assert batch.generation == "F1"
+    strain_library_mock.async_update_strain_generation.assert_awaited_once_with(
+        "OG x Diesel", "F1"
+    )
+
+
+@pytest.mark.asyncio
+async def test_add_seed_batch_respects_explicit_generation(
+    save_callback: AsyncMock,
+    strain_library_mock: MagicMock,
+) -> None:
+    """When generation explicitly set, do not overwrite it."""
+    repo = MagicMock()
+    repo.plants = {}
+    mgr = GeneticsManager(
+        repository=repo,
+        save_callback=save_callback,
+        strain_library=strain_library_mock,
+    )
+
+    batch = await mgr.async_add_seed_batch(
+        strain_name="Special BX",
+        breeder="Self",
+        quantity=5,
+        acquisition_date="2026-05-07",
+        generation="BX2",
+        parent_1_strain="OG Kush",
+        parent_2_strain="Sour Diesel",
+    )
+
+    assert batch.generation == "BX2"
+    strain_library_mock.async_update_strain_generation.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_update_seed_batch_reclassifies_on_parent_change(
+    save_callback: AsyncMock,
+    strain_library_mock: MagicMock,
+) -> None:
+    """Changing parent strains triggers reclassification when generation not explicitly set."""
+    strain_library_mock.get_strain_lineage_tree = MagicMock(
+        return_value={"name": "Strain", "parents": []}
+    )
+    repo = MagicMock()
+    repo.plants = {}
+    mgr = GeneticsManager(
+        repository=repo,
+        save_callback=save_callback,
+        strain_library=strain_library_mock,
+    )
+    # Create batch with explicit generation
+    batch = await mgr.async_add_seed_batch(
+        strain_name="My Cross",
+        breeder="Self",
+        quantity=5,
+        acquisition_date="2026-05-07",
+        generation="F1",
+        parent_1_strain="Strain A",
+        parent_2_strain="Strain B",
+    )
+
+    # Update with new parents — generation not passed → reclassify
+    updated = await mgr.async_update_seed_batch(
+        batch_id=batch.batch_id,
+        parent_1_strain="New Strain A",
+        parent_2_strain="New Strain B",
+    )
+
+    # Two distinct strains, no ancestry → F1
+    assert updated.generation == "F1"
+    # Called twice: once on add (explicit gen="F1" set — wait, no, explicit gen skips auto-classify)
+    # Actually: add has generation="F1" (explicit) → no auto-classify call
+    # update has no generation → reclassify → 1 call
+    assert strain_library_mock.async_update_strain_generation.await_count == 1
