@@ -12,10 +12,13 @@ from custom_components.growspace_manager.models import PollinationEvent, SeedBat
 from homeassistant.exceptions import ServiceValidationError
 from homeassistant.util import dt as dt_util
 
+from .lineage_classifier import classify_lineage
+
 if TYPE_CHECKING:
     from custom_components.growspace_manager.data_access.growspace_repository import (
         GrowspaceRepository,
     )
+    from custom_components.growspace_manager.strain_library import StrainLibrary
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -29,10 +32,12 @@ class GeneticsManager:
         self,
         repository: GrowspaceRepository,
         save_callback: Callable[[], Awaitable[None]],
+        strain_library: StrainLibrary | None = None,
     ) -> None:
         """Initialize the GeneticsManager."""
         self.repository = repository
         self.save_callback = save_callback
+        self.strain_library = strain_library
         self.seed_batches: dict[str, SeedBatch] = {}
         self.pollination_events: dict[str, PollinationEvent] = {}
 
@@ -263,18 +268,29 @@ class GeneticsManager:
         lineage = f"{receiver_name} x {donor_name}"
         strain_name = f"{receiver_name} x {donor_name}"
 
+        # Classify cross type from plant lineage trees (exclude current event
+        # so it doesn't appear in its own parents)
+        tree_receiver = self.get_lineage_tree(event.receiver_plant_id, exclude_event_id=event_id)
+        tree_donor = self.get_lineage_tree(event.donor_plant_id, exclude_event_id=event_id)
+        generation = classify_lineage(receiver_name, donor_name, tree_receiver, tree_donor)
+
         batch = SeedBatch(
             batch_id=str(uuid.uuid4()),
             strain_name=strain_name,
             breeder="Self",
             quantity=quantity,
             acquisition_date=dt_util.now().date().isoformat(),
-            generation="F1",
+            generation=generation,
             lineage=lineage,
             notes=notes,
         )
         self.seed_batches[batch.batch_id] = batch
         event.result_seed_batch_id = batch.batch_id
+
+        if self.strain_library is not None:
+            await self.strain_library.async_update_strain_generation(
+                batch.strain_name, generation
+            )
 
         await self.save_callback()
         _LOGGER.info(
@@ -346,7 +362,9 @@ class GeneticsManager:
     # Lineage tree
     # ------------------------------------------------------------------
 
-    def get_lineage_tree(self, plant_id: str) -> dict[str, Any]:
+    def get_lineage_tree(
+        self, plant_id: str, exclude_event_id: str | None = None
+    ) -> dict[str, Any]:
         """Build a pollination-based lineage tree for a plant.
 
         Walks the pollination_events to find which event produced the plant
@@ -356,6 +374,9 @@ class GeneticsManager:
 
         Args:
             plant_id: The plant whose lineage tree is requested.
+            exclude_event_id: Optional event ID to exclude when searching for
+                the producing event — used to avoid including the current cross
+                in its own classification.
 
         Returns:
             A nested dict ``{name, parents}`` rooted at the given plant.
@@ -368,7 +389,11 @@ class GeneticsManager:
 
         # Find a pollination event where this plant is the receiver
         event = next(
-            (e for e in self.pollination_events.values() if e.receiver_plant_id == plant_id),
+            (
+                e
+                for e in self.pollination_events.values()
+                if e.receiver_plant_id == plant_id and e.event_id != exclude_event_id
+            ),
             None,
         )
         if event is None:

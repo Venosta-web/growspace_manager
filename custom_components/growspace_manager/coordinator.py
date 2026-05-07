@@ -389,7 +389,9 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             self.data_repository, self._save_callback
         )
         self.genetics_manager = GeneticsManager(
-            self.data_repository, self._save_callback
+            self.data_repository,
+            self._save_callback,
+            strain_library=self.strain_library,
         )
         self.storage_manager = StorageManager(
             self.hass,

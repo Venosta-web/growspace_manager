@@ -775,3 +775,98 @@ class TestDeletePollination:
         """ServiceValidationError raised for unknown event_id."""
         with pytest.raises(ServiceValidationError, match="not found"):
             await manager_with_event.async_delete_pollination(event_id="ghost")
+
+
+# ---------------------------------------------------------------------------
+# StrainLibrary injection + classify_lineage integration
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def strain_library_mock() -> MagicMock:
+    """A mock StrainLibrary with async_update_strain_generation."""
+    lib = MagicMock()
+    lib.get_strain_lineage_tree = MagicMock(
+        return_value={"name": "Strain", "parents": []}
+    )
+    lib.async_update_strain_generation = AsyncMock()
+    return lib
+
+
+@pytest.fixture
+def manager_with_strain_lib(
+    save_callback: AsyncMock, strain_library_mock: MagicMock
+) -> GeneticsManager:
+    """GeneticsManager with two plants and injected StrainLibrary mock."""
+    repo = MagicMock()
+    repo.plants = {
+        "plant-donor": Plant(
+            plant_id="plant-donor",
+            growspace_id="gs-1",
+            genetics=PlantGenetics(strain_name="Pollen Donor"),
+            stage="flower",
+        ),
+        "plant-receiver": Plant(
+            plant_id="plant-receiver",
+            growspace_id="gs-1",
+            genetics=PlantGenetics(strain_name="Seed Mother"),
+            stage="flower",
+        ),
+    }
+    return GeneticsManager(
+        repository=repo,
+        save_callback=save_callback,
+        strain_library=strain_library_mock,
+    )
+
+
+@pytest.mark.asyncio
+async def test_harvest_seeds_classifies_generation(
+    manager_with_strain_lib: GeneticsManager,
+    strain_library_mock: MagicMock,
+) -> None:
+    """async_harvest_seeds sets batch.generation via classify_lineage."""
+    await manager_with_strain_lib.async_log_pollination(
+        donor_plant_id="plant-donor",
+        receiver_plant_id="plant-receiver",
+        date="2026-05-07",
+    )
+    event_id = next(iter(manager_with_strain_lib.pollination_events))
+
+    batch = await manager_with_strain_lib.async_harvest_seeds(event_id, quantity=10)
+
+    assert batch.generation == "F1"
+    strain_library_mock.async_update_strain_generation.assert_awaited_once_with(
+        batch.strain_name, "F1"
+    )
+
+
+@pytest.mark.asyncio
+async def test_harvest_seeds_s1_when_same_plant(
+    save_callback: AsyncMock,
+    strain_library_mock: MagicMock,
+) -> None:
+    """Same plant as donor and receiver → S1."""
+    repo = MagicMock()
+    repo.plants = {
+        "plant-self": Plant(
+            plant_id="plant-self",
+            growspace_id="gs-1",
+            genetics=PlantGenetics(strain_name="Self Strain"),
+            stage="flower",
+        ),
+    }
+    mgr = GeneticsManager(
+        repository=repo,
+        save_callback=save_callback,
+        strain_library=strain_library_mock,
+    )
+    await mgr.async_log_pollination(
+        donor_plant_id="plant-self",
+        receiver_plant_id="plant-self",
+        date="2026-05-07",
+    )
+    event_id = next(iter(mgr.pollination_events))
+    batch = await mgr.async_harvest_seeds(event_id, quantity=5)
+
+    assert batch.generation == "S1"
