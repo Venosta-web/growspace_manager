@@ -119,6 +119,14 @@ class StrainLibrary:
         except aiosqlite.OperationalError:
             pass  # Column already exists
 
+        # Ensure generation column exists (backwards compatibility)
+        try:
+            await self._db.execute("ALTER TABLE strains ADD COLUMN generation TEXT")
+            await self._db.commit()
+            _LOGGER.info("Added generation column to strains table")
+        except aiosqlite.OperationalError:
+            pass  # Column already exists
+
         # Ensure score columns exist in harvests table (backwards compatibility)
         for col in ["vigor", "structure", "aroma", "resin", "pest_resistance"]:
             try:
@@ -707,6 +715,27 @@ class StrainLibrary:
         await self.load()
         _LOGGER.info("Updated lineage tree for strain '%s'", strain_name)
         return flat_lineage
+
+    async def async_update_strain_generation(
+        self, strain_name: str, generation: str
+    ) -> None:
+        """Write the generation classification tag for a strain.
+
+        Args:
+            strain_name: The strain to update.
+            generation: Classification tag — one of "S1", "BX", "F2", "F1".
+        """
+        if self._db is None:
+            _LOGGER.warning(
+                "Database not connected, cannot update generation for '%s'", strain_name
+            )
+            return
+        await self._db.execute(
+            "UPDATE strains SET generation = ? WHERE strain_name = ?",
+            (generation, strain_name),
+        )
+        await self._db.commit()
+        _LOGGER.debug("Set generation '%s' for strain '%s'", generation, strain_name)
 
     def get_strain_lineage_tree(
         self,

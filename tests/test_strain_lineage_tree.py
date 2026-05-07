@@ -149,3 +149,40 @@ def test_get_strain_names_returns_sorted_list():
     }
     result = lib.get_strain_names()
     assert result == ["Blue Dream", "Gelato #41", "OG Kush"]
+
+
+@pytest.mark.asyncio
+async def test_async_update_strain_generation_executes_sql():
+    """async_update_strain_generation writes generation tag to DB."""
+    from custom_components.growspace_manager.strain_library import StrainLibrary
+    from unittest.mock import AsyncMock, MagicMock
+
+    hass = MagicMock()
+    hass.config.path.return_value = "/tmp/test_strain_lib.db"
+    lib = StrainLibrary(hass)
+    lib._db = AsyncMock()
+    lib._db.execute = AsyncMock()
+    lib._db.commit = AsyncMock()
+
+    await lib.async_update_strain_generation("OG Kush F1", "F1")
+
+    lib._db.execute.assert_called_once()
+    call_args = lib._db.execute.call_args
+    assert "generation" in call_args[0][0]
+    assert "OG Kush F1" in call_args[0][1]
+    assert "F1" in call_args[0][1]
+
+
+@pytest.mark.asyncio
+async def test_async_update_strain_generation_noop_when_db_none():
+    """Gracefully does nothing when DB is not connected."""
+    from custom_components.growspace_manager.strain_library import StrainLibrary
+    from unittest.mock import MagicMock
+
+    hass = MagicMock()
+    hass.config.path.return_value = "/tmp/test_strain_lib.db"
+    lib = StrainLibrary(hass)
+    lib._db = None
+
+    # Must not raise
+    await lib.async_update_strain_generation("Some Strain", "BX")
