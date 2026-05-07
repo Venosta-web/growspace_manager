@@ -1212,6 +1212,7 @@ class StrainLibrarySensor(CoordinatorEntity[GrowspaceCoordinator], SensorEntity)
     _attr_translation_key = "strain_library"
     _attr_entity_category = EntityCategory.DIAGNOSTIC
     _attr_native_unit_of_measurement = None
+    _unrecorded_attributes = frozenset({"lineage_trees"})
 
     def __init__(self, coordinator: GrowspaceCoordinator) -> None:
         """Initialize the Strain Library sensor."""
@@ -1235,16 +1236,21 @@ class StrainLibrarySensor(CoordinatorEntity[GrowspaceCoordinator], SensorEntity)
     @property
     @override  # type: ignore[misc]
     def extra_state_attributes(self) -> dict[str, Any]:
-        """Return the calculated strain analytics as state attributes."""
-        # Get the full data but only extract what is strictly necessary for basic HA usage
-        # to avoid hitting the 16KB recorder limit.
+        """Return strain analytics and lineage trees as state attributes."""
         analytics = self.coordinator.strain_library.get_analytics()
+        strains = self.coordinator.strain_library.get_all()
+
+        lineage_trees = {
+            name: self.coordinator.strain_library.get_strain_lineage_tree(name)
+            for name in strains
+        }
 
         return {
             "strain_count": len(analytics.get("strains", {})),
             "strain_list": analytics.get("strain_list", []),
             "last_updated": dt_util.utcnow().isoformat(),
             "note": "Full analytics available via WebSocket API: growspace_manager/get_strain_library",
+            "lineage_trees": lineage_trees,
         }
 
     # Register common system sensors (Library, etc.)
