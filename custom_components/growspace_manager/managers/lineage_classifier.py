@@ -25,6 +25,7 @@ def classify_lineage(
         return "S1"
     if _is_ancestor(parent_a, tree_b) or _is_ancestor(parent_b, tree_a):
         return "BX"
+    # F2: only checks immediate parents — multi-generational F2 via grandparent trees is out of scope
     parents_a = {p["name"] for p in tree_a.get("parents", [])}
     parents_b = {p["name"] for p in tree_b.get("parents", [])}
     if parents_a and parents_b and parents_a == parents_b:
@@ -37,7 +38,11 @@ def _is_ancestor(
     tree: dict[str, Any],
     visited: frozenset[str] | None = None,
 ) -> bool:
-    """Return True if name appears anywhere in tree's ancestry (cycle-safe)."""
+    """Return True if name appears in the parent nodes of *tree*, or their ancestors.
+
+    Does not match the root node itself — callers handle identity via S1 check.
+    Cycle-safe via immutable visited set.
+    """
     if visited is None:
         visited = frozenset()
     node_name = tree.get("name", "")

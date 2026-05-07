@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import pytest
+from typing import Any
 
 from custom_components.growspace_manager.managers.lineage_classifier import (
     classify_lineage,
@@ -35,8 +36,8 @@ def test_is_ancestor_not_present():
 
 
 def test_is_ancestor_cycle_safe():
-    node_a: dict = {"name": "A", "parents": []}
-    node_b: dict = {"name": "B", "parents": [node_a]}
+    node_a: dict[str, Any] = {"name": "A", "parents": []}
+    node_b: dict[str, Any] = {"name": "B", "parents": [node_a]}
     node_a["parents"] = [node_b]
     assert _is_ancestor("X", node_a) is False
 
