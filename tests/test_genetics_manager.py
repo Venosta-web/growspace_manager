@@ -842,6 +842,51 @@ async def test_harvest_seeds_classifies_generation(
 
 
 @pytest.mark.asyncio
+async def test_harvest_seeds_not_misclassified_as_bx_due_to_prior_event(
+    save_callback: AsyncMock,
+    strain_library_mock: MagicMock,
+) -> None:
+    """Receiver plant has a prior pollination event but harvest must still classify F1.
+
+    Without exclude_event_id, get_lineage_tree would find the current pollination
+    event and treat the donor as a parent of the receiver, producing BX instead of F1.
+    """
+    repo = MagicMock()
+    repo.plants = {
+        "plant-a": Plant(
+            plant_id="plant-a",
+            growspace_id="gs-1",
+            genetics=PlantGenetics(strain_name="Strain A"),
+            stage="flower",
+        ),
+        "plant-b": Plant(
+            plant_id="plant-b",
+            growspace_id="gs-1",
+            genetics=PlantGenetics(strain_name="Strain B"),
+            stage="flower",
+        ),
+    }
+    mgr = GeneticsManager(
+        repository=repo,
+        save_callback=save_callback,
+        strain_library=strain_library_mock,
+    )
+    # Log and harvest — receiver has no prior history, but the current event
+    # would cause BX if not excluded during classification
+    await mgr.async_log_pollination(
+        donor_plant_id="plant-b",
+        receiver_plant_id="plant-a",
+        date="2026-05-07",
+    )
+    event_id = next(iter(mgr.pollination_events))
+
+    batch = await mgr.async_harvest_seeds(event_id, quantity=10)
+
+    # Two distinct strains, no shared ancestry → must be F1, not BX
+    assert batch.generation == "F1"
+
+
+@pytest.mark.asyncio
 async def test_harvest_seeds_s1_when_same_plant(
     save_callback: AsyncMock,
     strain_library_mock: MagicMock,

@@ -399,23 +399,13 @@ class GeneticsManager:
         if event is None:
             return node
 
-        # Receiver parent
-        receiver = self.repository.plants.get(event.receiver_plant_id)
-        receiver_name = (
-            receiver.genetics.strain_name
-            if receiver and receiver.genetics.strain_name
-            else event.receiver_plant_id
+        # Exclude the producing event so a plant can't appear as its own parent
+        node["parents"].append(
+            self.get_lineage_tree(event.receiver_plant_id, exclude_event_id=event.event_id)
         )
-        node["parents"].append({"name": receiver_name, "parents": []})
-
-        # Donor parent
-        donor = self.repository.plants.get(event.donor_plant_id)
-        donor_name = (
-            donor.genetics.strain_name
-            if donor and donor.genetics.strain_name
-            else event.donor_plant_id
+        node["parents"].append(
+            self.get_lineage_tree(event.donor_plant_id, exclude_event_id=event.event_id)
         )
-        node["parents"].append({"name": donor_name, "parents": []})
 
         return node
 
