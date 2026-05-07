@@ -31,6 +31,7 @@ from custom_components.growspace_manager.const import (
     ATTR_PLANT_ID,
     ATTR_RESIN,
     ATTR_ROW,
+    ATTR_SEED_BATCH_ID,
     ATTR_START_NUMBER,
     ATTR_STRAIN,
     ATTR_STRUCTURE,
@@ -226,6 +227,7 @@ async def handle_add_plant(
                 row=row,
                 col=col,
                 phenotype=call.data.get(ATTR_PHENOTYPE, ""),
+                seed_batch_id=call.data.get(ATTR_SEED_BATCH_ID),
                 **parsed_dates,  # type: ignore[arg-type]
             )
         except GrowspaceError as err:
@@ -277,6 +279,7 @@ async def handle_add_plants(
         growspace_id, strain, amount, _ = validate_batch_add()
         start_number = call.data.get(ATTR_START_NUMBER, 1)
         base_phenotype = call.data.get(ATTR_PHENOTYPE)
+        seed_batch_id = call.data.get(ATTR_SEED_BATCH_ID)
 
         # Parse and handle optional dates
         add_date_fields = [f for f in DATE_FIELDS if f != "transition_date"]
@@ -321,6 +324,7 @@ async def handle_add_plants(
                     row=free_row,
                     col=free_col,
                     phenotype=phenotype,
+                    seed_batch_id=seed_batch_id,
                     **parsed_dates,  # type: ignore[arg-type]
                 )
                 plants_added_count += 1

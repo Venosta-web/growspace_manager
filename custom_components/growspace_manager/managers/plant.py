@@ -99,6 +99,7 @@ class PlantManager:
         stage: str = "",
         plant_type: str = "normal",
         device_id: str | None = None,
+        seed_batch_id: str | None = None,
         **kwargs: Any,
     ) -> Plant:
         """Add a new plant to the system."""
@@ -154,6 +155,7 @@ class PlantManager:
                 stage=stage or "",
                 type=plant_type,
                 device_id=device_id,
+                seed_batch_id=seed_batch_id,
                 created_at=dt_util.utcnow().isoformat(),
                 updated_at=dt_util.utcnow().isoformat(),
                 **date_fields,  # type: ignore[arg-type]

@@ -51,6 +51,7 @@ from .const import (
     ATTR_RECEIVER_PLANT_ID,
     ATTR_RESIN,
     ATTR_ROW,
+    ATTR_SEED_BATCH_ID,
     ATTR_STAGE,
     ATTR_STRAIN,
     ATTR_STRAIN_NAME,
@@ -152,6 +153,7 @@ ADD_PLANT_SCHEMA = vol.Schema(
         vol.Required(ATTR_ROW): vol.All(int, vol.Range(min=1)),
         vol.Required(ATTR_COL): vol.All(int, vol.Range(min=1)),
         vol.Optional(ATTR_PHENOTYPE): str,
+        vol.Optional(ATTR_SEED_BATCH_ID): cv.string,
         **_PLANT_DATE_FIELDS,
     }
 )
@@ -164,6 +166,7 @@ ADD_PLANTS_SCHEMA = vol.Schema(
         vol.Required("amount"): vol.All(int, vol.Range(min=1)),
         vol.Optional("start_number", default=1): vol.All(int, vol.Range(min=1)),
         vol.Optional(ATTR_PHENOTYPE): str,
+        vol.Optional(ATTR_SEED_BATCH_ID): cv.string,
         **_PLANT_DATE_FIELDS,
     }
 )

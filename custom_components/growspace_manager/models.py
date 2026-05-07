@@ -788,6 +788,7 @@ class Plant(BaseModel):
     updated_at: str | None = None
     transition_date: str | None = None
     source_mother: str | None = None
+    seed_batch_id: str | None = None
     last_watered: str | None = None
     last_trained: str | None = None
     last_training_technique: str | None = None
