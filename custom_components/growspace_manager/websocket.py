@@ -1443,11 +1443,21 @@ async def websocket_get_lineage_tree(
     hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
 ) -> None:
     """Handle get lineage tree command."""
-    plant_id = msg.get("plant_id")
+    plant_id = msg["plant_id"]
     try:
         coordinator = GrowspaceCoordinator.get_for_service_call(hass, msg)
-        if plant_id not in coordinator.plants:
-            raise ServiceValidationError(f"Plant {plant_id} not found")
+    except ServiceValidationError as err:
+        connection.send_error(msg["id"], "invalid_args", str(err))
+        return
+    except Exception as e:  # noqa: BLE001
+        connection.send_error(msg["id"], "unknown_error", str(e))
+        return
+
+    if plant_id not in coordinator.plants:
+        connection.send_error(msg["id"], "invalid_args", f"Plant {plant_id} not found")
+        return
+
+    try:
         tree = coordinator.genetics_manager.get_lineage_tree(plant_id)
 
         # If pollination tree has no parents, fall back to strain library lineage
@@ -1458,12 +1468,9 @@ async def websocket_get_lineage_tree(
                 strain_library = hass.data[DOMAIN]["strain_library"]
                 strain_tree = strain_library.get_strain_lineage_tree(strain_name)
                 if strain_tree.get("parents"):
-                    # Graft: keep plant node as root, use strain tree's parents
                     tree["parents"] = strain_tree["parents"]
 
         connection.send_result(msg["id"], tree)
-    except ServiceValidationError as err:
-        connection.send_error(msg["id"], "invalid_args", str(err))
     except Exception as e:  # noqa: BLE001
         connection.send_error(msg["id"], "unknown_error", str(e))
 
