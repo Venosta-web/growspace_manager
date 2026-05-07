@@ -1238,11 +1238,10 @@ class StrainLibrarySensor(CoordinatorEntity[GrowspaceCoordinator], SensorEntity)
     def extra_state_attributes(self) -> dict[str, Any]:
         """Return strain analytics and lineage trees as state attributes."""
         analytics = self.coordinator.strain_library.get_analytics()
-        strains = self.coordinator.strain_library.get_all()
 
         lineage_trees = {
             name: self.coordinator.strain_library.get_strain_lineage_tree(name)
-            for name in strains
+            for name in analytics.get("strains", {})
         }
 
         return {

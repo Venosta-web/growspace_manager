@@ -3,11 +3,11 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock
 
+from custom_components.growspace_manager.sensor import StrainLibrarySensor
 
-def _make_sensor() -> object:
+
+def _make_sensor() -> StrainLibrarySensor:
     """Build a minimal StrainLibrarySensor without a live coordinator."""
-    from custom_components.growspace_manager.sensor import StrainLibrarySensor
-
     coordinator = MagicMock()
     coordinator.strain_library.get_all.return_value = {
         "OG Kush": {"meta": {}, "phenotypes": {}},
