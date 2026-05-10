@@ -23,6 +23,20 @@ from .import_export_manager import ImportExportManager
 
 _LOGGER = logging.getLogger(__name__)
 
+
+def _collect_ancestors(
+    node: dict[str, Any], depth: int = 1
+) -> list[tuple[str, str | None, int]]:
+    """Walk a lineage_tree node recursively, returning (name, url, depth) for every ancestor."""
+    results: list[tuple[str, str | None, int]] = []
+    for parent in node.get("parents", []):
+        name = parent.get("name", "").strip()
+        if name:
+            results.append((name, parent.get("url"), depth))
+            results.extend(_collect_ancestors(parent, depth + 1))
+    return results
+
+
 # Database schema
 STRAIN_LIBRARY_SCHEMA = """
 CREATE TABLE IF NOT EXISTS strains (
@@ -115,6 +129,21 @@ class StrainLibrary:
         self._db = await aiosqlite.connect(self._db_path)
         self._db.row_factory = aiosqlite.Row
         await self._db.executescript(STRAIN_LIBRARY_SCHEMA)
+        await self._db.commit()
+
+        # Create ancestry closure table (idempotent)
+        await self._db.executescript("""
+            CREATE TABLE IF NOT EXISTS strain_ancestry (
+                ancestor_name        TEXT NOT NULL,
+                descendant_strain_id INTEGER NOT NULL,
+                depth                INTEGER NOT NULL,
+                ancestor_url         TEXT,
+                PRIMARY KEY (ancestor_name, descendant_strain_id),
+                FOREIGN KEY (descendant_strain_id) REFERENCES strains(strain_id) ON DELETE CASCADE
+            );
+            CREATE INDEX IF NOT EXISTS idx_ancestry_ancestor ON strain_ancestry(ancestor_name);
+            CREATE INDEX IF NOT EXISTS idx_ancestry_descendant ON strain_ancestry(descendant_strain_id);
+        """)
         await self._db.commit()
 
         # Ensure breeder_logo column exists before first load
@@ -661,6 +690,20 @@ class StrainLibrary:
             if row is None:
                 raise RuntimeError(f"Strain {strain} not found")
             strain_id = row[0]
+        # Rebuild ancestry rows when lineage_tree is provided
+        if lineage_tree is not None:
+            await self._db.execute(
+                "DELETE FROM strain_ancestry WHERE descendant_strain_id = ?", (strain_id,)
+            )
+            ancestors = _collect_ancestors(lineage_tree)
+            if ancestors:
+                await self._db.executemany(
+                    "INSERT OR REPLACE INTO strain_ancestry"
+                    " (ancestor_name, descendant_strain_id, depth, ancestor_url)"
+                    " VALUES (?, ?, ?, ?)",
+                    [(name, strain_id, depth, url) for name, url, depth in ancestors],
+                )
+            await self._db.commit()
         # Prepare phenotype data
         pheno_data = {
             "description": description,
@@ -895,6 +938,50 @@ class StrainLibrary:
             self._lineage_cache[strain_name] = node
 
         return node
+
+    async def async_get_strains_by_ancestor(
+        self, ancestor_name: str
+    ) -> list[dict[str, Any]]:
+        """Return all library strains that have ancestor_name anywhere in their lineage.
+
+        Results are ordered by depth (closest first) then strain name.
+        """
+        if self._db is None:
+            return []
+        async with self._db.execute(
+            """
+            SELECT s.strain_id, s.strain_name, s.breeder, sa.depth
+            FROM strain_ancestry sa
+            JOIN strains s ON sa.descendant_strain_id = s.strain_id
+            WHERE sa.ancestor_name = ?
+            ORDER BY sa.depth, s.strain_name
+            """,
+            (ancestor_name,),
+        ) as cursor:
+            return [dict(row) for row in await cursor.fetchall()]
+
+    async def async_get_shared_ancestors(
+        self, strain_ids: list[int]
+    ) -> list[dict[str, Any]]:
+        """Return ancestors common to ALL given strains, with the shallowest depth.
+
+        Results are ordered by closest_depth then ancestor_name.
+        """
+        if self._db is None or not strain_ids:
+            return []
+        placeholders = ",".join("?" * len(strain_ids))
+        async with self._db.execute(
+            f"""
+            SELECT ancestor_name, ancestor_url, MIN(depth) as closest_depth
+            FROM strain_ancestry
+            WHERE descendant_strain_id IN ({placeholders})
+            GROUP BY ancestor_name
+            HAVING COUNT(DISTINCT descendant_strain_id) = ?
+            ORDER BY closest_depth, ancestor_name
+            """,  # noqa: S608
+            (*strain_ids, len(strain_ids)),
+        ) as cursor:
+            return [dict(row) for row in await cursor.fetchall()]
 
     def get_strain_names(self) -> list[str]:
         """Return all strain names sorted alphabetically (lightweight, no image data)."""
