@@ -17,7 +17,7 @@ from homeassistant.components.persistent_notification import (
     async_create as create_notification,
 )
 from homeassistant.core import HomeAssistant, ServiceCall
-from homeassistant.exceptions import HomeAssistantError
+from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
 from homeassistant.helpers.network import get_url
 from homeassistant.util import dt as dt_util
 
@@ -30,6 +30,7 @@ from custom_components.growspace_manager.const import (
     ATTR_PHENOTYPE,
     ATTR_STRAIN,
 )
+from custom_components.growspace_manager.exceptions import GrowspaceError
 from custom_components.growspace_manager.strain_library import StrainLibrary
 
 _LOGGER = logging.getLogger(__name__)
@@ -99,7 +100,7 @@ def _downscale_logo_if_needed(logo_data: str | None) -> str | None:
             result = f"data:image/png;base64,{new_encoded}"
 
         return result
-    except Exception as err:  # noqa: BLE001
+    except (AttributeError, KeyError, ValueError, ServiceValidationError, GrowspaceError) as err:
         _LOGGER.warning("Failed to downscale breeder logo: %s", err)
         return logo_data
 
@@ -139,7 +140,7 @@ async def handle_export_strain_library(
             title="Strain Library Export",
         )
 
-    except Exception as err:
+    except (AttributeError, KeyError, ValueError, ServiceValidationError, GrowspaceError, Exception) as err:
         _LOGGER.exception("Failed to export strain library")
         create_notification(
             hass,
@@ -222,7 +223,7 @@ async def handle_import_strain_library(
             title="Strain Library Import",
         )
 
-    except Exception as err:
+    except (AttributeError, KeyError, ValueError, ServiceValidationError, GrowspaceError, Exception) as err:
         _LOGGER.exception("Failed to import strain library")
         create_notification(
             hass,
@@ -421,7 +422,7 @@ async def handle_clear_strain_library(
         hass.bus.async_fire(
             f"{DOMAIN}_strain_library_cleared", {"cleared_count": cleared_count}
         )
-    except Exception as err:
+    except (AttributeError, KeyError, ValueError, ServiceValidationError, GrowspaceError, Exception) as err:
         _LOGGER.exception("Failed to clear strain library")
         create_notification(
             hass,
@@ -594,7 +595,7 @@ async def handle_print_label(
         response = await hass.services.async_call(
             "niimbot", "print", service_data, blocking=True, return_response=True
         )
-    except Exception as err:
+    except (AttributeError, KeyError, ValueError, ServiceValidationError, GrowspaceError) as err:
         _LOGGER.error("Failed to print Niimbot label: %s", err)
         raise HomeAssistantError(f"Failed to print Niimbot label: {err}") from err
     else:

@@ -223,7 +223,7 @@ async def test_add_plant_exception(
 ) -> None:
     """Test exception handling in add_plant."""
     mock_coordinator.growspaces = {"gs1": mock_growspace}
-    mock_coordinator.plant_manager.add_plant.side_effect = Exception("Test error")
+    mock_coordinator.plant_manager.add_plant.side_effect = GrowspaceError("Test error")
 
     call = ServiceCall(
         hass,
@@ -237,7 +237,7 @@ async def test_add_plant_exception(
         },
     )
 
-    with pytest.raises(Exception, match="Test error"):
+    with pytest.raises(ServiceValidationError, match="Failed to add plant: Test error"):
         await handle_add_plant(hass, mock_coordinator, mock_strain_library, call)
 
 
@@ -608,7 +608,7 @@ async def test_move_clone_exception_finding_position(
     mock_coordinator.plants = {"clone_1": mock_plant}
     mock_coordinator.growspaces = {"veg": mock_growspace}
     mock_coordinator._find_first_available_position = Mock(
-        side_effect=Exception("Test error")
+        side_effect=ValueError("Test error")
     )
 
     call = ServiceCall(
@@ -641,7 +641,7 @@ async def test_move_clone_exception_during_move(
     """Test exception during clone move."""
     mock_coordinator.plants = {"clone_1": mock_plant}
     mock_coordinator.growspaces = {"veg": mock_growspace}
-    mock_coordinator.async_promote_clone.side_effect = Exception("Test error")
+    mock_coordinator.async_promote_clone.side_effect = GrowspaceError("Test error")
 
     call = ServiceCall(
         hass,
@@ -844,7 +844,7 @@ async def test_update_plant_exception(
 ) -> None:
     """Test exception handling in update_plant."""
     mock_coordinator.plants = {"plant_1": mock_plant}
-    mock_coordinator.plant_manager.update_plant.side_effect = Exception("Test error")
+    mock_coordinator.plant_manager.update_plant.side_effect = GrowspaceError("Test error")
 
     call = ServiceCall(
         hass,
@@ -919,7 +919,7 @@ async def test_remove_plant_exception(
 ) -> None:
     """Test exception handling in remove_plant."""
     mock_coordinator.plants = {"plant_1": mock_plant}
-    mock_coordinator.async_remove_plant.side_effect = Exception("Test error")
+    mock_coordinator.async_remove_plant.side_effect = GrowspaceError("Test error")
 
     call = ServiceCall(
         hass,
@@ -1036,7 +1036,7 @@ async def test_switch_plants_exception(
     plant2.strain = "Strain 2"
 
     mock_coordinator.plants = {"plant_1": plant1, "plant_2": plant2}
-    mock_coordinator.plant_manager.switch_plants.side_effect = Exception("Test error")
+    mock_coordinator.plant_manager.switch_plants.side_effect = GrowspaceError("Test error")
 
     call = ServiceCall(
         hass,
@@ -1188,7 +1188,7 @@ async def test_move_plant_exception(
     """Test exception handling in move_plant."""
     mock_coordinator.plants = {"plant_1": mock_plant}
     mock_coordinator.growspaces = {"gs1": mock_growspace}
-    mock_coordinator.plant_manager.move_plant.side_effect = Exception("Test error")
+    mock_coordinator.plant_manager.move_plant.side_effect = GrowspaceError("Test error")
     mock_coordinator.get_growspace_plants = Mock(return_value=[mock_plant])
 
     call = ServiceCall(
@@ -1365,7 +1365,7 @@ async def test_transition_plant_stage_exception(
 ) -> None:
     """Test exception handling in transition_plant_stage."""
     mock_coordinator.plants = {"plant_1": mock_plant}
-    mock_coordinator.plant_manager.transition_plant_stage.side_effect = Exception(
+    mock_coordinator.plant_manager.transition_plant_stage.side_effect = GrowspaceError(
         "Test error"
     )
 
@@ -1379,7 +1379,7 @@ async def test_transition_plant_stage_exception(
         },
     )
 
-    with pytest.raises(Exception, match="Test error"):
+    with pytest.raises(ServiceValidationError, match="Failed to transition plant stage for plant_1: Test error"):
         await handle_transition_plant_stage(
             hass, mock_coordinator, mock_strain_library, call
         )
@@ -1584,7 +1584,7 @@ async def test_harvest_plant_reload_error(
 ) -> None:
     """Test harvest when reload fails."""
     mock_coordinator.plants = {}
-    mock_coordinator.async_load.side_effect = Exception("Load error")
+    mock_coordinator.async_load.side_effect = GrowspaceError("Load error")
 
     call = ServiceCall(
         hass,
@@ -1679,7 +1679,7 @@ async def test_harvest_plant_exception(
 ) -> None:
     """Test exception handling in harvest_plant."""
     mock_coordinator.plants = {"plant_1": mock_plant}
-    mock_coordinator.async_harvest_plant.side_effect = Exception("Test error")
+    mock_coordinator.async_harvest_plant.side_effect = GrowspaceError("Test error")
 
     call = ServiceCall(
         hass,
@@ -1704,7 +1704,7 @@ async def test_harvest_plant_entity_id_resolution_error(
 
     # Mock entity state but cause exception during resolution
     hass.states = Mock()
-    hass.states.get = Mock(side_effect=Exception("State error"))
+    hass.states.get = Mock(side_effect=ValueError("State error"))
 
     call = ServiceCall(
         hass,

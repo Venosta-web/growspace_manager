@@ -20,6 +20,7 @@ from homeassistant.const import STATE_UNAVAILABLE, STATE_UNKNOWN
 from homeassistant.core import Context, HomeAssistant, ServiceCall
 from homeassistant.exceptions import ServiceValidationError
 
+from custom_components.growspace_manager.exceptions import GrowspaceError
 from .strain_library import StrainLibrary
 
 if TYPE_CHECKING:
@@ -484,7 +485,7 @@ class GrowAssistant:
 
         except ServiceValidationError:
             raise
-        except Exception as err:  # noqa: BLE001
+        except (AttributeError, KeyError, ValueError, ServiceValidationError, GrowspaceError, Exception) as err:
             _LOGGER.error("Error getting AI advice: %s", err)
             # Fallback to context if AI fails
             return f"AI Assistant Error: {err}\n\nRaw Data:\n\n{context}"
@@ -594,7 +595,7 @@ async def handle_analyze_all_growspaces(
             data = assistant.gather_growspace_data(growspace_id)
             all_data.append(data)
             issues_found.extend(_analyze_growspace_issues(data))
-        except Exception as err:  # noqa: BLE001
+        except (AttributeError, KeyError, ValueError, ServiceValidationError, GrowspaceError, Exception) as err:
             _LOGGER.warning("Error analyzing growspace %s: %s", growspace_id, err)
 
     # Build comprehensive summary
@@ -652,7 +653,7 @@ async def handle_analyze_all_growspaces(
                 "growspaces_analyzed": len(all_data),
             }
 
-    except Exception as err:  # noqa: BLE001
+    except (AttributeError, KeyError, ValueError, ServiceValidationError, GrowspaceError, Exception) as err:
         _LOGGER.error("Error analyzing all growspaces: %s", err)
         # Fallback to summary
         return {
@@ -752,7 +753,7 @@ async def handle_strain_recommendation(
         try:
             gs_data = assistant.gather_growspace_data(growspace_id)
             growspace_context = f"\nTARGET GROWSPACE: {gs_data['growspace']['name']} ({gs_data['growspace']['size']})"
-        except Exception as e:  # noqa: BLE001
+        except (AttributeError, KeyError, ValueError, ServiceValidationError, GrowspaceError, Exception) as e:
             _LOGGER.warning(
                 "Failed to gather growspace data for strain recommendation for growspace %s: %s",
                 growspace_id,
@@ -798,7 +799,7 @@ async def handle_strain_recommendation(
                 "strains_analyzed": len(all_strains),
             }
 
-    except Exception as err:  # noqa: BLE001
+    except (AttributeError, KeyError, ValueError, ServiceValidationError, GrowspaceError, Exception) as err:
         _LOGGER.error("Error getting strain recommendations: %s", err)
         return {
             "response": f"Error getting recommendations: {err}\n\nStrain Data:\n\n{context}",

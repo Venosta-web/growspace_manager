@@ -15,13 +15,14 @@ from typing import TYPE_CHECKING, Any
 from fpdf import FPDF
 
 from custom_components.growspace_manager.const import DOMAIN
+from custom_components.growspace_manager.exceptions import GrowspaceError
 from custom_components.growspace_manager.models import Plant
 from homeassistant.components.persistent_notification import (
     async_create as create_notification,
 )
 from homeassistant.components.recorder import get_instance
 from homeassistant.core import HomeAssistant, ServiceCall
-from homeassistant.exceptions import HomeAssistantError
+from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
 from homeassistant.util import dt as dt_util
 
 # Imports moved to function scope to avoid circular dependency with websocket.py
@@ -105,7 +106,7 @@ async def handle_export_grow_report(
             title="Grow Report Export",
         )
 
-    except Exception as err:
+    except (AttributeError, KeyError, ValueError, ServiceValidationError, GrowspaceError) as err:
         _LOGGER.exception("Failed to export grow report")
         create_notification(
             hass,
@@ -203,7 +204,7 @@ async def _get_plant_timeline_events(
 
     except HomeAssistantError:
         raise
-    except Exception as err:  # noqa: BLE001
+    except (AttributeError, KeyError, ValueError, ServiceValidationError, GrowspaceError) as err:
         _LOGGER.warning("Could not fetch logbook events for report: %s", err)
         return []
 
@@ -280,7 +281,7 @@ async def _get_plant_environmental_stats(
 
     except HomeAssistantError:
         raise
-    except Exception as err:  # noqa: BLE001
+    except (AttributeError, KeyError, ValueError, ServiceValidationError, GrowspaceError) as err:
         _LOGGER.warning("Could not fetch statistics for the report: %s", err)
 
     return averages
@@ -392,7 +393,7 @@ async def _aggregate_growspace_data(
                             data["environment"]["vpd_avg"] = round(
                                 sum(pts) / len(pts), 2
                             )
-            except Exception as err:  # noqa: BLE001
+            except (AttributeError, KeyError, ValueError, ServiceValidationError, GrowspaceError) as err:
                 _LOGGER.warning(
                     "Could not fetch env stats for growspace report: %s", err
                 )
@@ -436,7 +437,7 @@ async def async_websocket_get_grow_report(
 
         connection.send_result(msg["id"], report_data)
 
-    except Exception as err:
+    except (AttributeError, KeyError, ValueError, ServiceValidationError, GrowspaceError) as err:
         _LOGGER.exception("Error generating grow report for WebSocket")
         connection.send_error(msg["id"], "unknown_error", str(err))
 

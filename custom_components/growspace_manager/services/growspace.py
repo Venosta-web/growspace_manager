@@ -17,6 +17,7 @@ from custom_components.growspace_manager.const import (
     CATEGORY_NOTE,
     EVENT_GROWSPACE_LOG_ENTRY,
 )
+from custom_components.growspace_manager.exceptions import GrowspaceError
 from custom_components.growspace_manager.services.utils import handle_service_errors
 from custom_components.growspace_manager.strain_library import StrainLibrary
 from homeassistant.core import HomeAssistant, ServiceCall
@@ -117,7 +118,7 @@ async def async_add_growspace_note(
                     image_base64=img_b64,
                 )
                 image_paths.append(f"timeline/{Path(abs_path).name}")
-            except Exception as e:  # noqa: BLE001
+            except (AttributeError, KeyError, ValueError, ServiceValidationError, GrowspaceError, OSError) as e:
                 _LOGGER.error("Failed to save growspace note image: %s", e)
 
     event_data: dict[str, Any] = {

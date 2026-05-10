@@ -97,7 +97,7 @@ async def test_async_fetch_timeout_error(scraper: SeedfinderScraper) -> None:
 async def test_async_fetch_unexpected_error(scraper: SeedfinderScraper) -> None:
     mock_session = MagicMock()
     ctx = MagicMock()
-    ctx.__aenter__ = AsyncMock(side_effect=RuntimeError("boom"))
+    ctx.__aenter__ = AsyncMock(side_effect=ValueError("boom"))
     ctx.__aexit__ = AsyncMock(return_value=None)
     mock_session.get.return_value = ctx
 
@@ -146,7 +146,7 @@ async def test_async_search_strains_unexpected_error(
 ) -> None:
     mock_session = MagicMock()
     ctx = MagicMock()
-    ctx.__aenter__ = AsyncMock(side_effect=RuntimeError("boom"))
+    ctx.__aenter__ = AsyncMock(side_effect=ValueError("boom"))
     ctx.__aexit__ = AsyncMock(return_value=None)
     mock_session.get.return_value = ctx
 
@@ -348,7 +348,7 @@ async def test_async_get_strain_details_unexpected_error(
 ) -> None:
     mock_session = MagicMock()
     ctx = MagicMock()
-    ctx.__aenter__ = AsyncMock(side_effect=RuntimeError("boom"))
+    ctx.__aenter__ = AsyncMock(side_effect=ValueError("boom"))
     ctx.__aexit__ = AsyncMock(return_value=None)
     mock_session.get.return_value = ctx
 

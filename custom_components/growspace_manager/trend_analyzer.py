@@ -9,8 +9,10 @@ from typing import Any
 
 from homeassistant.const import STATE_UNAVAILABLE, STATE_UNKNOWN
 from homeassistant.core import HomeAssistant, State
+from homeassistant.exceptions import ServiceValidationError
 from homeassistant.util.dt import utcnow
 
+from .exceptions import GrowspaceError
 _LOGGER = logging.getLogger(__name__)
 
 
@@ -79,7 +81,7 @@ class TrendAnalyzer:
 
                 results[sensor_id] = {"trend": trend, "crossed_threshold": crossed}
 
-        except Exception:
+        except (AttributeError, KeyError, ValueError, ServiceValidationError, GrowspaceError):
             _LOGGER.exception("Error analyzing bulk sensor history")
             return {
                 sid: {"trend": "unknown", "crossed_threshold": False}

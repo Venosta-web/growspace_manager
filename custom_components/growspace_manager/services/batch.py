@@ -10,6 +10,7 @@ from custom_components.growspace_manager.const import (
     ATTR_TARGET_GROWSPACE_ID,
     ATTR_TRANSITION_DATE,
 )
+from custom_components.growspace_manager.exceptions import GrowspaceError
 from homeassistant.core import HomeAssistant, ServiceCall
 from homeassistant.exceptions import ServiceValidationError
 
@@ -60,7 +61,7 @@ async def handle_batch_action(
                 # Better to just log. But since it repeats for all, break.
                 break
 
-        except Exception as err:  # noqa: BLE001
+        except (AttributeError, KeyError, ValueError, ServiceValidationError, GrowspaceError, Exception) as err:
             _LOGGER.error("Error processing batch action for %s: %s", entity_id, err)
             errors.append(str(err))
 

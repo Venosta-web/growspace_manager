@@ -540,12 +540,12 @@ async def test_run_pump_cycle_error(
     )
 
     # Mock service call to raise exception
-    mock_hass.services.async_call.side_effect = Exception("Service Error")
+    mock_hass.services.async_call.side_effect = ValueError("Service Error")
 
     # The exception is caught and logged in _run_pump_cycle, but then re-raised
     # when trying to turn off the pump in finally block because side_effect applies to all calls.
     # We should make side_effect only apply to the first call (turn_on).
-    mock_hass.services.async_call.side_effect = [Exception("Service Error"), None]
+    mock_hass.services.async_call.side_effect = [ValueError("Service Error"), None]
 
     with patch.object(
         coordinator,
@@ -852,7 +852,7 @@ async def test_irrigation_coordinator_coverage_gaps(
         await BaseIrrigationCoordinator.async_unload(coordinator)  # Line 65
 
         # 6. Test _run_pump_cycle exception handling
-        mock_main_coordinator.add_event.side_effect = Exception("Test Error")
+        mock_main_coordinator.add_event.side_effect = ValueError("Test Error")
         # Must mock states again as side_effect consumed
         mock_hass.states.get.side_effect = None
         mock_hass.states.get.return_value = MagicMock(state="50.0")
@@ -880,7 +880,7 @@ async def test_irrigation_coordinator_coverage_gaps(
             ),
             patch(
                 "custom_components.growspace_manager.irrigation_coordinator.getattr",
-                side_effect=Exception("Unexpected"),
+                side_effect=ValueError("Unexpected"),
             ),
         ):
             await coordinator.async_remove_schedule_item("irrigation_times", "10:00:00")

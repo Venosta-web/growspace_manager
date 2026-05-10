@@ -134,3 +134,4 @@ tests/integration/snapshots/test_services_growspace_coverage.ambr
 # pytest cache
 tests/core/snapshots/
 tests/integration/snapshots/*
+custom_components/growspace_manager/ruff_check_full.txt

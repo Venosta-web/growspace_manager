@@ -282,7 +282,12 @@ async def test_export_no_stage_history_fallback(
     mock_plant.stage_history = []
     mock_plant.created_at = "2024-01-01T00:00:00+00:00"
 
-    with patch("custom_components.growspace_manager.services.report.get_instance"):
+    mock_recorder = MagicMock()
+    mock_recorder.async_add_executor_job = AsyncMock(return_value=[])
+    with patch(
+        "custom_components.growspace_manager.services.report.get_instance",
+        return_value=mock_recorder,
+    ):
         result = await _aggregate_plant_data(hass, mock_coordinator, mock_plant)
         assert result["plant_info"]["stage"] == "veg"  # From mock_plant
 
@@ -298,7 +303,12 @@ async def test_export_no_start_time_fallback(
     mock_plant.stage_history = []
     mock_plant.created_at = None
 
-    with patch("custom_components.growspace_manager.services.report.get_instance"):
+    mock_recorder = MagicMock()
+    mock_recorder.async_add_executor_job = AsyncMock(return_value=[])
+    with patch(
+        "custom_components.growspace_manager.services.report.get_instance",
+        return_value=mock_recorder,
+    ):
         result = await _aggregate_plant_data(hass, mock_coordinator, mock_plant)
         assert result["plant_info"]["stage"] == "veg"
 
@@ -336,7 +346,7 @@ async def test_export_logbook_general_exception(
     """Test generic exception during logbook fetch."""
     mock_recorder = MagicMock()
     mock_recorder.async_add_executor_job = AsyncMock(
-        side_effect=Exception("Other DB Error")
+        side_effect=ValueError("Other DB Error")
     )
 
     with patch(
@@ -358,8 +368,13 @@ async def test_export_statistics_exception(
     """Test exception during statistics fetch."""
     mock_growspace.environment_config.temperature_sensor = "sensor.test_temp"
 
+    mock_recorder = MagicMock()
+    mock_recorder.async_add_executor_job = AsyncMock(return_value=[])
     with (
-        patch("custom_components.growspace_manager.services.report.get_instance"),
+        patch(
+            "custom_components.growspace_manager.services.report.get_instance",
+            return_value=mock_recorder,
+        ),
         patch(
             "custom_components.growspace_manager.websocket._get_statistics_data",
             side_effect=HomeAssistantError("Stats Error"),
@@ -379,11 +394,16 @@ async def test_export_statistics_general_exception(
     """Test generic exception during statistics fetch."""
     mock_growspace.environment_config.temperature_sensor = "sensor.test_temp"
 
+    mock_recorder = MagicMock()
+    mock_recorder.async_add_executor_job = AsyncMock(return_value=[])
     with (
-        patch("custom_components.growspace_manager.services.report.get_instance"),
+        patch(
+            "custom_components.growspace_manager.services.report.get_instance",
+            return_value=mock_recorder,
+        ),
         patch(
             "custom_components.growspace_manager.websocket._get_statistics_data",
-            side_effect=Exception("Other Stats Error"),
+            side_effect=ValueError("Other Stats Error"),
         ),
     ):
         # Should catch Exception and just log warning.
@@ -401,7 +421,7 @@ async def test_export_handle_general_exception(
     with (
         patch(
             "custom_components.growspace_manager.services.report._aggregate_plant_data",
-            side_effect=Exception("Boom"),
+            side_effect=ValueError("Boom"),
         ),
         patch(
             "custom_components.growspace_manager.services.report.create_notification"
@@ -743,7 +763,7 @@ async def test_aggregate_growspace_data_stats_exception(
 
     with patch(
         "custom_components.growspace_manager.websocket._get_statistics_data",
-        side_effect=Exception("Stats error"),
+        side_effect=ValueError("Stats error"),
     ):
         data = await _aggregate_growspace_data(hass, mock_coordinator, "test_growspace")
 
@@ -903,7 +923,7 @@ async def test_websocket_get_grow_report_exception(
     """Test WebSocket report handles exceptions."""
 
     mock_coordinator = MagicMock()
-    mock_coordinator.get_plant.side_effect = Exception("DB Error")
+    mock_coordinator.get_plant.side_effect = ValueError("DB Error")
 
     mock_connection = MagicMock()
 
@@ -1062,8 +1082,13 @@ async def test_aggregate_data_with_invalid_dates(
     ]
     mock_plant.created_at = "more garbage"
 
+    mock_recorder = MagicMock()
+    mock_recorder.async_add_executor_job = AsyncMock(return_value=[])
     with (
-        patch("custom_components.growspace_manager.services.report.get_instance"),
+        patch(
+            "custom_components.growspace_manager.services.report.get_instance",
+            return_value=mock_recorder,
+        ),
         patch(
             "custom_components.growspace_manager.websocket._get_statistics_data",
             new_callable=AsyncMock,

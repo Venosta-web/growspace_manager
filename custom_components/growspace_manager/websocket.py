@@ -21,7 +21,7 @@ from homeassistant.components.recorder import (
 from homeassistant.components.recorder.db_schema import EventData, Events, EventTypes
 from homeassistant.components.recorder.util import session_scope
 from homeassistant.core import HomeAssistant, callback
-from homeassistant.exceptions import ServiceValidationError
+from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
 import homeassistant.util.dt as dt_util
 
 from .const import (
@@ -46,6 +46,7 @@ from .coordinator import GrowspaceCoordinator
 from .services.growspace import async_add_growspace_note
 from .services.plant import async_add_timeline_note
 from .services.report import async_websocket_get_grow_report
+from .exceptions import GrowspaceError
 from .strain_library import StrainLibrary
 
 _LOGGER = logging.getLogger(__name__)
@@ -143,7 +144,14 @@ async def websocket_get_growspace_data(
         connection.send_error(
             msg["id"], "not_loaded", "Growspace Manager integration not loaded"
         )
-    except Exception as e:  # noqa: BLE001
+    except (
+        AttributeError,
+        KeyError,
+        ValueError,
+        ServiceValidationError,
+        GrowspaceError,
+        Exception,
+    ) as e:
         connection.send_error(msg["id"], "unknown_error", str(e))
 
 
@@ -957,7 +965,14 @@ async def _get_statistics_data(
             else:
                 result[entity_id] = []
 
-    except Exception:  # noqa: BLE001
+    except (
+        AttributeError,
+        KeyError,
+        ValueError,
+        ServiceValidationError,
+        GrowspaceError,
+        Exception,
+    ):
         # Catch any error from Statistics API to ensure fallback to raw history
         _LOGGER.debug("Statistics API failed, falling back to raw history")
         return None
@@ -1234,7 +1249,7 @@ async def websocket_capture_snapshot(
                 f"/local/growspace_manager/snapshots/{growspace_id}/{filename}"
             )
             captured_paths.append(public_path)
-        except Exception:
+        except (AttributeError, KeyError, ValueError, HomeAssistantError, Exception):
             _LOGGER.exception(
                 "Failed to capture snapshot from camera %s", camera_entity_id
             )
@@ -1434,7 +1449,14 @@ async def websocket_get_subareas(
         connection.send_result(msg["id"], [asdict(s) for s in subareas])
     except ServiceValidationError as err:
         connection.send_error(msg["id"], "invalid_args", str(err))
-    except Exception as e:  # noqa: BLE001
+    except (
+        AttributeError,
+        KeyError,
+        ValueError,
+        ServiceValidationError,
+        GrowspaceError,
+        Exception,
+    ) as e:
         connection.send_error(msg["id"], "unknown_error", str(e))
 
 
@@ -1448,7 +1470,14 @@ async def websocket_add_subarea(
         connection.send_result(msg["id"], asdict(subarea))
     except ServiceValidationError as err:
         connection.send_error(msg["id"], "invalid_args", str(err))
-    except Exception as e:  # noqa: BLE001
+    except (
+        AttributeError,
+        KeyError,
+        ValueError,
+        ServiceValidationError,
+        GrowspaceError,
+        Exception,
+    ) as e:
         connection.send_error(msg["id"], "unknown_error", str(e))
 
 
@@ -1464,7 +1493,14 @@ async def websocket_update_subarea(
         connection.send_result(msg["id"], asdict(subarea))
     except ServiceValidationError as err:
         connection.send_error(msg["id"], "invalid_args", str(err))
-    except Exception as e:  # noqa: BLE001
+    except (
+        AttributeError,
+        KeyError,
+        ValueError,
+        ServiceValidationError,
+        GrowspaceError,
+        Exception,
+    ) as e:
         connection.send_error(msg["id"], "unknown_error", str(e))
 
 
@@ -1478,7 +1514,14 @@ async def websocket_remove_subarea(
         connection.send_result(msg["id"], {"success": True})
     except ServiceValidationError as err:
         connection.send_error(msg["id"], "invalid_args", str(err))
-    except Exception as e:  # noqa: BLE001
+    except (
+        AttributeError,
+        KeyError,
+        ValueError,
+        ServiceValidationError,
+        GrowspaceError,
+        Exception,
+    ) as e:
         connection.send_error(msg["id"], "unknown_error", str(e))
 
 
@@ -1501,7 +1544,14 @@ async def websocket_get_lineage_tree(
     except ServiceValidationError as err:
         connection.send_error(msg["id"], "invalid_args", str(err))
         return
-    except Exception as e:  # noqa: BLE001
+    except (
+        AttributeError,
+        KeyError,
+        ValueError,
+        ServiceValidationError,
+        GrowspaceError,
+        Exception,
+    ) as e:
         connection.send_error(msg["id"], "unknown_error", str(e))
         return
 
@@ -1522,7 +1572,14 @@ async def websocket_get_lineage_tree(
                     tree["parents"] = strain_tree["parents"]
 
         connection.send_result(msg["id"], tree)
-    except Exception as e:  # noqa: BLE001
+    except (
+        AttributeError,
+        KeyError,
+        ValueError,
+        ServiceValidationError,
+        GrowspaceError,
+        Exception,
+    ) as e:
         connection.send_error(msg["id"], "unknown_error", str(e))
 
 
@@ -1562,7 +1619,14 @@ async def websocket_get_strain_lineage_tree(
         connection.send_result(msg["id"], tree)
     except ServiceValidationError:
         connection.send_error(msg["id"], "not_loaded", "Strain library not loaded")
-    except Exception as e:  # noqa: BLE001
+    except (
+        AttributeError,
+        KeyError,
+        ValueError,
+        ServiceValidationError,
+        GrowspaceError,
+        Exception,
+    ) as e:
         connection.send_error(msg["id"], "unknown_error", str(e))
 
 
@@ -1581,7 +1645,14 @@ async def websocket_update_strain_lineage_tree(
         connection.send_result(msg["id"], {"lineage": flat_lineage})
     except ServiceValidationError:
         connection.send_error(msg["id"], "not_loaded", "Strain library not loaded")
-    except Exception as e:  # noqa: BLE001
+    except (
+        AttributeError,
+        KeyError,
+        ValueError,
+        ServiceValidationError,
+        GrowspaceError,
+        Exception,
+    ) as e:
         connection.send_error(msg["id"], "unknown_error", str(e))
 
 
@@ -1610,7 +1681,14 @@ async def websocket_import_strain_lineage_tree(
         connection.send_result(msg["id"], {"ok": True})
     except ServiceValidationError:
         connection.send_error(msg["id"], "not_loaded", "Strain library not loaded")
-    except Exception as e:  # noqa: BLE001
+    except (
+        AttributeError,
+        KeyError,
+        ValueError,
+        ServiceValidationError,
+        GrowspaceError,
+        Exception,
+    ) as e:
         connection.send_error(msg["id"], "unknown_error", str(e))
 
 

@@ -20,6 +20,7 @@ from homeassistant.components.binary_sensor import (
 )
 from homeassistant.const import STATE_UNAVAILABLE, STATE_UNKNOWN
 from homeassistant.core import Event, EventStateChangedData, HomeAssistant, callback
+from homeassistant.exceptions import ServiceValidationError
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.event import async_track_state_change_event
@@ -52,6 +53,7 @@ from .models import (
     GrowspaceType,
     Plant,
 )
+from .exceptions import GrowspaceError
 from .notification_manager import NotificationManager
 from .services.ai_assistant import GrowAssistant
 from .strain_library import StrainLibrary
@@ -708,7 +710,7 @@ class BayesianEnvironmentSensor(
             return await self.trend_analyzer.async_analyze_sensor_trend(
                 sensor_id, duration_minutes, threshold
             )
-        except Exception:
+        except (AttributeError, KeyError, ValueError, ServiceValidationError, GrowspaceError):
             _LOGGER.exception("Error analyzing sensor history for %s", sensor_id)
             return {"trend": "unknown", "crossed_threshold": False}
 
@@ -742,7 +744,7 @@ class BayesianEnvironmentSensor(
                         [r[1] for r in self._reasons],
                     )
                     final_message = f"{ai_message}\n\n(Original: {message})"
-                except Exception:  # noqa: BLE001
+                except (AttributeError, KeyError, ValueError, ServiceValidationError, GrowspaceError, Exception):
                     _LOGGER.warning(
                         "Failed to generate AI alert, falling back to standard message"
                     )
@@ -751,7 +753,7 @@ class BayesianEnvironmentSensor(
                 await self.notification_manager.async_send_notification(
                     self.growspace_id, title, final_message, self._sensor_states
                 )
-        except Exception:
+        except (AttributeError, KeyError, ValueError, TypeError, ServiceValidationError, GrowspaceError, Exception):
             _LOGGER.exception("Failed to send notification to %s", self.growspace_id)
 
     def get_notification_title_message(

@@ -13,10 +13,12 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import EVENT_STATE_CHANGED
 from homeassistant.core import Event, HomeAssistant, callback
 from homeassistant.helpers.event import async_track_time_change
+from homeassistant.exceptions import ServiceValidationError
 from homeassistant.util.dt import now as dt_now, utcnow
 
 if TYPE_CHECKING:
     from .coordinator import GrowspaceCoordinator
+from .exceptions import GrowspaceError
 from .models import Growspace, GrowspaceEvent
 
 _LOGGER = logging.getLogger(__name__)
@@ -342,7 +344,13 @@ class IrrigationCoordinator(BaseIrrigationCoordinator):
             # Persist the changes
             await self._save_and_reload()
 
-        except Exception:
+        except (
+            AttributeError,
+            KeyError,
+            ValueError,
+            ServiceValidationError,
+            GrowspaceError,
+        ):
             _LOGGER.exception(
                 "Unexpected error removing schedule item from %s", schedule_key
             )
@@ -531,7 +539,13 @@ class IrrigationCoordinator(BaseIrrigationCoordinator):
                 self._growspace_id,
                 pump_entity,
             )
-        except Exception as e:  # noqa: BLE001
+        except (
+            AttributeError,
+            KeyError,
+            ValueError,
+            ServiceValidationError,
+            GrowspaceError,
+        ) as e:
             _LOGGER.error(
                 "Error during %s cycle for %s (entity: %s): %s",
                 event_type,
@@ -586,7 +600,13 @@ class IrrigationCoordinator(BaseIrrigationCoordinator):
                         reasons=reasons,
                     )
                     self._main_coordinator.add_event(self._growspace_id, event)
-            except Exception as e:  # noqa: BLE001
+            except (
+                AttributeError,
+                KeyError,
+                ValueError,
+                ServiceValidationError,
+                GrowspaceError,
+            ) as e:
                 _LOGGER.error("Failed to log %s event: %s", event_type, e)
 
             _LOGGER.info(

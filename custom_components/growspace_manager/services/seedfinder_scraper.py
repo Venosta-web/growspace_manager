@@ -8,6 +8,8 @@ import aiohttp
 from bs4 import BeautifulSoup
 
 from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import ServiceValidationError
+from custom_components.growspace_manager.exceptions import GrowspaceError
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
 _LOGGER = logging.getLogger(__name__)
@@ -35,7 +37,7 @@ class SeedfinderScraper:
         except (aiohttp.ClientError, TimeoutError) as err:
             _LOGGER.error("Network error fetching %s: %s", url, err)
             return None
-        except Exception as err:  # noqa: BLE001
+        except (AttributeError, KeyError, ValueError, ServiceValidationError, GrowspaceError) as err:
             _LOGGER.error("Unexpected error fetching %s: %s", url, err)
             return None
 
@@ -105,7 +107,7 @@ class SeedfinderScraper:
         except (aiohttp.ClientError, TimeoutError) as err:
             _LOGGER.error("Network error searching Seedfinder: %s", err)
             return []
-        except Exception as err:  # noqa: BLE001
+        except (AttributeError, KeyError, ValueError, ServiceValidationError, GrowspaceError) as err:
             _LOGGER.error("Unexpected error searching Seedfinder: %s", err)
             return []
 
@@ -196,7 +198,7 @@ class SeedfinderScraper:
         except (aiohttp.ClientError, TimeoutError) as err:
             _LOGGER.error("Network error fetching Seedfinder details: %s", err)
             return None
-        except Exception as err:  # noqa: BLE001
+        except (AttributeError, KeyError, ValueError, ServiceValidationError, GrowspaceError) as err:
             _LOGGER.error("Unexpected error fetching Seedfinder details: %s", err)
             return None
 

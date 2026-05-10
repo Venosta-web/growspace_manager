@@ -15,9 +15,11 @@ from typing import Any
 import aiosqlite
 
 from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import ServiceValidationError
 from homeassistant.util import dt as dt_util, slugify
 
 from .const import DB_FILE_STRAIN_LIBRARY
+from .exceptions import GrowspaceError
 from .image_manager import ImageManager
 from .import_export_manager import ImportExportManager
 
@@ -1008,7 +1010,13 @@ class StrainLibrary:
                         _LOGGER.debug(
                             "Fetched lineage for leaf parent '%s' from %s", pname, purl
                         )
-                except Exception:  # noqa: BLE001
+                except (
+                    AttributeError,
+                    KeyError,
+                    ValueError,
+                    ServiceValidationError,
+                    GrowspaceError,
+                ):
                     _LOGGER.debug("Could not fetch lineage for '%s' at %s", pname, purl)
 
         if not lineage_by_node:

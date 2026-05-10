@@ -441,7 +441,7 @@ async def test_rewrite_with_ai_exception(
     with patch(
         "custom_components.growspace_manager.notification_manager.conversation.async_converse",
         new_callable=AsyncMock,
-        side_effect=Exception("AI Error"),
+        side_effect=ValueError("AI Error"),
     ):
         await manager.async_send_notification(GROWSPACE_ID, "Title", "Original Message")
 

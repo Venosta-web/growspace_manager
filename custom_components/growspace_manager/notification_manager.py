@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING, Any, ClassVar, cast
 
 from homeassistant.components import conversation
 from homeassistant.core import CALLBACK_TYPE, Context, HomeAssistant, callback
+from homeassistant.exceptions import ServiceValidationError
 from homeassistant.helpers import intent
 from homeassistant.helpers.event import async_call_later
 from homeassistant.util.dt import utcnow
@@ -34,6 +35,7 @@ from .const import (
     NotificationTier,
 )
 from .domain import calculate_days_in_stage
+from .exceptions import GrowspaceError
 from .presentation import EntityQueries
 
 if TYPE_CHECKING:
@@ -415,12 +417,11 @@ class NotificationManager:
                 title,
                 final_message,
             )
-            # Set cooldown after successful send (not before)
             if tier:
                 self._set_cooldown(growspace_id, tier)
-        except (AttributeError, TypeError, ValueError) as e:
+        except (AttributeError, KeyError, ValueError, ServiceValidationError, GrowspaceError):
             _LOGGER.error(
-                "Failed to send notification to %s: %s", notification_service, e
+                "Failed to send notification to %s", notification_service
             )
 
     async def _rewrite_with_ai(
@@ -508,8 +509,8 @@ class NotificationManager:
             else:
                 _LOGGER.warning("AI returned empty response, using default message")
 
-        except Exception as err:  # noqa: BLE001
-            _LOGGER.error("Failed to process AI notification: %s", err)
+        except (AttributeError, KeyError, ValueError, ServiceValidationError, GrowspaceError):
+            _LOGGER.error("Failed to process AI notification")
 
         return original_message
 
