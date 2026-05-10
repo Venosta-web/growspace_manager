@@ -671,7 +671,7 @@ async def test_websocket_get_growspace_data(
             "growspace_id": "invalid",
         }
         await websocket_get_growspace_data(hass, mock_connection, msg)
-        mock_connection.send_error.assert_called_with(2, "invalid_args", "Invalid ID")
+        mock_connection.send_error.assert_called_with(2, "not_loaded", "Growspace Manager integration not loaded")
 
     # 3. Unknown Error
     with patch(

@@ -510,7 +510,9 @@ async def test_websocket_breeder_commands_generic_error(
     strain_library = AsyncMock()
     strain_library.update_breeder.side_effect = Exception("Breeder Update Fail")
     strain_library.delete_breeder.side_effect = Exception("Breeder Delete Fail")
-    hass.data[DOMAIN] = {"strain_library": strain_library}
+
+    mock_coordinator = MagicMock()
+    mock_coordinator.strain_library = strain_library
 
     msg_update = {
         "id": 14,
@@ -518,7 +520,11 @@ async def test_websocket_breeder_commands_generic_error(
         "original_name": "O",
         "new_name": "N",
     }
-    await websocket_update_breeder(hass, mock_connection, msg_update)
+    with patch(
+        "custom_components.growspace_manager.websocket.GrowspaceCoordinator.get_any",
+        return_value=mock_coordinator,
+    ):
+        await websocket_update_breeder(hass, mock_connection, msg_update)
     mock_connection.send_error.assert_called_with(
         14, "unknown_error", "Breeder Update Fail"
     )
@@ -530,7 +536,11 @@ async def test_websocket_breeder_commands_generic_error(
         "type": f"{DOMAIN}/delete_breeder",
         "breeder_name": "B",
     }
-    await websocket_delete_breeder(hass, mock_connection, msg_delete)
+    with patch(
+        "custom_components.growspace_manager.websocket.GrowspaceCoordinator.get_any",
+        return_value=mock_coordinator,
+    ):
+        await websocket_delete_breeder(hass, mock_connection, msg_delete)
     mock_connection.send_error.assert_called_with(
         15, "unknown_error", "Breeder Delete Fail"
     )
@@ -583,11 +593,16 @@ async def test_websocket_get_strain_lineage_tree_success(mock_hass: MagicMock) -
         "source": "library",
         "parents": [],
     }
-    mock_hass.data[DOMAIN] = {"strain_library": strain_library}
+    mock_coordinator = MagicMock()
+    mock_coordinator.strain_library = strain_library
     connection = MagicMock()
 
     msg = {"id": 1, "type": f"{DOMAIN}/get_strain_lineage_tree", "strain_name": "Gelato #41"}
-    await websocket_get_strain_lineage_tree(mock_hass, connection, msg)
+    with patch(
+        "custom_components.growspace_manager.websocket.GrowspaceCoordinator.get_any",
+        return_value=mock_coordinator,
+    ):
+        await websocket_get_strain_lineage_tree(mock_hass, connection, msg)
 
     connection.send_result.assert_called_once_with(
         1, {"name": "Gelato #41", "source": "library", "parents": []}
@@ -615,7 +630,8 @@ async def test_websocket_update_strain_lineage_tree_success(mock_hass: MagicMock
 
     strain_library = AsyncMock()
     strain_library.update_strain_lineage_tree.return_value = "OG Kush × Durban Poison"
-    mock_hass.data[DOMAIN] = {"strain_library": strain_library}
+    mock_coordinator = MagicMock()
+    mock_coordinator.strain_library = strain_library
     connection = MagicMock()
 
     parents = [
@@ -628,7 +644,11 @@ async def test_websocket_update_strain_lineage_tree_success(mock_hass: MagicMock
         "strain_name": "Hybrid",
         "parents": parents,
     }
-    await websocket_update_strain_lineage_tree(mock_hass, connection, msg)
+    with patch(
+        "custom_components.growspace_manager.websocket.GrowspaceCoordinator.get_any",
+        return_value=mock_coordinator,
+    ):
+        await websocket_update_strain_lineage_tree(mock_hass, connection, msg)
     connection.send_result.assert_called_once_with(
         2, {"lineage": "OG Kush × Durban Poison"}
     )

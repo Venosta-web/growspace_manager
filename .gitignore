@@ -126,3 +126,11 @@ tests/output.txt
 tests/services/snapshots/test_strain_library.ambr
 uv.lock
 =4.15.0
+tests/core/snapshots/test_domain_stage_calculator.ambr
+tests/core/snapshots/test_presentation_snapshots.ambr
+tests/core/snapshots/test_websocket_snapshots.ambr
+tests/integration/snapshots/test_services_growspace_coverage.ambr
+
+# pytest cache
+tests/core/snapshots/
+tests/integration/snapshots/
