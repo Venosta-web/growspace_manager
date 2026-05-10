@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from custom_components.growspace_manager.bayesian_data import CURING_THRESHOLDS
-from custom_components.growspace_manager.const import PlantStage
+from custom_components.growspace_manager.models import GrowspaceType
 
 from .evaluator_strategy import BayesianEvaluatorStrategy
 
@@ -25,7 +25,8 @@ class CuringEvaluatorStrategy(BayesianEvaluatorStrategy):
     ) -> tuple[ObservationList, ReasonList]:
         """Evaluate curing conditions."""
         # Skip if not a cure growspace
-        if self.sensor.growspace_id != PlantStage.CURE:
+        growspace = self.sensor._get_growspace(self.sensor.growspace_id)
+        if not growspace or growspace.growspace_type != GrowspaceType.CURE:
             return [], []
 
         if None in (state.temp, state.humidity):

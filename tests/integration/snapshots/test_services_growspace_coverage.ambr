@@ -1,5 +1,8 @@
 # serializer version: 1
 # name: test_add_growspace_no_notification_target
+  typing.Any
+# ---
+# name: test_add_growspace_no_notification_target.1
   dict({
     'created_at': '2026-01-12T12:00:00+00:00',
     'dehumidifier_config': dict({

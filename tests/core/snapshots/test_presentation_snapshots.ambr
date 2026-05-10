@@ -1,5 +1,8 @@
 # serializer version: 1
 # name: test_growspace_view_model_snapshot
+  typing.Any
+# ---
+# name: test_growspace_view_model_snapshot.1
   dict({
     'active_events': dict({
     }),
@@ -182,6 +185,9 @@
   })
 # ---
 # name: test_plant_view_model_snapshot
+  typing.Any
+# ---
+# name: test_plant_view_model_snapshot.1
   dict({
     'clone_days': 0,
     'clone_start': None,
