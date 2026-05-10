@@ -57,6 +57,7 @@ from .services.environment_reporter import EnvironmentReporter
 from .services.facade import ServiceFacade
 from .services.ipm_service import IPMService
 from .services.nutrient_inventory import NutrientInventoryService
+from .services.seedfinder_scraper import SeedfinderScraper
 from .services.training_service import TrainingService
 from .services.watering_service import WateringService
 from .storage_manager import StorageManager
@@ -81,6 +82,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
     config_entry: ConfigEntry[GrowspaceCoordinator]
     strain_library: StrainLibrary | None = None
+    seedfinder_scraper: SeedfinderScraper | None = None
 
     @property
     def growspaces(self) -> dict[str, Growspace]:
@@ -333,6 +335,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         data: dict[str, Any] | None = None,
         options: dict[str, Any] | None = None,
         strain_library: StrainLibrary | None = None,
+        seedfinder_scraper: SeedfinderScraper | None = None,
     ) -> None:
         """Initialize the Growspace Coordinator.
 
@@ -383,6 +386,12 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             self.strain_library = StrainLibrary(hass)
         else:
             self.strain_library = strain_library
+
+        # Initialize seedfinder scraper
+        if seedfinder_scraper is None:
+            self.seedfinder_scraper = SeedfinderScraper(hass)
+        else:
+            self.seedfinder_scraper = seedfinder_scraper
 
         # 3. Initialize storage (depends on repository, nutrient_manager, genetics_manager)
         self.nutrient_manager = NutrientManager(
@@ -850,8 +859,6 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self.notification_manager.shutdown()
         self.vision_scheduler.async_stop()
         await self.storage_manager.async_force_save()
-
-
 
     async def async_load(self) -> None:
         """Load data from persistent storage and initialize the integration.

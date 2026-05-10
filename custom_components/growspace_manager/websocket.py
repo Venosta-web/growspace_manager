@@ -46,7 +46,6 @@ from .coordinator import GrowspaceCoordinator
 from .services.growspace import async_add_growspace_note
 from .services.plant import async_add_timeline_note
 from .services.report import async_websocket_get_grow_report
-from .services.seedfinder_scraper import SeedfinderScraper
 from .strain_library import StrainLibrary
 
 _LOGGER = logging.getLogger(__name__)
@@ -140,8 +139,10 @@ async def websocket_get_growspace_data(
         coordinator = GrowspaceCoordinator.get_for_service_call(hass, msg)
         data = coordinator.get_growspace_data(growspace_id)
         connection.send_result(msg["id"], data)
-    except ServiceValidationError as err:
-        connection.send_error(msg["id"], "invalid_args", str(err))
+    except ServiceValidationError:
+        connection.send_error(
+            msg["id"], "not_loaded", "Growspace Manager integration not loaded"
+        )
     except Exception as e:  # noqa: BLE001
         connection.send_error(msg["id"], "unknown_error", str(e))
 
@@ -460,14 +461,9 @@ def websocket_get_strain_library(
 ) -> None:
     """Handle get strain library command via WebSocket."""
     try:
-        # Retrieve the global strain library instance
-        if DOMAIN not in hass.data or "strain_library" not in hass.data[DOMAIN]:
-            connection.send_error(
-                msg["id"], "not_loaded", "Growspace Manager strain library not loaded"
-            )
-            return
-
-        strain_library: StrainLibrary = hass.data[DOMAIN]["strain_library"]
+        # Retrieve any coordinator to access the shared strain library
+        coordinator = GrowspaceCoordinator.get_any(hass)
+        strain_library: StrainLibrary = coordinator.strain_library
         # Return full strain data (including image_path) for frontend display
         all_strains = strain_library.get_all()
         response = {
@@ -475,6 +471,10 @@ def websocket_get_strain_library(
             "strain_list": list(all_strains.keys()),
         }
         connection.send_result(msg["id"], response)
+    except ServiceValidationError:
+        connection.send_error(
+            msg["id"], "not_loaded", "Growspace Manager strain library not loaded"
+        )
     except Exception as err:
         _LOGGER.exception("Error handling websocket_get_strain_library")
         connection.send_error(msg["id"], "unknown_error", str(err))
@@ -520,6 +520,10 @@ def websocket_get_nutrient_inventory(
             connection.send_result(msg["id"], asdict(inventory))
         else:
             connection.send_result(msg["id"], {"stocks": {}})
+    except ServiceValidationError:
+        connection.send_error(
+            msg["id"], "not_loaded", "Growspace Manager integration not loaded"
+        )
     except Exception as err:
         _LOGGER.exception("Error handling websocket_get_nutrient_inventory")
         connection.send_error(msg["id"], "unknown_error", str(err))
@@ -544,6 +548,10 @@ def websocket_update_nutrient_stock(
             connection.send_result(msg["id"])
         else:
             connection.send_error(msg["id"], "not_initialized", "Service not ready")
+    except ServiceValidationError:
+        connection.send_error(
+            msg["id"], "not_loaded", "Growspace Manager integration not loaded"
+        )
     except Exception as err:
         _LOGGER.exception("Error handling websocket_update_nutrient_stock")
         connection.send_error(msg["id"], "unknown_error", str(err))
@@ -563,6 +571,10 @@ def websocket_remove_nutrient_stock(
             connection.send_result(msg["id"])
         else:
             connection.send_error(msg["id"], "not_initialized", "Service not ready")
+    except ServiceValidationError:
+        connection.send_error(
+            msg["id"], "not_loaded", "Growspace Manager integration not loaded"
+        )
     except Exception as err:
         _LOGGER.exception("Error handling websocket_remove_nutrient_stock")
         connection.send_error(msg["id"], "unknown_error", str(err))
@@ -581,6 +593,10 @@ def websocket_get_nutrient_presets(
         # Use the manager's serialization logic to ensure consistency
         data = coordinator.nutrient_manager.get_serialization_data()
         connection.send_result(msg["id"], data["nutrient_presets"])
+    except ServiceValidationError:
+        connection.send_error(
+            msg["id"], "not_loaded", "Growspace Manager integration not loaded"
+        )
     except Exception as err:
         _LOGGER.exception("Error handling websocket_get_nutrient_presets")
         connection.send_error(msg["id"], "unknown_error", str(err))
@@ -599,6 +615,10 @@ def websocket_get_ipm_presets(
         # Use the manager's serialization logic to ensure consistency
         data = coordinator.nutrient_manager.get_serialization_data()
         connection.send_result(msg["id"], data["ipm_presets"])
+    except ServiceValidationError:
+        connection.send_error(
+            msg["id"], "not_loaded", "Growspace Manager integration not loaded"
+        )
     except Exception as err:
         _LOGGER.exception("Error handling websocket_get_ipm_presets")
         connection.send_error(msg["id"], "unknown_error", str(err))
@@ -616,6 +636,10 @@ def websocket_get_ec_ramp_curves(
 
         data = coordinator.nutrient_manager.get_serialization_data()
         connection.send_result(msg["id"], data.get("ec_ramp_curves", []))
+    except ServiceValidationError:
+        connection.send_error(
+            msg["id"], "not_loaded", "Growspace Manager integration not loaded"
+        )
     except Exception as err:
         _LOGGER.exception("Error handling websocket_get_ec_ramp_curves")
         connection.send_error(msg["id"], "unknown_error", str(err))
@@ -647,7 +671,7 @@ async def websocket_add_timeline_note(
     """Handle add timeline note command via WebSocket."""
     try:
         coordinator = GrowspaceCoordinator.get_for_service_call(hass, msg)
-        strain_library = hass.data[DOMAIN]["strain_library"]
+        strain_library = coordinator.strain_library
 
         await async_add_timeline_note(
             hass,
@@ -677,7 +701,7 @@ async def websocket_add_growspace_note(
     """Handle add growspace note command via WebSocket."""
     try:
         coordinator = GrowspaceCoordinator.get_for_service_call(hass, msg)
-        strain_library = hass.data[DOMAIN]["strain_library"]
+        strain_library = coordinator.strain_library
 
         await async_add_growspace_note(
             hass,
@@ -1062,19 +1086,18 @@ async def websocket_update_breeder(
 ) -> None:
     """Handle updating breeder info across all strains."""
     try:
-        if DOMAIN not in hass.data or "strain_library" not in hass.data[DOMAIN]:
-            connection.send_error(
-                msg["id"], "not_loaded", "Growspace Manager strain library not loaded"
-            )
-            return
-
-        strain_library: StrainLibrary = hass.data[DOMAIN]["strain_library"]
+        coordinator = GrowspaceCoordinator.get_any(hass)
+        strain_library: StrainLibrary = coordinator.strain_library
         count = await strain_library.update_breeder(
             original_name=msg["original_name"],
             new_name=msg["new_name"],
             logo=msg.get("logo"),
         )
         connection.send_result(msg["id"], {"updated": count})
+    except ServiceValidationError:
+        connection.send_error(
+            msg["id"], "not_loaded", "Growspace Manager strain library not loaded"
+        )
     except Exception as err:
         _LOGGER.exception("Error handling websocket_update_breeder")
         connection.send_error(msg["id"], "unknown_error", str(err))
@@ -1087,17 +1110,17 @@ async def websocket_delete_breeder(
 ) -> None:
     """Handle removing breeder association from all strains."""
     try:
-        if DOMAIN not in hass.data or "strain_library" not in hass.data[DOMAIN]:
-            connection.send_error(
-                msg["id"], "not_loaded", "Growspace Manager strain library not loaded"
-            )
-            return
+        coordinator = GrowspaceCoordinator.get_any(hass)
+        strain_library: StrainLibrary = coordinator.strain_library
 
-        strain_library: StrainLibrary = hass.data[DOMAIN]["strain_library"]
         count = await strain_library.delete_breeder(
             breeder_name=msg["breeder_name"],
         )
         connection.send_result(msg["id"], {"deleted": count})
+    except ServiceValidationError:
+        connection.send_error(
+            msg["id"], "not_loaded", "Growspace Manager strain library not loaded"
+        )
     except Exception as err:
         _LOGGER.exception("Error handling websocket_delete_breeder")
         connection.send_error(msg["id"], "unknown_error", str(err))
@@ -1113,7 +1136,8 @@ SCHEMA_WS_GET_VISION_HISTORY = websocket_api.BASE_COMMAND_MESSAGE_SCHEMA.extend(
 )
 
 WS_TYPE_UPDATE_VISION_CHECKUP_CONFIG = f"{DOMAIN}/update_vision_checkup_config"
-SCHEMA_WS_UPDATE_VISION_CHECKUP_CONFIG = websocket_api.BASE_COMMAND_MESSAGE_SCHEMA.extend(
+SCHEMA_WS_UPDATE_VISION_CHECKUP_CONFIG = (
+    websocket_api.BASE_COMMAND_MESSAGE_SCHEMA.extend(
         {
             vol.Required("type"): WS_TYPE_UPDATE_VISION_CHECKUP_CONFIG,
             vol.Required("growspace_id"): str,
@@ -1122,6 +1146,7 @@ SCHEMA_WS_UPDATE_VISION_CHECKUP_CONFIG = websocket_api.BASE_COMMAND_MESSAGE_SCHE
             vol.Optional("mid_check_hours"): vol.All(int, vol.Range(min=1)),
             vol.Optional("late_check_offset_minutes"): vol.All(int, vol.Range(min=1)),
         }
+    )
 )
 
 WS_TYPE_CAPTURE_SNAPSHOT = f"{DOMAIN}/capture_snapshot"
@@ -1484,11 +1509,10 @@ async def websocket_get_lineage_tree(
         tree = coordinator.genetics_manager.get_lineage_tree(plant_id)
 
         # If pollination tree has no parents, fall back to strain library lineage
-        if not tree.get("parents") and DOMAIN in hass.data and "strain_library" in hass.data[DOMAIN]:
+        if not tree.get("parents") and (strain_library := coordinator.strain_library):
             plant = coordinator.plants.get(plant_id)
             strain_name = plant.genetics.strain_name if plant else None
             if strain_name:
-                strain_library = hass.data[DOMAIN]["strain_library"]
                 strain_tree = strain_library.get_strain_lineage_tree(strain_name)
                 if strain_tree.get("parents"):
                     tree["parents"] = strain_tree["parents"]
@@ -1528,12 +1552,12 @@ async def websocket_get_strain_lineage_tree(
     """Handle get_strain_lineage_tree command."""
     strain_name = msg["strain_name"]
     try:
-        if DOMAIN not in hass.data or "strain_library" not in hass.data[DOMAIN]:
-            connection.send_error(msg["id"], "not_loaded", "Strain library not loaded")
-            return
-        strain_library = hass.data[DOMAIN]["strain_library"]
+        coordinator = GrowspaceCoordinator.get_any(hass)
+        strain_library = coordinator.strain_library
         tree = strain_library.get_strain_lineage_tree(strain_name)
         connection.send_result(msg["id"], tree)
+    except ServiceValidationError:
+        connection.send_error(msg["id"], "not_loaded", "Strain library not loaded")
     except Exception as e:  # noqa: BLE001
         connection.send_error(msg["id"], "unknown_error", str(e))
 
@@ -1545,12 +1569,14 @@ async def websocket_update_strain_lineage_tree(
     strain_name = msg["strain_name"]
     parents = msg["parents"]
     try:
-        if DOMAIN not in hass.data or "strain_library" not in hass.data[DOMAIN]:
-            connection.send_error(msg["id"], "not_loaded", "Strain library not loaded")
-            return
-        strain_library = hass.data[DOMAIN]["strain_library"]
-        flat_lineage = await strain_library.update_strain_lineage_tree(strain_name, parents)
+        coordinator = GrowspaceCoordinator.get_any(hass)
+        strain_library = coordinator.strain_library
+        flat_lineage = await strain_library.update_strain_lineage_tree(
+            strain_name, parents
+        )
         connection.send_result(msg["id"], {"lineage": flat_lineage})
+    except ServiceValidationError:
+        connection.send_error(msg["id"], "not_loaded", "Strain library not loaded")
     except Exception as e:  # noqa: BLE001
         connection.send_error(msg["id"], "unknown_error", str(e))
 
@@ -1572,12 +1598,12 @@ async def websocket_import_strain_lineage_tree(
     strain_name = msg["strain_name"]
     tree = msg["tree"]
     try:
-        if DOMAIN not in hass.data or "strain_library" not in hass.data[DOMAIN]:
-            connection.send_error(msg["id"], "not_loaded", "Strain library not loaded")
-            return
-        strain_library = hass.data[DOMAIN]["strain_library"]
+        coordinator = GrowspaceCoordinator.get_any(hass)
+        strain_library = coordinator.strain_library
         await strain_library.async_import_seedfinder_lineage_tree(strain_name, tree)
         connection.send_result(msg["id"], {"ok": True})
+    except ServiceValidationError:
+        connection.send_error(msg["id"], "not_loaded", "Strain library not loaded")
     except Exception as e:  # noqa: BLE001
         connection.send_error(msg["id"], "unknown_error", str(e))
 
@@ -1589,7 +1615,8 @@ async def websocket_query_external_strain(
 ) -> None:
     """Query external strain database."""
     query = msg["query"]
-    scraper: SeedfinderScraper = hass.data[DOMAIN]["seedfinder_scraper"]
+    coordinator = GrowspaceCoordinator.get_any(hass)
+    scraper = coordinator.seedfinder_scraper
 
     # Get blacklist from config entry options
     blacklist = []
@@ -1610,7 +1637,8 @@ async def websocket_get_external_strain_details(
 ) -> None:
     """Get details for an external strain."""
     url = msg["url"]
-    scraper: SeedfinderScraper = hass.data[DOMAIN]["seedfinder_scraper"]
+    coordinator = GrowspaceCoordinator.get_any(hass)
+    scraper = coordinator.seedfinder_scraper
 
     raw = await scraper.async_get_strain_details(url)
     if raw is None:
@@ -1626,27 +1654,30 @@ async def websocket_get_external_strain_details(
         hi = int(ft_match.group(2)) if ft_match.group(2) else lo
         flowering_days = round((lo + hi) / 2)
 
-    connection.send_result(msg["id"], {
-        "name": raw.get("name"),
-        "breeder": raw.get("breeder"),
-        "type": raw.get("type"),
-        "indica_percentage": (raw.get("composition") or {}).get("indica"),
-        "sativa_percentage": (raw.get("composition") or {}).get("sativa"),
-        "flowering_days": flowering_days,
-        "description": raw.get("description"),
-        "image": raw.get("image"),
-        "yield_potential": raw.get("yield_potential"),
-        "height": raw.get("height"),
-        "thc": raw.get("thc"),
-        "cbd": raw.get("cbd"),
-        "cbg": raw.get("cbg"),
-        "awards": raw.get("awards"),
-        "parents": raw.get("lineage_tree") or None,
-        "lineage_str": raw.get("lineage_str"),
-        "effects": raw.get("effects"),
-        "aroma": raw.get("aroma"),
-        "taste": raw.get("taste"),
-    })
+    connection.send_result(
+        msg["id"],
+        {
+            "name": raw.get("name"),
+            "breeder": raw.get("breeder"),
+            "type": raw.get("type"),
+            "indica_percentage": (raw.get("composition") or {}).get("indica"),
+            "sativa_percentage": (raw.get("composition") or {}).get("sativa"),
+            "flowering_days": flowering_days,
+            "description": raw.get("description"),
+            "image": raw.get("image"),
+            "yield_potential": raw.get("yield_potential"),
+            "height": raw.get("height"),
+            "thc": raw.get("thc"),
+            "cbd": raw.get("cbd"),
+            "cbg": raw.get("cbg"),
+            "awards": raw.get("awards"),
+            "parents": raw.get("lineage_tree") or None,
+            "lineage_str": raw.get("lineage_str"),
+            "effects": raw.get("effects"),
+            "aroma": raw.get("aroma"),
+            "taste": raw.get("taste"),
+        },
+    )
 
 
 @callback

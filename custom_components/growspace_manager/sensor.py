@@ -1212,7 +1212,7 @@ class StrainLibrarySensor(CoordinatorEntity[GrowspaceCoordinator], SensorEntity)
     _attr_translation_key = "strain_library"
     _attr_entity_category = EntityCategory.DIAGNOSTIC
     _attr_native_unit_of_measurement = None
-    _unrecorded_attributes = frozenset({"lineage_trees"})
+    _unrecorded_attributes = frozenset()
 
     def __init__(self, coordinator: GrowspaceCoordinator) -> None:
         """Initialize the Strain Library sensor."""
@@ -1236,7 +1236,7 @@ class StrainLibrarySensor(CoordinatorEntity[GrowspaceCoordinator], SensorEntity)
     @property
     @override  # type: ignore[misc]
     def extra_state_attributes(self) -> dict[str, Any]:
-        """Return strain analytics and lineage trees as state attributes."""
+        """Return strain analytics as state attributes."""
         analytics = self.coordinator.strain_library.get_analytics()
 
         return {
@@ -1244,7 +1244,6 @@ class StrainLibrarySensor(CoordinatorEntity[GrowspaceCoordinator], SensorEntity)
             "strain_list": analytics.get("strain_list", []),
             "last_updated": dt_util.utcnow().isoformat(),
             "note": "Full analytics available via WebSocket API: growspace_manager/get_strain_library",
-            "lineage_trees": analytics.get("lineage_trees", {}),
         }
 
     # Register common system sensors (Library, etc.)

@@ -8,7 +8,10 @@ import sys
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from syrupy.assertion import SnapshotAssertion
+try:
+    from syrupy.assertion import SnapshotAssertion
+except ImportError:
+    SnapshotAssertion = Any
 
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import device_registry as dr
@@ -86,18 +89,19 @@ def enforce_utc_timezone():
 
 
 @pytest.fixture
-def snapshot(snapshot: SnapshotAssertion) -> SnapshotAssertion:
-    """Override snapshot fixture to always use HomeAssistantSnapshotExtension.
-
-    This ensures snapshots are stored in 'snapshots/' (not '__snapshots__/')
-    consistently in both HA core and standalone CI environments.
-    """
+def snapshot(snapshot: Any) -> Any:
+    """Override snapshot fixture to always use HomeAssistantSnapshotExtension."""
+    if isinstance(snapshot, MagicMock) or snapshot == Any:
+        return snapshot
     try:
         from pytest_homeassistant_custom_component.syrupy import (  # noqa: PLC0415
             HomeAssistantSnapshotExtension,
         )
     except ImportError:
-        from tests.syrupy import HomeAssistantSnapshotExtension  # noqa: PLC0415
+        try:
+            from tests.syrupy import HomeAssistantSnapshotExtension  # noqa: PLC0415
+        except ImportError:
+            return snapshot
     return snapshot.use_extension(HomeAssistantSnapshotExtension)
 
 

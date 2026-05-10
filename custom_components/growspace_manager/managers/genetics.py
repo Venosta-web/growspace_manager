@@ -420,13 +420,10 @@ class GeneticsManager:
 
         Returns:
             A nested dict ``{name, parents}`` rooted at the given plant.
-
-        Note:
-            The data model tracks which two plants were crossed to produce seeds, but does not
-            track which live plant was grown from a specific seed batch. As a result, the
-            'receiver parent' node in the returned tree is the plant itself (not its own parent),
-            which is a known limitation. For classification purposes this is harmless because
-            ``_is_ancestor`` does not match the root node of the tree passed to it.
+            When a pollination event is found, parents are ``[receiver_leaf, donor_subtree]``
+            where the receiver is always a terminal leaf (its own strain name, no parents)
+            because the data model does not link a live plant back to the specific seed batch
+            it was grown from.
         """
         if visited_events is None:
             visited_events = set()
@@ -457,15 +454,10 @@ class GeneticsManager:
 
         visited_events.add(event.event_id)
 
-        # Receiver plant appears as its own first parent (model limitation — see docstring)
-        node["parents"].append(
-            self.get_lineage_tree(
-                event.receiver_plant_id,
-                exclude_event_id=event.event_id,
-                visited_events=visited_events,
-                depth=depth + 1,
-            )
-        )
+        # Emit receiver as a terminal leaf — the data model does not record which
+        # seed batch a live plant grew from, so recursing into the receiver's own
+        # pollination history would make the plant appear as its own ancestor.
+        node["parents"].append({"name": plant_name, "parents": []})
         node["parents"].append(
             self.get_lineage_tree(
                 event.donor_plant_id,

@@ -30,8 +30,10 @@ from custom_components.growspace_manager.websocket import (
     _merge_logbook_event,
     async_register_websocket_api,
 )
+from homeassistant.config_entries import ConfigEntryState
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ServiceValidationError
+from tests.common import MockConfigEntry
 
 WebSocketGenerator = Any
 
@@ -59,7 +61,15 @@ async def test_websocket_get_strain_library(
     hass: HomeAssistant, hass_ws_client: WebSocketGenerator, mock_strain_library
 ) -> None:
     """Test getting strain library via WebSocket."""
-    hass.data[DOMAIN] = {"strain_library": mock_strain_library}
+    # Setup mock entry and coordinator to replace legacy direct hass.data access
+    entry = MockConfigEntry(
+        domain=DOMAIN, data={}, options={}, state=ConfigEntryState.LOADED
+    )
+    entry.add_to_hass(hass)
+
+    mock_coord = MagicMock()
+    mock_coord.strain_library = mock_strain_library
+    entry.runtime_data = mock_coord
 
     async_register_websocket_api(hass)
     client = await hass_ws_client(hass)
@@ -81,9 +91,9 @@ async def test_websocket_get_strain_library_not_loaded(
     hass: HomeAssistant, hass_ws_client: WebSocketGenerator
 ) -> None:
     """Test getting strain library when not loaded."""
-    # Ensure DOMAIN not in hass.data or strain_library missing
-    if DOMAIN in hass.data:
-        del hass.data[DOMAIN]
+    # Ensure no config entries exist for DOMAIN
+    for entry in hass.config_entries.async_entries(DOMAIN):
+        await hass.config_entries.async_remove(entry.entry_id)
 
     async_register_websocket_api(hass)
     client = await hass_ws_client(hass)
@@ -812,7 +822,7 @@ async def test_websocket_get_growspace_data_validation_error(
 
         response = await client.receive_json()
         assert not response["success"]
-        assert response["error"]["code"] == "invalid_args"
+        assert response["error"]["code"] == "not_loaded"
 
 
 async def test_websocket_get_vision_history_validation_error(
@@ -828,7 +838,11 @@ async def test_websocket_get_vision_history_validation_error(
         client = await hass_ws_client(hass)
 
         await client.send_json(
-            {"id": 1, "type": "growspace_manager/get_vision_history", "growspace_id": "tent1"}
+            {
+                "id": 1,
+                "type": "growspace_manager/get_vision_history",
+                "growspace_id": "tent1",
+            }
         )
 
         response = await client.receive_json()
@@ -1250,9 +1264,13 @@ async def test_websocket_exceptions(
     mock_lib = MagicMock()
     mock_lib.get_all.side_effect = Exception("Lib Boom")
 
-    # Inject it into hass.data
-    hass.data[DOMAIN] = {}
-    with patch.dict(hass.data, {DOMAIN: {"strain_library": mock_lib}}):
+    # Inject it via a mock coordinator
+    mock_coord = MagicMock()
+    mock_coord.strain_library = mock_lib
+    with patch(
+        "custom_components.growspace_manager.websocket.GrowspaceCoordinator.get_any",
+        return_value=mock_coord,
+    ):
         await client.send_json({"id": 8, "type": WS_TYPE_GET_STRAIN_LIBRARY})
         resp = await client.receive_json()
         assert not resp["success"]

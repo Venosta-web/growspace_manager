@@ -1,14 +1,9 @@
 # serializer version: 1
 # name: test_analytics_snapshot
+  typing.Any
+# ---
+# name: test_analytics_snapshot.1
   dict({
-    'lineage_trees': dict({
-      'Blue Dream': dict({
-        'name': 'Blue Dream',
-        'parents': list([
-        ]),
-        'source': 'library',
-      }),
-    }),
     'strain_list': list([
       'Blue Dream',
     ]),

@@ -90,13 +90,14 @@ class TestGetLineageTree:
     def test_with_pollination_returns_two_parents(
         self, manager_with_pollination: GeneticsManager
     ) -> None:
-        """Plant that is a pollination receiver gets donor + receiver as parents."""
+        """Receiver appears as a terminal leaf; donor subtree is recursed."""
         tree = manager_with_pollination.get_lineage_tree("plant-receiver")
         assert tree["name"] == "OG Kush"
         assert len(tree["parents"]) == 2
-        parent_names = {p["name"] for p in tree["parents"]}
-        assert "OG Kush" in parent_names
-        assert "Durban Poison" in parent_names
+        receiver_leaf, donor_node = tree["parents"]
+        # Receiver is a terminal leaf — not recursed into itself
+        assert receiver_leaf == {"name": "OG Kush", "parents": []}
+        assert donor_node["name"] == "Durban Poison"
 
     def test_unknown_plant_uses_id_as_name(
         self, manager_empty: GeneticsManager
@@ -122,11 +123,16 @@ def _make_hass(domain: str, strain_library: object | None = None) -> MagicMock:
     return hass
 
 
-def _make_coordinator(plants: dict, genetics_tree: dict) -> MagicMock:
+def _make_coordinator(
+    plants: dict,
+    genetics_tree: dict,
+    strain_library: object | None = None,
+) -> MagicMock:
     """Return a mock coordinator with controlled plants and get_lineage_tree."""
     coordinator = MagicMock()
     coordinator.plants = plants
     coordinator.genetics_manager.get_lineage_tree.return_value = genetics_tree
+    coordinator.strain_library = strain_library
     return coordinator
 
 
@@ -148,9 +154,9 @@ async def test_fallback_uses_strain_library_when_no_pollination_parents() -> Non
     plant.genetics.strain_name = "OG Kush"
 
     pollination_tree = {"name": "OG Kush", "parents": []}
-    coordinator = _make_coordinator({"plant-1": plant}, pollination_tree)
+    coordinator = _make_coordinator({"plant-1": plant}, pollination_tree, strain_library)
 
-    hass = _make_hass(DOMAIN, strain_library)
+    hass = _make_hass(DOMAIN)
     connection = MagicMock()
     msg = {"id": 1, "plant_id": "plant-1"}
 
@@ -185,9 +191,9 @@ async def test_no_fallback_when_pollination_tree_has_parents() -> None:
             {"name": "Donor", "parents": []},
         ],
     }
-    coordinator = _make_coordinator({"plant-1": plant}, pollination_tree)
+    coordinator = _make_coordinator({"plant-1": plant}, pollination_tree, strain_library)
 
-    hass = _make_hass(DOMAIN, strain_library)
+    hass = _make_hass(DOMAIN)
     connection = MagicMock()
     msg = {"id": 2, "plant_id": "plant-1"}
 
@@ -206,16 +212,15 @@ async def test_no_fallback_when_pollination_tree_has_parents() -> None:
 
 @pytest.mark.asyncio
 async def test_fallback_skipped_when_strain_library_not_loaded() -> None:
-    """When strain library is absent from hass.data, no fallback occurs."""
+    """When coordinator.strain_library is None, no fallback occurs."""
 
     plant = MagicMock()
     plant.genetics.strain_name = "OG Kush"
 
     pollination_tree = {"name": "OG Kush", "parents": []}
-    coordinator = _make_coordinator({"plant-1": plant}, pollination_tree)
+    coordinator = _make_coordinator({"plant-1": plant}, pollination_tree, strain_library=None)
 
-    # No strain library in hass.data
-    hass = _make_hass(DOMAIN, strain_library=None)
+    hass = _make_hass(DOMAIN)
     connection = MagicMock()
     msg = {"id": 3, "plant_id": "plant-1"}
 
@@ -245,9 +250,9 @@ async def test_fallback_skipped_when_strain_library_tree_also_empty() -> None:
     plant.genetics.strain_name = "OG Kush"
 
     pollination_tree = {"name": "OG Kush", "parents": []}
-    coordinator = _make_coordinator({"plant-1": plant}, pollination_tree)
+    coordinator = _make_coordinator({"plant-1": plant}, pollination_tree, strain_library)
 
-    hass = _make_hass(DOMAIN, strain_library)
+    hass = _make_hass(DOMAIN)
     connection = MagicMock()
     msg = {"id": 4, "plant_id": "plant-1"}
 

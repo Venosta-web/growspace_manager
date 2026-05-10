@@ -174,7 +174,9 @@ class StrainLibrary:
 
         # Ensure is_stub column exists (backwards compatibility)
         try:
-            await self._db.execute("ALTER TABLE strains ADD COLUMN is_stub INTEGER DEFAULT 0")
+            await self._db.execute(
+                "ALTER TABLE strains ADD COLUMN is_stub INTEGER DEFAULT 0"
+            )
             await self._db.commit()
             _LOGGER.info("Added is_stub column to strains table")
         except aiosqlite.OperationalError:
@@ -616,6 +618,11 @@ class StrainLibrary:
             return
         strain = strain.strip()
         phenotype = phenotype.strip() if phenotype else "default"
+
+        # Treat 0% / 0% as unknown (NULL in DB)
+        if sativa_percentage == 0 and indica_percentage == 0:
+            sativa_percentage = indica_percentage = None
+
         # Hybrid percentage handling
         if strain_type and str(strain_type).lower() == "hybrid":
             if sativa_percentage is not None and indica_percentage is None:
@@ -649,7 +656,9 @@ class StrainLibrary:
             "taste": json.dumps(taste) if taste is not None else None,
             "description": strain_description,
             "awards": json.dumps(awards) if awards is not None else None,
-            "lineage_tree": json.dumps(lineage_tree) if lineage_tree is not None else None,
+            "lineage_tree": json.dumps(lineage_tree)
+            if lineage_tree is not None
+            else None,
         }
         strain_data = {k: v for k, v in strain_data.items() if v is not None}
 
@@ -705,7 +714,8 @@ class StrainLibrary:
         # Rebuild ancestry rows when lineage_tree is provided
         if lineage_tree is not None:
             await self._db.execute(
-                "DELETE FROM strain_ancestry WHERE descendant_strain_id = ?", (strain_id,)
+                "DELETE FROM strain_ancestry WHERE descendant_strain_id = ?",
+                (strain_id,),
             )
             ancestors = _collect_ancestors(lineage_tree)
             if ancestors:
@@ -901,7 +911,9 @@ class StrainLibrary:
                 return
             parents = node.get("parents") or []
             parent_names = [
-                (p.get("name") or "").strip() for p in parents if (p.get("name") or "").strip()
+                (p.get("name") or "").strip()
+                for p in parents
+                if (p.get("name") or "").strip()
             ]
             if parent_names:
                 lineage_by_node[name] = parent_names[:2]
@@ -953,7 +965,11 @@ class StrainLibrary:
         await self._db.commit()
         await self.load()
         self._lineage_cache.clear()
-        _LOGGER.info("Imported seedfinder lineage tree for '%s' (%d nodes)", root_strain_name, len(lineage_by_node))
+        _LOGGER.info(
+            "Imported seedfinder lineage tree for '%s' (%d nodes)",
+            root_strain_name,
+            len(lineage_by_node),
+        )
 
     async def async_update_strain_generation(
         self, strain_name: str, generation: str
@@ -976,6 +992,7 @@ class StrainLibrary:
         await self._db.commit()
         if strain_name in self.strains:
             self.strains[strain_name].setdefault("meta", {})["generation"] = generation
+        self._lineage_cache.clear()
         _LOGGER.debug("Set generation '%s' for strain '%s'", generation, strain_name)
 
     def get_strain_lineage_tree(
@@ -1201,7 +1218,6 @@ class StrainLibrary:
         if self._analytics_cache is not None:
             return self._analytics_cache
         analytics_data: dict[str, Any] = {}
-        lineage_trees: dict[str, Any] = {}
 
         for strain_name, strain_data in self.strains.items():
             phenotypes = strain_data.get("phenotypes", {})
@@ -1266,8 +1282,6 @@ class StrainLibrary:
                 strain_avg_veg = 0
                 strain_avg_flower = 0
 
-            # Pre-compute lineage tree for this strain
-            lineage_trees[strain_name] = self.get_strain_lineage_tree(strain_name)
 
             analytics_data[strain_name] = {
                 "meta": strain_data.get("meta", {}),
@@ -1282,7 +1296,6 @@ class StrainLibrary:
         result = {
             "strains": analytics_data,
             "strain_list": list(self.strains.keys()),
-            "lineage_trees": lineage_trees,
         }
         self._analytics_cache = result
         return result
@@ -1389,7 +1402,16 @@ class StrainLibrary:
         # Get all data
         library_data = self.get_all()
 
-        return await self.import_export_manager.export_library(library_data, output_dir)
+        # Filter out stub strains (placeholders created during lineage resolution)
+        filtered_data = {
+            name: data
+            for name, data in library_data.items()
+            if not data.get("meta", {}).get("is_stub", False)
+        }
+
+        return await self.import_export_manager.export_library(
+            filtered_data, output_dir
+        )
 
     async def import_library_from_zip(self, zip_path: str, merge: bool = True) -> int:
         """Import a library from a ZIP archive."""

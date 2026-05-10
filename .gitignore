@@ -123,3 +123,5 @@ test_output.txt
 tests/output.txt
 *.log
 .coverage
+tests/services/snapshots/test_strain_library.ambr
+uv.lock

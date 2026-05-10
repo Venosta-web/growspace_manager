@@ -22,6 +22,7 @@ from custom_components.growspace_manager.strain_library import StrainLibrary
 from homeassistant.core import HomeAssistant, ServiceCall
 from homeassistant.exceptions import ServiceValidationError
 import homeassistant.helpers.device_registry as dr
+from homeassistant.util import dt as dt_util
 
 if TYPE_CHECKING:
     from custom_components.growspace_manager.coordinator import GrowspaceCoordinator
@@ -124,6 +125,7 @@ async def async_add_growspace_note(
         ATTR_NOTES: notes,
         ATTR_IMAGES: image_paths,
         "category": CATEGORY_NOTE,
+        "timestamp": dt_util.now().isoformat(),
     }
 
     hass.bus.async_fire(EVENT_GROWSPACE_LOG_ENTRY, event_data)

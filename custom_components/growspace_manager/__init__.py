@@ -91,8 +91,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: GrowspaceConfigEntry) ->
                 ]
             )
 
-    # Retrieve global Strain Library
+    # Retrieve global Strain Library and Scraper
     strain_library_instance = hass.data[DOMAIN]["strain_library"]
+    scraper_instance = hass.data[DOMAIN]["seedfinder_scraper"]
 
     # Use builder to create coordinator with all dependencies
     builder = CoordinatorBuilder(hass, entry)
@@ -100,6 +101,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: GrowspaceConfigEntry) ->
         data=data,
         options=dict(entry.options),
         strain_library=strain_library_instance,
+        seedfinder_scraper=scraper_instance,
     )
     await coordinator.async_load()  # Load data into the coordinator
 
