@@ -12,7 +12,7 @@ jobs:
       contents: write
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6.0.2
 
       - name: Update version
         id: version_step
@@ -42,7 +42,7 @@ jobs:
 
       # 3. Creates the GitHub Pre-release and attaches the new zip file
       - name: Create Pre-release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3.0.0
         with:
           prerelease: true
           tag_name: v${{ steps.version_step.outputs.version }}-beta
@@ -51,7 +51,7 @@ jobs:
 
       # 4. Delete Older Pre-releases
       - name: Delete Older Pre-releases
-        uses: dev-drprasad/delete-older-releases@v0.3.3
+        uses: dev-drprasad/delete-older-releases@v0.3.2
         with:
           keep_latest: 5                # Number of most recent pre-releases to keep
           delete_tag_pattern: "^prerelease-" # Regex pattern to match your tags
