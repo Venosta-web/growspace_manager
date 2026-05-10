@@ -432,7 +432,11 @@ class GeneticsManager:
         plant_name = (
             plant.genetics.strain_name if plant and plant.genetics.strain_name else plant_id
         )
-        node: dict[str, Any] = {"name": plant_name, "parents": []}
+        node: dict[str, Any] = {
+            "name": plant_name,
+            "parents": [],
+            "generation": plant.genetics.generation if plant else "",
+        }
 
         if depth >= MAX_LINEAGE_DEPTH:
             _LOGGER.warning("Max lineage depth reached for plant %s", plant_id)

@@ -700,6 +700,7 @@ class PlantGenetics(BaseModel):
     phenotype_id: int | None = None
     strain_name: str = ""  # Cached for display/search
     phenotype_name: str = ""
+    generation: str = ""  # e.g. F1, F2, S1, BX1 — inherited from seed batch at sowing
 
     @property
     def key(self) -> str:

@@ -23,6 +23,19 @@ from .import_export_manager import ImportExportManager
 
 _LOGGER = logging.getLogger(__name__)
 
+# Two distinct formats are used for lineage data — they must not be conflated:
+#
+#   StoredParents  — flat list persisted in the DB `lineage_tree` column.
+#                    Each entry is an immediate parent: {name, source[, phenotype]}.
+#                    Written by update_strain_lineage_tree and add_strain.
+#
+#   LineageNode    — nested tree built lazily by get_strain_lineage_tree().
+#                    Each node is {name, source, parents: [LineageNode, ...]}.
+#                    Never stored; only lives in memory and WebSocket responses.
+type StoredParent = dict[str, str]
+type StoredParents = list[StoredParent]
+type LineageNode = dict[str, Any]
+
 
 def _collect_ancestors(
     node: dict[str, Any], depth: int = 1
@@ -610,9 +623,14 @@ class StrainLibrary:
         taste: list[str] | None = None,
         strain_description: str | None = None,
         awards: list[str] | None = None,
-        lineage_tree: dict[str, Any] | None = None,
+        lineage_tree: LineageNode | None = None,
     ) -> None:
-        """Add or update a strain/phenotype entry."""
+        """Add or update a strain/phenotype entry.
+
+        lineage_tree, when provided, must be a LineageNode (nested tree) — not a
+        StoredParents flat list.  Immediate parents are extracted and stored as
+        StoredParents in the DB; the full tree is used to rebuild strain_ancestry.
+        """
         if self._db is None:
             _LOGGER.warning("Database not connected, cannot add strain")
             return
@@ -656,7 +674,15 @@ class StrainLibrary:
             "taste": json.dumps(taste) if taste is not None else None,
             "description": strain_description,
             "awards": json.dumps(awards) if awards is not None else None,
-            "lineage_tree": json.dumps(lineage_tree)
+            "lineage_tree": json.dumps(
+                # Store only immediate parents (StoredParents flat list), not the
+                # full nested tree — get_strain_lineage_tree() builds the tree on demand.
+                [
+                    {"name": p.get("name", "").strip(), "source": p.get("source", "library")}
+                    for p in (lineage_tree.get("parents") or [])[:2]
+                    if p.get("name", "").strip()
+                ]
+            )
             if lineage_tree is not None
             else None,
         }
@@ -815,7 +841,7 @@ class StrainLibrary:
         taste: list[str] | None = None,
         strain_description: str | None = None,
         awards: list[str] | None = None,
-        lineage_tree: dict[str, Any] | None = None,
+        lineage_tree: LineageNode | None = None,
     ) -> None:
         """Update metadata for a strain/phenotype."""
         # Invalidate analytics cache
@@ -849,16 +875,46 @@ class StrainLibrary:
             lineage_tree=lineage_tree,
         )
 
+    async def _rebuild_strain_ancestry(self, strain_name: str) -> None:
+        """Rebuild strain_ancestry rows for strain_name from the in-memory lineage cache.
+
+        Resolves the full LineageNode tree via get_strain_lineage_tree() (which reads
+        StoredParents from the in-memory cache), then rewrites all ancestry rows.
+        Must be called after load() so the cache reflects the latest DB state.
+        """
+        if self._db is None:
+            return
+        cur = await self._db.execute(
+            "SELECT strain_id FROM strains WHERE strain_name = ?", (strain_name,)
+        )
+        row = await cur.fetchone()
+        if row is None:
+            return
+        strain_id = row[0]
+        full_tree = self.get_strain_lineage_tree(strain_name)
+        ancestors = _collect_ancestors(full_tree)
+        await self._db.execute(
+            "DELETE FROM strain_ancestry WHERE descendant_strain_id = ?", (strain_id,)
+        )
+        if ancestors:
+            await self._db.executemany(
+                "INSERT OR REPLACE INTO strain_ancestry"
+                " (ancestor_name, descendant_strain_id, depth, ancestor_url)"
+                " VALUES (?, ?, ?, ?)",
+                [(name, strain_id, depth, url) for name, url, depth in ancestors],
+            )
+        await self._db.commit()
+
     async def update_strain_lineage_tree(
         self,
         strain_name: str,
-        parents: list[dict[str, str]],
+        parents: StoredParents,
     ) -> str:
         """Store immediate parents for a strain and re-derive the flat lineage string.
 
         Args:
             strain_name: The strain to update.
-            parents: List of dicts with keys 'name' (str) and 'source' ('library'|'manual').
+            parents: StoredParents flat list with keys 'name' and 'source'.
                      Maximum 2 entries; extras are silently truncated.
 
         Returns:
@@ -878,6 +934,7 @@ class StrainLibrary:
         )
         await self._db.commit()
         await self.load()
+        await self._rebuild_strain_ancestry(strain_name)
         _LOGGER.info("Updated lineage tree for strain '%s'", strain_name)
         return flat_lineage
 
@@ -965,6 +1022,8 @@ class StrainLibrary:
         await self._db.commit()
         await self.load()
         self._lineage_cache.clear()
+        for name in lineage_by_node:
+            await self._rebuild_strain_ancestry(name)
         _LOGGER.info(
             "Imported seedfinder lineage tree for '%s' (%d nodes)",
             root_strain_name,
@@ -978,7 +1037,7 @@ class StrainLibrary:
 
         Args:
             strain_name: The strain to update.
-            generation: Classification tag — one of "S1", "BX", "F2", "F1".
+            generation: Classification tag — e.g. "F1", "F2", "F3", "S1", "S2", "BX1", "BX2".
         """
         if self._db is None:
             _LOGGER.warning(
@@ -1000,11 +1059,12 @@ class StrainLibrary:
         strain_name: str,
         _seen: frozenset[str] | None = None,
         _depth: int = 0,
-    ) -> dict[str, Any]:
+    ) -> LineageNode:
         """Recursively resolve the full lineage tree for a strain from the in-memory cache.
 
-        Reads from self.strains (no DB I/O). Stops recursing when a strain is already
-        in the current path (_seen) to prevent infinite loops, or when _depth >= 15.
+        Reads StoredParents from self.strains (no DB I/O) and builds a nested LineageNode.
+        Stops recursing when a strain is already in the current path (_seen) to prevent
+        infinite loops, or when _depth >= 15.
 
         Args:
             strain_name: Strain to resolve.
@@ -1012,14 +1072,20 @@ class StrainLibrary:
             _depth: Current recursion depth (hard cap at 15).
 
         Returns:
-            A nested dict: {name, source, parents: [...]}
+            LineageNode: {name, source, parents: [...LineageNode]}
         """
         if _seen is None:
             if strain_name in self._lineage_cache:
                 return self._lineage_cache[strain_name]
             _seen = frozenset()
 
-        node: dict[str, Any] = {"name": strain_name, "source": "library", "parents": []}
+        strain_meta = self.strains.get(strain_name, {}).get("meta", {})
+        node: dict[str, Any] = {
+            "name": strain_name,
+            "source": "library",
+            "parents": [],
+            "generation": strain_meta.get("generation", ""),
+        }
 
         if _depth >= 15 or strain_name in _seen:
             return node

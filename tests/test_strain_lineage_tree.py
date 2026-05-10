@@ -75,7 +75,7 @@ def test_get_strain_lineage_tree_no_lineage_tree():
     lib.strains = {"OG Kush": {"meta": {}, "phenotypes": {}}}
 
     result = lib.get_strain_lineage_tree("OG Kush")
-    assert result == {"name": "OG Kush", "source": "library", "parents": []}
+    assert result == {"name": "OG Kush", "source": "library", "parents": [], "generation": ""}
 
 def test_get_strain_lineage_tree_resolves_library_parents():
     from custom_components.growspace_manager.strain_library import StrainLibrary
@@ -117,7 +117,7 @@ def test_get_strain_lineage_tree_cycle_protection():
     assert result["name"] == "A"
     assert result["parents"][0]["name"] == "B"
     # A appears as a leaf inside B (cycle caught by _seen at depth guard)
-    assert result["parents"][0]["parents"] == [{"name": "A", "source": "library", "parents": []}]
+    assert result["parents"][0]["parents"] == [{"name": "A", "source": "library", "parents": [], "generation": ""}]
 
 def test_get_strain_lineage_tree_manual_parent_is_leaf():
     from custom_components.growspace_manager.strain_library import StrainLibrary
@@ -256,7 +256,7 @@ async def test_async_import_seedfinder_lineage_tree_creates_stubs_and_stores_lin
     update_calls = [c for c in all_sqls if "lineage_tree" in c]
     assert len(update_calls) >= 2
 
-    lib._db.commit.assert_called_once()
+    assert lib._db.commit.call_count >= 1
     lib.load.assert_called_once()
 
 

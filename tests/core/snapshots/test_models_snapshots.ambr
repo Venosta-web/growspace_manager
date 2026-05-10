@@ -1,5 +1,8 @@
 # serializer version: 1
 # name: test_diagnostics_snapshot
+  typing.Any
+# ---
+# name: test_diagnostics_snapshot.1
   dict({
     'coordinator_data': dict({
       'growspaces': dict({
@@ -33,6 +36,9 @@
   })
 # ---
 # name: test_environment_config_serialization_snapshot
+  typing.Any
+# ---
+# name: test_environment_config_serialization_snapshot.1
   dict({
     'bayesian_options': dict({
     }),
@@ -112,6 +118,9 @@
   })
 # ---
 # name: test_growspace_serialization_snapshot
+  typing.Any
+# ---
+# name: test_growspace_serialization_snapshot.1
   dict({
     'created_at': '2026-01-12T12:00:00+00:00',
     'dehumidifier_config': dict({
@@ -254,6 +263,9 @@
   })
 # ---
 # name: test_plant_serialization_snapshot
+  typing.Any
+# ---
+# name: test_plant_serialization_snapshot.1
   dict({
     'clone_start': None,
     'col': 2,
@@ -263,6 +275,7 @@
     'dry_start': None,
     'flower_start': None,
     'genetics': dict({
+      'generation': '',
       'phenotype_id': None,
       'phenotype_name': '',
       'strain_id': None,

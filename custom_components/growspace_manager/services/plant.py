@@ -219,6 +219,9 @@ async def handle_add_plant(
                 CANONICAL_ID_MOTHER,
             )
 
+        seed_batch_id = call.data.get(ATTR_SEED_BATCH_ID)
+        batch = coordinator.genetics_manager.seed_batches.get(seed_batch_id) if seed_batch_id else None
+
         # Call coordinator directly, catching validation errors
         try:
             plant_id = await coordinator.plant_manager.add_plant(
@@ -227,7 +230,8 @@ async def handle_add_plant(
                 row=row,
                 col=col,
                 phenotype=call.data.get(ATTR_PHENOTYPE, ""),
-                seed_batch_id=call.data.get(ATTR_SEED_BATCH_ID),
+                seed_batch_id=seed_batch_id,
+                generation=batch.generation if batch else "",
                 **parsed_dates,  # type: ignore[arg-type]
             )
         except GrowspaceError as err:
@@ -280,6 +284,8 @@ async def handle_add_plants(
         start_number = call.data.get(ATTR_START_NUMBER, 1)
         base_phenotype = call.data.get(ATTR_PHENOTYPE)
         seed_batch_id = call.data.get(ATTR_SEED_BATCH_ID)
+        batch = coordinator.genetics_manager.seed_batches.get(seed_batch_id) if seed_batch_id else None
+        batch_generation = batch.generation if batch else ""
 
         # Parse and handle optional dates
         add_date_fields = [f for f in DATE_FIELDS if f != "transition_date"]
@@ -325,6 +331,7 @@ async def handle_add_plants(
                     col=free_col,
                     phenotype=phenotype,
                     seed_batch_id=seed_batch_id,
+                    generation=batch_generation,
                     **parsed_dates,  # type: ignore[arg-type]
                 )
                 plants_added_count += 1

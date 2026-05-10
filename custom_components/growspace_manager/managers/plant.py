@@ -100,6 +100,7 @@ class PlantManager:
         plant_type: str = "normal",
         device_id: str | None = None,
         seed_batch_id: str | None = None,
+        generation: str = "",
         **kwargs: Any,
     ) -> Plant:
         """Add a new plant to the system."""
@@ -144,6 +145,7 @@ class PlantManager:
             genetics = PlantGenetics(
                 strain_name=strain,
                 phenotype_name=phenotype or "",
+                generation=generation,
             )
 
             plant = Plant(
