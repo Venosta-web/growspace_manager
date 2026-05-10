@@ -686,7 +686,8 @@ class StrainLibrary:
                 taste=COALESCE(excluded.taste, taste),
                 description=COALESCE(excluded.description, description),
                 awards=COALESCE(excluded.awards, awards),
-                lineage_tree=COALESCE(excluded.lineage_tree, lineage_tree)
+                lineage_tree=COALESCE(excluded.lineage_tree, lineage_tree),
+                is_stub=0
             WHERE strain_name = excluded.strain_name
         """  # noqa: S608
         await self._db.execute(query, (strain, *tuple(strain_data.values())))
@@ -936,6 +937,15 @@ class StrainLibrary:
             await self._db.execute(
                 "UPDATE strains SET lineage_tree = ?, lineage = ? WHERE strain_name = ?",
                 (json.dumps(library_parents), flat_lineage, name),
+            )
+
+        # Mark all ancestor nodes (not the root strain itself) as stubs
+        for ancestor_name in all_names:
+            if ancestor_name == root_strain_name:
+                continue
+            await self._db.execute(
+                "UPDATE strains SET is_stub = 1 WHERE strain_name = ? AND breeder IS NULL",
+                (ancestor_name,),
             )
 
         await self._db.commit()
