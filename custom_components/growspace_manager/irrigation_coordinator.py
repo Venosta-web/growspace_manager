@@ -14,7 +14,7 @@ from homeassistant.const import EVENT_STATE_CHANGED
 from homeassistant.core import Event, HomeAssistant, callback
 from homeassistant.helpers.event import async_track_time_change
 from homeassistant.exceptions import ServiceValidationError
-from homeassistant.util.dt import now as dt_now, utcnow
+from homeassistant.util.dt import utcnow
 
 if TYPE_CHECKING:
     from .coordinator import GrowspaceCoordinator
@@ -497,7 +497,7 @@ class IrrigationCoordinator(BaseIrrigationCoordinator):
         """Run the on-off cycle for a pump and send notifications."""
         # Track active event for frontend animation
         self._active_events[event_type] = {
-            "start": dt_now().isoformat(),
+            "start": utcnow().isoformat(),
             "duration": duration,
         }
 

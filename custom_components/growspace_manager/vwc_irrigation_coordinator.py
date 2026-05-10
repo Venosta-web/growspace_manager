@@ -284,7 +284,7 @@ class VWCIrrigationCoordinator(BaseIrrigationCoordinator):
         """Execute the pump cycle."""
         # Track active event for frontend animation
         self._active_events["irrigation"] = {
-            "start": now().isoformat(),
+            "start": utcnow().isoformat(),
             "duration": duration,
         }
 
