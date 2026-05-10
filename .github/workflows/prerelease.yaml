@@ -47,7 +47,9 @@ jobs:
           prerelease: true
           tag_name: v${{ steps.version_step.outputs.version }}-beta
           name: Pre-release-${{ github.ref_name }}-${{ github.sha }}
+          generate_release_notes: true
           files: growspace_manager.zip
+          
 
       # 4. Delete Older Pre-releases
       - name: Delete Older Pre-releases

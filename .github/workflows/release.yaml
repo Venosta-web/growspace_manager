@@ -45,6 +45,7 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/')
         with:
           tag_name: ${{ github.ref_name }}
+          generate_release_notes: true
           files: |
             growspace_manager.zip
           fail_on_unmatched_files: true
