@@ -100,6 +100,10 @@ class DehumidifierCoordinator:
         self._last_turn_on_time: float = 0.0
         self._last_turn_off_time: float = 0.0
 
+        # Light-sensor fallback state
+        self._last_known_is_day: bool | None = None
+        self._sensors_unavailable_since: float | None = None
+
         # Load configuration
         self.growspace = self.main_coordinator.growspaces.get(growspace_id)
         if not self.growspace:
@@ -424,31 +428,51 @@ class DehumidifierCoordinator:
         except ValueError:
             return None
 
+    _SENSOR_UNAVAILABLE_WARN_SECONDS = 300
+
     def _determine_is_day(self) -> bool:
         """Determine Day/Night state (OR logic)."""
-        is_day = True  # Default to day if no sensor
-        if self.light_sensors:
-            any_valid = False
-            any_on = False
-            for sensor in self.light_sensors:
-                light_state = self.hass.states.get(sensor)
-                if light_state and light_state.state not in (
-                    STATE_UNKNOWN,
-                    STATE_UNAVAILABLE,
-                ):
-                    any_valid = True
-                    try:
-                        light_val = float(light_state.state)
-                        if light_val > 0:
-                            any_on = True
-                    except ValueError:
-                        if light_state.state == STATE_ON:
-                            any_on = True
+        if not self.light_sensors:
+            return True
 
-            # If we found at least one valid sensor, use the result
-            if any_valid:
-                is_day = any_on
-        return is_day
+        any_valid = False
+        any_on = False
+        for sensor in self.light_sensors:
+            light_state = self.hass.states.get(sensor)
+            if light_state and light_state.state not in (
+                STATE_UNKNOWN,
+                STATE_UNAVAILABLE,
+            ):
+                any_valid = True
+                try:
+                    light_val = float(light_state.state)
+                    if light_val > 0:
+                        any_on = True
+                except ValueError:
+                    if light_state.state == STATE_ON:
+                        any_on = True
+
+        if any_valid:
+            self._last_known_is_day = any_on
+            self._sensors_unavailable_since = None
+            return any_on
+
+        # All sensors unavailable — use cached state
+        now = time.monotonic()
+        if self._sensors_unavailable_since is None:
+            self._sensors_unavailable_since = now
+        elif now - self._sensors_unavailable_since >= self._SENSOR_UNAVAILABLE_WARN_SECONDS:
+            _LOGGER.warning(
+                "All light sensors for growspace %s have been unavailable for over %d seconds; "
+                "using last known day/night state",
+                self.growspace_id,
+                int(now - self._sensors_unavailable_since),
+            )
+
+        if self._last_known_is_day is not None:
+            return self._last_known_is_day
+
+        return True  # No prior observation — assume daytime
 
     def _determine_is_device_on(self) -> bool:
         """Determine if any controlled device is on."""

@@ -661,6 +661,105 @@ async def test_logbook_event_not_fired_when_no_action(coordinator, mock_hass) ->
     coordinator.main_coordinator.add_event.assert_not_called()
 
 
+async def test_determine_is_day_all_sensors_unavailable_uses_cached_state(
+    mock_hass: MagicMock,
+    mock_main_coordinator: MagicMock,
+    mock_growspace: MagicMock,
+    mock_track_state_change_event: MagicMock,
+) -> None:
+    """Test that all-unavailable sensors fall back to last known state, not True."""
+    mock_main_coordinator.growspaces = {"gs1": mock_growspace}
+    coord = DehumidifierCoordinator(
+        mock_hass, mock_track_state_change_event, "gs1", mock_main_coordinator
+    )
+    await coord.async_setup()
+
+    # Prime the cache with night state (sensor reports 0 lux)
+    mock_hass.states.get.side_effect = lambda entity_id: MagicMock(state="0")
+    assert coord._determine_is_day() is False
+    assert coord._last_known_is_day is False
+
+    # Now all sensors become unavailable
+    mock_hass.states.get.side_effect = lambda entity_id: MagicMock(
+        state=STATE_UNAVAILABLE
+    )
+    # Should return cached False, not True
+    assert coord._determine_is_day() is False
+    assert coord._sensors_unavailable_since is not None
+
+
+async def test_determine_is_day_all_sensors_unavailable_no_cache_defaults_true(
+    mock_hass: MagicMock,
+    mock_main_coordinator: MagicMock,
+    mock_growspace: MagicMock,
+    mock_track_state_change_event: MagicMock,
+) -> None:
+    """Test that all-unavailable sensors with no cache default to True."""
+    mock_main_coordinator.growspaces = {"gs1": mock_growspace}
+    coord = DehumidifierCoordinator(
+        mock_hass, mock_track_state_change_event, "gs1", mock_main_coordinator
+    )
+    await coord.async_setup()
+
+    mock_hass.states.get.side_effect = lambda entity_id: MagicMock(
+        state=STATE_UNAVAILABLE
+    )
+    # No prior cache — should still default to True (safe fallback)
+    assert coord._determine_is_day() is True
+    assert coord._sensors_unavailable_since is not None
+
+
+async def test_determine_is_day_valid_read_clears_unavailability_timer(
+    mock_hass: MagicMock,
+    mock_main_coordinator: MagicMock,
+    mock_growspace: MagicMock,
+    mock_track_state_change_event: MagicMock,
+) -> None:
+    """Test that a valid sensor read clears the unavailability timer and updates cache."""
+    mock_main_coordinator.growspaces = {"gs1": mock_growspace}
+    coord = DehumidifierCoordinator(
+        mock_hass, mock_track_state_change_event, "gs1", mock_main_coordinator
+    )
+    await coord.async_setup()
+
+    # Simulate prior unavailability
+    coord._sensors_unavailable_since = time.monotonic() - 100
+
+    mock_hass.states.get.side_effect = lambda entity_id: MagicMock(state="500")
+    result = coord._determine_is_day()
+
+    assert result is True
+    assert coord._last_known_is_day is True
+    assert coord._sensors_unavailable_since is None
+
+
+async def test_determine_is_day_prolonged_unavailability_logs_warning(
+    mock_hass: MagicMock,
+    mock_main_coordinator: MagicMock,
+    mock_growspace: MagicMock,
+    mock_track_state_change_event: MagicMock,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Test that a warning is logged after sensors are unavailable for over 5 minutes."""
+    mock_main_coordinator.growspaces = {"gs1": mock_growspace}
+    coord = DehumidifierCoordinator(
+        mock_hass, mock_track_state_change_event, "gs1", mock_main_coordinator
+    )
+    await coord.async_setup()
+
+    coord._last_known_is_day = True
+    coord._sensors_unavailable_since = time.monotonic() - 400  # > 300 s
+
+    mock_hass.states.get.side_effect = lambda entity_id: MagicMock(
+        state=STATE_UNAVAILABLE
+    )
+
+    with caplog.at_level(logging.WARNING):
+        coord._determine_is_day()
+
+    assert any("unavailable" in r.message.lower() for r in caplog.records)
+
+
 async def test_determine_is_device_on_exhaust_fans(coordinator, mock_hass) -> None:
     """Test _determine_is_device_on checks exhaust fans."""
     coordinator.dehumidifier_entities = []
