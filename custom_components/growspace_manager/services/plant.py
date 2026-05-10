@@ -157,7 +157,13 @@ def _resolve_plant_id(hass: HomeAssistant, plant_id: str) -> str:
             )
         else:
             _LOGGER.warning("Entity Registry not available, cannot resolve entity ID")
-    except (AttributeError, KeyError, ValueError, ServiceValidationError, GrowspaceError) as e:
+    except (
+        AttributeError,
+        KeyError,
+        ValueError,
+        ServiceValidationError,
+        GrowspaceError,
+    ) as e:
         _LOGGER.warning("Error resolving entity ID '%s': %s", plant_id, e)
 
     return plant_id
@@ -176,7 +182,13 @@ async def _ensure_plant_loaded(
     )
     try:
         await coordinator.async_load()
-    except (AttributeError, KeyError, ValueError, ServiceValidationError, GrowspaceError) as load_err:
+    except (
+        AttributeError,
+        KeyError,
+        ValueError,
+        ServiceValidationError,
+        GrowspaceError,
+    ) as load_err:
         _LOGGER.error("Error reloading coordinator data: %s", load_err)
 
     if plant_id not in coordinator.plants:
@@ -220,7 +232,11 @@ async def handle_add_plant(
             )
 
         seed_batch_id = call.data.get(ATTR_SEED_BATCH_ID)
-        batch = coordinator.genetics_manager.seed_batches.get(seed_batch_id) if seed_batch_id else None
+        batch = (
+            coordinator.genetics_manager.seed_batches.get(seed_batch_id)
+            if seed_batch_id
+            else None
+        )
 
         # Call coordinator directly, catching validation errors
         try:
@@ -245,7 +261,14 @@ async def handle_add_plant(
             col,
         )
 
-    except (AttributeError, KeyError, ValueError, ServiceValidationError, GrowspaceError, Exception) as err:
+    except (
+        AttributeError,
+        KeyError,
+        ValueError,
+        ServiceValidationError,
+        GrowspaceError,
+        Exception,
+    ) as err:
         _LOGGER.exception("Failed to add plant")
         raise ServiceValidationError(f"Failed to add plant: {err}") from err
 
@@ -282,7 +305,11 @@ async def handle_add_plants(
         start_number = call.data.get(ATTR_START_NUMBER, 1)
         base_phenotype = call.data.get(ATTR_PHENOTYPE)
         seed_batch_id = call.data.get(ATTR_SEED_BATCH_ID)
-        batch = coordinator.genetics_manager.seed_batches.get(seed_batch_id) if seed_batch_id else None
+        batch = (
+            coordinator.genetics_manager.seed_batches.get(seed_batch_id)
+            if seed_batch_id
+            else None
+        )
         batch_generation = batch.generation if batch else ""
 
         # Parse and handle optional dates
@@ -344,7 +371,14 @@ async def handle_add_plants(
             growspace_id,
         )
 
-    except (AttributeError, KeyError, ValueError, ServiceValidationError, GrowspaceError, Exception) as err:
+    except (
+        AttributeError,
+        KeyError,
+        ValueError,
+        ServiceValidationError,
+        GrowspaceError,
+        Exception,
+    ) as err:
         _LOGGER.exception("Unexpected error during batch add plants")
         raise ServiceValidationError(f"Failed to batch add plants: {err}") from err
 
@@ -368,11 +402,12 @@ async def handle_take_clone(
     num_clones = call.data.get(ATTR_NUM_CLONES, 1)
     try:
         num_clones = int(num_clones)
-        if num_clones <= 0:
-            num_clones = 1
     except (TypeError, ValueError):
-        num_clones = 1
-        _LOGGER.warning("Invalid num_clones provided, defaulting to 1")
+        raise ServiceValidationError(
+            f"num_clones must be an integer, got: {num_clones!r}"
+        )
+    if num_clones <= 0:
+        raise ServiceValidationError(f"num_clones must be positive, got: {num_clones}")
 
     _LOGGER.debug(
         "Handling take_clone for %s, requesting %d clones to growspace %s",
@@ -441,7 +476,13 @@ async def handle_move_clone(
             plant_id,
             target_growspace_id,
         )
-    except (AttributeError, KeyError, ValueError, ServiceValidationError, GrowspaceError) as e:
+    except (
+        AttributeError,
+        KeyError,
+        ValueError,
+        ServiceValidationError,
+        GrowspaceError,
+    ) as e:
         _LOGGER.exception("Failed to promote clone %s", plant_id)
         create_notification(
             hass,
@@ -509,7 +550,13 @@ async def handle_update_plant(
         await coordinator.plant_manager.update_plant(plant_id, **update_data)
         _LOGGER.info("Updated plant %s with data: %s", plant_id, update_data)
 
-    except (AttributeError, KeyError, ValueError, ServiceValidationError, GrowspaceError) as err:
+    except (
+        AttributeError,
+        KeyError,
+        ValueError,
+        ServiceValidationError,
+        GrowspaceError,
+    ) as err:
         _LOGGER.exception("Failed to update plant")
         if isinstance(err, ServiceValidationError):
             raise
@@ -538,11 +585,19 @@ async def handle_remove_plant(
             plant_info.growspace_id,
         )
 
-    except (AttributeError, KeyError, ValueError, ServiceValidationError, GrowspaceError) as err:
+    except (
+        AttributeError,
+        KeyError,
+        ValueError,
+        ServiceValidationError,
+        GrowspaceError,
+    ) as err:
         _LOGGER.exception("Failed to remove plant %s", plant_id)
         if isinstance(err, ServiceValidationError):
             raise
-        raise ServiceValidationError(f"Failed to remove plant {plant_id}: {err}") from err
+        raise ServiceValidationError(
+            f"Failed to remove plant {plant_id}: {err}"
+        ) from err
 
 
 async def handle_switch_plants(
@@ -567,11 +622,19 @@ async def handle_switch_plants(
         await coordinator.plant_manager.switch_plants(plant_id_1, plant_id_2)
         _LOGGER.info("Plants %s and %s switched successfully", plant_id_1, plant_id_2)
 
-    except (AttributeError, KeyError, ValueError, ServiceValidationError, GrowspaceError) as err:
+    except (
+        AttributeError,
+        KeyError,
+        ValueError,
+        ServiceValidationError,
+        GrowspaceError,
+    ) as err:
         _LOGGER.exception("Failed to switch plants %s and %s", plant_id_1, plant_id_2)
         if isinstance(err, ServiceValidationError):
             raise
-        raise ServiceValidationError(f"Failed to switch plants {plant_id_1} and {plant_id_2}: {err}") from err
+        raise ServiceValidationError(
+            f"Failed to switch plants {plant_id_1} and {plant_id_2}: {err}"
+        ) from err
 
 
 async def handle_move_plant(
@@ -650,7 +713,13 @@ async def handle_move_plant(
                 plant.growspace_id,
             )
 
-    except (AttributeError, KeyError, ValueError, ServiceValidationError, GrowspaceError) as err:
+    except (
+        AttributeError,
+        KeyError,
+        ValueError,
+        ServiceValidationError,
+        GrowspaceError,
+    ) as err:
         _LOGGER.exception("Failed to move plant %s", plant_id)
         if isinstance(err, ServiceValidationError):
             raise
@@ -690,11 +759,19 @@ async def handle_transition_plant_stage(
         )
         _LOGGER.info("Plant %s transitioned to %s stage", plant_id, new_stage)
 
-    except (AttributeError, KeyError, ValueError, ServiceValidationError, GrowspaceError) as err:
+    except (
+        AttributeError,
+        KeyError,
+        ValueError,
+        ServiceValidationError,
+        GrowspaceError,
+    ) as err:
         _LOGGER.exception("Failed to transition plant stage for %s", plant_id)
         if isinstance(err, ServiceValidationError):
             raise
-        raise ServiceValidationError(f"Failed to transition plant stage for {plant_id}: {err}") from err
+        raise ServiceValidationError(
+            f"Failed to transition plant stage for {plant_id}: {err}"
+        ) from err
 
 
 async def handle_harvest_plant(
@@ -759,7 +836,13 @@ async def handle_harvest_plant(
             "harvest_date": transition_date.isoformat() if transition_date else None,
         }
 
-    except (AttributeError, KeyError, ValueError, ServiceValidationError, GrowspaceError) as err:
+    except (
+        AttributeError,
+        KeyError,
+        ValueError,
+        ServiceValidationError,
+        GrowspaceError,
+    ) as err:
         _LOGGER.exception("Failed to harvest plant %s", plant_id)
         create_notification(
             hass,
@@ -768,7 +851,9 @@ async def handle_harvest_plant(
         )
         if isinstance(err, ServiceValidationError):
             raise
-        raise ServiceValidationError(f"Failed to harvest plant {plant_id}: {err}") from err
+        raise ServiceValidationError(
+            f"Failed to harvest plant {plant_id}: {err}"
+        ) from err
 
 
 async def async_add_timeline_note(
@@ -838,6 +923,7 @@ async def async_add_timeline_note(
 
     # 2. Process images
     image_paths = []
+    failed_images = 0
     if images_base64 and strain_library.image_manager:
         for img_b64 in images_base64:
             try:
@@ -849,8 +935,23 @@ async def async_add_timeline_note(
                 )
                 # Convert to relative path: timeline/filename.webp
                 image_paths.append(f"timeline/{Path(abs_path).name}")
-            except (AttributeError, KeyError, ValueError, ServiceValidationError, GrowspaceError, Exception) as e:
+            except (
+                AttributeError,
+                KeyError,
+                ValueError,
+                ServiceValidationError,
+                GrowspaceError,
+                Exception,
+            ) as e:
+                failed_images += 1
                 _LOGGER.error("Failed to save timeline image: %s", e)
+        if failed_images:
+            _LOGGER.warning(
+                "%d of %d images failed to save for plant %s timeline entry",
+                failed_images,
+                len(images_base64),
+                plant_id,
+            )
 
     # 3. Fire event for persistence
     event_data = {
