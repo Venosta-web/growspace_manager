@@ -686,7 +686,7 @@ ADD_TIMELINE_NOTE_SCHEMA = vol.Schema(
     {
         vol.Required(ATTR_PLANT_ID): vol.Any(str, cv.ensure_list),
         vol.Required(ATTR_NOTES): str,
-        vol.Optional(ATTR_TRANSITION_DATE): cv.string,
+        vol.Optional(ATTR_TRANSITION_DATE): valid_date_or_none,
         vol.Optional(ATTR_IMAGES): cv.ensure_list,
         vol.Optional(ATTR_TAGS): cv.ensure_list,
         vol.Optional(ATTR_PH): vol.Coerce(float),

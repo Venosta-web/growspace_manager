@@ -49,7 +49,6 @@ from custom_components.growspace_manager.const import (
     EVENT_GROWSPACE_LOG_ENTRY,
 )
 from custom_components.growspace_manager.exceptions import GrowspaceError
-from custom_components.growspace_manager.growspace_validator import GrowspaceValidator
 from custom_components.growspace_manager.strain_library import StrainLibrary
 from custom_components.growspace_manager.utils import parse_date_field
 from homeassistant.components.persistent_notification import (
@@ -499,11 +498,9 @@ async def handle_update_plant(
     call: ServiceCall,
 ) -> None:
     """Handle update plant service call."""
-    validator = GrowspaceValidator(coordinator)
-
     try:
         plant_id = call.data[ATTR_PLANT_ID]
-        validator.validate_plant_exists(plant_id)
+        coordinator.validator.validate_plant_exists(plant_id)
 
         _LOGGER.debug("UPDATE_PLANT: Incoming call.data: %s", call.data)
 

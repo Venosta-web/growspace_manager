@@ -502,8 +502,8 @@ SCHEMA_WS_UPDATE_NUTRIENT_STOCK = websocket_api.BASE_COMMAND_MESSAGE_SCHEMA.exte
         vol.Required("type"): WS_TYPE_UPDATE_NUTRIENT_STOCK,
         vol.Required("nutrient_id"): str,
         vol.Required("name"): str,
-        vol.Required("current_ml"): vol.Any(float, int),
-        vol.Required("initial_ml"): vol.Any(float, int),
+        vol.Required("current_ml"): vol.All(vol.Any(float, int), vol.Range(min=0)),
+        vol.Required("initial_ml"): vol.All(vol.Any(float, int), vol.Range(min=1)),
     }
 )
 
@@ -545,11 +545,20 @@ def websocket_update_nutrient_stock(
     try:
         coordinator: GrowspaceCoordinator = GrowspaceCoordinator.get_any(hass)
         if coordinator.nutrient_inventory_service:
+            current_ml = float(msg["current_ml"])
+            initial_ml = float(msg["initial_ml"])
+            if current_ml > initial_ml:
+                connection.send_error(
+                    msg["id"],
+                    "invalid_input",
+                    "current_ml cannot exceed initial_ml",
+                )
+                return
             coordinator.nutrient_inventory_service.update_stock(
                 nutrient_id=msg["nutrient_id"],
                 name=msg["name"],
-                current_ml=float(msg["current_ml"]),
-                initial_ml=float(msg["initial_ml"]),
+                current_ml=current_ml,
+                initial_ml=initial_ml,
             )
             # Persist changes
             coordinator.config_entry.async_create_background_task(
