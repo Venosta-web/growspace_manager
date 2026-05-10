@@ -100,3 +100,39 @@ async def test_add_strain_clears_stub_flag():
     )
     assert upsert_sql is not None, "Expected INSERT OR REPLACE INTO strains"
     assert "is_stub" in upsert_sql, "ON CONFLICT clause must set is_stub = 0"
+
+
+@pytest.mark.asyncio
+async def test_load_populates_is_stub_from_db():
+    """load() must read is_stub from the DB row and store it as a bool in meta."""
+    import aiosqlite
+    from custom_components.growspace_manager.strain_library import StrainLibrary, STRAIN_LIBRARY_SCHEMA
+
+    hass = MagicMock()
+    hass.config.path.return_value = "/tmp/test_load_is_stub.db"
+    lib = StrainLibrary(hass)
+
+    async with aiosqlite.connect(":memory:") as db:
+        db.row_factory = aiosqlite.Row
+        await db.executescript(STRAIN_LIBRARY_SCHEMA)
+        await db.commit()
+
+        # generation column is added via ALTER TABLE in async_setup, not in the schema constant
+        await db.execute("ALTER TABLE strains ADD COLUMN generation TEXT")
+        await db.commit()
+
+        # Insert one stub (no breeder) and one real entry
+        await db.execute("INSERT INTO strains (strain_name, is_stub) VALUES (?, ?)", ("Haze", 1))
+        await db.execute("INSERT INTO strains (strain_name, breeder, is_stub) VALUES (?, ?, ?)", ("OG Kush", "DJ Short", 0))
+        await db.execute("INSERT INTO phenotypes (strain_id, phenotype_name) SELECT strain_id, 'default' FROM strains WHERE strain_name = 'Haze'")
+        await db.execute("INSERT INTO phenotypes (strain_id, phenotype_name) SELECT strain_id, 'default' FROM strains WHERE strain_name = 'OG Kush'")
+        await db.commit()
+
+        lib._db = db
+        await lib.load()
+
+    assert "Haze" in lib.strains
+    assert lib.strains["Haze"]["meta"]["is_stub"] is True
+
+    assert "OG Kush" in lib.strains
+    assert lib.strains["OG Kush"]["meta"]["is_stub"] is False

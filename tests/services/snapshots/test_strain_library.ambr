@@ -28,6 +28,7 @@
           'effects': list([
           ]),
           'indica_percentage': 40,
+          'is_stub': False,
           'sativa_percentage': 60,
           'taste': list([
           ]),

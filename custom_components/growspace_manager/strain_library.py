@@ -274,6 +274,7 @@ class StrainLibrary:
                 s.sativa_percentage, s.indica_percentage,
                 s.yield_potential, s.height, s.thc, s.awards,
                 s.cbd, s.cbg, s.effects, s.aroma, s.taste, s.description as strain_description,
+                s.is_stub,
                 p.phenotype_id, p.phenotype_name, p.description, p.image_path,
                 p.image_crop_meta, p.flower_days_min, p.flower_days_max
             FROM strains s
@@ -314,6 +315,7 @@ class StrainLibrary:
 
                     # Filter out None values to avoid nulls in JSON (aligns with Zod's .optional())
                     meta = {k: v for k, v in meta.items() if v is not None}
+                    meta["is_stub"] = bool(row["is_stub"])
 
                     # Parse JSON fields
                     for field in ["awards", "effects", "aroma", "taste"]:
