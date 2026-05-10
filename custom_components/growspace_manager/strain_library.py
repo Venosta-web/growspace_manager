@@ -34,7 +34,21 @@ CREATE TABLE IF NOT EXISTS strains (
     lineage TEXT,
     sex TEXT,
     sativa_percentage INTEGER,
-    indica_percentage INTEGER
+    indica_percentage INTEGER,
+    yield_potential TEXT,
+    height TEXT,
+    thc REAL,
+    awards TEXT,
+    lineage_tree TEXT,
+    cbd REAL,
+    cbg REAL,
+    effects TEXT,
+    aroma TEXT,
+    taste TEXT,
+    description TEXT,
+    is_indoor INTEGER DEFAULT 1,
+    is_outdoor INTEGER DEFAULT 1,
+    is_greenhouse INTEGER DEFAULT 1
 );
 CREATE TABLE IF NOT EXISTS phenotypes (
     phenotype_id INTEGER PRIMARY KEY,
@@ -138,24 +152,28 @@ class StrainLibrary:
                 # Column already exists
                 pass
 
-        # Ensure yield/lab columns exist in harvests table (backwards compatibility)
-        _harvest_new_cols: list[tuple[str, str]] = [
-            ("wet_weight", "REAL"),
-            ("dry_weight", "REAL"),
-            ("trim_weight", "REAL"),
-            ("thc_percentage", "REAL"),
-            ("cbd_percentage", "REAL"),
-            ("terpene_profile", "TEXT"),
+        # Ensure new Seedfinder columns exist
+        _strain_new_cols: list[tuple[str, str]] = [
+            ("yield_potential", "TEXT"),
+            ("height", "TEXT"),
+            ("thc", "REAL"),
+            ("awards", "TEXT"),
+            ("lineage_tree", "TEXT"),
+            ("cbd", "REAL"),
+            ("cbg", "REAL"),
+            ("effects", "TEXT"),
+            ("aroma", "TEXT"),
+            ("taste", "TEXT"),
+            ("description", "TEXT"),
         ]
-        for col_name, col_type in _harvest_new_cols:
+        for col_name, col_type in _strain_new_cols:
             try:
                 await self._db.execute(
-                    f"ALTER TABLE harvests ADD COLUMN {col_name} {col_type}"
+                    f"ALTER TABLE strains ADD COLUMN {col_name} {col_type}"
                 )
                 await self._db.commit()
-                _LOGGER.info("Added column '%s' to harvests table", col_name)
+                _LOGGER.info("Added column '%s' to strains table", col_name)
             except aiosqlite.OperationalError:
-                # Column already exists
                 pass
 
         await self.load()
@@ -216,6 +234,8 @@ class StrainLibrary:
                 s.strain_id, s.strain_name, s.breeder, s.breeder_logo, s.type,
                 s.lineage, s.lineage_tree, s.sex, s.generation,
                 s.sativa_percentage, s.indica_percentage,
+                s.yield_potential, s.height, s.thc, s.awards,
+                s.cbd, s.cbg, s.effects, s.aroma, s.taste, s.description as strain_description,
                 p.phenotype_id, p.phenotype_name, p.description, p.image_path,
                 p.image_crop_meta, p.flower_days_min, p.flower_days_max
             FROM strains s
@@ -237,11 +257,34 @@ class StrainLibrary:
                     meta = {
                         k: row[k]
                         for k in [
-                            "breeder", "breeder_logo", "type", "lineage", "sex",
-                            "sativa_percentage", "indica_percentage", "generation",
+                            "breeder",
+                            "breeder_logo",
+                            "type",
+                            "lineage",
+                            "sex",
+                            "generation",
+                            "sativa_percentage",
+                            "indica_percentage",
+                            "yield_potential",
+                            "height",
+                            "thc",
+                            "cbd",
+                            "cbg",
                         ]
-                        if row[k] is not None
                     }
+                    meta["description"] = row["strain_description"]
+
+                    # Filter out None values to avoid nulls in JSON (aligns with Zod's .optional())
+                    meta = {k: v for k, v in meta.items() if v is not None}
+
+                    # Parse JSON fields
+                    for field in ["awards", "effects", "aroma", "taste"]:
+                        val = row[field]
+                        try:
+                            meta[field] = json.loads(val) if val else []
+                        except (json.JSONDecodeError, TypeError):
+                            meta[field] = []
+
                     if lineage_tree is not None:
                         meta["lineage_tree"] = lineage_tree
                     new_strains[strain_name] = {"meta": meta, "phenotypes": {}}
@@ -515,6 +558,17 @@ class StrainLibrary:
         image_crop_meta: dict[str, Any] | None = None,
         sativa_percentage: int | None = None,
         indica_percentage: int | None = None,
+        yield_potential: str | None = None,
+        height: str | None = None,
+        thc: float | None = None,
+        cbd: float | None = None,
+        cbg: float | None = None,
+        effects: list[str] | None = None,
+        aroma: list[str] | None = None,
+        taste: list[str] | None = None,
+        strain_description: str | None = None,
+        awards: list[str] | None = None,
+        lineage_tree: dict[str, Any] | None = None,
     ) -> None:
         """Add or update a strain/phenotype entry."""
         if self._db is None:
@@ -545,6 +599,17 @@ class StrainLibrary:
             "sex": sex,
             "sativa_percentage": sativa_percentage,
             "indica_percentage": indica_percentage,
+            "yield_potential": yield_potential,
+            "height": height,
+            "thc": thc,
+            "cbd": cbd,
+            "cbg": cbg,
+            "effects": json.dumps(effects) if effects is not None else None,
+            "aroma": json.dumps(aroma) if aroma is not None else None,
+            "taste": json.dumps(taste) if taste is not None else None,
+            "description": strain_description,
+            "awards": json.dumps(awards) if awards is not None else None,
+            "lineage_tree": json.dumps(lineage_tree) if lineage_tree is not None else None,
         }
         strain_data = {k: v for k, v in strain_data.items() if v is not None}
 
@@ -572,7 +637,18 @@ class StrainLibrary:
                 lineage=COALESCE(excluded.lineage, lineage),
                 sex=COALESCE(excluded.sex, sex),
                 sativa_percentage=COALESCE(excluded.sativa_percentage, sativa_percentage),
-                indica_percentage=COALESCE(excluded.indica_percentage, indica_percentage)
+                indica_percentage=COALESCE(excluded.indica_percentage, indica_percentage),
+                yield_potential=COALESCE(excluded.yield_potential, yield_potential),
+                height=COALESCE(excluded.height, height),
+                thc=COALESCE(excluded.thc, thc),
+                cbd=COALESCE(excluded.cbd, cbd),
+                cbg=COALESCE(excluded.cbg, cbg),
+                effects=COALESCE(excluded.effects, effects),
+                aroma=COALESCE(excluded.aroma, aroma),
+                taste=COALESCE(excluded.taste, taste),
+                description=COALESCE(excluded.description, description),
+                awards=COALESCE(excluded.awards, awards),
+                lineage_tree=COALESCE(excluded.lineage_tree, lineage_tree)
             WHERE strain_name = excluded.strain_name
         """  # noqa: S608
         await self._db.execute(query, (strain, *tuple(strain_data.values())))
@@ -664,6 +740,17 @@ class StrainLibrary:
         image_crop_meta: dict[str, Any] | None = None,
         sativa_percentage: int | None = None,
         indica_percentage: int | None = None,
+        yield_potential: str | None = None,
+        height: str | None = None,
+        thc: float | None = None,
+        cbd: float | None = None,
+        cbg: float | None = None,
+        effects: list[str] | None = None,
+        aroma: list[str] | None = None,
+        taste: list[str] | None = None,
+        strain_description: str | None = None,
+        awards: list[str] | None = None,
+        lineage_tree: dict[str, Any] | None = None,
     ) -> None:
         """Update metadata for a strain/phenotype."""
         # Invalidate analytics cache
@@ -684,6 +771,17 @@ class StrainLibrary:
             image_crop_meta=image_crop_meta,
             sativa_percentage=sativa_percentage,
             indica_percentage=indica_percentage,
+            yield_potential=yield_potential,
+            height=height,
+            thc=thc,
+            cbd=cbd,
+            cbg=cbg,
+            effects=effects,
+            aroma=aroma,
+            taste=taste,
+            strain_description=strain_description,
+            awards=awards,
+            lineage_tree=lineage_tree,
         )
 
     async def update_strain_lineage_tree(

@@ -181,12 +181,47 @@ class TankWaterTracker:
 
         if delta_from_trough >= TANK_REFILL_THRESHOLD_PCT:
             # Large single rise from trough: formal refill event
-            event = {
-                "timestamp": timestamp,
-                "event_type": "refill",
-                "pct_delta": delta_from_trough,
-                "liters": _liters(delta_from_trough),
-            }
+            # Grouping: check if we can merge with a very recent refill event
+            # (within 10 minutes) to handle multi-step lid-open refills.
+            merged = False
+            if history.events:
+                last_ev = history.events[-1]
+                if last_ev["event_type"] == "refill":
+                    try:
+                        last_ts = _parse_ts(last_ev["timestamp"])
+                        curr_ts = _parse_ts(timestamp)
+                        if (curr_ts - last_ts).total_seconds() < 600:  # 10 mins
+                            last_ev["timestamp"] = timestamp
+                            last_ev["pct_delta"] = round(
+                                last_ev["pct_delta"] + delta_from_trough, 4
+                            )
+                            last_ev["liters"] = round(
+                                last_ev["liters"] + _liters(delta_from_trough), 4
+                            )
+                            event = last_ev
+                            merged = True
+                            _LOGGER.debug(
+                                "TankWaterTracker(%s) merged refill event: %sL (total delta: %s%%)",
+                                self.tank.sensor_entity,
+                                event["liters"],
+                                event["pct_delta"],
+                            )
+                    except Exception:
+                        _LOGGER.exception("Error merging refill event")
+
+            if not merged:
+                event = {
+                    "timestamp": timestamp,
+                    "event_type": "refill",
+                    "pct_delta": delta_from_trough,
+                    "liters": _liters(delta_from_trough),
+                }
+            else:
+                # Baselines must still advance even when merging
+                self.tank.last_recorded_level = level_pct
+                self.tank.peak_level = level_pct
+                self._pending_peak = None
+                return
 
         elif delta_from_peak <= -TANK_NOISE_FLOOR_PCT:
             # Level dropped below confirmed peak: consumption event

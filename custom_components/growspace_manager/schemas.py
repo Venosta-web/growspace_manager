@@ -370,6 +370,11 @@ STRAIN_BASE_FIELDS: dict[Any, Any] = {
     vol.Optional("indica_percentage"): vol.All(
         vol.Coerce(int), vol.Range(min=0, max=100)
     ),
+    vol.Optional("yield_potential"): str,
+    vol.Optional("height"): str,
+    vol.Optional("thc"): vol.Coerce(float),
+    vol.Optional("awards"): [str],
+    vol.Optional("lineage_tree"): dict,
 }
 
 ADD_STRAIN_SCHEMA = vol.Schema(

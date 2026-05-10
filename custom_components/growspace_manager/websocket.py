@@ -7,6 +7,7 @@ from dataclasses import asdict
 from datetime import datetime, timedelta
 import json
 import logging
+import re
 from typing import Any
 
 import voluptuous as vol
@@ -35,6 +36,7 @@ from .const import (
     ATTR_PLANT_ID,
     ATTR_TAGS,
     ATTR_TRANSITION_DATE,
+    CONF_BLACKLIST_BREEDERS,
     DOMAIN,
     EVENT_GROWSPACE_LOG_ENTRY,
     EVENT_LOG_LOOKBACK_DAYS,
@@ -44,6 +46,7 @@ from .coordinator import GrowspaceCoordinator
 from .services.growspace import async_add_growspace_note
 from .services.plant import async_add_timeline_note
 from .services.report import async_websocket_get_grow_report
+from .services.seedfinder_scraper import SeedfinderScraper
 from .strain_library import StrainLibrary
 
 _LOGGER = logging.getLogger(__name__)
@@ -105,6 +108,26 @@ SCHEMA_WS_GET_GROW_REPORT = websocket_api.BASE_COMMAND_MESSAGE_SCHEMA.extend(
         vol.Optional("plant_id"): str,
         vol.Optional("include_history", default=True): bool,
     }
+)
+
+WS_TYPE_QUERY_EXTERNAL_STRAIN = f"{DOMAIN}/query_external_strain"
+SCHEMA_WS_QUERY_EXTERNAL_STRAIN = websocket_api.BASE_COMMAND_MESSAGE_SCHEMA.extend(
+    {
+        vol.Required("type"): WS_TYPE_QUERY_EXTERNAL_STRAIN,
+        vol.Required("query"): str,
+        vol.Optional("source"): str,  # Default to seedfinder
+    }
+)
+
+WS_TYPE_GET_EXTERNAL_STRAIN_DETAILS = f"{DOMAIN}/get_external_strain_details"
+SCHEMA_WS_GET_EXTERNAL_STRAIN_DETAILS = (
+    websocket_api.BASE_COMMAND_MESSAGE_SCHEMA.extend(
+        {
+            vol.Required("type"): WS_TYPE_GET_EXTERNAL_STRAIN_DETAILS,
+            vol.Required("url"): str,
+            vol.Optional("source"): str,
+        }
+    )
 )
 
 
@@ -1091,14 +1114,14 @@ SCHEMA_WS_GET_VISION_HISTORY = websocket_api.BASE_COMMAND_MESSAGE_SCHEMA.extend(
 
 WS_TYPE_UPDATE_VISION_CHECKUP_CONFIG = f"{DOMAIN}/update_vision_checkup_config"
 SCHEMA_WS_UPDATE_VISION_CHECKUP_CONFIG = websocket_api.BASE_COMMAND_MESSAGE_SCHEMA.extend(
-    {
-        vol.Required("type"): WS_TYPE_UPDATE_VISION_CHECKUP_CONFIG,
-        vol.Required("growspace_id"): str,
-        vol.Optional("enabled"): bool,
-        vol.Optional("early_check_offset_minutes"): vol.All(int, vol.Range(min=1)),
-        vol.Optional("mid_check_hours"): vol.All(int, vol.Range(min=1)),
-        vol.Optional("late_check_offset_minutes"): vol.All(int, vol.Range(min=1)),
-    }
+        {
+            vol.Required("type"): WS_TYPE_UPDATE_VISION_CHECKUP_CONFIG,
+            vol.Required("growspace_id"): str,
+            vol.Optional("enabled"): bool,
+            vol.Optional("early_check_offset_minutes"): vol.All(int, vol.Range(min=1)),
+            vol.Optional("mid_check_hours"): vol.All(int, vol.Range(min=1)),
+            vol.Optional("late_check_offset_minutes"): vol.All(int, vol.Range(min=1)),
+        }
 )
 
 WS_TYPE_CAPTURE_SNAPSHOT = f"{DOMAIN}/capture_snapshot"
@@ -1532,6 +1555,73 @@ async def websocket_update_strain_lineage_tree(
         connection.send_error(msg["id"], "unknown_error", str(e))
 
 
+async def websocket_query_external_strain(
+    hass: HomeAssistant,
+    connection: websocket_api.ActiveConnection,
+    msg: dict[str, Any],
+) -> None:
+    """Query external strain database."""
+    query = msg["query"]
+    scraper: SeedfinderScraper = hass.data[DOMAIN]["seedfinder_scraper"]
+
+    # Get blacklist from config entry options
+    blacklist = []
+    try:
+        coordinator = GrowspaceCoordinator.get_any(hass)
+        blacklist = coordinator.config_entry.options.get(CONF_BLACKLIST_BREEDERS, [])
+    except (AttributeError, KeyError, RuntimeError):
+        _LOGGER.debug("Could not retrieve coordinator for blacklist, using empty list")
+
+    results = await scraper.async_search_strains(query, blacklist=blacklist)
+    connection.send_result(msg["id"], results)
+
+
+async def websocket_get_external_strain_details(
+    hass: HomeAssistant,
+    connection: websocket_api.ActiveConnection,
+    msg: dict[str, Any],
+) -> None:
+    """Get details for an external strain."""
+    url = msg["url"]
+    scraper: SeedfinderScraper = hass.data[DOMAIN]["seedfinder_scraper"]
+
+    raw = await scraper.async_get_strain_details(url)
+    if raw is None:
+        connection.send_result(msg["id"], None)
+        return
+
+    # Parse flowering_time string ("60 days" or "56-63 days") to a single int
+    flowering_days: int | None = None
+    ft = raw.get("flowering_time") or ""
+    ft_match = re.search(r"(\d+)(?:\s*-\s*(\d+))?", ft)
+    if ft_match:
+        lo = int(ft_match.group(1))
+        hi = int(ft_match.group(2)) if ft_match.group(2) else lo
+        flowering_days = round((lo + hi) / 2)
+
+    connection.send_result(msg["id"], {
+        "name": raw.get("name"),
+        "breeder": raw.get("breeder"),
+        "type": raw.get("type"),
+        "indica_percentage": (raw.get("composition") or {}).get("indica"),
+        "sativa_percentage": (raw.get("composition") or {}).get("sativa"),
+        "flowering_days": flowering_days,
+        "description": raw.get("description"),
+        "image": raw.get("image"),
+        "yield_potential": raw.get("yield_potential"),
+        "height": raw.get("height"),
+        "thc": raw.get("thc"),
+        "cbd": raw.get("cbd"),
+        "cbg": raw.get("cbg"),
+        "awards": raw.get("awards"),
+        "parents": raw.get("lineage_tree") or None,
+        "lineage_str": raw.get("lineage_str"),
+        "effects": raw.get("effects"),
+        "aroma": raw.get("aroma"),
+        "taste": raw.get("taste"),
+    })
+
+
 @callback
 def async_register_websocket_api(hass: HomeAssistant) -> None:
     """Register WebSocket API commands."""
@@ -1730,4 +1820,18 @@ def async_register_websocket_api(hass: HomeAssistant) -> None:
         WS_TYPE_UPDATE_STRAIN_LINEAGE_TREE,
         websocket_api.async_response(websocket_update_strain_lineage_tree),
         SCHEMA_WS_UPDATE_STRAIN_LINEAGE_TREE,
+    )
+
+    websocket_api.async_register_command(
+        hass,
+        WS_TYPE_QUERY_EXTERNAL_STRAIN,
+        websocket_api.async_response(websocket_query_external_strain),
+        SCHEMA_WS_QUERY_EXTERNAL_STRAIN,
+    )
+
+    websocket_api.async_register_command(
+        hass,
+        WS_TYPE_GET_EXTERNAL_STRAIN_DETAILS,
+        websocket_api.async_response(websocket_get_external_strain_details),
+        SCHEMA_WS_GET_EXTERNAL_STRAIN_DETAILS,
     )

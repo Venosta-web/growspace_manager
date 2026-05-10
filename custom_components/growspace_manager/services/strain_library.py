@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import base64
 import binascii
-from homeassistant.util import dt as dt_util
 from io import BytesIO
 import logging
 from pathlib import Path
@@ -20,6 +19,7 @@ from homeassistant.components.persistent_notification import (
 from homeassistant.core import HomeAssistant, ServiceCall
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.network import get_url
+from homeassistant.util import dt as dt_util
 
 if TYPE_CHECKING:
     from custom_components.growspace_manager.coordinator import GrowspaceCoordinator
@@ -84,7 +84,9 @@ def _downscale_logo_if_needed(logo_data: str | None) -> str | None:
 
         # If it's still large due to complexity, convert to 1-bit monochrome
         if len(result) >= 25000:
-            if img.mode in ("RGBA", "LA") or (img.mode == "P" and "transparency" in img.info):
+            if img.mode in ("RGBA", "LA") or (
+                img.mode == "P" and "transparency" in img.info
+            ):
                 img = img.convert("RGBA")
                 background = Image.new("RGB", img.size, (255, 255, 255))
                 background.paste(img, mask=img.split()[3])
@@ -332,6 +334,12 @@ async def handle_update_strain_meta(
     indica_percentage = call.data.get("indica_percentage")
     breeder_logo = call.data.get("breeder_logo")
 
+    yield_potential = call.data.get("yield_potential")
+    height = call.data.get("height")
+    thc = call.data.get("thc")
+    awards = call.data.get("awards")
+    lineage_tree = call.data.get("lineage_tree")
+
     if not strain:
         _LOGGER.warning(
             "Service call update_strain_meta missing required 'strain' parameter"
@@ -355,6 +363,11 @@ async def handle_update_strain_meta(
             sativa_percentage=sativa_percentage,
             indica_percentage=indica_percentage,
             breeder_logo=breeder_logo,
+            yield_potential=yield_potential,
+            height=height,
+            thc=thc,
+            awards=awards,
+            lineage_tree=lineage_tree,
         )
     except ValueError as err:
         raise HomeAssistantError(str(err)) from err
@@ -517,7 +530,9 @@ async def handle_print_label(
     if breeder_logo:
         # Downscale if it's a base64 string to avoid event bus and printer issues.
         # Run in executor to avoid blocking the event loop on PIL's lazy native lib init.
-        breeder_logo = await hass.async_add_executor_job(_downscale_logo_if_needed, breeder_logo)
+        breeder_logo = await hass.async_add_executor_job(
+            _downscale_logo_if_needed, breeder_logo
+        )
 
         payload.append(
             {

@@ -68,6 +68,7 @@ CONF_IRRIGATION_TANK_VOLUME = "irrigation_tank_volume"  # litres
 CONF_CONTROL_DEHUMIDIFIER = "control_dehumidifier"
 CONF_CONTROL_HUMIDIFIER = "control_humidifier"
 CONF_HUMIDIFIER_THRESHOLDS = "humidifier_thresholds"
+CONF_BLACKLIST_BREEDERS = "blacklist_breeders"
 
 # Tank water inference service attributes
 ATTR_TANK_ENTITY = "tank_entity"
@@ -488,6 +489,9 @@ ATTR_STRAIN_NAME = "strain_name"
 ATTR_BREEDER = "breeder"
 ATTR_QUANTITY = "quantity"
 ATTR_ACQUISITION_DATE = "acquisition_date"
+ATTR_HEIGHT = "height"
+ATTR_AWARDS = "awards"
+ATTR_LINEAGE_TREE = "lineage_tree"
 ATTR_GENERATION = "generation"
 ATTR_LINEAGE = "lineage"
 ATTR_PARENT_1_STRAIN = "parent_1_strain"

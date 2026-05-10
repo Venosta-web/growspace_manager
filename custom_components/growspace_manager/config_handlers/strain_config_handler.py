@@ -10,6 +10,7 @@ if TYPE_CHECKING:
 
 import voluptuous as vol
 
+from custom_components.growspace_manager.const import CONF_BLACKLIST_BREEDERS
 from custom_components.growspace_manager.schemas import ADD_STRAIN_SCHEMA
 from homeassistant.config_entries import ConfigFlowResult
 from homeassistant.helpers import selector
@@ -58,6 +59,8 @@ class StrainConfigHandler(BaseConfigHandler[dict[str, Any]]):
                 return await self.async_step_import_strain_library()
             if action == "export":
                 return await self.async_step_export_strain_library()
+            if action == "manage_blacklist":
+                return await self.async_step_manage_breeder_blacklist()
             if action == "back":
                 return await self.flow.async_step_init()
 
@@ -167,6 +170,9 @@ class StrainConfigHandler(BaseConfigHandler[dict[str, Any]]):
                             value="export", label="Export Library"
                         ),
                         selector.SelectOptionDict(
+                            value="manage_blacklist", label="Manage Breeder Blacklist"
+                        ),
+                        selector.SelectOptionDict(
                             value="back", label="Back to Main Menu"
                         ),
                     ],
@@ -219,4 +225,42 @@ class StrainConfigHandler(BaseConfigHandler[dict[str, Any]]):
         return self.flow.async_show_form(
             step_id="edit_strain",
             data_schema=ADD_STRAIN_SCHEMA,
+        )
+
+    async def async_step_manage_breeder_blacklist(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Manage the list of blacklisted breeders."""
+        if self.config_entry is None:
+            return self.flow.async_abort(reason="setup_error")
+
+        if user_input is not None:
+            # Save the new blacklist to options
+            new_options = dict(self.config_entry.options)
+            # Input is a list of strings from the selector
+            new_options[CONF_BLACKLIST_BREEDERS] = user_input[CONF_BLACKLIST_BREEDERS]
+
+            self.hass.config_entries.async_update_entry(
+                self.config_entry, options=new_options
+            )
+            return await self.async_step_manage_strain_library()
+
+        current_blacklist = self.config_entry.options.get(CONF_BLACKLIST_BREEDERS, [])
+
+        return self.flow.async_show_form(
+            step_id="manage_breeder_blacklist",
+            data_schema=vol.Schema(
+                {
+                    vol.Optional(
+                        CONF_BLACKLIST_BREEDERS, default=current_blacklist
+                    ): selector.SelectSelector(
+                        selector.SelectSelectorConfig(
+                            options=[],  # Empty options means user can add custom tags
+                            multiple=True,
+                            custom_value=True,
+                            mode=selector.SelectSelectorMode.DROPDOWN,
+                        )
+                    )
+                }
+            ),
         )

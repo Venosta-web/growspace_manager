@@ -23,6 +23,7 @@ from .const import CONF_SHOW_SIDEBAR, DOMAIN, PLATFORMS, STORAGE_KEY, STORAGE_VE
 from .coordinator import GrowspaceCoordinator
 from .coordinator_builder import CoordinatorBuilder
 from .intent import async_setup_intents
+from .services.seedfinder_scraper import SeedfinderScraper
 from .strain_library import StrainLibrary
 from .views import StrainLibraryImageView, StrainLibraryUploadView
 from .websocket import async_register_websocket_api
@@ -59,6 +60,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: GrowspaceConfigEntry) ->
         strain_library_instance = StrainLibrary(hass)
         await strain_library_instance.async_setup()
         hass.data[DOMAIN]["strain_library"] = strain_library_instance
+
+        # Initialize Seedfinder Scraper
+        hass.data[DOMAIN]["seedfinder_scraper"] = SeedfinderScraper(hass)
 
         # Register Views
         hass.http.register_view(StrainLibraryUploadView(hass, strain_library_instance))
@@ -235,10 +239,13 @@ async def async_unload_entry(hass: HomeAssistant, entry: GrowspaceConfigEntry) -
             _LOGGER.debug("Removing Growspace Manager sidebar panel during unload")
             frontend_async_remove_panel(hass, DOMAIN)
 
-        # Clean up global Strain Library
-        if DOMAIN in hass.data and "strain_library" in hass.data[DOMAIN]:
-            await hass.data[DOMAIN]["strain_library"].async_close()
-            del hass.data[DOMAIN]["strain_library"]
+        # Clean up global Strain Library and Scraper
+        if DOMAIN in hass.data:
+            if "strain_library" in hass.data[DOMAIN]:
+                await hass.data[DOMAIN]["strain_library"].async_close()
+                del hass.data[DOMAIN]["strain_library"]
+            if "seedfinder_scraper" in hass.data[DOMAIN]:
+                del hass.data[DOMAIN]["seedfinder_scraper"]
 
         _LOGGER.info("Unloaded Growspace Manager for entry %s", entry.entry_id)
         return True
