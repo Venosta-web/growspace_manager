@@ -116,3 +116,10 @@ custom_components/hacs/
 docs/plans/*
 
 gha-creds-*.json
+# Test outputs
+snapshot_diff.txt
+snapshot_output.txt
+test_output.txt
+tests/output.txt
+*.log
+.coverage

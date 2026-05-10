@@ -42,6 +42,8 @@ async def test_import_lineage_marks_ancestors_as_stubs():
     assert "Blueberry" in marked
     assert "Haze" in marked
     assert "Blue Dream" not in marked
+    for sql, _ in stub_update_sqls:
+        assert "breeder IS NULL" in sql, "Stub UPDATE must guard against overwriting real entries"
 
 
 @pytest.mark.asyncio
