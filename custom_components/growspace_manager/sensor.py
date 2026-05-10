@@ -240,7 +240,9 @@ async def async_setup_entry(
 
     def _listener_callback() -> None:
         """Handle coordinator updates."""
-        hass.async_create_task(_handle_coordinator_update_async())
+        config_entry.async_create_background_task(
+            hass, _handle_coordinator_update_async(), "handle_coordinator_update"
+        )
 
     config_entry.async_on_unload(coordinator.async_add_listener(_listener_callback))
 
@@ -415,7 +417,9 @@ async def _update_growspace_entities(
                 calculated_vpd_growspace_ids.add(v.unique_id)
             # Request a refresh so the coordinator can use the newly created sensor data
             # for its derived calculations (mold risk, etc.)
-            hass.async_create_task(coordinator.async_request_refresh())
+            coordinator.config_entry.async_create_background_task(
+                hass, coordinator.async_request_refresh(), "coordinator_refresh"
+            )
 
     # Remove deleted
     for removed_gs_id in list(growspace_entities.keys()):
@@ -725,7 +729,11 @@ class TankDepletionSensor(CoordinatorEntity, SensorEntity):
 
     def _handle_coordinator_update(self) -> None:
         """Handle coordinator updates by refreshing predictor buffer."""
-        self.hass.async_create_task(self._predictor.async_update())
+        self.coordinator.config_entry.async_create_background_task(
+            self.hass,
+            self._predictor.async_update(),
+            f"update_predictor_{self.entity_id or self.unique_id}",
+        )
         super()._handle_coordinator_update()
 
 

@@ -33,6 +33,8 @@ def mock_coordinator():
 
     coordinator = MagicMock()
     coordinator.hass = MagicMock()
+    coordinator.config_entry = MagicMock()
+    coordinator.config_entry.async_create_background_task = MagicMock()
     coordinator.growspaces = {}
     coordinator.plants = {}
     coordinator.data = MagicMock(spec=dict)

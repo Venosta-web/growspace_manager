@@ -2,8 +2,21 @@
 
 from __future__ import annotations
 
+# Load Home Assistant core test fixtures (hass, mock_recorder, freezer, etc.)
+# This must appear BEFORE other Home Assistant imports to avoid recorder initialization issues.
 import importlib.util as _ilu
 import pathlib as _pathlib
+
+_ha_conftest_spec = _ilu.find_spec("tests.conftest")
+_is_ha_core = (
+    _ha_conftest_spec is not None
+    and _ha_conftest_spec.origin is not None
+    and _pathlib.Path(_ha_conftest_spec.origin).resolve()
+    != _pathlib.Path(__file__).resolve()
+)
+if _is_ha_core:
+    pytest_plugins = ["tests.conftest"]
+
 import sys
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -18,15 +31,12 @@ from homeassistant.helpers import device_registry as dr
 from homeassistant.util import dt as dt_util
 
 # Patch DeviceRegistry initialization bug in pytest-homeassistant-custom-component
-# The plugin calls async_load before async_setup, which fails in HA 2025.12
 _orig_async_load = dr.async_load
 
 
 async def patched_async_load(hass: HomeAssistant, *args, **kwargs):
     """Ensure async_setup is called before async_load to initialize _loaded_event."""
     if dr.DATA_REGISTRY not in hass.data:
-        # Use the instance method directly; the module-level async_setup was
-        # removed in some HA release versions available via the CI package.
         dr.async_get(hass).async_setup()
     return await _orig_async_load(hass, *args, **kwargs)
 
@@ -34,7 +44,6 @@ async def patched_async_load(hass: HomeAssistant, *args, **kwargs):
 dr.async_load = patched_async_load
 
 # Prevent timezone leakage from Home Assistant core tests
-# This intercepts calls to set US/Pacific and keeps it at UTC
 _orig_set_default_time_zone = dt_util.set_default_time_zone
 
 
@@ -42,7 +51,6 @@ def patched_set_default_time_zone(time_zone):
     """Enforce UTC and ignore US/Pacific attempts from HA core fixtures."""
     if time_zone == dt_util.UTC:
         _orig_set_default_time_zone(time_zone)
-    # We ignore non-UTC assignments to stay compliant with verify_cleanup
 
 
 dt_util.set_default_time_zone = patched_set_default_time_zone
@@ -50,29 +58,6 @@ dt_util.set_default_time_zone = patched_set_default_time_zone
 # Must precede any custom_components import that pulls in fpdf/turbojpeg.
 sys.modules["turbojpeg"] = MagicMock()
 sys.modules["fpdf"] = MagicMock()
-
-# Load Home Assistant core test fixtures (hass, mock_recorder, freezer, etc.)
-# This must appear AFTER the sys.modules patching above.
-#
-# When running inside the HA core dev environment (PYTHONPATH includes core/),
-# load HA's own conftest to get the real fixture implementations.
-# In the standalone CI repo pytest-homeassistant-custom-component registers
-# the same fixtures automatically via its entry-point plugin – we only
-# load tests.conftest when the HA core source tree is on sys.path.
-#
-# We detect "real HA core" by checking that find_spec("tests.conftest") does
-# NOT resolve to this very file (which would happen when the standalone repo's
-# own tests/ package is on the path).
-_ha_conftest_spec = _ilu.find_spec("tests.conftest")
-_is_ha_core = (
-    _ha_conftest_spec is not None
-    and _ha_conftest_spec.origin is not None
-    # Ensure we didn't just find our *own* conftest (vendored repo).
-    and _pathlib.Path(_ha_conftest_spec.origin).resolve()
-    != _pathlib.Path(__file__).resolve()
-)
-if _is_ha_core:
-    pytest_plugins = ["tests.conftest"]
 
 import pytest  # noqa: E402
 

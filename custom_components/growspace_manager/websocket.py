@@ -544,7 +544,9 @@ def websocket_update_nutrient_stock(
                 initial_ml=float(msg["initial_ml"]),
             )
             # Persist changes
-            hass.async_create_task(coordinator.async_save())
+            coordinator.config_entry.async_create_background_task(
+                hass, coordinator.async_save(), "save_coordinator_data"
+            )
             connection.send_result(msg["id"])
         else:
             connection.send_error(msg["id"], "not_initialized", "Service not ready")
@@ -567,7 +569,9 @@ def websocket_remove_nutrient_stock(
         if coordinator.nutrient_inventory_service:
             coordinator.nutrient_inventory_service.remove_stock(msg["nutrient_id"])
             # Persist changes
-            hass.async_create_task(coordinator.async_save())
+            coordinator.config_entry.async_create_background_task(
+                hass, coordinator.async_save(), "save_coordinator_data"
+            )
             connection.send_result(msg["id"])
         else:
             connection.send_error(msg["id"], "not_initialized", "Service not ready")

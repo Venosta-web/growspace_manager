@@ -382,14 +382,28 @@ async def test_async_setup_entry_dynamic_updates(mock_coordinator: MagicMock) ->
     def async_add_entities(entities, update_before_add=False):
         added_entities.extend(entities)
 
-    # Setup with empty coordinator
+    # Trigger update
+    # The listener schedules a task, we need to execute the task
+    captured_coro = None
+
+    def mock_create_background_task(hass_obj, coro, name):
+        nonlocal captured_coro
+        captured_coro = coro
+        return Mock()
+
+    # The config_entry is the Mock we passed to async_setup_entry
+    config_entry = Mock(
+        entry_id="entry_1",
+        options={},
+        runtime_data=mock_coordinator,
+    )
+    config_entry.async_create_background_task = mock_create_background_task
+    mock_coordinator.config_entry = config_entry
+
+    # Setup with empty coordinator and our mock config_entry
     await async_setup_entry(
         hass,
-        Mock(
-            entry_id="entry_1",
-            options={},
-            runtime_data=mock_coordinator,
-        ),
+        config_entry,
         async_add_entities,
     )
 
@@ -408,16 +422,6 @@ async def test_async_setup_entry_dynamic_updates(mock_coordinator: MagicMock) ->
 
     mock_coordinator.growspaces = {"gs_new": new_gs}
     mock_coordinator.plants = {"p_new": new_plant}
-
-    # Trigger update
-    # The listener schedules a task, we need to execute the task
-    captured_coro = None
-
-    def mock_create_task(coro):
-        nonlocal captured_coro
-        captured_coro = coro
-
-    hass.async_create_task = mock_create_task
 
     # Clear added_entities to track new ones
     added_entities.clear()

@@ -2,6 +2,7 @@
 
 from dataclasses import dataclass
 import json
+import asyncio
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -183,6 +184,11 @@ async def test_websocket_nutrient_inventory_success(
     """Test successful nutrient inventory commands."""
     # Mock coordinator with service
     mock_coord = MagicMock()
+    mock_config_entry = MagicMock()
+    mock_config_entry.async_create_background_task.side_effect = (
+        lambda hass, coro, name: asyncio.create_task(coro)
+    )
+    mock_coord.config_entry = mock_config_entry
     mock_service = MagicMock()
     mock_coord.nutrient_inventory_service = mock_service
     mock_coord.async_save = AsyncMock()
@@ -200,6 +206,7 @@ async def test_websocket_nutrient_inventory_success(
             "initial_ml": 1000,
         }
         websocket_update_nutrient_stock(hass, mock_connection, msg_update)
+        await asyncio.sleep(0)  # Yield to background tasks
 
         mock_service.update_stock.assert_called_with(
             nutrient_id="n1", name="N1", current_ml=500.0, initial_ml=1000.0
@@ -210,10 +217,13 @@ async def test_websocket_nutrient_inventory_success(
         # Reset
         mock_connection.reset_mock()
         mock_coord.async_save.reset_mock()
+        mock_config_entry.async_create_background_task.reset_mock()
+
 
         # Remove Stock Success
         msg_remove = {"id": 2, "nutrient_id": "n1"}
         websocket_remove_nutrient_stock(hass, mock_connection, msg_remove)
+        await asyncio.sleep(0)  # Yield to background tasks
 
         mock_service.remove_stock.assert_called_with("n1")
         mock_connection.send_result.assert_called_with(2)

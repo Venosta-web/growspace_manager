@@ -47,6 +47,9 @@ def mock_coordinator() -> MagicMock:
     coordinator.options = {}
     coordinator.async_save = AsyncMock()
     coordinator.get_growspace_plants = MagicMock(return_value=[MagicMock()])
+    # Add config_entry with background task support
+    coordinator.config_entry = MagicMock()
+    coordinator.config_entry.async_create_background_task = MagicMock()
     return coordinator
 
 
@@ -56,7 +59,6 @@ def mock_hass() -> MagicMock:
     hass = MagicMock(spec=HomeAssistant)
     hass.services = MagicMock()
     hass.services.async_call = AsyncMock()
-    hass.async_create_task = MagicMock()
     hass.data = {}
     hass.config = MagicMock()
     hass.config.config_dir = "/tmp"
@@ -1245,7 +1247,7 @@ async def test_schedule_recovery(
 
     with patch.object(manager, "_async_send_recovery", new_callable=AsyncMock):
         manager._schedule_recovery(GROWSPACE_ID, alert)
-        mock_hass.async_create_task.assert_called_once()
+        manager.coordinator.config_entry.async_create_background_task.assert_called_once()
         # Verify call arguments if needed
         # args = mock_hass.async_create_task.call_args[0]
         # assert args[0] == mock_send_recovery.return_value
@@ -1382,7 +1384,7 @@ async def test_async_schedule_notification_execution(
     ):
         # Execute the callback
         callback_func(dt_util.utcnow())
-        mock_hass.async_create_task.assert_called_once()
+        manager.coordinator.config_entry.async_create_background_task.assert_called_once()
 
 
 async def test_async_send_notification_tier_cooldown_debug(

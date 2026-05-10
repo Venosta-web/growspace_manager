@@ -869,6 +869,11 @@ async def test_schedule_update_coverage(hass: HomeAssistant, mock_coordinator) -
     config_entry.runtime_data = mock_coordinator
 
     mock_coordinator.async_add_listener = MagicMock()
+    
+    # Mock async_create_background_task to actually run the task
+    def mock_background_task(h, coro, name):
+        return h.async_create_task(coro)
+    config_entry.async_create_background_task = MagicMock(side_effect=mock_background_task)
 
     await async_setup_entry(hass, config_entry, async_add_entities)
 
@@ -2164,8 +2169,8 @@ class TestBayesianEnvironmentSensor:
             base_sensor._async_sensor_changed,
         )
         assert base_sensor.async_on_remove.call_count == 2
-        # async_update_and_notify is scheduled via async_create_task, not directly awaited
-        base_sensor.hass.async_create_task.assert_called()
+        # async_update_and_notify is scheduled via async_create_background_task, not directly awaited
+        base_sensor.coordinator.config_entry.async_create_background_task.assert_called()
 
         # Reset mocks for next scenario
         base_sensor.coordinator.async_add_listener.reset_mock()
@@ -2220,18 +2225,21 @@ class TestBayesianEnvironmentSensor:
         base_sensor.hass = MagicMock()
         base_sensor.async_update_and_notify = MagicMock()
         base_sensor._handle_coordinator_update()
-        base_sensor.hass.async_create_task.assert_called_once_with(
-            base_sensor.async_update_and_notify()
-        )
+        base_sensor.coordinator.config_entry.async_create_background_task.assert_called_once()
+        args = base_sensor.coordinator.config_entry.async_create_background_task.call_args
+        assert args[0][0] == base_sensor.hass
+        # Comparing coroutines is tricky, but we can check if it was called with the mock return value
+        assert args[0][1] == base_sensor.async_update_and_notify()
 
     def test_async_sensor_changed_calls_async_update_and_notify(self, base_sensor):
         """Test that _async_sensor_changed calls async_update_and_notify."""
         base_sensor.hass = MagicMock()
         base_sensor.async_update_and_notify = MagicMock()
         base_sensor._async_sensor_changed(None)
-        base_sensor.hass.async_create_task.assert_called_once_with(
-            base_sensor.async_update_and_notify()
-        )
+        base_sensor.coordinator.config_entry.async_create_background_task.assert_called_once()
+        args = base_sensor.coordinator.config_entry.async_create_background_task.call_args
+        assert args[0][0] == base_sensor.hass
+        assert args[0][1] == base_sensor.async_update_and_notify()
 
     def test_get_sensor_value_no_sensor_id(self, base_sensor):
         """Test _get_sensor_value returns None if no sensor_id is provided."""

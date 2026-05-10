@@ -184,7 +184,11 @@ class NotificationManager:
     @callback
     def _schedule_recovery(self, growspace_id: str, alert: PendingAlert) -> None:
         """Schedule a recovery notification for a resolved critical alert."""
-        self.hass.async_create_task(self._async_send_recovery(growspace_id, alert))
+        self.coordinator.config_entry.async_create_background_task(
+            self.hass,
+            self._async_send_recovery(growspace_id, alert),
+            f"recovery_notification_{growspace_id}_{alert.sensor_name}",
+        )
 
     async def _async_send_recovery(
         self, growspace_id: str, alert: PendingAlert
@@ -248,8 +252,10 @@ class NotificationManager:
 
         @callback
         def _send_notification(_: datetime) -> None:
-            self.hass.async_create_task(
-                self._async_send_batched_notification(growspace_id)
+            self.coordinator.config_entry.async_create_background_task(
+                self.hass,
+                self._async_send_batched_notification(growspace_id),
+                f"batched_notification_{growspace_id}",
             )
 
         self._batch_timers[growspace_id] = async_call_later(

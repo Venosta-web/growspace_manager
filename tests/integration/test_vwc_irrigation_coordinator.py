@@ -44,6 +44,9 @@ def mock_hass():
     hass.states = MagicMock()
     # Schedule the coroutine on the loop to avoid "never awaited" warning and actually run it
     hass.async_create_task = MagicMock(side_effect=asyncio.create_task)
+    hass.async_create_background_task = MagicMock(
+        side_effect=lambda target, name: asyncio.create_task(target)
+    )
     return hass
 
 
@@ -93,8 +96,12 @@ async def await_pump_task():
 
 @pytest.fixture
 def vwc_coordinator(mock_hass, mock_main_coordinator):
+    mock_config_entry = MagicMock()
+    mock_config_entry.async_create_background_task.side_effect = (
+        lambda hass, target, name: asyncio.create_task(target)
+    )
     return VWCIrrigationCoordinator(
-        mock_hass, MagicMock(), "gs1", mock_main_coordinator
+        mock_hass, mock_config_entry, "gs1", mock_main_coordinator
     )
 
 

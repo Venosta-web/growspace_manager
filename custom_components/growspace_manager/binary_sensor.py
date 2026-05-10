@@ -154,7 +154,9 @@ async def async_setup_entry(
     # Listen for future updates - wrap async callback in sync wrapper
     def _schedule_update() -> None:
         """Sync wrapper to schedule the async update."""
-        hass.async_create_task(_update_binary_sensors())
+        entry.async_create_background_task(
+            hass, _update_binary_sensors(), "update_binary_sensors"
+        )
 
     entry.async_on_unload(coordinator.async_add_listener(_schedule_update))
 
@@ -562,7 +564,11 @@ class BayesianEnvironmentSensor(
         )
 
         # Schedule initial update
-        self.hass.async_create_task(self.async_update_and_notify())
+        self.coordinator.config_entry.async_create_background_task(
+            self.hass,
+            self.async_update_and_notify(),
+            f"initial_update_{self.entity_id or self.unique_id}",
+        )
 
     async def async_will_remove_from_hass(self) -> None:
         """Unregister from batched notifications."""
@@ -573,12 +579,20 @@ class BayesianEnvironmentSensor(
     @callback
     def _handle_coordinator_update(self) -> None:
         """Handle updates from the data coordinator."""
-        self.hass.async_create_task(self.async_update_and_notify())
+        self.coordinator.config_entry.async_create_background_task(
+            self.hass,
+            self.async_update_and_notify(),
+            f"coordinator_update_{self.entity_id or self.unique_id}",
+        )
 
     @callback
     def _async_sensor_changed(self, event: Event[EventStateChangedData]) -> None:
         """Handle state changes of the monitored environment sensors."""
-        self.hass.async_create_task(self.async_update_and_notify())
+        self.coordinator.config_entry.async_create_background_task(
+            self.hass,
+            self.async_update_and_notify(),
+            f"sensor_changed_{self.entity_id or self.unique_id}",
+        )
 
     def _get_sensor_value(self, sensor_id: str | None) -> float | None:
         """Safely get the numeric value from a sensor's state."""
@@ -1003,7 +1017,11 @@ class LightCycleVerificationSensor(
     @callback
     def _handle_coordinator_update(self) -> None:
         """Handle updates from the data coordinator."""
-        self.hass.async_create_task(self.async_update())
+        self.coordinator.config_entry.async_create_background_task(
+            self.hass,
+            self.async_update(),
+            f"light_cycle_coordinator_update_{self.entity_id or self.unique_id}",
+        )
 
     @callback
     def _handle_sensor_change(self, event: Event[EventStateChangedData]) -> None:
@@ -1062,7 +1080,11 @@ class LightCycleVerificationSensor(
     @callback
     def _async_light_sensor_changed(self, event: Event[EventStateChangedData]) -> None:
         """Handle state changes of the monitored light sensor."""
-        self.hass.async_create_task(self.async_update())
+        self.coordinator.config_entry.async_create_background_task(
+            self.hass,
+            self.async_update(),
+            f"light_sensor_changed_{self.entity_id or self.unique_id}",
+        )
 
     async def async_update(self) -> None:
         """Update the sensor's state based on the light's on/off duration."""

@@ -35,6 +35,9 @@ def mock_coordinator() -> MagicMock:
             ),
         )
     }
+    # Add config_entry with background task support
+    coordinator.config_entry = MagicMock()
+    coordinator.config_entry.async_create_background_task = MagicMock()
     return coordinator
 
 
@@ -42,7 +45,6 @@ def mock_coordinator() -> MagicMock:
 def mock_hass() -> MagicMock:
     """Mock Home Assistant instance."""
     hass = MagicMock(spec=HomeAssistant)
-    hass.async_create_task = MagicMock()
     hass.bus = MagicMock()
     hass.async_add_executor_job = AsyncMock()
     hass.states = MagicMock()
@@ -113,7 +115,7 @@ async def test_setup_growspace_listener_no_sensor(
 
 
 async def test_light_state_listener_callback(
-    reporter: EnvironmentReporter, mock_hass: MagicMock
+    reporter: EnvironmentReporter, mock_hass: MagicMock, mock_coordinator: MagicMock
 ) -> None:
     """Test the internal light state listener callback."""
     # We need to capture the listener defined inside _setup_growspace_listener
@@ -137,7 +139,7 @@ async def test_light_state_listener_callback(
     captured_listener(event)
 
     # Verify task created
-    mock_hass.async_create_task.assert_called_once()
+    mock_coordinator.config_entry.async_create_background_task.assert_called_once()
 
 
 def test_is_light_on(reporter: EnvironmentReporter) -> None:

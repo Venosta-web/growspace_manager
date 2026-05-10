@@ -269,8 +269,10 @@ class VWCIrrigationCoordinator(BaseIrrigationCoordinator):
         )
 
         # Schedule the task
-        task = self.hass.async_create_task(
-            self._run_pump_cycle(pump_entity, duration, phase)
+        task = self._config_entry.async_create_background_task(
+            self.hass,
+            self._run_pump_cycle(pump_entity, duration, phase),
+            f"irrigation_pump_{self._growspace_id}_{phase}",
         )
         task.add_done_callback(self._on_pump_done)
 

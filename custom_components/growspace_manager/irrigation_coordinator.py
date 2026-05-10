@@ -472,8 +472,10 @@ class IrrigationCoordinator(BaseIrrigationCoordinator):
             )
             return
 
-        task = self.hass.async_create_task(
-            self._run_pump_cycle(event_type, pump_entity, int(duration), event_data)
+        task = self._config_entry.async_create_background_task(
+            self.hass,
+            self._run_pump_cycle(event_type, pump_entity, int(duration), event_data),
+            f"irrigation_pump_{self._growspace_id}_{event_type}",
         )
         self._running_tasks[event_type] = task
 

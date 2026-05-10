@@ -56,8 +56,11 @@ def mock_hass(mock_main_coordinator) -> MagicMock:
     hass.services = AsyncMock()
     hass.bus = MagicMock()
     hass.states = MagicMock()
-    # Ensure async_create_task creates a real task for tests to await
+    # Ensure async_create_task and async_create_background_task create real tasks for tests to await
     hass.async_create_task = asyncio.create_task
+    hass.async_create_background_task = MagicMock(
+        side_effect=lambda target, name: asyncio.create_task(target)
+    )
     # Mock loop property
     type(hass).loop = property(lambda self: asyncio.get_running_loop())
     hass.data = {DOMAIN: {}}
@@ -71,6 +74,9 @@ def mock_config_entry() -> MagicMock:
     entry.options = {}
     entry.entry_id = ENTRY_ID
     entry.runtime_data = MagicMock()
+    entry.async_create_background_task = MagicMock(
+        side_effect=lambda hass, target, name: asyncio.create_task(target)
+    )
     entry.options = {
         "irrigation": {
             GROWSPACE_ID: {
