@@ -125,3 +125,4 @@ tests/output.txt
 .coverage
 tests/services/snapshots/test_strain_library.ambr
 uv.lock
+=4.15.0

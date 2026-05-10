@@ -216,6 +216,7 @@ class EnvironmentReporter:
                 "reasons": stats_summary,
                 "severity": 0,
                 "start_time": end_time.isoformat(),
+                "timestamp": dt_util.now().isoformat(),
             },
         )
         _LOGGER.info(

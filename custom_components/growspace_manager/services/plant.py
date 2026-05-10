@@ -872,8 +872,7 @@ async def async_add_timeline_note(
         "category": CATEGORY_NOTE,
     }
 
-    if transition_date_raw:
-        event_data["timestamp"] = transition_date_raw
+    event_data["timestamp"] = transition_date_raw or dt_util.now().isoformat()
 
     hass.bus.async_fire(EVENT_GROWSPACE_LOG_ENTRY, event_data)
     _LOGGER.info("Added timeline note for plant %s", plant_id)
