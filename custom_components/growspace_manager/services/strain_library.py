@@ -338,6 +338,8 @@ async def handle_update_strain_meta(
     height = call.data.get("height")
     thc = call.data.get("thc")
     awards = call.data.get("awards")
+    cbd = call.data.get("cbd")
+    cbg = call.data.get("cbg")
     lineage_tree = call.data.get("lineage_tree")
 
     if not strain:
@@ -366,6 +368,8 @@ async def handle_update_strain_meta(
             yield_potential=yield_potential,
             height=height,
             thc=thc,
+            cbd=cbd,
+            cbg=cbg,
             awards=awards,
             lineage_tree=lineage_tree,
         )

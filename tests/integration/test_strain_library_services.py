@@ -442,3 +442,34 @@ async def test_handle_update_strain_meta_value_error(
         await handle_update_strain_meta(
             mock_hass, mock_coordinator, mock_strain_library, mock_call
         )
+
+@pytest.mark.asyncio
+async def test_handle_update_strain_meta_with_none_values(
+    mock_hass, mock_coordinator, mock_strain_library, mock_call
+) -> None:
+    """Test handle_update_strain_meta service with None values."""
+    mock_call.data = {
+        "strain": "Strain A",
+        "sativa_percentage": None,
+        "indica_percentage": None,
+        "thc": None,
+        "cbd": None,
+        "cbg": None,
+        "flower_days_min": None,
+        "flower_days_max": None,
+    }
+
+    await handle_update_strain_meta(
+        mock_hass, mock_coordinator, mock_strain_library, mock_call
+    )
+
+    mock_strain_library.set_strain_meta.assert_awaited_once()
+    call_args = mock_strain_library.set_strain_meta.call_args.kwargs
+    assert call_args["strain"] == "Strain A"
+    assert call_args["sativa_percentage"] is None
+    assert call_args["indica_percentage"] is None
+    assert call_args["thc"] is None
+    assert call_args["cbd"] is None
+    assert call_args["cbg"] is None
+    assert call_args["flower_days_min"] is None
+    assert call_args["flower_days_max"] is None

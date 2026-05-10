@@ -73,6 +73,20 @@ class NotificationManager:
         self._cooldowns: dict[str, dict[str, datetime]] = {}
         self._ai_cooldown_until: datetime | None = None
 
+    @callback
+    def shutdown(self) -> None:
+        """Shutdown the notification manager and cancel all timers."""
+        for timer in self._batch_timers.values():
+            timer()
+        self._batch_timers.clear()
+
+        for alert in self._pending_alerts.values():
+            if alert.notification_timer is not None:
+                alert.notification_timer()
+                alert.notification_timer = None
+        self._pending_alerts.clear()
+
+
     _TIER_COOLDOWNS: ClassVar[dict[str, timedelta]] = {
         NotificationTier.CRITICAL: timedelta(minutes=CRITICAL_COOLDOWN_MINUTES),
         NotificationTier.WARNING: timedelta(minutes=WARNING_COOLDOWN_MINUTES),
@@ -246,7 +260,8 @@ class NotificationManager:
 
     async def _async_send_batched_notification(self, growspace_id: str) -> None:
         """Collect triggered sensors and send a consolidated notification."""
-        self._batch_timers.pop(growspace_id, None)
+        if timer := self._batch_timers.pop(growspace_id, None):
+            timer()
 
         now = utcnow()
 

@@ -837,10 +837,21 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
         This ensures clean shutdown and data persistence.
         """
+        # Cancel all sub-coordinator listeners
+        self.subsystem_manager.async_cancel_all()
+
+        # Unsubscribe all tank water trackers
+        for gs_trackers in self._tank_water_trackers.values():
+            for tracker in gs_trackers.values():
+                await tracker.async_unsubscribe()
+
         if hasattr(self, "environment_reporter"):
             self.environment_reporter.unload()
+        self.notification_manager.shutdown()
         self.vision_scheduler.async_stop()
         await self.storage_manager.async_force_save()
+
+
 
     async def async_load(self) -> None:
         """Load data from persistent storage and initialize the integration.

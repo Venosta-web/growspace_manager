@@ -15,6 +15,9 @@ def _make_sensor() -> StrainLibrarySensor:
     coordinator.strain_library.get_analytics.return_value = {
         "strains": {"OG Kush": {}},
         "strain_list": ["OG Kush"],
+        "lineage_trees": {
+            "OG Kush": {"name": "OG Kush", "parents": []},
+        },
     }
     coordinator.strain_library.get_strain_lineage_tree.return_value = {
         "name": "OG Kush",

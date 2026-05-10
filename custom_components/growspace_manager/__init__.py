@@ -197,13 +197,9 @@ async def async_register_sidebar_panel(
 
 @callback
 def _async_cancel_coordinators(coordinator: GrowspaceCoordinator) -> None:
-    """Cancel irrigation and dehumidifier listeners."""
-    for irr_coordinator in coordinator.irrigation_coordinators.values():
-        irr_coordinator.async_cancel_listeners()
-    for dehum_coordinator in coordinator.dehumidifier_coordinators.values():
-        dehum_coordinator.unload()
-    for hum_coordinator in coordinator.humidifier_coordinators.values():
-        hum_coordinator.unload()
+    """Cancel all sub-coordinator listeners via the subsystem manager."""
+    coordinator.subsystem_manager.async_cancel_all()
+
 
 
 @callback

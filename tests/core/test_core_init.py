@@ -434,20 +434,11 @@ async def test_async_setup_entry_with_growspaces(hass: HomeAssistant) -> None:
 async def test_async_unload_entry_with_coordinators_cleanup(mock_hass) -> None:
     """Test that _async_cancel_coordinators cleans up properly."""
 
-    mock_irrigation = MagicMock()
-    mock_irrigation.async_cancel_listeners = MagicMock()
-
-    mock_dehumidifier = MagicMock()
-    mock_dehumidifier.unload = MagicMock()
-
     coordinator = MagicMock()
-    coordinator.irrigation_coordinators = {"gs1": mock_irrigation}
-    coordinator.dehumidifier_coordinators = {"gs1": mock_dehumidifier}
-
     _async_cancel_coordinators(coordinator)
 
-    mock_irrigation.async_cancel_listeners.assert_called_once()
-    mock_dehumidifier.unload.assert_called_once()
+    coordinator.subsystem_manager.async_cancel_all.assert_called_once()
+
 
 
 @pytest.mark.asyncio
@@ -929,7 +920,7 @@ async def test_async_register_websocket_api(mock_hass) -> None:
         "homeassistant.components.websocket_api.async_register_command"
     ) as mock_reg:
         async_register_websocket_api(mock_hass)
-        assert mock_reg.call_count == 30
+        assert mock_reg.call_count == 33
 
 
 @pytest.mark.asyncio

@@ -109,8 +109,20 @@ class SubsystemManager:
     def async_cancel_all(self) -> None:
         """Cancel all sub-coordinator listeners."""
         for irr_coordinator in self.irrigation_coordinators.values():
-            irr_coordinator.async_cancel_listeners()
+            try:
+                irr_coordinator.async_cancel_listeners()
+            except Exception as err:
+                _LOGGER.error("Error cancelling irrigation listeners: %s", err)
+
         for dehum_coordinator in self.dehumidifier_coordinators.values():
-            dehum_coordinator.unload()
+            try:
+                dehum_coordinator.unload()
+            except Exception as err:
+                _LOGGER.error("Error unloading dehumidifier coordinator: %s", err)
+
         for hum_coordinator in self.humidifier_coordinators.values():
-            hum_coordinator.unload()
+            try:
+                hum_coordinator.unload()
+            except Exception as err:
+                _LOGGER.error("Error unloading humidifier coordinator: %s", err)
+

@@ -1555,6 +1555,33 @@ async def websocket_update_strain_lineage_tree(
         connection.send_error(msg["id"], "unknown_error", str(e))
 
 
+WS_TYPE_IMPORT_STRAIN_LINEAGE_TREE = f"{DOMAIN}/import_strain_lineage_tree"
+SCHEMA_WS_IMPORT_STRAIN_LINEAGE_TREE = websocket_api.BASE_COMMAND_MESSAGE_SCHEMA.extend(
+    {
+        vol.Required("type"): WS_TYPE_IMPORT_STRAIN_LINEAGE_TREE,
+        vol.Required("strain_name"): str,
+        vol.Required("tree"): dict,
+    }
+)
+
+
+async def websocket_import_strain_lineage_tree(
+    hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
+) -> None:
+    """Import a full seedfinder lineage tree, creating ancestor stubs as needed."""
+    strain_name = msg["strain_name"]
+    tree = msg["tree"]
+    try:
+        if DOMAIN not in hass.data or "strain_library" not in hass.data[DOMAIN]:
+            connection.send_error(msg["id"], "not_loaded", "Strain library not loaded")
+            return
+        strain_library = hass.data[DOMAIN]["strain_library"]
+        await strain_library.async_import_seedfinder_lineage_tree(strain_name, tree)
+        connection.send_result(msg["id"], {"ok": True})
+    except Exception as e:  # noqa: BLE001
+        connection.send_error(msg["id"], "unknown_error", str(e))
+
+
 async def websocket_query_external_strain(
     hass: HomeAssistant,
     connection: websocket_api.ActiveConnection,
@@ -1834,4 +1861,11 @@ def async_register_websocket_api(hass: HomeAssistant) -> None:
         WS_TYPE_GET_EXTERNAL_STRAIN_DETAILS,
         websocket_api.async_response(websocket_get_external_strain_details),
         SCHEMA_WS_GET_EXTERNAL_STRAIN_DETAILS,
+    )
+
+    websocket_api.async_register_command(
+        hass,
+        WS_TYPE_IMPORT_STRAIN_LINEAGE_TREE,
+        websocket_api.async_response(websocket_import_strain_lineage_tree),
+        SCHEMA_WS_IMPORT_STRAIN_LINEAGE_TREE,
     )

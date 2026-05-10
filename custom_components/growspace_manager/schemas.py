@@ -355,24 +355,26 @@ STRAIN_BASE_FIELDS: dict[Any, Any] = {
     vol.Optional("type"): str,
     vol.Optional("lineage"): str,
     vol.Optional("sex"): str,
-    vol.Optional("flower_days_min"): vol.All(vol.Coerce(int), vol.Range(min=0)),
-    vol.Optional("flower_days_max"): vol.All(vol.Coerce(int), vol.Range(min=0)),
-    vol.Optional("flowering_days_min"): vol.All(vol.Coerce(int), vol.Range(min=0)),
-    vol.Optional("flowering_days_max"): vol.All(vol.Coerce(int), vol.Range(min=0)),
+    vol.Optional("flower_days_min"): vol.Any(None, vol.All(vol.Coerce(int), vol.Range(min=0))),
+    vol.Optional("flower_days_max"): vol.Any(None, vol.All(vol.Coerce(int), vol.Range(min=0))),
+    vol.Optional("flowering_days_min"): vol.Any(None, vol.All(vol.Coerce(int), vol.Range(min=0))),
+    vol.Optional("flowering_days_max"): vol.Any(None, vol.All(vol.Coerce(int), vol.Range(min=0))),
     vol.Optional("description"): str,
     vol.Optional("image_base64"): str,
     vol.Optional("image"): str,
     vol.Optional("image_path"): str,
     vol.Optional("image_crop_meta"): dict,
-    vol.Optional("sativa_percentage"): vol.All(
-        vol.Coerce(int), vol.Range(min=0, max=100)
+    vol.Optional("sativa_percentage"): vol.Any(
+        None, vol.All(vol.Coerce(int), vol.Range(min=0, max=100))
     ),
-    vol.Optional("indica_percentage"): vol.All(
-        vol.Coerce(int), vol.Range(min=0, max=100)
+    vol.Optional("indica_percentage"): vol.Any(
+        None, vol.All(vol.Coerce(int), vol.Range(min=0, max=100))
     ),
     vol.Optional("yield_potential"): str,
     vol.Optional("height"): str,
-    vol.Optional("thc"): vol.Coerce(float),
+    vol.Optional("thc"): vol.Any(None, vol.Coerce(float)),
+    vol.Optional("cbd"): vol.Any(None, vol.Coerce(float)),
+    vol.Optional("cbg"): vol.Any(None, vol.Coerce(float)),
     vol.Optional("awards"): [str],
     vol.Optional("lineage_tree"): dict,
 }

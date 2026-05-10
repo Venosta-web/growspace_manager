@@ -206,3 +206,70 @@ async def test_async_update_strain_generation_updates_in_memory_cache():
     await lib.async_update_strain_generation("OG Kush", "BX")
 
     assert lib.strains["OG Kush"]["meta"]["generation"] == "BX"
+
+
+@pytest.mark.asyncio
+async def test_async_import_seedfinder_lineage_tree_creates_stubs_and_stores_lineage():
+    """Full multi-level seedfinder tree creates ancestor stubs and wires each node's parents."""
+    from custom_components.growspace_manager.strain_library import StrainLibrary
+    import json
+
+    hass = MagicMock()
+    hass.config.path.return_value = "/tmp/test_strain_lib.db"
+    lib = StrainLibrary(hass)
+    lib._db = AsyncMock()
+    lib._db.execute = AsyncMock()
+    lib._db.commit = AsyncMock()
+    lib.load = AsyncMock()
+    lib._lineage_cache = {}
+
+    # Root already in library; ancestors are not
+    lib.strains = {"Chem Cake": {"meta": {}, "phenotypes": {}}}
+
+    tree = {
+        "name": "Chem Cake",
+        "parents": [
+            {
+                "name": "Chemdog",
+                "parents": [],
+            },
+            {
+                "name": "Wedding Cake",
+                "parents": [
+                    {"name": "Triangle Mints", "parents": []},
+                    {"name": "Animal Mints", "parents": []},
+                ],
+            },
+        ],
+    }
+
+    await lib.async_import_seedfinder_lineage_tree("Chem Cake", tree)
+
+    all_sqls = [str(c) for c in lib._db.execute.call_args_list]
+
+    # Stubs created for all non-root ancestors not in library
+    stub_names = ["Chemdog", "Wedding Cake", "Triangle Mints", "Animal Mints"]
+    for name in stub_names:
+        assert any(name in s for s in all_sqls), f"No stub INSERT found for {name}"
+
+    # lineage_tree stored for nodes with parents: Chem Cake and Wedding Cake
+    update_calls = [c for c in all_sqls if "lineage_tree" in c]
+    assert len(update_calls) >= 2
+
+    lib._db.commit.assert_called_once()
+    lib.load.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_async_import_seedfinder_lineage_tree_noop_when_db_none():
+    """Silently does nothing when DB is not connected."""
+    from custom_components.growspace_manager.strain_library import StrainLibrary
+
+    hass = MagicMock()
+    hass.config.path.return_value = "/tmp/test_strain_lib.db"
+    lib = StrainLibrary(hass)
+    lib._db = None
+    lib.strains = {}
+
+    # Must not raise
+    await lib.async_import_seedfinder_lineage_tree("X", {"name": "X", "parents": [{"name": "Y", "parents": []}]})

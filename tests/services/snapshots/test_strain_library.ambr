@@ -1,6 +1,14 @@
 # serializer version: 1
 # name: test_analytics_snapshot
   dict({
+    'lineage_trees': dict({
+      'Blue Dream': dict({
+        'name': 'Blue Dream',
+        'parents': list([
+        ]),
+        'source': 'library',
+      }),
+    }),
     'strain_list': list([
       'Blue Dream',
     ]),
@@ -12,9 +20,17 @@
           'total_harvests': 1,
         }),
         'meta': dict({
+          'aroma': list([
+          ]),
+          'awards': list([
+          ]),
           'breeder': 'Humboldt',
+          'effects': list([
+          ]),
           'indica_percentage': 40,
           'sativa_percentage': 60,
+          'taste': list([
+          ]),
           'type': 'Hybrid',
         }),
         'phenotypes': dict({

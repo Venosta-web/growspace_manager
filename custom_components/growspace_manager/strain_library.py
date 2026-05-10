@@ -859,6 +859,81 @@ class StrainLibrary:
         _LOGGER.info("Updated lineage tree for strain '%s'", strain_name)
         return flat_lineage
 
+    async def async_import_seedfinder_lineage_tree(
+        self,
+        root_strain_name: str,
+        tree: dict[str, Any],
+    ) -> None:
+        """Import a full multi-level seedfinder lineage tree.
+
+        Walks every node in the tree, creates stub library entries for ancestors
+        not already in the library, and stores each node's immediate parents so
+        that ``get_strain_lineage_tree`` can resolve the full depth recursively.
+
+        The root strain itself must already exist in the library before calling
+        this method (the caller is responsible for that).
+
+        Args:
+            root_strain_name: The root strain whose lineage is being imported.
+            tree: Full lineage tree dict from the Seedfinder scraper
+                  (``{name, parents: [{name, parents: ...}, ...]}``)
+        """
+        if self._db is None:
+            return
+
+        lineage_by_node: dict[str, list[str]] = {}
+
+        def _collect(node: dict[str, Any]) -> None:
+            name = (node.get("name") or "").strip()
+            if not name:
+                return
+            parents = node.get("parents") or []
+            parent_names = [
+                (p.get("name") or "").strip() for p in parents if (p.get("name") or "").strip()
+            ]
+            if parent_names:
+                lineage_by_node[name] = parent_names[:2]
+            for parent in parents:
+                _collect(parent)
+
+        _collect(tree)
+
+        if not lineage_by_node:
+            return
+
+        all_names: set[str] = set()
+        for name, parent_names in lineage_by_node.items():
+            all_names.add(name)
+            all_names.update(parent_names)
+
+        for ancestor_name in all_names:
+            if ancestor_name == root_strain_name:
+                continue
+            await self._db.execute(
+                "INSERT OR IGNORE INTO strains (strain_name) VALUES (?)",
+                (ancestor_name,),
+            )
+            await self._db.execute(
+                """
+                INSERT OR IGNORE INTO phenotypes (strain_id, phenotype_name)
+                SELECT strain_id, 'default' FROM strains WHERE strain_name = ?
+                """,
+                (ancestor_name,),
+            )
+
+        for name, parent_names in lineage_by_node.items():
+            library_parents = [{"name": n, "source": "library"} for n in parent_names]
+            flat_lineage = " × ".join(parent_names)
+            await self._db.execute(
+                "UPDATE strains SET lineage_tree = ?, lineage = ? WHERE strain_name = ?",
+                (json.dumps(library_parents), flat_lineage, name),
+            )
+
+        await self._db.commit()
+        await self.load()
+        self._lineage_cache.clear()
+        _LOGGER.info("Imported seedfinder lineage tree for '%s' (%d nodes)", root_strain_name, len(lineage_by_node))
+
     async def async_update_strain_generation(
         self, strain_name: str, generation: str
     ) -> None:

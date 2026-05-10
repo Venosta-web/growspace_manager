@@ -15,11 +15,12 @@ from homeassistant.core import HomeAssistant
 
 
 @pytest.fixture
-def coordinator(hass: HomeAssistant):
+async def mock_coordinator(hass: HomeAssistant):
     coord = GrowspaceCoordinator(hass, MagicMock(), MagicMock())
     # Mock storage and other components to avoid hitting real storage
     coord.storage_manager = MagicMock()
     coord.storage_manager.async_save = AsyncMock()
+    coord.storage_manager.async_force_save = AsyncMock()
     coord.async_save = AsyncMock()
     # Mock save callback on watering service since it now handles saves
     coord._watering_service.save_callback = coord.async_save
@@ -55,13 +56,17 @@ def coordinator(hass: HomeAssistant):
     }
     coord.nutrient_manager.load_data({}, {}, inventory)
 
-    return coord
+    try:
+        yield coord
+    finally:
+        await coord.async_shutdown()
+
 
 
 @pytest.mark.asyncio
 @patch("custom_components.growspace_manager.events.async_fire_plant_event")
 async def test_water_growspace_total_amount_deduction(
-    mock_fire_event, coordinator
+    mock_fire_event, mock_coordinator
 ) -> None:
     """Test that watering a growspace with total amount deducts correctly."""
     # 5L total for 3 plants
@@ -70,34 +75,31 @@ async def test_water_growspace_total_amount_deduction(
 
     # Expected total deduction: 5.0 * 2.0 = 10.0 ml
 
-    await coordinator.async_water_growspace(
+    await mock_coordinator.async_water_growspace(
         growspace_id="gs1", amount=total_amount, nutrients=nutrients
     )
 
-    stock = coordinator.nutrient_manager.inventory.stocks["n1"]
+    stock = mock_coordinator.nutrient_manager.inventory.stocks["n1"]
     assert stock.current_ml == pytest.approx(90.0)
 
-    coordinator.async_save.assert_awaited()
+    mock_coordinator.async_save.assert_awaited()
 
 
 @pytest.mark.asyncio
 @patch("custom_components.growspace_manager.events.async_fire_plant_event")
 async def test_water_growspace_per_plant_compatibility(
-    mock_fire_event, coordinator
+    mock_fire_event, mock_coordinator
 ) -> None:
     """Test that legacy amount_per_plant still works."""
-    # Mock hass.bus
-    coordinator.hass.bus = MagicMock()
-
     # 2L per plant for 3 plants = 6L total
     amount_per_plant = 2.0
     nutrients = {"Nutrient A": 1.0}  # 1ml/L
 
     # Expected total deduction: 3 plants * 2.0L * 1.0ml/L = 6.0 ml
 
-    await coordinator.async_water_growspace(
+    await mock_coordinator.async_water_growspace(
         growspace_id="gs1", amount_per_plant=amount_per_plant, nutrients=nutrients
     )
 
-    stock = coordinator.nutrient_manager.inventory.stocks["n1"]
+    stock = mock_coordinator.nutrient_manager.inventory.stocks["n1"]
     assert stock.current_ml == pytest.approx(94.0)  # 100 - 6
