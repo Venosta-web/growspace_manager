@@ -107,6 +107,27 @@ from .const import (
 )
 from .validation import valid_date_or_none, valid_growspace_id
 
+
+def _validate_pump_entities(config: dict) -> dict:
+    """Validate that irrigation and drain pumps are not the same entity."""
+    irr = config.get("irrigation_pump_entity")
+    drain = config.get("drain_pump_entity")
+    if irr and drain and irr == drain:
+        raise vol.Invalid("Irrigation and drain pump cannot be the same entity")
+    return config
+
+
+def _validate_genetic_percentages(config: dict) -> dict:
+    """Validate that sativa and indica percentages sum to <= 100."""
+    sativa = config.get("sativa_percentage")
+    indica = config.get("indica_percentage")
+    if sativa is not None and indica is not None:
+        if sativa + indica > 100:
+            raise vol.Invalid(
+                f"Sativa ({sativa}%) and Indica ({indica}%) sum to {sativa + indica}%, which exceeds 100%"
+            )
+    return config
+
 # Shared Schema Dictionaries
 _PLANT_DATE_FIELDS: dict[Any, Any] = {
     vol.Optional(field): valid_date_or_none for field in DATE_FIELDS
@@ -379,11 +400,14 @@ STRAIN_BASE_FIELDS: dict[Any, Any] = {
     vol.Optional("lineage_tree"): dict,
 }
 
-ADD_STRAIN_SCHEMA = vol.Schema(
-    {
-        vol.Required("strain"): str,
-        **STRAIN_BASE_FIELDS,
-    }
+ADD_STRAIN_SCHEMA = vol.All(
+    vol.Schema(
+        {
+            vol.Required("strain"): str,
+            **STRAIN_BASE_FIELDS,
+        }
+    ),
+    _validate_genetic_percentages,
 )
 
 REMOVE_STRAIN_SCHEMA = vol.Schema(
@@ -393,11 +417,14 @@ REMOVE_STRAIN_SCHEMA = vol.Schema(
     }
 )
 
-UPDATE_STRAIN_META_SCHEMA = vol.Schema(
-    {
-        vol.Required("strain"): str,
-        **STRAIN_BASE_FIELDS,
-    }
+UPDATE_STRAIN_META_SCHEMA = vol.All(
+    vol.Schema(
+        {
+            vol.Required("strain"): str,
+            **STRAIN_BASE_FIELDS,
+        }
+    ),
+    _validate_genetic_percentages,
 )
 
 # Print Label
@@ -522,15 +549,20 @@ STRAIN_RECOMMENDATION_SCHEMA = vol.Schema(
 
 # --- Irrigation Service Schemas ---
 
-SET_IRRIGATION_SETTINGS_SCHEMA = vol.Schema(
-    {
-        vol.Required("growspace_id"): vol.All(str, valid_growspace_id),
-        vol.Optional("irrigation_pump_entity"): str,
-        vol.Optional("drain_pump_entity"): str,
-        vol.Optional("irrigation_duration"): vol.All(vol.Coerce(int), vol.Range(min=1)),
-        vol.Optional("drain_duration"): vol.All(vol.Coerce(int), vol.Range(min=1)),
-    }
+
+SET_IRRIGATION_SETTINGS_SCHEMA = vol.All(
+    vol.Schema(
+        {
+            vol.Required("growspace_id"): vol.All(str, valid_growspace_id),
+            vol.Optional("irrigation_pump_entity"): str,
+            vol.Optional("drain_pump_entity"): str,
+            vol.Optional("irrigation_duration"): vol.All(vol.Coerce(int), vol.Range(min=1)),
+            vol.Optional("drain_duration"): vol.All(vol.Coerce(int), vol.Range(min=1)),
+        }
+    ),
+    _validate_pump_entities,
 )
+
 
 _ADD_SCHEDULE_TIME_BASE = {
     vol.Required("growspace_id"): vol.All(str, valid_growspace_id),
