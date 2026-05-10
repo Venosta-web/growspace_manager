@@ -62,7 +62,8 @@ CREATE TABLE IF NOT EXISTS strains (
     description TEXT,
     is_indoor INTEGER DEFAULT 1,
     is_outdoor INTEGER DEFAULT 1,
-    is_greenhouse INTEGER DEFAULT 1
+    is_greenhouse INTEGER DEFAULT 1,
+    is_stub INTEGER DEFAULT 0
 );
 CREATE TABLE IF NOT EXISTS phenotypes (
     phenotype_id INTEGER PRIMARY KEY,
@@ -168,6 +169,14 @@ class StrainLibrary:
             await self._db.execute("ALTER TABLE strains ADD COLUMN generation TEXT")
             await self._db.commit()
             _LOGGER.info("Added generation column to strains table")
+        except aiosqlite.OperationalError:
+            pass  # Column already exists
+
+        # Ensure is_stub column exists (backwards compatibility)
+        try:
+            await self._db.execute("ALTER TABLE strains ADD COLUMN is_stub INTEGER DEFAULT 0")
+            await self._db.commit()
+            _LOGGER.info("Added is_stub column to strains table")
         except aiosqlite.OperationalError:
             pass  # Column already exists
 
