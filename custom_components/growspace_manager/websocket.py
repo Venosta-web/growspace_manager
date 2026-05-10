@@ -1600,7 +1600,9 @@ async def websocket_import_strain_lineage_tree(
     try:
         coordinator = GrowspaceCoordinator.get_any(hass)
         strain_library = coordinator.strain_library
-        await strain_library.async_import_seedfinder_lineage_tree(strain_name, tree)
+        await strain_library.async_import_seedfinder_lineage_tree(
+            strain_name, tree, scraper=coordinator.seedfinder_scraper
+        )
         connection.send_result(msg["id"], {"ok": True})
     except ServiceValidationError:
         connection.send_error(msg["id"], "not_loaded", "Strain library not loaded")

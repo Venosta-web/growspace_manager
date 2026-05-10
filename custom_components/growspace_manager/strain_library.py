@@ -942,12 +942,17 @@ class StrainLibrary:
         self,
         root_strain_name: str,
         tree: dict[str, Any],
+        scraper: Any | None = None,
     ) -> None:
         """Import a full multi-level seedfinder lineage tree.
 
         Walks every node in the tree, creates stub library entries for ancestors
         not already in the library, and stores each node's immediate parents so
         that ``get_strain_lineage_tree`` can resolve the full depth recursively.
+
+        When ``scraper`` is provided, any parent node that has a SeedFinder URL
+        but no children (i.e. the root page didn't expand that branch) is
+        automatically fetched so its own lineage is included.
 
         The root strain itself must already exist in the library before calling
         this method (the caller is responsible for that).
@@ -956,11 +961,16 @@ class StrainLibrary:
             root_strain_name: The root strain whose lineage is being imported.
             tree: Full lineage tree dict from the Seedfinder scraper
                   (``{name, parents: [{name, parents: ...}, ...]}``)
+            scraper: Optional SeedfinderScraper used to follow URLs for leaf
+                     parent nodes that have no children in the scraped tree.
         """
         if self._db is None:
             return
 
         lineage_by_node: dict[str, list[str]] = {}
+        # Collect (name, url) for parent nodes that appear as leaves (no children)
+        # but have a SeedFinder URL we can follow to get their lineage.
+        leaf_parent_urls: dict[str, str] = {}
 
         def _collect(node: dict[str, Any]) -> None:
             name = (node.get("name") or "").strip()
@@ -975,9 +985,31 @@ class StrainLibrary:
             if parent_names:
                 lineage_by_node[name] = parent_names[:2]
             for parent in parents:
+                pname = (parent.get("name") or "").strip()
+                purl = (parent.get("url") or "").strip()
+                if pname and purl and not (parent.get("parents") or []):
+                    leaf_parent_urls[pname] = purl
                 _collect(parent)
 
         _collect(tree)
+
+        # For leaf parents with a known URL, fetch their own lineage page so we
+        # capture branches that SeedFinder didn't expand on the root strain page.
+        if scraper and leaf_parent_urls:
+            for pname, purl in leaf_parent_urls.items():
+                if pname in lineage_by_node:
+                    continue  # already resolved from the initial tree
+                try:
+                    parent_details = await scraper.async_get_strain_details(purl)
+                    if parent_details and parent_details.get("lineage_tree"):
+                        parent_tree = parent_details["lineage_tree"]
+                        parent_tree.setdefault("name", pname)
+                        _collect(parent_tree)
+                        _LOGGER.debug(
+                            "Fetched lineage for leaf parent '%s' from %s", pname, purl
+                        )
+                except Exception:  # noqa: BLE001
+                    _LOGGER.debug("Could not fetch lineage for '%s' at %s", pname, purl)
 
         if not lineage_by_node:
             return
