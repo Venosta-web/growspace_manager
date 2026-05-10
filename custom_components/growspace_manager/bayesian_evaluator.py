@@ -718,7 +718,10 @@ def evaluate_substrate_temp_stress(
     if temp < SUBSTRATE_TEMP_STRESS_LOW:
         observations.append(PROB_SUBSTRATE_TEMP_EXTREME)
         reasons.append(
-            (PROB_SUBSTRATE_TEMP_EXTREME[0], f"Substrate temp critically low ({temp}°C)")
+            (
+                PROB_SUBSTRATE_TEMP_EXTREME[0],
+                f"Substrate temp critically low ({temp}°C)",
+            )
         )
     elif temp < SUBSTRATE_TEMP_OPTIMAL_MIN:
         observations.append(PROB_SUBSTRATE_TEMP_STRESS)
@@ -728,7 +731,10 @@ def evaluate_substrate_temp_stress(
     elif temp > SUBSTRATE_TEMP_STRESS_HIGH:
         observations.append(PROB_SUBSTRATE_TEMP_EXTREME)
         reasons.append(
-            (PROB_SUBSTRATE_TEMP_EXTREME[0], f"Substrate temp critically high ({temp}°C)")
+            (
+                PROB_SUBSTRATE_TEMP_EXTREME[0],
+                f"Substrate temp critically high ({temp}°C)",
+            )
         )
     elif temp > SUBSTRATE_TEMP_OPTIMAL_MAX:
         observations.append(PROB_SUBSTRATE_TEMP_STRESS)

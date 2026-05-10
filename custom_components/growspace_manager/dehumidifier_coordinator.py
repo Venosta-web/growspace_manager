@@ -132,14 +132,22 @@ class DehumidifierCoordinator:
         )
 
         # Valid if we have VPD sensor and at least one device to control
-        has_devices = bool(self.dehumidifier_entities or self.exhaust_fan_entities)
+        self.has_devices = bool(self.dehumidifier_entities or self.exhaust_fan_entities)
 
-        if self.vpd_sensor and has_devices and self.control_dehumidifier:
+        if self.vpd_sensor and self.has_devices and self.control_dehumidifier:
+            _LOGGER.debug(
+                "DehumidifierCoordinator initialized for %s. Call async_setup() to start monitoring",
+                self.growspace.name,
+            )
+
+    async def async_setup(self) -> None:
+        """Set up the coordinator and start monitoring."""
+        if self.vpd_sensor and self.has_devices and self.control_dehumidifier:
             self._setup_listeners()
-            # Start initial check after reload/starup
-            self.hass.async_create_task(self.async_check_and_control())
+            # Start initial check after reload/startup
+            await self.async_check_and_control()
             _LOGGER.info(
-                "DehumidifierCoordinator initialized for %s (VPD: %s, Devices: %d)",
+                "DehumidifierCoordinator started for %s (VPD: %s, Devices: %d)",
                 self.growspace.name,
                 self.vpd_sensor,
                 len(self.dehumidifier_entities) + len(self.exhaust_fan_entities),

@@ -90,10 +90,10 @@ class BaseIrrigationCoordinator:
         self._listeners = []
 
         if cancel_tasks:
-            for task in self._running_tasks.values():
+            for task in list(self._running_tasks.values()):
                 if task and not task.done():
                     task.cancel()
-            self._running_tasks = {}
+            self._running_tasks.clear()
         _LOGGER.debug(
             "Cancelled all irrigation listeners for growspace %s", self._growspace_id
         )

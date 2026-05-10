@@ -327,8 +327,7 @@ class BayesianEnvironmentSensor(
 
         # TrendAnalyzer will be initialized in async_added_to_hass when self.hass is available
         self.trend_analyzer: TrendAnalyzer | None = None
-        if notification_manager:
-            self.notification_manager = notification_manager
+        self.notification_manager = notification_manager
 
     @property
     def sensor_states(self) -> dict[str, Any]:
@@ -371,22 +370,45 @@ class BayesianEnvironmentSensor(
 
         # Aggregate sensors with fallback to singular if needed
         temp = self._get_aggregated_sensor_value(
-            [s for s in (self.env_config.temperature_sensor, *self.env_config.temperature_sensors) if s is not None]
+            [
+                s
+                for s in (
+                    self.env_config.temperature_sensor,
+                    *self.env_config.temperature_sensors,
+                )
+                if s is not None
+            ]
         )
         humidity = self._get_aggregated_sensor_value(
-            [s for s in (self.env_config.humidity_sensor, *self.env_config.humidity_sensors) if s is not None]
+            [
+                s
+                for s in (
+                    self.env_config.humidity_sensor,
+                    *self.env_config.humidity_sensors,
+                )
+                if s is not None
+            ]
         )
         vpd = self._get_aggregated_sensor_value(
-            [s for s in (self.env_config.vpd_sensor, *self.env_config.vpd_sensors) if s is not None]
+            [
+                s
+                for s in (self.env_config.vpd_sensor, *self.env_config.vpd_sensors)
+                if s is not None
+            ]
         )
 
         # Fallback: Calculate VPD if sensor is missing but Temp/Hum are available
         active_lst_offset = self.env_config.lst_offset
-        if growspace and growspace.growspace_type in (GrowspaceType.DRY, GrowspaceType.CURE):
+        if growspace and growspace.growspace_type in (
+            GrowspaceType.DRY,
+            GrowspaceType.CURE,
+        ):
             active_lst_offset = 0.0
 
         if vpd is None and temp is not None and humidity is not None:
-            vpd = VPDCalculator.calculate_vpd_with_lst_offset(temp, humidity, active_lst_offset)
+            vpd = VPDCalculator.calculate_vpd_with_lst_offset(
+                temp, humidity, active_lst_offset
+            )
 
         co2 = self._get_sensor_value(self.env_config.co2_sensor)
 
@@ -496,7 +518,8 @@ class BayesianEnvironmentSensor(
                 "Light switched in %s. Triggering notification cooldown",
                 self.growspace_id,
             )
-            self.notification_manager.trigger_cooldown(self.growspace_id)
+            if self.notification_manager:
+                self.notification_manager.trigger_cooldown(self.growspace_id)
 
     async def async_added_to_hass(self) -> None:
         """Register callbacks when the entity is added to Home Assistant."""
@@ -506,7 +529,8 @@ class BayesianEnvironmentSensor(
         self.trend_analyzer = TrendAnalyzer(self.hass)
 
         # Register for batched notifications
-        self.notification_manager.attach_sensor(self.growspace_id, self)
+        if self.notification_manager:
+            self.notification_manager.attach_sensor(self.growspace_id, self)
 
         c = self.env_config
         sensors = [
@@ -542,7 +566,8 @@ class BayesianEnvironmentSensor(
 
     async def async_will_remove_from_hass(self) -> None:
         """Unregister from batched notifications."""
-        self.notification_manager.detach_sensor(self.growspace_id, self)
+        if self.notification_manager:
+            self.notification_manager.detach_sensor(self.growspace_id, self)
         await super().async_will_remove_from_hass()
 
     @callback
@@ -675,9 +700,11 @@ class BayesianEnvironmentSensor(
 
     def generate_notification_message(self, base_message: str) -> str:
         """Construct a detailed notification message from the list of reasons."""
-        return self.notification_manager.generate_notification_message(
-            base_message, self._reasons
-        )
+        if self.notification_manager:
+            return self.notification_manager.generate_notification_message(
+                base_message, self._reasons
+            )
+        return base_message
 
     async def _send_notification(self, title: str, message: str) -> None:
         """Send a notification to the configured target for the growspace."""
@@ -706,9 +733,10 @@ class BayesianEnvironmentSensor(
                         "Failed to generate AI alert, falling back to standard message"
                     )
 
-            await self.notification_manager.async_send_notification(
-                self.growspace_id, title, final_message, self._sensor_states
-            )
+            if self.notification_manager:
+                await self.notification_manager.async_send_notification(
+                    self.growspace_id, title, final_message, self._sensor_states
+                )
         except Exception:
             _LOGGER.exception("Failed to send notification to %s", self.growspace_id)
 
@@ -805,7 +833,7 @@ class BayesianEnvironmentSensor(
 
         # Update pending alert state on every probability update
         # (replaces direct async_schedule_notification call on state change)
-        if self.entity_description.sensor_type != GrowspaceSensorType.OPTIMAL:
+        if self.notification_manager and self.entity_description.sensor_type != GrowspaceSensorType.OPTIMAL:
             self.notification_manager.update_pending_alert(self.growspace_id, self)
 
         self.async_write_ha_state()
@@ -1020,15 +1048,15 @@ class LightCycleVerificationSensor(
         return {"veg_days": max_veg, "flower_days": max_flower}
 
     def _get_current_stage_key(self, stage_info: dict[str, int]) -> str:
-        """Determine the current stage key based on day counts."""
-        flower_days = stage_info["flower_days"]
-        _, stage_b, _ = calculate_stage_transition(flower_days)
-        # Use stage_b if we are more than halfway through transition,
-        # but for light cycles we usually want a clean jump.
-        # Original boundaries were 21 and 42 (inclusive/exclusive boundary).
-        # calculate_stage_transition(21) returns ('flower_early', 'flower_mid', 1.0)
-        # calculate_stage_transition(42) returns ('flower_mid', 'flower_late', 1.0)
-        # So we just take stage_b which represents the "current or next" target.
+        _, stage_b, _ = calculate_stage_transition(
+            stage_info.get("flower_days", -1),
+            stage_info.get("veg_days", -1),
+            stage_info.get("seedling_days", -1),
+            stage_info.get("clone_days", -1),
+            stage_info.get("dry_days", -1),
+            stage_info.get("cure_days", -1),
+            stage_info.get("mother_days", -1),
+        )
         return stage_b
 
     @callback

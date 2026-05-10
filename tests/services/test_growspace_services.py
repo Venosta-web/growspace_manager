@@ -11,6 +11,7 @@ from custom_components.growspace_manager.services.ai_assistant import (
     handle_ask_grow_advice,
 )
 from custom_components.growspace_manager.services.growspace import (
+    async_add_growspace_note,
     handle_add_growspace,
     handle_remove_growspace,
     handle_update_growspace,
@@ -430,3 +431,137 @@ async def test_handle_remove_growspace_growspace_error(
 
     with pytest.raises(ServiceValidationError, match="Remove error"):
         await handle_remove_growspace(mock_hass, mock_coordinator, mock_call)
+
+
+# ---------------------------------------------------------------------------
+# async_add_growspace_note tests (lines 105-132)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_async_add_growspace_note_growspace_not_found(
+    mock_hass: MagicMock,
+    mock_coordinator: MagicMock,
+    mock_strain_library: MagicMock,
+) -> None:
+    """Raise ServiceValidationError when growspace_id not in coordinator.growspaces."""
+    mock_coordinator.growspaces = {}
+    with pytest.raises(ServiceValidationError, match="not found"):
+        await async_add_growspace_note(
+            mock_hass,
+            mock_coordinator,
+            mock_strain_library,
+            growspace_id="missing_gs",
+            notes="hello",
+        )
+
+
+@pytest.mark.asyncio
+async def test_async_add_growspace_note_no_images(
+    mock_hass: MagicMock,
+    mock_coordinator: MagicMock,
+    mock_strain_library: MagicMock,
+) -> None:
+    """Fire event with empty image list when images_base64 is None."""
+    mock_coordinator.growspaces = {"gs1": MagicMock()}
+    mock_hass.bus = MagicMock()
+
+    await async_add_growspace_note(
+        mock_hass,
+        mock_coordinator,
+        mock_strain_library,
+        growspace_id="gs1",
+        notes="A note",
+        images_base64=None,
+    )
+
+    mock_hass.bus.async_fire.assert_called_once()
+    fired_data = mock_hass.bus.async_fire.call_args[0][1]
+    assert fired_data["notes"] == "A note"
+    assert fired_data["images"] == []
+    assert fired_data["category"] == "note"
+
+
+@pytest.mark.asyncio
+async def test_async_add_growspace_note_with_images_success(
+    mock_hass: MagicMock,
+    mock_coordinator: MagicMock,
+    mock_strain_library: MagicMock,
+) -> None:
+    """Save images and include paths in fired event when images_base64 is provided."""
+    mock_coordinator.growspaces = {"gs1": MagicMock()}
+    mock_hass.bus = MagicMock()
+
+    mock_image_manager = MagicMock()
+    mock_image_manager.save_timeline_image = AsyncMock(
+        return_value="/config/www/growspace_manager/timeline/img_abc.jpg"
+    )
+    mock_strain_library.image_manager = mock_image_manager
+
+    await async_add_growspace_note(
+        mock_hass,
+        mock_coordinator,
+        mock_strain_library,
+        growspace_id="gs1",
+        notes="Note with image",
+        images_base64=["base64data=="],
+    )
+
+    mock_image_manager.save_timeline_image.assert_awaited_once_with(
+        plant_id="gs1", image_base64="base64data=="
+    )
+    fired_data = mock_hass.bus.async_fire.call_args[0][1]
+    assert fired_data["images"] == ["timeline/img_abc.jpg"]
+
+
+@pytest.mark.asyncio
+async def test_async_add_growspace_note_image_save_error(
+    mock_hass: MagicMock,
+    mock_coordinator: MagicMock,
+    mock_strain_library: MagicMock,
+) -> None:
+    """Log error and continue when saving a growspace note image fails."""
+    mock_coordinator.growspaces = {"gs1": MagicMock()}
+    mock_hass.bus = MagicMock()
+
+    mock_image_manager = MagicMock()
+    mock_image_manager.save_timeline_image = AsyncMock(side_effect=OSError("disk full"))
+    mock_strain_library.image_manager = mock_image_manager
+
+    await async_add_growspace_note(
+        mock_hass,
+        mock_coordinator,
+        mock_strain_library,
+        growspace_id="gs1",
+        notes="Note with bad image",
+        images_base64=["bad_base64"],
+    )
+
+    # Event still fired, but with empty image list because save failed
+    mock_hass.bus.async_fire.assert_called_once()
+    fired_data = mock_hass.bus.async_fire.call_args[0][1]
+    assert fired_data["images"] == []
+
+
+@pytest.mark.asyncio
+async def test_async_add_growspace_note_no_image_manager(
+    mock_hass: MagicMock,
+    mock_coordinator: MagicMock,
+    mock_strain_library: MagicMock,
+) -> None:
+    """Skip image saving when strain_library has no image_manager."""
+    mock_coordinator.growspaces = {"gs1": MagicMock()}
+    mock_hass.bus = MagicMock()
+    mock_strain_library.image_manager = None
+
+    await async_add_growspace_note(
+        mock_hass,
+        mock_coordinator,
+        mock_strain_library,
+        growspace_id="gs1",
+        notes="Note",
+        images_base64=["somedata"],
+    )
+
+    fired_data = mock_hass.bus.async_fire.call_args[0][1]
+    assert fired_data["images"] == []

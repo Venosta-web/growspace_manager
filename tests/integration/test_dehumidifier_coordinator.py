@@ -81,14 +81,16 @@ def mock_growspace():
 
 
 @pytest.fixture
-def coordinator(
+async def coordinator(
     mock_hass, mock_main_coordinator, mock_growspace, mock_track_state_change_event
 ):
     """Create a DehumidifierCoordinator instance."""
     mock_main_coordinator.growspaces = {"gs1": mock_growspace}
-    return DehumidifierCoordinator(
+    coord = DehumidifierCoordinator(
         mock_hass, mock_track_state_change_event, "gs1", mock_main_coordinator
     )
+    await coord.async_setup()
+    return coord
 
 
 async def test_initialization(
@@ -103,7 +105,6 @@ async def test_initialization(
     # Verify listener setup
     assert len(coordinator._remove_listeners) > 0
     mock_track_state_change_event.assert_called_once()
-    mock_hass.async_create_task.assert_called_once()
 
 
 async def test_initialization_disabled(
@@ -116,6 +117,7 @@ async def test_initialization_disabled(
     coord = DehumidifierCoordinator(
         mock_hass, mock_track_state_change_event, "gs1", mock_main_coordinator
     )
+    await coord.async_setup()
     setattr(coord, "async_check_and_control", MagicMock())
 
     assert coord.control_dehumidifier is False
@@ -134,6 +136,7 @@ async def test_initialization_missing_entities(
     coord = DehumidifierCoordinator(
         mock_hass, mock_track_state_change_event, "gs1", mock_main_coordinator
     )
+    await coord.async_setup()
     setattr(coord, "async_check_and_control", MagicMock())
 
     assert len(coord._remove_listeners) == 0
@@ -432,6 +435,7 @@ async def test_on_sensor_change(
     coordinator = DehumidifierCoordinator(
         mock_hass, mock_track_state_change_event, "gs1", mock_main_coordinator
     )
+    await coordinator.async_setup()
 
     # Mock async_check_and_control to verify it's awaited
     coordinator.async_check_and_control = AsyncMock()  # type: ignore[method-assign]
@@ -450,6 +454,7 @@ async def test_check_and_control_missing_entities(
     coordinator = DehumidifierCoordinator(
         mock_hass, mock_track_state_change_event, "gs1", mock_main_coordinator
     )
+    await coordinator.async_setup()
 
     # Force vpd_sensor to None after init
     coordinator.vpd_sensor = None
@@ -469,6 +474,7 @@ async def test_binary_light_sensor(
     coordinator = DehumidifierCoordinator(
         mock_hass, mock_track_state_change_event, "gs1", mock_main_coordinator
     )
+    await coordinator.async_setup()
 
     # Setup states
     mock_hass.states.get.side_effect = lambda entity_id: MagicMock(
@@ -511,6 +517,7 @@ async def test_generic_domain_control(
     coordinator = DehumidifierCoordinator(
         mock_hass, mock_track_state_change_event, "gs1", mock_main_coordinator
     )
+    await coordinator.async_setup()
 
     # Manually invoke control
     await coordinator._control_dehumidifier(True)
@@ -569,6 +576,7 @@ async def test_control_domain_fallback(
     coordinator = DehumidifierCoordinator(
         mock_hass, mock_track_state_change_event, "gs1", mock_main_coordinator
     )
+    await coordinator.async_setup()
 
     await coordinator._control_dehumidifier(True)
 

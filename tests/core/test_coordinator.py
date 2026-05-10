@@ -2420,10 +2420,17 @@ async def test_setup_sub_coordinators(coordinator: GrowspaceCoordinator) -> None
         patch(
             "custom_components.growspace_manager.managers.subsystem.DehumidifierCoordinator"
         ) as mock_dehum,
+        patch(
+            "custom_components.growspace_manager.managers.subsystem.HumidifierCoordinator"
+        ) as mock_hum,
     ):
         # Setup standard
         mock_irr_instance = AsyncMock()
         mock_irr.return_value = mock_irr_instance
+        mock_dehum_instance = AsyncMock()
+        mock_dehum.return_value = mock_dehum_instance
+        mock_hum_instance = AsyncMock()
+        mock_hum.return_value = mock_hum_instance
 
         await coordinator.subsystem_manager.async_setup_growspace_sub_coordinators(
             "gs1", gs_normal
@@ -2435,7 +2442,12 @@ async def test_setup_sub_coordinators(coordinator: GrowspaceCoordinator) -> None
         assert "gs1" in coordinator.subsystem_manager.irrigation_coordinators
 
         mock_dehum.assert_called_once()
+        mock_dehum_instance.async_setup.assert_awaited_once()
         assert "gs1" in coordinator.subsystem_manager.dehumidifier_coordinators
+
+        mock_hum.assert_called_once()
+        mock_hum_instance.async_setup.assert_awaited_once()
+        assert "gs1" in coordinator.subsystem_manager.humidifier_coordinators
 
     # Setup VWC
     with (
@@ -2448,9 +2460,16 @@ async def test_setup_sub_coordinators(coordinator: GrowspaceCoordinator) -> None
         patch(
             "custom_components.growspace_manager.managers.subsystem.DehumidifierCoordinator"
         ) as mock_dehum,
+        patch(
+            "custom_components.growspace_manager.managers.subsystem.HumidifierCoordinator"
+        ) as mock_hum,
     ):
         mock_vwc_instance = AsyncMock()
         mock_vwc.return_value = mock_vwc_instance
+        mock_dehum_instance = AsyncMock()
+        mock_dehum.return_value = mock_dehum_instance
+        mock_hum_instance = AsyncMock()
+        mock_hum.return_value = mock_hum_instance
 
         await coordinator.subsystem_manager.async_setup_growspace_sub_coordinators(
             "gs2", gs_vwc
@@ -2459,6 +2478,8 @@ async def test_setup_sub_coordinators(coordinator: GrowspaceCoordinator) -> None
         mock_vwc.assert_called_once()
         mock_irr.assert_not_called()
         mock_vwc_instance.async_setup.assert_awaited_once()
+        mock_dehum_instance.async_setup.assert_awaited_once()
+        mock_hum_instance.async_setup.assert_awaited_once()
 
 
 @pytest.mark.asyncio

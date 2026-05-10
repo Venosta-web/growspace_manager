@@ -77,14 +77,16 @@ def mock_growspace():
 
 
 @pytest.fixture
-def coordinator(
+async def coordinator(
     mock_hass, mock_main_coordinator, mock_growspace, mock_track_state_change_event
 ):
     """Create a HumidifierCoordinator instance."""
     mock_main_coordinator.growspaces = {"gs1": mock_growspace}
-    return HumidifierCoordinator(
+    coord = HumidifierCoordinator(
         mock_hass, mock_track_state_change_event, "gs1", mock_main_coordinator
     )
+    await coord.async_setup()
+    return coord
 
 
 async def test_initialization(
@@ -97,7 +99,6 @@ async def test_initialization(
     assert coordinator.control_humidifier is True
     assert len(coordinator._remove_listeners) > 0
     mock_track_state_change_event.assert_called_once()
-    mock_hass.async_create_task.assert_called_once()
 
 
 async def test_initialization_disabled(
@@ -110,6 +111,7 @@ async def test_initialization_disabled(
     coord = HumidifierCoordinator(
         mock_hass, mock_track_state_change_event, "gs1", mock_main_coordinator
     )
+    await coord.async_setup()
 
     assert coord.control_humidifier is False
     assert len(coord._remove_listeners) == 0
@@ -127,6 +129,7 @@ async def test_initialization_missing_vpd_sensor(
     coord = HumidifierCoordinator(
         mock_hass, mock_track_state_change_event, "gs1", mock_main_coordinator
     )
+    await coord.async_setup()
 
     assert len(coord._remove_listeners) == 0
     mock_track_state_change_event.assert_not_called()
@@ -401,6 +404,7 @@ async def test_generic_domain_control(
     coord = HumidifierCoordinator(
         mock_hass, mock_track_state_change_event, "gs1", mock_main_coordinator
     )
+    await coord.async_setup()
 
     await coord._control_humidifier(True)
 

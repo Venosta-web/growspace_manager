@@ -110,10 +110,19 @@ class HumidifierCoordinator:
         )
 
         if self.vpd_sensor and self.humidifier_entities and self.control_humidifier:
+            _LOGGER.debug(
+                "HumidifierCoordinator initialized for %s. Call async_setup() to start monitoring",
+                self.growspace.name,
+            )
+
+    async def async_setup(self) -> None:
+        """Set up the coordinator and start monitoring."""
+        if self.vpd_sensor and self.humidifier_entities and self.control_humidifier:
             self._setup_listeners()
-            self.hass.async_create_task(self.async_check_and_control())
+            # Start initial check after reload/startup
+            await self.async_check_and_control()
             _LOGGER.info(
-                "HumidifierCoordinator initialized for %s (VPD: %s, Devices: %d)",
+                "HumidifierCoordinator started for %s (VPD: %s, Devices: %d)",
                 self.growspace.name,
                 self.vpd_sensor,
                 len(self.humidifier_entities),

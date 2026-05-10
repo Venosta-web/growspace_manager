@@ -657,6 +657,7 @@ exclude_lines = [
 
 [tool.ruff]
 required-version = ">=0.15.12"
+target-version = "py314"
 
 [tool.ruff.lint]
 select = [

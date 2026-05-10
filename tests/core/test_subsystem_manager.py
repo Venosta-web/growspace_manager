@@ -70,14 +70,16 @@ async def test_async_initialize_sub_coordinators(subsystem_manager) -> None:
             "custom_components.growspace_manager.managers.subsystem.DehumidifierCoordinator",
             autospec=True,
         ) as mock_dehum,
+        patch(
+            "custom_components.growspace_manager.managers.subsystem.HumidifierCoordinator",
+            autospec=True,
+        ) as mock_hum,
     ):
         # Setup async_setup mocks
         mock_irrigation.return_value.async_setup = AsyncMock()
         mock_vwc.return_value.async_setup = AsyncMock()
-        mock_dehum.return_value.async_setup = (
-            AsyncMock()
-        )  # Dehumidifier doesn't strictly have async_setup in snippet, but might
-        # Re-checking snippet: Dehumidifier is just instantiated.
+        mock_dehum.return_value.async_setup = AsyncMock()
+        mock_hum.return_value.async_setup = AsyncMock()
 
         await subsystem_manager.async_initialize_sub_coordinators(growspaces)
 
@@ -103,6 +105,11 @@ async def test_async_initialize_sub_coordinators(subsystem_manager) -> None:
         assert mock_dehum.call_count == 2
         assert "gs1" in subsystem_manager.dehumidifier_coordinators
         assert "gs2" in subsystem_manager.dehumidifier_coordinators
+
+        # Verify HumidifierCoordinator creation
+        assert mock_hum.call_count == 2
+        assert "gs1" in subsystem_manager.humidifier_coordinators
+        assert "gs2" in subsystem_manager.humidifier_coordinators
 
 
 @pytest.mark.asyncio
@@ -139,7 +146,12 @@ async def test_async_cancel_all(subsystem_manager) -> None:
     mock_dehum.unload = MagicMock()
     subsystem_manager.dehumidifier_coordinators["gs1"] = mock_dehum
 
+    mock_hum = MagicMock()
+    mock_hum.unload = MagicMock()
+    subsystem_manager.humidifier_coordinators["gs1"] = mock_hum
+
     subsystem_manager.async_cancel_all()
 
     mock_irr.async_cancel_listeners.assert_called_once()
     mock_dehum.unload.assert_called_once()
+    mock_hum.unload.assert_called_once()

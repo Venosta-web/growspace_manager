@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 from collections.abc import Callable
 from datetime import datetime, timedelta
 import logging
@@ -39,6 +40,7 @@ class VWCIrrigationCoordinator(BaseIrrigationCoordinator):
         self._current_phase = "P3"  # Start in safe state
         self._last_shot_time: datetime | None = None
         self._target_reached_today = False
+        self._last_reset_date: str | None = None
 
         # We track if we have logged a "sensor missing" warning recently to avoid spam
         self._sensor_warning_logged = False
@@ -193,17 +195,20 @@ class VWCIrrigationCoordinator(BaseIrrigationCoordinator):
     ) -> None:
         """Execute the logic for the current phase."""
 
+        # Reset daily target flag at lights-on, regardless of whether P0 is observed.
+        # Using a date guard prevents the flag from getting stuck if P0 is shorter than
+        # the update interval or if the loop misses the P0 window entirely.
+        today_str = now().date().isoformat()
+        if today_str != self._last_reset_date and period in ("P0", "WINDOW"):
+            self._target_reached_today = False
+            self._last_reset_date = today_str
+
         if period == "P3":
             self._set_phase("P3 - Dry Back")
-            self._target_reached_today = False  # Reset for next day logic?
-            # Strictly speaking, we should reset this at Lights On.
-            # But if we are in P3 (night), we are dry backing.
             return
 
         if period == "P0":
             self._set_phase("P0 - Activation")
-            # Reset daily target flag if we are in P0 (start of day)
-            self._target_reached_today = False
             return
 
         # P1 / P2 WINDOW
@@ -264,7 +269,10 @@ class VWCIrrigationCoordinator(BaseIrrigationCoordinator):
         )
 
         # Schedule the task
-        self.hass.async_create_task(self._run_pump_cycle(pump_entity, duration, phase))
+        task = self.hass.async_create_task(
+            self._run_pump_cycle(pump_entity, duration, phase)
+        )
+        task.add_done_callback(self._on_pump_done)
 
         self._last_shot_time = now_dt
 
@@ -310,6 +318,16 @@ class VWCIrrigationCoordinator(BaseIrrigationCoordinator):
             if start_time:
                 actual_duration = int((end_time - start_time).total_seconds())
                 await self._log_event(phase, actual_duration, start_time, end_time)
+
+    def _on_pump_done(self, task: asyncio.Task) -> None:
+        """Log errors from completed pump cycle tasks."""
+        with contextlib.suppress(asyncio.CancelledError):
+            if exc := task.exception():
+                _LOGGER.error(
+                    "VWC pump cycle failed for growspace %s: %s",
+                    self._growspace_id,
+                    exc,
+                )
 
     async def _log_event(
         self, phase: str, duration: int, start_time: datetime, end_time: datetime

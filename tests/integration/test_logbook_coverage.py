@@ -118,6 +118,84 @@ async def test_log_entry_ipm(hass: HomeAssistant) -> None:
     assert result["message"] == "Neem Oil: Sprayed leaves"
 
 
+async def test_log_entry_dehumidifier(hass: HomeAssistant) -> None:
+    """Test log entry description for dehumidifier control events."""
+    mock_async_describe_event = Mock()
+    async_describe_events(hass, mock_async_describe_event)
+    callback = mock_async_describe_event.call_args[0][2]
+
+    event = Mock()
+
+    # Turned ON with detail reasons
+    event.data = {
+        "category": "dehumidifier",
+        "reasons": ["Turned ON", "VPD too low", "High humidity"],
+    }
+    result = callback(event)
+    assert result["name"] == "Dehumidifier Control"
+    assert result["message"] == "Turned ON • VPD too low, High humidity"
+
+    # Turned OFF with no detail reasons
+    event.data = {
+        "category": "dehumidifier",
+        "reasons": ["Turned OFF"],
+    }
+    result = callback(event)
+    assert result["name"] == "Dehumidifier Control"
+    assert result["message"] == "Turned OFF"
+
+    # No matching action reasons — falls back to "Controlled"
+    event.data = {
+        "category": "dehumidifier",
+        "reasons": ["VPD stable"],
+    }
+    result = callback(event)
+    assert result["name"] == "Dehumidifier Control"
+    assert result["message"] == "Controlled • VPD stable"
+
+    # Empty reasons list
+    event.data = {"category": "dehumidifier", "reasons": []}
+    result = callback(event)
+    assert result["name"] == "Dehumidifier Control"
+    assert result["message"] == "Controlled"
+
+
+async def test_log_entry_humidifier(hass: HomeAssistant) -> None:
+    """Test log entry description for humidifier control events."""
+    mock_async_describe_event = Mock()
+    async_describe_events(hass, mock_async_describe_event)
+    callback = mock_async_describe_event.call_args[0][2]
+
+    event = Mock()
+
+    # Turned ON with detail reasons
+    event.data = {
+        "category": "humidifier",
+        "reasons": ["Turned ON", "VPD too high"],
+    }
+    result = callback(event)
+    assert result["name"] == "Humidifier Control"
+    assert result["message"] == "Turned ON • VPD too high"
+
+    # Turned OFF with no detail reasons
+    event.data = {
+        "category": "humidifier",
+        "reasons": ["Turned OFF"],
+    }
+    result = callback(event)
+    assert result["name"] == "Humidifier Control"
+    assert result["message"] == "Turned OFF"
+
+    # No matching action reasons — falls back to "Controlled"
+    event.data = {
+        "category": "humidifier",
+        "reasons": [],
+    }
+    result = callback(event)
+    assert result["name"] == "Humidifier Control"
+    assert result["message"] == "Controlled"
+
+
 async def test_log_entry_default(hass: HomeAssistant) -> None:
     """Test log entry description for default/fallback."""
     mock_async_describe_event = Mock()
