@@ -2,6 +2,7 @@
 
 from unittest.mock import MagicMock, patch
 
+from freezegun import freeze_time
 import pytest
 from syrupy.assertion import SnapshotAssertion
 
@@ -31,6 +32,7 @@ def test_calculate_days_in_stage_no_start() -> None:
         mock_calc.assert_called_with(None, None)
 
 
+@freeze_time("2024-01-01 12:00:00", tz_offset=0)
 def test_calculate_days_in_stage_ongoing(snapshot: SnapshotAssertion) -> None:
     """Test when the stage is currently ongoing (no end date)."""
     plant = MagicMock(spec=Plant)
@@ -48,6 +50,7 @@ def test_calculate_days_in_stage_ongoing(snapshot: SnapshotAssertion) -> None:
         assert {"stage": "veg", "days": result} == snapshot
 
 
+@freeze_time("2024-01-20 12:00:00", tz_offset=0)
 def test_calculate_days_in_stage_completed() -> None:
     """Test when the stage is completed (has an end date)."""
     plant = MagicMock(spec=Plant)
@@ -72,6 +75,7 @@ def test_calculate_days_in_stage_completed() -> None:
         (PlantStage.DRY, "dry_start", "cure_start"),
     ],
 )
+@freeze_time("2024-01-05 12:00:00", tz_offset=0)
 def test_calculate_days_in_stage_transitions(stage, start_attr, end_attr) -> None:
     """Test all stage transitions and their corresponding end date attributes."""
     plant = MagicMock(spec=Plant)
@@ -86,6 +90,7 @@ def test_calculate_days_in_stage_transitions(stage, start_attr, end_attr) -> Non
         mock_calc.assert_called_with("2024-01-01", "2024-01-05")
 
 
+@freeze_time("2024-01-05 12:00:00", tz_offset=0)
 def test_calculate_days_in_stage_cure_no_end() -> None:
     """Test the cure stage which has no defined next stage end date in logic."""
     plant = MagicMock(spec=Plant)
