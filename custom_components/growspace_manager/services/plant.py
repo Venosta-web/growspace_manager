@@ -420,7 +420,7 @@ async def handle_take_clone(
     num_clones = call.data.get(ATTR_NUM_CLONES, 1)
     try:
         num_clones = int(num_clones)
-    except TypeError, ValueError:
+    except (TypeError, ValueError):
         raise ServiceValidationError(
             f"num_clones must be an integer, got: {num_clones!r}"
         )
@@ -912,7 +912,7 @@ async def async_add_timeline_note(
             try:
                 if state and state.state not in ("unknown", "unavailable"):
                     return float(state.state)
-            except ValueError, TypeError:
+            except (ValueError, TypeError):
                 pass
             return None
 

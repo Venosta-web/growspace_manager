@@ -43,7 +43,7 @@ class PlantConfigHandler(BaseConfigHandler[dict[str, Any]]):
                     plant = coordinator.plants.get(user_input["plant_id"])
                     if plant:
                         await self.async_destroy_plant(
-                            plant.growspace_id, plant.plant_id
+                            plant.plant_id
                         )
                 except Exception:
                     _LOGGER.exception("Error removing plant")
@@ -358,7 +358,7 @@ class PlantConfigHandler(BaseConfigHandler[dict[str, Any]]):
         )
 
     async def async_harvest_plant(
-        self, growspace_id: str, plant_id: str, harvest_weight: float
+        self, plant_id: str, harvest_weight: float
     ) -> None:
         """Harvest a plant."""
         if self.config_entry is None:
@@ -366,7 +366,7 @@ class PlantConfigHandler(BaseConfigHandler[dict[str, Any]]):
         coordinator = self.config_entry.runtime_data
         if coordinator is None:
             raise ValueError("Coordinator not found")
-        await coordinator.async_harvest_plant(growspace_id, plant_id, harvest_weight)
+        await coordinator.async_harvest_plant(plant_id, wet_weight=harvest_weight)
 
     async def async_destroy_plant(self, plant_id: str) -> None:
         """Destroy a plant."""

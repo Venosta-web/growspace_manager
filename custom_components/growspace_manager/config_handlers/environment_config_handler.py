@@ -10,14 +10,20 @@ from typing import Any
 import voluptuous as vol
 
 from custom_components.growspace_manager.const import (
+    CANONICAL_ID_CURE,
+    CANONICAL_ID_DRY,
     CONF_CAMERA_ENTITIES,
     CONF_CIRCULATION_FAN_ENTITIES,
     CONF_CIRCULATION_FAN_ENTITY,
     CONF_CO2_SENSOR,
+    CONF_CONFIGURE_ADVANCED,
     CONF_CONFIGURE_DEHUMIDIFIER,
     CONF_CONFIGURE_HUMIDIFIER,
+    CONF_CONTROL_DEHUMIDIFIER,
+    CONF_DAY,
     CONF_DEHUMIDIFIER_ENTITIES,
     CONF_DEHUMIDIFIER_ENTITY,
+    CONF_DEHUMIDIFIER_THRESHOLDS,
     CONF_DRAIN_VOLUME_SENSORS,
     CONF_ENERGY_SENSORS,
     CONF_EXHAUST_FAN_ENTITIES,
@@ -28,14 +34,19 @@ from custom_components.growspace_manager.const import (
     CONF_HUMIDIFIER_ENTITIES,
     CONF_HUMIDIFIER_ENTITY,
     CONF_HUMIDITY_SENSOR,
+    CONF_HUMIDITY_SENSORS,
     CONF_IRRIGATION_FLOW_SENSORS,
     CONF_IRRIGATION_TANK_SENSORS,
     CONF_IRRIGATION_TANK_VOLUME,
     CONF_IRRIGATION_TANK_WARNING_LEVEL,
     CONF_LIGHT_SENSOR,
     CONF_LIGHT_SENSORS,
+    CONF_LST_OFFSET,
     CONF_MIN_SOURCE_AIR_TEMP,
     CONF_MOLD_THRESHOLD,
+    CONF_NIGHT,
+    CONF_OFF,
+    CONF_ON,
     CONF_PH_SENSORS,
     CONF_POWER_SENSORS,
     CONF_PROB_HUMIDITY_HIGH_FLOWER,
@@ -65,17 +76,11 @@ from custom_components.growspace_manager.const import (
     CONF_PROB_VPD_STRESS_VEG_EARLY,
     CONF_PROB_VPD_STRESS_VEG_LATE,
     CONF_RUNOFF_EC_SENSORS,
-    CONF_SEEDLING_DAY_HOURS,
-    CONF_CLONE_DAY_HOURS,
-    CONF_MOTHER_DAY_HOURS,
     CONF_SOIL_MOISTURE_SENSOR,
     CONF_STRESS_THRESHOLD,
     CONF_SUBSTRATE_EC_SENSORS,
     CONF_TEMP_SENSOR,
     CONF_TEMP_SENSORS,
-    CONF_TREND_HUMIDITY_DURATION,
-    CONF_TREND_HUMIDITY_SENSITIVITY,
-    CONF_TREND_HUMIDITY_THRESHOLD,
     CONF_TREND_TEMPERATURE_DURATION,
     CONF_TREND_TEMPERATURE_SENSITIVITY,
     CONF_TREND_TEMPERATURE_THRESHOLD,
@@ -85,18 +90,6 @@ from custom_components.growspace_manager.const import (
     CONF_VEG_DAY_HOURS,
     CONF_VPD_SENSOR,
     CONF_VPD_SENSORS,
-    CONF_HUMIDITY_SENSORS,
-    CONF_ON,
-    CONF_OFF,
-    CONF_DAY,
-    CONF_NIGHT,
-    CONF_LST_OFFSET,
-    CONF_CONFIGURE_ADVANCED,
-    CONF_CONTROL_DEHUMIDIFIER,
-    CONF_SNAPSHOT_INTERVAL,
-    CONF_DEHUMIDIFIER_THRESHOLDS,
-    CANONICAL_ID_DRY,
-    CANONICAL_ID_CURE,
     DEFAULT_FLOWER_DAY_HOURS,
     DEFAULT_VEG_DAY_HOURS,
     DEHUMIDIFIER_STAGES,
@@ -204,7 +197,9 @@ class EnvironmentConfigHandler(BaseConfigHandler[dict[str, Any]]):
                 if growspace.environment_config
                 else []
             )
-            env_config = self._process_irrigation_tanks(env_config, existing_tanks=existing_tanks)
+            env_config = self._process_irrigation_tanks(
+                env_config, existing_tanks=existing_tanks
+            )
             self.flow.env_config_step1 = env_config
             return await self._determine_next_step(user_input)
 
@@ -254,7 +249,11 @@ class EnvironmentConfigHandler(BaseConfigHandler[dict[str, Any]]):
         existing_by_entity: dict[str, Any] = {}
         if existing_tanks:
             for t in existing_tanks:
-                entity = t.sensor_entity if hasattr(t, "sensor_entity") else t.get("sensor_entity")
+                entity = (
+                    t.sensor_entity
+                    if hasattr(t, "sensor_entity")
+                    else t.get("sensor_entity")
+                )
                 if entity:
                     existing_by_entity[entity] = t
 
@@ -324,7 +323,7 @@ class EnvironmentConfigHandler(BaseConfigHandler[dict[str, Any]]):
         merged = self.merge_options({}, cleaned_input)
 
         # Check if dehumidifier configuration is requested
-        if merged.get("configure_dehumidifier") and merged.get("control_dehumidifier"):
+        if merged.get(CONF_CONFIGURE_DEHUMIDIFIER):
             return await self.async_step_configure_dehumidifier()
 
         # Check if advanced Bayesian configuration is requested
@@ -424,7 +423,7 @@ class EnvironmentConfigHandler(BaseConfigHandler[dict[str, Any]]):
 
                 self.flow.env_config_step1 = env_config
 
-            except (ValueError, SyntaxError, TypeError):
+            except ValueError, SyntaxError, TypeError:
                 _LOGGER.warning("Invalid tuple format submitted", exc_info=True)
                 return self.flow.async_show_form(
                     step_id="configure_advanced_bayesian",
@@ -672,7 +671,9 @@ class EnvironmentConfigHandler(BaseConfigHandler[dict[str, Any]]):
         self._add_lst_offset_to_schema(schema_dict, growspace_options, stage=stage)
         self._add_optional_features_to_schema(schema_dict, growspace_options)
         self._add_exhaust_humidifier_to_schema(schema_dict, growspace_options)
-        self._add_dehumidifier_to_schema(schema_dict, growspace_options)
+        self._add_dehumidifier_entity_selectors(schema_dict, growspace_options)
+        self._add_dehumidifier_control_toggles(schema_dict, growspace_options)
+        self._add_dehumidifier_threshold_selectors(schema_dict, growspace_options)
         self._add_advanced_sensors_to_schema(schema_dict, growspace_options)
         self._add_camera_config_to_schema(schema_dict, growspace_options)
 
@@ -683,6 +684,9 @@ class EnvironmentConfigHandler(BaseConfigHandler[dict[str, Any]]):
         cleaned = super().clean_input(user_input)
 
         list_fields = [
+            CONF_TEMP_SENSORS,
+            CONF_HUMIDITY_SENSORS,
+            CONF_VPD_SENSORS,
             CONF_LIGHT_SENSORS,
             CONF_EXHAUST_FAN_ENTITIES,
             CONF_CIRCULATION_FAN_ENTITIES,
@@ -728,11 +732,20 @@ class EnvironmentConfigHandler(BaseConfigHandler[dict[str, Any]]):
                 cleaned[field] = None
             elif field not in user_input and field not in list_fields:
                 # Only clear if it's not one of our new list fields (which handle themselves)
-                # Actually, optional_fields contains CONF_LIGHT_SENSOR ("light_sensor")
-                # We need to map old config flow keys (light_sensor) to new keys (light_sensors) if we change the keys in schema
-                # The Models used separate keys.
-                # Let's verify what keys we are using in the schema below.
                 pass
+
+        # Sync plural and singular keys in cleaned output to ensure models don't revert clears
+        for plural_key, singular_key in [
+            (CONF_TEMP_SENSORS, CONF_TEMP_SENSOR),
+            (CONF_HUMIDITY_SENSORS, CONF_HUMIDITY_SENSOR),
+            (CONF_VPD_SENSORS, CONF_VPD_SENSOR),
+            (CONF_LIGHT_SENSORS, CONF_LIGHT_SENSOR),
+        ]:
+            if plural_key in cleaned:
+                if cleaned[plural_key]:
+                    cleaned[singular_key] = cleaned[plural_key][0]
+                else:
+                    cleaned[singular_key] = None
 
         return cleaned
 
@@ -1007,10 +1020,10 @@ class EnvironmentConfigHandler(BaseConfigHandler[dict[str, Any]]):
             )
         )
 
-    def _add_dehumidifier_to_schema(
+    def _add_dehumidifier_entity_selectors(
         self, schema_dict: dict[Any, Any], growspace_options: dict[str, Any]
     ) -> None:
-        """Add dehumidifier to the schema."""
+        """Add dehumidifier entity selectors to the schema."""
         # Check for list or legacy str
         suggested_dehumidifier = growspace_options.get(CONF_DEHUMIDIFIER_ENTITIES) or (
             [growspace_options.get(CONF_DEHUMIDIFIER_ENTITY)]
@@ -1035,6 +1048,11 @@ class EnvironmentConfigHandler(BaseConfigHandler[dict[str, Any]]):
                 multiple=True,
             )
         )
+
+    def _add_dehumidifier_control_toggles(
+        self, schema_dict: dict[Any, Any], growspace_options: dict[str, Any]
+    ) -> None:
+        """Add control and configuration toggles to the schema."""
         schema_dict[
             vol.Optional(
                 CONF_CONTROL_DEHUMIDIFIER,
@@ -1058,6 +1076,12 @@ class EnvironmentConfigHandler(BaseConfigHandler[dict[str, Any]]):
                 ),
             )
         ] = selector.BooleanSelector()
+
+    def _add_dehumidifier_threshold_selectors(
+        self, schema_dict: dict[Any, Any], growspace_options: dict[str, Any]
+    ) -> None:
+        """Add environmental thresholds, trend analysis, and photoperiod to the schema."""
+        # VPD Thresholds (Stress/Mold)
         for key, default in [
             (CONF_STRESS_THRESHOLD, 0.70),
             (CONF_MOLD_THRESHOLD, 0.75),
@@ -1073,36 +1097,7 @@ class EnvironmentConfigHandler(BaseConfigHandler[dict[str, Any]]):
                 )
             )
 
-        # Photoperiod Configuration
-        schema_dict[
-            vol.Optional(
-                CONF_VEG_DAY_HOURS,
-                default=growspace_options.get(CONF_VEG_DAY_HOURS, DEFAULT_VEG_DAY_HOURS),
-            )
-        ] = selector.NumberSelector(
-            selector.NumberSelectorConfig(
-                min=1, max=24, step=1, mode=selector.NumberSelectorMode.BOX
-            )
-        )
-
-        stage_keys = {
-            PlantStage.FLOWER_EARLY: CONF_FLOWER_EARLY_DAY_HOURS,
-            PlantStage.FLOWER_MID: CONF_FLOWER_MID_DAY_HOURS,
-            PlantStage.FLOWER_LATE: CONF_FLOWER_LATE_DAY_HOURS,
-        }
-        for key in stage_keys.values():
-            schema_dict[
-                vol.Optional(
-                    key,
-                    default=growspace_options.get(key, DEFAULT_FLOWER_DAY_HOURS),
-                )
-            ] = selector.NumberSelector(
-                selector.NumberSelectorConfig(
-                    min=1, max=24, step=1, mode=selector.NumberSelectorMode.BOX
-                )
-            )
-
-        # Thresholds
+        # Temperature Thresholds
         schema_dict[
             vol.Optional(
                 CONF_MIN_SOURCE_AIR_TEMP,
@@ -1114,7 +1109,7 @@ class EnvironmentConfigHandler(BaseConfigHandler[dict[str, Any]]):
             )
         )
 
-        # Trend analysis settings (fallback)
+        # Trend analysis settings
         trend_configs = {
             "vpd": {
                 "threshold": CONF_TREND_VPD_THRESHOLD,
@@ -1173,6 +1168,37 @@ class EnvironmentConfigHandler(BaseConfigHandler[dict[str, Any]]):
                 )
             )
 
+        # Photoperiod Configuration
+        schema_dict[
+            vol.Optional(
+                CONF_VEG_DAY_HOURS,
+                default=growspace_options.get(
+                    CONF_VEG_DAY_HOURS, DEFAULT_VEG_DAY_HOURS
+                ),
+            )
+        ] = selector.NumberSelector(
+            selector.NumberSelectorConfig(
+                min=1, max=24, step=1, mode=selector.NumberSelectorMode.BOX
+            )
+        )
+
+        stage_keys = {
+            PlantStage.FLOWER_EARLY: CONF_FLOWER_EARLY_DAY_HOURS,
+            PlantStage.FLOWER_MID: CONF_FLOWER_MID_DAY_HOURS,
+            PlantStage.FLOWER_LATE: CONF_FLOWER_LATE_DAY_HOURS,
+        }
+        for key in stage_keys.values():
+            schema_dict[
+                vol.Optional(
+                    key,
+                    default=growspace_options.get(key, DEFAULT_FLOWER_DAY_HOURS),
+                )
+            ] = selector.NumberSelector(
+                selector.NumberSelectorConfig(
+                    min=1, max=24, step=1, mode=selector.NumberSelectorMode.BOX
+                )
+            )
+
         # Advanced settings toggle
         schema_dict[vol.Optional(CONF_CONFIGURE_ADVANCED, default=False)] = (
             selector.BooleanSelector()
@@ -1189,7 +1215,9 @@ class EnvironmentConfigHandler(BaseConfigHandler[dict[str, Any]]):
 
                 # ON Threshold
                 schema_dict[
-                    vol.Required(f"{stage}_{cycle}_{CONF_ON}", default=defaults[CONF_ON])
+                    vol.Required(
+                        f"{stage}_{cycle}_{CONF_ON}", default=defaults[CONF_ON]
+                    )
                 ] = selector.NumberSelector(
                     selector.NumberSelectorConfig(
                         min=0.1,
@@ -1202,7 +1230,9 @@ class EnvironmentConfigHandler(BaseConfigHandler[dict[str, Any]]):
 
                 # OFF Threshold
                 schema_dict[
-                    vol.Required(f"{stage}_{cycle}_{CONF_OFF}", default=defaults[CONF_OFF])
+                    vol.Required(
+                        f"{stage}_{cycle}_{CONF_OFF}", default=defaults[CONF_OFF]
+                    )
                 ] = selector.NumberSelector(
                     selector.NumberSelectorConfig(
                         min=0.1,

@@ -232,7 +232,7 @@ async def test_growth_stage_detection(coordinator, mock_main_coordinator) -> Non
             "flower": 0,
         }.get(stage, 0),
     ):
-        assert coordinator._get_growth_stage() == "veg"
+        assert coordinator._get_growth_stage().value == "veg"
 
     # Case 2: Early Flower
     with patch(
@@ -242,7 +242,7 @@ async def test_growth_stage_detection(coordinator, mock_main_coordinator) -> Non
             "flower": 10,
         }.get(stage, 0),
     ):
-        assert coordinator._get_growth_stage() == "early_flower"
+        assert coordinator._get_growth_stage().value == "flower_early"
 
     # Case 3: Mid Flower
     with patch(
@@ -252,7 +252,7 @@ async def test_growth_stage_detection(coordinator, mock_main_coordinator) -> Non
             "flower": 30,
         }.get(stage, 0),
     ):
-        assert coordinator._get_growth_stage() == "mid_flower"
+        assert coordinator._get_growth_stage().value == "flower_mid"
 
     # Case 4: Late Flower
     with patch(
@@ -262,7 +262,7 @@ async def test_growth_stage_detection(coordinator, mock_main_coordinator) -> Non
             "flower": 60,
         }.get(stage, 0),
     ):
-        assert coordinator._get_growth_stage() == "late_flower"
+        assert coordinator._get_growth_stage().value == "flower_late"
 
 
 async def test_user_threshold_override(coordinator, mock_hass, mock_growspace) -> None:
@@ -543,14 +543,14 @@ async def test_growth_stage_detection_cure_dry_seedling(
         "custom_components.growspace_manager.dehumidifier_coordinator.calculate_days_in_stage",
         side_effect=lambda p, stage: 1 if stage == "cure" else 0,
     ):
-        assert coordinator._get_growth_stage() == "cure"
+        assert coordinator._get_growth_stage().value == "cure"
 
     # Test Dry
     with patch(
         "custom_components.growspace_manager.dehumidifier_coordinator.calculate_days_in_stage",
         side_effect=lambda p, stage: 1 if stage == "dry" else 0,
     ):
-        assert coordinator._get_growth_stage() == "dry"
+        assert coordinator._get_growth_stage().value == "dry"
 
     # Test Seedling
     with patch(

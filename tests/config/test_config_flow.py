@@ -11,7 +11,6 @@ from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, Mock, patch
 
 import pytest
-from tests.common import MockConfigEntry
 import voluptuous as vol
 
 from custom_components.growspace_manager.config_flow import (
@@ -37,6 +36,7 @@ from custom_components.growspace_manager.models import (
 from homeassistant.core import HomeAssistant
 from homeassistant.data_entry_flow import FlowResultType
 from homeassistant.helpers import selector
+from tests.common import MockConfigEntry
 
 
 @pytest.fixture
@@ -2149,18 +2149,18 @@ async def test_options_flow_configure_dehumidifier_submit(
         "veg_day_off": 0.8,
         "veg_night_on": 1.0,
         "veg_night_off": 0.8,
-        "early_flower_day_on": 1.2,
-        "early_flower_day_off": 1.0,
-        "early_flower_night_on": 1.2,
-        "early_flower_night_off": 1.0,
-        "mid_flower_day_on": 1.5,
-        "mid_flower_day_off": 1.2,
-        "mid_flower_night_on": 1.5,
-        "mid_flower_night_off": 1.2,
-        "late_flower_day_on": 1.8,
-        "late_flower_day_off": 1.5,
-        "late_flower_night_on": 1.8,
-        "late_flower_night_off": 1.5,
+        "flower_early_day_on": 1.2,
+        "flower_early_day_off": 1.0,
+        "flower_early_night_on": 1.2,
+        "flower_early_night_off": 1.0,
+        "flower_mid_day_on": 1.5,
+        "flower_mid_day_off": 1.2,
+        "flower_mid_night_on": 1.5,
+        "flower_mid_night_off": 1.2,
+        "flower_late_day_on": 1.8,
+        "flower_late_day_off": 1.5,
+        "flower_late_night_on": 1.8,
+        "flower_late_night_off": 1.5,
         "dry_day_on": 1.1,
         "dry_day_off": 1.0,
         "dry_night_on": 0.9,
@@ -2685,6 +2685,36 @@ async def test_options_flow_configure_environment_jump_to_dehumidifier(
     assert result["step_id"] == "configure_dehumidifier"
 
 
+async def test_options_flow_configure_environment_jump_to_dehumidifier_no_control(
+    hass: HomeAssistant, mock_coordinator: MagicMock
+) -> None:
+    """Test flow jumps to dehumidifier config even if control is disabled."""
+    config_entry = MockConfigEntry(domain=DOMAIN, data={"name": "Test"})
+    config_entry.add_to_hass(hass)
+    config_entry.runtime_data = mock_coordinator
+
+    mock_gs = Mock(name="GS1", environment_config=EnvironmentConfig())
+    mock_coordinator.growspaces = {"gs1": mock_gs}
+    config_entry.runtime_data = mock_coordinator
+
+    flow = OptionsFlowHandler(config_entry)
+    flow.hass = hass
+    flow.selected_growspace_id = "gs1"
+
+    # Submit Step 1 with configure_dehumidifier=True but control_dehumidifier=False
+    result = await flow.async_step_configure_environment(
+        user_input={
+            "configure_dehumidifier": True,
+            "control_dehumidifier": False,
+            "temp_sensor": "sensor.temp",
+        }
+    )
+
+    # Should transition to configure_dehumidifier
+    assert result["type"] == FlowResultType.FORM
+    assert result["step_id"] == "configure_dehumidifier"
+
+
 @pytest.mark.asyncio
 async def test_options_flow_configure_environment_jump_to_advanced(
     hass: HomeAssistant, mock_coordinator: MagicMock
@@ -2764,18 +2794,18 @@ async def test_options_flow_configure_dehumidifier_save_success(
         "veg_day_off": 40,
         "veg_night_on": 50,
         "veg_night_off": 40,
-        "early_flower_day_on": 50,
-        "early_flower_day_off": 40,
-        "early_flower_night_on": 50,
-        "early_flower_night_off": 40,
-        "mid_flower_day_on": 50,
-        "mid_flower_day_off": 40,
-        "mid_flower_night_on": 50,
-        "mid_flower_night_off": 40,
-        "late_flower_day_on": 50,
-        "late_flower_day_off": 40,
-        "late_flower_night_on": 50,
-        "late_flower_night_off": 40,
+        "flower_early_day_on": 50,
+        "flower_early_day_off": 40,
+        "flower_early_night_on": 50,
+        "flower_early_night_off": 40,
+        "flower_mid_day_on": 50,
+        "flower_mid_day_off": 40,
+        "flower_mid_night_on": 50,
+        "flower_mid_night_off": 40,
+        "flower_late_day_on": 50,
+        "flower_late_day_off": 40,
+        "flower_late_night_on": 50,
+        "flower_late_night_off": 40,
         "dry_day_on": 50,
         "dry_day_off": 40,
         "dry_night_on": 50,
@@ -3202,18 +3232,18 @@ async def test_options_flow_dehumidifier_jump_to_advanced(
         "veg_day_off": 40,
         "veg_night_on": 50,
         "veg_night_off": 40,
-        "early_flower_day_on": 50,
-        "early_flower_day_off": 40,
-        "early_flower_night_on": 50,
-        "early_flower_night_off": 40,
-        "mid_flower_day_on": 50,
-        "mid_flower_day_off": 40,
-        "mid_flower_night_on": 50,
-        "mid_flower_night_off": 40,
-        "late_flower_day_on": 50,
-        "late_flower_day_off": 40,
-        "late_flower_night_on": 50,
-        "late_flower_night_off": 40,
+        "flower_early_day_on": 50,
+        "flower_early_day_off": 40,
+        "flower_early_night_on": 50,
+        "flower_early_night_off": 40,
+        "flower_mid_day_on": 50,
+        "flower_mid_day_off": 40,
+        "flower_mid_night_on": 50,
+        "flower_mid_night_off": 40,
+        "flower_late_day_on": 50,
+        "flower_late_day_off": 40,
+        "flower_late_night_on": 50,
+        "flower_late_night_off": 40,
         "dry_day_on": 50,
         "dry_day_off": 40,
         "dry_night_on": 50,
@@ -3398,6 +3428,7 @@ async def test_options_flow_strain_library_delete_success(
     assert result["step_id"] == "manage_strain_library"
     assert "errors" not in result or not result["errors"]
     mock_coordinator.strain_library.remove_strain.assert_called_once_with("s1")
+
 
 @pytest.mark.asyncio
 async def test_options_flow_init_configure_general(

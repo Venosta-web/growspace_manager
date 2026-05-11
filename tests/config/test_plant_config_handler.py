@@ -121,9 +121,9 @@ async def test_async_harvest_plant(
     handler: PlantConfigHandler, mock_coordinator: MagicMock
 ) -> None:
     """Test harvesting a plant."""
-    await handler.async_harvest_plant(GROWSPACE_ID, "plant_1", 100.5)
+    await handler.async_harvest_plant("plant_1", 100.5)
     mock_coordinator.async_harvest_plant.assert_awaited_once_with(
-        GROWSPACE_ID, "plant_1", 100.5
+        "plant_1", wet_weight=100.5
     )
 
 
@@ -131,7 +131,7 @@ async def test_async_destroy_plant(
     handler: PlantConfigHandler, mock_coordinator: MagicMock
 ) -> None:
     """Test destroying a plant."""
-    await handler.async_destroy_plant(GROWSPACE_ID, "plant_1")
+    await handler.async_destroy_plant("plant_1")
     mock_coordinator.async_remove_plant.assert_awaited_once_with("plant_1")
 
 
@@ -256,9 +256,9 @@ async def test_helper_value_errors(
     # Test None config_entry
     handler.config_entry = None
     with pytest.raises(ValueError, match="Coordinator not found"):
-        await handler.async_harvest_plant("gs1", "p1", 1.0)
+        await handler.async_harvest_plant("p1", 1.0)
     with pytest.raises(ValueError, match="Coordinator not found"):
-        await handler.async_destroy_plant("gs1", "p1")
+        await handler.async_destroy_plant("p1")
     with pytest.raises(ValueError, match="Coordinator not found"):
         await handler.async_add_plant("gs1", "s1", 1, 1)
     with pytest.raises(ValueError, match="Coordinator not found"):
@@ -308,7 +308,7 @@ async def test_async_step_manage_plants_actions(
         handler, "async_destroy_plant", new_callable=AsyncMock
     ) as mock_destroy:
         await handler.async_step_manage_plants({"action": "remove", "plant_id": "p1"})
-        mock_destroy.assert_called_once_with("gs1", "p1")
+        mock_destroy.assert_called_once_with("p1")
 
 
 @pytest.mark.asyncio

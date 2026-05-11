@@ -611,7 +611,7 @@ class BayesianEnvironmentSensor(
 
         try:
             return float(state.state)
-        except ValueError, TypeError:
+        except (ValueError, TypeError):
             return None
 
     def _get_aggregated_sensor_value(self, sensor_ids: list[str]) -> float | None:

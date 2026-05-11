@@ -385,13 +385,13 @@ async def test_growth_stage_detection(coordinator, mock_main_coordinator) -> Non
         "custom_components.growspace_manager.humidifier_coordinator.calculate_days_in_stage",
         side_effect=lambda p, stage: {"flower": 60}.get(stage, 0),
     ):
-        assert coordinator._get_growth_stage() == "late_flower"
+        assert coordinator._get_growth_stage().value == "flower_late"
 
     with patch(
         "custom_components.growspace_manager.humidifier_coordinator.calculate_days_in_stage",
         side_effect=lambda p, stage: {"veg": 10}.get(stage, 0),
     ):
-        assert coordinator._get_growth_stage() == "veg"
+        assert coordinator._get_growth_stage().value == "veg"
 
 
 async def test_generic_domain_control(

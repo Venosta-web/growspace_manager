@@ -1,7 +1,6 @@
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from tests.common import MockConfigEntry, mock_component
 
 from custom_components.growspace_manager.config_handlers.environment_config_handler import (
     EnvironmentConfigHandler,
@@ -10,6 +9,7 @@ from custom_components.growspace_manager.const import DOMAIN
 from custom_components.growspace_manager.models import EnvironmentConfig, Growspace
 from homeassistant.core import HomeAssistant
 from homeassistant.data_entry_flow import FlowResultType
+from tests.common import MockConfigEntry, mock_component
 
 
 @pytest.fixture
@@ -99,9 +99,9 @@ async def test_configure_dehumidifier_thresholds(
     stages = [
         "seedling",
         "veg",
-        "early_flower",
-        "mid_flower",
-        "late_flower",
+        "flower_early",
+        "flower_mid",
+        "flower_late",
         "dry",
         "cure",
     ]
@@ -140,7 +140,7 @@ async def test_configure_dehumidifier_thresholds(
     saved_thresholds = mock_growspace.environment_config.dehumidifier_thresholds
     assert saved_thresholds["veg"]["day"]["on"] == 2.0
     assert saved_thresholds["veg"]["night"]["on"] == 1.5  # default form our loop
-    assert saved_thresholds["early_flower"]["day"]["on"] == 1.5
+    assert saved_thresholds["flower_early"]["day"]["on"] == 1.5
 
     # Verify sensor coordinates saved
     saved_coords = mock_growspace.environment_config.sensor_coordinates
