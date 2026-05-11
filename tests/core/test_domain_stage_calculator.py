@@ -32,7 +32,6 @@ def test_calculate_days_in_stage_no_start() -> None:
         mock_calc.assert_called_with(None, None)
 
 
-@freeze_time("2024-01-01 12:00:00", tz_offset=0)
 def test_calculate_days_in_stage_ongoing(snapshot: SnapshotAssertion) -> None:
     """Test when the stage is currently ongoing (no end date)."""
     plant = MagicMock(spec=Plant)
