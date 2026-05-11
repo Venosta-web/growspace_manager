@@ -24,6 +24,7 @@ from .const import (
     CATEGORY_HUMIDIFIER,
     DEFAULT_HUMIDIFIER_MIN_OFFTIME,
     DEFAULT_HUMIDIFIER_MIN_RUNTIME,
+    PlantStage,
 )
 from .domain import calculate_days_in_stage
 from .exceptions import GrowspaceError
@@ -38,35 +39,35 @@ _LOGGER = logging.getLogger(__name__)
 # High VPD = low humidity = needs humidification.
 # Format: {stage: {day_or_night: {on: float, off: float}}}
 DEFAULT_THRESHOLDS = {
-    "seedling": {
+    PlantStage.SEEDLING: {
         "day": {"on": 0.7, "off": 0.5},
         "night": {"on": 0.75, "off": 0.55},
     },
-    "mother": {
+    PlantStage.MOTHER: {
         "day": {"on": 0.9, "off": 0.7},
         "night": {"on": 0.85, "off": 0.65},
     },
-    "veg": {
+    PlantStage.VEG: {
         "day": {"on": 1.0, "off": 0.8},
         "night": {"on": 0.85, "off": 0.65},
     },
-    "early_flower": {
+    PlantStage.FLOWER_EARLY: {
         "day": {"on": 1.4, "off": 1.2},
         "night": {"on": 1.0, "off": 0.8},
     },
-    "mid_flower": {
+    PlantStage.FLOWER_MID: {
         "day": {"on": 1.6, "off": 1.4},
         "night": {"on": 1.2, "off": 1.0},
     },
-    "late_flower": {
+    PlantStage.FLOWER_LATE: {
         "day": {"on": 1.7, "off": 1.5},
         "night": {"on": 1.3, "off": 1.1},
     },
-    "dry": {
+    PlantStage.DRY: {
         "day": {"on": 1.2, "off": 1.0},
         "night": {"on": 1.2, "off": 1.0},
     },
-    "cure": {
+    PlantStage.CURE: {
         "day": {"on": 1.2, "off": 1.0},
         "night": {"on": 1.2, "off": 1.0},
     },
@@ -228,7 +229,7 @@ class HumidifierCoordinator:
 
         return False
 
-    def _get_growth_stage(self) -> str:
+    def _get_growth_stage(self) -> PlantStage:
         """Determine the current growth stage for threshold selection."""
         plants = self.main_coordinator.get_growspace_plants(self.growspace_id)
 
@@ -240,31 +241,31 @@ class HumidifierCoordinator:
         max_mother_days = 0
 
         for plant in plants:
-            max_seedling_days = max(max_seedling_days, calculate_days_in_stage(plant, "seedling"))
-            max_veg_days = max(max_veg_days, calculate_days_in_stage(plant, "veg"))
-            max_flower_days = max(max_flower_days, calculate_days_in_stage(plant, "flower"))
-            max_dry_days = max(max_dry_days, calculate_days_in_stage(plant, "dry"))
-            max_cure_days = max(max_cure_days, calculate_days_in_stage(plant, "cure"))
-            max_mother_days = max(max_mother_days, calculate_days_in_stage(plant, "mother"))
+            max_seedling_days = max(max_seedling_days, calculate_days_in_stage(plant, PlantStage.SEEDLING))
+            max_veg_days = max(max_veg_days, calculate_days_in_stage(plant, PlantStage.VEG))
+            max_flower_days = max(max_flower_days, calculate_days_in_stage(plant, PlantStage.FLOWER))
+            max_dry_days = max(max_dry_days, calculate_days_in_stage(plant, PlantStage.DRY))
+            max_cure_days = max(max_cure_days, calculate_days_in_stage(plant, PlantStage.CURE))
+            max_mother_days = max(max_mother_days, calculate_days_in_stage(plant, PlantStage.MOTHER))
 
         if max_cure_days > 0:
-            return "cure"
+            return PlantStage.CURE
         if max_dry_days > 0:
-            return "dry"
+            return PlantStage.DRY
         if max_flower_days >= 50:
-            return "late_flower"
+            return PlantStage.FLOWER_LATE
         if max_flower_days >= 22:
-            return "mid_flower"
+            return PlantStage.FLOWER_MID
         if max_flower_days > 0:
-            return "early_flower"
+            return PlantStage.FLOWER_EARLY
         if max_mother_days > 0:
-            return "mother"
+            return PlantStage.MOTHER
         if max_veg_days > 0:
-            return "veg"
+            return PlantStage.VEG
         if max_seedling_days > 0:
-            return "seedling"
+            return PlantStage.SEEDLING
 
-        return "veg"
+        return PlantStage.VEG
 
     def _get_current_thresholds(self, stage: str, is_day: bool) -> dict[str, float]:
         """Get the ON/OFF thresholds for the current state."""

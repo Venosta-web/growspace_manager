@@ -96,6 +96,156 @@ CONF_POWER_SENSORS = "power_sensors"
 CONF_ENERGY_SENSORS = "energy_sensors"
 CONF_ELECTRICITY_COST = "electricity_cost_per_kwh"
 
+# Photoperiod Config Keys
+CONF_SEEDLING_DAY_HOURS = "seedling_day_hours"
+CONF_CLONE_DAY_HOURS = "clone_day_hours"
+CONF_MOTHER_DAY_HOURS = "mother_day_hours"
+CONF_VEG_DAY_HOURS = "veg_day_hours"
+CONF_FLOWER_EARLY_DAY_HOURS = "flower_early_day_hours"
+CONF_FLOWER_MID_DAY_HOURS = "flower_mid_day_hours"
+CONF_FLOWER_LATE_DAY_HOURS = "flower_late_day_hours"
+
+STAGE_PHOTOPERIOD_KEYS: Final[dict[PlantStage, str]] = {
+    PlantStage.SEEDLING: CONF_SEEDLING_DAY_HOURS,
+    PlantStage.CLONE: CONF_CLONE_DAY_HOURS,
+    PlantStage.MOTHER: CONF_MOTHER_DAY_HOURS,
+    PlantStage.VEG: CONF_VEG_DAY_HOURS,
+    PlantStage.FLOWER_EARLY: CONF_FLOWER_EARLY_DAY_HOURS,
+    PlantStage.FLOWER_MID: CONF_FLOWER_MID_DAY_HOURS,
+    PlantStage.FLOWER_LATE: CONF_FLOWER_LATE_DAY_HOURS,
+}
+
+# Trend Analysis Constants
+CONF_TREND_VPD_THRESHOLD = "trend_vpd_threshold"
+CONF_TREND_TEMPERATURE_THRESHOLD = "trend_temperature_threshold"
+CONF_TREND_TEMP_THRESHOLD = CONF_TREND_TEMPERATURE_THRESHOLD  # Alias for backward compatibility
+CONF_TREND_HUMIDITY_THRESHOLD = "trend_humidity_threshold"
+CONF_TREND_VPD_DURATION = "trend_vpd_duration"
+CONF_TREND_TEMPERATURE_DURATION = "trend_temperature_duration"
+CONF_TREND_TEMP_DURATION = CONF_TREND_TEMPERATURE_DURATION  # Alias
+CONF_TREND_HUMIDITY_DURATION = "trend_humidity_duration"
+CONF_TREND_VPD_SENSITIVITY = "trend_vpd_sensitivity"
+CONF_TREND_TEMPERATURE_SENSITIVITY = "trend_temperature_sensitivity"
+CONF_TREND_TEMP_SENSITIVITY = CONF_TREND_TEMPERATURE_SENSITIVITY  # Alias
+CONF_TREND_HUMIDITY_SENSITIVITY = "trend_humidity_sensitivity"
+
+CONF_TEMPERATURE_TREND_SENSOR = "temperature_trend_sensor"
+CONF_HUMIDITY_TREND_SENSOR = "humidity_trend_sensor"
+CONF_VPD_TREND_SENSOR = "vpd_trend_sensor"
+CONF_TEMPERATURE_STATS_SENSOR = "temperature_stats_sensor"
+CONF_HUMIDITY_STATS_SENSOR = "humidity_stats_sensor"
+CONF_VPD_STATS_SENSOR = "vpd_stats_sensor"
+
+CONF_TEMP_TREND_THRESHOLD_RAW = "temp_trend_threshold"  # Legacy/Special case
+
+# Threshold Keys
+CONF_ON = "on"
+CONF_OFF = "off"
+CONF_DAY = "day"
+CONF_NIGHT = "night"
+
+# Environment Config Keys
+CONF_MIN_SOURCE_AIR_TEMP = "minimum_source_air_temperature"
+CONF_CONFIGURE_DEHUMIDIFIER = "configure_dehumidifier"
+CONF_CONFIGURE_HUMIDIFIER = "configure_humidifier"
+CONF_CONFIGURE_ADVANCED = "configure_advanced"
+CONF_LST_OFFSET = "lst_offset"
+
+# Mappings for Bayesian Evaluator
+CONF_SENSOR_MAP: Final[dict[str, str]] = {
+    "temperature": CONF_TEMP_SENSOR,
+    "humidity": CONF_HUMIDITY_SENSOR,
+    "vpd": CONF_VPD_SENSOR,
+}
+
+CONF_TREND_SENSOR_MAP: Final[dict[str, str]] = {
+    "temperature": CONF_TEMPERATURE_TREND_SENSOR,
+    "humidity": CONF_HUMIDITY_TREND_SENSOR,
+    "vpd": CONF_VPD_TREND_SENSOR,
+}
+
+CONF_STATS_SENSOR_MAP: Final[dict[str, str]] = {
+    "temperature": CONF_TEMPERATURE_STATS_SENSOR,
+    "humidity": CONF_HUMIDITY_STATS_SENSOR,
+    "vpd": CONF_VPD_STATS_SENSOR,
+}
+
+CONF_TREND_DURATION_MAP: Final[dict[str, str]] = {
+    "temperature": CONF_TREND_TEMPERATURE_DURATION,
+    "humidity": CONF_TREND_HUMIDITY_DURATION,
+    "vpd": CONF_TREND_VPD_DURATION,
+}
+
+CONF_TREND_THRESHOLD_MAP: Final[dict[str, str]] = {
+    "temperature": CONF_TREND_TEMPERATURE_THRESHOLD,
+    "humidity": CONF_TREND_HUMIDITY_THRESHOLD,
+    "vpd": CONF_TREND_VPD_THRESHOLD,
+}
+
+CONF_TREND_SENSITIVITY_MAP: Final[dict[str, str]] = {
+    "temperature": CONF_TREND_TEMPERATURE_SENSITIVITY,
+    "humidity": CONF_TREND_HUMIDITY_SENSITIVITY,
+    "vpd": CONF_TREND_VPD_SENSITIVITY,
+}
+
+# Bayesian Probability Config Keys
+CONF_PROB_HUMIDITY_HIGH_VEG_EARLY = "prob_humidity_high_veg_early"
+CONF_PROB_HUMIDITY_HIGH_VEG_LATE = "prob_humidity_high_veg_late"
+CONF_PROB_HUMIDITY_TOO_HUMID_FLOWER = "prob_humidity_too_humid_flower"
+CONF_PROB_HUMIDITY_HIGH_FLOWER = "prob_humidity_high_flower"
+
+# Bayesian VPD Stress Probability Config Keys
+CONF_PROB_VPD_STRESS_SEEDLING_ACCLIMATION = "prob_vpd_stress_seedling_acclimation"
+CONF_PROB_VPD_MILD_STRESS_SEEDLING_ACCLIMATION = (
+    "prob_vpd_mild_stress_seedling_acclimation"
+)
+CONF_PROB_VPD_STRESS_SEEDLING = "prob_vpd_stress_seedling"
+CONF_PROB_VPD_MILD_STRESS_SEEDLING = "prob_vpd_mild_stress_seedling"
+CONF_PROB_VPD_STRESS_CLONE_ACCLIMATION = "prob_vpd_stress_clone_acclimation"
+CONF_PROB_VPD_MILD_STRESS_CLONE_ACCLIMATION = "prob_vpd_mild_stress_clone_acclimation"
+CONF_PROB_VPD_STRESS_CLONE = "prob_vpd_stress_clone"
+CONF_PROB_VPD_MILD_STRESS_CLONE = "prob_vpd_mild_stress_clone"
+CONF_PROB_VPD_STRESS_VEG = "prob_vpd_stress_veg"
+CONF_PROB_VPD_MILD_STRESS_VEG = "prob_vpd_mild_stress_veg"
+CONF_PROB_VPD_STRESS_VEG_EARLY = "prob_vpd_stress_veg_early"
+CONF_PROB_VPD_MILD_STRESS_VEG_EARLY = "prob_vpd_mild_stress_veg_early"
+CONF_PROB_VPD_STRESS_VEG_LATE = "prob_vpd_stress_veg_late"
+CONF_PROB_VPD_MILD_STRESS_VEG_LATE = "prob_vpd_mild_stress_veg_late"
+CONF_PROB_VPD_STRESS_MOTHER = "prob_vpd_stress_mother"
+CONF_PROB_VPD_MILD_STRESS_MOTHER = "prob_vpd_mild_stress_mother"
+CONF_PROB_VPD_STRESS_FLOWER_EARLY = "prob_vpd_stress_flower_early"
+CONF_PROB_VPD_MILD_STRESS_FLOWER_EARLY = "prob_vpd_mild_stress_flower_early"
+CONF_PROB_VPD_STRESS_FLOWER_MID = "prob_vpd_stress_flower_mid"
+CONF_PROB_VPD_MILD_STRESS_FLOWER_MID = "prob_vpd_mild_stress_flower_mid"
+CONF_PROB_VPD_STRESS_FLOWER_LATE = "prob_vpd_stress_flower_late"
+CONF_PROB_VPD_MILD_STRESS_FLOWER_LATE = "prob_vpd_mild_stress_flower_late"
+CONF_PROB_VPD_STRESS_DRY = "prob_vpd_stress_dry"
+CONF_PROB_VPD_MILD_STRESS_DRY = "prob_vpd_mild_stress_dry"
+CONF_PROB_VPD_STRESS_CURE = "prob_vpd_stress_cure"
+CONF_PROB_VPD_MILD_STRESS_CURE = "prob_vpd_mild_stress_cure"
+
+# Bayesian Temperature Probabilities
+CONF_PROB_TEMP_EXTREME_HEAT = "prob_temp_extreme_heat"
+CONF_PROB_TEMP_HIGH_HEAT = "prob_temp_high_heat"
+CONF_PROB_TEMP_WARM = "prob_temp_warm"
+CONF_PROB_TEMP_EXTREME_COLD = "prob_temp_extreme_cold"
+CONF_PROB_TEMP_COLD = "prob_temp_cold"
+CONF_PROB_NIGHT_TEMP_HIGH = "prob_night_temp_high"
+
+# Bayesian Humidity/Mold Probabilities
+CONF_PROB_HUMIDITY_TOO_DRY = "prob_humidity_too_dry"
+CONF_PROB_MOLD_TEMP_DANGER_ZONE = "prob_mold_temp_danger_zone"
+CONF_PROB_MOLD_HUMIDITY_HIGH_NIGHT = "prob_mold_humidity_high_night"
+CONF_PROB_MOLD_VPD_LOW_NIGHT = "prob_mold_vpd_low_night"
+CONF_PROB_MOLD_LIGHTS_OFF = "prob_mold_lights_off"
+CONF_PROB_MOLD_HUMIDITY_HIGH_DAY = "prob_mold_humidity_high_day"
+CONF_PROB_MOLD_VPD_LOW_DAY = "prob_mold_vpd_low_day"
+CONF_PROB_MOLD_FAN_OFF = "prob_mold_fan_off"
+
+# Bayesian Trend Probabilities
+CONF_PROB_TREND_FAST_RISE = "prob_trend_fast_rise"
+CONF_PROB_TREND_SLOW_RISE = "prob_trend_slow_rise"
+
 # Tank Depletion Predictor Defaults
 DEFAULT_PREDICTION_WINDOW_HOURS = 72
 DEPLETION_DEADBAND_THRESHOLD = 0.1  # %/hour
@@ -356,9 +506,9 @@ DEFAULT_NOTIFICATION_EVENTS = {
 DEHUMIDIFIER_STAGES: Final = [
     PlantStage.SEEDLING.value,
     PlantStage.VEG.value,
-    "early_flower",
-    "mid_flower",
-    "late_flower",
+    PlantStage.FLOWER_EARLY.value,
+    PlantStage.FLOWER_MID.value,
+    PlantStage.FLOWER_LATE.value,
     PlantStage.DRY.value,
     PlantStage.CURE.value,
 ]

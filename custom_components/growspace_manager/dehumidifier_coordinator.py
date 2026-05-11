@@ -24,6 +24,7 @@ from .const import (
     CATEGORY_DEHUMIDIFIER,
     DEFAULT_DEHUMIDIFIER_MIN_OFFTIME,
     DEFAULT_DEHUMIDIFIER_MIN_RUNTIME,
+    PlantStage,
 )
 from .domain import calculate_days_in_stage
 from .exceptions import GrowspaceError
@@ -37,35 +38,35 @@ _LOGGER = logging.getLogger(__name__)
 # Default Thresholds
 # Format: {stage: {day_or_night: {on: float, off: float}}}
 DEFAULT_THRESHOLDS = {
-    "seedling": {
+    PlantStage.SEEDLING: {
         "day": {"on": 0.5, "off": 0.6},
         "night": {"on": 0.55, "off": 0.65},
     },
-    "mother": {
+    PlantStage.MOTHER: {
         "day": {"on": 0.6, "off": 0.7},
         "night": {"on": 0.65, "off": 0.75},
     },
-    "veg": {
+    PlantStage.VEG: {
         "day": {"on": 0.6, "off": 0.7},
         "night": {"on": 0.65, "off": 0.75},
     },
-    "early_flower": {
+    PlantStage.FLOWER_EARLY: {
         "day": {"on": 1.1, "off": 1.2},
         "night": {"on": 0.7, "off": 0.9},
     },
-    "mid_flower": {
+    PlantStage.FLOWER_MID: {
         "day": {"on": 1.25, "off": 1.35},
         "night": {"on": 0.9, "off": 1},
     },
-    "late_flower": {
+    PlantStage.FLOWER_LATE: {
         "day": {"on": 1.35, "off": 1.4},
         "night": {"on": 0.95, "off": 1.05},
     },
-    "dry": {
+    PlantStage.DRY: {
         "day": {"on": 0.8, "off": 1.0},
         "night": {"on": 0.85, "off": 1.05},
     },
-    "cure": {
+    PlantStage.CURE: {
         "day": {"on": 0.9, "off": 1.1},
         "night": {"on": 0.95, "off": 1.15},
     },
@@ -282,7 +283,7 @@ class DehumidifierCoordinator:
 
         return False
 
-    def _get_growth_stage(self) -> str:
+    def _get_growth_stage(self) -> PlantStage:
         """Determine the current growth stage for threshold selection."""
         plants = self.main_coordinator.get_growspace_plants(self.growspace_id)
 
@@ -294,12 +295,12 @@ class DehumidifierCoordinator:
         max_mother_days = 0
 
         for plant in plants:
-            s_days = calculate_days_in_stage(plant, "seedling")
-            v_days = calculate_days_in_stage(plant, "veg")
-            f_days = calculate_days_in_stage(plant, "flower")
-            d_days = calculate_days_in_stage(plant, "dry")
-            c_days = calculate_days_in_stage(plant, "cure")
-            m_days = calculate_days_in_stage(plant, "mother")
+            s_days = calculate_days_in_stage(plant, PlantStage.SEEDLING)
+            v_days = calculate_days_in_stage(plant, PlantStage.VEG)
+            f_days = calculate_days_in_stage(plant, PlantStage.FLOWER)
+            d_days = calculate_days_in_stage(plant, PlantStage.DRY)
+            c_days = calculate_days_in_stage(plant, PlantStage.CURE)
+            m_days = calculate_days_in_stage(plant, PlantStage.MOTHER)
 
             max_seedling_days = max(max_seedling_days, s_days)
             max_veg_days = max(max_veg_days, v_days)
@@ -310,23 +311,23 @@ class DehumidifierCoordinator:
 
         # Priority: Cure > Dry > Flower > Mother > Veg > Seedling
         if max_cure_days > 0:
-            return "cure"
+            return PlantStage.CURE
         if max_dry_days > 0:
-            return "dry"
+            return PlantStage.DRY
         if max_flower_days >= 50:
-            return "late_flower"
+            return PlantStage.FLOWER_LATE
         if max_flower_days >= 22:
-            return "mid_flower"
+            return PlantStage.FLOWER_MID
         if max_flower_days > 0:
-            return "early_flower"
+            return PlantStage.FLOWER_EARLY
         if max_mother_days > 0:
-            return "mother"
+            return PlantStage.MOTHER
         if max_veg_days > 0:
-            return "veg"
+            return PlantStage.VEG
         if max_seedling_days > 0:
-            return "seedling"
+            return PlantStage.SEEDLING
 
-        return "veg"  # Default
+        return PlantStage.VEG  # Default
 
     def _get_current_thresholds(self, stage: str, is_day: bool) -> dict[str, float]:
         """Get the ON/OFF thresholds for the current state."""

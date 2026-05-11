@@ -22,6 +22,11 @@ from .const import (
     CONF_HUMIDIFIER_ENTITY,
     CONF_LIGHT_SENSOR,
     CONF_LIGHT_SENSORS,
+    CONF_TREND_TEMP_DURATION,
+    CONF_TREND_TEMP_SENSITIVITY,
+    CONF_TREND_TEMP_THRESHOLD,
+    CONF_TREND_VPD_DURATION,
+    CONF_TREND_VPD_SENSITIVITY,
     PlantStage,
 )
 from .domain.stage import STAGE_REGISTRY
@@ -396,9 +401,33 @@ class EnvironmentConfig(BaseModel):
                     data[new_key] = [val] if isinstance(val, str) else []
                 else:
                     data[new_key] = []
-            # If we have both (e.g. from transition period), prefer the new one
-            elif old_key in data:
                 data.pop(old_key)
+
+        # Migration: Trend keys (standardize naming)
+        trend_migrations = {
+            "vpd_trend_duration": CONF_TREND_VPD_DURATION,
+            "temp_trend_duration": CONF_TREND_TEMP_DURATION,
+            "vpd_trend_sensitivity": CONF_TREND_VPD_SENSITIVITY,
+            "temp_trend_sensitivity": CONF_TREND_TEMP_SENSITIVITY,
+            "temp_trend_threshold": CONF_TREND_TEMP_THRESHOLD,
+        }
+        for old_key, new_key in trend_migrations.items():
+            if old_key in data and new_key not in data:
+                data[new_key] = data.pop(old_key)
+
+        # Migration: Stage names in threshold dicts (standardize flower stages)
+        stage_migrations = {
+            "early_flower": PlantStage.FLOWER_EARLY.value,
+            "mid_flower": PlantStage.FLOWER_MID.value,
+            "late_flower": PlantStage.FLOWER_LATE.value,
+        }
+        for dict_key in ["dehumidifier_thresholds", "humidifier_thresholds"]:
+            if dict_key in data and isinstance(data[dict_key], dict):
+                new_dict = {}
+                for stage, thresholds in data[dict_key].items():
+                    new_stage = stage_migrations.get(stage, stage)
+                    new_dict[new_stage] = thresholds
+                data[dict_key] = new_dict
 
         # Custom logic to implement _CATCH_ALL_FIELD behavior
         # Keep known keys, move everything else to bayesian_options

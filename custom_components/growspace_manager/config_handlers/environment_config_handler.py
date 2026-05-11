@@ -14,12 +14,17 @@ from custom_components.growspace_manager.const import (
     CONF_CIRCULATION_FAN_ENTITIES,
     CONF_CIRCULATION_FAN_ENTITY,
     CONF_CO2_SENSOR,
+    CONF_CONFIGURE_DEHUMIDIFIER,
+    CONF_CONFIGURE_HUMIDIFIER,
     CONF_DEHUMIDIFIER_ENTITIES,
     CONF_DEHUMIDIFIER_ENTITY,
     CONF_DRAIN_VOLUME_SENSORS,
     CONF_ENERGY_SENSORS,
     CONF_EXHAUST_FAN_ENTITIES,
     CONF_FEED_EC_SENSORS,
+    CONF_FLOWER_EARLY_DAY_HOURS,
+    CONF_FLOWER_LATE_DAY_HOURS,
+    CONF_FLOWER_MID_DAY_HOURS,
     CONF_HUMIDIFIER_ENTITIES,
     CONF_HUMIDIFIER_ENTITY,
     CONF_HUMIDITY_SENSOR,
@@ -29,18 +34,73 @@ from custom_components.growspace_manager.const import (
     CONF_IRRIGATION_TANK_WARNING_LEVEL,
     CONF_LIGHT_SENSOR,
     CONF_LIGHT_SENSORS,
+    CONF_MIN_SOURCE_AIR_TEMP,
     CONF_MOLD_THRESHOLD,
     CONF_PH_SENSORS,
     CONF_POWER_SENSORS,
+    CONF_PROB_HUMIDITY_HIGH_FLOWER,
+    CONF_PROB_HUMIDITY_HIGH_VEG_EARLY,
+    CONF_PROB_HUMIDITY_HIGH_VEG_LATE,
+    CONF_PROB_HUMIDITY_TOO_DRY,
+    CONF_PROB_HUMIDITY_TOO_HUMID_FLOWER,
+    CONF_PROB_MOLD_FAN_OFF,
+    CONF_PROB_MOLD_HUMIDITY_HIGH_DAY,
+    CONF_PROB_MOLD_HUMIDITY_HIGH_NIGHT,
+    CONF_PROB_MOLD_LIGHTS_OFF,
+    CONF_PROB_MOLD_TEMP_DANGER_ZONE,
+    CONF_PROB_MOLD_VPD_LOW_DAY,
+    CONF_PROB_MOLD_VPD_LOW_NIGHT,
+    CONF_PROB_NIGHT_TEMP_HIGH,
+    CONF_PROB_TEMP_COLD,
+    CONF_PROB_TEMP_EXTREME_COLD,
+    CONF_PROB_TEMP_EXTREME_HEAT,
+    CONF_PROB_TEMP_HIGH_HEAT,
+    CONF_PROB_TEMP_WARM,
+    CONF_PROB_VPD_MILD_STRESS_FLOWER_EARLY,
+    CONF_PROB_VPD_MILD_STRESS_FLOWER_LATE,
+    CONF_PROB_VPD_MILD_STRESS_VEG_EARLY,
+    CONF_PROB_VPD_MILD_STRESS_VEG_LATE,
+    CONF_PROB_VPD_STRESS_FLOWER_EARLY,
+    CONF_PROB_VPD_STRESS_FLOWER_LATE,
+    CONF_PROB_VPD_STRESS_VEG_EARLY,
+    CONF_PROB_VPD_STRESS_VEG_LATE,
     CONF_RUNOFF_EC_SENSORS,
+    CONF_SEEDLING_DAY_HOURS,
+    CONF_CLONE_DAY_HOURS,
+    CONF_MOTHER_DAY_HOURS,
     CONF_SOIL_MOISTURE_SENSOR,
     CONF_STRESS_THRESHOLD,
     CONF_SUBSTRATE_EC_SENSORS,
     CONF_TEMP_SENSOR,
+    CONF_TEMP_SENSORS,
+    CONF_TREND_HUMIDITY_DURATION,
+    CONF_TREND_HUMIDITY_SENSITIVITY,
+    CONF_TREND_HUMIDITY_THRESHOLD,
+    CONF_TREND_TEMPERATURE_DURATION,
+    CONF_TREND_TEMPERATURE_SENSITIVITY,
+    CONF_TREND_TEMPERATURE_THRESHOLD,
+    CONF_TREND_VPD_DURATION,
+    CONF_TREND_VPD_SENSITIVITY,
+    CONF_TREND_VPD_THRESHOLD,
+    CONF_VEG_DAY_HOURS,
     CONF_VPD_SENSOR,
+    CONF_VPD_SENSORS,
+    CONF_HUMIDITY_SENSORS,
+    CONF_ON,
+    CONF_OFF,
+    CONF_DAY,
+    CONF_NIGHT,
+    CONF_LST_OFFSET,
+    CONF_CONFIGURE_ADVANCED,
+    CONF_CONTROL_DEHUMIDIFIER,
+    CONF_SNAPSHOT_INTERVAL,
+    CONF_DEHUMIDIFIER_THRESHOLDS,
+    CANONICAL_ID_DRY,
+    CANONICAL_ID_CURE,
     DEFAULT_FLOWER_DAY_HOURS,
     DEFAULT_VEG_DAY_HOURS,
     DEHUMIDIFIER_STAGES,
+    PlantStage,
 )
 from custom_components.growspace_manager.dehumidifier_coordinator import (
     DEFAULT_THRESHOLDS,
@@ -798,26 +858,24 @@ class EnvironmentConfigHandler(BaseConfigHandler[dict[str, Any]]):
         """Add LST offset to the schema if applicable."""
         # Check both singular (legacy) and plural keys
         has_temp = bool(growspace_options.get(CONF_TEMP_SENSOR)) or bool(
-            growspace_options.get("temperature_sensors")
+            growspace_options.get(CONF_TEMP_SENSORS)
         )
         has_humidity = bool(growspace_options.get(CONF_HUMIDITY_SENSOR)) or bool(
-            growspace_options.get("humidity_sensors")
+            growspace_options.get(CONF_HUMIDITY_SENSORS)
         )
         has_vpd = bool(growspace_options.get(CONF_VPD_SENSOR)) or bool(
-            growspace_options.get("vpd_sensors")
+            growspace_options.get(CONF_VPD_SENSORS)
         )
-
         # Only show LST offset if we are calculating VPD (temp/humidity present, VPD missing)
         if has_temp and has_humidity and not has_vpd:
             # Default to 0.0 for Dry/Cure stages, otherwise -2.0
             default_offset = -2.0
-            if stage in ("dry", "cure"):
+            if stage in (CANONICAL_ID_DRY, CANONICAL_ID_CURE):
                 default_offset = 0.0
-
             schema_dict[
                 vol.Optional(
-                    "lst_offset",
-                    default=growspace_options.get("lst_offset", default_offset),
+                    CONF_LST_OFFSET,
+                    default=growspace_options.get(CONF_LST_OFFSET, default_offset),
                 )
             ] = selector.NumberSelector(
                 selector.NumberSelectorConfig(
@@ -979,24 +1037,24 @@ class EnvironmentConfigHandler(BaseConfigHandler[dict[str, Any]]):
         )
         schema_dict[
             vol.Optional(
-                "control_dehumidifier",
-                default=growspace_options.get("control_dehumidifier", False),
+                CONF_CONTROL_DEHUMIDIFIER,
+                default=growspace_options.get(CONF_CONTROL_DEHUMIDIFIER, False),
             )
         ] = selector.BooleanSelector()
 
         schema_dict[
             vol.Optional(
-                "control_humidifier",
-                default=growspace_options.get("control_humidifier", False),
+                CONF_CONFIGURE_HUMIDIFIER,
+                default=growspace_options.get(CONF_CONFIGURE_HUMIDIFIER, False),
             )
         ] = selector.BooleanSelector()
 
         schema_dict[
             vol.Optional(
-                "configure_dehumidifier",
+                CONF_CONFIGURE_DEHUMIDIFIER,
                 default=growspace_options.get(
-                    "configure_dehumidifier",
-                    bool(growspace_options.get("dehumidifier_thresholds")),
+                    CONF_CONFIGURE_DEHUMIDIFIER,
+                    bool(growspace_options.get(CONF_DEHUMIDIFIER_THRESHOLDS)),
                 ),
             )
         ] = selector.BooleanSelector()
@@ -1018,8 +1076,8 @@ class EnvironmentConfigHandler(BaseConfigHandler[dict[str, Any]]):
         # Photoperiod Configuration
         schema_dict[
             vol.Optional(
-                "veg_day_hours",
-                default=growspace_options.get("veg_day_hours", DEFAULT_VEG_DAY_HOURS),
+                CONF_VEG_DAY_HOURS,
+                default=growspace_options.get(CONF_VEG_DAY_HOURS, DEFAULT_VEG_DAY_HOURS),
             )
         ] = selector.NumberSelector(
             selector.NumberSelectorConfig(
@@ -1027,13 +1085,16 @@ class EnvironmentConfigHandler(BaseConfigHandler[dict[str, Any]]):
             )
         )
 
-        for stage in ["flower_early", "flower_mid", "flower_late"]:
+        stage_keys = {
+            PlantStage.FLOWER_EARLY: CONF_FLOWER_EARLY_DAY_HOURS,
+            PlantStage.FLOWER_MID: CONF_FLOWER_MID_DAY_HOURS,
+            PlantStage.FLOWER_LATE: CONF_FLOWER_LATE_DAY_HOURS,
+        }
+        for key in stage_keys.values():
             schema_dict[
                 vol.Optional(
-                    f"{stage}_day_hours",
-                    default=growspace_options.get(
-                        f"{stage}_day_hours", DEFAULT_FLOWER_DAY_HOURS
-                    ),
+                    key,
+                    default=growspace_options.get(key, DEFAULT_FLOWER_DAY_HOURS),
                 )
             ] = selector.NumberSelector(
                 selector.NumberSelectorConfig(
@@ -1044,8 +1105,8 @@ class EnvironmentConfigHandler(BaseConfigHandler[dict[str, Any]]):
         # Thresholds
         schema_dict[
             vol.Optional(
-                "minimum_source_air_temperature",
-                default=growspace_options.get("minimum_source_air_temperature", 18),
+                CONF_MIN_SOURCE_AIR_TEMP,
+                default=growspace_options.get(CONF_MIN_SOURCE_AIR_TEMP, 18),
             )
         ] = selector.NumberSelector(
             selector.NumberSelectorConfig(
@@ -1054,13 +1115,31 @@ class EnvironmentConfigHandler(BaseConfigHandler[dict[str, Any]]):
         )
 
         # Trend analysis settings (fallback)
-        for trend_type, default_threshold in [("vpd", 1.2), ("temp", 26.0)]:
+        trend_configs = {
+            "vpd": {
+                "threshold": CONF_TREND_VPD_THRESHOLD,
+                "duration": CONF_TREND_VPD_DURATION,
+                "sensitivity": CONF_TREND_VPD_SENSITIVITY,
+                "default": 1.2,
+            },
+            "temperature": {
+                "threshold": CONF_TREND_TEMPERATURE_THRESHOLD,
+                "duration": CONF_TREND_TEMPERATURE_DURATION,
+                "sensitivity": CONF_TREND_TEMPERATURE_SENSITIVITY,
+                "default": 26.0,
+            },
+        }
+
+        for config in trend_configs.values():
+            threshold_key = config["threshold"]
+            duration_key = config["duration"]
+            sensitivity_key = config["sensitivity"]
+            default_val = config["default"]
+
             schema_dict[
                 vol.Optional(
-                    f"trend_{trend_type}_threshold",
-                    default=growspace_options.get(
-                        f"trend_{trend_type}_threshold", default_threshold
-                    ),
+                    threshold_key,
+                    default=growspace_options.get(threshold_key, default_val),
                 )
             ] = selector.NumberSelector(
                 selector.NumberSelectorConfig(
@@ -1070,8 +1149,8 @@ class EnvironmentConfigHandler(BaseConfigHandler[dict[str, Any]]):
 
             schema_dict[
                 vol.Optional(
-                    f"{trend_type}_trend_duration",
-                    default=growspace_options.get(f"{trend_type}_trend_duration", 30),
+                    duration_key,
+                    default=growspace_options.get(duration_key, 30),
                 )
             ] = selector.NumberSelector(
                 selector.NumberSelectorConfig(
@@ -1082,29 +1161,11 @@ class EnvironmentConfigHandler(BaseConfigHandler[dict[str, Any]]):
                     unit_of_measurement="minutes",
                 )
             )
-            if trend_type == "temp":
-                schema_dict[
-                    vol.Optional(
-                        f"{trend_type}_trend_threshold",
-                        default=growspace_options.get(
-                            f"{trend_type}_trend_threshold", default_threshold
-                        ),
-                    )
-                ] = selector.NumberSelector(
-                    selector.NumberSelectorConfig(
-                        min=20,
-                        max=35,
-                        step=0.5,
-                        mode=selector.NumberSelectorMode.BOX,
-                        unit_of_measurement="°C",
-                    )
-                )
+
             schema_dict[
                 vol.Optional(
-                    f"{trend_type}_trend_sensitivity",
-                    default=growspace_options.get(
-                        f"{trend_type}_trend_sensitivity", 0.5
-                    ),
+                    sensitivity_key,
+                    default=growspace_options.get(sensitivity_key, 0.5),
                 )
             ] = selector.NumberSelector(
                 selector.NumberSelectorConfig(
@@ -1113,7 +1174,7 @@ class EnvironmentConfigHandler(BaseConfigHandler[dict[str, Any]]):
             )
 
         # Advanced settings toggle
-        schema_dict[vol.Optional("configure_advanced", default=False)] = (
+        schema_dict[vol.Optional(CONF_CONFIGURE_ADVANCED, default=False)] = (
             selector.BooleanSelector()
         )
 
@@ -1121,14 +1182,14 @@ class EnvironmentConfigHandler(BaseConfigHandler[dict[str, Any]]):
         """Generate schema for dehumidifier settings."""
         schema_dict = {}
         for stage in DEHUMIDIFIER_STAGES:
-            for cycle in ["day", "night"]:
+            for cycle in [CONF_DAY, CONF_NIGHT]:
                 defaults = current_thresholds.get(stage, {}).get(
                     cycle, DEFAULT_THRESHOLDS[stage][cycle]
                 )
 
                 # ON Threshold
                 schema_dict[
-                    vol.Required(f"{stage}_{cycle}_on", default=defaults["on"])
+                    vol.Required(f"{stage}_{cycle}_{CONF_ON}", default=defaults[CONF_ON])
                 ] = selector.NumberSelector(
                     selector.NumberSelectorConfig(
                         min=0.1,
@@ -1141,7 +1202,7 @@ class EnvironmentConfigHandler(BaseConfigHandler[dict[str, Any]]):
 
                 # OFF Threshold
                 schema_dict[
-                    vol.Required(f"{stage}_{cycle}_off", default=defaults["off"])
+                    vol.Required(f"{stage}_{cycle}_{CONF_OFF}", default=defaults[CONF_OFF])
                 ] = selector.NumberSelector(
                     selector.NumberSelectorConfig(
                         min=0.1,
@@ -1157,32 +1218,32 @@ class EnvironmentConfigHandler(BaseConfigHandler[dict[str, Any]]):
     def get_advanced_bayesian_schema(self, options: dict[str, Any]) -> vol.Schema:
         """Build the schema for the advanced Bayesian settings form."""
         defaults = {
-            "prob_temp_extreme_heat": (0.98, 0.05),
-            "prob_temp_high_heat": (0.85, 0.15),
-            "prob_temp_warm": (0.65, 0.30),
-            "prob_temp_extreme_cold": (0.95, 0.08),
-            "prob_temp_cold": (0.80, 0.20),
-            "prob_humidity_too_dry": (0.85, 0.20),
-            "prob_humidity_high_veg_early": (0.80, 0.20),
-            "prob_humidity_high_veg_late": (0.85, 0.15),
-            "prob_humidity_too_humid_flower": (0.95, 0.10),
-            "prob_humidity_high_flower": (0.75, 0.25),
-            "prob_vpd_stress_veg_early": (0.85, 0.15),
-            "prob_vpd_mild_stress_veg_early": (0.60, 0.30),
-            "prob_vpd_stress_veg_late": (0.80, 0.18),
-            "prob_vpd_mild_stress_veg_late": (0.55, 0.35),
-            "prob_vpd_stress_flower_early": (0.85, 0.15),
-            "prob_vpd_mild_stress_flower_early": (0.60, 0.30),
-            "prob_vpd_stress_flower_late": (0.90, 0.12),
-            "prob_vpd_mild_stress_flower_late": (0.65, 0.28),
-            "prob_night_temp_high": (0.80, 0.20),
-            "prob_mold_temp_danger_zone": (0.85, 0.30),
-            "prob_mold_humidity_high_night": (0.99, 0.10),
-            "prob_mold_vpd_low_night": (0.95, 0.20),
-            "prob_mold_lights_off": (0.75, 0.30),
-            "prob_mold_humidity_high_day": (0.95, 0.20),
-            "prob_mold_vpd_low_day": (0.90, 0.25),
-            "prob_mold_fan_off": (0.80, 0.15),
+            CONF_PROB_TEMP_EXTREME_HEAT: (0.98, 0.05),
+            CONF_PROB_TEMP_HIGH_HEAT: (0.85, 0.15),
+            CONF_PROB_TEMP_WARM: (0.65, 0.30),
+            CONF_PROB_TEMP_EXTREME_COLD: (0.95, 0.08),
+            CONF_PROB_TEMP_COLD: (0.80, 0.20),
+            CONF_PROB_HUMIDITY_TOO_DRY: (0.85, 0.20),
+            CONF_PROB_HUMIDITY_HIGH_VEG_EARLY: (0.80, 0.20),
+            CONF_PROB_HUMIDITY_HIGH_VEG_LATE: (0.85, 0.15),
+            CONF_PROB_HUMIDITY_TOO_HUMID_FLOWER: (0.95, 0.10),
+            CONF_PROB_HUMIDITY_HIGH_FLOWER: (0.75, 0.25),
+            CONF_PROB_VPD_STRESS_VEG_EARLY: (0.85, 0.15),
+            CONF_PROB_VPD_MILD_STRESS_VEG_EARLY: (0.60, 0.30),
+            CONF_PROB_VPD_STRESS_VEG_LATE: (0.80, 0.18),
+            CONF_PROB_VPD_MILD_STRESS_VEG_LATE: (0.55, 0.35),
+            CONF_PROB_VPD_STRESS_FLOWER_EARLY: (0.85, 0.15),
+            CONF_PROB_VPD_MILD_STRESS_FLOWER_EARLY: (0.60, 0.30),
+            CONF_PROB_VPD_STRESS_FLOWER_LATE: (0.90, 0.12),
+            CONF_PROB_VPD_MILD_STRESS_FLOWER_LATE: (0.65, 0.28),
+            CONF_PROB_NIGHT_TEMP_HIGH: (0.80, 0.20),
+            CONF_PROB_MOLD_TEMP_DANGER_ZONE: (0.85, 0.30),
+            CONF_PROB_MOLD_HUMIDITY_HIGH_NIGHT: (0.99, 0.10),
+            CONF_PROB_MOLD_VPD_LOW_NIGHT: (0.95, 0.20),
+            CONF_PROB_MOLD_LIGHTS_OFF: (0.75, 0.30),
+            CONF_PROB_MOLD_HUMIDITY_HIGH_DAY: (0.95, 0.20),
+            CONF_PROB_MOLD_VPD_LOW_DAY: (0.90, 0.25),
+            CONF_PROB_MOLD_FAN_OFF: (0.80, 0.15),
         }
         schema_dict = {
             vol.Optional(

@@ -93,14 +93,14 @@ class SubsystemManager:
 
         await irrigation_coordinator.async_setup()
         self.irrigation_coordinators[growspace_id] = irrigation_coordinator
- 
+
         # Dehumidifier coordinator setup
         dehumidifier_coordinator = DehumidifierCoordinator(
             self.hass, self.entry, growspace_id, self.coordinator
         )
         await dehumidifier_coordinator.async_setup()
         self.dehumidifier_coordinators[growspace_id] = dehumidifier_coordinator
- 
+
         # Humidifier coordinator setup
         humidifier_coordinator = HumidifierCoordinator(
             self.hass, self.entry, growspace_id, self.coordinator

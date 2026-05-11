@@ -38,13 +38,18 @@ from .const import (
     ATTR_THRESHOLD,
     ATTR_TIME_IN_CURRENT_STATE,
     CONF_AI_AUTO_ALERTS,
+    CONF_VEG_DAY_HOURS,
     DEFAULT_BAYESIAN_PRIORS,
     DEFAULT_BAYESIAN_THRESHOLDS,
+    DEFAULT_FLOWER_DAY_HOURS,
+    DEFAULT_VEG_DAY_HOURS,
     DOMAIN,
+    STAGE_PHOTOPERIOD_KEYS,
     GrowspaceSensorType,
     PlantStage,
 )
 from .coordinator import GrowspaceCoordinator
+from .exceptions import GrowspaceError
 from .models import (
     EnvironmentConfig,
     EnvironmentState,
@@ -53,7 +58,6 @@ from .models import (
     GrowspaceType,
     Plant,
 )
-from .exceptions import GrowspaceError
 from .notification_manager import NotificationManager
 from .services.ai_assistant import GrowAssistant
 from .strain_library import StrainLibrary
@@ -607,7 +611,7 @@ class BayesianEnvironmentSensor(
 
         try:
             return float(state.state)
-        except (ValueError, TypeError):
+        except ValueError, TypeError:
             return None
 
     def _get_aggregated_sensor_value(self, sensor_ids: list[str]) -> float | None:
@@ -710,7 +714,13 @@ class BayesianEnvironmentSensor(
             return await self.trend_analyzer.async_analyze_sensor_trend(
                 sensor_id, duration_minutes, threshold
             )
-        except (AttributeError, KeyError, ValueError, ServiceValidationError, GrowspaceError):
+        except (
+            AttributeError,
+            KeyError,
+            ValueError,
+            ServiceValidationError,
+            GrowspaceError,
+        ):
             _LOGGER.exception("Error analyzing sensor history for %s", sensor_id)
             return {"trend": "unknown", "crossed_threshold": False}
 
@@ -744,7 +754,14 @@ class BayesianEnvironmentSensor(
                         [r[1] for r in self._reasons],
                     )
                     final_message = f"{ai_message}\n\n(Original: {message})"
-                except (AttributeError, KeyError, ValueError, ServiceValidationError, GrowspaceError, Exception):
+                except (
+                    AttributeError,
+                    KeyError,
+                    ValueError,
+                    ServiceValidationError,
+                    GrowspaceError,
+                    Exception,
+                ):
                     _LOGGER.warning(
                         "Failed to generate AI alert, falling back to standard message"
                     )
@@ -753,7 +770,15 @@ class BayesianEnvironmentSensor(
                 await self.notification_manager.async_send_notification(
                     self.growspace_id, title, final_message, self._sensor_states
                 )
-        except (AttributeError, KeyError, ValueError, TypeError, ServiceValidationError, GrowspaceError, Exception):
+        except (
+            AttributeError,
+            KeyError,
+            ValueError,
+            TypeError,
+            ServiceValidationError,
+            GrowspaceError,
+            Exception,
+        ):
             _LOGGER.exception("Failed to send notification to %s", self.growspace_id)
 
     def get_notification_title_message(
@@ -849,7 +874,10 @@ class BayesianEnvironmentSensor(
 
         # Update pending alert state on every probability update
         # (replaces direct async_schedule_notification call on state change)
-        if self.notification_manager and self.entity_description.sensor_type != GrowspaceSensorType.OPTIMAL:
+        if (
+            self.notification_manager
+            and self.entity_description.sensor_type != GrowspaceSensorType.OPTIMAL
+        ):
             self.notification_manager.update_pending_alert(self.growspace_id, self)
 
         self.async_write_ha_state()
@@ -983,16 +1011,14 @@ class LightCycleVerificationSensor(
         stage_info = self._get_growth_stage_info()
         stage_key = self._get_current_stage_key(stage_info)
 
-        DEFAULT_VEG_DAY_HOURS = 18
-        DEFAULT_FLOWER_DAY_HOURS = 12
-
         env_config_dict = self.env_config.to_dict()
-        if stage_key == PlantStage.VEG:
-            day_hours = env_config_dict.get("veg_day_hours", DEFAULT_VEG_DAY_HOURS)
-        else:
-            day_hours = env_config_dict.get(
-                f"{stage_key}_day_hours", DEFAULT_FLOWER_DAY_HOURS
-            )
+        conf_key = STAGE_PHOTOPERIOD_KEYS.get(stage_key, CONF_VEG_DAY_HOURS)
+        default_hours = (
+            DEFAULT_VEG_DAY_HOURS
+            if stage_key == PlantStage.VEG
+            else DEFAULT_FLOWER_DAY_HOURS
+        )
+        day_hours = env_config_dict.get(conf_key, default_hours)
 
         expected_schedule = f"{day_hours}/{24 - day_hours}"
 
@@ -1090,9 +1116,6 @@ class LightCycleVerificationSensor(
 
     async def async_update(self) -> None:
         """Update the sensor's state based on the light's on/off duration."""
-        DEFAULT_VEG_DAY_HOURS = 18
-        DEFAULT_FLOWER_DAY_HOURS = 12
-
         # Check if light entity is configured (use instance attribute first, then env_config)
         light_entity = self.light_entity_id or self.env_config.light_sensor
         if not light_entity:
@@ -1117,12 +1140,13 @@ class LightCycleVerificationSensor(
 
         # Get configured day hours for the current stage
         env_config_dict = self.env_config.to_dict()
-        if stage_key == PlantStage.VEG:
-            day_hours = env_config_dict.get("veg_day_hours", DEFAULT_VEG_DAY_HOURS)
-        else:
-            day_hours = env_config_dict.get(
-                f"{stage_key}_day_hours", DEFAULT_FLOWER_DAY_HOURS
-            )
+        conf_key = STAGE_PHOTOPERIOD_KEYS.get(stage_key, CONF_VEG_DAY_HOURS)
+        default_hours = (
+            DEFAULT_VEG_DAY_HOURS
+            if stage_key == PlantStage.VEG
+            else DEFAULT_FLOWER_DAY_HOURS
+        )
+        day_hours = env_config_dict.get(conf_key, default_hours)
 
         # Determine the schedule duration based on the stage
         max_on_duration_hours = day_hours
