@@ -13,13 +13,13 @@ import logging
 from typing import TYPE_CHECKING, Any
 import uuid
 
-from custom_components.growspace_manager.event_builder import EventBuilder
-from custom_components.growspace_manager.models import GrowspaceEvent, IPMPreset, Plant
+from ..event_builder import EventBuilder
+from ..models import GrowspaceEvent, IPMPreset, Plant
 from homeassistant.core import HomeAssistant
 from homeassistant.util import dt as dt_util
 
 if TYPE_CHECKING:
-    from custom_components.growspace_manager.data_access.growspace_repository import (
+    from ..data_access.growspace_repository import (
         GrowspaceRepository,
     )
 

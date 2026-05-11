@@ -5,20 +5,30 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, cast
 
-from custom_components.growspace_manager.const import (
+from ..const import (
     ATTR_DRAIN_TIMES,
     ATTR_DURATION,
     ATTR_GROWSPACE_ID,
     ATTR_IRRIGATION_TIMES,
     ATTR_TIME,
+    GrowspaceService,
 )
-from custom_components.growspace_manager.services.utils import handle_service_errors
+from ..schemas import (
+    ADD_DRAIN_TIME_SCHEMA,
+    ADD_IRRIGATION_TIME_SCHEMA,
+    REMOVE_DRAIN_TIME_SCHEMA,
+    REMOVE_IRRIGATION_TIME_SCHEMA,
+    SET_IRRIGATION_SETTINGS_SCHEMA,
+)
+from .utils import handle_service_errors
 from homeassistant.core import HomeAssistant, ServiceCall
+
+from ._definition import ServiceDefinition
 from homeassistant.exceptions import ServiceValidationError
 
 if TYPE_CHECKING:
-    from custom_components.growspace_manager.coordinator import GrowspaceCoordinator
-    from custom_components.growspace_manager.irrigation_coordinator import (
+    from ..coordinator import GrowspaceCoordinator
+    from ..irrigation_coordinator import (
         IrrigationCoordinator,
     )
 
@@ -138,3 +148,32 @@ async def handle_remove_drain_time(
     await irrigation_coord.async_remove_schedule_item(
         ATTR_DRAIN_TIMES, call.data[ATTR_TIME]
     )
+
+
+SERVICES = [
+    ServiceDefinition(
+        GrowspaceService.SET_IRRIGATION_SETTINGS,
+        handle_set_irrigation_settings,
+        SET_IRRIGATION_SETTINGS_SCHEMA,
+    ),
+    ServiceDefinition(
+        GrowspaceService.ADD_IRRIGATION_TIME,
+        handle_add_irrigation_time,
+        ADD_IRRIGATION_TIME_SCHEMA,
+    ),
+    ServiceDefinition(
+        GrowspaceService.REMOVE_IRRIGATION_TIME,
+        handle_remove_irrigation_time,
+        REMOVE_IRRIGATION_TIME_SCHEMA,
+    ),
+    ServiceDefinition(
+        GrowspaceService.ADD_DRAIN_TIME,
+        handle_add_drain_time,
+        ADD_DRAIN_TIME_SCHEMA,
+    ),
+    ServiceDefinition(
+        GrowspaceService.REMOVE_DRAIN_TIME,
+        handle_remove_drain_time,
+        REMOVE_DRAIN_TIME_SCHEMA,
+    ),
+]

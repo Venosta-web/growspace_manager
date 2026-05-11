@@ -14,9 +14,10 @@ from typing import TYPE_CHECKING, Any
 
 from fpdf import FPDF
 
-from custom_components.growspace_manager.const import DOMAIN
-from custom_components.growspace_manager.exceptions import GrowspaceError
-from custom_components.growspace_manager.models import Plant
+from ..const import DOMAIN, GrowspaceService
+from ..exceptions import GrowspaceError
+from ..models import Plant
+from ..schemas import EXPORT_GROW_REPORT_SCHEMA
 from homeassistant.components.persistent_notification import (
     async_create as create_notification,
 )
@@ -25,10 +26,12 @@ from homeassistant.core import HomeAssistant, ServiceCall
 from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
 from homeassistant.util import dt as dt_util
 
+from ._definition import ServiceDefinition
+
 # Imports moved to function scope to avoid circular dependency with websocket.py
 
 if TYPE_CHECKING:
-    from custom_components.growspace_manager.coordinator import GrowspaceCoordinator
+    from ..coordinator import GrowspaceCoordinator
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -175,7 +178,7 @@ async def _get_plant_timeline_events(
 ) -> list[dict[str, Any]]:
     """Fetch and filter timeline events for a plant."""
     try:
-        from custom_components.growspace_manager.websocket import (  # noqa: PLC0415
+        from ..websocket import (  # noqa: PLC0415
             _query_logbook_events_impl,
         )
 
@@ -235,7 +238,7 @@ async def _get_plant_environmental_stats(
         return averages
 
     try:
-        from custom_components.growspace_manager.websocket import (  # noqa: PLC0415
+        from ..websocket import (  # noqa: PLC0415
             _get_statistics_data,
         )
 
@@ -365,7 +368,7 @@ async def _aggregate_growspace_data(
                 start_time = max(start_time, first_plant_date)
 
             try:
-                from custom_components.growspace_manager.websocket import (  # noqa: PLC0415
+                from ..websocket import (  # noqa: PLC0415
                     _get_statistics_data,
                 )
 
@@ -408,7 +411,7 @@ async def async_websocket_get_grow_report(
 ) -> None:
     """Handle WebSocket grow report request."""
 
-    from custom_components.growspace_manager.coordinator import (  # noqa: PLC0415
+    from ..coordinator import (  # noqa: PLC0415
         GrowspaceCoordinator,
     )
 
@@ -552,3 +555,12 @@ def _export_as_pdf(data: dict[str, Any], file_path: str) -> None:
             pdf.ln(2)
 
     pdf.output(file_path)
+
+
+SERVICES = [
+    ServiceDefinition(
+        GrowspaceService.EXPORT_GROW_REPORT,
+        handle_export_grow_report,
+        EXPORT_GROW_REPORT_SCHEMA,
+    ),
+]

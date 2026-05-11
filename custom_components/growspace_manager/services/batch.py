@@ -5,17 +5,21 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING
 
-from custom_components.growspace_manager.const import (
+from ..const import (
     ATTR_STAGE,
     ATTR_TARGET_GROWSPACE_ID,
     ATTR_TRANSITION_DATE,
+    GrowspaceService,
 )
-from custom_components.growspace_manager.exceptions import GrowspaceError
+from ..exceptions import GrowspaceError
+from ..schemas import BATCH_ACTION_SCHEMA
 from homeassistant.core import HomeAssistant, ServiceCall
 from homeassistant.exceptions import ServiceValidationError
 
+from ._definition import ServiceDefinition
+
 if TYPE_CHECKING:
-    from custom_components.growspace_manager.coordinator import GrowspaceCoordinator
+    from ..coordinator import GrowspaceCoordinator
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -71,3 +75,12 @@ async def handle_batch_action(
         raise ServiceValidationError(
             f"Batch action '{action}' failed for {error_count} entities. First error: {errors[0]}"
         )
+
+
+SERVICES = [
+    ServiceDefinition(
+        GrowspaceService.BATCH_ACTION,
+        handle_batch_action,
+        BATCH_ACTION_SCHEMA,
+    ),
+]

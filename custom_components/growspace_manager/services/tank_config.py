@@ -5,17 +5,22 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING
 
-from custom_components.growspace_manager.const import (
+from ..const import (
     ATTR_GROWSPACE_ID,
     ATTR_TANK_ENTITY,
     ATTR_VOLUME_LITERS,
+    GrowspaceService,
 )
-from custom_components.growspace_manager.services.utils import handle_service_errors
+from ..schemas import CONFIGURE_TANK_SCHEMA
+from ._definition import ServiceDefinition
+from .utils import handle_service_errors
+
 from homeassistant.core import HomeAssistant, ServiceCall
 from homeassistant.exceptions import ServiceValidationError
 
+
 if TYPE_CHECKING:
-    from custom_components.growspace_manager.coordinator import GrowspaceCoordinator
+    from ..coordinator import GrowspaceCoordinator
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -56,3 +61,12 @@ async def handle_configure_tank(
     )
 
     _LOGGER.info("Updated tank config for %s in %s", tank_entity, growspace_id)
+
+
+SERVICES = [
+    ServiceDefinition(
+        GrowspaceService.CONFIGURE_TANK,
+        handle_configure_tank,
+        CONFIGURE_TANK_SCHEMA,
+    ),
+]

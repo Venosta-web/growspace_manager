@@ -5,18 +5,27 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, Any
 
-from custom_components.growspace_manager.const import (
+from ..const import (
     CANONICAL_ID_CURE,
     CANONICAL_ID_DRY,
+    GrowspaceService,
 )
-from custom_components.growspace_manager.strain_library import StrainLibrary
+from ..schemas import (
+    DEBUG_CONSOLIDATE_DUPLICATE_SPECIAL_SCHEMA,
+    DEBUG_LIST_GROWSPACES_SCHEMA,
+    DEBUG_RESET_SPECIAL_GROWSPACES_SCHEMA,
+)
+from ..strain_library import StrainLibrary
+
+from ._definition import ServiceDefinition
+
 from homeassistant.components.persistent_notification import (
     async_create as create_notification,
 )
 from homeassistant.core import HomeAssistant, ServiceCall
 
 if TYPE_CHECKING:
-    from custom_components.growspace_manager.coordinator import GrowspaceCoordinator
+    from ..coordinator import GrowspaceCoordinator
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -353,3 +362,27 @@ async def _consolidate_plants_to_canonical_growspace(
                     )
         coordinator.growspaces.pop(dup_id, None)
         _LOGGER.debug("Removed duplicate %s growspace %s", log_prefix, dup_id)
+
+
+SERVICES = [
+    ServiceDefinition(
+        GrowspaceService.TEST_NOTIFICATION,
+        handle_test_notification,
+        None,
+    ),
+    ServiceDefinition(
+        GrowspaceService.DEBUG_LIST_GROWSPACES,
+        handle_debug_list_growspaces,
+        DEBUG_LIST_GROWSPACES_SCHEMA,
+    ),
+    ServiceDefinition(
+        GrowspaceService.DEBUG_CONSOLIDATE_DUPLICATE_SPECIAL,
+        handle_debug_consolidate_duplicate_special,
+        DEBUG_CONSOLIDATE_DUPLICATE_SPECIAL_SCHEMA,
+    ),
+    ServiceDefinition(
+        GrowspaceService.DEBUG_RESET_SPECIAL_GROWSPACES,
+        handle_debug_reset_special_growspaces,
+        DEBUG_RESET_SPECIAL_GROWSPACES_SCHEMA,
+    ),
+]

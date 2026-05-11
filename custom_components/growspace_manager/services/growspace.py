@@ -6,7 +6,7 @@ import logging
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from custom_components.growspace_manager.const import (
+from ..const import (
     ATTR_GROWSPACE_ID,
     ATTR_IMAGES,
     ATTR_NAME,
@@ -16,17 +16,25 @@ from custom_components.growspace_manager.const import (
     ATTR_ROWS,
     CATEGORY_NOTE,
     EVENT_GROWSPACE_LOG_ENTRY,
+    GrowspaceService,
 )
-from custom_components.growspace_manager.exceptions import GrowspaceError
-from custom_components.growspace_manager.services.utils import handle_service_errors
-from custom_components.growspace_manager.strain_library import StrainLibrary
+from ..exceptions import GrowspaceError
+from ._definition import ServiceDefinition
+from .utils import handle_service_errors
+from ..strain_library import StrainLibrary
 from homeassistant.core import HomeAssistant, ServiceCall
 from homeassistant.exceptions import ServiceValidationError
 import homeassistant.helpers.device_registry as dr
 from homeassistant.util import dt as dt_util
 
+from ..schemas import (
+    ADD_GROWSPACE_SCHEMA,
+    REMOVE_GROWSPACE_SCHEMA,
+    UPDATE_GROWSPACE_SCHEMA,
+)
+
 if TYPE_CHECKING:
-    from custom_components.growspace_manager.coordinator import GrowspaceCoordinator
+    from ..coordinator import GrowspaceCoordinator
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -131,3 +139,25 @@ async def async_add_growspace_note(
 
     hass.bus.async_fire(EVENT_GROWSPACE_LOG_ENTRY, event_data)
     _LOGGER.info("Added note for growspace %s", growspace_id)
+
+
+SERVICES: list[ServiceDefinition] = [
+    ServiceDefinition(
+        GrowspaceService.ADD_GROWSPACE,
+        handle_add_growspace,
+        ADD_GROWSPACE_SCHEMA,
+        needs_strain_lib=True,
+    ),
+    ServiceDefinition(
+        GrowspaceService.REMOVE_GROWSPACE,
+        handle_remove_growspace,
+        REMOVE_GROWSPACE_SCHEMA,
+        needs_strain_lib=False,
+    ),
+    ServiceDefinition(
+        GrowspaceService.UPDATE_GROWSPACE,
+        handle_update_growspace,
+        UPDATE_GROWSPACE_SCHEMA,
+        needs_strain_lib=True,
+    ),
+]

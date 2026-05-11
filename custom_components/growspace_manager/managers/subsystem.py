@@ -10,24 +10,24 @@ import asyncio
 import logging
 from typing import TYPE_CHECKING
 
-from custom_components.growspace_manager.dehumidifier_coordinator import (
+from ..dehumidifier_coordinator import (
     DehumidifierCoordinator,
 )
-from custom_components.growspace_manager.humidifier_coordinator import (
+from ..humidifier_coordinator import (
     HumidifierCoordinator,
 )
-from custom_components.growspace_manager.irrigation_coordinator import (
+from ..irrigation_coordinator import (
     IrrigationCoordinator,
 )
-from custom_components.growspace_manager.vwc_irrigation_coordinator import (
+from ..vwc_irrigation_coordinator import (
     VWCIrrigationCoordinator,
 )
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 
 if TYPE_CHECKING:
-    from custom_components.growspace_manager.coordinator import GrowspaceCoordinator
-    from custom_components.growspace_manager.models import Growspace
+    from ..coordinator import GrowspaceCoordinator
+    from ..models import Growspace
 
 _LOGGER = logging.getLogger(__name__)
 

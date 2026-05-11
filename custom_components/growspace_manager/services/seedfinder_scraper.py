@@ -9,7 +9,7 @@ from bs4 import BeautifulSoup
 
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ServiceValidationError
-from custom_components.growspace_manager.exceptions import GrowspaceError
+from ..exceptions import GrowspaceError
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
 _LOGGER = logging.getLogger(__name__)

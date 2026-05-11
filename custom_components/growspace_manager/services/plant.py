@@ -6,7 +6,15 @@ import logging
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from custom_components.growspace_manager.const import (
+from homeassistant.components.persistent_notification import (
+    async_create as create_notification,
+)
+from homeassistant.core import HomeAssistant, ServiceCall
+from homeassistant.exceptions import ServiceValidationError
+from homeassistant.helpers import entity_registry as er
+from homeassistant.util import dt as dt_util
+
+from ..const import (
     ATTR_AMOUNT,
     ATTR_AMOUNT_ML,
     ATTR_AROMA,
@@ -47,20 +55,31 @@ from custom_components.growspace_manager.const import (
     CATEGORY_NOTE,
     DATE_FIELDS,
     EVENT_GROWSPACE_LOG_ENTRY,
+    GrowspaceService,
 )
-from custom_components.growspace_manager.exceptions import GrowspaceError
-from custom_components.growspace_manager.strain_library import StrainLibrary
-from custom_components.growspace_manager.utils import parse_date_field
-from homeassistant.components.persistent_notification import (
-    async_create as create_notification,
-)
-from homeassistant.core import HomeAssistant, ServiceCall
-from homeassistant.exceptions import ServiceValidationError
-from homeassistant.helpers import entity_registry as er
-from homeassistant.util import dt as dt_util
+from ..exceptions import GrowspaceError
+from ..strain_library import StrainLibrary
+from ..utils import parse_date_field
 
 if TYPE_CHECKING:
-    from custom_components.growspace_manager.coordinator import GrowspaceCoordinator
+    from ..coordinator import GrowspaceCoordinator
+
+from ..schemas import (
+    ADD_PLANT_SCHEMA,
+    ADD_PLANTS_SCHEMA,
+    ADD_TIMELINE_NOTE_SCHEMA,
+    HARVEST_PLANT_SCHEMA,
+    MOVE_CLONE_SCHEMA,
+    MOVE_PLANT_SCHEMA,
+    REMOVE_PLANT_SCHEMA,
+    SCORE_PLANT_SCHEMA,
+    SWITCH_PLANT_SCHEMA,
+    TAKE_CLONE_SCHEMA,
+    TRANSITION_PLANT_SCHEMA,
+    UPDATE_HARVEST_METRICS_SCHEMA,
+    UPDATE_PLANT_SCHEMA,
+)
+from ._definition import ServiceDefinition
 
 # from ..models import Plant # Potentially needed for type hinting if desired
 
@@ -401,7 +420,7 @@ async def handle_take_clone(
     num_clones = call.data.get(ATTR_NUM_CLONES, 1)
     try:
         num_clones = int(num_clones)
-    except (TypeError, ValueError):
+    except TypeError, ValueError:
         raise ServiceValidationError(
             f"num_clones must be an integer, got: {num_clones!r}"
         )
@@ -893,7 +912,7 @@ async def async_add_timeline_note(
             try:
                 if state and state.state not in ("unknown", "unavailable"):
                     return float(state.state)
-            except (ValueError, TypeError):
+            except ValueError, TypeError:
                 pass
             return None
 
@@ -1071,3 +1090,85 @@ async def handle_update_harvest_metrics(
             metrics.cbd_percentage,
             metrics.terpene_profile,
         )
+
+
+SERVICES: list[ServiceDefinition] = [
+    ServiceDefinition(
+        GrowspaceService.ADD_PLANT,
+        handle_add_plant,
+        ADD_PLANT_SCHEMA,
+        needs_strain_lib=True,
+    ),
+    ServiceDefinition(
+        GrowspaceService.ADD_PLANTS,
+        handle_add_plants,
+        ADD_PLANTS_SCHEMA,
+        needs_strain_lib=True,
+    ),
+    ServiceDefinition(
+        GrowspaceService.REMOVE_PLANT,
+        handle_remove_plant,
+        REMOVE_PLANT_SCHEMA,
+        needs_strain_lib=True,
+    ),
+    ServiceDefinition(
+        GrowspaceService.UPDATE_PLANT,
+        handle_update_plant,
+        UPDATE_PLANT_SCHEMA,
+        needs_strain_lib=True,
+    ),
+    ServiceDefinition(
+        GrowspaceService.MOVE_PLANT,
+        handle_move_plant,
+        MOVE_PLANT_SCHEMA,
+        needs_strain_lib=True,
+    ),
+    ServiceDefinition(
+        GrowspaceService.SWITCH_PLANTS,
+        handle_switch_plants,
+        SWITCH_PLANT_SCHEMA,
+        needs_strain_lib=True,
+    ),
+    ServiceDefinition(
+        GrowspaceService.TRANSITION_PLANT_STAGE,
+        handle_transition_plant_stage,
+        TRANSITION_PLANT_SCHEMA,
+        needs_strain_lib=True,
+    ),
+    ServiceDefinition(
+        GrowspaceService.TAKE_CLONE,
+        handle_take_clone,
+        TAKE_CLONE_SCHEMA,
+        needs_strain_lib=True,
+    ),
+    ServiceDefinition(
+        GrowspaceService.MOVE_CLONE,
+        handle_move_clone,
+        MOVE_CLONE_SCHEMA,
+        needs_strain_lib=True,
+    ),
+    ServiceDefinition(
+        GrowspaceService.HARVEST_PLANT,
+        handle_harvest_plant,
+        HARVEST_PLANT_SCHEMA,
+        needs_strain_lib=True,
+    ),
+    ServiceDefinition(
+        GrowspaceService.UPDATE_HARVEST_METRICS,
+        handle_update_harvest_metrics,
+        UPDATE_HARVEST_METRICS_SCHEMA,
+        needs_strain_lib=True,
+    ),
+    ServiceDefinition(
+        GrowspaceService.SCORE_PLANT,
+        handle_score_plant,
+        SCORE_PLANT_SCHEMA,
+        needs_strain_lib=True,
+    ),
+    ServiceDefinition(
+        GrowspaceService.ADD_TIMELINE_NOTE,
+        handle_add_timeline_note,
+        ADD_TIMELINE_NOTE_SCHEMA,
+        needs_strain_lib=True,
+    ),
+]

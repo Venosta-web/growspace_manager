@@ -394,11 +394,13 @@ async def test_take_clone_invalid_num_clones(
         },
     )
 
-    await handle_take_clone(hass, mock_coordinator, mock_strain_library, call)
+    with pytest.raises(
+        ServiceValidationError,
+        match="num_clones must be an integer, got: 'invalid'",
+    ):
+        await handle_take_clone(hass, mock_coordinator, mock_strain_library, call)
 
-    # Should default to 1 clone
-    mock_coordinator.async_take_clones.assert_called_once()
-    assert mock_coordinator.async_take_clones.call_args.kwargs["num_clones"] == 1
+    mock_coordinator.async_take_clones.assert_not_called()
 
 
 @pytest.mark.asyncio
@@ -708,7 +710,9 @@ async def test_update_plant_not_found(
     )
 
     # The service should catch the PlantNotFoundError and re-raise as ServiceValidationError
-    with pytest.raises(ServiceValidationError, match="does not exist"):
+    with pytest.raises(
+        ServiceValidationError, match="Failed to update plant: 'nonexistent'"
+    ):
         await handle_update_plant(hass, mock_coordinator, mock_strain_library, call)
 
     mock_coordinator.plant_manager.update_plant.assert_not_called()
@@ -844,7 +848,9 @@ async def test_update_plant_exception(
 ) -> None:
     """Test exception handling in update_plant."""
     mock_coordinator.plants = {"plant_1": mock_plant}
-    mock_coordinator.plant_manager.update_plant.side_effect = GrowspaceError("Test error")
+    mock_coordinator.plant_manager.update_plant.side_effect = GrowspaceError(
+        "Test error"
+    )
 
     call = ServiceCall(
         hass,
@@ -997,7 +1003,9 @@ async def test_switch_plants_first_not_found(
         },
     )
 
-    with pytest.raises(ServiceValidationError, match="does not exist"):
+    with pytest.raises(
+        ServiceValidationError, match="Plant nonexistent does not exist."
+    ):
         await handle_switch_plants(hass, mock_coordinator, mock_strain_library, call)
     mock_coordinator.plant_manager.switch_plants.assert_not_called()
 
@@ -1020,7 +1028,9 @@ async def test_switch_plants_second_not_found(
         },
     )
 
-    with pytest.raises(ServiceValidationError, match="does not exist"):
+    with pytest.raises(
+        ServiceValidationError, match="Plant nonexistent does not exist."
+    ):
         await handle_switch_plants(hass, mock_coordinator, mock_strain_library, call)
     mock_coordinator.plant_manager.switch_plants.assert_not_called()
 
@@ -1036,7 +1046,9 @@ async def test_switch_plants_exception(
     plant2.strain = "Strain 2"
 
     mock_coordinator.plants = {"plant_1": plant1, "plant_2": plant2}
-    mock_coordinator.plant_manager.switch_plants.side_effect = GrowspaceError("Test error")
+    mock_coordinator.plant_manager.switch_plants.side_effect = GrowspaceError(
+        "Test error"
+    )
 
     call = ServiceCall(
         hass,
@@ -1379,7 +1391,10 @@ async def test_transition_plant_stage_exception(
         },
     )
 
-    with pytest.raises(ServiceValidationError, match="Failed to transition plant stage for plant_1: Test error"):
+    with pytest.raises(
+        ServiceValidationError,
+        match="Failed to transition plant stage for plant_1: Test error",
+    ):
         await handle_transition_plant_stage(
             hass, mock_coordinator, mock_strain_library, call
         )
@@ -1861,11 +1876,13 @@ async def test_take_clone_negative_clones(
         },
     )
 
-    await handle_take_clone(hass, mock_coordinator, mock_strain_library, call)
+    with pytest.raises(
+        ServiceValidationError,
+        match="num_clones must be positive, got: -5",
+    ):
+        await handle_take_clone(hass, mock_coordinator, mock_strain_library, call)
 
-    # Should default to 1
-    mock_coordinator.async_take_clones.assert_called_once()
-    assert mock_coordinator.async_take_clones.call_args.kwargs["num_clones"] == 1
+    mock_coordinator.async_take_clones.assert_not_called()
 
 
 @pytest.mark.asyncio
@@ -1924,11 +1941,13 @@ async def test_take_clone_zero_clones(
         },
     )
 
-    await handle_take_clone(hass, mock_coordinator, mock_strain_library, call)
+    with pytest.raises(
+        ServiceValidationError,
+        match="num_clones must be positive, got: 0",
+    ):
+        await handle_take_clone(hass, mock_coordinator, mock_strain_library, call)
 
-    # Should default to 1
-    mock_coordinator.async_take_clones.assert_called_once()
-    assert mock_coordinator.async_take_clones.call_args.kwargs["num_clones"] == 1
+    mock_coordinator.async_take_clones.assert_not_called()
 
 
 # ============================================================================

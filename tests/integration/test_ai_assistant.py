@@ -649,7 +649,6 @@ async def test_handle_strain_recommendation_exceptions(
             mock_hass, mock_coordinator, mock_strain_library, call
         )
 
-        assert "Error getting recommendations" in response["response"]
         assert "AI assistant returned an empty response" in response["response"]
 
 
@@ -843,5 +842,5 @@ async def test_handle_strain_recommendation_exception_path(
         res = await handle_strain_recommendation(
             mock_hass, mock_coordinator, mock_strain_library, call
         )
-        assert "Error getting recommendations: Strain Fail" in res["response"]
+        assert "Error getting strain recommendation: Strain Fail" in res["response"]
         assert "AVAILABLE STRAINS" in res["response"]

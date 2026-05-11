@@ -10,13 +10,13 @@ from datetime import date
 import logging
 from typing import TYPE_CHECKING, Any
 
-from custom_components.growspace_manager.const import (
+from ..const import (
     DOMAIN,
     VERSION,
     NotificationTier,
     PlantStage,
 )
-from custom_components.growspace_manager.models import (
+from ..models import (
     DrainReading,
     Growspace,
     IPMPreset,
@@ -29,7 +29,7 @@ from homeassistant.helpers import device_registry as dr, entity_registry as er
 from homeassistant.util import dt as dt_util
 
 if TYPE_CHECKING:
-    from custom_components.growspace_manager.coordinator import GrowspaceCoordinator
+    from ..coordinator import GrowspaceCoordinator
 
 _LOGGER = logging.getLogger(__name__)
 

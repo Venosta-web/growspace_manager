@@ -5,17 +5,24 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING
 
-from custom_components.growspace_manager.const import (
+from ..const import (
     ATTR_MIN_DAYS_IN_STAGE,
     ATTR_NAME,
     ATTR_PRESET_ID,
     ATTR_STAGE,
+    GrowspaceService,
 )
-from custom_components.growspace_manager.services.utils import handle_service_errors
+from ..schemas import (
+    REMOVE_NUTRIENT_PRESET_SCHEMA,
+    SAVE_NUTRIENT_PRESET_SCHEMA,
+)
+from ._definition import ServiceDefinition
+from .utils import handle_service_errors
+
 from homeassistant.core import HomeAssistant, ServiceCall
 
 if TYPE_CHECKING:
-    from custom_components.growspace_manager.coordinator import GrowspaceCoordinator
+    from ..coordinator import GrowspaceCoordinator
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -47,3 +54,17 @@ async def handle_remove_nutrient_preset(
     """Handle removing a nutrient preset."""
     preset_id = call.data[ATTR_PRESET_ID]
     await coordinator.async_remove_nutrient_preset(preset_id)
+
+
+SERVICES = [
+    ServiceDefinition(
+        GrowspaceService.SAVE_NUTRIENT_PRESET,
+        handle_save_nutrient_preset,
+        SAVE_NUTRIENT_PRESET_SCHEMA,
+    ),
+    ServiceDefinition(
+        GrowspaceService.REMOVE_NUTRIENT_PRESET,
+        handle_remove_nutrient_preset,
+        REMOVE_NUTRIENT_PRESET_SCHEMA,
+    ),
+]

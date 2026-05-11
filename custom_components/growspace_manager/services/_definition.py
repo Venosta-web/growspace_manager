@@ -9,7 +9,7 @@ from typing import Any
 import voluptuous as vol
 from homeassistant.core import SupportsResponse
 
-from custom_components.growspace_manager.const import GrowspaceService
+from ..const import GrowspaceService
 
 
 @dataclass

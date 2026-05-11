@@ -8,7 +8,7 @@ import logging
 from typing import TYPE_CHECKING, Any
 import uuid
 
-from custom_components.growspace_manager.const import (
+from ..const import (
     CANONICAL_ID_CLONE,
     CANONICAL_ID_CURE,
     CANONICAL_ID_DRY,
@@ -19,30 +19,30 @@ from custom_components.growspace_manager.const import (
     DOMAIN,
     PlantStage,
 )
-from custom_components.growspace_manager.events import (
+from ..events import (
     EVENT_GROWSPACE_ADDED,
     EVENT_GROWSPACE_REMOVED,
     EVENT_GROWSPACE_UPDATED,
     async_fire_growspace_event,
 )
-from custom_components.growspace_manager.exceptions import GrowspaceNotFoundError
-from custom_components.growspace_manager.models import (
+from ..exceptions import GrowspaceNotFoundError
+from ..models import (
     EnvironmentConfig,
     Growspace,
     GrowspaceType,
     Subarea,
 )
-from custom_components.growspace_manager.view_model_builder import ViewModelBuilder
+from ..view_model_builder import ViewModelBuilder
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ServiceValidationError
 from homeassistant.helpers import device_registry as dr
 from homeassistant.util import slugify
 
 if TYPE_CHECKING:
-    from custom_components.growspace_manager.data_access.growspace_repository import (
+    from ..data_access.growspace_repository import (
         GrowspaceRepository,
     )
-    from custom_components.growspace_manager.growspace_validator import (
+    from ..growspace_validator import (
         GrowspaceValidator,
     )
 

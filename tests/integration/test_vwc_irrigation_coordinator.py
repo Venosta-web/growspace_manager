@@ -136,8 +136,11 @@ async def test_p1_ramp_up(vwc_coordinator, mock_hass) -> None:
         patch(
             "custom_components.growspace_manager.vwc_irrigation_coordinator.utcnow",
             side_effect=[
-                datetime(2023, 1, 1, 9, 30, 0, tzinfo=dt_util.UTC),
-                datetime(2023, 1, 1, 9, 30, 10, tzinfo=dt_util.UTC),
+                datetime(2023, 1, 1, 9, 30, 0, tzinfo=dt_util.UTC),  # 1. Event Start
+                datetime(
+                    2023, 1, 1, 9, 30, 0, tzinfo=dt_util.UTC
+                ),  # 2. pump start_time
+                datetime(2023, 1, 1, 9, 30, 10, tzinfo=dt_util.UTC),  # 3. pump end_time
             ],
         ),
     ):
@@ -197,8 +200,11 @@ async def test_p2_maintenance(vwc_coordinator, mock_hass) -> None:
         patch(
             "custom_components.growspace_manager.vwc_irrigation_coordinator.utcnow",
             side_effect=[
-                datetime(2023, 1, 1, 12, 0, 0, tzinfo=dt_util.UTC),
-                datetime(2023, 1, 1, 12, 0, 10, tzinfo=dt_util.UTC),
+                datetime(2023, 1, 1, 12, 0, 0, tzinfo=dt_util.UTC),  # 1. Event Start
+                datetime(
+                    2023, 1, 1, 12, 0, 0, tzinfo=dt_util.UTC
+                ),  # 2. pump start_time
+                datetime(2023, 1, 1, 12, 0, 10, tzinfo=dt_util.UTC),  # 3. pump end_time
             ],
         ),
     ):
@@ -270,7 +276,9 @@ async def test_custom_day_hours(vwc_coordinator, mock_hass, mock_growspace) -> N
     ):
         mock_hass.states.get.return_value = MagicMock(state="45.0")
         vwc_coordinator._target_reached_today = True  # Force P2
-        vwc_coordinator._last_reset_date = "2023-01-01"  # Prevent date guard from re-resetting
+        vwc_coordinator._last_reset_date = (
+            "2023-01-01"  # Prevent date guard from re-resetting
+        )
         await vwc_coordinator._update_loop(now_p2)
         assert vwc_coordinator._current_phase == "P2 - Maintenance"
 

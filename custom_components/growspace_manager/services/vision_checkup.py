@@ -5,11 +5,17 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, Any
 
+from ..const import GrowspaceService
+from ..schemas import (
+    SERVICE_TRIGGER_VISION_CHECKUP_SCHEMA,
+)
+from homeassistant.core import HomeAssistant, ServiceCall, SupportsResponse
 from homeassistant.exceptions import ServiceValidationError
 
+from ._definition import ServiceDefinition
+
 if TYPE_CHECKING:
-    from custom_components.growspace_manager.coordinator import GrowspaceCoordinator
-    from homeassistant.core import HomeAssistant, ServiceCall
+    from ..coordinator import GrowspaceCoordinator
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -48,3 +54,13 @@ async def handle_trigger_vision_checkup(
         "recommendations": result.recommendations,
         "timestamp": result.timestamp,
     }
+
+
+SERVICES = [
+    ServiceDefinition(
+        GrowspaceService.TRIGGER_VISION_CHECKUP,
+        handle_trigger_vision_checkup,
+        SERVICE_TRIGGER_VISION_CHECKUP_SCHEMA,
+        supports_response=SupportsResponse.OPTIONAL,
+    ),
+]

@@ -2,7 +2,7 @@
 
 import logging
 
-from custom_components.growspace_manager.models import NutrientInventory, NutrientStock
+from ..models import NutrientInventory, NutrientStock
 from homeassistant.util import dt as dt_util
 
 _LOGGER = logging.getLogger(__name__)

@@ -7,10 +7,14 @@ from typing import TYPE_CHECKING, Any
 
 from homeassistant.core import HomeAssistant, ServiceCall
 
+from ..const import GrowspaceService
+from ..schemas import WATER_GROWSPACE_SCHEMA, WATER_PLANT_SCHEMA
+
+from ._definition import ServiceDefinition
 from .utils import handle_service_errors
 
 if TYPE_CHECKING:
-    from custom_components.growspace_manager.coordinator import GrowspaceCoordinator
+    from ..coordinator import GrowspaceCoordinator
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -84,3 +88,17 @@ async def handle_water_growspace(
         raise
     else:
         return {"plants_watered": plants_watered}
+
+
+SERVICES = [
+    ServiceDefinition(
+        GrowspaceService.WATER_PLANT,
+        handle_water_plant,
+        WATER_PLANT_SCHEMA,
+    ),
+    ServiceDefinition(
+        GrowspaceService.WATER_GROWSPACE,
+        handle_water_growspace,
+        WATER_GROWSPACE_SCHEMA,
+    ),
+]
