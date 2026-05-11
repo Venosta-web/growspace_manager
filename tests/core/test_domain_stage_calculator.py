@@ -34,6 +34,8 @@ def test_calculate_days_in_stage_no_start() -> None:
 
 def test_calculate_days_in_stage_ongoing(snapshot: SnapshotAssertion) -> None:
     """Test when the stage is currently ongoing (no end date)."""
+    freezer_move_to = freeze_time("2024-01-01 12:00:00", tz_offset=0)
+    freezer_move_to.start()
     plant = MagicMock(spec=Plant)
     plant.veg_start = "2024-01-01T12:00:00"
     plant.flower_start = None
@@ -49,9 +51,10 @@ def test_calculate_days_in_stage_ongoing(snapshot: SnapshotAssertion) -> None:
         assert {"stage": "veg", "days": result} == snapshot
 
 
-@freeze_time("2024-01-20 12:00:00", tz_offset=0)
 def test_calculate_days_in_stage_completed() -> None:
     """Test when the stage is completed (has an end date)."""
+    freezer_move_to = freeze_time("2024-01-20 12:00:00", tz_offset=0)
+    freezer_move_to.start()
     plant = MagicMock(spec=Plant)
     plant.veg_start = "2024-01-01T12:00:00"
     plant.flower_start = "2024-01-20T12:00:00"
@@ -74,9 +77,10 @@ def test_calculate_days_in_stage_completed() -> None:
         (PlantStage.DRY, "dry_start", "cure_start"),
     ],
 )
-@freeze_time("2024-01-05 12:00:00", tz_offset=0)
 def test_calculate_days_in_stage_transitions(stage, start_attr, end_attr) -> None:
     """Test all stage transitions and their corresponding end date attributes."""
+    freezer_move_to = freeze_time("2024-01-05 12:00:00", tz_offset=0)
+    freezer_move_to.start()
     plant = MagicMock(spec=Plant)
     setattr(plant, start_attr, "2024-01-01")
     setattr(plant, end_attr, "2024-01-05")
@@ -89,9 +93,10 @@ def test_calculate_days_in_stage_transitions(stage, start_attr, end_attr) -> Non
         mock_calc.assert_called_with("2024-01-01", "2024-01-05")
 
 
-@freeze_time("2024-01-05 12:00:00", tz_offset=0)
 def test_calculate_days_in_stage_cure_no_end() -> None:
     """Test the cure stage which has no defined next stage end date in logic."""
+    freezer_move_to = freeze_time("2024-01-05 12:00:00", tz_offset=0)
+    freezer_move_to.start()
     plant = MagicMock(spec=Plant)
     plant.cure_start = "2024-01-01"
 
