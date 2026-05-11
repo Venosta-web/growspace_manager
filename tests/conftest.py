@@ -21,10 +21,7 @@ import sys
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
-try:
-    from syrupy.assertion import SnapshotAssertion
-except ImportError:
-    SnapshotAssertion = Any
+from syrupy.assertion import SnapshotAssertion
 
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import device_registry as dr
