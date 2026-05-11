@@ -2,6 +2,7 @@
 
 from unittest.mock import MagicMock
 
+from freezegun import freeze_time
 import pytest
 from syrupy.assertion import SnapshotAssertion
 
@@ -17,6 +18,7 @@ from custom_components.growspace_manager.models import (
 from homeassistant.core import HomeAssistant
 
 
+@freeze_time("2024-01-01 12:00:00", tz_offset=0)
 def test_growspace_serialization_snapshot(snapshot: SnapshotAssertion) -> None:
     """Test Growspace model serialization yields expected structure."""
     gs = Growspace(
@@ -30,6 +32,7 @@ def test_growspace_serialization_snapshot(snapshot: SnapshotAssertion) -> None:
     assert gs.to_dict() == snapshot
 
 
+@freeze_time("2024-01-01 12:00:00", tz_offset=0)
 def test_plant_serialization_snapshot(snapshot: SnapshotAssertion) -> None:
     """Test Plant model serialization yields expected structure."""
     plant = Plant(
@@ -42,6 +45,7 @@ def test_plant_serialization_snapshot(snapshot: SnapshotAssertion) -> None:
     assert plant.to_dict() == snapshot
 
 
+@freeze_time("2024-01-01 12:00:00", tz_offset=0)
 def test_environment_config_serialization_snapshot(snapshot: SnapshotAssertion) -> None:
     """Test EnvironmentConfig model serialization yields expected structure."""
     config = EnvironmentConfig(
@@ -53,6 +57,7 @@ def test_environment_config_serialization_snapshot(snapshot: SnapshotAssertion) 
     assert config.to_dict() == snapshot
 
 
+@freeze_time("2024-01-01 12:00:00", tz_offset=0)
 @pytest.mark.asyncio
 async def test_diagnostics_snapshot(
     hass: HomeAssistant, snapshot: SnapshotAssertion

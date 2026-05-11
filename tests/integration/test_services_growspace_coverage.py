@@ -2,6 +2,7 @@
 
 from unittest.mock import AsyncMock, MagicMock, patch
 
+from freezegun import freeze_time
 import pytest
 from syrupy.assertion import SnapshotAssertion
 
@@ -84,6 +85,7 @@ def service(
     return svc
 
 
+@freeze_time("2024-01-01 12:00:00", tz_offset=0)
 @pytest.mark.asyncio
 async def test_add_growspace_no_notification_target(
     service, repository_mock, snapshot: SnapshotAssertion

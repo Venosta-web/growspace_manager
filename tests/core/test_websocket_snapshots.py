@@ -3,6 +3,7 @@
 import json
 from unittest.mock import AsyncMock, MagicMock, patch
 
+from freezegun import freeze_time
 import pytest
 from syrupy.assertion import SnapshotAssertion
 
@@ -34,6 +35,7 @@ def mock_connection():
     return connection
 
 
+@freeze_time("2024-01-01 12:00:00", tz_offset=0)
 @pytest.mark.asyncio
 async def test_websocket_get_growspace_data_snapshot(
     hass: HomeAssistant, mock_connection, snapshot: SnapshotAssertion
@@ -61,6 +63,7 @@ async def test_websocket_get_growspace_data_snapshot(
         assert result == snapshot
 
 
+@freeze_time("2024-01-01 12:00:00", tz_offset=0)
 @pytest.mark.asyncio
 async def test_websocket_get_strain_library_snapshot(
     hass: HomeAssistant, mock_connection, snapshot: SnapshotAssertion
@@ -87,6 +90,7 @@ async def test_websocket_get_strain_library_snapshot(
         assert result == snapshot
 
 
+@freeze_time("2024-01-01 12:00:00", tz_offset=0)
 @pytest.mark.asyncio
 async def test_websocket_get_nutrient_inventory_snapshot(
     hass: HomeAssistant, mock_connection, snapshot: SnapshotAssertion
@@ -121,6 +125,7 @@ async def test_websocket_get_nutrient_inventory_snapshot(
         assert result == snapshot
 
 
+@freeze_time("2024-01-01 12:00:00", tz_offset=0)
 @pytest.mark.asyncio
 async def test_websocket_get_nutrient_presets_snapshot(
     hass: HomeAssistant, mock_connection, snapshot: SnapshotAssertion
@@ -147,6 +152,7 @@ async def test_websocket_get_nutrient_presets_snapshot(
         assert result == snapshot
 
 
+@freeze_time("2024-01-01 12:00:00", tz_offset=0)
 @pytest.mark.asyncio
 async def test_websocket_get_ipm_presets_snapshot(
     hass: HomeAssistant, mock_connection, snapshot: SnapshotAssertion
@@ -172,6 +178,7 @@ async def test_websocket_get_ipm_presets_snapshot(
         assert result == snapshot
 
 
+@freeze_time("2024-01-01 12:00:00", tz_offset=0)
 @pytest.mark.asyncio
 async def test_websocket_add_timeline_note_snapshot(
     hass: HomeAssistant, mock_connection
@@ -241,6 +248,7 @@ async def test_websocket_add_growspace_note_snapshot(
         mock_connection.send_result.assert_called_once_with(7)
 
 
+@freeze_time("2024-01-01 12:00:00", tz_offset=0)
 @pytest.mark.asyncio
 async def test_websocket_get_event_log_snapshot(
     hass: HomeAssistant, mock_connection, snapshot: SnapshotAssertion
@@ -301,6 +309,7 @@ async def test_websocket_get_event_log_snapshot(
         assert result == snapshot
 
 
+@freeze_time("2024-01-01 12:00:00", tz_offset=0)
 @pytest.mark.asyncio
 async def test_websocket_get_alerts_snapshot(
     hass: HomeAssistant, mock_connection, snapshot: SnapshotAssertion
@@ -361,6 +370,7 @@ async def test_websocket_get_alerts_snapshot(
         assert result == snapshot
 
 
+@freeze_time("2024-01-01 12:00:00", tz_offset=0)
 @pytest.mark.asyncio
 async def test_websocket_get_history_stats_snapshot(
     hass: HomeAssistant, mock_connection, snapshot: SnapshotAssertion
@@ -392,6 +402,7 @@ async def test_websocket_get_history_stats_snapshot(
         assert result == snapshot
 
 
+@freeze_time("2024-01-01 12:00:00", tz_offset=0)
 @pytest.mark.asyncio
 async def test_websocket_update_breeder_snapshot(
     hass: HomeAssistant, mock_connection, snapshot: SnapshotAssertion
@@ -420,6 +431,7 @@ async def test_websocket_update_breeder_snapshot(
         assert snapshot == {"updated": 5}
 
 
+@freeze_time("2024-01-01 12:00:00", tz_offset=0)
 @pytest.mark.asyncio
 async def test_websocket_delete_breeder_snapshot(
     hass: HomeAssistant, mock_connection, snapshot: SnapshotAssertion
@@ -467,9 +479,7 @@ async def test_websocket_get_vision_history_empty(
         }
         await websocket_get_vision_history(hass, mock_connection, msg)
 
-    mock_connection.send_result.assert_called_once_with(
-        12, {"history": [], "total": 0}
-    )
+    mock_connection.send_result.assert_called_once_with(12, {"history": [], "total": 0})
 
 
 @pytest.mark.asyncio

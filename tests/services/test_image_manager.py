@@ -5,6 +5,7 @@ from io import BytesIO
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
+from freezegun import freeze_time
 from PIL import Image, UnidentifiedImageError
 import pytest
 from syrupy.assertion import SnapshotAssertion
@@ -70,6 +71,7 @@ async def test_initialization(mock_hass: MagicMock, tmp_path: Path) -> None:
     assert storage_dir.is_dir()
 
 
+@freeze_time("2024-01-01 12:00:00", tz_offset=0)
 @pytest.mark.asyncio
 async def test_save_strain_image_success(
     image_manager: ImageManager, tmp_path: Path, snapshot: SnapshotAssertion
@@ -133,6 +135,7 @@ async def test_save_strain_image_grayscale(
         assert saved_img.mode == "RGB"
 
 
+@freeze_time("2024-01-01 12:00:00", tz_offset=0)
 @pytest.mark.asyncio
 async def test_save_strain_image_with_phenotype(
     image_manager: ImageManager, tmp_path: Path, snapshot: SnapshotAssertion
@@ -315,6 +318,7 @@ async def test_delete_image_with_phenotype(
     assert not file_path.exists()
 
 
+@freeze_time("2024-01-01 12:00:00", tz_offset=0)
 @pytest.mark.asyncio
 async def test_save_timeline_image_success(
     image_manager: ImageManager, tmp_path: Path, snapshot: SnapshotAssertion
@@ -387,6 +391,7 @@ async def test_save_timeline_image_error(image_manager: ImageManager) -> None:
             await image_manager.save_timeline_image("p1", "bad_data")
 
 
+@freeze_time("2024-01-01 12:00:00", tz_offset=0)
 @pytest.mark.asyncio
 async def test_save_breeder_logo_success(
     image_manager: ImageManager, tmp_path: Path, snapshot: SnapshotAssertion
