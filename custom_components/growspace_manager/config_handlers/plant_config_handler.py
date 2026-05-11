@@ -116,7 +116,9 @@ class PlantConfigHandler(BaseConfigHandler[dict[str, Any]]):
                     veg_start=user_input.get("veg_start"),
                     flower_start=user_input.get("flower_start"),
                 )
-                return self.flow.async_create_entry(title="", data=self.config_entry.options)
+                return self.flow.async_create_entry(
+                    title="", data=self.config_entry.options
+                )
             except Exception as err:
                 _LOGGER.exception("Error adding plant")
                 return self.flow.async_show_form(
@@ -149,7 +151,9 @@ class PlantConfigHandler(BaseConfigHandler[dict[str, Any]]):
                 # Filter out empty values
                 update_data = {k: v for k, v in user_input.items() if v}
                 await self.async_update_plant(plant_id, **update_data)
-                return self.flow.async_create_entry(title="", data=self.config_entry.options)
+                return self.flow.async_create_entry(
+                    title="", data=self.config_entry.options
+                )
             except Exception as err:
                 _LOGGER.exception("Error updating plant")
                 return self.flow.async_show_form(
@@ -360,13 +364,17 @@ class PlantConfigHandler(BaseConfigHandler[dict[str, Any]]):
         if self.config_entry is None:
             raise ValueError("Coordinator not found")
         coordinator = self.config_entry.runtime_data
+        if coordinator is None:
+            raise ValueError("Coordinator not found")
         await coordinator.async_harvest_plant(growspace_id, plant_id, harvest_weight)
 
-    async def async_destroy_plant(self, growspace_id: str, plant_id: str) -> None:
+    async def async_destroy_plant(self, plant_id: str) -> None:
         """Destroy a plant."""
         if self.config_entry is None:
             raise ValueError("Coordinator not found")
         coordinator = self.config_entry.runtime_data
+        if coordinator is None:
+            raise ValueError("Coordinator not found")
         await coordinator.async_remove_plant(plant_id)
 
     async def async_add_plant(
