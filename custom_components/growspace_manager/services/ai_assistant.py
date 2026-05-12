@@ -69,7 +69,7 @@ class GrowAssistant:
 
     def gather_growspace_data(self, growspace_id: str) -> dict[str, Any]:
         """Gather comprehensive data about a growspace for AI analysis."""
-        growspace = self.coordinator.growspaces.get(growspace_id)
+        growspace = self.coordinator.data_repository.get_growspace(growspace_id)
         if not growspace:
             raise ServiceValidationError(f"Growspace {growspace_id} not found.")
 
@@ -114,7 +114,7 @@ class GrowAssistant:
         bayesian_data = self._gather_bayesian_sensor_data(growspace_id)
 
         # Plant data
-        plants = self.coordinator.get_growspace_plants(growspace_id)
+        plants = self.coordinator.data_repository.get_growspace_plants(growspace_id)
         plant_summary = self._summarize_plants(plants)
 
         # Strain analytics
@@ -358,7 +358,7 @@ class GrowAssistant:
 
         # Add strain-specific context (breeder notes, preferences)
         if data["plants"]["count"] > 0:
-            plants = self.coordinator.get_growspace_plants(data["growspace"]["id"])
+            plants = self.coordinator.data_repository.get_growspace_plants(data["growspace"]["id"])
             strain_context = self._get_strain_specific_context(plants)
             if strain_context:
                 lines.append("STRAIN-SPECIFIC GUIDANCE:")
@@ -605,7 +605,7 @@ async def handle_analyze_all_growspaces(
     all_data = []
     issues_found = []
 
-    for growspace_id in coordinator.growspaces:
+    for growspace_id in coordinator.data_repository.growspaces:
         try:
             data = assistant.gather_growspace_data(growspace_id)
             all_data.append(data)

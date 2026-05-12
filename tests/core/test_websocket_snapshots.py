@@ -42,7 +42,8 @@ async def test_websocket_get_growspace_data_snapshot(
 ) -> None:
     """Test websocket_get_growspace_data output matches snapshot."""
     coordinator = MagicMock()
-    coordinator.get_growspace_data.return_value = {
+    coordinator.services = MagicMock()
+    coordinator.services.get_growspace_data.return_value = {
         "id": "gs1",
         "name": "Test Growspace",
         "plants": [
@@ -185,6 +186,8 @@ async def test_websocket_add_timeline_note_snapshot(
 ) -> None:
     """Test websocket_add_timeline_note success."""
     coordinator = MagicMock()
+    coordinator.services = MagicMock()
+    coordinator.services.add_timeline_note = AsyncMock()
     coordinator.strain_library = MagicMock()
 
     with (
@@ -192,10 +195,6 @@ async def test_websocket_add_timeline_note_snapshot(
             "custom_components.growspace_manager.GrowspaceCoordinator.get_for_service_call",
             return_value=coordinator,
         ),
-        patch(
-            "custom_components.growspace_manager.websocket.async_add_timeline_note",
-            new_callable=AsyncMock,
-        ) as mock_add_note,
     ):
         msg = {
             "id": 6,
@@ -212,7 +211,7 @@ async def test_websocket_add_timeline_note_snapshot(
         }
         await websocket_add_timeline_note(hass, mock_connection, msg)
 
-        mock_add_note.assert_called_once()
+        coordinator.services.add_timeline_note.assert_called_once()
         mock_connection.send_result.assert_called_once_with(6)
 
 

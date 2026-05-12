@@ -3,13 +3,13 @@
 from datetime import date
 from unittest.mock import AsyncMock, MagicMock
 
-from common import create_plant
+from .common import create_plant
 import pytest
 
 from custom_components.growspace_manager.const import EVENT_GROWSPACE_LOG_ENTRY
 from custom_components.growspace_manager.managers.plant import PlantManager
 from custom_components.growspace_manager.models import PlantStage
-from custom_components.growspace_manager.services.plant import async_add_timeline_note
+from custom_components.growspace_manager.services.plant import handle_add_timeline_note
 from homeassistant.core import HomeAssistant
 
 
@@ -160,7 +160,7 @@ async def test_add_timeline_note_coverage(hass: HomeAssistant) -> None:
     hass.bus.async_listen(EVENT_GROWSPACE_LOG_ENTRY, capture_event)
 
     # Call with coverage arguments
-    await async_add_timeline_note(
+    await handle_add_timeline_note(
         hass,
         coordinator,
         strain_library,

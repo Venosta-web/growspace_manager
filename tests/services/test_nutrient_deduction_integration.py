@@ -2,7 +2,7 @@
 
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from common import create_plant
+from .common import create_plant
 import pytest
 
 from custom_components.growspace_manager.coordinator import GrowspaceCoordinator
@@ -62,7 +62,6 @@ async def mock_coordinator(hass: HomeAssistant):
         await coord.async_shutdown()
 
 
-
 @pytest.mark.asyncio
 @patch("custom_components.growspace_manager.events.async_fire_plant_event")
 async def test_water_growspace_total_amount_deduction(
@@ -75,14 +74,14 @@ async def test_water_growspace_total_amount_deduction(
 
     # Expected total deduction: 5.0 * 2.0 = 10.0 ml
 
-    await mock_coordinator.async_water_growspace(
+    await mock_coordinator.services.water_growspace(
         growspace_id="gs1", amount=total_amount, nutrients=nutrients
     )
 
     stock = mock_coordinator.nutrient_manager.inventory.stocks["n1"]
     assert stock.current_ml == pytest.approx(90.0)
 
-    mock_coordinator.async_save.assert_awaited()
+    mock_coordinator.services.save.assert_awaited()
 
 
 @pytest.mark.asyncio
@@ -97,7 +96,7 @@ async def test_water_growspace_per_plant_compatibility(
 
     # Expected total deduction: 3 plants * 2.0L * 1.0ml/L = 6.0 ml
 
-    await mock_coordinator.async_water_growspace(
+    await mock_coordinator.services.water_growspace(
         growspace_id="gs1", amount_per_plant=amount_per_plant, nutrients=nutrients
     )
 

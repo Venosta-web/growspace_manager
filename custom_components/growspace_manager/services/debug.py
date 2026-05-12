@@ -54,7 +54,7 @@ async def handle_debug_list_growspaces(
         return
 
     for gs_id, gs_data in coordinator.growspaces.items():
-        plant_count = len(coordinator.get_growspace_plants(gs_id))
+        plant_count = len(coordinator.services.get_growspace_plants(gs_id))
         _LOGGER.debug(
             "%s -> name='%s', plants=%d, rows=%s, plants_per_row=%s",
             gs_id,
@@ -66,7 +66,7 @@ async def handle_debug_list_growspaces(
 
     _LOGGER.debug("=== Plants by Growspace ===")
     for gs_id in coordinator.growspaces:
-        plants = coordinator.get_growspace_plants(gs_id)
+        plants = coordinator.services.get_growspace_plants(gs_id)
         if plants:
             _LOGGER.debug("%s has %d plants:", gs_id, len(plants))
             for plant in plants:
@@ -147,7 +147,7 @@ async def _handle_reset_dry_growspace(
                     "strain": plant.strain,
                     "old_pos": f"({plant.row},{plant.col})",
                 }
-                for plant in coordinator.get_growspace_plants(dry_id)
+                for plant in coordinator.services.get_growspace_plants(dry_id)
                 if plant.plant_id in coordinator.plants
             )
 
@@ -185,7 +185,7 @@ async def _handle_reset_cure_growspace(
                     "strain": plant.strain,
                     "old_pos": f"({plant.row},{plant.col})",
                 }
-                for plant in coordinator.get_growspace_plants(cure_id)
+                for plant in coordinator.services.get_growspace_plants(cure_id)
                 if plant.plant_id in coordinator.plants
             )
 
@@ -270,7 +270,7 @@ async def handle_debug_consolidate_duplicate_special(
 
         coordinator.data["growspaces"] = coordinator.growspaces
         coordinator.data["plants"] = coordinator.plants
-        await coordinator.async_save()
+        await coordinator.async_commit()
 
         _LOGGER.debug("Duplicate consolidation complete")
 
@@ -306,7 +306,7 @@ async def handle_debug_reset_special_growspaces(
         # Save changes after all resets are done
         coordinator.data["growspaces"] = coordinator.growspaces
         coordinator.data["plants"] = coordinator.plants
-        await coordinator.async_save()
+        await coordinator.async_commit()
 
         _LOGGER.debug("Special growspace reset complete")
 
@@ -323,7 +323,7 @@ async def _consolidate_plants_to_canonical_growspace(
 ) -> None:
     """Move plants from duplicate growspaces to the canonical one."""
     for dup_id in duplicate_ids:
-        plants_to_move = coordinator.get_growspace_plants(dup_id)
+        plants_to_move = coordinator.services.get_growspace_plants(dup_id)
         for plant in plants_to_move:
             plant_id = plant.plant_id
             if plant_id in coordinator.plants:

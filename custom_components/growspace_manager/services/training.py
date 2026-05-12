@@ -40,7 +40,7 @@ async def handle_log_training_event(
     # If no plant_ids and no growspace_id, try to infer growspace from context if possible,
     # but strictly we require at least one.
 
-    await coordinator.async_log_training_event(
+    await coordinator.services.log_training_event(
         growspace_id=growspace_id,
         technique=technique,
         notes=notes,

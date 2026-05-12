@@ -8,7 +8,7 @@ sensor attribute integration.
 from datetime import datetime, timedelta
 from unittest.mock import AsyncMock, MagicMock
 
-from common import create_plant
+from .common import create_plant
 import pytest
 from tests.common import (
     MockConfigEntry,
@@ -44,8 +44,10 @@ def create_test_coordinator(hass: HomeAssistant) -> GrowspaceCoordinator:
     coordinator.async_save = AsyncMock()  # type: ignore[method-assign]
     coordinator.async_commit = AsyncMock()  # type: ignore[method-assign]
     coordinator.async_set_updated_data = MagicMock()
+    # Mock services.save to be an AsyncMock for assertions and functionality
+    coordinator.services.save = AsyncMock(side_effect=coordinator.async_commit)
     # Mock save callback on watering service since it now handles saves
-    coordinator._watering_service.save_callback = coordinator.async_save
+    coordinator._watering_service.save_callback = coordinator.services.save
     return coordinator
 
 
@@ -97,7 +99,7 @@ class TestAsyncWaterPlant:
         assert watering_coordinator.plants[plant_id].last_watered is None
 
         # Water the plant
-        await watering_coordinator.async_water_plant(plant_id, amount=1.5)
+        await watering_coordinator.services.water_plant(plant_id, amount=1.5)
 
         # Verify last_watered is now set
         plant = watering_coordinator.plants[plant_id]
@@ -108,8 +110,8 @@ class TestAsyncWaterPlant:
         assert isinstance(parsed, datetime)
 
         # Verify save was called to persist the change
-        assert watering_coordinator.async_save.called  # type: ignore[attr-defined]
-        assert watering_coordinator.async_save.call_count == 1  # type: ignore[attr-defined]
+        assert watering_coordinator.services.save.called  # type: ignore[attr-defined]
+        assert watering_coordinator.services.save.call_count == 1  # type: ignore[attr-defined]
 
     @pytest.mark.asyncio
     async def test_water_plant_with_nutrients(
@@ -120,7 +122,7 @@ class TestAsyncWaterPlant:
         nutrients = {"CalMag": 2.0, "Bloom": 3.5}
 
         # Water with nutrients
-        await watering_coordinator.async_water_plant(
+        await watering_coordinator.services.water_plant(
             plant_id, amount=2.0, nutrients=nutrients
         )
 
@@ -139,7 +141,7 @@ class TestAsyncWaterPlant:
         events = async_capture_events(hass, EVENT_GROWSPACE_LOG_ENTRY)
 
         # Water the plant
-        await watering_coordinator.async_water_plant(plant_id, amount=1.0)
+        await watering_coordinator.services.water_plant(plant_id, amount=1.0)
 
         # Verify an event was created
         assert len(events) == 1
@@ -159,7 +161,7 @@ class TestAsyncWaterPlant:
 
         events = async_capture_events(hass, EVENT_GROWSPACE_LOG_ENTRY)
 
-        await watering_coordinator.async_water_plant(
+        await watering_coordinator.services.water_plant(
             plant_id, amount=1.5, nutrients=nutrients
         )
 
@@ -175,7 +177,7 @@ class TestAsyncWaterPlant:
         """Test that watering a nonexistent plant raises an error."""
 
         with pytest.raises(PlantNotFoundError):
-            await watering_coordinator.async_water_plant("nonexistent", amount=1.0)
+            await watering_coordinator.services.water_plant("nonexistent", amount=1.0)
 
 
 class TestAsyncWaterGrowspace:
@@ -191,7 +193,7 @@ class TestAsyncWaterGrowspace:
             assert watering_coordinator.plants[plant_id].last_watered is None
 
         # Water the growspace
-        count = await watering_coordinator.async_water_growspace(
+        count = await watering_coordinator.services.water_growspace(
             "test_gs", amount_per_plant=2.0
         )
 
@@ -202,7 +204,7 @@ class TestAsyncWaterGrowspace:
             assert plant.last_watered is not None
 
         # Verify save was called ensures persistence
-        assert watering_coordinator.async_save.called  # type: ignore[attr-defined]
+        assert watering_coordinator.services.save.called  # type: ignore[attr-defined]
 
     @pytest.mark.asyncio
     async def test_water_growspace_with_nutrients(
@@ -211,7 +213,7 @@ class TestAsyncWaterGrowspace:
         """Test watering a growspace with nutrients updates all plants."""
         nutrients = {"PK": 4.0}
 
-        count = await watering_coordinator.async_water_growspace(
+        count = await watering_coordinator.services.water_growspace(
             "test_gs", amount_per_plant=1.0, nutrients=nutrients
         )
 
@@ -227,7 +229,7 @@ class TestAsyncWaterGrowspace:
         """Test that watering a growspace creates events for each plant."""
         events = async_capture_events(hass, EVENT_GROWSPACE_LOG_ENTRY)
 
-        await watering_coordinator.async_water_growspace(
+        await watering_coordinator.services.water_growspace(
             "test_gs", amount_per_plant=1.5
         )
 
@@ -244,7 +246,7 @@ class TestAsyncWaterGrowspace:
             id="empty_gs", name="Empty", rows=2, plants_per_row=2
         )
 
-        count = await watering_coordinator.async_water_growspace(
+        count = await watering_coordinator.services.water_growspace(
             "empty_gs", amount_per_plant=1.0
         )
 
@@ -257,7 +259,7 @@ class TestAsyncWaterGrowspace:
         """Test that watering a nonexistent growspace raises an error."""
 
         with pytest.raises(GrowspaceNotFoundError):
-            await watering_coordinator.async_water_growspace(
+            await watering_coordinator.services.water_growspace(
                 "nonexistent", amount_per_plant=1.0
             )
 
@@ -355,7 +357,7 @@ class TestPlantEntityWateringAttributes:
         """Test that PlantEntity exposes watering attributes correctly."""
 
         # Water the plant first
-        await watering_coordinator.async_water_plant("test_plant", amount=1.0)
+        await watering_coordinator.services.water_plant("test_plant", amount=1.0)
 
         # Create a PlantEntity
         plant = watering_coordinator.plants["test_plant"]

@@ -174,7 +174,7 @@ async def handle_configure_environment(
     growspace.environment_config = env_config
 
     # Save to storage
-    await coordinator.async_save()
+    await coordinator.async_commit()
 
     # Trigger coordinator update to create/update binary sensors
     await coordinator.async_refresh()
@@ -202,7 +202,7 @@ async def handle_remove_environment(
     growspace.environment_config = EnvironmentConfig()
 
     # Save to storage
-    await coordinator.async_save()
+    await coordinator.async_commit()
 
     # Trigger coordinator update
     await coordinator.async_refresh()
@@ -231,7 +231,7 @@ async def handle_set_dehumidifier_control(
     growspace.environment_config.control_dehumidifier = bool(enabled)
 
     # Save to storage
-    await coordinator.async_save()
+    await coordinator.async_commit()
 
     # Trigger coordinator update
     await coordinator.async_refresh()

@@ -14,7 +14,7 @@ from custom_components.growspace_manager.services.water_analytics import (
 def coordinator():
     """Mock coordinator with water analytics methods."""
     mock = MagicMock()
-    mock.async_reset_water_tracking = AsyncMock()
+    mock.services.reset_water_tracking = AsyncMock()
     return mock
 
 
@@ -28,6 +28,6 @@ async def test_handle_reset_water_tracking(coordinator) -> None:
 
     await handle_reset_water_tracking(MagicMock(), coordinator, call)
 
-    coordinator.async_reset_water_tracking.assert_awaited_once_with(
+    coordinator.services.reset_water_tracking.assert_awaited_once_with(
         growspace_id="tent1",
     )

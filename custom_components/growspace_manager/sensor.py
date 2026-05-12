@@ -378,7 +378,7 @@ async def _create_initial_entities(
                 and _should_create_derived_water_sensor(growspace, tank)
             )
 
-        for plant in coordinator.get_growspace_plants(growspace_id):
+        for plant in coordinator.services.get_growspace_plants(growspace_id):
             pe = PlantEntity(coordinator, plant)
             plant_entities[plant.plant_id] = pe
             initial_entities.append(pe)
@@ -791,7 +791,7 @@ class TankDerivedWaterSensor(CoordinatorEntity, SensorEntity):
     @property
     def _tracker(self) -> Any:
         """Return the TankWaterTracker for this tank, or None."""
-        return self.coordinator.get_tank_tracker(
+        return self.coordinator.services.get_tank_tracker(
             self._growspace_id, self._tank.sensor_entity
         )
 
@@ -826,7 +826,7 @@ class TankDerivedWaterSensor(CoordinatorEntity, SensorEntity):
     async def async_added_to_hass(self) -> None:
         """Subscribe to tank sensor state changes via the tracker."""
         await super().async_added_to_hass()
-        tracker = self.coordinator.get_tank_tracker(
+        tracker = self.coordinator.services.get_tank_tracker(
             self._growspace_id, self._tank.sensor_entity
         )
         if tracker is None:
@@ -1067,7 +1067,7 @@ class GrowspaceOverviewSensor(CoordinatorEntity[GrowspaceCoordinator], SensorEnt
     @override  # type: ignore[misc]
     def native_value(self) -> int:
         """Return the number of plants in the growspace."""
-        plants = self.coordinator.get_growspace_plants(self.growspace_id)
+        plants = self.coordinator.services.get_growspace_plants(self.growspace_id)
         return len(plants)
 
     @property
@@ -1592,7 +1592,7 @@ class WaterUsageSensor(CoordinatorEntity[GrowspaceCoordinator], SensorEntity):  
             return {}
 
         usage = growspace.water_usage
-        plant_count = len(self.coordinator.get_growspace_plants(self._growspace_id))
+        plant_count = len(self.coordinator.services.get_growspace_plants(self._growspace_id))
         days = 1
         if usage.cycle_start_date:
             from datetime import date as date_cls  # noqa: PLC0415
@@ -1663,7 +1663,7 @@ class ECTargetSensor(CoordinatorEntity[GrowspaceCoordinator], SensorEntity):  # 
         if not growspace:
             return None
 
-        plants = self.coordinator.get_growspace_plants(self._growspace_id)
+        plants = self.coordinator.services.get_growspace_plants(self._growspace_id)
         if not plants:
             return None
 
@@ -1677,7 +1677,7 @@ class ECTargetSensor(CoordinatorEntity[GrowspaceCoordinator], SensorEntity):  # 
 
     def _get_current_week(self) -> int:
         """Get the current week number in the active stage."""
-        plants = self.coordinator.get_growspace_plants(self._growspace_id)
+        plants = self.coordinator.services.get_growspace_plants(self._growspace_id)
         if not plants:
             return 1
         stage = calculate_plant_stage(plants[0])

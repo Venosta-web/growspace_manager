@@ -87,7 +87,7 @@ class VisionCheckupScheduler:
 
         Uses flower hours if any plant is in flower stage, otherwise veg hours.
         """
-        plants = self.coordinator.get_growspace_plants(growspace.id)
+        plants = self.coordinator.services.get_growspace_plants(growspace.id)
         env = growspace.environment_config
         for plant in plants:
             if getattr(plant, "stage", None) in (PlantStage.FLOWER, "flower"):
@@ -546,7 +546,7 @@ class VisionCheckupScheduler:
             :history_limit
         ]
 
-        await self.coordinator.async_save()
+        await self.coordinator.async_commit()
 
         _LOGGER.info(
             "Vision checkup completed for %s: severity=%s, issues=%s",

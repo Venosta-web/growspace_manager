@@ -45,7 +45,7 @@ async def handle_save_ec_ramp_curve(
     points: list[dict[str, Any]] = call.data[ATTR_POINTS]
     curve_id: str | None = call.data.get(ATTR_CURVE_ID)
 
-    await coordinator.async_save_ec_ramp_curve(
+    await coordinator.services.save_ec_ramp_curve(
         name=name,
         stage=stage,
         points=points,
@@ -70,7 +70,7 @@ async def handle_remove_ec_ramp_curve(
     """
     curve_id: str = call.data[ATTR_CURVE_ID]
 
-    await coordinator.async_remove_ec_ramp_curve(curve_id=curve_id)
+    await coordinator.services.remove_ec_ramp_curve(curve_id=curve_id)
 
     _LOGGER.info("Removed EC ramp curve %s", curve_id)
 

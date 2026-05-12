@@ -231,7 +231,7 @@ class HumidifierCoordinator:
 
     def _get_growth_stage(self) -> PlantStage:
         """Determine the current growth stage for threshold selection."""
-        plants = self.main_coordinator.get_growspace_plants(self.growspace_id)
+        plants = self.main_coordinator.services.get_growspace_plants(self.growspace_id)
 
         max_seedling_days = 0
         max_veg_days = 0

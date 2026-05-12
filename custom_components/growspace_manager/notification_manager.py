@@ -88,7 +88,6 @@ class NotificationManager:
                 alert.notification_timer = None
         self._pending_alerts.clear()
 
-
     _TIER_COOLDOWNS: ClassVar[dict[str, timedelta]] = {
         NotificationTier.CRITICAL: timedelta(minutes=CRITICAL_COOLDOWN_MINUTES),
         NotificationTier.WARNING: timedelta(minutes=WARNING_COOLDOWN_MINUTES),
@@ -119,7 +118,7 @@ class NotificationManager:
         Called by sensors on every probability update instead of
         async_schedule_notification directly.
         """
-        if not self.coordinator.get_growspace_plants(growspace_id):
+        if not self.coordinator.services.get_growspace_plants(growspace_id):
             alert = self._pending_alerts.pop(
                 f"{growspace_id}_{sensor.entity_description.sensor_type}", None
             )
@@ -371,7 +370,7 @@ class NotificationManager:
             )
             return
 
-        if not self.coordinator.get_growspace_plants(growspace_id):
+        if not self.coordinator.services.get_growspace_plants(growspace_id):
             _LOGGER.debug(
                 "Growspace %s has no plants, skipping notification",
                 growspace_id,
@@ -379,7 +378,9 @@ class NotificationManager:
             return
 
         # Check if notifications are enabled in coordinator
-        if not self.coordinator.is_notifications_enabled(growspace_id):
+        if not self.coordinator.services.services.is_notifications_enabled(
+            growspace_id
+        ):
             _LOGGER.debug("Notifications disabled in coordinator for %s", growspace_id)
             return
 
@@ -419,10 +420,14 @@ class NotificationManager:
             )
             if tier:
                 self._set_cooldown(growspace_id, tier)
-        except (AttributeError, KeyError, ValueError, ServiceValidationError, GrowspaceError):
-            _LOGGER.error(
-                "Failed to send notification to %s", notification_service
-            )
+        except (
+            AttributeError,
+            KeyError,
+            ValueError,
+            ServiceValidationError,
+            GrowspaceError,
+        ):
+            _LOGGER.error("Failed to send notification to %s", notification_service)
 
     async def _rewrite_with_ai(
         self,
@@ -509,7 +514,13 @@ class NotificationManager:
             else:
                 _LOGGER.warning("AI returned empty response, using default message")
 
-        except (AttributeError, KeyError, ValueError, ServiceValidationError, GrowspaceError):
+        except (
+            AttributeError,
+            KeyError,
+            ValueError,
+            ServiceValidationError,
+            GrowspaceError,
+        ):
             _LOGGER.error("Failed to process AI notification")
 
         return original_message
@@ -753,4 +764,4 @@ class NotificationManager:
                 self.coordinator.notifications_sent[plant.plant_id][
                     notification_key
                 ] = True
-                await self.coordinator.async_save()
+                await self.coordinator.async_commit()

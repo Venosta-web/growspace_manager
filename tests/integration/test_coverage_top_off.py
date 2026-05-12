@@ -6,7 +6,7 @@ import json
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from common import create_plant
+from .common import create_plant
 import pytest
 from tests.common import MockConfigEntry
 

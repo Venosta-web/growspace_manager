@@ -44,7 +44,7 @@ from .const import (
 )
 from .coordinator import GrowspaceCoordinator
 from .services.growspace import async_add_growspace_note
-from .services.plant import async_add_timeline_note
+
 from .services.report import async_websocket_get_grow_report
 from .exceptions import GrowspaceError
 from .strain_library import StrainLibrary
@@ -138,7 +138,7 @@ async def websocket_get_growspace_data(
     growspace_id = msg.get("growspace_id")
     try:
         coordinator = GrowspaceCoordinator.get_for_service_call(hass, msg)
-        data = coordinator.get_growspace_data(growspace_id)
+        data = coordinator.services.get_growspace_data(growspace_id)
         connection.send_result(msg["id"], data)
     except ServiceValidationError:
         connection.send_error(
@@ -562,7 +562,7 @@ def websocket_update_nutrient_stock(
             )
             # Persist changes
             coordinator.config_entry.async_create_background_task(
-                hass, coordinator.async_save(), "save_coordinator_data"
+                hass, coordinator.async_commit(), "save_coordinator_data"
             )
             connection.send_result(msg["id"])
         else:
@@ -587,7 +587,7 @@ def websocket_remove_nutrient_stock(
             coordinator.nutrient_inventory_service.remove_stock(msg["nutrient_id"])
             # Persist changes
             coordinator.config_entry.async_create_background_task(
-                hass, coordinator.async_save(), "save_coordinator_data"
+                hass, coordinator.async_commit(), "save_coordinator_data"
             )
             connection.send_result(msg["id"])
         else:
@@ -694,13 +694,10 @@ async def websocket_add_timeline_note(
         coordinator = GrowspaceCoordinator.get_for_service_call(hass, msg)
         strain_library = coordinator.strain_library
 
-        await async_add_timeline_note(
-            hass,
-            coordinator,
-            strain_library,
+        await coordinator.services.add_timeline_note(
             plant_id=msg[ATTR_PLANT_ID],
             notes=msg[ATTR_NOTES],
-            transition_date_raw=msg.get(ATTR_TRANSITION_DATE),
+            timestamp=msg.get(ATTR_TRANSITION_DATE),
             images_base64=msg.get(ATTR_IMAGES),
             tags=msg.get(ATTR_TAGS),
             ph=msg.get(ATTR_PH),
@@ -887,7 +884,7 @@ async def websocket_update_sensor_coordinates(
         growspace.environment_config.sensor_coordinates[entity_id] = data
 
         # Save the coordinator data
-        await coordinator.async_save()
+        await coordinator.async_commit()
 
         # Trigger a coordinator refresh to update all sensors
         await coordinator.async_request_refresh()
@@ -1454,7 +1451,7 @@ async def websocket_get_subareas(
     """Return all subareas for a growspace."""
     try:
         coordinator = GrowspaceCoordinator.get_for_service_call(hass, msg)
-        subareas = coordinator.get_subareas(msg["growspace_id"])
+        subareas = coordinator.services.get_subareas(msg["growspace_id"])
         connection.send_result(msg["id"], [asdict(s) for s in subareas])
     except ServiceValidationError as err:
         connection.send_error(msg["id"], "invalid_args", str(err))
@@ -1475,7 +1472,7 @@ async def websocket_add_subarea(
     """Add a subarea to a growspace."""
     try:
         coordinator = GrowspaceCoordinator.get_for_service_call(hass, msg)
-        subarea = await coordinator.async_add_subarea(msg["growspace_id"], msg["name"])
+        subarea = await coordinator.services.add_subarea(msg["growspace_id"], msg["name"])
         connection.send_result(msg["id"], asdict(subarea))
     except ServiceValidationError as err:
         connection.send_error(msg["id"], "invalid_args", str(err))
@@ -1496,7 +1493,7 @@ async def websocket_update_subarea(
     """Update a subarea's environment config."""
     try:
         coordinator = GrowspaceCoordinator.get_for_service_call(hass, msg)
-        subarea = await coordinator.async_update_subarea(
+        subarea = await coordinator.services.update_subarea(
             msg["growspace_id"], msg["subarea_id"], msg["environment_config"]
         )
         connection.send_result(msg["id"], asdict(subarea))
@@ -1519,7 +1516,7 @@ async def websocket_remove_subarea(
     """Remove a subarea from a growspace."""
     try:
         coordinator = GrowspaceCoordinator.get_for_service_call(hass, msg)
-        await coordinator.async_remove_subarea(msg["growspace_id"], msg["subarea_id"])
+        await coordinator.services.remove_subarea(msg["growspace_id"], msg["subarea_id"])
         connection.send_result(msg["id"], {"success": True})
     except ServiceValidationError as err:
         connection.send_error(msg["id"], "invalid_args", str(err))

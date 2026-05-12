@@ -2,7 +2,7 @@
 
 import json
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 from aiohttp import web
 
@@ -176,22 +176,19 @@ async def test_websocket_timeline_operations_errors(hass: HomeAssistant) -> None
         "custom_components.growspace_manager.coordinator.GrowspaceCoordinator.get_for_service_call",
         return_value=mock_coordinator,
     ):
-        # Case A: ServiceValidationError in services/plant helper
-        # Patch where it is USED in __init__.py
-        with patch(
-            "custom_components.growspace_manager.websocket.async_add_timeline_note",
-            side_effect=ServiceValidationError("Invalid"),
-        ):
-            await websocket_add_timeline_note(hass, connection, msg_note)
-            connection.send_error.assert_called_with(2, "invalid_args", "Invalid")
+        # Case A: ServiceValidationError
+        mock_coordinator.services.add_timeline_note = AsyncMock(
+            side_effect=ServiceValidationError("Invalid")
+        )
+        await websocket_add_timeline_note(hass, connection, msg_note)
+        connection.send_error.assert_called_with(2, "invalid_args", "Invalid")
 
         # Case B: Generic Exception
-        with patch(
-            "custom_components.growspace_manager.websocket.async_add_timeline_note",
-            side_effect=Exception("General"),
-        ):
-            await websocket_add_timeline_note(hass, connection, msg_note)
-            connection.send_error.assert_called_with(2, "unknown_error", "General")
+        mock_coordinator.services.add_timeline_note = AsyncMock(
+            side_effect=Exception("General")
+        )
+        await websocket_add_timeline_note(hass, connection, msg_note)
+        connection.send_error.assert_called_with(2, "unknown_error", "General")
 
 
 # ========================================================================================

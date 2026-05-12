@@ -98,12 +98,16 @@ class GrowspaceNotificationSwitch(SwitchEntity):  # type: ignore[misc]  # HA bas
     @override  # type: ignore[misc]  # SwitchEntity.is_on exists but not detected by mypy
     def is_on(self) -> bool:
         """Return true if notifications are enabled for the growspace."""
-        return self._coordinator.is_notifications_enabled(self._growspace_id)
+        return self._coordinator.services.services.is_notifications_enabled(
+            self._growspace_id
+        )
 
     @override  # type: ignore[misc]  # SwitchEntity.async_turn_on exists but not detected by mypy
     async def async_turn_on(self, **kwargs: Any) -> None:
         """Enable notifications for the growspace."""
-        await self._coordinator.set_notifications_enabled(self._growspace_id, True)
+        await self._coordinator.services.set_notifications_enabled(
+            self._growspace_id, True
+        )
         self.async_write_ha_state()
         _LOGGER.info(
             "Notifications enabled for growspace %s (%s)",
@@ -114,7 +118,9 @@ class GrowspaceNotificationSwitch(SwitchEntity):  # type: ignore[misc]  # HA bas
     @override  # type: ignore[misc]  # SwitchEntity.async_turn_off exists but not detected by mypy
     async def async_turn_off(self, **kwargs: Any) -> None:
         """Disable notifications for the growspace."""
-        await self._coordinator.set_notifications_enabled(self._growspace_id, False)
+        await self._coordinator.services.set_notifications_enabled(
+            self._growspace_id, False
+        )
         self.async_write_ha_state()
         _LOGGER.info(
             "Notifications disabled for growspace %s (%s)",

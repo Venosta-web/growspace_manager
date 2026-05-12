@@ -883,7 +883,9 @@ async def test_irrigation_coordinator_coverage_gaps(
                 side_effect=ValueError("Unexpected"),
             ),
         ):
-            await coordinator.async_remove_schedule_item("irrigation_times", "10:00:00")
+            await coordinator.services.remove_schedule_item(
+                "irrigation_times", "10:00:00"
+            )
 
         # 9. Test _async_wait_for_switch_state with irrelevant entity event (Line 145)
         mock_hass.states.get.return_value = Mock(state="off")

@@ -37,9 +37,9 @@ def mock_config_entry():
 def mock_irrigation_coordinator():
     """Create a mock irrigation coordinator."""
     coordinator = MagicMock()
-    coordinator.async_set_settings = AsyncMock()
-    coordinator.async_add_schedule_item = AsyncMock()
-    coordinator.async_remove_schedule_item = AsyncMock()
+    coordinator.services.set_settings = AsyncMock()
+    coordinator.services.add_schedule_item = AsyncMock()
+    coordinator.services.remove_schedule_item = AsyncMock()
     coordinator.get_default_duration = MagicMock(return_value=300)
     return coordinator
 
@@ -154,7 +154,7 @@ class TestHandleSetIrrigationSettings:
             "irrigation_duration": 600,
             "drain_duration": 300,
         }
-        mock_irrigation_coordinator.async_set_settings.assert_awaited_once_with(
+        mock_irrigation_coordinator.services.set_settings.assert_awaited_once_with(
             expected_settings
         )
 
@@ -195,7 +195,7 @@ class TestHandleAddIrrigationTime:
         await handle_add_irrigation_time(mock_hass, mock_coordinator, call)
 
         # Verify
-        mock_irrigation_coordinator.async_add_schedule_item.assert_awaited_once_with(
+        mock_irrigation_coordinator.services.add_schedule_item.assert_awaited_once_with(
             "irrigation_times", "08:00:00", 600
         )
 
@@ -220,7 +220,7 @@ class TestHandleAddIrrigationTime:
         mock_irrigation_coordinator.get_default_duration.assert_called_once_with(
             "irrigation"
         )
-        mock_irrigation_coordinator.async_add_schedule_item.assert_awaited_once_with(
+        mock_irrigation_coordinator.services.add_schedule_item.assert_awaited_once_with(
             "irrigation_times", "08:00:00", 300
         )
 
@@ -246,7 +246,7 @@ class TestHandleRemoveIrrigationTime:
         await handle_remove_irrigation_time(mock_hass, mock_coordinator, call)
 
         # Verify
-        mock_irrigation_coordinator.async_remove_schedule_item.assert_awaited_once_with(
+        mock_irrigation_coordinator.services.remove_schedule_item.assert_awaited_once_with(
             "irrigation_times", "08:00:00"
         )
 
@@ -272,7 +272,7 @@ class TestHandleAddDrainTime:
         await handle_add_drain_time(mock_hass, mock_coordinator, call)
 
         # Verify
-        mock_irrigation_coordinator.async_add_schedule_item.assert_awaited_once_with(
+        mock_irrigation_coordinator.services.add_schedule_item.assert_awaited_once_with(
             "drain_times", "10:00:00", 180
         )
 
@@ -297,7 +297,7 @@ class TestHandleAddDrainTime:
         mock_irrigation_coordinator.get_default_duration.assert_called_once_with(
             "drain"
         )
-        mock_irrigation_coordinator.async_add_schedule_item.assert_awaited_once_with(
+        mock_irrigation_coordinator.services.add_schedule_item.assert_awaited_once_with(
             "drain_times", "10:00:00", 300
         )
 
@@ -323,6 +323,6 @@ class TestHandleRemoveDrainTime:
         await handle_remove_drain_time(mock_hass, mock_coordinator, call)
 
         # Verify
-        mock_irrigation_coordinator.async_remove_schedule_item.assert_awaited_once_with(
+        mock_irrigation_coordinator.services.remove_schedule_item.assert_awaited_once_with(
             "drain_times", "10:00:00"
         )

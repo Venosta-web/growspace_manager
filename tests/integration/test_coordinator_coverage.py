@@ -5,7 +5,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from tests.common import async_capture_events
-from test_coordinator import create_test_coordinator
+from tests.core.test_coordinator import create_test_coordinator
 
 from custom_components.growspace_manager.const import DOMAIN
 from custom_components.growspace_manager.coordinator import GrowspaceCoordinator

@@ -14,7 +14,6 @@ from custom_components.growspace_manager.const import (
 )
 from custom_components.growspace_manager.exceptions import GrowspaceError
 from custom_components.growspace_manager.services.plant import (
-    async_add_timeline_note,
     handle_add_plants,
     handle_add_timeline_note,
     handle_harvest_plant,
@@ -45,7 +44,7 @@ async def test_add_timeline_note_defaults() -> None:
             return_value="plant1",
         ),
     ):
-        await async_add_timeline_note(
+        await handle_add_timeline_note(
             hass,
             coordinator,
             strain_library,
@@ -103,7 +102,7 @@ async def test_add_timeline_note_sensor_snapshot() -> None:
             return_value="plant1",
         ),
     ):
-        await async_add_timeline_note(
+        await handle_add_timeline_note(
             hass,
             coordinator,
             strain_library,
@@ -153,7 +152,7 @@ async def test_add_timeline_note_images(tmp_path: Path) -> None:
             return_value="plant1",
         ),
     ):
-        await async_add_timeline_note(
+        await handle_add_timeline_note(
             hass,
             coordinator,
             strain_library,
@@ -180,7 +179,7 @@ async def test_add_timeline_note_images(tmp_path: Path) -> None:
             return_value="plant1",
         ),
     ):
-        await async_add_timeline_note(
+        await handle_add_timeline_note(
             hass,
             coordinator,
             strain_library,
@@ -205,7 +204,7 @@ async def test_add_timeline_note_images(tmp_path: Path) -> None:
             return_value="plant1",
         ),
     ):
-        await async_add_timeline_note(
+        await handle_add_timeline_note(
             hass,
             coordinator,
             strain_library,
@@ -279,7 +278,7 @@ async def test_add_timeline_note_extra_metadata() -> None:
             return_value="plant1",
         ),
     ):
-        await async_add_timeline_note(
+        await handle_add_timeline_note(
             hass,
             coordinator,
             strain_library,
@@ -310,7 +309,7 @@ async def test_handle_add_timeline_note_service() -> None:
     mock_call.data = {"plant_id": "plant1", "notes": "Service call note"}
 
     with patch(
-        "custom_components.growspace_manager.services.plant.async_add_timeline_note"
+        "custom_components.growspace_manager.services.plant.handle_add_timeline_note"
     ) as mock_logic:
         await handle_add_timeline_note(hass, coordinator, strain_library, mock_call)
         mock_logic.assert_called_once()

@@ -1,6 +1,6 @@
 from unittest.mock import AsyncMock, MagicMock
 
-from common import create_plant
+from .common import create_plant
 import pytest
 from tests.common import MockConfigEntry
 

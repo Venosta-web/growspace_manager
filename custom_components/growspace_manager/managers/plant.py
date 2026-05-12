@@ -246,7 +246,7 @@ class PlantManager:
 
     async def move_plant(self, plant_id: str, new_row: int, new_col: int) -> None:
         """Move a plant to a new position."""
-        await self.lifecycle_manager.async_update_plant(
+        await self.update_plant(
             plant_id, row=new_row, col=new_col
         )
 
@@ -319,6 +319,7 @@ class PlantManager:
     ) -> Plant:
         """Add a new mother plant."""
         mother_id: str = self.growspace_manager.ensure_mother_growspace()
+        kwargs.pop("growspace_id", None)
         kwargs["type_str"] = PlantStage.MOTHER  # Passed as plant_type logic?
         # Lifecycle add_plant used 'plant_type' arg. Service used 'type_str'.
         # I used 'plant_type' in add_plant signature above.
@@ -455,7 +456,7 @@ class PlantManager:
             )
             updates["stage_history"] = new_history
 
-        await self.lifecycle_manager.async_update_plant(plant_id, **updates)
+        await self.update_plant(plant_id, **updates)
 
         # Trigger logic for automatic moves based on stage
         plant = self.repository.plants.get(plant_id)
@@ -610,7 +611,7 @@ class PlantManager:
                 "mother_start": transition_date,
             }
 
-        await self.lifecycle_manager.async_update_plant(
+        await self.update_plant(
             plant_id,
             growspace_id=target_growspace_id,
             row=new_row,
@@ -697,7 +698,7 @@ class PlantManager:
         if target_stage in date_map:
             updates[date_map[target_stage]] = transition_date
 
-        await self.lifecycle_manager.async_update_plant(plant_id, **updates)
+        await self.update_plant(plant_id, **updates)
         return True
 
     async def move_to_dry_growspace(
@@ -791,7 +792,7 @@ class PlantManager:
             raise ValidationChangeError(f"Target growspace {target_gs_id} is full")
 
         # Now call update_plant (which acquires lock)
-        await self.lifecycle_manager.async_update_plant(
+        await self.update_plant(
             clone_id,
             growspace_id=target_gs_id,
             row=row,

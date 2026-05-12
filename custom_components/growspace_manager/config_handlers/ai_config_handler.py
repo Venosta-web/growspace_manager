@@ -161,6 +161,6 @@ class AIConfigHandler(BaseConfigHandler[dict[str, Any]]):
         coordinator.options = new_options
 
         # Save to storage
-        await coordinator.async_save()
+        await coordinator.async_commit()
 
         return cast(dict[str, Any], new_options)

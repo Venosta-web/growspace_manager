@@ -38,7 +38,7 @@ async def handle_save_nutrient_preset(
     stage = call.data.get(ATTR_STAGE)
     min_days_in_stage = call.data.get(ATTR_MIN_DAYS_IN_STAGE)
 
-    await coordinator.async_save_nutrient_preset(
+    await coordinator.services.save_nutrient_preset(
         name=name,
         nutrients=nutrients,
         stage=stage,
@@ -53,7 +53,7 @@ async def handle_remove_nutrient_preset(
 ) -> None:
     """Handle removing a nutrient preset."""
     preset_id = call.data[ATTR_PRESET_ID]
-    await coordinator.async_remove_nutrient_preset(preset_id)
+    await coordinator.services.remove_nutrient_preset(preset_id)
 
 
 SERVICES = [

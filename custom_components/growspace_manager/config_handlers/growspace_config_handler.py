@@ -26,7 +26,7 @@ class GrowspaceConfigHandler(BaseConfigHandler[dict[str, Any]]):
         self, coordinator: GrowspaceCoordinator
     ) -> vol.Schema:
         """Build the schema for the growspace management menu."""
-        growspace_options = coordinator.growspace_service.get_sorted_growspace_options()
+        growspace_options = coordinator.services.get_sorted_growspace_options()
 
         schema: dict[Any, Any] = {
             vol.Required("action", default="add"): selector.SelectSelector(
@@ -197,7 +197,7 @@ class GrowspaceConfigHandler(BaseConfigHandler[dict[str, Any]]):
             raise ValueError("Coordinator not found")
 
         # Use coordinator to add growspace
-        await coordinator.async_add_growspace(
+        await coordinator.services.add_growspace(
             name=user_input["name"],
             rows=user_input["rows"],
             plants_per_row=user_input["plants_per_row"],
@@ -219,14 +219,15 @@ class GrowspaceConfigHandler(BaseConfigHandler[dict[str, Any]]):
         except AbortFlow as e:
             return self.flow.async_abort(reason=e.reason)
         growspace_id = self.flow.selected_growspace_id
-        growspace = coordinator.growspaces.get(growspace_id)
+        growspace = coordinator.services.growspaces.get(growspace_id)
 
         if not growspace:
             return self.flow.async_abort(reason="growspace_not_found")
 
         if user_input is not None:
             try:
-                await self.async_remove_growspace(growspace_id)
+                coordinator = self.get_coordinator()
+                await coordinator.services.remove_growspace(growspace_id)
                 return await self.async_step_manage_growspaces()
             except Exception:
                 _LOGGER.exception("Error removing growspace")
@@ -345,7 +346,7 @@ class GrowspaceConfigHandler(BaseConfigHandler[dict[str, Any]]):
         coordinator = self.config_entry.runtime_data
         if coordinator is None:
             raise ValueError("Coordinator not found")
-        await coordinator.async_remove_growspace(growspace_id)
+        await coordinator.services.remove_growspace(growspace_id)
 
     async def async_update_growspace(
         self, growspace_id: str, user_input: dict[str, Any]
@@ -370,7 +371,7 @@ class GrowspaceConfigHandler(BaseConfigHandler[dict[str, Any]]):
             }
             update_data["dimensions"] = dimensions
 
-        await coordinator.async_update_growspace(growspace_id, **update_data)
+        await coordinator.services.update_growspace(growspace_id, **update_data)
 
     async def async_step_update_growspace(
         self, user_input: dict[str, Any] | None = None
@@ -381,14 +382,14 @@ class GrowspaceConfigHandler(BaseConfigHandler[dict[str, Any]]):
         except AbortFlow as e:
             return self.flow.async_abort(reason=e.reason)
         growspace_id = self.flow.selected_growspace_id
-        growspace = coordinator.growspaces.get(growspace_id)
+        growspace = coordinator.services.growspaces.get(growspace_id)
 
         if not growspace:
             return self.flow.async_abort(reason="growspace_not_found")
 
         if user_input is not None:
             try:
-                await self.async_update_growspace(growspace_id, user_input)
+                await coordinator.services.update_growspace(growspace_id, user_input)
                 return await self.async_step_manage_growspaces()
             except Exception:
                 _LOGGER.exception("Error updating growspace")

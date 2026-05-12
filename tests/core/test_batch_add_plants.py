@@ -28,7 +28,7 @@ def mock_coordinator(mock_growspace: Mock) -> Mock:
     coordinator.plant_manager = MagicMock()
     coordinator.plant_manager.add_plant = AsyncMock()
     coordinator.growspaces = {"gs1": mock_growspace}
-    coordinator.async_add_plant = coordinator.plant_manager.add_plant
+    coordinator.services.add_plant = coordinator.plant_manager.add_plant
     coordinator.validator = Mock()
     # default infinite space
     coordinator.validator.find_first_available_position = Mock(return_value=(1, 1))
@@ -69,10 +69,10 @@ async def test_batch_add_plants_success(
 
     await handle_add_plants(hass, mock_coordinator, mock_strain_library, call)
 
-    assert mock_coordinator.async_add_plant.call_count == 3
+    assert mock_coordinator.services.add_plant.call_count == 3
 
     # Check calls
-    calls = mock_coordinator.async_add_plant.call_args_list
+    calls = mock_coordinator.services.add_plant.call_args_list
 
     # 1st plant
     kwargs1 = calls[0].kwargs
@@ -123,9 +123,9 @@ async def test_batch_add_plants_growspace_full(
     await handle_add_plants(hass, mock_coordinator, mock_strain_library, call)
 
     # Should have added 1 plant and then stopped
-    assert mock_coordinator.async_add_plant.call_count == 1
+    assert mock_coordinator.services.add_plant.call_count == 1
     assert (
-        mock_coordinator.async_add_plant.call_args.kwargs["phenotype"]
+        mock_coordinator.services.add_plant.call_args.kwargs["phenotype"]
         == "Blue Dream #1"
     )
 
@@ -151,7 +151,7 @@ async def test_batch_add_plants_initially_full(
     with pytest.raises(ServiceValidationError, match=".*is full.*"):
         await handle_add_plants(hass, mock_coordinator, mock_strain_library, call)
 
-    mock_coordinator.async_add_plant.assert_not_called()
+    mock_coordinator.services.add_plant.assert_not_called()
 
 
 @pytest.mark.asyncio
@@ -201,9 +201,9 @@ async def test_batch_add_plants_individual_error(
     ]
 
     # 1st add raises error
-    mock_coordinator.async_add_plant.side_effect = GrowspaceError("Test Error")
+    mock_coordinator.services.add_plant.side_effect = GrowspaceError("Test Error")
 
     await handle_add_plants(hass, mock_coordinator, mock_strain_library, call)
 
     # Should stop after first failure
-    assert mock_coordinator.async_add_plant.call_count == 1
+    assert mock_coordinator.services.add_plant.call_count == 1

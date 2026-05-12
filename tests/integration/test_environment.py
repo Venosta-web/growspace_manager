@@ -67,7 +67,7 @@ async def test_handle_configure_environment_success(
         energy_sensors=[],
         electricity_cost_per_kwh=None,
     )
-    mock_coordinator.async_save.assert_called_once()
+    mock_coordinator.async_commit.assert_called_once()
     mock_coordinator.async_refresh.assert_called_once()
 
 
@@ -84,7 +84,7 @@ async def test_handle_configure_environment_missing_growspace(
     with pytest.raises(ServiceValidationError, match="Growspace.*not found"):
         await handle_configure_environment(hass, mock_coordinator, call)
 
-    mock_coordinator.async_save.assert_not_called()
+    mock_coordinator.async_commit.assert_not_called()
 
 
 @pytest.mark.asyncio
@@ -104,7 +104,7 @@ async def test_handle_remove_environment_success(
     await handle_remove_environment(hass, mock_coordinator, call)
 
     assert growspace.environment_config == EnvironmentConfig()
-    mock_coordinator.async_save.assert_called_once()
+    mock_coordinator.async_commit.assert_called_once()
     mock_coordinator.async_refresh.assert_called_once()
 
 
@@ -121,7 +121,7 @@ async def test_handle_remove_environment_missing_growspace(
     with pytest.raises(ServiceValidationError, match="Growspace.*not found"):
         await handle_remove_environment(hass, mock_coordinator, call)
 
-    mock_coordinator.async_save.assert_not_called()
+    mock_coordinator.async_commit.assert_not_called()
 
 
 @pytest.mark.asyncio
@@ -140,7 +140,7 @@ async def test_handle_set_dehumidifier_control_success(
     await handle_set_dehumidifier_control(hass, mock_coordinator, call)
 
     assert growspace.environment_config.control_dehumidifier is True
-    mock_coordinator.async_save.assert_called_once()
+    mock_coordinator.async_commit.assert_called_once()
     mock_coordinator.async_refresh.assert_called_once()
 
 
@@ -157,4 +157,4 @@ async def test_handle_set_dehumidifier_control_missing_growspace(
     with pytest.raises(ServiceValidationError, match="Growspace.*not found"):
         await handle_set_dehumidifier_control(hass, mock_coordinator, call)
 
-    mock_coordinator.async_save.assert_not_called()
+    mock_coordinator.async_commit.assert_not_called()

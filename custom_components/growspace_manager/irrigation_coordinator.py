@@ -205,7 +205,7 @@ class IrrigationCoordinator(BaseIrrigationCoordinator):
         await self._main_coordinator.async_refresh_growspace_data(self._growspace_id)
 
         # Save to custom storage via main coordinator
-        await self._main_coordinator.async_save()
+        await self._main_coordinator.async_commit()
 
         # Notify listeners of update
         self._main_coordinator.async_set_updated_data(self._main_coordinator.data)

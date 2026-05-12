@@ -52,9 +52,10 @@ def patched_set_default_time_zone(time_zone):
 
 dt_util.set_default_time_zone = patched_set_default_time_zone
 
-# Must precede any custom_components import that pulls in fpdf/turbojpeg.
+# Must precede any custom_components import that pulls in fpdf/turbojpeg/ai_task.
 sys.modules["turbojpeg"] = MagicMock()
 sys.modules["fpdf"] = MagicMock()
+sys.modules["homeassistant.components.ai_task"] = MagicMock()
 
 import pytest  # noqa: E402
 

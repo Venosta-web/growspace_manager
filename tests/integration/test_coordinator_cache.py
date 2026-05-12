@@ -1,7 +1,7 @@
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
-from common import create_plant
+from .common import create_plant
 import pytest
 from tests.common import MockConfigEntry
 
@@ -32,6 +32,7 @@ def create_test_coordinator(
     )
     coord.storage_manager = MagicMock()
     coord.storage_manager.async_save = AsyncMock()
+    coord.storage_manager.async_force_save = AsyncMock()
     # Don't mock plant_manager - let real service logic run for cache invalidation tests
     return coord
 

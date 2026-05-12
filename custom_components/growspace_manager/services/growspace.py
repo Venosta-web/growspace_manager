@@ -6,6 +6,11 @@ import logging
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from homeassistant.core import HomeAssistant, ServiceCall
+from homeassistant.exceptions import ServiceValidationError
+import homeassistant.helpers.device_registry as dr
+from homeassistant.util import dt as dt_util
+
 from ..const import (
     ATTR_GROWSPACE_ID,
     ATTR_IMAGES,
@@ -19,19 +24,14 @@ from ..const import (
     GrowspaceService,
 )
 from ..exceptions import GrowspaceError
-from ._definition import ServiceDefinition
-from .utils import handle_service_errors
-from ..strain_library import StrainLibrary
-from homeassistant.core import HomeAssistant, ServiceCall
-from homeassistant.exceptions import ServiceValidationError
-import homeassistant.helpers.device_registry as dr
-from homeassistant.util import dt as dt_util
-
 from ..schemas import (
     ADD_GROWSPACE_SCHEMA,
     REMOVE_GROWSPACE_SCHEMA,
     UPDATE_GROWSPACE_SCHEMA,
 )
+from ..strain_library import StrainLibrary
+from ._definition import ServiceDefinition
+from .utils import handle_service_errors
 
 if TYPE_CHECKING:
     from ..coordinator import GrowspaceCoordinator
@@ -61,7 +61,7 @@ async def handle_add_growspace(
     rows = call.data[ATTR_ROWS]
     plants_per_row = call.data[ATTR_PLANTS_PER_ROW]
 
-    growspace_id = await coordinator.growspace_service.add_growspace(
+    growspace_id = await coordinator.services.add_growspace(
         name=name,
         rows=rows,
         plants_per_row=plants_per_row,
@@ -80,7 +80,7 @@ async def handle_update_growspace(
 ) -> None:
     """Handle update growspace service call."""
     growspace_id = call.data[ATTR_GROWSPACE_ID]
-    await coordinator.growspace_service.update_growspace(
+    await coordinator.services.update_growspace(
         growspace_id=growspace_id,
         name=call.data.get(ATTR_NAME),
         rows=call.data.get(ATTR_ROWS),
@@ -98,7 +98,7 @@ async def handle_remove_growspace(
 ) -> None:
     """Handle remove growspace service call."""
     growspace_id = call.data[ATTR_GROWSPACE_ID]
-    await coordinator.async_remove_growspace(growspace_id)
+    await coordinator.services.remove_growspace(growspace_id)
     _LOGGER.info("Growspace %s removed successfully", growspace_id)
 
 
@@ -126,7 +126,14 @@ async def async_add_growspace_note(
                     image_base64=img_b64,
                 )
                 image_paths.append(f"timeline/{Path(abs_path).name}")
-            except (AttributeError, KeyError, ValueError, ServiceValidationError, GrowspaceError, OSError) as e:
+            except (
+                AttributeError,
+                KeyError,
+                ValueError,
+                ServiceValidationError,
+                GrowspaceError,
+                OSError,
+            ) as e:
                 _LOGGER.error("Failed to save growspace note image: %s", e)
 
     event_data: dict[str, Any] = {

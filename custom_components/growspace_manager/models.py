@@ -180,6 +180,18 @@ class BasePreset(BaseModel):
     min_days_in_stage: int | None = None
     created_at: str = field(default_factory=lambda: dt_util.utcnow().isoformat())
 
+    @classmethod
+    def __pre_deserialize__(cls, d: dict[str, Any]) -> dict[str, Any]:
+        """Handle missing 'id' in legacy data by generating one if necessary."""
+        d = super().__pre_deserialize__(d)
+        if "id" not in d:
+            # If id is missing, use a deterministic one based on name if possible,
+            # or a random one. Using a name-based ID helps maintain consistency
+            # if the same legacy data is loaded multiple times.
+            name = d.get("name", "Legacy Preset")
+            d["id"] = f"legacy_{name.lower().replace(' ', '_')}"
+        return d
+
 
 @dataclass(slots=True)
 class IrrigationStrategy(BaseModel):

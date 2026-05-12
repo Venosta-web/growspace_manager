@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import logging
-from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from homeassistant.components.persistent_notification import (
@@ -52,9 +51,7 @@ from ..const import (
     ATTR_VIGOR,
     ATTR_WET_WEIGHT,
     CANONICAL_ID_MOTHER,
-    CATEGORY_NOTE,
     DATE_FIELDS,
-    EVENT_GROWSPACE_LOG_ENTRY,
     GrowspaceService,
 )
 from ..exceptions import GrowspaceError
@@ -97,7 +94,7 @@ def _resolve_position_conflict(
         return
 
     new_row, new_col = service_data[ATTR_ROW], service_data[ATTR_COL]
-    existing_plants = coordinator.get_growspace_plants(growspace_id)
+    existing_plants = coordinator.services.get_growspace_plants(growspace_id)
     is_occupied = any(
         p.plant_id != plant_id and p.row == new_row and p.col == new_col
         for p in existing_plants
@@ -256,9 +253,9 @@ async def handle_add_plant(
             else None
         )
 
-        # Call coordinator directly, catching validation errors
+        # Call through facade
         try:
-            plant_id = await coordinator.plant_manager.add_plant(
+            plant = await coordinator.services.add_plant(
                 growspace_id=growspace_id,
                 strain=call.data[ATTR_STRAIN],
                 row=row,
@@ -268,6 +265,7 @@ async def handle_add_plant(
                 generation=batch.generation if batch else "",
                 **parsed_dates,  # type: ignore[arg-type]
             )
+            plant_id = plant.plant_id
         except GrowspaceError as err:
             raise ServiceValidationError(str(err)) from err
 
@@ -365,9 +363,9 @@ async def handle_add_plants(
                 # Partial success - just stop adding
                 break
 
-            # Add the plant
+            # Add the plant through facade
             try:
-                await coordinator.plant_manager.add_plant(
+                await coordinator.services.add_plant(
                     growspace_id=growspace_id,
                     strain=strain,
                     row=free_row,
@@ -438,16 +436,16 @@ async def handle_take_clone(
         _LOGGER.error("Mother plant %s does not exist for take_clone", mother_plant_id)
         raise ServiceValidationError(f"Mother plant {mother_plant_id} not found.")
 
-    # Delegate to coordinator
+    # Delegate to facade
     try:
-        clones = await coordinator.async_take_clones(
+        clones = await coordinator.services.take_clones(
             mother_plant_id=mother_plant_id,
             num_clones=num_clones,
             target_growspace_id=target_growspace_id,
             transition_date=transition_date,
         )
         clones_added_count = len(clones)
-    except GrowspaceError as err:
+    except (GrowspaceError, ValueError) as err:
         _LOGGER.error("Failed to take clones from %s: %s", mother_plant_id, err)
         raise ServiceValidationError(str(err)) from err
 
@@ -483,7 +481,7 @@ async def handle_move_clone(
         )
 
     try:
-        await coordinator.async_promote_clone(
+        await coordinator.services.promote_clone(
             clone_id=plant_id,
             target_growspace_id=target_growspace_id,
             transition_date=transition_date,
@@ -563,7 +561,7 @@ async def handle_update_plant(
             # Let's assume we need to ensure it exists.
             await strain_library.add_strain(strain=strain_key, phenotype=pheno_key)
 
-        await coordinator.plant_manager.update_plant(plant_id, **update_data)
+        await coordinator.services.update_plant(plant_id, **update_data)
         _LOGGER.info("Updated plant %s with data: %s", plant_id, update_data)
 
     except (
@@ -594,7 +592,7 @@ async def handle_remove_plant(
 
     try:
         plant_info = coordinator.plants[plant_id]  # Get info before removal
-        await coordinator.async_remove_plant(plant_id)
+        await coordinator.services.remove_plant(plant_id)
         _LOGGER.info(
             "Plant %s removed successfully from growspace %s",
             plant_id,
@@ -635,7 +633,7 @@ async def handle_switch_plants(
         raise ServiceValidationError(f"Plant {plant_id_2} does not exist.")
 
     try:
-        await coordinator.plant_manager.switch_plants(plant_id_1, plant_id_2)
+        await coordinator.services.switch_plants(plant_id_1, plant_id_2)
         _LOGGER.info("Plants %s and %s switched successfully", plant_id_1, plant_id_2)
 
     except (
@@ -684,7 +682,7 @@ async def handle_move_plant(
         old_row, old_col = plant.row, plant.col
 
         # Check if new position is occupied by another plant
-        existing_plants = coordinator.get_growspace_plants(plant.growspace_id)
+        existing_plants = coordinator.services.get_growspace_plants(plant.growspace_id)
         occupying_plant = None
         for other_plant in existing_plants:
             if (
@@ -696,7 +694,7 @@ async def handle_move_plant(
                 break
 
         if occupying_plant:
-            # Switch positions: move the occupying plant to the original position
+            # Switch positions through facade
             occupying_plant_id = occupying_plant.plant_id
 
             _LOGGER.info(
@@ -710,8 +708,8 @@ async def handle_move_plant(
                 plant.growspace_id,
             )
 
-            # Use the dedicated switch method
-            await coordinator.plant_manager.switch_plants(plant_id, occupying_plant_id)
+            # Use the facade
+            await coordinator.services.switch_plants(plant_id, occupying_plant_id)
 
             _LOGGER.info(
                 "Successfully switched positions for %s and %s",
@@ -719,8 +717,8 @@ async def handle_move_plant(
                 occupying_plant_id,
             )
         else:
-            # Position is empty, just move normally
-            await coordinator.plant_manager.move_plant(plant_id, new_row, new_col)
+            # Position is empty, move through facade
+            await coordinator.services.move_plant(plant_id, new_row, new_col)
             _LOGGER.info(
                 "Plant %s moved to (%d,%d) in growspace %s",
                 plant.strain,
@@ -768,7 +766,7 @@ async def handle_transition_plant_stage(
             )
 
     try:
-        await coordinator.plant_manager.transition_plant_stage(
+        await coordinator.services.transition_plant_stage(
             plant_id=plant_id,
             new_stage=new_stage,
             transition_date=transition_date or None,
@@ -797,33 +795,19 @@ async def handle_harvest_plant(
     call: ServiceCall,
 ) -> dict[str, Any] | None:
     """Handle harvest plant service call."""
-    plant_id = call.data.get(ATTR_PLANT_ID)
-    if not plant_id:
-        _LOGGER.error("Missing plant_id in harvest_plant service call")
-        raise ServiceValidationError("Missing plant_id for harvest_plant.")
-
-    plant_id = _resolve_plant_id(hass, plant_id)
-
-    if not await _ensure_plant_loaded(hass, coordinator, plant_id):
-        return None
+    plant_id_input = call.data.get(ATTR_PLANT_ID)
+    if not plant_id_input:
+        raise ServiceValidationError("Missing plant_id")
+    plant_id = _resolve_plant_id(hass, plant_id_input)
+    await _ensure_plant_loaded(hass, coordinator, plant_id)
 
     target_growspace_id = call.data.get(ATTR_TARGET_GROWSPACE_ID)
     transition_date_str = call.data.get(ATTR_TRANSITION_DATE)
     transition_date = None
 
-    # Yield & lab fields (all optional)
-    wet_weight: float | None = call.data.get(ATTR_WET_WEIGHT)
-    dry_weight: float | None = call.data.get(ATTR_DRY_WEIGHT)
-    trim_weight: float | None = call.data.get(ATTR_TRIM_WEIGHT)
-    thc_percentage: float | None = call.data.get(ATTR_THC_PERCENTAGE)
-    cbd_percentage: float | None = call.data.get(ATTR_CBD_PERCENTAGE)
-    terpene_profile: str | None = call.data.get(ATTR_TERPENE_PROFILE)
-
     if transition_date_str:
-        transition_date_dt = parse_date_field(transition_date_str)
-        if transition_date_dt:
-            transition_date = transition_date_dt.date()
-        else:
+        transition_date = parse_date_field(transition_date_str)
+        if not transition_date:
             _LOGGER.warning(
                 "Could not parse transition_date string: %s", transition_date_str
             )
@@ -832,24 +816,26 @@ async def handle_harvest_plant(
             )
 
     try:
-        await coordinator.async_harvest_plant(
+        await coordinator.services.harvest_plant(
             plant_id=plant_id,
             target_growspace_id=target_growspace_id,
-            target_growspace_name=None,
-            transition_date=transition_date.isoformat() if transition_date else None,
-            wet_weight=wet_weight,
-            dry_weight=dry_weight,
-            trim_weight=trim_weight,
-            thc_percentage=thc_percentage,
-            cbd_percentage=cbd_percentage,
-            terpene_profile=terpene_profile,
+            transition_date=transition_date.date().isoformat()
+            if transition_date
+            else None,
+            wet_weight=call.data.get(ATTR_WET_WEIGHT),
+            dry_weight=call.data.get(ATTR_DRY_WEIGHT),
+            trim_weight=call.data.get(ATTR_TRIM_WEIGHT),
+            thc_percentage=call.data.get(ATTR_THC_PERCENTAGE),
+            cbd_percentage=call.data.get(ATTR_CBD_PERCENTAGE),
+            terpene_profile=call.data.get(ATTR_TERPENE_PROFILE),
         )
-        _LOGGER.info("Plant %s harvested successfully", plant_id)
 
         return {
             ATTR_PLANT_ID: plant_id,
             ATTR_TARGET_GROWSPACE_ID: target_growspace_id,
-            "harvest_date": transition_date.isoformat() if transition_date else None,
+            "harvest_date": transition_date.date().isoformat()
+            if transition_date
+            else None,
         }
 
     except (
@@ -860,130 +846,11 @@ async def handle_harvest_plant(
         GrowspaceError,
     ) as err:
         _LOGGER.exception("Failed to harvest plant %s", plant_id)
-        create_notification(
-            hass,
-            f"Failed to harvest plant {plant_id}: {err!s}",
-            title="Growspace Manager Error",
-        )
         if isinstance(err, ServiceValidationError):
             raise
         raise ServiceValidationError(
             f"Failed to harvest plant {plant_id}: {err}"
         ) from err
-
-
-async def async_add_timeline_note(
-    hass: HomeAssistant,
-    coordinator: GrowspaceCoordinator,
-    strain_library: StrainLibrary,
-    plant_id: str,
-    notes: str,
-    transition_date_raw: str | None = None,
-    images_base64: list[str] | None = None,
-    tags: list[str] | None = None,
-    ph: float | None = None,
-    ec: float | None = None,
-    amount_ml: float | None = None,
-    external_metadata: dict[str, Any] | None = None,
-) -> None:
-    """Add a timeline note to a plant (logic only)."""
-    if images_base64 is None:
-        images_base64 = []
-    if tags is None:
-        tags = []
-    if external_metadata is None:
-        external_metadata = {}
-
-    plant_id = _resolve_plant_id(hass, plant_id)
-    await _ensure_plant_loaded(hass, coordinator, plant_id)
-
-    plant = coordinator.plants[plant_id]
-    growspace_id = plant.growspace_id
-
-    # 1. Fetch current sensor snapshot
-    metadata = {}
-    if growspace := coordinator.growspaces.get(growspace_id):
-        env_config = growspace.environment_config
-
-        def _get_state(entity_id: str | None) -> float | None:
-            if not entity_id:
-                return None
-            state = hass.states.get(entity_id)
-            try:
-                if state and state.state not in ("unknown", "unavailable"):
-                    return float(state.state)
-            except (ValueError, TypeError):
-                pass
-            return None
-
-        metadata.update(
-            {
-                "temperature": _get_state(env_config.temperature_sensor),
-                "humidity": _get_state(env_config.humidity_sensor),
-                "vpd": _get_state(env_config.vpd_sensor),
-                "soil_moisture": _get_state(env_config.soil_moisture_sensor),
-                "light_intensity": _get_state(env_config.light_sensor),
-            }
-        )
-
-    # Add optional action data to metadata
-    if ph is not None:
-        metadata["ph"] = ph
-    if ec is not None:
-        metadata["ec"] = ec
-    if amount_ml is not None:
-        metadata["amount_ml"] = amount_ml
-
-    # Merge with external metadata (if any)
-    metadata.update(external_metadata)
-
-    # 2. Process images
-    image_paths = []
-    failed_images = 0
-    if images_base64 and strain_library.image_manager:
-        for img_b64 in images_base64:
-            try:
-                # save_timeline_image returns the absolute path, we want relative for frontend
-                abs_path = await strain_library.image_manager.save_timeline_image(
-                    plant_id=plant_id,
-                    image_base64=img_b64,
-                    timestamp=transition_date_raw,
-                )
-                # Convert to relative path: timeline/filename.webp
-                image_paths.append(f"timeline/{Path(abs_path).name}")
-            except (
-                AttributeError,
-                KeyError,
-                ValueError,
-                ServiceValidationError,
-                GrowspaceError,
-                Exception,
-            ) as e:
-                failed_images += 1
-                _LOGGER.error("Failed to save timeline image: %s", e)
-        if failed_images:
-            _LOGGER.warning(
-                "%d of %d images failed to save for plant %s timeline entry",
-                failed_images,
-                len(images_base64),
-                plant_id,
-            )
-
-    # 3. Fire event for persistence
-    event_data = {
-        ATTR_PLANT_ID: plant_id,
-        "growspace_id": growspace_id,
-        ATTR_NOTES: notes,
-        ATTR_TAGS: tags,
-        ATTR_METADATA: metadata,
-        ATTR_IMAGES: image_paths,
-        "category": CATEGORY_NOTE,
-    }
-
-    event_data["timestamp"] = transition_date_raw or dt_util.now().isoformat()
-
-    hass.bus.async_fire(EVENT_GROWSPACE_LOG_ENTRY, event_data)
-    _LOGGER.info("Added timeline note for plant %s", plant_id)
 
 
 async def handle_add_timeline_note(
@@ -993,13 +860,13 @@ async def handle_add_timeline_note(
     call: ServiceCall,
 ) -> None:
     """Handle adding a timeline note to a plant."""
-    await async_add_timeline_note(
-        hass,
-        coordinator,
-        strain_library,
-        plant_id=call.data[ATTR_PLANT_ID],
+    plant_id = _resolve_plant_id(hass, call.data[ATTR_PLANT_ID])
+    await _ensure_plant_loaded(hass, coordinator, plant_id)
+
+    await coordinator.services.add_timeline_note(
+        plant_id=plant_id,
         notes=call.data[ATTR_NOTES],
-        transition_date_raw=call.data.get(ATTR_TRANSITION_DATE),
+        timestamp=call.data.get(ATTR_TRANSITION_DATE),
         images_base64=call.data.get(ATTR_IMAGES, []),
         tags=call.data.get(ATTR_TAGS, []),
         ph=call.data.get(ATTR_PH),
@@ -1016,36 +883,16 @@ async def handle_score_plant(
     call: ServiceCall,
 ) -> None:
     """Handle the score_plant service call."""
-    plant_id = call.data[ATTR_PLANT_ID]
+    plant_id = _resolve_plant_id(hass, call.data[ATTR_PLANT_ID])
     await _ensure_plant_loaded(hass, coordinator, plant_id)
 
-    plant = coordinator.plants.get(plant_id)
-    if plant is None:
-        raise ServiceValidationError(f"Plant {plant_id} not found")
-
-    # Map legacy attr names → new PhenotypeScore fields (partial update)
-    ps = plant.phenotype_score
-    if ATTR_VIGOR in call.data:
-        ps.vigor = call.data[ATTR_VIGOR]
-    if ATTR_STRUCTURE in call.data:
-        ps.internodal_spacing = call.data[ATTR_STRUCTURE]
-    if ATTR_AROMA in call.data:
-        ps.terpene_intensity = call.data[ATTR_AROMA]
-    if ATTR_RESIN in call.data:
-        ps.resin = call.data[ATTR_RESIN]
-    if ATTR_PEST_RESISTANCE in call.data:
-        ps.mold_resistance = call.data[ATTR_PEST_RESISTANCE]
-
-    await coordinator.plant_manager.update_plant(plant_id, phenotype_score=ps)
-
-    _LOGGER.info(
-        "Plant %s phenotype scored: vigor=%s internodal=%s terpenes=%s resin=%s mold_res=%s",
-        plant_id,
-        ps.vigor,
-        ps.internodal_spacing,
-        ps.terpene_intensity,
-        ps.resin,
-        ps.mold_resistance,
+    await coordinator.services.score_plant(
+        plant_id=plant_id,
+        vigor=call.data.get(ATTR_VIGOR),
+        structure=call.data.get(ATTR_STRUCTURE),
+        aroma=call.data.get(ATTR_AROMA),
+        resin=call.data.get(ATTR_RESIN),
+        pest_resistance=call.data.get(ATTR_PEST_RESISTANCE),
     )
 
 
@@ -1056,40 +903,18 @@ async def handle_update_harvest_metrics(
     call: ServiceCall,
 ) -> None:
     """Handle the update_harvest_metrics service call."""
-    plant_id = call.data[ATTR_PLANT_ID]
+    plant_id = _resolve_plant_id(hass, call.data[ATTR_PLANT_ID])
     await _ensure_plant_loaded(hass, coordinator, plant_id)
 
-    plant = coordinator.plants.get(plant_id)
-    if plant is None:
-        raise ServiceValidationError(f"Plant {plant_id} not found")
-
-    metrics = plant.harvest_metrics
-    updated = False
-
-    for attr in (
-        ATTR_WET_WEIGHT,
-        ATTR_DRY_WEIGHT,
-        ATTR_TRIM_WEIGHT,
-        ATTR_THC_PERCENTAGE,
-        ATTR_CBD_PERCENTAGE,
-        ATTR_TERPENE_PROFILE,
-    ):
-        if attr in call.data:
-            setattr(metrics, attr, call.data[attr])
-            updated = True
-
-    if updated:
-        await coordinator.plant_manager.update_plant(plant_id, harvest_metrics=metrics)
-        _LOGGER.info(
-            "Plant %s harvest metrics updated: wet=%s dry=%s trim=%s thc=%s cbd=%s terpene=%s",
-            plant_id,
-            metrics.wet_weight,
-            metrics.dry_weight,
-            metrics.trim_weight,
-            metrics.thc_percentage,
-            metrics.cbd_percentage,
-            metrics.terpene_profile,
-        )
+    await coordinator.services.update_harvest_metrics(
+        plant_id=plant_id,
+        wet_weight=call.data.get(ATTR_WET_WEIGHT),
+        dry_weight=call.data.get(ATTR_DRY_WEIGHT),
+        trim_weight=call.data.get(ATTR_TRIM_WEIGHT),
+        thc_percentage=call.data.get(ATTR_THC_PERCENTAGE),
+        cbd_percentage=call.data.get(ATTR_CBD_PERCENTAGE),
+        terpene_profile=call.data.get(ATTR_TERPENE_PROFILE),
+    )
 
 
 SERVICES: list[ServiceDefinition] = [

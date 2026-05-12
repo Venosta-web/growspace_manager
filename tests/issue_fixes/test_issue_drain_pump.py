@@ -17,7 +17,7 @@ def mock_coordinator(hass: HomeAssistant):
     coordinator = MagicMock()
     coordinator.hass = hass
     coordinator.growspaces = {}
-    coordinator.async_update_irrigation_config = AsyncMock()
+    coordinator.services.update_irrigation_config = AsyncMock()
     # Mocking get_sorted_growspace_options is needed for step_select_growspace
     coordinator.get_sorted_growspace_options = MagicMock(
         return_value=[("gs1", "Test Growspace")]
@@ -69,8 +69,8 @@ async def test_irrigation_config_optional_drain_pump(
     await handler.async_step_irrigation_overview(user_input)
 
     # Verification
-    mock_coordinator.async_update_irrigation_config.assert_called_once()
-    call_args = mock_coordinator.async_update_irrigation_config.call_args
+    mock_coordinator.services.update_irrigation_config.assert_called_once()
+    call_args = mock_coordinator.services.update_irrigation_config.call_args
     growspace_id, data = call_args[0]
 
     assert growspace_id == "gs1"
@@ -116,8 +116,8 @@ async def test_irrigation_config_omitted_drain_pump(
     await handler.async_step_irrigation_overview(user_input)
 
     # Verification
-    mock_coordinator.async_update_irrigation_config.assert_called_once()
-    call_args = mock_coordinator.async_update_irrigation_config.call_args
+    mock_coordinator.services.update_irrigation_config.assert_called_once()
+    call_args = mock_coordinator.services.update_irrigation_config.call_args
     _, data = call_args[0]
 
     # Coordinator logic:
@@ -186,8 +186,8 @@ async def test_irrigation_config_empty_string_drain_pump(
     await handler.async_step_irrigation_overview(user_input)
 
     # Verification
-    mock_coordinator.async_update_irrigation_config.assert_called_once()
-    call_args = mock_coordinator.async_update_irrigation_config.call_args
+    mock_coordinator.services.update_irrigation_config.assert_called_once()
+    call_args = mock_coordinator.services.update_irrigation_config.call_args
     _, _data = call_args[0]
 
     # This assumes the coordinator normalization logic works on the input dictionary inplace

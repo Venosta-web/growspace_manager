@@ -1,6 +1,6 @@
 """Tests for Growspace Manager events."""
 
-from common import create_plant
+from .common import create_plant
 
 from custom_components.growspace_manager.events import (
     EVENT_CLONES_TAKEN,

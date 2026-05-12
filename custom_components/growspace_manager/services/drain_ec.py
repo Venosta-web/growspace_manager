@@ -49,7 +49,7 @@ async def handle_log_drain_reading(
     drain_volume_ml: float | None = call.data.get(ATTR_DRAIN_VOLUME_ML)
     feed_volume_ml: float | None = call.data.get(ATTR_FEED_VOLUME_ML)
 
-    await coordinator.async_log_drain_reading(
+    await coordinator.growspace_manager.async_log_drain_reading(
         growspace_id=growspace_id,
         feed_ec=feed_ec,
         drain_ec=drain_ec,
@@ -83,7 +83,7 @@ async def handle_configure_drain_monitoring(
     max_ec_delta: float | None = call.data.get(ATTR_MAX_EC_DELTA)
     target_runoff_percent: float | None = call.data.get(ATTR_TARGET_RUNOFF_PERCENT)
 
-    await coordinator.async_configure_drain_monitoring(
+    await coordinator.growspace_manager.async_configure_drain_monitoring(
         growspace_id=growspace_id,
         enabled=enabled,
         max_ec_delta=max_ec_delta,

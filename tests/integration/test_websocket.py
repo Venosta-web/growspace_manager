@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 import json
 from typing import Any
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -53,7 +53,20 @@ def mock_strain_library():
 def mock_coordinator():
     """Mock coordinator."""
     coord = MagicMock()
-    coord.get_growspace_data.return_value = {"id": "gs1", "name": "Growspace 1"}
+    # Correctly mock services.get_growspace_data to return serializable data
+    coord.services = MagicMock()
+    coord.services.get_growspace_data.return_value = {"id": "gs1", "name": "Growspace 1"}
+
+    # WebSocket handlers await these service calls
+    coord.services.add_timeline_note = AsyncMock()
+    coord.services.add_subarea = AsyncMock()
+    coord.services.update_subarea = AsyncMock()
+    coord.services.remove_subarea = AsyncMock()
+
+    # Coordinator level awaitables
+    coord.async_commit = AsyncMock()
+    coord.async_request_refresh = AsyncMock()
+
     return coord
 
 
@@ -472,9 +485,6 @@ async def test_websocket_timeline_notes(
             "custom_components.growspace_manager.websocket.GrowspaceCoordinator.get_for_service_call",
             return_value=mock_coordinator,
         ),
-        patch(
-            "custom_components.growspace_manager.websocket.async_add_timeline_note"
-        ) as mock_add,
     ):
         async_register_websocket_api(hass)
         client = await hass_ws_client(hass)
@@ -489,7 +499,7 @@ async def test_websocket_timeline_notes(
         )
         response = await client.receive_json()
         assert response["success"]
-        mock_add.assert_called_once()
+        mock_coordinator.services.add_timeline_note.assert_called_once()
 
 
 async def test_websocket_remove_timeline_event(

@@ -1,6 +1,6 @@
 """Tests for the Growspace Manager DataRepository."""
 
-from common import create_plant
+from .common import create_plant
 import pytest
 
 from custom_components.growspace_manager.data_access.growspace_repository import (

@@ -142,7 +142,7 @@ async def handle_export_strain_library(
 
         _LOGGER.info("Exported strain library to %s (web: %s)", zip_path, relative_path)
 
-        await coordinator.async_save()
+        await coordinator.async_commit()
 
         hass.bus.async_fire(
             f"{DOMAIN}_strain_library_exported",
@@ -449,7 +449,7 @@ async def handle_clear_strain_library(
         cleared_count = await strain_library.clear()
 
         _LOGGER.info("Cleared %s strains from library", cleared_count)
-        await coordinator.async_save()
+        await coordinator.async_commit()
         await coordinator.async_request_refresh()
 
         hass.bus.async_fire(

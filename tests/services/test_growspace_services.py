@@ -36,7 +36,7 @@ def obsolete_mock_coordinator():
     """Fixture for a mock GrowspaceCoordinator instance."""
     coordinator = MagicMock(spec=GrowspaceCoordinator)
     coordinator.growspace_manager.add_growspace = AsyncMock(return_value="gs1")
-    coordinator.async_remove_growspace = AsyncMock()
+    coordinator.services.remove_growspace = AsyncMock()
     # Mock growspaces dict
     mock_gs = MagicMock()
     mock_gs.name = "Test Growspace"
@@ -174,9 +174,7 @@ async def test_handle_add_growspace_exception(
     )
     mock_async_get.return_value.devices = {}
 
-    with pytest.raises(
-        ServiceValidationError, match="Operation failed: Add failed"
-    ):
+    with pytest.raises(ServiceValidationError, match="Operation failed: Add failed"):
         await handle_add_growspace(
             mock_hass, mock_coordinator, mock_strain_library, mock_call
         )
@@ -191,8 +189,7 @@ async def test_handle_remove_growspace(
 
     await handle_remove_growspace(mock_hass, mock_coordinator, mock_call)
 
-    mock_coordinator.async_remove_growspace.assert_awaited_once_with("gs1")
-    mock_coordinator.async_remove_growspace.assert_awaited_once_with("gs1")
+    mock_coordinator.services.remove_growspace.assert_awaited_once_with("gs1")
     mock_hass.bus.async_fire.assert_not_called()
 
 
@@ -205,11 +202,9 @@ async def test_handle_remove_growspace_exception(
 ) -> None:
     """Test handle_remove_growspace with an exception."""
     mock_call.data = {"growspace_id": "gs1"}
-    mock_coordinator.async_remove_growspace.side_effect = Exception("Remove failed")
+    mock_coordinator.services.remove_growspace.side_effect = Exception("Remove failed")
 
-    with pytest.raises(
-        ServiceValidationError, match="Operation failed: Remove failed"
-    ):
+    with pytest.raises(ServiceValidationError, match="Operation failed: Remove failed"):
         await handle_remove_growspace(mock_hass, mock_coordinator, mock_call)
 
 
@@ -391,9 +386,7 @@ async def test_handle_update_growspace_exception(
         "Update failed"
     )
 
-    with pytest.raises(
-        ServiceValidationError, match="Operation failed: Update failed"
-    ):
+    with pytest.raises(ServiceValidationError, match="Operation failed: Update failed"):
         await handle_update_growspace(
             mock_hass, mock_coordinator, mock_strain_library, mock_call
         )
@@ -427,7 +420,9 @@ async def test_handle_remove_growspace_growspace_error(
 ) -> None:
     """Test handle_remove_growspace with a GrowspaceError."""
     mock_call.data = {"growspace_id": "gs1"}
-    mock_coordinator.async_remove_growspace.side_effect = GrowspaceError("Remove error")
+    mock_coordinator.services.remove_growspace.side_effect = GrowspaceError(
+        "Remove error"
+    )
 
     with pytest.raises(ServiceValidationError, match="Remove error"):
         await handle_remove_growspace(mock_hass, mock_coordinator, mock_call)

@@ -119,7 +119,7 @@ class EnvironmentConfigHandler(BaseConfigHandler[dict[str, Any]]):
         except AbortFlow as e:
             return self.flow.async_abort(reason=e.reason)
 
-        growspace_options = coordinator.growspace_service.get_sorted_growspace_options()
+        growspace_options = coordinator.services.get_sorted_growspace_options()
 
         if not growspace_options:
             return self.flow.async_abort(reason="no_growspaces")
@@ -152,7 +152,7 @@ class EnvironmentConfigHandler(BaseConfigHandler[dict[str, Any]]):
         except AbortFlow as e:
             return self.flow.async_abort(reason=e.reason)
         growspace_id = self.flow.selected_growspace_id
-        growspace = coordinator.growspaces.get(growspace_id)
+        growspace = coordinator.services.get_growspace(growspace_id)
 
         if not growspace:
             return self.flow.async_abort(reason="growspace_not_found")
@@ -342,7 +342,7 @@ class EnvironmentConfigHandler(BaseConfigHandler[dict[str, Any]]):
         except AbortFlow as e:
             return self.flow.async_abort(reason=e.reason)
         growspace_id = self.flow.selected_growspace_id
-        growspace = coordinator.growspaces.get(growspace_id)
+        growspace = coordinator.services.get_growspace(growspace_id)
 
         if not growspace:
             return self.flow.async_abort(reason="growspace_not_found")
@@ -394,7 +394,7 @@ class EnvironmentConfigHandler(BaseConfigHandler[dict[str, Any]]):
         except AbortFlow as e:
             return self.flow.async_abort(reason=e.reason)
         growspace_id = self.flow.selected_growspace_id
-        growspace = coordinator.growspaces.get(growspace_id)
+        growspace = coordinator.services.get_growspace(growspace_id)
 
         if not growspace:
             return self.flow.async_abort(reason="growspace_not_found")
@@ -423,7 +423,7 @@ class EnvironmentConfigHandler(BaseConfigHandler[dict[str, Any]]):
 
                 self.flow.env_config_step1 = env_config
 
-            except ValueError, SyntaxError, TypeError:
+            except (ValueError, SyntaxError, TypeError):
                 _LOGGER.warning("Invalid tuple format submitted", exc_info=True)
                 return self.flow.async_show_form(
                     step_id="configure_advanced_bayesian",
@@ -451,7 +451,7 @@ class EnvironmentConfigHandler(BaseConfigHandler[dict[str, Any]]):
         except AbortFlow as e:
             return self.flow.async_abort(reason=e.reason)
         growspace_id = self.flow.selected_growspace_id
-        growspace = coordinator.growspaces.get(growspace_id)
+        growspace = coordinator.services.get_growspace(growspace_id)
 
         if not growspace:
             return self.flow.async_abort(reason="growspace_not_found")
@@ -651,7 +651,7 @@ class EnvironmentConfigHandler(BaseConfigHandler[dict[str, Any]]):
         env_config.pop("configure_dehumidifier", None)
 
         growspace.environment_config = EnvironmentConfig.from_dict(env_config)
-        await coordinator.async_save()
+        await coordinator.async_commit()
         await coordinator.async_refresh()
 
         _LOGGER.info(

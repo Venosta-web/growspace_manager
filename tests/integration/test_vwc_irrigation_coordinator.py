@@ -296,7 +296,7 @@ async def test_custom_day_hours(vwc_coordinator, mock_hass, mock_growspace) -> N
 async def test_setup_unload(vwc_coordinator, mock_hass) -> None:
     """Test async_setup and async_unload."""
     with patch(
-        "custom_components.growspace_manager.vwc_irrigation_coordinator.async_track_time_interval"
+        "custom_components.growspace_manager.vwc_irrigation_coordinator.services.track_time_interval"
     ) as mock_track:
         mock_remove = MagicMock()
         mock_track.return_value = mock_remove

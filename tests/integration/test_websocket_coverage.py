@@ -191,7 +191,7 @@ async def test_websocket_nutrient_inventory_success(
     mock_coord.config_entry = mock_config_entry
     mock_service = MagicMock()
     mock_coord.nutrient_inventory_service = mock_service
-    mock_coord.async_save = AsyncMock()
+    mock_coord.async_commit = AsyncMock()
 
     with patch(
         "custom_components.growspace_manager.coordinator.GrowspaceCoordinator.get_any",
@@ -212,11 +212,11 @@ async def test_websocket_nutrient_inventory_success(
             nutrient_id="n1", name="N1", current_ml=500.0, initial_ml=1000.0
         )
         mock_connection.send_result.assert_called_with(1)
-        mock_coord.async_save.assert_awaited()
+        mock_coord.async_commit.assert_awaited()
 
         # Reset
         mock_connection.reset_mock()
-        mock_coord.async_save.reset_mock()
+        mock_coord.async_commit.reset_mock()
         mock_config_entry.async_create_background_task.reset_mock()
 
 
@@ -227,7 +227,7 @@ async def test_websocket_nutrient_inventory_success(
 
         mock_service.remove_stock.assert_called_with("n1")
         mock_connection.send_result.assert_called_with(2)
-        mock_coord.async_save.assert_awaited()
+        mock_coord.async_commit.assert_awaited()
 
 
 async def test_websocket_add_timeline_note_validation_error(
@@ -236,13 +236,15 @@ async def test_websocket_add_timeline_note_validation_error(
     """Test add_timeline_note handles validation errors."""
     msg = {"id": 1, ATTR_PLANT_ID: "plant1", ATTR_NOTES: "notes"}
 
+    mock_coord = MagicMock()
+    mock_coord.services.add_timeline_note = AsyncMock(
+        side_effect=ServiceValidationError("Invalid Plant")
+    )
+
     with (
         patch(
-            "custom_components.growspace_manager.websocket.GrowspaceCoordinator.get_for_service_call"
-        ),
-        patch(
-            "custom_components.growspace_manager.websocket.async_add_timeline_note",
-            side_effect=ServiceValidationError("Invalid Plant"),
+            "custom_components.growspace_manager.websocket.GrowspaceCoordinator.get_for_service_call",
+            return_value=mock_coord,
         ),
     ):
         # We need mock strain library in hass.data

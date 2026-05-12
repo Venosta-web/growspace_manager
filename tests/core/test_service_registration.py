@@ -120,7 +120,7 @@ async def test_service_wrapper_execution_no_strain_lib(
         )
         await captured_wrapper(call)
 
-        mock_coordinator.async_remove_growspace.assert_called_once_with("gs1")
+        mock_coordinator.services.remove_growspace.assert_called_once_with("gs1")
 
 
 async def test_service_wrapper_error_handling(
@@ -142,7 +142,7 @@ async def test_service_wrapper_error_handling(
     hass.services.async_register.side_effect = capture_register
 
     # Throw the error from the correct async method
-    mock_coordinator.async_remove_growspace = AsyncMock(
+    mock_coordinator.services.remove_growspace = AsyncMock(
         side_effect=GrowspaceError("Test error")
     )
 

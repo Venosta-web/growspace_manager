@@ -2,7 +2,7 @@
 
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from common import create_plant
+from .common import create_plant
 import pytest
 import voluptuous as vol
 

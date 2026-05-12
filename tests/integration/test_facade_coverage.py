@@ -106,7 +106,9 @@ async def test_ipm_management(mock_coordinator) -> None:
     mock_coordinator.ipm_service.async_save_ipm_preset.assert_called_once()
 
     await facade.remove_ipm_preset("preset_1")
-    mock_coordinator.ipm_service.async_remove_ipm_preset.assert_called_once_with("preset_1")
+    mock_coordinator.ipm_service.async_remove_ipm_preset.assert_called_once_with(
+        "preset_1"
+    )
 
     await facade.apply_ipm("preset_1", growspace_id="gs1")
     mock_coordinator.ipm_service.async_apply_ipm.assert_called_once()
@@ -141,15 +143,17 @@ async def test_log_drain_reading(mock_coordinator) -> None:
 async def test_growspace_lifecycle_services(mock_coordinator) -> None:
     """Test growspace management services (remove, options, lights)."""
     facade = ServiceFacade(mock_coordinator)
-    mock_coordinator.async_remove_growspace = AsyncMock()
-    mock_coordinator.async_update_options = AsyncMock()
-    mock_coordinator.async_set_lighting_schedule = AsyncMock()
+    mock_coordinator.services.remove_growspace = AsyncMock()
+    mock_coordinator.services.update_options = AsyncMock()
+    mock_coordinator.services.set_lighting_schedule = AsyncMock()
 
     await facade.remove_growspace("gs1")
-    mock_coordinator.async_remove_growspace.assert_called_once_with("gs1")
+    mock_coordinator.services.remove_growspace.assert_called_once_with("gs1")
 
     await facade.update_options({"opt": "val"})
-    mock_coordinator.async_update_options.assert_called_once_with({"opt": "val"})
+    mock_coordinator.services.update_options.assert_called_once_with({"opt": "val"})
 
     await facade.async_set_lighting_schedule("gs1", 12, 12, 12)
-    mock_coordinator.async_set_lighting_schedule.assert_called_once_with("gs1", 12, 12, 12)
+    mock_coordinator.services.set_lighting_schedule.assert_called_once_with(
+        "gs1", 12, 12, 12
+    )

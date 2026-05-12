@@ -4,7 +4,7 @@ import asyncio
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
-from test_coordinator import create_test_coordinator
+from .test_coordinator import create_test_coordinator
 
 from homeassistant.core import HomeAssistant
 

@@ -210,7 +210,7 @@ async def test_websocket_add_subarea_generic_error(
     with patch(
         "custom_components.growspace_manager.websocket.GrowspaceCoordinator.get_for_service_call"
     ) as mock_get:
-        mock_get.return_value.async_add_subarea = AsyncMock(side_effect=RuntimeError("fail"))
+        mock_get.return_value.services.add_subarea = AsyncMock(side_effect=RuntimeError("fail"))
         await websocket_add_subarea(hass, mock_connection, msg)
     mock_connection.send_error.assert_called_once_with(9, "unknown_error", "fail")
 
@@ -249,7 +249,7 @@ async def test_websocket_update_subarea_generic_error(
     with patch(
         "custom_components.growspace_manager.websocket.GrowspaceCoordinator.get_for_service_call"
     ) as mock_get:
-        mock_get.return_value.async_update_subarea = AsyncMock(side_effect=RuntimeError("oops"))
+        mock_get.return_value.services.update_subarea = AsyncMock(side_effect=RuntimeError("oops"))
         await websocket_update_subarea(hass, mock_connection, msg)
     mock_connection.send_error.assert_called_once_with(11, "unknown_error", "oops")
 
@@ -278,7 +278,7 @@ async def test_websocket_remove_subarea_generic_error(
     with patch(
         "custom_components.growspace_manager.websocket.GrowspaceCoordinator.get_for_service_call"
     ) as mock_get:
-        mock_get.return_value.async_remove_subarea = AsyncMock(side_effect=RuntimeError("fail"))
+        mock_get.return_value.services.remove_subarea = AsyncMock(side_effect=RuntimeError("fail"))
         await websocket_remove_subarea(hass, mock_connection, msg)
     mock_connection.send_error.assert_called_once_with(13, "unknown_error", "fail")
 
