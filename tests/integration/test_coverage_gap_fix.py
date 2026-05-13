@@ -711,35 +711,25 @@ async def test_promote_clone_custom_target(hass: HomeAssistant) -> None:
     # 1. Initialize a real coordinator
     coordinator = GrowspaceCoordinator(hass, MagicMock())
 
-    # 2. Setup standard AsyncMocks for anything awaited
+    # 2. Setup standard AsyncMock
     mock_update = AsyncMock()
     coordinator.services.save = AsyncMock()
 
-    # 3. DEEP INJECTION: Manually override the methods on EVERY instance
-    # This ensures that even if the facade has a 'stale' reference to a manager,
-    # the method itself is replaced.
-    coordinator.async_update_plant = mock_update
-    if hasattr(coordinator, "lifecycle_manager"):
-        coordinator.lifecycle_manager.async_update_plant = mock_update
+    # 3. DEEP INJECTION: Override BOTH names on the manager instance
+    # This is critical because promote_clone calls self.update_plant internally.
     if hasattr(coordinator, "plant_manager"):
-        coordinator.plant_manager.async_update_plant = mock_update
+        pm = coordinator.plant_manager
+        pm.update_plant = mock_update
+        pm.async_update_plant = mock_update
 
-    # Check if the facade has its own internal references to managers
-    # (Update these attribute names based on your actual facade implementation)
-    for attr in dir(coordinator.services):
-        if "manager" in attr:
-            mgr = getattr(coordinator.services, attr)
-            if hasattr(mgr, "async_update_plant"):
-                mgr.async_update_plant = mock_update
-
-    # 4. Prepare data
+    # 4. Prepare real objects for source and target
     plant = create_plant(
         plant_id="p1", growspace_id="clone_room", stage=PlantStage.CLONE
     )
     source_gs = Growspace(id="clone_room", name="Clone Room")
     target_gs = Growspace(id="custom_room", name="Custom Room")
 
-    # 5. SATURATION MOCKING for lookups
+    # 5. SATURATION MOCKING for lookups (to bypass guard clauses in managers)
     def get_gs_side_effect(gs_id):
         if gs_id == "clone_room":
             return source_gs
@@ -747,14 +737,16 @@ async def test_promote_clone_custom_target(hass: HomeAssistant) -> None:
             return target_gs
         return None
 
+    # Replace methods on all objects the logic might use
     for obj in [coordinator, coordinator.data_repository, coordinator.services]:
         obj.get_growspace = MagicMock(side_effect=get_gs_side_effect)
         obj.get_plant = MagicMock(return_value=plant)
 
+    # Populate real dictionaries (Setters update the repository automatically)
     coordinator.plants = {"p1": plant}
     coordinator.growspaces = {"clone_room": source_gs, "custom_room": target_gs}
 
-    # 6. Execute
+    # 6. Execute through the facade
     with patch.object(
         coordinator.validator, "find_first_available_position", return_value=(1, 1)
     ):
@@ -762,8 +754,10 @@ async def test_promote_clone_custom_target(hass: HomeAssistant) -> None:
             "p1", target_growspace_id="custom_room"
         )
 
-    # 7. Final Check
+    # 7. Final Check - This should now be True!
     assert mock_update.called
+    # Extra credit: verify it passed the correct destination
+    assert mock_update.call_args[1]["growspace_id"] == "custom_room"
 
 
 async def test_resolve_entity_id_special_detected(hass: HomeAssistant) -> None:
