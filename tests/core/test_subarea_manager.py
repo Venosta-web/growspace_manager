@@ -60,6 +60,12 @@ async def test_update_subarea(manager: GrowspaceManager) -> None:
 
 
 @pytest.mark.asyncio
+async def test_update_subarea_unknown_growspace(manager: GrowspaceManager) -> None:
+    with pytest.raises(GrowspaceNotFoundError):
+        await manager.update_subarea("no_such_gs", "any_id", {})
+
+
+@pytest.mark.asyncio
 async def test_update_subarea_not_found(manager: GrowspaceManager) -> None:
     with pytest.raises(ServiceValidationError):
         await manager.update_subarea("gs1", "bad_id", {})
@@ -71,6 +77,12 @@ async def test_remove_subarea(manager: GrowspaceManager) -> None:
     await manager.remove_subarea("gs1", sub.id)
     assert manager.repository.growspaces["gs1"].subareas == []
     manager.save_callback.assert_awaited()
+
+
+@pytest.mark.asyncio
+async def test_remove_subarea_unknown_growspace(manager: GrowspaceManager) -> None:
+    with pytest.raises(GrowspaceNotFoundError):
+        await manager.remove_subarea("no_such_gs", "any_id")
 
 
 @pytest.mark.asyncio
