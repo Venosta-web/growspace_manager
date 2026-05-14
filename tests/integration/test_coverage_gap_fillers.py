@@ -24,6 +24,7 @@ from custom_components.growspace_manager.services.plant import handle_add_plants
 from custom_components.growspace_manager.websocket import _merge_logbook_event
 from homeassistant.const import STATE_UNKNOWN
 from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import HomeAssistantError
 
 
 async def test_add_plants_with_base_phenotype(hass: HomeAssistant) -> None:
@@ -203,7 +204,7 @@ async def test_dehumidifier_coordinator_control_exceptions(hass: HomeAssistant) 
     # Test 2: Exception handling
     coordinator.dehumidifier_entities = ["switch.valid"]
     with patch(
-        "homeassistant.core.ServiceRegistry.async_call", side_effect=Exception("Boom")
+        "homeassistant.core.ServiceRegistry.async_call", side_effect=HomeAssistantError("Boom")
     ) as mock_call:
         # Should not raise
         await coordinator._control_dehumidifier(True)

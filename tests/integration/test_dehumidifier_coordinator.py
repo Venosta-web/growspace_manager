@@ -20,6 +20,7 @@ from homeassistant.const import (
     STATE_UNAVAILABLE,
 )
 from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import HomeAssistantError
 
 
 @pytest.fixture
@@ -594,7 +595,7 @@ async def test_control_device_exception(
     coordinator, mock_hass, caplog: pytest.LogCaptureFixture
 ) -> None:
     """Test exception handling in _control_dehumidifier."""
-    mock_hass.services.async_call.side_effect = Exception("Service failure")
+    mock_hass.services.async_call.side_effect = HomeAssistantError("Service failure")
 
     with caplog.at_level(logging.WARNING):
         await coordinator._control_dehumidifier(True)

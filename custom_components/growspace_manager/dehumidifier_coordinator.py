@@ -16,7 +16,7 @@ from homeassistant.const import (
     STATE_UNKNOWN,
 )
 from homeassistant.core import HomeAssistant
-from homeassistant.exceptions import ServiceValidationError
+from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.event import async_track_state_change_event
 from homeassistant.util import dt as dt_util
 
@@ -28,7 +28,6 @@ from .const import (
 )
 from .domain import calculate_days_in_stage
 from .domain.stage import DEFAULT_FLOWER_EARLY_DAYS, FLOWER_LATE_MIN_DAYS
-from .exceptions import GrowspaceError
 from .models import GrowspaceEvent
 
 if TYPE_CHECKING:
@@ -368,14 +367,7 @@ class DehumidifierCoordinator:
                     {ATTR_ENTITY_ID: entity_id},
                     blocking=False,  # Use non-blocking to speed up
                 )
-            except (
-                AttributeError,
-                KeyError,
-                ValueError,
-                ServiceValidationError,
-                GrowspaceError,
-                Exception,
-            ):
+            except (HomeAssistantError, TimeoutError):
                 _LOGGER.warning("Failed to control device %s", entity_id, exc_info=True)
 
         # Update timestamps for short-cycling prevention

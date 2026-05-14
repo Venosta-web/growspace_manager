@@ -39,6 +39,9 @@ async def test_evaluate_humidity_risk_branches(mock_sensor) -> None:
     state.clone_days = -1
     state.veg_days = -1
     state.flower_days = 43  # Late flower
+    state.dry_days = -1
+    state.cure_days = -1
+    state.mother_days = -1
 
     # Late flower critical humidity is 65.0, high is 60.0
     # 87.0 is way above critical
@@ -68,6 +71,9 @@ async def test_evaluate_circulation_risk_branches(mock_sensor) -> None:
     state.clone_days = -1
     state.veg_days = -1
     state.flower_days = -1
+    state.dry_days = -1
+    state.cure_days = -1
+    state.mother_days = -1
 
     # 1. Early stage threshold (Acclimation: 100.0)
     state.seedling_days = 1
@@ -106,6 +112,9 @@ async def test_evaluate_humidifier_risk_branches(mock_sensor) -> None:
     state.clone_days = -1
     state.veg_days = -1
     state.flower_days = -1
+    state.dry_days = -1
+    state.cure_days = -1
+    state.mother_days = -1
 
     # 1. Early stage safe zone (< 90)
     state.seedling_days = 1

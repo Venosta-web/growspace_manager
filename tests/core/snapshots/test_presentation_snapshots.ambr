@@ -11,6 +11,7 @@
     ]),
     'circulation_fan_entities': list([
     ]),
+    'cure_week': 0,
     'daily_avg_hum': 55.0,
     'daily_avg_temp': 24.5,
     'dehumidifier_entities': list([
@@ -31,6 +32,7 @@
     'drain_pump_state': None,
     'drain_volume_sensors': list([
     ]),
+    'dry_week': 0,
     'electricity_cost_per_kwh': 0.0,
     'energy_sensors': list([
     ]),
@@ -136,6 +138,8 @@
     ]),
     'light_sensors': list([
     ]),
+    'max_cure_days': 0,
+    'max_dry_days': 0,
     'max_flower_days': -1,
     'max_stage_summary': 'Veg: 15d (W3), Flower: -1d (W0)',
     'max_veg_days': 15,
