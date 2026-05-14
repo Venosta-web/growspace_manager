@@ -8,6 +8,10 @@ from custom_components.growspace_manager.const import CONF_AI_ENABLED, CONF_ASSI
 from custom_components.growspace_manager.models import EnvironmentConfig, Growspace
 from custom_components.growspace_manager.services.ai_assistant import (
     GrowAssistant,
+    _analyze_growspace_issues,
+    _build_facility_summary,
+    _build_recommendation_prompt,
+    _build_strain_performance_summary,
     handle_analyze_all_growspaces,
     handle_ask_grow_advice,
     handle_strain_recommendation,
@@ -365,3 +369,392 @@ async def test_handle_strain_recommendation_exception_path(
         )
         assert "Error getting strain recommendation: Strain Fail" in res["response"]
         assert "AVAILABLE STRAINS" in res["response"]
+
+
+def test_get_ai_settings_enabled_no_agent_id(
+    assistant: GrowAssistant, mock_coordinator: MagicMock
+) -> None:
+    """Test get_ai_settings when AI enabled but no assistant ID configured."""
+    mock_coordinator.options = {"ai_settings": {CONF_AI_ENABLED: True}}
+    result = assistant.get_ai_settings()
+    assert result is None
+
+
+def test_get_strain_specific_context_empty_plants(assistant: GrowAssistant) -> None:
+    """Test _get_strain_specific_context returns empty string for empty plants."""
+    result = assistant._get_strain_specific_context([])
+    assert result == ""
+
+
+def test_format_analysis_data_all_active(assistant: GrowAssistant) -> None:
+    """Test _format_analysis_data with stress, mold risk, and optimal all active."""
+    analysis = {
+        "stress": {"active": True, "reasons": ["High temp", "Low humidity"]},
+        "mold_risk": {"active": True, "reasons": ["Humid canopy"]},
+        "optimal": {"active": True, "reasons": []},
+    }
+    lines = assistant._format_analysis_data(analysis)
+    combined = "\n".join(lines)
+    assert "⚠️ STRESS DETECTED:" in combined
+    assert "High temp" in combined
+    assert "🍄 MOLD RISK DETECTED:" in combined
+    assert "Humid canopy" in combined
+    assert "✅ Optimal conditions achieved" in combined
+
+
+def test_format_plant_data_with_veg_and_flower_days(assistant: GrowAssistant) -> None:
+    """Test _format_plant_data renders veg and flower day lines."""
+    plants = {
+        "count": 2,
+        "strains": ["Kush"],
+        "max_veg_days": 30,
+        "max_flower_days": 49,
+    }
+    lines = assistant._format_plant_data(plants)
+    combined = "\n".join(lines)
+    assert "Max Veg: Day 30" in combined
+    assert "Max Flower: Day 49 (Week 7)" in combined
+
+
+async def test_get_grow_advice_generic_exception_fallback(
+    assistant: GrowAssistant,
+) -> None:
+    """Test get_grow_advice falls back to raw data on generic exception."""
+    with patch(
+        "custom_components.growspace_manager.services.ai_assistant.conversation.async_converse",
+        side_effect=ValueError("unexpected"),
+    ):
+        result = await assistant.get_grow_advice(GROWSPACE_ID, "Query")
+    assert "AI Assistant Error:" in result
+    assert "Raw Data:" in result
+
+
+def test_validate_ai_settings_enabled_no_agent_id(
+    assistant: GrowAssistant, mock_coordinator: MagicMock
+) -> None:
+    """Test _validate_ai_settings raises when AI enabled but no agent ID."""
+    mock_coordinator.options = {"ai_settings": {CONF_AI_ENABLED: True}}
+    with pytest.raises(ServiceValidationError, match="no assistant ID selected"):
+        assistant._validate_ai_settings(None)
+
+
+def test_validate_ai_settings_fallback(
+    assistant: GrowAssistant, mock_coordinator: MagicMock
+) -> None:
+    """Test _validate_ai_settings generic fallback when AI enabled and agent set but still None."""
+    mock_coordinator.options = {
+        "ai_settings": {CONF_AI_ENABLED: True, CONF_ASSISTANT_ID: "agent"}
+    }
+    with pytest.raises(ServiceValidationError, match="invalid or incomplete"):
+        assistant._validate_ai_settings(None)
+
+
+async def test_execute_conversation_empty_agent_id(assistant: GrowAssistant) -> None:
+    """Test _execute_conversation raises when agent_id is empty string."""
+    with pytest.raises(ServiceValidationError, match="AI assistant is not enabled"):
+        await assistant._execute_conversation("prompt", "", 100, GROWSPACE_ID)
+
+
+async def test_execute_conversation_truncates_response(
+    assistant: GrowAssistant,
+) -> None:
+    """Test _execute_conversation truncates response when it exceeds max_length."""
+    long_text = "word " * 100  # 500 chars
+    with patch(
+        "custom_components.growspace_manager.services.ai_assistant.conversation.async_converse"
+    ) as mock_converse:
+        mock_result = MagicMock()
+        mock_result.response.speech = {"plain": {"speech": long_text}}
+        mock_converse.return_value = mock_result
+
+        result = await assistant._execute_conversation("prompt", "agent", 50, GROWSPACE_ID)
+
+    assert len(result) <= 53  # max_length + "..."
+    assert result.endswith("...")
+
+
+async def test_handle_analyze_all_growspaces_no_agent_id(
+    mock_hass, mock_coordinator, mock_strain_library
+) -> None:
+    """Test handle_analyze_all_growspaces returns summary when no agent_id configured."""
+    mock_coordinator.options = {}
+    call = ServiceCall(mock_hass, "gsm", "analyze", {}, context=MagicMock())
+
+    res = await handle_analyze_all_growspaces(
+        mock_hass, mock_coordinator, mock_strain_library, call
+    )
+    assert "AI Assistant not configured" in res["response"]
+    assert "FACILITY OVERVIEW" in res["response"]
+
+
+async def test_handle_analyze_all_growspaces_truncates_response(
+    mock_hass, mock_coordinator, mock_strain_library
+) -> None:
+    """Test handle_analyze_all_growspaces truncates long AI responses."""
+    long_text = "word " * 200
+    call = ServiceCall(mock_hass, "gsm", "analyze", {"max_length": 50}, context=MagicMock())
+
+    with patch(
+        "custom_components.growspace_manager.services.ai_assistant.conversation.async_converse"
+    ) as mock_converse:
+        mock_result = MagicMock()
+        mock_result.response.speech = {"plain": {"speech": long_text}}
+        mock_converse.return_value = mock_result
+
+        res = await handle_analyze_all_growspaces(
+            mock_hass, mock_coordinator, mock_strain_library, call
+        )
+
+    assert res["response"].endswith("...")
+    assert len(res["response"]) <= 53
+
+
+async def test_handle_analyze_all_growspaces_empty_ai_response(
+    mock_hass, mock_coordinator, mock_strain_library
+) -> None:
+    """Test handle_analyze_all_growspaces returns summary on empty AI response."""
+    call = ServiceCall(mock_hass, "gsm", "analyze", {}, context=MagicMock())
+
+    with patch(
+        "custom_components.growspace_manager.services.ai_assistant.conversation.async_converse"
+    ) as mock_converse:
+        mock_result = MagicMock()
+        mock_result.response.speech = {}  # No plain speech
+        mock_converse.return_value = mock_result
+
+        res = await handle_analyze_all_growspaces(
+            mock_hass, mock_coordinator, mock_strain_library, call
+        )
+
+    assert "AI assistant returned an empty response" in res["response"]
+    assert "FACILITY OVERVIEW" in res["response"]
+
+
+def test_analyze_growspace_issues_stress_and_mold() -> None:
+    """Test _analyze_growspace_issues detects stress and mold issues."""
+    data = {
+        "growspace": {"name": "Tent 1"},
+        "analysis": {
+            "stress": {"active": True, "reasons": ["High VPD", "Low RH"]},
+            "mold_risk": {"active": True, "reasons": ["Dense canopy"]},
+        },
+    }
+    issues = _analyze_growspace_issues(data)
+    assert len(issues) == 2
+    assert "Stress detected" in issues[0]
+    assert "Mold risk" in issues[1]
+
+
+def test_build_facility_summary_with_issues_and_statuses() -> None:
+    """Test _build_facility_summary with issues, optimal, and attention-needed growspaces."""
+    all_data = [
+        {
+            "growspace": {"name": "Tent A"},
+            "plants": {"count": 4},
+            "analysis": {"optimal": {"active": True}, "stress": {"active": False}, "mold_risk": {"active": False}},
+        },
+        {
+            "growspace": {"name": "Tent B"},
+            "plants": {"count": 2},
+            "analysis": {"optimal": {"active": False}, "stress": {"active": True}, "mold_risk": {"active": False}},
+        },
+    ]
+    issues = ["Tent B: Stress detected - High VPD"]
+    summary = _build_facility_summary(all_data, issues)
+
+    assert "⚠️ ISSUES REQUIRING ATTENTION:" in summary
+    assert "Tent B: Stress detected" in summary
+    assert "✅ Optimal" in summary
+    assert "⚠️ Needs Attention" in summary
+
+
+async def test_handle_strain_recommendation_no_agent_id(
+    mock_hass, mock_coordinator, mock_strain_library
+) -> None:
+    """Test handle_strain_recommendation returns strain data when no agent_id."""
+    mock_coordinator.options = {}
+    call = ServiceCall(mock_hass, "gsm", "recommend", {}, context=MagicMock())
+
+    res = await handle_strain_recommendation(
+        mock_hass, mock_coordinator, mock_strain_library, call
+    )
+    assert "AI Assistant not configured" in res["response"]
+    assert "AVAILABLE STRAINS" in res["response"]
+
+
+async def test_handle_strain_recommendation_success(
+    mock_hass, mock_coordinator, mock_strain_library
+) -> None:
+    """Test handle_strain_recommendation returns AI response on success."""
+    call = ServiceCall(mock_hass, "gsm", "recommend", {}, context=MagicMock())
+
+    with patch(
+        "custom_components.growspace_manager.services.ai_assistant.conversation.async_converse"
+    ) as mock_converse:
+        mock_result = MagicMock()
+        mock_result.response.speech = {"plain": {"speech": "Recommend Kush"}}
+        mock_converse.return_value = mock_result
+
+        res = await handle_strain_recommendation(
+            mock_hass, mock_coordinator, mock_strain_library, call
+        )
+
+    assert res["response"] == "Recommend Kush"
+    assert "strains_analyzed" in res
+
+
+async def test_handle_strain_recommendation_empty_ai_response(
+    mock_hass, mock_coordinator, mock_strain_library
+) -> None:
+    """Test handle_strain_recommendation fallback on empty AI response."""
+    call = ServiceCall(mock_hass, "gsm", "recommend", {}, context=MagicMock())
+
+    with patch(
+        "custom_components.growspace_manager.services.ai_assistant.conversation.async_converse"
+    ) as mock_converse:
+        mock_result = MagicMock()
+        mock_result.response.speech = {}
+        mock_converse.return_value = mock_result
+
+        res = await handle_strain_recommendation(
+            mock_hass, mock_coordinator, mock_strain_library, call
+        )
+
+    assert "AI assistant returned an empty response" in res["response"]
+
+
+async def test_handle_strain_recommendation_with_growspace_error(
+    mock_hass, mock_coordinator, mock_strain_library
+) -> None:
+    """Test handle_strain_recommendation logs warning when growspace data fails."""
+    call = ServiceCall(
+        mock_hass,
+        "gsm",
+        "recommend",
+        {"growspace_id": "bad_id"},
+        context=MagicMock(),
+    )
+    mock_coordinator.data_repository.get_growspace.return_value = None
+
+    with patch(
+        "custom_components.growspace_manager.services.ai_assistant.conversation.async_converse"
+    ) as mock_converse:
+        mock_result = MagicMock()
+        mock_result.response.speech = {"plain": {"speech": "Advice without growspace"}}
+        mock_converse.return_value = mock_result
+
+        res = await handle_strain_recommendation(
+            mock_hass, mock_coordinator, mock_strain_library, call
+        )
+
+    assert "Advice without growspace" in res["response"]
+
+
+async def test_handle_strain_recommendation_truncates_response(
+    mock_hass, mock_coordinator, mock_strain_library
+) -> None:
+    """Test handle_strain_recommendation truncates long AI responses."""
+    long_text = "word " * 200
+    call = ServiceCall(mock_hass, "gsm", "recommend", {"max_length": 50}, context=MagicMock())
+
+    with patch(
+        "custom_components.growspace_manager.services.ai_assistant.conversation.async_converse"
+    ) as mock_converse:
+        mock_result = MagicMock()
+        mock_result.response.speech = {"plain": {"speech": long_text}}
+        mock_converse.return_value = mock_result
+
+        res = await handle_strain_recommendation(
+            mock_hass, mock_coordinator, mock_strain_library, call
+        )
+
+    assert res["response"].endswith("...")
+
+
+def test_build_recommendation_prompt_with_preferences_and_query() -> None:
+    """Test _build_recommendation_prompt includes preferences and user_query."""
+    prompt = _build_recommendation_prompt(
+        context="AVAILABLE STRAINS:",
+        preferences={"flavor": "citrus", "yield": "high"},
+        user_query="Something sativa-leaning",
+        growspace_context="",
+        max_length=None,
+    )
+    assert "USER PREFERENCES (Structured):" in prompt
+    assert "flavor: citrus" in prompt
+    assert "USER REQUEST: Something sativa-leaning" in prompt
+
+
+def test_build_strain_performance_summary_with_estimates_and_description() -> None:
+    """Test _build_strain_performance_summary with pheno estimates and description."""
+    strain_data = {
+        "meta": {"type": "Sativa", "breeder": "Test"},
+        "phenotypes": {
+            "Pheno A": {
+                "harvests": [],
+                "flower_days_min": 60,
+                "flower_days_max": 70,
+                "description": "Fruity pheno",
+            }
+        },
+    }
+    result = _build_strain_performance_summary("Test Strain", strain_data)
+    assert "Est. Flowering: 60-70 days" in result
+    assert "Fruity pheno" in result
+
+
+async def test_handle_strain_recommendation_successful_growspace_context(
+    mock_hass, mock_coordinator, mock_strain_library
+) -> None:
+    """Test handle_strain_recommendation with a valid growspace_id that succeeds."""
+    call = ServiceCall(
+        mock_hass,
+        "gsm",
+        "recommend",
+        {"growspace_id": GROWSPACE_ID},
+        context=MagicMock(),
+    )
+
+    with patch(
+        "custom_components.growspace_manager.services.ai_assistant.conversation.async_converse"
+    ) as mock_converse:
+        mock_result = MagicMock()
+        mock_result.response.speech = {"plain": {"speech": "Advice with context"}}
+        mock_converse.return_value = mock_result
+
+        res = await handle_strain_recommendation(
+            mock_hass, mock_coordinator, mock_strain_library, call
+        )
+
+    assert "Advice with context" in res["response"]
+    # Verify growspace context was included in the prompt (TARGET GROWSPACE)
+    call_args = mock_converse.call_args
+    assert "TARGET GROWSPACE" in call_args.kwargs["text"]
+
+
+def test_format_context_data_includes_strain_history(
+    assistant: GrowAssistant,
+    mock_coordinator: MagicMock,
+    mock_strain_library: MagicMock,
+) -> None:
+    """Test _format_context_data includes STRAIN HISTORY when analytics are present."""
+    plant = MagicMock(strain="Strain A", stage="veg", veg_start=None, flower_start=None)
+    mock_coordinator.data_repository.get_growspace_plants.return_value = [plant]
+
+    data = assistant.gather_growspace_data(GROWSPACE_ID)
+    # Strain A has harvest data in mock_strain_library, so analytics should be populated
+    assert data["strain_analytics"]
+
+    context = assistant._format_context_data(data)
+    assert "STRAIN HISTORY:" in context
+    assert "Strain A" in context
+
+
+def test_build_strain_performance_summary_no_history_no_estimates() -> None:
+    """Test _build_strain_performance_summary with no harvests and no estimates."""
+    strain_data = {
+        "meta": {"type": "Indica", "breeder": "Unknown"},
+        "phenotypes": {"Pheno B": {"harvests": []}},
+    }
+    result = _build_strain_performance_summary("Mystery Strain", strain_data)
+    assert "No harvests recorded yet" in result
