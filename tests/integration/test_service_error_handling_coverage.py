@@ -50,17 +50,47 @@ def mock_hass():
 
 
 @pytest.fixture
-def mock_coordinator():
+def mock_coordinator(mock_hass):
     """Create a mock coordinator."""
     coordinator = MagicMock()
+    coordinator.hass = mock_hass
+    coordinator.storage_manager = MagicMock()
+    coordinator.storage_manager.async_save = AsyncMock()
+    coordinator.storage_manager.async_commit = AsyncMock()
+
+    # Mock the new ServiceFacade
+    coordinator.services = MagicMock()
+
+    # Irrigation orchestrated services
+    coordinator.services.add_irrigation_schedule_item = AsyncMock()
+    coordinator.services.remove_irrigation_schedule_item = AsyncMock()
+    coordinator.services.add_irrigation_drain_time = AsyncMock()
+    coordinator.services.remove_irrigation_drain_time = AsyncMock()
+    coordinator.services.set_irrigation_settings = AsyncMock()
+
+    # IPM orchestrated services
+    coordinator.services.apply_ipm_action = AsyncMock()
     coordinator.services.save_ipm_preset = AsyncMock()
     coordinator.services.remove_ipm_preset = AsyncMock()
-    coordinator.services.apply_ipm = AsyncMock()
+
+    # Nutrient orchestrated services
     coordinator.services.save_nutrient_preset = AsyncMock()
     coordinator.services.remove_nutrient_preset = AsyncMock()
+
+    # Training orchestrated services
     coordinator.services.log_training_event = AsyncMock()
-    coordinator.services.water_plant = AsyncMock()
+
+    # Watering orchestrated services
     coordinator.services.water_growspace = AsyncMock()
+    coordinator.services.water_plant = AsyncMock()
+
+    # Global data services
+    coordinator.services.save = AsyncMock()
+    coordinator.services.request_refresh = AsyncMock()
+
+    coordinator.growspaces = {"gs1": MagicMock(id="gs1")}
+    coordinator.plants = {"plant1": MagicMock(plant_id="plant1", growspace_id="gs1")}
+
     return coordinator
 
 
@@ -141,68 +171,58 @@ async def test_irrigation_error_handling(
 
     mock_coordinator.irrigation_coordinators = {"gs1": mock_irrigation_coordinator}
     # Set Settings - GrowspaceError
-    mock_irrigation_coordinator.services.set_settings.side_effect = GrowspaceError(
+    mock_coordinator.services.set_irrigation_settings.side_effect = GrowspaceError(
         "Set failed"
     )
     with pytest.raises(ServiceValidationError, match="Set failed"):
         await handle_set_irrigation_settings(mock_hass, mock_coordinator, call)
 
     # Set Settings - Generic Exception
-    mock_irrigation_coordinator.services.set_settings.side_effect = Exception("Crash")
+    mock_coordinator.services.set_irrigation_settings.side_effect = Exception("Crash")
     with pytest.raises(ServiceValidationError, match="Operation failed"):
         await handle_set_irrigation_settings(mock_hass, mock_coordinator, call)
 
     # Add Irrigation Time - GrowspaceError
-    mock_irrigation_coordinator.services.add_schedule_item.side_effect = GrowspaceError(
-        "Add failed"
-    )
+    # Test add_irrigation_schedule_item error
+    mock_coordinator.services.add_irrigation_schedule_item.side_effect = GrowspaceError("Add failed")
     with pytest.raises(ServiceValidationError, match="Add failed"):
         await handle_add_irrigation_time(mock_hass, mock_coordinator, call)
 
-    # Add Irrigation Time - Generic Exception
-    mock_irrigation_coordinator.services.add_schedule_item.side_effect = Exception(
-        "Crash"
-    )
-    with pytest.raises(ServiceValidationError, match="Operation failed"):
-        await handle_add_irrigation_time(mock_hass, mock_coordinator, call)
-
-    # Remove Irrigation Time - GrowspaceError
-    mock_irrigation_coordinator.services.remove_schedule_item.side_effect = (
-        GrowspaceError("Remove failed")
-    )
+    # Test remove_irrigation_schedule_item error
+    mock_coordinator.services.remove_irrigation_schedule_item.side_effect = GrowspaceError("Remove failed")
     with pytest.raises(ServiceValidationError, match="Remove failed"):
         await handle_remove_irrigation_time(mock_hass, mock_coordinator, call)
 
     # Remove Irrigation Time - Generic Exception
-    mock_irrigation_coordinator.services.remove_schedule_item.side_effect = Exception(
+    mock_coordinator.services.remove_irrigation_schedule_item.side_effect = Exception(
         "Crash"
     )
     with pytest.raises(ServiceValidationError, match="Operation failed"):
         await handle_remove_irrigation_time(mock_hass, mock_coordinator, call)
 
     # Add Drain Time - GrowspaceError
-    mock_irrigation_coordinator.services.add_schedule_item.side_effect = GrowspaceError(
+    mock_coordinator.services.add_irrigation_schedule_item.side_effect = GrowspaceError(
         "Add failed"
     )
     with pytest.raises(ServiceValidationError, match="Add failed"):
         await handle_add_drain_time(mock_hass, mock_coordinator, call)
 
     # Add Drain Time - Generic Exception
-    mock_irrigation_coordinator.services.add_schedule_item.side_effect = Exception(
+    mock_coordinator.services.add_irrigation_schedule_item.side_effect = Exception(
         "Crash"
     )
     with pytest.raises(ServiceValidationError, match="Operation failed"):
         await handle_add_drain_time(mock_hass, mock_coordinator, call)
 
     # Remove Drain Time - GrowspaceError
-    mock_irrigation_coordinator.services.remove_schedule_item.side_effect = (
+    mock_coordinator.services.remove_irrigation_schedule_item.side_effect = (
         GrowspaceError("Remove failed")
     )
     with pytest.raises(ServiceValidationError, match="Remove failed"):
         await handle_remove_drain_time(mock_hass, mock_coordinator, call)
 
     # Remove Drain Time - Generic Exception
-    mock_irrigation_coordinator.services.remove_schedule_item.side_effect = Exception(
+    mock_coordinator.services.remove_irrigation_schedule_item.side_effect = Exception(
         "Crash"
     )
     with pytest.raises(ServiceValidationError, match="Operation failed"):

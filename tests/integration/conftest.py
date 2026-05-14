@@ -6,22 +6,28 @@ from unittest.mock import AsyncMock, MagicMock, Mock
 # Mock homeassistant.components.ai_task
 sys.modules["homeassistant.components.ai_task"] = MagicMock()
 
+# Inject Recorder dummy to satisfy Python 3.14 lazy annotation evaluation in recorder.migration
+import homeassistant.components.recorder.migration as migration
+if not hasattr(migration, "Recorder"):
+    migration.Recorder = MagicMock()
+
 from freezegun.api import FrozenDateTimeFactory
 import pytest
 
 from custom_components.growspace_manager.date_time_helper import DateTimeHelper
 
-# pytest_plugins = "pytest_homeassistant_custom_component"
+import freezegun
 
 
 @pytest.fixture(autouse=True)
-def freeze_time(freezer: FrozenDateTimeFactory) -> None:
+def freeze_time() -> None:
     """Freeze time to a fixed value to avoid off-by-one date errors.
 
     We choose a time in the middle of the day to avoid UTC midnight issues.
     Today is 2026-01-12 according to system context.
     """
-    freezer.move_to("2026-01-12 12:00:00")
+    with freezegun.freeze_time("2026-01-12 12:00:00"):
+        yield
 
 
 @pytest.fixture
@@ -105,6 +111,7 @@ def mock_coordinator():
     coordinator.async_start_flowering = AsyncMock()
     coordinator.async_start_drying = AsyncMock()
     coordinator.async_start_curing = AsyncMock()
+    coordinator.async_commit = AsyncMock()
 
     # 5. Mock other subsystem services
     coordinator.subsystem_manager = MagicMock()

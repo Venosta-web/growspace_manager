@@ -6,6 +6,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from custom_components.growspace_manager.const import PlantStage
 from custom_components.growspace_manager.dehumidifier_coordinator import (
     DehumidifierCoordinator,
 )
@@ -54,8 +55,7 @@ def mock_main_coordinator():
     """Mock the main GrowspaceCoordinator."""
     coordinator = MagicMock()
     coordinator.growspaces = {}
-    coordinator.get_growspace_plants = MagicMock(return_value=[])
-    coordinator.get_growspace_plants = MagicMock(return_value=[])
+    coordinator.services.get_growspace_plants = MagicMock(return_value=[])
     return coordinator
 
 
@@ -222,14 +222,14 @@ async def test_growth_stage_detection(coordinator, mock_main_coordinator) -> Non
     """Test correct growth stage detection based on plant days."""
     plant1 = MagicMock(spec=Plant)
     plant2 = MagicMock(spec=Plant)
-    mock_main_coordinator.get_growspace_plants.return_value = [plant1, plant2]
+    mock_main_coordinator.services.get_growspace_plants.return_value = [plant1, plant2]
 
     # Case 1: Veg
     with patch(
         "custom_components.growspace_manager.dehumidifier_coordinator.calculate_days_in_stage",
         side_effect=lambda p, stage: {
-            "veg": 10,
-            "flower": 0,
+            PlantStage.VEG: 10,
+            PlantStage.FLOWER: 0,
         }.get(stage, 0),
     ):
         assert coordinator._get_growth_stage().value == "veg"
@@ -238,8 +238,8 @@ async def test_growth_stage_detection(coordinator, mock_main_coordinator) -> Non
     with patch(
         "custom_components.growspace_manager.dehumidifier_coordinator.calculate_days_in_stage",
         side_effect=lambda p, stage: {
-            "veg": 30,
-            "flower": 10,
+            PlantStage.VEG: 30,
+            PlantStage.FLOWER: 10,
         }.get(stage, 0),
     ):
         assert coordinator._get_growth_stage().value == "flower_early"
@@ -248,8 +248,8 @@ async def test_growth_stage_detection(coordinator, mock_main_coordinator) -> Non
     with patch(
         "custom_components.growspace_manager.dehumidifier_coordinator.calculate_days_in_stage",
         side_effect=lambda p, stage: {
-            "veg": 30,
-            "flower": 30,
+            PlantStage.VEG: 30,
+            PlantStage.FLOWER: 30,
         }.get(stage, 0),
     ):
         assert coordinator._get_growth_stage().value == "flower_mid"
@@ -258,8 +258,8 @@ async def test_growth_stage_detection(coordinator, mock_main_coordinator) -> Non
     with patch(
         "custom_components.growspace_manager.dehumidifier_coordinator.calculate_days_in_stage",
         side_effect=lambda p, stage: {
-            "veg": 30,
-            "flower": 60,
+            PlantStage.VEG: 30,
+            PlantStage.FLOWER: 60,
         }.get(stage, 0),
     ):
         assert coordinator._get_growth_stage().value == "flower_late"
@@ -536,34 +536,35 @@ async def test_growth_stage_detection_cure_dry_seedling(
 ) -> None:
     """Test detection of cure, dry, and seedling stages."""
     plant = MagicMock(spec=Plant)
-    mock_main_coordinator.get_growspace_plants.return_value = [plant]
+    mock_main_coordinator.services.get_growspace_plants.return_value = [plant]
 
     # Test Cure
     with patch(
         "custom_components.growspace_manager.dehumidifier_coordinator.calculate_days_in_stage",
-        side_effect=lambda p, stage: 1 if stage == "cure" else 0,
+        side_effect=lambda p, stage: 1 if stage == PlantStage.CURE else 0,
     ):
-        assert coordinator._get_growth_stage().value == "cure"
+        assert coordinator._get_growth_stage() == PlantStage.CURE
 
     # Test Dry
     with patch(
         "custom_components.growspace_manager.dehumidifier_coordinator.calculate_days_in_stage",
-        side_effect=lambda p, stage: 1 if stage == "dry" else 0,
+        side_effect=lambda p, stage: 1 if stage == PlantStage.DRY else 0,
     ):
-        assert coordinator._get_growth_stage().value == "dry"
+        assert coordinator._get_growth_stage() == PlantStage.DRY
 
     # Test Seedling
     with patch(
         "custom_components.growspace_manager.dehumidifier_coordinator.calculate_days_in_stage",
-        side_effect=lambda p, stage: 1 if stage == "seedling" else 0,
+        side_effect=lambda p, stage: 1 if stage == PlantStage.SEEDLING else 0,
     ):
-        assert coordinator._get_growth_stage() == "seedling"
+        assert coordinator._get_growth_stage() == PlantStage.SEEDLING
 
+    # Test Mother
     with patch(
         "custom_components.growspace_manager.dehumidifier_coordinator.calculate_days_in_stage",
-        side_effect=lambda p, stage: 1 if stage == "mother" else 0,
+        side_effect=lambda p, stage: 1 if stage == PlantStage.MOTHER else 0,
     ):
-        assert coordinator._get_growth_stage() == "mother"
+        assert coordinator._get_growth_stage() == PlantStage.MOTHER
 
 
 async def test_control_domain_fallback(

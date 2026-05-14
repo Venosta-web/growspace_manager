@@ -378,9 +378,7 @@ class NotificationManager:
             return
 
         # Check if notifications are enabled in coordinator
-        if not self.coordinator.services.services.is_notifications_enabled(
-            growspace_id
-        ):
+        if not self.coordinator.services.is_notifications_enabled(growspace_id):
             _LOGGER.debug("Notifications disabled in coordinator for %s", growspace_id)
             return
 

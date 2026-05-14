@@ -38,9 +38,9 @@ def mock_coordinator() -> MagicMock:
     Returns:
         A mock coordinator object with pre-populated growspace and plant data.
     """
-    coordinator = Mock()
-    coordinator.hass = Mock()
-    gs1 = Mock(
+    coordinator = MagicMock()
+    coordinator.hass = MagicMock()
+    gs1 = MagicMock(
         id="gs1",
         rows=2,
         plants_per_row=2,
@@ -66,15 +66,17 @@ def mock_coordinator() -> MagicMock:
             cure_start=None,
         )
     }
-    coordinator.get_growspace_plants.return_value = list(coordinator.plants.values())
-    coordinator.serializer = Mock()
+    coordinator.services.get_growspace_plants.return_value = list(
+        coordinator.plants.values()
+    )
+    coordinator.serializer = MagicMock()
     coordinator.serializer.calculate_days_in_stage.return_value = 10
 
-    coordinator.should_send_notification.return_value = True
-    coordinator.mark_notification_sent = AsyncMock()
+    coordinator.services.should_send_notification.return_value = True
+    coordinator.services.mark_notification_sent = AsyncMock()
     coordinator.async_add_listener = Mock()
-    coordinator.get_strain_options.return_value = ["Strain A", "Strain B"]
-    coordinator.growspace_manager.get_growspace_options.return_value = ["gs1"]
+    coordinator.services.get_strain_options.return_value = ["Strain A", "Strain B"]
+    coordinator.services.get_growspace_options.return_value = ["gs1"]
     coordinator.strains = MagicMock()
     coordinator.created_entity_ids = []
 

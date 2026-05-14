@@ -97,7 +97,7 @@ async def test_websocket_update_sensor_coordinates_success(
     mock_growspace = MagicMock()
     mock_coord.growspaces = {"gs1": mock_growspace}
     mock_growspace.environment_config.sensor_coordinates = {}
-    mock_coord.async_save = AsyncMock()
+    mock_coord.async_commit = AsyncMock()
     mock_coord.async_request_refresh = AsyncMock()
 
     with patch(
@@ -112,7 +112,7 @@ async def test_websocket_update_sensor_coordinates_success(
             "z": 30,
             "rotation": 90,
         }
-        mock_coord.async_save.assert_awaited()
+        mock_coord.async_commit.assert_awaited()
         mock_coord.async_request_refresh.assert_awaited()
         mock_connection.send_result.assert_called_with(1)
 
@@ -137,7 +137,7 @@ async def test_websocket_update_sensor_coordinates_no_rotation(
     mock_growspace.environment_config.sensor_coordinates = (
         None  # Test initialization too
     )
-    mock_coord.async_save = AsyncMock()
+    mock_coord.async_commit = AsyncMock()
     mock_coord.async_request_refresh = AsyncMock()
 
     with patch(
@@ -193,7 +193,7 @@ async def test_websocket_update_sensor_coordinates_errors(
         mock_growspace.environment_config = MagicMock()
         with patch.object(
             mock_coord,
-            "async_save",
+            "async_commit",
             side_effect=ServiceValidationError("Validation Fail"),
         ):
             await websocket_update_sensor_coordinates(hass, mock_connection, msg)
@@ -203,7 +203,7 @@ async def test_websocket_update_sensor_coordinates_errors(
 
         # 4. Generic Exception (Line 713-714)
         with patch.object(
-            mock_coord, "async_save", side_effect=Exception("Unexpected")
+            mock_coord, "async_commit", side_effect=Exception("Unexpected")
         ):
             await websocket_update_sensor_coordinates(hass, mock_connection, msg)
         mock_connection.send_error.assert_called_with(1, "unknown_error", "Unexpected")

@@ -42,8 +42,8 @@ def handler():
     coordinator.async_refresh = AsyncMock()
 
     # 2. Setup Sub-Services/Repos
-    # The code likely uses coordinator.services or coordinator.data_repository
     service_mock = MagicMock()
+    service_mock.save = AsyncMock()  # This was missing and causing TypeErrors
     coordinator.services = service_mock
     coordinator.growspace_service = service_mock
     coordinator.data_repository = service_mock
@@ -243,7 +243,7 @@ async def test_save_and_finish(handler) -> None:
     result = await handler._async_save_and_finish(gs, env_config)
 
     assert result["type"] == FlowResultType.CREATE_ENTRY
-    handler.config_entry.runtime_data.async_commit.assert_awaited_once()
+    handler.config_entry.runtime_data.services.save.assert_awaited_once()
 
 
 @pytest.mark.asyncio
@@ -666,7 +666,7 @@ async def test_collect_sensors_to_configure_empty_after_filtering(handler) -> No
 
     # If no valid sensors are left, it skips to finish
     assert result["type"] == FlowResultType.CREATE_ENTRY
-    handler.config_entry.runtime_data.async_commit.assert_awaited_once()
+    handler.config_entry.runtime_data.services.save.assert_awaited_once()
 
 
 @pytest.mark.asyncio

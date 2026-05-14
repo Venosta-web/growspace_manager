@@ -31,8 +31,10 @@ def _make_growspace(tank_entity: str = "sensor.tank_1") -> Growspace:
 def coordinator():
     """Mock coordinator with tank-related async methods."""
     mock = MagicMock()
-    mock.async_configure_tank = AsyncMock()
-    mock.get_growspace = MagicMock(return_value=_make_growspace())
+    mock.data_repository = MagicMock()
+    mock.data_repository.get_growspace = MagicMock(return_value=_make_growspace())
+    mock.growspace_manager = MagicMock()
+    mock.growspace_manager.async_configure_tank = AsyncMock()
     return mock
 
 
@@ -48,7 +50,7 @@ async def test_handle_configure_tank_calls_coordinator(coordinator) -> None:
 
     await handle_configure_tank(MagicMock(), coordinator, call)
 
-    coordinator.async_configure_tank.assert_awaited_once_with(
+    coordinator.growspace_manager.async_configure_tank.assert_awaited_once_with(
         "gs_1",
         "sensor.tank_1",
         volume_liters=20.0,
@@ -66,7 +68,7 @@ async def test_handle_configure_tank_without_volume(coordinator) -> None:
 
     await handle_configure_tank(MagicMock(), coordinator, call)
 
-    coordinator.async_configure_tank.assert_awaited_once_with(
+    coordinator.growspace_manager.async_configure_tank.assert_awaited_once_with(
         "gs_1",
         "sensor.tank_1",
         volume_liters=None,
@@ -86,4 +88,4 @@ async def test_handle_configure_tank_unknown_entity_raises(coordinator) -> None:
     with pytest.raises(ServiceValidationError):
         await handle_configure_tank(MagicMock(), coordinator, call)
 
-    coordinator.async_configure_tank.assert_not_awaited()
+    coordinator.growspace_manager.async_configure_tank.assert_not_awaited()

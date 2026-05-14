@@ -113,6 +113,7 @@ def mock_coordinator():
     coordinator.async_commit = AsyncMock()
     coordinator.async_load = AsyncMock()
     coordinator.async_refresh = AsyncMock()
+    coordinator.async_request_refresh = AsyncMock()
 
     # 6. Mock other subsystem services
     coordinator.subsystem_manager = MagicMock()
@@ -137,12 +138,13 @@ def mock_coordinator():
         return_value=[("gs1", "Test Growspace")]
     )
     coordinator.services.get_plant = MagicMock(
-        side_effect=lambda pid: coordinator.plants.get(pid)
+        side_effect=coordinator.plants.get
     )
 
     from custom_components.growspace_manager.services.facade import ServiceFacade
-
-    coordinator.services = ServiceFacade(coordinator)
+    services = ServiceFacade(coordinator)
+    services.save = AsyncMock(side_effect=services.save)
+    coordinator.services = services
 
     return coordinator
 

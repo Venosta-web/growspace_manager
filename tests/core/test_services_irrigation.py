@@ -40,6 +40,11 @@ def mock_irrigation_coordinator():
     coordinator.services.set_settings = AsyncMock()
     coordinator.services.add_schedule_item = AsyncMock()
     coordinator.services.remove_schedule_item = AsyncMock()
+    # The handlers call coordinator.async_* which MagicMock would make non-awaitable.
+    # Bind AsyncMocks directly so that await works and assertions on services.* pass.
+    coordinator.async_set_settings = coordinator.services.set_settings
+    coordinator.async_add_schedule_item = coordinator.services.add_schedule_item
+    coordinator.async_remove_schedule_item = coordinator.services.remove_schedule_item
     coordinator.get_default_duration = MagicMock(return_value=300)
     return coordinator
 

@@ -9,6 +9,7 @@ import pytest
 from custom_components.growspace_manager.humidifier_coordinator import (
     HumidifierCoordinator,
 )
+from custom_components.growspace_manager.domain.stage import PlantStage
 from custom_components.growspace_manager.models import Plant
 from homeassistant.const import (
     ATTR_ENTITY_ID,
@@ -379,19 +380,19 @@ def test_init_missing_growspace(
 async def test_growth_stage_detection(coordinator, mock_main_coordinator) -> None:
     """Test correct growth stage detection."""
     plant = MagicMock(spec=Plant)
-    mock_main_coordinator.get_growspace_plants.return_value = [plant]
+    mock_main_coordinator.services.get_growspace_plants.return_value = [plant]
 
     with patch(
         "custom_components.growspace_manager.humidifier_coordinator.calculate_days_in_stage",
-        side_effect=lambda p, stage: {"flower": 60}.get(stage, 0),
+        side_effect=lambda p, stage: {PlantStage.FLOWER: 60}.get(stage, 0),
     ):
-        assert coordinator._get_growth_stage().value == "flower_late"
+        assert coordinator._get_growth_stage() == PlantStage.FLOWER_LATE
 
     with patch(
         "custom_components.growspace_manager.humidifier_coordinator.calculate_days_in_stage",
-        side_effect=lambda p, stage: {"veg": 10}.get(stage, 0),
+        side_effect=lambda p, stage: {PlantStage.VEG: 10}.get(stage, 0),
     ):
-        assert coordinator._get_growth_stage().value == "veg"
+        assert coordinator._get_growth_stage() == PlantStage.VEG
 
 
 async def test_generic_domain_control(

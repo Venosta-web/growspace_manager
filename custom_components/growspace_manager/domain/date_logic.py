@@ -77,9 +77,11 @@ def format_date(date_value: DateInput) -> str | None:
 
 def calculate_days_in_stage(plant: Plant, stage: str) -> int:
     """Calculate how many days a plant has been in a specific growth stage."""
-    from .stage import PlantStage  # noqa: PLC0415
+    from .stage import PlantStage, get_stage_definition  # noqa: PLC0415
 
-    start_date = getattr(plant, f"{stage}_start", None)
+    stage_def = get_stage_definition(stage)
+    start_field = stage_def.start_field if stage_def else f"{stage}_start"
+    start_date = getattr(plant, start_field, None)
 
     # Simplified lookup for common stages
     stage_map = {

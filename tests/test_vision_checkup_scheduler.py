@@ -119,6 +119,7 @@ def mock_coordinator(mock_hass):
     coordinator.growspaces = {}
     coordinator.get_growspace_plants = MagicMock(return_value=[])
     coordinator.async_save = AsyncMock()
+    coordinator.async_commit = AsyncMock()
     coordinator.strain_library = MagicMock()
     return coordinator
 
@@ -310,7 +311,7 @@ async def test_run_vision_analysis_stores_result_in_history(
     assert result is not None
     assert len(gs.vision_checkup_history) == 1
     assert gs.vision_checkup_history[0].severity == "low"
-    mock_coordinator.async_save.assert_called_once()
+    mock_coordinator.async_commit.assert_called_once()
 
 
 @pytest.mark.asyncio
@@ -447,7 +448,7 @@ async def test_get_active_day_hours_flower(mock_hass, mock_coordinator):
     gs = _make_mock_growspace()
     plant = MagicMock()
     plant.stage = "flower"
-    mock_coordinator.get_growspace_plants.return_value = [plant]
+    mock_coordinator.services.get_growspace_plants.return_value = [plant]
     scheduler = VisionCheckupScheduler(mock_hass, mock_coordinator)
     assert scheduler._get_active_day_hours(gs) == 12
 

@@ -20,8 +20,8 @@ from custom_components.growspace_manager.services.ec_ramp import (
 def coordinator():
     """Mock coordinator with EC ramp async methods."""
     mock = MagicMock()
-    mock.async_save_ec_ramp_curve = AsyncMock()
-    mock.async_remove_ec_ramp_curve = AsyncMock()
+    mock.services.save_ec_ramp_curve = AsyncMock()
+    mock.services.remove_ec_ramp_curve = AsyncMock()
     return mock
 
 

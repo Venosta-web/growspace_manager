@@ -118,7 +118,7 @@ async def test_handle_update_growspace(
     )
 
     mock_coordinator.growspace_manager.update_growspace.assert_awaited_once_with(
-        growspace_id="gs1",
+        "gs1",
         name="Updated GS",
         rows=5,
         plants_per_row=5,
@@ -303,6 +303,9 @@ async def test_handle_ask_grow_advice_growspace_not_found(
     mock_call,
 ) -> None:
     """Test handle_ask_grow_advice for non-existent growspace."""
+    mock_coordinator.options = {
+        "ai_settings": {CONF_AI_ENABLED: True, CONF_ASSISTANT_ID: "test_agent"},
+    }
     mock_call.data = {"growspace_id": "gs_invalid"}
 
     with pytest.raises(ServiceValidationError, match="Growspace gs_invalid not found"):

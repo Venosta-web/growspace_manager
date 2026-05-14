@@ -170,7 +170,7 @@ async def test_ai_handler_save_settings(mock_hass, mock_config_entry) -> None:
     new_options = await handler.save_ai_settings(user_input)
 
     assert new_options["ai_settings"] == user_input
-    coordinator.async_commit.assert_awaited_once()
+    coordinator.services.save.assert_awaited_once()
 
 
 @pytest.mark.asyncio

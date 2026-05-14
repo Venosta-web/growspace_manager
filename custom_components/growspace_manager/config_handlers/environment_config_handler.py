@@ -651,7 +651,7 @@ class EnvironmentConfigHandler(BaseConfigHandler[dict[str, Any]]):
         env_config.pop("configure_dehumidifier", None)
 
         growspace.environment_config = EnvironmentConfig.from_dict(env_config)
-        await coordinator.async_commit()
+        await coordinator.services.save()
         await coordinator.async_refresh()
 
         _LOGGER.info(

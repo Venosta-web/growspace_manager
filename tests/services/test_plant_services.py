@@ -24,6 +24,7 @@ from custom_components.growspace_manager.services.plant import (
     handle_transition_plant_stage,
     handle_update_plant,
 )
+from custom_components.growspace_manager.utils import parse_date_field
 from homeassistant.core import HomeAssistant, ServiceCall
 from homeassistant.exceptions import ServiceValidationError
 from homeassistant.helpers import entity_registry as er
@@ -1229,11 +1230,6 @@ async def test_transition_plant_stage_success(
     # Arrange
     mock_coordinator.plants = {"plant_1": mock_plant}
 
-    # Make async methods AsyncMock
-    mock_coordinator.services.transition_plant_stage = AsyncMock()
-    mock_coordinator.services.save = AsyncMock()
-    mock_coordinator.services.request_refresh = AsyncMock()
-
     call = ServiceCall(
         hass,
         domain=DOMAIN,
@@ -1252,12 +1248,12 @@ async def test_transition_plant_stage_success(
     await hass.async_block_till_done()
 
     # Assert
-    _args, kwargs = mock_coordinator.plant_manager.transition_plant_stage.call_args
-    assert kwargs["plant_id"] == "plant_1"
-    assert kwargs["new_stage"] == "flower"
-    # Compare dates with tolerance or just timezone equality
     expected_dt = as_local(datetime(2024, 1, 15, 0, 0))
-    assert kwargs["transition_date"] == expected_dt
+    mock_coordinator.services.transition_plant_stage.assert_called_once_with(
+        plant_id="plant_1",
+        new_stage="flower",
+        transition_date=expected_dt,
+    )
 
     # mock_coordinator.async_save.assert_called_once()
     # mock_coordinator.async_request_refresh.assert_called_once()
@@ -1284,8 +1280,12 @@ async def test_transition_plant_stage_without_date(
         hass, mock_coordinator, mock_strain_library, call
     )
 
-    call_kwargs = mock_coordinator.plant_manager.transition_plant_stage.call_args[1]
-    assert call_kwargs["transition_date"] is None
+    # Assert
+    mock_coordinator.services.transition_plant_stage.assert_called_once_with(
+        plant_id="plant_1",
+        new_stage="flower",
+        transition_date=None,
+    )
 
 
 @pytest.mark.asyncio
@@ -1359,14 +1359,13 @@ async def test_transition_plant_stage_with_timezone(
         hass, mock_coordinator, mock_strain_library, call
     )
 
-    call_kwargs = mock_coordinator.plant_manager.transition_plant_stage.call_args.kwargs
-    # Date strings are parsed to datetime objects. Input was 12:00:00Z.
-    # We strip tzinfo for comparison as the test fixture might not have timezone setup perfectly or we want to compare naive.
-    # Actually, let's just compare with what we expect: 12:00:00
-    actual_dt_str = call_kwargs["transition_date"]
-    # handle_transition_plant_stage converts to isoformat string
-    # Input was 12:00:00Z, so output should be 2024-01-15T12:00:00+00:00
-    assert actual_dt_str.isoformat() == "2024-01-15T12:00:00+00:00"
+    # Assert
+    expected_dt = parse_date_field("2024-01-15T12:00:00Z")
+    mock_coordinator.services.transition_plant_stage.assert_called_once_with(
+        plant_id="plant_1",
+        new_stage="flower",
+        transition_date=expected_dt,
+    )
 
 
 @pytest.mark.asyncio
@@ -1410,11 +1409,6 @@ async def test_harvest_plant_success(
     """Test successfully harvesting a plant."""
 
     mock_coordinator.plants = {"plant_1": mock_plant}
-
-    # Make async methods AsyncMock
-    mock_coordinator.services.harvest_plant = AsyncMock()
-    mock_coordinator.services.save = AsyncMock()
-    mock_coordinator.services.request_refresh = AsyncMock()
 
     call = ServiceCall(
         hass,
@@ -1550,7 +1544,7 @@ async def test_harvest_plant_not_found_reload_attempt(
     async def mock_load():
         mock_coordinator.plants = {"plant_1": mock_plant}
 
-    mock_coordinator.services.load = mock_load
+    mock_coordinator.async_load = AsyncMock(side_effect=mock_load)
 
     call = ServiceCall(
         hass,
@@ -1597,7 +1591,7 @@ async def test_harvest_plant_reload_error(
 ) -> None:
     """Test harvest when reload fails."""
     mock_coordinator.plants = {}
-    mock_coordinator.services.load.side_effect = GrowspaceError("Load error")
+    mock_coordinator.async_load.side_effect = GrowspaceError("Load error")
 
     call = ServiceCall(
         hass,

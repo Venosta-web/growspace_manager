@@ -43,6 +43,7 @@ def mock_main_coordinator() -> MagicMock:
         )
     }
     coordinator.async_save = AsyncMock()
+    coordinator.async_commit = AsyncMock()
     coordinator.async_refresh_growspace_data = AsyncMock()
     coordinator.async_set_updated_data = MagicMock()
     coordinator.add_event = MagicMock()
@@ -363,7 +364,7 @@ async def test_async_set_settings(
         assert growspace.irrigation_config.irrigation_duration == 45
         assert growspace.irrigation_config.drain_pump_entity == "switch.new_drain_pump"
 
-        mock_main_coordinator.async_save.assert_awaited_once()
+        mock_main_coordinator.async_commit.assert_awaited_once()
         mock_update.assert_awaited_once()
 
 
@@ -394,7 +395,7 @@ async def test_async_add_schedule_item(
         assert new_item is not None
         assert new_item["duration"] == 30
 
-        assert mock_main_coordinator.async_save.call_count == 2
+        assert mock_main_coordinator.async_commit.call_count == 2
         assert mock_update.call_count == 2
 
 
@@ -417,16 +418,16 @@ async def test_async_remove_schedule_item(
         removed_item = next((i for i in items if i["time"] == "10:00:00"), None)
         assert removed_item is None
 
-        mock_main_coordinator.async_save.assert_awaited_once()
+        mock_main_coordinator.async_commit.assert_awaited_once()
         mock_update.assert_awaited_once()
 
         # Test removing non-existent item
-        mock_main_coordinator.async_save.reset_mock()
+        mock_main_coordinator.async_commit.reset_mock()
         mock_update.reset_mock()
 
         await coordinator.async_remove_schedule_item("irrigation_times", "99:99:99")
 
-        mock_main_coordinator.async_save.assert_not_awaited()
+        mock_main_coordinator.async_commit.assert_not_awaited()
         mock_update.assert_not_awaited()
 
 
@@ -582,8 +583,8 @@ async def test_async_remove_schedule_item_key_error(
     await coordinator.async_remove_schedule_item("missing_schedule", "12:00:00")
 
     # Should handle KeyError gracefully and log warning
-    # We can verify this by checking if async_save was NOT called (since no change happened)
-    mock_main_coordinator.async_save.assert_not_awaited()
+    # We can verify this by checking if async_commit was NOT called (since no change happened)
+    mock_main_coordinator.async_commit.assert_not_awaited()
 
 
 async def test_async_remove_schedule_item_key_error_explicit(
@@ -618,8 +619,8 @@ async def test_async_remove_schedule_item_key_error_explicit(
     await coordinator.async_remove_schedule_item("some_schedule", "12:00:00")
 
     # Should catch KeyError and log warning
-    # We can verify this by checking if async_save was NOT called
-    mock_main_coordinator.async_save.assert_not_awaited()
+    # We can verify this by checking if async_commit was NOT called
+    mock_main_coordinator.async_commit.assert_not_awaited()
 
 
 async def test_schedule_event_short_time_format(
@@ -883,7 +884,7 @@ async def test_irrigation_coordinator_coverage_gaps(
                 side_effect=ValueError("Unexpected"),
             ),
         ):
-            await coordinator.services.remove_schedule_item(
+            await coordinator.async_remove_schedule_item(
                 "irrigation_times", "10:00:00"
             )
 

@@ -37,22 +37,21 @@ async def test_configure_dehumidifier_thresholds(
 
     # Mock Coordinator
     mock_coordinator = MagicMock()
+    mock_coordinator.services = MagicMock()
+    
     mock_growspace = Growspace(
         id="gs1",
         name="Test GS",
         environment_config=EnvironmentConfig(dehumidifier_entities=["switch.dehum"]),
     )
     mock_coordinator.growspaces = {"gs1": mock_growspace}
-    mock_coordinator.growspace_manager.get_sorted_growspace_options.return_value = [
+    mock_coordinator.services.get_sorted_growspace_options.return_value = [
         ("gs1", "Test GS")
     ]
-    mock_coordinator.async_save = AsyncMock()
+    mock_coordinator.services.get_growspace.return_value = mock_growspace
+    mock_coordinator.services.save = AsyncMock()
     mock_coordinator.async_refresh = AsyncMock()
 
-    # Public properties for services
-    type(mock_coordinator).growspace_service = property(
-        lambda self: self.growspace_manager
-    )
 
     entry.runtime_data = mock_coordinator
     entry.add_to_hass(hass)
@@ -147,7 +146,7 @@ async def test_configure_dehumidifier_thresholds(
     assert saved_coords["switch.dehum"] == {"x": 10.0, "y": 20.0, "z": 30.0}
 
     # Verify save called
-    assert mock_coordinator.async_save.called
+    assert mock_coordinator.services.save.called
 
     # 6. Verify Persistence: Re-open flow, checkbox should be True
     # We simulate this by checking what the schema default would be

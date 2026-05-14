@@ -13,6 +13,10 @@ from unittest.mock import AsyncMock, MagicMock, Mock, patch
 import pytest
 import voluptuous as vol
 
+from homeassistant.core import HomeAssistant
+from homeassistant.data_entry_flow import FlowResultType
+from homeassistant.helpers import selector
+
 from custom_components.growspace_manager.config_flow import (
     ConfigFlow,
     OptionsFlowHandler,
@@ -33,9 +37,6 @@ from custom_components.growspace_manager.models import (
     EnvironmentConfig,
     IrrigationConfig,
 )
-from homeassistant.core import HomeAssistant
-from homeassistant.data_entry_flow import FlowResultType
-from homeassistant.helpers import selector
 from tests.common import MockConfigEntry
 
 
@@ -1729,7 +1730,7 @@ async def test_options_flow_configure_environment_submit(
 
     # Environment config is saved to the growspace object, not config_entry options
     assert mock_growspace.environment_config.temperature_sensors == ["sensor.temp"]
-    mock_coordinator.services.commit.assert_called_once()
+    mock_coordinator.services.save.assert_called_once()
 
 
 @pytest.mark.asyncio
@@ -1781,7 +1782,7 @@ async def test_options_flow_configure_environment_remove_vpd_sensor(
     assert mock_growspace.environment_config.vpd_sensors == []
     # Ensure other sensors remain
     assert mock_growspace.environment_config.temperature_sensors == ["sensor.temp"]
-    mock_coordinator.services.commit.assert_called_once()
+    mock_coordinator.services.save.assert_called_once()
 
 
 @pytest.mark.asyncio
@@ -1893,7 +1894,7 @@ async def test_options_flow_configure_advanced_bayesian_submit(
     assert mock_growspace.environment_config.bayesian_options[
         "prob_temp_extreme_heat"
     ] == (0.9, 0.1)
-    mock_coordinator.services.commit.assert_called_once()
+    mock_coordinator.services.save.assert_called_once()
 
 
 @pytest.mark.asyncio
@@ -2192,7 +2193,7 @@ async def test_options_flow_configure_dehumidifier_submit(
         mock_growspace.environment_config.dehumidifier_thresholds["veg"]["day"]["on"]
         == 1.0
     )
-    mock_coordinator.services.commit.assert_called_once()
+    mock_coordinator.services.save.assert_called_once()
 
 
 # ============================================================================
@@ -2850,7 +2851,7 @@ async def test_options_flow_configure_dehumidifier_save_success(
 
     result = await flow.async_step_configure_dehumidifier(user_input=user_input)
     assert result["type"] == FlowResultType.CREATE_ENTRY
-    mock_coordinator.services.commit.assert_called_once()
+    mock_coordinator.services.save.assert_called_once()
 
 
 @pytest.mark.asyncio

@@ -174,10 +174,10 @@ async def handle_configure_environment(
     growspace.environment_config = env_config
 
     # Save to storage
-    await coordinator.async_commit()
+    await coordinator.services.save()
 
     # Trigger coordinator update to create/update binary sensors
-    await coordinator.async_refresh()
+    await coordinator.services.request_refresh()
 
     success_msg = f"Environment monitoring configured for '{growspace.name}'"
     _LOGGER.info("%s: %s", success_msg, env_config)
@@ -202,10 +202,10 @@ async def handle_remove_environment(
     growspace.environment_config = EnvironmentConfig()
 
     # Save to storage
-    await coordinator.async_commit()
+    await coordinator.services.save()
 
     # Trigger coordinator update
-    await coordinator.async_refresh()
+    await coordinator.services.request_refresh()
 
     success_msg = f"Environment monitoring removed for '{growspace.name}'"
     _LOGGER.info(success_msg)
@@ -231,10 +231,10 @@ async def handle_set_dehumidifier_control(
     growspace.environment_config.control_dehumidifier = bool(enabled)
 
     # Save to storage
-    await coordinator.async_commit()
+    await coordinator.services.save()
 
     # Trigger coordinator update
-    await coordinator.async_refresh()
+    await coordinator.services.request_refresh()
 
     status = "enabled" if enabled else "disabled"
     _LOGGER.info("Dehumidifier control %s for '%s'", status, growspace.name)

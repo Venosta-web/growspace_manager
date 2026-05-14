@@ -6,11 +6,20 @@ from unittest.mock import AsyncMock, MagicMock
 from .common import create_plant
 import pytest
 
-from custom_components.growspace_manager.const import EVENT_GROWSPACE_LOG_ENTRY
+from custom_components.growspace_manager.const import (
+    ATTR_AMOUNT_ML,
+    ATTR_EC,
+    ATTR_IMAGES,
+    ATTR_NOTES,
+    ATTR_PH,
+    ATTR_PLANT_ID,
+    ATTR_TAGS,
+    EVENT_GROWSPACE_LOG_ENTRY,
+)
 from custom_components.growspace_manager.managers.plant import PlantManager
 from custom_components.growspace_manager.models import PlantStage
 from custom_components.growspace_manager.services.plant import handle_add_timeline_note
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, ServiceCall
 
 
 @pytest.fixture
@@ -128,13 +137,19 @@ async def test_transition_closes_existing_history(
 @pytest.mark.asyncio
 async def test_add_timeline_note_coverage(hass: HomeAssistant) -> None:
     """Test async_add_timeline_note coverage (ph, ec, amount_ml, entity parsing)."""
+    from custom_components.growspace_manager.services.facade import ServiceFacade
+
     coordinator = MagicMock()
+    coordinator.hass = hass
     coordinator.plants = {}
-    strain_library = MagicMock()
+    coordinator.growspaces = {}
+    coordinator.strain_library = MagicMock()
+    coordinator.services = ServiceFacade(coordinator)
 
     plant_id = "test_plant"
     plant = MagicMock()
     plant.growspace_id = "tent"
+    plant.plant_id = plant_id
     coordinator.plants[plant_id] = plant
 
     growspace = MagicMock()
@@ -160,17 +175,22 @@ async def test_add_timeline_note_coverage(hass: HomeAssistant) -> None:
     hass.bus.async_listen(EVENT_GROWSPACE_LOG_ENTRY, capture_event)
 
     # Call with coverage arguments
+    call = MagicMock(spec=ServiceCall)
+    call.data = {
+        ATTR_PLANT_ID: plant_id,
+        ATTR_NOTES: "Coverage test",
+        ATTR_PH: 6.5,
+        ATTR_EC: 1.2,
+        ATTR_AMOUNT_ML: 500.0,
+        ATTR_IMAGES: [],
+        ATTR_TAGS: ["test"],
+    }
+
     await handle_add_timeline_note(
         hass,
         coordinator,
-        strain_library,
-        plant_id=plant_id,
-        notes="Coverage test",
-        ph=6.5,
-        ec=1.2,
-        amount_ml=500.0,
-        images_base64=None,
-        tags=["test"],
+        coordinator.strain_library,
+        call,
     )
 
     await hass.async_block_till_done()

@@ -659,8 +659,12 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         return self.data
 
     async def _save_callback(self) -> None:
-        """Helper to call current async_commit for late-binding in tests."""
-        await self.async_commit()
+        """Internal callback to handle async saving and commit logic.
+        
+        This delegates to the service facade to ensure all orchestration
+        logic (including storage and cache invalidation) is executed.
+        """
+        await self.services.save()
 
     def _load_initial_data(self, data: dict[str, Any]) -> None:
         """Load and validate initial data from a dictionary.
@@ -982,15 +986,19 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     async def async_add_mother_plant(
         self,
         phenotype: str,
-        growspace_id: str,
-        strain: str | None = None,
+        strain: str,
+        row: int = 1,
+        col: int = 1,
+        mother_start: date | None = None,
         **kwargs: Any,
     ) -> Plant:
         """Add a new mother plant."""
         return await self.services.add_mother_plant(
             phenotype=phenotype,
-            growspace_id=growspace_id,
             strain=strain,
+            row=row,
+            col=col,
+            mother_start=mother_start,
             **kwargs,
         )
 
@@ -1054,6 +1062,18 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     async def async_switch_plants(self, plant1_id: str, plant2_id: str) -> None:
         """Switch the positions of two plants."""
         await self.services.switch_plants(plant1_id, plant2_id)
+
+    async def switch_plants_service(self, plant1_id: str, plant2_id: str) -> None:
+        """Switch the positions of two plants (legacy service alias)."""
+        await self.services.switch_plants(plant1_id, plant2_id)
+
+    async def async_move_plant(self, plant_id: str, row: int, col: int) -> None:
+        """Move a plant to a new position."""
+        await self.services.move_plant(plant_id, row, col)
+
+    async def move_plant_service(self, plant_id: str, row: int, col: int) -> None:
+        """Move a plant to a new position (legacy service alias)."""
+        await self.services.move_plant(plant_id, row, col)
 
     # =============================================================================
     # DATA RETRIEVAL FOR WEBSOCKET API
@@ -1326,3 +1346,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     def fire_event(self, event_type: str, data: dict[str, Any]) -> None:
         """Fire a growspace manager event."""
         self.services.fire_event(event_type, data)
+
+    async def _async_remove_plant_entities(self, plant_id: str) -> None:
+        """Remove all Home Assistant entities associated with a specific plant."""
+        await self.services._remove_plant_entities(plant_id)

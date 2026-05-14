@@ -27,9 +27,6 @@ def mock_coordinator():
     coordinator.data = {}
     coordinator.options = {}
 
-    # Initialize ServiceFacade with the mock coordinator
-    coordinator.services = ServiceFacade(coordinator)
-
     # Initialize managers
     coordinator.storage_manager = MagicMock()
     coordinator.plant_manager = MagicMock()
@@ -43,6 +40,7 @@ def mock_coordinator():
     # Core coordinator-level async methods (Awaited by production logic)
     coordinator.async_commit = AsyncMock()
     coordinator.async_refresh = AsyncMock()
+    coordinator.async_request_refresh = AsyncMock()
 
     # Plant manager methods
     coordinator.plant_manager.async_add_plant = AsyncMock()
@@ -90,6 +88,10 @@ def mock_coordinator():
     coordinator.calculate_days = MagicMock(side_effect=DateTimeHelper.calculate_days)
     coordinator.to_date = MagicMock(side_effect=DateTimeHelper.to_date)
     coordinator.get_growspace_plants = MagicMock(return_value=[])
+
+    # Initialize ServiceFacade AFTER all async mocks are set so the facade's
+    # internal _coordinator reference sees the correct AsyncMock attributes.
+    coordinator.services = ServiceFacade(coordinator)
 
     return coordinator
 

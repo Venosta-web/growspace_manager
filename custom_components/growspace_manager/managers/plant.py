@@ -246,9 +246,7 @@ class PlantManager:
 
     async def move_plant(self, plant_id: str, new_row: int, new_col: int) -> None:
         """Move a plant to a new position."""
-        await self.update_plant(
-            plant_id, row=new_row, col=new_col
-        )
+        await self.update_plant(plant_id, row=new_row, col=new_col)
 
         # Original Service fired EVENT_PLANT_MOVED here
         if plant := self.repository.plants.get(plant_id):

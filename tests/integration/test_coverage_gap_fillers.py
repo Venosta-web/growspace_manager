@@ -33,8 +33,8 @@ async def test_add_plants_with_base_phenotype(hass: HomeAssistant) -> None:
     mock_coordinator.growspaces = {"gs1": Mock()}
     mock_coordinator.validator = Mock()
     mock_coordinator.validator.find_first_available_position.return_value = (1, 1)
-    mock_coordinator.plant_manager = MagicMock()
-    mock_coordinator.plant_manager.add_plant = AsyncMock()
+    mock_coordinator.services = MagicMock()
+    mock_coordinator.services.add_plant = AsyncMock()
 
     mock_strain_library = Mock()
 
@@ -55,8 +55,8 @@ async def test_add_plants_with_base_phenotype(hass: HomeAssistant) -> None:
     await handle_add_plants(hass, mock_coordinator, mock_strain_library, call)
 
     # Verify
-    mock_coordinator.plant_manager.add_plant.assert_called_once()
-    call_kwargs = mock_coordinator.plant_manager.add_plant.call_args.kwargs
+    mock_coordinator.services.add_plant.assert_called_once()
+    call_kwargs = mock_coordinator.services.add_plant.call_args.kwargs
 
     # Check that 'Bluey #1' was passed as phenotype
     assert call_kwargs["phenotype"] == "Bluey #1"

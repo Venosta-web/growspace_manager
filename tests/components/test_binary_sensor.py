@@ -125,14 +125,17 @@ def mock_coordinator(mock_growspace):
         dt = date.fromisoformat(start_date_str.split("T")[0])
         return (date.today() - dt).days
 
-    coordinator.get_growspace_plants.return_value = list(coordinator.plants.values())
-    coordinator.is_notifications_enabled.return_value = True
+    # UPDATE: Use a lambda so plant updates in individual tests evaluate dynamically
+    coordinator.services.get_growspace_plants.side_effect = lambda gid=None: list(
+        coordinator.plants.values()
+    )
+    coordinator.services.is_notifications_enabled.return_value = True
     coordinator.async_add_listener = Mock()
-    coordinator.calculate_days.side_effect = _calculate_days_side_effect
+    coordinator.services.calculate_days.side_effect = _calculate_days_side_effect
     coordinator.options = {}  # Disable AI by default
 
     # Add missing dependencies for refactored sensor
-    coordinator.add_event = MagicMock()
+    coordinator.services.add_event = MagicMock()
     coordinator.notification_manager = MagicMock(spec=NotificationManager)
     coordinator.strain_library = None
 
@@ -164,10 +167,10 @@ def create_test_sensor(
         env_config=env_config,
         description=description,
         strategy_class=strategy_class,
-        # Inject dependencies
+        # UPDATE: Point to the new service face
         get_growspace=lambda gid: coordinator.growspaces.get(gid),
-        get_plants=coordinator.get_growspace_plants,
-        add_event=coordinator.add_event,
+        get_plants=coordinator.services.get_growspace_plants,
+        add_event=coordinator.services.add_event,
         notification_manager=coordinator.notification_manager,
         strain_library=coordinator.strain_library,
         options=coordinator.options,
@@ -298,7 +301,7 @@ async def test_notification_sending(
 
     # Mock growspace object for notification target
     mock_coordinator.growspaces["gs1"].notification_target = "notify.test"
-    mock_coordinator.is_notifications_enabled.return_value = True
+    mock_coordinator.services.is_notifications_enabled.return_value = True
 
     # Set initial state to "off" (no stress)
     set_sensor_state(hass, "sensor.temp", 25)  # Optimal temp
@@ -869,11 +872,14 @@ async def test_schedule_update_coverage(hass: HomeAssistant, mock_coordinator) -
     config_entry.runtime_data = mock_coordinator
 
     mock_coordinator.async_add_listener = MagicMock()
-    
+
     # Mock async_create_background_task to actually run the task
     def mock_background_task(h, coro, name):
         return h.async_create_task(coro)
-    config_entry.async_create_background_task = MagicMock(side_effect=mock_background_task)
+
+    config_entry.async_create_background_task = MagicMock(
+        side_effect=mock_background_task
+    )
 
     await async_setup_entry(hass, config_entry, async_add_entities)
 
@@ -965,8 +971,8 @@ async def test_falling_edge_event_creation(
 
     # Check if event was added to coordinator
     # mock_coordinator.add_event is called
-    mock_coordinator.add_event.assert_called_once()
-    event = mock_coordinator.add_event.call_args[0][1]
+    mock_coordinator.services.add_event.assert_called_once()
+    event = mock_coordinator.services.add_event.call_args[0][1]
     assert event.duration_sec == 600
     assert event.sensor_type == GrowspaceSensorType.STRESS
 
@@ -1134,8 +1140,8 @@ async def test_light_cycle_verification_sensor_logic(
         coordinator=mock_coordinator,
         growspace_id="gs1",
         env_config=env_config,
-        get_plants=mock_coordinator.get_growspace_plants,
-        calculate_days=mock_coordinator.calculate_days,
+        get_plants=mock_coordinator.services.get_growspace_plants,
+        calculate_days=mock_coordinator.services.calculate_days,
     )
     sensor.hass = hass
     sensor.platform = MagicMock()
@@ -1623,8 +1629,8 @@ def test_light_cycle_verification_sensor_is_on_property(
         coordinator=mock_coordinator,
         growspace_id="gs1",
         env_config=env_config,
-        get_plants=mock_coordinator.get_growspace_plants,
-        calculate_days=mock_coordinator.calculate_days,
+        get_plants=mock_coordinator.services.get_growspace_plants,
+        calculate_days=mock_coordinator.services.calculate_days,
     )
     sensor._is_correct = True
     assert sensor.is_on is True
@@ -1640,8 +1646,8 @@ def test_light_cycle_verification_sensor_extra_state_attributes_veg_stage(
         coordinator=mock_coordinator,
         growspace_id="gs1",
         env_config=env_config,
-        get_plants=mock_coordinator.get_growspace_plants,
-        calculate_days=mock_coordinator.calculate_days,
+        get_plants=mock_coordinator.services.get_growspace_plants,
+        calculate_days=mock_coordinator.services.calculate_days,
     )
     sensor.light_entity_id = "light.test_light"
     sensor._time_in_current_state = timedelta(hours=10)
@@ -1665,8 +1671,8 @@ def test_light_cycle_verification_sensor_extra_state_attributes_flower_stage(
         coordinator=mock_coordinator,
         growspace_id="gs1",
         env_config=env_config,
-        get_plants=mock_coordinator.get_growspace_plants,
-        calculate_days=mock_coordinator.calculate_days,
+        get_plants=mock_coordinator.services.get_growspace_plants,
+        calculate_days=mock_coordinator.services.calculate_days,
     )
     sensor.light_entity_id = "light.test_light"
     sensor._time_in_current_state = timedelta(hours=8)
@@ -1691,8 +1697,8 @@ async def test_light_cycle_verification_sensor_async_update_no_light_entity(
         coordinator=mock_coordinator,
         growspace_id="gs1",
         env_config=env_config,
-        get_plants=mock_coordinator.get_growspace_plants,
-        calculate_days=mock_coordinator.calculate_days,
+        get_plants=mock_coordinator.services.get_growspace_plants,
+        calculate_days=mock_coordinator.services.calculate_days,
     )
     sensor.hass = hass
     sensor.light_entity_id = None
@@ -1713,8 +1719,8 @@ async def test_light_cycle_verification_sensor_async_update_light_state_unavaila
         coordinator=mock_coordinator,
         growspace_id="gs1",
         env_config=env_config,
-        get_plants=mock_coordinator.get_growspace_plants,
-        calculate_days=mock_coordinator.calculate_days,
+        get_plants=mock_coordinator.services.get_growspace_plants,
+        calculate_days=mock_coordinator.services.calculate_days,
     )
     sensor.hass = hass
     sensor.light_entity_id = "light.test_light"
@@ -1757,8 +1763,8 @@ async def test_light_cycle_verification_sensor_async_update(
         coordinator=mock_coordinator,
         growspace_id="gs1",
         env_config=env_config,
-        get_plants=mock_coordinator.get_growspace_plants,
-        calculate_days=mock_coordinator.calculate_days,
+        get_plants=mock_coordinator.services.get_growspace_plants,
+        calculate_days=mock_coordinator.services.calculate_days,
     )
     sensor.hass = hass
     sensor.light_entity_id = "light.test_light"
@@ -1811,18 +1817,13 @@ def test_light_cycle_get_growth_stage_info_scenarios(
         coordinator=mock_coordinator,
         growspace_id="gs1",
         env_config=env_config,
-        get_plants=mock_coordinator.get_growspace_plants,
-        calculate_days=mock_coordinator.calculate_days,
+        get_plants=mock_coordinator.services.get_growspace_plants,
+        calculate_days=mock_coordinator.services.calculate_days,
     )
-    mock_coordinator.get_growspace_plants.return_value = plants
+    mock_coordinator.services.get_growspace_plants.side_effect = lambda gid=None: plants
 
-    # Mock calculate_days to match the frozen date of 2026-01-12
-    # This is necessary because the default mock behavior in test_binary_sensor.py
-    # uses dynamic date.today() which conflicts with our frozen time fixture
-    mock_coordinator.calculate_days.side_effect = (
-        lambda date_str: (date(2026, 1, 12) - date.fromisoformat(date_str)).days
-        if date_str
-        else 0
+    mock_coordinator.services.calculate_days.side_effect = lambda date_str: (
+        (date(2026, 1, 12) - date.fromisoformat(date_str)).days if date_str else 0
     )
 
     result = sensor._get_growth_stage_info()
@@ -1843,8 +1844,8 @@ async def test_light_cycle_async_added_to_hass_with_light_entity(
         coordinator=mock_coordinator,
         growspace_id="gs1",
         env_config=env_config,
-        get_plants=mock_coordinator.get_growspace_plants,
-        calculate_days=mock_coordinator.calculate_days,
+        get_plants=mock_coordinator.services.get_growspace_plants,
+        calculate_days=mock_coordinator.services.calculate_days,
     )
     sensor.hass = MagicMock()
     # async_on_remove and async_update are methods, use Mock() not assignment
@@ -1877,8 +1878,8 @@ async def test_light_cycle_async_added_to_hass_without_light_entity(
         coordinator=mock_coordinator,
         growspace_id="gs1",
         env_config=env_config,
-        get_plants=mock_coordinator.get_growspace_plants,
-        calculate_days=mock_coordinator.calculate_days,
+        get_plants=mock_coordinator.services.get_growspace_plants,
+        calculate_days=mock_coordinator.services.calculate_days,
     )
     sensor.hass = MagicMock()
     # async_on_remove and async_update are methods, use Mock() not assignment
@@ -1903,8 +1904,8 @@ async def test_light_cycle_callbacks(
         coordinator=mock_coordinator,
         growspace_id="gs1",
         env_config=env_config,
-        get_plants=mock_coordinator.get_growspace_plants,
-        calculate_days=mock_coordinator.calculate_days,
+        get_plants=mock_coordinator.services.get_growspace_plants,
+        calculate_days=mock_coordinator.services.calculate_days,
     )
     sensor.hass = hass
     sensor.entity_id = "binary_sensor.light_cycle"
@@ -1979,10 +1980,12 @@ class TestBayesianEnvironmentSensor:
 
             # Add missing injected dependencies
             sensor._get_growspace = lambda gid: sensor.coordinator.growspaces.get(gid)
-            sensor._get_plants = lambda gid: sensor.coordinator.get_growspace_plants(
-                gid
+            sensor._get_plants = lambda gid: (
+                sensor.coordinator.services.get_growspace_plants(gid)
             )
-            sensor._add_event = lambda gid, evt: sensor.coordinator.add_event(gid, evt)
+            sensor._add_event = lambda gid, evt: sensor.coordinator.services.add_event(
+                gid, evt
+            )
             sensor._strain_library = None
             sensor._options = {}
 
@@ -2061,7 +2064,7 @@ class TestBayesianEnvironmentSensor:
         )
 
         base_sensor.coordinator.growspaces["gs1"].notification_target = "notify.test"
-        base_sensor.coordinator.is_notifications_enabled.return_value = False
+        base_sensor.coordinator.services.is_notifications_enabled.return_value = False
 
         # Mock hass.services.async_call
         base_sensor.hass.services.async_call = AsyncMock()
@@ -2119,7 +2122,9 @@ class TestBayesianEnvironmentSensor:
 
     def test_get_growth_stage_info_no_plants(self, base_sensor):
         """Test _get_growth_stage_info when no plants are found"""
-        base_sensor.coordinator.get_growspace_plants.return_value = []
+        base_sensor.coordinator.services.get_growspace_plants.side_effect = (
+            lambda gid=None: []
+        )
         result = base_sensor._get_growth_stage_info()
         assert result == {
             "veg_days": -1,
@@ -2226,7 +2231,9 @@ class TestBayesianEnvironmentSensor:
         base_sensor.async_update_and_notify = MagicMock()
         base_sensor._handle_coordinator_update()
         base_sensor.coordinator.config_entry.async_create_background_task.assert_called_once()
-        args = base_sensor.coordinator.config_entry.async_create_background_task.call_args
+        args = (
+            base_sensor.coordinator.config_entry.async_create_background_task.call_args
+        )
         assert args[0][0] == base_sensor.hass
         # Comparing coroutines is tricky, but we can check if it was called with the mock return value
         assert args[0][1] == base_sensor.async_update_and_notify()
@@ -2237,7 +2244,9 @@ class TestBayesianEnvironmentSensor:
         base_sensor.async_update_and_notify = MagicMock()
         base_sensor._async_sensor_changed(None)
         base_sensor.coordinator.config_entry.async_create_background_task.assert_called_once()
-        args = base_sensor.coordinator.config_entry.async_create_background_task.call_args
+        args = (
+            base_sensor.coordinator.config_entry.async_create_background_task.call_args
+        )
         assert args[0][0] == base_sensor.hass
         assert args[0][1] == base_sensor.async_update_and_notify()
 
@@ -2530,9 +2539,9 @@ async def test_active_saturation_veg_stage(
     sensor.threshold = 0.7
     sensor.prior = 0.15
 
-    # Set up humidifier ON with high humidity in veg (> 75%)
+    # Set up humidifier ON with high humidity in veg (> 80%)
     set_sensor_state(hass, "sensor.temp", 25)
-    set_sensor_state(hass, "sensor.humidity", 80)  # High humidity for veg
+    set_sensor_state(hass, "sensor.humidity", 81)  # High humidity for veg
     set_sensor_state(hass, "sensor.vpd", 1.0)
     set_sensor_state(hass, "sensor.co2", 800)
     set_sensor_state(hass, "sensor.humidifier", 50)  # Humidifier running

@@ -78,8 +78,8 @@ async def test_handle_configure_environment_success(
     assert len(mock_gs.environment_config.irrigation_tanks) == 1
     assert isinstance(mock_gs.environment_config.irrigation_tanks[0], IrrigationTank)
     assert mock_gs.environment_config.dehumidifier_thresholds == {"day": 50.0}
-    mock_coordinator.async_save.assert_awaited_once()
-    mock_coordinator.async_refresh.assert_awaited_once()
+    mock_coordinator.async_commit.assert_awaited_once()
+    mock_coordinator.async_request_refresh.assert_awaited_once()
 
 
 @pytest.mark.asyncio
@@ -100,8 +100,12 @@ async def test_handle_configure_environment_singular_plural_lists(
     await handle_configure_environment(mock_hass, mock_coordinator, mock_call)
     assert mock_gs.environment_config.circulation_fan_entities == ["fan.1"]
     assert mock_gs.environment_config.exhaust_fan_entities == ["fan.2"]
+    mock_coordinator.async_commit.assert_awaited()
+    mock_coordinator.async_request_refresh.assert_awaited()
 
     # Test plural taking precedence
+    mock_coordinator.async_commit.reset_mock()
+    mock_coordinator.async_request_refresh.reset_mock()
     mock_call.data = {
         "growspace_id": growspace_id,
         "circulation_fan_entities": ["fan.3", "fan.4"],
@@ -146,6 +150,8 @@ async def test_handle_configure_environment_invalid_groups_and_tanks(
     # SensorGroup.from_dict will fail because 'id' is missing, so it won't be appended
     assert len(mock_gs.environment_config.sensor_groups) == 0
     assert len(mock_gs.environment_config.irrigation_tanks) == 0
+    mock_coordinator.async_commit.assert_awaited_once()
+    mock_coordinator.async_request_refresh.assert_awaited_once()
 
 
 @pytest.mark.asyncio
@@ -165,8 +171,8 @@ async def test_handle_remove_environment_success(
     assert isinstance(mock_gs.environment_config, EnvironmentConfig)
     # Default values should be present
     assert mock_gs.environment_config.temperature_sensor is None
-    mock_coordinator.async_save.assert_awaited_once()
-    mock_coordinator.async_refresh.assert_awaited_once()
+    mock_coordinator.async_commit.assert_awaited_once()
+    mock_coordinator.async_request_refresh.assert_awaited_once()
 
 
 @pytest.mark.asyncio
@@ -199,8 +205,8 @@ async def test_handle_set_dehumidifier_control_success(
     await handle_set_dehumidifier_control(mock_hass, mock_coordinator, mock_call)
 
     assert mock_gs.environment_config.control_dehumidifier is True
-    mock_coordinator.async_save.assert_awaited_once()
-    mock_coordinator.async_refresh.assert_awaited_once()
+    mock_coordinator.async_commit.assert_awaited_once()
+    mock_coordinator.async_request_refresh.assert_awaited_once()
 
 
 @pytest.mark.asyncio

@@ -309,6 +309,8 @@ class DehumidifierCoordinator:
             max_cure_days = max(max_cure_days, c_days)
             max_mother_days = max(max_mother_days, m_days)
 
+
+
         # Priority: Cure > Dry > Flower > Mother > Veg > Seedling
         if max_cure_days > 0:
             return PlantStage.CURE

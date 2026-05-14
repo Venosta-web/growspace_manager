@@ -33,6 +33,7 @@ from custom_components.growspace_manager.models import (
     Subarea,
     WaterUsageData,
 )
+from custom_components.growspace_manager.exceptions import GrowspaceNotFoundError
 from custom_components.growspace_manager.tank_water_tracker import TankWaterTracker
 from custom_components.growspace_manager.utils import (
     generate_growspace_overview_unique_id,
@@ -92,6 +93,13 @@ class ServiceFacade:
         This delegates to the coordinator's async_commit method for persistence.
         """
         await self._coordinator.async_commit()
+
+    async def request_refresh(self) -> None:
+        """Request a refresh of all entities.
+
+        This delegates to the coordinator's async_request_refresh method.
+        """
+        await self._coordinator.async_request_refresh()
 
     async def add_growspace(self, **kwargs: Any) -> Growspace:
         """Add a new growspace and register it with Home Assistant.
@@ -471,15 +479,19 @@ class ServiceFacade:
     async def add_mother_plant(
         self,
         phenotype: str,
-        growspace_id: str,
-        strain: str | None = None,
+        strain: str,
+        row: int,
+        col: int,
+        mother_start: date | None = None,
         **kwargs: Any,
     ) -> Plant:
         """Add a new mother plant."""
         plant = await self._coordinator.plant_manager.add_mother_plant(
             phenotype=phenotype,
-            growspace_id=growspace_id,
             strain=strain,
+            row=row,
+            col=col,
+            mother_start=mother_start,
             **kwargs,
         )
         await self._coordinator.async_request_refresh()
@@ -496,7 +508,7 @@ class ServiceFacade:
         """
         growspace = self._coordinator.growspaces.get(growspace_id)
         if not growspace:
-            raise ServiceValidationError(f"Growspace {growspace_id} not found")
+            raise GrowspaceNotFoundError(f"Growspace {growspace_id} not found")
 
         # Handle "clear" flag if present
         if user_input.get("clear"):
@@ -587,8 +599,64 @@ class ServiceFacade:
             transition_date: The date of the transition.
         """
         await self._coordinator.plant_manager.promote_clone(
-            clone_id, target_growspace_id, transition_date
+            clone_id=clone_id,
+            target_growspace_id=target_growspace_id,
+            transition_date=transition_date,
         )
+
+    # =========================================================================
+    # WATERING AND IRRIGATION
+    # =========================================================================
+
+    async def set_irrigation_settings(
+        self, growspace_id: str, settings: dict[str, Any]
+    ) -> None:
+        """Set irrigation settings for a growspace."""
+        # Use existing update_irrigation_config which handles both config and strategy
+        await self.update_irrigation_config(growspace_id, settings)
+
+    async def add_irrigation_schedule_item(
+        self,
+        growspace_id: str,
+        schedule_key: str,
+        time_str: str,
+        duration_minutes: int | None = None,
+    ) -> None:
+        """Add a schedule item (irrigation or drain time) to a growspace."""
+        irrigation_coord = await self._get_irrigation_coordinator(growspace_id)
+
+        if duration_minutes is None:
+            # Determine type from schedule_key
+            item_type = "irrigation" if "irrigation" in schedule_key.lower() else "drain"
+            duration_minutes = irrigation_coord.get_default_duration(item_type)
+
+        await irrigation_coord.async_add_schedule_item(
+            schedule_key, time_str, duration_minutes
+        )
+
+    async def remove_irrigation_schedule_item(
+        self, growspace_id: str, schedule_key: str, time_str: str
+    ) -> None:
+        """Remove a schedule item from a growspace."""
+        irrigation_coord = await self._get_irrigation_coordinator(growspace_id)
+        await irrigation_coord.async_remove_schedule_item(schedule_key, time_str)
+
+    async def _get_irrigation_coordinator(self, growspace_id: str) -> Any:
+        """Helper to get irrigation coordinator for a growspace."""
+        if growspace_id not in self._coordinator.irrigation_coordinators:
+            # Fallback: Check if growspace exists and try to lazy init
+            growspace = self._coordinator.growspaces.get(growspace_id)
+            if growspace:
+                await self._coordinator.subsystem_manager.async_setup_growspace_sub_coordinators(
+                    growspace_id, growspace
+                )
+
+            if growspace_id not in self._coordinator.irrigation_coordinators:
+                raise ServiceValidationError(
+                    f"Growspace '{growspace_id}' not found or has no irrigation setup."
+                )
+
+        return self._coordinator.irrigation_coordinators[growspace_id]
 
     async def switch_plants(self, plant1_id: str, plant2_id: str) -> None:
         """Switch the positions of two plants.

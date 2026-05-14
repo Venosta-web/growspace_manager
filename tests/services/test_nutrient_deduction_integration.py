@@ -24,6 +24,9 @@ async def mock_coordinator(hass: HomeAssistant):
     coord.async_save = AsyncMock()
     # Mock save callback on watering service since it now handles saves
     coord._watering_service.save_callback = coord.async_save
+    # Mock services facade to allow tracking calls
+    coord.services = MagicMock(wraps=coord.services)
+    coord.services.save = AsyncMock()
 
     # Initialize basic data
     coord.growspaces = {
@@ -81,7 +84,7 @@ async def test_water_growspace_total_amount_deduction(
     stock = mock_coordinator.nutrient_manager.inventory.stocks["n1"]
     assert stock.current_ml == pytest.approx(90.0)
 
-    mock_coordinator.services.save.assert_awaited()
+    mock_coordinator.async_save.assert_awaited()
 
 
 @pytest.mark.asyncio

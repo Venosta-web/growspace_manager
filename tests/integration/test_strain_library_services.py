@@ -35,8 +35,12 @@ def mock_hass():
 def mock_coordinator():
     """Fixture for a mock GrowspaceCoordinator instance."""
     coordinator = MagicMock()
-    coordinator.async_save = AsyncMock()
-    coordinator.async_request_refresh = AsyncMock()
+    coordinator.services = MagicMock()
+    coordinator.services.save = AsyncMock()
+    coordinator.services.request_refresh = AsyncMock()
+    # Keep legacy aliases if needed, but handlers now use .services
+    coordinator.async_save = coordinator.services.save
+    coordinator.async_request_refresh = coordinator.services.request_refresh
     return coordinator
 
 

@@ -11,7 +11,6 @@ from datetime import date, datetime, timedelta
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from .common import create_plant
 from freezegun import freeze_time
 import pytest
 
@@ -35,7 +34,10 @@ from custom_components.growspace_manager.utils import calculate_plant_stage
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import device_registry as dr, entity_registry as er
 from homeassistant.util.dt import now
+
 from tests.common import MockConfigEntry, async_capture_events
+
+from .common import create_plant
 
 
 def create_test_coordinator(
@@ -2849,7 +2851,9 @@ async def test_coordinator_add_subarea_delegates(coordinator) -> None:
     coordinator._growspace_manager.add_subarea = AsyncMock(return_value=expected)
     result = await coordinator.async_add_subarea("gs1", "Undercanopy")
     assert result.name == "Undercanopy"
-    coordinator._growspace_manager.add_subarea.assert_awaited_once_with("gs1", "Undercanopy")
+    coordinator._growspace_manager.add_subarea.assert_awaited_once_with(
+        "gs1", "Undercanopy"
+    )
 
 
 @pytest.mark.asyncio
@@ -2858,7 +2862,9 @@ async def test_coordinator_update_subarea_delegates(coordinator) -> None:
     expected = Subarea(id="s1", name="Undercanopy")
     coordinator._growspace_manager = MagicMock()
     coordinator._growspace_manager.update_subarea = AsyncMock(return_value=expected)
-    result = await coordinator.async_update_subarea("gs1", "s1", {"temperature_sensors": ["sensor.t"]})
+    result = await coordinator.async_update_subarea(
+        "gs1", "s1", {"temperature_sensors": ["sensor.t"]}
+    )
     assert result.id == "s1"
     coordinator._growspace_manager.update_subarea.assert_awaited_once_with(
         "gs1", "s1", {"temperature_sensors": ["sensor.t"]}

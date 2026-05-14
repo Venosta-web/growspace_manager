@@ -23,8 +23,9 @@ from custom_components.growspace_manager.services.drain_ec import (
 def coordinator():
     """Mock coordinator with drain-related async methods."""
     mock = MagicMock()
-    mock.async_log_drain_reading = AsyncMock()
-    mock.async_configure_drain_monitoring = AsyncMock()
+    mock.services = MagicMock()
+    mock.services.log_drain_reading = AsyncMock()
+    mock.services.configure_drain_monitoring = AsyncMock()
     return mock
 
 

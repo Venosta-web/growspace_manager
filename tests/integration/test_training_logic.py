@@ -165,7 +165,7 @@ async def test_handle_log_training_event_service(
     )
 
     with patch.object(
-        mock_coordinator, "async_log_training_event", new_callable=AsyncMock
+        mock_coordinator.services, "log_training_event", new_callable=AsyncMock
     ) as mock_method:
         await handle_log_training_event(hass, mock_coordinator, call)
 

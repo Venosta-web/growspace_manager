@@ -819,6 +819,7 @@ async def handle_harvest_plant(
         await coordinator.services.harvest_plant(
             plant_id=plant_id,
             target_growspace_id=target_growspace_id,
+            target_growspace_name=None,
             transition_date=transition_date.date().isoformat()
             if transition_date
             else None,

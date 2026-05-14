@@ -1,6 +1,13 @@
 """Shared test fixtures and utilities for growspace_manager tests."""
 
 from __future__ import annotations
+import sys
+from unittest.mock import MagicMock
+
+# Must precede any imports that pull in these dependencies
+sys.modules["turbojpeg"] = MagicMock()
+sys.modules["fpdf"] = MagicMock()
+sys.modules["homeassistant.components.ai_task"] = MagicMock()
 
 # Load Home Assistant core test fixtures (hass, mock_recorder, freezer, etc.)
 # This must appear BEFORE other Home Assistant imports to avoid recorder initialization issues.
@@ -17,9 +24,8 @@ _is_ha_core = (
 if _is_ha_core:
     pytest_plugins = ["tests.conftest"]
 
-import sys
 from typing import Any
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 
 from syrupy.assertion import SnapshotAssertion
 
@@ -51,11 +57,6 @@ def patched_set_default_time_zone(time_zone):
 
 
 dt_util.set_default_time_zone = patched_set_default_time_zone
-
-# Must precede any custom_components import that pulls in fpdf/turbojpeg/ai_task.
-sys.modules["turbojpeg"] = MagicMock()
-sys.modules["fpdf"] = MagicMock()
-sys.modules["homeassistant.components.ai_task"] = MagicMock()
 
 import pytest  # noqa: E402
 

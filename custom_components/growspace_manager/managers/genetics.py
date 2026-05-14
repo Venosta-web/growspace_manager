@@ -304,9 +304,15 @@ class GeneticsManager:
 
         # Classify cross type from plant lineage trees (exclude current event
         # so it doesn't appear in its own parents)
-        tree_receiver = self.get_lineage_tree(event.receiver_plant_id, exclude_event_id=event_id)
-        tree_donor = self.get_lineage_tree(event.donor_plant_id, exclude_event_id=event_id)
-        generation = classify_lineage(receiver_name, donor_name, tree_receiver, tree_donor)
+        tree_receiver = self.get_lineage_tree(
+            event.receiver_plant_id, exclude_event_id=event_id
+        )
+        tree_donor = self.get_lineage_tree(
+            event.donor_plant_id, exclude_event_id=event_id
+        )
+        generation = classify_lineage(
+            receiver_name, donor_name, tree_receiver, tree_donor
+        )
 
         batch = SeedBatch(
             batch_id=str(uuid.uuid4()),
@@ -430,7 +436,9 @@ class GeneticsManager:
 
         plant = self.repository.plants.get(plant_id)
         plant_name = (
-            plant.genetics.strain_name if plant and plant.genetics.strain_name else plant_id
+            plant.genetics.strain_name
+            if plant and plant.genetics.strain_name
+            else plant_id
         )
         node: dict[str, Any] = {
             "name": plant_name,

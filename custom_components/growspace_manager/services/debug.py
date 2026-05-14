@@ -5,24 +5,19 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, Any
 
-from ..const import (
-    CANONICAL_ID_CURE,
-    CANONICAL_ID_DRY,
-    GrowspaceService,
+from homeassistant.components.persistent_notification import (
+    async_create as create_notification,
 )
+from homeassistant.core import HomeAssistant, ServiceCall
+
+from ..const import CANONICAL_ID_CURE, CANONICAL_ID_DRY, GrowspaceService
 from ..schemas import (
     DEBUG_CONSOLIDATE_DUPLICATE_SPECIAL_SCHEMA,
     DEBUG_LIST_GROWSPACES_SCHEMA,
     DEBUG_RESET_SPECIAL_GROWSPACES_SCHEMA,
 )
 from ..strain_library import StrainLibrary
-
 from ._definition import ServiceDefinition
-
-from homeassistant.components.persistent_notification import (
-    async_create as create_notification,
-)
-from homeassistant.core import HomeAssistant, ServiceCall
 
 if TYPE_CHECKING:
     from ..coordinator import GrowspaceCoordinator
@@ -270,7 +265,7 @@ async def handle_debug_consolidate_duplicate_special(
 
         coordinator.data["growspaces"] = coordinator.growspaces
         coordinator.data["plants"] = coordinator.plants
-        await coordinator.async_commit()
+        await coordinator.services.save()
 
         _LOGGER.debug("Duplicate consolidation complete")
 
@@ -306,7 +301,7 @@ async def handle_debug_reset_special_growspaces(
         # Save changes after all resets are done
         coordinator.data["growspaces"] = coordinator.growspaces
         coordinator.data["plants"] = coordinator.plants
-        await coordinator.async_commit()
+        await coordinator.services.save()
 
         _LOGGER.debug("Special growspace reset complete")
 

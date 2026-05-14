@@ -19,6 +19,9 @@ def mock_coordinator(hass: HomeAssistant):
     coordinator.growspaces = {}
     coordinator.services.update_irrigation_config = AsyncMock()
     # Mocking get_sorted_growspace_options is needed for step_select_growspace
+    coordinator.services.get_growspace.side_effect = lambda gs_id: (
+        coordinator.growspaces.get(gs_id)
+    )
     coordinator.get_sorted_growspace_options = MagicMock(
         return_value=[("gs1", "Test Growspace")]
     )
@@ -68,13 +71,15 @@ async def test_irrigation_config_optional_drain_pump(
 
     await handler.async_step_irrigation_overview(user_input)
 
-    # Verification
     mock_coordinator.services.update_irrigation_config.assert_called_once()
     call_args = mock_coordinator.services.update_irrigation_config.call_args
-    growspace_id, data = call_args[0]
+    
+    assert len(call_args.args) >= 1, "Expected growspace_id as positional arg"
+    growspace_id = call_args.args[0]
+    data = call_args.kwargs
 
     assert growspace_id == "gs1"
-    assert data["drain_pump_entity"] is None, "drain_pump_entity should be None"
+    assert data.get("drain_pump_entity") is None, "drain_pump_entity should be None"
 
 
 @pytest.mark.asyncio
@@ -115,10 +120,9 @@ async def test_irrigation_config_omitted_drain_pump(
 
     await handler.async_step_irrigation_overview(user_input)
 
-    # Verification
     mock_coordinator.services.update_irrigation_config.assert_called_once()
     call_args = mock_coordinator.services.update_irrigation_config.call_args
-    _, data = call_args[0]
+    data = call_args.kwargs
 
     # Coordinator logic:
     # if "drain_pump_entity" not in updated_settings: updated_settings["drain_pump_entity"] = None
@@ -185,21 +189,11 @@ async def test_irrigation_config_empty_string_drain_pump(
 
     await handler.async_step_irrigation_overview(user_input)
 
-    # Verification
     mock_coordinator.services.update_irrigation_config.assert_called_once()
     call_args = mock_coordinator.services.update_irrigation_config.call_args
-    _, _data = call_args[0]
+    data = call_args.kwargs
 
     # This assumes the coordinator normalization logic works on the input dictionary inplace
     # OR that the arguments passed to it are what we check.
-    # Actually, async_step_irrigation_overview calls async_update_irrigation_config(id, user_input)
-    # The normalization happens INSIDE async_update_irrigation_config.
-    # Therefore, the mock will receive the UNMODIFIED user_input (with empty string).
-    # THIS TEST IS FLAWED if I mock the coordinator method I just modified!
-
-    # Correct approach: I shouldn't mock async_update_irrigation_config if I want to test IT.
-    # BUT I modified `coordinator.py`. `mock_coordinator` MOCKS `GrowspaceCoordinator`.
-    # So I am testing the ConfigHandler, which just passes data through.
-
     # To test the COORDINATOR logic, I need an improperly mocked coordinator.
     # OR I should use a real coordinator.
