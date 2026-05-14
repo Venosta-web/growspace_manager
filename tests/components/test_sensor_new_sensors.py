@@ -12,15 +12,18 @@ from custom_components.growspace_manager.models import (
     EnvironmentConfig,
     WaterUsageData,
 )
+from custom_components.growspace_manager.models import Subarea
 from custom_components.growspace_manager.sensor import (
     CropSteeringSensor,
     DLISensor,
     ECTargetSensor,
     EnergyUsageSensor,
     PlantEntity,
+    SubareaCalculatedVpdSensor,
     WaterUsageSensor,
     _async_create_derivative_sensors,
     _check_calculated_vpd_sensor,
+    _check_subarea_calculated_vpd_sensors,
     _create_initial_entities,
 )
 
@@ -129,6 +132,7 @@ async def test_create_initial_entities_dli_and_energy_sensors_created() -> None:
         name="Tent 1",
         environment_config=env_config,
         irrigation_strategy=Mock(enabled=False),
+        subareas=[],
     )
     coordinator = _make_coordinator(growspaces={"gs1": growspace})
     coordinator.created_entity_ids = []
@@ -147,7 +151,7 @@ async def test_create_initial_entities_dli_and_energy_sensors_created() -> None:
         ),
     ):
         await _create_initial_entities(
-            hass, coordinator, config_entry, initial_entities, {}, {}, set()
+            hass, coordinator, config_entry, initial_entities, {}, {}, set(), set()
         )
 
     assert any(isinstance(e, DLISensor) for e in initial_entities)
@@ -172,6 +176,7 @@ async def test_create_initial_entities_dict_env_config_with_tank() -> None:
         name="Tent 1",
         environment_config=dict_env_config,
         irrigation_strategy=Mock(enabled=False),
+        subareas=[],
     )
     coordinator = _make_coordinator(growspaces={"gs1": growspace})
     coordinator.created_entity_ids = []
@@ -193,7 +198,7 @@ async def test_create_initial_entities_dict_env_config_with_tank() -> None:
     ):
         mock_tdp.return_value.async_update = AsyncMock()
         await _create_initial_entities(
-            hass, coordinator, config_entry, [], {}, {}, set()
+            hass, coordinator, config_entry, [], {}, {}, set(), set()
         )
 
     mock_tdp.assert_called_once()
@@ -873,3 +878,129 @@ def test_ec_sensor_native_value_before_first_point() -> None:
         result = sensor.native_value
 
     assert result is None
+
+
+# ---------------------------------------------------------------------------
+# SubareaCalculatedVpdSensor and _check_subarea_calculated_vpd_sensors tests
+# ---------------------------------------------------------------------------
+
+
+def _make_subarea(
+    subarea_id: str = "sub1",
+    subarea_name: str = "Corner A",
+    temp_sensors: list | None = None,
+    hum_sensors: list | None = None,
+    vpd_sensors: list | None = None,
+) -> Subarea:
+    env_config = EnvironmentConfig(
+        temperature_sensors=temp_sensors or [],
+        humidity_sensors=hum_sensors or [],
+        vpd_sensors=vpd_sensors or [],
+    )
+    return Subarea(id=subarea_id, name=subarea_name, environment_config=env_config)
+
+
+def test_check_subarea_no_subareas() -> None:
+    """Returns empty list when growspace has no subareas."""
+    growspace = Mock(subareas=[])
+    result = _check_subarea_calculated_vpd_sensors(MagicMock(), growspace)
+    assert result == []
+
+
+def test_check_subarea_no_env_config() -> None:
+    """Returns empty list when subarea has no environment_config."""
+    subarea = Subarea(id="sub1", name="Zone A")
+    subarea.environment_config = None  # type: ignore[assignment]
+    growspace = Mock(subareas=[subarea])
+    result = _check_subarea_calculated_vpd_sensors(MagicMock(), growspace)
+    assert result == []
+
+
+def test_check_subarea_missing_humidity() -> None:
+    """Returns empty list when subarea has temperature but no humidity sensor."""
+    subarea = _make_subarea(temp_sensors=["sensor.temp"])
+    growspace = Mock(id="gs1", name="Tent", subareas=[subarea])
+    result = _check_subarea_calculated_vpd_sensors(MagicMock(), growspace)
+    assert result == []
+
+
+def test_check_subarea_creates_sensor_when_no_vpd() -> None:
+    """Creates one SubareaCalculatedVpdSensor when T+H sensors exist but no VPD."""
+    subarea = _make_subarea(
+        temp_sensors=["sensor.temp"],
+        hum_sensors=["sensor.hum"],
+    )
+    growspace = Mock(id="gs1", name="Tent", subareas=[subarea])
+    result = _check_subarea_calculated_vpd_sensors(MagicMock(), growspace)
+    assert len(result) == 1
+    assert isinstance(result[0], SubareaCalculatedVpdSensor)
+    assert result[0]._attr_name == "Corner A Calculated VPD"
+    assert "subarea_sub1" in result[0]._attr_unique_id
+
+
+def test_check_subarea_skips_when_real_vpd_sensor_exists() -> None:
+    """Does not create a sensor when a physical VPD sensor is already assigned."""
+    subarea = _make_subarea(
+        temp_sensors=["sensor.temp"],
+        hum_sensors=["sensor.hum"],
+        vpd_sensors=["sensor.real_vpd"],
+    )
+    growspace = Mock(id="gs1", name="Tent", subareas=[subarea])
+    result = _check_subarea_calculated_vpd_sensors(MagicMock(), growspace)
+    assert result == []
+
+
+def test_check_subarea_replaces_calculated_vpd_placeholder() -> None:
+    """Creates a sensor even when the existing VPD entry is a previous calculated sensor."""
+    subarea = _make_subarea(
+        temp_sensors=["sensor.temp"],
+        hum_sensors=["sensor.hum"],
+        vpd_sensors=["sensor.growspace_manager_gs1_subarea_sub1_calculated_vpd"],
+    )
+    growspace = Mock(id="gs1", name="Tent", subareas=[subarea])
+    result = _check_subarea_calculated_vpd_sensors(MagicMock(), growspace)
+    assert len(result) == 1
+
+
+def test_check_subarea_multiple_pairs_indexed() -> None:
+    """Creates indexed sensors when multiple T/H pairs are present."""
+    subarea = _make_subarea(
+        subarea_id="subA",
+        subarea_name="Zone A",
+        temp_sensors=["sensor.temp1", "sensor.temp2"],
+        hum_sensors=["sensor.hum1", "sensor.hum2"],
+    )
+    growspace = Mock(id="gs1", name="Tent", subareas=[subarea])
+    result = _check_subarea_calculated_vpd_sensors(MagicMock(), growspace)
+    assert len(result) == 2
+    assert result[0]._attr_name == "Zone A Calculated VPD 1"
+    assert result[1]._attr_name == "Zone A Calculated VPD 2"
+
+
+def test_check_subarea_singular_sensor_fallback() -> None:
+    """Falls back to singular temperature_sensor / humidity_sensor fields."""
+    env_config = EnvironmentConfig()
+    env_config.temperature_sensor = "sensor.t"  # type: ignore[attr-defined]
+    env_config.humidity_sensor = "sensor.h"  # type: ignore[attr-defined]
+    subarea = Subarea(id="sub1", name="Top", environment_config=env_config)
+    growspace = Mock(id="gs1", name="Tent", subareas=[subarea])
+    result = _check_subarea_calculated_vpd_sensors(MagicMock(), growspace)
+    assert len(result) == 1
+
+
+def test_subarea_calculated_vpd_sensor_unique_id_and_name() -> None:
+    """SubareaCalculatedVpdSensor generates correct unique_id and name."""
+    coordinator = MagicMock()
+    coordinator.growspaces = {}
+    sensor = SubareaCalculatedVpdSensor(
+        coordinator=coordinator,
+        growspace_id="tent1",
+        growspace_name="My Tent",
+        subarea_id="zone_a",
+        subarea_name="Zone A",
+        temp_sensor="sensor.temp",
+        humidity_sensor="sensor.hum",
+    )
+    assert sensor._attr_name == "Zone A Calculated VPD"
+    assert "subarea_zone_a" in sensor._attr_unique_id
+    assert "tent1" in sensor._attr_unique_id

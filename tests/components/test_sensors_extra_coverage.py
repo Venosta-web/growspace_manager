@@ -428,6 +428,7 @@ async def test_update_growspace_entities_new_vpd(hass: HomeAssistant):
             growspace_entities,
             async_add_entities,
             calculated_vpd_unique_ids,
+            set(),
         )
 
     assert async_add_entities.called

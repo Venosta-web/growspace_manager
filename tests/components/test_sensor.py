@@ -123,6 +123,7 @@ async def test_async_setup_entry_adds_entities(mock_coordinator: MagicMock) -> N
             rows=2,
             plants_per_row=2,
             environment_config=EnvironmentConfig(),
+            subareas=[],
         )
     }
     mock_coordinator.get_growspace_plants = Mock(
@@ -180,6 +181,7 @@ async def test_async_setup_entry_calculated_vpd(mock_coordinator: MagicMock) -> 
             humidity_sensor="sensor.humidity",
             lst_offset=-1.5,
         ),
+        subareas=[],
     )
     gs_mock.name = "Growspace 1"
     mock_coordinator.growspaces = {"gs1": gs_mock}
@@ -245,6 +247,7 @@ async def test_async_setup_entry_vision_sensor(mock_coordinator: MagicMock) -> N
         rows=2,
         plants_per_row=2,
         environment_config=EnvironmentConfig(camera_entities=["camera.cam1"]),
+        subareas=[],
     )
     mock_coordinator.growspaces = {"gs_vision": gs_mock}
     mock_coordinator.get_growspace_plants = Mock(return_value=[])
@@ -417,6 +420,7 @@ async def test_async_setup_entry_dynamic_updates(mock_coordinator: MagicMock) ->
         name="New Growspace",
         environment_config=EnvironmentConfig(),
         irrigation_strategy=Mock(enabled=False),
+        subareas=[],
     )
     new_plant = Mock(
         plant_id="p_new", growspace_id="gs_new", strain="New Strain", row=1, col=1
@@ -977,7 +981,7 @@ async def test_update_growspace_entities_removal_registry(
         mock_coordinator.growspaces = {}
 
         await sensor_module._update_growspace_entities(
-            hass, mock_coordinator, config_entry, entities, Mock(), set()
+            hass, mock_coordinator, config_entry, entities, Mock(), set(), set()
         )
 
         # Verify removal
@@ -1143,6 +1147,7 @@ async def test_async_setup_entry_recreates_calculated_vpd(
             vpd_sensor="sensor.growspace_1_calculated_vpd",  # Matches expected ID format
             lst_offset=-1.5,
         ),
+        subareas=[],
     )
     gs_mock.name = "Growspace 1"
     mock_coordinator.growspaces = {"gs1": gs_mock}
@@ -1322,6 +1327,7 @@ async def test_async_setup_entry_dataclass_tank(mock_coordinator: MagicMock) -> 
         rows=2,
         plants_per_row=2,
         environment_config=env_config,
+        subareas=[],
     )
     gs_mock.name = "Growspace 1"
     mock_coordinator.growspaces = {"gs1": gs_mock}

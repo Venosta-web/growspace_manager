@@ -619,6 +619,7 @@ async def test_sensor_new_vpd_entity_creation_in_update(hass: HomeAssistant) -> 
                 growspace_entities,
                 mock_add_entities,
                 calculated_vpd_growspace_ids,
+                set(),
             )
 
     assert (

@@ -539,6 +539,7 @@ class TestSensorRegistrationCoverage:
             growspace_entities,
             plant_entities,
             calculated_vpd_growspace_ids,
+            set(),
         )
 
         # Ensure no NutrientPresetSensor is created

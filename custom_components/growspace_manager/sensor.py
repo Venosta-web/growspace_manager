@@ -56,6 +56,7 @@ from .utils import (
     VPDCalculator,
     calculate_plant_stage,
     generate_growspace_overview_unique_id,
+    generate_subarea_vpd_sensor_unique_id,
     generate_vpd_sensor_unique_id,
 )
 
@@ -163,6 +164,7 @@ async def async_setup_entry(
     initial_entities: list[Entity] = []
 
     calculated_vpd_growspace_ids: set[str] = set()
+    calculated_subarea_vpd_ids: set[str] = set()
 
     # Create initial entities
     await _create_initial_entities(
@@ -173,6 +175,7 @@ async def async_setup_entry(
         growspace_entities,
         plant_entities,
         calculated_vpd_growspace_ids,
+        calculated_subarea_vpd_ids,
     )
 
     if initial_entities:
@@ -233,6 +236,7 @@ async def async_setup_entry(
                 growspace_entities,
                 async_add_entities,
                 calculated_vpd_growspace_ids,
+                calculated_subarea_vpd_ids,
             )
             await _update_plant_entities(
                 hass, coordinator, plant_entities, async_add_entities
@@ -255,6 +259,7 @@ async def _create_initial_entities(
     growspace_entities: dict[str, GrowspaceOverviewSensor],
     plant_entities: dict[str, PlantEntity],
     calculated_vpd_growspace_ids: set[str],
+    calculated_subarea_vpd_ids: set[str],
 ) -> None:
     """Create initial entities for the platform."""
     # Strain Library
@@ -273,6 +278,13 @@ async def _create_initial_entities(
         for vpd_entity in vpd_entities:
             initial_entities.append(vpd_entity)
             calculated_vpd_growspace_ids.add(vpd_entity.unique_id)
+
+        subarea_vpd_entities = _check_subarea_calculated_vpd_sensors(
+            coordinator, growspace
+        )
+        for vpd_entity in subarea_vpd_entities:
+            initial_entities.append(vpd_entity)
+            calculated_subarea_vpd_ids.add(vpd_entity.unique_id)
 
         # Create tank depletion sensors if environment config has tanks
         env_config = getattr(growspace, "environment_config", None)
@@ -394,6 +406,7 @@ async def _update_growspace_entities(
     growspace_entities: dict[str, GrowspaceOverviewSensor],
     async_add_entities: AddEntitiesCallback,
     calculated_vpd_growspace_ids: set[str],
+    calculated_subarea_vpd_ids: set[str],
 ) -> None:
     """Update growspace entities based on coordinator data."""
     # Add new
@@ -420,6 +433,19 @@ async def _update_growspace_entities(
             coordinator.config_entry.async_create_background_task(
                 hass, coordinator.async_request_refresh(), "coordinator_refresh"
             )
+
+        subarea_vpd_entities = _check_subarea_calculated_vpd_sensors(
+            coordinator, growspace
+        )
+        new_subarea_vpds = [
+            v
+            for v in subarea_vpd_entities
+            if v.unique_id not in calculated_subarea_vpd_ids
+        ]
+        if new_subarea_vpds:
+            async_add_entities(new_subarea_vpds)
+            for v in new_subarea_vpds:
+                calculated_subarea_vpd_ids.add(v.unique_id)
 
     # Remove deleted
     for removed_gs_id in list(growspace_entities.keys()):
@@ -920,6 +946,101 @@ class CalculatedVpdSensor(BaseVpdSensor):
             "configured_lst_offset": self._lst_offset,
             "calculation_method": "Calculated from temperature and humidity",
         }
+
+
+class SubareaCalculatedVpdSensor(CalculatedVpdSensor):
+    """A VPD sensor calculated from a subarea's temperature and humidity sensors."""
+
+    def __init__(
+        self,
+        coordinator: GrowspaceCoordinator,
+        growspace_id: str,
+        growspace_name: str,
+        subarea_id: str,
+        subarea_name: str,
+        temp_sensor: str,
+        humidity_sensor: str,
+        lst_offset: float = 0.0,
+        index: int | None = None,
+    ) -> None:
+        """Initialize the subarea calculated VPD sensor."""
+        super().__init__(
+            coordinator,
+            growspace_id,
+            growspace_name,
+            temp_sensor,
+            humidity_sensor,
+            lst_offset,
+            index,
+        )
+        suffix = f" {index + 1}" if index is not None else ""
+        self._attr_name = f"{subarea_name} Calculated VPD{suffix}"
+        self._attr_unique_id = generate_subarea_vpd_sensor_unique_id(
+            growspace_id, subarea_id, index
+        )
+        self._subarea_id = subarea_id
+        self._subarea_name = subarea_name
+
+
+def _get_env_config_val(env_config: Any, key: str, default: Any = None) -> Any:
+    """Safely get a value from an EnvironmentConfig (dataclass or dict)."""
+    try:
+        if isinstance(env_config, dict):
+            return env_config.get(key, default)
+        return getattr(env_config, key, default)
+    except AttributeError:
+        return default
+
+
+def _check_subarea_calculated_vpd_sensors(
+    coordinator: GrowspaceCoordinator,
+    growspace: Growspace,
+) -> list[SubareaCalculatedVpdSensor]:
+    """Create calculated VPD sensors for subareas that have T/H but no VPD sensor."""
+    entities: list[SubareaCalculatedVpdSensor] = []
+
+    for subarea in getattr(growspace, "subareas", []):
+        env_config = subarea.environment_config
+        if not env_config:
+            continue
+
+        temp_sensors = _get_env_config_val(env_config, "temperature_sensors", [])
+        hum_sensors = _get_env_config_val(env_config, "humidity_sensors", [])
+        vpd_sensors = _get_env_config_val(env_config, "vpd_sensors", [])
+
+        if not temp_sensors and (ts := _get_env_config_val(env_config, "temperature_sensor")):
+            temp_sensors = [ts]
+        if not hum_sensors and (hs := _get_env_config_val(env_config, "humidity_sensor")):
+            hum_sensors = [hs]
+        if not vpd_sensors and (vs := _get_env_config_val(env_config, "vpd_sensor")):
+            vpd_sensors = [vs]
+
+        num_pairs = min(len(temp_sensors), len(hum_sensors))
+        lst_offset = _get_env_config_val(env_config, "lst_offset", 0.0)
+
+        for i in range(num_pairs):
+            t_sensor = temp_sensors[i]
+            h_sensor = hum_sensors[i]
+            existing_vpd = vpd_sensors[i] if i < len(vpd_sensors) else None
+
+            if t_sensor and h_sensor:
+                if not existing_vpd or "calculated_vpd" in existing_vpd:
+                    index = i if num_pairs > 1 else None
+                    entities.append(
+                        SubareaCalculatedVpdSensor(
+                            coordinator,
+                            growspace.id,
+                            growspace.name,
+                            subarea.id,
+                            subarea.name,
+                            t_sensor,
+                            h_sensor,
+                            lst_offset,
+                            index=index,
+                        )
+                    )
+
+    return entities
 
 
 class AirExchangeSensor(CoordinatorEntity[GrowspaceCoordinator], SensorEntity):  # type: ignore[misc]

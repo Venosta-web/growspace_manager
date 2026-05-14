@@ -346,6 +346,14 @@ def generate_vpd_sensor_unique_id(growspace_id: str, index: int | None = None) -
     return f"{DOMAIN}_{growspace_id}_calculated_vpd{suffix}"
 
 
+def generate_subarea_vpd_sensor_unique_id(
+    growspace_id: str, subarea_id: str, index: int | None = None
+) -> str:
+    """Generate a consistent unique ID for a subarea calculated VPD sensor."""
+    suffix = f"_{index}" if index is not None else ""
+    return f"{DOMAIN}_{growspace_id}_subarea_{subarea_id}_calculated_vpd{suffix}"
+
+
 def generate_growspace_overview_unique_id(growspace_id: str) -> str:
     """Generate a consistent unique ID for a growspace overview sensor."""
     return f"{DOMAIN}_{growspace_id}"
