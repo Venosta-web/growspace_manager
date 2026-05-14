@@ -137,6 +137,8 @@ class GrowspaceViewModelBuilder:
         # Calculate weeks from days
         veg_week = days_to_week(max_veg_days)
         flower_week = days_to_week(max_flower_days)
+        dry_week = days_to_week(max_dry_days)
+        cure_week = days_to_week(max_cure_days)
 
         # Get irrigation settings
         irrigation_config = growspace.irrigation_config
@@ -187,9 +189,19 @@ class GrowspaceViewModelBuilder:
             "notification_target": growspace.notification_target,
             "max_veg_days": max_veg_days,
             "max_flower_days": max_flower_days,
+            "max_dry_days": max_dry_days,
+            "max_cure_days": max_cure_days,
             "veg_week": veg_week,
             "flower_week": flower_week,
-            "max_stage_summary": f"Veg: {max_veg_days}d (W{veg_week}), Flower: {max_flower_days}d (W{flower_week})",
+            "dry_week": dry_week,
+            "cure_week": cure_week,
+            "max_stage_summary": (
+                f"Cure: {max_cure_days}d (W{cure_week})"
+                if max_cure_days > 0
+                else f"Dry: {max_dry_days}d (W{dry_week})"
+                if max_dry_days > 0
+                else f"Veg: {max_veg_days}d (W{veg_week}), Flower: {max_flower_days}d (W{flower_week})"
+            ),
             "irrigation_config": irrigation_options,
             "irrigation_strategy": irrigation_strategy_dict,
             "drain_config": {

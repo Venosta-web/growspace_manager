@@ -73,15 +73,7 @@ def days_to_week(days: int) -> int:
 def find_first_free_position(
     growspace: Growspace, occupied_positions: set[tuple[int, int]]
 ) -> tuple[int | None, int | None]:
-    """_Returns the first col/row thats free in growspace.
-
-    Args:
-        growspace (dict): _description_
-        occupied_positions (set[tuple[int, int]]): _description_
-
-    Returns:
-        tuple[int, int]: _description_
-    """
+    """Return the first (row, col) position not in occupied_positions, or the last cell if all are taken."""
 
     total_rows = int(growspace.rows)
     total_cols = int(growspace.plants_per_row)

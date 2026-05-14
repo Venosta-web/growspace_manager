@@ -12,6 +12,7 @@ from custom_components.growspace_manager.bayesian_data import (
 from custom_components.growspace_manager.bayesian_evaluator import (
     async_evaluate_mold_risk_trend,
 )
+from custom_components.growspace_manager.domain.stage import BayesianStage
 from custom_components.growspace_manager.utils import (
     calculate_stage_transition,
     interpolate_value,
@@ -66,7 +67,13 @@ class MoldRiskEvaluatorStrategy(BayesianEvaluatorStrategy):
 
         # Use transition logic for smoother mold risk thresholds
         stage_a, stage_b, factor = calculate_stage_transition(
-            state.flower_days, state.veg_days, state.seedling_days, state.clone_days
+            state.flower_days,
+            state.veg_days,
+            state.seedling_days,
+            state.clone_days,
+            state.dry_days,
+            state.cure_days,
+            state.mother_days,
         )
 
         crit_a = CRITICAL_HUMIDITY_THRESHOLDS[stage_a]["critical"]
@@ -77,17 +84,13 @@ class MoldRiskEvaluatorStrategy(BayesianEvaluatorStrategy):
         critical_humidity = interpolate_value(crit_a, crit_b, factor)
         high_humidity = interpolate_value(high_a, high_b, factor)
 
-        is_early_stage = stage_a in (
-            "seedling",
-            "clone",
-            "seedling_standard",
-            "clone_standard",
-        ) or stage_b in (
-            "seedling",
-            "clone",
-            "seedling_standard",
-            "clone_standard",
+        early_stages = (
+            BayesianStage.SEEDLING,
+            BayesianStage.CLONE,
+            BayesianStage.SEEDLING_STANDARD,
+            BayesianStage.CLONE_STANDARD,
         )
+        is_early_stage = stage_a in early_stages or stage_b in early_stages
 
         if not is_early_stage and state.humidity is not None and state.humidity > 90.0:
             # Extra penalty for extremely high humidity in non-early stages
@@ -112,7 +115,13 @@ class MoldRiskEvaluatorStrategy(BayesianEvaluatorStrategy):
 
         # Define thresholds based on growth stage
         stage_a, stage_b, factor = calculate_stage_transition(
-            state.flower_days, state.veg_days, state.seedling_days, state.clone_days
+            state.flower_days,
+            state.veg_days,
+            state.seedling_days,
+            state.clone_days,
+            state.dry_days,
+            state.cure_days,
+            state.mother_days,
         )
 
         # Use high humidity threshold as a safe point for air circulation
@@ -143,7 +152,13 @@ class MoldRiskEvaluatorStrategy(BayesianEvaluatorStrategy):
 
         # Define thresholds based on growth stage
         stage_a, stage_b, factor = calculate_stage_transition(
-            state.flower_days, state.veg_days, state.seedling_days, state.clone_days
+            state.flower_days,
+            state.veg_days,
+            state.seedling_days,
+            state.clone_days,
+            state.dry_days,
+            state.cure_days,
+            state.mother_days,
         )
 
         # Use critical humidity threshold

@@ -89,15 +89,15 @@ class EnvironmentAnalyzer:
             )
 
         # Day Targets
-        day_a = thr_a.get("day", thr_a["day"])
-        day_b = thr_b.get("day", thr_b["day"])
+        day_a = thr_a["day"]
+        day_b = thr_b["day"]
         d_danger_min, d_danger_max, d_target_min, d_target_max = interpolate_targets(
             day_a, day_b, factor
         )
 
         # Night Targets
-        night_a = thr_a.get("night", thr_a["day"])
-        night_b = thr_b.get("night", thr_b["day"])
+        night_a = thr_a["night"]
+        night_b = thr_b["night"]
         n_danger_min, n_danger_max, n_target_min, n_target_max = interpolate_targets(
             night_a, night_b, factor
         )

@@ -27,6 +27,7 @@ from .const import (
     PlantStage,
 )
 from .domain import calculate_days_in_stage
+from .domain.stage import DEFAULT_FLOWER_EARLY_DAYS, FLOWER_LATE_MIN_DAYS
 from .exceptions import GrowspaceError
 from .models import GrowspaceEvent
 
@@ -231,7 +232,9 @@ class DehumidifierCoordinator:
                 "Day" if is_day else "Night",
             )
             await self._control_dehumidifier(True)
-            self._fire_logbook_event(True, current_vpd, stage_name, is_day, on_threshold, off_threshold)
+            self._fire_logbook_event(
+                True, current_vpd, stage_name, is_day, on_threshold, off_threshold
+            )
         elif current_vpd > off_threshold and is_on:
             _LOGGER.info(
                 "VPD Trigger: Current %.2f > Threshold %.2f (%s, %s) -> Turning OFF Devices",
@@ -241,7 +244,9 @@ class DehumidifierCoordinator:
                 "Day" if is_day else "Night",
             )
             await self._control_dehumidifier(False)
-            self._fire_logbook_event(False, current_vpd, stage_name, is_day, on_threshold, off_threshold)
+            self._fire_logbook_event(
+                False, current_vpd, stage_name, is_day, on_threshold, off_threshold
+            )
 
     def _is_locked_by_timer(self, is_on: bool) -> bool:
         """Check if state change is blocked by minimum run/off timers.
@@ -309,16 +314,14 @@ class DehumidifierCoordinator:
             max_cure_days = max(max_cure_days, c_days)
             max_mother_days = max(max_mother_days, m_days)
 
-
-
         # Priority: Cure > Dry > Flower > Mother > Veg > Seedling
         if max_cure_days > 0:
             return PlantStage.CURE
         if max_dry_days > 0:
             return PlantStage.DRY
-        if max_flower_days >= 50:
+        if max_flower_days > FLOWER_LATE_MIN_DAYS:
             return PlantStage.FLOWER_LATE
-        if max_flower_days >= 22:
+        if max_flower_days > DEFAULT_FLOWER_EARLY_DAYS:
             return PlantStage.FLOWER_MID
         if max_flower_days > 0:
             return PlantStage.FLOWER_EARLY
@@ -464,7 +467,10 @@ class DehumidifierCoordinator:
         now = time.monotonic()
         if self._sensors_unavailable_since is None:
             self._sensors_unavailable_since = now
-        elif now - self._sensors_unavailable_since >= self._SENSOR_UNAVAILABLE_WARN_SECONDS:
+        elif (
+            now - self._sensors_unavailable_since
+            >= self._SENSOR_UNAVAILABLE_WARN_SECONDS
+        ):
             _LOGGER.warning(
                 "All light sensors for growspace %s have been unavailable for over %d seconds; "
                 "using last known day/night state",
