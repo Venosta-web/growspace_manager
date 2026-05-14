@@ -13,12 +13,13 @@ async def test_async_commit_invalidates_cache(hass: HomeAssistant) -> None:
     """Test that async_commit invalidates the cache before updating data."""
     entry = MockConfigEntry(domain=DOMAIN, data={}, entry_id="test_entry")
 
-    # Mock storage manager
+    # Mock storage manager (Ensure path is exactly this, without .services.)
     with patch(
         "custom_components.growspace_manager.coordinator.StorageManager"
     ) as mock_sm_cls:
         mock_sm_instance = mock_sm_cls.return_value
         mock_sm_instance.async_save = AsyncMock()
+        mock_sm_instance.async_force_save = AsyncMock()
 
         coordinator = GrowspaceCoordinator(hass, entry, data={})
 
@@ -46,6 +47,7 @@ async def test_async_commit_rebuilds_cache(hass: HomeAssistant) -> None:
     ) as mock_sm_cls:
         mock_sm_instance = mock_sm_cls.return_value
         mock_sm_instance.async_save = AsyncMock()
+        mock_sm_instance.async_force_save = AsyncMock()
 
         coordinator = GrowspaceCoordinator(hass, entry, data={})
         coordinator.async_set_updated_data = MagicMock()

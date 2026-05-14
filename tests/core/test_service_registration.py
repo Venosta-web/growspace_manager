@@ -102,7 +102,7 @@ async def test_service_wrapper_execution_no_strain_lib(
     hass.services.async_register.side_effect = capture_register
 
     # Mock the CORRECT async method that the handler actually awaits!
-    mock_coordinator.async_remove_growspace = AsyncMock()
+    mock_coordinator.services.remove_growspace = AsyncMock()
 
     with patch(
         "homeassistant.config_entries.ConfigEntries.async_entries",

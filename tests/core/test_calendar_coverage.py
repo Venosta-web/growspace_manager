@@ -1,17 +1,21 @@
 """Coverage tests for calendar.py."""
 
 from datetime import timedelta
-from unittest.mock import Mock, patch
+from unittest.mock import MagicMock, Mock, patch
+
 import pytest
 
 from custom_components.growspace_manager.calendar import GrowspaceCalendar
 from homeassistant.util import dt as dt_util
 
+
 @pytest.fixture
 def mock_coordinator() -> Mock:
     """Create a mock GrowspaceCoordinator."""
-    coordinator = Mock()
+    coordinator = MagicMock()
     coordinator.hass = Mock()
+    coordinator.services = MagicMock()  # ADDED: Initialize the services namespace
+
     growspace_mock = Mock()
     growspace_mock.name = "Growspace 1"
     growspace_mock.id = "gs1"
@@ -35,19 +39,29 @@ def mock_coordinator() -> Mock:
             }
         ]
     }
-    coordinator.get_growspace_plants.return_value = list(coordinator.plants.values())
+
+    # UPDATED: Point to the new services location
+    coordinator.services.get_growspace_plants.return_value = list(
+        coordinator.plants.values()
+    )
     return coordinator
+
 
 def test_generate_events_exception_handling(mock_coordinator: Mock) -> None:
     """Test exception handling in _generate_events."""
     calendar = GrowspaceCalendar(mock_coordinator, "gs1")
-    
+
     # Patch dt_util.parse_datetime to raise ValueError
-    with patch("homeassistant.util.dt.parse_datetime", side_effect=ValueError("Test Error")), \
-         patch("custom_components.growspace_manager.calendar._LOGGER.warning") as mock_warning:
-        
+    with (
+        patch(
+            "homeassistant.util.dt.parse_datetime", side_effect=ValueError("Test Error")
+        ),
+        patch(
+            "custom_components.growspace_manager.calendar._LOGGER.warning"
+        ) as mock_warning,
+    ):
         calendar._generate_events()
-        
+
         # Verify that warning was logged
         assert mock_warning.called
         args = mock_warning.call_args[0]
@@ -55,5 +69,3 @@ def test_generate_events_exception_handling(mock_coordinator: Mock) -> None:
         assert args[1] == "p1"
         assert isinstance(args[2], ValueError)
         assert str(args[2]) == "Test Error"
-
-

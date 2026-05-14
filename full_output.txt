@@ -1,0 +1,62 @@
+============================= test session starts ==============================
+platform linux -- Python 3.12.3, pytest-9.0.3, pluggy-1.6.0 -- /usr/bin/python3
+cachedir: .pytest_cache
+rootdir: /home/maxi/core/core/vendor/growspace_manager
+configfile: pytest.ini (WARNING: ignoring pytest config in pyproject.toml!)
+plugins: syrupy-5.1.0, anyio-4.13.0, respx-0.23.1, asyncio-1.3.0, socket-0.7.0
+asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=function, asyncio_default_test_loop_scope=function
+collecting ... collected 1 item
+
+tests/core/test_services_irrigation.py::TestGetIrrigationCoordinator::test_success ERROR [100%]
+
+==================================== ERRORS ====================================
+_________ ERROR at setup of TestGetIrrigationCoordinator.test_success __________
+file /home/maxi/core/core/vendor/growspace_manager/tests/core/test_services_irrigation.py, line 96
+      @pytest.mark.asyncio
+      async def test_success(self, mock_coordinator, mock_irrigation_coordinator):
+          """Test successful retrieval of irrigation coordinator."""
+          mock_coordinator.irrigation_coordinators = {"gs1": mock_irrigation_coordinator}
+
+          result = await _get_irrigation_coordinator(mock_coordinator, "gs1")
+          assert result == mock_irrigation_coordinator
+file /home/maxi/core/core/vendor/growspace_manager/tests/core/conftest.py, line 10
+  @pytest.fixture(autouse=True)
+  def freeze_time(freezer: FrozenDateTimeFactory) -> None:
+E       fixture 'freezer' not found
+>       available fixtures: _class_scoped_runner, _function_scoped_runner, _module_scoped_runner, _package_scoped_runner, _session_scoped_runner, _syrupy_apply_ide_patches, anyio_backend, anyio_backend_name, anyio_backend_options, cache, capfd, capfdbinary, caplog, capsys, capsysbinary, capteesys, doctest_namespace, enforce_utc_timezone, event_loop_policy, free_tcp_port, free_tcp_port_factory, free_udp_port, free_udp_port_factory, freeze_time, init_integration, mock_config_entry, mock_coordinator, mock_growspace, mock_hass, mock_irrigation_coordinator, mock_plant, mock_recorder_before_hass, mock_strain_library, monkeypatch, pytestconfig, record_property, record_testsuite_property, record_xml_attribute, recwarn, respx_mock, snapshot, socket_disabled, socket_enabled, subtests, tmp_path, tmp_path_factory, tmpdir, tmpdir_factory, unused_tcp_port, unused_tcp_port_factory, unused_udp_port, unused_udp_port_factory
+>       use 'pytest --fixtures [testpath]' for help on them.
+
+/home/maxi/core/core/vendor/growspace_manager/tests/core/conftest.py:10
+=============================== warnings summary ===============================
+../../../../.local/lib/python3.12/site-packages/josepy/util.py:28
+  /home/maxi/.local/lib/python3.12/site-packages/josepy/util.py:28: DeprecationWarning: CSR support in pyOpenSSL is deprecated. You should use the APIs in cryptography.
+    def __init__(self, wrapped: Union[crypto.X509, crypto.X509Req]) -> None:
+
+../../../../.local/lib/python3.12/site-packages/acme/crypto_util.py:280
+  /home/maxi/.local/lib/python3.12/site-packages/acme/crypto_util.py:280: DeprecationWarning: CSR support in pyOpenSSL is deprecated. You should use the APIs in cryptography.
+    def _pyopenssl_cert_or_req_all_names(loaded_cert_or_req: Union[crypto.X509, crypto.X509Req]
+
+../../../../.local/lib/python3.12/site-packages/acme/crypto_util.py:291
+  /home/maxi/.local/lib/python3.12/site-packages/acme/crypto_util.py:291: DeprecationWarning: CSR support in pyOpenSSL is deprecated. You should use the APIs in cryptography.
+    def _pyopenssl_cert_or_req_san(cert_or_req: Union[crypto.X509, crypto.X509Req]) -> List[str]:
+
+../../../../.local/lib/python3.12/site-packages/acme/crypto_util.py:318
+  /home/maxi/.local/lib/python3.12/site-packages/acme/crypto_util.py:318: DeprecationWarning: CSR support in pyOpenSSL is deprecated. You should use the APIs in cryptography.
+    def _pyopenssl_cert_or_req_san_ip(cert_or_req: Union[crypto.X509, crypto.X509Req]) -> List[str]:
+
+../../../../.local/lib/python3.12/site-packages/acme/crypto_util.py:338
+  /home/maxi/.local/lib/python3.12/site-packages/acme/crypto_util.py:338: DeprecationWarning: CSR support in pyOpenSSL is deprecated. You should use the APIs in cryptography.
+    def _pyopenssl_extract_san_list_raw(cert_or_req: Union[crypto.X509, crypto.X509Req]) -> List[str]:
+
+../../../../.local/lib/python3.12/site-packages/acme/crypto_util.py:372
+  /home/maxi/.local/lib/python3.12/site-packages/acme/crypto_util.py:372: DeprecationWarning: X509Extension support in pyOpenSSL is deprecated. You should use the APIs in cryptography.
+    extensions: Optional[List[crypto.X509Extension]] = None,
+
+../../../../.local/lib/python3.12/site-packages/homeassistant/components/http/__init__.py:310
+  /home/maxi/.local/lib/python3.12/site-packages/homeassistant/components/http/__init__.py:310: DeprecationWarning: Inheritance class HomeAssistantApplication from web.Application is discouraged
+    class HomeAssistantApplication(web.Application):
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+ERROR tests/core/test_services_irrigation.py::TestGetIrrigationCoordinator::test_success
+========================= 7 warnings, 1 error in 0.02s =========================

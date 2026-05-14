@@ -440,7 +440,6 @@ async def test_async_unload_entry_with_coordinators_cleanup(mock_hass) -> None:
     coordinator.subsystem_manager.async_cancel_all.assert_called_once()
 
 
-
 @pytest.mark.asyncio
 async def test_strain_library_upload_view(mock_hass) -> None:
     """Test StrainLibraryUploadView."""
@@ -650,7 +649,10 @@ async def test_websocket_get_growspace_data(
         "custom_components.growspace_manager.GrowspaceCoordinator.get_for_service_call",
         return_value=mock_coordinator,
     ):
-        mock_coordinator.get_growspace_data.return_value = {"name": "Test space"}
+        # FIX: Add .services here to match the updated websocket.py logic
+        mock_coordinator.services.get_growspace_data.return_value = {
+            "name": "Test space"
+        }
 
         msg = {
             "id": 1,
@@ -671,7 +673,9 @@ async def test_websocket_get_growspace_data(
             "growspace_id": "invalid",
         }
         await websocket_get_growspace_data(hass, mock_connection, msg)
-        mock_connection.send_error.assert_called_with(2, "not_loaded", "Growspace Manager integration not loaded")
+        mock_connection.send_error.assert_called_with(
+            2, "not_loaded", "Growspace Manager integration not loaded"
+        )
 
     # 3. Unknown Error
     with patch(
