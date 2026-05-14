@@ -121,6 +121,9 @@ snapshot_diff.txt
 snapshot_output.txt
 test_output.txt
 tests/output.txt
+full_output.txt
+output.txt
+socket_check.txt
 *.log
 .coverage
 uv.lock

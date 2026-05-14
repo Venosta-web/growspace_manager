@@ -1622,7 +1622,7 @@ async def test_async_move_plant(hass: HomeAssistant) -> None:
 
 @pytest.mark.asyncio
 async def test_async_switch_plants_service(hass: HomeAssistant) -> None:
-    """Test the async_switch_plants_service method."""
+    """Test the async_switch_plants method."""
     coordinator = create_test_coordinator(hass, data={})
     gs = await coordinator.growspace_manager.add_growspace(
         "Test GS", rows=2, plants_per_row=2
@@ -1634,7 +1634,7 @@ async def test_async_switch_plants_service(hass: HomeAssistant) -> None:
         gs.id, "Test Plant 2", row=2, col=2
     )
 
-    await coordinator.switch_plants_service(plant1.plant_id, plant2.plant_id)
+    await coordinator.async_switch_plants(plant1.plant_id, plant2.plant_id)
 
     assert coordinator.plants[plant1.plant_id].row == 2
     assert coordinator.plants[plant1.plant_id].col == 2

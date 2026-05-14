@@ -1063,18 +1063,6 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         """Switch the positions of two plants."""
         await self.services.switch_plants(plant1_id, plant2_id)
 
-    async def switch_plants_service(self, plant1_id: str, plant2_id: str) -> None:
-        """Switch the positions of two plants (legacy service alias)."""
-        await self.services.switch_plants(plant1_id, plant2_id)
-
-    async def async_move_plant(self, plant_id: str, row: int, col: int) -> None:
-        """Move a plant to a new position."""
-        await self.services.move_plant(plant_id, row, col)
-
-    async def move_plant_service(self, plant_id: str, row: int, col: int) -> None:
-        """Move a plant to a new position (legacy service alias)."""
-        await self.services.move_plant(plant_id, row, col)
-
     # =============================================================================
     # DATA RETRIEVAL FOR WEBSOCKET API
     # =============================================================================
@@ -1349,4 +1337,4 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
     async def _async_remove_plant_entities(self, plant_id: str) -> None:
         """Remove all Home Assistant entities associated with a specific plant."""
-        await self.services._remove_plant_entities(plant_id)
+        await self.services.remove_plant_entities(plant_id)

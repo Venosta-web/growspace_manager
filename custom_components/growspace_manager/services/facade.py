@@ -369,7 +369,7 @@ class ServiceFacade:
             growspace.environment_config.dli_target_veg = float(dli_veg)
 
         await self._coordinator.async_commit()
-        await self._coordinator.async_refresh()
+        await self._coordinator.async_request_refresh()
         _LOGGER.info(
             "Lighting schedule updated for %s: Veg=%sh, Flower=%sh, DLI=%s",
             growspace.name,
@@ -388,24 +388,6 @@ class ServiceFacade:
         """Compatibility alias for async_set_lighting_schedule."""
         await self.async_set_lighting_schedule(
             growspace_id, veg_hours, flower_hours, dli_veg
-        )
-        if growspace_id not in self._coordinator.growspaces:
-            raise ServiceValidationError(f"Growspace '{growspace_id}' not found")
-
-        growspace = self._coordinator.growspaces[growspace_id]
-        growspace.environment_config.veg_day_hours = int(veg_hours)
-        growspace.environment_config.flower_day_hours = int(flower_hours)
-        if dli_veg is not None:
-            growspace.environment_config.dli_target_veg = float(dli_veg)
-
-        await self._coordinator.async_commit()
-        await self._coordinator.async_refresh()
-        _LOGGER.info(
-            "Lighting schedule updated for %s: Veg=%sh, Flower=%sh, DLI=%s",
-            growspace.name,
-            veg_hours,
-            flower_hours,
-            dli_veg,
         )
 
     async def set_notifications_enabled(self, growspace_id: str, enabled: bool) -> None:
@@ -554,7 +536,7 @@ class ServiceFacade:
 
         # Save and refresh
         await self._coordinator.async_commit()
-        await self._coordinator.async_refresh()
+        await self._coordinator.async_request_refresh()
         _LOGGER.info("Updated irrigation config for %s", growspace_id)
 
     async def take_clones(
@@ -936,11 +918,11 @@ class ServiceFacade:
 
         # Entity removal (cleanup)
         if removed:
-            await self._remove_plant_entities(plant_id)
+            await self.remove_plant_entities(plant_id)
 
         return removed
 
-    async def _remove_plant_entities(self, plant_id: str) -> None:
+    async def remove_plant_entities(self, plant_id: str) -> None:
         """Remove all Home Assistant entities associated with a specific plant."""
         entity_registry = er.async_get(self._coordinator.hass)
 

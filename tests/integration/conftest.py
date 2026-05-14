@@ -99,6 +99,7 @@ def mock_coordinator():
     coordinator.async_commit = AsyncMock()
     coordinator.async_load = AsyncMock()
     coordinator.async_refresh = AsyncMock()
+    coordinator.async_request_refresh = AsyncMock()
     coordinator.async_take_clones = AsyncMock(return_value=["clone_1"])
     coordinator.async_promote_clone = AsyncMock()
     coordinator.async_add_plant = AsyncMock()
