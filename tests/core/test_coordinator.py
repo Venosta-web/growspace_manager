@@ -1193,9 +1193,9 @@ async def test_async_harvest_plant_auto_flow_to_cure(
         coordinator: The mock GrowspaceCoordinator.
     """
     # Manually create the 'dry' growspace as a special growspace
-    coordinator.growspaces["dry"] = Growspace(
+    coordinator.data_repository.add_growspace(Growspace(
         id="dry", name="Dry GS", rows=3, plants_per_row=3
-    )
+    ))
     plant = await coordinator.plant_manager.add_plant(
         "dry", "Strain A", stage=PlantStage.DRY, dry_start=date(2025, 1, 1)
     )
@@ -1595,10 +1595,9 @@ async def test_ensure_special_growspace_updates_name(
 
     caplog.set_level("INFO")
     coordinator = create_test_coordinator(hass, data={})
-    coordinator.growspaces["dry"] = Growspace(
+    coordinator.data_repository.add_growspace(Growspace(
         id="dry", name="Old Dry Name", rows=1, plants_per_row=1
-    )
-
+    ))
     coordinator.growspace_manager.ensure_special_growspace("dry", "Dry")
 
     assert coordinator.growspaces["dry"].name == "Dry"
@@ -1661,10 +1660,11 @@ async def test_handle_harvest_logic_explicit_target(hass: HomeAssistant) -> None
 
     coordinator = create_test_coordinator(hass, data={})
     plant = MagicMock()
+    plant.plant_id = "p1"
     plant.phi_clearance_date = None
-    coordinator.growspaces["gs1"] = Growspace(id="gs1", name="gs1_name")
-    coordinator.growspaces["target_gs"] = Growspace(id="target_gs", name="Target GS")
-    coordinator.plants["p1"] = plant
+    coordinator.data_repository.add_growspace(Growspace(id="gs1", name="gs1_name"))
+    coordinator.data_repository.add_growspace(Growspace(id="target_gs", name="Target GS"))
+    coordinator.data_repository.add_plant(plant)
 
     with patch.object(
         coordinator.lifecycle_manager,
@@ -1690,8 +1690,9 @@ async def test_handle_harvest_logic_auto_flow(hass: HomeAssistant) -> None:
 
     coordinator = create_test_coordinator(hass, data={})
     plant = MagicMock()
+    plant.plant_id = "p1"
     plant.phi_clearance_date = None
-    coordinator.plants["p1"] = plant
+    coordinator.data_repository.add_plant(plant)
 
     with patch.object(
         coordinator.lifecycle_manager, "_harvest_auto_flow", new_callable=AsyncMock
@@ -1793,8 +1794,8 @@ async def test_harvest_to_explicit_target_no_position(
         "find_first_available_position",
         MagicMock(side_effect=ValueError("No position")),
     )
-    coordinator.growspaces = {"gs1": MagicMock()}
-    coordinator.plants["p1"] = plant  # Ensure plant exists
+    coordinator.data_repository.add_growspace(MagicMock(id="gs1"))
+    coordinator.data_repository.add_plant(plant)  # Ensure plant exists
 
     with patch.object(
         coordinator.lifecycle_manager, "update_plant", new_callable=AsyncMock
@@ -1827,9 +1828,9 @@ async def test_harvest_to_explicit_target_cure(hass: HomeAssistant) -> None:
         "find_first_available_position",
         MagicMock(return_value=(1, 1)),
     )
-    coordinator.growspaces = {"cure": MagicMock()}
+    coordinator.data_repository.add_growspace(MagicMock(id="cure"))
 
-    coordinator.plants["p1"] = plant  # Ensure plant exists in coordinator
+    coordinator.data_repository.add_plant(plant)  # Ensure plant exists in coordinator
 
     with patch.object(
         coordinator.lifecycle_manager, "update_plant", new_callable=AsyncMock
@@ -1869,9 +1870,9 @@ async def test_harvest_to_explicit_target_clone(hass: HomeAssistant) -> None:
         "find_first_available_position",
         MagicMock(return_value=(1, 1)),
     )
-    coordinator.growspaces = {"clone": MagicMock()}
+    coordinator.data_repository.add_growspace(MagicMock(id="clone"))
 
-    coordinator.plants["p1"] = plant  # Ensure plant exists in coordinator
+    coordinator.data_repository.add_plant(plant)  # Ensure plant exists in coordinator
 
     with patch.object(
         coordinator.lifecycle_manager, "update_plant", new_callable=AsyncMock
@@ -1911,9 +1912,9 @@ async def test_harvest_to_explicit_target_mother(hass: HomeAssistant) -> None:
         "find_first_available_position",
         MagicMock(return_value=(1, 1)),
     )
-    coordinator.growspaces = {"mother": MagicMock()}
+    coordinator.data_repository.add_growspace(MagicMock(id="mother"))
 
-    coordinator.plants["p1"] = plant  # Ensure plant exists in coordinator
+    coordinator.data_repository.add_plant(plant)  # Ensure plant exists in coordinator
 
     with patch.object(
         coordinator.lifecycle_manager, "update_plant", new_callable=AsyncMock
@@ -1956,8 +1957,8 @@ async def test_move_to_clone_growspace_no_position(
         "find_first_available_position",
         MagicMock(side_effect=ValueError("No position")),
     )
-    coordinator.growspaces = {"clone": MagicMock()}
-    coordinator.plants["p1"] = plant  # Ensure plant exists in coordinator
+    coordinator.data_repository.add_growspace(MagicMock(id="clone"))
+    coordinator.data_repository.add_plant(plant)  # Ensure plant exists in coordinator
 
     with patch.object(
         coordinator.lifecycle_manager, "update_plant", new_callable=AsyncMock
@@ -2016,7 +2017,7 @@ async def test_async_initialize_sub_coordinators(
     coordinator: GrowspaceCoordinator,
 ) -> None:
     """Test sub-coordinator initialization."""
-    coordinator.growspaces = {}
+    coordinator.data_repository.load_growspaces({})
 
     # 1. Add growspace with irrigation enabled
     gs1 = await coordinator.growspace_manager.add_growspace("GS1")
@@ -2075,7 +2076,7 @@ async def test_ensure_calculated_sensors_logic(
             temperature_sensor="sensor.temp",
         ),
     )
-    coordinator.growspaces["gs_test"] = gs
+    coordinator.data_repository.add_growspace(gs)
 
     coordinator.growspace_manager.ensure_calculated_sensors()
 
@@ -2192,7 +2193,7 @@ async def test_guess_overview_entity_id(coordinator: GrowspaceCoordinator) -> No
 
     # 3. Standard fallback with slugify
     gs = Growspace(id="complex_id", name="My Complex Name")
-    coordinator.growspaces["complex_id"] = gs
+    coordinator.data_repository.add_growspace(gs)
 
     with patch(
         "homeassistant.helpers.entity_registry.async_get", return_value=mock_registry
@@ -2207,7 +2208,7 @@ async def test_initialization_failure_exception_group(
 ) -> None:
     """Test async_initialize_sub_coordinators handling ExceptionGroup from TaskGroup."""
     gs = Growspace(id="gs1", name="GS1")
-    coordinator.growspaces["gs1"] = gs
+    coordinator.data_repository.add_growspace(gs)
 
     with (
         patch.object(
@@ -2562,8 +2563,7 @@ async def test_ensure_default_growspaces_recreation(
 ) -> None:
     """Test _ensure_default_growspaces recreates missing ones."""
     # Delete 'veg'
-    if "veg" in coordinator.growspaces:
-        del coordinator.growspaces["veg"]
+    coordinator.data_repository.remove_growspace("veg")
 
     await coordinator.growspace_manager.ensure_default_growspaces()
 
@@ -2702,7 +2702,7 @@ async def test_coverage_ensure_special_growspace_type_update(
         plants_per_row=3,
         growspace_type=GrowspaceType.FLOWER,  # Wrong type for dry room
     )
-    coordinator.growspaces["dry"] = growspace
+    coordinator.data_repository.add_growspace(growspace)
 
     # Mock the cache invalidation
     # Mock the cache invalidation
@@ -2724,14 +2724,12 @@ async def test_coverage_async_commit_with_irrigation_coordinators(
 ) -> None:
     """Test async_commit refreshes irrigation coordinators (lines 569-575)."""
     # Setup growspaces
-    coordinator.growspaces = {
-        "gs1": Growspace(
-            id="gs1",
-            name="GS1",
-            rows=3,
-            plants_per_row=3,
-        )
-    }
+    coordinator.data_repository.add_growspace(Growspace(
+        id="gs1",
+        name="GS1",
+        rows=3,
+        plants_per_row=3,
+    ))
 
     # Setup mock irrigation coordinator
     mock_irrigation = MagicMock()
@@ -2771,7 +2769,7 @@ async def test_coverage_ensure_calculated_sensors_no_env_config(
     # Lines 654: if not growspace.environment_config: return
     # So yes, it handles falsy.
     growspace.environment_config = None  # type: ignore[assignment]
-    coordinator.growspaces = {"test_gs": growspace}
+    coordinator.data_repository.add_growspace(growspace)
 
     # Should not raise error
     coordinator.growspace_manager.ensure_calculated_sensors()

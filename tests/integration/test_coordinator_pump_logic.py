@@ -64,10 +64,8 @@ async def test_async_update_irrigation_config_normalizes_empty_strings(
         irrigation_config=IrrigationConfig(drain_pump_entity="switch.old"),
     )
 
-    # Ensure the repository (which the facade now uses) has the growspace
-    coordinator.growspaces = {growspace_id: growspace}
-    coordinator.data_repository.growspaces = coordinator.growspaces
-    coordinator.data_repository.get_growspace.return_value = growspace
+    # Ensure the coordinator's growspaces snapshot includes the growspace
+    coordinator.data_repository.get_all_growspaces.return_value = [growspace]
 
     # Test Input: Empty String for drain_pump_entity
     user_input = {

@@ -239,7 +239,7 @@ class NutrientManager:
     def get_applicable_presets(self, plant_id: str) -> list[NutrientPreset]:
         """Get all presets applicable to a plant based on its current stage and days."""
         # Validate plant existence via coordinator or pass plant object
-        plant = self.repository.plants.get(plant_id)
+        plant = self.repository.get_plant(plant_id)
         if not plant:
             raise ValueError(f"Plant {plant_id} not found")
 

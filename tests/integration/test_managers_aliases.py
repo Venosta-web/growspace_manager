@@ -27,6 +27,7 @@ def growspace_manager(mock_hass, mock_repository):
     mgr = GrowspaceManager(
         mock_hass,
         mock_repository,
+        notification_state=MagicMock(),
         validator=MagicMock(),
         view_model_builder=MagicMock(),
         save_callback=AsyncMock(),
@@ -46,6 +47,7 @@ def plant_manager(mock_hass, mock_repository, growspace_manager):
     mgr = PlantManager(
         mock_hass,
         mock_repository,
+        notification_state=MagicMock(),
         validator=MagicMock(),
         growspace_manager=growspace_manager,
         strain_library=MagicMock(),

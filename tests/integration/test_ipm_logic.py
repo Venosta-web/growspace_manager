@@ -86,11 +86,12 @@ async def test_async_apply_ipm_to_growspace(
     """Test applying IPM to an entire growspace."""
     # Setup
     gs = Growspace(id="gs1", name="Veg Tent")
-    mock_coordinator.growspaces["gs1"] = gs
+    mock_coordinator.data_repository.add_growspace(gs)
 
     p1 = create_plant(plant_id="p1", growspace_id="gs1", strain="Strain A")
     p2 = create_plant(plant_id="p2", growspace_id="gs1", strain="Strain B")
-    mock_coordinator.plants.update({"p1": p1, "p2": p2})
+    mock_coordinator.data_repository.add_plant(p1)
+    mock_coordinator.data_repository.add_plant(p2)
 
     preset = IPMPreset(
         id="ipm1",
@@ -134,11 +135,12 @@ async def test_async_apply_ipm_to_plants(
     """Test applying IPM to specific plants."""
     # Setup
     gs = Growspace(id="gs1", name="Veg Tent")
-    mock_coordinator.growspaces["gs1"] = gs
+    mock_coordinator.data_repository.add_growspace(gs)
 
     p1 = create_plant(plant_id="p1", growspace_id="gs1", strain="Strain A")
     p2 = create_plant(plant_id="p2", growspace_id="gs1", strain="Strain B")
-    mock_coordinator.plants.update({"p1": p1, "p2": p2})
+    mock_coordinator.data_repository.add_plant(p1)
+    mock_coordinator.data_repository.add_plant(p2)
 
     preset = IPMPreset(id="ipm1", name="Spot Treat", type="drench", items=[])
     mock_coordinator.ipm_presets["ipm1"] = preset

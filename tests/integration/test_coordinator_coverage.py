@@ -38,15 +38,12 @@ async def test_coordinator_getters_setters(coordinator: GrowspaceCoordinator) ->
         "test": coordinator.subsystem_manager.dehumidifier_coordinators["test"]
     }
 
-    # Line 219: notifications_sent setter
-    new_notifs = {"gs1": {"stage": {"1": True}}}
-    coordinator.notifications_sent = new_notifs
-    assert coordinator.data_repository.notifications_sent == new_notifs
+    # notifications_sent/enabled are now read-only properties from notification_state
+    coordinator.notification_state.sent = {"gs1": {"stage": {"1": True}}}
+    assert coordinator.notifications_sent == {"gs1": {"stage": {"1": True}}}
 
-    # Line 229: notifications_enabled setter
-    new_enabled = {"gs1": True}
-    coordinator.notifications_enabled = new_enabled
-    assert coordinator.data_repository.notifications_enabled == new_enabled
+    coordinator.notification_state.enabled = {"gs1": True}
+    assert coordinator.notifications_enabled == {"gs1": True}
 
     # Line 234: growspace_service getter
     assert coordinator.growspace_service == coordinator.growspace_manager
@@ -122,7 +119,7 @@ async def test_async_update_growspace_delegation(
 ) -> None:
     """Test services.update_growspace delegation."""
     gs = Growspace(id="gs1", name="Old Name")
-    coordinator.growspaces = {"gs1": gs}
+    coordinator.data_repository.add_growspace(gs)
     coordinator.growspace_manager.update_growspace = AsyncMock(return_value=gs)
 
     result = await coordinator.services.update_growspace("gs1", name="New Name")

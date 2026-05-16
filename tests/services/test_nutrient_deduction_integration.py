@@ -29,23 +29,15 @@ async def mock_coordinator(hass: HomeAssistant):
     coord.services.save = AsyncMock()
 
     # Initialize basic data
-    coord.growspaces = {
-        "gs1": Growspace(id="gs1", name="Growspace 1", rows=1, plants_per_row=3)
-    }
-    coord.plants = {
-        "p1": create_plant(
-            plant_id="p1", growspace_id="gs1", row=1, col=1, strain="Strain"
-        ),
-        "p2": create_plant(
-            plant_id="p2", growspace_id="gs1", row=1, col=2, strain="Strain"
-        ),
-        "p3": create_plant(
-            plant_id="p3", growspace_id="gs1", row=1, col=3, strain="Strain"
-        ),
-    }
-
-    # IMPORTANT: Update Data Repository so coordination logic can find the plants
-    coord.data_repository.load_data(coord.growspaces, coord.plants)
+    coord.data_repository.add_growspace(
+        Growspace(id="gs1", name="Growspace 1", rows=1, plants_per_row=3)
+    )
+    for plant in [
+        create_plant(plant_id="p1", growspace_id="gs1", row=1, col=1, strain="Strain"),
+        create_plant(plant_id="p2", growspace_id="gs1", row=1, col=2, strain="Strain"),
+        create_plant(plant_id="p3", growspace_id="gs1", row=1, col=3, strain="Strain"),
+    ]:
+        coord.data_repository.add_plant(plant)
 
     # Mock nutrient manager and inventory
     inventory = NutrientInventory()

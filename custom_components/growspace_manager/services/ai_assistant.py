@@ -605,7 +605,7 @@ async def handle_analyze_all_growspaces(
     all_data = []
     issues_found = []
 
-    for growspace_id in coordinator.data_repository.growspaces:
+    for growspace_id in (gs.id for gs in coordinator.data_repository.get_all_growspaces()):
         try:
             data = assistant.gather_growspace_data(growspace_id)
             all_data.append(data)

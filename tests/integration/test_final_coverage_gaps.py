@@ -133,6 +133,7 @@ def plant_manager(hass: HomeAssistant) -> PlantManager:
     return PlantManager(
         hass=hass,
         repository=repo,
+        notification_state=MagicMock(),
         validator=validator,
         growspace_manager=MagicMock(),
         strain_library=MagicMock(record_harvest=AsyncMock()),

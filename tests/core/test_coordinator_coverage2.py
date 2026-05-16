@@ -68,12 +68,14 @@ def create_test_coordinator(
 
 
 @pytest.mark.asyncio
-async def test_plants_setter(hass: HomeAssistant) -> None:
-    """Test the plants property setter (line 112)."""
+async def test_plants_property(hass: HomeAssistant) -> None:
+    """Test the plants property returns a dict view over the repository."""
+    from custom_components.growspace_manager.models import Plant as _Plant
     coordinator = create_test_coordinator(hass)
-    new_plants: dict[str, Plant] = {}
-    coordinator.plants = new_plants
-    assert coordinator.data_repository.plants is new_plants
+    plant = _Plant(plant_id="p1", growspace_id="gs1", row=1, col=1)
+    coordinator.data_repository.add_plant(plant)
+    assert "p1" in coordinator.plants
+    assert coordinator.plants["p1"] is plant
 
 
 @pytest.mark.asyncio
@@ -140,21 +142,19 @@ async def test_nutrient_inventory_property_and_setter(hass: HomeAssistant) -> No
 
 
 @pytest.mark.asyncio
-async def test_notifications_sent_setter(hass: HomeAssistant) -> None:
-    """Test the notifications_sent setter (line 258)."""
+async def test_notifications_sent_property(hass: HomeAssistant) -> None:
+    """Test the notifications_sent property reads from notification_state."""
     coordinator = create_test_coordinator(hass)
-    new_data: dict = {"p1": {"veg": {"1": True}}}
-    coordinator.notifications_sent = new_data
-    assert coordinator.data_repository.notifications_sent is new_data
+    coordinator.notification_state.sent = {"p1": {"veg": {"1": True}}}
+    assert coordinator.notifications_sent is coordinator.notification_state.sent
 
 
 @pytest.mark.asyncio
-async def test_notifications_enabled_setter(hass: HomeAssistant) -> None:
-    """Test the notifications_enabled setter (line 276)."""
+async def test_notifications_enabled_property(hass: HomeAssistant) -> None:
+    """Test the notifications_enabled property reads from notification_state."""
     coordinator = create_test_coordinator(hass)
-    new_enabled: dict[str, bool] = {"gs1": True}
-    coordinator.notifications_enabled = new_enabled
-    assert coordinator.data_repository.notifications_enabled is new_enabled
+    coordinator.notification_state.enabled = {"gs1": True}
+    assert coordinator.notifications_enabled is coordinator.notification_state.enabled
 
 
 # =============================================================================
@@ -996,7 +996,7 @@ async def test_async_set_lighting_schedule(hass: HomeAssistant) -> None:
 
     env = EnvironmentConfig()
     gs = Growspace(id="gs1", name="Test GS", environment_config=env)
-    coordinator.growspaces["gs1"] = gs
+    coordinator.data_repository.add_growspace(gs)
 
     # Test successful set
     await coordinator.services.set_lighting_schedule("gs1", 18, 12, 35.5)

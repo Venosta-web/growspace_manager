@@ -16,8 +16,10 @@ def repository_mock():
     mock = MagicMock()
     mock.growspaces = {}
     mock.plants = {}
-    mock.notifications_sent = {}
-    mock.notifications_enabled = {}
+    mock.load_growspaces.side_effect = lambda gs: mock.growspaces.update(gs)
+    mock.load_plants.side_effect = lambda ps: mock.plants.update(ps)
+    mock.get_all_growspaces.side_effect = lambda: list(mock.growspaces.values())
+    mock.get_all_plants.side_effect = lambda: list(mock.plants.values())
     return mock
 
 

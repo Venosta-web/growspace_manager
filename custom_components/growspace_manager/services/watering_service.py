@@ -98,7 +98,7 @@ class WateringService:
     ) -> Plant:
         """Internal watering logic with optional cache invalidation."""
         self.validator.validate_plant_exists(plant_id)
-        plant = self.repository.plants[plant_id]
+        plant = self.repository.require_plant(plant_id)
 
         final_nutrients, preset_name = self.nutrient_manager.resolve_nutrient_mix(
             nutrients, preset_id

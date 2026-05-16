@@ -33,17 +33,17 @@ class GrowspaceValidator:
 
     def validate_growspace_exists(self, growspace_id: str) -> None:
         """Validate that a growspace exists in the repository."""
-        if growspace_id not in self.repository.growspaces:
+        if not self.repository.has_growspace(growspace_id):
             raise GrowspaceNotFoundError(f"Growspace {growspace_id} does not exist")
 
     def validate_plant_exists(self, plant_id: str) -> None:
         """Validate that a plant exists in the repository."""
-        if plant_id not in self.repository.plants:
+        if not self.repository.has_plant(plant_id):
             raise PlantNotFoundError(f"Plant {plant_id} does not exist")
 
     def validate_position_bounds(self, growspace_id: str, row: int, col: int) -> None:
         """Validate that a position is within the bounds of a growspace grid."""
-        growspace = self.repository.growspaces[growspace_id]
+        growspace = self.repository.require_growspace(growspace_id)
 
         # Skip boundary check for special growspaces
         if growspace_id in [
@@ -78,9 +78,7 @@ class GrowspaceValidator:
         # Implementing it here might be better to avoid circular dependency on method
         # But accessing coordinator.plants is fine.
 
-        existing_plants = [
-            p for p in self.repository.plants.values() if p.growspace_id == growspace_id
-        ]
+        existing_plants = self.repository.get_growspace_plants(growspace_id)
 
         for existing_plant in existing_plants:
             if (
@@ -96,11 +94,9 @@ class GrowspaceValidator:
         self, growspace_id: str
     ) -> tuple[int | None, int | None]:
         """Find the first available (row, col) position in a growspace."""
-        growspace = self.repository.growspaces[growspace_id]
+        growspace = self.repository.require_growspace(growspace_id)
         occupied = {
-            (p.row, p.col)
-            for p in self.repository.plants.values()
-            if p.growspace_id == growspace_id
+            (p.row, p.col) for p in self.repository.get_growspace_plants(growspace_id)
         }
         return find_first_free_position(growspace, occupied)
 
@@ -115,9 +111,7 @@ class GrowspaceValidator:
             new_plants_per_row: The new number of plants per row
         """
         # Get all plants in this growspace
-        plants_to_check = [
-            p for p in self.repository.plants.values() if p.growspace_id == growspace_id
-        ]
+        plants_to_check = self.repository.get_growspace_plants(growspace_id)
 
         # Find plants outside new boundaries
         invalid_plants = [

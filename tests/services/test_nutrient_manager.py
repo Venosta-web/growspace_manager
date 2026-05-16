@@ -18,7 +18,7 @@ from custom_components.growspace_manager.models import (
 def repository_mock():
     """Mock the GrowspaceRepository."""
     mock = MagicMock()
-    mock.plants = {}
+    mock.get_plant.return_value = None
     return mock
 
 
@@ -186,7 +186,7 @@ def test_get_applicable_presets(manager, repository_mock) -> None:
     plant.stage = "veg"
     plant.veg_start = "2024-01-01"
     plant.growspace_id = "gs1"
-    repository_mock.plants["plant1"] = plant
+    repository_mock.get_plant.return_value = plant
 
     # Setup presets
     # 1. Matches stage (veg)

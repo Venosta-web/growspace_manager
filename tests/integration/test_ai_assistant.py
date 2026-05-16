@@ -45,6 +45,7 @@ def mock_coordinator() -> MagicMock:
     )
     data_repo.get_growspace.return_value = growspace
     data_repo.growspaces = {GROWSPACE_ID: growspace}
+    data_repo.get_all_growspaces.return_value = [growspace]
 
     # 3. LINKING: Ensure the root and repositories use the EXACT SAME mock method
     # This prevents the coordinator from returning a "fresh" empty mock

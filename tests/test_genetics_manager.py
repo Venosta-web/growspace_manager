@@ -6,6 +6,9 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
+from custom_components.growspace_manager.data_access.growspace_repository import (
+    GrowspaceRepository,
+)
 from custom_components.growspace_manager.managers.genetics import GeneticsManager
 from custom_components.growspace_manager.models import (
     Plant,
@@ -29,30 +32,26 @@ def save_callback() -> AsyncMock:
 @pytest.fixture
 def manager(save_callback: AsyncMock) -> GeneticsManager:
     """A fresh GeneticsManager with an in-memory plant repository."""
-    repo = MagicMock()
-    repo.plants = {}
+    repo = GrowspaceRepository()
     return GeneticsManager(repository=repo, save_callback=save_callback)
-
 
 
 @pytest.fixture
 def manager_with_plants(save_callback: AsyncMock) -> GeneticsManager:
     """GeneticsManager with two plants pre-loaded (donor + receiver)."""
-    repo = MagicMock()
-    repo.plants = {
-        "plant-donor": Plant(
-            plant_id="plant-donor",
-            growspace_id="gs-1",
-            genetics=PlantGenetics(strain_name="Pollen Donor"),
-            stage="flower",
-        ),
-        "plant-receiver": Plant(
-            plant_id="plant-receiver",
-            growspace_id="gs-1",
-            genetics=PlantGenetics(strain_name="Female Receiver"),
-            stage="flower",
-        ),
-    }
+    repo = GrowspaceRepository()
+    repo.add_plant(Plant(
+        plant_id="plant-donor",
+        growspace_id="gs-1",
+        genetics=PlantGenetics(strain_name="Pollen Donor"),
+        stage="flower",
+    ))
+    repo.add_plant(Plant(
+        plant_id="plant-receiver",
+        growspace_id="gs-1",
+        genetics=PlantGenetics(strain_name="Female Receiver"),
+        stage="flower",
+    ))
     return GeneticsManager(repository=repo, save_callback=save_callback)
 
 
@@ -370,7 +369,7 @@ class TestLogPollination:
     ) -> None:
         """log_pollination raises if donor plant has already been harvested."""
 
-        manager_with_plants.repository.plants["plant-donor"].stage = "harvested"
+        manager_with_plants.repository.require_plant("plant-donor").stage = "harvested"
 
         with pytest.raises(ServiceValidationError, match="harvested"):
             await manager_with_plants.async_log_pollination(
@@ -384,7 +383,7 @@ class TestLogPollination:
     ) -> None:
         """log_pollination raises if receiver plant has already been harvested."""
 
-        manager_with_plants.repository.plants["plant-receiver"].stage = "harvested"
+        manager_with_plants.repository.require_plant("plant-receiver").stage = "harvested"
 
         with pytest.raises(ServiceValidationError, match="harvested"):
             await manager_with_plants.async_log_pollination(
@@ -507,15 +506,13 @@ class TestScorePhenotype:
     @pytest.fixture
     def manager_with_plant(self, save_callback: AsyncMock) -> GeneticsManager:
         """GeneticsManager with a single scoreable plant."""
-        repo = MagicMock()
-        repo.plants = {
-            "plant-score": Plant(
-                plant_id="plant-score",
-                growspace_id="gs",
-                genetics=PlantGenetics(strain_name="Test"),
-                stage="flower",
-            )
-        }
+        repo = GrowspaceRepository()
+        repo.add_plant(Plant(
+            plant_id="plant-score",
+            growspace_id="gs",
+            genetics=PlantGenetics(strain_name="Test"),
+            stage="flower",
+        ))
         return GeneticsManager(repository=repo, save_callback=save_callback)
 
     async def test_updates_phenotype_score_fields(
@@ -534,7 +531,7 @@ class TestScorePhenotype:
             notes="Outstanding pheno",
         )
 
-        ps = manager_with_plant.repository.plants["plant-score"].phenotype_score
+        ps = manager_with_plant.repository.require_plant("plant-score").phenotype_score
         assert ps.vigor == 9
         assert ps.internodal_spacing == 7
         assert ps.terpene_intensity == 10
@@ -552,14 +549,14 @@ class TestScorePhenotype:
             plant_id="plant-score",
             vigor=8,
         )
-        ps = manager_with_plant.repository.plants["plant-score"].phenotype_score
+        ps = manager_with_plant.repository.require_plant("plant-score").phenotype_score
         assert ps.updated_at is not None
 
     async def test_partial_update_overwrites_only_provided_fields(
         self, manager_with_plant: GeneticsManager
     ) -> None:
         """score_phenotype only updates fields explicitly passed."""
-        plant = manager_with_plant.repository.plants["plant-score"]
+        plant = manager_with_plant.repository.require_plant("plant-score")
         plant.phenotype_score.resin = 7
         plant.phenotype_score.yield_potential = 5
 
@@ -646,20 +643,18 @@ class TestUpdatePollination:
     @pytest.fixture
     def manager_with_event(self, manager: GeneticsManager) -> GeneticsManager:
         """Manager pre-loaded with one pollination event and two plants."""
-        manager.repository.plants = {
-            "plant-donor": Plant(
-                plant_id="plant-donor",
-                growspace_id="gs-1",
-                genetics=PlantGenetics(strain_name="Pollen Donor"),
-                stage="flower",
-            ),
-            "plant-receiver": Plant(
-                plant_id="plant-receiver",
-                growspace_id="gs-1",
-                genetics=PlantGenetics(strain_name="Female Receiver"),
-                stage="flower",
-            ),
-        }
+        manager.repository.add_plant(Plant(
+            plant_id="plant-donor",
+            growspace_id="gs-1",
+            genetics=PlantGenetics(strain_name="Pollen Donor"),
+            stage="flower",
+        ))
+        manager.repository.add_plant(Plant(
+            plant_id="plant-receiver",
+            growspace_id="gs-1",
+            genetics=PlantGenetics(strain_name="Female Receiver"),
+            stage="flower",
+        ))
         event = PollinationEvent(
             event_id="evt-1",
             date="2026-01-10",
@@ -798,21 +793,19 @@ def manager_with_strain_lib(
     save_callback: AsyncMock, strain_library_mock: MagicMock
 ) -> GeneticsManager:
     """GeneticsManager with two plants and injected StrainLibrary mock."""
-    repo = MagicMock()
-    repo.plants = {
-        "plant-donor": Plant(
-            plant_id="plant-donor",
-            growspace_id="gs-1",
-            genetics=PlantGenetics(strain_name="Pollen Donor"),
-            stage="flower",
-        ),
-        "plant-receiver": Plant(
-            plant_id="plant-receiver",
-            growspace_id="gs-1",
-            genetics=PlantGenetics(strain_name="Seed Mother"),
-            stage="flower",
-        ),
-    }
+    repo = GrowspaceRepository()
+    repo.add_plant(Plant(
+        plant_id="plant-donor",
+        growspace_id="gs-1",
+        genetics=PlantGenetics(strain_name="Pollen Donor"),
+        stage="flower",
+    ))
+    repo.add_plant(Plant(
+        plant_id="plant-receiver",
+        growspace_id="gs-1",
+        genetics=PlantGenetics(strain_name="Seed Mother"),
+        stage="flower",
+    ))
     return GeneticsManager(
         repository=repo,
         save_callback=save_callback,
@@ -851,21 +844,19 @@ async def test_harvest_seeds_not_misclassified_as_bx_due_to_prior_event(
     Without exclude_event_id, get_lineage_tree would find the current pollination
     event and treat the donor as a parent of the receiver, producing BX instead of F1.
     """
-    repo = MagicMock()
-    repo.plants = {
-        "plant-a": Plant(
-            plant_id="plant-a",
-            growspace_id="gs-1",
-            genetics=PlantGenetics(strain_name="Strain A"),
-            stage="flower",
-        ),
-        "plant-b": Plant(
-            plant_id="plant-b",
-            growspace_id="gs-1",
-            genetics=PlantGenetics(strain_name="Strain B"),
-            stage="flower",
-        ),
-    }
+    repo = GrowspaceRepository()
+    repo.add_plant(Plant(
+        plant_id="plant-a",
+        growspace_id="gs-1",
+        genetics=PlantGenetics(strain_name="Strain A"),
+        stage="flower",
+    ))
+    repo.add_plant(Plant(
+        plant_id="plant-b",
+        growspace_id="gs-1",
+        genetics=PlantGenetics(strain_name="Strain B"),
+        stage="flower",
+    ))
     mgr = GeneticsManager(
         repository=repo,
         save_callback=save_callback,

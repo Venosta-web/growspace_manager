@@ -97,7 +97,7 @@ async def test_dehumidifier_stages_coverage(hass: HomeAssistant) -> None:
     )
     mock_coordinator.services.get_growspace_plants.return_value = [plant_seedling]
     with patch(
-        "custom_components.growspace_manager.dehumidifier_coordinator.calculate_days_in_stage",
+        "custom_components.growspace_manager.domain.stage_calculator.calculate_days_in_stage",
         side_effect=lambda p, s: 1 if s == PlantStage.SEEDLING else 0,
     ):
         assert coordinator._get_growth_stage() == PlantStage.SEEDLING
@@ -249,11 +249,12 @@ async def test_lifecycle_history_closing_coverage(hass: HomeAssistant) -> None:
         stage="veg",
         stage_history=[{"stage": "veg", "start": "2024-01-01", "end": None}],
     )
-    repository.plants = {"p1": plant}
+    repository.get_plant.return_value = plant
 
     manager = PlantManager(
         hass=hass,
         repository=repository,
+        notification_state=MagicMock(),
         validator=validator,
         growspace_manager=gs_service,
         strain_library=strain_library,
@@ -281,7 +282,7 @@ async def test_batch_add_mother_auto_date_coverage(hass: HomeAssistant) -> None:
     entry.add_to_hass(hass)
     mock_coordinator = GrowspaceCoordinator(hass, entry, data={})
 
-    mock_coordinator.data_repository.growspaces = {"mother": MagicMock()}
+    mock_coordinator.data_repository.add_growspace(Growspace(id="mother", name="mother"))
     with patch.object(
         mock_coordinator.validator, "find_first_available_position", return_value=(1, 1)
     ):
@@ -560,6 +561,9 @@ async def test_storage_manager_force_save_coverage(hass: HomeAssistant) -> None:
     repository = MagicMock()
     repository.growspaces = {}
     repository.plants = {}
+    repository.load_growspaces.side_effect = lambda gs: repository.growspaces.update(gs)
+    repository.load_plants.side_effect = lambda ps: repository.plants.update(ps)
+    repository.get_all_growspaces.return_value = []
     repository.notifications_sent = {}
     repository.notifications_enabled = {}
 
@@ -631,6 +635,18 @@ async def test_storage_manager_load_coverage(hass: HomeAssistant) -> None:
     repository = MagicMock()
     repository.growspaces = {}
     repository.plants = {}
+
+    def _load_growspaces(gs: dict) -> None:
+        repository.growspaces.clear()
+        repository.growspaces.update(gs)
+
+    def _load_plants(ps: dict) -> None:
+        repository.plants.clear()
+        repository.plants.update(ps)
+
+    repository.load_growspaces.side_effect = _load_growspaces
+    repository.load_plants.side_effect = _load_plants
+    repository.get_all_growspaces.return_value = []
 
     nutrient_manager = MagicMock()
     genetics_manager = MagicMock()
@@ -814,6 +830,7 @@ async def test_lifecycle_history_stages_coverage(hass: HomeAssistant) -> None:
     manager = PlantManager(
         hass=hass,
         repository=repository,
+        notification_state=MagicMock(),
         validator=validator,
         growspace_manager=gs_service,
         strain_library=strain_library,

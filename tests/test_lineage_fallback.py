@@ -29,36 +29,34 @@ def save_callback() -> AsyncMock:
 @pytest.fixture
 def manager_empty(save_callback: AsyncMock) -> GeneticsManager:
     """GeneticsManager with a plant but no pollination events."""
-    repo = MagicMock()
-    repo.plants = {
-        "plant-1": Plant(
-            plant_id="plant-1",
-            growspace_id="gs-1",
-            genetics=PlantGenetics(strain_name="OG Kush"),
-            stage="flower",
-        ),
-    }
+    from custom_components.growspace_manager.data_access.growspace_repository import GrowspaceRepository  # noqa: PLC0415
+    repo = GrowspaceRepository()
+    repo.add_plant(Plant(
+        plant_id="plant-1",
+        growspace_id="gs-1",
+        genetics=PlantGenetics(strain_name="OG Kush"),
+        stage="flower",
+    ))
     return GeneticsManager(repository=repo, save_callback=save_callback)
 
 
 @pytest.fixture
 def manager_with_pollination(save_callback: AsyncMock) -> GeneticsManager:
     """GeneticsManager with a plant that has a pollination event."""
-    repo = MagicMock()
-    repo.plants = {
-        "plant-donor": Plant(
-            plant_id="plant-donor",
-            growspace_id="gs-1",
-            genetics=PlantGenetics(strain_name="Durban Poison"),
-            stage="flower",
-        ),
-        "plant-receiver": Plant(
-            plant_id="plant-receiver",
-            growspace_id="gs-1",
-            genetics=PlantGenetics(strain_name="OG Kush"),
-            stage="flower",
-        ),
-    }
+    from custom_components.growspace_manager.data_access.growspace_repository import GrowspaceRepository  # noqa: PLC0415
+    repo = GrowspaceRepository()
+    repo.add_plant(Plant(
+        plant_id="plant-donor",
+        growspace_id="gs-1",
+        genetics=PlantGenetics(strain_name="Durban Poison"),
+        stage="flower",
+    ))
+    repo.add_plant(Plant(
+        plant_id="plant-receiver",
+        growspace_id="gs-1",
+        genetics=PlantGenetics(strain_name="OG Kush"),
+        stage="flower",
+    ))
     mgr = GeneticsManager(repository=repo, save_callback=save_callback)
     event = PollinationEvent(
         event_id="evt-1",

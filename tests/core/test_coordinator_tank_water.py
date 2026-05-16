@@ -47,7 +47,7 @@ def _add_growspace_with_tank(
     growspace = Growspace(
         id=growspace_id, name="Test Tent", environment_config=env_config
     )
-    coordinator.growspaces[growspace_id] = growspace
+    coordinator.data_repository.add_growspace(growspace)
     return growspace
 
 

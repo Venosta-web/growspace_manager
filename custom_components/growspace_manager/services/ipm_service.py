@@ -199,9 +199,9 @@ class IPMService:
         """Resolve target plants from IDs or growspace ID."""
         if plant_ids:
             return [
-                self.repository.plants[pid]
+                self.repository.require_plant(pid)
                 for pid in plant_ids
-                if pid in self.repository.plants
+                if self.repository.has_plant(pid)
             ]
         if growspace_id:
             return self.repository.get_growspace_plants(growspace_id)

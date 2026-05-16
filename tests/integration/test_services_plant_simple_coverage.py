@@ -88,6 +88,7 @@ def manager(
     return PlantManager(
         hass=hass,
         repository=repository_mock,
+        notification_state=MagicMock(),
         validator=validator_mock,
         growspace_manager=gs_service_mock,
         strain_library=strain_library_mock,
@@ -114,7 +115,7 @@ async def test_transition_closes_existing_history(
             {"stage": "veg", "start": "2023-02-01", "end": None},  # Open item
         ],
     )
-    repository_mock.plants[plant_id] = plant
+    repository_mock.get_plant.return_value = plant
 
     # Transition
     today = date.today().isoformat()

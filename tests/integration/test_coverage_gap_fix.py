@@ -171,7 +171,7 @@ async def test_calendar_notification_not_for_growspace(hass: HomeAssistant) -> N
     }
 
     gs = Growspace(id="our_gs", name="Our GS")
-    coordinator.growspaces = {"our_gs": gs}
+    coordinator.data_repository.add_growspace(gs)
     plant = create_plant(
         plant_id="p1",
         growspace_id="our_gs",
@@ -576,7 +576,7 @@ async def test_coordinator_update_missing_pump_keys(hass: HomeAssistant) -> None
     )
 
     gs = Growspace(id="gs1", name="GS1", irrigation_config=config)
-    coord.growspaces = {"gs1": gs}
+    coord.data_repository.add_growspace(gs)
 
     await coord.services.update_irrigation_config("gs1", {"some_other_key": "val"})
 
@@ -691,7 +691,7 @@ async def test_async_remove_growspace_device_cleanup(hass: HomeAssistant) -> Non
     coordinator.invalidate_cache = MagicMock()  # type: ignore[method-assign]
 
     # Setup growspace
-    coordinator.growspaces["gs1"] = Growspace(id="gs1", name="Test Only")
+    coordinator.data_repository.add_growspace(Growspace(id="gs1", name="Test Only"))
 
     # Mock device registry
     mock_dev_reg = MagicMock()
@@ -739,13 +739,14 @@ async def test_promote_clone_custom_target(hass: HomeAssistant) -> None:
         return None
 
     # Replace methods on all objects the logic might use
+    coordinator.data_repository.has_growspace = MagicMock(return_value=True)
+    coordinator.data_repository.get_plant = MagicMock(return_value=plant)
+    coordinator.data_repository.get_growspace = MagicMock(side_effect=get_gs_side_effect)
     for obj in [coordinator, coordinator.data_repository, coordinator.services]:
         obj.get_growspace = MagicMock(side_effect=get_gs_side_effect)
         obj.get_plant = MagicMock(return_value=plant)
 
     # Populate real dictionaries (Setters update the repository automatically)
-    coordinator.plants = {"p1": plant}
-    coordinator.growspaces = {"clone_room": source_gs, "custom_room": target_gs}
 
     # 6. Execute through the facade
     with patch.object(

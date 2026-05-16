@@ -62,8 +62,6 @@ def mock_coordinator(
     coordinator = MagicMock()
     coordinator.hass = hass
     coordinator.config_entry = mock_entry
-    coordinator.growspaces = {}
-    coordinator.plants = {}
     coordinator.growspace_manager.get_sorted_growspace_options = MagicMock(
         return_value=[]
     )
@@ -326,7 +324,7 @@ async def test_coordinator_extended_coverage(
 
     # 4. _update_growspace_structure (lines 909-923)
     gs = Growspace(id="gs1", name="GS1", rows=1, plants_per_row=1)
-    coord.growspaces = {"gs1": gs}
+    coord.data_repository.add_growspace(gs)
     changes: list[str] = []
     # No changes
     assert not coord._update_growspace_structure("gs1", changes=changes)

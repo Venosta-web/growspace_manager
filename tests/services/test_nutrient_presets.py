@@ -61,14 +61,14 @@ def preset_coordinator(hass: HomeAssistant) -> GrowspaceCoordinator:
     coordinator = create_test_coordinator(hass)
 
     # Add a growspace and a plant
-    coordinator.growspaces["test_gs"] = Growspace(
+    coordinator.data_repository.add_growspace(Growspace(
         id="test_gs",
         name="Test Growspace",
         rows=1,
         plants_per_row=1,
-    )
+    ))
 
-    coordinator.plants["test_plant"] = create_plant(
+    coordinator.data_repository.add_plant(create_plant(
         plant_id="test_plant",
         growspace_id="test_gs",
         strain="Test Strain",
@@ -76,7 +76,7 @@ def preset_coordinator(hass: HomeAssistant) -> GrowspaceCoordinator:
         veg_start=(datetime.now() - timedelta(days=10)).isoformat(),
         row=1,
         col=1,
-    )
+    ))
 
     return coordinator
 

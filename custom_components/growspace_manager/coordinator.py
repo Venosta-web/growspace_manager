@@ -15,6 +15,7 @@ from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 from .cache import CacheManager
 from .const import COORDINATOR_UPDATE_INTERVAL_MINUTES, DOMAIN, VERSION
 from .data_access.growspace_repository import GrowspaceRepository
+from .data_access.notification_state import NotificationState
 from .date_time_helper import DateTimeHelper
 from .dehumidifier_coordinator import DehumidifierCoordinator
 from .environment_analyzer import EnvironmentAnalyzer
@@ -73,39 +74,13 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
     @property
     def growspaces(self) -> dict[str, Growspace]:
-        """Return all growspaces managed by this coordinator.
-
-        Returns:
-            Dictionary mapping growspace IDs to Growspace objects.
-        """
-        return self.data_repository.growspaces
-
-    @growspaces.setter
-    def growspaces(self, value: dict[str, Growspace]) -> None:
-        """Set the growspaces dictionary.
-
-        Args:
-            value: New growspaces dictionary to set.
-        """
-        self.data_repository.growspaces = value
+        """Return a snapshot dict of all growspaces keyed by ID."""
+        return {gs.id: gs for gs in self.data_repository.get_all_growspaces()}
 
     @property
     def plants(self) -> dict[str, Plant]:
-        """Return all plants managed by this coordinator.
-
-        Returns:
-            Dictionary mapping plant IDs to Plant objects.
-        """
-        return self.data_repository.plants
-
-    @plants.setter
-    def plants(self, value: dict[str, Plant]) -> None:
-        """Set the plants dictionary.
-
-        Args:
-            value: New plants dictionary to set.
-        """
-        self.data_repository.plants = value
+        """Return a snapshot dict of all plants keyed by plant_id."""
+        return {p.plant_id: p for p in self.data_repository.get_all_plants()}
 
     @staticmethod
     def get_for_service_call(
@@ -259,41 +234,13 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
     @property
     def notifications_sent(self) -> dict[str, dict[str, dict[str, bool]]]:
-        """Return notification tracking data.
-
-        Structure: {plant_id: {stage: {day: sent_bool}}}
-
-        Returns:
-            Nested dictionary tracking which notifications have been sent.
-        """
-        return self.data_repository.notifications_sent
-
-    @notifications_sent.setter
-    def notifications_sent(self, value: dict[str, dict[str, dict[str, bool]]]) -> None:
-        """Set notification tracking data.
-
-        Args:
-            value: New notification tracking dictionary.
-        """
-        self.data_repository.notifications_sent = value
+        """Return notification tracking data."""
+        return self.notification_state.sent
 
     @property
     def notifications_enabled(self) -> dict[str, bool]:
-        """Return notification enabled state for each growspace.
-
-        Returns:
-            Dictionary mapping growspace IDs to enabled state (bool).
-        """
-        return self.data_repository.notifications_enabled
-
-    @notifications_enabled.setter
-    def notifications_enabled(self, value: dict[str, bool]) -> None:
-        """Set notification enabled state.
-
-        Args:
-            value: Dictionary mapping growspace IDs to enabled state.
-        """
-        self.data_repository.notifications_enabled = value
+        """Return notification enabled state for each growspace."""
+        return self.notification_state.enabled
 
     @property
     def growspace_manager(self) -> GrowspaceManager:
@@ -348,7 +295,8 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self.lock = asyncio.Lock()
 
         # Initialize Data Repository first - it owns the data dicts
-        self.data_repository = GrowspaceRepository({}, {})
+        self.data_repository = GrowspaceRepository()
+        self.notification_state = NotificationState()
 
         # 1. Initialize logic components with minimal dependencies
         self.validator = GrowspaceValidator(self.data_repository)
@@ -394,12 +342,14 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             self.data_repository,
             self.nutrient_manager,
             self.genetics_manager,
+            self.notification_state,
         )
 
         # 4. Initialize Managers (replacing services)
         self._growspace_manager = GrowspaceManager(
             self.hass,
             self.data_repository,
+            self.notification_state,
             self.validator,
             self.view_model_builder,
             self._save_callback,
@@ -409,6 +359,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._plant_manager = PlantManager(
             self.hass,
             self.data_repository,
+            self.notification_state,
             self.validator,
             self._growspace_manager,
             self.strain_library,
@@ -700,12 +651,12 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 )
 
         # Update the repository with deserialized objects
-        self.data_repository.load_data(
-            growspaces,
-            plants,
-            data.get("notifications_sent"),
-            data.get("notifications_enabled"),
-        )
+        self.data_repository.load_growspaces(growspaces)
+        self.data_repository.load_plants(plants)
+        if notifications_sent := data.get("notifications_sent"):
+            self.notification_state.sent = notifications_sent
+        if notifications_enabled := data.get("notifications_enabled"):
+            self.notification_state.enabled = notifications_enabled
 
     async def async_commit(self) -> None:
         """Commit all changes to storage and notify listeners.

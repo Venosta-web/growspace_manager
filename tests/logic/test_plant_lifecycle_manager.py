@@ -79,6 +79,7 @@ def manager(
     return PlantManager(
         hass=hass,
         repository=repository_mock,
+        notification_state=MagicMock(),
         validator=validator_mock,
         growspace_manager=gs_service_mock,
         strain_library=strain_library_mock,
@@ -107,9 +108,9 @@ async def test_handle_clone_creation(
     )
 
     assert plant_id is not None
-    # Check that a plant was added to repository.plants
-    assert len(repository_mock.plants) == 1
-    added_plant = list(repository_mock.plants.values())[0]
+    # Check that add_plant was called on the repository
+    repository_mock.add_plant.assert_called_once()
+    added_plant = repository_mock.add_plant.call_args[0][0]
 
     assert added_plant.growspace_id == "clone_tent"
     assert added_plant.strain == "OG Kush"
@@ -195,8 +196,8 @@ async def test_move_to_dry_growspace_device_id_ghosting(
     gs_service_mock.ensure_special_growspace.return_value = "dry_gs"
     mock_dry_gs = MagicMock()
     mock_dry_gs.device_id = None  # Crucial: destination has no device
-    repository_mock.growspaces = {"dry_gs": mock_dry_gs, "gs1": MagicMock()}
-    repository_mock.plants = {"p1": plant}
+    repository_mock.get_growspace.side_effect = lambda gid: {"dry_gs": mock_dry_gs, "gs1": MagicMock()}.get(gid)
+    repository_mock.get_plant.return_value = plant
 
     await manager.move_to_dry_growspace("p1", plant, "2023-01-01")
 
@@ -215,7 +216,7 @@ async def test_handle_harvest_logic_fallthrough(manager, repository_mock) -> Non
     plant.plant_id = "p1"
     plant.phi_clearance_date = None
     # Mock growspaces not containing 'invalid_gs'
-    repository_mock.growspaces = {"valid_gs": MagicMock()}
+    repository_mock.has_growspace.side_effect = lambda gid: gid == "valid_gs"
 
     with pytest.raises(
         GrowspaceNotFoundError, match="Target growspace invalid_gs not found"
@@ -228,7 +229,7 @@ async def test_handle_harvest_logic_fallthrough(manager, repository_mock) -> Non
 @pytest.mark.asyncio
 async def test_remove_plant_not_found(manager, repository_mock) -> None:
     """Test remove_plant returns False when plant does not exist."""
-    repository_mock.plants = {}
+    repository_mock.get_plant.return_value = None
     result = await manager.remove_plant("non_existent_plant")
     assert result is False
 
@@ -239,23 +240,16 @@ async def test_remove_plant_race_condition(manager, repository_mock) -> None:
     plant_id = "race_plant"
     plant = MagicMock()
 
-    # Initially present for the first check
-    repository_mock.plants = {plant_id: plant}
+    # Initially plant is found on the first check
+    repository_mock.get_plant.return_value = plant
 
-    # Define a side effect for the lock that removes the plant
-
+    # Define a side effect for the lock that simulates plant disappearing
     async def side_effect_enter():
-        # Remove plant from repository when lock is acquired
-        if plant_id in repository_mock.plants:
-            del repository_mock.plants[plant_id]
+        # After lock acquisition, plant is gone and has_plant returns False
+        repository_mock.has_plant.return_value = False
 
-    # We need to mock the lock so we can inject the side effect
-    # But manager.lock is already a MagicMock from fixture 'lock_mock'
-    # The fixture mock.__aenter__ returns None.
     manager.lock.__aenter__.side_effect = side_effect_enter
-
-    # We also need to ensure the initial get works (it uses repository_mock.plants.get which references the dict)
-    # The dict is updated in place, so the initial check will pass if we set it up right.
+    repository_mock.has_plant.return_value = True
 
     result = await manager.remove_plant(plant_id)
     assert result is False
@@ -299,7 +293,7 @@ async def test_promote_clone_target_full(manager, repository_mock) -> None:
     clone_plant.stage = PlantStage.CLONE
     clone_plant.plant_id = "c1"
 
-    repository_mock.plants = {"c1": clone_plant}
+    repository_mock.get_plant.return_value = clone_plant
 
     # Mock find_first_available_position returning (None, None)
     manager.validator.find_first_available_position.return_value = (None, None)

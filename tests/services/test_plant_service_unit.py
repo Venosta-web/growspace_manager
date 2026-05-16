@@ -64,6 +64,7 @@ def plant_service(
     return PlantManager(
         hass=mock_hass,
         repository=mock_repository,
+        notification_state=MagicMock(),
         validator=mock_validator,
         growspace_manager=mockgrowspace_manager,
         strain_library=MagicMock(),
@@ -86,7 +87,7 @@ async def test_take_clones_growspace_full(
     mother_plant = Mock(spec=Plant)
     mother_plant.strain = "Test Strain"
     mother_plant.phenotype = "Test Pheno"
-    mock_repository.plants[mother_id] = mother_plant
+    mock_repository.require_plant.return_value = mother_plant
 
     # Setup target growspace
     clone_gs_id = "clone_room"
@@ -95,8 +96,7 @@ async def test_take_clones_growspace_full(
     mock_validator.validate_plant_exists.return_value = None
 
     # Mock growspace service to return clone room id (if default used) or we pass explicit
-    # If we pass explicit target_growspace_id, we need it in repo.growspaces
-    mock_repository.growspaces[clone_gs_id] = Mock()
+    mock_repository.has_growspace.return_value = True
 
     # Mock find_first_available_position to return None (Full)
     mock_validator.find_first_available_position.return_value = (None, None)
@@ -117,13 +117,11 @@ async def test_take_clones_explicit_target_growspace_not_found(
     # Setup mother plant
     mother_id = "mother_1"
     mother_plant = Mock(spec=Plant)
-    mock_repository.plants[mother_id] = mother_plant
+    mock_repository.require_plant.return_value = mother_plant
 
     target_gs_id = "non_existent_room"
 
-    # Ensure target not in repo
-    if target_gs_id in mock_repository.growspaces:
-        del mock_repository.growspaces[target_gs_id]
+    mock_repository.has_growspace.return_value = False
 
     with pytest.raises(
         ValueError, match=f"Target growspace '{target_gs_id}' does not exist"

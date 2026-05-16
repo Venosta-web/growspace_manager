@@ -22,13 +22,14 @@ from custom_components.growspace_manager.view_model_builder import ViewModelBuil
 
 @pytest.fixture
 def manager() -> GrowspaceManager:
-    repo = GrowspaceRepository({}, {})
+    repo = GrowspaceRepository()
     gs = Growspace(id="gs1", name="Tent 1")
-    repo.growspaces["gs1"] = gs
+    repo.add_growspace(gs)
     save_cb = AsyncMock()
     return GrowspaceManager(
         hass=MagicMock(),
         repository=repo,
+        notification_state=MagicMock(),
         validator=GrowspaceValidator(repo),
         view_model_builder=MagicMock(spec=ViewModelBuilder),
         save_callback=save_cb,
@@ -51,7 +52,7 @@ async def test_async_log_drain_reading_appends_reading(
         feed_volume_ml=500.0,
     )
 
-    gs = manager.repository.growspaces["gs1"]
+    gs = manager.repository.require_growspace("gs1")
     assert len(gs.drain_config.readings) == 1
     reading = gs.drain_config.readings[0]
     assert reading.feed_ec == 1.8
@@ -71,7 +72,7 @@ async def test_async_log_drain_reading_without_volumes(
         drain_ec=2.3,
     )
 
-    gs = manager.repository.growspaces["gs1"]
+    gs = manager.repository.require_growspace("gs1")
     reading = gs.drain_config.readings[0]
     assert reading.drain_volume_ml is None
     assert reading.feed_volume_ml is None
@@ -81,7 +82,7 @@ async def test_async_log_drain_reading_without_volumes(
 async def test_async_log_drain_reading_enforces_rolling_window(
     manager: GrowspaceManager,
 ) -> None:
-    gs = manager.repository.growspaces["gs1"]
+    gs = manager.repository.require_growspace("gs1")
     gs.drain_config.max_readings = 3
 
     for i in range(5):
@@ -95,7 +96,7 @@ async def test_async_log_drain_reading_enforces_rolling_window(
 async def test_async_log_drain_reading_fires_alert_when_threshold_exceeded(
     manager: GrowspaceManager,
 ) -> None:
-    gs = manager.repository.growspaces["gs1"]
+    gs = manager.repository.require_growspace("gs1")
     gs.drain_config.enabled = True
     gs.drain_config.max_ec_delta = 0.5
 
@@ -113,7 +114,7 @@ async def test_async_log_drain_reading_fires_alert_when_threshold_exceeded(
 async def test_async_log_drain_reading_no_alert_when_below_threshold(
     manager: GrowspaceManager,
 ) -> None:
-    gs = manager.repository.growspaces["gs1"]
+    gs = manager.repository.require_growspace("gs1")
     gs.drain_config.enabled = True
     gs.drain_config.max_ec_delta = 1.0
 
@@ -146,7 +147,7 @@ async def test_async_configure_drain_monitoring_all_fields(
         target_runoff_percent=25.0,
     )
 
-    gs = manager.repository.growspaces["gs1"]
+    gs = manager.repository.require_growspace("gs1")
     assert gs.drain_config.enabled is True
     assert gs.drain_config.max_ec_delta == pytest.approx(0.4)
     assert gs.drain_config.target_runoff_percent == pytest.approx(25.0)
@@ -157,7 +158,7 @@ async def test_async_configure_drain_monitoring_all_fields(
 async def test_async_configure_drain_monitoring_partial_update(
     manager: GrowspaceManager,
 ) -> None:
-    gs = manager.repository.growspaces["gs1"]
+    gs = manager.repository.require_growspace("gs1")
     gs.drain_config.max_ec_delta = 0.9
 
     await manager.async_configure_drain_monitoring("gs1", enabled=True)
@@ -181,7 +182,7 @@ async def test_async_configure_drain_monitoring_unknown_growspace(
 async def test_async_reset_water_tracking_resets_usage(
     manager: GrowspaceManager,
 ) -> None:
-    gs = manager.repository.growspaces["gs1"]
+    gs = manager.repository.require_growspace("gs1")
     gs.water_usage.total_liters = 500.0
 
     await manager.async_reset_water_tracking("gs1")
@@ -204,15 +205,16 @@ async def test_async_reset_water_tracking_unknown_growspace(
 
 @pytest.fixture
 def manager_with_tank() -> GrowspaceManager:
-    repo = GrowspaceRepository({}, {})
+    repo = GrowspaceRepository()
     tank = IrrigationTank(sensor_entity="sensor.tank1", volume_liters=None)
     env = EnvironmentConfig(irrigation_tanks=[tank])
     gs = Growspace(id="gs1", name="Tent 1", environment_config=env)
-    repo.growspaces["gs1"] = gs
+    repo.add_growspace(gs)
     save_cb = AsyncMock()
     return GrowspaceManager(
         hass=MagicMock(),
         repository=repo,
+        notification_state=MagicMock(),
         validator=GrowspaceValidator(repo),
         view_model_builder=MagicMock(spec=ViewModelBuilder),
         save_callback=save_cb,
@@ -226,7 +228,7 @@ async def test_async_configure_tank_updates_volume(
 ) -> None:
     await manager_with_tank.async_configure_tank("gs1", "sensor.tank1", volume_liters=80.0)
 
-    tank = manager_with_tank.repository.growspaces["gs1"].environment_config.irrigation_tanks[0]
+    tank = manager_with_tank.repository.require_growspace("gs1").environment_config.irrigation_tanks[0]
     assert tank.volume_liters == pytest.approx(80.0)
     manager_with_tank.save_callback.assert_awaited_once()
 
@@ -235,11 +237,11 @@ async def test_async_configure_tank_updates_volume(
 async def test_async_configure_tank_volume_none_is_noop(
     manager_with_tank: GrowspaceManager,
 ) -> None:
-    manager_with_tank.repository.growspaces["gs1"].environment_config.irrigation_tanks[0].volume_liters = 50.0
+    manager_with_tank.repository.require_growspace("gs1").environment_config.irrigation_tanks[0].volume_liters = 50.0
 
     await manager_with_tank.async_configure_tank("gs1", "sensor.tank1", volume_liters=None)
 
-    tank = manager_with_tank.repository.growspaces["gs1"].environment_config.irrigation_tanks[0]
+    tank = manager_with_tank.repository.require_growspace("gs1").environment_config.irrigation_tanks[0]
     assert tank.volume_liters == pytest.approx(50.0)
     manager_with_tank.save_callback.assert_not_awaited()
 

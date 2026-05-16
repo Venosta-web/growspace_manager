@@ -95,7 +95,7 @@ async def test_cache_invalidation_update_plant(hass: HomeAssistant) -> None:
         created_at="2025-01-01",
         updated_at="2025-01-01",
     )
-    coordinator.plants[mock_plant.plant_id] = mock_plant
+    coordinator.data_repository.add_plant(mock_plant)
     # Direct manual update requires manual cache invalidation or update call
     coordinator.growspaces[gs.id].plants_per_row = 5
     coordinator.growspaces[gs.id].rows = 5

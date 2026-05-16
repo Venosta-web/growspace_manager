@@ -291,8 +291,8 @@ class GeneticsManager:
                 f"(batch_id={event.result_seed_batch_id})"
             )
 
-        receiver = self.repository.plants.get(event.receiver_plant_id)
-        donor = self.repository.plants.get(event.donor_plant_id)
+        receiver = self.repository.get_plant(event.receiver_plant_id)
+        donor = self.repository.get_plant(event.donor_plant_id)
 
         receiver_name = (
             receiver.genetics.strain_name if receiver else event.receiver_plant_id
@@ -366,7 +366,7 @@ class GeneticsManager:
         Raises:
             ServiceValidationError: If the plant is not found.
         """
-        plant = self.repository.plants.get(plant_id)
+        plant = self.repository.get_plant(plant_id)
         if plant is None:
             raise ServiceValidationError(f"Plant '{plant_id}' not found")
 
@@ -434,7 +434,7 @@ class GeneticsManager:
         if visited_events is None:
             visited_events = set()
 
-        plant = self.repository.plants.get(plant_id)
+        plant = self.repository.get_plant(plant_id)
         plant_name = (
             plant.genetics.strain_name
             if plant and plant.genetics.strain_name
@@ -508,7 +508,7 @@ class GeneticsManager:
         Raises:
             ServiceValidationError: If plant is absent or in a post-harvest stage.
         """
-        plant = self.repository.plants.get(plant_id)
+        plant = self.repository.get_plant(plant_id)
         if plant is None:
             raise ServiceValidationError(
                 f"Pollination {role} plant '{plant_id}' not found"

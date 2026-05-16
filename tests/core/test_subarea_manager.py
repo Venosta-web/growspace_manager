@@ -19,13 +19,14 @@ from homeassistant.exceptions import ServiceValidationError
 
 @pytest.fixture
 def manager() -> GrowspaceManager:
-    repo = GrowspaceRepository({}, {})
+    repo = GrowspaceRepository()
     gs = Growspace(id="gs1", name="Tent 1")
-    repo.growspaces["gs1"] = gs
+    repo.add_growspace(gs)
     save_cb = AsyncMock()
     mgr = GrowspaceManager(
         hass=MagicMock(),
         repository=repo,
+        notification_state=MagicMock(),
         validator=GrowspaceValidator(repo),
         view_model_builder=MagicMock(spec=ViewModelBuilder),
         save_callback=save_cb,
@@ -39,7 +40,7 @@ async def test_add_subarea(manager: GrowspaceManager) -> None:
     sub = await manager.add_subarea("gs1", "Undercanopy")
     assert sub.name == "Undercanopy"
     assert sub.id
-    assert len(manager.repository.growspaces["gs1"].subareas) == 1
+    assert len(manager.repository.require_growspace("gs1").subareas) == 1
     manager.save_callback.assert_awaited_once()
 
 
@@ -75,7 +76,7 @@ async def test_update_subarea_not_found(manager: GrowspaceManager) -> None:
 async def test_remove_subarea(manager: GrowspaceManager) -> None:
     sub = await manager.add_subarea("gs1", "Undercanopy")
     await manager.remove_subarea("gs1", sub.id)
-    assert manager.repository.growspaces["gs1"].subareas == []
+    assert manager.repository.require_growspace("gs1").subareas == []
     manager.save_callback.assert_awaited()
 
 
