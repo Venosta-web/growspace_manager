@@ -72,7 +72,7 @@ async def test_dehumidifier_stages_coverage(hass: HomeAssistant) -> None:
     )
     mock_coordinator.services.get_growspace_plants.return_value = [plant_cure]
     with patch(
-        "custom_components.growspace_manager.dehumidifier_coordinator.calculate_days_in_stage",
+        "custom_components.growspace_manager.domain.stage_calculator.calculate_days_in_stage",
         side_effect=lambda p, s: 1 if s == PlantStage.CURE else 0,
     ):
         coordinator = DehumidifierCoordinator(
@@ -86,7 +86,7 @@ async def test_dehumidifier_stages_coverage(hass: HomeAssistant) -> None:
     )
     mock_coordinator.services.get_growspace_plants.return_value = [plant_dry]
     with patch(
-        "custom_components.growspace_manager.dehumidifier_coordinator.calculate_days_in_stage",
+        "custom_components.growspace_manager.domain.stage_calculator.calculate_days_in_stage",
         side_effect=lambda p, s: 1 if s == PlantStage.DRY else 0,
     ):
         assert coordinator._get_growth_stage() == PlantStage.DRY
