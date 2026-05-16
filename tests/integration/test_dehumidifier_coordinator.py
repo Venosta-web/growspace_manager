@@ -227,7 +227,7 @@ async def test_growth_stage_detection(coordinator, mock_main_coordinator) -> Non
 
     # Case 1: Veg
     with patch(
-        "custom_components.growspace_manager.dehumidifier_coordinator.calculate_days_in_stage",
+        "custom_components.growspace_manager.domain.stage_calculator.calculate_days_in_stage",
         side_effect=lambda p, stage: {
             PlantStage.VEG: 10,
             PlantStage.FLOWER: 0,
@@ -237,7 +237,7 @@ async def test_growth_stage_detection(coordinator, mock_main_coordinator) -> Non
 
     # Case 2: Early Flower
     with patch(
-        "custom_components.growspace_manager.dehumidifier_coordinator.calculate_days_in_stage",
+        "custom_components.growspace_manager.domain.stage_calculator.calculate_days_in_stage",
         side_effect=lambda p, stage: {
             PlantStage.VEG: 30,
             PlantStage.FLOWER: 10,
@@ -247,7 +247,7 @@ async def test_growth_stage_detection(coordinator, mock_main_coordinator) -> Non
 
     # Case 3: Mid Flower
     with patch(
-        "custom_components.growspace_manager.dehumidifier_coordinator.calculate_days_in_stage",
+        "custom_components.growspace_manager.domain.stage_calculator.calculate_days_in_stage",
         side_effect=lambda p, stage: {
             PlantStage.VEG: 30,
             PlantStage.FLOWER: 30,
@@ -257,7 +257,7 @@ async def test_growth_stage_detection(coordinator, mock_main_coordinator) -> Non
 
     # Case 4: Late Flower
     with patch(
-        "custom_components.growspace_manager.dehumidifier_coordinator.calculate_days_in_stage",
+        "custom_components.growspace_manager.domain.stage_calculator.calculate_days_in_stage",
         side_effect=lambda p, stage: {
             PlantStage.VEG: 30,
             PlantStage.FLOWER: 60,
@@ -541,28 +541,28 @@ async def test_growth_stage_detection_cure_dry_seedling(
 
     # Test Cure
     with patch(
-        "custom_components.growspace_manager.dehumidifier_coordinator.calculate_days_in_stage",
+        "custom_components.growspace_manager.domain.stage_calculator.calculate_days_in_stage",
         side_effect=lambda p, stage: 1 if stage == PlantStage.CURE else 0,
     ):
         assert coordinator._get_growth_stage() == PlantStage.CURE
 
     # Test Dry
     with patch(
-        "custom_components.growspace_manager.dehumidifier_coordinator.calculate_days_in_stage",
+        "custom_components.growspace_manager.domain.stage_calculator.calculate_days_in_stage",
         side_effect=lambda p, stage: 1 if stage == PlantStage.DRY else 0,
     ):
         assert coordinator._get_growth_stage() == PlantStage.DRY
 
     # Test Seedling
     with patch(
-        "custom_components.growspace_manager.dehumidifier_coordinator.calculate_days_in_stage",
+        "custom_components.growspace_manager.domain.stage_calculator.calculate_days_in_stage",
         side_effect=lambda p, stage: 1 if stage == PlantStage.SEEDLING else 0,
     ):
         assert coordinator._get_growth_stage() == PlantStage.SEEDLING
 
     # Test Mother
     with patch(
-        "custom_components.growspace_manager.dehumidifier_coordinator.calculate_days_in_stage",
+        "custom_components.growspace_manager.domain.stage_calculator.calculate_days_in_stage",
         side_effect=lambda p, stage: 1 if stage == PlantStage.MOTHER else 0,
     ):
         assert coordinator._get_growth_stage() == PlantStage.MOTHER

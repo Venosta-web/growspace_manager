@@ -383,13 +383,13 @@ async def test_growth_stage_detection(coordinator, mock_main_coordinator) -> Non
     mock_main_coordinator.services.get_growspace_plants.return_value = [plant]
 
     with patch(
-        "custom_components.growspace_manager.humidifier_coordinator.calculate_days_in_stage",
+        "custom_components.growspace_manager.domain.stage_calculator.calculate_days_in_stage",
         side_effect=lambda p, stage: {PlantStage.FLOWER: 60}.get(stage, 0),
     ):
         assert coordinator._get_growth_stage() == PlantStage.FLOWER_LATE
 
     with patch(
-        "custom_components.growspace_manager.humidifier_coordinator.calculate_days_in_stage",
+        "custom_components.growspace_manager.domain.stage_calculator.calculate_days_in_stage",
         side_effect=lambda p, stage: {PlantStage.VEG: 10}.get(stage, 0),
     ):
         assert coordinator._get_growth_stage() == PlantStage.VEG

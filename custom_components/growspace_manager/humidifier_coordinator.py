@@ -26,8 +26,7 @@ from .const import (
     DEFAULT_HUMIDIFIER_MIN_RUNTIME,
     PlantStage,
 )
-from .domain import calculate_days_in_stage
-from .domain.stage import DEFAULT_FLOWER_EARLY_DAYS, FLOWER_LATE_MIN_DAYS
+from .domain.stage_calculator import determine_coordinator_stage
 from .exceptions import GrowspaceError
 from .models import GrowspaceEvent
 
@@ -237,52 +236,7 @@ class HumidifierCoordinator:
     def _get_growth_stage(self) -> PlantStage:
         """Determine the current growth stage for threshold selection."""
         plants = self.main_coordinator.services.get_growspace_plants(self.growspace_id)
-
-        max_seedling_days = 0
-        max_veg_days = 0
-        max_flower_days = 0
-        max_dry_days = 0
-        max_cure_days = 0
-        max_mother_days = 0
-
-        for plant in plants:
-            max_seedling_days = max(
-                max_seedling_days, calculate_days_in_stage(plant, PlantStage.SEEDLING)
-            )
-            max_veg_days = max(
-                max_veg_days, calculate_days_in_stage(plant, PlantStage.VEG)
-            )
-            max_flower_days = max(
-                max_flower_days, calculate_days_in_stage(plant, PlantStage.FLOWER)
-            )
-            max_dry_days = max(
-                max_dry_days, calculate_days_in_stage(plant, PlantStage.DRY)
-            )
-            max_cure_days = max(
-                max_cure_days, calculate_days_in_stage(plant, PlantStage.CURE)
-            )
-            max_mother_days = max(
-                max_mother_days, calculate_days_in_stage(plant, PlantStage.MOTHER)
-            )
-
-        if max_cure_days > 0:
-            return PlantStage.CURE
-        if max_dry_days > 0:
-            return PlantStage.DRY
-        if max_flower_days > FLOWER_LATE_MIN_DAYS:
-            return PlantStage.FLOWER_LATE
-        if max_flower_days > DEFAULT_FLOWER_EARLY_DAYS:
-            return PlantStage.FLOWER_MID
-        if max_flower_days > 0:
-            return PlantStage.FLOWER_EARLY
-        if max_mother_days > 0:
-            return PlantStage.MOTHER
-        if max_veg_days > 0:
-            return PlantStage.VEG
-        if max_seedling_days > 0:
-            return PlantStage.SEEDLING
-
-        return PlantStage.VEG
+        return determine_coordinator_stage(plants)
 
     def _get_current_thresholds(self, stage: str, is_day: bool) -> dict[str, float]:
         """Get the ON/OFF thresholds for the current state."""
