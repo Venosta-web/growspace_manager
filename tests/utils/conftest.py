@@ -73,17 +73,11 @@ def mock_coordinator():
     )
 
     # Core coordinator-level async methods (Awaited by handlers)
-    coordinator.async_take_clones = AsyncMock(return_value=["clone_1"])
-    coordinator.async_promote_clone = AsyncMock()
-    coordinator.async_remove_plant = AsyncMock()
-    coordinator.async_harvest_plant = AsyncMock()
-    coordinator.async_remove_growspace = AsyncMock()
     coordinator.async_transition_plant_stage = AsyncMock()
     coordinator.async_save = AsyncMock()
     coordinator.async_commit = AsyncMock()
     coordinator.async_load = AsyncMock()
     coordinator.async_refresh = AsyncMock()
-    coordinator.async_update_irrigation_config = AsyncMock()
 
     async def _mock_update_env_config(
         growspace_id: str, environment_data: dict
@@ -116,7 +110,6 @@ def mock_coordinator():
     # Utility methods
     coordinator.calculate_days = MagicMock(side_effect=DateTimeHelper.calculate_days)
     coordinator.to_date = MagicMock(side_effect=DateTimeHelper.to_date)
-    coordinator.get_growspace_plants = MagicMock(return_value=[])
 
     return coordinator
 

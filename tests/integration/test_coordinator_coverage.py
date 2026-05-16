@@ -99,7 +99,7 @@ async def test_async_add_growspace_coverage(
     coordinator.growspace_manager.add_growspace = AsyncMock(return_value=mock_gs)
     coordinator.subsystem_manager.async_setup_growspace_sub_coordinators = AsyncMock()
 
-    result = await coordinator.async_add_growspace(name="New GS")
+    result = await coordinator.services.add_growspace(name="New GS")
 
     assert result == mock_gs
     coordinator.growspace_manager.add_growspace.assert_called_once()
@@ -120,13 +120,12 @@ async def test_async_add_growspace_coverage(
 async def test_async_update_growspace_delegation(
     coordinator: GrowspaceCoordinator,
 ) -> None:
-    """Test async_update_growspace delegation."""
-    # Line 541
-    coordinator.growspace_manager.update_growspace = AsyncMock()
+    """Test services.update_growspace delegation."""
     gs = Growspace(id="gs1", name="Old Name")
     coordinator.growspaces = {"gs1": gs}
+    coordinator.growspace_manager.update_growspace = AsyncMock(return_value=gs)
 
-    result = await coordinator.async_update_growspace("gs1", name="New Name")
+    result = await coordinator.services.update_growspace("gs1", name="New Name")
 
     coordinator.growspace_manager.update_growspace.assert_called_once_with(
         "gs1", name="New Name"
@@ -141,17 +140,17 @@ async def test_strain_library_coverage(coordinator: GrowspaceCoordinator) -> Non
     coordinator.strain_library = MagicMock()
     coordinator.strain_library.get_all.return_value = {"Strain A": {}, "Strain B": {}}
 
-    assert coordinator.get_strain_options() == ["Strain A", "Strain B"]
-    assert coordinator.export_strain_library() == ["Strain A", "Strain B"]
+    assert coordinator.services.get_strain_options() == ["Strain A", "Strain B"]
+    assert coordinator.services.export_strain_library() == ["Strain A", "Strain B"]
 
     # Line 1466-1468
     coordinator.strain_library.clear = AsyncMock(return_value=2)
-    assert await coordinator.clear_strains() == 2
+    assert await coordinator.services.clear_strains() == 2
 
     # Test without strain library
     coordinator.strain_library = None
-    assert coordinator.get_strain_options() == []
-    assert await coordinator.clear_strains() == 0
+    assert coordinator.services.get_strain_options() == []
+    assert await coordinator.services.clear_strains() == 0
 
 
 @pytest.mark.asyncio
@@ -186,7 +185,7 @@ async def test_async_log_training_event_empty_plants_with_gs(
     # Also need to mock it on the service
     coordinator._training_service.add_event = coordinator.add_event
 
-    await coordinator.async_log_training_event(gs_id, "topping")
+    await coordinator.services.log_training_event(gs_id, "topping")
 
     # Verify add_event was called with the gs_id
     coordinator.add_event.assert_called_once()

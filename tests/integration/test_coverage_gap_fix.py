@@ -578,7 +578,7 @@ async def test_coordinator_update_missing_pump_keys(hass: HomeAssistant) -> None
     gs = Growspace(id="gs1", name="GS1", irrigation_config=config)
     coord.growspaces = {"gs1": gs}
 
-    await coord.async_update_irrigation_config("gs1", {"some_other_key": "val"})
+    await coord.services.update_irrigation_config("gs1", {"some_other_key": "val"})
 
     # Verify that pump entities were set to None on the config object
     assert gs.irrigation_config.irrigation_pump_entity is None

@@ -230,11 +230,11 @@ async def test_notification_config_handler_gaps(
 
     # 1. manage_timed_notifications 'back' action
     mock_flow.async_step_init.reset_mock()
-    cast(MagicMock, mock_coordinator.get_timed_notifications).return_value = []
+    cast(MagicMock, mock_coordinator.services.get_timed_notifications).return_value = []
 
     # 1. manage_timed_notifications 'back' action
     mock_flow.async_step_init.reset_mock()
-    cast(MagicMock, mock_coordinator.get_timed_notifications).return_value = []
+    cast(MagicMock, mock_coordinator.services.get_timed_notifications).return_value = []
 
     # Check if runtime_data is set (it should be from fixture)
     assert mock_entry.runtime_data == mock_coordinator
@@ -272,33 +272,33 @@ async def test_coordinator_setters_and_gaps(
     with patch(
         "custom_components.growspace_manager.notifications.notification_settings_manager._LOGGER.warning"
     ) as mock_warn:
-        await coord.set_notifications_enabled("nonexistent", True)
+        await coord.services.set_notifications_enabled("nonexistent", True)
         mock_warn.assert_called()
 
-    # Coverage for async_update_irrigation_config growspace not found
+    # Coverage for services.update_irrigation_config growspace not found
     with pytest.raises(GrowspaceNotFoundError):
-        await coord.async_update_irrigation_config("nonexistent", {})
+        await coord.services.update_irrigation_config("nonexistent", {})
 
     # _get_target_plants is now in TrainingService - tested through public API
 
-    # Coverage for async_save_ipm_preset update branch
+    # Coverage for services.save_ipm_preset update branch
     coord.ipm_presets = {
         "ipm1": IPMPreset(
             id="ipm1", name="Old", type="foliar", items=[], created_at="2026-01-01"
         )
     }
-    await coord.async_save_ipm_preset(
+    await coord.services.save_ipm_preset(
         name="New", type="drench", items=[], preset_id="ipm1"
     )
     assert coord.ipm_presets["ipm1"].name == "New"
 
-    # Coverage for async_remove_ipm_preset error
+    # Coverage for services.remove_ipm_preset error
     with pytest.raises(KeyError):
-        await coord.async_remove_ipm_preset("nonexistent")
+        await coord.services.remove_ipm_preset("nonexistent")
 
-    # Coverage for async_apply_ipm error
+    # Coverage for services.apply_ipm error
     with pytest.raises(KeyError):
-        await coord.async_apply_ipm("nonexistent")
+        await coord.services.apply_ipm("nonexistent")
 
 
 @pytest.mark.asyncio
@@ -360,21 +360,21 @@ async def test_coordinator_extended_coverage(
 
     # 6. Timed Notification CRUD (lines 1061, 1071-1112)
     # Add
-    await coord.async_add_timed_notification("Msg", "veg", 5, ["gs1"])
-    notifications = coord.get_timed_notifications()
+    await coord.services.add_timed_notification("Msg", "veg", 5, ["gs1"])
+    notifications = coord.services.get_timed_notifications()
     assert len(notifications) == 1
     assert notifications[0]["message"] == "Msg"
     nid = notifications[0]["id"]
 
     # Update
-    await coord.async_update_timed_notification(nid, "New Msg", "flower", 10, ["gs2"])
-    notifications = coord.get_timed_notifications()
+    await coord.services.update_timed_notification(nid, "New Msg", "flower", 10, ["gs2"])
+    notifications = coord.services.get_timed_notifications()
     assert notifications[0]["message"] == "New Msg"
     assert notifications[0]["day"] == 10
 
     # Remove
-    await coord.async_remove_timed_notification(nid)
-    assert len(coord.get_timed_notifications()) == 0
+    await coord.services.remove_timed_notification(nid)
+    assert len(coord.services.get_timed_notifications()) == 0
 
     # 7. resolve_nutrient_mix - now tested via NutrientManager (dead code removed from coordinator)
     coord.nutrient_presets = {

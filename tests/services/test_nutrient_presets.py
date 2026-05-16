@@ -164,7 +164,7 @@ class TestNutrientPresetCoordinator:
             name="Global", nutrients=[{"name": "D", "dose_ml_l": 1.0}]
         )
 
-        applicable = preset_coordinator.get_applicable_presets("test_plant")
+        applicable = preset_coordinator.services.get_applicable_presets("test_plant")
 
         assert len(applicable) == 2
         names = [p.name for p in applicable]
@@ -216,7 +216,7 @@ class TestNutrientPresetCoordinator:
             min_days_in_stage=15,  # Too many days
         )
 
-        applicable = preset_coordinator.get_applicable_presets("test_plant")
+        applicable = preset_coordinator.services.get_applicable_presets("test_plant")
         names = [p.name for p in applicable]
         assert "Days Match" in names
         assert "Days No Match" not in names

@@ -100,19 +100,11 @@ def mock_coordinator():
     coordinator.async_load = AsyncMock()
     coordinator.async_refresh = AsyncMock()
     coordinator.async_request_refresh = AsyncMock()
-    coordinator.async_take_clones = AsyncMock(return_value=["clone_1"])
-    coordinator.async_promote_clone = AsyncMock()
-    coordinator.async_add_plant = AsyncMock()
-    coordinator.async_remove_plant = AsyncMock()
-    coordinator.async_harvest_plant = AsyncMock()
-    coordinator.async_remove_growspace = AsyncMock()
     coordinator.async_transition_plant_stage = AsyncMock()
-    coordinator.async_update_irrigation_config = AsyncMock()
     coordinator.async_update_environment_config = AsyncMock()
     coordinator.async_start_flowering = AsyncMock()
     coordinator.async_start_drying = AsyncMock()
     coordinator.async_start_curing = AsyncMock()
-    coordinator.async_commit = AsyncMock()
 
     # 5. Mock other subsystem services
     coordinator.subsystem_manager = MagicMock()
@@ -136,8 +128,6 @@ def mock_coordinator():
     # 7. Utility methods
     coordinator.calculate_days = MagicMock(side_effect=DateTimeHelper.calculate_days)
     coordinator.to_date = MagicMock(side_effect=DateTimeHelper.to_date)
-    coordinator.get_growspace_plants = MagicMock(return_value=[])
-    coordinator.get_growspace_data = MagicMock(return_value={})
 
     # Public properties for legacy compatibility
     type(coordinator).growspace_service = property(lambda self: self.growspace_manager)

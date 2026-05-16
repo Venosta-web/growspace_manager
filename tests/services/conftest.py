@@ -92,27 +92,25 @@ def mock_coordinator(mock_plant, mock_growspace):
     coordinator.strain_library.clear = AsyncMock()
     coordinator.subsystem_manager.async_setup_growspace_sub_coordinators = AsyncMock()
 
-    # Initialize query methods
-    coordinator.get_growspace_plants = MagicMock(
+    # Link data_repository methods to local mocks so ServiceFacade sees them
+    mock_get_growspace_plants = MagicMock(
         name="get_growspace_plants",
         side_effect=lambda gid: [p for p in coordinator.plants.values() if p.growspace_id == gid]
     )
-    coordinator.get_plant = MagicMock(
+    mock_get_plant = MagicMock(
         name="get_plant",
         side_effect=lambda pid: coordinator.plants.get(pid)
     )
-    coordinator.get_growspace = MagicMock(
+    mock_get_growspace = MagicMock(
         name="get_growspace",
         side_effect=lambda gid: coordinator.growspaces.get(gid)
     )
-    coordinator.get_subareas = MagicMock(name="get_subareas", return_value=[])
-    
-    # Link data_repository methods to coordinator methods
-    # This ensures that ServiceFacade (which uses data_repository) sees mocks set on the coordinator
-    coordinator.data_repository.get_growspace_plants = coordinator.get_growspace_plants
-    coordinator.data_repository.get_plant = coordinator.get_plant
-    coordinator.data_repository.get_growspace = coordinator.get_growspace
-    coordinator.growspace_manager.get_subareas = coordinator.get_subareas
+    mock_get_subareas = MagicMock(name="get_subareas", return_value=[])
+
+    coordinator.data_repository.get_growspace_plants = mock_get_growspace_plants
+    coordinator.data_repository.get_plant = mock_get_plant
+    coordinator.data_repository.get_growspace = mock_get_growspace
+    coordinator.growspace_manager.get_subareas = mock_get_subareas
 
 
     # Initialize ServiceFacade and wrap it in a MagicMock
