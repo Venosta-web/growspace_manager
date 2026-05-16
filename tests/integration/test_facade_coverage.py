@@ -94,20 +94,20 @@ async def test_remove_plant_entities(mock_coordinator) -> None:
 async def test_ipm_management(mock_coordinator) -> None:
     """Test IPM preset management services."""
     facade = ServiceFacade(mock_coordinator)
-    mock_coordinator.ipm_service.async_save_ipm_preset = AsyncMock()
-    mock_coordinator.ipm_service.async_remove_ipm_preset = AsyncMock()
-    mock_coordinator.ipm_service.async_apply_ipm = AsyncMock()
+    mock_coordinator._ipm_service.async_save_ipm_preset = AsyncMock()
+    mock_coordinator._ipm_service.async_remove_ipm_preset = AsyncMock()
+    mock_coordinator._ipm_service.async_apply_ipm = AsyncMock()
 
     await facade.save_ipm_preset("Test", "Foliar", [])
-    mock_coordinator.ipm_service.async_save_ipm_preset.assert_called_once()
+    mock_coordinator._ipm_service.async_save_ipm_preset.assert_called_once()
 
     await facade.remove_ipm_preset("preset_1")
-    mock_coordinator.ipm_service.async_remove_ipm_preset.assert_called_once_with(
+    mock_coordinator._ipm_service.async_remove_ipm_preset.assert_called_once_with(
         "preset_1"
     )
 
     await facade.apply_ipm("preset_1", growspace_id="gs1")
-    mock_coordinator.ipm_service.async_apply_ipm.assert_called_once()
+    mock_coordinator._ipm_service.async_apply_ipm.assert_called_once()
 
 
 @pytest.mark.asyncio

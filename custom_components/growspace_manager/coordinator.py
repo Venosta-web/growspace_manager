@@ -476,21 +476,6 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self.options = options or {}
         _LOGGER.info("--- COORDINATOR INITIALIZED WITH OPTIONS: %s ---", self.options)
 
-    @property
-    def watering_service(self) -> WateringService:
-        """Return the watering service."""
-        return self._watering_service
-
-    @property
-    def training_service(self) -> TrainingService:
-        """Return the training service."""
-        return self._training_service
-
-    @property
-    def ipm_service(self) -> IPMService:
-        """Return the IPM service."""
-        return self._ipm_service
-
     def on_nutrient_inventory_loaded(self, inventory: NutrientInventory) -> None:
         """Update inventory and synchronize services after loading from storage.
 

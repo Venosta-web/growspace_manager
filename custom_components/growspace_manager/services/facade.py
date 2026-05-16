@@ -295,17 +295,17 @@ class ServiceFacade:
     @property
     def watering_service(self) -> WateringService:
         """Return the watering service."""
-        return self._coordinator.watering_service
+        return self._coordinator._watering_service
 
     @property
     def training_service(self) -> TrainingService:
         """Return the training service."""
-        return self._coordinator.training_service
+        return self._coordinator._training_service
 
     @property
     def ipm_service(self) -> IPMService:
         """Return the IPM service."""
-        return self._coordinator.ipm_service
+        return self._coordinator._ipm_service
 
     @property
     def notification_manager(self) -> NotificationManager:
@@ -754,7 +754,7 @@ class ServiceFacade:
         preset_id: str | None = None,
     ) -> Plant:
         """Record a watering event for a single plant."""
-        return await self._coordinator.watering_service.async_water_plant(
+        return await self.watering_service.async_water_plant(
             plant_id, amount, nutrients, preset_id
         )
 
@@ -767,7 +767,7 @@ class ServiceFacade:
         amount: float | None = None,
     ) -> int:
         """Record a watering event for all plants in a growspace."""
-        return await self._coordinator.watering_service.async_water_growspace(
+        return await self.watering_service.async_water_growspace(
             growspace_id, amount_per_plant, nutrients, preset_id, amount
         )
 
@@ -804,7 +804,7 @@ class ServiceFacade:
         plant_ids: list[str] | None = None,
     ) -> None:
         """Log a training event for specific plants or an entire growspace."""
-        await self._coordinator.training_service.async_log_training_event(
+        await self.training_service.async_log_training_event(
             growspace_id, technique, notes, plant_ids
         )
 
@@ -835,23 +835,23 @@ class ServiceFacade:
                 "save_ipm_preset() missing 1 required positional argument: 'items'"
             )
 
-        return await self._coordinator.ipm_service.async_save_ipm_preset(
+        return await self.ipm_service.async_save_ipm_preset(
             name, preset_type, items, stage, min_days_in_stage, preset_id
         )
 
     async def remove_ipm_preset(self, preset_id: str) -> None:
         """Remove an IPM preset."""
-        await self._coordinator.ipm_service.async_remove_ipm_preset(preset_id)
+        await self.ipm_service.async_remove_ipm_preset(preset_id)
 
     async def apply_ipm(
         self,
-        preset_id: str,
+        preset_id: str | None = None,
         growspace_id: str | None = None,
         plant_ids: list[str] | None = None,
         notes: str | None = None,
     ) -> list[str]:
         """Log an IPM application event."""
-        return await self._coordinator.ipm_service.async_apply_ipm(
+        return await self.ipm_service.async_apply_ipm(
             preset_id, growspace_id, plant_ids, notes
         )
 

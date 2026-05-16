@@ -257,9 +257,9 @@ def test_properties(mock_coordinator) -> None:
     assert facade.plant_manager is mock_coordinator.plant_manager
     assert facade.strain_library is mock_coordinator.strain_library
     assert facade.nutrient_manager is mock_coordinator.nutrient_manager
-    assert facade.watering_service is mock_coordinator.watering_service
-    assert facade.training_service is mock_coordinator.training_service
-    assert facade.ipm_service is mock_coordinator.ipm_service
+    assert facade.watering_service is mock_coordinator._watering_service
+    assert facade.training_service is mock_coordinator._training_service
+    assert facade.ipm_service is mock_coordinator._ipm_service
     assert facade.notification_manager is mock_coordinator.notification_manager
     assert facade.notification_settings is mock_coordinator.notification_settings
 
@@ -698,10 +698,10 @@ async def test_harvest_plant(mock_coordinator) -> None:
 async def test_water_plant(mock_coordinator) -> None:
     facade = ServiceFacade(mock_coordinator)
     plant = MagicMock()
-    mock_coordinator.watering_service.async_water_plant = AsyncMock(return_value=plant)
+    mock_coordinator._watering_service.async_water_plant = AsyncMock(return_value=plant)
     result = await facade.water_plant("p1", 500.0)
     assert result is plant
-    mock_coordinator.watering_service.async_water_plant.assert_awaited_once_with(
+    mock_coordinator._watering_service.async_water_plant.assert_awaited_once_with(
         "p1", 500.0, None, None
     )
 
@@ -709,7 +709,7 @@ async def test_water_plant(mock_coordinator) -> None:
 @pytest.mark.asyncio
 async def test_water_growspace(mock_coordinator) -> None:
     facade = ServiceFacade(mock_coordinator)
-    mock_coordinator.watering_service.async_water_growspace = AsyncMock(return_value=3)
+    mock_coordinator._watering_service.async_water_growspace = AsyncMock(return_value=3)
     result = await facade.water_growspace("gs1", amount_per_plant=500.0)
     assert result == 3
 
@@ -752,9 +752,9 @@ def test_get_applicable_presets(mock_coordinator) -> None:
 @pytest.mark.asyncio
 async def test_log_training_event(mock_coordinator) -> None:
     facade = ServiceFacade(mock_coordinator)
-    mock_coordinator.training_service.async_log_training_event = AsyncMock()
+    mock_coordinator._training_service.async_log_training_event = AsyncMock()
     await facade.log_training_event("gs1", "LST", notes="Tied down")
-    mock_coordinator.training_service.async_log_training_event.assert_awaited_once_with(
+    mock_coordinator._training_service.async_log_training_event.assert_awaited_once_with(
         "gs1", "LST", "Tied down", None
     )
 
@@ -764,7 +764,7 @@ async def test_save_ipm_preset_legacy_type_kwarg(mock_coordinator) -> None:
     """save_ipm_preset accepts 'type' as a kwarg for backward compat."""
     facade = ServiceFacade(mock_coordinator)
     preset = MagicMock()
-    mock_coordinator.ipm_service.async_save_ipm_preset = AsyncMock(return_value=preset)
+    mock_coordinator._ipm_service.async_save_ipm_preset = AsyncMock(return_value=preset)
     result = await facade.save_ipm_preset("Neem", items=[], type="Foliar")
     assert result is preset
 
@@ -1457,7 +1457,7 @@ async def test_save_ipm_preset_items_in_kwargs(mock_coordinator) -> None:
     """save_ipm_preset should pick items from **kwargs if items param is None."""
     facade = ServiceFacade(mock_coordinator)
     preset = MagicMock()
-    mock_coordinator.ipm_service.async_save_ipm_preset = AsyncMock(return_value=preset)
+    mock_coordinator._ipm_service.async_save_ipm_preset = AsyncMock(return_value=preset)
     # Pass items via kwargs, not as the named parameter
     result = await facade.save_ipm_preset("Test", preset_type="Foliar", items=[{"name": "Neem"}])
     assert result is preset
