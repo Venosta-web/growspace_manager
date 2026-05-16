@@ -48,6 +48,8 @@ from custom_components.growspace_manager.schemas import (
     HARVEST_SEEDS_SCHEMA,
     IMPORT_STRAIN_LIBRARY_SCHEMA,
     LOG_DRAIN_READING_SCHEMA,
+    LOG_DRYING_WEIGHT_SCHEMA,
+    LOG_MOISTURE_READING_SCHEMA,
     LOG_POLLINATION_SCHEMA,
     LOG_TRAINING_EVENT_SCHEMA,
     MOVE_CLONE_SCHEMA,
@@ -71,6 +73,7 @@ from custom_components.growspace_manager.schemas import (
     SERVICE_TRIGGER_VISION_CHECKUP_SCHEMA,
     SET_DEHUMIDIFIER_CONTROL_SCHEMA,
     SET_IRRIGATION_SETTINGS_SCHEMA,
+    SET_VISUAL_TAG_SCHEMA,
     STRAIN_RECOMMENDATION_SCHEMA,
     SWITCH_PLANT_SCHEMA,
     TAKE_CLONE_SCHEMA,
@@ -291,6 +294,9 @@ async def test_register_services(mock_hass, mock_strain_library_for_services) ->
         "harvest_seeds": HARVEST_SEEDS_SCHEMA,
         "update_pollination": UPDATE_POLLINATION_SCHEMA,
         "delete_pollination": DELETE_POLLINATION_SCHEMA,
+        "log_drying_weight": LOG_DRYING_WEIGHT_SCHEMA,
+        "log_moisture_reading": LOG_MOISTURE_READING_SCHEMA,
+        "set_visual_tag": SET_VISUAL_TAG_SCHEMA,
     }
 
     # Verify call count

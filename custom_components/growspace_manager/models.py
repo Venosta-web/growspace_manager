@@ -796,6 +796,31 @@ class PhenotypeScore(BaseModel):
 
 
 @dataclass(slots=True)
+class WeightEntry(BaseModel):
+    """A single daily weight observation during drying."""
+
+    date: str = ""
+    weight_grams: float = 0.0
+
+
+@dataclass(slots=True)
+class MoistureEntry(BaseModel):
+    """A single daily moisture meter reading during drying."""
+
+    date: str = ""
+    moisture_percent: float = 0.0
+
+
+@dataclass(slots=True)
+class DryingData(BaseModel):
+    """In-progress drying observations for a plant in the dry stage."""
+
+    weight_log: list[WeightEntry] = field(default_factory=list)
+    moisture_log: list[MoistureEntry] = field(default_factory=list)
+    visual_tag: str | None = None
+
+
+@dataclass(slots=True)
 class HarvestMetrics(BaseModel):
     """Quantitative yield and quality data recorded at harvest."""
 
@@ -840,6 +865,7 @@ class Plant(BaseModel):
     stage_history: list[StageHistoryItem] = field(default_factory=list)
     phenotype_score: PhenotypeScore = field(default_factory=PhenotypeScore)
     harvest_metrics: HarvestMetrics = field(default_factory=HarvestMetrics)
+    drying_data: DryingData = field(default_factory=DryingData)
 
     @classmethod
     def __pre_deserialize__(cls, data: dict[str, Any]) -> dict[str, Any]:

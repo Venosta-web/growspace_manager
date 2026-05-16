@@ -50,6 +50,7 @@ from .const import (
 )
 from .coordinator import GrowspaceCoordinator
 from .exceptions import GrowspaceError
+from .drying_calculator import is_cure_ready
 from .models import (
     EnvironmentConfig,
     EnvironmentState,
@@ -1162,3 +1163,33 @@ class LightCycleVerificationSensor(
         self._time_in_current_state = time_since_last_changed
         self._expected_schedule = f"{day_hours}/{24 - day_hours}"
         self.async_write_ha_state()
+
+
+class DryingReadyForCureSensor(CoordinatorEntity[GrowspaceCoordinator], BinarySensorEntity):  # type: ignore[misc]
+    """Binary sensor that is on when a plant's moisture is at or below the cure threshold."""
+
+    _attr_has_entity_name = True
+    _attr_translation_key = "drying_ready_for_cure"
+    _attr_icon = "mdi:jar-outline"
+
+    def __init__(self, coordinator: GrowspaceCoordinator, plant: Plant) -> None:
+        """Initialize the ready-for-cure binary sensor."""
+        super().__init__(coordinator)
+        self._plant_id = plant.plant_id
+        self._attr_unique_id = f"{DOMAIN}_{plant.plant_id}_ready_for_cure"
+        growspace: Any = coordinator.growspaces.get(plant.growspace_id, {})
+        self._attr_device_info = DeviceInfo(
+            identifiers={(DOMAIN, plant.growspace_id)},
+            name=getattr(growspace, "name", plant.growspace_id),
+            model="Growspace",
+            manufacturer="Growspace Manager",
+        )
+
+    @property
+    @override  # type: ignore[misc]
+    def is_on(self) -> bool:
+        """Return True when the latest moisture reading is at or below the cure threshold."""
+        plant = self.coordinator.plants.get(self._plant_id)
+        if not plant:
+            return False
+        return is_cure_ready(plant.drying_data.moisture_log)

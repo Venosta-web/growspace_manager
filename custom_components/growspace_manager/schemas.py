@@ -67,9 +67,12 @@ from .const import (
     ATTR_TRIM_WEIGHT,
     ATTR_TYPE,
     ATTR_VIGOR,
+    ATTR_VISUAL_TAG,
     ATTR_VOLUME_LITERS,
     ATTR_WET_WEIGHT,
+    ATTR_WEIGHT_GRAMS,
     ATTR_YIELD_POTENTIAL,
+    ATTR_MOISTURE_PERCENT,
     CONF_CAMERA_ENTITIES,
     CONF_CIRCULATION_FAN_ENTITIES,
     CONF_CIRCULATION_FAN_ENTITY,
@@ -859,5 +862,32 @@ UPDATE_POLLINATION_SCHEMA = vol.Schema(
 DELETE_POLLINATION_SCHEMA = vol.Schema(
     {
         vol.Required(ATTR_EVENT_ID): cv.string,
+    }
+)
+
+# --- Drying & Curing Schemas ---
+
+LOG_DRYING_WEIGHT_SCHEMA = vol.Schema(
+    {
+        vol.Required(ATTR_PLANT_ID): cv.string,
+        vol.Required(ATTR_WEIGHT_GRAMS): vol.All(vol.Coerce(float), vol.Range(min=0.0)),
+        vol.Optional(ATTR_DATE): cv.string,
+    }
+)
+
+LOG_MOISTURE_READING_SCHEMA = vol.Schema(
+    {
+        vol.Required(ATTR_PLANT_ID): cv.string,
+        vol.Required(ATTR_MOISTURE_PERCENT): vol.All(
+            vol.Coerce(float), vol.Range(min=0.0, max=100.0)
+        ),
+        vol.Optional(ATTR_DATE): cv.string,
+    }
+)
+
+SET_VISUAL_TAG_SCHEMA = vol.Schema(
+    {
+        vol.Required(ATTR_PLANT_ID): cv.string,
+        vol.Optional(ATTR_VISUAL_TAG): vol.Any(cv.string, None),
     }
 )

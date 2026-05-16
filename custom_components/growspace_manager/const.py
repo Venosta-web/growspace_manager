@@ -380,6 +380,9 @@ ATTR_SEED_BATCH_ID = "seed_batch_id"
 ATTR_STRAIN_NAME = "strain_name"
 ATTR_DATE = "date"
 ATTR_QUANTITY = "quantity"
+ATTR_WEIGHT_GRAMS = "weight_grams"
+ATTR_MOISTURE_PERCENT = "moisture_percent"
+ATTR_VISUAL_TAG = "visual_tag"
 
 ATTR_PROBABILITY = "probability"
 ATTR_THRESHOLD = "threshold"
@@ -606,6 +609,10 @@ class GrowspaceService(StrEnum):
     TRIGGER_VISION_CHECKUP = "trigger_vision_checkup"
     # Tank Configuration Services
     CONFIGURE_TANK = "configure_tank"
+    # Drying & Curing Services
+    LOG_DRYING_WEIGHT = "log_drying_weight"
+    LOG_MOISTURE_READING = "log_moisture_reading"
+    SET_VISUAL_TAG = "set_visual_tag"
     # Genetics Services
     ADD_SEED_BATCH = "add_seed_batch"
     UPDATE_SEED_BATCH = "update_seed_batch"

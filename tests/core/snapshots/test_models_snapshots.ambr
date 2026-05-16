@@ -273,6 +273,13 @@
     'cure_start': None,
     'device_id': None,
     'dry_start': None,
+    'drying_data': dict({
+      'moisture_log': list([
+      ]),
+      'visual_tag': None,
+      'weight_log': list([
+      ]),
+    }),
     'flower_start': None,
     'genetics': dict({
       'generation': '',

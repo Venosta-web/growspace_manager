@@ -33,10 +33,12 @@ from ..models import (
     Growspace,
     IPMPreset,
     IrrigationConfig,
+    MoistureEntry,
     NutrientPreset,
     Plant,
     Subarea,
     WaterUsageData,
+    WeightEntry,
 )
 from ..tank_water_tracker import TankWaterTracker
 from ..utils import generate_growspace_overview_unique_id
@@ -906,6 +908,50 @@ class ServiceFacade:
                 f"Drain EC delta ({ec_delta:.2f}) exceeds threshold ({drain_config.max_ec_delta:.2f}).",
                 tier="drain_ec",
             )
+
+    async def log_drying_weight(
+        self,
+        plant_id: str,
+        weight_grams: float,
+        date: str | None = None,
+    ) -> None:
+        """Append a weight entry to a plant's drying log."""
+        plant = self._coordinator.plants.get(plant_id)
+        if not plant:
+            raise ServiceValidationError(f"Plant '{plant_id}' not found")
+        entry_date = date or dt_util.now().date().isoformat()
+        plant.drying_data.weight_log.append(
+            WeightEntry(date=entry_date, weight_grams=weight_grams)
+        )
+        await self._coordinator.async_commit()
+
+    async def log_moisture_reading(
+        self,
+        plant_id: str,
+        moisture_percent: float,
+        date: str | None = None,
+    ) -> None:
+        """Append a moisture entry to a plant's drying log."""
+        plant = self._coordinator.plants.get(plant_id)
+        if not plant:
+            raise ServiceValidationError(f"Plant '{plant_id}' not found")
+        entry_date = date or dt_util.now().date().isoformat()
+        plant.drying_data.moisture_log.append(
+            MoistureEntry(date=entry_date, moisture_percent=moisture_percent)
+        )
+        await self._coordinator.async_commit()
+
+    async def set_visual_tag(
+        self,
+        plant_id: str,
+        visual_tag: str | None,
+    ) -> None:
+        """Set or clear the visual tag on a plant."""
+        plant = self._coordinator.plants.get(plant_id)
+        if not plant:
+            raise ServiceValidationError(f"Plant '{plant_id}' not found")
+        plant.drying_data.visual_tag = visual_tag
+        await self._coordinator.async_commit()
 
     async def _async_auto_harvest(self) -> None:
         """Automatically harvest plants based on their transition date."""

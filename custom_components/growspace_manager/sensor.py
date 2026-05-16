@@ -50,7 +50,8 @@ from .const import (
 # Local / relative imports
 from .coordinator import GrowspaceCoordinator
 from .helpers import async_setup_statistics_sensor, async_setup_trend_sensor
-from .models import Growspace, GrowspaceType, Plant
+from .drying_calculator import compute_days_to_target, compute_weight_lost_pct, is_cure_ready
+from .models import DryingData, Growspace, GrowspaceType, Plant, WeightEntry, MoistureEntry
 from .tank_depletion_predictor import TankDepletionPredictor
 from .utils import (
     VPDCalculator,
@@ -1958,3 +1959,88 @@ class SeedInventorySensor(CoordinatorEntity[GrowspaceCoordinator], SensorEntity)
                 for batch in self.coordinator.genetics_manager.seed_batches.values()
             ],
         }
+
+
+class DryingWeightSensor(CoordinatorEntity[GrowspaceCoordinator], SensorEntity):  # type: ignore[misc]
+    """Sensor tracking daily drying weight for a plant."""
+
+    _attr_has_entity_name = True
+    _attr_translation_key = "drying_weight"
+    _attr_native_unit_of_measurement = "g"
+    _attr_state_class = SensorStateClass.MEASUREMENT
+    _attr_icon = "mdi:scale"
+
+    def __init__(self, coordinator: GrowspaceCoordinator, plant: Plant) -> None:
+        """Initialize the drying weight sensor."""
+        super().__init__(coordinator)
+        self._plant_id = plant.plant_id
+        self._attr_unique_id = f"{DOMAIN}_{plant.plant_id}_drying_weight"
+        growspace: Any = coordinator.growspaces.get(plant.growspace_id, {})
+        self._attr_device_info = DeviceInfo(
+            identifiers={(DOMAIN, plant.growspace_id)},
+            name=getattr(growspace, "name", plant.growspace_id),
+            model="Growspace",
+            manufacturer="Growspace Manager",
+        )
+
+    def _get_plant(self) -> Plant | None:
+        return self.coordinator.plants.get(self._plant_id)
+
+    @property
+    @override  # type: ignore[misc]
+    def native_value(self) -> float | None:
+        """Return the latest logged weight in grams."""
+        plant = self._get_plant()
+        if not plant or not plant.drying_data.weight_log:
+            return None
+        return plant.drying_data.weight_log[-1].weight_grams
+
+    @property
+    @override  # type: ignore[misc]
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Return weight_lost_pct and days_to_target."""
+        plant = self._get_plant()
+        if not plant:
+            return {}
+        wet_weight = plant.harvest_metrics.wet_weight
+        log = plant.drying_data.weight_log
+        current = log[-1].weight_grams if log else None
+        return {
+            "weight_lost_pct": compute_weight_lost_pct(wet_weight, current) if current is not None else None,
+            "days_to_target": compute_days_to_target(wet_weight, log),
+        }
+
+
+class DryingMoistureSensor(CoordinatorEntity[GrowspaceCoordinator], SensorEntity):  # type: ignore[misc]
+    """Sensor tracking daily moisture meter readings for a plant."""
+
+    _attr_has_entity_name = True
+    _attr_translation_key = "drying_moisture"
+    _attr_native_unit_of_measurement = "%"
+    _attr_state_class = SensorStateClass.MEASUREMENT
+    _attr_icon = "mdi:water-percent"
+
+    def __init__(self, coordinator: GrowspaceCoordinator, plant: Plant) -> None:
+        """Initialize the drying moisture sensor."""
+        super().__init__(coordinator)
+        self._plant_id = plant.plant_id
+        self._attr_unique_id = f"{DOMAIN}_{plant.plant_id}_drying_moisture"
+        growspace: Any = coordinator.growspaces.get(plant.growspace_id, {})
+        self._attr_device_info = DeviceInfo(
+            identifiers={(DOMAIN, plant.growspace_id)},
+            name=getattr(growspace, "name", plant.growspace_id),
+            model="Growspace",
+            manufacturer="Growspace Manager",
+        )
+
+    def _get_plant(self) -> Plant | None:
+        return self.coordinator.plants.get(self._plant_id)
+
+    @property
+    @override  # type: ignore[misc]
+    def native_value(self) -> float | None:
+        """Return the latest logged moisture percent."""
+        plant = self._get_plant()
+        if not plant or not plant.drying_data.moisture_log:
+            return None
+        return plant.drying_data.moisture_log[-1].moisture_percent
