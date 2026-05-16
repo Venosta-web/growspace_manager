@@ -272,7 +272,7 @@ class HumidifierCoordinator:
         if max_flower_days > FLOWER_LATE_MIN_DAYS:
             return PlantStage.FLOWER_LATE
         if max_flower_days > DEFAULT_FLOWER_EARLY_DAYS:
-            return "mid_flower"
+            return PlantStage.FLOWER_MID
         if max_flower_days > 0:
             return PlantStage.FLOWER_EARLY
         if max_mother_days > 0:
