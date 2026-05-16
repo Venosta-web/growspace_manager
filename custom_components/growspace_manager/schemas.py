@@ -331,10 +331,10 @@ SCORE_PLANT_SCHEMA = vol.Schema(
     {
         vol.Required(ATTR_PLANT_ID): str,
         vol.Optional(ATTR_VIGOR): _SCORE_VALIDATOR,
-        vol.Optional(ATTR_STRUCTURE): _SCORE_VALIDATOR,
-        vol.Optional(ATTR_AROMA): _SCORE_VALIDATOR,
+        vol.Optional(ATTR_INTERNODAL_SPACING): _SCORE_VALIDATOR,
+        vol.Optional(ATTR_TERPENE_INTENSITY): _SCORE_VALIDATOR,
         vol.Optional(ATTR_RESIN): _SCORE_VALIDATOR,
-        vol.Optional(ATTR_PEST_RESISTANCE): _SCORE_VALIDATOR,
+        vol.Optional(ATTR_MOLD_RESISTANCE): _SCORE_VALIDATOR,
     }
 )
 

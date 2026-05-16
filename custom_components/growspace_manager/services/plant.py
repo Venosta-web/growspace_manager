@@ -16,7 +16,7 @@ from homeassistant.util import dt as dt_util
 from ..const import (
     ATTR_AMOUNT,
     ATTR_AMOUNT_ML,
-    ATTR_AROMA,
+    ATTR_MOLD_RESISTANCE,
     ATTR_CBD_PERCENTAGE,
     ATTR_COL,
     ATTR_DRY_WEIGHT,
@@ -30,7 +30,7 @@ from ..const import (
     ATTR_NEW_STAGE,
     ATTR_NOTES,
     ATTR_NUM_CLONES,
-    ATTR_PEST_RESISTANCE,
+    ATTR_TERPENE_INTENSITY,
     ATTR_PH,
     ATTR_PHENOTYPE,
     ATTR_PLANT1_ID,
@@ -41,7 +41,7 @@ from ..const import (
     ATTR_SEED_BATCH_ID,
     ATTR_START_NUMBER,
     ATTR_STRAIN,
-    ATTR_STRUCTURE,
+    ATTR_INTERNODAL_SPACING,
     ATTR_TAGS,
     ATTR_TARGET_GROWSPACE_ID,
     ATTR_TERPENE_PROFILE,
@@ -890,10 +890,10 @@ async def handle_score_plant(
     await coordinator.services.score_plant(
         plant_id=plant_id,
         vigor=call.data.get(ATTR_VIGOR),
-        structure=call.data.get(ATTR_STRUCTURE),
-        aroma=call.data.get(ATTR_AROMA),
+        internodal_spacing=call.data.get(ATTR_INTERNODAL_SPACING),
+        terpene_intensity=call.data.get(ATTR_TERPENE_INTENSITY),
         resin=call.data.get(ATTR_RESIN),
-        pest_resistance=call.data.get(ATTR_PEST_RESISTANCE),
+        mold_resistance=call.data.get(ATTR_MOLD_RESISTANCE),
     )
 
 

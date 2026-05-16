@@ -30,9 +30,9 @@ def mock_strain_library():
 
 def test_score_plant_schema_accepts_null_scores():
     """Schema must accept None for score fields (frontend sends null for unset scores)."""
-    result = SCORE_PLANT_SCHEMA({"plant_id": "abc", "vigor": None, "structure": None})
+    result = SCORE_PLANT_SCHEMA({"plant_id": "abc", "vigor": None, "internodal_spacing": None})
     assert result["vigor"] is None
-    assert result["structure"] is None
+    assert result["internodal_spacing"] is None
 
 
 def test_score_plant_schema_coerces_float_to_int():
@@ -59,10 +59,10 @@ async def test_handle_score_plant_all_fields(
     call.data = {
         ATTR_PLANT_ID: "test_plant_1",
         "vigor": 5,
-        "structure": 4,
-        "aroma": 5,
+        "internodal_spacing": 4,
+        "terpene_intensity": 5,
         "resin": 4,
-        "pest_resistance": 3,
+        "mold_resistance": 3,
     }
 
     # Seed plant

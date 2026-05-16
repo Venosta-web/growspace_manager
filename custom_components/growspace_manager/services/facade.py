@@ -6,12 +6,16 @@ reducing the complexity and size of the main GrowspaceCoordinator.
 
 from __future__ import annotations
 
-from datetime import date
 import logging
+from datetime import date
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from custom_components.growspace_manager.const import (
+from homeassistant.exceptions import ServiceValidationError
+from homeassistant.helpers import device_registry as dr, entity_registry as er
+from homeassistant.util import dt as dt_util, slugify
+
+from ..const import (
     ATTR_DRAIN_TIMES,
     ATTR_IRRIGATION_TIMES,
     CATEGORY_NOTE,
@@ -22,7 +26,8 @@ from custom_components.growspace_manager.const import (
     NotificationTier,
     PlantStage,
 )
-from custom_components.growspace_manager.models import (
+from ..exceptions import GrowspaceNotFoundError
+from ..models import (
     DrainReading,
     ECRampCurve,
     Growspace,
@@ -33,34 +38,20 @@ from custom_components.growspace_manager.models import (
     Subarea,
     WaterUsageData,
 )
-from custom_components.growspace_manager.exceptions import GrowspaceNotFoundError
-from custom_components.growspace_manager.tank_water_tracker import TankWaterTracker
-from custom_components.growspace_manager.utils import (
-    generate_growspace_overview_unique_id,
-)
-from homeassistant.exceptions import ServiceValidationError
-from homeassistant.helpers import device_registry as dr, entity_registry as er
-from homeassistant.util import dt as dt_util, slugify
+from ..tank_water_tracker import TankWaterTracker
+from ..utils import generate_growspace_overview_unique_id
 
 if TYPE_CHECKING:
-    from custom_components.growspace_manager.coordinator import GrowspaceCoordinator
-    from custom_components.growspace_manager.managers.growspace import GrowspaceManager
-    from custom_components.growspace_manager.managers.nutrient import NutrientManager
-    from custom_components.growspace_manager.managers.plant import PlantManager
-    from custom_components.growspace_manager.notification_manager import (
-        NotificationManager,
-    )
-    from custom_components.growspace_manager.notifications import (
-        NotificationSettingsManager,
-    )
-    from custom_components.growspace_manager.services.ipm_service import IPMService
-    from custom_components.growspace_manager.services.training_service import (
-        TrainingService,
-    )
-    from custom_components.growspace_manager.services.watering_service import (
-        WateringService,
-    )
-    from custom_components.growspace_manager.strain_library import StrainLibrary
+    from ..coordinator import GrowspaceCoordinator
+    from ..managers.growspace import GrowspaceManager
+    from ..managers.nutrient import NutrientManager
+    from ..managers.plant import PlantManager
+    from ..notification_manager import NotificationManager
+    from ..notifications import NotificationSettingsManager
+    from ..strain_library import StrainLibrary
+    from .ipm_service import IPMService
+    from .training_service import TrainingService
+    from .watering_service import WateringService
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -1109,7 +1100,7 @@ class ServiceFacade:
                             timestamp=timestamp,
                         )
                         image_paths.append(f"timeline/{Path(abs_path).name}")
-                    except Exception as e:
+                    except (OSError, ValueError) as e:
                         _LOGGER.error("Failed to save timeline image: %s", e)
 
         # 3. Fire event for persistence
@@ -1135,6 +1126,12 @@ class ServiceFacade:
         aroma: int | None = None,
         resin: int | None = None,
         pest_resistance: int | None = None,
+        internodal_spacing: int | None = None,
+        terpene_intensity: int | None = None,
+        mold_resistance: int | None = None,
+        yield_potential: int | None = None,
+        keeper: bool | None = None,
+        notes: str | None = None,
     ) -> None:
         """Score a plant's phenotype performance."""
         plant = self._coordinator.plants.get(plant_id)
@@ -1142,16 +1139,33 @@ class ServiceFacade:
             raise ServiceValidationError(f"Plant {plant_id} not found")
 
         ps = plant.phenotype_score
+
+        # Mapping with precedence for new names
         if vigor is not None:
             ps.vigor = vigor
-        if structure is not None:
+        if internodal_spacing is not None:
+            ps.internodal_spacing = internodal_spacing
+        elif structure is not None:
             ps.internodal_spacing = structure
-        if aroma is not None:
+
+        if terpene_intensity is not None:
+            ps.terpene_intensity = terpene_intensity
+        elif aroma is not None:
             ps.terpene_intensity = aroma
+
         if resin is not None:
             ps.resin = resin
-        if pest_resistance is not None:
+
+        if mold_resistance is not None:
+            ps.mold_resistance = mold_resistance
+        elif pest_resistance is not None:
             ps.mold_resistance = pest_resistance
+        if yield_potential is not None:
+            ps.yield_potential = yield_potential
+        if keeper is not None:
+            ps.keeper = keeper
+        if notes is not None:
+            ps.notes = notes
 
         await self._coordinator.plant_manager.update_plant(plant_id, phenotype_score=ps)
         _LOGGER.info("Plant %s phenotype scored", plant_id)
