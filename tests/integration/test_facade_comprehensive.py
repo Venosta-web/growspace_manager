@@ -23,19 +23,6 @@ from custom_components.growspace_manager.services.facade import ServiceFacade
 from homeassistant.exceptions import ServiceValidationError
 
 
-# ---------------------------------------------------------------------------
-# __getattr__ / async_ alias
-# ---------------------------------------------------------------------------
-
-
-def test_getattr_async_alias_resolves(mock_coordinator) -> None:
-    """async_<name> should delegate to the plain method when it exists."""
-    facade = ServiceFacade(mock_coordinator)
-    facade.get_growspace = Mock(return_value="gs")
-    result = facade.async_get_growspace
-    assert result is facade.get_growspace
-
-
 def test_getattr_unknown_raises(mock_coordinator) -> None:
     """Accessing an unknown attribute should raise AttributeError."""
     facade = ServiceFacade(mock_coordinator)

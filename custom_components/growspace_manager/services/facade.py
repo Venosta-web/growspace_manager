@@ -68,16 +68,6 @@ class ServiceFacade:
         self._coordinator = coordinator
         self._tank_water_trackers: dict[str, dict[str, TankWaterTracker]] = {}
 
-    def __getattr__(self, name: str) -> Any:
-        """Handle dynamic attribute access, providing async_ aliases."""
-        if name.startswith("async_"):
-            base_name = name[6:]
-            if hasattr(self, base_name):
-                return getattr(self, base_name)
-        raise AttributeError(
-            f"'{self.__class__.__name__}' object has no attribute '{name}'"
-        )
-
     async def save(self) -> None:
         """Save current data to storage.
 
@@ -441,6 +431,33 @@ class ServiceFacade:
         )
         await self.update_options({"timed_notifications": notifications})
 
+    async def async_add_timed_notification(
+        self,
+        message: str,
+        trigger_type: str,
+        day: int,
+        growspace_ids: list[str] | None = None,
+    ) -> None:
+        """Alias for add_timed_notification."""
+        await self.add_timed_notification(message, trigger_type, day, growspace_ids)
+
+    async def async_update_timed_notification(
+        self,
+        notification_id: str,
+        message: str,
+        trigger_type: str,
+        day: int,
+        growspace_ids: list[str] | None = None,
+    ) -> None:
+        """Alias for update_timed_notification."""
+        await self.update_timed_notification(
+            notification_id, message, trigger_type, day, growspace_ids
+        )
+
+    async def async_remove_timed_notification(self, notification_id: str) -> None:
+        """Alias for remove_timed_notification."""
+        await self.remove_timed_notification(notification_id)
+
     def is_notifications_enabled(self, growspace_id: str) -> bool:
         """Check if notifications are enabled for a specific growspace."""
         return (
@@ -698,6 +715,33 @@ class ServiceFacade:
             terpene_profile=terpene_profile,
         )
 
+    async def async_harvest_plant(
+        self,
+        plant_id: str,
+        target_growspace_id: str | None = None,
+        target_growspace_name: str | None = None,
+        transition_date: str | None = None,
+        wet_weight: float | None = None,
+        dry_weight: float | None = None,
+        trim_weight: float | None = None,
+        thc_percentage: float | None = None,
+        cbd_percentage: float | None = None,
+        terpene_profile: str | None = None,
+    ) -> None:
+        """Alias for harvest_plant."""
+        await self.harvest_plant(
+            plant_id=plant_id,
+            target_growspace_id=target_growspace_id,
+            target_growspace_name=target_growspace_name,
+            transition_date=transition_date,
+            wet_weight=wet_weight,
+            dry_weight=dry_weight,
+            trim_weight=trim_weight,
+            thc_percentage=thc_percentage,
+            cbd_percentage=cbd_percentage,
+            terpene_profile=terpene_profile,
+        )
+
     # =========================================================================
     # WATERING AND NUTRIENTS
     # =========================================================================
@@ -904,14 +948,14 @@ class ServiceFacade:
 
     async def remove_plant(self, plant_id: str) -> bool:
         """Remove a plant and its associated entities."""
-        # Logical removal
         removed = await self._coordinator.plant_manager.remove_plant(plant_id)
-
-        # Entity removal (cleanup)
         if removed:
             await self.remove_plant_entities(plant_id)
-
         return removed
+
+    async def async_remove_plant(self, plant_id: str, **kwargs: Any) -> bool:
+        """Alias for remove_plant."""
+        return await self.remove_plant(plant_id)
 
     async def remove_plant_entities(self, plant_id: str) -> None:
         """Remove all Home Assistant entities associated with a specific plant."""
