@@ -7,9 +7,9 @@ from typing import Any
 import aiohttp
 from bs4 import BeautifulSoup
 
+from custom_components.growspace_manager.exceptions import GrowspaceError
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ServiceValidationError
-from ..exceptions import GrowspaceError
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
 _LOGGER = logging.getLogger(__name__)
@@ -37,7 +37,13 @@ class SeedfinderScraper:
         except (aiohttp.ClientError, TimeoutError) as err:
             _LOGGER.error("Network error fetching %s: %s", url, err)
             return None
-        except (AttributeError, KeyError, ValueError, ServiceValidationError, GrowspaceError) as err:
+        except (
+            AttributeError,
+            KeyError,
+            ValueError,
+            ServiceValidationError,
+            GrowspaceError,
+        ) as err:
             _LOGGER.error("Unexpected error fetching %s: %s", url, err)
             return None
 
@@ -55,7 +61,9 @@ class SeedfinderScraper:
                     return []
 
                 html = await response.text()
-                soup = BeautifulSoup(html, "html.parser")
+                soup = await self.hass.async_add_executor_job(
+                    BeautifulSoup, html, "html.parser"
+                )
 
                 results = []
                 # Search results are typically in a table or list
@@ -107,7 +115,13 @@ class SeedfinderScraper:
         except (aiohttp.ClientError, TimeoutError) as err:
             _LOGGER.error("Network error searching Seedfinder: %s", err)
             return []
-        except (AttributeError, KeyError, ValueError, ServiceValidationError, GrowspaceError) as err:
+        except (
+            AttributeError,
+            KeyError,
+            ValueError,
+            ServiceValidationError,
+            GrowspaceError,
+        ) as err:
             _LOGGER.error("Unexpected error searching Seedfinder: %s", err)
             return []
 
@@ -124,7 +138,9 @@ class SeedfinderScraper:
                     return None
 
                 html = await response.text()
-                soup = BeautifulSoup(html, "html.parser")
+                soup = await self.hass.async_add_executor_job(
+                    BeautifulSoup, html, "html.parser"
+                )
 
                 # Extract info using helper methods
                 name, breeder = self._parse_basic_info(soup)
@@ -198,7 +214,13 @@ class SeedfinderScraper:
         except (aiohttp.ClientError, TimeoutError) as err:
             _LOGGER.error("Network error fetching Seedfinder details: %s", err)
             return None
-        except (AttributeError, KeyError, ValueError, ServiceValidationError, GrowspaceError) as err:
+        except (
+            AttributeError,
+            KeyError,
+            ValueError,
+            ServiceValidationError,
+            GrowspaceError,
+        ) as err:
             _LOGGER.error("Unexpected error fetching Seedfinder details: %s", err)
             return None
 

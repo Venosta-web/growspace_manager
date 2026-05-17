@@ -102,7 +102,7 @@ async def test_service_wrapper_execution_no_strain_lib(
     hass.services.async_register.side_effect = capture_register
 
     # Mock the CORRECT async method that the handler actually awaits!
-    mock_coordinator.services.remove_growspace = AsyncMock()
+    mock_coordinator.services.growspaces.remove_growspace = AsyncMock()
 
     with patch(
         "homeassistant.config_entries.ConfigEntries.async_entries",
@@ -120,7 +120,7 @@ async def test_service_wrapper_execution_no_strain_lib(
         )
         await captured_wrapper(call)
 
-        mock_coordinator.services.remove_growspace.assert_called_once_with("gs1")
+        mock_coordinator.services.growspaces.remove_growspace.assert_called_once_with("gs1")
 
 
 async def test_service_wrapper_error_handling(
@@ -142,7 +142,7 @@ async def test_service_wrapper_error_handling(
     hass.services.async_register.side_effect = capture_register
 
     # Throw the error from the correct async method
-    mock_coordinator.services.remove_growspace = AsyncMock(
+    mock_coordinator.services.growspaces.remove_growspace = AsyncMock(
         side_effect=GrowspaceError("Test error")
     )
 

@@ -403,7 +403,7 @@ async def test_config_flow_missing_env_config_coverage(hass: HomeAssistant) -> N
     mock_entry.add_to_hass(hass)
 
     mock_coordinator = MagicMock()
-    mock_coordinator.services.get_growspace = MagicMock()
+    mock_coordinator.services.growspaces.get_growspace = MagicMock()
     mock_coordinator.data_repository.get_growspace = MagicMock()
 
     mock_entry.runtime_data = mock_coordinator
@@ -414,7 +414,7 @@ async def test_config_flow_missing_env_config_coverage(hass: HomeAssistant) -> N
     real_gs = Growspace(id="gs1", name="GS1", environment_config=EnvironmentConfig())
 
     mock_coordinator.growspaces = {"gs1": real_gs}
-    mock_coordinator.services.get_growspace.return_value = real_gs
+    mock_coordinator.services.growspaces.get_growspace.return_value = real_gs
     mock_coordinator.data_repository.get_growspace.return_value = real_gs
 
     flow.selected_growspace_id = "gs1"
@@ -433,7 +433,7 @@ async def test_handle_harvest_plant_not_loaded(hass: HomeAssistant) -> None:
     """Test harvest plant aborts if plant not loaded."""
     coordinator = MagicMock()
     # Ensure the facade is ready to be called or skipped
-    coordinator.services.harvest_plant = AsyncMock()
+    coordinator.services.plants.harvest_plant = AsyncMock()
 
     call = MagicMock()
     call.data = {"plant_id": "p1", "target_growspace_id": "dry"}
@@ -454,7 +454,7 @@ async def test_handle_harvest_plant_not_loaded(hass: HomeAssistant) -> None:
             await handle_harvest_plant(hass, coordinator, MagicMock(), call)
 
         # Verify the facade was never even reached
-        coordinator.services.harvest_plant.assert_not_called()
+        coordinator.services.plants.harvest_plant.assert_not_called()
 
 
 # -----------------------------------------------------------------------------
@@ -578,7 +578,7 @@ async def test_coordinator_update_missing_pump_keys(hass: HomeAssistant) -> None
     gs = Growspace(id="gs1", name="GS1", irrigation_config=config)
     coord.data_repository.add_growspace(gs)
 
-    await coord.services.update_irrigation_config("gs1", {"some_other_key": "val"})
+    await coord.services.growspaces.update_irrigation_config("gs1", {"some_other_key": "val"})
 
     # Verify that pump entities were set to None on the config object
     assert gs.irrigation_config.irrigation_pump_entity is None
@@ -673,7 +673,7 @@ async def test_config_flow_missing_env_config_coverage(hass: HomeAssistant) -> N
     real_gs = Growspace(id="gs1", name="GS1", environment_config=EnvironmentConfig())
 
     mock_coordinator.growspaces = {"gs1": real_gs}
-    mock_coordinator.services.get_growspace.return_value = real_gs
+    mock_coordinator.services.growspaces.get_growspace.return_value = real_gs
     mock_coordinator.data_repository.get_growspace.return_value = real_gs
 
     flow = OptionsFlowHandler(mock_entry)
@@ -702,7 +702,7 @@ async def test_async_remove_growspace_device_cleanup(hass: HomeAssistant) -> Non
     with patch(
         "homeassistant.helpers.device_registry.async_get", return_value=mock_dev_reg
     ):
-        await coordinator.services.remove_growspace("gs1")
+        await coordinator.services.growspaces.remove_growspace("gs1")
 
     mock_dev_reg.async_remove_device.assert_called_once_with("dev_123")
 
@@ -752,7 +752,7 @@ async def test_promote_clone_custom_target(hass: HomeAssistant) -> None:
     with patch.object(
         coordinator.validator, "find_first_available_position", return_value=(1, 1)
     ):
-        await coordinator.services.promote_clone(
+        await coordinator.services.plants.promote_clone(
             "p1", target_growspace_id="custom_room"
         )
 

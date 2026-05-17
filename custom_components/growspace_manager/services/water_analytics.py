@@ -33,7 +33,7 @@ async def handle_reset_water_tracking(
     """
     growspace_id: str = call.data[ATTR_GROWSPACE_ID]
 
-    await coordinator.services.reset_water_tracking(growspace_id=growspace_id)
+    await coordinator.services.growspaces.reset_water_tracking(growspace_id=growspace_id)
 
     _LOGGER.info("Reset water tracking for growspace %s", growspace_id)
 

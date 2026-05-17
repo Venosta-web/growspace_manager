@@ -24,7 +24,7 @@ from custom_components.growspace_manager.services.ipm import (
 async def test_handle_save_ipm_preset() -> None:
     """Test handle_save_ipm_preset service handler."""
     coordinator = MagicMock()
-    coordinator.services.save_ipm_preset = AsyncMock()
+    coordinator.services.config.save_ipm_preset = AsyncMock()
 
     data = {
         ATTR_NAME: "Soap Spray",
@@ -39,7 +39,7 @@ async def test_handle_save_ipm_preset() -> None:
 
     await handle_save_ipm_preset(None, coordinator, call)
 
-    coordinator.services.save_ipm_preset.assert_awaited_once_with(
+    coordinator.services.config.save_ipm_preset.assert_awaited_once_with(
         name="Soap Spray",
         preset_type="foliar",
         items=[{"name": "Soap", "dose_amount": 10, "dose_unit": "ml"}],
@@ -53,7 +53,7 @@ async def test_handle_save_ipm_preset() -> None:
 async def test_handle_remove_ipm_preset() -> None:
     """Test handle_remove_ipm_preset service handler."""
     coordinator = MagicMock()
-    coordinator.services.remove_ipm_preset = AsyncMock()
+    coordinator.services.config.remove_ipm_preset = AsyncMock()
 
     data = {ATTR_PRESET_ID: "preset_123"}
     call = MagicMock()
@@ -61,14 +61,14 @@ async def test_handle_remove_ipm_preset() -> None:
 
     await handle_remove_ipm_preset(None, coordinator, call)
 
-    coordinator.services.remove_ipm_preset.assert_awaited_once_with("preset_123")
+    coordinator.services.config.remove_ipm_preset.assert_awaited_once_with("preset_123")
 
 
 @pytest.mark.asyncio
 async def test_handle_apply_ipm() -> None:
     """Test handle_apply_ipm service handler."""
     coordinator = MagicMock()
-    coordinator.services.apply_ipm = AsyncMock()
+    coordinator.services.plants.apply_ipm = AsyncMock()
 
     data = {
         ATTR_PRESET_ID: "preset_123",
@@ -81,7 +81,7 @@ async def test_handle_apply_ipm() -> None:
 
     await handle_apply_ipm(None, coordinator, call)
 
-    coordinator.services.apply_ipm.assert_awaited_once_with(
+    coordinator.services.plants.apply_ipm.assert_awaited_once_with(
         preset_id="preset_123",
         growspace_id="gs1",
         plant_ids=["p1", "p2"],

@@ -50,12 +50,8 @@ def mock_coordinator(hass: HomeAssistant, tmp_path: Path):
     coordinator.growspaces = {}
     coordinator.plants = {}
 
-    facade = MagicMock(spec=ServiceFacade)
+    facade = MagicMock()
     coordinator.services = facade
-
-    # Map properties to return coordinator data dynamically
-    type(facade).growspaces = property(lambda self: coordinator.growspaces)
-    type(facade).plants = property(lambda self: coordinator.plants)
 
     facade.save = AsyncMock()
     facade.commit = AsyncMock()
@@ -63,69 +59,61 @@ def mock_coordinator(hass: HomeAssistant, tmp_path: Path):
     coordinator.async_save = facade.save
     coordinator.async_refresh = AsyncMock()
 
-    # Setup Strain Library on facade (Fixes the 'MagicMock object can't be awaited' error)
-    facade.strain_library = MagicMock()
-    facade.strain_library.async_load = AsyncMock()
-    facade.strain_library.import_library_from_zip = AsyncMock()
-    facade.strain_library.export_library_to_zip = AsyncMock(
+    # --- growspaces sub-facade ---
+    gs_facade = MagicMock()
+    gs_facade.get_growspace = MagicMock(
+        side_effect=lambda gid: coordinator.growspaces.get(gid)
+    )
+    gs_facade.get_sorted_growspace_options = MagicMock(return_value=[])
+    gs_facade.get_growspace_data = MagicMock(return_value={})
+    gs_facade.add_growspace = AsyncMock()
+    gs_facade.update_growspace = AsyncMock()
+    gs_facade.remove_growspace = AsyncMock()
+    gs_facade.update_irrigation_config = AsyncMock()
+    facade.growspaces = gs_facade
+
+    # --- plants sub-facade ---
+    pl_facade = MagicMock()
+    pl_facade.get_plant = MagicMock(
+        side_effect=lambda pid: coordinator.plants.get(pid)
+    )
+    pl_facade.add_plant = AsyncMock()
+    pl_facade.update_plant = AsyncMock()
+    pl_facade.remove_plant = AsyncMock()
+    facade.plants = pl_facade
+
+    # --- config sub-facade ---
+    cfg_facade = MagicMock()
+    cfg_facade.strain_library = MagicMock()
+    cfg_facade.strain_library.async_load = AsyncMock()
+    cfg_facade.strain_library.import_library_from_zip = AsyncMock()
+    cfg_facade.strain_library.export_library_to_zip = AsyncMock(
         return_value=str(tmp_path / "export.zip")
     )
-    facade.strain_library.remove_strain = AsyncMock()
-    # Link remove_strain to async_delete_strain for test compatibility
-    facade.strain_library.async_delete_strain = facade.strain_library.remove_strain
-    facade.strain_library.get_all = MagicMock(return_value={})
-    facade.strain_library.get_all_strains = MagicMock(return_value=[])
+    cfg_facade.strain_library.remove_strain = AsyncMock()
+    cfg_facade.strain_library.async_delete_strain = cfg_facade.strain_library.remove_strain
+    cfg_facade.strain_library.get_all = MagicMock(return_value={})
+    cfg_facade.strain_library.get_all_strains = MagicMock(return_value=[])
+    cfg_facade.get_strain_options = MagicMock(return_value=[])
+    facade.config = cfg_facade
 
-    # Map common async methods as AsyncMocks
-    async_methods = [
-        "add_growspace",
-        "update_growspace",
-        "remove_growspace",
-        "add_plant",
-        "update_plant",
-        "remove_plant",
-        "add_timed_notification",
-        "update_timed_notification",
-        "remove_timed_notification",
-        "update_irrigation_config",
-        "add_strain",
-        "update_strain",
-    ]
-    for method in async_methods:
-        mock = AsyncMock()
-        setattr(facade, method, mock)
-        # Alias with async_ prefix to support mixed calling styles
-        setattr(facade, f"async_{method}", mock)
-        # Ensure coordinator also has these methods for compatibility with old tests
-        setattr(coordinator, method, mock)
-        setattr(coordinator, f"async_{method}", mock)
+    # --- notifications sub-facade ---
+    notif_facade = MagicMock()
+    notif_facade.get_timed_notifications = MagicMock(return_value=[])
+    _add_notif = AsyncMock()
+    _update_notif = AsyncMock()
+    _remove_notif = AsyncMock()
+    notif_facade.add_timed_notification = _add_notif
+    notif_facade.async_add_timed_notification = _add_notif
+    notif_facade.update_timed_notification = _update_notif
+    notif_facade.async_update_timed_notification = _update_notif
+    notif_facade.remove_timed_notification = _remove_notif
+    notif_facade.async_remove_timed_notification = _remove_notif
+    facade.notifications = notif_facade
 
-    # Sync Getters
-    sync_getters = [
-        "get_sorted_growspace_options",
-        "get_strain_options",
-        "get_timed_notifications",
-        "get_growspace_data",
-        "get_plant_options",
-    ]
-    for getter in sync_getters:
-        mock = MagicMock(return_value=[])
-        setattr(facade, getter, mock)
-        setattr(coordinator, getter, mock)
-
-    facade.get_growspace = MagicMock(side_effect=lambda gid: coordinator.growspaces.get(gid))
-    facade.get_plant = MagicMock(side_effect=lambda pid: coordinator.plants.get(pid))
-    coordinator.get_growspace = facade.get_growspace
-    coordinator.get_plant = facade.get_plant
-
-    # Manager aliases on facade (for nested access like coordinator.services.growspace)
-    # These only work because the facade has the same methods as the managers
-    facade.growspace = facade
-    facade.strain = facade
-    facade.plant = facade
-    facade.growspace_manager = facade
-    facade.plant_manager = facade
-    # strain_library is handled separately above (lines 66-74) because it has distinct methods
+    # Backwards-compat aliases on coordinator for old-style access in tests
+    coordinator.get_growspace = gs_facade.get_growspace
+    coordinator.get_plant = pl_facade.get_plant
 
     return coordinator
 
@@ -513,7 +501,7 @@ async def test_options_flow_manage_growspaces_remove(
         user_input={"confirm": True}
     )
 
-    mock_coordinator.services.remove_growspace.assert_called_once_with("gs1")
+    mock_coordinator.services.growspaces.remove_growspace.assert_called_once_with("gs1")
     assert result.get("type") == FlowResultType.FORM
     assert result.get("step_id") == "manage_growspaces"
 
@@ -635,7 +623,7 @@ async def test_options_flow_add_growspace_success(
 
     assert result.get("type") == FlowResultType.FORM
     assert result.get("step_id") == "manage_growspaces"
-    mock_coordinator.services.add_growspace.assert_awaited_once_with(
+    mock_coordinator.services.growspaces.add_growspace.assert_awaited_once_with(
         name="New Growspace",
         rows=5,
         plants_per_row=6,
@@ -657,7 +645,7 @@ async def test_options_flow_add_growspace_error(
     config_entry = MockConfigEntry(domain=DOMAIN, data={"name": "Test"})
     config_entry.add_to_hass(hass)
     config_entry.runtime_data = mock_coordinator
-    mock_coordinator.services.add_growspace.side_effect = Exception("Test error")
+    mock_coordinator.services.growspaces.add_growspace.side_effect = Exception("Test error")
     config_entry.runtime_data = mock_coordinator
     hass.services = Mock()
     hass.services.async_services = Mock(return_value={"notify": {}})
@@ -750,7 +738,7 @@ async def test_options_flow_update_growspace_success(
 
     assert result.get("type") == FlowResultType.FORM
     assert result.get("step_id") == "manage_growspaces"
-    mock_coordinator.services.update_growspace.assert_awaited_once()
+    mock_coordinator.services.growspaces.update_growspace.assert_awaited_once()
 
 
 @pytest.mark.asyncio
@@ -799,7 +787,7 @@ async def test_options_flow_update_growspace_error(
     mock_growspace.plants_per_row = 4
     mock_growspace.notification_target = None
     mock_coordinator.growspaces = {"gs1": mock_growspace}
-    mock_coordinator.services.update_growspace.side_effect = Exception("Test error")
+    mock_coordinator.services.growspaces.update_growspace.side_effect = Exception("Test error")
 
     config_entry.runtime_data = mock_coordinator
     hass.services = Mock()
@@ -868,7 +856,7 @@ async def test_options_flow_add_plant_success(
     result = await flow.async_step_add_plant(user_input=user_input)
 
     assert result.get("type") == FlowResultType.CREATE_ENTRY
-    mock_coordinator.services.add_plant.assert_awaited_once_with(
+    mock_coordinator.services.plants.add_plant.assert_awaited_once_with(
         growspace_id="gs1",
         strain="Test Strain",
         row=1,
@@ -889,7 +877,7 @@ async def test_options_flow_add_plant_error(
     config_entry.runtime_data = mock_coordinator
     mock_growspace = Mock(name="Growspace 1", rows=4, plants_per_row=4)
     mock_coordinator.growspaces = {"gs1": mock_growspace}
-    mock_coordinator.services.add_plant.side_effect = Exception("Test error")
+    mock_coordinator.services.plants.add_plant.side_effect = Exception("Test error")
     config_entry.runtime_data = mock_coordinator
 
     flow = OptionsFlowHandler(config_entry)
@@ -957,7 +945,7 @@ async def test_options_flow_update_plant_success(
     result = await flow.async_step_update_plant(user_input=user_input)
 
     assert result.get("type") == FlowResultType.CREATE_ENTRY
-    mock_coordinator.services.update_plant.assert_awaited_once_with("p1", **user_input)
+    mock_coordinator.services.plants.update_plant.assert_awaited_once_with("p1", **user_input)
 
 
 @pytest.mark.asyncio
@@ -970,7 +958,7 @@ async def test_options_flow_update_plant_error(
     config_entry.runtime_data = mock_coordinator
     mock_plant = Mock(strain="Old Strain", row=1, col=1)
     mock_coordinator.plants = {"p1": mock_plant}
-    mock_coordinator.services.update_plant.side_effect = Exception("Test error")
+    mock_coordinator.services.plants.update_plant.side_effect = Exception("Test error")
     config_entry.runtime_data = mock_coordinator
     flow = OptionsFlowHandler(config_entry)
     flow.hass = hass
@@ -1033,7 +1021,7 @@ async def test_get_add_plant_schema_no_strain_options(
 
     handler = PlantConfigHandler(hass, config_entry)
     mock_growspace = Mock(name="Growspace 1", rows=4, plants_per_row=4)
-    mock_coordinator.get_strain_options.return_value = []
+    mock_coordinator.services.config.get_strain_options.return_value = []
 
     schema = handler.get_add_plant_schema(
         growspace=mock_growspace, coordinator=mock_coordinator
@@ -1058,7 +1046,7 @@ async def test_get_add_plant_schema_with_strain_options(
 
     handler = PlantConfigHandler(hass, config_entry)
     mock_growspace = Mock(name="Growspace 1", rows=4, plants_per_row=4)
-    mock_coordinator.get_strain_options.return_value = ["Strain 1", "Strain 2"]
+    mock_coordinator.services.config.get_strain_options.return_value = ["Strain 1", "Strain 2"]
 
     schema = handler.get_add_plant_schema(
         growspace=mock_growspace, coordinator=mock_coordinator
@@ -1084,7 +1072,7 @@ async def test_get_update_plant_schema_no_growspace(
     mock_plant = Mock(strain="Test Strain", row=1, col=1, growspace_id="gs1")
     mock_growspace = Mock(name="Growspace 1", rows=4, plants_per_row=4)
     mock_coordinator.growspaces = {"gs1": mock_growspace}
-    mock_coordinator.get_strain_options.return_value = ["Strain 1", "Strain 2"]
+    mock_coordinator.services.config.get_strain_options.return_value = ["Strain 1", "Strain 2"]
 
     schema = handler.get_update_plant_schema(
         plant=mock_plant, coordinator=mock_coordinator
@@ -1109,7 +1097,7 @@ async def test_get_update_plant_schema_no_strain_options(
     mock_plant = Mock(strain="Test Strain", row=1, col=1, growspace_id="gs1")
     mock_growspace = Mock(name="Growspace 1", rows=4, plants_per_row=4)
     mock_coordinator.growspaces = {"gs1": mock_growspace}
-    mock_coordinator.get_strain_options.return_value = []
+    mock_coordinator.services.config.get_strain_options.return_value = []
 
     schema = handler.get_update_plant_schema(
         plant=mock_plant, coordinator=mock_coordinator
@@ -1135,7 +1123,7 @@ async def test_get_update_plant_schema_with_strain_options(
     mock_plant = Mock(strain="Test Strain", row=1, col=1, growspace_id="gs1")
     mock_growspace = Mock(name="Growspace 1", rows=4, plants_per_row=4)
     mock_coordinator.growspaces = {"gs1": mock_growspace}
-    mock_coordinator.get_strain_options.return_value = ["Strain 1", "Strain 2"]
+    mock_coordinator.services.config.get_strain_options.return_value = ["Strain 1", "Strain 2"]
 
     schema = handler.get_update_plant_schema(
         plant=mock_plant, coordinator=mock_coordinator
@@ -1372,7 +1360,7 @@ async def test_options_flow_add_timed_notification_success(
     result = await flow.async_step_add_timed_notification(user_input=user_input)
 
     assert result.get("type") == FlowResultType.CREATE_ENTRY
-    mock_coordinator.services.add_timed_notification.assert_called_once_with(
+    mock_coordinator.services.notifications.add_timed_notification.assert_called_once_with(
         "Test notification",
         "flower",
         10,
@@ -1408,7 +1396,7 @@ async def test_options_flow_manage_timed_notifications_edit(
     )
     config_entry.add_to_hass(hass)
     config_entry.runtime_data = mock_coordinator
-    mock_coordinator.get_timed_notifications.return_value = notifications
+    mock_coordinator.services.notifications.get_timed_notifications.return_value = notifications
     config_entry.runtime_data = mock_coordinator
 
     flow = OptionsFlowHandler(config_entry)
@@ -1449,7 +1437,7 @@ async def test_options_flow_edit_timed_notification_success(
     )
     config_entry.add_to_hass(hass)
     config_entry.runtime_data = mock_coordinator
-    mock_coordinator.get_timed_notifications.return_value = notifications
+    mock_coordinator.services.notifications.get_timed_notifications.return_value = notifications
     config_entry.runtime_data = mock_coordinator
 
     flow = OptionsFlowHandler(config_entry)
@@ -1466,7 +1454,7 @@ async def test_options_flow_edit_timed_notification_success(
     result = await flow.async_step_edit_timed_notification(user_input=user_input)
 
     assert result.get("type") == FlowResultType.CREATE_ENTRY
-    mock_coordinator.services.update_timed_notification.assert_called_once_with(
+    mock_coordinator.services.notifications.update_timed_notification.assert_called_once_with(
         "123",
         "New message",
         "veg",
@@ -1501,7 +1489,7 @@ async def test_options_flow_manage_timed_notifications_delete(
     )
     config_entry.add_to_hass(hass)
     config_entry.runtime_data = mock_coordinator
-    mock_coordinator.get_timed_notifications.return_value = notifications
+    mock_coordinator.services.notifications.get_timed_notifications.return_value = notifications
     config_entry.runtime_data = mock_coordinator
 
     flow = OptionsFlowHandler(config_entry)
@@ -1518,7 +1506,7 @@ async def test_options_flow_manage_timed_notifications_delete(
     result = await flow.async_step_delete_timed_notification(user_input={})
 
     assert result.get("type") == FlowResultType.CREATE_ENTRY
-    mock_coordinator.services.remove_timed_notification.assert_called_once_with("123")
+    mock_coordinator.services.notifications.remove_timed_notification.assert_called_once_with("123")
 
 
 # ============================================================================
@@ -1543,7 +1531,7 @@ async def test_options_flow_init_configure_environment(
     config_entry.add_to_hass(hass)
     config_entry.runtime_data = mock_coordinator
     mock_coordinator = MagicMock()
-    mock_coordinator.services.get_sorted_growspace_options = MagicMock(
+    mock_coordinator.services.growspaces.get_sorted_growspace_options = MagicMock(
         return_value=[("gs1", "Growspace 1")]
     )
     config_entry.runtime_data = mock_coordinator
@@ -1574,7 +1562,7 @@ async def test_options_flow_select_growspace_for_env_show_form(
     config_entry.add_to_hass(hass)
     config_entry.runtime_data = mock_coordinator
     mock_coordinator = MagicMock()
-    mock_coordinator.services.get_sorted_growspace_options = MagicMock(
+    mock_coordinator.services.growspaces.get_sorted_growspace_options = MagicMock(
         return_value=[("gs1", "Growspace 1")]
     )
     config_entry.runtime_data = mock_coordinator
@@ -1603,7 +1591,7 @@ async def test_options_flow_select_growspace_for_env_no_growspaces(
     config_entry = MockConfigEntry(domain=DOMAIN, data={"name": "Test"}, options={})
     config_entry.add_to_hass(hass)
     config_entry.runtime_data = mock_coordinator
-    mock_coordinator.services.get_sorted_growspace_options = MagicMock(
+    mock_coordinator.services.growspaces.get_sorted_growspace_options = MagicMock(
         return_value=[]
     )
     config_entry.runtime_data = mock_coordinator
@@ -1639,7 +1627,7 @@ async def test_options_flow_select_growspace_for_env_submit(
             irrigation_config=IrrigationConfig(),
         )
     }
-    mock_coordinator.services.get_sorted_growspace_options = Mock(
+    mock_coordinator.services.growspaces.get_sorted_growspace_options = Mock(
         return_value=[("gs1", "Growspace 1")]
     )
     config_entry.runtime_data = mock_coordinator
@@ -2209,7 +2197,7 @@ async def test_options_flow_init_configure_irrigation(
     config_entry = MockConfigEntry(domain=DOMAIN, data={"name": "Test"}, options={})
     config_entry.add_to_hass(hass)
     config_entry.runtime_data = mock_coordinator
-    mock_coordinator.services.get_sorted_growspace_options = MagicMock(
+    mock_coordinator.services.growspaces.get_sorted_growspace_options = MagicMock(
         return_value=[("gs1", "Growspace 1")]
     )
     config_entry.runtime_data = mock_coordinator
@@ -2231,7 +2219,7 @@ async def test_options_flow_select_growspace_for_irrigation_show_form(
     config_entry = MockConfigEntry(domain=DOMAIN, data={"name": "Test"}, options={})
     config_entry.add_to_hass(hass)
     config_entry.runtime_data = mock_coordinator
-    mock_coordinator.services.get_sorted_growspace_options = MagicMock(
+    mock_coordinator.services.growspaces.get_sorted_growspace_options = MagicMock(
         return_value=[("gs1", "Growspace 1")]
     )
     config_entry.runtime_data = mock_coordinator
@@ -2260,7 +2248,7 @@ async def test_options_flow_select_growspace_for_irrigation_submit(
     )
     # mock_gs.irrigation_config = {} # REMOVED: Must use dataclass
     mock_coordinator.growspaces = {"gs1": mock_gs}
-    mock_coordinator.services.get_sorted_growspace_options = Mock(
+    mock_coordinator.services.growspaces.get_sorted_growspace_options = Mock(
         return_value=[("gs1", "Growspace 1")]
     )
     config_entry.runtime_data = mock_coordinator
@@ -2321,11 +2309,11 @@ async def test_options_flow_configure_irrigation_submit(
         "irrigation_duration": 30,
         "drain_duration": 30,
     }
-    mock_coordinator.services.update_irrigation_config = AsyncMock()
+    mock_coordinator.services.growspaces.update_irrigation_config = AsyncMock()
     result = await flow.async_step_irrigation_overview(user_input=user_input)
 
     assert result.get("type") == FlowResultType.CREATE_ENTRY
-    mock_coordinator.services.update_irrigation_config.assert_called_once_with(
+    mock_coordinator.services.growspaces.update_irrigation_config.assert_called_once_with(
         "gs1", **user_input
     )
 
@@ -2384,7 +2372,7 @@ async def test_options_flow_add_strain_success(
     config_entry.add_to_hass(hass)
     config_entry.runtime_data = mock_coordinator
     config_entry.runtime_data = mock_coordinator
-    mock_coordinator.services.strain_library.async_add_strain = AsyncMock()
+    mock_coordinator.services.config.strain_library.async_add_strain = AsyncMock()
 
     flow = OptionsFlowHandler(config_entry)
     flow.hass = hass
@@ -2398,7 +2386,7 @@ async def test_options_flow_add_strain_success(
 
     assert result.get("type") == FlowResultType.FORM
     assert result.get("step_id") == "manage_strain_library"
-    mock_coordinator.services.strain_library.async_add_strain.assert_called_once()
+    mock_coordinator.services.config.strain_library.async_add_strain.assert_called_once()
 
 
 @pytest.mark.asyncio
@@ -2411,7 +2399,7 @@ async def test_options_flow_manage_strain_library_edit(
     config_entry.runtime_data = mock_coordinator
     mock_strain = Mock(id="strain1")
     mock_strain.name = "Strain 1"
-    mock_coordinator.services.strain_library.get_all_strains.return_value = [
+    mock_coordinator.services.config.strain_library.get_all_strains.return_value = [
         mock_strain
     ]
     config_entry.runtime_data = mock_coordinator
@@ -2446,7 +2434,7 @@ async def test_options_flow_select_strain_to_edit_submit(
     config_entry.runtime_data = mock_coordinator
     mock_strain = Mock(id="strain1")
     mock_strain.name = "Strain 1"
-    mock_coordinator.services.strain_library.get_all_strains.return_value = [
+    mock_coordinator.services.config.strain_library.get_all_strains.return_value = [
         mock_strain
     ]
     config_entry.runtime_data = mock_coordinator
@@ -2496,10 +2484,10 @@ async def test_options_flow_manage_strain_library_delete(
     config_entry.runtime_data = mock_coordinator
     mock_strain = Mock(id="strain1")
     mock_strain.name = "Strain 1"
-    mock_coordinator.services.strain_library.get_all_strains.return_value = [
+    mock_coordinator.services.config.strain_library.get_all_strains.return_value = [
         mock_strain
     ]
-    mock_coordinator.services.strain_library.get_all.return_value = {
+    mock_coordinator.services.config.strain_library.get_all.return_value = {
         "strain1": mock_strain
     }
     config_entry.runtime_data = mock_coordinator
@@ -2514,7 +2502,7 @@ async def test_options_flow_manage_strain_library_delete(
 
     assert result.get("type") == FlowResultType.FORM
     assert result.get("step_id") == "manage_strain_library"
-    mock_coordinator.services.strain_library.remove_strain.assert_called_once_with(
+    mock_coordinator.services.config.strain_library.remove_strain.assert_called_once_with(
         "strain1"
     )
 
@@ -2549,8 +2537,8 @@ async def test_options_flow_import_strain_library_submit(
     config_entry.add_to_hass(hass)
 
     config_entry.runtime_data = mock_coordinator
-    mock_coordinator.services.strain_library.async_load = AsyncMock()
-    mock_coordinator.services.strain_library.import_library_from_zip = AsyncMock()
+    mock_coordinator.services.config.strain_library.async_load = AsyncMock()
+    mock_coordinator.services.config.strain_library.import_library_from_zip = AsyncMock()
 
     flow = OptionsFlowHandler(config_entry)
     flow.hass = hass
@@ -2561,7 +2549,7 @@ async def test_options_flow_import_strain_library_submit(
 
     assert result.get("type") == FlowResultType.FORM
     assert result.get("step_id") == "manage_strain_library"
-    mock_coordinator.services.strain_library.import_library_from_zip.assert_called_once()
+    mock_coordinator.services.config.strain_library.import_library_from_zip.assert_called_once()
 
 
 @pytest.mark.asyncio
@@ -2572,7 +2560,7 @@ async def test_options_flow_manage_strain_library_export(
     config_entry = MockConfigEntry(domain=DOMAIN, data={"name": "Test"}, options={})
     config_entry.add_to_hass(hass)
     config_entry.runtime_data = mock_coordinator
-    mock_coordinator.services.strain_library.export_library_to_zip = AsyncMock()
+    mock_coordinator.services.config.strain_library.export_library_to_zip = AsyncMock()
 
     flow = OptionsFlowHandler(config_entry)
     flow.hass = hass
@@ -2888,7 +2876,7 @@ async def test_options_flow_irrigation_no_growspaces(
     config_entry.add_to_hass(hass)
     config_entry.runtime_data = mock_coordinator
     config_entry.runtime_data = mock_coordinator
-    mock_coordinator.services.get_sorted_growspace_options = Mock(
+    mock_coordinator.services.growspaces.get_sorted_growspace_options = Mock(
         return_value=[]
     )  # Empty
 
@@ -3068,7 +3056,7 @@ async def test_options_flow_add_plant_exception(
     flow.hass = hass
     flow.selected_growspace_id = "gs1"
 
-    mock_coordinator.services.add_plant.side_effect = ValueError("Invalid")  # type: ignore[method-assign]
+    mock_coordinator.services.plants.add_plant.side_effect = ValueError("Invalid")  # type: ignore[method-assign]
     flow.plant_handler.get_add_plant_schema = Mock(return_value=vol.Schema({}))  # type: ignore[method-assign]
 
     result = await flow.async_step_add_plant(
@@ -3088,7 +3076,7 @@ async def test_options_flow_strain_library_delete_error(
     config_entry.runtime_data = mock_coordinator
     config_entry.runtime_data = mock_coordinator
 
-    mock_coordinator.services.strain_library.async_delete_strain.side_effect = (
+    mock_coordinator.services.config.strain_library.async_delete_strain.side_effect = (
         Exception("Del Bad")
     )
 
@@ -3116,7 +3104,7 @@ async def test_options_flow_import_strain_library_errors(
     flow.hass = hass
 
     # 1. File Not Found
-    mock_coordinator.services.strain_library.import_library_from_zip.side_effect = (
+    mock_coordinator.services.config.strain_library.import_library_from_zip.side_effect = (
         FileNotFoundError
     )
     result = await flow.async_step_import_strain_library(
@@ -3125,7 +3113,7 @@ async def test_options_flow_import_strain_library_errors(
     assert result["errors"] == {"base": "file_not_found"}
 
     # 2. Invalid Zip
-    mock_coordinator.services.strain_library.import_library_from_zip.side_effect = (
+    mock_coordinator.services.config.strain_library.import_library_from_zip.side_effect = (
         ValueError
     )
     result = await flow.async_step_import_strain_library(
@@ -3134,7 +3122,7 @@ async def test_options_flow_import_strain_library_errors(
     assert result["errors"] == {"base": "invalid_zip"}
 
     # 3. Generic Exception
-    mock_coordinator.services.strain_library.import_library_from_zip.side_effect = (
+    mock_coordinator.services.config.strain_library.import_library_from_zip.side_effect = (
         Exception("Boom")
     )
     result = await flow.async_step_import_strain_library(
@@ -3197,7 +3185,7 @@ async def test_options_flow_select_growspace_for_plant_success(
     config_entry = MockConfigEntry(domain=DOMAIN, data={"name": "Test"})
     config_entry.add_to_hass(hass)
     config_entry.runtime_data = mock_coordinator
-    mock_coordinator.services.get_sorted_growspace_options = Mock(
+    mock_coordinator.services.growspaces.get_sorted_growspace_options = Mock(
         return_value=[("gs1", "GS 1")]
     )
     config_entry.runtime_data = mock_coordinator
@@ -3331,7 +3319,7 @@ async def test_options_flow_select_growspace_for_plant_no_gs(
     config_entry = MockConfigEntry(domain=DOMAIN, data={"name": "Test"})
     config_entry.add_to_hass(hass)
     config_entry.runtime_data = mock_coordinator
-    mock_coordinator.services.get_sorted_growspace_options = Mock(
+    mock_coordinator.services.growspaces.get_sorted_growspace_options = Mock(
         return_value=[]
     )
     config_entry.runtime_data = mock_coordinator
@@ -3379,7 +3367,7 @@ async def test_options_flow_manage_growspaces_remove_error(
     flow.growspace_handler.get_growspace_management_schema = Mock(  # type: ignore[method-assign]
         return_value=vol.Schema({})
     )
-    mock_coordinator.services.remove_growspace.side_effect = Exception("Del Err")
+    mock_coordinator.services.growspaces.remove_growspace.side_effect = Exception("Del Err")
 
     mock_coordinator.growspaces = {"gs1": Mock(name="Growspace 1")}
     # Need to simulate the call from manage_growspaces
@@ -3410,7 +3398,7 @@ async def test_options_flow_manage_plants_nav_add(
 
     # Mock behavior of select_growspace_for_plant to verify transition
     # We can rely on it returning FORM for the select step
-    mock_coordinator.services.get_sorted_growspace_options = Mock(
+    mock_coordinator.services.growspaces.get_sorted_growspace_options = Mock(
         return_value=[("gs1", "GS1")]
     )
 
@@ -3431,7 +3419,7 @@ async def test_options_flow_export_strain_library_error(
     flow = OptionsFlowHandler(config_entry)
     flow.hass = hass
 
-    mock_coordinator.services.strain_library.export_library_to_zip.side_effect = (
+    mock_coordinator.services.config.strain_library.export_library_to_zip.side_effect = (
         Exception("Exp Err")
     )
 
@@ -3452,7 +3440,7 @@ async def test_options_flow_strain_library_delete_success(
     flow = OptionsFlowHandler(config_entry)
     flow.hass = hass
 
-    mock_coordinator.services.strain_library.remove_strain = AsyncMock(
+    mock_coordinator.services.config.strain_library.remove_strain = AsyncMock(
         return_value=None
     )
     flow._get_strain_library_menu_schema = Mock(return_value=vol.Schema({}))
@@ -3465,7 +3453,7 @@ async def test_options_flow_strain_library_delete_success(
     assert result["type"] == FlowResultType.FORM
     assert result["step_id"] == "manage_strain_library"
     assert "errors" not in result or not result["errors"]
-    mock_coordinator.services.strain_library.remove_strain.assert_called_once_with("s1")
+    mock_coordinator.services.config.strain_library.remove_strain.assert_called_once_with("s1")
 
 
 @pytest.mark.asyncio

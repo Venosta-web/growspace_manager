@@ -30,7 +30,7 @@ class NotificationConfigHandler(BaseConfigHandler[dict[str, Any]]):
         except AbortFlow as e:
             return self.flow.async_abort(reason=e.reason)
 
-        notifications = coordinator.services.get_timed_notifications()
+        notifications = coordinator.services.notifications.get_timed_notifications()
 
         if user_input is not None:
             action = user_input.get("action")
@@ -61,7 +61,7 @@ class NotificationConfigHandler(BaseConfigHandler[dict[str, Any]]):
         coordinator = self.config_entry.runtime_data
 
         if user_input is not None:
-            await coordinator.services.async_add_timed_notification(
+            await coordinator.services.notifications.async_add_timed_notification(
                 user_input["message"],
                 user_input["trigger_type"],
                 user_input["day"],
@@ -85,7 +85,7 @@ class NotificationConfigHandler(BaseConfigHandler[dict[str, Any]]):
         notification = next(
             (
                 n
-                for n in coordinator.services.get_timed_notifications()
+                for n in coordinator.services.notifications.get_timed_notifications()
                 if n["id"] == notification_id
             ),
             None,
@@ -95,7 +95,7 @@ class NotificationConfigHandler(BaseConfigHandler[dict[str, Any]]):
             return self.flow.async_abort(reason="notification_not_found")
 
         if user_input is not None:
-            await coordinator.services.async_update_timed_notification(
+            await coordinator.services.notifications.async_update_timed_notification(
                 notification_id,
                 user_input["message"],
                 user_input["trigger_type"],
@@ -119,7 +119,7 @@ class NotificationConfigHandler(BaseConfigHandler[dict[str, Any]]):
         notification_id = self.flow.selected_notification_id
 
         if user_input is not None:
-            await coordinator.services.async_remove_timed_notification(notification_id)
+            await coordinator.services.notifications.async_remove_timed_notification(notification_id)
             return self.flow.async_create_entry(title="", data={})
 
         return self.flow.async_show_form(

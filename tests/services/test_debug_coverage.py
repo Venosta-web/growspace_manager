@@ -69,7 +69,7 @@ async def test_consolidate_plants_no_space(mock_coordinator) -> None:
 
     mock_coordinator.plants = {"p1": mock_plant}
     mock_coordinator.growspaces = {"dry_1": {}}  # Add duplicate growspace
-    mock_coordinator.services.get_growspace_plants.return_value = [mock_plant]
+    mock_coordinator.services.growspaces.get_growspace_plants.return_value = [mock_plant]
 
     # Setup validator to return No space (None, None)
     mock_coordinator.validator.find_first_available_position.return_value = (None, None)

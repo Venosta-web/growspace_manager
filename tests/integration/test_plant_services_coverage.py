@@ -60,7 +60,7 @@ async def test_handle_add_plants_success() -> None:
     hass = MagicMock()
     mock_coordinator = MagicMock()
     mock_coordinator.services = MagicMock()
-    mock_coordinator.services.add_plant = AsyncMock()
+    mock_coordinator.services.plants.add_plant = AsyncMock()
     mock_coordinator.growspaces = {"gs1": MagicMock()}
     mock_coordinator.validator.find_first_available_position.return_value = (1, 1)
 
@@ -76,9 +76,9 @@ async def test_handle_add_plants_success() -> None:
 
     await handle_add_plants(hass, mock_coordinator, mock_strain_library, mock_call)
 
-    assert mock_coordinator.services.add_plant.call_count == 2
+    assert mock_coordinator.services.plants.add_plant.call_count == 2
     # Check that phenotype uses start_number
-    args = mock_coordinator.services.add_plant.call_args_list[0].kwargs
+    args = mock_coordinator.services.plants.add_plant.call_args_list[0].kwargs
     assert args["phenotype"] == "Strain A #10"
 
 
@@ -91,7 +91,7 @@ async def test_handle_harvest_plant_not_loaded() -> None:
     hass = MagicMock()
     coordinator = MagicMock()
     coordinator.services = MagicMock()
-    coordinator.services.harvest_plant = AsyncMock()
+    coordinator.services.plants.harvest_plant = AsyncMock()
     coordinator.async_load = AsyncMock()
     strain_library = MagicMock()
 
@@ -111,7 +111,7 @@ async def test_handle_add_plants_errors() -> None:
     hass = MagicMock()
     mock_coordinator = MagicMock()
     mock_coordinator.services = MagicMock()
-    mock_coordinator.services.add_plant = AsyncMock()
+    mock_coordinator.services.plants.add_plant = AsyncMock()
     mock_coordinator.growspaces = {"gs1": MagicMock()}
     mock_coordinator.validator.find_first_available_position.return_value = (1, 1)
 
@@ -124,12 +124,12 @@ async def test_handle_add_plants_errors() -> None:
 
     # 2. GrowspaceError during add (297-299)
     mock_call.data = {"growspace_id": "gs1", "strain": "S1", "amount": 2}
-    mock_coordinator.services.add_plant = AsyncMock(
+    mock_coordinator.services.plants.add_plant = AsyncMock(
         side_effect=GrowspaceError("Fail")
     )
     await handle_add_plants(hass, mock_coordinator, MagicMock(), mock_call)
     assert (
-        mock_coordinator.services.add_plant.call_count == 1
+        mock_coordinator.services.plants.add_plant.call_count == 1
     )  # Stopped after first error
 
     # 3. Unexpected exception (308-310)
@@ -146,7 +146,7 @@ async def test_handle_add_plants_full() -> None:
     hass = MagicMock()
     mock_coordinator = MagicMock()
     mock_coordinator.services = MagicMock()
-    mock_coordinator.services.add_plant = AsyncMock()
+    mock_coordinator.services.plants.add_plant = AsyncMock()
     mock_coordinator.growspaces = {"gs1": MagicMock()}
     mock_call = MagicMock(spec=ServiceCall)
     mock_call.data = {"growspace_id": "gs1", "strain": "S1", "amount": 2}
@@ -166,4 +166,4 @@ async def test_handle_add_plants_full() -> None:
         (None, None),
     ]
     await handle_add_plants(hass, mock_coordinator, MagicMock(), mock_call)
-    assert mock_coordinator.services.add_plant.call_count == 1
+    assert mock_coordinator.services.plants.add_plant.call_count == 1

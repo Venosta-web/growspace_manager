@@ -172,7 +172,7 @@ async def test_async_send_notification_disabled(
     manager: NotificationManager, mock_coordinator: MagicMock, mock_hass: MagicMock
 ) -> None:
     """Test sending notification when disabled."""
-    mock_coordinator.services.is_notifications_enabled.return_value = False
+    mock_coordinator.services.notifications.is_notifications_enabled.return_value = False
 
     await manager.async_send_notification(GROWSPACE_ID, "Test Title", "Test Message")
 
@@ -690,12 +690,12 @@ async def test_async_send_notification_disabled_cases(
 ) -> None:
     """Test notification disabled cases (lines 44-45, 49-50)."""
     # CASE: Notifications disabled for growspace
-    mock_coordinator.services.is_notifications_enabled.return_value = False
+    mock_coordinator.services.notifications.is_notifications_enabled.return_value = False
     await manager.async_send_notification(GROWSPACE_ID, "T", "M")
     mock_hass.services.async_call.assert_not_called()
 
     # CASE: No target
-    mock_coordinator.services.is_notifications_enabled.return_value = True
+    mock_coordinator.services.notifications.is_notifications_enabled.return_value = True
     mock_coordinator.growspaces[GROWSPACE_ID].notification_target = None
     await manager.async_send_notification(GROWSPACE_ID, "T", "M")
     mock_hass.services.async_call.assert_not_called()
@@ -1539,7 +1539,7 @@ def test_update_pending_alert_no_plants_cancels_timer(
     manager: NotificationManager, mock_coordinator: MagicMock
 ) -> None:
     """Test update_pending_alert early-exits when growspace has no plants (lines 121-127)."""
-    mock_coordinator.services.get_growspace_plants.return_value = []
+    mock_coordinator.services.growspaces.get_growspace_plants.return_value = []
 
     cancel_mock = MagicMock()
     alert_key = f"{GROWSPACE_ID}_stress"
@@ -1568,7 +1568,7 @@ def test_update_pending_alert_no_plants_no_existing_alert(
     manager: NotificationManager, mock_coordinator: MagicMock
 ) -> None:
     """Test update_pending_alert when no plants and no pending alert (line 121)."""
-    mock_coordinator.services.get_growspace_plants.return_value = []
+    mock_coordinator.services.growspaces.get_growspace_plants.return_value = []
 
     sensor = MagicMock()
     sensor.is_on = True
@@ -1629,8 +1629,8 @@ async def test_async_send_notification_no_plants_skips(
     manager: NotificationManager, mock_coordinator: MagicMock, mock_hass: MagicMock
 ) -> None:
     """Test notification is skipped when growspace has no plants (lines 367-371)."""
-    mock_coordinator.services.get_growspace_plants.return_value = []
-    mock_coordinator.services.is_notifications_enabled.return_value = True
+    mock_coordinator.services.growspaces.get_growspace_plants.return_value = []
+    mock_coordinator.services.notifications.is_notifications_enabled.return_value = True
 
     await manager.async_send_notification(GROWSPACE_ID, "Title", "Message")
 

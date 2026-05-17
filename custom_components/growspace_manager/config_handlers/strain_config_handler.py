@@ -41,7 +41,7 @@ class StrainConfigHandler(BaseConfigHandler[dict[str, Any]]):
                 return await self.async_step_edit_strain()
             if action == "delete_strain":
                 try:
-                    await coordinator.services.strain_library.remove_strain(
+                    await coordinator.services.config.strain_library.remove_strain(
                         user_input.get("strain_id")
                     )
                 except Exception:
@@ -82,12 +82,12 @@ class StrainConfigHandler(BaseConfigHandler[dict[str, Any]]):
                     coordinator = self.config_entry.runtime_data
                     file_path = user_input["file_path"]
 
-                    await coordinator.services.strain_library.import_library_from_zip(
+                    await coordinator.services.config.strain_library.import_library_from_zip(
                         file_path, merge=True
                     )
 
                     # Reload strains to reflect changes
-                    await coordinator.services.strain_library.async_load()
+                    await coordinator.services.config.strain_library.async_load()
 
                     return await self.async_step_manage_strain_library()
                 except FileNotFoundError:
@@ -126,7 +126,7 @@ class StrainConfigHandler(BaseConfigHandler[dict[str, Any]]):
         export_dir = self.flow.hass.config.path("exports")
 
         try:
-            zip_path = await coordinator.services.strain_library.export_library_to_zip(
+            zip_path = await coordinator.services.config.strain_library.export_library_to_zip(
                 export_dir
             )
             return self.flow.async_show_form(
@@ -142,10 +142,10 @@ class StrainConfigHandler(BaseConfigHandler[dict[str, Any]]):
         self, coordinator: GrowspaceCoordinator
     ) -> vol.Schema:
         """Build the schema for the strain library menu."""
-        if not coordinator.services.strain_library:
+        if not coordinator.services.config.strain_library:
             return vol.Schema({})
 
-        strains = list(coordinator.services.strain_library.get_all().keys())
+        strains = list(coordinator.services.config.strain_library.get_all().keys())
         strain_options = [
             selector.SelectOptionDict(value=name, label=name) for name in strains
         ]
@@ -200,7 +200,7 @@ class StrainConfigHandler(BaseConfigHandler[dict[str, Any]]):
         coordinator = self.config_entry.runtime_data
 
         if user_input is not None:
-            await coordinator.services.strain_library.async_add_strain(
+            await coordinator.services.config.strain_library.async_add_strain(
                 name=user_input["strain"],
                 breeder=user_input.get("breeder"),
                 strain_type=user_input.get("type"),

@@ -22,10 +22,10 @@ def mock_hass() -> MagicMock:
 def mock_coordinator() -> AsyncMock:
     coord = AsyncMock()
     coord.services = AsyncMock()
-    coord.services.plant_manager = AsyncMock()
-    coord.services.plant_manager.transition_plant_stage = AsyncMock()
-    coord.services.async_harvest_plant = AsyncMock()
-    coord.services.async_remove_plant = AsyncMock()
+    coord.services.plants = AsyncMock()
+    coord.services.plants.transition_plant_stage = AsyncMock()
+    coord.services.plants.harvest_plant = AsyncMock()
+    coord.services.plants.remove_plant = AsyncMock()
     return coord
 
 
@@ -44,12 +44,12 @@ async def test_batch_transition(
     await handle_batch_action(mock_hass, mock_coordinator, call)
 
     assert (
-        mock_coordinator.services.plant_manager.transition_plant_stage.call_count == 2
+        mock_coordinator.services.plants.transition_plant_stage.call_count == 2
     )
-    mock_coordinator.services.plant_manager.transition_plant_stage.assert_any_call(
+    mock_coordinator.services.plants.transition_plant_stage.assert_any_call(
         plant_id="plant1", new_stage="flower", transition_date="2023-01-01"
     )
-    mock_coordinator.services.plant_manager.transition_plant_stage.assert_any_call(
+    mock_coordinator.services.plants.transition_plant_stage.assert_any_call(
         plant_id="plant2", new_stage="flower", transition_date="2023-01-01"
     )
 
@@ -66,7 +66,7 @@ async def test_batch_harvest(mock_hass: MagicMock, mock_coordinator: MagicMock) 
 
     await handle_batch_action(mock_hass, mock_coordinator, call)
 
-    mock_coordinator.services.async_harvest_plant.assert_called_once_with(
+    mock_coordinator.services.plants.harvest_plant.assert_called_once_with(
         plant_id="plant1",
         target_growspace_id="drying_room",
         target_growspace_name=None,
@@ -82,9 +82,9 @@ async def test_batch_remove(mock_hass: MagicMock, mock_coordinator: MagicMock) -
 
     await handle_batch_action(mock_hass, mock_coordinator, call)
 
-    assert mock_coordinator.services.async_remove_plant.call_count == 2
-    mock_coordinator.services.async_remove_plant.assert_any_call(plant_id="plant1")
-    mock_coordinator.services.async_remove_plant.assert_any_call(plant_id="plant2")
+    assert mock_coordinator.services.plants.remove_plant.call_count == 2
+    mock_coordinator.services.plants.remove_plant.assert_any_call(plant_id="plant1")
+    mock_coordinator.services.plants.remove_plant.assert_any_call(plant_id="plant2")
 
 
 @pytest.mark.asyncio
@@ -93,7 +93,7 @@ async def test_batch_error_handling(
 ) -> None:
     """Test that one failure does not stop the batch."""
     # First call fails, second succeeds
-    mock_coordinator.services.async_remove_plant.side_effect = [
+    mock_coordinator.services.plants.remove_plant.side_effect = [
         Exception("Test Error"),
         None,
     ]
@@ -105,7 +105,7 @@ async def test_batch_error_handling(
     with pytest.raises(ServiceValidationError):
         await handle_batch_action(mock_hass, mock_coordinator, call)
 
-    assert mock_coordinator.services.async_remove_plant.call_count == 2
+    assert mock_coordinator.services.plants.remove_plant.call_count == 2
 
 
 @pytest.mark.asyncio
@@ -122,5 +122,5 @@ async def test_unknown_action(
 
     # Should result in no coordinator calls
     mock_coordinator.services.plant_manager.transition_plant_stage.assert_not_called()
-    mock_coordinator.services.async_harvest_plant.assert_not_called()
-    mock_coordinator.services.async_remove_plant.assert_not_called()
+    mock_coordinator.services.plants.harvest_plant.assert_not_called()
+    mock_coordinator.services.plants.remove_plant.assert_not_called()

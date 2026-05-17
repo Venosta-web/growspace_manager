@@ -91,7 +91,7 @@ class ViewModelBuilder:
         if preloaded_plants is not None:
             plants = preloaded_plants
         else:
-            plants = self.coordinator.services.get_growspace_plants(growspace_id)
+            plants = self.coordinator.services.growspaces.get_growspace_plants(growspace_id)
 
         # Calculate aggregated stats for the growspace
         stage_attr_map = {

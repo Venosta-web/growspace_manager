@@ -30,33 +30,39 @@ def mock_coordinator(hass: HomeAssistant):
     coordinator.growspaces = {}
     coordinator.plants = {}
 
-    facade = MagicMock()
-    coordinator.services = facade
-
-    type(facade).growspaces = property(lambda _: coordinator.growspaces)
-    type(facade).plants = property(lambda _: coordinator.plants)
-
     coordinator.growspace_manager = MagicMock()
-    coordinator.growspace_manager.services = MagicMock()
     coordinator.plant_manager = MagicMock()
-    coordinator.plant_manager.services = MagicMock()
-    facade.add_growspace = AsyncMock()
-    facade.update_growspace = AsyncMock()
-    facade.remove_growspace = AsyncMock()
-    facade.destroy_growspace = AsyncMock()
 
-    facade.add_plant = AsyncMock()
-    facade.update_plant = AsyncMock()
-    facade.remove_plant = AsyncMock()
+    gs_facade = MagicMock()
+    gs_facade.get_growspace = MagicMock(
+        side_effect=lambda gsid: coordinator.growspaces.get(gsid)
+    )
+    gs_facade.get_sorted_growspace_options = MagicMock(return_value=[])
+    gs_facade.get_growspace_data = MagicMock(return_value={})
+    gs_facade.add_growspace = AsyncMock()
+    gs_facade.update_growspace = AsyncMock()
+    gs_facade.remove_growspace = AsyncMock()
 
+    pl_facade = MagicMock()
+    pl_facade.get_plant = MagicMock(side_effect=lambda pid: coordinator.plants.get(pid))
+    pl_facade.add_plant = AsyncMock()
+    pl_facade.update_plant = AsyncMock()
+    pl_facade.remove_plant = AsyncMock()
+
+    notif_facade = MagicMock()
+    notif_facade.get_timed_notifications = MagicMock(return_value=[])
+    notif_facade.async_add_timed_notification = AsyncMock()
+    notif_facade.async_update_timed_notification = AsyncMock()
+    notif_facade.async_remove_timed_notification = AsyncMock()
+
+    facade = MagicMock()
+    facade.growspaces = gs_facade
+    facade.plants = pl_facade
+    facade.notifications = notif_facade
+    facade.config = MagicMock()
     facade.save = AsyncMock()
     facade.commit = AsyncMock()
-
-    facade.get_sorted_growspace_options = MagicMock(return_value=[])
-    facade.get_plant = MagicMock(side_effect=lambda pid: coordinator.plants.get(pid))
-    facade.get_growspace_data = MagicMock(return_value={})
-    facade.get_growspace_options = MagicMock(return_value=[])
-    facade.get_plant_options = MagicMock(return_value=[])
+    coordinator.services = facade
 
     coordinator.async_commit = AsyncMock()
     coordinator.async_save = AsyncMock()
@@ -220,7 +226,7 @@ async def test_options_flow_manage_growspaces_remove(
     )
 
     # Then
-    mock_coordinator.services.remove_growspace.assert_called_once_with("gs1")
+    mock_coordinator.services.growspaces.remove_growspace.assert_called_once_with("gs1")
     assert result.get("type") == FlowResultType.FORM
     assert result.get("step_id") == "manage_growspaces"
 
@@ -231,7 +237,7 @@ async def test_options_flow_manage_growspaces_remove_error(
 ) -> None:
     """Test error handling when removing growspace."""
     # Given
-    mock_coordinator.services.remove_growspace.side_effect = Exception("Test error")
+    mock_coordinator.services.growspaces.remove_growspace.side_effect = Exception("Test error")
     mock_coordinator.growspaces = {"gs1": Mock(name="Test Growspace")}
     config_entry = await setup_test_environment(hass, mock_coordinator)
 
@@ -347,7 +353,7 @@ async def test_options_flow_add_growspace_success(
     # Then
     assert result.get("type") == FlowResultType.FORM
     assert result.get("step_id") == "manage_growspaces"
-    mock_coordinator.services.add_growspace.assert_called_once_with(
+    mock_coordinator.services.growspaces.add_growspace.assert_called_once_with(
         name="New Growspace",
         rows=5,
         plants_per_row=6,
@@ -367,7 +373,7 @@ async def test_options_flow_add_growspace_error(
 ) -> None:
     """Test error handling when adding growspace."""
     # Given
-    mock_coordinator.services.add_growspace.side_effect = Exception("Test error")
+    mock_coordinator.services.growspaces.add_growspace.side_effect = Exception("Test error")
     config_entry = await setup_test_environment(hass, mock_coordinator)
     hass.services = Mock()
     hass.services.async_services = Mock(return_value={"notify": {}})
@@ -439,7 +445,7 @@ async def test_options_flow_update_growspace_success(
     # Then
     assert result.get("type") == FlowResultType.FORM
     assert result.get("step_id") == "manage_growspaces"
-    mock_coordinator.services.update_growspace.assert_called_once_with(
+    mock_coordinator.services.growspaces.update_growspace.assert_called_once_with(
         "gs1", {"name": "New Name", "rows": 5}
     )
 
@@ -475,7 +481,7 @@ async def test_options_flow_update_growspace_error(
     mock_growspace.plants_per_row = 4
     mock_growspace.notification_target = None
     mock_coordinator.growspaces = {"gs1": mock_growspace}
-    mock_coordinator.services.update_growspace.side_effect = Exception("Test error")
+    mock_coordinator.services.growspaces.update_growspace.side_effect = Exception("Test error")
     config_entry = await setup_test_environment(hass, mock_coordinator)
     hass.services = Mock()
     hass.services.async_services = Mock(return_value={"notify": {}})
@@ -522,10 +528,10 @@ async def test_options_flow_manage_plants_add(
     """Test the add plant action in the options flow."""
     # Given
     mock_coordinator.growspaces = {"test_grow": Mock(name="Test Growspace")}
-    mock_coordinator.services.get_sorted_growspace_options.return_value = [
+    mock_coordinator.services.growspaces.get_sorted_growspace_options.return_value = [
         ("test_grow", "Test Growspace")
     ]
-    mock_coordinator.services.get_strain_options.return_value = ["Strain A", "Strain B"]
+    mock_coordinator.services.config.get_strain_options.return_value = ["Strain A", "Strain B"]
     config_entry = await setup_test_environment(hass, mock_coordinator)
     config_entry.runtime_data.store = mock_store
 
@@ -549,7 +555,7 @@ async def test_options_flow_manage_plants_update(
     """Test update plant action."""
     # Given
     mock_coordinator.growspaces = {"test_grow": Mock(name="Test Growspace")}
-    mock_coordinator.services.get_strain_options.return_value = ["Strain A", "Strain B"]
+    mock_coordinator.services.config.get_strain_options.return_value = ["Strain A", "Strain B"]
     config_entry = await setup_test_environment(hass, mock_coordinator)
     config_entry.runtime_data.store = mock_store
 
@@ -584,7 +590,7 @@ async def test_options_flow_manage_plants_remove(
     )
 
     # Then
-    mock_coordinator.services.remove_plant.assert_called()
+    mock_coordinator.services.plants.remove_plant.assert_called()
 
 
 @pytest.mark.asyncio
@@ -593,7 +599,7 @@ async def test_options_flow_manage_plants_remove_error(
 ) -> None:
     """Test error when removing plant."""
     # Given
-    mock_coordinator.services.remove_plant.side_effect = Exception("Test error")
+    mock_coordinator.services.plants.remove_plant.side_effect = Exception("Test error")
     mock_plant = Mock(id="p1", growspace_id="gs1")
     mock_coordinator.plants = {"p1": mock_plant}
     config_entry = await setup_test_environment(hass, mock_coordinator)

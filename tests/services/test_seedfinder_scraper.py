@@ -15,7 +15,11 @@ from custom_components.growspace_manager.services.seedfinder_scraper import (
 @pytest.fixture
 def scraper() -> SeedfinderScraper:
     """Fixture for SeedfinderScraper."""
-    return SeedfinderScraper(MagicMock())
+    hass = MagicMock()
+    hass.async_add_executor_job = AsyncMock(
+        side_effect=lambda target, *args, **kwargs: target(*args, **kwargs)
+    )
+    return SeedfinderScraper(hass)
 
 
 def _make_mock_session(html: str, status: int = 200) -> MagicMock:

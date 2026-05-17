@@ -17,9 +17,9 @@ def mock_coordinator(hass: HomeAssistant):
     coordinator = MagicMock()
     coordinator.hass = hass
     coordinator.growspaces = {}
-    coordinator.services.update_irrigation_config = AsyncMock()
+    coordinator.services.growspaces.update_irrigation_config = AsyncMock()
     # Mocking get_sorted_growspace_options is needed for step_select_growspace
-    coordinator.services.get_growspace.side_effect = lambda gs_id: (
+    coordinator.services.growspaces.get_growspace.side_effect = lambda gs_id: (
         coordinator.growspaces.get(gs_id)
     )
     coordinator.get_sorted_growspace_options = MagicMock(
@@ -71,8 +71,8 @@ async def test_irrigation_config_optional_drain_pump(
 
     await handler.async_step_irrigation_overview(user_input)
 
-    mock_coordinator.services.update_irrigation_config.assert_called_once()
-    call_args = mock_coordinator.services.update_irrigation_config.call_args
+    mock_coordinator.services.growspaces.update_irrigation_config.assert_called_once()
+    call_args = mock_coordinator.services.growspaces.update_irrigation_config.call_args
     
     assert len(call_args.args) >= 1, "Expected growspace_id as positional arg"
     growspace_id = call_args.args[0]
@@ -120,8 +120,8 @@ async def test_irrigation_config_omitted_drain_pump(
 
     await handler.async_step_irrigation_overview(user_input)
 
-    mock_coordinator.services.update_irrigation_config.assert_called_once()
-    call_args = mock_coordinator.services.update_irrigation_config.call_args
+    mock_coordinator.services.growspaces.update_irrigation_config.assert_called_once()
+    call_args = mock_coordinator.services.growspaces.update_irrigation_config.call_args
     data = call_args.kwargs
 
     # Coordinator logic:
@@ -189,8 +189,8 @@ async def test_irrigation_config_empty_string_drain_pump(
 
     await handler.async_step_irrigation_overview(user_input)
 
-    mock_coordinator.services.update_irrigation_config.assert_called_once()
-    call_args = mock_coordinator.services.update_irrigation_config.call_args
+    mock_coordinator.services.growspaces.update_irrigation_config.assert_called_once()
+    call_args = mock_coordinator.services.growspaces.update_irrigation_config.call_args
     data = call_args.kwargs
 
     # This assumes the coordinator normalization logic works on the input dictionary inplace

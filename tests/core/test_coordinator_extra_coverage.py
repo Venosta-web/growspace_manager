@@ -38,11 +38,11 @@ async def test_async_update_growspace_returns_gs(hass: HomeAssistant) -> None:
     coordinator = create_test_coordinator(hass)
 
     # Add a growspace
-    gs = await coordinator.services.add_growspace(name="Test GS", rows=2, plants_per_row=2)
+    gs = await coordinator.services.growspaces.add_growspace(name="Test GS", rows=2, plants_per_row=2)
     gs_id = gs.id
 
     # Update it
-    result = await coordinator.services.update_growspace(gs_id, name="Updated GS")
+    result = await coordinator.services.growspaces.update_growspace(gs_id, name="Updated GS")
 
     # Verify it returns the updated growspace object
     assert result.id == gs_id
@@ -56,16 +56,16 @@ async def test_validate_plants_after_growspace_resize_task(hass: HomeAssistant) 
     coordinator = create_test_coordinator(hass)
 
     # Mock the service facade validate method
-    coordinator.services.validate_plants_after_growspace_resize = MagicMock()
+    coordinator.services.growspaces.validate_plants_after_growspace_resize = MagicMock()
 
     # Call the service method
-    coordinator.services.validate_plants_after_growspace_resize("gs1", 2, 2)
+    coordinator.services.growspaces.validate_plants_after_growspace_resize("gs1", 2, 2)
 
     # Give it a tiny bit of time to schedule/run
     await asyncio.sleep(0)
 
     # Verify the service method was called
-    coordinator.services.validate_plants_after_growspace_resize.assert_called_once_with(
+    coordinator.services.growspaces.validate_plants_after_growspace_resize.assert_called_once_with(
         "gs1", 2, 2
     )
 
@@ -79,7 +79,7 @@ async def test_services_update_growspace_fallback(hass: HomeAssistant) -> None:
 
     # Call it with an ID that definitely doesn't exist in coordinator.growspaces
     with pytest.raises(GrowspaceNotFoundError):
-        await coordinator.services.update_growspace("nonexistent_id", name="New Name")
+        await coordinator.services.growspaces.update_growspace("nonexistent_id", name="New Name")
 
     # It should not be in the growspaces repo
     assert "nonexistent_id" not in coordinator.growspaces

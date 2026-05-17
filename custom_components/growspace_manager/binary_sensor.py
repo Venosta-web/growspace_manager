@@ -210,10 +210,10 @@ def _process_growspace_sensors(
                         strategy_class=strategy_class,
                         # Inject dependencies as callbacks
                         get_growspace=lambda gid: coordinator.growspaces.get(gid),
-                        get_plants=coordinator.services.get_growspace_plants,
+                        get_plants=coordinator.services.growspaces.get_growspace_plants,
                         add_event=coordinator.add_event,
-                        notification_manager=coordinator.notification_manager,
-                        strain_library=coordinator.strain_library,
+                        notification_manager=coordinator.services.notifications.manager,
+                        strain_library=coordinator.services.config.strain_library,
                         options=coordinator.options,
                     )
                 )
@@ -229,7 +229,7 @@ def _process_growspace_sensors(
                     growspace_id=growspace_id,
                     env_config=env_config,
                     # Inject dependencies
-                    get_plants=coordinator.services.get_growspace_plants,
+                    get_plants=coordinator.services.growspaces.get_growspace_plants,
                     calculate_days=coordinator.calculate_days,
                 )
             )

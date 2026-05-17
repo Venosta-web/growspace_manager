@@ -9,11 +9,10 @@ from custom_components.growspace_manager.sensor import StrainLibrarySensor
 def _make_sensor() -> StrainLibrarySensor:
     """Build a minimal StrainLibrarySensor without a live coordinator."""
     coordinator = MagicMock()
-    coordinator.strain_library.get_all.return_value = {
+    coordinator.services.config.strain_library.get_all.return_value = {
         "OG Kush": {"meta": {}, "phenotypes": {}},
     }
-    # Mock analytics result without lineage_trees
-    coordinator.strain_library.get_analytics.return_value = {
+    coordinator.services.config.strain_library.get_analytics.return_value = {
         "strains": {"OG Kush": {}},
         "strain_list": ["OG Kush"],
     }

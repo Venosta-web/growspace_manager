@@ -76,7 +76,7 @@ async def test_log_training_single_plant(
     with patch(
         "homeassistant.util.dt.now", return_value=datetime(2023, 1, 1, 12, 0, 0)
     ):
-        await mock_coordinator.services.log_training_event(
+        await mock_coordinator.services.plants.log_training_event(
             growspace_id=None, technique=technique, notes=notes, plant_ids=["plant_1"]
         )
 
@@ -106,7 +106,7 @@ async def test_log_training_growspace_all(
     with patch(
         "homeassistant.util.dt.now", return_value=datetime(2023, 1, 1, 12, 0, 0)
     ):
-        await mock_coordinator.services.log_training_event(
+        await mock_coordinator.services.plants.log_training_event(
             growspace_id="gs_1", technique=technique
         )
 
@@ -131,7 +131,7 @@ async def test_log_training_subset(mock_coordinator: GrowspaceCoordinator) -> No
     plant_ids = ["plant_1"]
     technique = "lst"
 
-    await mock_coordinator.services.log_training_event(
+    await mock_coordinator.services.plants.log_training_event(
         growspace_id=None, technique=technique, plant_ids=plant_ids
     )
 
@@ -165,7 +165,7 @@ async def test_handle_log_training_event_service(
     )
 
     with patch.object(
-        mock_coordinator.services, "log_training_event", new_callable=AsyncMock
+        mock_coordinator.services.plants, "log_training_event", new_callable=AsyncMock
     ) as mock_method:
         await handle_log_training_event(hass, mock_coordinator, call)
 
@@ -183,7 +183,7 @@ async def test_log_training_empty_growspace(
 ) -> None:
     """Test logging training for a growspace with no plants."""
     # Create a growspace with no plants (gs_none)
-    await mock_coordinator.services.log_training_event(
+    await mock_coordinator.services.plants.log_training_event(
         growspace_id="empty_gs", technique="testing"
     )
 
@@ -202,6 +202,6 @@ async def test_log_training_missing_params_error(
     with pytest.raises(
         ValueError, match="Either growspace_id or plant_ids must be provided"
     ):
-        await mock_coordinator.services.log_training_event(
+        await mock_coordinator.services.plants.log_training_event(
             growspace_id=None, technique="testing", plant_ids=None
         )

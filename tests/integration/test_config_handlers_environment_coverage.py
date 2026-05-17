@@ -44,7 +44,6 @@ def handler():
     # 2. Setup Sub-Services/Repos
     service_mock = MagicMock()
     service_mock.save = AsyncMock()  # This was missing and causing TypeErrors
-    coordinator.services = service_mock
     coordinator.growspace_service = service_mock
     coordinator.data_repository = service_mock
 
@@ -52,6 +51,17 @@ def handler():
     default_gs = Growspace(id="gs1", name="GS1", environment_config=EnvironmentConfig())
     service_mock.get_growspace.return_value = default_gs
     coordinator.growspaces = {"gs1": default_gs}
+
+    # 4. Wire sub-facades so handlers can call coordinator.services.growspaces.*
+    gs_facade = MagicMock()
+    gs_facade.get_growspace.return_value = default_gs
+    gs_facade.get_sorted_growspace_options.return_value = [("gs1", "GS1")]
+    gs_facade.update_irrigation_config = AsyncMock()
+    gs_facade.configure_tank = AsyncMock()
+
+    coordinator.services = MagicMock()
+    coordinator.services.save = AsyncMock()
+    coordinator.services.growspaces = gs_facade
 
     handler.config_entry = MagicMock()
     handler.config_entry.runtime_data = coordinator
@@ -63,7 +73,7 @@ def handler():
 @pytest.mark.asyncio
 async def test_select_growspace_for_env_success(handler) -> None:
     """Test selecting a growspace for environment config."""
-    handler.config_entry.runtime_data.growspace_service.get_sorted_growspace_options.return_value = [
+    handler.config_entry.runtime_data.services.growspaces.get_sorted_growspace_options.return_value = [
         ("gs1", "GS1")
     ]
 
@@ -86,7 +96,7 @@ async def test_select_growspace_for_env_success(handler) -> None:
 async def test_select_growspace_no_options(handler) -> None:
     """Test select growspace when none exist."""
     # Ensure the correct path in the facade is mocked
-    handler.config_entry.runtime_data.growspace_service.get_sorted_growspace_options.return_value = []
+    handler.config_entry.runtime_data.services.growspaces.get_sorted_growspace_options.return_value = []
 
     result = await handler.async_step_select_growspace_for_env()
 
@@ -112,7 +122,7 @@ async def test_configure_environment_with_tanks(handler) -> None:
     )
 
     # Mock the return value for the specific call the handler makes
-    handler.config_entry.runtime_data.services.get_growspace.return_value = gs
+    handler.config_entry.runtime_data.services.growspaces.get_growspace.return_value = gs
     handler.config_entry.runtime_data.growspaces = {"gs1": gs}
     handler.flow.selected_growspace_id = "gs1"
 
@@ -353,7 +363,7 @@ async def test_configure_environment_sensor_groups_preservation(handler) -> None
 @pytest.mark.asyncio
 async def test_configure_sensor_placement_growspace_not_found(handler) -> None:
     """Test sensor placement when growspace is missing."""
-    handler.config_entry.runtime_data.data_repository.get_growspace.return_value = None
+    handler.config_entry.runtime_data.services.growspaces.get_growspace.return_value = None
     handler.config_entry.runtime_data.growspaces = {}
     handler.flow.selected_growspace_id = "missing"
 
@@ -375,7 +385,7 @@ async def test_configure_sensor_placement_pumps(handler) -> None:
         ),
         environment_config=EnvironmentConfig(),
     )
-    handler.config_entry.runtime_data.data_repository.get_growspace.return_value = gs
+    handler.config_entry.runtime_data.services.growspaces.get_growspace.return_value = gs
     handler.config_entry.runtime_data.growspaces = {"gs1": gs}
     handler.flow.selected_growspace_id = "gs1"
 
@@ -489,7 +499,7 @@ async def test_async_step_configure_dehumidifier_growspace_not_found(handler) ->
     """Test dehumidifier step when growspace is missing."""
     # Ensure both paths to find growspaces return nothing
     handler.config_entry.runtime_data.growspaces = {}
-    handler.config_entry.runtime_data.services.get_growspace.return_value = None
+    handler.config_entry.runtime_data.services.growspaces.get_growspace.return_value = None
 
     handler.flow.selected_growspace_id = "missing"
     result = await handler.async_step_configure_dehumidifier()
@@ -535,7 +545,7 @@ async def test_async_step_configure_advanced_bayesian_growspace_not_found(
 ) -> None:
     """Test advanced Bayesian step when growspace is missing."""
     # CRITICAL: Override the default mock return
-    handler.config_entry.runtime_data.data_repository.get_growspace.return_value = None
+    handler.config_entry.runtime_data.services.growspaces.get_growspace.return_value = None
     handler.flow.selected_growspace_id = "missing"
 
     result = await handler.async_step_configure_advanced_bayesian()
@@ -578,7 +588,7 @@ async def test_async_step_configure_sensor_placement_v_no_coord_abort(handler) -
 async def test_configure_environment_growspace_not_found(handler) -> None:
     """Test environment config when growspace is not found."""
     # CRITICAL: Override the default mock return
-    handler.config_entry.runtime_data.data_repository.get_growspace.return_value = None
+    handler.config_entry.runtime_data.services.growspaces.get_growspace.return_value = None
     handler.flow.selected_growspace_id = "missing"
 
     result = await handler.async_step_configure_environment()
@@ -656,7 +666,7 @@ async def test_parse_advanced_bayesian_input_success(handler) -> None:
 async def test_collect_sensors_to_configure_empty_after_filtering(handler) -> None:
     """Test _collect_sensors_to_configure when filtering results in empty list."""
     gs = Growspace(id="gs1", name="GS1")
-    handler.config_entry.runtime_data.services.get_growspace.return_value = gs
+    handler.config_entry.runtime_data.services.growspaces.get_growspace.return_value = gs
     handler.flow.selected_growspace_id = "gs1"
 
     # Provide an invalid type in a list to trigger filtering logic

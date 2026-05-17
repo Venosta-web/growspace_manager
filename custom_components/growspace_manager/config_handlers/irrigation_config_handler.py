@@ -29,7 +29,7 @@ class IrrigationConfigHandler(BaseConfigHandler[dict[str, Any]]):
         except AbortFlow as e:
             return self.flow.async_abort(reason=e.reason)
 
-        growspace_options = coordinator.services.get_sorted_growspace_options()
+        growspace_options = coordinator.services.growspaces.get_sorted_growspace_options()
 
         if not growspace_options:
             return self.flow.async_abort(reason="no_growspaces")
@@ -61,7 +61,7 @@ class IrrigationConfigHandler(BaseConfigHandler[dict[str, Any]]):
             coordinator = self.get_coordinator()
         except AbortFlow as e:
             return self.flow.async_abort(reason=e.reason)
-        growspace = coordinator.services.get_growspace(self.flow.selected_growspace_id)
+        growspace = coordinator.services.growspaces.get_growspace(self.flow.selected_growspace_id)
 
         if not growspace:
             return self.flow.async_abort(reason="growspace_not_found")
@@ -77,7 +77,7 @@ class IrrigationConfigHandler(BaseConfigHandler[dict[str, Any]]):
             coordinator = self.get_coordinator()
         except AbortFlow as e:
             return self.flow.async_abort(reason=e.reason)
-        growspace = coordinator.services.get_growspace(self.flow.selected_growspace_id)
+        growspace = coordinator.services.growspaces.get_growspace(self.flow.selected_growspace_id)
 
         if not growspace:
             return self.flow.async_abort(reason="growspace_not_found")
@@ -87,7 +87,7 @@ class IrrigationConfigHandler(BaseConfigHandler[dict[str, Any]]):
 
         if user_input is not None:
             # Delegate update logic to coordinator
-            await coordinator.services.update_irrigation_config(
+            await coordinator.services.growspaces.update_irrigation_config(
                 self.flow.selected_growspace_id, **user_input
             )
 

@@ -138,7 +138,7 @@ async def websocket_get_growspace_data(
     growspace_id = msg.get("growspace_id")
     try:
         coordinator = GrowspaceCoordinator.get_for_service_call(hass, msg)
-        data = coordinator.services.get_growspace_data(growspace_id)
+        data = coordinator.services.growspaces.get_growspace_data(growspace_id)
         connection.send_result(msg["id"], data)
     except ServiceValidationError:
         connection.send_error(
@@ -471,7 +471,7 @@ def websocket_get_strain_library(
     try:
         # Retrieve any coordinator to access the shared strain library
         coordinator = GrowspaceCoordinator.get_any(hass)
-        strain_library: StrainLibrary = coordinator.strain_library
+        strain_library: StrainLibrary = coordinator.services.config.strain_library
         # Return full strain data (including image_path) for frontend display
         all_strains = strain_library.get_all()
         response = {
@@ -692,7 +692,7 @@ async def websocket_add_timeline_note(
     """Handle add timeline note command via WebSocket."""
     try:
         coordinator = GrowspaceCoordinator.get_for_service_call(hass, msg)
-        strain_library = coordinator.strain_library
+        strain_library = coordinator.services.config.strain_library
 
         await coordinator.services.add_timeline_note(
             plant_id=msg[ATTR_PLANT_ID],
@@ -719,7 +719,7 @@ async def websocket_add_growspace_note(
     """Handle add growspace note command via WebSocket."""
     try:
         coordinator = GrowspaceCoordinator.get_for_service_call(hass, msg)
-        strain_library = coordinator.strain_library
+        strain_library = coordinator.services.config.strain_library
 
         await async_add_growspace_note(
             hass,
@@ -1112,7 +1112,7 @@ async def websocket_update_breeder(
     """Handle updating breeder info across all strains."""
     try:
         coordinator = GrowspaceCoordinator.get_any(hass)
-        strain_library: StrainLibrary = coordinator.strain_library
+        strain_library: StrainLibrary = coordinator.services.config.strain_library
         count = await strain_library.update_breeder(
             original_name=msg["original_name"],
             new_name=msg["new_name"],
@@ -1136,7 +1136,7 @@ async def websocket_delete_breeder(
     """Handle removing breeder association from all strains."""
     try:
         coordinator = GrowspaceCoordinator.get_any(hass)
-        strain_library: StrainLibrary = coordinator.strain_library
+        strain_library: StrainLibrary = coordinator.services.config.strain_library
 
         count = await strain_library.delete_breeder(
             breeder_name=msg["breeder_name"],
@@ -1451,7 +1451,7 @@ async def websocket_get_subareas(
     """Return all subareas for a growspace."""
     try:
         coordinator = GrowspaceCoordinator.get_for_service_call(hass, msg)
-        subareas = coordinator.services.get_subareas(msg["growspace_id"])
+        subareas = coordinator.services.growspaces.get_subareas(msg["growspace_id"])
         connection.send_result(msg["id"], [asdict(s) for s in subareas])
     except ServiceValidationError as err:
         connection.send_error(msg["id"], "invalid_args", str(err))
@@ -1472,7 +1472,7 @@ async def websocket_add_subarea(
     """Add a subarea to a growspace."""
     try:
         coordinator = GrowspaceCoordinator.get_for_service_call(hass, msg)
-        subarea = await coordinator.services.add_subarea(msg["growspace_id"], msg["name"])
+        subarea = await coordinator.services.growspaces.add_subarea(msg["growspace_id"], msg["name"])
         connection.send_result(msg["id"], asdict(subarea))
     except ServiceValidationError as err:
         connection.send_error(msg["id"], "invalid_args", str(err))
@@ -1493,7 +1493,7 @@ async def websocket_update_subarea(
     """Update a subarea's environment config."""
     try:
         coordinator = GrowspaceCoordinator.get_for_service_call(hass, msg)
-        subarea = await coordinator.services.update_subarea(
+        subarea = await coordinator.services.growspaces.update_subarea(
             msg["growspace_id"], msg["subarea_id"], msg["environment_config"]
         )
         connection.send_result(msg["id"], asdict(subarea))
@@ -1516,7 +1516,7 @@ async def websocket_remove_subarea(
     """Remove a subarea from a growspace."""
     try:
         coordinator = GrowspaceCoordinator.get_for_service_call(hass, msg)
-        await coordinator.services.remove_subarea(msg["growspace_id"], msg["subarea_id"])
+        await coordinator.services.growspaces.remove_subarea(msg["growspace_id"], msg["subarea_id"])
         connection.send_result(msg["id"], {"success": True})
     except ServiceValidationError as err:
         connection.send_error(msg["id"], "invalid_args", str(err))
@@ -1569,7 +1569,7 @@ async def websocket_get_lineage_tree(
         tree = coordinator.genetics_manager.get_lineage_tree(plant_id)
 
         # If pollination tree has no parents, fall back to strain library lineage
-        if not tree.get("parents") and (strain_library := coordinator.strain_library):
+        if not tree.get("parents") and (strain_library := coordinator.services.config.strain_library):
             plant = coordinator.plants.get(plant_id)
             strain_name = plant.genetics.strain_name if plant else None
             if strain_name:
@@ -1620,7 +1620,7 @@ async def websocket_get_strain_lineage_tree(
     strain_name = msg["strain_name"]
     try:
         coordinator = GrowspaceCoordinator.get_any(hass)
-        strain_library = coordinator.strain_library
+        strain_library = coordinator.services.config.strain_library
         tree = strain_library.get_strain_lineage_tree(strain_name)
         connection.send_result(msg["id"], tree)
     except ServiceValidationError:
@@ -1644,7 +1644,7 @@ async def websocket_update_strain_lineage_tree(
     parents = msg["parents"]
     try:
         coordinator = GrowspaceCoordinator.get_any(hass)
-        strain_library = coordinator.strain_library
+        strain_library = coordinator.services.config.strain_library
         flat_lineage = await strain_library.update_strain_lineage_tree(
             strain_name, parents
         )
@@ -1680,7 +1680,7 @@ async def websocket_import_strain_lineage_tree(
     tree = msg["tree"]
     try:
         coordinator = GrowspaceCoordinator.get_any(hass)
-        strain_library = coordinator.strain_library
+        strain_library = coordinator.services.config.strain_library
         await strain_library.async_import_seedfinder_lineage_tree(
             strain_name, tree, scraper=coordinator.seedfinder_scraper
         )

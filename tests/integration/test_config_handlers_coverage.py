@@ -179,7 +179,7 @@ async def test_growspace_handler_crud(mock_hass, mock_config_entry) -> None:
     handler = GrowspaceConfigHandler(mock_hass, mock_config_entry)
 
     coordinator = MagicMock()
-    coordinator.services.remove_growspace = AsyncMock()
+    coordinator.services.growspaces.remove_growspace = AsyncMock()
     coordinator.services.save = AsyncMock()
     coordinator.growspace_manager.add_growspace = AsyncMock()
     coordinator.growspace_manager.update_growspace = AsyncMock()
@@ -200,7 +200,7 @@ async def test_growspace_handler_crud(mock_hass, mock_config_entry) -> None:
 
     # Test Remove
     await handler.async_remove_growspace("gs1")
-    coordinator.services.remove_growspace.assert_awaited_with("gs1")
+    coordinator.services.growspaces.remove_growspace.assert_awaited_with("gs1")
 
 
 def test_growspace_handler_schemas(mock_hass, mock_config_entry) -> None:
@@ -363,27 +363,27 @@ async def test_plant_handler_async_operations(mock_hass, mock_config_entry) -> N
     """Test async crud operations."""
     handler = PlantConfigHandler(mock_hass, mock_config_entry)
     coordinator = MagicMock()
-    coordinator.services.harvest_plant = AsyncMock()
-    coordinator.services.remove_plant = AsyncMock()
-    coordinator.services.add_plant = AsyncMock()
-    coordinator.services.update_plant = AsyncMock()
+    coordinator.services.plants.harvest_plant = AsyncMock()
+    coordinator.services.plants.remove_plant = AsyncMock()
+    coordinator.services.plants.add_plant = AsyncMock()
+    coordinator.services.plants.update_plant = AsyncMock()
     mock_config_entry.runtime_data = coordinator
 
     # Harvest
     await handler.async_harvest_plant("p1", 50.0)
-    coordinator.services.harvest_plant.assert_awaited_with("p1", wet_weight=50.0)
+    coordinator.services.plants.harvest_plant.assert_awaited_with("p1", wet_weight=50.0)
 
     # Destroy
     await handler.async_destroy_plant("p1")
-    coordinator.services.remove_plant.assert_awaited_with("p1")
+    coordinator.services.plants.remove_plant.assert_awaited_with("p1")
 
     # Add (now via coordinator public method)
-    await coordinator.services.add_plant("gs1", "Strain A", 1, 1)
-    coordinator.services.add_plant.assert_awaited()
+    await coordinator.services.plants.add_plant("gs1", "Strain A", 1, 1)
+    coordinator.services.plants.add_plant.assert_awaited()
 
     # Update (now via coordinator public method)
-    await coordinator.services.update_plant("p1", strain="Strain B")
-    coordinator.services.update_plant.assert_awaited()
+    await coordinator.services.plants.update_plant("p1", strain="Strain B")
+    coordinator.services.plants.update_plant.assert_awaited()
 
 
 def test_plant_handler_growspace_selection_schema(mock_hass, mock_config_entry) -> None:
@@ -505,7 +505,7 @@ async def test_growspace_handler_flow_add_step(mock_hass, mock_config_entry) -> 
     handler = GrowspaceConfigHandler(mock_hass, mock_config_entry)
     handler.flow = MagicMock()
     coordinator = MagicMock()
-    coordinator.services.add_growspace = AsyncMock()
+    coordinator.services.growspaces.add_growspace = AsyncMock()
     # Still need to expect the service call might be mocked if handler accessed it,
     # but handler uses public API now
     mock_config_entry.runtime_data = coordinator
@@ -527,7 +527,7 @@ async def test_growspace_handler_flow_add_step(mock_hass, mock_config_entry) -> 
     coordinator.growspace_service.get_sorted_growspace_options.return_value = []
     handler.flow.async_show_form = MagicMock(return_value={"type": "form"})
     await handler.async_step_add_growspace(user_input)
-    coordinator.services.add_growspace.assert_awaited_with(
+    coordinator.services.growspaces.add_growspace.assert_awaited_with(
         name=user_input["name"],
         rows=user_input["rows"],
         plants_per_row=user_input["plants_per_row"],
@@ -542,7 +542,7 @@ async def test_growspace_handler_flow_add_step(mock_hass, mock_config_entry) -> 
     handler.flow.async_show_form.assert_called()
 
     # 3. Input error
-    coordinator.services.add_growspace.side_effect = Exception("Fail")
+    coordinator.services.growspaces.add_growspace.side_effect = Exception("Fail")
     await handler.async_step_add_growspace(user_input)
     assert "add_failed" in str(handler.flow.async_show_form.call_args)
 
@@ -556,7 +556,7 @@ async def test_growspace_handler_flow_update_step(mock_hass, mock_config_entry) 
 
     coordinator = MagicMock()
     coordinator.growspaces = {"gs1": MagicMock()}
-    coordinator.services.update_growspace = AsyncMock()
+    coordinator.services.growspaces.update_growspace = AsyncMock()
     # Support for the schema fetching in the flow
     coordinator.growspace_service.get_sorted_growspace_options.return_value = []
 
@@ -573,7 +573,7 @@ async def test_growspace_handler_flow_update_step(mock_hass, mock_config_entry) 
     await handler.async_step_update_growspace(user_input)
 
     # FIX: Matches the actual call signature (id, dict_of_input)
-    coordinator.services.update_growspace.assert_awaited_with("gs1", user_input)
+    coordinator.services.growspaces.update_growspace.assert_awaited_with("gs1", user_input)
 
 
 @pytest.mark.asyncio
@@ -604,7 +604,7 @@ async def test_plant_handler_flow_actions(mock_hass, mock_config_entry) -> None:
     coordinator.plants = {"p1": mock_plant}
 
     # FIX: Ensure the service returns the mock_plant so plant.plant_id works
-    coordinator.services.get_plant.return_value = mock_plant
+    coordinator.services.plants.get_plant.return_value = mock_plant
 
     mock_config_entry.runtime_data = coordinator
 
@@ -631,7 +631,7 @@ async def test_plant_handler_flow_add_step(mock_hass, mock_config_entry) -> None
     handler.flow.selected_growspace_id = "gs1"
     coordinator = MagicMock()
     coordinator.growspaces = {"gs1": MagicMock()}
-    coordinator.services.add_plant = AsyncMock()
+    coordinator.services.plants.add_plant = AsyncMock()
     mock_config_entry.runtime_data = coordinator
 
     # 1. No input
@@ -641,7 +641,7 @@ async def test_plant_handler_flow_add_step(mock_hass, mock_config_entry) -> None
     # 2. Input success
     user_input = {"strain": "Test", "row": 1, "col": 1}
     await handler.async_step_add_plant(user_input)
-    coordinator.services.add_plant.assert_awaited()
+    coordinator.services.plants.add_plant.assert_awaited()
     handler.flow.async_create_entry.assert_called()
 
 

@@ -656,7 +656,7 @@ async def test_websocket_get_growspace_data(
         return_value=mock_coordinator,
     ):
         # FIX: Add .services here to match the updated websocket.py logic
-        mock_coordinator.services.get_growspace_data.return_value = {
+        mock_coordinator.services.growspaces.get_growspace_data.return_value = {
             "name": "Test space"
         }
 

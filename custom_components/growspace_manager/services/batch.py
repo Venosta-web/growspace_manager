@@ -43,23 +43,20 @@ async def handle_batch_action(
     for entity_id in entity_ids:
         try:
             if action == "transition":
-                # UPDATED: Routes through coordinator.services.plant_manager
-                await coordinator.services.plant_manager.transition_plant_stage(
+                await coordinator.services.plants.transition_plant_stage(
                     plant_id=entity_id,
                     new_stage=data[ATTR_STAGE],
                     transition_date=data.get(ATTR_TRANSITION_DATE),
                 )
             elif action == "harvest":
-                # UPDATED: Routes through coordinator.services
-                await coordinator.services.async_harvest_plant(
+                await coordinator.services.plants.harvest_plant(
                     plant_id=entity_id,
                     target_growspace_id=data.get(ATTR_TARGET_GROWSPACE_ID),
                     target_growspace_name=None,
                     transition_date=data.get(ATTR_TRANSITION_DATE),
                 )
             elif action == "remove":
-                # UPDATED: Routes through coordinator.services
-                await coordinator.services.async_remove_plant(plant_id=entity_id)
+                await coordinator.services.plants.remove_plant(plant_id=entity_id)
             else:
                 msg = f"Unknown or unsupported batch action: {action}"
                 _LOGGER.warning(msg)

@@ -448,7 +448,7 @@ async def test_get_active_day_hours_flower(mock_hass, mock_coordinator):
     gs = _make_mock_growspace()
     plant = MagicMock()
     plant.stage = "flower"
-    mock_coordinator.services.get_growspace_plants.return_value = [plant]
+    mock_coordinator.services.growspaces.get_growspace_plants.return_value = [plant]
     scheduler = VisionCheckupScheduler(mock_hass, mock_coordinator)
     assert scheduler._get_active_day_hours(gs) == 12
 

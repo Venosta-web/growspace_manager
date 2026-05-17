@@ -25,7 +25,7 @@ async def test_update_plant_name_change(mock_coordinator, mock_plant) -> None:
     mock_dr.async_get_device.return_value = mock_device
 
     with patch("homeassistant.helpers.device_registry.async_get", return_value=mock_dr):
-        await facade.update_plant("plant_1", name="New Plant Name")
+        await facade.plants.update_plant("plant_1", name="New Plant Name")
 
     mock_dr.async_update_device.assert_called_once_with(
         "device_1", name="New Plant Name"
@@ -52,7 +52,7 @@ async def test_async_auto_harvest(mock_coordinator, mock_plant) -> None:
     mock_coordinator.plant_manager.harvest = AsyncMock()
     mock_coordinator.notification_manager.async_send_notification = AsyncMock()
 
-    await facade._async_auto_harvest()
+    await facade.plants._async_auto_harvest()
 
     mock_coordinator.plant_manager.harvest.assert_called_once_with(
         plant_id="p1", transition_date=today
@@ -83,7 +83,7 @@ async def test_remove_plant_entities(mock_coordinator) -> None:
     with patch("homeassistant.helpers.entity_registry.async_get", return_value=mock_er):
         # Service call to remove_plant will trigger _remove_plant_entities
         mock_coordinator.plant_manager.remove_plant = AsyncMock(return_value=True)
-        await facade.remove_plant("p1")
+        await facade.plants.remove_plant("p1")
 
     assert mock_er.async_remove.call_count == 2
     mock_er.async_remove.assert_any_call("sensor.p1_s1")
@@ -98,15 +98,15 @@ async def test_ipm_management(mock_coordinator) -> None:
     mock_coordinator._ipm_service.async_remove_ipm_preset = AsyncMock()
     mock_coordinator._ipm_service.async_apply_ipm = AsyncMock()
 
-    await facade.save_ipm_preset("Test", "Foliar", [])
+    await facade.config.save_ipm_preset("Test", "Foliar", [])
     mock_coordinator._ipm_service.async_save_ipm_preset.assert_called_once()
 
-    await facade.remove_ipm_preset("preset_1")
+    await facade.config.remove_ipm_preset("preset_1")
     mock_coordinator._ipm_service.async_remove_ipm_preset.assert_called_once_with(
         "preset_1"
     )
 
-    await facade.apply_ipm("preset_1", growspace_id="gs1")
+    await facade.plants.apply_ipm("preset_1", growspace_id="gs1")
     mock_coordinator._ipm_service.async_apply_ipm.assert_called_once()
 
 
@@ -121,15 +121,15 @@ async def test_log_drain_reading(mock_coordinator) -> None:
 
     # Test error
     with pytest.raises(ServiceValidationError):
-        await facade.log_drain_reading("unknown", 2.0, 1.8)
+        await facade.growspaces.log_drain_reading("unknown", 2.0, 1.8)
 
     # Add readings
-    await facade.log_drain_reading("gs1", 2.0, 1.8)
-    await facade.log_drain_reading("gs1", 2.1, 1.7)
+    await facade.growspaces.log_drain_reading("gs1", 2.0, 1.8)
+    await facade.growspaces.log_drain_reading("gs1", 2.1, 1.7)
     assert len(gs.drain_config.readings) == 2
 
     # Trigger roll
-    await facade.log_drain_reading("gs1", 2.2, 1.6)
+    await facade.growspaces.log_drain_reading("gs1", 2.2, 1.6)
     assert len(gs.drain_config.readings) == 2
     assert gs.drain_config.readings[-1].feed_ec == 2.2
     assert mock_coordinator.async_commit.call_count == 3
@@ -153,12 +153,12 @@ async def test_growspace_lifecycle_services(mock_coordinator) -> None:
     gs.environment_config = MagicMock()
     mock_coordinator.growspaces = {"gs1": gs}
 
-    await facade.remove_growspace("gs1")
+    await facade.growspaces.remove_growspace("gs1")
     mock_coordinator.growspace_manager.remove_growspace.assert_called_once_with("gs1")
 
-    await facade.update_options({"opt": "val"})
+    await facade.growspaces.update_options({"opt": "val"})
     mock_coordinator.async_commit.assert_called()
 
-    await facade.async_set_lighting_schedule("gs1", 12, 12, 12)
+    await facade.growspaces.async_set_lighting_schedule("gs1", 12, 12, 12)
     assert gs.environment_config.veg_day_hours == 12
 

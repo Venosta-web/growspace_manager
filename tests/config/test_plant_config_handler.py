@@ -36,39 +36,42 @@ def mock_coordinator() -> MagicMock:
     }
     coordinator.plants = {}
 
-    # Facade
-    facade = MagicMock()
-    coordinator.services = facade
-
-    # Link facade properties
-    type(facade).growspaces = property(lambda _: coordinator.growspaces)
-    type(facade).plants = property(lambda _: coordinator.plants)
-
-    # Facade methods
-    facade.get_sorted_growspace_options = MagicMock(
-        return_value=[(GROWSPACE_ID, "Test Growspace")]
-    )
-    facade.get_strain_options = MagicMock(return_value=["Strain A", "Strain B"])
-    facade.get_plant = MagicMock(side_effect=lambda pid: coordinator.plants.get(pid))
-    facade.get_growspace = MagicMock(
+    # Build sub-facades
+    gs_facade = MagicMock()
+    gs_facade.get_growspace = MagicMock(
         side_effect=lambda gsid: coordinator.growspaces.get(gsid)
     )
+    gs_facade.get_sorted_growspace_options = MagicMock(
+        return_value=[(GROWSPACE_ID, "Test Growspace")]
+    )
+    gs_facade.add_growspace = AsyncMock()
+    gs_facade.update_growspace = AsyncMock()
+    gs_facade.remove_growspace = AsyncMock()
 
-    facade.add_plant = AsyncMock()
-    facade.update_plant = AsyncMock()
-    facade.remove_plant = AsyncMock()
-    facade.harvest_plant = AsyncMock()
+    pl_facade = MagicMock()
+    pl_facade.get_plant = MagicMock(side_effect=lambda pid: coordinator.plants.get(pid))
+    pl_facade.add_plant = AsyncMock()
+    pl_facade.update_plant = AsyncMock()
+    pl_facade.remove_plant = AsyncMock()
+    pl_facade.harvest_plant = AsyncMock()
+    pl_facade.async_harvest_plant = pl_facade.harvest_plant
+
+    cfg_facade = MagicMock()
+    cfg_facade.get_strain_options = MagicMock(return_value=["Strain A", "Strain B"])
+
+    facade = MagicMock()
+    facade.growspaces = gs_facade
+    facade.plants = pl_facade
+    facade.config = cfg_facade
+    coordinator.services = facade
 
     # Legacy support
-    coordinator.get_sorted_growspace_options = facade.get_sorted_growspace_options
-    coordinator.get_strain_options = facade.get_strain_options
-    coordinator.async_harvest_plant = facade.harvest_plant
-    coordinator.async_remove_plant = facade.remove_plant
-    coordinator.async_add_plant = facade.add_plant
-
-    return coordinator
-
-    coordinator.async_update_plant = facade.update_plant
+    coordinator.get_sorted_growspace_options = gs_facade.get_sorted_growspace_options
+    coordinator.get_strain_options = cfg_facade.get_strain_options
+    coordinator.async_harvest_plant = pl_facade.harvest_plant
+    coordinator.async_remove_plant = pl_facade.remove_plant
+    coordinator.async_add_plant = pl_facade.add_plant
+    coordinator.async_update_plant = pl_facade.update_plant
 
     return coordinator
 
@@ -140,7 +143,7 @@ async def test_async_harvest_plant(
 ) -> None:
     """Test harvesting a plant."""
     await handler.async_harvest_plant("plant_1", 100.5)
-    mock_coordinator.services.harvest_plant.assert_awaited_once_with(
+    mock_coordinator.services.plants.harvest_plant.assert_awaited_once_with(
         "plant_1", wet_weight=100.5
     )
 
@@ -150,7 +153,7 @@ async def test_async_destroy_plant(
 ) -> None:
     """Test destroying a plant."""
     await handler.async_destroy_plant("plant_1")
-    mock_coordinator.services.remove_plant.assert_awaited_once_with("plant_1")
+    mock_coordinator.services.plants.remove_plant.assert_awaited_once_with("plant_1")
 
 
 async def test_async_add_plant(
@@ -166,7 +169,7 @@ async def test_async_add_plant(
         veg_start="2023-01-01",
         flower_start="2023-02-01",
     )
-    mock_coordinator.services.add_plant.assert_awaited_once_with(
+    mock_coordinator.services.plants.add_plant.assert_awaited_once_with(
         growspace_id=GROWSPACE_ID,
         strain="Strain A",
         row=1,
@@ -182,7 +185,7 @@ async def test_async_update_plant(
 ) -> None:
     """Test updating a plant."""
     await handler.async_update_plant("plant_1", strain="New Strain")
-    mock_coordinator.services.update_plant.assert_awaited_once_with(
+    mock_coordinator.services.plants.update_plant.assert_awaited_once_with(
         "plant_1", strain="New Strain"
     )
 
@@ -211,7 +214,7 @@ def test_get_add_plant_schema(
     # With coordinator (strains available)
     schema = handler.get_add_plant_schema(growspace, mock_coordinator)
     assert isinstance(schema, vol.Schema)
-    mock_coordinator.services.get_strain_options.assert_called_once()
+    mock_coordinator.services.config.get_strain_options.assert_called_once()
 
     # Without coordinator
     schema_no_coord = handler.get_add_plant_schema(growspace)
@@ -232,7 +235,7 @@ def test_get_update_plant_schema(
 
     schema = handler.get_update_plant_schema(plant, mock_coordinator)
     assert isinstance(schema, vol.Schema)
-    mock_coordinator.services.get_strain_options.assert_called()
+    mock_coordinator.services.config.get_strain_options.assert_called()
 
 
 @pytest.mark.asyncio
@@ -370,7 +373,7 @@ async def test_async_step_add_plant_success(
 
     result = await handler.async_step_add_plant(user_input)
     assert result["type"] == FlowResultType.CREATE_ENTRY
-    mock_coordinator.services.add_plant.assert_awaited_once()
+    mock_coordinator.services.plants.add_plant.assert_awaited_once()
 
 
 @pytest.mark.asyncio
@@ -410,7 +413,7 @@ async def test_async_step_add_plant_error(
     handler.flow = mock_flow
     handler.flow.selected_growspace_id = "gs1"
 
-    mock_coordinator.services.add_plant.side_effect = Exception("Failed")
+    mock_coordinator.services.plants.add_plant.side_effect = Exception("Failed")
     result = await handler.async_step_add_plant({"strain": "S1", "row": 1, "col": 1})
     assert result["type"] == FlowResultType.FORM
     assert result["errors"] == {"base": "Failed"}

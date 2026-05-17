@@ -69,7 +69,7 @@ async def test_water_growspace_total_amount_deduction(
 
     # Expected total deduction: 5.0 * 2.0 = 10.0 ml
 
-    await mock_coordinator.services.water_growspace(
+    await mock_coordinator.services.growspaces.water_growspace(
         growspace_id="gs1", amount=total_amount, nutrients=nutrients
     )
 
@@ -91,7 +91,7 @@ async def test_water_growspace_per_plant_compatibility(
 
     # Expected total deduction: 3 plants * 2.0L * 1.0ml/L = 6.0 ml
 
-    await mock_coordinator.services.water_growspace(
+    await mock_coordinator.services.growspaces.water_growspace(
         growspace_id="gs1", amount_per_plant=amount_per_plant, nutrients=nutrients
     )
 
