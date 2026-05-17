@@ -6,6 +6,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from custom_components.growspace_manager.managers.plant import PlantManager
+from custom_components.growspace_manager.services.context import ServiceContext
 from custom_components.growspace_manager.models import Plant, PlantGenetics
 from homeassistant.core import HomeAssistant
 
@@ -89,6 +90,12 @@ def service(
 ):
     """PlantManager fixture."""
     svc = PlantManager(
+        ctx=ServiceContext(
+            save_callback=save_callback_mock,
+            lock=lock_mock,
+            add_event=MagicMock(),
+            invalidate_cache=MagicMock(),
+        ),
         hass=hass,
         repository=repository_mock,
         notification_state=MagicMock(),
@@ -96,8 +103,6 @@ def service(
         growspace_manager=gs_service_mock,
         strain_library=strain_library_mock,
         plant_view_builder=plant_view_builder_mock,
-        save_callback=save_callback_mock,
-        lock=lock_mock,
     )
     # Mock cache and event firing which are internal/delegated
     svc._fire_event = MagicMock()

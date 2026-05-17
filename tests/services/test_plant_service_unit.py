@@ -7,6 +7,7 @@ import pytest
 
 from custom_components.growspace_manager.managers.plant import PlantManager
 from custom_components.growspace_manager.models import Plant
+from custom_components.growspace_manager.services.context import ServiceContext
 
 
 @pytest.fixture
@@ -60,8 +61,13 @@ def plant_service(
     mock_plant_view_builder,
     mock_save_callback,
 ):
-    lock = asyncio.Lock()
     return PlantManager(
+        ctx=ServiceContext(
+            save_callback=mock_save_callback,
+            lock=asyncio.Lock(),
+            add_event=MagicMock(),
+            invalidate_cache=MagicMock(),
+        ),
         hass=mock_hass,
         repository=mock_repository,
         notification_state=MagicMock(),
@@ -69,8 +75,6 @@ def plant_service(
         growspace_manager=mockgrowspace_manager,
         strain_library=MagicMock(),
         plant_view_builder=mock_plant_view_builder,
-        save_callback=mock_save_callback,
-        lock=lock,
     )
 
 

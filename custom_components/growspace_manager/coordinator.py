@@ -44,6 +44,7 @@ from .notifications import NotificationSettingsManager
 from .presentation import PlantViewModelBuilder
 from .service_coordinator_locator import ServiceCoordinatorLocator
 from .services.environment_reporter import EnvironmentReporter
+from .services.context import ServiceContext
 from .services.facade import ServiceFacade
 from .services.ipm_service import IPMService
 from .services.nutrient_inventory import NutrientInventoryService
@@ -345,18 +346,25 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             self.notification_state,
         )
 
-        # 4. Initialize Managers (replacing services)
+        # 4. Initialize Managers and Services
+        _svc_ctx = ServiceContext(
+            save_callback=self._save_callback,
+            lock=self.lock,
+            add_event=self.add_event,
+            invalidate_cache=self.cache.invalidate,
+        )
+
         self._growspace_manager = GrowspaceManager(
+            _svc_ctx,
             self.hass,
             self.data_repository,
             self.notification_state,
             self.validator,
             self.view_model_builder,
-            self._save_callback,
-            self.lock,
         )
 
         self._plant_manager = PlantManager(
+            _svc_ctx,
             self.hass,
             self.data_repository,
             self.notification_state,
@@ -364,8 +372,6 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             self._growspace_manager,
             self.strain_library,
             self._plant_view_builder,
-            self._save_callback,
-            self.lock,
         )
 
         # Aliases for compatibility
@@ -374,34 +380,24 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self.lifecycle_manager = self._plant_manager
         self._special_growspace_manager = self._growspace_manager
 
-        # Initialize specialized services
         self._watering_service = WateringService(
+            _svc_ctx,
             self.hass,
             self.data_repository,
             self.validator,
             self.nutrient_manager,
-            self._save_callback,
-            self.lock,
-            self.add_event,
-            self.cache.invalidate,
         )
 
         self._training_service = TrainingService(
+            _svc_ctx,
             self.hass,
             self.data_repository,
-            self._save_callback,
-            self.lock,
-            self.add_event,
-            self.cache.invalidate,
         )
 
         self._ipm_service = IPMService(
+            _svc_ctx,
             self.hass,
             self.data_repository,
-            self._save_callback,
-            self.lock,
-            self.add_event,
-            self.cache.invalidate,
         )
 
         self.environment_analyzer = EnvironmentAnalyzer(hass, self)

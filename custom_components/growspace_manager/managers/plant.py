@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
-from collections.abc import Awaitable, Callable
 from datetime import date
 import logging
 from typing import TYPE_CHECKING, Any
@@ -36,6 +34,7 @@ from custom_components.growspace_manager.exceptions import (
     ValidationChangeError,
 )
 from custom_components.growspace_manager.models import Plant, PlantGenetics
+from custom_components.growspace_manager.services.context import BaseService, ServiceContext
 from custom_components.growspace_manager.utils import calculate_plant_stage, format_date
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ServiceValidationError
@@ -58,11 +57,12 @@ if TYPE_CHECKING:
 _LOGGER = logging.getLogger(__name__)
 
 
-class PlantManager:
+class PlantManager(BaseService):
     """Manages plant lifecycle, CRUD operations, and events."""
 
     def __init__(
         self,
+        ctx: ServiceContext,
         hass: HomeAssistant,
         repository: GrowspaceRepository,
         notification_state: NotificationState,
@@ -70,10 +70,9 @@ class PlantManager:
         growspace_manager: GrowspaceManager,
         strain_library: StrainLibrary,
         plant_view_builder: PlantViewModelBuilder,
-        save_callback: Callable[[], Awaitable[None]],
-        lock: asyncio.Lock,
     ) -> None:
         """Initialize the plant manager."""
+        super().__init__(ctx)
         self.hass = hass
         self.repository = repository
         self.notification_state = notification_state
@@ -81,8 +80,6 @@ class PlantManager:
         self.growspace_manager = growspace_manager
         self.strain_library = strain_library
         self.plant_view_builder = plant_view_builder
-        self.save_callback = save_callback
-        self.lock = lock
         self.lifecycle_manager = self
         self.cache: Any = None  # To be injected
 
@@ -111,7 +108,7 @@ class PlantManager:
         **kwargs: Any,
     ) -> Plant:
         """Add a new plant to the system."""
-        async with self.lock:
+        async with self._lock:
             try:
                 self.validator.validate_position_not_occupied(growspace_id, row, col)
                 final_row, final_col = row, col
@@ -177,7 +174,7 @@ class PlantManager:
                 plant.stage = calculate_plant_stage(plant)
 
             self.repository.add_plant(plant)
-            await self.save_callback()
+            await self._save()
 
         # Event Firing (outside lock if possible, or inside? Service did it after lifecycle call)
         # Service: await lifecycle.add_plant -> fire event
@@ -190,7 +187,7 @@ class PlantManager:
 
     async def update_plant(self, plant_id: str, **updates: Any) -> Plant:
         """Update attributes of an existing plant."""
-        async with self.lock:
+        async with self._lock:
             plant = self.repository.get_plant(plant_id)
             if not plant:
                 raise PlantNotFoundError(f"Plant {plant_id} does not exist")
@@ -210,7 +207,7 @@ class PlantManager:
                     setattr(plant, key, value)
 
             plant.updated_at = dt_util.now().date().isoformat()
-            await self.save_callback()
+            await self._save()
 
         self._fire_event(
             "plant_updated",
@@ -230,11 +227,11 @@ class PlantManager:
         if not plant:
             return False
 
-        async with self.lock:
+        async with self._lock:
             if self.repository.has_plant(plant_id):
                 self.repository.remove_plant(plant_id)
                 self.notification_state.sent.pop(plant_id, None)
-                await self.save_callback()
+                await self._save()
                 removed = True
             else:
                 removed = False
@@ -263,7 +260,7 @@ class PlantManager:
 
     async def switch_plants(self, plant1_id: str, plant2_id: str) -> None:
         """Switch the positions of two plants."""
-        async with self.lock:
+        async with self._lock:
             self.validator.validate_plant_exists(plant1_id)
             self.validator.validate_plant_exists(plant2_id)
 
@@ -285,7 +282,7 @@ class PlantManager:
             plant1.updated_at = now
             plant2.updated_at = now
 
-            await self.save_callback()
+            await self._save()
 
         # Fire events
         if p1 := self.repository.get_plant(plant1_id):

@@ -23,7 +23,7 @@ async def mock_coordinator(hass: HomeAssistant):
     coord.storage_manager.async_force_save = AsyncMock()
     coord.async_save = AsyncMock()
     # Mock save callback on watering service since it now handles saves
-    coord._watering_service.save_callback = coord.async_save
+    coord._watering_service._ctx.save_callback = coord.async_save
     # Mock services facade to allow tracking calls
     coord.services = MagicMock(wraps=coord.services)
     coord.services.save = AsyncMock()

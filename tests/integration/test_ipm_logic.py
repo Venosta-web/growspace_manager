@@ -24,7 +24,7 @@ def mock_coordinator(hass: HomeAssistant) -> GrowspaceCoordinator:
     coord = GrowspaceCoordinator(hass, entry, data={}, strain_library=MagicMock())
     coord.async_save = AsyncMock()  # type: ignore[method-assign]
     # Mock the save callback in the IPM service since it now handles saves
-    coord._ipm_service.save_callback = coord.async_save
+    coord._ipm_service._ctx.save_callback = coord.async_save
     # Ensure properties are initialized
     coord.ipm_presets = {}
     # coord.plants and coord.growspaces are linked to DataRepository in __init__

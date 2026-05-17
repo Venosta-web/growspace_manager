@@ -29,6 +29,7 @@ from custom_components.growspace_manager.dehumidifier_coordinator import (
     DehumidifierCoordinator,
 )
 from custom_components.growspace_manager.managers.plant import PlantManager
+from custom_components.growspace_manager.services.context import ServiceContext
 from custom_components.growspace_manager.models import (
     BaseModel,
     EnvironmentConfig,
@@ -252,6 +253,12 @@ async def test_lifecycle_history_closing_coverage(hass: HomeAssistant) -> None:
     repository.get_plant.return_value = plant
 
     manager = PlantManager(
+        ctx=ServiceContext(
+            save_callback=save_callback,
+            lock=lock,
+            add_event=MagicMock(),
+            invalidate_cache=MagicMock(),
+        ),
         hass=hass,
         repository=repository,
         notification_state=MagicMock(),
@@ -259,8 +266,6 @@ async def test_lifecycle_history_closing_coverage(hass: HomeAssistant) -> None:
         growspace_manager=gs_service,
         strain_library=strain_library,
         plant_view_builder=MagicMock(),
-        save_callback=save_callback,
-        lock=lock,
     )
     with patch.object(manager, "update_plant", new_callable=AsyncMock) as mock_update:
         await manager.transition_plant_stage("p1", "flower")
@@ -828,6 +833,12 @@ async def test_lifecycle_history_stages_coverage(hass: HomeAssistant) -> None:
     repository.plants = {"p1": plant}
 
     manager = PlantManager(
+        ctx=ServiceContext(
+            save_callback=save_callback,
+            lock=lock,
+            add_event=MagicMock(),
+            invalidate_cache=MagicMock(),
+        ),
         hass=hass,
         repository=repository,
         notification_state=MagicMock(),
@@ -835,8 +846,6 @@ async def test_lifecycle_history_stages_coverage(hass: HomeAssistant) -> None:
         growspace_manager=gs_service,
         strain_library=strain_library,
         plant_view_builder=MagicMock(),
-        save_callback=save_callback,
-        lock=lock,
     )
 
     manager.async_update_plant = AsyncMock()
