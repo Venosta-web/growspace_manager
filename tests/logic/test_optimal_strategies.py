@@ -19,25 +19,36 @@ def mock_sensor() -> MagicMock:
 @pytest.mark.asyncio
 async def test_optimal_conditions_notification(mock_sensor) -> None:
     """Test notification title generation for falling edge."""
-    strategy = OptimalConditionsEvaluatorStrategy(mock_sensor)
+    from unittest.mock import AsyncMock
 
-    # Mock coordinator and growspace
-    mock_sensor.coordinator.growspaces = {"gs1": MagicMock(name="GTent")}
-    mock_sensor.growspace_id = "gs1"
-    mock_sensor.generate_notification_message.return_value = "msg"
+    mock_growspace = MagicMock()
+    mock_growspace.name = "GTent"
 
-    # Rising edge (True) -> Should return None (handled by bayesian_evaluator base or not needed here)
-    # The method only handles falling edge (new_state_on=False)
-    assert strategy.get_notification_title_message(True) is None
+    strategy = OptimalConditionsEvaluatorStrategy(
+        env_config=mock_sensor.env_config,
+        analyze_trend=AsyncMock(return_value={"trend": "stable", "crossed_threshold": False}),
+        get_state=MagicMock(return_value=None),
+        get_growspace=lambda: mock_growspace,
+        get_notification_message=MagicMock(return_value="msg"),
+    )
 
-    # Falling edge (False) -> Should return notification
-    title_msg = strategy.get_notification_title_message(False)
+    # Rising edge -> should return None
+    assert strategy.get_notification_title_message(True, []) is None
+
+    # Falling edge -> should return notification
+    title_msg = strategy.get_notification_title_message(False, [])
     assert title_msg is not None
     assert "Optimal Conditions Lost" in title_msg[0]
     assert "GTent" in title_msg[0]
 
-    # Test fallback name
-    mock_sensor.coordinator.growspaces = {}
-    title_msg_fallback = strategy.get_notification_title_message(False)
+    # Test fallback name when get_growspace returns None
+    strategy_no_growspace = OptimalConditionsEvaluatorStrategy(
+        env_config=mock_sensor.env_config,
+        analyze_trend=AsyncMock(return_value={"trend": "stable", "crossed_threshold": False}),
+        get_state=MagicMock(return_value=None),
+        get_growspace=lambda: None,
+        get_notification_message=MagicMock(return_value="msg"),
+    )
+    title_msg_fallback = strategy_no_growspace.get_notification_title_message(False, [])
     assert title_msg_fallback is not None
-    assert "Optimal Conditions Lost: gs1" in title_msg_fallback[0]
+    assert "Optimal Conditions Lost: Unknown" in title_msg_fallback[0]

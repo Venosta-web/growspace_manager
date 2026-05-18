@@ -21,7 +21,10 @@ from custom_components.growspace_manager.utils import (
 from .evaluator_strategy import BayesianEvaluatorStrategy
 
 if TYPE_CHECKING:
-    from custom_components.growspace_manager.bayesian_evaluator import ObservationList
+    from custom_components.growspace_manager.bayesian_evaluator import (
+        ObservationList,
+        ReasonList,
+    )
     from custom_components.growspace_manager.models import EnvironmentState
 
 
@@ -48,9 +51,9 @@ class MoldRiskEvaluatorStrategy(BayesianEvaluatorStrategy):
         self._evaluate_humidifier_risk(state, observations, reasons)
 
         # 4. Trends
-        if self.sensor.env_config.humidity_sensor:
+        if self.env_config.humidity_sensor:
             obs_list, rsn_list, _ = await async_evaluate_mold_risk_trend(
-                self.sensor, state
+                self.env_config, self._get_state, self._analyze_trend, state
             )
             observations.extend(obs_list)
             reasons.extend(rsn_list)
@@ -183,16 +186,14 @@ class MoldRiskEvaluatorStrategy(BayesianEvaluatorStrategy):
         reasons.append((prob[0], f"Humidifier On: Humidity is {state.humidity}%"))
 
     def get_notification_title_message(
-        self, new_state_on: bool
+        self, new_state_on: bool, reasons: ReasonList
     ) -> tuple[str, str] | None:
         """Notify on rising edge of mold risk."""
         if new_state_on:
-            growspace = self.sensor.coordinator.growspaces.get(self.sensor.growspace_id)
+            growspace = self._get_growspace()
             if not growspace:
                 return None
             name = growspace.name
-            message = self.sensor.generate_notification_message(
-                "High mold risk detected"
-            )
+            message = self._get_notification_message("High mold risk detected", reasons)
             return (f"High Mold Risk in {name}", message)
         return None

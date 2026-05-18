@@ -49,8 +49,8 @@ from .const import (
     PlantStage,
 )
 from .coordinator import GrowspaceCoordinator
-from .exceptions import GrowspaceError
 from .drying_calculator import is_cure_ready
+from .exceptions import GrowspaceError
 from .models import (
     EnvironmentConfig,
     EnvironmentState,
@@ -290,7 +290,8 @@ class BayesianEnvironmentSensor(
         self.coordinator = coordinator
         self.growspace_id = growspace_id
         self.env_config = env_config
-        self.strategy = strategy_class(self)
+        self._strategy_class = strategy_class
+        self.strategy: BayesianEvaluatorStrategy | None = None
         self._attr_should_poll = False
 
         # Store injected dependencies
@@ -536,6 +537,22 @@ class BayesianEnvironmentSensor(
 
         # Initialize TrendAnalyzer now that self.hass is available
         self.trend_analyzer = TrendAnalyzer(self.hass)
+
+        # Wire strategy now that hass is available for get_state
+        growspace_id = self.growspace_id
+        coordinator = self.coordinator
+        notification_manager = self.notification_manager
+        self.strategy = self._strategy_class(
+            env_config=self.env_config,
+            analyze_trend=self.async_analyze_sensor_trend,
+            get_state=self.hass.states.get,
+            get_growspace=lambda: coordinator.growspaces.get(growspace_id),
+            get_notification_message=lambda msg, reasons: (
+                notification_manager.generate_notification_message(msg, reasons)
+                if notification_manager
+                else msg
+            ),
+        )
 
         # Register for batched notifications
         if self.notification_manager:
@@ -786,7 +803,9 @@ class BayesianEnvironmentSensor(
         self, new_state_on: bool
     ) -> tuple[str, str] | None:
         """Return the title and message for a notification based on state change."""
-        return self.strategy.get_notification_title_message(new_state_on)
+        if self.strategy is None:
+            return None
+        return self.strategy.get_notification_title_message(new_state_on, self._reasons)
 
     def _calculate_bayesian_probability(
         self, start_prob: float, observations: list[tuple[float, float]]
@@ -817,6 +836,8 @@ class BayesianEnvironmentSensor(
 
     async def _async_update_probability(self) -> None:
         """Update probability using the assigned strategy."""
+        if self.strategy is None:
+            return
         env_state = self._get_base_environment_state()
         all_observations, all_reasons = await self.strategy.async_evaluate(env_state)
 

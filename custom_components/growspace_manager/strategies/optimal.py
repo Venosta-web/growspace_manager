@@ -33,7 +33,7 @@ class OptimalConditionsEvaluatorStrategy(BayesianEvaluatorStrategy):
         if None in (state.temp, state.humidity, state.vpd):
             return [], []
 
-        env_config_dict = self.sensor.env_config.to_dict()
+        env_config_dict = self.env_config.to_dict()
 
         for check_func in [
             evaluate_optimal_temperature,
@@ -47,14 +47,14 @@ class OptimalConditionsEvaluatorStrategy(BayesianEvaluatorStrategy):
         return all_observations, all_reasons
 
     def get_notification_title_message(
-        self, new_state_on: bool
+        self, new_state_on: bool, reasons: ReasonList
     ) -> tuple[str, str] | None:
         """Notify when conditions DROP out of optimal (falling edge)."""
         if not new_state_on:
-            growspace = self.sensor.coordinator.growspaces.get(self.sensor.growspace_id)
-            name = growspace.name if growspace else self.sensor.growspace_id
-            message = self.sensor.generate_notification_message(
-                "Conditions no longer optimal"
+            growspace = self._get_growspace()
+            name = growspace.name if growspace else "Unknown"
+            message = self._get_notification_message(
+                "Conditions no longer optimal", reasons
             )
             return (f"Optimal Conditions Lost: {name}", message)
         return None

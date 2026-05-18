@@ -35,10 +35,8 @@ class StressEvaluatorStrategy(BayesianEvaluatorStrategy):
         """Evaluate stress conditions."""
         all_observations: ObservationList = []
         all_reasons: ReasonList = []
-        env_config_dict = self.sensor.env_config.to_dict()
+        env_config_dict = self.env_config.to_dict()
 
-        # 1. Direct Sensor Evaluation (Temp, Hum, VPD, CO2)
-        # We can use the helper functions from bayesian_evaluator
         checks = [
             evaluate_direct_temp_stress,
             evaluate_direct_humidity_stress,
@@ -55,26 +53,24 @@ class StressEvaluatorStrategy(BayesianEvaluatorStrategy):
             all_observations.extend(obs)
             all_reasons.extend(rsn)
 
-        # 2. Trends
-        if self.sensor.env_config.temperature_sensor:
-            # async_evaluate_stress_trend returns (obs, reasons, states)
-            # The function expects sensor_instance because it calls `async_analyze_sensor_trend` on it
-            # We pass self.sensor which is the BayesianEnvironmentSensor instance
-            obs, rsn, _ = await async_evaluate_stress_trend(self.sensor, state)
+        if self.env_config.temperature_sensor:
+            obs, rsn, _ = await async_evaluate_stress_trend(
+                self.env_config, self._get_state, self._analyze_trend, state
+            )
             all_observations.extend(obs)
             all_reasons.extend(rsn)
 
         return all_observations, all_reasons
 
     def get_notification_title_message(
-        self, new_state_on: bool
+        self, new_state_on: bool, reasons: ReasonList
     ) -> tuple[str, str] | None:
         """Notify on rising edge of stress."""
         if new_state_on:
-            growspace = self.sensor.coordinator.growspaces.get(self.sensor.growspace_id)
-            name = growspace.name if growspace else self.sensor.growspace_id
-            message = self.sensor.generate_notification_message(
-                f"High stress conditions detected in {name}"
+            growspace = self._get_growspace()
+            name = growspace.name if growspace else "Unknown"
+            message = self._get_notification_message(
+                f"High stress conditions detected in {name}", reasons
             )
             return (f"Plant Stress Alert: {name}", message)
         return None

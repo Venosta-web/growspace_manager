@@ -115,12 +115,18 @@ async def test_evaluator_strategy_placeholders() -> None:
 
     class TestStrategy(BayesianEvaluatorStrategy):
         async def async_evaluate(  # type: ignore[override]
-            self, environment_state: Any, env_config: dict[str, Any]
+            self, environment_state: Any
         ) -> tuple[list[str], list[str]]:
             return ([], [])
 
-    strategy = TestStrategy(MagicMock())
-    assert strategy.get_notification_title_message(False) is None
+    strategy = TestStrategy(
+        env_config=MagicMock(),
+        analyze_trend=MagicMock(),
+        get_state=MagicMock(),
+        get_growspace=MagicMock(),
+        get_notification_message=MagicMock(),
+    )
+    assert strategy.get_notification_title_message(False, []) is None
 
 
 @pytest.mark.asyncio

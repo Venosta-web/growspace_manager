@@ -12,7 +12,10 @@ if TYPE_CHECKING:
         ObservationList,
         ReasonList,
     )
-    from custom_components.growspace_manager.models import EnvironmentState, GrowspaceType
+    from custom_components.growspace_manager.models import (
+        EnvironmentState,
+        GrowspaceType,
+    )
 
 
 class PostHarvestEvaluatorStrategy(BayesianEvaluatorStrategy):
@@ -37,7 +40,7 @@ class PostHarvestEvaluatorStrategy(BayesianEvaluatorStrategy):
         self, state: EnvironmentState
     ) -> tuple[ObservationList, ReasonList]:
         """Evaluate post-harvest conditions."""
-        growspace = self.sensor._get_growspace(self.sensor.growspace_id)
+        growspace = self._get_growspace()
         if not growspace or growspace.growspace_type != self.growspace_type:
             return [], []
 

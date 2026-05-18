@@ -68,7 +68,6 @@ async def test_fallback_mold_trend_vpd_falling_veg_danger(
     trend_states: dict[str, Any] = {}
 
     await _async_evaluate_fallback_mold_trend_analysis(
-        mock_sensor_instance,
         mock_sensor_instance.env_config.to_dict(),
         "vpd",
         "vpd_trend",
@@ -102,7 +101,6 @@ async def test_fallback_mold_trend_vpd_falling_veg_safe(
     trend_states: dict[str, Any] = {}
 
     await _async_evaluate_fallback_mold_trend_analysis(
-        mock_sensor_instance,
         mock_sensor_instance.env_config.to_dict(),
         "vpd",
         "vpd_trend",
@@ -135,7 +133,6 @@ async def test_fallback_mold_trend_vpd_falling_flower_danger(
     trend_states: dict[str, Any] = {}
 
     await _async_evaluate_fallback_mold_trend_analysis(
-        mock_sensor_instance,
         mock_sensor_instance.env_config.to_dict(),
         "vpd",
         "vpd_trend",
@@ -163,7 +160,7 @@ async def test_external_mold_trend_sensor_humidity_rising(
     trend_states: dict[str, Any] = {}
 
     await _async_evaluate_external_mold_trend_sensor(
-        mock_sensor_instance,
+        hass.states.get,
         env_config,
         "humidity",
         "humidity_trend",
@@ -194,7 +191,7 @@ async def test_external_mold_stats_sensor_vpd_falling(
     trend_states: dict[str, Any] = {}
 
     await _async_evaluate_external_mold_trend_sensor(
-        mock_sensor_instance,
+        hass.states.get,
         env_config,
         "vpd",
         "vpd_trend",
@@ -235,7 +232,10 @@ async def test_async_evaluate_mold_risk_trend_integration(
     # or let it run (it won't find external sensors in default config)
 
     obs, reasons, trends = await async_evaluate_mold_risk_trend(
-        mock_sensor_instance, mock_env_state
+        mock_sensor_instance.env_config,
+        lambda _: None,
+        mock_analyze,
+        mock_env_state,
     )
 
     # Humidity trend should be rising in trends map...
@@ -263,7 +263,7 @@ async def test_external_mold_trend_sensor_vpd_falling_safe(
     trend_states: dict[str, Any] = {}
 
     await _async_evaluate_external_mold_trend_sensor(
-        mock_sensor_instance,
+        hass.states.get,
         env_config,
         "vpd",
         "vpd_trend",
@@ -294,7 +294,7 @@ async def test_external_mold_stats_sensor_vpd_falling_safe(
     trend_states: dict[str, Any] = {}
 
     await _async_evaluate_external_mold_trend_sensor(
-        mock_sensor_instance,
+        hass.states.get,
         env_config,
         "vpd",
         "vpd_trend",
@@ -303,7 +303,6 @@ async def test_external_mold_stats_sensor_vpd_falling_safe(
         trend_states,
         mock_env_state,
     )
-
 
     # Should be ignored due to gating
     assert len(observations) == 0

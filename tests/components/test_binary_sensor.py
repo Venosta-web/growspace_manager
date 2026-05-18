@@ -154,20 +154,22 @@ def create_test_sensor(
     sensor_type: str,
     strategy_class: type,
     env_config: EnvironmentConfig | None = None,
+    hass: HomeAssistant | None = None,
 ) -> BayesianEnvironmentSensor:
     """Helper to create a BayesianEnvironmentSensor for testing with all dependencies."""
+    from custom_components.growspace_manager.trend_analyzer import TrendAnalyzer
+
     if env_config is None:
         env_config = coordinator.growspaces[growspace_id].environment_config
 
     description = next(d for d in SENSOR_TYPES if d.sensor_type == sensor_type)
 
-    return BayesianEnvironmentSensor(
+    sensor = BayesianEnvironmentSensor(
         coordinator=coordinator,
         growspace_id=growspace_id,
         env_config=env_config,
         description=description,
         strategy_class=strategy_class,
-        # UPDATE: Point to the new service face
         get_growspace=lambda gid: coordinator.growspaces.get(gid),
         get_plants=coordinator.services.growspaces.get_growspace_plants,
         add_event=coordinator.services.add_event,
@@ -175,6 +177,24 @@ def create_test_sensor(
         strain_library=coordinator.strain_library,
         options=coordinator.options,
     )
+
+    if hass is not None:
+        sensor.hass = hass
+        sensor.trend_analyzer = TrendAnalyzer(hass)
+        notification_manager = coordinator.notification_manager
+        sensor.strategy = strategy_class(
+            env_config=sensor.env_config,
+            analyze_trend=lambda *args, **kwargs: sensor.async_analyze_sensor_trend(*args, **kwargs),
+            get_state=hass.states.get,
+            get_growspace=lambda: coordinator.growspaces.get(growspace_id),
+            get_notification_message=lambda msg, r: (
+                notification_manager.generate_notification_message(msg, r)
+                if notification_manager
+                else msg
+            ),
+        )
+
+    return sensor
 
 
 def set_sensor_state(hass: HomeAssistant, entity_id, state, attributes=None):
@@ -220,19 +240,19 @@ async def test_async_setup_entry(
     assert len(entities) == 10
     assert any(
         isinstance(e, BayesianEnvironmentSensor)
-        and isinstance(e.strategy, StressEvaluatorStrategy)
+        and e._strategy_class is StressEvaluatorStrategy
         and e.growspace_id == "gs1"
         for e in entities
     )
     assert any(
         isinstance(e, BayesianEnvironmentSensor)
-        and isinstance(e.strategy, DryingEvaluatorStrategy)
+        and e._strategy_class is DryingEvaluatorStrategy
         and e.growspace_id == "dry"
         for e in entities
     )
     assert any(
         isinstance(e, BayesianEnvironmentSensor)
-        and isinstance(e.strategy, CuringEvaluatorStrategy)
+        and e._strategy_class is CuringEvaluatorStrategy
         and e.growspace_id == "cure"
         for e in entities
     )
@@ -289,8 +309,8 @@ async def test_notification_sending(
         GrowspaceSensorType.STRESS,
         StressEvaluatorStrategy,
         env_config,
+        hass,
     )
-    sensor.hass = hass
     sensor.entity_id = "binary_sensor.test_notification"
     # Mock name to avoid platform_data attribute error in tests
     type(sensor).name = PropertyMock(return_value="Stress Sensor")
@@ -561,53 +581,34 @@ def test_optimal_conditions_notification_returns_none_when_on(
 def test_mold_risk_sensor_notification_returns_tuple_when_on_and_growspace_exists(
     mock_coordinator, env_config
 ) -> None:
-    """Test that the mold risk sensor generates a notification when turning on and growspace exists."""
-    sensor = create_test_sensor(
-        mock_coordinator,
-        "gs1",
-        GrowspaceSensorType.MOLD,
-        MoldRiskEvaluatorStrategy,
-        env_config,
+    """Test that the mold risk strategy generates a notification when turning on and growspace exists."""
+    mock_growspace_obj = MagicMock()
+    mock_growspace_obj.name = "Test Growspace"
+
+    strategy = MoldRiskEvaluatorStrategy(
+        env_config=env_config,
+        analyze_trend=MagicMock(),
+        get_state=MagicMock(return_value=None),
+        get_growspace=lambda: mock_growspace_obj,
+        get_notification_message=lambda msg, reasons: "Mocked message",
     )
-    with (
-        patch.object(
-            mock_coordinator, "growspaces", new=MagicMock()
-        ) as mock_growspaces_dict,
-        patch.object(
-            sensor, "generate_notification_message", return_value="Mocked message"
-        ) as mock_generate_message,
-    ):
-        mock_growspace_obj = MagicMock()
-        mock_growspace_obj.name = "Test Growspace"
-        mock_growspaces_dict.get.return_value = mock_growspace_obj
-        notification = sensor.get_notification_title_message(new_state_on=True)
-        assert notification == ("High Mold Risk in Test Growspace", "Mocked message")
-        mock_growspaces_dict.get.assert_called_once_with("gs1")
-        mock_generate_message.assert_called_once_with("High mold risk detected")
+    notification = strategy.get_notification_title_message(True, [])
+    assert notification == ("High Mold Risk in Test Growspace", "Mocked message")
 
 
 def test_mold_risk_sensor_notification_returns_none_when_on_and_growspace_does_not_exist(
     mock_coordinator, env_config
 ) -> None:
-    """Test that the mold risk sensor does not generate a notification when turning on and growspace does not exist."""
-    sensor = create_test_sensor(
-        mock_coordinator,
-        "gs1",
-        GrowspaceSensorType.MOLD,
-        MoldRiskEvaluatorStrategy,
-        env_config,
+    """Test that the mold risk strategy returns None when growspace does not exist."""
+    strategy = MoldRiskEvaluatorStrategy(
+        env_config=env_config,
+        analyze_trend=MagicMock(),
+        get_state=MagicMock(return_value=None),
+        get_growspace=lambda: None,
+        get_notification_message=lambda msg, reasons: "Mocked message",
     )
-    with (
-        patch.object(
-            mock_coordinator, "growspaces", new=MagicMock()
-        ) as mock_growspaces_dict,
-        patch.object(sensor, "generate_notification_message") as mock_generate_message,
-    ):
-        mock_growspaces_dict.get.return_value = None
-        notification = sensor.get_notification_title_message(new_state_on=True)
-        assert notification is None
-        mock_growspaces_dict.get.assert_called_once_with("gs1")
-        mock_generate_message.assert_not_called()
+    notification = strategy.get_notification_title_message(True, [])
+    assert notification is None
 
 
 @patch(
@@ -646,8 +647,8 @@ async def test_bayesian_stress_sensor_granular(
         GrowspaceSensorType.STRESS,
         StressEvaluatorStrategy,
         mock_coordinator.growspaces["gs1"].environment_config,
+        hass,
     )
-    sensor.hass = hass
     sensor.entity_id = "binary_sensor.test_stress_granular"
     sensor._probability = 0.1  # Start as OFF
     sensor.platform = MagicMock()
@@ -1064,8 +1065,8 @@ async def test_mold_risk_specifics(
         GrowspaceSensorType.MOLD,
         MoldRiskEvaluatorStrategy,
         env_config,
+        hass,
     )
-    sensor.hass = hass
     sensor.entity_id = "binary_sensor.test_mold_risk"
 
     # 1. Humidifier On
@@ -1278,8 +1279,8 @@ async def test_stress_sensor_stage_and_time_logic(
         GrowspaceSensorType.STRESS,
         StressEvaluatorStrategy,
         env_config,
+        hass,
     )
-    sensor.hass = hass
     sensor.entity_id = "binary_sensor.test_stress_complex"
     sensor.platform = MagicMock()
     sensor.threshold = 0.49  # Lower threshold for single observation
@@ -1446,8 +1447,8 @@ async def test_optimal_sensor_off_states(
         GrowspaceSensorType.OPTIMAL,
         OptimalConditionsEvaluatorStrategy,
         env_config,
+        hass,
     )
-    sensor.hass = hass
     sensor.entity_id = "binary_sensor.test_optimal_fail"
     sensor._probability = 1.0  # Start as ON
     sensor.platform = MagicMock()
@@ -1545,8 +1546,8 @@ async def test_dry_cure_sensors_off_states(
         sensor_type,
         strategy_class,
         env_config,
+        hass,
     )
-    sensor.hass = hass
     sensor.entity_id = f"binary_sensor.test_{growspace_id}_fail"
     sensor._probability = 1.0  # Start as ON
     sensor.platform = MagicMock()  # Mock platform
@@ -1583,8 +1584,8 @@ async def test_curing_sensor_skips_if_not_cure_growspace(
         GrowspaceSensorType.CURING,
         CuringEvaluatorStrategy,
         env_config,
+        MagicMock(),
     )
-    sensor.hass = MagicMock()
     sensor.entity_id = "binary_sensor.test_curing_non_cure"
     sensor._probability = 0.5  # Set an initial probability
     sensor.platform = MagicMock()
@@ -1608,8 +1609,8 @@ async def test_drying_sensor_skips_if_not_dry_growspace(
         GrowspaceSensorType.DRYING,
         DryingEvaluatorStrategy,
         env_config,
+        MagicMock(),
     )
-    sensor.hass = MagicMock()
     sensor.entity_id = "binary_sensor.test_drying_non_dry"
     sensor._probability = 0.5  # Set an initial probability
     sensor.platform = MagicMock()
@@ -1989,7 +1990,8 @@ class TestBayesianEnvironmentSensor:
             sensor._strain_library = None
             sensor._options = {}
 
-            sensor.strategy = MagicMock()  # Mock strategy
+            sensor._strategy_class = MagicMock()  # Strategy class for async_added_to_hass
+            sensor.strategy = MagicMock()  # Mock strategy (pre-wired)
             sensor.strategy.async_evaluate = AsyncMock(return_value=([], []))
             # Notification state is handled by notification_manager, not sensor attributes
             # Set a notification target for the growspace in the coordinator
@@ -2037,7 +2039,9 @@ class TestBayesianEnvironmentSensor:
         """Test that get_notification_title_message delegates."""
         base_sensor.strategy.get_notification_title_message.return_value = None
         assert base_sensor.get_notification_title_message(True) is None
-        base_sensor.strategy.get_notification_title_message.assert_called_with(True)
+        base_sensor.strategy.get_notification_title_message.assert_called_with(
+            True, base_sensor._reasons
+        )
 
     @pytest.mark.asyncio
     @pytest.mark.parametrize("exception_type", [AttributeError, TypeError, ValueError])
@@ -2443,8 +2447,8 @@ async def test_active_desiccation_low_humidity(
         GrowspaceSensorType.STRESS,
         StressEvaluatorStrategy,
         env_config,
+        hass,
     )
-    sensor.hass = hass
     sensor.entity_id = "binary_sensor.test_desiccation"
     sensor.platform = MagicMock()
     sensor.threshold = 0.7
@@ -2484,8 +2488,8 @@ async def test_active_desiccation_high_vpd(
         GrowspaceSensorType.STRESS,
         StressEvaluatorStrategy,
         env_config,
+        hass,
     )
-    sensor.hass = hass
     sensor.entity_id = "binary_sensor.test_desiccation_vpd"
     sensor.platform = MagicMock()
     sensor.threshold = 0.7
@@ -2532,8 +2536,8 @@ async def test_active_saturation_veg_stage(
         GrowspaceSensorType.STRESS,
         StressEvaluatorStrategy,
         env_config,
+        hass,
     )
-    sensor.hass = hass
     sensor.entity_id = "binary_sensor.test_saturation_veg"
     sensor.platform = MagicMock()
     sensor.threshold = 0.7
@@ -2581,8 +2585,8 @@ async def test_active_saturation_flower_stage(
         GrowspaceSensorType.STRESS,
         StressEvaluatorStrategy,
         env_config,
+        hass,
     )
-    sensor.hass = hass
     sensor.entity_id = "binary_sensor.test_saturation_flower"
     sensor.platform = MagicMock()
     sensor.threshold = 0.7
@@ -2675,8 +2679,8 @@ async def test_soil_moisture_stress(
         GrowspaceSensorType.STRESS,
         StressEvaluatorStrategy,
         env_config,
+        hass,
     )
-    sensor.hass = hass
     sensor.entity_id = "binary_sensor.test_soil_moisture"
     sensor.platform = MagicMock()
     sensor.threshold = 0.49  # Lower threshold for single observation
