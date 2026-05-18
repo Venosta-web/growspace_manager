@@ -56,7 +56,7 @@ def mock_main_coordinator():
     """Mock the main GrowspaceCoordinator."""
     coordinator = MagicMock()
     coordinator.growspaces = {}
-    coordinator.services.get_growspace_plants = MagicMock(return_value=[])
+    coordinator.services.growspaces.get_growspace_plants = MagicMock(return_value=[])
     return coordinator
 
 
@@ -223,7 +223,7 @@ async def test_growth_stage_detection(coordinator, mock_main_coordinator) -> Non
     """Test correct growth stage detection based on plant days."""
     plant1 = MagicMock(spec=Plant)
     plant2 = MagicMock(spec=Plant)
-    mock_main_coordinator.services.get_growspace_plants.return_value = [plant1, plant2]
+    mock_main_coordinator.services.growspaces.get_growspace_plants.return_value = [plant1, plant2]
 
     # Case 1: Veg
     with patch(
@@ -537,7 +537,7 @@ async def test_growth_stage_detection_cure_dry_seedling(
 ) -> None:
     """Test detection of cure, dry, and seedling stages."""
     plant = MagicMock(spec=Plant)
-    mock_main_coordinator.services.get_growspace_plants.return_value = [plant]
+    mock_main_coordinator.services.growspaces.get_growspace_plants.return_value = [plant]
 
     # Test Cure
     with patch(

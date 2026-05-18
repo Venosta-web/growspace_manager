@@ -41,7 +41,7 @@ def mock_coordinator() -> Mock:
     }
 
     # UPDATED: Point to the new services location
-    coordinator.services.get_growspace_plants.return_value = list(
+    coordinator.services.growspaces.get_growspace_plants.return_value = list(
         coordinator.plants.values()
     )
     return coordinator

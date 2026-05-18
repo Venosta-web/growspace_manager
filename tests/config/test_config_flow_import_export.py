@@ -18,22 +18,26 @@ def mock_coordinator(hass: HomeAssistant, tmp_path: Path):
     coordinator = MagicMock()
     coordinator.hass = hass
     
-    # Setup facade
-    facade = MagicMock()
-    coordinator.services = facade
-    
     coordinator.import_export_manager = AsyncMock()
-    
-    # Strain library inside facade
-    facade.strain_library = MagicMock()
-    facade.strain_library.get_all.return_value = {"strain1": {}}
-    facade.strain_library.async_load = AsyncMock()
-    facade.strain_library.get_all_strains.return_value = []
-    facade.strain_library.import_library_from_zip = AsyncMock()
-    facade.strain_library.export_library_to_zip = AsyncMock()
-    
-    # Legacy support if needed by some code
-    coordinator.strain_library = facade.strain_library
+
+    # Strain library in config sub-facade
+    strain_lib = MagicMock()
+    strain_lib.get_all.return_value = {"strain1": {}}
+    strain_lib.async_load = AsyncMock()
+    strain_lib.get_all_strains.return_value = []
+    strain_lib.import_library_from_zip = AsyncMock()
+    strain_lib.export_library_to_zip = AsyncMock()
+    coordinator.strain_library = strain_lib
+
+    cfg_facade = MagicMock()
+    cfg_facade.strain_library = strain_lib
+
+    facade = MagicMock()
+    facade.config = cfg_facade
+    facade.growspaces = MagicMock()
+    facade.plants = MagicMock()
+    facade.notifications = MagicMock()
+    coordinator.services = facade
     
     return coordinator
 
@@ -81,8 +85,8 @@ async def test_import_strain_library_success(
         assert result.get("type") == FlowResultType.FORM
         assert result.get("step_id") == "manage_strain_library"
 
-        mock_coordinator.services.strain_library.import_library_from_zip.assert_awaited_once()
-        mock_coordinator.services.strain_library.async_load.assert_awaited_once()
+        mock_coordinator.services.config.strain_library.import_library_from_zip.assert_awaited_once()
+        mock_coordinator.services.config.strain_library.async_load.assert_awaited_once()
 
 
 @pytest.mark.asyncio
@@ -95,7 +99,7 @@ async def test_import_strain_library_file_not_found(
     config_entry.runtime_data = MagicMock()
     config_entry.runtime_data = mock_coordinator
 
-    mock_coordinator.services.strain_library.import_library_from_zip.side_effect = (
+    mock_coordinator.services.config.strain_library.import_library_from_zip.side_effect = (
         FileNotFoundError
     )
 
@@ -120,7 +124,7 @@ async def test_import_strain_library_invalid_zip(
     config_entry.runtime_data = MagicMock()
     config_entry.runtime_data = mock_coordinator
 
-    mock_coordinator.services.strain_library.import_library_from_zip.side_effect = ValueError
+    mock_coordinator.services.config.strain_library.import_library_from_zip.side_effect = ValueError
 
     flow = OptionsFlowHandler(config_entry)
     flow.hass = hass
@@ -143,7 +147,7 @@ async def test_export_strain_library_success(
     config_entry.runtime_data = MagicMock()
     config_entry.runtime_data = mock_coordinator
 
-    mock_coordinator.services.strain_library.export_library_to_zip.return_value = str(
+    mock_coordinator.services.config.strain_library.export_library_to_zip.return_value = str(
         tmp_path / "export.zip"
     )
 

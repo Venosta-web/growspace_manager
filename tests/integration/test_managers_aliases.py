@@ -7,6 +7,7 @@ import pytest
 from custom_components.growspace_manager.managers.growspace import GrowspaceManager
 from custom_components.growspace_manager.managers.plant import PlantManager
 from custom_components.growspace_manager.models import PlantStage
+from custom_components.growspace_manager.services.context import ServiceContext
 
 
 @pytest.fixture
@@ -25,16 +26,19 @@ def mock_repository():
 @pytest.fixture
 def growspace_manager(mock_hass, mock_repository):
     mgr = GrowspaceManager(
-        mock_hass,
-        mock_repository,
+        ctx=ServiceContext(
+            save_callback=AsyncMock(),
+            lock=MagicMock(),
+            add_event=MagicMock(),
+            invalidate_cache=MagicMock(),
+        ),
+        hass=mock_hass,
+        repository=mock_repository,
         notification_state=MagicMock(),
         validator=MagicMock(),
         view_model_builder=MagicMock(),
-        save_callback=AsyncMock(),
-        lock=MagicMock()
     )
     # Define these as AsyncMocks so they can be awaited and asserted
-    mgr.save_callback = AsyncMock()
     mgr.add_growspace = AsyncMock()
     mgr.remove_growspace = AsyncMock()
     mgr.update_growspace = AsyncMock()
@@ -45,15 +49,19 @@ def growspace_manager(mock_hass, mock_repository):
 @pytest.fixture
 def plant_manager(mock_hass, mock_repository, growspace_manager):
     mgr = PlantManager(
-        mock_hass,
-        mock_repository,
+        ctx=ServiceContext(
+            save_callback=AsyncMock(),
+            lock=MagicMock(),
+            add_event=MagicMock(),
+            invalidate_cache=MagicMock(),
+        ),
+        hass=mock_hass,
+        repository=mock_repository,
         notification_state=MagicMock(),
         validator=MagicMock(),
         growspace_manager=growspace_manager,
         strain_library=MagicMock(),
         plant_view_builder=MagicMock(),
-        save_callback=AsyncMock(),
-        lock=MagicMock()
     )
     # Define These as AsyncMocks so they can be awaited and asserted
     mgr.add_plant = AsyncMock()

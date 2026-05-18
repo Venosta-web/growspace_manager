@@ -12,6 +12,7 @@ from custom_components.growspace_manager.data_access.growspace_repository import
 from custom_components.growspace_manager.exceptions import GrowspaceNotFoundError
 from custom_components.growspace_manager.growspace_validator import GrowspaceValidator
 from custom_components.growspace_manager.managers.growspace import GrowspaceManager
+from custom_components.growspace_manager.services.context import ServiceContext
 from custom_components.growspace_manager.models import (
     EnvironmentConfig,
     Growspace,
@@ -27,13 +28,17 @@ def manager() -> GrowspaceManager:
     repo.add_growspace(gs)
     save_cb = AsyncMock()
     return GrowspaceManager(
+        ctx=ServiceContext(
+            save_callback=save_cb,
+            lock=asyncio.Lock(),
+            add_event=MagicMock(),
+            invalidate_cache=MagicMock(),
+        ),
         hass=MagicMock(),
         repository=repo,
         notification_state=MagicMock(),
         validator=GrowspaceValidator(repo),
         view_model_builder=MagicMock(spec=ViewModelBuilder),
-        save_callback=save_cb,
-        lock=asyncio.Lock(),
     )
 
 
@@ -59,7 +64,7 @@ async def test_async_log_drain_reading_appends_reading(
     assert reading.drain_ec == 2.1
     assert reading.drain_volume_ml == 100.0
     assert reading.feed_volume_ml == 500.0
-    manager.save_callback.assert_awaited_once()
+    manager._ctx.save_callback.assert_awaited_once()
 
 
 @pytest.mark.asyncio
@@ -151,7 +156,7 @@ async def test_async_configure_drain_monitoring_all_fields(
     assert gs.drain_config.enabled is True
     assert gs.drain_config.max_ec_delta == pytest.approx(0.4)
     assert gs.drain_config.target_runoff_percent == pytest.approx(25.0)
-    manager.save_callback.assert_awaited_once()
+    manager._ctx.save_callback.assert_awaited_once()
 
 
 @pytest.mark.asyncio
@@ -189,7 +194,7 @@ async def test_async_reset_water_tracking_resets_usage(
 
     assert gs.water_usage.total_liters == pytest.approx(0.0)
     assert gs.water_usage.cycle_start_date != ""
-    manager.save_callback.assert_awaited_once()
+    manager._ctx.save_callback.assert_awaited_once()
 
 
 @pytest.mark.asyncio
@@ -212,13 +217,17 @@ def manager_with_tank() -> GrowspaceManager:
     repo.add_growspace(gs)
     save_cb = AsyncMock()
     return GrowspaceManager(
+        ctx=ServiceContext(
+            save_callback=save_cb,
+            lock=asyncio.Lock(),
+            add_event=MagicMock(),
+            invalidate_cache=MagicMock(),
+        ),
         hass=MagicMock(),
         repository=repo,
         notification_state=MagicMock(),
         validator=GrowspaceValidator(repo),
         view_model_builder=MagicMock(spec=ViewModelBuilder),
-        save_callback=save_cb,
-        lock=asyncio.Lock(),
     )
 
 
@@ -230,7 +239,7 @@ async def test_async_configure_tank_updates_volume(
 
     tank = manager_with_tank.repository.require_growspace("gs1").environment_config.irrigation_tanks[0]
     assert tank.volume_liters == pytest.approx(80.0)
-    manager_with_tank.save_callback.assert_awaited_once()
+    manager_with_tank._ctx.save_callback.assert_awaited_once()
 
 
 @pytest.mark.asyncio
@@ -243,7 +252,7 @@ async def test_async_configure_tank_volume_none_is_noop(
 
     tank = manager_with_tank.repository.require_growspace("gs1").environment_config.irrigation_tanks[0]
     assert tank.volume_liters == pytest.approx(50.0)
-    manager_with_tank.save_callback.assert_not_awaited()
+    manager_with_tank._ctx.save_callback.assert_not_awaited()
 
 
 @pytest.mark.asyncio
@@ -252,7 +261,7 @@ async def test_async_configure_tank_unknown_entity_is_noop(
 ) -> None:
     await manager_with_tank.async_configure_tank("gs1", "sensor.missing", volume_liters=100.0)
 
-    manager_with_tank.save_callback.assert_not_awaited()
+    manager_with_tank._ctx.save_callback.assert_not_awaited()
 
 
 @pytest.mark.asyncio

@@ -118,7 +118,7 @@ class NotificationManager:
         Called by sensors on every probability update instead of
         async_schedule_notification directly.
         """
-        if not self.coordinator.services.get_growspace_plants(growspace_id):
+        if not self.coordinator.services.growspaces.get_growspace_plants(growspace_id):
             alert = self._pending_alerts.pop(
                 f"{growspace_id}_{sensor.entity_description.sensor_type}", None
             )
@@ -370,7 +370,7 @@ class NotificationManager:
             )
             return
 
-        if not self.coordinator.services.get_growspace_plants(growspace_id):
+        if not self.coordinator.services.growspaces.get_growspace_plants(growspace_id):
             _LOGGER.debug(
                 "Growspace %s has no plants, skipping notification",
                 growspace_id,
@@ -378,7 +378,7 @@ class NotificationManager:
             return
 
         # Check if notifications are enabled in coordinator
-        if not self.coordinator.services.is_notifications_enabled(growspace_id):
+        if not self.coordinator.services.notifications.is_notifications_enabled(growspace_id):
             _LOGGER.debug("Notifications disabled in coordinator for %s", growspace_id)
             return
 

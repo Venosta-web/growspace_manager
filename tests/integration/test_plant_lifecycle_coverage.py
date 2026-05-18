@@ -12,6 +12,7 @@ from custom_components.growspace_manager.data_access.notification_state import (
 )
 from custom_components.growspace_manager.exceptions import ValidationChangeError
 from custom_components.growspace_manager.managers.plant import PlantManager
+from custom_components.growspace_manager.services.context import ServiceContext
 from custom_components.growspace_manager.models import Growspace
 
 
@@ -84,6 +85,12 @@ def manager(
 ):
     """Fixture for PlantManager."""
     return PlantManager(
+        ctx=ServiceContext(
+            save_callback=save_callback_mock,
+            lock=lock_mock,
+            add_event=MagicMock(),
+            invalidate_cache=MagicMock(),
+        ),
         hass=hass,
         repository=repository_mock,
         notification_state=notification_state,
@@ -91,8 +98,6 @@ def manager(
         growspace_manager=gs_service_mock,
         strain_library=strain_library_mock,
         plant_view_builder=MagicMock(),
-        save_callback=save_callback_mock,
-        lock=lock_mock,
     )
 
 

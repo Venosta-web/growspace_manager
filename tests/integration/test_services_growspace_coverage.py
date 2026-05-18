@@ -8,6 +8,7 @@ from syrupy.assertion import SnapshotAssertion
 
 from custom_components.growspace_manager.exceptions import GrowspaceNotFoundError
 from custom_components.growspace_manager.managers.growspace import GrowspaceManager
+from custom_components.growspace_manager.services.context import ServiceContext
 from custom_components.growspace_manager.models import (
     EnvironmentConfig,
     Growspace,
@@ -107,13 +108,17 @@ def service(
 ):
     """GrowspaceManager fixture."""
     svc = GrowspaceManager(
+        ctx=ServiceContext(
+            save_callback=save_callback_mock,
+            lock=lock_mock,
+            add_event=MagicMock(),
+            invalidate_cache=MagicMock(),
+        ),
         hass=hass,
         repository=repository_mock,
         notification_state=MagicMock(),
         validator=validator_mock,
         view_model_builder=view_model_builder_mock,
-        save_callback=save_callback_mock,
-        lock=lock_mock,
     )
     svc.cache = cache_mock
     return svc

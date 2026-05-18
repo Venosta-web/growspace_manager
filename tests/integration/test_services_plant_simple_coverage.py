@@ -17,6 +17,7 @@ from custom_components.growspace_manager.const import (
     EVENT_GROWSPACE_LOG_ENTRY,
 )
 from custom_components.growspace_manager.managers.plant import PlantManager
+from custom_components.growspace_manager.services.context import ServiceContext
 from custom_components.growspace_manager.models import PlantStage
 from custom_components.growspace_manager.services.plant import handle_add_timeline_note
 from homeassistant.core import HomeAssistant, ServiceCall
@@ -86,6 +87,12 @@ def manager(
 ):
     """Fixture for PlantManager."""
     return PlantManager(
+        ctx=ServiceContext(
+            save_callback=save_callback_mock,
+            lock=lock_mock,
+            add_event=MagicMock(),
+            invalidate_cache=MagicMock(),
+        ),
         hass=hass,
         repository=repository_mock,
         notification_state=MagicMock(),
@@ -93,8 +100,6 @@ def manager(
         growspace_manager=gs_service_mock,
         strain_library=strain_library_mock,
         plant_view_builder=MagicMock(),
-        save_callback=save_callback_mock,
-        lock=lock_mock,
     )
 
 

@@ -56,7 +56,7 @@ def mock_coordinator() -> Mock:
             },
         ]
     }
-    coordinator.services.get_growspace_plants.return_value = list(
+    coordinator.services.growspaces.get_growspace_plants.return_value = list(
         coordinator.plants.values()
     )
     coordinator.async_add_listener = Mock()

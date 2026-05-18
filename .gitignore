@@ -133,3 +133,5 @@ uv.lock
 tests/core/snapshots/
 tests/integration/snapshots/*
 custom_components/growspace_manager/ruff_check_full.txt
+
+scratch/

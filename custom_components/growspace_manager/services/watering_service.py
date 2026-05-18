@@ -6,16 +6,16 @@ extracted from the coordinator to reduce complexity.
 
 from __future__ import annotations
 
-import asyncio
-from collections.abc import Awaitable, Callable
 import logging
 from typing import TYPE_CHECKING
 
 from ..event_builder import EventBuilder
 from ..exceptions import GrowspaceError
-from ..models import GrowspaceEvent, Plant
+from ..models import Plant
 from homeassistant.core import HomeAssistant
 from homeassistant.util import dt as dt_util
+
+from .context import BaseService, ServiceContext
 
 if TYPE_CHECKING:
     from ..data_access.growspace_repository import (
@@ -29,40 +29,22 @@ if TYPE_CHECKING:
 _LOGGER = logging.getLogger(__name__)
 
 
-class WateringService:
+class WateringService(BaseService):
     """Handles all watering operations."""
 
     def __init__(
         self,
+        ctx: ServiceContext,
         hass: HomeAssistant,
         repository: GrowspaceRepository,
         validator: GrowspaceValidator,
         nutrient_manager: NutrientManager,
-        save_callback: Callable[[], Awaitable[None]],
-        lock: asyncio.Lock,
-        add_event_callback: Callable[[str, GrowspaceEvent], None],
-        invalidate_cache_callback: Callable[[str | None], None],
     ) -> None:
-        """Initialize the watering service.
-
-        Args:
-            hass: Home Assistant instance.
-            repository: Data repository.
-            validator: Growspace validator.
-            nutrient_manager: Nutrient manager for preset resolution.
-            save_callback: Callback to save data.
-            lock: Async lock for thread safety.
-            add_event_callback: Callback to add events to logbook.
-            invalidate_cache_callback: Callback to invalidate cache.
-        """
+        super().__init__(ctx)
         self.hass = hass
         self.repository = repository
         self.validator = validator
         self.nutrient_manager = nutrient_manager
-        self.save_callback = save_callback
-        self.lock = lock
-        self.add_event = add_event_callback
-        self.invalidate_cache = invalidate_cache_callback
 
     async def async_water_plant(
         self,
@@ -85,7 +67,7 @@ class WateringService:
         plant = await self._water_plant_internal(
             plant_id, amount, nutrients, preset_id, invalidate_cache=True
         )
-        await self.save_callback()
+        await self._save()
         return plant
 
     async def _water_plant_internal(
@@ -141,13 +123,13 @@ class WateringService:
 
         # Invalidate cache for the growspace if requested
         if invalidate_cache:
-            self.invalidate_cache(plant.growspace_id)
+            self._invalidate(plant.growspace_id)
 
         # Create and log the watering event
         event = EventBuilder.create_watering_event(
             plant, amount, preset_name, final_nutrients
         )
-        self.add_event(plant.growspace_id, event)
+        self._emit(plant.growspace_id, event)
 
         _LOGGER.info(
             "Watered plant %s (%s) with %sL%s%s",
@@ -193,7 +175,7 @@ class WateringService:
             )
 
         # Bulk invalidation
-        self.invalidate_cache(growspace_id)
+        self._invalidate(growspace_id)
 
         _LOGGER.info(
             "Watered %d plants in growspace %s with %sL each%s",
@@ -203,6 +185,6 @@ class WateringService:
             f" using preset '{preset_id}'" if preset_id else "",
         )
 
-        await self.save_callback()
+        await self._save()
 
         return len(plants)

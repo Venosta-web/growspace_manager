@@ -34,7 +34,7 @@ def mock_coordinator():
 
     # Link the chain: coordinator -> services -> strain_library
     coordinator.services = services
-    services.strain_library = strain_service
+    services.config.strain_library = strain_service
 
     # Legacy/Direct access support
     coordinator.strain_library = strain_service
@@ -133,7 +133,7 @@ async def test_async_step_manage_strain_library_post_delete_success(
 ) -> None:
     """Test deleting a strain successfully."""
     # Access the deeply nested mock through the facade
-    strain_service = handler.config_entry.runtime_data.services.strain_library
+    strain_service = handler.config_entry.runtime_data.services.config.strain_library
     handler.flow.async_show_form = MagicMock(return_value={"type": "form"})
 
     result = await handler.async_step_manage_strain_library(
@@ -193,7 +193,7 @@ async def test_async_step_import_strain_library_success(
     handler: StrainConfigHandler,
 ) -> None:
     """Test importing successfully."""
-    strain_service = handler.config_entry.runtime_data.services.strain_library
+    strain_service = handler.config_entry.runtime_data.services.config.strain_library
     handler.async_step_manage_strain_library = AsyncMock(
         return_value={"type": FlowResultType.FORM}
     )
@@ -257,7 +257,7 @@ async def test_async_step_export_strain_library_success(
     handler: StrainConfigHandler,
 ) -> None:
     """Test exporting successfully."""
-    strain_service = handler.config_entry.runtime_data.services.strain_library
+    strain_service = handler.config_entry.runtime_data.services.config.strain_library
     strain_service.export_library_to_zip.return_value = "/path/to/zip"
     handler.flow.async_show_form = MagicMock(return_value={"type": FlowResultType.FORM})
 
@@ -298,7 +298,7 @@ async def test_async_step_export_strain_library_fail(
 
 async def test_async_step_add_strain_success(handler: StrainConfigHandler) -> None:
     """Test adding a strain successfully."""
-    strain_service = handler.config_entry.runtime_data.services.strain_library
+    strain_service = handler.config_entry.runtime_data.services.config.strain_library
     handler.async_step_manage_strain_library = AsyncMock(
         return_value={"type": FlowResultType.FORM}
     )
@@ -355,13 +355,13 @@ def test_get_strain_library_menu_schema_no_library(
     """Test schema when library is missing."""
     coordinator = handler.config_entry.runtime_data
     # Set the facade service to None to trigger the early return in the handler
-    coordinator.services.strain_library = None
+    coordinator.services.config.strain_library = None
 
     schema = handler._get_strain_library_menu_schema(coordinator)
     assert isinstance(schema, vol.Schema)
 
     # The implementation returns an empty schema when the library service is missing
-    # aligning with the guard clause: if not coordinator.services.strain_library: return vol.Schema({})
+    # aligning with the guard clause: if not coordinator.services.config.strain_library: return vol.Schema({})
     assert schema.schema == {}
 
 
@@ -369,7 +369,7 @@ def test_get_strain_library_menu_schema_with_strains(
     handler: StrainConfigHandler,
 ) -> None:
     """Test schema when strains are present."""
-    strain_service = handler.config_entry.runtime_data.services.strain_library
+    strain_service = handler.config_entry.runtime_data.services.config.strain_library
     strain_service.get_all.return_value = {"strain1": {}}
 
     schema = handler._get_strain_library_menu_schema(handler.config_entry.runtime_data)

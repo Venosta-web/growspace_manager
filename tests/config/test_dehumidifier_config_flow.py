@@ -45,10 +45,10 @@ async def test_configure_dehumidifier_thresholds(
         environment_config=EnvironmentConfig(dehumidifier_entities=["switch.dehum"]),
     )
     mock_coordinator.growspaces = {"gs1": mock_growspace}
-    mock_coordinator.services.get_sorted_growspace_options.return_value = [
+    mock_coordinator.services.growspaces.get_sorted_growspace_options.return_value = [
         ("gs1", "Test GS")
     ]
-    mock_coordinator.services.get_growspace.return_value = mock_growspace
+    mock_coordinator.services.growspaces.get_growspace.return_value = mock_growspace
     mock_coordinator.services.save = AsyncMock()
     mock_coordinator.async_refresh = AsyncMock()
 

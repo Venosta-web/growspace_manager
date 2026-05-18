@@ -29,6 +29,7 @@ from custom_components.growspace_manager.dehumidifier_coordinator import (
     DehumidifierCoordinator,
 )
 from custom_components.growspace_manager.managers.plant import PlantManager
+from custom_components.growspace_manager.services.context import ServiceContext
 from custom_components.growspace_manager.models import (
     BaseModel,
     EnvironmentConfig,
@@ -70,7 +71,7 @@ async def test_dehumidifier_stages_coverage(hass: HomeAssistant) -> None:
     plant_cure = create_plant(
         plant_id="p1", growspace_id="gs1", strain="S1", cure_start="2024-01-01"
     )
-    mock_coordinator.services.get_growspace_plants.return_value = [plant_cure]
+    mock_coordinator.services.growspaces.get_growspace_plants.return_value = [plant_cure]
     with patch(
         "custom_components.growspace_manager.domain.stage_calculator.calculate_days_in_stage",
         side_effect=lambda p, s: 1 if s == PlantStage.CURE else 0,
@@ -84,7 +85,7 @@ async def test_dehumidifier_stages_coverage(hass: HomeAssistant) -> None:
     plant_dry = create_plant(
         plant_id="p1", growspace_id="gs1", strain="S1", dry_start="2024-01-01"
     )
-    mock_coordinator.services.get_growspace_plants.return_value = [plant_dry]
+    mock_coordinator.services.growspaces.get_growspace_plants.return_value = [plant_dry]
     with patch(
         "custom_components.growspace_manager.domain.stage_calculator.calculate_days_in_stage",
         side_effect=lambda p, s: 1 if s == PlantStage.DRY else 0,
@@ -95,7 +96,7 @@ async def test_dehumidifier_stages_coverage(hass: HomeAssistant) -> None:
     plant_seedling = create_plant(
         plant_id="p1", growspace_id="gs1", strain="S1", seedling_start="2024-01-01"
     )
-    mock_coordinator.services.get_growspace_plants.return_value = [plant_seedling]
+    mock_coordinator.services.growspaces.get_growspace_plants.return_value = [plant_seedling]
     with patch(
         "custom_components.growspace_manager.domain.stage_calculator.calculate_days_in_stage",
         side_effect=lambda p, s: 1 if s == PlantStage.SEEDLING else 0,
@@ -127,7 +128,7 @@ def create_test_sensor(
         strategy_class=strategy_class,
         # Inject dependencies
         get_growspace=lambda gid: coordinator.growspaces.get(gid),
-        get_plants=coordinator.services.get_growspace_plants,
+        get_plants=coordinator.services.growspaces.get_growspace_plants,
         add_event=coordinator.add_event,
         notification_manager=coordinator.notification_manager,
         strain_library=coordinator.strain_library,
@@ -252,6 +253,12 @@ async def test_lifecycle_history_closing_coverage(hass: HomeAssistant) -> None:
     repository.get_plant.return_value = plant
 
     manager = PlantManager(
+        ctx=ServiceContext(
+            save_callback=save_callback,
+            lock=lock,
+            add_event=MagicMock(),
+            invalidate_cache=MagicMock(),
+        ),
         hass=hass,
         repository=repository,
         notification_state=MagicMock(),
@@ -259,8 +266,6 @@ async def test_lifecycle_history_closing_coverage(hass: HomeAssistant) -> None:
         growspace_manager=gs_service,
         strain_library=strain_library,
         plant_view_builder=MagicMock(),
-        save_callback=save_callback,
-        lock=lock,
     )
     with patch.object(manager, "update_plant", new_callable=AsyncMock) as mock_update:
         await manager.transition_plant_stage("p1", "flower")
@@ -290,7 +295,7 @@ async def test_batch_add_mother_auto_date_coverage(hass: HomeAssistant) -> None:
         mock_plant.growspace_id = "mother"
         mock_plant.plant_id = "p1"
         mock_plant.id = "p1"
-        mock_coordinator.services.add_plant = AsyncMock(return_value=mock_plant)
+        mock_coordinator.services.plants.add_plant = AsyncMock(return_value=mock_plant)
 
         # mock plant manager add plant if needed, but the facade handles it
         mock_coordinator.plant_manager.add_plant = AsyncMock(return_value=mock_plant)
@@ -303,7 +308,7 @@ async def test_batch_add_mother_auto_date_coverage(hass: HomeAssistant) -> None:
         }
 
         await handle_add_plants(hass, mock_coordinator, MagicMock(), call)
-        _args, kwargs = mock_coordinator.services.add_plant.call_args
+        _args, kwargs = mock_coordinator.services.plants.add_plant.call_args
         assert kwargs.get("mother_start") is not None
 
 
@@ -828,6 +833,12 @@ async def test_lifecycle_history_stages_coverage(hass: HomeAssistant) -> None:
     repository.plants = {"p1": plant}
 
     manager = PlantManager(
+        ctx=ServiceContext(
+            save_callback=save_callback,
+            lock=lock,
+            add_event=MagicMock(),
+            invalidate_cache=MagicMock(),
+        ),
         hass=hass,
         repository=repository,
         notification_state=MagicMock(),
@@ -835,8 +846,6 @@ async def test_lifecycle_history_stages_coverage(hass: HomeAssistant) -> None:
         growspace_manager=gs_service,
         strain_library=strain_library,
         plant_view_builder=MagicMock(),
-        save_callback=save_callback,
-        lock=lock,
     )
 
     manager.async_update_plant = AsyncMock()

@@ -55,13 +55,13 @@ def mock_coordinator():
     coord = MagicMock()
     # Correctly mock services.get_growspace_data to return serializable data
     coord.services = MagicMock()
-    coord.services.get_growspace_data.return_value = {"id": "gs1", "name": "Growspace 1"}
+    coord.services.growspaces.get_growspace_data.return_value = {"id": "gs1", "name": "Growspace 1"}
 
     # WebSocket handlers await these service calls
     coord.services.add_timeline_note = AsyncMock()
-    coord.services.add_subarea = AsyncMock()
-    coord.services.update_subarea = AsyncMock()
-    coord.services.remove_subarea = AsyncMock()
+    coord.services.growspaces.add_subarea = AsyncMock()
+    coord.services.growspaces.update_subarea = AsyncMock()
+    coord.services.growspaces.remove_subarea = AsyncMock()
 
     # Coordinator level awaitables
     coord.async_commit = AsyncMock()
@@ -82,6 +82,7 @@ async def test_websocket_get_strain_library(
 
     mock_coord = MagicMock()
     mock_coord.strain_library = mock_strain_library
+    mock_coord.services.config.strain_library = mock_strain_library
     entry.runtime_data = mock_coord
 
     async_register_websocket_api(hass)
@@ -1277,6 +1278,7 @@ async def test_websocket_exceptions(
     # Inject it via a mock coordinator
     mock_coord = MagicMock()
     mock_coord.strain_library = mock_lib
+    mock_coord.services.config.strain_library = mock_lib
     with patch(
         "custom_components.growspace_manager.websocket.GrowspaceCoordinator.get_any",
         return_value=mock_coord,

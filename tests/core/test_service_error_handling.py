@@ -45,7 +45,7 @@ async def test_handle_add_plant_wraps_error(
 ) -> None:
     """Test handle_add_plant wraps generic exceptions."""
     # Setup - simulate generic exception
-    mock_coordinator.services.add_plant = AsyncMock(side_effect=Exception("Boom"))
+    mock_coordinator.services.plants.add_plant = AsyncMock(side_effect=Exception("Boom"))
 
     call = MagicMock()
     call.data = {
@@ -64,7 +64,7 @@ async def test_handle_add_plants_wraps_error(
 ) -> None:
     """Test handle_add_plants wraps generic exceptions."""
     # Setup - simulate exception in the loop (add_plant is called by add_plants)
-    mock_coordinator.services.add_plant = AsyncMock(side_effect=Exception("Boom Batch"))
+    mock_coordinator.services.plants.add_plant = AsyncMock(side_effect=Exception("Boom Batch"))
     # Need to mock find_first_available_position to prevent early exit
     mock_coordinator.validator.find_first_available_position.return_value = (1, 1)
 
@@ -86,7 +86,7 @@ async def test_handle_water_plant_wraps_growspace_error(
 ) -> None:
     """Test handle_water_plant wraps GrowspaceError."""
     # Setup
-    mock_coordinator.services.water_plant = AsyncMock(side_effect=GrowspaceError("Not Found"))
+    mock_coordinator.services.plants.water_plant = AsyncMock(side_effect=GrowspaceError("Not Found"))
 
     call = MagicMock()
     call.data = {"plant_id": "p1", "amount": 1.0}
@@ -100,7 +100,7 @@ async def test_handle_water_plant_wraps_generic_error(
 ) -> None:
     """Test handle_water_plant wraps generic exceptions."""
     # Setup
-    mock_coordinator.services.water_plant = AsyncMock(side_effect=Exception("Pump Failure"))
+    mock_coordinator.services.plants.water_plant = AsyncMock(side_effect=Exception("Pump Failure"))
 
     call = MagicMock()
     call.data = {"plant_id": "p1", "amount": 1.0}
@@ -114,7 +114,7 @@ async def test_handle_water_growspace_wraps_error(
 ) -> None:
     """Test handle_water_growspace wraps exceptions."""
     # Setup
-    mock_coordinator.services.water_growspace = AsyncMock(side_effect=Exception("Valve Error"))
+    mock_coordinator.services.growspaces.water_growspace = AsyncMock(side_effect=Exception("Valve Error"))
 
     call = MagicMock()
     call.data = {"growspace_id": "gs1", "amount_per_plant": 1.0}

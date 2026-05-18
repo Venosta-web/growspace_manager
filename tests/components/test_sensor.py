@@ -66,16 +66,16 @@ def mock_coordinator() -> MagicMock:
             cure_start=None,
         )
     }
-    coordinator.services.get_growspace_plants.return_value = list(
+    coordinator.services.growspaces.get_growspace_plants.return_value = list(
         coordinator.plants.values()
     )
     coordinator.serializer = MagicMock()
     coordinator.serializer.calculate_days_in_stage.return_value = 10
 
-    coordinator.services.should_send_notification.return_value = True
-    coordinator.services.mark_notification_sent = AsyncMock()
+    coordinator.services.notifications.should_send_notification.return_value = True
+    coordinator.services.notifications.mark_notification_sent = AsyncMock()
     coordinator.async_add_listener = Mock()
-    coordinator.services.get_strain_options.return_value = ["Strain A", "Strain B"]
+    coordinator.services.config.get_strain_options.return_value = ["Strain A", "Strain B"]
     coordinator.services.get_growspace_options.return_value = ["gs1"]
     coordinator.strains = MagicMock()
     coordinator.created_entity_ids = []
@@ -857,6 +857,14 @@ def test_strain_library_sensor_state_and_attributes(mock_coordinator) -> None:
         "strain_list": ["Strain A", "Strain B", "Strain C"],
     }
 
+    # Mirror setup on the facade path the sensor actually reads
+    mock_coordinator.services.config.strain_library.get_all.return_value = (
+        mock_coordinator.strain_library.get_all.return_value
+    )
+    mock_coordinator.services.config.strain_library.get_analytics.return_value = (
+        mock_coordinator.strain_library.get_analytics.return_value
+    )
+
     sensor = StrainLibrarySensor(mock_coordinator)
     sensor.platform = Mock()
     sensor.platform.platform_name = "growspace_manager"
@@ -864,7 +872,7 @@ def test_strain_library_sensor_state_and_attributes(mock_coordinator) -> None:
     sensor.platform.domain = "sensor"
 
     # State should be the number of unique strains
-    assert sensor.state == 3
+    assert sensor.native_value == 3
 
     attrs = sensor.extra_state_attributes
 

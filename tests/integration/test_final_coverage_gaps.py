@@ -14,6 +14,7 @@ from custom_components.growspace_manager.irrigation_coordinator import (
     IrrigationCoordinator,
 )
 from custom_components.growspace_manager.managers.plant import PlantManager
+from custom_components.growspace_manager.services.context import ServiceContext
 from custom_components.growspace_manager.models import (
     Growspace,
     IPMPreset,
@@ -131,6 +132,12 @@ def plant_manager(hass: HomeAssistant) -> PlantManager:
     lock.__aexit__ = AsyncMock(return_value=None)
 
     return PlantManager(
+        ctx=ServiceContext(
+            save_callback=AsyncMock(),
+            lock=lock,
+            add_event=MagicMock(),
+            invalidate_cache=MagicMock(),
+        ),
         hass=hass,
         repository=repo,
         notification_state=MagicMock(),
@@ -138,8 +145,6 @@ def plant_manager(hass: HomeAssistant) -> PlantManager:
         growspace_manager=MagicMock(),
         strain_library=MagicMock(record_harvest=AsyncMock()),
         plant_view_builder=MagicMock(),
-        save_callback=AsyncMock(),
-        lock=lock,
     )
 
 
@@ -215,12 +220,14 @@ def ipm_service() -> IPMService:
     repo.get_growspace_plants.return_value = []
 
     return IPMService(
+        ctx=ServiceContext(
+            save_callback=AsyncMock(),
+            lock=asyncio.Lock(),
+            add_event=MagicMock(),
+            invalidate_cache=MagicMock(),
+        ),
         hass=MagicMock(),
         repository=repo,
-        save_callback=AsyncMock(),
-        lock=asyncio.Lock(),
-        add_event_callback=MagicMock(),
-        invalidate_cache_callback=MagicMock(),
     )
 
 
@@ -299,14 +306,16 @@ def watering_service() -> WateringService:
     nutrient_manager.deduct_from_inventory = MagicMock()
 
     return WateringService(
+        ctx=ServiceContext(
+            save_callback=AsyncMock(),
+            lock=asyncio.Lock(),
+            add_event=MagicMock(),
+            invalidate_cache=MagicMock(),
+        ),
         hass=MagicMock(),
         repository=repo,
         validator=validator,
         nutrient_manager=nutrient_manager,
-        save_callback=AsyncMock(),
-        lock=asyncio.Lock(),
-        add_event_callback=MagicMock(),
-        invalidate_cache_callback=MagicMock(),
     )
 
 
@@ -656,7 +665,7 @@ def test_coordinator_get_plant_delegates_to_repository() -> None:
     coordinator.data_repository = MagicMock()
     coordinator.data_repository.get_plant.return_value = plant
 
-    result = coordinator.services.get_plant("p1")
+    result = coordinator.services.plants.get_plant("p1")
     assert result is plant
     coordinator.data_repository.get_plant.assert_called_once_with("p1")
 
@@ -675,6 +684,6 @@ def test_coordinator_get_growspace_delegates_to_repository() -> None:
     coordinator.data_repository = MagicMock()
     coordinator.data_repository.get_growspace.return_value = growspace
 
-    result = coordinator.services.get_growspace("gs1")
+    result = coordinator.services.growspaces.get_growspace("gs1")
     assert result is growspace
     coordinator.data_repository.get_growspace.assert_called_once_with("gs1")

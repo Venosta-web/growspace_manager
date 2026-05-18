@@ -31,20 +31,22 @@ def create_test_sensor(
     sensor_type: str,
     strategy_class: type,
     env_config: EnvironmentConfig | None = None,
+    hass: HomeAssistant | None = None,
 ) -> BayesianEnvironmentSensor:
     """Helper to create a BayesianEnvironmentSensor for testing with all dependencies."""
+    from custom_components.growspace_manager.trend_analyzer import TrendAnalyzer
+
     if env_config is None:
         env_config = coordinator.growspaces[growspace_id].environment_config
 
     description = next(d for d in SENSOR_TYPES if d.sensor_type == sensor_type)
 
-    return BayesianEnvironmentSensor(
+    sensor = BayesianEnvironmentSensor(
         coordinator=coordinator,
         growspace_id=growspace_id,
         env_config=env_config,
         description=description,
         strategy_class=strategy_class,
-        # Inject dependencies
         get_growspace=lambda gid: coordinator.growspaces.get(gid),
         get_plants=coordinator.get_growspace_plants,
         add_event=coordinator.add_event,
@@ -52,6 +54,24 @@ def create_test_sensor(
         strain_library=coordinator.strain_library,
         options=coordinator.options,
     )
+
+    if hass is not None:
+        sensor.hass = hass
+        sensor.trend_analyzer = TrendAnalyzer(hass)
+        notification_manager = coordinator.notification_manager
+        sensor.strategy = strategy_class(
+            env_config=sensor.env_config,
+            analyze_trend=lambda *args, **kwargs: sensor.async_analyze_sensor_trend(*args, **kwargs),
+            get_state=hass.states.get,
+            get_growspace=lambda: coordinator.growspaces.get(growspace_id),
+            get_notification_message=lambda msg, r: (
+                notification_manager.generate_notification_message(msg, r)
+                if notification_manager
+                else msg
+            ),
+        )
+
+    return sensor
 
 
 @pytest.fixture
@@ -248,8 +268,8 @@ async def test_optimal_sensor_event_category(
         GrowspaceSensorType.OPTIMAL,
         StressEvaluatorStrategy,
         mock_coordinator.growspaces["gs1"].environment_config,
+        hass,
     )
-    sensor.hass = hass
 
     # Init with high prob so old_state=True
     sensor._probability = 0.9

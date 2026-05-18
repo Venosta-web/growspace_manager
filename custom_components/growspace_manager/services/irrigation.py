@@ -80,7 +80,7 @@ async def handle_set_irrigation_settings(
         key: value for key, value in call.data.items() if key != ATTR_GROWSPACE_ID
     }
 
-    await coordinator.services.set_irrigation_settings(growspace_id, settings)
+    await coordinator.services.growspaces.set_irrigation_settings(growspace_id, settings)
     _LOGGER.info("Set irrigation settings for growspace '%s'", growspace_id)
 
 
@@ -98,7 +98,7 @@ async def handle_add_irrigation_time(
     if duration is None:
         duration = irrigation_coord.get_default_duration("irrigation")
 
-    await coordinator.services.add_irrigation_schedule_item(
+    await coordinator.services.growspaces.add_irrigation_schedule_item(
         growspace_id, ATTR_IRRIGATION_TIMES, call.data[ATTR_TIME], duration
     )
 
@@ -112,7 +112,7 @@ async def handle_remove_irrigation_time(
     """Handle the service call to remove an irrigation time from a schedule."""
     growspace_id = call.data[ATTR_GROWSPACE_ID]
     irrigation_coord = await _get_irrigation_coordinator(coordinator, growspace_id)
-    await coordinator.services.remove_irrigation_schedule_item(
+    await coordinator.services.growspaces.remove_irrigation_schedule_item(
         growspace_id, ATTR_IRRIGATION_TIMES, call.data[ATTR_TIME]
     )
 
@@ -131,7 +131,7 @@ async def handle_add_drain_time(
     if duration is None:
         duration = irrigation_coord.get_default_duration("drain")
 
-    await coordinator.services.add_irrigation_schedule_item(
+    await coordinator.services.growspaces.add_irrigation_schedule_item(
         growspace_id, ATTR_DRAIN_TIMES, call.data[ATTR_TIME], duration
     )
 
@@ -145,7 +145,7 @@ async def handle_remove_drain_time(
     """Handle the service call to remove a drain time from a schedule."""
     growspace_id = call.data[ATTR_GROWSPACE_ID]
     irrigation_coord = await _get_irrigation_coordinator(coordinator, growspace_id)
-    await coordinator.services.remove_irrigation_schedule_item(
+    await coordinator.services.growspaces.remove_irrigation_schedule_item(
         growspace_id, ATTR_DRAIN_TIMES, call.data[ATTR_TIME]
     )
 

@@ -48,6 +48,19 @@ Projected number of days until the plant's current weight reaches the Target Dry
 
 Data entry for drying observations is done via **service calls**, not HA helper entities (`input_number`). This is consistent with all other data-entry patterns in this integration. Services: `log_drying_weight`, `log_moisture_reading`.
 
+## Service Facade Architecture
+
+All external callers (sensors, websocket handlers, config flow handlers, service handlers) must access the coordinator exclusively through `coordinator.services.*`. Direct access to `coordinator.strain_library`, `coordinator.nutrient_manager`, `coordinator.notification_manager` from outside the coordinator is forbidden.
+
+`coordinator.services` is a **ServiceFacade** container that exposes four domain sub-facades:
+
+- `coordinator.services.growspaces` — growspace CRUD, subareas, irrigation, drain/water tracking, tank trackers
+- `coordinator.services.plants` — plant lifecycle (clone, harvest, stage transitions), watering, IPM, training, drying
+- `coordinator.services.config` — nutrient presets, IPM presets, EC ramp curves, strain library
+- `coordinator.services.notifications` — notification settings and timed notifications
+
+Infrastructure methods (`save`, `request_refresh`, `fire_event`, `add_timeline_note`) live on the container itself.
+
 ## Sensor Entities
 
 Each computed drying metric is a distinct HA sensor entity:

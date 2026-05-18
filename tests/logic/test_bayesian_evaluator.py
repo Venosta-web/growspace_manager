@@ -41,7 +41,6 @@ async def test_async_evaluate_fallback_mold_trend_analysis_rising() -> None:
     state = MagicMock(spec=EnvironmentState, flower_days=-1, humidity=68)
 
     await _async_evaluate_fallback_mold_trend_analysis(
-        sensor_instance,
         env_config,
         "humidity",
         "humidity_trend",
@@ -66,7 +65,6 @@ async def test_async_evaluate_fallback_mold_trend_analysis_rising() -> None:
 @pytest.mark.asyncio
 async def test_async_evaluate_fallback_mold_trend_analysis_falling() -> None:
     """Test fallback mold trend analysis for falling VPD."""
-    sensor_instance = MagicMock()
     env_config: dict[str, Any] = {
         "vpd_sensor": "sensor.vpd",
         "vpd_trend_sensitivity": 0.5,
@@ -80,7 +78,6 @@ async def test_async_evaluate_fallback_mold_trend_analysis_falling() -> None:
     state = MagicMock(spec=EnvironmentState, flower_days=-1, humidity=50, vpd=0.4)
 
     await _async_evaluate_fallback_mold_trend_analysis(
-        sensor_instance,
         env_config,
         "vpd",
         "vpd_trend",
@@ -279,9 +276,6 @@ async def test_async_evaluate_external_mold_trend_sensor(
     expected_reason,
 ) -> None:
     """Test _async_evaluate_external_mold_trend_sensor for all scenarios."""
-    sensor_instance = MagicMock()
-    sensor_instance.hass = MagicMock()
-
     env_config: dict[str, Any] = {
         f"{sensor_key}_trend_sensor": f"sensor.{sensor_key}_trend",
         f"{sensor_key}_stats_sensor": f"sensor.{sensor_key}_stats",
@@ -290,20 +284,20 @@ async def test_async_evaluate_external_mold_trend_sensor(
     reasons: list[tuple[float, str]] = []
     trend_states: dict[str, str] = {}
 
+    get_state = MagicMock(return_value=None)
     if trend_state_value:
         trend_state = MagicMock(state=trend_state_value)
-        sensor_instance.hass.states.get.return_value = trend_state
+        get_state = MagicMock(return_value=trend_state)
     elif stats_change_value:
-        # Make trend_sensor_id None to test the stats_sensor_id branch
         env_config[f"{sensor_key}_trend_sensor"] = None
         stats_state = MagicMock(attributes={"change": stats_change_value})
-        sensor_instance.hass.states.get.return_value = stats_state
+        get_state = MagicMock(return_value=stats_state)
 
     # Create mock state with values that bypass danger zone gating
     state = MagicMock(spec=EnvironmentState, flower_days=-1, vpd=0.4, humidity=85)
 
     await _async_evaluate_external_mold_trend_sensor(
-        sensor_instance,
+        get_state,
         env_config,
         sensor_key,
         f"{sensor_key}_trend",
@@ -413,52 +407,51 @@ async def test_async_evaluate_stress_trend(
     expected_reason,
 ) -> None:
     """Test all branches of async_evaluate_stress_trend."""
-    sensor_instance = MagicMock()
-    sensor_instance.hass = MagicMock()
-
     async def side_effect(sensor_id, duration, threshold):
         if manual_analysis_result and sensor_id == f"sensor.{test_sensor_key}":
             return manual_analysis_result
         return {"trend": "stable", "crossed_threshold": False}
 
-    sensor_instance.async_analyze_sensor_trend = AsyncMock(side_effect=side_effect)
+    analyze_trend_fn = AsyncMock(side_effect=side_effect)
 
-    env_config: dict[str, Any] = {
+    env_config_dict: dict[str, Any] = {
         "prob_trend_fast_rise": (0.95, 0.15),
         "prob_trend_slow_rise": (0.75, 0.30),
     }
     for key in ["temperature", "humidity", "vpd"]:
-        env_config[f"{key}_trend_sensor"] = (
+        env_config_dict[f"{key}_trend_sensor"] = (
             f"sensor.{key}_trend"
             if use_trend_sensor and key == test_sensor_key
             else None
         )
-        env_config[f"{key}_stats_sensor"] = (
+        env_config_dict[f"{key}_stats_sensor"] = (
             f"sensor.{key}_stats"
             if use_stats_sensor and key == test_sensor_key
             else None
         )
-        env_config[f"{key}_sensor"] = (
+        env_config_dict[f"{key}_sensor"] = (
             f"sensor.{key}"
             if not (use_trend_sensor or use_stats_sensor) and key == test_sensor_key
             else None
         )
-        env_config[f"{key}_trend_sensitivity"] = 0.5
+        env_config_dict[f"{key}_trend_sensitivity"] = 0.5
 
-    sensor_instance.env_config = env_config
+    mock_env_config = MagicMock()
+    mock_env_config.to_dict.return_value = env_config_dict
     state = MagicMock()
 
+    get_state = MagicMock(return_value=None)
     if use_trend_sensor:
         trend_state = MagicMock(
             state=trend_state_value, attributes={"gradient": gradient}
         )
-        sensor_instance.hass.states.get.return_value = trend_state
+        get_state = MagicMock(return_value=trend_state)
     elif use_stats_sensor:
         stats_state = MagicMock(attributes={"change": stats_change})
-        sensor_instance.hass.states.get.return_value = stats_state
+        get_state = MagicMock(return_value=stats_state)
 
     observations, reasons, trend_states = await async_evaluate_stress_trend(
-        sensor_instance, state
+        mock_env_config, get_state, analyze_trend_fn, state
     )
 
     for key in ["temperature", "humidity", "vpd"]:
@@ -545,7 +538,6 @@ def test_evaluate_optimal_temperature_all_branches(
 @pytest.mark.asyncio
 async def test_async_evaluate_fallback_mold_trend_analysis_veg_safe_zone() -> None:
     """Test that rising humidity in Veg safe zone does not trigger alert."""
-    sensor_instance = MagicMock()
     env_config: dict[str, Any] = {
         "humidity_sensor": "sensor.humidity",
         "humidity_trend_sensitivity": 0.5,
@@ -559,7 +551,6 @@ async def test_async_evaluate_fallback_mold_trend_analysis_veg_safe_zone() -> No
     state = MagicMock(spec=EnvironmentState, flower_days=-1, humidity=61)
 
     await _async_evaluate_fallback_mold_trend_analysis(
-        sensor_instance,
         env_config,
         "humidity",
         "humidity_trend",
@@ -579,7 +570,6 @@ async def test_async_evaluate_fallback_mold_trend_analysis_veg_safe_zone() -> No
 @pytest.mark.asyncio
 async def test_async_evaluate_fallback_mold_trend_analysis_late_flower_unsafe() -> None:
     """Test that rising humidity in Late Flower unsafe zone triggers alert."""
-    sensor_instance = MagicMock()
     env_config: dict[str, Any] = {
         "humidity_sensor": "sensor.humidity",
         "humidity_trend_sensitivity": 0.5,
@@ -593,7 +583,6 @@ async def test_async_evaluate_fallback_mold_trend_analysis_late_flower_unsafe() 
     state = MagicMock(spec=EnvironmentState, flower_days=45, humidity=58)
 
     await _async_evaluate_fallback_mold_trend_analysis(
-        sensor_instance,
         env_config,
         "humidity",
         "humidity_trend",

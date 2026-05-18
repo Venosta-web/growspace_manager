@@ -94,7 +94,7 @@ def _resolve_position_conflict(
         return
 
     new_row, new_col = service_data[ATTR_ROW], service_data[ATTR_COL]
-    existing_plants = coordinator.services.get_growspace_plants(growspace_id)
+    existing_plants = coordinator.services.growspaces.get_growspace_plants(growspace_id)
     is_occupied = any(
         p.plant_id != plant_id and p.row == new_row and p.col == new_col
         for p in existing_plants
@@ -255,7 +255,7 @@ async def handle_add_plant(
 
         # Call through facade
         try:
-            plant = await coordinator.services.add_plant(
+            plant = await coordinator.services.plants.add_plant(
                 growspace_id=growspace_id,
                 strain=call.data[ATTR_STRAIN],
                 row=row,
@@ -365,7 +365,7 @@ async def handle_add_plants(
 
             # Add the plant through facade
             try:
-                await coordinator.services.add_plant(
+                await coordinator.services.plants.add_plant(
                     growspace_id=growspace_id,
                     strain=strain,
                     row=free_row,
@@ -438,7 +438,7 @@ async def handle_take_clone(
 
     # Delegate to facade
     try:
-        clones = await coordinator.services.take_clones(
+        clones = await coordinator.services.plants.take_clones(
             mother_plant_id=mother_plant_id,
             num_clones=num_clones,
             target_growspace_id=target_growspace_id,
@@ -481,7 +481,7 @@ async def handle_move_clone(
         )
 
     try:
-        await coordinator.services.promote_clone(
+        await coordinator.services.plants.promote_clone(
             clone_id=plant_id,
             target_growspace_id=target_growspace_id,
             transition_date=transition_date,
@@ -561,7 +561,7 @@ async def handle_update_plant(
             # Let's assume we need to ensure it exists.
             await strain_library.add_strain(strain=strain_key, phenotype=pheno_key)
 
-        await coordinator.services.update_plant(plant_id, **update_data)
+        await coordinator.services.plants.update_plant(plant_id, **update_data)
         _LOGGER.info("Updated plant %s with data: %s", plant_id, update_data)
 
     except (
@@ -592,7 +592,7 @@ async def handle_remove_plant(
 
     try:
         plant_info = coordinator.plants[plant_id]  # Get info before removal
-        await coordinator.services.remove_plant(plant_id)
+        await coordinator.services.plants.remove_plant(plant_id)
         _LOGGER.info(
             "Plant %s removed successfully from growspace %s",
             plant_id,
@@ -633,7 +633,7 @@ async def handle_switch_plants(
         raise ServiceValidationError(f"Plant {plant_id_2} does not exist.")
 
     try:
-        await coordinator.services.switch_plants(plant_id_1, plant_id_2)
+        await coordinator.services.plants.switch_plants(plant_id_1, plant_id_2)
         _LOGGER.info("Plants %s and %s switched successfully", plant_id_1, plant_id_2)
 
     except (
@@ -682,7 +682,7 @@ async def handle_move_plant(
         old_row, old_col = plant.row, plant.col
 
         # Check if new position is occupied by another plant
-        existing_plants = coordinator.services.get_growspace_plants(plant.growspace_id)
+        existing_plants = coordinator.services.growspaces.get_growspace_plants(plant.growspace_id)
         occupying_plant = None
         for other_plant in existing_plants:
             if (
@@ -709,7 +709,7 @@ async def handle_move_plant(
             )
 
             # Use the facade
-            await coordinator.services.switch_plants(plant_id, occupying_plant_id)
+            await coordinator.services.plants.switch_plants(plant_id, occupying_plant_id)
 
             _LOGGER.info(
                 "Successfully switched positions for %s and %s",
@@ -718,7 +718,7 @@ async def handle_move_plant(
             )
         else:
             # Position is empty, move through facade
-            await coordinator.services.move_plant(plant_id, new_row, new_col)
+            await coordinator.services.plants.move_plant(plant_id, new_row, new_col)
             _LOGGER.info(
                 "Plant %s moved to (%d,%d) in growspace %s",
                 plant.strain,
@@ -766,7 +766,7 @@ async def handle_transition_plant_stage(
             )
 
     try:
-        await coordinator.services.transition_plant_stage(
+        await coordinator.services.plants.transition_plant_stage(
             plant_id=plant_id,
             new_stage=new_stage,
             transition_date=transition_date or None,
@@ -816,7 +816,7 @@ async def handle_harvest_plant(
             )
 
     try:
-        await coordinator.services.harvest_plant(
+        await coordinator.services.plants.harvest_plant(
             plant_id=plant_id,
             target_growspace_id=target_growspace_id,
             target_growspace_name=None,
@@ -887,7 +887,7 @@ async def handle_score_plant(
     plant_id = _resolve_plant_id(hass, call.data[ATTR_PLANT_ID])
     await _ensure_plant_loaded(hass, coordinator, plant_id)
 
-    await coordinator.services.score_plant(
+    await coordinator.services.plants.score_plant(
         plant_id=plant_id,
         vigor=call.data.get(ATTR_VIGOR),
         internodal_spacing=call.data.get(ATTR_INTERNODAL_SPACING),
@@ -907,7 +907,7 @@ async def handle_update_harvest_metrics(
     plant_id = _resolve_plant_id(hass, call.data[ATTR_PLANT_ID])
     await _ensure_plant_loaded(hass, coordinator, plant_id)
 
-    await coordinator.services.update_harvest_metrics(
+    await coordinator.services.plants.update_harvest_metrics(
         plant_id=plant_id,
         wet_weight=call.data.get(ATTR_WET_WEIGHT),
         dry_weight=call.data.get(ATTR_DRY_WEIGHT),

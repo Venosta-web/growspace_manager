@@ -61,7 +61,7 @@ async def handle_add_growspace(
     rows = call.data[ATTR_ROWS]
     plants_per_row = call.data[ATTR_PLANTS_PER_ROW]
 
-    growspace_id = await coordinator.services.add_growspace(
+    growspace_id = await coordinator.services.growspaces.add_growspace(
         name=name,
         rows=rows,
         plants_per_row=plants_per_row,
@@ -80,7 +80,7 @@ async def handle_update_growspace(
 ) -> None:
     """Handle update growspace service call."""
     growspace_id = call.data[ATTR_GROWSPACE_ID]
-    await coordinator.services.update_growspace(
+    await coordinator.services.growspaces.update_growspace(
         growspace_id=growspace_id,
         name=call.data.get(ATTR_NAME),
         rows=call.data.get(ATTR_ROWS),
@@ -98,7 +98,7 @@ async def handle_remove_growspace(
 ) -> None:
     """Handle remove growspace service call."""
     growspace_id = call.data[ATTR_GROWSPACE_ID]
-    await coordinator.services.remove_growspace(growspace_id)
+    await coordinator.services.growspaces.remove_growspace(growspace_id)
     _LOGGER.info("Growspace %s removed successfully", growspace_id)
 
 

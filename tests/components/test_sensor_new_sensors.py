@@ -33,7 +33,7 @@ def _make_coordinator(**kwargs):
     coordinator = MagicMock()
     coordinator.growspaces = kwargs.get("growspaces", {})
     coordinator.plants = kwargs.get("plants", {})
-    coordinator.services.get_growspace_plants = MagicMock(
+    coordinator.services.growspaces.get_growspace_plants = MagicMock(
         return_value=kwargs.get("plants_list", [])
     )
     coordinator.async_add_listener = MagicMock()
@@ -519,7 +519,7 @@ def _make_water_sensor():
         daily_readings=[{"date": "2026-01-12", "liters": 5.0}],
     )
     coordinator.growspaces = {"gs1": growspace}
-    coordinator.services.get_growspace_plants = MagicMock(return_value=[Mock(), Mock()])
+    coordinator.services.growspaces.get_growspace_plants = MagicMock(return_value=[Mock(), Mock()])
 
     sensor = WaterUsageSensor(coordinator, "gs1", "Tent 1")
     sensor.hass = MagicMock()
@@ -587,8 +587,7 @@ def test_ec_sensor_get_active_curve_no_growspace() -> None:
     """Lines 1482-1484: _get_active_curve returns None when growspace is missing."""
     sensor, coordinator = _make_ec_sensor()
     coordinator.growspaces = {}
-    coordinator.nutrient_manager = MagicMock()
-    coordinator.nutrient_manager.ec_ramp_curves = {}
+    coordinator.services.config.ec_ramp_curves = {}
     assert sensor._get_active_curve() is None
 
 
@@ -596,9 +595,8 @@ def test_ec_sensor_get_active_curve_no_plants() -> None:
     """Lines 1486-1488: _get_active_curve returns None when no plants in growspace."""
     sensor, coordinator = _make_ec_sensor()
     coordinator.growspaces = {"gs1": Mock()}
-    coordinator.nutrient_manager = MagicMock()
-    coordinator.nutrient_manager.ec_ramp_curves = {"c1": _flower_curve()}
-    coordinator.services.get_growspace_plants.return_value = []
+    coordinator.services.config.ec_ramp_curves = {"c1": _flower_curve()}
+    coordinator.services.growspaces.get_growspace_plants.return_value = []
     assert sensor._get_active_curve() is None
 
 
@@ -606,10 +604,9 @@ def test_ec_sensor_get_active_curve_matches() -> None:
     """Lines 1491-1494: _get_active_curve returns the curve matching current stage."""
     sensor, coordinator = _make_ec_sensor()
     curve = _flower_curve()
-    coordinator.nutrient_manager = MagicMock()
-    coordinator.nutrient_manager.ec_ramp_curves = {"c1": curve}
+    coordinator.services.config.ec_ramp_curves = {"c1": curve}
     coordinator.growspaces = {"gs1": Mock()}
-    coordinator.services.get_growspace_plants.return_value = [Mock()]
+    coordinator.services.growspaces.get_growspace_plants.return_value = [Mock()]
 
     with patch(
         "custom_components.growspace_manager.sensor.calculate_plant_stage",
@@ -624,10 +621,9 @@ def test_ec_sensor_get_active_curve_no_match() -> None:
     """_get_active_curve returns None when no curve matches current stage."""
     sensor, coordinator = _make_ec_sensor()
     curve = _flower_curve()
-    coordinator.nutrient_manager = MagicMock()
-    coordinator.nutrient_manager.ec_ramp_curves = {"c1": curve}
+    coordinator.services.config.ec_ramp_curves = {"c1": curve}
     coordinator.growspaces = {"gs1": Mock()}
-    coordinator.services.get_growspace_plants.return_value = [Mock()]
+    coordinator.services.growspaces.get_growspace_plants.return_value = [Mock()]
 
     with patch(
         "custom_components.growspace_manager.sensor.calculate_plant_stage",
@@ -640,7 +636,7 @@ def test_ec_sensor_get_current_week() -> None:
     """Lines 1498-1503: _get_current_week calculates week from days in stage."""
     sensor, coordinator = _make_ec_sensor()
     plant = Mock(get_days_in_stage=Mock(return_value=14))
-    coordinator.services.get_growspace_plants.return_value = [plant]
+    coordinator.services.growspaces.get_growspace_plants.return_value = [plant]
 
     with patch(
         "custom_components.growspace_manager.sensor.calculate_plant_stage",
@@ -652,7 +648,7 @@ def test_ec_sensor_get_current_week() -> None:
 def test_ec_sensor_get_current_week_no_plants() -> None:
     """_get_current_week returns 1 as default when no plants exist."""
     sensor, coordinator = _make_ec_sensor()
-    coordinator.services.get_growspace_plants.return_value = []
+    coordinator.services.growspaces.get_growspace_plants.return_value = []
     assert sensor._get_current_week() == 1
 
 
@@ -660,11 +656,10 @@ def test_ec_sensor_native_value_exact_week_match() -> None:
     """Lines 1509-1515: native_value returns midpoint for exact week match."""
     sensor, coordinator = _make_ec_sensor()
     curve = _flower_curve()
-    coordinator.nutrient_manager = MagicMock()
-    coordinator.nutrient_manager.ec_ramp_curves = {"c1": curve}
+    coordinator.services.config.ec_ramp_curves = {"c1": curve}
     coordinator.growspaces = {"gs1": Mock()}
     plant = Mock(get_days_in_stage=Mock(return_value=7))  # week 2
-    coordinator.services.get_growspace_plants.return_value = [plant]
+    coordinator.services.growspaces.get_growspace_plants.return_value = [plant]
 
     with patch(
         "custom_components.growspace_manager.sensor.calculate_plant_stage",
@@ -685,11 +680,10 @@ def test_ec_sensor_native_value_fallback_last_point() -> None:
         points=[ECRampPoint(week=1, ec_min=1.2, ec_max=1.6)],
         created_at="2026-01-01",
     )
-    coordinator.nutrient_manager = MagicMock()
-    coordinator.nutrient_manager.ec_ramp_curves = {"c1": curve}
+    coordinator.services.config.ec_ramp_curves = {"c1": curve}
     coordinator.growspaces = {"gs1": Mock()}
     plant = Mock(get_days_in_stage=Mock(return_value=21))  # week 4 > last week 1
-    coordinator.services.get_growspace_plants.return_value = [plant]
+    coordinator.services.growspaces.get_growspace_plants.return_value = [plant]
 
     with patch(
         "custom_components.growspace_manager.sensor.calculate_plant_stage",
@@ -703,8 +697,7 @@ def test_ec_sensor_native_value_fallback_last_point() -> None:
 def test_ec_sensor_native_value_no_curve() -> None:
     """native_value returns None when no active curve exists."""
     sensor, coordinator = _make_ec_sensor()
-    coordinator.nutrient_manager = MagicMock()
-    coordinator.nutrient_manager.ec_ramp_curves = {}
+    coordinator.services.config.ec_ramp_curves = {}
     coordinator.growspaces = {}
     assert sensor.native_value is None
 
@@ -713,11 +706,10 @@ def test_ec_sensor_extra_state_attributes_exact_match() -> None:
     """Lines 1526-1543: extra_state_attributes with exact week match."""
     sensor, coordinator = _make_ec_sensor()
     curve = _flower_curve()
-    coordinator.nutrient_manager = MagicMock()
-    coordinator.nutrient_manager.ec_ramp_curves = {"c1": curve}
+    coordinator.services.config.ec_ramp_curves = {"c1": curve}
     coordinator.growspaces = {"gs1": Mock()}
     plant = Mock(get_days_in_stage=Mock(return_value=7))  # week 2
-    coordinator.services.get_growspace_plants.return_value = [plant]
+    coordinator.services.growspaces.get_growspace_plants.return_value = [plant]
 
     with patch(
         "custom_components.growspace_manager.sensor.calculate_plant_stage",
@@ -742,11 +734,10 @@ def test_ec_sensor_extra_state_attributes_fallback_last_point() -> None:
         points=[ECRampPoint(week=1, ec_min=1.2, ec_max=1.6)],
         created_at="2026-01-01",
     )
-    coordinator.nutrient_manager = MagicMock()
-    coordinator.nutrient_manager.ec_ramp_curves = {"c1": curve}
+    coordinator.services.config.ec_ramp_curves = {"c1": curve}
     coordinator.growspaces = {"gs1": Mock()}
     plant = Mock(get_days_in_stage=Mock(return_value=21))  # week 4
-    coordinator.services.get_growspace_plants.return_value = [plant]
+    coordinator.services.growspaces.get_growspace_plants.return_value = [plant]
 
     with patch(
         "custom_components.growspace_manager.sensor.calculate_plant_stage",
@@ -761,8 +752,7 @@ def test_ec_sensor_extra_state_attributes_fallback_last_point() -> None:
 def test_ec_sensor_extra_state_attributes_no_curve() -> None:
     """extra_state_attributes returns {} when no active curve."""
     sensor, coordinator = _make_ec_sensor()
-    coordinator.nutrient_manager = MagicMock()
-    coordinator.nutrient_manager.ec_ramp_curves = {}
+    coordinator.services.config.ec_ramp_curves = {}
     coordinator.growspaces = {}
     assert sensor.extra_state_attributes == {}
 
@@ -839,19 +829,20 @@ def test_water_sensor_extra_state_attributes_invalid_date() -> None:
 
 
 def test_ec_sensor_get_active_curve_no_nutrient_manager() -> None:
-    """Line 1474: _get_active_curve returns None when coordinator lacks nutrient_manager."""
+    """_get_active_curve returns None when ec_ramp_curves is empty."""
     sensor, _ = _make_ec_sensor()
-    sensor.coordinator = Mock(spec=[])
+    coordinator = MagicMock()
+    coordinator.services.config.ec_ramp_curves = {}
+    sensor.coordinator = coordinator
     assert sensor._get_active_curve() is None
 
 
 def test_ec_sensor_get_active_curve_no_ec_ramp_curves_attr() -> None:
-    """Line 1477: _get_active_curve returns None when nutrient_manager lacks ec_ramp_curves."""
+    """_get_active_curve returns None when ec_ramp_curves is None/falsy."""
     sensor, _ = _make_ec_sensor()
-    nm = Mock(spec=[])
-    mock_coordinator = Mock()
-    mock_coordinator.nutrient_manager = nm
-    sensor.coordinator = mock_coordinator
+    coordinator = MagicMock()
+    coordinator.services.config.ec_ramp_curves = None
+    sensor.coordinator = coordinator
     assert sensor._get_active_curve() is None
 
 
@@ -865,8 +856,7 @@ def test_ec_sensor_native_value_before_first_point() -> None:
         points=[ECRampPoint(week=5, ec_min=1.6, ec_max=2.0)],
         created_at="2026-01-01",
     )
-    coordinator.nutrient_manager = MagicMock()
-    coordinator.nutrient_manager.ec_ramp_curves = {"c1": curve}
+    coordinator.services.config.ec_ramp_curves = {"c1": curve}
     coordinator.growspaces = {"gs1": Mock()}
     plant = Mock(get_days_in_stage=Mock(return_value=14))  # week 3 < last week 5
     coordinator.get_growspace_plants.return_value = [plant]

@@ -87,7 +87,7 @@ class VisionCheckupScheduler:
 
         Uses flower hours if any plant is in flower stage, otherwise veg hours.
         """
-        plants = self.coordinator.services.get_growspace_plants(growspace.id)
+        plants = self.coordinator.services.growspaces.get_growspace_plants(growspace.id)
         env = growspace.environment_config
         for plant in plants:
             if getattr(plant, "stage", None) in (PlantStage.FLOWER, "flower"):
@@ -107,7 +107,7 @@ class VisionCheckupScheduler:
         from .services.ai_assistant import GrowAssistant  # noqa: PLC0415
 
         assistant = GrowAssistant(
-            self.hass, self.coordinator, self.coordinator.strain_library
+            self.hass, self.coordinator, self.coordinator.services.config.strain_library
         )
         return assistant.gather_growspace_data(growspace_id)
 
@@ -123,7 +123,7 @@ class VisionCheckupScheduler:
         from .services.ai_assistant import GrowAssistant  # noqa: PLC0415
 
         assistant = GrowAssistant(
-            self.hass, self.coordinator, self.coordinator.strain_library
+            self.hass, self.coordinator, self.coordinator.services.config.strain_library
         )
         env_context = assistant._format_context_data(context_data)  # noqa: SLF001
 

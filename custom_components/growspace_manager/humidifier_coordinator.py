@@ -235,7 +235,7 @@ class HumidifierCoordinator:
 
     def _get_growth_stage(self) -> PlantStage:
         """Determine the current growth stage for threshold selection."""
-        plants = self.main_coordinator.services.get_growspace_plants(self.growspace_id)
+        plants = self.main_coordinator.services.growspaces.get_growspace_plants(self.growspace_id)
         return determine_coordinator_stage(plants)
 
     def _get_current_thresholds(self, stage: str, is_day: bool) -> dict[str, float]:

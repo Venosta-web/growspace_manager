@@ -75,7 +75,7 @@ async def test_async_update_irrigation_config_normalizes_empty_strings(
     }
 
     # Execute
-    await coordinator.services.update_irrigation_config(growspace_id, user_input)
+    await coordinator.services.growspaces.update_irrigation_config(growspace_id, user_input)
 
     # Assertions
     assert growspace.irrigation_config.irrigation_pump_entity == "switch.new_irrigation"

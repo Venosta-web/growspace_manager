@@ -383,11 +383,11 @@ async def test_vpd_sensor_added_to_hass_weather(setup_sensor_for_test):
 async def test_strain_library_sensor_attributes_avg(setup_sensor_for_test):
     """Test StrainLibrarySensor attributes averaging logic."""
     coordinator = MagicMock()
-    coordinator.strain_library.get_analytics.return_value = {
-        "strains": {"Strain A": {}},
-        "strain_list": ["Strain A"],
-    }
+    analytics = {"strains": {"Strain A": {}}, "strain_list": ["Strain A"]}
+    coordinator.strain_library.get_analytics.return_value = analytics
     coordinator.strain_library.get_all.return_value = {"Strain A": {}}
+    coordinator.services.config.strain_library.get_analytics.return_value = analytics
+    coordinator.services.config.strain_library.get_all.return_value = {"Strain A": {}}
 
     sensor = StrainLibrarySensor(coordinator)
     setup_sensor_for_test(sensor)

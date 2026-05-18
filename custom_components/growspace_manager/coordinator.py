@@ -44,6 +44,7 @@ from .notifications import NotificationSettingsManager
 from .presentation import PlantViewModelBuilder
 from .service_coordinator_locator import ServiceCoordinatorLocator
 from .services.environment_reporter import EnvironmentReporter
+from .services.context import ServiceContext
 from .services.facade import ServiceFacade
 from .services.ipm_service import IPMService
 from .services.nutrient_inventory import NutrientInventoryService
@@ -345,18 +346,25 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             self.notification_state,
         )
 
-        # 4. Initialize Managers (replacing services)
+        # 4. Initialize Managers and Services
+        _svc_ctx = ServiceContext(
+            save_callback=self._save_callback,
+            lock=self.lock,
+            add_event=self.add_event,
+            invalidate_cache=self.cache.invalidate,
+        )
+
         self._growspace_manager = GrowspaceManager(
+            _svc_ctx,
             self.hass,
             self.data_repository,
             self.notification_state,
             self.validator,
             self.view_model_builder,
-            self._save_callback,
-            self.lock,
         )
 
         self._plant_manager = PlantManager(
+            _svc_ctx,
             self.hass,
             self.data_repository,
             self.notification_state,
@@ -364,8 +372,6 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             self._growspace_manager,
             self.strain_library,
             self._plant_view_builder,
-            self._save_callback,
-            self.lock,
         )
 
         # Aliases for compatibility
@@ -374,34 +380,24 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self.lifecycle_manager = self._plant_manager
         self._special_growspace_manager = self._growspace_manager
 
-        # Initialize specialized services
         self._watering_service = WateringService(
+            _svc_ctx,
             self.hass,
             self.data_repository,
             self.validator,
             self.nutrient_manager,
-            self._save_callback,
-            self.lock,
-            self.add_event,
-            self.cache.invalidate,
         )
 
         self._training_service = TrainingService(
+            _svc_ctx,
             self.hass,
             self.data_repository,
-            self._save_callback,
-            self.lock,
-            self.add_event,
-            self.cache.invalidate,
         )
 
         self._ipm_service = IPMService(
+            _svc_ctx,
             self.hass,
             self.data_repository,
-            self._save_callback,
-            self.lock,
-            self.add_event,
-            self.cache.invalidate,
         )
 
         self.environment_analyzer = EnvironmentAnalyzer(hass, self)
@@ -706,7 +702,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self.subsystem_manager.async_cancel_all()
 
         # Unsubscribe all tank water trackers
-        await self.services.async_unsubscribe_all_trackers()
+        await self.services.growspaces.async_unsubscribe_all_trackers()
 
         if hasattr(self, "environment_reporter"):
             self.environment_reporter.unload()
@@ -774,11 +770,11 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
     def get_growspace_grid(self, growspace_id: str) -> list[list[str | None]]:
         """Generate a 2D grid representation of a growspace's plant layout."""
-        return self.services.get_growspace_grid(growspace_id)
+        return self.services.growspaces.get_growspace_grid(growspace_id)
 
     def _guess_overview_entity_id(self, growspace_id: str) -> str:
         """Make a best-effort guess of the overview sensor entity ID for a growspace."""
-        return self.services.guess_overview_entity_id(growspace_id)
+        return self.services.growspaces.guess_overview_entity_id(growspace_id)
 
     # =============================================================================
     # NOTIFICATION MANAGEMENT
@@ -786,13 +782,13 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
     def should_send_notification(self, plant_id: str, stage: str, days: int) -> bool:
         """Check if a notification for a specific event has already been sent."""
-        return self.services.should_send_notification(plant_id, stage, days)
+        return self.services.notifications.should_send_notification(plant_id, stage, days)
 
     async def mark_notification_sent(
         self, plant_id: str, stage: str, days: int
     ) -> None:
         """Mark a notification as sent to prevent duplicates."""
-        await self.services.mark_notification_sent(plant_id, stage, days)
+        await self.services.notifications.mark_notification_sent(plant_id, stage, days)
 
     def fire_event(self, event_type: str, data: dict[str, Any]) -> None:
         """Fire a growspace manager event."""
@@ -800,4 +796,4 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
     async def _async_remove_plant_entities(self, plant_id: str) -> None:
         """Remove all Home Assistant entities associated with a specific plant."""
-        await self.services.remove_plant_entities(plant_id)
+        await self.services.plants.remove_plant_entities(plant_id)

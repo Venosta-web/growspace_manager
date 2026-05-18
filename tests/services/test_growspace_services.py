@@ -36,7 +36,7 @@ def obsolete_mock_coordinator():
     """Fixture for a mock GrowspaceCoordinator instance."""
     coordinator = MagicMock(spec=GrowspaceCoordinator)
     coordinator.growspace_manager.add_growspace = AsyncMock(return_value="gs1")
-    coordinator.services.remove_growspace = AsyncMock()
+    coordinator.services.growspaces.remove_growspace = AsyncMock()
     # Mock growspaces dict
     mock_gs = MagicMock()
     mock_gs.name = "Test Growspace"
@@ -189,7 +189,7 @@ async def test_handle_remove_growspace(
 
     await handle_remove_growspace(mock_hass, mock_coordinator, mock_call)
 
-    mock_coordinator.services.remove_growspace.assert_awaited_once_with("gs1")
+    mock_coordinator.services.growspaces.remove_growspace.assert_awaited_once_with("gs1")
     mock_hass.bus.async_fire.assert_not_called()
 
 
@@ -202,7 +202,7 @@ async def test_handle_remove_growspace_exception(
 ) -> None:
     """Test handle_remove_growspace with an exception."""
     mock_call.data = {"growspace_id": "gs1"}
-    mock_coordinator.services.remove_growspace.side_effect = Exception("Remove failed")
+    mock_coordinator.services.growspaces.remove_growspace.side_effect = Exception("Remove failed")
 
     with pytest.raises(ServiceValidationError, match="Operation failed: Remove failed"):
         await handle_remove_growspace(mock_hass, mock_coordinator, mock_call)
@@ -423,7 +423,7 @@ async def test_handle_remove_growspace_growspace_error(
 ) -> None:
     """Test handle_remove_growspace with a GrowspaceError."""
     mock_call.data = {"growspace_id": "gs1"}
-    mock_coordinator.services.remove_growspace.side_effect = GrowspaceError(
+    mock_coordinator.services.growspaces.remove_growspace.side_effect = GrowspaceError(
         "Remove error"
     )
 

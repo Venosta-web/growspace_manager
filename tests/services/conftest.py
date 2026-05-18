@@ -113,17 +113,26 @@ def mock_coordinator(mock_plant, mock_growspace):
     coordinator.growspace_manager.get_subareas = mock_get_subareas
 
 
-    # Initialize ServiceFacade and wrap it in a MagicMock
-    # This allows tracking calls while using the real facade logic which delegates to managers
+    # Initialize ServiceFacade, then wrap both the container and each sub-facade in
+    # MagicMocks so tests can assert on calls (assert_called_once_with, etc.)
     facade = ServiceFacade(coordinator)
+
+    def _wrap_sub_facade(sub_facade):
+        """Wrap a sub-facade so async methods are AsyncMocks."""
+        wrapped = MagicMock(wraps=sub_facade)
+        for name, attr in inspect.getmembers(sub_facade, predicate=inspect.iscoroutinefunction):
+            setattr(wrapped, name, AsyncMock(side_effect=attr))
+        return wrapped
+
     coordinator.services = MagicMock(wraps=facade)
-    
-    # Ensure all async methods in the facade are properly wrapped as AsyncMocks
-    # so that assert_awaited works correctly in tests.
+    coordinator.services.growspaces = _wrap_sub_facade(facade.growspaces)
+    coordinator.services.plants = _wrap_sub_facade(facade.plants)
+    coordinator.services.config = _wrap_sub_facade(facade.config)
+    coordinator.services.notifications = _wrap_sub_facade(facade.notifications)
+
+    # Wrap container-level async methods
     for name, attr in inspect.getmembers(facade, predicate=inspect.iscoroutinefunction):
-        # We use side_effect to call the real method while maintaining mock functionality
-        mock_method = AsyncMock(side_effect=attr)
-        setattr(coordinator.services, name, mock_method)
+        setattr(coordinator.services, name, AsyncMock(side_effect=attr))
 
     # Legacy Aliases and helper properties
     type(coordinator).growspace_service = property(lambda self: self.growspace_manager)

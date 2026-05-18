@@ -391,7 +391,7 @@ async def _create_initial_entities(
                 and _should_create_derived_water_sensor(growspace, tank)
             )
 
-        for plant in coordinator.services.get_growspace_plants(growspace_id):
+        for plant in coordinator.services.growspaces.get_growspace_plants(growspace_id):
             pe = PlantEntity(coordinator, plant)
             plant_entities[plant.plant_id] = pe
             initial_entities.append(pe)
@@ -818,7 +818,7 @@ class TankDerivedWaterSensor(CoordinatorEntity, SensorEntity):
     @property
     def _tracker(self) -> Any:
         """Return the TankWaterTracker for this tank, or None."""
-        return self.coordinator.services.get_tank_tracker(
+        return self.coordinator.services.growspaces.get_tank_tracker(
             self._growspace_id, self._tank.sensor_entity
         )
 
@@ -853,7 +853,7 @@ class TankDerivedWaterSensor(CoordinatorEntity, SensorEntity):
     async def async_added_to_hass(self) -> None:
         """Subscribe to tank sensor state changes via the tracker."""
         await super().async_added_to_hass()
-        tracker = self.coordinator.services.get_tank_tracker(
+        tracker = self.coordinator.services.growspaces.get_tank_tracker(
             self._growspace_id, self._tank.sensor_entity
         )
         if tracker is None:
@@ -1189,7 +1189,7 @@ class GrowspaceOverviewSensor(CoordinatorEntity[GrowspaceCoordinator], SensorEnt
     @override  # type: ignore[misc]
     def native_value(self) -> int:
         """Return the number of plants in the growspace."""
-        plants = self.coordinator.services.get_growspace_plants(self.growspace_id)
+        plants = self.coordinator.services.growspaces.get_growspace_plants(self.growspace_id)
         return len(plants)
 
     @property
@@ -1361,13 +1361,13 @@ class StrainLibrarySensor(CoordinatorEntity[GrowspaceCoordinator], SensorEntity)
     @override  # type: ignore[misc]
     def native_value(self) -> int:
         """Return the number of unique strains in the library."""
-        return len(self.coordinator.strain_library.get_all())
+        return len(self.coordinator.services.config.strain_library.get_all())
 
     @property
     @override  # type: ignore[misc]
     def extra_state_attributes(self) -> dict[str, Any]:
         """Return strain analytics as state attributes."""
-        analytics = self.coordinator.strain_library.get_analytics()
+        analytics = self.coordinator.services.config.strain_library.get_analytics()
 
         return {
             "strain_count": len(analytics.get("strains", {})),
@@ -1714,7 +1714,7 @@ class WaterUsageSensor(CoordinatorEntity[GrowspaceCoordinator], SensorEntity):  
             return {}
 
         usage = growspace.water_usage
-        plant_count = len(self.coordinator.services.get_growspace_plants(self._growspace_id))
+        plant_count = len(self.coordinator.services.growspaces.get_growspace_plants(self._growspace_id))
         days = 1
         if usage.cycle_start_date:
             from datetime import date as date_cls  # noqa: PLC0415
@@ -1774,32 +1774,26 @@ class ECTargetSensor(CoordinatorEntity[GrowspaceCoordinator], SensorEntity):  # 
 
     def _get_active_curve(self) -> Any:
         """Get the active EC ramp curve for this growspace's current stage."""
-        if not hasattr(self.coordinator, "nutrient_manager"):
-            return None
-        nm = self.coordinator.nutrient_manager
-        if not hasattr(nm, "ec_ramp_curves"):
+        ec_ramp_curves = self.coordinator.services.config.ec_ramp_curves
+        if not ec_ramp_curves:
             return None
 
-        # Find a curve matching current growspace stage
-        growspace = self.coordinator.growspaces.get(self._growspace_id)
-        if not growspace:
-            return None
-
-        plants = self.coordinator.services.get_growspace_plants(self._growspace_id)
+        plants = self.coordinator.services.growspaces.get_growspace_plants(
+            self._growspace_id
+        )
         if not plants:
             return None
 
-        # Use the dominant stage
         current_stage = calculate_plant_stage(plants[0])
 
-        for curve in nm.ec_ramp_curves.values():
+        for curve in ec_ramp_curves.values():
             if curve.stage == current_stage:
                 return curve
         return None
 
     def _get_current_week(self) -> int:
         """Get the current week number in the active stage."""
-        plants = self.coordinator.services.get_growspace_plants(self._growspace_id)
+        plants = self.coordinator.services.growspaces.get_growspace_plants(self._growspace_id)
         if not plants:
             return 1
         stage = calculate_plant_stage(plants[0])

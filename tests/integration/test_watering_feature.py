@@ -99,7 +99,7 @@ class TestAsyncWaterPlant:
         assert watering_coordinator.plants[plant_id].last_watered is None
 
         # Water the plant
-        await watering_coordinator.services.water_plant(plant_id, amount=1.5)
+        await watering_coordinator.services.plants.water_plant(plant_id, amount=1.5)
 
         # Verify last_watered is now set
         plant = watering_coordinator.plants[plant_id]
@@ -122,7 +122,7 @@ class TestAsyncWaterPlant:
         nutrients = {"CalMag": 2.0, "Bloom": 3.5}
 
         # Water with nutrients
-        await watering_coordinator.services.water_plant(
+        await watering_coordinator.services.plants.water_plant(
             plant_id, amount=2.0, nutrients=nutrients
         )
 
@@ -141,7 +141,7 @@ class TestAsyncWaterPlant:
         events = async_capture_events(hass, EVENT_GROWSPACE_LOG_ENTRY)
 
         # Water the plant
-        await watering_coordinator.services.water_plant(plant_id, amount=1.0)
+        await watering_coordinator.services.plants.water_plant(plant_id, amount=1.0)
 
         # Verify an event was created
         assert len(events) == 1
@@ -161,7 +161,7 @@ class TestAsyncWaterPlant:
 
         events = async_capture_events(hass, EVENT_GROWSPACE_LOG_ENTRY)
 
-        await watering_coordinator.services.water_plant(
+        await watering_coordinator.services.plants.water_plant(
             plant_id, amount=1.5, nutrients=nutrients
         )
 
@@ -177,7 +177,7 @@ class TestAsyncWaterPlant:
         """Test that watering a nonexistent plant raises an error."""
 
         with pytest.raises(PlantNotFoundError):
-            await watering_coordinator.services.water_plant("nonexistent", amount=1.0)
+            await watering_coordinator.services.plants.water_plant("nonexistent", amount=1.0)
 
 
 class TestAsyncWaterGrowspace:
@@ -193,7 +193,7 @@ class TestAsyncWaterGrowspace:
             assert watering_coordinator.plants[plant_id].last_watered is None
 
         # Water the growspace
-        count = await watering_coordinator.services.water_growspace(
+        count = await watering_coordinator.services.growspaces.water_growspace(
             "test_gs", amount_per_plant=2.0
         )
 
@@ -213,7 +213,7 @@ class TestAsyncWaterGrowspace:
         """Test watering a growspace with nutrients updates all plants."""
         nutrients = {"PK": 4.0}
 
-        count = await watering_coordinator.services.water_growspace(
+        count = await watering_coordinator.services.growspaces.water_growspace(
             "test_gs", amount_per_plant=1.0, nutrients=nutrients
         )
 
@@ -229,7 +229,7 @@ class TestAsyncWaterGrowspace:
         """Test that watering a growspace creates events for each plant."""
         events = async_capture_events(hass, EVENT_GROWSPACE_LOG_ENTRY)
 
-        await watering_coordinator.services.water_growspace(
+        await watering_coordinator.services.growspaces.water_growspace(
             "test_gs", amount_per_plant=1.5
         )
 
@@ -246,7 +246,7 @@ class TestAsyncWaterGrowspace:
             Growspace(id="empty_gs", name="Empty", rows=2, plants_per_row=2)
         )
 
-        count = await watering_coordinator.services.water_growspace(
+        count = await watering_coordinator.services.growspaces.water_growspace(
             "empty_gs", amount_per_plant=1.0
         )
 
@@ -259,7 +259,7 @@ class TestAsyncWaterGrowspace:
         """Test that watering a nonexistent growspace raises an error."""
 
         with pytest.raises(GrowspaceNotFoundError):
-            await watering_coordinator.services.water_growspace(
+            await watering_coordinator.services.growspaces.water_growspace(
                 "nonexistent", amount_per_plant=1.0
             )
 
@@ -357,7 +357,7 @@ class TestPlantEntityWateringAttributes:
         """Test that PlantEntity exposes watering attributes correctly."""
 
         # Water the plant first
-        await watering_coordinator.services.water_plant("test_plant", amount=1.0)
+        await watering_coordinator.services.plants.water_plant("test_plant", amount=1.0)
 
         # Create a PlantEntity
         plant = watering_coordinator.plants["test_plant"]

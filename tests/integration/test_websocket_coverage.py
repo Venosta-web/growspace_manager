@@ -525,6 +525,8 @@ async def test_websocket_breeder_commands_generic_error(
 
     mock_coordinator = MagicMock()
     mock_coordinator.strain_library = strain_library
+    mock_coordinator.services.config.strain_library = strain_library
+    mock_coordinator.services.config.strain_library = strain_library
 
     msg_update = {
         "id": 14,
@@ -607,6 +609,8 @@ async def test_websocket_get_strain_lineage_tree_success(mock_hass: MagicMock) -
     }
     mock_coordinator = MagicMock()
     mock_coordinator.strain_library = strain_library
+    mock_coordinator.services.config.strain_library = strain_library
+    mock_coordinator.services.config.strain_library = strain_library
     connection = MagicMock()
 
     msg = {"id": 1, "type": f"{DOMAIN}/get_strain_lineage_tree", "strain_name": "Gelato #41"}
@@ -644,6 +648,8 @@ async def test_websocket_update_strain_lineage_tree_success(mock_hass: MagicMock
     strain_library.update_strain_lineage_tree.return_value = "OG Kush × Durban Poison"
     mock_coordinator = MagicMock()
     mock_coordinator.strain_library = strain_library
+    mock_coordinator.services.config.strain_library = strain_library
+    mock_coordinator.services.config.strain_library = strain_library
     connection = MagicMock()
 
     parents = [

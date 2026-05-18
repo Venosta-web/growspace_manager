@@ -82,7 +82,7 @@ async def test_async_step_select_growspace_for_irrigation_no_growspaces(
     handler: IrrigationConfigHandler,
 ) -> None:
     coordinator = handler.config_entry.runtime_data
-    coordinator.services.get_sorted_growspace_options.return_value = []
+    coordinator.services.growspaces.get_sorted_growspace_options.return_value = []
     handler.flow.async_abort = MagicMock(return_value={"type": "abort"})
     result = await handler.async_step_select_growspace_for_irrigation()
     assert result == {"type": "abort"}
@@ -93,7 +93,7 @@ async def test_async_step_select_growspace_for_irrigation_get(
     handler: IrrigationConfigHandler,
 ) -> None:
     coordinator = handler.config_entry.runtime_data
-    coordinator.services.get_sorted_growspace_options.return_value = [
+    coordinator.services.growspaces.get_sorted_growspace_options.return_value = [
         ("gs1", "GS1")
     ]
     handler.flow.async_show_form = MagicMock(return_value={"type": "form"})
@@ -105,7 +105,7 @@ async def test_async_step_select_growspace_for_irrigation_post(
     handler: IrrigationConfigHandler,
 ) -> None:
     coordinator = handler.config_entry.runtime_data
-    coordinator.services.get_sorted_growspace_options.return_value = [
+    coordinator.services.growspaces.get_sorted_growspace_options.return_value = [
         ("gs1", "GS1")
     ]
     handler.async_step_configure_irrigation = AsyncMock(return_value={"type": "form"})
@@ -127,7 +127,7 @@ async def test_async_step_configure_irrigation_errors(
 
     # Restore entry, no growspace
     handler.config_entry = MagicMock()
-    handler.config_entry.runtime_data.services.get_growspace.return_value = None
+    handler.config_entry.runtime_data.services.growspaces.get_growspace.return_value = None
     result = await handler.async_step_configure_irrigation()
     assert result == {"type": "abort"}
 
@@ -150,7 +150,7 @@ async def test_async_step_irrigation_overview_success(
     growspace = MockGrowspace(
         id="gs1", name="GS1", irrigation_config=MockIrrigationConfig()
     )
-    coordinator.services.get_growspace.return_value = growspace
+    coordinator.services.growspaces.get_growspace.return_value = growspace
     handler.flow.async_show_form = MagicMock(return_value={"type": "form"})
 
     result = await handler.async_step_irrigation_overview()
@@ -164,14 +164,14 @@ async def test_async_step_irrigation_overview_post(
     growspace = MockGrowspace(
         id="gs1", name="GS1", irrigation_config=MockIrrigationConfig()
     )
-    coordinator.services.get_growspace.return_value = growspace
-    coordinator.services.update_irrigation_config = AsyncMock()
+    coordinator.services.growspaces.get_growspace.return_value = growspace
+    coordinator.services.growspaces.update_irrigation_config = AsyncMock()
     handler.flow.async_create_entry = MagicMock(return_value={"type": "create_entry"})
 
     user_input = {"irrigation_duration": 40}
     result = await handler.async_step_irrigation_overview(user_input)
     assert result["type"] == "create_entry"
-    coordinator.services.update_irrigation_config.assert_called_once_with(
+    coordinator.services.growspaces.update_irrigation_config.assert_called_once_with(
         "gs1", **user_input
     )
 
@@ -189,7 +189,7 @@ async def test_async_step_irrigation_overview_no_growspace(
     handler: IrrigationConfigHandler,
 ) -> None:
     coordinator = handler.config_entry.runtime_data
-    coordinator.services.get_growspace.return_value = None
+    coordinator.services.growspaces.get_growspace.return_value = None
     handler.flow.async_abort = MagicMock(return_value={"type": "abort"})
     result = await handler.async_step_irrigation_overview()
     assert result == {"type": "abort"}
@@ -199,7 +199,7 @@ async def test_async_step_configure_irrigation_no_growspace(
     handler: IrrigationConfigHandler,
 ) -> None:
     coordinator = handler.config_entry.runtime_data
-    coordinator.services.get_growspace.return_value = None
+    coordinator.services.growspaces.get_growspace.return_value = None
     handler.flow.async_abort = MagicMock(return_value={"type": "abort"})
     result = await handler.async_step_configure_irrigation()
     assert result == {"type": "abort"}

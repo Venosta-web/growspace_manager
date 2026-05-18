@@ -62,13 +62,13 @@ async def test_async_configure_tank_updates_volume(hass: HomeAssistant) -> None:
 
     # 1. Mock the facade method that handles the actual work
     # Note: Check if your facade method is named 'async_configure_tank' or 'configure_tank'
-    coordinator.services.configure_tank = AsyncMock()
+    coordinator.services.growspaces.configure_tank = AsyncMock()
 
     # 2. Call the services facade method directly
-    await coordinator.services.configure_tank("gs_1", "sensor.tank_1", volume_liters=100.0)
+    await coordinator.services.growspaces.configure_tank("gs_1", "sensor.tank_1", volume_liters=100.0)
 
     # 3. Verify the call was made
-    coordinator.services.configure_tank.assert_called_once_with(
+    coordinator.services.growspaces.configure_tank.assert_called_once_with(
         "gs_1", "sensor.tank_1", volume_liters=100.0
     )
 
@@ -82,7 +82,7 @@ async def test_async_configure_tank_calls_storage_save(hass: HomeAssistant) -> N
     # FIX: Change async_save to async_force_save
     coordinator.storage_manager.async_force_save = AsyncMock()
 
-    await coordinator.services.configure_tank(
+    await coordinator.services.growspaces.configure_tank(
         "gs_1", "sensor.tank_1", volume_liters=75.0
     )
 
@@ -98,7 +98,7 @@ async def test_async_configure_tank_unknown_entity_is_noop(hass: HomeAssistant) 
 
     coordinator.storage_manager.async_save = AsyncMock()
 
-    await coordinator.services.configure_tank(
+    await coordinator.services.growspaces.configure_tank(
         "gs_1", "sensor.unknown_tank", volume_liters=80.0
     )
 
@@ -116,7 +116,7 @@ async def test_async_configure_tank_volume_none_does_not_overwrite(
 
     coordinator.storage_manager.async_save = AsyncMock()
 
-    await coordinator.services.configure_tank("gs_1", "sensor.tank_1", volume_liters=None)
+    await coordinator.services.growspaces.configure_tank("gs_1", "sensor.tank_1", volume_liters=None)
 
     tank = growspace.environment_config.irrigation_tanks[0]
     assert tank.volume_liters == 60.0
@@ -129,7 +129,7 @@ async def test_async_configure_tank_unknown_growspace_is_noop(
     """async_configure_tank with unknown growspace_id must not raise."""
     coordinator = _make_coordinator(hass)
     # Should not raise AttributeError
-    await coordinator.services.configure_tank(
+    await coordinator.services.growspaces.configure_tank(
         "nonexistent_gs", "sensor.tank", volume_liters=100.0
     )
 
@@ -142,7 +142,7 @@ def test_get_tank_tracker_returns_tracker_when_volume_set(hass: HomeAssistant) -
     coordinator = _make_coordinator(hass)
     _add_growspace_with_tank(coordinator, volume_liters=200.0)
 
-    tracker = coordinator.services.get_tank_tracker("gs_1", "sensor.tank_1")
+    tracker = coordinator.services.growspaces.get_tank_tracker("gs_1", "sensor.tank_1")
 
     assert isinstance(tracker, TankWaterTracker)
 
@@ -152,7 +152,7 @@ def test_get_tank_tracker_returns_none_when_volume_not_set(hass: HomeAssistant) 
     coordinator = _make_coordinator(hass)
     _add_growspace_with_tank(coordinator, volume_liters=None)
 
-    tracker = coordinator.services.get_tank_tracker("gs_1", "sensor.tank_1")
+    tracker = coordinator.services.growspaces.get_tank_tracker("gs_1", "sensor.tank_1")
 
     assert tracker is None
 
@@ -162,7 +162,7 @@ def test_get_tank_tracker_returns_none_for_unknown_entity(hass: HomeAssistant) -
     coordinator = _make_coordinator(hass)
     _add_growspace_with_tank(coordinator, volume_liters=200.0)
 
-    tracker = coordinator.services.get_tank_tracker("gs_1", "sensor.does_not_exist")
+    tracker = coordinator.services.growspaces.get_tank_tracker("gs_1", "sensor.does_not_exist")
 
     assert tracker is None
 
@@ -173,7 +173,7 @@ def test_get_tank_tracker_returns_none_for_unknown_growspace(
     """Test get_tank_tracker returns None when growspace_id is not found."""
     coordinator = _make_coordinator(hass)
 
-    tracker = coordinator.services.get_tank_tracker("nonexistent_gs", "sensor.tank_1")
+    tracker = coordinator.services.growspaces.get_tank_tracker("nonexistent_gs", "sensor.tank_1")
 
     assert tracker is None
 
@@ -185,7 +185,7 @@ def test_get_tank_tracker_returns_same_instance_on_repeated_calls(
     coordinator = _make_coordinator(hass)
     _add_growspace_with_tank(coordinator, volume_liters=150.0)
 
-    tracker_first = coordinator.services.get_tank_tracker("gs_1", "sensor.tank_1")
-    tracker_second = coordinator.services.get_tank_tracker("gs_1", "sensor.tank_1")
+    tracker_first = coordinator.services.growspaces.get_tank_tracker("gs_1", "sensor.tank_1")
+    tracker_second = coordinator.services.growspaces.get_tank_tracker("gs_1", "sensor.tank_1")
 
     assert tracker_first is tracker_second

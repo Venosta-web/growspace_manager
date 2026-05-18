@@ -63,10 +63,10 @@ def mock_coordinator():
         "harvest",
     ]
 
-    coordinator.plant_manager.services.add_plant = AsyncMock(
+    coordinator.plant_manager.services.plants.add_plant = AsyncMock(
         side_effect=_mock_add_plant
     )
-    coordinator.plant_manager.add_plant = coordinator.plant_manager.services.add_plant
+    coordinator.plant_manager.add_plant = coordinator.plant_manager.services.plants.add_plant
 
     for method in plant_methods:
         mock_method = AsyncMock()
@@ -88,16 +88,16 @@ def mock_coordinator():
         coordinator.growspaces[g.id] = g
         return g
 
-    coordinator.growspace_manager.services.add_growspace = AsyncMock(
+    coordinator.growspace_manager.services.growspaces.add_growspace = AsyncMock(
         side_effect=_mock_add_gs
     )
     coordinator.growspace_manager.add_growspace = (
-        coordinator.growspace_manager.services.add_growspace
+        coordinator.growspace_manager.services.growspaces.add_growspace
     )
 
-    coordinator.growspace_manager.services.update_growspace = AsyncMock()
+    coordinator.growspace_manager.services.growspaces.update_growspace = AsyncMock()
     coordinator.growspace_manager.update_growspace = (
-        coordinator.growspace_manager.services.update_growspace
+        coordinator.growspace_manager.services.growspaces.update_growspace
     )
 
     # 4. Fix sync vs async getters (Fixes 'coroutine is not iterable')
@@ -128,18 +128,6 @@ def mock_coordinator():
 
     coordinator.ipm_service = MagicMock()
     coordinator.ipm_service.services = MagicMock()
-
-    type(coordinator.services).growspaces = property(
-        lambda self: coordinator.growspaces
-    )
-    type(coordinator.services).plants = property(lambda self: coordinator.plants)
-
-    coordinator.services.get_sorted_growspace_options = MagicMock(
-        return_value=[("gs1", "Test Growspace")]
-    )
-    coordinator.services.get_plant = MagicMock(
-        side_effect=coordinator.plants.get
-    )
 
     from custom_components.growspace_manager.services.facade import ServiceFacade
     services = ServiceFacade(coordinator)

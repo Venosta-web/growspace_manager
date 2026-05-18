@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from unittest.mock import Mock, patch
+from unittest.mock import MagicMock, Mock, patch
 
 import pytest
 
@@ -41,8 +41,9 @@ async def test_websocket_get_strain_library_success(mock_connection) -> None:
     expected_strains = {"Strain A": {"name": "Strain A"}}
     mock_library.get_all.return_value = expected_strains
 
-    coordinator = Mock(spec=GrowspaceCoordinator)
+    coordinator = MagicMock()
     coordinator.strain_library = mock_library
+    coordinator.services.config.strain_library = mock_library
 
     with patch(
         "custom_components.growspace_manager.GrowspaceCoordinator.get_any",
@@ -86,8 +87,9 @@ async def test_websocket_get_strain_library_exception(mock_connection) -> None:
     mock_library = Mock()
     mock_library.get_all.side_effect = RuntimeError("Unexpected error")
 
-    coordinator = Mock(spec=GrowspaceCoordinator)
+    coordinator = MagicMock()
     coordinator.strain_library = mock_library
+    coordinator.services.config.strain_library = mock_library
 
     with patch(
         "custom_components.growspace_manager.GrowspaceCoordinator.get_any",
@@ -172,8 +174,9 @@ async def test_websocket_get_strain_lineage_tree_success(mock_connection) -> Non
     expected_tree = {"name": "Strain A", "parents": []}
     mock_library.get_strain_lineage_tree.return_value = expected_tree
 
-    coordinator = Mock(spec=GrowspaceCoordinator)
+    coordinator = MagicMock()
     coordinator.strain_library = mock_library
+    coordinator.services.config.strain_library = mock_library
 
     with patch(
         "custom_components.growspace_manager.GrowspaceCoordinator.get_any",

@@ -40,7 +40,7 @@ async def handle_log_drying_weight(
     weight_grams: float = call.data[ATTR_WEIGHT_GRAMS]
     date: str | None = call.data.get(ATTR_DATE)
 
-    await coordinator.services.log_drying_weight(
+    await coordinator.services.plants.log_drying_weight(
         plant_id=plant_id,
         weight_grams=weight_grams,
         date=date,
@@ -59,7 +59,7 @@ async def handle_log_moisture_reading(
     moisture_percent: float = call.data[ATTR_MOISTURE_PERCENT]
     date: str | None = call.data.get(ATTR_DATE)
 
-    await coordinator.services.log_moisture_reading(
+    await coordinator.services.plants.log_moisture_reading(
         plant_id=plant_id,
         moisture_percent=moisture_percent,
         date=date,
@@ -79,7 +79,7 @@ async def handle_set_visual_tag(
     plant_id: str = call.data[ATTR_PLANT_ID]
     visual_tag: str | None = call.data.get(ATTR_VISUAL_TAG)
 
-    await coordinator.services.set_visual_tag(
+    await coordinator.services.plants.set_visual_tag(
         plant_id=plant_id,
         visual_tag=visual_tag,
     )

@@ -119,7 +119,7 @@ class EnvironmentConfigHandler(BaseConfigHandler[dict[str, Any]]):
         except AbortFlow as e:
             return self.flow.async_abort(reason=e.reason)
 
-        growspace_options = coordinator.services.get_sorted_growspace_options()
+        growspace_options = coordinator.services.growspaces.get_sorted_growspace_options()
 
         if not growspace_options:
             return self.flow.async_abort(reason="no_growspaces")
@@ -152,7 +152,7 @@ class EnvironmentConfigHandler(BaseConfigHandler[dict[str, Any]]):
         except AbortFlow as e:
             return self.flow.async_abort(reason=e.reason)
         growspace_id = self.flow.selected_growspace_id
-        growspace = coordinator.services.get_growspace(growspace_id)
+        growspace = coordinator.services.growspaces.get_growspace(growspace_id)
 
         if not growspace:
             return self.flow.async_abort(reason="growspace_not_found")
@@ -342,7 +342,7 @@ class EnvironmentConfigHandler(BaseConfigHandler[dict[str, Any]]):
         except AbortFlow as e:
             return self.flow.async_abort(reason=e.reason)
         growspace_id = self.flow.selected_growspace_id
-        growspace = coordinator.services.get_growspace(growspace_id)
+        growspace = coordinator.services.growspaces.get_growspace(growspace_id)
 
         if not growspace:
             return self.flow.async_abort(reason="growspace_not_found")
@@ -394,7 +394,7 @@ class EnvironmentConfigHandler(BaseConfigHandler[dict[str, Any]]):
         except AbortFlow as e:
             return self.flow.async_abort(reason=e.reason)
         growspace_id = self.flow.selected_growspace_id
-        growspace = coordinator.services.get_growspace(growspace_id)
+        growspace = coordinator.services.growspaces.get_growspace(growspace_id)
 
         if not growspace:
             return self.flow.async_abort(reason="growspace_not_found")
@@ -451,7 +451,7 @@ class EnvironmentConfigHandler(BaseConfigHandler[dict[str, Any]]):
         except AbortFlow as e:
             return self.flow.async_abort(reason=e.reason)
         growspace_id = self.flow.selected_growspace_id
-        growspace = coordinator.services.get_growspace(growspace_id)
+        growspace = coordinator.services.growspaces.get_growspace(growspace_id)
 
         if not growspace:
             return self.flow.async_abort(reason="growspace_not_found")

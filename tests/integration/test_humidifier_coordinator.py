@@ -380,7 +380,7 @@ def test_init_missing_growspace(
 async def test_growth_stage_detection(coordinator, mock_main_coordinator) -> None:
     """Test correct growth stage detection."""
     plant = MagicMock(spec=Plant)
-    mock_main_coordinator.services.get_growspace_plants.return_value = [plant]
+    mock_main_coordinator.services.growspaces.get_growspace_plants.return_value = [plant]
 
     with patch(
         "custom_components.growspace_manager.domain.stage_calculator.calculate_days_in_stage",

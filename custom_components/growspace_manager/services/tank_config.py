@@ -53,7 +53,7 @@ async def handle_configure_tank(
             f"Tank entity '{tank_entity}' not found in growspace '{growspace_id}'"
         )
 
-    await coordinator.growspace_manager.async_configure_tank(
+    await coordinator.services.growspaces.configure_tank(
         growspace_id,
         tank_entity,
         volume_liters=volume_liters,

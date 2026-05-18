@@ -11,6 +11,7 @@ from custom_components.growspace_manager.exceptions import (
 )
 from custom_components.growspace_manager.managers.plant import PlantManager
 from custom_components.growspace_manager.models import Plant
+from custom_components.growspace_manager.services.context import ServiceContext
 from homeassistant.core import HomeAssistant
 
 
@@ -77,6 +78,12 @@ def manager(
 ):
     """Fixture for PlantManager."""
     return PlantManager(
+        ctx=ServiceContext(
+            save_callback=save_callback_mock,
+            lock=lock_mock,
+            add_event=MagicMock(),
+            invalidate_cache=MagicMock(),
+        ),
         hass=hass,
         repository=repository_mock,
         notification_state=MagicMock(),
@@ -84,8 +91,6 @@ def manager(
         growspace_manager=gs_service_mock,
         strain_library=strain_library_mock,
         plant_view_builder=MagicMock(),
-        save_callback=save_callback_mock,
-        lock=lock_mock,
     )
 
 
@@ -248,7 +253,7 @@ async def test_remove_plant_race_condition(manager, repository_mock) -> None:
         # After lock acquisition, plant is gone and has_plant returns False
         repository_mock.has_plant.return_value = False
 
-    manager.lock.__aenter__.side_effect = side_effect_enter
+    manager._ctx.lock.__aenter__.side_effect = side_effect_enter
     repository_mock.has_plant.return_value = True
 
     result = await manager.remove_plant(plant_id)

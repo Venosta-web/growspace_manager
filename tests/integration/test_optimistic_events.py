@@ -130,7 +130,7 @@ async def test_async_remove_plant_fires_event(
     hass.bus.async_listen("growspace_manager_updated", event_listener)
 
     # Execute
-    await mock_coordinator.services.remove_plant("test_plant")
+    await mock_coordinator.services.plants.remove_plant("test_plant")
     await hass.async_block_till_done()
 
     # Verify

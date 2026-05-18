@@ -43,7 +43,7 @@ async def test_websocket_get_growspace_data_snapshot(
     """Test websocket_get_growspace_data output matches snapshot."""
     coordinator = MagicMock()
     coordinator.services = MagicMock()
-    coordinator.services.get_growspace_data.return_value = {
+    coordinator.services.growspaces.get_growspace_data.return_value = {
         "id": "gs1",
         "name": "Test Growspace",
         "plants": [
@@ -78,6 +78,7 @@ async def test_websocket_get_strain_library_snapshot(
 
     coordinator = MagicMock()
     coordinator.strain_library = strain_library
+    coordinator.services.config.strain_library = strain_library
 
     with patch(
         "custom_components.growspace_manager.GrowspaceCoordinator.get_any",
@@ -408,10 +409,11 @@ async def test_websocket_update_breeder_snapshot(
 ) -> None:
     """Test websocket_update_breeder output matches snapshot."""
     strain_library = AsyncMock()
-    strain_library.update_breeder.return_value = 5
+    strain_library.update_breeder = AsyncMock(return_value=5)
 
     coordinator = MagicMock()
     coordinator.strain_library = strain_library
+    coordinator.services.config.strain_library = strain_library
 
     with patch(
         "custom_components.growspace_manager.GrowspaceCoordinator.get_any",
@@ -437,10 +439,11 @@ async def test_websocket_delete_breeder_snapshot(
 ) -> None:
     """Test websocket_delete_breeder output matches snapshot."""
     strain_library = AsyncMock()
-    strain_library.delete_breeder.return_value = 3
+    strain_library.delete_breeder = AsyncMock(return_value=3)
 
     coordinator = MagicMock()
     coordinator.strain_library = strain_library
+    coordinator.services.config.strain_library = strain_library
 
     with patch(
         "custom_components.growspace_manager.GrowspaceCoordinator.get_any",
