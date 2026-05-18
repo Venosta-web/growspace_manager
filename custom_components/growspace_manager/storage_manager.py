@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from dataclasses import asdict
-from datetime import datetime
 import json
 import logging
 from pathlib import Path
@@ -11,6 +10,7 @@ from typing import TYPE_CHECKING, Any
 
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.storage import Store
+from homeassistant.util import dt as dt_util
 
 from .const import (
     STORAGE_KEY,
@@ -33,6 +33,7 @@ from .models import (
 
 if TYPE_CHECKING:
     from .data_access.growspace_repository import GrowspaceRepository
+    from .data_access.notification_state import NotificationState
     from .managers.genetics import GeneticsManager
     from .managers.nutrient import NutrientManager
 
@@ -48,19 +49,14 @@ class StorageManager:
         repository: GrowspaceRepository,
         nutrient_manager: NutrientManager,
         genetics_manager: GeneticsManager | None = None,
+        notification_state: NotificationState | None = None,
     ) -> None:
-        """Initialize the StorageManager.
-
-        Args:
-            hass: The Home Assistant instance.
-            repository: The data repository.
-            nutrient_manager: The nutrient manager.
-            genetics_manager: The genetics manager (optional for backward compat).
-        """
+        """Initialize the StorageManager."""
         self.hass = hass
         self.repository = repository
         self.nutrient_manager = nutrient_manager
         self.genetics_manager = genetics_manager
+        self.notification_state = notification_state
 
         # Segmented stores
         self.config_store: Store[dict[str, Any]] = Store(
@@ -101,10 +97,10 @@ class StorageManager:
 
         config = {
             "growspaces": {
-                gid: asdict(g) for gid, g in self.repository.growspaces.items()
+                gs.id: asdict(gs) for gs in self.repository.get_all_growspaces()
             },
-            "notifications_sent": self.repository.notifications_sent,
-            "notifications_enabled": self.repository.notifications_enabled,
+            "notifications_sent": self.notification_state.sent if self.notification_state else {},
+            "notifications_enabled": self.notification_state.enabled if self.notification_state else {},
         }
         # Merge nutrient data (presets and inventory)
         config.update(nutrient_data)
@@ -115,7 +111,7 @@ class StorageManager:
     def _get_plants_data(self) -> dict[str, Any]:
         """Gather plant data for storage."""
         return {
-            "plants": {pid: asdict(p) for pid, p in self.repository.plants.items()},
+            "plants": {p.plant_id: asdict(p) for p in self.repository.get_all_plants()},
         }
 
     def _get_genetics_data(self) -> dict[str, Any]:
@@ -183,13 +179,14 @@ class StorageManager:
         self.genetics_manager.load_data(seed_batches, pollination_events)
 
         # Load notification tracking
-        self.repository.notifications_sent = data.get("notifications_sent", {})
-        self.repository.notifications_enabled = data.get("notifications_enabled", {})
+        if self.notification_state is not None:
+            self.notification_state.sent = data.get("notifications_sent", {})
+            self.notification_state.enabled = data.get("notifications_enabled", {})
 
-        # Ensure all growspaces have a notification enabled state
-        for growspace_id in self.repository.growspaces:
-            if growspace_id not in self.repository.notifications_enabled:
-                self.repository.notifications_enabled[growspace_id] = True
+            # Ensure all growspaces have a notification enabled state
+            for growspace in self.repository.get_all_growspaces():
+                if growspace.id not in self.notification_state.enabled:
+                    self.notification_state.enabled[growspace.id] = True
 
     def _load_legacy(
         self, data: dict[str, Any], options: dict[str, Any] | None = None
@@ -202,7 +199,7 @@ class StorageManager:
     def _backup_corrupt_data(self, key: str, data: dict[str, Any]) -> None:
         """Backup corrupt data to a file before reset."""
         try:
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            timestamp = dt_util.now().strftime("%Y%m%d_%H%M%S")
             backup_filename = f"growspace_manager_{key}_CORRUPT_{timestamp}.json"
             backup_path = Path(self.hass.config.path(".storage")) / backup_filename
 
@@ -248,16 +245,16 @@ class StorageManager:
                 except Exception:
                     _LOGGER.exception("Unexpected error loading plant %s", pid)
 
-            self.repository.plants = plants
-            _LOGGER.info("Loaded %d plants", len(self.repository.plants))
+            self.repository.load_plants(plants)
+            _LOGGER.info("Loaded %d plants", len(plants))
         except (ValueError, KeyError, TypeError):
             _LOGGER.exception("Critical data structure error loading plants")
             self._backup_corrupt_data("plants", data)
-            self.repository.plants = {}
+            self.repository.load_plants({})
         except Exception:
             _LOGGER.exception("Unexpected error loading plants")
             self._backup_corrupt_data("plants", data)
-            self.repository.plants = {}
+            self.repository.load_plants({})
 
     def _load_growspaces(
         self, data: dict[str, Any], options: dict[str, Any] | None = None
@@ -293,27 +290,27 @@ class StorageManager:
                 except Exception:
                     _LOGGER.exception("Unexpected error loading growspace %s", gid)
 
-            self.repository.growspaces = growspaces
-            _LOGGER.info("Loaded %d growspaces", len(self.repository.growspaces))
+            self.repository.load_growspaces(growspaces)
+            _LOGGER.info("Loaded %d growspaces", len(growspaces))
 
             self._apply_options_to_growspaces(options)
         except (ValueError, KeyError, TypeError):
             _LOGGER.exception("Critical data structure error loading growspaces")
             self._backup_corrupt_data("growspaces", data)
-            self.repository.growspaces = {}
+            self.repository.load_growspaces({})
         except Exception:
             _LOGGER.exception("Unexpected error loading growspaces")
             self._backup_corrupt_data("growspaces", data)
-            self.repository.growspaces = {}
+            self.repository.load_growspaces({})
 
     def _apply_options_to_growspaces(self, options: dict[str, Any] | None) -> None:
         """Apply configuration options to loaded growspaces."""
         if not options:
             return
 
-        for growspace_id, growspace in self.repository.growspaces.items():
-            if growspace_id in options:
-                opts = options[growspace_id]
+        for growspace in self.repository.get_all_growspaces():
+            if growspace.id in options:
+                opts = options[growspace.id]
                 if isinstance(opts, dict):
                     growspace.environment_config = EnvironmentConfig.from_dict(opts)
                 else:

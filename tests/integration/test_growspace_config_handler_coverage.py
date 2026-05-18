@@ -121,9 +121,11 @@ async def test_async_step_add_growspace_success(
     handler: GrowspaceConfigHandler,
 ) -> None:
     coordinator = handler.config_entry.runtime_data
-    coordinator.async_add_growspace = AsyncMock()
+    coordinator.services.add_growspace = AsyncMock()
     coordinator.growspace_service.get_sorted_growspace_options.return_value = []
-    handler.flow.async_show_form = MagicMock(return_value={"type": "form", "step_id": "manage_growspaces"})
+    handler.flow.async_show_form = MagicMock(
+        return_value={"type": "form", "step_id": "manage_growspaces"}
+    )
 
     user_input = {
         "name": "GS1",
@@ -135,12 +137,12 @@ async def test_async_step_add_growspace_success(
     }
     result = await handler.async_step_add_growspace(user_input)
     assert result["type"] == "form"
-    coordinator.async_add_growspace.assert_called_once()
+    coordinator.services.add_growspace.assert_called_once()
 
 
 async def test_async_step_add_growspace_fail(handler: GrowspaceConfigHandler) -> None:
     coordinator = handler.config_entry.runtime_data
-    coordinator.async_add_growspace = AsyncMock(side_effect=Exception)
+    coordinator.services.add_growspace = AsyncMock(side_effect=Exception)
     handler.flow.async_show_form = MagicMock(return_value={"type": "form"})
 
     result = await handler.async_step_add_growspace(
@@ -162,13 +164,15 @@ async def test_async_step_confirm_remove_growspace_success(
 ) -> None:
     coordinator = handler.config_entry.runtime_data
     coordinator.growspaces = {"gs1": MockGrowspace(id="gs1", name="GS1")}
-    coordinator.async_remove_growspace = AsyncMock()
+    coordinator.services.remove_growspace = AsyncMock()
     coordinator.growspace_service.get_sorted_growspace_options.return_value = []
-    handler.flow.async_show_form = MagicMock(return_value={"type": "form", "step_id": "manage_growspaces"})
+    handler.flow.async_show_form = MagicMock(
+        return_value={"type": "form", "step_id": "manage_growspaces"}
+    )
 
     result = await handler.async_step_confirm_remove_growspace({"confirm": True})
     assert result["type"] == "form"
-    coordinator.async_remove_growspace.assert_called_once_with("gs1")
+    coordinator.services.remove_growspace.assert_called_once_with("gs1")
 
 
 async def test_async_step_confirm_remove_growspace_fail(
@@ -176,7 +180,7 @@ async def test_async_step_confirm_remove_growspace_fail(
 ) -> None:
     coordinator = handler.config_entry.runtime_data
     coordinator.growspaces = {"gs1": MockGrowspace(id="gs1", name="GS1")}
-    coordinator.async_remove_growspace = AsyncMock(side_effect=Exception)
+    coordinator.services.remove_growspace = AsyncMock(side_effect=Exception)
     handler.flow.async_show_form = MagicMock(return_value={"type": "form"})
 
     result = await handler.async_step_confirm_remove_growspace({"confirm": True})
@@ -191,9 +195,11 @@ async def test_async_step_update_growspace_success(
 ) -> None:
     coordinator = handler.config_entry.runtime_data
     coordinator.growspaces = {"gs1": MockGrowspace(id="gs1", name="GS1")}
-    coordinator.async_update_growspace = AsyncMock()
+    coordinator.services.update_growspace = AsyncMock()
     coordinator.growspace_service.get_sorted_growspace_options.return_value = []
-    handler.flow.async_show_form = MagicMock(return_value={"type": "form", "step_id": "manage_growspaces"})
+    handler.flow.async_show_form = MagicMock(
+        return_value={"type": "form", "step_id": "manage_growspaces"}
+    )
 
     user_input = {
         "name": "GS2",
@@ -205,7 +211,7 @@ async def test_async_step_update_growspace_success(
     }
     result = await handler.async_step_update_growspace(user_input)
     assert result["type"] == "form"
-    coordinator.async_update_growspace.assert_called_once()
+    coordinator.services.update_growspace.assert_called_once()
 
 
 async def test_async_step_update_growspace_fail(
@@ -213,7 +219,7 @@ async def test_async_step_update_growspace_fail(
 ) -> None:
     coordinator = handler.config_entry.runtime_data
     coordinator.growspaces = {"gs1": MockGrowspace(id="gs1", name="GS1")}
-    coordinator.async_update_growspace = AsyncMock(side_effect=Exception)
+    coordinator.services.update_growspace = AsyncMock(side_effect=Exception)
     handler.flow.async_show_form = MagicMock(return_value={"type": "form"})
 
     result = await handler.async_step_update_growspace({"name": "GS2"})
@@ -311,7 +317,7 @@ async def test_async_step_confirm_remove_growspace_not_found(
     handler: GrowspaceConfigHandler,
 ) -> None:
     """Test remove step when growspace is not found."""
-    handler.config_entry.runtime_data.growspaces = {}
+    handler.config_entry.runtime_data.services.growspaces = {}
     handler.flow.async_abort = MagicMock(return_value={"type": "abort"})
 
     result = await handler.async_step_confirm_remove_growspace()
@@ -323,7 +329,7 @@ async def test_async_step_update_growspace_not_found(
     handler: GrowspaceConfigHandler,
 ) -> None:
     """Test update step when growspace is not found."""
-    handler.config_entry.runtime_data.growspaces = {}
+    handler.config_entry.runtime_data.services.growspaces = {}
     handler.flow.async_abort = MagicMock(return_value={"type": "abort"})
 
     result = await handler.async_step_update_growspace()

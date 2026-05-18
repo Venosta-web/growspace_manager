@@ -12,14 +12,18 @@ from custom_components.growspace_manager.models import PollinationEvent, SeedBat
 from homeassistant.exceptions import ServiceValidationError
 from homeassistant.util import dt as dt_util
 
+from .lineage_classifier import classify_lineage
+
 if TYPE_CHECKING:
     from custom_components.growspace_manager.data_access.growspace_repository import (
         GrowspaceRepository,
     )
+    from custom_components.growspace_manager.strain_library import StrainLibrary
 
 _LOGGER = logging.getLogger(__name__)
 
 _HARVESTED_STAGES = {"harvested", "dry", "cure"}
+MAX_LINEAGE_DEPTH = 20
 
 
 class GeneticsManager:
@@ -29,10 +33,12 @@ class GeneticsManager:
         self,
         repository: GrowspaceRepository,
         save_callback: Callable[[], Awaitable[None]],
+        strain_library: StrainLibrary | None = None,
     ) -> None:
         """Initialize the GeneticsManager."""
         self.repository = repository
         self.save_callback = save_callback
+        self.strain_library = strain_library
         self.seed_batches: dict[str, SeedBatch] = {}
         self.pollination_events: dict[str, PollinationEvent] = {}
 
@@ -59,7 +65,7 @@ class GeneticsManager:
         breeder: str,
         quantity: int,
         acquisition_date: str,
-        generation: str,
+        generation: str = "",
         lineage: str = "",
         parent_1_strain: str | None = None,
         parent_1_phenotype: str | None = None,
@@ -82,6 +88,21 @@ class GeneticsManager:
             parent_2_phenotype=parent_2_phenotype,
             notes=notes,
         )
+        # Auto-classify when both parents are known and generation was not set explicitly
+        if (
+            not generation
+            and parent_1_strain
+            and parent_2_strain
+            and self.strain_library is not None
+        ):
+            tree_a = self.strain_library.get_strain_lineage_tree(parent_1_strain)
+            tree_b = self.strain_library.get_strain_lineage_tree(parent_2_strain)
+            batch.generation = classify_lineage(
+                parent_1_strain, parent_2_strain, tree_a, tree_b
+            )
+            await self.strain_library.async_update_strain_generation(
+                strain_name, batch.generation
+            )
         self.seed_batches[batch.batch_id] = batch
         await self.save_callback()
         _LOGGER.info(
@@ -135,6 +156,24 @@ class GeneticsManager:
             batch.parent_2_phenotype = parent_2_phenotype
         if notes is not None:
             batch.notes = notes
+
+        # Re-classify when parent strains changed and caller did not set generation explicitly
+        parents_changed = parent_1_strain is not None or parent_2_strain is not None
+        if (
+            parents_changed
+            and generation is None
+            and batch.parent_1_strain
+            and batch.parent_2_strain
+            and self.strain_library is not None
+        ):
+            tree_a = self.strain_library.get_strain_lineage_tree(batch.parent_1_strain)
+            tree_b = self.strain_library.get_strain_lineage_tree(batch.parent_2_strain)
+            batch.generation = classify_lineage(
+                batch.parent_1_strain, batch.parent_2_strain, tree_a, tree_b
+            )
+            await self.strain_library.async_update_strain_generation(
+                batch.strain_name, batch.generation
+            )
 
         await self.save_callback()
         _LOGGER.info("Updated seed batch '%s' (id=%s)", batch.strain_name, batch_id)
@@ -252,8 +291,8 @@ class GeneticsManager:
                 f"(batch_id={event.result_seed_batch_id})"
             )
 
-        receiver = self.repository.plants.get(event.receiver_plant_id)
-        donor = self.repository.plants.get(event.donor_plant_id)
+        receiver = self.repository.get_plant(event.receiver_plant_id)
+        donor = self.repository.get_plant(event.donor_plant_id)
 
         receiver_name = (
             receiver.genetics.strain_name if receiver else event.receiver_plant_id
@@ -263,18 +302,35 @@ class GeneticsManager:
         lineage = f"{receiver_name} x {donor_name}"
         strain_name = f"{receiver_name} x {donor_name}"
 
+        # Classify cross type from plant lineage trees (exclude current event
+        # so it doesn't appear in its own parents)
+        tree_receiver = self.get_lineage_tree(
+            event.receiver_plant_id, exclude_event_id=event_id
+        )
+        tree_donor = self.get_lineage_tree(
+            event.donor_plant_id, exclude_event_id=event_id
+        )
+        generation = classify_lineage(
+            receiver_name, donor_name, tree_receiver, tree_donor
+        )
+
         batch = SeedBatch(
             batch_id=str(uuid.uuid4()),
             strain_name=strain_name,
             breeder="Self",
             quantity=quantity,
             acquisition_date=dt_util.now().date().isoformat(),
-            generation="F1",
+            generation=generation,
             lineage=lineage,
             notes=notes,
         )
         self.seed_batches[batch.batch_id] = batch
         event.result_seed_batch_id = batch.batch_id
+
+        if self.strain_library is not None:
+            await self.strain_library.async_update_strain_generation(
+                batch.strain_name, generation
+            )
 
         await self.save_callback()
         _LOGGER.info(
@@ -310,7 +366,7 @@ class GeneticsManager:
         Raises:
             ServiceValidationError: If the plant is not found.
         """
-        plant = self.repository.plants.get(plant_id)
+        plant = self.repository.get_plant(plant_id)
         if plant is None:
             raise ServiceValidationError(f"Plant '{plant_id}' not found")
 
@@ -343,6 +399,89 @@ class GeneticsManager:
         )
 
     # ------------------------------------------------------------------
+    # Lineage tree
+    # ------------------------------------------------------------------
+
+    def get_lineage_tree(
+        self,
+        plant_id: str,
+        exclude_event_id: str | None = None,
+        visited_events: set[str] | None = None,
+        depth: int = 0,
+    ) -> dict[str, Any]:
+        """Build a pollination-based lineage tree for a plant.
+
+        Walks the pollination_events to find which event produced the plant
+        (as a receiver), then recurses to find the donor and receiver parents.
+        Returns a node dict matching the strain-library tree format:
+        ``{name, parents: [...]}``.
+
+        Args:
+            plant_id: The plant whose lineage tree is requested.
+            exclude_event_id: Optional event ID to exclude when searching for
+                the producing event — used to avoid including the current cross
+                in its own classification.
+            visited_events: Set of event IDs already visited in this traversal to detect cycles.
+            depth: Current recursion depth.
+
+        Returns:
+            A nested dict ``{name, parents}`` rooted at the given plant.
+            When a pollination event is found, parents are ``[receiver_leaf, donor_subtree]``
+            where the receiver is always a terminal leaf (its own strain name, no parents)
+            because the data model does not link a live plant back to the specific seed batch
+            it was grown from.
+        """
+        if visited_events is None:
+            visited_events = set()
+
+        plant = self.repository.get_plant(plant_id)
+        plant_name = (
+            plant.genetics.strain_name
+            if plant and plant.genetics.strain_name
+            else plant_id
+        )
+        node: dict[str, Any] = {
+            "name": plant_name,
+            "parents": [],
+            "generation": plant.genetics.generation if plant else "",
+        }
+
+        if depth >= MAX_LINEAGE_DEPTH:
+            _LOGGER.warning("Max lineage depth reached for plant %s", plant_id)
+            return node
+
+        # Find a pollination event where this plant is the receiver
+        event = next(
+            (
+                e
+                for e in self.pollination_events.values()
+                if e.receiver_plant_id == plant_id
+                and e.event_id != exclude_event_id
+                and e.event_id not in visited_events
+            ),
+            None,
+        )
+        if event is None:
+            return node
+
+        visited_events.add(event.event_id)
+
+        # Emit receiver as a terminal leaf — the data model does not record which
+        # seed batch a live plant grew from, so recursing into the receiver's own
+        # pollination history would make the plant appear as its own ancestor.
+        node["parents"].append({"name": plant_name, "parents": []})
+        node["parents"].append(
+            self.get_lineage_tree(
+                event.donor_plant_id,
+                exclude_event_id=event.event_id,
+                visited_events=visited_events,
+                depth=depth + 1,
+            )
+        )
+
+        return node
+
+    # ------------------------------------------------------------------
     # Serialization
     # ------------------------------------------------------------------
 
@@ -369,7 +508,7 @@ class GeneticsManager:
         Raises:
             ServiceValidationError: If plant is absent or in a post-harvest stage.
         """
-        plant = self.repository.plants.get(plant_id)
+        plant = self.repository.get_plant(plant_id)
         if plant is None:
             raise ServiceValidationError(
                 f"Pollination {role} plant '{plant_id}' not found"

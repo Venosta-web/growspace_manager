@@ -10,24 +10,24 @@ import asyncio
 import logging
 from typing import TYPE_CHECKING
 
-from custom_components.growspace_manager.dehumidifier_coordinator import (
+from ..dehumidifier_coordinator import (
     DehumidifierCoordinator,
 )
-from custom_components.growspace_manager.humidifier_coordinator import (
+from ..humidifier_coordinator import (
     HumidifierCoordinator,
 )
-from custom_components.growspace_manager.irrigation_coordinator import (
+from ..irrigation_coordinator import (
     IrrigationCoordinator,
 )
-from custom_components.growspace_manager.vwc_irrigation_coordinator import (
+from ..vwc_irrigation_coordinator import (
     VWCIrrigationCoordinator,
 )
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 
 if TYPE_CHECKING:
-    from custom_components.growspace_manager.coordinator import GrowspaceCoordinator
-    from custom_components.growspace_manager.models import Growspace
+    from ..coordinator import GrowspaceCoordinator
+    from ..models import Growspace
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -98,19 +98,33 @@ class SubsystemManager:
         dehumidifier_coordinator = DehumidifierCoordinator(
             self.hass, self.entry, growspace_id, self.coordinator
         )
+        await dehumidifier_coordinator.async_setup()
         self.dehumidifier_coordinators[growspace_id] = dehumidifier_coordinator
 
         # Humidifier coordinator setup
         humidifier_coordinator = HumidifierCoordinator(
             self.hass, self.entry, growspace_id, self.coordinator
         )
+        await humidifier_coordinator.async_setup()
         self.humidifier_coordinators[growspace_id] = humidifier_coordinator
 
     def async_cancel_all(self) -> None:
         """Cancel all sub-coordinator listeners."""
         for irr_coordinator in self.irrigation_coordinators.values():
-            irr_coordinator.async_cancel_listeners()
+            try:
+                irr_coordinator.async_cancel_listeners()
+            except Exception as err:
+                _LOGGER.error("Error cancelling irrigation listeners: %s", err)
+
         for dehum_coordinator in self.dehumidifier_coordinators.values():
-            dehum_coordinator.unload()
+            try:
+                dehum_coordinator.unload()
+            except Exception as err:
+                _LOGGER.error("Error unloading dehumidifier coordinator: %s", err)
+
         for hum_coordinator in self.humidifier_coordinators.values():
-            hum_coordinator.unload()
+            try:
+                hum_coordinator.unload()
+            except Exception as err:
+                _LOGGER.error("Error unloading humidifier coordinator: %s", err)
+

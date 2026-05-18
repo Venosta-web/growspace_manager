@@ -1,5 +1,8 @@
 # serializer version: 1
 # name: test_calculate_days_in_stage_ongoing
+  typing.Any
+# ---
+# name: test_calculate_days_in_stage_ongoing.1
   dict({
     'days': 10,
     'stage': 'veg',

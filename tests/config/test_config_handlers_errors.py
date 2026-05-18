@@ -89,10 +89,12 @@ async def test_strain_flow_delete_error() -> None:
     """Test error handling during strain deletion."""
     handler = StrainConfigHandler()
     coordinator = MagicMock()
-    coordinator.strain_library.remove_strain = AsyncMock(
+    coordinator.services = MagicMock()
+    coordinator.services.strain_library = MagicMock()
+    coordinator.services.strain_library.remove_strain = AsyncMock(
         side_effect=Exception("Del error")
     )
-    coordinator.strain_library.get_all.return_value = {}
+    coordinator.services.strain_library.get_all.return_value = {}
 
     handler.config_entry = MagicMock()
     handler.config_entry.runtime_data = coordinator
@@ -116,7 +118,9 @@ async def test_strain_flow_import_exceptions() -> None:
 
     # 1. FileNotFoundError
     coordinator = MagicMock()
-    coordinator.strain_library.import_library_from_zip = AsyncMock(
+    coordinator.services = MagicMock()
+    coordinator.services.strain_library = MagicMock()
+    coordinator.services.strain_library.import_library_from_zip = AsyncMock(
         side_effect=FileNotFoundError
     )
     handler.config_entry.runtime_data = coordinator
@@ -131,14 +135,14 @@ async def test_strain_flow_import_exceptions() -> None:
     )
 
     # 2. ValueError (invalid zip)
-    coordinator.strain_library.import_library_from_zip = AsyncMock(
+    coordinator.services.strain_library.import_library_from_zip = AsyncMock(
         side_effect=ValueError
     )
     await handler.async_step_import_strain_library(user_input)
     assert handler.flow.async_show_form.call_args[1]["errors"]["base"] == "invalid_zip"
 
     # 3. Generic Exception
-    coordinator.strain_library.import_library_from_zip = AsyncMock(
+    coordinator.services.strain_library.import_library_from_zip = AsyncMock(
         side_effect=Exception("Boom")
     )
     await handler.async_step_import_strain_library(user_input)

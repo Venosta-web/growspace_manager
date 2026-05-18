@@ -44,6 +44,7 @@ class CoordinatorBuilder:
         data: dict[str, Any] | None = None,
         options: dict[str, Any] | None = None,
         strain_library: StrainLibrary | None = None,
+        seedfinder_scraper: Any | None = None,
     ) -> GrowspaceCoordinator:
         """Build a fully configured GrowspaceCoordinator.
 
@@ -54,6 +55,7 @@ class CoordinatorBuilder:
             data: Initial raw data from storage to restore state. If None, starts fresh.
             options: Configuration options from the config entry.
             strain_library: Optional pre-initialized strain library. If None, creates new.
+            seedfinder_scraper: Optional pre-initialized seedfinder scraper. If None, creates new.
 
         Returns:
             Fully initialized GrowspaceCoordinator instance
@@ -74,6 +76,7 @@ class CoordinatorBuilder:
             data=data,
             options=options,
             strain_library=strain_library,
+            seedfinder_scraper=seedfinder_scraper,
         )
 
         _LOGGER.debug("GrowspaceCoordinator built successfully")

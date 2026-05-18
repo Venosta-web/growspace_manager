@@ -37,7 +37,7 @@ async def test_websocket_get_subareas_success(
     with patch(
         "custom_components.growspace_manager.websocket.GrowspaceCoordinator.get_for_service_call"
     ) as mock_get:
-        mock_get.return_value.get_subareas.return_value = [mock_subarea]
+        mock_get.return_value.services.get_subareas.return_value = [mock_subarea]
         await websocket_get_subareas(hass, mock_connection, msg)
     mock_connection.send_result.assert_called_once()
     result = mock_connection.send_result.call_args[0][1]
@@ -53,7 +53,7 @@ async def test_websocket_add_subarea_success(
     with patch(
         "custom_components.growspace_manager.websocket.GrowspaceCoordinator.get_for_service_call"
     ) as mock_get:
-        mock_get.return_value.async_add_subarea = AsyncMock(return_value=mock_subarea)
+        mock_get.return_value.services.add_subarea = AsyncMock(return_value=mock_subarea)
         await websocket_add_subarea(hass, mock_connection, msg)
     mock_connection.send_result.assert_called_once()
     assert mock_connection.send_result.call_args[0][1]["name"] == "Undercanopy"
@@ -73,7 +73,7 @@ async def test_websocket_update_subarea_success(
     with patch(
         "custom_components.growspace_manager.websocket.GrowspaceCoordinator.get_for_service_call"
     ) as mock_get:
-        mock_get.return_value.async_update_subarea = AsyncMock(return_value=mock_subarea)
+        mock_get.return_value.services.update_subarea = AsyncMock(return_value=mock_subarea)
         await websocket_update_subarea(hass, mock_connection, msg)
     mock_connection.send_result.assert_called_once()
 
@@ -91,7 +91,7 @@ async def test_websocket_remove_subarea_success(
     with patch(
         "custom_components.growspace_manager.websocket.GrowspaceCoordinator.get_for_service_call"
     ) as mock_get:
-        mock_get.return_value.async_remove_subarea = AsyncMock()
+        mock_get.return_value.services.remove_subarea = AsyncMock()
         await websocket_remove_subarea(hass, mock_connection, msg)
     mock_connection.send_result.assert_called_once_with(1, {"success": True})
 
@@ -117,7 +117,7 @@ async def test_websocket_add_subarea_validation_error(
     with patch(
         "custom_components.growspace_manager.websocket.GrowspaceCoordinator.get_for_service_call"
     ) as mock_get:
-        mock_get.return_value.async_add_subarea = AsyncMock(
+        mock_get.return_value.services.add_subarea = AsyncMock(
             side_effect=ServiceValidationError("not found")
         )
         await websocket_add_subarea(hass, mock_connection, msg)

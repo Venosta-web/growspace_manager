@@ -3,6 +3,7 @@
 import json
 from unittest.mock import AsyncMock, MagicMock, patch
 
+from freezegun import freeze_time
 import pytest
 from syrupy.assertion import SnapshotAssertion
 
@@ -34,13 +35,15 @@ def mock_connection():
     return connection
 
 
+@freeze_time("2024-01-01 12:00:00", tz_offset=0)
 @pytest.mark.asyncio
 async def test_websocket_get_growspace_data_snapshot(
     hass: HomeAssistant, mock_connection, snapshot: SnapshotAssertion
 ) -> None:
     """Test websocket_get_growspace_data output matches snapshot."""
     coordinator = MagicMock()
-    coordinator.get_growspace_data.return_value = {
+    coordinator.services = MagicMock()
+    coordinator.services.get_growspace_data.return_value = {
         "id": "gs1",
         "name": "Test Growspace",
         "plants": [
@@ -61,6 +64,7 @@ async def test_websocket_get_growspace_data_snapshot(
         assert result == snapshot
 
 
+@freeze_time("2024-01-01 12:00:00", tz_offset=0)
 @pytest.mark.asyncio
 async def test_websocket_get_strain_library_snapshot(
     hass: HomeAssistant, mock_connection, snapshot: SnapshotAssertion
@@ -71,16 +75,23 @@ async def test_websocket_get_strain_library_snapshot(
         "Northern Lights": {"type": "Indica", "flowering_weeks": 8},
         "Blueberry": {"type": "Indica/Sativa", "flowering_weeks": 9},
     }
-    hass.data[DOMAIN] = {"strain_library": strain_library}
 
-    msg = {"id": 2, "type": f"{DOMAIN}/get_strain_library"}
-    websocket_get_strain_library(hass, mock_connection, msg)
+    coordinator = MagicMock()
+    coordinator.strain_library = strain_library
 
-    mock_connection.send_result.assert_called_once()
-    result = mock_connection.send_result.call_args[0][1]
-    assert result == snapshot
+    with patch(
+        "custom_components.growspace_manager.GrowspaceCoordinator.get_any",
+        return_value=coordinator,
+    ):
+        msg = {"id": 2, "type": f"{DOMAIN}/get_strain_library"}
+        websocket_get_strain_library(hass, mock_connection, msg)
+
+        mock_connection.send_result.assert_called_once()
+        result = mock_connection.send_result.call_args[0][1]
+        assert result == snapshot
 
 
+@freeze_time("2024-01-01 12:00:00", tz_offset=0)
 @pytest.mark.asyncio
 async def test_websocket_get_nutrient_inventory_snapshot(
     hass: HomeAssistant, mock_connection, snapshot: SnapshotAssertion
@@ -115,6 +126,7 @@ async def test_websocket_get_nutrient_inventory_snapshot(
         assert result == snapshot
 
 
+@freeze_time("2024-01-01 12:00:00", tz_offset=0)
 @pytest.mark.asyncio
 async def test_websocket_get_nutrient_presets_snapshot(
     hass: HomeAssistant, mock_connection, snapshot: SnapshotAssertion
@@ -141,6 +153,7 @@ async def test_websocket_get_nutrient_presets_snapshot(
         assert result == snapshot
 
 
+@freeze_time("2024-01-01 12:00:00", tz_offset=0)
 @pytest.mark.asyncio
 async def test_websocket_get_ipm_presets_snapshot(
     hass: HomeAssistant, mock_connection, snapshot: SnapshotAssertion
@@ -166,23 +179,22 @@ async def test_websocket_get_ipm_presets_snapshot(
         assert result == snapshot
 
 
+@freeze_time("2024-01-01 12:00:00", tz_offset=0)
 @pytest.mark.asyncio
 async def test_websocket_add_timeline_note_snapshot(
     hass: HomeAssistant, mock_connection
 ) -> None:
     """Test websocket_add_timeline_note success."""
     coordinator = MagicMock()
-    hass.data[DOMAIN] = {"strain_library": MagicMock()}
+    coordinator.services = MagicMock()
+    coordinator.services.add_timeline_note = AsyncMock()
+    coordinator.strain_library = MagicMock()
 
     with (
         patch(
             "custom_components.growspace_manager.GrowspaceCoordinator.get_for_service_call",
             return_value=coordinator,
         ),
-        patch(
-            "custom_components.growspace_manager.websocket.async_add_timeline_note",
-            new_callable=AsyncMock,
-        ) as mock_add_note,
     ):
         msg = {
             "id": 6,
@@ -199,7 +211,7 @@ async def test_websocket_add_timeline_note_snapshot(
         }
         await websocket_add_timeline_note(hass, mock_connection, msg)
 
-        mock_add_note.assert_called_once()
+        coordinator.services.add_timeline_note.assert_called_once()
         mock_connection.send_result.assert_called_once_with(6)
 
 
@@ -210,7 +222,7 @@ async def test_websocket_add_growspace_note_snapshot(
     """Test websocket_add_growspace_note success."""
     coordinator = MagicMock()
     coordinator.growspaces = {"gs1": MagicMock()}
-    hass.data[DOMAIN] = {"strain_library": MagicMock()}
+    coordinator.strain_library = MagicMock()
 
     with (
         patch(
@@ -235,6 +247,7 @@ async def test_websocket_add_growspace_note_snapshot(
         mock_connection.send_result.assert_called_once_with(7)
 
 
+@freeze_time("2024-01-01 12:00:00", tz_offset=0)
 @pytest.mark.asyncio
 async def test_websocket_get_event_log_snapshot(
     hass: HomeAssistant, mock_connection, snapshot: SnapshotAssertion
@@ -295,6 +308,7 @@ async def test_websocket_get_event_log_snapshot(
         assert result == snapshot
 
 
+@freeze_time("2024-01-01 12:00:00", tz_offset=0)
 @pytest.mark.asyncio
 async def test_websocket_get_alerts_snapshot(
     hass: HomeAssistant, mock_connection, snapshot: SnapshotAssertion
@@ -355,6 +369,7 @@ async def test_websocket_get_alerts_snapshot(
         assert result == snapshot
 
 
+@freeze_time("2024-01-01 12:00:00", tz_offset=0)
 @pytest.mark.asyncio
 async def test_websocket_get_history_stats_snapshot(
     hass: HomeAssistant, mock_connection, snapshot: SnapshotAssertion
@@ -386,6 +401,7 @@ async def test_websocket_get_history_stats_snapshot(
         assert result == snapshot
 
 
+@freeze_time("2024-01-01 12:00:00", tz_offset=0)
 @pytest.mark.asyncio
 async def test_websocket_update_breeder_snapshot(
     hass: HomeAssistant, mock_connection, snapshot: SnapshotAssertion
@@ -393,21 +409,28 @@ async def test_websocket_update_breeder_snapshot(
     """Test websocket_update_breeder output matches snapshot."""
     strain_library = AsyncMock()
     strain_library.update_breeder.return_value = 5
-    hass.data[DOMAIN] = {"strain_library": strain_library}
 
-    msg = {
-        "id": 10,
-        "type": f"{DOMAIN}/update_breeder",
-        "original_name": "Old Breeder",
-        "new_name": "New Breeder",
-        "logo": "new_logo.png",
-    }
-    await websocket_update_breeder(hass, mock_connection, msg)
+    coordinator = MagicMock()
+    coordinator.strain_library = strain_library
 
-    mock_connection.send_result.assert_called_once_with(10, {"updated": 5})
-    assert snapshot == {"updated": 5}
+    with patch(
+        "custom_components.growspace_manager.GrowspaceCoordinator.get_any",
+        return_value=coordinator,
+    ):
+        msg = {
+            "id": 10,
+            "type": f"{DOMAIN}/update_breeder",
+            "original_name": "Old Breeder",
+            "new_name": "New Breeder",
+            "logo": "new_logo.png",
+        }
+        await websocket_update_breeder(hass, mock_connection, msg)
+
+        mock_connection.send_result.assert_called_once_with(10, {"updated": 5})
+        assert snapshot == {"updated": 5}
 
 
+@freeze_time("2024-01-01 12:00:00", tz_offset=0)
 @pytest.mark.asyncio
 async def test_websocket_delete_breeder_snapshot(
     hass: HomeAssistant, mock_connection, snapshot: SnapshotAssertion
@@ -415,17 +438,23 @@ async def test_websocket_delete_breeder_snapshot(
     """Test websocket_delete_breeder output matches snapshot."""
     strain_library = AsyncMock()
     strain_library.delete_breeder.return_value = 3
-    hass.data[DOMAIN] = {"strain_library": strain_library}
 
-    msg = {
-        "id": 11,
-        "type": f"{DOMAIN}/delete_breeder",
-        "breeder_name": "Breeder to Delete",
-    }
-    await websocket_delete_breeder(hass, mock_connection, msg)
+    coordinator = MagicMock()
+    coordinator.strain_library = strain_library
 
-    mock_connection.send_result.assert_called_once_with(11, {"deleted": 3})
-    assert snapshot == {"deleted": 3}
+    with patch(
+        "custom_components.growspace_manager.GrowspaceCoordinator.get_any",
+        return_value=coordinator,
+    ):
+        msg = {
+            "id": 11,
+            "type": f"{DOMAIN}/delete_breeder",
+            "breeder_name": "Breeder to Delete",
+        }
+        await websocket_delete_breeder(hass, mock_connection, msg)
+
+        mock_connection.send_result.assert_called_once_with(11, {"deleted": 3})
+        assert snapshot == {"deleted": 3}
 
 
 @pytest.mark.asyncio
@@ -449,9 +478,7 @@ async def test_websocket_get_vision_history_empty(
         }
         await websocket_get_vision_history(hass, mock_connection, msg)
 
-    mock_connection.send_result.assert_called_once_with(
-        12, {"history": [], "total": 0}
-    )
+    mock_connection.send_result.assert_called_once_with(12, {"history": [], "total": 0})
 
 
 @pytest.mark.asyncio

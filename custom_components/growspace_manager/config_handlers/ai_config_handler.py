@@ -103,9 +103,7 @@ class AIConfigHandler(BaseConfigHandler[dict[str, Any]]):
                 CONF_AI_TASK_ENTITY_ID,
                 default=current_settings.get(CONF_AI_TASK_ENTITY_ID),
             )
-        ] = selector.EntitySelector(
-            selector.EntitySelectorConfig(domain="ai_task")
-        )
+        ] = selector.EntitySelector(selector.EntitySelectorConfig(domain="ai_task"))
 
         return vol.Schema(schema)
 
@@ -161,6 +159,6 @@ class AIConfigHandler(BaseConfigHandler[dict[str, Any]]):
         coordinator.options = new_options
 
         # Save to storage
-        await coordinator.async_save()
+        await coordinator.services.save()
 
         return cast(dict[str, Any], new_options)

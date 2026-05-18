@@ -346,12 +346,16 @@ async def test_light_verification_callbacks(
     sensor.hass = hass
 
     # Test _handle_coordinator_update
-    with patch.object(hass, "async_create_task") as mock_create_task:
+    with patch.object(
+        mock_coordinator.config_entry, "async_create_background_task"
+    ) as mock_create_task:
         sensor._handle_coordinator_update()
         mock_create_task.assert_called()
 
     # Test _async_light_sensor_changed
-    with patch.object(hass, "async_create_task") as mock_create_task:
+    with patch.object(
+        mock_coordinator.config_entry, "async_create_background_task"
+    ) as mock_create_task:
         sensor._async_light_sensor_changed(MagicMock())
         mock_create_task.assert_called()
 

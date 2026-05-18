@@ -9,6 +9,7 @@ import pytest
 from custom_components.growspace_manager.humidifier_coordinator import (
     HumidifierCoordinator,
 )
+from custom_components.growspace_manager.domain.stage import PlantStage
 from custom_components.growspace_manager.models import Plant
 from homeassistant.const import (
     ATTR_ENTITY_ID,
@@ -77,14 +78,16 @@ def mock_growspace():
 
 
 @pytest.fixture
-def coordinator(
+async def coordinator(
     mock_hass, mock_main_coordinator, mock_growspace, mock_track_state_change_event
 ):
     """Create a HumidifierCoordinator instance."""
     mock_main_coordinator.growspaces = {"gs1": mock_growspace}
-    return HumidifierCoordinator(
+    coord = HumidifierCoordinator(
         mock_hass, mock_track_state_change_event, "gs1", mock_main_coordinator
     )
+    await coord.async_setup()
+    return coord
 
 
 async def test_initialization(
@@ -97,7 +100,6 @@ async def test_initialization(
     assert coordinator.control_humidifier is True
     assert len(coordinator._remove_listeners) > 0
     mock_track_state_change_event.assert_called_once()
-    mock_hass.async_create_task.assert_called_once()
 
 
 async def test_initialization_disabled(
@@ -110,6 +112,7 @@ async def test_initialization_disabled(
     coord = HumidifierCoordinator(
         mock_hass, mock_track_state_change_event, "gs1", mock_main_coordinator
     )
+    await coord.async_setup()
 
     assert coord.control_humidifier is False
     assert len(coord._remove_listeners) == 0
@@ -127,6 +130,7 @@ async def test_initialization_missing_vpd_sensor(
     coord = HumidifierCoordinator(
         mock_hass, mock_track_state_change_event, "gs1", mock_main_coordinator
     )
+    await coord.async_setup()
 
     assert len(coord._remove_listeners) == 0
     mock_track_state_change_event.assert_not_called()
@@ -376,19 +380,19 @@ def test_init_missing_growspace(
 async def test_growth_stage_detection(coordinator, mock_main_coordinator) -> None:
     """Test correct growth stage detection."""
     plant = MagicMock(spec=Plant)
-    mock_main_coordinator.get_growspace_plants.return_value = [plant]
+    mock_main_coordinator.services.get_growspace_plants.return_value = [plant]
 
     with patch(
-        "custom_components.growspace_manager.humidifier_coordinator.calculate_days_in_stage",
-        side_effect=lambda p, stage: {"flower": 60}.get(stage, 0),
+        "custom_components.growspace_manager.domain.stage_calculator.calculate_days_in_stage",
+        side_effect=lambda p, stage: {PlantStage.FLOWER: 60}.get(stage, 0),
     ):
-        assert coordinator._get_growth_stage() == "late_flower"
+        assert coordinator._get_growth_stage() == PlantStage.FLOWER_LATE
 
     with patch(
-        "custom_components.growspace_manager.humidifier_coordinator.calculate_days_in_stage",
-        side_effect=lambda p, stage: {"veg": 10}.get(stage, 0),
+        "custom_components.growspace_manager.domain.stage_calculator.calculate_days_in_stage",
+        side_effect=lambda p, stage: {PlantStage.VEG: 10}.get(stage, 0),
     ):
-        assert coordinator._get_growth_stage() == "veg"
+        assert coordinator._get_growth_stage() == PlantStage.VEG
 
 
 async def test_generic_domain_control(
@@ -401,6 +405,7 @@ async def test_generic_domain_control(
     coord = HumidifierCoordinator(
         mock_hass, mock_track_state_change_event, "gs1", mock_main_coordinator
     )
+    await coord.async_setup()
 
     await coord._control_humidifier(True)
 

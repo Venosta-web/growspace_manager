@@ -93,7 +93,8 @@ async def test_async_step_add_timed_notification_success(
     handler: NotificationConfigHandler,
 ) -> None:
     coordinator = handler.config_entry.runtime_data
-    coordinator.async_add_timed_notification = AsyncMock()
+    coordinator.services = MagicMock()
+    coordinator.services.async_add_timed_notification = AsyncMock()
     handler.flow.async_create_entry = MagicMock(return_value={"type": "create_entry"})
 
     user_input = {
@@ -104,7 +105,9 @@ async def test_async_step_add_timed_notification_success(
     }
     result = await handler.async_step_add_timed_notification(user_input)
     assert result["type"] == "create_entry"
-    coordinator.async_add_timed_notification.assert_called_once()
+    coordinator.services.async_add_timed_notification.assert_called_once_with(
+        "MSG", "type", 1, ["gs1"]
+    )
 
 
 async def test_async_step_add_timed_notification_get(
@@ -119,16 +122,17 @@ async def test_async_step_edit_timed_notification_success(
     handler: NotificationConfigHandler,
 ) -> None:
     coordinator = handler.config_entry.runtime_data
-    coordinator.get_timed_notifications.return_value = [
-        {"id": "notif1", "message": "msg", "trigger_type": "t", "day": 1}
-    ]
-    coordinator.async_update_timed_notification = AsyncMock()
+    coordinator.services = MagicMock()
+    coordinator.services.get_timed_notifications = MagicMock(
+        return_value=[{"id": "notif1", "message": "msg", "trigger_type": "t", "day": 1}]
+    )
+    coordinator.services.async_update_timed_notification = AsyncMock()
     handler.flow.async_create_entry = MagicMock(return_value={"type": "create_entry"})
 
     user_input = {"message": "new", "trigger_type": "t", "day": 2, "growspace_ids": []}
     result = await handler.async_step_edit_timed_notification(user_input)
     assert result["type"] == "create_entry"
-    coordinator.async_update_timed_notification.assert_called_once_with(
+    coordinator.services.async_update_timed_notification.assert_called_once_with(
         "notif1", "new", "t", 2, []
     )
 
@@ -137,7 +141,8 @@ async def test_async_step_edit_timed_notification_not_found(
     handler: NotificationConfigHandler,
 ) -> None:
     coordinator = handler.config_entry.runtime_data
-    coordinator.get_timed_notifications.return_value = []
+    coordinator.services = MagicMock()
+    coordinator.services.get_timed_notifications = MagicMock(return_value=[])
     handler.flow.async_abort = MagicMock(return_value={"type": "abort"})
     result = await handler.async_step_edit_timed_notification()
     assert result == {"type": "abort"}
@@ -147,12 +152,15 @@ async def test_async_step_delete_timed_notification_success(
     handler: NotificationConfigHandler,
 ) -> None:
     coordinator = handler.config_entry.runtime_data
-    coordinator.async_remove_timed_notification = AsyncMock()
+    coordinator.services = MagicMock()
+    coordinator.services.async_remove_timed_notification = AsyncMock()
     handler.flow.async_create_entry = MagicMock(return_value={"type": "create_entry"})
 
     result = await handler.async_step_delete_timed_notification({"confirm": True})
     assert result["type"] == "create_entry"
-    coordinator.async_remove_timed_notification.assert_called_once_with("notif1")
+    coordinator.services.async_remove_timed_notification.assert_called_once_with(
+        "notif1"
+    )
 
 
 async def test_get_add_edit_schema_with_growspaces(

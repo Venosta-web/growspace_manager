@@ -6,6 +6,9 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
+from custom_components.growspace_manager.data_access.growspace_repository import (
+    GrowspaceRepository,
+)
 from custom_components.growspace_manager.managers.genetics import GeneticsManager
 from custom_components.growspace_manager.models import (
     Plant,
@@ -29,30 +32,26 @@ def save_callback() -> AsyncMock:
 @pytest.fixture
 def manager(save_callback: AsyncMock) -> GeneticsManager:
     """A fresh GeneticsManager with an in-memory plant repository."""
-    repo = MagicMock()
-    repo.plants = {}
+    repo = GrowspaceRepository()
     return GeneticsManager(repository=repo, save_callback=save_callback)
-
 
 
 @pytest.fixture
 def manager_with_plants(save_callback: AsyncMock) -> GeneticsManager:
     """GeneticsManager with two plants pre-loaded (donor + receiver)."""
-    repo = MagicMock()
-    repo.plants = {
-        "plant-donor": Plant(
-            plant_id="plant-donor",
-            growspace_id="gs-1",
-            genetics=PlantGenetics(strain_name="Pollen Donor"),
-            stage="flower",
-        ),
-        "plant-receiver": Plant(
-            plant_id="plant-receiver",
-            growspace_id="gs-1",
-            genetics=PlantGenetics(strain_name="Female Receiver"),
-            stage="flower",
-        ),
-    }
+    repo = GrowspaceRepository()
+    repo.add_plant(Plant(
+        plant_id="plant-donor",
+        growspace_id="gs-1",
+        genetics=PlantGenetics(strain_name="Pollen Donor"),
+        stage="flower",
+    ))
+    repo.add_plant(Plant(
+        plant_id="plant-receiver",
+        growspace_id="gs-1",
+        genetics=PlantGenetics(strain_name="Female Receiver"),
+        stage="flower",
+    ))
     return GeneticsManager(repository=repo, save_callback=save_callback)
 
 
@@ -370,7 +369,7 @@ class TestLogPollination:
     ) -> None:
         """log_pollination raises if donor plant has already been harvested."""
 
-        manager_with_plants.repository.plants["plant-donor"].stage = "harvested"
+        manager_with_plants.repository.require_plant("plant-donor").stage = "harvested"
 
         with pytest.raises(ServiceValidationError, match="harvested"):
             await manager_with_plants.async_log_pollination(
@@ -384,7 +383,7 @@ class TestLogPollination:
     ) -> None:
         """log_pollination raises if receiver plant has already been harvested."""
 
-        manager_with_plants.repository.plants["plant-receiver"].stage = "harvested"
+        manager_with_plants.repository.require_plant("plant-receiver").stage = "harvested"
 
         with pytest.raises(ServiceValidationError, match="harvested"):
             await manager_with_plants.async_log_pollination(
@@ -507,15 +506,13 @@ class TestScorePhenotype:
     @pytest.fixture
     def manager_with_plant(self, save_callback: AsyncMock) -> GeneticsManager:
         """GeneticsManager with a single scoreable plant."""
-        repo = MagicMock()
-        repo.plants = {
-            "plant-score": Plant(
-                plant_id="plant-score",
-                growspace_id="gs",
-                genetics=PlantGenetics(strain_name="Test"),
-                stage="flower",
-            )
-        }
+        repo = GrowspaceRepository()
+        repo.add_plant(Plant(
+            plant_id="plant-score",
+            growspace_id="gs",
+            genetics=PlantGenetics(strain_name="Test"),
+            stage="flower",
+        ))
         return GeneticsManager(repository=repo, save_callback=save_callback)
 
     async def test_updates_phenotype_score_fields(
@@ -534,7 +531,7 @@ class TestScorePhenotype:
             notes="Outstanding pheno",
         )
 
-        ps = manager_with_plant.repository.plants["plant-score"].phenotype_score
+        ps = manager_with_plant.repository.require_plant("plant-score").phenotype_score
         assert ps.vigor == 9
         assert ps.internodal_spacing == 7
         assert ps.terpene_intensity == 10
@@ -552,14 +549,14 @@ class TestScorePhenotype:
             plant_id="plant-score",
             vigor=8,
         )
-        ps = manager_with_plant.repository.plants["plant-score"].phenotype_score
+        ps = manager_with_plant.repository.require_plant("plant-score").phenotype_score
         assert ps.updated_at is not None
 
     async def test_partial_update_overwrites_only_provided_fields(
         self, manager_with_plant: GeneticsManager
     ) -> None:
         """score_phenotype only updates fields explicitly passed."""
-        plant = manager_with_plant.repository.plants["plant-score"]
+        plant = manager_with_plant.repository.require_plant("plant-score")
         plant.phenotype_score.resin = 7
         plant.phenotype_score.yield_potential = 5
 
@@ -646,20 +643,18 @@ class TestUpdatePollination:
     @pytest.fixture
     def manager_with_event(self, manager: GeneticsManager) -> GeneticsManager:
         """Manager pre-loaded with one pollination event and two plants."""
-        manager.repository.plants = {
-            "plant-donor": Plant(
-                plant_id="plant-donor",
-                growspace_id="gs-1",
-                genetics=PlantGenetics(strain_name="Pollen Donor"),
-                stage="flower",
-            ),
-            "plant-receiver": Plant(
-                plant_id="plant-receiver",
-                growspace_id="gs-1",
-                genetics=PlantGenetics(strain_name="Female Receiver"),
-                stage="flower",
-            ),
-        }
+        manager.repository.add_plant(Plant(
+            plant_id="plant-donor",
+            growspace_id="gs-1",
+            genetics=PlantGenetics(strain_name="Pollen Donor"),
+            stage="flower",
+        ))
+        manager.repository.add_plant(Plant(
+            plant_id="plant-receiver",
+            growspace_id="gs-1",
+            genetics=PlantGenetics(strain_name="Female Receiver"),
+            stage="flower",
+        ))
         event = PollinationEvent(
             event_id="evt-1",
             date="2026-01-10",
@@ -775,3 +770,241 @@ class TestDeletePollination:
         """ServiceValidationError raised for unknown event_id."""
         with pytest.raises(ServiceValidationError, match="not found"):
             await manager_with_event.async_delete_pollination(event_id="ghost")
+
+
+# ---------------------------------------------------------------------------
+# StrainLibrary injection + classify_lineage integration
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def strain_library_mock() -> MagicMock:
+    """A mock StrainLibrary with async_update_strain_generation."""
+    lib = MagicMock()
+    lib.get_strain_lineage_tree = MagicMock(
+        return_value={"name": "Strain", "parents": []}
+    )
+    lib.async_update_strain_generation = AsyncMock()
+    return lib
+
+
+@pytest.fixture
+def manager_with_strain_lib(
+    save_callback: AsyncMock, strain_library_mock: MagicMock
+) -> GeneticsManager:
+    """GeneticsManager with two plants and injected StrainLibrary mock."""
+    repo = GrowspaceRepository()
+    repo.add_plant(Plant(
+        plant_id="plant-donor",
+        growspace_id="gs-1",
+        genetics=PlantGenetics(strain_name="Pollen Donor"),
+        stage="flower",
+    ))
+    repo.add_plant(Plant(
+        plant_id="plant-receiver",
+        growspace_id="gs-1",
+        genetics=PlantGenetics(strain_name="Seed Mother"),
+        stage="flower",
+    ))
+    return GeneticsManager(
+        repository=repo,
+        save_callback=save_callback,
+        strain_library=strain_library_mock,
+    )
+
+
+@pytest.mark.asyncio
+async def test_harvest_seeds_classifies_generation(
+    manager_with_strain_lib: GeneticsManager,
+    strain_library_mock: MagicMock,
+) -> None:
+    """async_harvest_seeds sets batch.generation via classify_lineage."""
+    await manager_with_strain_lib.async_log_pollination(
+        donor_plant_id="plant-donor",
+        receiver_plant_id="plant-receiver",
+        date="2026-05-07",
+    )
+    event_id = next(iter(manager_with_strain_lib.pollination_events))
+
+    batch = await manager_with_strain_lib.async_harvest_seeds(event_id, quantity=10)
+
+    assert batch.generation == "F1"
+    strain_library_mock.async_update_strain_generation.assert_awaited_once_with(
+        batch.strain_name, "F1"
+    )
+
+
+@pytest.mark.asyncio
+async def test_harvest_seeds_not_misclassified_as_bx_due_to_prior_event(
+    save_callback: AsyncMock,
+    strain_library_mock: MagicMock,
+) -> None:
+    """Receiver plant has a prior pollination event but harvest must still classify F1.
+
+    Without exclude_event_id, get_lineage_tree would find the current pollination
+    event and treat the donor as a parent of the receiver, producing BX instead of F1.
+    """
+    repo = GrowspaceRepository()
+    repo.add_plant(Plant(
+        plant_id="plant-a",
+        growspace_id="gs-1",
+        genetics=PlantGenetics(strain_name="Strain A"),
+        stage="flower",
+    ))
+    repo.add_plant(Plant(
+        plant_id="plant-b",
+        growspace_id="gs-1",
+        genetics=PlantGenetics(strain_name="Strain B"),
+        stage="flower",
+    ))
+    mgr = GeneticsManager(
+        repository=repo,
+        save_callback=save_callback,
+        strain_library=strain_library_mock,
+    )
+    # Log and harvest — receiver has no prior history, but the current event
+    # would cause BX if not excluded during classification
+    await mgr.async_log_pollination(
+        donor_plant_id="plant-b",
+        receiver_plant_id="plant-a",
+        date="2026-05-07",
+    )
+    event_id = next(iter(mgr.pollination_events))
+
+    batch = await mgr.async_harvest_seeds(event_id, quantity=10)
+
+    # Two distinct strains, no shared ancestry → must be F1, not BX
+    assert batch.generation == "F1"
+
+
+@pytest.mark.asyncio
+async def test_harvest_seeds_s1_when_same_plant(
+    save_callback: AsyncMock,
+    strain_library_mock: MagicMock,
+) -> None:
+    """Same plant as donor and receiver → S1."""
+    repo = MagicMock()
+    repo.plants = {
+        "plant-self": Plant(
+            plant_id="plant-self",
+            growspace_id="gs-1",
+            genetics=PlantGenetics(strain_name="Self Strain"),
+            stage="flower",
+        ),
+    }
+    mgr = GeneticsManager(
+        repository=repo,
+        save_callback=save_callback,
+        strain_library=strain_library_mock,
+    )
+    await mgr.async_log_pollination(
+        donor_plant_id="plant-self",
+        receiver_plant_id="plant-self",
+        date="2026-05-07",
+    )
+    event_id = next(iter(mgr.pollination_events))
+    batch = await mgr.async_harvest_seeds(event_id, quantity=5)
+
+    assert batch.generation == "S1"
+
+
+@pytest.mark.asyncio
+async def test_add_seed_batch_auto_classifies_f1(
+    save_callback: AsyncMock,
+    strain_library_mock: MagicMock,
+) -> None:
+    """When both parent strains given and generation is empty, auto-classify."""
+    strain_library_mock.get_strain_lineage_tree = MagicMock(
+        return_value={"name": "Strain", "parents": []}
+    )
+    repo = MagicMock()
+    repo.plants = {}
+    mgr = GeneticsManager(
+        repository=repo,
+        save_callback=save_callback,
+        strain_library=strain_library_mock,
+    )
+
+    batch = await mgr.async_add_seed_batch(
+        strain_name="OG x Diesel",
+        breeder="Self",
+        quantity=10,
+        acquisition_date="2026-05-07",
+        generation="",
+        parent_1_strain="OG Kush",
+        parent_2_strain="Sour Diesel",
+    )
+
+    assert batch.generation == "F1"
+    strain_library_mock.async_update_strain_generation.assert_awaited_once_with(
+        "OG x Diesel", "F1"
+    )
+
+
+@pytest.mark.asyncio
+async def test_add_seed_batch_respects_explicit_generation(
+    save_callback: AsyncMock,
+    strain_library_mock: MagicMock,
+) -> None:
+    """When generation explicitly set, do not overwrite it."""
+    repo = MagicMock()
+    repo.plants = {}
+    mgr = GeneticsManager(
+        repository=repo,
+        save_callback=save_callback,
+        strain_library=strain_library_mock,
+    )
+
+    batch = await mgr.async_add_seed_batch(
+        strain_name="Special BX",
+        breeder="Self",
+        quantity=5,
+        acquisition_date="2026-05-07",
+        generation="BX2",
+        parent_1_strain="OG Kush",
+        parent_2_strain="Sour Diesel",
+    )
+
+    assert batch.generation == "BX2"
+    strain_library_mock.async_update_strain_generation.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_update_seed_batch_reclassifies_on_parent_change(
+    save_callback: AsyncMock,
+    strain_library_mock: MagicMock,
+) -> None:
+    """Changing parent strains triggers reclassification when generation not explicitly set."""
+    strain_library_mock.get_strain_lineage_tree = MagicMock(
+        return_value={"name": "Strain", "parents": []}
+    )
+    repo = MagicMock()
+    repo.plants = {}
+    mgr = GeneticsManager(
+        repository=repo,
+        save_callback=save_callback,
+        strain_library=strain_library_mock,
+    )
+    # Create batch with explicit generation
+    batch = await mgr.async_add_seed_batch(
+        strain_name="My Cross",
+        breeder="Self",
+        quantity=5,
+        acquisition_date="2026-05-07",
+        generation="F1",
+        parent_1_strain="Strain A",
+        parent_2_strain="Strain B",
+    )
+
+    # Update with new parents — generation not passed → reclassify
+    updated = await mgr.async_update_seed_batch(
+        batch_id=batch.batch_id,
+        parent_1_strain="New Strain A",
+        parent_2_strain="New Strain B",
+    )
+
+    # Two distinct strains, no ancestry → F1
+    assert updated.generation == "F1"
+    # add_seed_batch skips auto-classify because generation="F1" is explicit;
+    # only the update call triggers reclassification.
+    assert strain_library_mock.async_update_strain_generation.await_count == 1

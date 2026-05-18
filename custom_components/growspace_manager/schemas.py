@@ -51,6 +51,7 @@ from .const import (
     ATTR_RECEIVER_PLANT_ID,
     ATTR_RESIN,
     ATTR_ROW,
+    ATTR_SEED_BATCH_ID,
     ATTR_STAGE,
     ATTR_STRAIN,
     ATTR_STRAIN_NAME,
@@ -66,9 +67,12 @@ from .const import (
     ATTR_TRIM_WEIGHT,
     ATTR_TYPE,
     ATTR_VIGOR,
+    ATTR_VISUAL_TAG,
     ATTR_VOLUME_LITERS,
     ATTR_WET_WEIGHT,
+    ATTR_WEIGHT_GRAMS,
     ATTR_YIELD_POTENTIAL,
+    ATTR_MOISTURE_PERCENT,
     CONF_CAMERA_ENTITIES,
     CONF_CIRCULATION_FAN_ENTITIES,
     CONF_CIRCULATION_FAN_ENTITY,
@@ -105,6 +109,27 @@ from .const import (
     PLANT_STAGES,
 )
 from .validation import valid_date_or_none, valid_growspace_id
+
+
+def _validate_pump_entities(config: dict) -> dict:
+    """Validate that irrigation and drain pumps are not the same entity."""
+    irr = config.get("irrigation_pump_entity")
+    drain = config.get("drain_pump_entity")
+    if irr and drain and irr == drain:
+        raise vol.Invalid("Irrigation and drain pump cannot be the same entity")
+    return config
+
+
+def _validate_genetic_percentages(config: dict) -> dict:
+    """Validate that sativa and indica percentages sum to <= 100."""
+    sativa = config.get("sativa_percentage")
+    indica = config.get("indica_percentage")
+    if sativa is not None and indica is not None:
+        if sativa + indica > 100:
+            raise vol.Invalid(
+                f"Sativa ({sativa}%) and Indica ({indica}%) sum to {sativa + indica}%, which exceeds 100%"
+            )
+    return config
 
 # Shared Schema Dictionaries
 _PLANT_DATE_FIELDS: dict[Any, Any] = {
@@ -152,6 +177,7 @@ ADD_PLANT_SCHEMA = vol.Schema(
         vol.Required(ATTR_ROW): vol.All(int, vol.Range(min=1)),
         vol.Required(ATTR_COL): vol.All(int, vol.Range(min=1)),
         vol.Optional(ATTR_PHENOTYPE): str,
+        vol.Optional(ATTR_SEED_BATCH_ID): cv.string,
         **_PLANT_DATE_FIELDS,
     }
 )
@@ -164,6 +190,7 @@ ADD_PLANTS_SCHEMA = vol.Schema(
         vol.Required("amount"): vol.All(int, vol.Range(min=1)),
         vol.Optional("start_number", default=1): vol.All(int, vol.Range(min=1)),
         vol.Optional(ATTR_PHENOTYPE): str,
+        vol.Optional(ATTR_SEED_BATCH_ID): cv.string,
         **_PLANT_DATE_FIELDS,
     }
 )
@@ -307,10 +334,10 @@ SCORE_PLANT_SCHEMA = vol.Schema(
     {
         vol.Required(ATTR_PLANT_ID): str,
         vol.Optional(ATTR_VIGOR): _SCORE_VALIDATOR,
-        vol.Optional(ATTR_STRUCTURE): _SCORE_VALIDATOR,
-        vol.Optional(ATTR_AROMA): _SCORE_VALIDATOR,
+        vol.Optional(ATTR_INTERNODAL_SPACING): _SCORE_VALIDATOR,
+        vol.Optional(ATTR_TERPENE_INTENSITY): _SCORE_VALIDATOR,
         vol.Optional(ATTR_RESIN): _SCORE_VALIDATOR,
-        vol.Optional(ATTR_PEST_RESISTANCE): _SCORE_VALIDATOR,
+        vol.Optional(ATTR_MOLD_RESISTANCE): _SCORE_VALIDATOR,
     }
 )
 
@@ -352,28 +379,38 @@ STRAIN_BASE_FIELDS: dict[Any, Any] = {
     vol.Optional("type"): str,
     vol.Optional("lineage"): str,
     vol.Optional("sex"): str,
-    vol.Optional("flower_days_min"): vol.All(vol.Coerce(int), vol.Range(min=0)),
-    vol.Optional("flower_days_max"): vol.All(vol.Coerce(int), vol.Range(min=0)),
-    vol.Optional("flowering_days_min"): vol.All(vol.Coerce(int), vol.Range(min=0)),
-    vol.Optional("flowering_days_max"): vol.All(vol.Coerce(int), vol.Range(min=0)),
+    vol.Optional("flower_days_min"): vol.Any(None, vol.All(vol.Coerce(int), vol.Range(min=0))),
+    vol.Optional("flower_days_max"): vol.Any(None, vol.All(vol.Coerce(int), vol.Range(min=0))),
+    vol.Optional("flowering_days_min"): vol.Any(None, vol.All(vol.Coerce(int), vol.Range(min=0))),
+    vol.Optional("flowering_days_max"): vol.Any(None, vol.All(vol.Coerce(int), vol.Range(min=0))),
     vol.Optional("description"): str,
     vol.Optional("image_base64"): str,
     vol.Optional("image"): str,
     vol.Optional("image_path"): str,
     vol.Optional("image_crop_meta"): dict,
-    vol.Optional("sativa_percentage"): vol.All(
-        vol.Coerce(int), vol.Range(min=0, max=100)
+    vol.Optional("sativa_percentage"): vol.Any(
+        None, vol.All(vol.Coerce(int), vol.Range(min=0, max=100))
     ),
-    vol.Optional("indica_percentage"): vol.All(
-        vol.Coerce(int), vol.Range(min=0, max=100)
+    vol.Optional("indica_percentage"): vol.Any(
+        None, vol.All(vol.Coerce(int), vol.Range(min=0, max=100))
     ),
+    vol.Optional("yield_potential"): str,
+    vol.Optional("height"): str,
+    vol.Optional("thc"): vol.Any(None, vol.Coerce(float)),
+    vol.Optional("cbd"): vol.Any(None, vol.Coerce(float)),
+    vol.Optional("cbg"): vol.Any(None, vol.Coerce(float)),
+    vol.Optional("awards"): [str],
+    vol.Optional("lineage_tree"): dict,
 }
 
-ADD_STRAIN_SCHEMA = vol.Schema(
-    {
-        vol.Required("strain"): str,
-        **STRAIN_BASE_FIELDS,
-    }
+ADD_STRAIN_SCHEMA = vol.All(
+    vol.Schema(
+        {
+            vol.Required("strain"): str,
+            **STRAIN_BASE_FIELDS,
+        }
+    ),
+    _validate_genetic_percentages,
 )
 
 REMOVE_STRAIN_SCHEMA = vol.Schema(
@@ -383,11 +420,14 @@ REMOVE_STRAIN_SCHEMA = vol.Schema(
     }
 )
 
-UPDATE_STRAIN_META_SCHEMA = vol.Schema(
-    {
-        vol.Required("strain"): str,
-        **STRAIN_BASE_FIELDS,
-    }
+UPDATE_STRAIN_META_SCHEMA = vol.All(
+    vol.Schema(
+        {
+            vol.Required("strain"): str,
+            **STRAIN_BASE_FIELDS,
+        }
+    ),
+    _validate_genetic_percentages,
 )
 
 # Print Label
@@ -512,15 +552,20 @@ STRAIN_RECOMMENDATION_SCHEMA = vol.Schema(
 
 # --- Irrigation Service Schemas ---
 
-SET_IRRIGATION_SETTINGS_SCHEMA = vol.Schema(
-    {
-        vol.Required("growspace_id"): vol.All(str, valid_growspace_id),
-        vol.Optional("irrigation_pump_entity"): str,
-        vol.Optional("drain_pump_entity"): str,
-        vol.Optional("irrigation_duration"): vol.All(vol.Coerce(int), vol.Range(min=1)),
-        vol.Optional("drain_duration"): vol.All(vol.Coerce(int), vol.Range(min=1)),
-    }
+
+SET_IRRIGATION_SETTINGS_SCHEMA = vol.All(
+    vol.Schema(
+        {
+            vol.Required("growspace_id"): vol.All(str, valid_growspace_id),
+            vol.Optional("irrigation_pump_entity"): str,
+            vol.Optional("drain_pump_entity"): str,
+            vol.Optional("irrigation_duration"): vol.All(vol.Coerce(int), vol.Range(min=1)),
+            vol.Optional("drain_duration"): vol.All(vol.Coerce(int), vol.Range(min=1)),
+        }
+    ),
+    _validate_pump_entities,
 )
+
 
 _ADD_SCHEDULE_TIME_BASE = {
     vol.Required("growspace_id"): vol.All(str, valid_growspace_id),
@@ -644,7 +689,7 @@ ADD_TIMELINE_NOTE_SCHEMA = vol.Schema(
     {
         vol.Required(ATTR_PLANT_ID): vol.Any(str, cv.ensure_list),
         vol.Required(ATTR_NOTES): str,
-        vol.Optional(ATTR_TRANSITION_DATE): cv.string,
+        vol.Optional(ATTR_TRANSITION_DATE): valid_date_or_none,
         vol.Optional(ATTR_IMAGES): cv.ensure_list,
         vol.Optional(ATTR_TAGS): cv.ensure_list,
         vol.Optional(ATTR_PH): vol.Coerce(float),
@@ -817,5 +862,32 @@ UPDATE_POLLINATION_SCHEMA = vol.Schema(
 DELETE_POLLINATION_SCHEMA = vol.Schema(
     {
         vol.Required(ATTR_EVENT_ID): cv.string,
+    }
+)
+
+# --- Drying & Curing Schemas ---
+
+LOG_DRYING_WEIGHT_SCHEMA = vol.Schema(
+    {
+        vol.Required(ATTR_PLANT_ID): cv.string,
+        vol.Required(ATTR_WEIGHT_GRAMS): vol.All(vol.Coerce(float), vol.Range(min=0.0)),
+        vol.Optional(ATTR_DATE): cv.string,
+    }
+)
+
+LOG_MOISTURE_READING_SCHEMA = vol.Schema(
+    {
+        vol.Required(ATTR_PLANT_ID): cv.string,
+        vol.Required(ATTR_MOISTURE_PERCENT): vol.All(
+            vol.Coerce(float), vol.Range(min=0.0, max=100.0)
+        ),
+        vol.Optional(ATTR_DATE): cv.string,
+    }
+)
+
+SET_VISUAL_TAG_SCHEMA = vol.Schema(
+    {
+        vol.Required(ATTR_PLANT_ID): cv.string,
+        vol.Optional(ATTR_VISUAL_TAG): vol.Any(cv.string, None),
     }
 )

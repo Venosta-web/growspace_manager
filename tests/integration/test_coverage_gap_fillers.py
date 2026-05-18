@@ -24,6 +24,7 @@ from custom_components.growspace_manager.services.plant import handle_add_plants
 from custom_components.growspace_manager.websocket import _merge_logbook_event
 from homeassistant.const import STATE_UNKNOWN
 from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import HomeAssistantError
 
 
 async def test_add_plants_with_base_phenotype(hass: HomeAssistant) -> None:
@@ -33,8 +34,8 @@ async def test_add_plants_with_base_phenotype(hass: HomeAssistant) -> None:
     mock_coordinator.growspaces = {"gs1": Mock()}
     mock_coordinator.validator = Mock()
     mock_coordinator.validator.find_first_available_position.return_value = (1, 1)
-    mock_coordinator.plant_manager = MagicMock()
-    mock_coordinator.plant_manager.add_plant = AsyncMock()
+    mock_coordinator.services = MagicMock()
+    mock_coordinator.services.add_plant = AsyncMock()
 
     mock_strain_library = Mock()
 
@@ -55,8 +56,8 @@ async def test_add_plants_with_base_phenotype(hass: HomeAssistant) -> None:
     await handle_add_plants(hass, mock_coordinator, mock_strain_library, call)
 
     # Verify
-    mock_coordinator.plant_manager.add_plant.assert_called_once()
-    call_kwargs = mock_coordinator.plant_manager.add_plant.call_args.kwargs
+    mock_coordinator.services.add_plant.assert_called_once()
+    call_kwargs = mock_coordinator.services.add_plant.call_args.kwargs
 
     # Check that 'Bluey #1' was passed as phenotype
     assert call_kwargs["phenotype"] == "Bluey #1"
@@ -203,7 +204,7 @@ async def test_dehumidifier_coordinator_control_exceptions(hass: HomeAssistant) 
     # Test 2: Exception handling
     coordinator.dehumidifier_entities = ["switch.valid"]
     with patch(
-        "homeassistant.core.ServiceRegistry.async_call", side_effect=Exception("Boom")
+        "homeassistant.core.ServiceRegistry.async_call", side_effect=HomeAssistantError("Boom")
     ) as mock_call:
         # Should not raise
         await coordinator._control_dehumidifier(True)

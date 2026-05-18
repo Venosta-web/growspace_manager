@@ -94,7 +94,7 @@ async def test_websocket_update_nutrient_stock(
         current_ml=100.0,
         initial_ml=200.0,
     )
-    mock_coordinator.async_save.assert_called()
+    mock_coordinator.async_commit.assert_called()
 
 
 async def test_websocket_remove_nutrient_stock(
@@ -117,4 +117,4 @@ async def test_websocket_remove_nutrient_stock(
     mock_coordinator.nutrient_inventory_service.remove_stock.assert_called_with(
         "test_nutrient"
     )
-    mock_coordinator.async_save.assert_called()
+    mock_coordinator.async_commit.assert_called()

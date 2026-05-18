@@ -4,6 +4,9 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from custom_components.growspace_manager.data_access.notification_state import (
+    NotificationState,
+)
 from custom_components.growspace_manager.models import (
     EnvironmentConfig,
     Growspace,
@@ -20,9 +23,15 @@ from homeassistant.core import HomeAssistant
 def repository_mock():
     """Mock the GrowspaceRepository."""
     mock = MagicMock()
-    mock.growspaces = {}
-    mock.plants = {}
+    mock.get_all_growspaces.return_value = []
+    mock.get_all_plants.return_value = []
     return mock
+
+
+@pytest.fixture
+def notification_state():
+    """Real NotificationState for storage tests."""
+    return NotificationState()
 
 
 @pytest.fixture
@@ -40,9 +49,9 @@ def genetics_manager_mock():
 
 
 @pytest.fixture
-def storage(hass: HomeAssistant, repository_mock, nutrient_manager_mock, genetics_manager_mock):
+def storage(hass: HomeAssistant, repository_mock, nutrient_manager_mock, genetics_manager_mock, notification_state):
     """Provide a StorageManager instance."""
-    return StorageManager(hass, repository_mock, nutrient_manager_mock, genetics_manager_mock)
+    return StorageManager(hass, repository_mock, nutrient_manager_mock, genetics_manager_mock, notification_state)
 
 
 @pytest.mark.asyncio
@@ -74,13 +83,13 @@ async def test_storage_async_force_save(storage) -> None:
 
 
 def test_storage_get_config_data(
-    storage, repository_mock, nutrient_manager_mock
+    storage, repository_mock, nutrient_manager_mock, notification_state
 ) -> None:
     """Test gathering config data for storage."""
     nutrient_manager_mock.get_serialization_data.return_value = {"nutrients": "data"}
-    repository_mock.growspaces = {"gs1": Growspace(id="gs1", name="Test")}
-    repository_mock.notifications_sent = {"gs1": ["notif1"]}
-    repository_mock.notifications_enabled = {"gs1": True}
+    repository_mock.get_all_growspaces.return_value = [Growspace(id="gs1", name="Test")]
+    notification_state.sent = {"gs1": ["notif1"]}
+    notification_state.enabled = {"gs1": True}
 
     data = storage._get_config_data()
 
@@ -92,9 +101,9 @@ def test_storage_get_config_data(
 
 def test_storage_get_plants_data(storage, repository_mock) -> None:
     """Test gathering plant data for storage."""
-    repository_mock.plants = {
-        "p1": Plant(plant_id="p1", growspace_id="gs1", row=1, col=1)
-    }
+    repository_mock.get_all_plants.return_value = [
+        Plant(plant_id="p1", growspace_id="gs1", row=1, col=1)
+    ]
 
     data = storage._get_plants_data()
 
@@ -119,11 +128,12 @@ async def test_storage_apply_options_object(
     """Test applying options when they are already an object."""
     env_config = EnvironmentConfig(temperature_sensor="sensor.temp")
     options = {"gs1": env_config}
-    repository_mock.growspaces = {"gs1": Growspace(id="gs1", name="Test")}
+    gs = Growspace(id="gs1", name="Test")
+    repository_mock.get_all_growspaces.return_value = [gs]
 
     storage._apply_options_to_growspaces(options)
 
-    assert repository_mock.growspaces["gs1"].environment_config == env_config
+    assert gs.environment_config == env_config
 
 
 @pytest.mark.asyncio
@@ -140,7 +150,7 @@ async def test_storage_load_nutrient_inventory_exception(
 
 
 def test_storage_load_config_notification_defaults(
-    storage, repository_mock, nutrient_manager_mock
+    storage, repository_mock, nutrient_manager_mock, notification_state
 ) -> None:
     """Test _load_config sets notification defaults for new growspaces."""
     data = {
@@ -148,7 +158,8 @@ def test_storage_load_config_notification_defaults(
         "notifications_sent": {},
         "notifications_enabled": {},  # Missing gs1
     }
-    repository_mock.growspaces = {"gs1": Growspace(id="gs1", name="GS1")}
+    gs = Growspace(id="gs1", name="GS1")
+    repository_mock.get_all_growspaces.return_value = [gs]
 
     with (
         patch.object(storage, "_load_growspaces"),
@@ -159,7 +170,7 @@ def test_storage_load_config_notification_defaults(
         ),
     ):
         storage._load_config(data)
-        assert repository_mock.notifications_enabled["gs1"] is True
+        assert notification_state.enabled["gs1"] is True
 
 
 @pytest.mark.asyncio
@@ -211,14 +222,17 @@ async def test_storage_async_load_fresh(storage) -> None:
         mock_save.assert_called_once()
 
 
-def test_storage_load_config(storage, repository_mock, nutrient_manager_mock) -> None:
+def test_storage_load_config(
+    storage, repository_mock, nutrient_manager_mock, notification_state
+) -> None:
     """Test _load_config logic."""
     data = {
         "notifications_sent": {"gs1": []},
         "notifications_enabled": {"gs1": False},
         "growspaces": {"gs1": {"id": "gs1", "name": "GS1"}},
     }
-    repository_mock.growspaces = {"gs1": Growspace(id="gs1", name="GS1")}
+    gs = Growspace(id="gs1", name="GS1")
+    repository_mock.get_all_growspaces.return_value = [gs]
 
     with (
         patch.object(storage, "_load_growspaces"),
@@ -231,8 +245,8 @@ def test_storage_load_config(storage, repository_mock, nutrient_manager_mock) ->
         storage._load_config(data)
 
         nutrient_manager_mock.load_data.assert_called_once()
-        assert repository_mock.notifications_sent == {"gs1": []}
-        assert repository_mock.notifications_enabled == {"gs1": False}
+        assert notification_state.sent == {"gs1": []}
+        assert notification_state.enabled == {"gs1": False}
 
 
 def test_storage_load_legacy(storage) -> None:
@@ -263,9 +277,10 @@ def test_storage_load_plants(storage, repository_mock) -> None:
         ) as mock_log_error,
     ):
         storage._load_plants(data)
-        assert len(repository_mock.plants) == 2
-        assert "p1" in repository_mock.plants
-        assert "p2" in repository_mock.plants
+        loaded = repository_mock.load_plants.call_args[0][0]
+        assert len(loaded) == 2
+        assert "p1" in loaded
+        assert "p2" in loaded
         mock_log_error.assert_called_once()
 
 
@@ -283,7 +298,8 @@ def test_storage_load_plants_inner_exception(storage, repository_mock) -> None:
     ):
         storage._load_plants(data)
         mock_log_exc.assert_called_once()
-        assert len(repository_mock.plants) == 0
+        loaded = repository_mock.load_plants.call_args[0][0]
+        assert len(loaded) == 0
 
 
 def test_storage_load_plants_exception(storage, repository_mock) -> None:
@@ -313,9 +329,10 @@ def test_storage_load_growspaces(storage, repository_mock) -> None:
         ) as mock_log_error,
     ):
         storage._load_growspaces(data)
-        assert len(repository_mock.growspaces) == 2
-        assert "gs1" in repository_mock.growspaces
-        assert "gs2" in repository_mock.growspaces
+        loaded = repository_mock.load_growspaces.call_args[0][0]
+        assert len(loaded) == 2
+        assert "gs1" in loaded
+        assert "gs2" in loaded
         mock_log_error.assert_called_once()
 
 
@@ -333,7 +350,8 @@ def test_storage_load_growspaces_inner_exception(storage, repository_mock) -> No
     ):
         storage._load_growspaces(data)
         mock_log_exc.assert_called_once()
-        assert len(repository_mock.growspaces) == 0
+        loaded = repository_mock.load_growspaces.call_args[0][0]
+        assert len(loaded) == 0
 
 
 def test_storage_load_growspaces_exception(storage, repository_mock) -> None:
@@ -400,13 +418,11 @@ def test_storage_load_ipm_presets(storage) -> None:
 
 def test_storage_apply_options_dict(storage, repository_mock) -> None:
     """Test applying dict options."""
-    repository_mock.growspaces = {"gs1": Growspace(id="gs1", name="GS1")}
+    gs = Growspace(id="gs1", name="GS1")
+    repository_mock.get_all_growspaces.return_value = [gs]
     options = {"gs1": {"temperature_sensor": "sensor.temp"}}
     storage._apply_options_to_growspaces(options)
-    assert (
-        repository_mock.growspaces["gs1"].environment_config.temperature_sensor
-        == "sensor.temp"
-    )
+    assert gs.environment_config.temperature_sensor == "sensor.temp"
 
 
 def test_storage_load_nutrient_inventory_success(storage) -> None:

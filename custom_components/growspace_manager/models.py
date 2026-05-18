@@ -3,12 +3,13 @@
 from __future__ import annotations
 
 from dataclasses import MISSING, dataclass, field, fields
-from datetime import datetime
 from enum import StrEnum
 import logging
 from typing import Any, TypedDict
 
 from mashumaro.mixins.dict import DataClassDictMixin
+
+import homeassistant.util.dt as dt_util
 
 from .const import (
     CONF_CIRCULATION_FAN_ENTITIES,
@@ -21,6 +22,11 @@ from .const import (
     CONF_HUMIDIFIER_ENTITY,
     CONF_LIGHT_SENSOR,
     CONF_LIGHT_SENSORS,
+    CONF_TREND_TEMP_DURATION,
+    CONF_TREND_TEMP_SENSITIVITY,
+    CONF_TREND_TEMP_THRESHOLD,
+    CONF_TREND_VPD_DURATION,
+    CONF_TREND_VPD_SENSITIVITY,
     PlantStage,
 )
 from .domain.stage import STAGE_REGISTRY
@@ -172,7 +178,19 @@ class BasePreset(BaseModel):
     items: list[Any]
     stage: PlantStage | str | None = None
     min_days_in_stage: int | None = None
-    created_at: str = field(default_factory=lambda: datetime.now().isoformat())
+    created_at: str = field(default_factory=lambda: dt_util.utcnow().isoformat())
+
+    @classmethod
+    def __pre_deserialize__(cls, d: dict[str, Any]) -> dict[str, Any]:
+        """Handle missing 'id' in legacy data by generating one if necessary."""
+        d = super().__pre_deserialize__(d)
+        if "id" not in d:
+            # If id is missing, use a deterministic one based on name if possible,
+            # or a random one. Using a name-based ID helps maintain consistency
+            # if the same legacy data is loaded multiple times.
+            name = d.get("name", "Legacy Preset")
+            d["id"] = f"legacy_{name.lower().replace(' ', '_')}"
+        return d
 
 
 @dataclass(slots=True)
@@ -395,9 +413,33 @@ class EnvironmentConfig(BaseModel):
                     data[new_key] = [val] if isinstance(val, str) else []
                 else:
                     data[new_key] = []
-            # If we have both (e.g. from transition period), prefer the new one
-            elif old_key in data:
                 data.pop(old_key)
+
+        # Migration: Trend keys (standardize naming)
+        trend_migrations = {
+            "vpd_trend_duration": CONF_TREND_VPD_DURATION,
+            "temp_trend_duration": CONF_TREND_TEMP_DURATION,
+            "vpd_trend_sensitivity": CONF_TREND_VPD_SENSITIVITY,
+            "temp_trend_sensitivity": CONF_TREND_TEMP_SENSITIVITY,
+            "temp_trend_threshold": CONF_TREND_TEMP_THRESHOLD,
+        }
+        for old_key, new_key in trend_migrations.items():
+            if old_key in data and new_key not in data:
+                data[new_key] = data.pop(old_key)
+
+        # Migration: Stage names in threshold dicts (standardize flower stages)
+        stage_migrations = {
+            "early_flower": PlantStage.FLOWER_EARLY.value,
+            "mid_flower": PlantStage.FLOWER_MID.value,
+            "late_flower": PlantStage.FLOWER_LATE.value,
+        }
+        for dict_key in ["dehumidifier_thresholds", "humidifier_thresholds"]:
+            if dict_key in data and isinstance(data[dict_key], dict):
+                new_dict = {}
+                for stage, thresholds in data[dict_key].items():
+                    new_stage = stage_migrations.get(stage, stage)
+                    new_dict[new_stage] = thresholds
+                data[dict_key] = new_dict
 
         # Custom logic to implement _CATCH_ALL_FIELD behavior
         # Keep known keys, move everything else to bayesian_options
@@ -527,7 +569,7 @@ class ECRampCurve(BaseModel):
     name: str = ""
     stage: str = ""
     points: list[ECRampPoint] = field(default_factory=list)
-    created_at: str = field(default_factory=lambda: datetime.now().isoformat())
+    created_at: str = field(default_factory=lambda: dt_util.utcnow().isoformat())
 
 
 @dataclass(slots=True)
@@ -588,7 +630,7 @@ class Growspace(BaseModel):
     rows: int = 3
     plants_per_row: int = 3
     notification_target: str | None = None
-    created_at: str = field(default_factory=lambda: datetime.now().isoformat())
+    created_at: str = field(default_factory=lambda: dt_util.utcnow().isoformat())
     device_id: str | None = None
     environment_config: EnvironmentConfig = field(default_factory=EnvironmentConfig)
     irrigation_config: IrrigationConfig = field(default_factory=IrrigationConfig)
@@ -699,6 +741,7 @@ class PlantGenetics(BaseModel):
     phenotype_id: int | None = None
     strain_name: str = ""  # Cached for display/search
     phenotype_name: str = ""
+    generation: str = ""  # e.g. F1, F2, S1, BX1 — inherited from seed batch at sowing
 
     @property
     def key(self) -> str:
@@ -753,6 +796,31 @@ class PhenotypeScore(BaseModel):
 
 
 @dataclass(slots=True)
+class WeightEntry(BaseModel):
+    """A single daily weight observation during drying."""
+
+    date: str = ""
+    weight_grams: float = 0.0
+
+
+@dataclass(slots=True)
+class MoistureEntry(BaseModel):
+    """A single daily moisture meter reading during drying."""
+
+    date: str = ""
+    moisture_percent: float = 0.0
+
+
+@dataclass(slots=True)
+class DryingData(BaseModel):
+    """In-progress drying observations for a plant in the dry stage."""
+
+    weight_log: list[WeightEntry] = field(default_factory=list)
+    moisture_log: list[MoistureEntry] = field(default_factory=list)
+    visual_tag: str | None = None
+
+
+@dataclass(slots=True)
 class HarvestMetrics(BaseModel):
     """Quantitative yield and quality data recorded at harvest."""
 
@@ -787,6 +855,7 @@ class Plant(BaseModel):
     updated_at: str | None = None
     transition_date: str | None = None
     source_mother: str | None = None
+    seed_batch_id: str | None = None
     last_watered: str | None = None
     last_trained: str | None = None
     last_training_technique: str | None = None
@@ -796,6 +865,7 @@ class Plant(BaseModel):
     stage_history: list[StageHistoryItem] = field(default_factory=list)
     phenotype_score: PhenotypeScore = field(default_factory=PhenotypeScore)
     harvest_metrics: HarvestMetrics = field(default_factory=HarvestMetrics)
+    drying_data: DryingData = field(default_factory=DryingData)
 
     @classmethod
     def __pre_deserialize__(cls, data: dict[str, Any]) -> dict[str, Any]:
@@ -1030,7 +1100,7 @@ class NutrientStock(BaseModel):
     name: str
     current_ml: float
     initial_ml: float
-    last_updated: str = field(default_factory=lambda: datetime.now().isoformat())
+    last_updated: str = field(default_factory=lambda: dt_util.utcnow().isoformat())
 
 
 @dataclass(slots=True)

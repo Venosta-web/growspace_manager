@@ -11,9 +11,9 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.exceptions import ServiceValidationError
 
 if TYPE_CHECKING:
-    from custom_components.growspace_manager.coordinator import GrowspaceCoordinator
+    from ..coordinator import GrowspaceCoordinator
 
-from custom_components.growspace_manager.exceptions import GrowspaceError
+from ..exceptions import GrowspaceError
 
 _LOGGER = logging.getLogger(__name__)
 

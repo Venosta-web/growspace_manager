@@ -7,10 +7,14 @@ from typing import TYPE_CHECKING, Any
 
 from homeassistant.core import HomeAssistant, ServiceCall
 
+from ..const import GrowspaceService
+from ..schemas import WATER_GROWSPACE_SCHEMA, WATER_PLANT_SCHEMA
+
+from ._definition import ServiceDefinition
 from .utils import handle_service_errors
 
 if TYPE_CHECKING:
-    from custom_components.growspace_manager.coordinator import GrowspaceCoordinator
+    from ..coordinator import GrowspaceCoordinator
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -34,7 +38,7 @@ async def handle_water_plant(
         nutrients: dict[str, float] | None = call.data.get("nutrients")
         preset_id: str | None = call.data.get("preset_id")
 
-        await coordinator.async_water_plant(plant_id, amount, nutrients, preset_id)
+        await coordinator.services.water_plant(plant_id, amount, nutrients, preset_id)
 
         _LOGGER.info(
             "Service water_plant completed for plant %s with %sL",
@@ -69,7 +73,7 @@ async def handle_water_growspace(
         nutrients: dict[str, float] | None = call.data.get("nutrients")
         preset_id: str | None = call.data.get("preset_id")
 
-        plants_watered = await coordinator.async_water_growspace(
+        plants_watered = await coordinator.services.water_growspace(
             growspace_id, amount_per_plant, nutrients, preset_id, amount=amount
         )
 
@@ -84,3 +88,17 @@ async def handle_water_growspace(
         raise
     else:
         return {"plants_watered": plants_watered}
+
+
+SERVICES = [
+    ServiceDefinition(
+        GrowspaceService.WATER_PLANT,
+        handle_water_plant,
+        WATER_PLANT_SCHEMA,
+    ),
+    ServiceDefinition(
+        GrowspaceService.WATER_GROWSPACE,
+        handle_water_growspace,
+        WATER_GROWSPACE_SCHEMA,
+    ),
+]

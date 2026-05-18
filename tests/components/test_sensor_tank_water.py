@@ -25,11 +25,13 @@ def _make_coordinator(volume: float = 200.0, flow_sensors=None, drain_sensors=No
     )
     growspace = Growspace(id="gs_1", name="Test", environment_config=env)
     coordinator = MagicMock()
+    coordinator.services = MagicMock()
     coordinator.last_update_success = True
     tracker = MagicMock()
     tracker.get_total_liters_today.return_value = 8.5
     tracker.get_total_liters_7d.return_value = 42.0
-    coordinator.get_tank_tracker.return_value = tracker
+    tracker.async_setup = AsyncMock()
+    coordinator.services.get_tank_tracker.return_value = tracker
     return coordinator, growspace, tank
 
 
@@ -59,7 +61,7 @@ def test_unique_id_format():
 
 def test_unavailable_when_tracker_none():
     coordinator, _, tank = _make_coordinator()
-    coordinator.get_tank_tracker.return_value = None
+    coordinator.services.get_tank_tracker.return_value = None
     sensor = TankDerivedWaterSensor(coordinator, "gs_1", tank)
     assert sensor.available is False
     assert sensor.native_value is None
@@ -90,7 +92,7 @@ def test_should_not_create_when_no_volume():
 def test_extra_state_attributes_tracker_none():
     """Test extra_state_attributes returns {} when tracker is None (sensor.py:787)."""
     coordinator, _, tank = _make_coordinator()
-    coordinator.get_tank_tracker.return_value = None
+    coordinator.services.get_tank_tracker.return_value = None
     sensor = TankDerivedWaterSensor(coordinator, "gs_1", tank)
     assert sensor.extra_state_attributes == {}
 
@@ -99,14 +101,14 @@ def test_extra_state_attributes_tracker_none():
 async def test_async_added_to_hass_tracker_none():
     """Test async_added_to_hass returns early when tracker is None (sensor.py:801-806)."""
     coordinator, _, tank = _make_coordinator()
-    coordinator.get_tank_tracker.return_value = None
+    coordinator.services.get_tank_tracker.return_value = None
     sensor = TankDerivedWaterSensor(coordinator, "gs_1", tank)
 
     with patch.object(CoordinatorEntity, "async_added_to_hass", new_callable=AsyncMock):
         await sensor.async_added_to_hass()
 
     # get_tank_tracker was called and returned None, so early return happened
-    coordinator.get_tank_tracker.assert_called_once_with("gs_1", "sensor.tank_1")
+    coordinator.services.get_tank_tracker.assert_called_once_with("gs_1", "sensor.tank_1")
 
 
 @pytest.mark.asyncio
@@ -116,7 +118,7 @@ async def test_async_added_to_hass_with_tracker():
     tracker = MagicMock()
     unsub = MagicMock()
     tracker.async_setup = AsyncMock(return_value=unsub)
-    coordinator.get_tank_tracker.return_value = tracker
+    coordinator.services.get_tank_tracker.return_value = tracker
     sensor = TankDerivedWaterSensor(coordinator, "gs_1", tank)
     sensor.async_on_remove = MagicMock()
 
@@ -139,7 +141,7 @@ async def test_async_added_to_hass_on_change_invokes_schedule():
 
     tracker = MagicMock()
     tracker.async_setup = fake_async_setup
-    coordinator.get_tank_tracker.return_value = tracker
+    coordinator.services.get_tank_tracker.return_value = tracker
     sensor = TankDerivedWaterSensor(coordinator, "gs_1", tank)
     sensor.async_on_remove = MagicMock()
     sensor.schedule_update_ha_state = MagicMock()

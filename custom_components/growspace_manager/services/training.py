@@ -5,17 +5,22 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING
 
-from custom_components.growspace_manager.const import (
+from ..const import (
     ATTR_GROWSPACE_ID,
     ATTR_NOTES,
     ATTR_PLANT_ID,
     ATTR_TECHNIQUE,
+    GrowspaceService,
 )
-from custom_components.growspace_manager.services.utils import handle_service_errors
+from ..schemas import LOG_TRAINING_EVENT_SCHEMA
+from ._definition import ServiceDefinition
+from .utils import handle_service_errors
+
 from homeassistant.core import HomeAssistant, ServiceCall
 
+
 if TYPE_CHECKING:
-    from custom_components.growspace_manager.coordinator import GrowspaceCoordinator
+    from ..coordinator import GrowspaceCoordinator
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -35,9 +40,18 @@ async def handle_log_training_event(
     # If no plant_ids and no growspace_id, try to infer growspace from context if possible,
     # but strictly we require at least one.
 
-    await coordinator.async_log_training_event(
+    await coordinator.services.log_training_event(
         growspace_id=growspace_id,
         technique=technique,
         notes=notes,
         plant_ids=plant_ids,
     )
+
+
+SERVICES = [
+    ServiceDefinition(
+        GrowspaceService.LOG_TRAINING_EVENT,
+        handle_log_training_event,
+        LOG_TRAINING_EVENT_SCHEMA,
+    ),
+]

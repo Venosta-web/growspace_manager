@@ -28,6 +28,7 @@ def mock_managers():
         patch("custom_components.growspace_manager.coordinator.GrowspaceRepository"),
         patch("custom_components.growspace_manager.coordinator.SubsystemManager"),
         patch("custom_components.growspace_manager.coordinator.GrowspaceManager"),
+        patch("custom_components.growspace_manager.coordinator.ViewModelBuilder"),
     ):
         yield
 
@@ -39,14 +40,20 @@ async def test_async_update_irrigation_config_normalizes_empty_strings(
     """Test that empty strings in pump entities are converted to None."""
     entry = MagicMock()
 
-    # Initialize coordinator with mocks to avoid side effects
+    # Initialize coordinator
     coordinator = GrowspaceCoordinator(hass, entry, data={})
 
-    # Mock internal methods
+    # Sub-managers created in __init__ are MagicMocks due to patching.
+    # We must make the awaited methods AsyncMocks.
+    coordinator.storage_manager.async_force_save = AsyncMock()
+    coordinator.storage_manager.async_save = AsyncMock()
+
+    # Mock other internal methods/properties
     coordinator.cache = MagicMock()
     coordinator.cache.invalidate = MagicMock()
-    coordinator.async_save = AsyncMock()  # type: ignore[method-assign]
-    coordinator.async_set_updated_data = MagicMock()
+
+    # The view_model_builder needs to return something for the 'data' property
+    coordinator.view_model_builder.build_data_property.return_value = {}
 
     # Create test growspace
     growspace_id = "gs1"
@@ -56,7 +63,9 @@ async def test_async_update_irrigation_config_normalizes_empty_strings(
         growspace_type=GrowspaceType.FLOWER,
         irrigation_config=IrrigationConfig(drain_pump_entity="switch.old"),
     )
-    coordinator.growspaces = {growspace_id: growspace}
+
+    # Ensure the coordinator's growspaces snapshot includes the growspace
+    coordinator.data_repository.get_all_growspaces.return_value = [growspace]
 
     # Test Input: Empty String for drain_pump_entity
     user_input = {
@@ -66,10 +75,13 @@ async def test_async_update_irrigation_config_normalizes_empty_strings(
     }
 
     # Execute
-    await coordinator.async_update_irrigation_config(growspace_id, user_input)
+    await coordinator.services.update_irrigation_config(growspace_id, user_input)
 
     # Assertions
     assert growspace.irrigation_config.irrigation_pump_entity == "switch.new_irrigation"
     assert growspace.irrigation_config.drain_pump_entity is None, (
         "Empty string should be normalized to None"
     )
+
+    # Verify the save was actually attempted
+    coordinator.storage_manager.async_force_save.assert_awaited_once()

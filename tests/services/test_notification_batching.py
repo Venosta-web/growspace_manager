@@ -27,7 +27,9 @@ def mock_coordinator():
 @pytest.fixture
 def manager(hass: HomeAssistant, mock_coordinator):
     """Notification manager fixture."""
-    return NotificationManager(hass, mock_coordinator)
+    mgr = NotificationManager(hass, mock_coordinator)
+    yield mgr
+    mgr.shutdown()
 
 
 @pytest.fixture

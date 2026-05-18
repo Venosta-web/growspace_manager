@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING
 
-from custom_components.growspace_manager.const import (
+from ..const import (
     ATTR_DRAIN_EC,
     ATTR_DRAIN_VOLUME_ML,
     ATTR_FEED_EC,
@@ -13,12 +13,19 @@ from custom_components.growspace_manager.const import (
     ATTR_GROWSPACE_ID,
     ATTR_MAX_EC_DELTA,
     ATTR_TARGET_RUNOFF_PERCENT,
+    GrowspaceService,
 )
-from custom_components.growspace_manager.services.utils import handle_service_errors
+from ..schemas import (
+    CONFIGURE_DRAIN_MONITORING_SCHEMA,
+    LOG_DRAIN_READING_SCHEMA,
+)
+from .utils import handle_service_errors
 from homeassistant.core import HomeAssistant, ServiceCall
 
+from ._definition import ServiceDefinition
+
 if TYPE_CHECKING:
-    from custom_components.growspace_manager.coordinator import GrowspaceCoordinator
+    from ..coordinator import GrowspaceCoordinator
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -42,7 +49,7 @@ async def handle_log_drain_reading(
     drain_volume_ml: float | None = call.data.get(ATTR_DRAIN_VOLUME_ML)
     feed_volume_ml: float | None = call.data.get(ATTR_FEED_VOLUME_ML)
 
-    await coordinator.async_log_drain_reading(
+    await coordinator.services.log_drain_reading(
         growspace_id=growspace_id,
         feed_ec=feed_ec,
         drain_ec=drain_ec,
@@ -76,7 +83,7 @@ async def handle_configure_drain_monitoring(
     max_ec_delta: float | None = call.data.get(ATTR_MAX_EC_DELTA)
     target_runoff_percent: float | None = call.data.get(ATTR_TARGET_RUNOFF_PERCENT)
 
-    await coordinator.async_configure_drain_monitoring(
+    await coordinator.services.configure_drain_monitoring(
         growspace_id=growspace_id,
         enabled=enabled,
         max_ec_delta=max_ec_delta,
@@ -84,3 +91,17 @@ async def handle_configure_drain_monitoring(
     )
 
     _LOGGER.info("Updated drain monitoring config for %s", growspace_id)
+
+
+SERVICES = [
+    ServiceDefinition(
+        GrowspaceService.LOG_DRAIN_READING,
+        handle_log_drain_reading,
+        LOG_DRAIN_READING_SCHEMA,
+    ),
+    ServiceDefinition(
+        GrowspaceService.CONFIGURE_DRAIN_MONITORING,
+        handle_configure_drain_monitoring,
+        CONFIGURE_DRAIN_MONITORING_SCHEMA,
+    ),
+]

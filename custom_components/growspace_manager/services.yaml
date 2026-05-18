@@ -1660,3 +1660,61 @@ harvest_seeds:
       required: false
       selector:
         text:
+
+log_drying_weight:
+  description: Log a daily weight reading for a plant during drying
+  fields:
+    plant_id:
+      description: The ID of the plant
+      required: true
+      selector:
+        text:
+    weight_grams:
+      description: Current weight in grams
+      required: true
+      selector:
+        number:
+          min: 0
+          max: 10000
+          step: 0.1
+    date:
+      description: Date of the reading (ISO format, defaults to today)
+      required: false
+      selector:
+        text:
+
+log_moisture_reading:
+  description: Log a daily moisture meter reading for a plant during drying
+  fields:
+    plant_id:
+      description: The ID of the plant
+      required: true
+      selector:
+        text:
+    moisture_percent:
+      description: Moisture reading as a percentage (0-100)
+      required: true
+      selector:
+        number:
+          min: 0
+          max: 100
+          step: 0.1
+    date:
+      description: Date of the reading (ISO format, defaults to today)
+      required: false
+      selector:
+        text:
+
+set_visual_tag:
+  description: Set or clear the visual identification tag on a plant
+  fields:
+    plant_id:
+      description: The ID of the plant
+      required: true
+      selector:
+        text:
+    visual_tag:
+      description: Visual tag label (e.g. "Red Velcro"), or omit to clear
+      required: false
+      selector:
+        text:

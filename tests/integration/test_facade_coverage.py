@@ -11,9 +11,7 @@ from homeassistant.exceptions import ServiceValidationError
 
 
 @pytest.mark.asyncio
-async def test_update_plant_name_change(
-    hass: HomeAssistant, mock_coordinator, mock_plant
-) -> None:
+async def test_update_plant_name_change(mock_coordinator, mock_plant) -> None:
     """Test updating plant name updates the device name."""
     facade = ServiceFacade(mock_coordinator)
     mock_coordinator.plant_manager.async_update_plant = AsyncMock(
@@ -35,9 +33,7 @@ async def test_update_plant_name_change(
 
 
 @pytest.mark.asyncio
-async def test_async_auto_harvest(
-    hass: HomeAssistant, mock_coordinator, mock_plant
-) -> None:
+async def test_async_auto_harvest(mock_coordinator, mock_plant) -> None:
     """Test auto-harvesting plants that reached their transition date."""
     facade = ServiceFacade(mock_coordinator)
 
@@ -65,7 +61,7 @@ async def test_async_auto_harvest(
 
 
 @pytest.mark.asyncio
-async def test_remove_plant_entities(hass: HomeAssistant, mock_coordinator) -> None:
+async def test_remove_plant_entities(mock_coordinator) -> None:
     """Test removing HA entities associated with a plant."""
     facade = ServiceFacade(mock_coordinator)
 
@@ -98,18 +94,20 @@ async def test_remove_plant_entities(hass: HomeAssistant, mock_coordinator) -> N
 async def test_ipm_management(mock_coordinator) -> None:
     """Test IPM preset management services."""
     facade = ServiceFacade(mock_coordinator)
-    mock_coordinator.ipm_service.async_save_ipm_preset = AsyncMock()
-    mock_coordinator.ipm_service.async_remove_ipm_preset = AsyncMock()
-    mock_coordinator.ipm_service.async_apply_ipm = AsyncMock()
+    mock_coordinator._ipm_service.async_save_ipm_preset = AsyncMock()
+    mock_coordinator._ipm_service.async_remove_ipm_preset = AsyncMock()
+    mock_coordinator._ipm_service.async_apply_ipm = AsyncMock()
 
     await facade.save_ipm_preset("Test", "Foliar", [])
-    mock_coordinator.ipm_service.async_save_ipm_preset.assert_called_once()
+    mock_coordinator._ipm_service.async_save_ipm_preset.assert_called_once()
 
     await facade.remove_ipm_preset("preset_1")
-    mock_coordinator.ipm_service.async_remove_ipm_preset.assert_called_once_with("preset_1")
+    mock_coordinator._ipm_service.async_remove_ipm_preset.assert_called_once_with(
+        "preset_1"
+    )
 
     await facade.apply_ipm("preset_1", growspace_id="gs1")
-    mock_coordinator.ipm_service.async_apply_ipm.assert_called_once()
+    mock_coordinator._ipm_service.async_apply_ipm.assert_called_once()
 
 
 @pytest.mark.asyncio
@@ -141,15 +139,26 @@ async def test_log_drain_reading(mock_coordinator) -> None:
 async def test_growspace_lifecycle_services(mock_coordinator) -> None:
     """Test growspace management services (remove, options, lights)."""
     facade = ServiceFacade(mock_coordinator)
-    mock_coordinator.async_remove_growspace = AsyncMock()
-    mock_coordinator.async_update_options = AsyncMock()
-    mock_coordinator.async_set_lighting_schedule = AsyncMock()
+
+    # 1. Mock orchestrator methods on the facade itself (since it delegates to coordinator)
+    # The facade delegates remove_growspace to coordinator.growspace_manager
+    mock_coordinator.growspace_manager.remove_growspace = AsyncMock()
+    mock_coordinator.async_commit = AsyncMock()
+
+    # We mock the coordinator methods that the facade implementation calls
+    mock_coordinator.hass.config_entries.async_update_entry = MagicMock()
+
+    # 2. Add a growspace to avoid validation errors
+    gs = MagicMock()
+    gs.environment_config = MagicMock()
+    mock_coordinator.growspaces = {"gs1": gs}
 
     await facade.remove_growspace("gs1")
-    mock_coordinator.async_remove_growspace.assert_called_once_with("gs1")
+    mock_coordinator.growspace_manager.remove_growspace.assert_called_once_with("gs1")
 
     await facade.update_options({"opt": "val"})
-    mock_coordinator.async_update_options.assert_called_once_with({"opt": "val"})
+    mock_coordinator.async_commit.assert_called()
 
     await facade.async_set_lighting_schedule("gs1", 12, 12, 12)
-    mock_coordinator.async_set_lighting_schedule.assert_called_once_with("gs1", 12, 12, 12)
+    assert gs.environment_config.veg_day_hours == 12
+

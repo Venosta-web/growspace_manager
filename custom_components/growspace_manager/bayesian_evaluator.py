@@ -96,6 +96,16 @@ from .bayesian_data import (
     VPD_OPTIMAL_THRESHOLDS,
     VPD_STRESS_THRESHOLDS,
 )
+from .const import (
+    CONF_PROB_TREND_FAST_RISE,
+    CONF_PROB_TREND_SLOW_RISE,
+    CONF_SENSOR_MAP,
+    CONF_STATS_SENSOR_MAP,
+    CONF_TREND_DURATION_MAP,
+    CONF_TREND_SENSITIVITY_MAP,
+    CONF_TREND_SENSOR_MAP,
+    CONF_TREND_THRESHOLD_MAP,
+)
 from .domain.stage import BayesianStage
 from .models import EnvironmentState
 from .utils import calculate_stage_transition, interpolate_value
@@ -173,8 +183,8 @@ async def async_evaluate_stress_trend(
         local_reasons: ReasonList = []
         local_trends: dict[str, str] = {}
 
-        trend_sensor_id = env_config.get(f"{sensor_key}_trend_sensor")
-        stats_sensor_id = env_config.get(f"{sensor_key}_stats_sensor")
+        trend_sensor_id = env_config.get(CONF_TREND_SENSOR_MAP[sensor_key])
+        stats_sensor_id = env_config.get(CONF_STATS_SENSOR_MAP[sensor_key])
 
         # --- External Trend Sensor Logic ---
         if trend_sensor_id:
@@ -183,9 +193,9 @@ async def async_evaluate_stress_trend(
                 local_trends[trend_key] = "rising"
                 gradient = trend_state.attributes.get("gradient", 0)
                 prob = (
-                    env_config.get("prob_trend_fast_rise", PROB_TREND_FAST_RISE)
+                    env_config.get(CONF_PROB_TREND_FAST_RISE, PROB_TREND_FAST_RISE)
                     if gradient > TREND_GRADIENT_FAST_THRESHOLD
-                    else env_config.get("prob_trend_slow_rise", PROB_TREND_SLOW_RISE)
+                    else env_config.get(CONF_PROB_TREND_SLOW_RISE, PROB_TREND_SLOW_RISE)
                 )
                 local_obs.append(prob)
                 reason_suffix = (
@@ -214,17 +224,18 @@ async def async_evaluate_stress_trend(
 
         else:  # Fallback to manual analysis (Requires await)
             duration = env_config.get(
-                f"{sensor_key}_trend_duration", DEFAULT_TREND_DURATION
+                CONF_TREND_DURATION_MAP[sensor_key], DEFAULT_TREND_DURATION
             )
             threshold = env_config.get(
-                f"{sensor_key}_trend_threshold", DEFAULT_TREND_THRESHOLD_TEMP
+                CONF_TREND_THRESHOLD_MAP[sensor_key], DEFAULT_TREND_THRESHOLD_TEMP
             )
             sensitivity = env_config.get(
-                f"{sensor_key}_trend_sensitivity", DEFAULT_TREND_SENSITIVITY
+                CONF_TREND_SENSITIVITY_MAP[sensor_key], DEFAULT_TREND_SENSITIVITY
             )
-            if env_config.get(f"{sensor_key}_sensor"):
+            sensor_id_key = CONF_SENSOR_MAP[sensor_key]
+            if env_config.get(sensor_id_key):
                 analysis = await analyze_trend(
-                    env_config[f"{sensor_key}_sensor"], duration, threshold
+                    env_config[sensor_id_key], duration, threshold
                 )
                 local_trends[trend_key] = analysis["trend"]
                 if analysis["trend"] == "rising" and analysis["crossed_threshold"]:
@@ -272,8 +283,8 @@ async def _async_evaluate_external_mold_trend_sensor(
     state: EnvironmentState,
 ) -> None:
     """Evaluate external trend sensors for mold risk (humidity and VPD)."""
-    trend_sensor_id = env_config.get(f"{sensor_key}_trend_sensor")
-    stats_sensor_id = env_config.get(f"{sensor_key}_stats_sensor")
+    trend_sensor_id = env_config.get(CONF_TREND_SENSOR_MAP[sensor_key])
+    stats_sensor_id = env_config.get(CONF_STATS_SENSOR_MAP[sensor_key])
 
     if trend_sensor_id:
         trend_state: State | None = sensor_instance.hass.states.get(trend_sensor_id)
@@ -341,11 +352,11 @@ async def _async_evaluate_fallback_mold_trend_analysis(
     state: EnvironmentState,
 ) -> None:
     """Perform fallback manual trend analysis for mold risk."""
-    if not env_config.get(f"{sensor_key}_trend_sensor") and not env_config.get(
-        f"{sensor_key}_stats_sensor"
+    if not env_config.get(CONF_TREND_SENSOR_MAP[sensor_key]) and not env_config.get(
+        CONF_STATS_SENSOR_MAP[sensor_key]
     ):
         duration = env_config.get(
-            f"{sensor_key}_trend_duration", DEFAULT_TREND_DURATION
+            CONF_TREND_DURATION_MAP[sensor_key], DEFAULT_TREND_DURATION
         )
         threshold = (
             MOLD_TREND_THRESHOLD_HUMIDITY
@@ -353,11 +364,12 @@ async def _async_evaluate_fallback_mold_trend_analysis(
             else MOLD_TREND_THRESHOLD_VPD
         )
         sensitivity = env_config.get(
-            f"{sensor_key}_trend_sensitivity", DEFAULT_TREND_SENSITIVITY
+            CONF_TREND_SENSITIVITY_MAP[sensor_key], DEFAULT_TREND_SENSITIVITY
         )
-        if env_config.get(f"{sensor_key}_sensor"):
+        sensor_id_key = CONF_SENSOR_MAP[sensor_key]
+        if env_config.get(sensor_id_key):
             analysis = await analyze_trend(
-                env_config[f"{sensor_key}_sensor"], duration, threshold
+                env_config[sensor_id_key], duration, threshold
             )
             # Fallback analysis updates trend state
             trend_states[f"{sensor_key}_trend"] = analysis["trend"]
@@ -718,7 +730,10 @@ def evaluate_substrate_temp_stress(
     if temp < SUBSTRATE_TEMP_STRESS_LOW:
         observations.append(PROB_SUBSTRATE_TEMP_EXTREME)
         reasons.append(
-            (PROB_SUBSTRATE_TEMP_EXTREME[0], f"Substrate temp critically low ({temp}°C)")
+            (
+                PROB_SUBSTRATE_TEMP_EXTREME[0],
+                f"Substrate temp critically low ({temp}°C)",
+            )
         )
     elif temp < SUBSTRATE_TEMP_OPTIMAL_MIN:
         observations.append(PROB_SUBSTRATE_TEMP_STRESS)
@@ -728,7 +743,10 @@ def evaluate_substrate_temp_stress(
     elif temp > SUBSTRATE_TEMP_STRESS_HIGH:
         observations.append(PROB_SUBSTRATE_TEMP_EXTREME)
         reasons.append(
-            (PROB_SUBSTRATE_TEMP_EXTREME[0], f"Substrate temp critically high ({temp}°C)")
+            (
+                PROB_SUBSTRATE_TEMP_EXTREME[0],
+                f"Substrate temp critically high ({temp}°C)",
+            )
         )
     elif temp > SUBSTRATE_TEMP_OPTIMAL_MAX:
         observations.append(PROB_SUBSTRATE_TEMP_STRESS)

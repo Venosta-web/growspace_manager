@@ -14,8 +14,9 @@ from homeassistant.core import HomeAssistant
 def repository_mock():
     """Mock the GrowspaceRepository."""
     mock = MagicMock()
-    mock.plants = {}
-    mock.growspaces = {}
+    mock.get_plant.return_value = None
+    mock.has_plant.return_value = False
+    mock.has_growspace.return_value = False
     return mock
 
 
@@ -90,6 +91,7 @@ def service(
     svc = PlantManager(
         hass=hass,
         repository=repository_mock,
+        notification_state=MagicMock(),
         validator=validator_mock,
         growspace_manager=gs_service_mock,
         strain_library=strain_library_mock,
@@ -111,7 +113,7 @@ async def test_add_plant(service, repository_mock) -> None:
     assert result.plant_id == "p1"
     assert result.growspace_id == "gs1"
     assert result.strain == "S1"
-    assert "p1" in repository_mock.plants
+    repository_mock.add_plant.assert_called_once()
     service._fire_event.assert_called()
 
 
@@ -145,7 +147,7 @@ async def test_take_clones_default(
         growspace_id="gs1",
         genetics=PlantGenetics(strain_name="S1", phenotype_name="P1"),
     )
-    repository_mock.plants = {"mom": mother}
+    repository_mock.require_plant.return_value = mother
     gs_service_mock.ensure_special_growspace.return_value = "clone"
     validator_mock.find_first_available_position.return_value = (1, 1)
 
@@ -161,8 +163,8 @@ async def test_take_clones_default(
 @pytest.mark.asyncio
 async def test_take_clones_invalid_target(service, repository_mock) -> None:
     """Test taking clones with invalid target growspace."""
-    repository_mock.plants = {"mom": MagicMock()}
-    repository_mock.growspaces = {}
+    repository_mock.require_plant.return_value = MagicMock()
+    repository_mock.has_growspace.return_value = False
     with pytest.raises(ValueError, match="Target growspace 'unknown' does not exist"):
         await service.take_clones("mom", 1, target_growspace_id="unknown")
 
@@ -172,8 +174,8 @@ async def test_take_clones_full_growspace(
     service, repository_mock, validator_mock
 ) -> None:
     """Test taking clones when target growspace is full."""
-    repository_mock.plants = {"mom": MagicMock()}
-    repository_mock.growspaces = {"clone": MagicMock()}
+    repository_mock.require_plant.return_value = MagicMock()
+    repository_mock.has_growspace.return_value = True
     validator_mock.find_first_available_position.return_value = (None, None)
 
     with pytest.raises(ValueError, match="Growspace 'clone' is full"):
@@ -193,7 +195,9 @@ async def test_update_plant_move(
         stage="flowering",
         type="normal",
     )
-    repository_mock.plants = {"p1": plant}
+    repository_mock.get_plant.return_value = plant
+    repository_mock.require_plant.return_value = plant
+    repository_mock.has_plant.return_value = True
     lifecycle_manager_mock.async_update_plant.return_value = plant
 
     await service.update_plant("p1", growspace_id="gs2")
@@ -211,7 +215,9 @@ async def test_move_plant(service, repository_mock) -> None:
         stage="flowering",
         type="normal",
     )
-    repository_mock.plants = {"p1": plant}
+    repository_mock.get_plant.return_value = plant
+    repository_mock.require_plant.return_value = plant
+    repository_mock.has_plant.return_value = True
     await service.move_plant("p1", 2, 2)
     assert plant.row == 2
     assert plant.col == 2
@@ -237,7 +243,10 @@ async def test_switch_plants(service, repository_mock) -> None:
         stage="flowering",
         type="normal",
     )
-    repository_mock.plants = {"p1": p1, "p2": p2}
+    _plants = {"p1": p1, "p2": p2}
+    repository_mock.require_plant.side_effect = lambda pid: _plants[pid]
+    repository_mock.get_plant.side_effect = lambda pid: _plants.get(pid)
+    repository_mock.has_plant.side_effect = lambda pid: pid in _plants
     await service.switch_plants("p1", "p2")
     assert p1.row == 2
     assert p1.col == 2
@@ -264,7 +273,9 @@ async def test_remove_plant_success(
         stage="flowering",
         type="normal",
     )
-    repository_mock.plants = {"p1": plant}
+    repository_mock.get_plant.return_value = plant
+    repository_mock.require_plant.return_value = plant
+    repository_mock.has_plant.return_value = True
     lifecycle_manager_mock.async_remove_plant.return_value = True
 
     assert await service.remove_plant("p1") is True
@@ -290,7 +301,9 @@ async def test_transition_plant_stage_actual(service, repository_mock) -> None:
         stage="vegetative",
         type="normal",
     )
-    repository_mock.plants = {"p1": plant}
+    repository_mock.get_plant.return_value = plant
+    repository_mock.require_plant.return_value = plant
+    repository_mock.has_plant.return_value = True
     await service.transition_plant_stage("p1", "flower")
     assert plant.stage == "flower"
     service._fire_event.assert_called()
@@ -300,7 +313,9 @@ async def test_transition_plant_stage_actual(service, repository_mock) -> None:
 async def test_convenience_methods(service, repository_mock) -> None:
     """Test stage transition convenience methods."""
     plant = Plant(plant_id="p1", growspace_id="gs1")
-    repository_mock.plants = {"p1": plant}
+    repository_mock.get_plant.return_value = plant
+    repository_mock.require_plant.return_value = plant
+    repository_mock.has_plant.return_value = True
 
     with patch.object(
         service, "transition_plant_stage", return_value=None
@@ -330,9 +345,11 @@ async def test_harvest_orchestration(service, repository_mock) -> None:
         stage="flowering",
         type="normal",
     )
-    repository_mock.plants = {"p1": plant}
+    repository_mock.get_plant.return_value = plant
+    repository_mock.require_plant.return_value = plant
+    repository_mock.has_plant.return_value = True
     # Mock repository.growspaces to include dry_room
-    repository_mock.growspaces = {"dry_room": MagicMock()}
+    repository_mock.has_growspace.return_value = True
 
     # Mock calculate_plant_stage to avoid issues with mocked plants if any
     with patch(

@@ -133,6 +133,7 @@ def plant_manager(hass: HomeAssistant) -> PlantManager:
     return PlantManager(
         hass=hass,
         repository=repo,
+        notification_state=MagicMock(),
         validator=validator,
         growspace_manager=MagicMock(),
         strain_library=MagicMock(record_harvest=AsyncMock()),
@@ -655,7 +656,7 @@ def test_coordinator_get_plant_delegates_to_repository() -> None:
     coordinator.data_repository = MagicMock()
     coordinator.data_repository.get_plant.return_value = plant
 
-    result = coordinator.get_plant("p1")
+    result = coordinator.services.get_plant("p1")
     assert result is plant
     coordinator.data_repository.get_plant.assert_called_once_with("p1")
 
@@ -674,6 +675,6 @@ def test_coordinator_get_growspace_delegates_to_repository() -> None:
     coordinator.data_repository = MagicMock()
     coordinator.data_repository.get_growspace.return_value = growspace
 
-    result = coordinator.get_growspace("gs1")
+    result = coordinator.services.get_growspace("gs1")
     assert result is growspace
     coordinator.data_repository.get_growspace.assert_called_once_with("gs1")

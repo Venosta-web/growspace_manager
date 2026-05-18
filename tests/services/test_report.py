@@ -1,10 +1,10 @@
 """Tests for the Growspace Manager report service."""
 
+from datetime import datetime
 import importlib
 import json
-import sys
-from datetime import datetime, timezone
 from pathlib import Path
+import sys
 from unittest.mock import AsyncMock, MagicMock, PropertyMock, patch
 
 import pytest
@@ -41,7 +41,7 @@ def real_fpdf():
         if fpdf_mock is not None:
             sys.modules["fpdf"] = fpdf_mock
 
-    import custom_components.growspace_manager.services.report as report_mod
+    import custom_components.growspace_manager.services.report as report_mod  # noqa: PLC0415
 
     with patch.object(report_mod, "FPDF", real_fpdf_class):
         yield
@@ -81,13 +81,20 @@ def mock_growspace() -> Growspace:
     return growspace
 
 
+@pytest.fixture(autouse=True)
+def setup_coordinator_data(mock_coordinator, mock_plant, mock_growspace):
+    """Set up default coordinator data for report tests."""
+    mock_coordinator.plants = {mock_plant.plant_id: mock_plant}
+    mock_coordinator.growspaces = {mock_growspace.id: mock_growspace}
+
+
 async def test_aggregate_plant_data(
     hass: HomeAssistant, mock_plant: Plant, mock_growspace: Growspace
 ) -> None:
     """Test data aggregation for the report."""
     mock_coordinator = MagicMock()
-    mock_coordinator.get_growspace.return_value = mock_growspace
-    mock_coordinator.get_plant.return_value = mock_plant
+    mock_coordinator.data_repository.get_growspace.return_value = mock_growspace
+    mock_coordinator.data_repository.get_plant.return_value = mock_plant
 
     with (
         patch(
@@ -145,11 +152,13 @@ async def test_export_grow_report_json(
 ) -> None:
     """Test generating a JSON report."""
     mock_coordinator = MagicMock()
-    mock_coordinator.get_plant.return_value = mock_plant
-    mock_coordinator.get_growspace.return_value = mock_growspace
+    mock_coordinator.data_repository.get_plant.return_value = mock_plant
+    mock_coordinator.data_repository.get_growspace.return_value = mock_growspace
 
-    # Setup config path to point to tmp_path
-    hass.config.path = MagicMock(return_value=str(tmp_path / "www"))
+    # Setup config path mock to handle subdirectories correctly
+    hass.config.path = MagicMock(
+        side_effect=lambda *args: str(tmp_path.joinpath(*args))
+    )
 
     with (
         patch(
@@ -157,17 +166,23 @@ async def test_export_grow_report_json(
             new_callable=AsyncMock,
         ) as mock_aggregate,
         patch(
-            "custom_components.growspace_manager.services.report.datetime"
-        ) as mock_dt,
+            "custom_components.growspace_manager.services.report.dt_util.now"
+        ) as mock_now,
     ):
-        mock_dt.now.return_value.strftime.return_value = "20240101_120000"
+        mock_now.return_value.strftime.return_value = "20240101_120000"
         mock_aggregate.return_value = {"plant_info": {"id": "test_plant"}}
 
         call = MagicMock()
         call.data = {"plant_id": "test_plant", "format": "json"}
         await handle_export_grow_report(hass, mock_coordinator, call)
 
-        expected_file = tmp_path / "www" / "Test_Strain_#1_20240101_120000.json"
+        expected_file = (
+            tmp_path
+            / "www"
+            / "growspace_manager"
+            / "reports"
+            / "Test_Strain_#1_20240101_120000.json"
+        )
         assert expected_file.exists()
 
         data = json.loads(expected_file.read_text())
@@ -183,10 +198,12 @@ async def test_export_grow_report_pdf(
 ) -> None:
     """Test generating a PDF report."""
     mock_coordinator = MagicMock()
-    mock_coordinator.get_plant.return_value = mock_plant
-    mock_coordinator.get_growspace.return_value = mock_growspace
+    mock_coordinator.data_repository.get_plant.return_value = mock_plant
+    mock_coordinator.data_repository.get_growspace.return_value = mock_growspace
 
-    hass.config.path = MagicMock(return_value=str(tmp_path / "www"))
+    hass.config.path = MagicMock(
+        side_effect=lambda *args: str(tmp_path.joinpath(*args))
+    )
 
     with (
         patch(
@@ -194,11 +211,11 @@ async def test_export_grow_report_pdf(
             new_callable=AsyncMock,
         ) as mock_aggregate,
         patch(
-            "custom_components.growspace_manager.services.report.datetime"
-        ) as mock_dt,
+            "custom_components.growspace_manager.services.report.dt_util.now"
+        ) as mock_now,
     ):
-        mock_dt.now.return_value.strftime.return_value = "20240101_120000"
-        mock_dt.now.return_value.timestamp.return_value = 1704110400
+        mock_now.return_value.strftime.return_value = "20240101_120000"
+        mock_now.return_value.timestamp.return_value = 1704110400
         mock_aggregate.return_value = {
             "plant_info": {
                 "id": "test_plant",
@@ -225,7 +242,13 @@ async def test_export_grow_report_pdf(
         call.data = {"plant_id": "test_plant", "format": "pdf"}
         await handle_export_grow_report(hass, mock_coordinator, call)
 
-        expected_file = tmp_path / "www" / "Test_Strain_#1_20240101_120000.pdf"
+        expected_file = (
+            tmp_path
+            / "www"
+            / "growspace_manager"
+            / "reports"
+            / "Test_Strain_#1_20240101_120000.pdf"
+        )
         assert expected_file.exists()
         # Verify it's a PDF file (starts with %PDF)
         header = expected_file.read_bytes()[:4]
@@ -237,7 +260,7 @@ async def test_export_plant_not_found(
     hass: HomeAssistant, mock_coordinator: MagicMock
 ) -> None:
     """Test export service fails if plant not found."""
-    mock_coordinator.get_plant.return_value = None
+    mock_coordinator.data_repository.get_plant.return_value = None
     call = MagicMock(data={"plant_id": "missing_plant", "format": "json"})
 
     with pytest.raises(HomeAssistantError, match="Plant missing_plant not found"):
@@ -249,7 +272,7 @@ async def test_export_growspace_not_found(
     hass: HomeAssistant, mock_coordinator: MagicMock, mock_plant: Plant
 ) -> None:
     """Test aggregation fails if growspace not found."""
-    mock_coordinator.get_growspace.return_value = None
+    mock_coordinator.growspaces = {}
 
     with pytest.raises(HomeAssistantError, match="Growspace test_growspace not found"):
         await _aggregate_plant_data(hass, mock_coordinator, mock_plant)
@@ -263,10 +286,16 @@ async def test_export_no_stage_history_fallback(
     mock_growspace: Growspace,
 ) -> None:
     """Test falling back to created_at if no stage_history."""
+    mock_coordinator.growspaces = {mock_growspace.id: mock_growspace}
     mock_plant.stage_history = []
     mock_plant.created_at = "2024-01-01T00:00:00+00:00"
 
-    with patch("custom_components.growspace_manager.services.report.get_instance"):
+    mock_recorder = MagicMock()
+    mock_recorder.async_add_executor_job = AsyncMock(return_value=[])
+    with patch(
+        "custom_components.growspace_manager.services.report.get_instance",
+        return_value=mock_recorder,
+    ):
         result = await _aggregate_plant_data(hass, mock_coordinator, mock_plant)
         assert result["plant_info"]["stage"] == "veg"  # From mock_plant
 
@@ -282,7 +311,12 @@ async def test_export_no_start_time_fallback(
     mock_plant.stage_history = []
     mock_plant.created_at = None
 
-    with patch("custom_components.growspace_manager.services.report.get_instance"):
+    mock_recorder = MagicMock()
+    mock_recorder.async_add_executor_job = AsyncMock(return_value=[])
+    with patch(
+        "custom_components.growspace_manager.services.report.get_instance",
+        return_value=mock_recorder,
+    ):
         result = await _aggregate_plant_data(hass, mock_coordinator, mock_plant)
         assert result["plant_info"]["stage"] == "veg"
 
@@ -300,12 +334,14 @@ async def test_export_logbook_exception(
         side_effect=HomeAssistantError("DB Error")
     )
 
-    with patch(
-        "custom_components.growspace_manager.services.report.get_instance",
-        return_value=mock_recorder,
+    with (
+        patch(
+            "custom_components.growspace_manager.services.report.get_instance",
+            return_value=mock_recorder,
+        ),
+        pytest.raises(HomeAssistantError, match="DB Error"),
     ):
-        with pytest.raises(HomeAssistantError, match="DB Error"):
-            await _aggregate_plant_data(hass, mock_coordinator, mock_plant)
+        await _aggregate_plant_data(hass, mock_coordinator, mock_plant)
 
 
 @pytest.mark.asyncio
@@ -318,7 +354,7 @@ async def test_export_logbook_general_exception(
     """Test generic exception during logbook fetch."""
     mock_recorder = MagicMock()
     mock_recorder.async_add_executor_job = AsyncMock(
-        side_effect=Exception("Other DB Error")
+        side_effect=ValueError("Other DB Error")
     )
 
     with patch(
@@ -340,15 +376,20 @@ async def test_export_statistics_exception(
     """Test exception during statistics fetch."""
     mock_growspace.environment_config.temperature_sensor = "sensor.test_temp"
 
+    mock_recorder = MagicMock()
+    mock_recorder.async_add_executor_job = AsyncMock(return_value=[])
     with (
-        patch("custom_components.growspace_manager.services.report.get_instance"),
+        patch(
+            "custom_components.growspace_manager.services.report.get_instance",
+            return_value=mock_recorder,
+        ),
         patch(
             "custom_components.growspace_manager.websocket._get_statistics_data",
             side_effect=HomeAssistantError("Stats Error"),
         ),
+        pytest.raises(HomeAssistantError, match="Stats Error"),
     ):
-        with pytest.raises(HomeAssistantError, match="Stats Error"):
-            await _aggregate_plant_data(hass, mock_coordinator, mock_plant)
+        await _aggregate_plant_data(hass, mock_coordinator, mock_plant)
 
 
 @pytest.mark.asyncio
@@ -361,11 +402,16 @@ async def test_export_statistics_general_exception(
     """Test generic exception during statistics fetch."""
     mock_growspace.environment_config.temperature_sensor = "sensor.test_temp"
 
+    mock_recorder = MagicMock()
+    mock_recorder.async_add_executor_job = AsyncMock(return_value=[])
     with (
-        patch("custom_components.growspace_manager.services.report.get_instance"),
+        patch(
+            "custom_components.growspace_manager.services.report.get_instance",
+            return_value=mock_recorder,
+        ),
         patch(
             "custom_components.growspace_manager.websocket._get_statistics_data",
-            side_effect=Exception("Other Stats Error"),
+            side_effect=ValueError("Other Stats Error"),
         ),
     ):
         # Should catch Exception and just log warning.
@@ -383,7 +429,7 @@ async def test_export_handle_general_exception(
     with (
         patch(
             "custom_components.growspace_manager.services.report._aggregate_plant_data",
-            side_effect=Exception("Boom"),
+            side_effect=ValueError("Boom"),
         ),
         patch(
             "custom_components.growspace_manager.services.report.create_notification"
@@ -414,7 +460,7 @@ async def test_export_growspace_not_found_in_handle(
     hass: HomeAssistant, mock_coordinator: MagicMock
 ) -> None:
     """Test export fails when growspace not found."""
-    mock_coordinator.get_growspace.return_value = None
+    mock_coordinator.data_repository.get_growspace.return_value = None
     call = MagicMock(data={"growspace_id": "missing_growspace", "format": "json"})
 
     with pytest.raises(
@@ -429,7 +475,7 @@ async def test_export_growspace_json(
 ) -> None:
     """Test generating a JSON report for growspace."""
     mock_coordinator = MagicMock()
-    mock_coordinator.get_growspace.return_value = mock_growspace
+    mock_coordinator.data_repository.get_growspace.return_value = mock_growspace
     mock_coordinator.plants = {
         "plant1": MagicMock(
             growspace_id="test_growspace",
@@ -451,7 +497,10 @@ async def test_export_growspace_json(
         ),
     }
 
-    hass.config.path = MagicMock(return_value=str(tmp_path / "www"))
+    # Setup config path mock to handle subdirectories correctly
+    hass.config.path = MagicMock(
+        side_effect=lambda *args: str(tmp_path.joinpath(*args))
+    )
 
     with (
         patch(
@@ -459,10 +508,10 @@ async def test_export_growspace_json(
             new_callable=AsyncMock,
         ) as mock_aggregate,
         patch(
-            "custom_components.growspace_manager.services.report.datetime"
-        ) as mock_dt,
+            "custom_components.growspace_manager.services.report.dt_util.now"
+        ) as mock_now,
     ):
-        mock_dt.now.return_value.strftime.return_value = "20240101_120000"
+        mock_now.return_value.strftime.return_value = "20240101_120000"
         mock_aggregate.return_value = {
             "plant_info": {
                 "id": "test_growspace",
@@ -495,7 +544,13 @@ async def test_export_growspace_json(
         call.data = {"growspace_id": "test_growspace", "format": "json"}
         await handle_export_grow_report(hass, mock_coordinator, call)
 
-        expected_file = tmp_path / "www" / "Test_Growspace_20240101_120000.json"
+        expected_file = (
+            tmp_path
+            / "www"
+            / "growspace_manager"
+            / "reports"
+            / "Test_Growspace_20240101_120000.json"
+        )
         assert expected_file.exists()
 
         data = json.loads(expected_file.read_text())
@@ -513,10 +568,13 @@ async def test_export_growspace_pdf(
 ) -> None:
     """Test generating a PDF report for growspace."""
     mock_coordinator = MagicMock()
-    mock_coordinator.get_growspace.return_value = mock_growspace
+    mock_coordinator.data_repository.get_growspace.return_value = mock_growspace
     mock_coordinator.plants = {}
 
-    hass.config.path = MagicMock(return_value=str(tmp_path / "www"))
+    # Setup config path mock to handle subdirectories correctly
+    hass.config.path = MagicMock(
+        side_effect=lambda *args: str(tmp_path.joinpath(*args))
+    )
 
     with (
         patch(
@@ -524,10 +582,10 @@ async def test_export_growspace_pdf(
             new_callable=AsyncMock,
         ) as mock_aggregate,
         patch(
-            "custom_components.growspace_manager.services.report.datetime"
-        ) as mock_dt,
+            "custom_components.growspace_manager.services.report.dt_util.now"
+        ) as mock_now,
     ):
-        mock_dt.now.return_value.strftime.return_value = "20240101_120000"
+        mock_now.return_value.strftime.return_value = "20240101_120000"
         mock_aggregate.return_value = {
             "plant_info": {
                 "id": "test_growspace",
@@ -562,7 +620,13 @@ async def test_export_growspace_pdf(
         call.data = {"growspace_id": "test_growspace", "format": "pdf"}
         await handle_export_grow_report(hass, mock_coordinator, call)
 
-        expected_file = tmp_path / "www" / "Test_Growspace_20240101_120000.pdf"
+        expected_file = (
+            tmp_path
+            / "www"
+            / "growspace_manager"
+            / "reports"
+            / "Test_Growspace_20240101_120000.pdf"
+        )
         assert expected_file.exists()
         # Verify it's a PDF file
         header = expected_file.read_bytes()[:4]
@@ -581,7 +645,7 @@ async def test_aggregate_growspace_data_with_plants(
     plant1.growspace_id = "test_growspace"
     plant1.genetics.strain_name = "Strain A"
     plant1.stage = "veg"
-    plant1.created_at = "2024-01-01T00:00:00"
+    plant1.created_at = "2024-01-01T00:00:00+00:00"
     plant1.wet_weight = 100
     plant1.dry_weight = 20
     plant1.trim_weight = 5
@@ -591,7 +655,7 @@ async def test_aggregate_growspace_data_with_plants(
     plant2.growspace_id = "test_growspace"
     plant2.genetics.strain_name = "Strain B"
     plant2.stage = "flower"
-    plant2.created_at = "2024-01-05T00:00:00"
+    plant2.created_at = "2024-01-05T00:00:00+00:00"
     plant2.wet_weight = 120
     plant2.dry_weight = 25
     plant2.trim_weight = 6
@@ -604,7 +668,7 @@ async def test_aggregate_growspace_data_with_plants(
     mock_growspace.environment_config.humidity_sensor = "sensor.test_humidity"
     mock_growspace.environment_config.vpd_sensor = "sensor.test_vpd"
 
-    mock_coordinator.get_growspace.return_value = mock_growspace
+    mock_coordinator.data_repository.get_growspace.return_value = mock_growspace
     mock_coordinator.plants = {"plant1": plant1, "plant2": plant2}
 
     with (
@@ -613,22 +677,14 @@ async def test_aggregate_growspace_data_with_plants(
             new_callable=AsyncMock,
         ) as mock_get_stats,
         patch(
-            "custom_components.growspace_manager.services.report.datetime"
-        ) as mock_dt,
+            "custom_components.growspace_manager.services.report.dt_util.now"
+        ) as mock_now,
     ):
-        # Need to mock datetime.fromisoformat as well for proper date parsing
-        mock_dt.now.return_value = datetime(2024, 1, 15, 12, 0, 0)
-        mock_dt.fromisoformat = datetime.fromisoformat
+        mock_now.return_value = datetime(2024, 1, 15, 12, 0, 0)
         mock_get_stats.return_value = {
-            "sensor.test_temp": [
-                {"lu": "2024-01-15T12:00:00+00:00", "s": 24.5}
-            ],
-            "sensor.test_humidity": [
-                {"lu": "2024-01-15T12:00:00+00:00", "s": 55.0}
-            ],
-            "sensor.test_vpd": [
-                {"lu": "2024-01-15T12:00:00+00:00", "s": 1.0}
-            ],
+            "sensor.test_temp": [{"lu": "2024-01-15T12:00:00+00:00", "s": 24.5}],
+            "sensor.test_humidity": [{"lu": "2024-01-15T12:00:00+00:00", "s": 55.0}],
+            "sensor.test_vpd": [{"lu": "2024-01-15T12:00:00+00:00", "s": 1.0}],
         }
 
         data = await _aggregate_growspace_data(hass, mock_coordinator, "test_growspace")
@@ -658,7 +714,7 @@ async def test_aggregate_growspace_data_no_environment_config(
     mock_growspace.name = "Test Growspace"
     mock_growspace.environment_config = None
 
-    mock_coordinator.get_growspace.return_value = mock_growspace
+    mock_coordinator.data_repository.get_growspace.return_value = mock_growspace
     mock_coordinator.plants = {}
 
     data = await _aggregate_growspace_data(hass, mock_coordinator, "test_growspace")
@@ -682,7 +738,7 @@ async def test_aggregate_growspace_data_no_stats(
     mock_growspace.environment_config.humidity_sensor = None
     mock_growspace.environment_config.vpd_sensor = None
 
-    mock_coordinator.get_growspace.return_value = mock_growspace
+    mock_coordinator.data_repository.get_growspace.return_value = mock_growspace
     mock_coordinator.plants = {}
 
     with patch(
@@ -710,12 +766,12 @@ async def test_aggregate_growspace_data_stats_exception(
     mock_growspace.environment_config.humidity_sensor = None
     mock_growspace.environment_config.vpd_sensor = None
 
-    mock_coordinator.get_growspace.return_value = mock_growspace
+    mock_coordinator.data_repository.get_growspace.return_value = mock_growspace
     mock_coordinator.plants = {}
 
     with patch(
         "custom_components.growspace_manager.websocket._get_statistics_data",
-        side_effect=Exception("Stats error"),
+        side_effect=ValueError("Stats error"),
     ):
         data = await _aggregate_growspace_data(hass, mock_coordinator, "test_growspace")
 
@@ -729,7 +785,7 @@ async def test_aggregate_growspace_data_growspace_not_found(
 ) -> None:
     """Test growspace aggregation when growspace not found."""
     mock_coordinator = MagicMock()
-    mock_coordinator.get_growspace.return_value = None
+    mock_coordinator.data_repository.get_growspace.return_value = None
 
     with pytest.raises(HomeAssistantError, match="Growspace missing_space not found"):
         await _aggregate_growspace_data(hass, mock_coordinator, "missing_space")
@@ -742,8 +798,8 @@ async def test_websocket_get_grow_report_plant(
     """Test WebSocket grow report request for plant."""
 
     mock_coordinator = MagicMock()
-    mock_coordinator.get_plant.return_value = mock_plant
-    mock_coordinator.get_growspace.return_value = mock_growspace
+    mock_coordinator.data_repository.get_plant.return_value = mock_plant
+    mock_coordinator.data_repository.get_growspace.return_value = mock_growspace
 
     mock_connection = MagicMock()
 
@@ -780,7 +836,7 @@ async def test_websocket_get_grow_report_growspace(
     """Test WebSocket grow report request for growspace."""
 
     mock_coordinator = MagicMock()
-    mock_coordinator.get_growspace.return_value = mock_growspace
+    mock_coordinator.data_repository.get_growspace.return_value = mock_growspace
     mock_coordinator.plants = {}
 
     mock_connection = MagicMock()
@@ -820,7 +876,7 @@ async def test_websocket_get_grow_report_plant_not_found(
     """Test WebSocket report when plant not found."""
 
     mock_coordinator = MagicMock()
-    mock_coordinator.get_plant.return_value = None
+    mock_coordinator.data_repository.get_plant.return_value = None
 
     mock_connection = MagicMock()
 
@@ -875,7 +931,7 @@ async def test_websocket_get_grow_report_exception(
     """Test WebSocket report handles exceptions."""
 
     mock_coordinator = MagicMock()
-    mock_coordinator.get_plant.side_effect = Exception("DB Error")
+    mock_coordinator.data_repository.get_plant.side_effect = ValueError("DB Error")
 
     mock_connection = MagicMock()
 
@@ -903,10 +959,12 @@ async def test_export_notification_fired(
 ) -> None:
     """Test that notification is created after successful export."""
     mock_coordinator = MagicMock()
-    mock_coordinator.get_plant.return_value = mock_plant
-    mock_coordinator.get_growspace.return_value = mock_growspace
+    mock_coordinator.data_repository.get_plant.return_value = mock_plant
+    mock_coordinator.data_repository.get_growspace.return_value = mock_growspace
 
-    hass.config.path = MagicMock(return_value=str(tmp_path / "www"))
+    hass.config.path = MagicMock(
+        side_effect=lambda *args: str(tmp_path.joinpath(*args))
+    )
 
     with (
         patch(
@@ -914,13 +972,13 @@ async def test_export_notification_fired(
             new_callable=AsyncMock,
         ) as mock_aggregate,
         patch(
-            "custom_components.growspace_manager.services.report.datetime"
-        ) as mock_dt,
+            "custom_components.growspace_manager.services.report.dt_util.now"
+        ) as mock_now,
         patch(
             "custom_components.growspace_manager.services.report.create_notification"
         ) as mock_notify,
     ):
-        mock_dt.now.return_value.strftime.return_value = "20240101_120000"
+        mock_now.return_value.strftime.return_value = "20240101_120000"
         mock_aggregate.return_value = {"plant_info": {"id": "test_plant"}}
 
         call = MagicMock()
@@ -938,10 +996,12 @@ async def test_export_event_fired(
 ) -> None:
     """Test that event is fired after successful export."""
     mock_coordinator = MagicMock()
-    mock_coordinator.get_plant.return_value = mock_plant
-    mock_coordinator.get_growspace.return_value = mock_growspace
+    mock_coordinator.data_repository.get_plant.return_value = mock_plant
+    mock_coordinator.data_repository.get_growspace.return_value = mock_growspace
 
-    hass.config.path = MagicMock(return_value=str(tmp_path / "www"))
+    hass.config.path = MagicMock(
+        side_effect=lambda *args: str(tmp_path.joinpath(*args))
+    )
 
     with (
         patch(
@@ -949,13 +1009,13 @@ async def test_export_event_fired(
             new_callable=AsyncMock,
         ) as mock_aggregate,
         patch(
-            "custom_components.growspace_manager.services.report.datetime"
-        ) as mock_dt,
+            "custom_components.growspace_manager.services.report.dt_util.now"
+        ) as mock_now,
         patch(
             "custom_components.growspace_manager.services.report.create_notification"
         ),
     ):
-        mock_dt.now.return_value.strftime.return_value = "20240101_120000"
+        mock_now.return_value.strftime.return_value = "20240101_120000"
         mock_aggregate.return_value = {"plant_info": {"id": "test_plant"}}
 
         call = MagicMock()
@@ -977,10 +1037,12 @@ async def test_export_with_special_characters_in_name(
     mock_growspace.name = "Tent/1"
 
     mock_coordinator = MagicMock()
-    mock_coordinator.get_plant.return_value = mock_plant
-    mock_coordinator.get_growspace.return_value = mock_growspace
+    mock_coordinator.data_repository.get_plant.return_value = mock_plant
+    mock_coordinator.data_repository.get_growspace.return_value = mock_growspace
 
-    hass.config.path = MagicMock(return_value=str(tmp_path / "www"))
+    hass.config.path = MagicMock(
+        side_effect=lambda *args: str(tmp_path.joinpath(*args))
+    )
 
     with (
         patch(
@@ -988,13 +1050,13 @@ async def test_export_with_special_characters_in_name(
             new_callable=AsyncMock,
         ) as mock_aggregate,
         patch(
-            "custom_components.growspace_manager.services.report.datetime"
-        ) as mock_dt,
+            "custom_components.growspace_manager.services.report.dt_util.now"
+        ) as mock_now,
         patch(
             "custom_components.growspace_manager.services.report.create_notification"
         ),
     ):
-        mock_dt.now.return_value.strftime.return_value = "20240101_120000"
+        mock_now.return_value.strftime.return_value = "20240101_120000"
         mock_aggregate.return_value = {"plant_info": {"id": "test_plant"}}
 
         call = MagicMock()
@@ -1002,5 +1064,79 @@ async def test_export_with_special_characters_in_name(
         await handle_export_grow_report(hass, mock_coordinator, call)
 
         # Filename should have special chars replaced with underscores
-        expected_file = tmp_path / "www" / "Test_Special_Strain_#1_20240101_120000.json"
+        expected_file = (
+            tmp_path
+            / "www"
+            / "growspace_manager"
+            / "reports"
+            / "Test_Special_Strain_#1_20240101_120000.json"
+        )
         assert expected_file.exists()
+
+
+@pytest.mark.asyncio
+async def test_aggregate_data_with_invalid_dates(
+    hass: HomeAssistant, mock_plant: Plant, mock_growspace: Growspace
+) -> None:
+    """Test data aggregation with invalid date strings (None/garbage)."""
+    mock_coordinator = MagicMock()
+    mock_coordinator.data_repository.get_growspace.return_value = mock_growspace
+    mock_coordinator.data_repository.get_plant.return_value = mock_plant
+
+    # 1. Test plant data with garbage dates
+    mock_plant.stage_history = [
+        {"stage": "seedling", "start": "garbage"},
+        {"stage": "veg", "start": "2024-01-14T00:00:00+00:00"},
+    ]
+    mock_plant.created_at = "more garbage"
+
+    mock_recorder = MagicMock()
+    mock_recorder.async_add_executor_job = AsyncMock(return_value=[])
+    with (
+        patch(
+            "custom_components.growspace_manager.services.report.get_instance",
+            return_value=mock_recorder,
+        ),
+        patch(
+            "custom_components.growspace_manager.websocket._get_statistics_data",
+            new_callable=AsyncMock,
+        ) as mock_get_stats,
+    ):
+        mock_get_stats.return_value = {}
+
+        # Should not crash and use fallback (now) for start_time
+        data = await _aggregate_plant_data(hass, mock_coordinator, mock_plant)
+        assert data["plant_info"]["id"] == "test_plant"
+        # The seedling stage should be skipped because of garbage start date
+        assert "seedling" not in data["environmental_averages"]
+
+    # 2. Test growspace data with None/garbage created_at
+    mock_growspace_2 = MagicMock()
+    mock_growspace_2.id = "test_growspace"
+    mock_growspace_2.name = "Test Growspace"
+    mock_growspace_2.environment_config = None
+    mock_coordinator.data_repository.get_growspace.return_value = mock_growspace_2
+
+    plant1 = MagicMock()
+    plant1.growspace_id = "test_growspace"
+    plant1.genetics.strain_name = "Strain A"
+    plant1.created_at = None
+    plant1.thc_percentage = 0
+    plant1.wet_weight = 0
+    plant1.dry_weight = 0
+    plant1.trim_weight = 0
+
+    plant2 = MagicMock()
+    plant2.growspace_id = "test_growspace"
+    plant2.genetics.strain_name = "Strain B"
+    plant2.created_at = "garbage"
+    plant2.thc_percentage = 0
+    plant2.wet_weight = 0
+    plant2.dry_weight = 0
+    plant2.trim_weight = 0
+
+    mock_coordinator.plants = {"p1": plant1, "p2": plant2}
+
+    # Should not crash when calculating first_plant_date
+    data = await _aggregate_growspace_data(hass, mock_coordinator, "test_growspace")
+    assert data["plant_info"]["id"] == "test_growspace"

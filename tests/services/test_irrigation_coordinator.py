@@ -43,6 +43,7 @@ def mock_main_coordinator() -> MagicMock:
         )
     }
     coordinator.async_save = AsyncMock()
+    coordinator.async_commit = AsyncMock()
     coordinator.async_refresh_growspace_data = AsyncMock()
     coordinator.async_set_updated_data = MagicMock()
     coordinator.add_event = MagicMock()
@@ -56,8 +57,11 @@ def mock_hass(mock_main_coordinator) -> MagicMock:
     hass.services = AsyncMock()
     hass.bus = MagicMock()
     hass.states = MagicMock()
-    # Ensure async_create_task creates a real task for tests to await
+    # Ensure async_create_task and async_create_background_task create real tasks for tests to await
     hass.async_create_task = asyncio.create_task
+    hass.async_create_background_task = MagicMock(
+        side_effect=lambda target, name: asyncio.create_task(target)
+    )
     # Mock loop property
     type(hass).loop = property(lambda self: asyncio.get_running_loop())
     hass.data = {DOMAIN: {}}
@@ -71,6 +75,9 @@ def mock_config_entry() -> MagicMock:
     entry.options = {}
     entry.entry_id = ENTRY_ID
     entry.runtime_data = MagicMock()
+    entry.async_create_background_task = MagicMock(
+        side_effect=lambda hass, target, name: asyncio.create_task(target)
+    )
     entry.options = {
         "irrigation": {
             GROWSPACE_ID: {
@@ -357,7 +364,7 @@ async def test_async_set_settings(
         assert growspace.irrigation_config.irrigation_duration == 45
         assert growspace.irrigation_config.drain_pump_entity == "switch.new_drain_pump"
 
-        mock_main_coordinator.async_save.assert_awaited_once()
+        mock_main_coordinator.async_commit.assert_awaited_once()
         mock_update.assert_awaited_once()
 
 
@@ -388,7 +395,7 @@ async def test_async_add_schedule_item(
         assert new_item is not None
         assert new_item["duration"] == 30
 
-        assert mock_main_coordinator.async_save.call_count == 2
+        assert mock_main_coordinator.async_commit.call_count == 2
         assert mock_update.call_count == 2
 
 
@@ -411,16 +418,16 @@ async def test_async_remove_schedule_item(
         removed_item = next((i for i in items if i["time"] == "10:00:00"), None)
         assert removed_item is None
 
-        mock_main_coordinator.async_save.assert_awaited_once()
+        mock_main_coordinator.async_commit.assert_awaited_once()
         mock_update.assert_awaited_once()
 
         # Test removing non-existent item
-        mock_main_coordinator.async_save.reset_mock()
+        mock_main_coordinator.async_commit.reset_mock()
         mock_update.reset_mock()
 
         await coordinator.async_remove_schedule_item("irrigation_times", "99:99:99")
 
-        mock_main_coordinator.async_save.assert_not_awaited()
+        mock_main_coordinator.async_commit.assert_not_awaited()
         mock_update.assert_not_awaited()
 
 
@@ -534,12 +541,12 @@ async def test_run_pump_cycle_error(
     )
 
     # Mock service call to raise exception
-    mock_hass.services.async_call.side_effect = Exception("Service Error")
+    mock_hass.services.async_call.side_effect = ValueError("Service Error")
 
     # The exception is caught and logged in _run_pump_cycle, but then re-raised
     # when trying to turn off the pump in finally block because side_effect applies to all calls.
     # We should make side_effect only apply to the first call (turn_on).
-    mock_hass.services.async_call.side_effect = [Exception("Service Error"), None]
+    mock_hass.services.async_call.side_effect = [ValueError("Service Error"), None]
 
     with patch.object(
         coordinator,
@@ -576,8 +583,8 @@ async def test_async_remove_schedule_item_key_error(
     await coordinator.async_remove_schedule_item("missing_schedule", "12:00:00")
 
     # Should handle KeyError gracefully and log warning
-    # We can verify this by checking if async_save was NOT called (since no change happened)
-    mock_main_coordinator.async_save.assert_not_awaited()
+    # We can verify this by checking if async_commit was NOT called (since no change happened)
+    mock_main_coordinator.async_commit.assert_not_awaited()
 
 
 async def test_async_remove_schedule_item_key_error_explicit(
@@ -612,8 +619,8 @@ async def test_async_remove_schedule_item_key_error_explicit(
     await coordinator.async_remove_schedule_item("some_schedule", "12:00:00")
 
     # Should catch KeyError and log warning
-    # We can verify this by checking if async_save was NOT called
-    mock_main_coordinator.async_save.assert_not_awaited()
+    # We can verify this by checking if async_commit was NOT called
+    mock_main_coordinator.async_commit.assert_not_awaited()
 
 
 async def test_schedule_event_short_time_format(
@@ -846,7 +853,7 @@ async def test_irrigation_coordinator_coverage_gaps(
         await BaseIrrigationCoordinator.async_unload(coordinator)  # Line 65
 
         # 6. Test _run_pump_cycle exception handling
-        mock_main_coordinator.add_event.side_effect = Exception("Test Error")
+        mock_main_coordinator.add_event.side_effect = ValueError("Test Error")
         # Must mock states again as side_effect consumed
         mock_hass.states.get.side_effect = None
         mock_hass.states.get.return_value = MagicMock(state="50.0")
@@ -874,10 +881,12 @@ async def test_irrigation_coordinator_coverage_gaps(
             ),
             patch(
                 "custom_components.growspace_manager.irrigation_coordinator.getattr",
-                side_effect=Exception("Unexpected"),
+                side_effect=ValueError("Unexpected"),
             ),
         ):
-            await coordinator.async_remove_schedule_item("irrigation_times", "10:00:00")
+            await coordinator.async_remove_schedule_item(
+                "irrigation_times", "10:00:00"
+            )
 
         # 9. Test _async_wait_for_switch_state with irrelevant entity event (Line 145)
         mock_hass.states.get.return_value = Mock(state="off")

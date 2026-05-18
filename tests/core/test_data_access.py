@@ -17,31 +17,26 @@ def repository():
 
 
 def test_growspace_repository_init() -> None:
-    """Test repository initialization."""
-    gs = {"gs1": MagicMock(spec=Growspace)}
-    plants = {"p1": MagicMock(spec=Plant)}
-    repo = GrowspaceRepository(growspaces=gs, plants=plants)
-    assert repo.growspaces == gs
-    assert repo.plants == plants
+    """Test repository initializes empty."""
+    repo = GrowspaceRepository()
+    assert repo.get_all_growspaces() == []
+    assert repo.get_all_plants() == []
 
 
-def test_growspace_repository_getters_setters(repository) -> None:
-    """Test growspaces and plants getters and setters."""
-    gs = {"gs1": MagicMock(spec=Growspace)}
-    plants = {"p1": MagicMock(spec=Plant)}
-    repository.growspaces = gs
-    repository.plants = plants
-    assert repository.growspaces == gs
-    assert repository.plants == plants
+def test_growspace_repository_load_growspaces(repository) -> None:
+    """Test bulk-loading growspaces via load_growspaces."""
+    gs = MagicMock(spec=Growspace)
+    gs.id = "gs1"
+    repository.load_growspaces({"gs1": gs})
+    assert repository.get_growspace("gs1") is gs
 
 
-def test_growspace_repository_load_data(repository) -> None:
-    """Test loading data into the repository."""
-    gs = {"gs1": MagicMock(spec=Growspace)}
-    plants = {"p1": MagicMock(spec=Plant)}
-    repository.load_data(gs, plants)
-    assert repository.growspaces == gs
-    assert repository.plants == plants
+def test_growspace_repository_load_plants(repository) -> None:
+    """Test bulk-loading plants via load_plants."""
+    plant = MagicMock(spec=Plant)
+    plant.plant_id = "p1"
+    repository.load_plants({"p1": plant})
+    assert repository.get_plant("p1") is plant
 
 
 def test_plant_operations(repository) -> None:

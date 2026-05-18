@@ -1,58 +1,91 @@
 """Shared test fixtures and utilities for growspace_manager tests."""
 
 from __future__ import annotations
-
-import importlib.util as _ilu
-import pathlib as _pathlib
 import sys
-from typing import Any
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock
 
-from syrupy.assertion import SnapshotAssertion
-
-# Must precede any custom_components import that pulls in fpdf/turbojpeg.
+# Must precede any imports that pull in these dependencies
 sys.modules["turbojpeg"] = MagicMock()
 sys.modules["fpdf"] = MagicMock()
+sys.modules["homeassistant.components.ai_task"] = MagicMock()
 
 # Load Home Assistant core test fixtures (hass, mock_recorder, freezer, etc.)
-# This must appear AFTER the sys.modules patching above.
-#
-# When running inside the HA core dev environment (PYTHONPATH includes core/),
-# load HA's own conftest to get the real fixture implementations.
-# In the standalone CI repo pytest-homeassistant-custom-component registers
-# the same fixtures automatically via its entry-point plugin – we only
-# load tests.conftest when the HA core source tree is on sys.path.
-#
-# We detect "real HA core" by checking that find_spec("tests.conftest") does
-# NOT resolve to this very file (which would happen when the standalone repo's
-# own tests/ package is on the path).
+# This must appear BEFORE other Home Assistant imports to avoid recorder initialization issues.
+import importlib.util as _ilu
+import pathlib as _pathlib
+
 _ha_conftest_spec = _ilu.find_spec("tests.conftest")
 _is_ha_core = (
     _ha_conftest_spec is not None
     and _ha_conftest_spec.origin is not None
-    # Ensure we didn't just find our *own* conftest (vendored repo).
     and _pathlib.Path(_ha_conftest_spec.origin).resolve()
     != _pathlib.Path(__file__).resolve()
 )
 if _is_ha_core:
     pytest_plugins = ["tests.conftest"]
 
+from typing import Any
+from unittest.mock import AsyncMock, patch
+
+from syrupy.assertion import SnapshotAssertion
+
+from homeassistant.core import HomeAssistant
+from homeassistant.helpers import device_registry as dr
+from homeassistant.util import dt as dt_util
+
+# Patch DeviceRegistry initialization bug in pytest-homeassistant-custom-component
+_orig_async_load = dr.async_load
+
+
+async def patched_async_load(hass: HomeAssistant, *args, **kwargs):
+    """Ensure async_setup is called before async_load to initialize _loaded_event."""
+    if dr.DATA_REGISTRY not in hass.data:
+        dr.async_get(hass).async_setup()
+    return await _orig_async_load(hass, *args, **kwargs)
+
+
+dr.async_load = patched_async_load
+
+# Prevent timezone leakage from Home Assistant core tests
+_orig_set_default_time_zone = dt_util.set_default_time_zone
+
+
+def patched_set_default_time_zone(time_zone):
+    """Enforce UTC and ignore US/Pacific attempts from HA core fixtures."""
+    if time_zone == dt_util.UTC:
+        _orig_set_default_time_zone(time_zone)
+
+
+dt_util.set_default_time_zone = patched_set_default_time_zone
+
 import pytest  # noqa: E402
 
 
-@pytest.fixture
-def snapshot(snapshot: SnapshotAssertion) -> SnapshotAssertion:
-    """Override snapshot fixture to always use HomeAssistantSnapshotExtension.
+@pytest.fixture(autouse=True)
+def enforce_utc_timezone():
+    """Ensure timezone is UTC before and after each test.
 
-    This ensures snapshots are stored in 'snapshots/' (not '__snapshots__/')
-    consistently in both HA core and standalone CI environments.
+    This works in tandem with our monkeypatch to prevent leaks.
     """
+    dt_util.set_default_time_zone(dt_util.UTC)
+    yield
+    dt_util.set_default_time_zone(dt_util.UTC)
+
+
+@pytest.fixture
+def snapshot(snapshot: Any) -> Any:
+    """Override snapshot fixture to always use HomeAssistantSnapshotExtension."""
+    if isinstance(snapshot, MagicMock) or snapshot == Any:
+        return snapshot
     try:
         from pytest_homeassistant_custom_component.syrupy import (  # noqa: PLC0415
             HomeAssistantSnapshotExtension,
         )
     except ImportError:
-        from tests.syrupy import HomeAssistantSnapshotExtension  # noqa: PLC0415
+        try:
+            from tests.syrupy import HomeAssistantSnapshotExtension  # noqa: PLC0415
+        except ImportError:
+            return snapshot
     return snapshot.use_extension(HomeAssistantSnapshotExtension)
 
 
@@ -69,9 +102,8 @@ def mock_recorder_before_hass(async_test_recorder) -> None:
 @pytest.fixture
 def mock_config_entry():
     """Return a standard MockConfigEntry for the integration."""
-    from tests.common import MockConfigEntry  # noqa: PLC0415
-
     from custom_components.growspace_manager.const import DOMAIN  # noqa: PLC0415
+    from tests.common import MockConfigEntry  # noqa: PLC0415
 
     return MockConfigEntry(
         domain=DOMAIN,
@@ -83,7 +115,9 @@ def mock_config_entry():
 
 
 @pytest.fixture
-async def init_integration(hass, mock_config_entry, enable_custom_integrations, recorder_mock):
+async def init_integration(
+    hass, mock_config_entry, enable_custom_integrations, recorder_mock
+):
     """Set up the real integration through the HA config entry lifecycle.
 
     Runs the actual async_setup_entry / async_unload_entry, so

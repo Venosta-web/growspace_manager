@@ -6,7 +6,6 @@ comprehensive PDF or JSON reports for individual plants.
 
 from __future__ import annotations
 
-import contextlib
 from datetime import datetime, timedelta
 import json
 import logging
@@ -15,17 +14,24 @@ from typing import TYPE_CHECKING, Any
 
 from fpdf import FPDF
 
-from custom_components.growspace_manager.const import DOMAIN
-from custom_components.growspace_manager.models import Plant
+from ..const import DOMAIN, GrowspaceService
+from ..exceptions import GrowspaceError
+from ..models import Plant
+from ..schemas import EXPORT_GROW_REPORT_SCHEMA
 from homeassistant.components.persistent_notification import (
     async_create as create_notification,
 )
 from homeassistant.components.recorder import get_instance
 from homeassistant.core import HomeAssistant, ServiceCall
-from homeassistant.exceptions import HomeAssistantError
+from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
+from homeassistant.util import dt as dt_util
+
+from ._definition import ServiceDefinition
+
+# Imports moved to function scope to avoid circular dependency with websocket.py
 
 if TYPE_CHECKING:
-    from custom_components.growspace_manager.coordinator import GrowspaceCoordinator
+    from ..coordinator import GrowspaceCoordinator
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -45,12 +51,12 @@ async def handle_export_grow_report(
 
     # Validate identifiers and get basic data before entering the try block
     if plant_id:
-        plant = coordinator.get_plant(plant_id)
+        plant = coordinator.data_repository.get_plant(plant_id)
         if not plant:
             raise HomeAssistantError(f"Plant {plant_id} not found")
         safe_name = f"{plant.genetics.strain_name}_{plant.phenotype}"
     else:
-        growspace = coordinator.get_growspace(growspace_id)  # type: ignore[arg-type]
+        growspace = coordinator.data_repository.get_growspace(growspace_id)  # type: ignore[arg-type]
         if not growspace:
             raise HomeAssistantError(f"Growspace {growspace_id} not found")
         safe_name = growspace.name
@@ -65,9 +71,9 @@ async def handle_export_grow_report(
             )  # type: ignore[arg-type]
 
         output_dir = Path(hass.config.path("www", "growspace_manager", "reports"))
-        output_dir.mkdir(parents=True, exist_ok=True)
+        await hass.async_add_executor_job(output_dir.mkdir, 511, True, True)
 
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        timestamp = dt_util.now().strftime("%Y%m%d_%H%M%S")
         safe_name = safe_name.replace(" ", "_").replace("/", "_")
         filename = f"{safe_name}_{timestamp}.{export_format}"
         file_path = output_dir / filename
@@ -103,7 +109,7 @@ async def handle_export_grow_report(
             title="Grow Report Export",
         )
 
-    except Exception as err:
+    except (AttributeError, KeyError, ValueError, ServiceValidationError, GrowspaceError) as err:
         _LOGGER.exception("Failed to export grow report")
         create_notification(
             hass,
@@ -117,12 +123,36 @@ async def _aggregate_plant_data(
     hass: HomeAssistant, coordinator: GrowspaceCoordinator, plant: Plant
 ) -> dict[str, Any]:
     """Aggregate all data needed for the report."""
-    growspace = coordinator.get_growspace(plant.growspace_id)
+    growspace = coordinator.data_repository.get_growspace(plant.growspace_id)
     if not growspace:
         raise HomeAssistantError(f"Growspace {plant.growspace_id} not found")
 
-    # 1. Basic Plant Info
-    data: dict[str, Any] = {
+    # 1. Setup time range
+    start_time = None
+    if plant.stage_history:
+        parsed = dt_util.parse_datetime(plant.stage_history[0]["start"])
+        if parsed:
+            start_time = dt_util.as_utc(parsed)
+    if not start_time and plant.created_at:
+        parsed = dt_util.parse_datetime(plant.created_at)
+        if parsed:
+            start_time = dt_util.as_utc(parsed)
+    if not start_time:
+        start_time = dt_util.utcnow()
+
+    end_time = dt_util.utcnow()
+
+    # 2. Fetch Timeline Events
+    timeline = await _get_plant_timeline_events(
+        hass, plant, growspace.id, start_time, end_time
+    )
+
+    # 3. Calculate Environmental Averages per Stage
+    averages = await _get_plant_environmental_stats(
+        hass, plant, growspace.environment_config, start_time, end_time
+    )
+
+    return {
         "plant_info": {
             "id": plant.plant_id,
             "strain": plant.genetics.strain_name,
@@ -134,143 +164,137 @@ async def _aggregate_plant_data(
             or getattr(plant, "cure_start", None),
         },
         "stage_history": plant.stage_history,
-        "timeline_events": [],
-        "environmental_averages": {},
+        "timeline_events": timeline,
+        "environmental_averages": averages,
     }
 
-    # Setup time range
-    start_time = None
-    if plant.stage_history:
-        with contextlib.suppress(ValueError):
-            start_time = datetime.fromisoformat(plant.stage_history[0]["start"])
-    if not start_time and plant.created_at:
-        with contextlib.suppress(ValueError):
-            start_time = datetime.fromisoformat(plant.created_at)
-    if not start_time:
-        start_time = datetime.now()
 
-    end_time = datetime.now()
-
-    # 2. Fetch Timeline Events (Watering, Training, IPM, Notes)
+async def _get_plant_timeline_events(
+    hass: HomeAssistant,
+    plant: Plant,
+    growspace_id: str,
+    start_time: datetime,
+    end_time: datetime,
+) -> list[dict[str, Any]]:
+    """Fetch and filter timeline events for a plant."""
     try:
-        from custom_components.growspace_manager.websocket import (
-            _get_statistics_data,
+        from ..websocket import (  # noqa: PLC0415
             _query_logbook_events_impl,
         )
 
         recorder = get_instance(hass)
-        # Fetch events for the plant's growspace
         evts = await recorder.async_add_executor_job(
             _query_logbook_events_impl,
             hass,
             start_time,
             end_time,
-            1000,  # limit
-            growspace.id,
-            {"optimal", "stress", "mold", "environment"},  # exclude categories
+            1000,
+            growspace_id,
+            {"optimal", "stress", "mold", "environment"},
             None,
             2,
         )
 
-        # Filter events specific to this plant or space-wide events that affect it
         plant_evts = []
         for e in evts:
             pid = e.get("plant_id")
-            if pid == plant.plant_id or (
-                isinstance(pid, list) and plant.plant_id in pid
+            if (
+                pid == plant.plant_id
+                or (isinstance(pid, list) and plant.plant_id in pid)
+                or (not pid and e.get("growspace_id") == growspace_id)
             ):
                 plant_evts.append(e)
-            elif not pid and e.get("growspace_id") == growspace.id:
-                # Include whole-growspace events like space watering
-                plant_evts.append(e)
-
-        data["timeline_events"] = plant_evts
 
     except HomeAssistantError:
         raise
-    except Exception as err:
+    except (AttributeError, KeyError, ValueError, ServiceValidationError, GrowspaceError) as err:
         _LOGGER.warning("Could not fetch logbook events for report: %s", err)
+        return []
 
-    # 3. Calculate Environmental Averages per Stage
-    env_config = growspace.environment_config
-    if env_config:
-        entities_to_track = []
-        if env_config.temperature_sensor:
-            entities_to_track.append(env_config.temperature_sensor)
-        if env_config.humidity_sensor:
-            entities_to_track.append(env_config.humidity_sensor)
-        if env_config.vpd_sensor:
-            entities_to_track.append(env_config.vpd_sensor)
+    return plant_evts
 
-        if entities_to_track and plant.stage_history:
-            try:
-                # We use a 1-hour interval for long term stats
-                stats = await _get_statistics_data(
-                    hass, entities_to_track, start_time, end_time, 60
-                )
-                if stats:
-                    for stage in plant.stage_history:
-                        stage_name = stage["stage"]
-                        s_start = datetime.fromisoformat(stage["start"])
-                        s_end = (
-                            datetime.fromisoformat(stage["end"])
-                            if stage.get("end")
-                            else end_time
-                        )
 
-                        stage_stats = {
-                            "temperature": None,
-                            "humidity": None,
-                            "vpd": None,
-                        }
+async def _get_plant_environmental_stats(
+    hass: HomeAssistant,
+    plant: Plant,
+    env_config: Any,
+    start_time: datetime,
+    end_time: datetime,
+) -> dict[str, Any]:
+    """Calculate environmental statistics for a plant's stages."""
+    averages: dict[str, Any] = {}
+    if not env_config or not plant.stage_history:
+        return averages
 
-                        # Filter stats points within the stage window and calculate mean
-                        if env_config.temperature_sensor in stats:
-                            points = [
-                                float(p["s"])
-                                for p in stats[env_config.temperature_sensor]
-                                if s_start.isoformat() <= p["lu"] <= s_end.isoformat()
-                            ]
-                            if points:
-                                stage_stats["temperature"] = round(
-                                    sum(points) / len(points), 2
-                                )
+    entities_to_track = []
+    if env_config.temperature_sensor:
+        entities_to_track.append(env_config.temperature_sensor)
+    if env_config.humidity_sensor:
+        entities_to_track.append(env_config.humidity_sensor)
+    if env_config.vpd_sensor:
+        entities_to_track.append(env_config.vpd_sensor)
 
-                        if env_config.humidity_sensor in stats:
-                            points = [
-                                float(p["s"])
-                                for p in stats[env_config.humidity_sensor]
-                                if s_start.isoformat() <= p["lu"] <= s_end.isoformat()
-                            ]
-                            if points:
-                                stage_stats["humidity"] = round(
-                                    sum(points) / len(points), 2
-                                )
+    if not entities_to_track:
+        return averages
 
-                        if env_config.vpd_sensor in stats:
-                            points = [
-                                float(p["s"])
-                                for p in stats[env_config.vpd_sensor]
-                                if s_start.isoformat() <= p["lu"] <= s_end.isoformat()
-                            ]
-                            if points:
-                                stage_stats["vpd"] = round(sum(points) / len(points), 2)
+    try:
+        from ..websocket import (  # noqa: PLC0415
+            _get_statistics_data,
+        )
 
-                        data["environmental_averages"][stage_name] = stage_stats
+        stats = await _get_statistics_data(
+            hass, entities_to_track, start_time, end_time, 60
+        )
+        if not stats:
+            return averages
 
-            except HomeAssistantError:
-                raise
-            except Exception as err:
-                _LOGGER.warning("Could not fetch statistics for the report: %s", err)
+        for stage in plant.stage_history:
+            stage_name = stage["stage"]
+            parsed_start = dt_util.parse_datetime(stage["start"])
+            if not parsed_start:
+                continue
+            s_start = dt_util.as_utc(parsed_start)
 
-    return data
+            s_end = end_time
+            if stage.get("end"):
+                parsed_end = dt_util.parse_datetime(stage["end"])
+                if parsed_end:
+                    s_end = dt_util.as_utc(parsed_end)
+
+            stage_stats = {"temperature": None, "humidity": None, "vpd": None}
+
+            # Map sensors to keys
+            sensor_map = {
+                "temperature": env_config.temperature_sensor,
+                "humidity": env_config.humidity_sensor,
+                "vpd": env_config.vpd_sensor,
+            }
+
+            for key, sensor_id in sensor_map.items():
+                if sensor_id and sensor_id in stats:
+                    points = [
+                        float(p["s"])
+                        for p in stats[sensor_id]
+                        if s_start.isoformat() <= p["lu"] <= s_end.isoformat()
+                    ]
+                    if points:
+                        stage_stats[key] = round(sum(points) / len(points), 2)  # type: ignore[reassigned]
+
+            averages[stage_name] = stage_stats
+
+    except HomeAssistantError:
+        raise
+    except (AttributeError, KeyError, ValueError, ServiceValidationError, GrowspaceError) as err:
+        _LOGGER.warning("Could not fetch statistics for the report: %s", err)
+
+    return averages
 
 
 async def _aggregate_growspace_data(
     hass: HomeAssistant, coordinator: GrowspaceCoordinator, growspace_id: str
 ) -> dict[str, Any]:
     """Aggregate data for a whole growspace report."""
-    growspace = coordinator.get_growspace(growspace_id)
+    growspace = coordinator.data_repository.get_growspace(growspace_id)
     if not growspace:
         raise HomeAssistantError(f"Growspace {growspace_id} not found")
 
@@ -331,24 +355,23 @@ async def _aggregate_growspace_data(
             entities.append(env_config.vpd_sensor)
 
         if entities:
-            from custom_components.growspace_manager.websocket import (
-                _get_statistics_data,
-            )
-
-            end_time = datetime.now()
+            end_time = dt_util.utcnow()
             start_time = end_time - timedelta(days=30)
             if plants:
-                first_plant_date = min(
-                    [
-                        datetime.fromisoformat(p.created_at)
-                        for p in plants
-                        if p.created_at
-                    ]
-                    + [end_time]
-                )
+                created_dates = []
+                for p in plants:
+                    if p.created_at:
+                        parsed = dt_util.parse_datetime(p.created_at)
+                        if parsed:
+                            created_dates.append(dt_util.as_utc(parsed))
+                first_plant_date = min([*created_dates, end_time])
                 start_time = max(start_time, first_plant_date)
 
             try:
+                from ..websocket import (  # noqa: PLC0415
+                    _get_statistics_data,
+                )
+
                 stats = await _get_statistics_data(
                     hass, entities, start_time, end_time, 60
                 )
@@ -373,7 +396,7 @@ async def _aggregate_growspace_data(
                             data["environment"]["vpd_avg"] = round(
                                 sum(pts) / len(pts), 2
                             )
-            except Exception as err:
+            except (AttributeError, KeyError, ValueError, ServiceValidationError, GrowspaceError) as err:
                 _LOGGER.warning(
                     "Could not fetch env stats for growspace report: %s", err
                 )
@@ -388,7 +411,9 @@ async def async_websocket_get_grow_report(
 ) -> None:
     """Handle WebSocket grow report request."""
 
-    from custom_components.growspace_manager.coordinator import GrowspaceCoordinator
+    from ..coordinator import (  # noqa: PLC0415
+        GrowspaceCoordinator,
+    )
 
     try:
         coordinator = GrowspaceCoordinator.get_for_service_call(hass, msg)
@@ -396,7 +421,7 @@ async def async_websocket_get_grow_report(
         growspace_id = msg.get("growspace_id")
 
         if plant_id:
-            plant = coordinator.get_plant(plant_id)
+            plant = coordinator.data_repository.get_plant(plant_id)
             if not plant:
                 connection.send_error(
                     msg["id"], "not_found", f"Plant {plant_id} not found"
@@ -415,7 +440,7 @@ async def async_websocket_get_grow_report(
 
         connection.send_result(msg["id"], report_data)
 
-    except Exception as err:
+    except (AttributeError, KeyError, ValueError, ServiceValidationError, GrowspaceError) as err:
         _LOGGER.exception("Error generating grow report for WebSocket")
         connection.send_error(msg["id"], "unknown_error", str(err))
 
@@ -441,7 +466,7 @@ def _export_as_pdf(data: dict[str, Any], file_path: str) -> None:
     pdf.cell(
         0,
         10,
-        f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M')}",
+        f"Generated: {dt_util.now().strftime('%Y-%m-%d %H:%M')}",
         align="C",
         new_x="LMARGIN",
         new_y="NEXT",
@@ -510,7 +535,9 @@ def _export_as_pdf(data: dict[str, Any], file_path: str) -> None:
         for evt in sorted(events, key=lambda x: x.get("timestamp", 0))[-50:]:
             ts = evt.get("timestamp")
             date_str = (
-                datetime.fromtimestamp(ts / 1000).strftime("%Y-%m-%d")
+                dt_util.as_local(dt_util.utc_from_timestamp(ts / 1000)).strftime(
+                    "%Y-%m-%d"
+                )
                 if ts
                 else "Unknown"
             )
@@ -528,3 +555,12 @@ def _export_as_pdf(data: dict[str, Any], file_path: str) -> None:
             pdf.ln(2)
 
     pdf.output(file_path)
+
+
+SERVICES = [
+    ServiceDefinition(
+        GrowspaceService.EXPORT_GROW_REPORT,
+        handle_export_grow_report,
+        EXPORT_GROW_REPORT_SCHEMA,
+    ),
+]

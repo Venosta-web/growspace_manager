@@ -29,6 +29,7 @@ from homeassistant.helpers.entity import Entity
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.event import async_track_state_change_event
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
+from homeassistant.util import dt as dt_util
 
 from .const import (
     ATTR_COL,
@@ -49,12 +50,14 @@ from .const import (
 # Local / relative imports
 from .coordinator import GrowspaceCoordinator
 from .helpers import async_setup_statistics_sensor, async_setup_trend_sensor
-from .models import Growspace, GrowspaceType, Plant
+from .drying_calculator import compute_days_to_target, compute_weight_lost_pct, is_cure_ready
+from .models import DryingData, Growspace, GrowspaceType, Plant, WeightEntry, MoistureEntry
 from .tank_depletion_predictor import TankDepletionPredictor
 from .utils import (
     VPDCalculator,
     calculate_plant_stage,
     generate_growspace_overview_unique_id,
+    generate_subarea_vpd_sensor_unique_id,
     generate_vpd_sensor_unique_id,
 )
 
@@ -162,6 +165,7 @@ async def async_setup_entry(
     initial_entities: list[Entity] = []
 
     calculated_vpd_growspace_ids: set[str] = set()
+    calculated_subarea_vpd_ids: set[str] = set()
 
     # Create initial entities
     await _create_initial_entities(
@@ -172,6 +176,7 @@ async def async_setup_entry(
         growspace_entities,
         plant_entities,
         calculated_vpd_growspace_ids,
+        calculated_subarea_vpd_ids,
     )
 
     if initial_entities:
@@ -232,6 +237,7 @@ async def async_setup_entry(
                 growspace_entities,
                 async_add_entities,
                 calculated_vpd_growspace_ids,
+                calculated_subarea_vpd_ids,
             )
             await _update_plant_entities(
                 hass, coordinator, plant_entities, async_add_entities
@@ -239,7 +245,9 @@ async def async_setup_entry(
 
     def _listener_callback() -> None:
         """Handle coordinator updates."""
-        hass.async_create_task(_handle_coordinator_update_async())
+        config_entry.async_create_background_task(
+            hass, _handle_coordinator_update_async(), "handle_coordinator_update"
+        )
 
     config_entry.async_on_unload(coordinator.async_add_listener(_listener_callback))
 
@@ -252,6 +260,7 @@ async def _create_initial_entities(
     growspace_entities: dict[str, GrowspaceOverviewSensor],
     plant_entities: dict[str, PlantEntity],
     calculated_vpd_growspace_ids: set[str],
+    calculated_subarea_vpd_ids: set[str],
 ) -> None:
     """Create initial entities for the platform."""
     # Strain Library
@@ -270,6 +279,13 @@ async def _create_initial_entities(
         for vpd_entity in vpd_entities:
             initial_entities.append(vpd_entity)
             calculated_vpd_growspace_ids.add(vpd_entity.unique_id)
+
+        subarea_vpd_entities = _check_subarea_calculated_vpd_sensors(
+            coordinator, growspace
+        )
+        for vpd_entity in subarea_vpd_entities:
+            initial_entities.append(vpd_entity)
+            calculated_subarea_vpd_ids.add(vpd_entity.unique_id)
 
         # Create tank depletion sensors if environment config has tanks
         env_config = getattr(growspace, "environment_config", None)
@@ -375,7 +391,7 @@ async def _create_initial_entities(
                 and _should_create_derived_water_sensor(growspace, tank)
             )
 
-        for plant in coordinator.get_growspace_plants(growspace_id):
+        for plant in coordinator.services.get_growspace_plants(growspace_id):
             pe = PlantEntity(coordinator, plant)
             plant_entities[plant.plant_id] = pe
             initial_entities.append(pe)
@@ -391,6 +407,7 @@ async def _update_growspace_entities(
     growspace_entities: dict[str, GrowspaceOverviewSensor],
     async_add_entities: AddEntitiesCallback,
     calculated_vpd_growspace_ids: set[str],
+    calculated_subarea_vpd_ids: set[str],
 ) -> None:
     """Update growspace entities based on coordinator data."""
     # Add new
@@ -414,7 +431,22 @@ async def _update_growspace_entities(
                 calculated_vpd_growspace_ids.add(v.unique_id)
             # Request a refresh so the coordinator can use the newly created sensor data
             # for its derived calculations (mold risk, etc.)
-            hass.async_create_task(coordinator.async_request_refresh())
+            coordinator.config_entry.async_create_background_task(
+                hass, coordinator.async_request_refresh(), "coordinator_refresh"
+            )
+
+        subarea_vpd_entities = _check_subarea_calculated_vpd_sensors(
+            coordinator, growspace
+        )
+        new_subarea_vpds = [
+            v
+            for v in subarea_vpd_entities
+            if v.unique_id not in calculated_subarea_vpd_ids
+        ]
+        if new_subarea_vpds:
+            async_add_entities(new_subarea_vpds)
+            for v in new_subarea_vpds:
+                calculated_subarea_vpd_ids.add(v.unique_id)
 
     # Remove deleted
     for removed_gs_id in list(growspace_entities.keys()):
@@ -724,7 +756,11 @@ class TankDepletionSensor(CoordinatorEntity, SensorEntity):
 
     def _handle_coordinator_update(self) -> None:
         """Handle coordinator updates by refreshing predictor buffer."""
-        self.hass.async_create_task(self._predictor.async_update())
+        self.coordinator.config_entry.async_create_background_task(
+            self.hass,
+            self._predictor.async_update(),
+            f"update_predictor_{self.entity_id or self.unique_id}",
+        )
         super()._handle_coordinator_update()
 
 
@@ -782,7 +818,7 @@ class TankDerivedWaterSensor(CoordinatorEntity, SensorEntity):
     @property
     def _tracker(self) -> Any:
         """Return the TankWaterTracker for this tank, or None."""
-        return self.coordinator.get_tank_tracker(
+        return self.coordinator.services.get_tank_tracker(
             self._growspace_id, self._tank.sensor_entity
         )
 
@@ -817,7 +853,7 @@ class TankDerivedWaterSensor(CoordinatorEntity, SensorEntity):
     async def async_added_to_hass(self) -> None:
         """Subscribe to tank sensor state changes via the tracker."""
         await super().async_added_to_hass()
-        tracker = self.coordinator.get_tank_tracker(
+        tracker = self.coordinator.services.get_tank_tracker(
             self._growspace_id, self._tank.sensor_entity
         )
         if tracker is None:
@@ -913,6 +949,101 @@ class CalculatedVpdSensor(BaseVpdSensor):
         }
 
 
+class SubareaCalculatedVpdSensor(CalculatedVpdSensor):
+    """A VPD sensor calculated from a subarea's temperature and humidity sensors."""
+
+    def __init__(
+        self,
+        coordinator: GrowspaceCoordinator,
+        growspace_id: str,
+        growspace_name: str,
+        subarea_id: str,
+        subarea_name: str,
+        temp_sensor: str,
+        humidity_sensor: str,
+        lst_offset: float = 0.0,
+        index: int | None = None,
+    ) -> None:
+        """Initialize the subarea calculated VPD sensor."""
+        super().__init__(
+            coordinator,
+            growspace_id,
+            growspace_name,
+            temp_sensor,
+            humidity_sensor,
+            lst_offset,
+            index,
+        )
+        suffix = f" {index + 1}" if index is not None else ""
+        self._attr_name = f"{subarea_name} Calculated VPD{suffix}"
+        self._attr_unique_id = generate_subarea_vpd_sensor_unique_id(
+            growspace_id, subarea_id, index
+        )
+        self._subarea_id = subarea_id
+        self._subarea_name = subarea_name
+
+
+def _get_env_config_val(env_config: Any, key: str, default: Any = None) -> Any:
+    """Safely get a value from an EnvironmentConfig (dataclass or dict)."""
+    try:
+        if isinstance(env_config, dict):
+            return env_config.get(key, default)
+        return getattr(env_config, key, default)
+    except AttributeError:
+        return default
+
+
+def _check_subarea_calculated_vpd_sensors(
+    coordinator: GrowspaceCoordinator,
+    growspace: Growspace,
+) -> list[SubareaCalculatedVpdSensor]:
+    """Create calculated VPD sensors for subareas that have T/H but no VPD sensor."""
+    entities: list[SubareaCalculatedVpdSensor] = []
+
+    for subarea in getattr(growspace, "subareas", []):
+        env_config = subarea.environment_config
+        if not env_config:
+            continue
+
+        temp_sensors = _get_env_config_val(env_config, "temperature_sensors", [])
+        hum_sensors = _get_env_config_val(env_config, "humidity_sensors", [])
+        vpd_sensors = _get_env_config_val(env_config, "vpd_sensors", [])
+
+        if not temp_sensors and (ts := _get_env_config_val(env_config, "temperature_sensor")):
+            temp_sensors = [ts]
+        if not hum_sensors and (hs := _get_env_config_val(env_config, "humidity_sensor")):
+            hum_sensors = [hs]
+        if not vpd_sensors and (vs := _get_env_config_val(env_config, "vpd_sensor")):
+            vpd_sensors = [vs]
+
+        num_pairs = min(len(temp_sensors), len(hum_sensors))
+        lst_offset = _get_env_config_val(env_config, "lst_offset", 0.0)
+
+        for i in range(num_pairs):
+            t_sensor = temp_sensors[i]
+            h_sensor = hum_sensors[i]
+            existing_vpd = vpd_sensors[i] if i < len(vpd_sensors) else None
+
+            if t_sensor and h_sensor:
+                if not existing_vpd or "calculated_vpd" in existing_vpd:
+                    index = i if num_pairs > 1 else None
+                    entities.append(
+                        SubareaCalculatedVpdSensor(
+                            coordinator,
+                            growspace.id,
+                            growspace.name,
+                            subarea.id,
+                            subarea.name,
+                            t_sensor,
+                            h_sensor,
+                            lst_offset,
+                            index=index,
+                        )
+                    )
+
+    return entities
+
+
 class AirExchangeSensor(CoordinatorEntity[GrowspaceCoordinator], SensorEntity):  # type: ignore[misc]
     """A sensor that provides an air exchange recommendation for a growspace.
 
@@ -968,12 +1099,14 @@ class GrowspaceOverviewSensor(CoordinatorEntity[GrowspaceCoordinator], SensorEnt
     _attr_translation_key = "overview"
     _attr_native_unit_of_measurement = None
 
-    _unrecorded_attributes = frozenset({
-        "environment_config",
-        "notification_config",
-        "irrigation_config",
-        "drain_config",
-    })
+    _unrecorded_attributes = frozenset(
+        {
+            "environment_config",
+            "notification_config",
+            "irrigation_config",
+            "drain_config",
+        }
+    )
 
     # Environment sensor attributes to track for real-time updates
     TRACKABLE_ENVIRONMENT_ATTRS: tuple[str, ...] = (
@@ -1056,7 +1189,7 @@ class GrowspaceOverviewSensor(CoordinatorEntity[GrowspaceCoordinator], SensorEnt
     @override  # type: ignore[misc]
     def native_value(self) -> int:
         """Return the number of plants in the growspace."""
-        plants = self.coordinator.get_growspace_plants(self.growspace_id)
+        plants = self.coordinator.services.get_growspace_plants(self.growspace_id)
         return len(plants)
 
     @property
@@ -1178,15 +1311,15 @@ class PlantEntity(CoordinatorEntity[GrowspaceCoordinator], SensorEntity):  # typ
 
         # PHI (Pre-Harvest Interval) attributes
         if plant.phi_clearance_date:
-            from datetime import date as date_cls  # noqa: PLC0415
-
             attributes["phi_clearance_date"] = plant.phi_clearance_date
             try:
-                clearance = date_cls.fromisoformat(plant.phi_clearance_date)
-                remaining = (clearance - date_cls.today()).days
-                attributes["phi_days_remaining"] = max(0, remaining)
+                clearance = dt_util.parse_date(plant.phi_clearance_date)
+                if clearance:
+                    remaining = (clearance - dt_util.now().date()).days
+                    attributes["phi_days_remaining"] = max(0, remaining)
             except (ValueError, TypeError):
                 attributes["phi_days_remaining"] = None
+
 
         return attributes
 
@@ -1209,6 +1342,7 @@ class StrainLibrarySensor(CoordinatorEntity[GrowspaceCoordinator], SensorEntity)
     _attr_translation_key = "strain_library"
     _attr_entity_category = EntityCategory.DIAGNOSTIC
     _attr_native_unit_of_measurement = None
+    _unrecorded_attributes = frozenset()
 
     def __init__(self, coordinator: GrowspaceCoordinator) -> None:
         """Initialize the Strain Library sensor."""
@@ -1232,15 +1366,13 @@ class StrainLibrarySensor(CoordinatorEntity[GrowspaceCoordinator], SensorEntity)
     @property
     @override  # type: ignore[misc]
     def extra_state_attributes(self) -> dict[str, Any]:
-        """Return the calculated strain analytics as state attributes."""
-        # Get the full data but only extract what is strictly necessary for basic HA usage
-        # to avoid hitting the 16KB recorder limit.
+        """Return strain analytics as state attributes."""
         analytics = self.coordinator.strain_library.get_analytics()
 
         return {
             "strain_count": len(analytics.get("strains", {})),
             "strain_list": analytics.get("strain_list", []),
-            "last_updated": datetime.now().isoformat(),
+            "last_updated": dt_util.utcnow().isoformat(),
             "note": "Full analytics available via WebSocket API: growspace_manager/get_strain_library",
         }
 
@@ -1385,7 +1517,7 @@ class DLISensor(CoordinatorEntity[GrowspaceCoordinator], SensorEntity):  # type:
 
     def _handle_coordinator_update(self) -> None:
         """Handle coordinator updates by accumulating DLI."""
-        now = datetime.now()
+        now = dt_util.now()
         today = now.date().isoformat()
 
         # Reset at midnight
@@ -1582,7 +1714,7 @@ class WaterUsageSensor(CoordinatorEntity[GrowspaceCoordinator], SensorEntity):  
             return {}
 
         usage = growspace.water_usage
-        plant_count = len(self.coordinator.get_growspace_plants(self._growspace_id))
+        plant_count = len(self.coordinator.services.get_growspace_plants(self._growspace_id))
         days = 1
         if usage.cycle_start_date:
             from datetime import date as date_cls  # noqa: PLC0415
@@ -1600,7 +1732,7 @@ class WaterUsageSensor(CoordinatorEntity[GrowspaceCoordinator], SensorEntity):  
         )
 
         # Today's usage from daily_readings
-        today_str = datetime.now().date().isoformat()
+        today_str = dt_util.now().date().isoformat()
         liters_today = 0.0
         for reading in usage.daily_readings:
             if reading.get("date") == today_str:
@@ -1653,7 +1785,7 @@ class ECTargetSensor(CoordinatorEntity[GrowspaceCoordinator], SensorEntity):  # 
         if not growspace:
             return None
 
-        plants = self.coordinator.get_growspace_plants(self._growspace_id)
+        plants = self.coordinator.services.get_growspace_plants(self._growspace_id)
         if not plants:
             return None
 
@@ -1667,7 +1799,7 @@ class ECTargetSensor(CoordinatorEntity[GrowspaceCoordinator], SensorEntity):  # 
 
     def _get_current_week(self) -> int:
         """Get the current week number in the active stage."""
-        plants = self.coordinator.get_growspace_plants(self._growspace_id)
+        plants = self.coordinator.services.get_growspace_plants(self._growspace_id)
         if not plants:
             return 1
         stage = calculate_plant_stage(plants[0])
@@ -1827,3 +1959,88 @@ class SeedInventorySensor(CoordinatorEntity[GrowspaceCoordinator], SensorEntity)
                 for batch in self.coordinator.genetics_manager.seed_batches.values()
             ],
         }
+
+
+class DryingWeightSensor(CoordinatorEntity[GrowspaceCoordinator], SensorEntity):  # type: ignore[misc]
+    """Sensor tracking daily drying weight for a plant."""
+
+    _attr_has_entity_name = True
+    _attr_translation_key = "drying_weight"
+    _attr_native_unit_of_measurement = "g"
+    _attr_state_class = SensorStateClass.MEASUREMENT
+    _attr_icon = "mdi:scale"
+
+    def __init__(self, coordinator: GrowspaceCoordinator, plant: Plant) -> None:
+        """Initialize the drying weight sensor."""
+        super().__init__(coordinator)
+        self._plant_id = plant.plant_id
+        self._attr_unique_id = f"{DOMAIN}_{plant.plant_id}_drying_weight"
+        growspace: Any = coordinator.growspaces.get(plant.growspace_id, {})
+        self._attr_device_info = DeviceInfo(
+            identifiers={(DOMAIN, plant.growspace_id)},
+            name=getattr(growspace, "name", plant.growspace_id),
+            model="Growspace",
+            manufacturer="Growspace Manager",
+        )
+
+    def _get_plant(self) -> Plant | None:
+        return self.coordinator.plants.get(self._plant_id)
+
+    @property
+    @override  # type: ignore[misc]
+    def native_value(self) -> float | None:
+        """Return the latest logged weight in grams."""
+        plant = self._get_plant()
+        if not plant or not plant.drying_data.weight_log:
+            return None
+        return plant.drying_data.weight_log[-1].weight_grams
+
+    @property
+    @override  # type: ignore[misc]
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Return weight_lost_pct and days_to_target."""
+        plant = self._get_plant()
+        if not plant:
+            return {}
+        wet_weight = plant.harvest_metrics.wet_weight
+        log = plant.drying_data.weight_log
+        current = log[-1].weight_grams if log else None
+        return {
+            "weight_lost_pct": compute_weight_lost_pct(wet_weight, current) if current is not None else None,
+            "days_to_target": compute_days_to_target(wet_weight, log),
+        }
+
+
+class DryingMoistureSensor(CoordinatorEntity[GrowspaceCoordinator], SensorEntity):  # type: ignore[misc]
+    """Sensor tracking daily moisture meter readings for a plant."""
+
+    _attr_has_entity_name = True
+    _attr_translation_key = "drying_moisture"
+    _attr_native_unit_of_measurement = "%"
+    _attr_state_class = SensorStateClass.MEASUREMENT
+    _attr_icon = "mdi:water-percent"
+
+    def __init__(self, coordinator: GrowspaceCoordinator, plant: Plant) -> None:
+        """Initialize the drying moisture sensor."""
+        super().__init__(coordinator)
+        self._plant_id = plant.plant_id
+        self._attr_unique_id = f"{DOMAIN}_{plant.plant_id}_drying_moisture"
+        growspace: Any = coordinator.growspaces.get(plant.growspace_id, {})
+        self._attr_device_info = DeviceInfo(
+            identifiers={(DOMAIN, plant.growspace_id)},
+            name=getattr(growspace, "name", plant.growspace_id),
+            model="Growspace",
+            manufacturer="Growspace Manager",
+        )
+
+    def _get_plant(self) -> Plant | None:
+        return self.coordinator.plants.get(self._plant_id)
+
+    @property
+    @override  # type: ignore[misc]
+    def native_value(self) -> float | None:
+        """Return the latest logged moisture percent."""
+        plant = self._get_plant()
+        if not plant or not plant.drying_data.moisture_log:
+            return None
+        return plant.drying_data.moisture_log[-1].moisture_percent

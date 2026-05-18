@@ -2,7 +2,7 @@
 
 from datetime import datetime, timedelta
 
-from common import create_plant
+from .common import create_plant
 
 from custom_components.growspace_manager.models import Plant, StageHistoryItem
 

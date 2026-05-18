@@ -7,7 +7,7 @@ parsing, formatting, calculations, and grid generation logic.
 
 from datetime import date, datetime
 
-from common import create_plant
+from .common import create_plant
 import pytest
 
 from custom_components.growspace_manager.const import DOMAIN

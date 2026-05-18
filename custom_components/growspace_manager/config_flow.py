@@ -472,6 +472,12 @@ class OptionsFlowHandler(OptionsFlow):
         """Delegate strain library export to the handler."""
         return await self.strain_handler.async_step_export_strain_library(user_input)
 
+    async def async_step_manage_breeder_blacklist(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Delegate breeder blacklist management to the handler."""
+        return await self.strain_handler.async_step_manage_breeder_blacklist(user_input)
+
     async def async_step_configure_global(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:

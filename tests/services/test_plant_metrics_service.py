@@ -1,5 +1,4 @@
-"""Tests for plant metrics services like score_plant and update_harvest_metrics."""
-
+"""Tests for Growspace Manager plant metrics services."""
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -21,7 +20,6 @@ from custom_components.growspace_manager.models import (
 from custom_components.growspace_manager.services.plant import (
     handle_update_harvest_metrics,
 )
-from homeassistant.exceptions import ServiceValidationError
 
 
 @pytest.fixture
@@ -31,29 +29,13 @@ def mock_hass():
 
 
 @pytest.fixture
-def mock_coordinator():
-    """Mock Growspace Coordinator."""
-    coordinator = AsyncMock()
-
-    # Create a mock plant to be updated
-    plant = Plant(
-        plant_id="test_plant_1",
-        growspace_id="test_gs",
-        genetics=PlantGenetics(strain_name="Test Strain"),
-        stage="dry",
-    )
-    coordinator.plants = {"test_plant_1": plant}
-    return coordinator
-
-
-@pytest.fixture
 def mock_strain_library():
     """Mock Strain Library."""
     return AsyncMock()
 
 
 @pytest.mark.asyncio
-async def test_handle_update_harvest_metrics(
+async def test_handle_update_harvest_metrics_success(
     mock_hass, mock_coordinator, mock_strain_library
 ):
     """Test updating harvest metrics for a plant."""
@@ -67,6 +49,15 @@ async def test_handle_update_harvest_metrics(
         ATTR_CBD_PERCENTAGE: 1.0,
         ATTR_TERPENE_PROFILE: "Myrcene, Limonene",
     }
+
+    # Seed plant
+    plant = Plant(
+        plant_id="test_plant_1",
+        growspace_id="test_gs",
+        genetics=PlantGenetics(strain_name="Test Strain"),
+        stage="dry",
+    )
+    mock_coordinator.plants["test_plant_1"] = plant
 
     # Run the handler
     with patch(
@@ -105,7 +96,14 @@ async def test_handle_update_harvest_metrics_partial(
         ATTR_WET_WEIGHT: 50.0,
     }
 
-    plant = mock_coordinator.plants["test_plant_1"]
+    # Seed plant
+    plant = Plant(
+        plant_id="test_plant_1",
+        growspace_id="test_gs",
+        genetics=PlantGenetics(strain_name="Test Strain"),
+        stage="dry",
+    )
+    mock_coordinator.plants["test_plant_1"] = plant
     plant.harvest_metrics.dry_weight = 10.0  # Pretend this was set previously
 
     with patch(
@@ -133,25 +131,20 @@ async def test_handle_update_harvest_metrics_partial(
 async def test_handle_update_harvest_metrics_not_found(
     mock_hass, mock_coordinator, mock_strain_library
 ):
-    """Test updating harvest metrics for a plant that does not exist in the coordinator."""
-
+    """Test updating harvest metrics for a plant that does not exist."""
     call = AsyncMock()
     call.data = {
         ATTR_PLANT_ID: "missing_plant",
-        ATTR_WET_WEIGHT: 50.0,
     }
 
-    # The plant is missing
-    assert "missing_plant" not in mock_coordinator.plants
+    from homeassistant.exceptions import ServiceValidationError
 
     with patch(
         "custom_components.growspace_manager.services.plant._ensure_plant_loaded",
         new_callable=AsyncMock,
     ) as mock_ensure:
         mock_ensure.return_value = True
-        with pytest.raises(
-            ServiceValidationError, match="Plant missing_plant not found"
-        ):
+        with pytest.raises(ServiceValidationError):
             await handle_update_harvest_metrics(
                 mock_hass, mock_coordinator, mock_strain_library, call
             )

@@ -68,6 +68,9 @@ async def test_websocket_add_timeline_note(hass: HomeAssistant) -> None:
     }
 
     mock_coordinator = MagicMock()
+    mock_add_note = AsyncMock()
+    mock_coordinator.services.add_timeline_note = mock_add_note
+
     mock_strain_lib = MagicMock()
     hass.data[DOMAIN] = {"strain_library": mock_strain_lib}
 
@@ -76,10 +79,6 @@ async def test_websocket_add_timeline_note(hass: HomeAssistant) -> None:
             "custom_components.growspace_manager.GrowspaceCoordinator.get_for_service_call",
             return_value=mock_coordinator,
         ),
-        patch(
-            "custom_components.growspace_manager.websocket.async_add_timeline_note",
-            new_callable=AsyncMock,
-        ) as mock_add_note,
     ):
         await websocket_add_timeline_note(hass, connection, msg)
         connection.send_result.assert_called_with(1)
@@ -180,7 +179,7 @@ async def test_websocket_get_growspace_data_errors(hass: HomeAssistant) -> None:
         side_effect=ServiceValidationError("Invalid"),
     ):
         await websocket_get_growspace_data(hass, connection, msg)
-        connection.send_error.assert_called_with(1, "invalid_args", "Invalid")
+        connection.send_error.assert_called_with(1, "not_loaded", "Growspace Manager integration not loaded")
 
     # 2. General Exception
     connection.reset_mock()

@@ -38,9 +38,9 @@ def mock_coordinator() -> MagicMock:
     Returns:
         A mock coordinator object with pre-populated growspace and plant data.
     """
-    coordinator = Mock()
-    coordinator.hass = Mock()
-    gs1 = Mock(
+    coordinator = MagicMock()
+    coordinator.hass = MagicMock()
+    gs1 = MagicMock(
         id="gs1",
         rows=2,
         plants_per_row=2,
@@ -66,15 +66,17 @@ def mock_coordinator() -> MagicMock:
             cure_start=None,
         )
     }
-    coordinator.get_growspace_plants.return_value = list(coordinator.plants.values())
-    coordinator.serializer = Mock()
+    coordinator.services.get_growspace_plants.return_value = list(
+        coordinator.plants.values()
+    )
+    coordinator.serializer = MagicMock()
     coordinator.serializer.calculate_days_in_stage.return_value = 10
 
-    coordinator.should_send_notification.return_value = True
-    coordinator.mark_notification_sent = AsyncMock()
+    coordinator.services.should_send_notification.return_value = True
+    coordinator.services.mark_notification_sent = AsyncMock()
     coordinator.async_add_listener = Mock()
-    coordinator.get_strain_options.return_value = ["Strain A", "Strain B"]
-    coordinator.growspace_manager.get_growspace_options.return_value = ["gs1"]
+    coordinator.services.get_strain_options.return_value = ["Strain A", "Strain B"]
+    coordinator.services.get_growspace_options.return_value = ["gs1"]
     coordinator.strains = MagicMock()
     coordinator.created_entity_ids = []
 
@@ -121,6 +123,7 @@ async def test_async_setup_entry_adds_entities(mock_coordinator: MagicMock) -> N
             rows=2,
             plants_per_row=2,
             environment_config=EnvironmentConfig(),
+            subareas=[],
         )
     }
     mock_coordinator.get_growspace_plants = Mock(
@@ -178,6 +181,7 @@ async def test_async_setup_entry_calculated_vpd(mock_coordinator: MagicMock) -> 
             humidity_sensor="sensor.humidity",
             lst_offset=-1.5,
         ),
+        subareas=[],
     )
     gs_mock.name = "Growspace 1"
     mock_coordinator.growspaces = {"gs1": gs_mock}
@@ -243,6 +247,7 @@ async def test_async_setup_entry_vision_sensor(mock_coordinator: MagicMock) -> N
         rows=2,
         plants_per_row=2,
         environment_config=EnvironmentConfig(camera_entities=["camera.cam1"]),
+        subareas=[],
     )
     mock_coordinator.growspaces = {"gs_vision": gs_mock}
     mock_coordinator.get_growspace_plants = Mock(return_value=[])
@@ -382,14 +387,28 @@ async def test_async_setup_entry_dynamic_updates(mock_coordinator: MagicMock) ->
     def async_add_entities(entities, update_before_add=False):
         added_entities.extend(entities)
 
-    # Setup with empty coordinator
+    # Trigger update
+    # The listener schedules a task, we need to execute the task
+    captured_coro = None
+
+    def mock_create_background_task(hass_obj, coro, name):
+        nonlocal captured_coro
+        captured_coro = coro
+        return Mock()
+
+    # The config_entry is the Mock we passed to async_setup_entry
+    config_entry = Mock(
+        entry_id="entry_1",
+        options={},
+        runtime_data=mock_coordinator,
+    )
+    config_entry.async_create_background_task = mock_create_background_task
+    mock_coordinator.config_entry = config_entry
+
+    # Setup with empty coordinator and our mock config_entry
     await async_setup_entry(
         hass,
-        Mock(
-            entry_id="entry_1",
-            options={},
-            runtime_data=mock_coordinator,
-        ),
+        config_entry,
         async_add_entities,
     )
 
@@ -401,6 +420,7 @@ async def test_async_setup_entry_dynamic_updates(mock_coordinator: MagicMock) ->
         name="New Growspace",
         environment_config=EnvironmentConfig(),
         irrigation_strategy=Mock(enabled=False),
+        subareas=[],
     )
     new_plant = Mock(
         plant_id="p_new", growspace_id="gs_new", strain="New Strain", row=1, col=1
@@ -408,16 +428,6 @@ async def test_async_setup_entry_dynamic_updates(mock_coordinator: MagicMock) ->
 
     mock_coordinator.growspaces = {"gs_new": new_gs}
     mock_coordinator.plants = {"p_new": new_plant}
-
-    # Trigger update
-    # The listener schedules a task, we need to execute the task
-    captured_coro = None
-
-    def mock_create_task(coro):
-        nonlocal captured_coro
-        captured_coro = coro
-
-    hass.async_create_task = mock_create_task
 
     # Clear added_entities to track new ones
     added_entities.clear()
@@ -971,7 +981,7 @@ async def test_update_growspace_entities_removal_registry(
         mock_coordinator.growspaces = {}
 
         await sensor_module._update_growspace_entities(
-            hass, mock_coordinator, config_entry, entities, Mock(), set()
+            hass, mock_coordinator, config_entry, entities, Mock(), set(), set()
         )
 
         # Verify removal
@@ -1137,6 +1147,7 @@ async def test_async_setup_entry_recreates_calculated_vpd(
             vpd_sensor="sensor.growspace_1_calculated_vpd",  # Matches expected ID format
             lst_offset=-1.5,
         ),
+        subareas=[],
     )
     gs_mock.name = "Growspace 1"
     mock_coordinator.growspaces = {"gs1": gs_mock}
@@ -1316,6 +1327,7 @@ async def test_async_setup_entry_dataclass_tank(mock_coordinator: MagicMock) -> 
         rows=2,
         plants_per_row=2,
         environment_config=env_config,
+        subareas=[],
     )
     gs_mock.name = "Growspace 1"
     mock_coordinator.growspaces = {"gs1": gs_mock}

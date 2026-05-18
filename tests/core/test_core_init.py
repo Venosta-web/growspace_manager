@@ -11,7 +11,6 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 from aiohttp import BodyPartReader
 import pytest
-from tests.common import MockConfigEntry
 
 from custom_components.growspace_manager import (
     _async_cancel_coordinators,
@@ -49,6 +48,8 @@ from custom_components.growspace_manager.schemas import (
     HARVEST_SEEDS_SCHEMA,
     IMPORT_STRAIN_LIBRARY_SCHEMA,
     LOG_DRAIN_READING_SCHEMA,
+    LOG_DRYING_WEIGHT_SCHEMA,
+    LOG_MOISTURE_READING_SCHEMA,
     LOG_POLLINATION_SCHEMA,
     LOG_TRAINING_EVENT_SCHEMA,
     MOVE_CLONE_SCHEMA,
@@ -72,6 +73,7 @@ from custom_components.growspace_manager.schemas import (
     SERVICE_TRIGGER_VISION_CHECKUP_SCHEMA,
     SET_DEHUMIDIFIER_CONTROL_SCHEMA,
     SET_IRRIGATION_SETTINGS_SCHEMA,
+    SET_VISUAL_TAG_SCHEMA,
     STRAIN_RECOMMENDATION_SCHEMA,
     SWITCH_PLANT_SCHEMA,
     TAKE_CLONE_SCHEMA,
@@ -98,6 +100,7 @@ from homeassistant.config_entries import ConfigEntryState
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ServiceValidationError
 from homeassistant.util import dt as dt_util
+from tests.common import MockConfigEntry
 
 
 @pytest.fixture
@@ -291,6 +294,9 @@ async def test_register_services(mock_hass, mock_strain_library_for_services) ->
         "harvest_seeds": HARVEST_SEEDS_SCHEMA,
         "update_pollination": UPDATE_POLLINATION_SCHEMA,
         "delete_pollination": DELETE_POLLINATION_SCHEMA,
+        "log_drying_weight": LOG_DRYING_WEIGHT_SCHEMA,
+        "log_moisture_reading": LOG_MOISTURE_READING_SCHEMA,
+        "set_visual_tag": SET_VISUAL_TAG_SCHEMA,
     }
 
     # Verify call count
@@ -434,20 +440,10 @@ async def test_async_setup_entry_with_growspaces(hass: HomeAssistant) -> None:
 async def test_async_unload_entry_with_coordinators_cleanup(mock_hass) -> None:
     """Test that _async_cancel_coordinators cleans up properly."""
 
-    mock_irrigation = MagicMock()
-    mock_irrigation.async_cancel_listeners = MagicMock()
-
-    mock_dehumidifier = MagicMock()
-    mock_dehumidifier.unload = MagicMock()
-
     coordinator = MagicMock()
-    coordinator.irrigation_coordinators = {"gs1": mock_irrigation}
-    coordinator.dehumidifier_coordinators = {"gs1": mock_dehumidifier}
-
     _async_cancel_coordinators(coordinator)
 
-    mock_irrigation.async_cancel_listeners.assert_called_once()
-    mock_dehumidifier.unload.assert_called_once()
+    coordinator.subsystem_manager.async_cancel_all.assert_called_once()
 
 
 @pytest.mark.asyncio
@@ -659,7 +655,10 @@ async def test_websocket_get_growspace_data(
         "custom_components.growspace_manager.GrowspaceCoordinator.get_for_service_call",
         return_value=mock_coordinator,
     ):
-        mock_coordinator.get_growspace_data.return_value = {"name": "Test space"}
+        # FIX: Add .services here to match the updated websocket.py logic
+        mock_coordinator.services.get_growspace_data.return_value = {
+            "name": "Test space"
+        }
 
         msg = {
             "id": 1,
@@ -680,7 +679,9 @@ async def test_websocket_get_growspace_data(
             "growspace_id": "invalid",
         }
         await websocket_get_growspace_data(hass, mock_connection, msg)
-        mock_connection.send_error.assert_called_with(2, "invalid_args", "Invalid ID")
+        mock_connection.send_error.assert_called_with(
+            2, "not_loaded", "Growspace Manager integration not loaded"
+        )
 
     # 3. Unknown Error
     with patch(
@@ -929,7 +930,7 @@ async def test_async_register_websocket_api(mock_hass) -> None:
         "homeassistant.components.websocket_api.async_register_command"
     ) as mock_reg:
         async_register_websocket_api(mock_hass)
-        assert mock_reg.call_count == 27
+        assert mock_reg.call_count == 33
 
 
 @pytest.mark.asyncio

@@ -5,12 +5,15 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING
 
-from custom_components.growspace_manager.const import ATTR_GROWSPACE_ID
-from custom_components.growspace_manager.services.utils import handle_service_errors
+from ..const import ATTR_GROWSPACE_ID, GrowspaceService
+from ..schemas import RESET_WATER_TRACKING_SCHEMA
+from ._definition import ServiceDefinition
+from .utils import handle_service_errors
+
 from homeassistant.core import HomeAssistant, ServiceCall
 
 if TYPE_CHECKING:
-    from custom_components.growspace_manager.coordinator import GrowspaceCoordinator
+    from ..coordinator import GrowspaceCoordinator
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -30,6 +33,15 @@ async def handle_reset_water_tracking(
     """
     growspace_id: str = call.data[ATTR_GROWSPACE_ID]
 
-    await coordinator.async_reset_water_tracking(growspace_id=growspace_id)
+    await coordinator.services.reset_water_tracking(growspace_id=growspace_id)
 
     _LOGGER.info("Reset water tracking for growspace %s", growspace_id)
+
+
+SERVICES = [
+    ServiceDefinition(
+        GrowspaceService.RESET_WATER_TRACKING,
+        handle_reset_water_tracking,
+        RESET_WATER_TRACKING_SCHEMA,
+    ),
+]

@@ -23,6 +23,7 @@ from .const import CONF_SHOW_SIDEBAR, DOMAIN, PLATFORMS, STORAGE_KEY, STORAGE_VE
 from .coordinator import GrowspaceCoordinator
 from .coordinator_builder import CoordinatorBuilder
 from .intent import async_setup_intents
+from .services.seedfinder_scraper import SeedfinderScraper
 from .strain_library import StrainLibrary
 from .views import StrainLibraryImageView, StrainLibraryUploadView
 from .websocket import async_register_websocket_api
@@ -60,6 +61,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: GrowspaceConfigEntry) ->
         await strain_library_instance.async_setup()
         hass.data[DOMAIN]["strain_library"] = strain_library_instance
 
+        # Initialize Seedfinder Scraper
+        hass.data[DOMAIN]["seedfinder_scraper"] = SeedfinderScraper(hass)
+
         # Register Views
         hass.http.register_view(StrainLibraryUploadView(hass, strain_library_instance))
         hass.http.register_view(StrainLibraryImageView(hass, strain_library_instance))
@@ -87,8 +91,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: GrowspaceConfigEntry) ->
                 ]
             )
 
-    # Retrieve global Strain Library
+    # Retrieve global Strain Library and Scraper
     strain_library_instance = hass.data[DOMAIN]["strain_library"]
+    scraper_instance = hass.data[DOMAIN]["seedfinder_scraper"]
 
     # Use builder to create coordinator with all dependencies
     builder = CoordinatorBuilder(hass, entry)
@@ -96,6 +101,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: GrowspaceConfigEntry) ->
         data=data,
         options=dict(entry.options),
         strain_library=strain_library_instance,
+        seedfinder_scraper=scraper_instance,
     )
     await coordinator.async_load()  # Load data into the coordinator
 
@@ -193,13 +199,9 @@ async def async_register_sidebar_panel(
 
 @callback
 def _async_cancel_coordinators(coordinator: GrowspaceCoordinator) -> None:
-    """Cancel irrigation and dehumidifier listeners."""
-    for irr_coordinator in coordinator.irrigation_coordinators.values():
-        irr_coordinator.async_cancel_listeners()
-    for dehum_coordinator in coordinator.dehumidifier_coordinators.values():
-        dehum_coordinator.unload()
-    for hum_coordinator in coordinator.humidifier_coordinators.values():
-        hum_coordinator.unload()
+    """Cancel all sub-coordinator listeners via the subsystem manager."""
+    coordinator.subsystem_manager.async_cancel_all()
+
 
 
 @callback
@@ -235,10 +237,13 @@ async def async_unload_entry(hass: HomeAssistant, entry: GrowspaceConfigEntry) -
             _LOGGER.debug("Removing Growspace Manager sidebar panel during unload")
             frontend_async_remove_panel(hass, DOMAIN)
 
-        # Clean up global Strain Library
-        if DOMAIN in hass.data and "strain_library" in hass.data[DOMAIN]:
-            await hass.data[DOMAIN]["strain_library"].async_close()
-            del hass.data[DOMAIN]["strain_library"]
+        # Clean up global Strain Library and Scraper
+        if DOMAIN in hass.data:
+            if "strain_library" in hass.data[DOMAIN]:
+                await hass.data[DOMAIN]["strain_library"].async_close()
+                del hass.data[DOMAIN]["strain_library"]
+            if "seedfinder_scraper" in hass.data[DOMAIN]:
+                del hass.data[DOMAIN]["seedfinder_scraper"]
 
         _LOGGER.info("Unloaded Growspace Manager for entry %s", entry.entry_id)
         return True

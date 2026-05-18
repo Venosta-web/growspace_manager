@@ -113,7 +113,7 @@ class GrowspaceCalendar(CalendarEntity):  # type: ignore[misc]
         """Generate all calendar events for the growspace based on timed notifications."""
         events = []
         notifications = self.coordinator.options.get("timed_notifications", [])
-        plants = self.coordinator.get_growspace_plants(self.growspace_id)
+        plants = self.coordinator.services.get_growspace_plants(self.growspace_id)
 
         for plant in plants:
             for notification in notifications:

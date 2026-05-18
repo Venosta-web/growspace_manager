@@ -1,6 +1,6 @@
 """Tests for the environment service handlers."""
 
-from unittest.mock import AsyncMock, Mock
+from unittest.mock import AsyncMock, MagicMock, Mock
 
 import pytest
 
@@ -17,10 +17,13 @@ from homeassistant.exceptions import ServiceValidationError
 @pytest.fixture
 def mock_coordinator():
     """Mock the GrowspaceCoordinator."""
-    coordinator = Mock()
+    coordinator = MagicMock()
     coordinator.growspaces = {}
-    coordinator.async_save = AsyncMock()
-    coordinator.async_refresh = AsyncMock()
+    coordinator.get_growspace_plants = MagicMock(return_value=[])
+    coordinator.services = MagicMock()
+    coordinator.services.save = AsyncMock()
+    coordinator.services.request_refresh = AsyncMock()
+    coordinator.strain_library = MagicMock()
     return coordinator
 
 
@@ -67,8 +70,8 @@ async def test_handle_configure_environment_success(
         energy_sensors=[],
         electricity_cost_per_kwh=None,
     )
-    mock_coordinator.async_save.assert_called_once()
-    mock_coordinator.async_refresh.assert_called_once()
+    mock_coordinator.services.save.assert_awaited_once()
+    mock_coordinator.services.request_refresh.assert_awaited_once()
 
 
 @pytest.mark.asyncio
@@ -84,7 +87,7 @@ async def test_handle_configure_environment_missing_growspace(
     with pytest.raises(ServiceValidationError, match="Growspace.*not found"):
         await handle_configure_environment(hass, mock_coordinator, call)
 
-    mock_coordinator.async_save.assert_not_called()
+    mock_coordinator.services.save.assert_not_called()
 
 
 @pytest.mark.asyncio
@@ -104,8 +107,8 @@ async def test_handle_remove_environment_success(
     await handle_remove_environment(hass, mock_coordinator, call)
 
     assert growspace.environment_config == EnvironmentConfig()
-    mock_coordinator.async_save.assert_called_once()
-    mock_coordinator.async_refresh.assert_called_once()
+    mock_coordinator.services.save.assert_awaited_once()
+    mock_coordinator.services.request_refresh.assert_awaited_once()
 
 
 @pytest.mark.asyncio
@@ -121,7 +124,7 @@ async def test_handle_remove_environment_missing_growspace(
     with pytest.raises(ServiceValidationError, match="Growspace.*not found"):
         await handle_remove_environment(hass, mock_coordinator, call)
 
-    mock_coordinator.async_save.assert_not_called()
+    mock_coordinator.services.save.assert_not_called()
 
 
 @pytest.mark.asyncio
@@ -140,8 +143,8 @@ async def test_handle_set_dehumidifier_control_success(
     await handle_set_dehumidifier_control(hass, mock_coordinator, call)
 
     assert growspace.environment_config.control_dehumidifier is True
-    mock_coordinator.async_save.assert_called_once()
-    mock_coordinator.async_refresh.assert_called_once()
+    mock_coordinator.services.save.assert_awaited_once()
+    mock_coordinator.services.request_refresh.assert_awaited_once()
 
 
 @pytest.mark.asyncio
@@ -157,4 +160,4 @@ async def test_handle_set_dehumidifier_control_missing_growspace(
     with pytest.raises(ServiceValidationError, match="Growspace.*not found"):
         await handle_set_dehumidifier_control(hass, mock_coordinator, call)
 
-    mock_coordinator.async_save.assert_not_called()
+    mock_coordinator.services.save.assert_not_called()

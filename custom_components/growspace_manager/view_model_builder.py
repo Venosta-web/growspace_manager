@@ -76,9 +76,14 @@ class ViewModelBuilder:
         Returns:
             Serialized growspace data with timestamp and cached result.
         """
-        # Check cache first
-        if cached := self.coordinator.cache.get(growspace_id):
-            return cached
+        current_time = dt_util.utcnow().timestamp()
+
+        # Check cache first with a 30-second TTL
+        cached_entry = self.coordinator.cache.get(growspace_id)
+        if isinstance(cached_entry, tuple) and len(cached_entry) == 2:
+            cached_time, cached_data = cached_entry
+            if current_time - cached_time < 30.0:  # 30-second TTL
+                return cached_data
 
         growspace = self.growspaces[growspace_id]
 
@@ -86,7 +91,7 @@ class ViewModelBuilder:
         if preloaded_plants is not None:
             plants = preloaded_plants
         else:
-            plants = self.coordinator.get_growspace_plants(growspace_id)
+            plants = self.coordinator.services.get_growspace_plants(growspace_id)
 
         # Calculate aggregated stats for the growspace
         stage_attr_map = {
@@ -156,10 +161,11 @@ class ViewModelBuilder:
         )
 
         # Inject timestamp for efficient frontend equality checks (change detection)
-        serialized["_ts"] = int(dt_util.utcnow().timestamp() * 1000)
+        # Using the current_time we already captured at the start of the method
+        serialized["_ts"] = int(current_time * 1000)
 
-        # Cache the serialized data
-        self.coordinator.cache.set(growspace_id, serialized)
+        # Cache the serialized data as a tuple: (timestamp, data)
+        self.coordinator.cache.set(growspace_id, (current_time, serialized))
         return serialized
 
     def build_data_property(
@@ -189,7 +195,13 @@ class ViewModelBuilder:
         # Pre-calculate plant distribution to avoid O(N*M) lookups
         # Build plants_by_growspace index - O(N) where N = number of plants
         plants_by_growspace: dict[str, list[Plant]] = defaultdict(list)
-        for plant in self.plants.values():
+        for plant_id, plant in self.plants.items():
+            if plant.growspace_id not in self.growspaces:
+                _LOGGER.warning(
+                    "Orphaned plant detected: Plant '%s' refers to non-existent growspace '%s'. It will be excluded from the view",
+                    plant_id,
+                    plant.growspace_id,
+                )
             plants_by_growspace[plant.growspace_id].append(plant)
 
         for growspace_id in self.growspaces:

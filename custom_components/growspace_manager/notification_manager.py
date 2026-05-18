@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING, Any, ClassVar, cast
 
 from homeassistant.components import conversation
 from homeassistant.core import CALLBACK_TYPE, Context, HomeAssistant, callback
+from homeassistant.exceptions import ServiceValidationError
 from homeassistant.helpers import intent
 from homeassistant.helpers.event import async_call_later
 from homeassistant.util.dt import utcnow
@@ -34,6 +35,7 @@ from .const import (
     NotificationTier,
 )
 from .domain import calculate_days_in_stage
+from .exceptions import GrowspaceError
 from .presentation import EntityQueries
 
 if TYPE_CHECKING:
@@ -73,6 +75,19 @@ class NotificationManager:
         self._cooldowns: dict[str, dict[str, datetime]] = {}
         self._ai_cooldown_until: datetime | None = None
 
+    @callback
+    def shutdown(self) -> None:
+        """Shutdown the notification manager and cancel all timers."""
+        for timer in self._batch_timers.values():
+            timer()
+        self._batch_timers.clear()
+
+        for alert in self._pending_alerts.values():
+            if alert.notification_timer is not None:
+                alert.notification_timer()
+                alert.notification_timer = None
+        self._pending_alerts.clear()
+
     _TIER_COOLDOWNS: ClassVar[dict[str, timedelta]] = {
         NotificationTier.CRITICAL: timedelta(minutes=CRITICAL_COOLDOWN_MINUTES),
         NotificationTier.WARNING: timedelta(minutes=WARNING_COOLDOWN_MINUTES),
@@ -103,7 +118,7 @@ class NotificationManager:
         Called by sensors on every probability update instead of
         async_schedule_notification directly.
         """
-        if not self.coordinator.get_growspace_plants(growspace_id):
+        if not self.coordinator.services.get_growspace_plants(growspace_id):
             alert = self._pending_alerts.pop(
                 f"{growspace_id}_{sensor.entity_description.sensor_type}", None
             )
@@ -170,7 +185,11 @@ class NotificationManager:
     @callback
     def _schedule_recovery(self, growspace_id: str, alert: PendingAlert) -> None:
         """Schedule a recovery notification for a resolved critical alert."""
-        self.hass.async_create_task(self._async_send_recovery(growspace_id, alert))
+        self.coordinator.config_entry.async_create_background_task(
+            self.hass,
+            self._async_send_recovery(growspace_id, alert),
+            f"recovery_notification_{growspace_id}_{alert.sensor_name}",
+        )
 
     async def _async_send_recovery(
         self, growspace_id: str, alert: PendingAlert
@@ -234,8 +253,10 @@ class NotificationManager:
 
         @callback
         def _send_notification(_: datetime) -> None:
-            self.hass.async_create_task(
-                self._async_send_batched_notification(growspace_id)
+            self.coordinator.config_entry.async_create_background_task(
+                self.hass,
+                self._async_send_batched_notification(growspace_id),
+                f"batched_notification_{growspace_id}",
             )
 
         self._batch_timers[growspace_id] = async_call_later(
@@ -246,7 +267,8 @@ class NotificationManager:
 
     async def _async_send_batched_notification(self, growspace_id: str) -> None:
         """Collect triggered sensors and send a consolidated notification."""
-        self._batch_timers.pop(growspace_id, None)
+        if timer := self._batch_timers.pop(growspace_id, None):
+            timer()
 
         now = utcnow()
 
@@ -348,7 +370,7 @@ class NotificationManager:
             )
             return
 
-        if not self.coordinator.get_growspace_plants(growspace_id):
+        if not self.coordinator.services.get_growspace_plants(growspace_id):
             _LOGGER.debug(
                 "Growspace %s has no plants, skipping notification",
                 growspace_id,
@@ -356,7 +378,7 @@ class NotificationManager:
             return
 
         # Check if notifications are enabled in coordinator
-        if not self.coordinator.is_notifications_enabled(growspace_id):
+        if not self.coordinator.services.is_notifications_enabled(growspace_id):
             _LOGGER.debug("Notifications disabled in coordinator for %s", growspace_id)
             return
 
@@ -394,13 +416,16 @@ class NotificationManager:
                 title,
                 final_message,
             )
-            # Set cooldown after successful send (not before)
             if tier:
                 self._set_cooldown(growspace_id, tier)
-        except (AttributeError, TypeError, ValueError) as e:
-            _LOGGER.error(
-                "Failed to send notification to %s: %s", notification_service, e
-            )
+        except (
+            AttributeError,
+            KeyError,
+            ValueError,
+            ServiceValidationError,
+            GrowspaceError,
+        ):
+            _LOGGER.error("Failed to send notification to %s", notification_service)
 
     async def _rewrite_with_ai(
         self,
@@ -487,8 +512,14 @@ class NotificationManager:
             else:
                 _LOGGER.warning("AI returned empty response, using default message")
 
-        except Exception as err:  # noqa: BLE001
-            _LOGGER.error("Failed to process AI notification: %s", err)
+        except (
+            AttributeError,
+            KeyError,
+            ValueError,
+            ServiceValidationError,
+            GrowspaceError,
+        ):
+            _LOGGER.error("Failed to process AI notification")
 
         return original_message
 
@@ -731,4 +762,4 @@ class NotificationManager:
                 self.coordinator.notifications_sent[plant.plant_id][
                     notification_key
                 ] = True
-                await self.coordinator.async_save()
+                await self.coordinator.async_commit()

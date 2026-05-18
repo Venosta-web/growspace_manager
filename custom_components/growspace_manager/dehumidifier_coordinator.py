@@ -16,6 +16,7 @@ from homeassistant.const import (
     STATE_UNKNOWN,
 )
 from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.event import async_track_state_change_event
 from homeassistant.util import dt as dt_util
 
@@ -23,8 +24,9 @@ from .const import (
     CATEGORY_DEHUMIDIFIER,
     DEFAULT_DEHUMIDIFIER_MIN_OFFTIME,
     DEFAULT_DEHUMIDIFIER_MIN_RUNTIME,
+    PlantStage,
 )
-from .domain import calculate_days_in_stage
+from .domain.stage_calculator import determine_coordinator_stage
 from .models import GrowspaceEvent
 
 if TYPE_CHECKING:
@@ -35,35 +37,35 @@ _LOGGER = logging.getLogger(__name__)
 # Default Thresholds
 # Format: {stage: {day_or_night: {on: float, off: float}}}
 DEFAULT_THRESHOLDS = {
-    "seedling": {
+    PlantStage.SEEDLING: {
         "day": {"on": 0.5, "off": 0.6},
         "night": {"on": 0.55, "off": 0.65},
     },
-    "mother": {
+    PlantStage.MOTHER: {
         "day": {"on": 0.6, "off": 0.7},
         "night": {"on": 0.65, "off": 0.75},
     },
-    "veg": {
+    PlantStage.VEG: {
         "day": {"on": 0.6, "off": 0.7},
         "night": {"on": 0.65, "off": 0.75},
     },
-    "early_flower": {
+    PlantStage.FLOWER_EARLY: {
         "day": {"on": 1.1, "off": 1.2},
         "night": {"on": 0.7, "off": 0.9},
     },
-    "mid_flower": {
+    PlantStage.FLOWER_MID: {
         "day": {"on": 1.25, "off": 1.35},
         "night": {"on": 0.9, "off": 1},
     },
-    "late_flower": {
+    PlantStage.FLOWER_LATE: {
         "day": {"on": 1.35, "off": 1.4},
         "night": {"on": 0.95, "off": 1.05},
     },
-    "dry": {
+    PlantStage.DRY: {
         "day": {"on": 0.8, "off": 1.0},
         "night": {"on": 0.85, "off": 1.05},
     },
-    "cure": {
+    PlantStage.CURE: {
         "day": {"on": 0.9, "off": 1.1},
         "night": {"on": 0.95, "off": 1.15},
     },
@@ -97,6 +99,10 @@ class DehumidifierCoordinator:
         # Timing state for short-cycling prevention
         self._last_turn_on_time: float = 0.0
         self._last_turn_off_time: float = 0.0
+
+        # Light-sensor fallback state
+        self._last_known_is_day: bool | None = None
+        self._sensors_unavailable_since: float | None = None
 
         # Load configuration
         self.growspace = self.main_coordinator.growspaces.get(growspace_id)
@@ -132,14 +138,22 @@ class DehumidifierCoordinator:
         )
 
         # Valid if we have VPD sensor and at least one device to control
-        has_devices = bool(self.dehumidifier_entities or self.exhaust_fan_entities)
+        self.has_devices = bool(self.dehumidifier_entities or self.exhaust_fan_entities)
 
-        if self.vpd_sensor and has_devices and self.control_dehumidifier:
+        if self.vpd_sensor and self.has_devices and self.control_dehumidifier:
+            _LOGGER.debug(
+                "DehumidifierCoordinator initialized for %s. Call async_setup() to start monitoring",
+                self.growspace.name,
+            )
+
+    async def async_setup(self) -> None:
+        """Set up the coordinator and start monitoring."""
+        if self.vpd_sensor and self.has_devices and self.control_dehumidifier:
             self._setup_listeners()
-            # Start initial check after reload/starup
-            self.hass.async_create_task(self.async_check_and_control())
+            # Start initial check after reload/startup
+            await self.async_check_and_control()
             _LOGGER.info(
-                "DehumidifierCoordinator initialized for %s (VPD: %s, Devices: %d)",
+                "DehumidifierCoordinator started for %s (VPD: %s, Devices: %d)",
                 self.growspace.name,
                 self.vpd_sensor,
                 len(self.dehumidifier_entities) + len(self.exhaust_fan_entities),
@@ -216,7 +230,9 @@ class DehumidifierCoordinator:
                 "Day" if is_day else "Night",
             )
             await self._control_dehumidifier(True)
-            self._fire_logbook_event(True, current_vpd, stage_name, is_day, on_threshold, off_threshold)
+            self._fire_logbook_event(
+                True, current_vpd, stage_name, is_day, on_threshold, off_threshold
+            )
         elif current_vpd > off_threshold and is_on:
             _LOGGER.info(
                 "VPD Trigger: Current %.2f > Threshold %.2f (%s, %s) -> Turning OFF Devices",
@@ -226,7 +242,9 @@ class DehumidifierCoordinator:
                 "Day" if is_day else "Night",
             )
             await self._control_dehumidifier(False)
-            self._fire_logbook_event(False, current_vpd, stage_name, is_day, on_threshold, off_threshold)
+            self._fire_logbook_event(
+                False, current_vpd, stage_name, is_day, on_threshold, off_threshold
+            )
 
     def _is_locked_by_timer(self, is_on: bool) -> bool:
         """Check if state change is blocked by minimum run/off timers.
@@ -268,51 +286,10 @@ class DehumidifierCoordinator:
 
         return False
 
-    def _get_growth_stage(self) -> str:
+    def _get_growth_stage(self) -> PlantStage:
         """Determine the current growth stage for threshold selection."""
-        plants = self.main_coordinator.get_growspace_plants(self.growspace_id)
-
-        max_seedling_days = 0
-        max_veg_days = 0
-        max_flower_days = 0
-        max_dry_days = 0
-        max_cure_days = 0
-        max_mother_days = 0
-
-        for plant in plants:
-            s_days = calculate_days_in_stage(plant, "seedling")
-            v_days = calculate_days_in_stage(plant, "veg")
-            f_days = calculate_days_in_stage(plant, "flower")
-            d_days = calculate_days_in_stage(plant, "dry")
-            c_days = calculate_days_in_stage(plant, "cure")
-            m_days = calculate_days_in_stage(plant, "mother")
-
-            max_seedling_days = max(max_seedling_days, s_days)
-            max_veg_days = max(max_veg_days, v_days)
-            max_flower_days = max(max_flower_days, f_days)
-            max_dry_days = max(max_dry_days, d_days)
-            max_cure_days = max(max_cure_days, c_days)
-            max_mother_days = max(max_mother_days, m_days)
-
-        # Priority: Cure > Dry > Flower > Mother > Veg > Seedling
-        if max_cure_days > 0:
-            return "cure"
-        if max_dry_days > 0:
-            return "dry"
-        if max_flower_days >= 50:
-            return "late_flower"
-        if max_flower_days >= 22:
-            return "mid_flower"
-        if max_flower_days > 0:
-            return "early_flower"
-        if max_mother_days > 0:
-            return "mother"
-        if max_veg_days > 0:
-            return "veg"
-        if max_seedling_days > 0:
-            return "seedling"
-
-        return "veg"  # Default
+        plants = self.main_coordinator.services.get_growspace_plants(self.growspace_id)
+        return determine_coordinator_stage(plants)
 
     def _get_current_thresholds(self, stage: str, is_day: bool) -> dict[str, float]:
         """Get the ON/OFF thresholds for the current state."""
@@ -348,7 +325,7 @@ class DehumidifierCoordinator:
                     {ATTR_ENTITY_ID: entity_id},
                     blocking=False,  # Use non-blocking to speed up
                 )
-            except Exception:  # noqa: BLE001
+            except (HomeAssistantError, TimeoutError):
                 _LOGGER.warning("Failed to control device %s", entity_id, exc_info=True)
 
         # Update timestamps for short-cycling prevention
@@ -407,31 +384,54 @@ class DehumidifierCoordinator:
         except ValueError:
             return None
 
+    _SENSOR_UNAVAILABLE_WARN_SECONDS = 300
+
     def _determine_is_day(self) -> bool:
         """Determine Day/Night state (OR logic)."""
-        is_day = True  # Default to day if no sensor
-        if self.light_sensors:
-            any_valid = False
-            any_on = False
-            for sensor in self.light_sensors:
-                light_state = self.hass.states.get(sensor)
-                if light_state and light_state.state not in (
-                    STATE_UNKNOWN,
-                    STATE_UNAVAILABLE,
-                ):
-                    any_valid = True
-                    try:
-                        light_val = float(light_state.state)
-                        if light_val > 0:
-                            any_on = True
-                    except ValueError:
-                        if light_state.state == STATE_ON:
-                            any_on = True
+        if not self.light_sensors:
+            return True
 
-            # If we found at least one valid sensor, use the result
-            if any_valid:
-                is_day = any_on
-        return is_day
+        any_valid = False
+        any_on = False
+        for sensor in self.light_sensors:
+            light_state = self.hass.states.get(sensor)
+            if light_state and light_state.state not in (
+                STATE_UNKNOWN,
+                STATE_UNAVAILABLE,
+            ):
+                any_valid = True
+                try:
+                    light_val = float(light_state.state)
+                    if light_val > 0:
+                        any_on = True
+                except ValueError:
+                    if light_state.state == STATE_ON:
+                        any_on = True
+
+        if any_valid:
+            self._last_known_is_day = any_on
+            self._sensors_unavailable_since = None
+            return any_on
+
+        # All sensors unavailable — use cached state
+        now = time.monotonic()
+        if self._sensors_unavailable_since is None:
+            self._sensors_unavailable_since = now
+        elif (
+            now - self._sensors_unavailable_since
+            >= self._SENSOR_UNAVAILABLE_WARN_SECONDS
+        ):
+            _LOGGER.warning(
+                "All light sensors for growspace %s have been unavailable for over %d seconds; "
+                "using last known day/night state",
+                self.growspace_id,
+                int(now - self._sensors_unavailable_since),
+            )
+
+        if self._last_known_is_day is not None:
+            return self._last_known_is_day
+
+        return True  # No prior observation — assume daytime
 
     def _determine_is_device_on(self) -> bool:
         """Determine if any controlled device is on."""

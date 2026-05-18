@@ -1,6 +1,6 @@
 from unittest.mock import AsyncMock, MagicMock
 
-from common import create_plant
+from .common import create_plant
 import pytest
 from tests.common import MockConfigEntry
 
@@ -84,7 +84,7 @@ async def test_async_update_plant_fires_event(
         strain="Test Strain",
         stage="flower",
     )
-    mock_coordinator.plants = {"test_plant": updated_plant}
+    mock_coordinator.data_repository.add_plant(updated_plant)
     mock_coordinator.lifecycle_manager.async_update_plant.return_value = updated_plant
 
     fired_events = []
@@ -118,7 +118,7 @@ async def test_async_remove_plant_fires_event(
     plant = create_plant(
         plant_id="test_plant", growspace_id="test_gs", strain="Test Strain"
     )
-    mock_coordinator.plants["test_plant"] = plant
+    mock_coordinator.data_repository.add_plant(plant)
     mock_coordinator.lifecycle_manager.async_remove_plant.return_value = True
 
     fired_events = []
@@ -130,7 +130,7 @@ async def test_async_remove_plant_fires_event(
     hass.bus.async_listen("growspace_manager_updated", event_listener)
 
     # Execute
-    await mock_coordinator.async_remove_plant("test_plant")
+    await mock_coordinator.services.remove_plant("test_plant")
     await hass.async_block_till_done()
 
     # Verify

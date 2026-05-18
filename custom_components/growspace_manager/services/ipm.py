@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING
 
-from custom_components.growspace_manager.const import (
+from ..const import (
     ATTR_GROWSPACE_ID,
     ATTR_ITEMS,
     ATTR_MIN_DAYS_IN_STAGE,
@@ -15,12 +15,20 @@ from custom_components.growspace_manager.const import (
     ATTR_PRESET_ID,
     ATTR_STAGE,
     ATTR_TYPE,
+    GrowspaceService,
 )
-from custom_components.growspace_manager.services.utils import handle_service_errors
+from ..schemas import (
+    APPLY_IPM_SCHEMA,
+    REMOVE_IPM_PRESET_SCHEMA,
+    SAVE_IPM_PRESET_SCHEMA,
+)
+from .utils import handle_service_errors
 from homeassistant.core import HomeAssistant, ServiceCall
 
+from ._definition import ServiceDefinition
+
 if TYPE_CHECKING:
-    from custom_components.growspace_manager.coordinator import GrowspaceCoordinator
+    from ..coordinator import GrowspaceCoordinator
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -37,9 +45,9 @@ async def handle_save_ipm_preset(
     stage = call.data.get(ATTR_STAGE)
     min_days_in_stage = call.data.get(ATTR_MIN_DAYS_IN_STAGE)
 
-    await coordinator.async_save_ipm_preset(
+    await coordinator.services.save_ipm_preset(
         name=name,
-        type=type_,
+        preset_type=type_,
         items=items,
         stage=stage,
         min_days_in_stage=min_days_in_stage,
@@ -53,7 +61,7 @@ async def handle_remove_ipm_preset(
 ) -> None:
     """Handle removing an IPM preset."""
     preset_id = call.data[ATTR_PRESET_ID]
-    await coordinator.async_remove_ipm_preset(preset_id)
+    await coordinator.services.remove_ipm_preset(preset_id)
 
 
 @handle_service_errors
@@ -66,9 +74,28 @@ async def handle_apply_ipm(
     plant_ids = call.data.get(ATTR_PLANT_ID)
     notes = call.data.get(ATTR_NOTES)
 
-    await coordinator.async_apply_ipm(
+    await coordinator.services.apply_ipm(
         preset_id=preset_id,
         growspace_id=growspace_id,
         plant_ids=plant_ids,
         notes=notes,
     )
+
+
+SERVICES = [
+    ServiceDefinition(
+        GrowspaceService.SAVE_IPM_PRESET,
+        handle_save_ipm_preset,
+        SAVE_IPM_PRESET_SCHEMA,
+    ),
+    ServiceDefinition(
+        GrowspaceService.REMOVE_IPM_PRESET,
+        handle_remove_ipm_preset,
+        REMOVE_IPM_PRESET_SCHEMA,
+    ),
+    ServiceDefinition(
+        GrowspaceService.APPLY_IPM,
+        handle_apply_ipm,
+        APPLY_IPM_SCHEMA,
+    ),
+]

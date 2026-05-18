@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING
 
-from custom_components.growspace_manager.const import (
+from ..const import (
     ATTR_ACQUISITION_DATE,
     ATTR_BATCH_ID,
     ATTR_BREEDER,
@@ -30,12 +30,24 @@ from custom_components.growspace_manager.const import (
     ATTR_TERPENE_INTENSITY,
     ATTR_VIGOR,
     ATTR_YIELD_POTENTIAL,
+    GrowspaceService,
 )
-from custom_components.growspace_manager.services.utils import handle_service_errors
+from ..schemas import (
+    ADD_SEED_BATCH_SCHEMA,
+    DELETE_POLLINATION_SCHEMA,
+    HARVEST_SEEDS_SCHEMA,
+    LOG_POLLINATION_SCHEMA,
+    SCORE_PHENOTYPE_SCHEMA,
+    UPDATE_POLLINATION_SCHEMA,
+    UPDATE_SEED_BATCH_SCHEMA,
+)
+from .utils import handle_service_errors
 from homeassistant.core import HomeAssistant, ServiceCall
 
+from ._definition import ServiceDefinition
+
 if TYPE_CHECKING:
-    from growspace_manager.coordinator import GrowspaceCoordinator
+    from ..coordinator import GrowspaceCoordinator
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -165,3 +177,42 @@ async def handle_delete_pollination(
     await coordinator.genetics_manager.async_delete_pollination(
         event_id=call.data[ATTR_EVENT_ID],
     )
+
+
+SERVICES = [
+    ServiceDefinition(
+        GrowspaceService.ADD_SEED_BATCH,
+        handle_add_seed_batch,
+        ADD_SEED_BATCH_SCHEMA,
+    ),
+    ServiceDefinition(
+        GrowspaceService.UPDATE_SEED_BATCH,
+        handle_update_seed_batch,
+        UPDATE_SEED_BATCH_SCHEMA,
+    ),
+    ServiceDefinition(
+        GrowspaceService.LOG_POLLINATION,
+        handle_log_pollination,
+        LOG_POLLINATION_SCHEMA,
+    ),
+    ServiceDefinition(
+        GrowspaceService.SCORE_PHENOTYPE,
+        handle_score_phenotype,
+        SCORE_PHENOTYPE_SCHEMA,
+    ),
+    ServiceDefinition(
+        GrowspaceService.HARVEST_SEEDS,
+        handle_harvest_seeds,
+        HARVEST_SEEDS_SCHEMA,
+    ),
+    ServiceDefinition(
+        GrowspaceService.UPDATE_POLLINATION,
+        handle_update_pollination,
+        UPDATE_POLLINATION_SCHEMA,
+    ),
+    ServiceDefinition(
+        GrowspaceService.DELETE_POLLINATION,
+        handle_delete_pollination,
+        DELETE_POLLINATION_SCHEMA,
+    ),
+]

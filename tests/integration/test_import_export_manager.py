@@ -66,10 +66,11 @@ async def test_export_library_success(
     with (
         patch("zipfile.ZipFile") as mock_zip_cls,
         patch(
-            "custom_components.growspace_manager.import_export_manager.datetime"
-        ) as mock_datetime,
+            "custom_components.growspace_manager.import_export_manager.dt_util"
+        ) as mock_dt,
     ):
-        mock_datetime.now.return_value.strftime.return_value = "20230101_120000"
+        mock_dt.now.return_value.strftime.return_value = "20230101_120000"
+
         mock_zip = MagicMock()
         mock_zip_cls.return_value.__enter__.return_value = mock_zip
 

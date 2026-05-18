@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from datetime import datetime
 import json
 import logging
 from pathlib import Path
@@ -11,6 +10,7 @@ from typing import Any, cast
 import zipfile
 
 from homeassistant.core import HomeAssistant
+from homeassistant.util import dt as dt_util
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -49,7 +49,7 @@ class ImportExportManager:
         """Synchronous helper to create the export ZIP file."""
         out_path = Path(output_dir)
         out_path.mkdir(parents=True, exist_ok=True)
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        timestamp = dt_util.now().strftime("%Y%m%d_%H%M%S")
         zip_path = out_path / f"strain_library_export_{timestamp}.zip"
 
         # Create a deep copy or modify a copy to avoid changing the original data

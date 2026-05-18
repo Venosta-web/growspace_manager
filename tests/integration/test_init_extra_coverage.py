@@ -42,7 +42,8 @@ async def test_async_setup_entry_pending_growspace_success(hass: HomeAssistant) 
     mock_strain_lib = MagicMock()
     mock_strain_lib.async_setup = AsyncMock()
 
-    hass.data[DOMAIN] = {"strain_library": mock_strain_lib}
+    mock_scraper = MagicMock()
+    hass.data[DOMAIN] = {"strain_library": mock_strain_lib, "seedfinder_scraper": mock_scraper}
     hass.http = MagicMock()
     hass.http.async_register_static_paths = AsyncMock()
 

@@ -1,9 +1,9 @@
 """Nutrient Inventory Service."""
 
-from datetime import datetime
 import logging
 
-from custom_components.growspace_manager.models import NutrientInventory, NutrientStock
+from ..models import NutrientInventory, NutrientStock
+from homeassistant.util import dt as dt_util
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -28,7 +28,7 @@ class NutrientInventoryService:
             name=name,
             current_ml=current_ml,
             initial_ml=initial_ml,
-            last_updated=datetime.now().isoformat(),
+            last_updated=dt_util.utcnow().isoformat(),
         )
         _LOGGER.debug(
             "Updated stock for %s (%s): %s/%s ml",
@@ -53,7 +53,7 @@ class NutrientInventoryService:
         if target_id:
             stock = self._inventory.stocks[target_id]
             stock.current_ml = max(0.0, stock.current_ml - amount_ml)
-            stock.last_updated = datetime.now().isoformat()
+            stock.last_updated = dt_util.utcnow().isoformat()
             _LOGGER.debug(
                 "Deducted %s ml from %s. Remaining: %s ml",
                 amount_ml,

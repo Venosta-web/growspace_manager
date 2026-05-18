@@ -11,20 +11,20 @@ from collections.abc import Awaitable, Callable
 import logging
 from typing import TYPE_CHECKING
 
-from custom_components.growspace_manager.event_builder import EventBuilder
-from custom_components.growspace_manager.exceptions import GrowspaceError
-from custom_components.growspace_manager.models import GrowspaceEvent, Plant
+from ..event_builder import EventBuilder
+from ..exceptions import GrowspaceError
+from ..models import GrowspaceEvent, Plant
 from homeassistant.core import HomeAssistant
 from homeassistant.util import dt as dt_util
 
 if TYPE_CHECKING:
-    from custom_components.growspace_manager.data_access.growspace_repository import (
+    from ..data_access.growspace_repository import (
         GrowspaceRepository,
     )
-    from custom_components.growspace_manager.growspace_validator import (
+    from ..growspace_validator import (
         GrowspaceValidator,
     )
-    from custom_components.growspace_manager.managers.nutrient import NutrientManager
+    from ..managers.nutrient import NutrientManager
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -98,7 +98,7 @@ class WateringService:
     ) -> Plant:
         """Internal watering logic with optional cache invalidation."""
         self.validator.validate_plant_exists(plant_id)
-        plant = self.repository.plants[plant_id]
+        plant = self.repository.require_plant(plant_id)
 
         final_nutrients, preset_name = self.nutrient_manager.resolve_nutrient_mix(
             nutrients, preset_id

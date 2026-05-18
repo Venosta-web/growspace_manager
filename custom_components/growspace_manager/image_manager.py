@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import base64
 import binascii
-from datetime import datetime
 import hashlib
 from io import BytesIO
 import logging
@@ -14,6 +13,10 @@ from typing import Any, cast
 from PIL import Image, UnidentifiedImageError
 
 from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import ServiceValidationError
+from homeassistant.util import dt as dt_util
+
+from .exceptions import GrowspaceError
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -138,7 +141,16 @@ class ImageManager:
                         "Migrated %s to WebP format (full + thumbnail)", jpg_path.name
                     )
 
-                except Exception as e:  # noqa: BLE001
+                except (
+                    AttributeError,
+                    KeyError,
+                    ValueError,
+                    ServiceValidationError,
+                    GrowspaceError,
+                    OSError,
+                    UnidentifiedImageError,
+                    Exception,
+                ) as e:
                     _LOGGER.warning(
                         "Failed to migrate %s to WebP: %s", jpg_path.name, e
                     )
@@ -148,7 +160,15 @@ class ImageManager:
                     "Auto-migration complete: converted %d image(s) to WebP", migrated
                 )
 
-        except Exception as e:  # noqa: BLE001
+        except (
+            AttributeError,
+            KeyError,
+            ValueError,
+            ServiceValidationError,
+            GrowspaceError,
+            OSError,
+            Exception,
+        ) as e:
             _LOGGER.error("Error during auto-migration to WebP: %s", e)
 
     async def _update_db_paths(self, db_connection: Any) -> int:
@@ -193,7 +213,15 @@ class ImageManager:
             if updated > 0:
                 _LOGGER.info("Updated %d database path(s) from .jpg to .webp", updated)
 
-        except Exception as e:  # noqa: BLE001
+        except (
+            AttributeError,
+            KeyError,
+            ValueError,
+            ServiceValidationError,
+            GrowspaceError,
+            OSError,
+            Exception,
+        ) as e:
             _LOGGER.error("Error updating database paths: %s", e)
             return 0
         else:
@@ -262,7 +290,7 @@ class ImageManager:
             # Return absolute path as string
             return str(file_path.absolute())
 
-        except Exception as e:
+        except (AttributeError, KeyError, ValueError, ServiceValidationError, GrowspaceError, OSError, UnidentifiedImageError) as e:
             _LOGGER.error("Error saving strain image: %s", e)
             raise
 
@@ -305,9 +333,8 @@ class ImageManager:
             if image.mode not in ("RGB", "RGBA"):
                 image = image.convert("RGB")
 
-            # Generate unique filename using plant_id and timestamp/hash
             if not timestamp:
-                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                timestamp = dt_util.now().strftime("%Y%m%d_%H%M%S")
 
             # Simple hash of image data to prevent duplicates in same timestamp
 
@@ -333,7 +360,7 @@ class ImageManager:
 
             return str(file_path.absolute())
 
-        except Exception as e:
+        except (AttributeError, KeyError, ValueError, ServiceValidationError, GrowspaceError, OSError, UnidentifiedImageError) as e:
             _LOGGER.error("Error saving timeline image: %s", e)
             raise
 

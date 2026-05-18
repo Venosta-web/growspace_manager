@@ -14,6 +14,7 @@ from custom_components.growspace_manager.const import (
     DOMAIN,
 )
 from homeassistant.core import HomeAssistant
+from homeassistant.data_entry_flow import FlowResultType
 
 
 @pytest.fixture
@@ -32,6 +33,16 @@ def mock_config_entry() -> MagicMock:
     entry.entry_id = "test_entry"
     entry.options = {"ai_settings": {}}
     return entry
+
+
+@pytest.fixture
+def mock_coordinator() -> MagicMock:
+    """Mock the GrowspaceCoordinator with ServiceFacade support."""
+    coordinator = MagicMock()
+    coordinator.services = MagicMock()
+    coordinator.services.save = AsyncMock()
+    coordinator.options = {}
+    return coordinator
 
 
 @pytest.fixture
@@ -89,13 +100,12 @@ async def testget_ai_settings_schema_no_agents(
 
 
 async def test_save_ai_settings(
-    handler: AIConfigHandler, mock_hass: MagicMock, mock_config_entry: MagicMock
+    handler: AIConfigHandler,
+    mock_hass: MagicMock,
+    mock_config_entry: MagicMock,
+    mock_coordinator: MagicMock,
 ) -> None:
     """Test saving AI settings."""
-    # Setup coordinator mock
-    mock_coordinator = MagicMock()
-    mock_coordinator.async_save = AsyncMock()
-
     # Update to use runtime_data
     mock_config_entry.runtime_data = mock_coordinator
 
@@ -109,14 +119,14 @@ async def test_save_ai_settings(
 
     assert new_options["ai_settings"] == user_input
     assert mock_coordinator.options["ai_settings"] == user_input
-    mock_coordinator.async_save.assert_called_once()
+    mock_coordinator.services.save.assert_awaited_once()
 
 
 async def test_error_cases(mock_hass: MagicMock, mock_config_entry: MagicMock) -> None:
     """Test error cases for AIConfigHandler."""
     mock_flow = MagicMock()
     mock_flow.async_abort = MagicMock(
-        return_value={"type": "abort", "reason": "setup_error"}
+        return_value={"type": FlowResultType.ABORT, "reason": "setup_error"}
     )
 
     # Test get_ai_settings_schema with None config_entry
@@ -127,7 +137,7 @@ async def test_error_cases(mock_hass: MagicMock, mock_config_entry: MagicMock) -
 
     # Test async_step_configure_ai with None config_entry
     result = await handler_no_entry.async_step_configure_ai()
-    assert result["type"] == "abort"
+    assert result["type"] == FlowResultType.ABORT
     assert result["reason"] == "setup_error"
 
     # Test async_step_configure_ai with None coordinator
@@ -135,7 +145,7 @@ async def test_error_cases(mock_hass: MagicMock, mock_config_entry: MagicMock) -
     handler_no_coord = AIConfigHandler(mock_hass, mock_config_entry)
     handler_no_coord.flow = mock_flow
     result = await handler_no_coord.async_step_configure_ai()
-    assert result["type"] == "abort"
+    assert result["type"] == FlowResultType.ABORT
     assert result["reason"] == "setup_error"
 
     # Test save_ai_settings with None config_entry
@@ -148,11 +158,12 @@ async def test_error_cases(mock_hass: MagicMock, mock_config_entry: MagicMock) -
 
 
 async def test_async_step_configure_ai_success(
-    handler: AIConfigHandler, mock_hass: MagicMock, mock_config_entry: MagicMock
+    handler: AIConfigHandler,
+    mock_hass: MagicMock,
+    mock_config_entry: MagicMock,
+    mock_coordinator: MagicMock,
 ) -> None:
     """Test successful AI configuration step."""
-    mock_coordinator = MagicMock()
-    mock_coordinator.async_save = AsyncMock()
     mock_config_entry.runtime_data = mock_coordinator
 
     mock_flow = MagicMock()
@@ -168,7 +179,7 @@ async def test_async_step_configure_ai_success(
     result = await handler.async_step_configure_ai(user_input)
 
     assert result["type"] == "create_entry"
-    mock_coordinator.async_save.assert_awaited_once()
+    mock_coordinator.services.save.assert_awaited_once()
 
 
 async def test_async_step_configure_ai_validation_error(
@@ -190,22 +201,23 @@ async def test_async_step_configure_ai_validation_error(
 
     result = await handler.async_step_configure_ai(user_input)
 
-    assert result["type"] == "form"
+    assert result["type"] == FlowResultType.FORM
     mock_flow.async_show_form.assert_called_once()
     args = mock_flow.async_show_form.call_args[1]
     assert args["errors"] == {"base": "assistant_required"}
 
 
 async def test_async_step_configure_ai_disabled(
-    handler: AIConfigHandler, mock_hass: MagicMock, mock_config_entry: MagicMock
+    handler: AIConfigHandler,
+    mock_hass: MagicMock,
+    mock_config_entry: MagicMock,
+    mock_coordinator: MagicMock,
 ) -> None:
     """Test AI configuration step with AI disabled."""
-    mock_coordinator = MagicMock()
-    mock_coordinator.async_save = AsyncMock()
     mock_config_entry.runtime_data = mock_coordinator
 
     mock_flow = MagicMock()
-    mock_flow.async_create_entry = MagicMock(return_value={"type": "create_entry"})
+    mock_flow.async_create_entry = MagicMock(return_value=FlowResultType.CREATE_ENTRY)
     handler.flow = mock_flow
 
     user_input = {
@@ -215,8 +227,8 @@ async def test_async_step_configure_ai_disabled(
 
     result = await handler.async_step_configure_ai(user_input)
 
-    assert result["type"] == "create_entry"
-    mock_coordinator.async_save.assert_awaited_once()
+    assert result == FlowResultType.CREATE_ENTRY
+    mock_coordinator.services.save.assert_awaited_once()
 
 
 async def testget_ai_settings_schema_exception(

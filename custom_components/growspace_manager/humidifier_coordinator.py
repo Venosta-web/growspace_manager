@@ -16,6 +16,7 @@ from homeassistant.const import (
     STATE_UNKNOWN,
 )
 from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import ServiceValidationError
 from homeassistant.helpers.event import async_track_state_change_event
 from homeassistant.util import dt as dt_util
 
@@ -23,8 +24,10 @@ from .const import (
     CATEGORY_HUMIDIFIER,
     DEFAULT_HUMIDIFIER_MIN_OFFTIME,
     DEFAULT_HUMIDIFIER_MIN_RUNTIME,
+    PlantStage,
 )
-from .domain import calculate_days_in_stage
+from .domain.stage_calculator import determine_coordinator_stage
+from .exceptions import GrowspaceError
 from .models import GrowspaceEvent
 
 if TYPE_CHECKING:
@@ -36,35 +39,35 @@ _LOGGER = logging.getLogger(__name__)
 # High VPD = low humidity = needs humidification.
 # Format: {stage: {day_or_night: {on: float, off: float}}}
 DEFAULT_THRESHOLDS = {
-    "seedling": {
+    PlantStage.SEEDLING: {
         "day": {"on": 0.7, "off": 0.5},
         "night": {"on": 0.75, "off": 0.55},
     },
-    "mother": {
+    PlantStage.MOTHER: {
         "day": {"on": 0.9, "off": 0.7},
         "night": {"on": 0.85, "off": 0.65},
     },
-    "veg": {
+    PlantStage.VEG: {
         "day": {"on": 1.0, "off": 0.8},
         "night": {"on": 0.85, "off": 0.65},
     },
-    "early_flower": {
+    PlantStage.FLOWER_EARLY: {
         "day": {"on": 1.4, "off": 1.2},
         "night": {"on": 1.0, "off": 0.8},
     },
-    "mid_flower": {
+    PlantStage.FLOWER_MID: {
         "day": {"on": 1.6, "off": 1.4},
         "night": {"on": 1.2, "off": 1.0},
     },
-    "late_flower": {
+    PlantStage.FLOWER_LATE: {
         "day": {"on": 1.7, "off": 1.5},
         "night": {"on": 1.3, "off": 1.1},
     },
-    "dry": {
+    PlantStage.DRY: {
         "day": {"on": 1.2, "off": 1.0},
         "night": {"on": 1.2, "off": 1.0},
     },
-    "cure": {
+    PlantStage.CURE: {
         "day": {"on": 1.2, "off": 1.0},
         "night": {"on": 1.2, "off": 1.0},
     },
@@ -110,10 +113,19 @@ class HumidifierCoordinator:
         )
 
         if self.vpd_sensor and self.humidifier_entities and self.control_humidifier:
+            _LOGGER.debug(
+                "HumidifierCoordinator initialized for %s. Call async_setup() to start monitoring",
+                self.growspace.name,
+            )
+
+    async def async_setup(self) -> None:
+        """Set up the coordinator and start monitoring."""
+        if self.vpd_sensor and self.humidifier_entities and self.control_humidifier:
             self._setup_listeners()
-            self.hass.async_create_task(self.async_check_and_control())
+            # Start initial check after reload/startup
+            await self.async_check_and_control()
             _LOGGER.info(
-                "HumidifierCoordinator initialized for %s (VPD: %s, Devices: %d)",
+                "HumidifierCoordinator started for %s (VPD: %s, Devices: %d)",
                 self.growspace.name,
                 self.vpd_sensor,
                 len(self.humidifier_entities),
@@ -176,7 +188,9 @@ class HumidifierCoordinator:
                 "Day" if is_day else "Night",
             )
             await self._control_humidifier(True)
-            self._fire_logbook_event(True, current_vpd, stage_name, is_day, on_threshold, off_threshold)
+            self._fire_logbook_event(
+                True, current_vpd, stage_name, is_day, on_threshold, off_threshold
+            )
         elif current_vpd < off_threshold and is_on:
             _LOGGER.info(
                 "VPD Trigger: Current %.2f < Threshold %.2f (%s, %s) -> Turning OFF Humidifier",
@@ -186,7 +200,9 @@ class HumidifierCoordinator:
                 "Day" if is_day else "Night",
             )
             await self._control_humidifier(False)
-            self._fire_logbook_event(False, current_vpd, stage_name, is_day, on_threshold, off_threshold)
+            self._fire_logbook_event(
+                False, current_vpd, stage_name, is_day, on_threshold, off_threshold
+            )
 
     def _is_locked_by_timer(self, is_on: bool) -> bool:
         """Check if state change is blocked by minimum run/off timers."""
@@ -217,43 +233,10 @@ class HumidifierCoordinator:
 
         return False
 
-    def _get_growth_stage(self) -> str:
+    def _get_growth_stage(self) -> PlantStage:
         """Determine the current growth stage for threshold selection."""
-        plants = self.main_coordinator.get_growspace_plants(self.growspace_id)
-
-        max_seedling_days = 0
-        max_veg_days = 0
-        max_flower_days = 0
-        max_dry_days = 0
-        max_cure_days = 0
-        max_mother_days = 0
-
-        for plant in plants:
-            max_seedling_days = max(max_seedling_days, calculate_days_in_stage(plant, "seedling"))
-            max_veg_days = max(max_veg_days, calculate_days_in_stage(plant, "veg"))
-            max_flower_days = max(max_flower_days, calculate_days_in_stage(plant, "flower"))
-            max_dry_days = max(max_dry_days, calculate_days_in_stage(plant, "dry"))
-            max_cure_days = max(max_cure_days, calculate_days_in_stage(plant, "cure"))
-            max_mother_days = max(max_mother_days, calculate_days_in_stage(plant, "mother"))
-
-        if max_cure_days > 0:
-            return "cure"
-        if max_dry_days > 0:
-            return "dry"
-        if max_flower_days >= 50:
-            return "late_flower"
-        if max_flower_days >= 22:
-            return "mid_flower"
-        if max_flower_days > 0:
-            return "early_flower"
-        if max_mother_days > 0:
-            return "mother"
-        if max_veg_days > 0:
-            return "veg"
-        if max_seedling_days > 0:
-            return "seedling"
-
-        return "veg"
+        plants = self.main_coordinator.services.get_growspace_plants(self.growspace_id)
+        return determine_coordinator_stage(plants)
 
     def _get_current_thresholds(self, stage: str, is_day: bool) -> dict[str, float]:
         """Get the ON/OFF thresholds for the current state."""
@@ -281,7 +264,14 @@ class HumidifierCoordinator:
                     {ATTR_ENTITY_ID: entity_id},
                     blocking=False,
                 )
-            except Exception:  # noqa: BLE001
+            except (
+                AttributeError,
+                KeyError,
+                ValueError,
+                ServiceValidationError,
+                GrowspaceError,
+                Exception,
+            ):
                 _LOGGER.warning("Failed to control device %s", entity_id, exc_info=True)
 
         if turn_on:

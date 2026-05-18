@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import base64
 import binascii
-from datetime import datetime
 from io import BytesIO
 import logging
 from pathlib import Path
@@ -13,24 +12,39 @@ from typing import TYPE_CHECKING, Any
 
 from PIL import Image
 
-from custom_components.growspace_manager.const import DOMAIN
-from homeassistant.components.persistent_notification import (
-    async_create as create_notification,
-)
-from homeassistant.core import HomeAssistant, ServiceCall
-from homeassistant.exceptions import HomeAssistantError
+from homeassistant.core import HomeAssistant, ServiceCall, SupportsResponse
+from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
 from homeassistant.helpers.network import get_url
+from homeassistant.util import dt as dt_util
 
-if TYPE_CHECKING:
-    from custom_components.growspace_manager.coordinator import GrowspaceCoordinator
-from custom_components.growspace_manager.const import (
+from ..const import (
     ATTR_BREEDER,
     ATTR_BREEDER_LOGO,
     ATTR_LINEAGE,
     ATTR_PHENOTYPE,
     ATTR_STRAIN,
+    DOMAIN,
+    GrowspaceService,
 )
-from custom_components.growspace_manager.strain_library import StrainLibrary
+from ..exceptions import GrowspaceError
+from homeassistant.components.persistent_notification import (
+    async_create as create_notification,
+)
+from ..schemas import (
+    ADD_STRAIN_SCHEMA,
+    CLEAR_STRAIN_LIBRARY_SCHEMA,
+    EXPORT_STRAIN_LIBRARY_SCHEMA,
+    IMPORT_STRAIN_LIBRARY_SCHEMA,
+    PRINT_LABEL_SCHEMA,
+    REMOVE_STRAIN_SCHEMA,
+    UPDATE_STRAIN_META_SCHEMA,
+)
+from ..strain_library import StrainLibrary
+
+from ._definition import ServiceDefinition
+
+if TYPE_CHECKING:
+    from ..coordinator import GrowspaceCoordinator
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -84,7 +98,9 @@ def _downscale_logo_if_needed(logo_data: str | None) -> str | None:
 
         # If it's still large due to complexity, convert to 1-bit monochrome
         if len(result) >= 25000:
-            if img.mode in ("RGBA", "LA") or (img.mode == "P" and "transparency" in img.info):
+            if img.mode in ("RGBA", "LA") or (
+                img.mode == "P" and "transparency" in img.info
+            ):
                 img = img.convert("RGBA")
                 background = Image.new("RGB", img.size, (255, 255, 255))
                 background.paste(img, mask=img.split()[3])
@@ -97,7 +113,13 @@ def _downscale_logo_if_needed(logo_data: str | None) -> str | None:
             result = f"data:image/png;base64,{new_encoded}"
 
         return result
-    except Exception as err:  # noqa: BLE001
+    except (
+        AttributeError,
+        KeyError,
+        ValueError,
+        ServiceValidationError,
+        GrowspaceError,
+    ) as err:
         _LOGGER.warning("Failed to downscale breeder logo: %s", err)
         return logo_data
 
@@ -120,7 +142,7 @@ async def handle_export_strain_library(
 
         _LOGGER.info("Exported strain library to %s (web: %s)", zip_path, relative_path)
 
-        await coordinator.async_save()
+        await coordinator.services.save()
 
         hass.bus.async_fire(
             f"{DOMAIN}_strain_library_exported",
@@ -137,7 +159,14 @@ async def handle_export_strain_library(
             title="Strain Library Export",
         )
 
-    except Exception as err:
+    except (
+        AttributeError,
+        KeyError,
+        ValueError,
+        ServiceValidationError,
+        GrowspaceError,
+        Exception,
+    ) as err:
         _LOGGER.exception("Failed to export strain library")
         create_notification(
             hass,
@@ -220,7 +249,14 @@ async def handle_import_strain_library(
             title="Strain Library Import",
         )
 
-    except Exception as err:
+    except (
+        AttributeError,
+        KeyError,
+        ValueError,
+        ServiceValidationError,
+        GrowspaceError,
+        Exception,
+    ) as err:
         _LOGGER.exception("Failed to import strain library")
         create_notification(
             hass,
@@ -332,6 +368,14 @@ async def handle_update_strain_meta(
     indica_percentage = call.data.get("indica_percentage")
     breeder_logo = call.data.get("breeder_logo")
 
+    yield_potential = call.data.get("yield_potential")
+    height = call.data.get("height")
+    thc = call.data.get("thc")
+    awards = call.data.get("awards")
+    cbd = call.data.get("cbd")
+    cbg = call.data.get("cbg")
+    lineage_tree = call.data.get("lineage_tree")
+
     if not strain:
         _LOGGER.warning(
             "Service call update_strain_meta missing required 'strain' parameter"
@@ -355,6 +399,13 @@ async def handle_update_strain_meta(
             sativa_percentage=sativa_percentage,
             indica_percentage=indica_percentage,
             breeder_logo=breeder_logo,
+            yield_potential=yield_potential,
+            height=height,
+            thc=thc,
+            cbd=cbd,
+            cbg=cbg,
+            awards=awards,
+            lineage_tree=lineage_tree,
         )
     except ValueError as err:
         raise HomeAssistantError(str(err)) from err
@@ -398,13 +449,20 @@ async def handle_clear_strain_library(
         cleared_count = await strain_library.clear()
 
         _LOGGER.info("Cleared %s strains from library", cleared_count)
-        await coordinator.async_save()
-        await coordinator.async_request_refresh()
+        await coordinator.services.save()
+        await coordinator.services.request_refresh()
 
         hass.bus.async_fire(
             f"{DOMAIN}_strain_library_cleared", {"cleared_count": cleared_count}
         )
-    except Exception as err:
+    except (
+        AttributeError,
+        KeyError,
+        ValueError,
+        ServiceValidationError,
+        GrowspaceError,
+        Exception,
+    ) as err:
         _LOGGER.exception("Failed to clear strain library")
         create_notification(
             hass,
@@ -517,7 +575,9 @@ async def handle_print_label(
     if breeder_logo:
         # Downscale if it's a base64 string to avoid event bus and printer issues.
         # Run in executor to avoid blocking the event loop on PIL's lazy native lib init.
-        breeder_logo = await hass.async_add_executor_job(_downscale_logo_if_needed, breeder_logo)
+        breeder_logo = await hass.async_add_executor_job(
+            _downscale_logo_if_needed, breeder_logo
+        )
 
         payload.append(
             {
@@ -548,7 +608,7 @@ async def handle_print_label(
         )
 
     # 6. Small Timestamp (Bottom Right)
-    now = datetime.now().strftime("%d.%m.%Y")
+    now = dt_util.now().strftime("%d.%m.%Y")
     payload.append(
         {
             "type": "text",
@@ -575,10 +635,70 @@ async def handle_print_label(
         response = await hass.services.async_call(
             "niimbot", "print", service_data, blocking=True, return_response=True
         )
-    except Exception as err:
+    except (
+        AttributeError,
+        KeyError,
+        ValueError,
+        ServiceValidationError,
+        GrowspaceError,
+    ) as err:
         _LOGGER.error("Failed to print Niimbot label: %s", err)
         raise HomeAssistantError(f"Failed to print Niimbot label: {err}") from err
     else:
         log_id = plant_id or strain_name
         _LOGGER.info("Sent label to Niimbot for %s", log_id)
         return response
+
+
+SERVICES: list[ServiceDefinition] = [
+    ServiceDefinition(
+        GrowspaceService.ADD_STRAIN,
+        handle_add_strain,
+        ADD_STRAIN_SCHEMA,
+        needs_strain_lib=True,
+    ),
+    ServiceDefinition(
+        GrowspaceService.REMOVE_STRAIN,
+        handle_remove_strain,
+        REMOVE_STRAIN_SCHEMA,
+        needs_strain_lib=True,
+    ),
+    ServiceDefinition(
+        GrowspaceService.UPDATE_STRAIN_META,
+        handle_update_strain_meta,
+        UPDATE_STRAIN_META_SCHEMA,
+        needs_strain_lib=True,
+    ),
+    ServiceDefinition(
+        GrowspaceService.IMPORT_STRAIN_LIBRARY,
+        handle_import_strain_library,
+        IMPORT_STRAIN_LIBRARY_SCHEMA,
+        needs_strain_lib=True,
+    ),
+    ServiceDefinition(
+        GrowspaceService.EXPORT_STRAIN_LIBRARY,
+        handle_export_strain_library,
+        EXPORT_STRAIN_LIBRARY_SCHEMA,
+        needs_strain_lib=True,
+    ),
+    ServiceDefinition(
+        GrowspaceService.CLEAR_STRAIN_LIBRARY,
+        handle_clear_strain_library,
+        CLEAR_STRAIN_LIBRARY_SCHEMA,
+        needs_strain_lib=True,
+    ),
+    ServiceDefinition(
+        GrowspaceService.GET_STRAIN_LIBRARY,
+        handle_get_strain_library,
+        None,
+        needs_strain_lib=True,
+        supports_response=SupportsResponse.ONLY,
+    ),
+    ServiceDefinition(
+        GrowspaceService.PRINT_LABEL,
+        handle_print_label,
+        PRINT_LABEL_SCHEMA,
+        needs_strain_lib=True,
+        supports_response=SupportsResponse.OPTIONAL,
+    ),
+]

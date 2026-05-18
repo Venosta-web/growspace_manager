@@ -23,8 +23,9 @@ from custom_components.growspace_manager.services.drain_ec import (
 def coordinator():
     """Mock coordinator with drain-related async methods."""
     mock = MagicMock()
-    mock.async_log_drain_reading = AsyncMock()
-    mock.async_configure_drain_monitoring = AsyncMock()
+    mock.services = MagicMock()
+    mock.services.log_drain_reading = AsyncMock()
+    mock.services.configure_drain_monitoring = AsyncMock()
     return mock
 
 
@@ -42,7 +43,7 @@ async def test_handle_log_drain_reading_all_fields(coordinator) -> None:
 
     await handle_log_drain_reading(MagicMock(), coordinator, call)
 
-    coordinator.async_log_drain_reading.assert_awaited_once_with(
+    coordinator.services.log_drain_reading.assert_awaited_once_with(
         growspace_id="tent1",
         feed_ec=2.0,
         drain_ec=2.4,
@@ -63,7 +64,7 @@ async def test_handle_log_drain_reading_no_volumes(coordinator) -> None:
 
     await handle_log_drain_reading(MagicMock(), coordinator, call)
 
-    coordinator.async_log_drain_reading.assert_awaited_once_with(
+    coordinator.services.log_drain_reading.assert_awaited_once_with(
         growspace_id="tent2",
         feed_ec=1.8,
         drain_ec=2.1,
@@ -85,7 +86,7 @@ async def test_handle_configure_drain_monitoring_all_fields(coordinator) -> None
 
     await handle_configure_drain_monitoring(MagicMock(), coordinator, call)
 
-    coordinator.async_configure_drain_monitoring.assert_awaited_once_with(
+    coordinator.services.configure_drain_monitoring.assert_awaited_once_with(
         growspace_id="tent1",
         enabled=True,
         max_ec_delta=0.5,
@@ -103,7 +104,7 @@ async def test_handle_configure_drain_monitoring_no_optional_fields(
 
     await handle_configure_drain_monitoring(MagicMock(), coordinator, call)
 
-    coordinator.async_configure_drain_monitoring.assert_awaited_once_with(
+    coordinator.services.configure_drain_monitoring.assert_awaited_once_with(
         growspace_id="tent3",
         enabled=None,
         max_ec_delta=None,

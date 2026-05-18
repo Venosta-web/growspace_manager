@@ -6,7 +6,7 @@ from dataclasses import fields
 import logging
 from typing import cast
 
-from custom_components.growspace_manager.const import (
+from ..const import (
     CONF_CAMERA_ENTITIES,
     CONF_CIRCULATION_FAN_ENTITIES,
     CONF_CIRCULATION_FAN_ENTITY,
@@ -39,15 +39,23 @@ from custom_components.growspace_manager.const import (
     CONF_SUBSTRATE_TEMP_SENSORS,
     CONF_TEMP_SENSOR,
     CONF_VPD_SENSOR,
+    GrowspaceService,
 )
-from custom_components.growspace_manager.coordinator import GrowspaceCoordinator
-from custom_components.growspace_manager.models import (
+from ..coordinator import GrowspaceCoordinator
+from ..models import (
     EnvironmentConfig,
     IrrigationTank,
     SensorGroup,
 )
+from ..schemas import (
+    CONFIGURE_ENVIRONMENT_SCHEMA,
+    REMOVE_ENVIRONMENT_SCHEMA,
+    SET_DEHUMIDIFIER_CONTROL_SCHEMA,
+)
 from homeassistant.core import HomeAssistant, ServiceCall
 from homeassistant.exceptions import ServiceValidationError
+
+from ._definition import ServiceDefinition
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -166,10 +174,10 @@ async def handle_configure_environment(
     growspace.environment_config = env_config
 
     # Save to storage
-    await coordinator.async_save()
+    await coordinator.services.save()
 
     # Trigger coordinator update to create/update binary sensors
-    await coordinator.async_refresh()
+    await coordinator.services.request_refresh()
 
     success_msg = f"Environment monitoring configured for '{growspace.name}'"
     _LOGGER.info("%s: %s", success_msg, env_config)
@@ -194,10 +202,10 @@ async def handle_remove_environment(
     growspace.environment_config = EnvironmentConfig()
 
     # Save to storage
-    await coordinator.async_save()
+    await coordinator.services.save()
 
     # Trigger coordinator update
-    await coordinator.async_refresh()
+    await coordinator.services.request_refresh()
 
     success_msg = f"Environment monitoring removed for '{growspace.name}'"
     _LOGGER.info(success_msg)
@@ -223,10 +231,29 @@ async def handle_set_dehumidifier_control(
     growspace.environment_config.control_dehumidifier = bool(enabled)
 
     # Save to storage
-    await coordinator.async_save()
+    await coordinator.services.save()
 
     # Trigger coordinator update
-    await coordinator.async_refresh()
+    await coordinator.services.request_refresh()
 
     status = "enabled" if enabled else "disabled"
     _LOGGER.info("Dehumidifier control %s for '%s'", status, growspace.name)
+
+
+SERVICES = [
+    ServiceDefinition(
+        GrowspaceService.CONFIGURE_ENVIRONMENT,
+        handle_configure_environment,
+        CONFIGURE_ENVIRONMENT_SCHEMA,
+    ),
+    ServiceDefinition(
+        GrowspaceService.REMOVE_ENVIRONMENT,
+        handle_remove_environment,
+        REMOVE_ENVIRONMENT_SCHEMA,
+    ),
+    ServiceDefinition(
+        GrowspaceService.SET_DEHUMIDIFIER_CONTROL,
+        handle_set_dehumidifier_control,
+        SET_DEHUMIDIFIER_CONTROL_SCHEMA,
+    ),
+]

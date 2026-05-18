@@ -129,13 +129,12 @@ class TestTankDepletionSensor:
 
         # Mock async_write_ha_state to avoid entity registration issues
         sensor.async_write_ha_state = MagicMock()
-        sensor.hass.async_create_task = MagicMock()
 
         # Trigger coordinator update
         sensor._handle_coordinator_update()
 
-        # Verify async_create_task was called (predictor update was scheduled)
-        sensor.hass.async_create_task.assert_called_once()
+        # Verify async_create_background_task was called (predictor update was scheduled)
+        sensor.coordinator.config_entry.async_create_background_task.assert_called_once()
         # Verify async_write_ha_state was called by super()
         sensor.async_write_ha_state.assert_called_once()
 

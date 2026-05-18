@@ -73,15 +73,7 @@ def days_to_week(days: int) -> int:
 def find_first_free_position(
     growspace: Growspace, occupied_positions: set[tuple[int, int]]
 ) -> tuple[int | None, int | None]:
-    """_Returns the first col/row thats free in growspace.
-
-    Args:
-        growspace (dict): _description_
-        occupied_positions (set[tuple[int, int]]): _description_
-
-    Returns:
-        tuple[int, int]: _description_
-    """
+    """Return the first (row, col) position not in occupied_positions, or the last cell if all are taken."""
 
     total_rows = int(growspace.rows)
     total_cols = int(growspace.plants_per_row)
@@ -344,6 +336,14 @@ def generate_vpd_sensor_unique_id(growspace_id: str, index: int | None = None) -
     """Generate a consistent unique ID for a calculated VPD sensor."""
     suffix = f"_{index}" if index is not None else ""
     return f"{DOMAIN}_{growspace_id}_calculated_vpd{suffix}"
+
+
+def generate_subarea_vpd_sensor_unique_id(
+    growspace_id: str, subarea_id: str, index: int | None = None
+) -> str:
+    """Generate a consistent unique ID for a subarea calculated VPD sensor."""
+    suffix = f"_{index}" if index is not None else ""
+    return f"{DOMAIN}_{growspace_id}_subarea_{subarea_id}_calculated_vpd{suffix}"
 
 
 def generate_growspace_overview_unique_id(growspace_id: str) -> str:

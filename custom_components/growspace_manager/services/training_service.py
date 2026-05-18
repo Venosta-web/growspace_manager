@@ -11,13 +11,13 @@ from collections.abc import Awaitable, Callable
 import logging
 from typing import TYPE_CHECKING
 
-from custom_components.growspace_manager.event_builder import EventBuilder
-from custom_components.growspace_manager.models import GrowspaceEvent, Plant
+from ..event_builder import EventBuilder
+from ..models import GrowspaceEvent, Plant
 from homeassistant.core import HomeAssistant
 from homeassistant.util import dt as dt_util
 
 if TYPE_CHECKING:
-    from custom_components.growspace_manager.data_access.growspace_repository import (
+    from ..data_access.growspace_repository import (
         GrowspaceRepository,
     )
 
@@ -106,9 +106,9 @@ class TrainingService:
         """Resolve target plants from IDs or growspace ID."""
         if plant_ids:
             return [
-                self.repository.plants[pid]
+                self.repository.require_plant(pid)
                 for pid in plant_ids
-                if pid in self.repository.plants
+                if self.repository.has_plant(pid)
             ]
         if growspace_id:
             return self.repository.get_growspace_plants(growspace_id)

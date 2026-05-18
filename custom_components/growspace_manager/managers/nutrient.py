@@ -8,7 +8,7 @@ import logging
 from typing import TYPE_CHECKING, Any
 import uuid
 
-from custom_components.growspace_manager.models import (
+from ..models import (
     ECRampCurve,
     ECRampPoint,
     IPMPreset,
@@ -17,13 +17,13 @@ from custom_components.growspace_manager.models import (
     NutrientPreset,
     NutrientPresetItem,
 )
-from custom_components.growspace_manager.services.nutrient_inventory import (
+from ..services.nutrient_inventory import (
     NutrientInventoryService,
 )
 import homeassistant.util.dt as dt_util
 
 if TYPE_CHECKING:
-    from custom_components.growspace_manager.data_access.growspace_repository import (
+    from ..data_access.growspace_repository import (
         GrowspaceRepository,
     )
 
@@ -239,7 +239,7 @@ class NutrientManager:
     def get_applicable_presets(self, plant_id: str) -> list[NutrientPreset]:
         """Get all presets applicable to a plant based on its current stage and days."""
         # Validate plant existence via coordinator or pass plant object
-        plant = self.repository.plants.get(plant_id)
+        plant = self.repository.get_plant(plant_id)
         if not plant:
             raise ValueError(f"Plant {plant_id} not found")
 

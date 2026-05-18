@@ -46,9 +46,9 @@ def test_update_stock(mock_inventory) -> None:
 
     # Test creating new stock
     with patch(
-        "custom_components.growspace_manager.services.nutrient_inventory.datetime"
+        "custom_components.growspace_manager.services.nutrient_inventory.dt_util"
     ) as mock_dt:
-        mock_dt.now.return_value = datetime(2024, 2, 1, 12, 0, 0)
+        mock_dt.utcnow.return_value = datetime(2024, 2, 1, 12, 0, 0)
 
         service.update_stock(
             nutrient_id="n3", name="CalMag", current_ml=250.0, initial_ml=500.0
@@ -74,15 +74,16 @@ def test_deduct_usage_success(mock_inventory) -> None:
     service = NutrientInventoryService(mock_inventory)
 
     with patch(
-        "custom_components.growspace_manager.services.nutrient_inventory.datetime"
+        "custom_components.growspace_manager.services.nutrient_inventory.dt_util"
     ) as mock_dt:
-        mock_dt.now.return_value = datetime(2024, 2, 1, 12, 0, 0)
+        mock_dt.utcnow.return_value = datetime(2024, 2, 1, 12, 0, 0)
 
         # Deduct 50ml from Grow A (starts at 500)
         service.deduct_usage("Grow A", 50.0)
 
         assert mock_inventory.stocks["n1"].current_ml == 450.0
         assert mock_inventory.stocks["n1"].last_updated == "2024-02-01T12:00:00"
+
 
 
 def test_deduct_usage_case_insensitive(mock_inventory) -> None:

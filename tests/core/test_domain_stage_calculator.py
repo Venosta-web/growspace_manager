@@ -2,6 +2,7 @@
 
 from unittest.mock import MagicMock, patch
 
+from freezegun import freeze_time
 import pytest
 from syrupy.assertion import SnapshotAssertion
 
@@ -37,9 +38,12 @@ def test_calculate_days_in_stage_ongoing(snapshot: SnapshotAssertion) -> None:
     plant.veg_start = "2024-01-01T12:00:00"
     plant.flower_start = None
 
-    with patch(
-        "custom_components.growspace_manager.domain.stage_calculator.calculate_days_since"
-    ) as mock_calc:
+    with (
+        patch(
+            "custom_components.growspace_manager.domain.stage_calculator.calculate_days_since"
+        ) as mock_calc,
+        freeze_time("2024-01-11T12:00:00"),
+    ):
         mock_calc.return_value = 10
         result = calculate_days_in_stage(plant, PlantStage.VEG)
         assert result == 10
@@ -54,9 +58,12 @@ def test_calculate_days_in_stage_completed() -> None:
     plant.veg_start = "2024-01-01T12:00:00"
     plant.flower_start = "2024-01-20T12:00:00"
 
-    with patch(
-        "custom_components.growspace_manager.domain.stage_calculator.calculate_days_since"
-    ) as mock_calc:
+    with (
+        patch(
+            "custom_components.growspace_manager.domain.stage_calculator.calculate_days_since"
+        ) as mock_calc,
+        freeze_time("2024-01-20 12:00:00", tz_offset=0),
+    ):
         mock_calc.return_value = 19
         assert calculate_days_in_stage(plant, PlantStage.VEG) == 19
         mock_calc.assert_called_with("2024-01-01T12:00:00", "2024-01-20T12:00:00")
@@ -78,9 +85,12 @@ def test_calculate_days_in_stage_transitions(stage, start_attr, end_attr) -> Non
     setattr(plant, start_attr, "2024-01-01")
     setattr(plant, end_attr, "2024-01-05")
 
-    with patch(
-        "custom_components.growspace_manager.domain.stage_calculator.calculate_days_since"
-    ) as mock_calc:
+    with (
+        patch(
+            "custom_components.growspace_manager.domain.stage_calculator.calculate_days_since"
+        ) as mock_calc,
+        freeze_time("2024-01-05 12:00:00", tz_offset=0),
+    ):
         mock_calc.return_value = 4
         assert calculate_days_in_stage(plant, stage) == 4
         mock_calc.assert_called_with("2024-01-01", "2024-01-05")
@@ -91,9 +101,12 @@ def test_calculate_days_in_stage_cure_no_end() -> None:
     plant = MagicMock(spec=Plant)
     plant.cure_start = "2024-01-01"
 
-    with patch(
-        "custom_components.growspace_manager.domain.stage_calculator.calculate_days_since"
-    ) as mock_calc:
+    with (
+        patch(
+            "custom_components.growspace_manager.domain.stage_calculator.calculate_days_since"
+        ) as mock_calc,
+        freeze_time("2024-01-05 12:00:00", tz_offset=0),
+    ):
         mock_calc.return_value = 5
         # stages not in the set/mapping in stage_calculator.py default to end_date=None
         assert calculate_days_in_stage(plant, PlantStage.CURE) == 5

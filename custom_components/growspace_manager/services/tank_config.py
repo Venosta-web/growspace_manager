@@ -5,17 +5,21 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING
 
-from custom_components.growspace_manager.const import (
-    ATTR_GROWSPACE_ID,
-    ATTR_TANK_ENTITY,
-    ATTR_VOLUME_LITERS,
-)
-from custom_components.growspace_manager.services.utils import handle_service_errors
 from homeassistant.core import HomeAssistant, ServiceCall
 from homeassistant.exceptions import ServiceValidationError
 
+from ..const import (
+    ATTR_GROWSPACE_ID,
+    ATTR_TANK_ENTITY,
+    ATTR_VOLUME_LITERS,
+    GrowspaceService,
+)
+from ..schemas import CONFIGURE_TANK_SCHEMA
+from ._definition import ServiceDefinition
+from .utils import handle_service_errors
+
 if TYPE_CHECKING:
-    from custom_components.growspace_manager.coordinator import GrowspaceCoordinator
+    from ..coordinator import GrowspaceCoordinator
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -37,7 +41,7 @@ async def handle_configure_tank(
     tank_entity: str = call.data[ATTR_TANK_ENTITY]
     volume_liters: float | None = call.data.get(ATTR_VOLUME_LITERS)
 
-    growspace = coordinator.get_growspace(growspace_id)
+    growspace = coordinator.data_repository.get_growspace(growspace_id)
     tanks = (
         growspace.environment_config.irrigation_tanks
         if growspace and growspace.environment_config
@@ -49,10 +53,19 @@ async def handle_configure_tank(
             f"Tank entity '{tank_entity}' not found in growspace '{growspace_id}'"
         )
 
-    await coordinator.async_configure_tank(
+    await coordinator.growspace_manager.async_configure_tank(
         growspace_id,
         tank_entity,
         volume_liters=volume_liters,
     )
 
     _LOGGER.info("Updated tank config for %s in %s", tank_entity, growspace_id)
+
+
+SERVICES = [
+    ServiceDefinition(
+        GrowspaceService.CONFIGURE_TANK,
+        handle_configure_tank,
+        CONFIGURE_TANK_SCHEMA,
+    ),
+]

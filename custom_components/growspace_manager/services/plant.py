@@ -2,15 +2,21 @@
 
 from __future__ import annotations
 
-from datetime import datetime
 import logging
-from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from custom_components.growspace_manager.const import (
+from homeassistant.components.persistent_notification import (
+    async_create as create_notification,
+)
+from homeassistant.core import HomeAssistant, ServiceCall
+from homeassistant.exceptions import ServiceValidationError
+from homeassistant.helpers import entity_registry as er
+from homeassistant.util import dt as dt_util
+
+from ..const import (
     ATTR_AMOUNT,
     ATTR_AMOUNT_ML,
-    ATTR_AROMA,
+    ATTR_MOLD_RESISTANCE,
     ATTR_CBD_PERCENTAGE,
     ATTR_COL,
     ATTR_DRY_WEIGHT,
@@ -24,7 +30,7 @@ from custom_components.growspace_manager.const import (
     ATTR_NEW_STAGE,
     ATTR_NOTES,
     ATTR_NUM_CLONES,
-    ATTR_PEST_RESISTANCE,
+    ATTR_TERPENE_INTENSITY,
     ATTR_PH,
     ATTR_PHENOTYPE,
     ATTR_PLANT1_ID,
@@ -32,9 +38,10 @@ from custom_components.growspace_manager.const import (
     ATTR_PLANT_ID,
     ATTR_RESIN,
     ATTR_ROW,
+    ATTR_SEED_BATCH_ID,
     ATTR_START_NUMBER,
     ATTR_STRAIN,
-    ATTR_STRUCTURE,
+    ATTR_INTERNODAL_SPACING,
     ATTR_TAGS,
     ATTR_TARGET_GROWSPACE_ID,
     ATTR_TERPENE_PROFILE,
@@ -44,23 +51,32 @@ from custom_components.growspace_manager.const import (
     ATTR_VIGOR,
     ATTR_WET_WEIGHT,
     CANONICAL_ID_MOTHER,
-    CATEGORY_NOTE,
     DATE_FIELDS,
-    EVENT_GROWSPACE_LOG_ENTRY,
+    GrowspaceService,
 )
-from custom_components.growspace_manager.exceptions import GrowspaceError
-from custom_components.growspace_manager.growspace_validator import GrowspaceValidator
-from custom_components.growspace_manager.strain_library import StrainLibrary
-from custom_components.growspace_manager.utils import parse_date_field
-from homeassistant.components.persistent_notification import (
-    async_create as create_notification,
-)
-from homeassistant.core import HomeAssistant, ServiceCall
-from homeassistant.exceptions import ServiceValidationError
-from homeassistant.helpers import entity_registry as er
+from ..exceptions import GrowspaceError
+from ..strain_library import StrainLibrary
+from ..utils import parse_date_field
 
 if TYPE_CHECKING:
-    from custom_components.growspace_manager.coordinator import GrowspaceCoordinator
+    from ..coordinator import GrowspaceCoordinator
+
+from ..schemas import (
+    ADD_PLANT_SCHEMA,
+    ADD_PLANTS_SCHEMA,
+    ADD_TIMELINE_NOTE_SCHEMA,
+    HARVEST_PLANT_SCHEMA,
+    MOVE_CLONE_SCHEMA,
+    MOVE_PLANT_SCHEMA,
+    REMOVE_PLANT_SCHEMA,
+    SCORE_PLANT_SCHEMA,
+    SWITCH_PLANT_SCHEMA,
+    TAKE_CLONE_SCHEMA,
+    TRANSITION_PLANT_SCHEMA,
+    UPDATE_HARVEST_METRICS_SCHEMA,
+    UPDATE_PLANT_SCHEMA,
+)
+from ._definition import ServiceDefinition
 
 # from ..models import Plant # Potentially needed for type hinting if desired
 
@@ -78,7 +94,7 @@ def _resolve_position_conflict(
         return
 
     new_row, new_col = service_data[ATTR_ROW], service_data[ATTR_COL]
-    existing_plants = coordinator.get_growspace_plants(growspace_id)
+    existing_plants = coordinator.services.get_growspace_plants(growspace_id)
     is_occupied = any(
         p.plant_id != plant_id and p.row == new_row and p.col == new_col
         for p in existing_plants
@@ -156,7 +172,13 @@ def _resolve_plant_id(hass: HomeAssistant, plant_id: str) -> str:
             )
         else:
             _LOGGER.warning("Entity Registry not available, cannot resolve entity ID")
-    except Exception as e:  # noqa: BLE001
+    except (
+        AttributeError,
+        KeyError,
+        ValueError,
+        ServiceValidationError,
+        GrowspaceError,
+    ) as e:
         _LOGGER.warning("Error resolving entity ID '%s': %s", plant_id, e)
 
     return plant_id
@@ -175,7 +197,13 @@ async def _ensure_plant_loaded(
     )
     try:
         await coordinator.async_load()
-    except Exception as load_err:  # noqa: BLE001
+    except (
+        AttributeError,
+        KeyError,
+        ValueError,
+        ServiceValidationError,
+        GrowspaceError,
+    ) as load_err:
         _LOGGER.error("Error reloading coordinator data: %s", load_err)
 
     if plant_id not in coordinator.plants:
@@ -212,22 +240,32 @@ async def handle_add_plant(
 
         # Auto-set mother_start if stage is mother and not provided.
         if growspace_id == CANONICAL_ID_MOTHER and not parsed_dates.get("mother_start"):
-            parsed_dates["mother_start"] = datetime.now()
+            parsed_dates["mother_start"] = dt_util.utcnow()
             _LOGGER.debug(
                 "Auto-setting mother_start to now for '%s' growspace",
                 CANONICAL_ID_MOTHER,
             )
 
-        # Call coordinator directly, catching validation errors
+        seed_batch_id = call.data.get(ATTR_SEED_BATCH_ID)
+        batch = (
+            coordinator.genetics_manager.seed_batches.get(seed_batch_id)
+            if seed_batch_id
+            else None
+        )
+
+        # Call through facade
         try:
-            plant_id = await coordinator.plant_manager.add_plant(
+            plant = await coordinator.services.add_plant(
                 growspace_id=growspace_id,
                 strain=call.data[ATTR_STRAIN],
                 row=row,
                 col=col,
                 phenotype=call.data.get(ATTR_PHENOTYPE, ""),
+                seed_batch_id=seed_batch_id,
+                generation=batch.generation if batch else "",
                 **parsed_dates,  # type: ignore[arg-type]
             )
+            plant_id = plant.plant_id
         except GrowspaceError as err:
             raise ServiceValidationError(str(err)) from err
 
@@ -239,9 +277,14 @@ async def handle_add_plant(
             col,
         )
 
-    except ServiceValidationError:
-        raise
-    except Exception as err:
+    except (
+        AttributeError,
+        KeyError,
+        ValueError,
+        ServiceValidationError,
+        GrowspaceError,
+        Exception,
+    ) as err:
         _LOGGER.exception("Failed to add plant")
         raise ServiceValidationError(f"Failed to add plant: {err}") from err
 
@@ -277,6 +320,13 @@ async def handle_add_plants(
         growspace_id, strain, amount, _ = validate_batch_add()
         start_number = call.data.get(ATTR_START_NUMBER, 1)
         base_phenotype = call.data.get(ATTR_PHENOTYPE)
+        seed_batch_id = call.data.get(ATTR_SEED_BATCH_ID)
+        batch = (
+            coordinator.genetics_manager.seed_batches.get(seed_batch_id)
+            if seed_batch_id
+            else None
+        )
+        batch_generation = batch.generation if batch else ""
 
         # Parse and handle optional dates
         add_date_fields = [f for f in DATE_FIELDS if f != "transition_date"]
@@ -284,7 +334,7 @@ async def handle_add_plants(
 
         # Auto-set mother_start if stage is mother and not provided.
         if growspace_id == CANONICAL_ID_MOTHER and not parsed_dates.get("mother_start"):
-            parsed_dates["mother_start"] = datetime.now()
+            parsed_dates["mother_start"] = dt_util.utcnow()
             _LOGGER.debug(
                 "Auto-setting mother_start to now for '%s' growspace (batch)",
                 CANONICAL_ID_MOTHER,
@@ -313,14 +363,16 @@ async def handle_add_plants(
                 # Partial success - just stop adding
                 break
 
-            # Add the plant
+            # Add the plant through facade
             try:
-                await coordinator.plant_manager.add_plant(
+                await coordinator.services.add_plant(
                     growspace_id=growspace_id,
                     strain=strain,
                     row=free_row,
                     col=free_col,
                     phenotype=phenotype,
+                    seed_batch_id=seed_batch_id,
+                    generation=batch_generation,
                     **parsed_dates,  # type: ignore[arg-type]
                 )
                 plants_added_count += 1
@@ -335,7 +387,14 @@ async def handle_add_plants(
             growspace_id,
         )
 
-    except Exception as err:
+    except (
+        AttributeError,
+        KeyError,
+        ValueError,
+        ServiceValidationError,
+        GrowspaceError,
+        Exception,
+    ) as err:
         _LOGGER.exception("Unexpected error during batch add plants")
         raise ServiceValidationError(f"Failed to batch add plants: {err}") from err
 
@@ -349,7 +408,7 @@ async def handle_take_clone(
     """Handle taking clones from a plant."""
     mother_plant_id = call.data[ATTR_MOTHER_PLANT_ID]
     transition_date_raw = call.data.get(ATTR_TRANSITION_DATE)
-    transition_datetime = parse_date_field(transition_date_raw) or datetime.now()
+    transition_datetime = parse_date_field(transition_date_raw) or dt_util.utcnow()
     transition_date = transition_datetime.date()
 
     # Extract target growspace ID (optional)
@@ -359,11 +418,12 @@ async def handle_take_clone(
     num_clones = call.data.get(ATTR_NUM_CLONES, 1)
     try:
         num_clones = int(num_clones)
-        if num_clones <= 0:
-            num_clones = 1
     except (TypeError, ValueError):
-        num_clones = 1
-        _LOGGER.warning("Invalid num_clones provided, defaulting to 1")
+        raise ServiceValidationError(
+            f"num_clones must be an integer, got: {num_clones!r}"
+        )
+    if num_clones <= 0:
+        raise ServiceValidationError(f"num_clones must be positive, got: {num_clones}")
 
     _LOGGER.debug(
         "Handling take_clone for %s, requesting %d clones to growspace %s",
@@ -376,16 +436,16 @@ async def handle_take_clone(
         _LOGGER.error("Mother plant %s does not exist for take_clone", mother_plant_id)
         raise ServiceValidationError(f"Mother plant {mother_plant_id} not found.")
 
-    # Delegate to coordinator
+    # Delegate to facade
     try:
-        clones = await coordinator.async_take_clones(
+        clones = await coordinator.services.take_clones(
             mother_plant_id=mother_plant_id,
             num_clones=num_clones,
             target_growspace_id=target_growspace_id,
             transition_date=transition_date,
         )
         clones_added_count = len(clones)
-    except GrowspaceError as err:
+    except (GrowspaceError, ValueError) as err:
         _LOGGER.error("Failed to take clones from %s: %s", mother_plant_id, err)
         raise ServiceValidationError(str(err)) from err
 
@@ -409,7 +469,7 @@ async def handle_move_clone(
     target_growspace_id = call.data.get(ATTR_TARGET_GROWSPACE_ID)
 
     transition_date_str = call.data.get(ATTR_TRANSITION_DATE)
-    transition_datetime = parse_date_field(transition_date_str) or datetime.now()
+    transition_datetime = parse_date_field(transition_date_str) or dt_util.utcnow()
     transition_date = transition_datetime.date()
 
     if not plant_id or not target_growspace_id:
@@ -421,7 +481,7 @@ async def handle_move_clone(
         )
 
     try:
-        await coordinator.async_promote_clone(
+        await coordinator.services.promote_clone(
             clone_id=plant_id,
             target_growspace_id=target_growspace_id,
             transition_date=transition_date,
@@ -432,7 +492,13 @@ async def handle_move_clone(
             plant_id,
             target_growspace_id,
         )
-    except Exception as e:
+    except (
+        AttributeError,
+        KeyError,
+        ValueError,
+        ServiceValidationError,
+        GrowspaceError,
+    ) as e:
         _LOGGER.exception("Failed to promote clone %s", plant_id)
         create_notification(
             hass,
@@ -449,11 +515,9 @@ async def handle_update_plant(
     call: ServiceCall,
 ) -> None:
     """Handle update plant service call."""
-    validator = GrowspaceValidator(coordinator)
-
     try:
         plant_id = call.data[ATTR_PLANT_ID]
-        validator.validate_plant_exists(plant_id)
+        coordinator.validator.validate_plant_exists(plant_id)
 
         _LOGGER.debug("UPDATE_PLANT: Incoming call.data: %s", call.data)
 
@@ -497,15 +561,20 @@ async def handle_update_plant(
             # Let's assume we need to ensure it exists.
             await strain_library.add_strain(strain=strain_key, phenotype=pheno_key)
 
-        await coordinator.plant_manager.update_plant(plant_id, **update_data)
+        await coordinator.services.update_plant(plant_id, **update_data)
         _LOGGER.info("Updated plant %s with data: %s", plant_id, update_data)
 
-    except GrowspaceError as err:
-        raise ServiceValidationError(str(err)) from err
-
-    except Exception:
+    except (
+        AttributeError,
+        KeyError,
+        ValueError,
+        ServiceValidationError,
+        GrowspaceError,
+    ) as err:
         _LOGGER.exception("Failed to update plant")
-        raise
+        if isinstance(err, ServiceValidationError):
+            raise
+        raise ServiceValidationError(f"Failed to update plant: {err}") from err
 
 
 async def handle_remove_plant(
@@ -523,19 +592,26 @@ async def handle_remove_plant(
 
     try:
         plant_info = coordinator.plants[plant_id]  # Get info before removal
-        await coordinator.async_remove_plant(plant_id)
+        await coordinator.services.remove_plant(plant_id)
         _LOGGER.info(
             "Plant %s removed successfully from growspace %s",
             plant_id,
             plant_info.growspace_id,
         )
 
-    except GrowspaceError as err:
-        raise ServiceValidationError(str(err)) from err
-
-    except Exception:
+    except (
+        AttributeError,
+        KeyError,
+        ValueError,
+        ServiceValidationError,
+        GrowspaceError,
+    ) as err:
         _LOGGER.exception("Failed to remove plant %s", plant_id)
-        raise
+        if isinstance(err, ServiceValidationError):
+            raise
+        raise ServiceValidationError(
+            f"Failed to remove plant {plant_id}: {err}"
+        ) from err
 
 
 async def handle_switch_plants(
@@ -557,15 +633,22 @@ async def handle_switch_plants(
         raise ServiceValidationError(f"Plant {plant_id_2} does not exist.")
 
     try:
-        await coordinator.plant_manager.switch_plants(plant_id_1, plant_id_2)
+        await coordinator.services.switch_plants(plant_id_1, plant_id_2)
         _LOGGER.info("Plants %s and %s switched successfully", plant_id_1, plant_id_2)
 
-    except GrowspaceError as err:
-        raise ServiceValidationError(str(err)) from err
-
-    except Exception:
+    except (
+        AttributeError,
+        KeyError,
+        ValueError,
+        ServiceValidationError,
+        GrowspaceError,
+    ) as err:
         _LOGGER.exception("Failed to switch plants %s and %s", plant_id_1, plant_id_2)
-        raise
+        if isinstance(err, ServiceValidationError):
+            raise
+        raise ServiceValidationError(
+            f"Failed to switch plants {plant_id_1} and {plant_id_2}: {err}"
+        ) from err
 
 
 async def handle_move_plant(
@@ -599,7 +682,7 @@ async def handle_move_plant(
         old_row, old_col = plant.row, plant.col
 
         # Check if new position is occupied by another plant
-        existing_plants = coordinator.get_growspace_plants(plant.growspace_id)
+        existing_plants = coordinator.services.get_growspace_plants(plant.growspace_id)
         occupying_plant = None
         for other_plant in existing_plants:
             if (
@@ -611,7 +694,7 @@ async def handle_move_plant(
                 break
 
         if occupying_plant:
-            # Switch positions: move the occupying plant to the original position
+            # Switch positions through facade
             occupying_plant_id = occupying_plant.plant_id
 
             _LOGGER.info(
@@ -625,8 +708,8 @@ async def handle_move_plant(
                 plant.growspace_id,
             )
 
-            # Use the dedicated switch method
-            await coordinator.plant_manager.switch_plants(plant_id, occupying_plant_id)
+            # Use the facade
+            await coordinator.services.switch_plants(plant_id, occupying_plant_id)
 
             _LOGGER.info(
                 "Successfully switched positions for %s and %s",
@@ -634,8 +717,8 @@ async def handle_move_plant(
                 occupying_plant_id,
             )
         else:
-            # Position is empty, just move normally
-            await coordinator.plant_manager.move_plant(plant_id, new_row, new_col)
+            # Position is empty, move through facade
+            await coordinator.services.move_plant(plant_id, new_row, new_col)
             _LOGGER.info(
                 "Plant %s moved to (%d,%d) in growspace %s",
                 plant.strain,
@@ -644,13 +727,17 @@ async def handle_move_plant(
                 plant.growspace_id,
             )
 
-    except GrowspaceError as err:
-        _LOGGER.warning("Validation error moving plant %s: %s", plant_id, err)
-        raise ServiceValidationError(str(err)) from err
-
-    except Exception:
+    except (
+        AttributeError,
+        KeyError,
+        ValueError,
+        ServiceValidationError,
+        GrowspaceError,
+    ) as err:
         _LOGGER.exception("Failed to move plant %s", plant_id)
-        raise
+        if isinstance(err, ServiceValidationError):
+            raise
+        raise ServiceValidationError(f"Failed to move plant {plant_id}: {err}") from err
 
 
 async def handle_transition_plant_stage(
@@ -679,19 +766,26 @@ async def handle_transition_plant_stage(
             )
 
     try:
-        await coordinator.plant_manager.transition_plant_stage(
+        await coordinator.services.transition_plant_stage(
             plant_id=plant_id,
             new_stage=new_stage,
             transition_date=transition_date or None,
         )
         _LOGGER.info("Plant %s transitioned to %s stage", plant_id, new_stage)
 
-    except GrowspaceError as err:
-        raise ServiceValidationError(str(err)) from err
-
-    except Exception:
+    except (
+        AttributeError,
+        KeyError,
+        ValueError,
+        ServiceValidationError,
+        GrowspaceError,
+    ) as err:
         _LOGGER.exception("Failed to transition plant stage for %s", plant_id)
-        raise
+        if isinstance(err, ServiceValidationError):
+            raise
+        raise ServiceValidationError(
+            f"Failed to transition plant stage for {plant_id}: {err}"
+        ) from err
 
 
 async def handle_harvest_plant(
@@ -701,33 +795,19 @@ async def handle_harvest_plant(
     call: ServiceCall,
 ) -> dict[str, Any] | None:
     """Handle harvest plant service call."""
-    plant_id = call.data.get(ATTR_PLANT_ID)
-    if not plant_id:
-        _LOGGER.error("Missing plant_id in harvest_plant service call")
-        raise ServiceValidationError("Missing plant_id for harvest_plant.")
-
-    plant_id = _resolve_plant_id(hass, plant_id)
-
-    if not await _ensure_plant_loaded(hass, coordinator, plant_id):
-        return None
+    plant_id_input = call.data.get(ATTR_PLANT_ID)
+    if not plant_id_input:
+        raise ServiceValidationError("Missing plant_id")
+    plant_id = _resolve_plant_id(hass, plant_id_input)
+    await _ensure_plant_loaded(hass, coordinator, plant_id)
 
     target_growspace_id = call.data.get(ATTR_TARGET_GROWSPACE_ID)
     transition_date_str = call.data.get(ATTR_TRANSITION_DATE)
     transition_date = None
 
-    # Yield & lab fields (all optional)
-    wet_weight: float | None = call.data.get(ATTR_WET_WEIGHT)
-    dry_weight: float | None = call.data.get(ATTR_DRY_WEIGHT)
-    trim_weight: float | None = call.data.get(ATTR_TRIM_WEIGHT)
-    thc_percentage: float | None = call.data.get(ATTR_THC_PERCENTAGE)
-    cbd_percentage: float | None = call.data.get(ATTR_CBD_PERCENTAGE)
-    terpene_profile: str | None = call.data.get(ATTR_TERPENE_PROFILE)
-
     if transition_date_str:
-        transition_date_dt = parse_date_field(transition_date_str)
-        if transition_date_dt:
-            transition_date = transition_date_dt.date()
-        else:
+        transition_date = parse_date_field(transition_date_str)
+        if not transition_date:
             _LOGGER.warning(
                 "Could not parse transition_date string: %s", transition_date_str
             )
@@ -736,134 +816,42 @@ async def handle_harvest_plant(
             )
 
     try:
-        await coordinator.async_harvest_plant(
+        await coordinator.services.harvest_plant(
             plant_id=plant_id,
             target_growspace_id=target_growspace_id,
             target_growspace_name=None,
-            transition_date=transition_date.isoformat() if transition_date else None,
-            wet_weight=wet_weight,
-            dry_weight=dry_weight,
-            trim_weight=trim_weight,
-            thc_percentage=thc_percentage,
-            cbd_percentage=cbd_percentage,
-            terpene_profile=terpene_profile,
+            transition_date=transition_date.date().isoformat()
+            if transition_date
+            else None,
+            wet_weight=call.data.get(ATTR_WET_WEIGHT),
+            dry_weight=call.data.get(ATTR_DRY_WEIGHT),
+            trim_weight=call.data.get(ATTR_TRIM_WEIGHT),
+            thc_percentage=call.data.get(ATTR_THC_PERCENTAGE),
+            cbd_percentage=call.data.get(ATTR_CBD_PERCENTAGE),
+            terpene_profile=call.data.get(ATTR_TERPENE_PROFILE),
         )
-        _LOGGER.info("Plant %s harvested successfully", plant_id)
 
         return {
             ATTR_PLANT_ID: plant_id,
             ATTR_TARGET_GROWSPACE_ID: target_growspace_id,
-            "harvest_date": transition_date.isoformat() if transition_date else None,
+            "harvest_date": transition_date.date().isoformat()
+            if transition_date
+            else None,
         }
 
-    except GrowspaceError as err:
-        raise ServiceValidationError(str(err)) from err
-
-    except Exception as err:
+    except (
+        AttributeError,
+        KeyError,
+        ValueError,
+        ServiceValidationError,
+        GrowspaceError,
+    ) as err:
         _LOGGER.exception("Failed to harvest plant %s", plant_id)
-        create_notification(
-            hass,
-            f"Failed to harvest plant {plant_id}: {err!s}",
-            title="Growspace Manager Error",
-        )
-        raise
-
-
-async def async_add_timeline_note(
-    hass: HomeAssistant,
-    coordinator: GrowspaceCoordinator,
-    strain_library: StrainLibrary,
-    plant_id: str,
-    notes: str,
-    transition_date_raw: str | None = None,
-    images_base64: list[str] | None = None,
-    tags: list[str] | None = None,
-    ph: float | None = None,
-    ec: float | None = None,
-    amount_ml: float | None = None,
-    external_metadata: dict[str, Any] | None = None,
-) -> None:
-    """Add a timeline note to a plant (logic only)."""
-    if images_base64 is None:
-        images_base64 = []
-    if tags is None:
-        tags = []
-    if external_metadata is None:
-        external_metadata = {}
-
-    plant_id = _resolve_plant_id(hass, plant_id)
-    await _ensure_plant_loaded(hass, coordinator, plant_id)
-
-    plant = coordinator.plants[plant_id]
-    growspace_id = plant.growspace_id
-
-    # 1. Fetch current sensor snapshot
-    metadata = {}
-    if growspace := coordinator.growspaces.get(growspace_id):
-        env_config = growspace.environment_config
-
-        def _get_state(entity_id: str | None) -> float | None:
-            if not entity_id:
-                return None
-            state = hass.states.get(entity_id)
-            try:
-                if state and state.state not in ("unknown", "unavailable"):
-                    return float(state.state)
-            except (ValueError, TypeError):
-                pass
-            return None
-
-        metadata.update(
-            {
-                "temperature": _get_state(env_config.temperature_sensor),
-                "humidity": _get_state(env_config.humidity_sensor),
-                "vpd": _get_state(env_config.vpd_sensor),
-                "soil_moisture": _get_state(env_config.soil_moisture_sensor),
-                "light_intensity": _get_state(env_config.light_sensor),
-            }
-        )
-
-    # Add optional action data to metadata
-    if ph is not None:
-        metadata["ph"] = ph
-    if ec is not None:
-        metadata["ec"] = ec
-    if amount_ml is not None:
-        metadata["amount_ml"] = amount_ml
-
-    # Merge with external metadata (if any)
-    metadata.update(external_metadata)
-
-    # 2. Process images
-    image_paths = []
-    if images_base64 and strain_library.image_manager:
-        for img_b64 in images_base64:
-            try:
-                # save_timeline_image returns the absolute path, we want relative for frontend
-                abs_path = await strain_library.image_manager.save_timeline_image(
-                    plant_id=plant_id,
-                    image_base64=img_b64,
-                    timestamp=transition_date_raw,
-                )
-                # Convert to relative path: timeline/filename.webp
-                image_paths.append(f"timeline/{Path(abs_path).name}")
-            except Exception as e:  # noqa: BLE001
-                _LOGGER.error("Failed to save timeline image: %s", e)
-
-    # 3. Fire event for persistence
-    event_data = {
-        ATTR_PLANT_ID: plant_id,
-        "growspace_id": growspace_id,
-        ATTR_NOTES: notes,
-        ATTR_TAGS: tags,
-        ATTR_METADATA: metadata,
-        ATTR_IMAGES: image_paths,
-        "category": CATEGORY_NOTE,
-        "timestamp": transition_date_raw or datetime.now().isoformat(),
-    }
-
-    hass.bus.async_fire(EVENT_GROWSPACE_LOG_ENTRY, event_data)
-    _LOGGER.info("Added timeline note for plant %s", plant_id)
+        if isinstance(err, ServiceValidationError):
+            raise
+        raise ServiceValidationError(
+            f"Failed to harvest plant {plant_id}: {err}"
+        ) from err
 
 
 async def handle_add_timeline_note(
@@ -873,13 +861,13 @@ async def handle_add_timeline_note(
     call: ServiceCall,
 ) -> None:
     """Handle adding a timeline note to a plant."""
-    await async_add_timeline_note(
-        hass,
-        coordinator,
-        strain_library,
-        plant_id=call.data[ATTR_PLANT_ID],
+    plant_id = _resolve_plant_id(hass, call.data[ATTR_PLANT_ID])
+    await _ensure_plant_loaded(hass, coordinator, plant_id)
+
+    await coordinator.services.add_timeline_note(
+        plant_id=plant_id,
         notes=call.data[ATTR_NOTES],
-        transition_date_raw=call.data.get(ATTR_TRANSITION_DATE),
+        timestamp=call.data.get(ATTR_TRANSITION_DATE),
         images_base64=call.data.get(ATTR_IMAGES, []),
         tags=call.data.get(ATTR_TAGS, []),
         ph=call.data.get(ATTR_PH),
@@ -896,36 +884,16 @@ async def handle_score_plant(
     call: ServiceCall,
 ) -> None:
     """Handle the score_plant service call."""
-    plant_id = call.data[ATTR_PLANT_ID]
+    plant_id = _resolve_plant_id(hass, call.data[ATTR_PLANT_ID])
     await _ensure_plant_loaded(hass, coordinator, plant_id)
 
-    plant = coordinator.plants.get(plant_id)
-    if plant is None:
-        raise ServiceValidationError(f"Plant {plant_id} not found")
-
-    # Map legacy attr names → new PhenotypeScore fields (partial update)
-    ps = plant.phenotype_score
-    if ATTR_VIGOR in call.data:
-        ps.vigor = call.data[ATTR_VIGOR]
-    if ATTR_STRUCTURE in call.data:
-        ps.internodal_spacing = call.data[ATTR_STRUCTURE]
-    if ATTR_AROMA in call.data:
-        ps.terpene_intensity = call.data[ATTR_AROMA]
-    if ATTR_RESIN in call.data:
-        ps.resin = call.data[ATTR_RESIN]
-    if ATTR_PEST_RESISTANCE in call.data:
-        ps.mold_resistance = call.data[ATTR_PEST_RESISTANCE]
-
-    await coordinator.plant_manager.update_plant(plant_id, phenotype_score=ps)
-
-    _LOGGER.info(
-        "Plant %s phenotype scored: vigor=%s internodal=%s terpenes=%s resin=%s mold_res=%s",
-        plant_id,
-        ps.vigor,
-        ps.internodal_spacing,
-        ps.terpene_intensity,
-        ps.resin,
-        ps.mold_resistance,
+    await coordinator.services.score_plant(
+        plant_id=plant_id,
+        vigor=call.data.get(ATTR_VIGOR),
+        internodal_spacing=call.data.get(ATTR_INTERNODAL_SPACING),
+        terpene_intensity=call.data.get(ATTR_TERPENE_INTENSITY),
+        resin=call.data.get(ATTR_RESIN),
+        mold_resistance=call.data.get(ATTR_MOLD_RESISTANCE),
     )
 
 
@@ -936,37 +904,97 @@ async def handle_update_harvest_metrics(
     call: ServiceCall,
 ) -> None:
     """Handle the update_harvest_metrics service call."""
-    plant_id = call.data[ATTR_PLANT_ID]
+    plant_id = _resolve_plant_id(hass, call.data[ATTR_PLANT_ID])
     await _ensure_plant_loaded(hass, coordinator, plant_id)
 
-    plant = coordinator.plants.get(plant_id)
-    if plant is None:
-        raise ServiceValidationError(f"Plant {plant_id} not found")
+    await coordinator.services.update_harvest_metrics(
+        plant_id=plant_id,
+        wet_weight=call.data.get(ATTR_WET_WEIGHT),
+        dry_weight=call.data.get(ATTR_DRY_WEIGHT),
+        trim_weight=call.data.get(ATTR_TRIM_WEIGHT),
+        thc_percentage=call.data.get(ATTR_THC_PERCENTAGE),
+        cbd_percentage=call.data.get(ATTR_CBD_PERCENTAGE),
+        terpene_profile=call.data.get(ATTR_TERPENE_PROFILE),
+    )
 
-    metrics = plant.harvest_metrics
-    updated = False
 
-    for attr in (
-        ATTR_WET_WEIGHT,
-        ATTR_DRY_WEIGHT,
-        ATTR_TRIM_WEIGHT,
-        ATTR_THC_PERCENTAGE,
-        ATTR_CBD_PERCENTAGE,
-        ATTR_TERPENE_PROFILE,
-    ):
-        if attr in call.data:
-            setattr(metrics, attr, call.data[attr])
-            updated = True
-
-    if updated:
-        await coordinator.plant_manager.update_plant(plant_id, harvest_metrics=metrics)
-        _LOGGER.info(
-            "Plant %s harvest metrics updated: wet=%s dry=%s trim=%s thc=%s cbd=%s terpene=%s",
-            plant_id,
-            metrics.wet_weight,
-            metrics.dry_weight,
-            metrics.trim_weight,
-            metrics.thc_percentage,
-            metrics.cbd_percentage,
-            metrics.terpene_profile,
-        )
+SERVICES: list[ServiceDefinition] = [
+    ServiceDefinition(
+        GrowspaceService.ADD_PLANT,
+        handle_add_plant,
+        ADD_PLANT_SCHEMA,
+        needs_strain_lib=True,
+    ),
+    ServiceDefinition(
+        GrowspaceService.ADD_PLANTS,
+        handle_add_plants,
+        ADD_PLANTS_SCHEMA,
+        needs_strain_lib=True,
+    ),
+    ServiceDefinition(
+        GrowspaceService.REMOVE_PLANT,
+        handle_remove_plant,
+        REMOVE_PLANT_SCHEMA,
+        needs_strain_lib=True,
+    ),
+    ServiceDefinition(
+        GrowspaceService.UPDATE_PLANT,
+        handle_update_plant,
+        UPDATE_PLANT_SCHEMA,
+        needs_strain_lib=True,
+    ),
+    ServiceDefinition(
+        GrowspaceService.MOVE_PLANT,
+        handle_move_plant,
+        MOVE_PLANT_SCHEMA,
+        needs_strain_lib=True,
+    ),
+    ServiceDefinition(
+        GrowspaceService.SWITCH_PLANTS,
+        handle_switch_plants,
+        SWITCH_PLANT_SCHEMA,
+        needs_strain_lib=True,
+    ),
+    ServiceDefinition(
+        GrowspaceService.TRANSITION_PLANT_STAGE,
+        handle_transition_plant_stage,
+        TRANSITION_PLANT_SCHEMA,
+        needs_strain_lib=True,
+    ),
+    ServiceDefinition(
+        GrowspaceService.TAKE_CLONE,
+        handle_take_clone,
+        TAKE_CLONE_SCHEMA,
+        needs_strain_lib=True,
+    ),
+    ServiceDefinition(
+        GrowspaceService.MOVE_CLONE,
+        handle_move_clone,
+        MOVE_CLONE_SCHEMA,
+        needs_strain_lib=True,
+    ),
+    ServiceDefinition(
+        GrowspaceService.HARVEST_PLANT,
+        handle_harvest_plant,
+        HARVEST_PLANT_SCHEMA,
+        needs_strain_lib=True,
+    ),
+    ServiceDefinition(
+        GrowspaceService.UPDATE_HARVEST_METRICS,
+        handle_update_harvest_metrics,
+        UPDATE_HARVEST_METRICS_SCHEMA,
+        needs_strain_lib=True,
+    ),
+    ServiceDefinition(
+        GrowspaceService.SCORE_PLANT,
+        handle_score_plant,
+        SCORE_PLANT_SCHEMA,
+        needs_strain_lib=True,
+    ),
+    ServiceDefinition(
+        GrowspaceService.ADD_TIMELINE_NOTE,
+        handle_add_timeline_note,
+        ADD_TIMELINE_NOTE_SCHEMA,
+        needs_strain_lib=True,
+    ),
+]

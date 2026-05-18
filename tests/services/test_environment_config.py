@@ -24,8 +24,9 @@ def mock_coordinator():
     """Fixture for a mock GrowspaceCoordinator instance."""
     coordinator = MagicMock()
     coordinator.growspaces = {}
-    coordinator.async_save = AsyncMock()
-    coordinator.async_refresh = AsyncMock()
+    coordinator.services = MagicMock()
+    coordinator.services.save = AsyncMock()
+    coordinator.services.request_refresh = AsyncMock()
     return coordinator
 
 
@@ -71,8 +72,8 @@ async def test_handle_configure_environment_with_coordinates_and_tanks(
     await handle_configure_environment(mock_hass, mock_coordinator, mock_call)
 
     # Verify coordinator save and refresh were called
-    mock_coordinator.async_save.assert_awaited_once()
-    mock_coordinator.async_refresh.assert_awaited_once()
+    mock_coordinator.services.save.assert_awaited_once()
+    mock_coordinator.services.request_refresh.assert_awaited_once()
 
     # Verify environment config was updated correctly
     updated_config = mock_gs.environment_config

@@ -5,16 +5,21 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING
 
-from custom_components.growspace_manager.const import (
-    ATTR_STAGE,
-    ATTR_TARGET_GROWSPACE_ID,
-    ATTR_TRANSITION_DATE,
-)
 from homeassistant.core import HomeAssistant, ServiceCall
 from homeassistant.exceptions import ServiceValidationError
 
+from ..const import (
+    ATTR_STAGE,
+    ATTR_TARGET_GROWSPACE_ID,
+    ATTR_TRANSITION_DATE,
+    GrowspaceService,
+)
+from ..exceptions import GrowspaceError
+from ..schemas import BATCH_ACTION_SCHEMA
+from ._definition import ServiceDefinition
+
 if TYPE_CHECKING:
-    from custom_components.growspace_manager.coordinator import GrowspaceCoordinator
+    from ..coordinator import GrowspaceCoordinator
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -38,20 +43,23 @@ async def handle_batch_action(
     for entity_id in entity_ids:
         try:
             if action == "transition":
-                await coordinator.plant_manager.transition_plant_stage(
+                # UPDATED: Routes through coordinator.services.plant_manager
+                await coordinator.services.plant_manager.transition_plant_stage(
                     plant_id=entity_id,
                     new_stage=data[ATTR_STAGE],
                     transition_date=data.get(ATTR_TRANSITION_DATE),
                 )
             elif action == "harvest":
-                await coordinator.async_harvest_plant(
+                # UPDATED: Routes through coordinator.services
+                await coordinator.services.async_harvest_plant(
                     plant_id=entity_id,
                     target_growspace_id=data.get(ATTR_TARGET_GROWSPACE_ID),
                     target_growspace_name=None,
                     transition_date=data.get(ATTR_TRANSITION_DATE),
                 )
             elif action == "remove":
-                await coordinator.async_remove_plant(plant_id=entity_id)
+                # UPDATED: Routes through coordinator.services
+                await coordinator.services.async_remove_plant(plant_id=entity_id)
             else:
                 msg = f"Unknown or unsupported batch action: {action}"
                 _LOGGER.warning(msg)
@@ -60,7 +68,14 @@ async def handle_batch_action(
                 # Better to just log. But since it repeats for all, break.
                 break
 
-        except Exception as err:  # noqa: BLE001
+        except (
+            AttributeError,
+            KeyError,
+            ValueError,
+            ServiceValidationError,
+            GrowspaceError,
+            Exception,
+        ) as err:
             _LOGGER.error("Error processing batch action for %s: %s", entity_id, err)
             errors.append(str(err))
 
@@ -70,3 +85,12 @@ async def handle_batch_action(
         raise ServiceValidationError(
             f"Batch action '{action}' failed for {error_count} entities. First error: {errors[0]}"
         )
+
+
+SERVICES = [
+    ServiceDefinition(
+        GrowspaceService.BATCH_ACTION,
+        handle_batch_action,
+        BATCH_ACTION_SCHEMA,
+    ),
+]

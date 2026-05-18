@@ -20,11 +20,11 @@ async def test_ghost_plant_bug(hass: HomeAssistant) -> None:
         assert plant.plant_id in coordinator.plants
 
         # Remove the plant
-        await coordinator.async_remove_plant(plant.plant_id)
+        await coordinator.services.remove_plant(plant.plant_id)
         assert plant.plant_id not in coordinator.plants
 
         # Refresh the coordinator
-        await coordinator.async_refresh()
+        await coordinator.services.request_refresh()
 
         # Assert plant is still gone
         assert plant.plant_id not in coordinator.plants

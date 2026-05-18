@@ -1,6 +1,6 @@
 from unittest.mock import AsyncMock, MagicMock
 
-from common import create_plant
+from .common import create_plant
 import pytest
 from tests.common import (
     MockConfigEntry,
@@ -40,7 +40,7 @@ async def test_async_save_ipm_preset(mock_coordinator: GrowspaceCoordinator) -> 
     """Test creating and updating an IPM preset."""
     # Test Create
     items = [{"name": "Neem Oil", "dose_amount": 5.0, "dose_unit": "ml/L"}]
-    preset = await mock_coordinator.async_save_ipm_preset(
+    preset = await mock_coordinator.services.save_ipm_preset(
         name="Bug Free", type="foliar", items=items, stage="veg", min_days_in_stage=0
     )
 
@@ -51,7 +51,7 @@ async def test_async_save_ipm_preset(mock_coordinator: GrowspaceCoordinator) -> 
 
     # Test Update
     updated_items = [{"name": "Neem Oil", "dose_amount": 10.0, "dose_unit": "ml/L"}]
-    updated_preset = await mock_coordinator.async_save_ipm_preset(
+    updated_preset = await mock_coordinator.services.save_ipm_preset(
         name="Bug Free V2", type="drench", items=updated_items, preset_id=preset.id
     )
 
@@ -70,13 +70,13 @@ async def test_async_remove_ipm_preset(mock_coordinator: GrowspaceCoordinator) -
     }
 
     # Test Remove
-    await mock_coordinator.async_remove_ipm_preset("ipm1")
+    await mock_coordinator.services.remove_ipm_preset("ipm1")
     assert "ipm1" not in mock_coordinator.ipm_presets
     mock_coordinator.async_save.assert_called()  # type: ignore[attr-defined]
 
     # Test Missing
     with pytest.raises(KeyError):
-        await mock_coordinator.async_remove_ipm_preset("ipm1")
+        await mock_coordinator.services.remove_ipm_preset("ipm1")
 
 
 @pytest.mark.asyncio
@@ -86,11 +86,12 @@ async def test_async_apply_ipm_to_growspace(
     """Test applying IPM to an entire growspace."""
     # Setup
     gs = Growspace(id="gs1", name="Veg Tent")
-    mock_coordinator.growspaces["gs1"] = gs
+    mock_coordinator.data_repository.add_growspace(gs)
 
     p1 = create_plant(plant_id="p1", growspace_id="gs1", strain="Strain A")
     p2 = create_plant(plant_id="p2", growspace_id="gs1", strain="Strain B")
-    mock_coordinator.plants.update({"p1": p1, "p2": p2})
+    mock_coordinator.data_repository.add_plant(p1)
+    mock_coordinator.data_repository.add_plant(p2)
 
     preset = IPMPreset(
         id="ipm1",
@@ -104,7 +105,7 @@ async def test_async_apply_ipm_to_growspace(
     events = async_capture_events(mock_coordinator.hass, EVENT_GROWSPACE_LOG_ENTRY)
 
     # Execute
-    affected = await mock_coordinator.async_apply_ipm("ipm1", growspace_id="gs1")
+    affected = await mock_coordinator.services.apply_ipm("ipm1", growspace_id="gs1")
 
     # Verify return
     assert set(affected) == {"p1", "p2"}
@@ -134,18 +135,19 @@ async def test_async_apply_ipm_to_plants(
     """Test applying IPM to specific plants."""
     # Setup
     gs = Growspace(id="gs1", name="Veg Tent")
-    mock_coordinator.growspaces["gs1"] = gs
+    mock_coordinator.data_repository.add_growspace(gs)
 
     p1 = create_plant(plant_id="p1", growspace_id="gs1", strain="Strain A")
     p2 = create_plant(plant_id="p2", growspace_id="gs1", strain="Strain B")
-    mock_coordinator.plants.update({"p1": p1, "p2": p2})
+    mock_coordinator.data_repository.add_plant(p1)
+    mock_coordinator.data_repository.add_plant(p2)
 
     preset = IPMPreset(id="ipm1", name="Spot Treat", type="drench", items=[])
     mock_coordinator.ipm_presets["ipm1"] = preset
 
     # Execute - Only p1
     events = async_capture_events(mock_coordinator.hass, EVENT_GROWSPACE_LOG_ENTRY)
-    affected = await mock_coordinator.async_apply_ipm(
+    affected = await mock_coordinator.services.apply_ipm(
         "ipm1", plant_ids=["p1"], notes="Mites found"
     )
 
@@ -175,8 +177,8 @@ async def test_async_apply_ipm_errors(mock_coordinator: GrowspaceCoordinator) ->
 
     # No target
     with pytest.raises(ValueError):
-        await mock_coordinator.async_apply_ipm("ipm1")
+        await mock_coordinator.services.apply_ipm("ipm1")
 
     # Missing preset
     with pytest.raises(KeyError):
-        await mock_coordinator.async_apply_ipm("missing_id", growspace_id="gs1")
+        await mock_coordinator.services.apply_ipm("missing_id", growspace_id="gs1")

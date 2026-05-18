@@ -13,10 +13,12 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import EVENT_STATE_CHANGED
 from homeassistant.core import Event, HomeAssistant, callback
 from homeassistant.helpers.event import async_track_time_change
-from homeassistant.util.dt import now as dt_now, utcnow
+from homeassistant.exceptions import ServiceValidationError
+from homeassistant.util.dt import utcnow
 
 if TYPE_CHECKING:
     from .coordinator import GrowspaceCoordinator
+from .exceptions import GrowspaceError
 from .models import Growspace, GrowspaceEvent
 
 _LOGGER = logging.getLogger(__name__)
@@ -90,10 +92,10 @@ class BaseIrrigationCoordinator:
         self._listeners = []
 
         if cancel_tasks:
-            for task in self._running_tasks.values():
+            for task in list(self._running_tasks.values()):
                 if task and not task.done():
                     task.cancel()
-            self._running_tasks = {}
+            self._running_tasks.clear()
         _LOGGER.debug(
             "Cancelled all irrigation listeners for growspace %s", self._growspace_id
         )
@@ -203,7 +205,7 @@ class IrrigationCoordinator(BaseIrrigationCoordinator):
         await self._main_coordinator.async_refresh_growspace_data(self._growspace_id)
 
         # Save to custom storage via main coordinator
-        await self._main_coordinator.async_save()
+        await self._main_coordinator.async_commit()
 
         # Notify listeners of update
         self._main_coordinator.async_set_updated_data(self._main_coordinator.data)
@@ -342,7 +344,13 @@ class IrrigationCoordinator(BaseIrrigationCoordinator):
             # Persist the changes
             await self._save_and_reload()
 
-        except Exception:
+        except (
+            AttributeError,
+            KeyError,
+            ValueError,
+            ServiceValidationError,
+            GrowspaceError,
+        ):
             _LOGGER.exception(
                 "Unexpected error removing schedule item from %s", schedule_key
             )
@@ -472,8 +480,10 @@ class IrrigationCoordinator(BaseIrrigationCoordinator):
             )
             return
 
-        task = self.hass.async_create_task(
-            self._run_pump_cycle(event_type, pump_entity, int(duration), event_data)
+        task = self._config_entry.async_create_background_task(
+            self.hass,
+            self._run_pump_cycle(event_type, pump_entity, int(duration), event_data),
+            f"irrigation_pump_{self._growspace_id}_{event_type}",
         )
         self._running_tasks[event_type] = task
 
@@ -487,7 +497,7 @@ class IrrigationCoordinator(BaseIrrigationCoordinator):
         """Run the on-off cycle for a pump and send notifications."""
         # Track active event for frontend animation
         self._active_events[event_type] = {
-            "start": dt_now().isoformat(),
+            "start": utcnow().isoformat(),
             "duration": duration,
         }
 
@@ -529,7 +539,13 @@ class IrrigationCoordinator(BaseIrrigationCoordinator):
                 self._growspace_id,
                 pump_entity,
             )
-        except Exception as e:  # noqa: BLE001
+        except (
+            AttributeError,
+            KeyError,
+            ValueError,
+            ServiceValidationError,
+            GrowspaceError,
+        ) as e:
             _LOGGER.error(
                 "Error during %s cycle for %s (entity: %s): %s",
                 event_type,
@@ -584,7 +600,13 @@ class IrrigationCoordinator(BaseIrrigationCoordinator):
                         reasons=reasons,
                     )
                     self._main_coordinator.add_event(self._growspace_id, event)
-            except Exception as e:  # noqa: BLE001
+            except (
+                AttributeError,
+                KeyError,
+                ValueError,
+                ServiceValidationError,
+                GrowspaceError,
+            ) as e:
                 _LOGGER.error("Failed to log %s event: %s", event_type, e)
 
             _LOGGER.info(

@@ -23,7 +23,9 @@ from custom_components.growspace_manager.services.ipm import (
 @pytest.mark.asyncio
 async def test_handle_save_ipm_preset() -> None:
     """Test handle_save_ipm_preset service handler."""
-    coordinator = AsyncMock()
+    coordinator = MagicMock()
+    coordinator.services.save_ipm_preset = AsyncMock()
+
     data = {
         ATTR_NAME: "Soap Spray",
         ATTR_TYPE: "foliar",
@@ -37,9 +39,9 @@ async def test_handle_save_ipm_preset() -> None:
 
     await handle_save_ipm_preset(None, coordinator, call)
 
-    coordinator.async_save_ipm_preset.assert_awaited_once_with(
+    coordinator.services.save_ipm_preset.assert_awaited_once_with(
         name="Soap Spray",
-        type="foliar",
+        preset_type="foliar",
         items=[{"name": "Soap", "dose_amount": 10, "dose_unit": "ml"}],
         stage="veg",
         min_days_in_stage=7,
@@ -50,20 +52,24 @@ async def test_handle_save_ipm_preset() -> None:
 @pytest.mark.asyncio
 async def test_handle_remove_ipm_preset() -> None:
     """Test handle_remove_ipm_preset service handler."""
-    coordinator = AsyncMock()
+    coordinator = MagicMock()
+    coordinator.services.remove_ipm_preset = AsyncMock()
+
     data = {ATTR_PRESET_ID: "preset_123"}
     call = MagicMock()
     call.data = data
 
     await handle_remove_ipm_preset(None, coordinator, call)
 
-    coordinator.async_remove_ipm_preset.assert_awaited_once_with("preset_123")
+    coordinator.services.remove_ipm_preset.assert_awaited_once_with("preset_123")
 
 
 @pytest.mark.asyncio
 async def test_handle_apply_ipm() -> None:
     """Test handle_apply_ipm service handler."""
-    coordinator = AsyncMock()
+    coordinator = MagicMock()
+    coordinator.services.apply_ipm = AsyncMock()
+
     data = {
         ATTR_PRESET_ID: "preset_123",
         ATTR_GROWSPACE_ID: "gs1",
@@ -75,7 +81,7 @@ async def test_handle_apply_ipm() -> None:
 
     await handle_apply_ipm(None, coordinator, call)
 
-    coordinator.async_apply_ipm.assert_awaited_once_with(
+    coordinator.services.apply_ipm.assert_awaited_once_with(
         preset_id="preset_123",
         growspace_id="gs1",
         plant_ids=["p1", "p2"],

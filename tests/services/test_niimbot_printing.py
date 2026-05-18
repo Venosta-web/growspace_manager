@@ -180,7 +180,7 @@ async def test_handle_print_label_service_error(
     call = MagicMock()
     call.data = {"plant_id": plant_id}
     # Mock service call to fail
-    mock_hass.services.async_call.side_effect = Exception("Service error")
+    mock_hass.services.async_call.side_effect = ValueError("Service error")
     with (
         patch(
             "custom_components.growspace_manager.services.strain_library.get_url",

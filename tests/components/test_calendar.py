@@ -19,8 +19,9 @@ from homeassistant.util import dt as dt_util
 @pytest.fixture
 def mock_coordinator() -> Mock:
     """Create a mock GrowspaceCoordinator for calendar testing."""
-    coordinator = Mock()
-    coordinator.hass = Mock()
+    coordinator = MagicMock()
+    coordinator.hass = MagicMock()
+    coordinator.services = MagicMock()
 
     growspace_mock = Mock()
     growspace_mock.name = "Growspace 1"
@@ -55,7 +56,9 @@ def mock_coordinator() -> Mock:
             },
         ]
     }
-    coordinator.get_growspace_plants.return_value = list(coordinator.plants.values())
+    coordinator.services.get_growspace_plants.return_value = list(
+        coordinator.plants.values()
+    )
     coordinator.async_add_listener = Mock()
     return coordinator
 

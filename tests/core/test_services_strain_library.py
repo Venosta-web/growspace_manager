@@ -27,6 +27,12 @@ def mock_coordinator() -> MagicMock:
     coordinator = MagicMock()
     coordinator.async_save = AsyncMock()
     coordinator.async_request_refresh = AsyncMock()
+
+    coordinator.services = MagicMock()
+    coordinator.services.save = AsyncMock()
+    # FIX: Make request_refresh awaitable
+    coordinator.services.request_refresh = AsyncMock()
+
     return coordinator
 
 
@@ -35,7 +41,10 @@ def mock_strain_library() -> MagicMock:
     """Mock the StrainLibrary."""
     library = MagicMock()
     library.load = AsyncMock()
+
+    # FIX: get_all is synchronous, so it needs to be a standard MagicMock
     library.get_all = MagicMock(return_value={"Strain A": {}})
+
     library.export_library_to_zip = AsyncMock(
         return_value="/config/www/growspace_manager/exports/export.zip"
     )
@@ -95,7 +104,8 @@ async def test_handle_export_strain_library(
         )
 
         mock_strain_library.export_library_to_zip.assert_awaited_once()
-        mock_coordinator.async_save.assert_awaited_once()
+        # FIX: Assert on the services namespace
+        mock_coordinator.services.save.assert_awaited_once()
         mock_hass.bus.async_fire.assert_called_once()
         mock_notify.assert_called_once()
 
@@ -418,8 +428,9 @@ async def test_handle_clear_strain_library(
         )
 
         mock_strain_library.clear.assert_awaited_once()
-        mock_coordinator.async_save.assert_awaited_once()
-        mock_coordinator.async_request_refresh.assert_awaited_once()
+        # FIX: Assert on the services namespace
+        mock_coordinator.services.save.assert_awaited_once()
+        mock_coordinator.services.request_refresh.assert_awaited_once()
         mock_hass.bus.async_fire.assert_called_once()
 
 
