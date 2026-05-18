@@ -865,6 +865,23 @@ class BayesianEnvironmentSensor(
             self._event_start_time = utcnow()
             self._event_max_prob = self._probability
 
+            # Log immediately so the alert appears in the logbook right away
+            category = "alert"
+            if self.entity_description.sensor_type == GrowspaceSensorType.OPTIMAL:
+                category = "environment"
+            now_iso = self._event_start_time.isoformat()
+            start_event = GrowspaceEvent(
+                sensor_type=self.entity_description.sensor_type,
+                growspace_id=self.growspace_id,
+                start_time=now_iso,
+                end_time=now_iso,
+                duration_sec=0,
+                severity=self._event_max_prob,
+                category=category,
+                reasons=[r[1] for r in sorted(self._reasons, reverse=True)[:5]],
+            )
+            self._add_event(self.growspace_id, start_event)
+
         # Detect Falling Edge (End of Event)
         elif not new_state_on and old_state_on and self._event_start_time:
             end_time = utcnow()

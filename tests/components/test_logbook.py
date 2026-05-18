@@ -172,10 +172,12 @@ async def test_sensor_event_capture(hass: HomeAssistant, mock_coordinator) -> No
         assert sensor._event_start_time is None
         assert sensor._event_max_prob == 0.0
 
-        mock_coordinator.add_event.assert_called_once()
-        args = mock_coordinator.add_event.call_args[0]
-        assert args[0] == "gs1"
-        event = args[1]
+        # Rising edge fires one event, falling edge fires another — 2 total
+        assert mock_coordinator.add_event.call_count == 2
+        # Falling edge event (second call) has the full duration and peak severity
+        falling_args = mock_coordinator.add_event.call_args_list[1][0]
+        assert falling_args[0] == "gs1"
+        event = falling_args[1]
         assert event.duration_sec == 600  # 10 mins
         assert event.severity == 0.95
         assert event.category == "alert"

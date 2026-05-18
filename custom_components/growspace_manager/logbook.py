@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING, Any
 from homeassistant.components.logbook import LOGBOOK_ENTRY_MESSAGE, LOGBOOK_ENTRY_NAME
 from homeassistant.core import HomeAssistant, callback
 
-from .const import CATEGORY_DEHUMIDIFIER, CATEGORY_HUMIDIFIER, CATEGORY_NOTE, DOMAIN, EVENT_GROWSPACE_LOG_ENTRY
+from .const import CATEGORY_ALERT, CATEGORY_DEHUMIDIFIER, CATEGORY_HUMIDIFIER, CATEGORY_MILESTONE, CATEGORY_NOTE, DOMAIN, EVENT_GROWSPACE_LOG_ENTRY
 
 if TYPE_CHECKING:
     from homeassistant.components.logbook import LazyEventPartialState
@@ -44,6 +44,12 @@ def async_describe_events(
                 return _describe_dehumidifier_event(data)
             case category if category == CATEGORY_HUMIDIFIER:
                 return _describe_humidifier_event(data)
+            case category if category == CATEGORY_MILESTONE:
+                return _describe_milestone_event(data)
+            case category if category == CATEGORY_ALERT:
+                return _describe_alert_event(data)
+            case "environment":
+                return _describe_environment_event(data)
             case _:
                 return _describe_default_event(category, data)
 
@@ -134,6 +140,41 @@ def _describe_humidifier_event(data: dict[str, Any]) -> dict[str, Any]:
     if details:
         message += f" • {', '.join(details)}"
     return {LOGBOOK_ENTRY_NAME: "Humidifier Control", LOGBOOK_ENTRY_MESSAGE: message}
+
+
+def _describe_milestone_event(data: dict[str, Any]) -> dict[str, Any]:
+    """Describe a growth milestone event (e.g. stage transition)."""
+    reasons = data.get("reasons", [])
+    message = reasons[0] if reasons else data.get("sensor_type", "Milestone reached")
+    return {LOGBOOK_ENTRY_NAME: "Growth Milestone", LOGBOOK_ENTRY_MESSAGE: message}
+
+
+def _describe_alert_event(data: dict[str, Any]) -> dict[str, Any]:
+    """Describe a stress or mold alert event."""
+    sensor_type = data.get("sensor_type", "alert")
+    label = sensor_type.replace("_", " ").title()
+    reasons = data.get("reasons", [])
+    duration = data.get("duration_sec", 0)
+    message = f"{label} detected"
+    if duration:
+        minutes = duration // 60
+        message += f" — lasted {minutes} min" if minutes else f" — lasted {duration}s"
+    if reasons:
+        message += f" • {reasons[0]}"
+    return {LOGBOOK_ENTRY_NAME: f"{label} Alert", LOGBOOK_ENTRY_MESSAGE: message}
+
+
+def _describe_environment_event(data: dict[str, Any]) -> dict[str, Any]:
+    """Describe an optimal-conditions drop event."""
+    reasons = data.get("reasons", [])
+    duration = data.get("duration_sec", 0)
+    message = "Conditions left optimal range"
+    if duration:
+        minutes = duration // 60
+        message += f" for {minutes} min" if minutes else f" for {duration}s"
+    if reasons:
+        message += f" • {reasons[0]}"
+    return {LOGBOOK_ENTRY_NAME: "Environment Alert", LOGBOOK_ENTRY_MESSAGE: message}
 
 
 def _describe_default_event(

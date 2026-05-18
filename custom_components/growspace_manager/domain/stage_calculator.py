@@ -43,9 +43,10 @@ def determine_coordinator_stage(plants: list[Plant]) -> PlantStage:
     """Determine the dominant growth stage for environmental control.
 
     Applies a priority ladder so the most demanding stage wins:
-    cure > dry > late_flower > mid_flower > early_flower > mother > veg > seedling.
+    cure > dry > late_flower > mid_flower > early_flower > mother > veg > seedling == clone.
     """
     max_seedling_days = 0
+    max_clone_days = 0
     max_veg_days = 0
     max_flower_days = 0
     max_dry_days = 0
@@ -55,6 +56,9 @@ def determine_coordinator_stage(plants: list[Plant]) -> PlantStage:
     for plant in plants:
         max_seedling_days = max(
             max_seedling_days, calculate_days_in_stage(plant, PlantStage.SEEDLING)
+        )
+        max_clone_days = max(
+            max_clone_days, calculate_days_in_stage(plant, PlantStage.CLONE)
         )
         max_veg_days = max(
             max_veg_days, calculate_days_in_stage(plant, PlantStage.VEG)
@@ -88,5 +92,7 @@ def determine_coordinator_stage(plants: list[Plant]) -> PlantStage:
         return PlantStage.VEG
     if max_seedling_days > 0:
         return PlantStage.SEEDLING
+    if max_clone_days > 0:
+        return PlantStage.CLONE
 
     return PlantStage.VEG

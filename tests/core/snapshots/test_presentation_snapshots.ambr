@@ -149,6 +149,8 @@
     'ph_sensors': list([
     ]),
     'plants_per_row': 2,
+    'power_sensors': list([
+    ]),
     'rows': 2,
     'runoff_ec_sensors': list([
     ]),

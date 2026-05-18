@@ -671,6 +671,8 @@ CATEGORY_NOTE = "note"
 CATEGORY_WATERING = "watering"
 CATEGORY_DEHUMIDIFIER = "dehumidifier"
 CATEGORY_HUMIDIFIER = "humidifier"
+CATEGORY_MILESTONE = "milestone"
+CATEGORY_ALERT = "alert"
 
 
 # Plant stages

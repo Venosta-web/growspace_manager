@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING, Any
 import uuid
 
 from custom_components.growspace_manager.const import (
+    CATEGORY_MILESTONE,
     DATE_FIELDS,
     PLANT_STAGES,
     SPECIAL_GROWSPACES,
@@ -33,7 +34,7 @@ from custom_components.growspace_manager.exceptions import (
     PlantNotFoundError,
     ValidationChangeError,
 )
-from custom_components.growspace_manager.models import Plant, PlantGenetics
+from custom_components.growspace_manager.models import GrowspaceEvent, Plant, PlantGenetics
 from custom_components.growspace_manager.services.context import BaseService, ServiceContext
 from custom_components.growspace_manager.utils import calculate_plant_stage, format_date
 from homeassistant.core import HomeAssistant
@@ -475,6 +476,19 @@ class PlantManager(BaseService):
                 plant,
                 {"new_stage": str(new_stage)},
             )
+            now_iso = dt_util.now().isoformat()
+            stage_label = new_stage.replace("_", " ").title()
+            event = GrowspaceEvent(
+                sensor_type="stage_transition",
+                growspace_id=plant.growspace_id,
+                start_time=now_iso,
+                end_time=now_iso,
+                duration_sec=0,
+                severity=1.0,
+                category=CATEGORY_MILESTONE,
+                reasons=[f"{plant.genetics.strain_name or plant_id} entered {stage_label}"],
+            )
+            self._emit(plant.growspace_id, event)
 
     async def harvest_plant(
         self,

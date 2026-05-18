@@ -140,7 +140,7 @@ template:
       # PH sensor
       - name: "Test PH"
         unique_id: test_ph_sensor
-        unit_of_measurement: "pH"
+        device_class: ph
         state_class: measurement
         state: >
           {{ (5.8 + (range(0, 10) | random) / 20) | round(2) }}
@@ -157,7 +157,6 @@ template:
       - name: "Test Tank Level"
         unique_id: test_tank_level_sensor
         unit_of_measurement: "%"
-        device_class: battery # Close enough for percentage display
         state_class: measurement
         state: >
           {{ (range(50, 100) | random) }}

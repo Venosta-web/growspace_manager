@@ -14,7 +14,7 @@ import pytest
 
 from custom_components.growspace_manager import sensor as sensor_module
 from custom_components.growspace_manager.const import DOMAIN
-from custom_components.growspace_manager.models import EnvironmentConfig, IrrigationTank
+from custom_components.growspace_manager.models import DryingData, EnvironmentConfig, HarvestMetrics, IrrigationTank
 from custom_components.growspace_manager.sensor import (
     AirExchangeSensor,
     CalculatedVpdSensor,
@@ -64,6 +64,8 @@ def mock_coordinator() -> MagicMock:
             clone_start=None,
             dry_start=None,
             cure_start=None,
+            drying_data=DryingData(),
+            harvest_metrics=HarvestMetrics(),
         )
     }
     coordinator.services.growspaces.get_growspace_plants.return_value = list(
