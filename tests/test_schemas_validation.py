@@ -3,7 +3,11 @@
 import pytest
 import voluptuous as vol
 
-from custom_components.growspace_manager.schemas import SET_IRRIGATION_SETTINGS_SCHEMA
+from custom_components.growspace_manager.schemas import (
+    ADD_STRAIN_SCHEMA,
+    SET_IRRIGATION_SETTINGS_SCHEMA,
+    UPDATE_STRAIN_META_SCHEMA,
+)
 
 
 def test_set_irrigation_settings_schema_valid() -> None:
@@ -52,3 +56,55 @@ def test_set_irrigation_settings_schema_different_pumps_valid() -> None:
     }
     # Should not raise
     SET_IRRIGATION_SETTINGS_SCHEMA(valid_data)
+
+
+@pytest.mark.parametrize(
+    ("schema", "sativa", "indica"),
+    [
+        (ADD_STRAIN_SCHEMA, 10, 90),
+        (ADD_STRAIN_SCHEMA, 50, 50),
+        (ADD_STRAIN_SCHEMA, 100, 0),
+        (ADD_STRAIN_SCHEMA, None, None),
+        (ADD_STRAIN_SCHEMA, None, 100),
+        (ADD_STRAIN_SCHEMA, 80, None),
+        (UPDATE_STRAIN_META_SCHEMA, 10, 90),
+        (UPDATE_STRAIN_META_SCHEMA, 50, 50),
+        (UPDATE_STRAIN_META_SCHEMA, 100, 0),
+        (UPDATE_STRAIN_META_SCHEMA, None, None),
+        (UPDATE_STRAIN_META_SCHEMA, None, 100),
+        (UPDATE_STRAIN_META_SCHEMA, 80, None),
+    ],
+)
+def test_genetic_percentages_valid(
+    schema: vol.Schema, sativa: int | None, indica: int | None
+) -> None:
+    """Test valid genetic percentages for strain schemas."""
+    data = {
+        "strain": "Test Strain",
+        "sativa_percentage": sativa,
+        "indica_percentage": indica,
+    }
+    # Should not raise any validation error
+    schema(data)
+
+
+@pytest.mark.parametrize(
+    ("schema", "sativa", "indica"),
+    [
+        (ADD_STRAIN_SCHEMA, 60, 50),
+        (ADD_STRAIN_SCHEMA, 100, 1),
+        (UPDATE_STRAIN_META_SCHEMA, 60, 50),
+        (UPDATE_STRAIN_META_SCHEMA, 100, 1),
+    ],
+)
+def test_genetic_percentages_invalid(
+    schema: vol.Schema, sativa: int, indica: int
+) -> None:
+    """Test invalid genetic percentages (sum > 100) raise vol.Invalid."""
+    data = {
+        "strain": "Test Strain",
+        "sativa_percentage": sativa,
+        "indica_percentage": indica,
+    }
+    with pytest.raises(vol.Invalid, match="exceeds 100%"):
+        schema(data)
