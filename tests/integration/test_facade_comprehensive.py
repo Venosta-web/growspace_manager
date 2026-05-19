@@ -1689,3 +1689,26 @@ async def test_async_remove_timed_notification(mock_coordinator: MagicMock) -> N
         [{"id": "n1"}], "n1"
     )
 
+
+def test_config_get_applicable_presets(mock_coordinator: MagicMock) -> None:
+    """Test that facade.config.get_applicable_presets delegates to coordinator."""
+    facade = ServiceFacade(mock_coordinator)
+    presets = [MagicMock()]
+    mock_coordinator.nutrient_manager.get_applicable_presets = MagicMock(
+        return_value=presets
+    )
+    assert facade.config.get_applicable_presets("p1") is presets
+    mock_coordinator.nutrient_manager.get_applicable_presets.assert_called_once_with("p1")
+
+
+def test_config_get_nutrient_serialization_data(mock_coordinator: MagicMock) -> None:
+    """Test that facade.config.get_nutrient_serialization_data delegates to coordinator."""
+    facade = ServiceFacade(mock_coordinator)
+    serial_data = {"presets": []}
+    mock_coordinator.nutrient_manager.get_serialization_data = MagicMock(
+        return_value=serial_data
+    )
+    assert facade.config.get_nutrient_serialization_data() == serial_data
+    mock_coordinator.nutrient_manager.get_serialization_data.assert_called_once()
+
+
