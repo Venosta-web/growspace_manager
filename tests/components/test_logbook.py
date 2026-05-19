@@ -321,13 +321,13 @@ async def test_sensor_event_capture(hass: HomeAssistant, mock_coordinator) -> No
                 "duration_sec": 120,
             },
             "Mold Risk Alert",
-            "Mold Risk detected — lasted 2 min • High mold probability",
+            "Mold Risk detected — lasted 2 minutes • High mold probability",
         ),
         (
             "alert",
             {"sensor_type": "heat_stress", "duration_sec": 45},
             "Heat Stress Alert",
-            "Heat Stress detected — lasted 45s",
+            "Heat Stress detected — lasted 45 seconds",
         ),
         (
             "alert",
@@ -340,13 +340,13 @@ async def test_sensor_event_capture(hass: HomeAssistant, mock_coordinator) -> No
             "environment",
             {"reasons": ["High VPD"], "duration_sec": 180},
             "Environment Alert",
-            "Conditions left optimal range for 3 min • High VPD",
+            "Conditions left optimal range for 3 minutes • High VPD",
         ),
         (
             "environment",
             {"duration_sec": 30},
             "Environment Alert",
-            "Conditions left optimal range for 30s",
+            "Conditions left optimal range for 30 seconds",
         ),
         (
             "environment",
