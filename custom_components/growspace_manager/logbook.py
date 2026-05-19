@@ -171,7 +171,7 @@ def _describe_environment_event(data: dict[str, Any]) -> dict[str, Any]:
     message = "Conditions left optimal range"
     if duration:
         minutes = duration // 60
-        message += f" for {minutes} min" if minutes else f" for {duration}s"
+        message += f" for {minutes} minutes" if minutes else f" for {duration} seconds"
     if reasons:
         message += f" • {reasons[0]}"
     return {LOGBOOK_ENTRY_NAME: "Environment Alert", LOGBOOK_ENTRY_MESSAGE: message}
