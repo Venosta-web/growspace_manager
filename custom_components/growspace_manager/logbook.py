@@ -158,7 +158,7 @@ def _describe_alert_event(data: dict[str, Any]) -> dict[str, Any]:
     message = f"{label} detected"
     if duration:
         minutes = duration // 60
-        message += f" — lasted {minutes} min" if minutes else f" — lasted {duration}s"
+        message += f" — lasted {minutes} minutes" if minutes else f" — lasted {duration} seconds"
     if reasons:
         message += f" • {reasons[0]}"
     return {LOGBOOK_ENTRY_NAME: f"{label} Alert", LOGBOOK_ENTRY_MESSAGE: message}
