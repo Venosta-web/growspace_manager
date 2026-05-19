@@ -1,6 +1,7 @@
 """Tests for the Bayesian Event Logbook feature."""
 
 from datetime import datetime
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -10,6 +11,8 @@ from custom_components.growspace_manager.binary_sensor import (
     BayesianEnvironmentSensor,
     GrowspaceSensorType,
 )
+from custom_components.growspace_manager.const import DOMAIN, EVENT_GROWSPACE_LOG_ENTRY
+from custom_components.growspace_manager.logbook import async_describe_events
 from custom_components.growspace_manager.models import (
     EnvironmentConfig,
     Growspace,
@@ -18,6 +21,7 @@ from custom_components.growspace_manager.models import (
 from custom_components.growspace_manager.strategies.mold import (
     MoldRiskEvaluatorStrategy,
 )
+from homeassistant.components.logbook import LOGBOOK_ENTRY_MESSAGE, LOGBOOK_ENTRY_NAME
 from homeassistant.core import HomeAssistant
 from homeassistant.util import dt as dt_util
 
@@ -181,3 +185,225 @@ async def test_sensor_event_capture(hass: HomeAssistant, mock_coordinator) -> No
         assert event.duration_sec == 600  # 10 mins
         assert event.severity == 0.95
         assert event.category == "alert"
+
+
+# --- 4. Test Logbook Event Description ---
+
+
+@pytest.mark.parametrize(
+    ("category", "data", "expected_name", "expected_message"),
+    [
+        # CATEGORY_NOTE ("note") cases
+        (
+            "note",
+            {"notes": "Test note", "tags": ["tag1", "tag2"], "images": ["img1.jpg"]},
+            "Plant Note",
+            "Test note [Tags: tag1, tag2 | 1 Image]",
+        ),
+        (
+            "note",
+            {
+                "notes": "Test note 2",
+                "tags": ["tag1"],
+                "images": ["img1.jpg", "img2.jpg"],
+            },
+            "Plant Note",
+            "Test note 2 [Tags: tag1 | 2 Images]",
+        ),
+        (
+            "note",
+            {"notes": ""},
+            "Plant Note",
+            "",
+        ),
+        # Watering cases ("water", "watering", "irrigation")
+        (
+            "watering",
+            {"amount_ml": 500, "recipe": "Recipe A"},
+            "Watering",
+            "Watered 500ml with Recipe A",
+        ),
+        (
+            "water",
+            {"amount_ml": None},
+            "Watering",
+            "Watered",
+        ),
+        # Training cases ("training")
+        (
+            "training",
+            {"sensor_type": "low_stress_training", "notes": "Bent stems"},
+            "Low Stress Training",
+            "Bent stems",
+        ),
+        (
+            "training",
+            {},
+            "Training",
+            "Training performed",
+        ),
+        # IPM cases ("ipm")
+        (
+            "ipm",
+            {"sensor_type": "ipm_neem_oil", "notes": "Sprayed leaves"},
+            "IPM Treatment",
+            "Neem Oil: Sprayed leaves",
+        ),
+        (
+            "ipm",
+            {"sensor_type": "ipm_treatment"},
+            "IPM Treatment",
+            "Treatment: Applied",
+        ),
+        # Dehumidifier cases ("dehumidifier")
+        (
+            "dehumidifier",
+            {"reasons": ["Turned ON", "VPD too low"]},
+            "Dehumidifier Control",
+            "Turned ON • VPD too low",
+        ),
+        (
+            "dehumidifier",
+            {"reasons": ["Turned OFF"]},
+            "Dehumidifier Control",
+            "Turned OFF",
+        ),
+        (
+            "dehumidifier",
+            {},
+            "Dehumidifier Control",
+            "Controlled",
+        ),
+        # Humidifier cases ("humidifier")
+        (
+            "humidifier",
+            {"reasons": ["Turned ON", "Humidity too low"]},
+            "Humidifier Control",
+            "Turned ON • Humidity too low",
+        ),
+        (
+            "humidifier",
+            {"reasons": ["Turned OFF"]},
+            "Humidifier Control",
+            "Turned OFF",
+        ),
+        (
+            "humidifier",
+            {},
+            "Humidifier Control",
+            "Controlled",
+        ),
+        # Growth Milestone cases ("milestone")
+        (
+            "milestone",
+            {"reasons": ["Stage changed to Veg"]},
+            "Growth Milestone",
+            "Stage changed to Veg",
+        ),
+        (
+            "milestone",
+            {"sensor_type": "veg_stage"},
+            "Growth Milestone",
+            "veg_stage",
+        ),
+        (
+            "milestone",
+            {},
+            "Growth Milestone",
+            "Milestone reached",
+        ),
+        # Alert cases ("alert")
+        (
+            "alert",
+            {
+                "sensor_type": "mold_risk",
+                "reasons": ["High mold probability"],
+                "duration_sec": 120,
+            },
+            "Mold Risk Alert",
+            "Mold Risk detected — lasted 2 min • High mold probability",
+        ),
+        (
+            "alert",
+            {"sensor_type": "heat_stress", "duration_sec": 45},
+            "Heat Stress Alert",
+            "Heat Stress detected — lasted 45s",
+        ),
+        (
+            "alert",
+            {"sensor_type": "mold_risk"},
+            "Mold Risk Alert",
+            "Mold Risk detected",
+        ),
+        # Environment cases ("environment")
+        (
+            "environment",
+            {"reasons": ["High VPD"], "duration_sec": 180},
+            "Environment Alert",
+            "Conditions left optimal range for 3 min • High VPD",
+        ),
+        (
+            "environment",
+            {"duration_sec": 30},
+            "Environment Alert",
+            "Conditions left optimal range for 30s",
+        ),
+        (
+            "environment",
+            {},
+            "Environment Alert",
+            "Conditions left optimal range",
+        ),
+        # Default cases
+        (
+            "custom_cat",
+            {"notes": "Custom notes"},
+            "Growspace Custom_Cat",
+            "Custom notes",
+        ),
+        (
+            None,
+            {"sensor_type": "custom_sensor"},
+            "Growspace Event",
+            "custom_sensor",
+        ),
+        (
+            None,
+            {},
+            "Growspace Event",
+            "Event recorded",
+        ),
+    ],
+)
+def test_async_describe_events(
+    hass: HomeAssistant,
+    category: str | None,
+    data: dict[str, Any],
+    expected_name: str,
+    expected_message: str,
+) -> None:
+    """Test that async_describe_events correctly formats all events."""
+    mock_async_describe_event = MagicMock()
+
+    # Register the events
+    async_describe_events(hass, mock_async_describe_event)
+
+    # Assert registration arguments
+    mock_async_describe_event.assert_called_once()
+    args = mock_async_describe_event.call_args[0]
+    assert args[0] == DOMAIN
+    assert args[1] == EVENT_GROWSPACE_LOG_ENTRY
+    describe_callback = args[2]
+    assert callable(describe_callback)
+
+    # Prepare the event and verify the returned logbook entry
+    event_data = dict(data)
+    if category is not None:
+        event_data["category"] = category
+
+    mock_event = MagicMock()
+    mock_event.data = event_data
+
+    result = describe_callback(mock_event)
+    assert result[LOGBOOK_ENTRY_NAME] == expected_name
+    assert result[LOGBOOK_ENTRY_MESSAGE] == expected_message

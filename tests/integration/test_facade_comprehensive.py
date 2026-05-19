@@ -1614,3 +1614,78 @@ def test_handle_position_update_only_col(mock_coordinator) -> None:
     mock_coordinator.validator.validate_position_bounds.assert_called_once_with(
         "gs1", 2, 5
     )
+
+
+# ---------------------------------------------------------------------------
+# NotificationsFacade coverage increase
+# ---------------------------------------------------------------------------
+
+
+def test_notifications_facade_manager_property(mock_coordinator: MagicMock) -> None:
+    """Test that the manager property delegates to coordinator's notification_manager."""
+    facade = ServiceFacade(mock_coordinator)
+    mock_manager = MagicMock()
+    mock_coordinator.notification_manager = mock_manager
+    assert facade.notifications.manager is mock_manager
+
+
+@pytest.mark.asyncio
+async def test_async_add_timed_notification(mock_coordinator: MagicMock) -> None:
+    """Test that async_add_timed_notification calls add_timed_notification with same parameters."""
+    facade = ServiceFacade(mock_coordinator)
+    mock_coordinator.notification_settings.get_timed_notifications = MagicMock(
+        return_value=[]
+    )
+    new_note = {"id": "n1", "message": "Water time!"}
+    mock_coordinator.notification_settings.create_timed_notification = MagicMock(
+        return_value=new_note
+    )
+    mock_coordinator.async_commit = AsyncMock()
+    mock_coordinator.config_entry = MagicMock()
+    mock_coordinator.config_entry.options = {}
+
+    await facade.notifications.async_add_timed_notification("Water time!", "day", 7, ["gs1"])
+    mock_coordinator.notification_settings.create_timed_notification.assert_called_once_with(
+        "Water time!", "day", 7, ["gs1"]
+    )
+
+
+@pytest.mark.asyncio
+async def test_async_update_timed_notification(mock_coordinator: MagicMock) -> None:
+    """Test that async_update_timed_notification calls update_timed_notification with same parameters."""
+    facade = ServiceFacade(mock_coordinator)
+    mock_coordinator.notification_settings.get_timed_notifications = MagicMock(
+        return_value=[{"id": "n1"}]
+    )
+    mock_coordinator.notification_settings.update_timed_notification_in_list = (
+        MagicMock(return_value=True)
+    )
+    mock_coordinator.async_commit = AsyncMock()
+    mock_coordinator.config_entry = MagicMock()
+    mock_coordinator.config_entry.options = {}
+
+    await facade.notifications.async_update_timed_notification("n1", "Updated", "day", 7, ["gs1"])
+    mock_coordinator.notification_settings.update_timed_notification_in_list.assert_called_once_with(
+        [{"id": "n1"}], "n1", "Updated", "day", 7, ["gs1"]
+    )
+
+
+@pytest.mark.asyncio
+async def test_async_remove_timed_notification(mock_coordinator: MagicMock) -> None:
+    """Test that async_remove_timed_notification calls remove_timed_notification with same parameters."""
+    facade = ServiceFacade(mock_coordinator)
+    mock_coordinator.notification_settings.get_timed_notifications = MagicMock(
+        return_value=[{"id": "n1"}]
+    )
+    mock_coordinator.notification_settings.remove_timed_notification_from_list = (
+        MagicMock(return_value=[])
+    )
+    mock_coordinator.async_commit = AsyncMock()
+    mock_coordinator.config_entry = MagicMock()
+    mock_coordinator.config_entry.options = {}
+
+    await facade.notifications.async_remove_timed_notification("n1")
+    mock_coordinator.notification_settings.remove_timed_notification_from_list.assert_called_once_with(
+        [{"id": "n1"}], "n1"
+    )
+
