@@ -970,12 +970,16 @@ async def test_falling_edge_event_creation(
     ):
         await sensor.async_update_and_notify()
 
-    # Check if event was added to coordinator
-    # mock_coordinator.add_event is called
-    mock_coordinator.services.add_event.assert_called_once()
-    event = mock_coordinator.services.add_event.call_args[0][1]
-    assert event.duration_sec == 600
-    assert event.sensor_type == GrowspaceSensorType.STRESS
+    # Check if event was added to coordinator — once on rising edge, once on falling edge
+    assert mock_coordinator.services.add_event.call_count == 2
+    # The second call (falling edge) carries the full duration
+    falling_event = mock_coordinator.services.add_event.call_args_list[1][0][1]
+    assert falling_event.duration_sec == 600
+    assert falling_event.sensor_type == GrowspaceSensorType.STRESS
+    # The first call (rising edge) is the start notification
+    rising_event = mock_coordinator.services.add_event.call_args_list[0][0][1]
+    assert rising_event.duration_sec == 0
+    assert rising_event.sensor_type == GrowspaceSensorType.STRESS
 
 
 @pytest.mark.asyncio

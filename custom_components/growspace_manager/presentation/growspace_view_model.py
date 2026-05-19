@@ -477,6 +477,7 @@ class GrowspaceViewModelBuilder:
         attributes["substrate_temperature_sensors"] = (
             env_config.substrate_temperature_sensors
         )
+        attributes["power_sensors"] = env_config.power_sensors
         attributes["energy_sensors"] = env_config.energy_sensors
         attributes["electricity_cost_per_kwh"] = env_config.electricity_cost_per_kwh
         attributes["camera_entities"] = env_config.camera_entities

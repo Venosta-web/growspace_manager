@@ -6,6 +6,7 @@ import pytest
 
 from custom_components.growspace_manager.models import (
     CropSteeringState,
+    DryingData,
     ECRampCurve,
     ECRampPoint,
     EnergyTracking,
@@ -226,7 +227,8 @@ def test_plant_entity_phi_days_remaining() -> None:
     plant.get_week_in_stage = Mock(return_value=1)
     plant.get_days_since_watering = Mock(return_value=None)
     plant.scores = Mock(to_dict=Mock(return_value={}))
-    plant.harvest_metrics = Mock(to_dict=Mock(return_value={}))
+    plant.harvest_metrics = Mock(to_dict=Mock(return_value={}), wet_weight=None)
+    plant.drying_data = DryingData()
 
     coordinator.plants = {"p1": plant}
     coordinator.growspaces = {"gs1": Mock(name="GS")}

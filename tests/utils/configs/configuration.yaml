@@ -79,11 +79,17 @@ template:
       - name: "Test CO2"
         unique_id: test_co2_sensor
         unit_of_measurement: "ppm"
-        device_class: carbon_dioxide
+        device_class: co2
         state_class: measurement
         state: >
           {{ 800 + (range(0, 400) | random) }}
-        
+      # Ph sensor
+      - name: "Test PH"
+        unique_id: test_ph_sensor
+        device_class: ph
+        state_class: measurement
+        state: >
+          {{ 6 + (range(0, 1) | random) }}
       # Light sensor (PPFD)
       - name: "Test PPFD"
         unique_id: test_ppfd_sensor

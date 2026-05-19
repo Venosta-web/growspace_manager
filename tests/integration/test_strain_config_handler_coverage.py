@@ -8,7 +8,7 @@ import voluptuous as vol
 from custom_components.growspace_manager.config_handlers.strain_config_handler import (
     StrainConfigHandler,
 )
-from custom_components.growspace_manager.const import DOMAIN
+from custom_components.growspace_manager.const import CONF_BLACKLIST_BREEDERS, DOMAIN
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.data_entry_flow import FlowResultType
@@ -393,3 +393,65 @@ async def test_async_step_add_strain_get(handler: StrainConfigHandler) -> None:
     handler.flow.async_show_form = MagicMock(return_value={"type": "form"})
     result = await handler.async_step_add_strain()
     assert result["type"] == "form"
+
+
+async def test_async_step_manage_strain_library_post_manage_blacklist(
+    handler: StrainConfigHandler,
+) -> None:
+    """Test routing to manage breeder blacklist."""
+    handler.async_step_manage_breeder_blacklist = AsyncMock(
+        return_value={"type": "form"}
+    )
+    result = await handler.async_step_manage_strain_library(
+        {"action": "manage_blacklist"}
+    )
+    assert result["type"] == "form"
+    handler.async_step_manage_breeder_blacklist.assert_called_once()
+
+
+async def test_async_step_manage_breeder_blacklist_no_entry(
+    mock_hass: MagicMock,
+) -> None:
+    """Test manage blacklist with no config entry."""
+    handler = StrainConfigHandler(mock_hass, None)
+    handler.flow = MagicMock()
+    handler.flow.async_abort = MagicMock(return_value={"type": "abort"})
+
+    result = await handler.async_step_manage_breeder_blacklist()
+    assert result == {"type": "abort"}
+    handler.flow.async_abort.assert_called_once_with(reason="setup_error")
+
+
+async def test_async_step_manage_breeder_blacklist_get(
+    handler: StrainConfigHandler,
+) -> None:
+    """Test GET flow of manage breeder blacklist."""
+    handler.flow.async_show_form = MagicMock(return_value={"type": "form"})
+    handler.config_entry.options = {CONF_BLACKLIST_BREEDERS: ["Breeder A"]}
+
+    result = await handler.async_step_manage_breeder_blacklist()
+    assert result["type"] == "form"
+    handler.flow.async_show_form.assert_called_once()
+
+
+async def test_async_step_manage_breeder_blacklist_post(
+    handler: StrainConfigHandler,
+) -> None:
+    """Test POST flow of manage breeder blacklist."""
+    handler.config_entry.options = {"existing_option": "value"}
+    handler.hass.config_entries = MagicMock()
+    handler.hass.config_entries.async_update_entry = MagicMock()
+    handler.async_step_manage_strain_library = AsyncMock(
+        return_value={"type": "form"}
+    )
+
+    user_input = {CONF_BLACKLIST_BREEDERS: ["Breeder B"]}
+    result = await handler.async_step_manage_breeder_blacklist(user_input)
+
+    assert result["type"] == "form"
+    handler.hass.config_entries.async_update_entry.assert_called_once_with(
+        handler.config_entry,
+        options={"existing_option": "value", CONF_BLACKLIST_BREEDERS: ["Breeder B"]},
+    )
+    handler.async_step_manage_strain_library.assert_called_once()
+

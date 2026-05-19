@@ -1,7 +1,7 @@
 """Coverage-focused tests for EnvironmentConfigHandler."""
 
-from unittest.mock import AsyncMock, MagicMock, patch
 from dataclasses import asdict
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 import voluptuous as vol
@@ -398,13 +398,16 @@ async def test_configure_sensor_placement_pumps(handler) -> None:
 
 
 @pytest.mark.asyncio
-async def test_configure_sensor_placement_unit_fallback(handler) -> None:
+async def test_configure_sensor_placement_unit_fallback(
+    handler: EnvironmentConfigHandler,
+) -> None:
     """Test fallback to 'cm' when unit is invalid."""
     gs = Growspace(
         id="gs1",
         name="GS1",
         dimensions={"width": 100, "length": 100, "height": 180, "unit": 123},  # Not str
     )
+    handler.config_entry.runtime_data.services.growspaces.get_growspace.return_value = gs
     handler.config_entry.runtime_data.growspaces = {"gs1": gs}
     handler.flow.selected_growspace_id = "gs1"
     handler.flow.env_config_step1 = {"temperature_sensors": ["sensor.t1"]}
@@ -680,7 +683,9 @@ async def test_collect_sensors_to_configure_empty_after_filtering(handler) -> No
 
 
 @pytest.mark.asyncio
-async def test_configure_environment_with_tank_volume_liters(handler) -> None:
+async def test_configure_environment_with_tank_volume_liters(
+    handler: EnvironmentConfigHandler,
+) -> None:
     """Test async_step_configure_environment with a tank that has volume_liters set (environment_config_handler.py:128)."""
     from custom_components.growspace_manager.models import IrrigationTank
 
@@ -697,8 +702,176 @@ async def test_configure_environment_with_tank_volume_liters(handler) -> None:
             ]
         ),
     )
+    handler.config_entry.runtime_data.services.growspaces.get_growspace.return_value = gs
     handler.config_entry.runtime_data.growspaces = {"gs1": gs}
     handler.flow.selected_growspace_id = "gs1"
 
     result = await handler.async_step_configure_environment()
     assert result["type"] == FlowResultType.FORM
+
+
+@pytest.mark.asyncio
+async def test_configure_environment_no_environment_config(
+    handler: EnvironmentConfigHandler,
+) -> None:
+    """Test configure_environment when growspace has no environment_config set. Covers line 185."""
+    gs = Growspace(
+        id="gs1",
+        name="GS1",
+        environment_config=None,
+    )
+    handler.config_entry.runtime_data.services.growspaces.get_growspace.return_value = gs
+    handler.config_entry.runtime_data.growspaces = {"gs1": gs}
+    handler.flow.selected_growspace_id = "gs1"
+
+    result = await handler.async_step_configure_environment()
+    assert result["type"] == FlowResultType.FORM
+
+
+def test_process_irrigation_tanks_comprehensive(
+    handler: EnvironmentConfigHandler,
+) -> None:
+    """Test _process_irrigation_tanks logic under various conditions. Covers lines 251-258 and 261-307."""
+    from custom_components.growspace_manager.models import (
+        IrrigationTank,
+        TankWaterHistory,
+    )
+
+    # Setup some state for self.hass.states.get lookup
+    mock_state = MagicMock()
+    mock_state.attributes = {"friendly_name": "My Custom Tank"}
+
+    # Mock handler.hass.states.get
+    handler.hass.states.get = MagicMock(
+        side_effect=lambda entity: mock_state if entity == "sensor.tank_1" else None
+    )
+
+    # Mock existing tanks - one object (IrrigationTank) and one dict to cover lines 251-258 and 281-296
+    history_obj = TankWaterHistory(snapshots=[{"timestamp": "2026-05-19", "level_pct": 50.0}], events=[])
+    tank_obj = IrrigationTank(
+        sensor_entity="sensor.tank_1",
+        warning_level=20.0,
+        volume_liters=100.0,
+    )
+    tank_obj.water_history = history_obj
+    tank_obj.last_recorded_level = 50.0
+    tank_obj.peak_level = 95.0
+
+    tank_dict = {
+        "sensor_entity": "sensor.tank_2",
+        "warning_level": 25.0,
+        "volume_liters": 150.0,
+        "water_history": "raw_history_string_or_dict",
+        "last_recorded_level": 40.0,
+        "peak_level": 85.0,
+    }
+
+    existing_tanks = [tank_obj, tank_dict]
+
+    # Call _process_irrigation_tanks
+    env_config = {
+        "irrigation_tank_sensors": ["sensor.tank_1", "sensor.tank_2", "sensor.tank_3"],
+        "irrigation_tank_warning_level": 35.0,
+        "irrigation_tank_volume": 120.0,
+    }
+
+    result = handler._process_irrigation_tanks(
+        env_config, existing_tanks=existing_tanks
+    )
+
+    # Validate output
+    assert "irrigation_tank_sensors" not in result
+    assert "irrigation_tank_warning_level" not in result
+    assert "irrigation_tank_volume" not in result
+
+    tanks = result["irrigation_tanks"]
+    assert len(tanks) == 3
+
+    # Tank 1 (state object exists, friendly name lookup used, existing was object)
+    t1 = tanks[0]
+    assert t1["sensor_entity"] == "sensor.tank_1"
+    assert t1["name"] == "My Custom Tank"
+    assert t1["warning_level"] == 35.0
+    assert t1["volume_liters"] == 120.0
+    assert t1["water_history"] == asdict(history_obj)
+    assert t1["last_recorded_level"] == 50.0
+    assert t1["peak_level"] == 95.0
+
+    # Tank 2 (no state object, friendly name fallback used, existing was dict)
+    t2 = tanks[1]
+    assert t2["sensor_entity"] == "sensor.tank_2"
+    assert t2["name"] == "Tank 2"
+    assert t2["warning_level"] == 35.0
+    assert t2["volume_liters"] == 120.0
+    assert t2["water_history"] == "raw_history_string_or_dict"
+    assert t2["last_recorded_level"] == 40.0
+    assert t2["peak_level"] == 85.0
+
+    # Tank 3 (new tank, no existing runtime data)
+    t3 = tanks[2]
+    assert t3["sensor_entity"] == "sensor.tank_3"
+    assert t3["name"] == "Tank 3"
+    assert t3["warning_level"] == 35.0
+    assert t3["volume_liters"] == 120.0
+    assert "water_history" not in t3
+    assert "last_recorded_level" not in t3
+    assert "peak_level" not in t3
+
+
+def test_process_irrigation_tanks_empty(
+    handler: EnvironmentConfigHandler,
+) -> None:
+    """Test _process_irrigation_tanks when tank_sensors list is empty."""
+    env_config = {
+        "irrigation_tank_sensors": [],
+    }
+    result = handler._process_irrigation_tanks(env_config)
+    assert result["irrigation_tanks"] == []
+
+
+def test_lst_offset_default_for_dry_and_cure_stages(
+    handler: EnvironmentConfigHandler,
+) -> None:
+    """Test _add_lst_offset_to_schema offset defaults across different stages. Covers line 887."""
+    # Test for "dry" stage
+    schema_dict = {}
+    growspace_options = {
+        "temperature_sensors": ["sensor.temp"],
+        "humidity_sensors": ["sensor.humid"],
+    }
+    handler._add_lst_offset_to_schema(
+        schema_dict, growspace_options, stage="dry"
+    )
+    lst_key = None
+    for k in schema_dict:
+        if k.schema == "lst_offset":
+            lst_key = k
+            break
+    assert lst_key is not None
+    assert lst_key.default() == 0.0
+
+    # Test for "cure" stage
+    schema_dict = {}
+    handler._add_lst_offset_to_schema(
+        schema_dict, growspace_options, stage="cure"
+    )
+    lst_key = None
+    for k in schema_dict:
+        if k.schema == "lst_offset":
+            lst_key = k
+            break
+    assert lst_key is not None
+    assert lst_key.default() == 0.0
+
+    # Test for other stage e.g. "veg" (should default to -2.0)
+    schema_dict = {}
+    handler._add_lst_offset_to_schema(
+        schema_dict, growspace_options, stage="veg"
+    )
+    lst_key = None
+    for k in schema_dict:
+        if k.schema == "lst_offset":
+            lst_key = k
+            break
+    assert lst_key is not None
+    assert lst_key.default() == -2.0
