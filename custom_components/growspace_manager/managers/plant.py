@@ -486,7 +486,7 @@ class PlantManager(BaseService):
                 duration_sec=0,
                 severity=1.0,
                 category=CATEGORY_MILESTONE,
-                reasons=[f"{plant.genetics.strain_name or plant_id} entered {stage_label}"],
+                reasons=[f"{(plant.genetics.strain_name if plant.genetics else None) or plant_id} entered {stage_label}"],
             )
             self._emit(plant.growspace_id, event)
 
