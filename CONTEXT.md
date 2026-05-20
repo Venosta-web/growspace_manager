@@ -37,6 +37,9 @@ A moisture reading ≤ 12.0% indicates the plant is ready to move from `dry` to 
 **Estimated Days to Target Weight**
 Projected number of days until the plant's current weight reaches the Target Dry Weight. Computed from the rolling average daily weight loss across all `weight_log` entries.
 
+**Active Growspace**
+A growspace with `total_plants > 0`, regardless of `PlantStage`. A growspace in `dry` or `cure` mode still counts as active if plants are present. An empty growspace (no plants at all) is inactive.
+
 ## Drying Thresholds (Constants)
 
 | Threshold | Value | Source |

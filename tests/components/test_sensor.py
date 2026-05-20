@@ -1052,7 +1052,9 @@ def test_growspace_list_sensor_state_and_attributes(
     sensor.platform_data = sensor.platform
     attrs = sensor.extra_state_attributes
     assert "growspaces" in attrs
-    assert attrs["growspaces"] == {"gs1": "Growspace 1"}
+    assert attrs["growspaces"] == {
+        "gs1": {"name": "Growspace 1", "total_plants": 1}
+    }
 
 
 # --------------------
