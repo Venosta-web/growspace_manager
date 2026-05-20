@@ -280,6 +280,15 @@ class ImageManager:
             file_path = self.storage_dir / filename
             small_file_path = self.storage_dir / small_filename
 
+            # Avoid overwriting an existing image — append _2, _3, … until unique
+            counter = 2
+            while file_path.exists():
+                filename = f"{base_name}_{counter}.webp"
+                small_filename = f"{base_name}_{counter}_small.webp"
+                file_path = self.storage_dir / filename
+                small_file_path = self.storage_dir / small_filename
+                counter += 1
+
             # 1. Save Full Size Optimized WebP
             image.save(file_path, "WEBP", quality=85, method=4)
 
