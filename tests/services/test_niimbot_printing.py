@@ -71,7 +71,6 @@ async def test_handle_add_strain_with_breeder_logo(
         strain="Test Strain",
         phenotype=None,
         breeder="Test Breeder",
-        breeder_logo="https://example.com/logo.png",
         strain_type=None,
         lineage=None,
         sex=None,
@@ -81,8 +80,10 @@ async def test_handle_add_strain_with_breeder_logo(
         image_base64=None,
         image_path=None,
         image_crop_meta=None,
+        images=None,
         sativa_percentage=None,
         indica_percentage=None,
+        breeder_logo="https://example.com/logo.png",
     )
     mock_coordinator.async_request_refresh.assert_awaited_once()
 

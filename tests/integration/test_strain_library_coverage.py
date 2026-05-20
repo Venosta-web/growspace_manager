@@ -160,7 +160,8 @@ async def test_load_invalid_lineage_tree_json(mock_hass) -> None:
     )
 
     mock_cursor = AsyncMock()
-    mock_cursor.fetchall = AsyncMock(return_value=[bad_row])
+    # First fetchall call is the migration query (return empty → no-op), second is main load
+    mock_cursor.fetchall = AsyncMock(side_effect=[[], [bad_row]])
 
     class AsyncCM:
         async def __aenter__(self):
@@ -216,7 +217,8 @@ async def test_load_invalid_array_json_fields(mock_hass) -> None:
     )
 
     mock_cursor = AsyncMock()
-    mock_cursor.fetchall = AsyncMock(return_value=[bad_row])
+    # First fetchall call is the migration query (return empty → no-op), second is main load
+    mock_cursor.fetchall = AsyncMock(side_effect=[[], [bad_row]])
 
     class AsyncCM:
         async def __aenter__(self):
@@ -274,6 +276,7 @@ async def test_load_filters_404_image_path(mock_hass) -> None:
         image_crop_meta=None,
         flower_days_min=None,
         flower_days_max=None,
+        images=None,
     )
 
     mock_cursor = AsyncMock()
@@ -288,6 +291,7 @@ async def test_load_filters_404_image_path(mock_hass) -> None:
 
     mock_db = MagicMock()
     mock_db.execute = MagicMock(return_value=AsyncCM())
+    mock_db.commit = AsyncMock()
 
     lib = StrainLibrary(mock_hass)
     lib._db = mock_db

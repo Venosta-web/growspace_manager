@@ -759,6 +759,11 @@ add_strain:
       required: false
       selector:
         object:
+    images:
+      description: Full image gallery (list of {path, crop_meta, is_thumbnail} dicts)
+      required: false
+      selector:
+        object:
     sativa_percentage:
       description: Sativa percentage (0-100)
       required: false
@@ -842,6 +847,11 @@ update_strain_meta:
         text:
     image_crop_meta:
       description: Metadata for image cropping
+      required: false
+      selector:
+        object:
+    images:
+      description: Full image gallery (list of {path, crop_meta, is_thumbnail} dicts)
       required: false
       selector:
         object:

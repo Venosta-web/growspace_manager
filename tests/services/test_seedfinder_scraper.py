@@ -419,7 +419,7 @@ async def test_async_get_strain_details_full(scraper: SeedfinderScraper) -> None
     assert result is not None
     assert result["name"] == "OG Kush"
     assert result["breeder"] == "Royal Queen Seeds"
-    assert result["image"] is not None
+    assert isinstance(result["images"], list)
     assert result["composition"]["sativa"] == 60.0
     assert result["composition"]["indica"] == 40.0
     assert result["awards"] == ["1st place Cannabis Cup 2010"]
@@ -1305,3 +1305,80 @@ def test_parse_recursive_partial_paren_not_stripped(
     assert len(result["parents"]) == 2
     for p in result["parents"]:
         assert p["name"] == "Cross"
+
+
+# ---------------------------------------------------------------------------
+# _parse_images (gallery)
+# ---------------------------------------------------------------------------
+
+
+def test_parse_images_extracts_full_gallery_from_alpine_xdata(scraper: SeedfinderScraper) -> None:
+    """_parse_images returns all gallery URLs from Alpine.js x-data, not just the first."""
+    html = """
+    <div x-data='{"selectedIndex": -1, "images": [{"big": "https://cdn.example.com/1.jpg", "thumb": "https://cdn.example.com/1t.jpg"}, {"big": "https://cdn.example.com/2.jpg", "thumb": "https://cdn.example.com/2t.jpg"}, {"big": "/storage/pics/3.jpg", "thumb": "/storage/pics/3t.jpg"}]}'>
+        <img :src="selectedIndex === -1 ? 'https://cdn.example.com/official.jpg' : images[selectedIndex].big" />
+    </div>
+    """
+    soup = _soup(html)
+    urls = scraper._parse_images(soup)
+    assert urls == [
+        "https://cdn.example.com/1.jpg",
+        "https://cdn.example.com/2.jpg",
+        f"{BASE_URL}/storage/pics/3.jpg",
+    ]
+
+
+def test_parse_images_extracts_galerie_img_tags_when_no_xdata(scraper: SeedfinderScraper) -> None:
+    """_parse_images collects all /storage/pics/galerie/ img tags (older pages like Sunset Paradise)."""
+    html = """
+    <a href="/gallery/1"><img src="/storage/pics/galerie/Paradise_Seeds/Sunset_Paradise/img1.jpg" alt="1"></a>
+    <a href="/gallery/2"><img src="https://seedfinder.eu/storage/pics/galerie/Paradise_Seeds/Sunset_Paradise/img2.jpg" alt="2"></a>
+    <a href="/gallery/3"><img src="/storage/pics/galerie/Paradise_Seeds/Sunset_Paradise/img3.jpg" alt="3"></a>
+    """
+    soup = _soup(html)
+    urls = scraper._parse_images(soup)
+    assert urls == [
+        f"{BASE_URL}/storage/pics/galerie/Paradise_Seeds/Sunset_Paradise/img1.jpg",
+        "https://seedfinder.eu/storage/pics/galerie/Paradise_Seeds/Sunset_Paradise/img2.jpg",
+        f"{BASE_URL}/storage/pics/galerie/Paradise_Seeds/Sunset_Paradise/img3.jpg",
+    ]
+
+
+def test_parse_images_deduplicates_galerie_urls(scraper: SeedfinderScraper) -> None:
+    """_parse_images deduplicates identical galerie URLs (thumbnail + full-size same src)."""
+    html = """
+    <img src="/storage/pics/galerie/Breeder/Strain/img1.jpg">
+    <img src="/storage/pics/galerie/Breeder/Strain/img1.jpg">
+    <img src="/storage/pics/galerie/Breeder/Strain/img2.jpg">
+    """
+    soup = _soup(html)
+    urls = scraper._parse_images(soup)
+    assert urls == [
+        f"{BASE_URL}/storage/pics/galerie/Breeder/Strain/img1.jpg",
+        f"{BASE_URL}/storage/pics/galerie/Breeder/Strain/img2.jpg",
+    ]
+
+
+def test_parse_images_caps_at_10(scraper: SeedfinderScraper) -> None:
+    """_parse_images returns at most 10 images."""
+    imgs = "".join(
+        f'<img src="/storage/pics/galerie/B/S/img{i}.jpg">' for i in range(15)
+    )
+    soup = _soup(f"<div>{imgs}</div>")
+    urls = scraper._parse_images(soup)
+    assert len(urls) == 10
+
+
+def test_parse_images_falls_back_to_parse_image_when_no_galerie(scraper: SeedfinderScraper) -> None:
+    """_parse_images falls back to the single-image path when no galerie tags found."""
+    html = '<img :src="selectedIndex === -1 ? \'https://cdn.example.com/official.jpg\' : images[selectedIndex].big" />'
+    soup = _soup(html)
+    urls = scraper._parse_images(soup)
+    assert urls == ["https://cdn.example.com/official.jpg"]
+
+
+def test_parse_images_returns_empty_list_when_no_images(scraper: SeedfinderScraper) -> None:
+    """_parse_images returns [] when no image data is found at all."""
+    soup = _soup("<div>no images here</div>")
+    urls = scraper._parse_images(soup)
+    assert urls == []

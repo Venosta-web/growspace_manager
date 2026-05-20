@@ -6,6 +6,7 @@ import bisect
 from dataclasses import asdict
 from datetime import datetime, timedelta
 import json
+from pathlib import Path
 import logging
 import re
 from typing import Any
@@ -1698,6 +1699,83 @@ async def websocket_import_strain_lineage_tree(
         connection.send_error(msg["id"], "unknown_error", str(e))
 
 
+WS_TYPE_UPLOAD_STRAIN_IMAGE = f"{DOMAIN}/upload_strain_image"
+SCHEMA_WS_UPLOAD_STRAIN_IMAGE = websocket_api.BASE_COMMAND_MESSAGE_SCHEMA.extend(
+    {
+        vol.Required("type"): WS_TYPE_UPLOAD_STRAIN_IMAGE,
+        vol.Required("strain"): str,
+        vol.Required("phenotype"): str,
+        vol.Required("image_base64"): str,
+    }
+)
+
+
+async def websocket_upload_strain_image(
+    hass: HomeAssistant,
+    connection: websocket_api.ActiveConnection,
+    msg: dict[str, Any],
+) -> None:
+    """Upload a strain image to disk and return its local path."""
+    try:
+        coordinator = GrowspaceCoordinator.get_any(hass)
+        image_manager = coordinator.services.config.strain_library.image_manager
+        abs_path = await image_manager.save_strain_image(
+            msg["strain"], msg["phenotype"], msg["image_base64"]
+        )
+        filename = Path(abs_path).name
+        local_path = f"/local/growspace_manager/strains/{filename}"
+        connection.send_result(msg["id"], {"path": local_path})
+    except ServiceValidationError:
+        connection.send_error(msg["id"], "not_loaded", "Strain library not loaded")
+    except Exception as e:
+        connection.send_error(msg["id"], "unknown_error", str(e))
+
+
+WS_TYPE_DOWNLOAD_STRAIN_IMAGE = f"{DOMAIN}/download_strain_image"
+SCHEMA_WS_DOWNLOAD_STRAIN_IMAGE = websocket_api.BASE_COMMAND_MESSAGE_SCHEMA.extend(
+    {
+        vol.Required("type"): WS_TYPE_DOWNLOAD_STRAIN_IMAGE,
+        vol.Required("url"): str,
+        vol.Required("strain"): str,
+        vol.Required("phenotype"): str,
+    }
+)
+
+
+async def websocket_download_strain_image(
+    hass: HomeAssistant,
+    connection: websocket_api.ActiveConnection,
+    msg: dict[str, Any],
+) -> None:
+    """Download a remote image URL and save it as a local strain image."""
+    from homeassistant.helpers.aiohttp_client import async_get_clientsession
+
+    url = msg["url"]
+    try:
+        coordinator = GrowspaceCoordinator.get_any(hass)
+        image_manager = coordinator.services.config.strain_library.image_manager
+
+        session = async_get_clientsession(hass)
+        async with session.get(url, timeout=15) as response:
+            if response.status != 200:
+                connection.send_error(msg["id"], "fetch_failed", f"HTTP {response.status}")
+                return
+            raw = await response.read()
+
+        import base64 as _base64
+        image_base64 = "data:image/jpeg;base64," + _base64.b64encode(raw).decode()
+        abs_path = await image_manager.save_strain_image(
+            msg["strain"], msg["phenotype"], image_base64
+        )
+        filename = Path(abs_path).name
+        local_path = f"/local/growspace_manager/strains/{filename}"
+        connection.send_result(msg["id"], {"path": local_path})
+    except ServiceValidationError:
+        connection.send_error(msg["id"], "not_loaded", "Strain library not loaded")
+    except Exception as e:
+        connection.send_error(msg["id"], "unknown_error", str(e))
+
+
 async def websocket_query_external_strain(
     hass: HomeAssistant,
     connection: websocket_api.ActiveConnection,
@@ -1754,7 +1832,7 @@ async def websocket_get_external_strain_details(
             "sativa_percentage": (raw.get("composition") or {}).get("sativa"),
             "flowering_days": flowering_days,
             "description": raw.get("description"),
-            "image": raw.get("image"),
+            "images": raw.get("images", []),
             "yield_potential": raw.get("yield_potential"),
             "height": raw.get("height"),
             "thc": raw.get("thc"),
@@ -1989,4 +2067,16 @@ def async_register_websocket_api(hass: HomeAssistant) -> None:
         WS_TYPE_IMPORT_STRAIN_LINEAGE_TREE,
         websocket_api.async_response(websocket_import_strain_lineage_tree),
         SCHEMA_WS_IMPORT_STRAIN_LINEAGE_TREE,
+    )
+    websocket_api.async_register_command(
+        hass,
+        WS_TYPE_UPLOAD_STRAIN_IMAGE,
+        websocket_api.async_response(websocket_upload_strain_image),
+        SCHEMA_WS_UPLOAD_STRAIN_IMAGE,
+    )
+    websocket_api.async_register_command(
+        hass,
+        WS_TYPE_DOWNLOAD_STRAIN_IMAGE,
+        websocket_api.async_response(websocket_download_strain_image),
+        SCHEMA_WS_DOWNLOAD_STRAIN_IMAGE,
     )

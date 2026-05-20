@@ -117,8 +117,9 @@ async def test_load_populates_is_stub_from_db():
         await db.executescript(STRAIN_LIBRARY_SCHEMA)
         await db.commit()
 
-        # generation column is added via ALTER TABLE in async_setup, not in the schema constant
+        # columns added via ALTER TABLE in async_setup, not in the schema constant
         await db.execute("ALTER TABLE strains ADD COLUMN generation TEXT")
+        await db.execute("ALTER TABLE phenotypes ADD COLUMN images TEXT")
         await db.commit()
 
         # Insert one stub (no breeder) and one real entry

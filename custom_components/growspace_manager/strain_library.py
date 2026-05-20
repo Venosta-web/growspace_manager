@@ -187,6 +187,14 @@ class StrainLibrary:
         except aiosqlite.OperationalError:
             pass  # Column already exists
 
+        # Ensure images column exists on phenotypes (image gallery support)
+        try:
+            await self._db.execute("ALTER TABLE phenotypes ADD COLUMN images TEXT")
+            await self._db.commit()
+            _LOGGER.info("Added images column to phenotypes table")
+        except aiosqlite.OperationalError:
+            pass  # Column already exists
+
         # Ensure is_stub column exists (backwards compatibility)
         try:
             await self._db.execute(
@@ -247,11 +255,49 @@ class StrainLibrary:
             await self._db.close()
             self._db = None
 
+    async def _async_migrate_image_gallery(self) -> None:
+        """One-time migration: convert image_path rows to images JSON gallery."""
+        if self._db is None:
+            return
+        try:
+            async with self._db.execute(
+                "SELECT phenotype_id, image_path, image_crop_meta FROM phenotypes"
+                " WHERE image_path IS NOT NULL AND images IS NULL"
+            ) as cursor:
+                rows = await cursor.fetchall()
+        except aiosqlite.OperationalError:
+            # images column not yet present — migration will run after ALTER TABLE
+            return
+
+        if not rows:
+            return
+
+        for row in rows:
+            image_path = row["image_path"]
+            if image_path and "=404" in image_path:
+                continue
+            raw_crop = row["image_crop_meta"]
+            crop_meta = None
+            if raw_crop:
+                try:
+                    crop_meta = json.loads(raw_crop)
+                except json.JSONDecodeError:
+                    crop_meta = None
+            gallery = [{"path": image_path, "crop_meta": crop_meta, "is_thumbnail": True}]
+            await self._db.execute(
+                "UPDATE phenotypes SET images = ? WHERE phenotype_id = ?",
+                (json.dumps(gallery), row["phenotype_id"]),
+            )
+
+        await self._db.commit()
+        _LOGGER.info("Migrated %d phenotype(s) from image_path to images gallery", len(rows))
+
     async def load(self) -> None:
         """Load all strain and phenotype data into the in-memory cache."""
         if self._db is None:
             _LOGGER.warning("Database not connected, cannot load library")
             return
+        await self._async_migrate_image_gallery()
         # Fetch all harvests first to avoid N+1 queries and async calls in the loop
         harvests_by_pheno: dict[int, list[dict[str, Any]]] = {}
         async with self._db.execute(
@@ -293,7 +339,7 @@ class StrainLibrary:
                 s.cbd, s.cbg, s.effects, s.aroma, s.taste, s.description as strain_description,
                 s.is_stub,
                 p.phenotype_id, p.phenotype_name, p.description, p.image_path,
-                p.image_crop_meta, p.flower_days_min, p.flower_days_max
+                p.image_crop_meta, p.flower_days_min, p.flower_days_max, p.images
             FROM strains s
             LEFT JOIN phenotypes p ON s.strain_id = p.strain_id
         """
@@ -362,11 +408,25 @@ class StrainLibrary:
 
                     pheno_id = row["phenotype_id"]
                     raw_image_path = row["image_path"]
+
+                    raw_images = row["images"]
+                    images: list[dict[str, Any]] | None = None
+                    if raw_images:
+                        try:
+                            images = json.loads(raw_images)
+                        except json.JSONDecodeError:
+                            _LOGGER.warning(
+                                "Could not decode images for %s (%s)",
+                                strain_name,
+                                phenotype_name,
+                            )
+
                     phenotype_data = {
                         "phenotype_id": pheno_id,
                         "description": row["description"],
                         "image_path": None if (raw_image_path and "=404" in raw_image_path) else raw_image_path,
                         "image_crop_meta": image_crop_meta,
+                        "images": images,
                         "flower_days_min": row["flower_days_min"],
                         "flower_days_max": row["flower_days_max"],
                         "harvests": harvests_by_pheno.get(pheno_id, []),
@@ -614,6 +674,7 @@ class StrainLibrary:
         image_base64: str | None = None,
         image_path: str | None = None,
         image_crop_meta: dict[str, Any] | None = None,
+        images: list[dict[str, Any]] | None = None,
         sativa_percentage: int | None = None,
         indica_percentage: int | None = None,
         yield_potential: str | None = None,
@@ -765,7 +826,9 @@ class StrainLibrary:
             "flower_days_max": flower_days_max,
         }
         # Image handling
-        if image_base64:
+        if images is not None:
+            pheno_data["images"] = json.dumps(images)
+        elif image_base64:
             safe_strain = slugify(strain)
             safe_pheno = slugify(phenotype)
 
@@ -832,6 +895,7 @@ class StrainLibrary:
         image_base64: str | None = None,
         image_path: str | None = None,
         image_crop_meta: dict[str, Any] | None = None,
+        images: list[dict[str, Any]] | None = None,
         sativa_percentage: int | None = None,
         indica_percentage: int | None = None,
         yield_potential: str | None = None,
@@ -863,6 +927,7 @@ class StrainLibrary:
             image_base64=image_base64,
             image_path=image_path,
             image_crop_meta=image_crop_meta,
+            images=images,
             sativa_percentage=sativa_percentage,
             indica_percentage=indica_percentage,
             yield_potential=yield_potential,
@@ -1227,6 +1292,46 @@ class StrainLibrary:
                     for pheno_name in sorted(phenotypes)
                 )
         return entries
+
+    def resolve_thumbnail(
+        self, strain_name: str, phenotype_name: str
+    ) -> dict[str, Any] | None:
+        """Return the thumbnail image dict for a phenotype, with sibling fallback.
+
+        Falls back to the 'default' phenotype, then alphabetical siblings, when the
+        requested phenotype has no images. Returns None if no image exists anywhere.
+        """
+        strain_data = self.strains.get(strain_name)
+        if strain_data is None:
+            return None
+        phenotypes = strain_data.get("phenotypes", {})
+        normalized = phenotype_name or "default"
+
+        def _thumbnail_from(pheno_data: dict[str, Any]) -> dict[str, Any] | None:
+            imgs = pheno_data.get("images")
+            if not imgs:
+                return None
+            for img in imgs:
+                if img.get("is_thumbnail"):
+                    return img
+            return imgs[0]
+
+        own = phenotypes.get(normalized, {})
+        result = _thumbnail_from(own)
+        if result is not None:
+            return result
+
+        # Fallback: prefer "default", then alphabetical siblings
+        fallback_order = ["default"] + sorted(
+            k for k in phenotypes if k != "default" and k != normalized
+        )
+        for sibling_name in fallback_order:
+            sibling = phenotypes.get(sibling_name, {})
+            result = _thumbnail_from(sibling)
+            if result is not None:
+                return result
+
+        return None
 
     async def remove_strain_phenotype(self, strain: str, phenotype: str) -> None:
         """Remove a specific phenotype and its harvests."""
