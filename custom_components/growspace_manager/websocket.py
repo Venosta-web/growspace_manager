@@ -24,6 +24,7 @@ from homeassistant.components.recorder.util import session_scope
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
 import homeassistant.util.dt as dt_util
+from homeassistant.util import slugify
 
 from .const import (
     ALERT_LOG_LOOKBACK_DAYS,
@@ -1720,7 +1721,7 @@ async def websocket_upload_strain_image(
         coordinator = GrowspaceCoordinator.get_any(hass)
         image_manager = coordinator.services.config.strain_library.image_manager
         abs_path = await image_manager.save_strain_image(
-            msg["strain"], msg["phenotype"], msg["image_base64"]
+            slugify(msg["strain"]), slugify(msg["phenotype"]), msg["image_base64"]
         )
         filename = Path(abs_path).name
         local_path = f"/local/growspace_manager/strains/{filename}"
@@ -1756,7 +1757,12 @@ async def websocket_download_strain_image(
         image_manager = coordinator.services.config.strain_library.image_manager
 
         session = async_get_clientsession(hass)
-        async with session.get(url, timeout=15) as response:
+        headers = {
+            "User-Agent": "Mozilla/5.0 (compatible; HomeAssistant)",
+            "Accept": "image/webp,image/png,image/jpeg,*/*",
+            "Referer": "https://en.seedfinder.eu/",
+        }
+        async with session.get(url, timeout=15, headers=headers, allow_redirects=True, max_redirects=20) as response:
             if response.status != 200:
                 connection.send_error(msg["id"], "fetch_failed", f"HTTP {response.status}")
                 return
@@ -1765,7 +1771,7 @@ async def websocket_download_strain_image(
         import base64 as _base64
         image_base64 = "data:image/jpeg;base64," + _base64.b64encode(raw).decode()
         abs_path = await image_manager.save_strain_image(
-            msg["strain"], msg["phenotype"], image_base64
+            slugify(msg["strain"]), slugify(msg["phenotype"]), image_base64
         )
         filename = Path(abs_path).name
         local_path = f"/local/growspace_manager/strains/{filename}"

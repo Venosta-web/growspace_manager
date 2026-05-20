@@ -413,7 +413,11 @@ class StrainLibrary:
                     images: list[dict[str, Any]] | None = None
                     if raw_images:
                         try:
-                            images = json.loads(raw_images)
+                            parsed = json.loads(raw_images)
+                            images = [
+                                img for img in parsed
+                                if isinstance(img, dict) and "=404" not in (img.get("path") or "")
+                            ] or None
                         except json.JSONDecodeError:
                             _LOGGER.warning(
                                 "Could not decode images for %s (%s)",
