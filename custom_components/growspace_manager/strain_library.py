@@ -361,10 +361,11 @@ class StrainLibrary:
                         image_crop_meta = None
 
                     pheno_id = row["phenotype_id"]
+                    raw_image_path = row["image_path"]
                     phenotype_data = {
                         "phenotype_id": pheno_id,
                         "description": row["description"],
-                        "image_path": row["image_path"],
+                        "image_path": None if (raw_image_path and "=404" in raw_image_path) else raw_image_path,
                         "image_crop_meta": image_crop_meta,
                         "flower_days_min": row["flower_days_min"],
                         "flower_days_max": row["flower_days_max"],

@@ -246,6 +246,8 @@ class SeedfinderScraper:
             match = re.search(r"selectedIndex === -1 \? '([^']+)'", src_expr)
             if match:
                 image_url = match.group(1)
+                if "=404" in image_url:
+                    return None
                 if not image_url.startswith("http"):
                     image_url = BASE_URL + image_url
                 return image_url
@@ -254,7 +256,9 @@ class SeedfinderScraper:
         img_tag = soup.find("img", src=re.compile(r"/storage/pics/"))
         if img_tag:
             image_url = img_tag.get("src")
-            if image_url and not image_url.startswith("http"):
+            if not image_url or "=404" in image_url:
+                return None
+            if not image_url.startswith("http"):
                 image_url = BASE_URL + image_url
             return image_url
         return None

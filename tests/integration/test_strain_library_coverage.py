@@ -237,6 +237,68 @@ async def test_load_invalid_array_json_fields(mock_hass) -> None:
 
 
 @pytest.mark.asyncio
+async def test_load_filters_404_image_path(mock_hass) -> None:
+    """=404 placeholder image_paths must not be stored in self.strains (regression test)."""
+
+    class FakeRow(dict):
+        def __getitem__(self, key: str):
+            return super().__getitem__(key)
+
+    row = FakeRow(
+        strain_id=1,
+        strain_name="Paradise Seeds Strain",
+        lineage_tree=None,
+        breeder="Paradise Seeds",
+        breeder_logo=None,
+        type=None,
+        lineage=None,
+        sex=None,
+        generation=None,
+        sativa_percentage=None,
+        indica_percentage=None,
+        yield_potential=None,
+        height=None,
+        thc=None,
+        cbd=None,
+        cbg=None,
+        description=None,
+        strain_description=None,
+        is_stub=0,
+        awards=None,
+        effects=None,
+        aroma=None,
+        taste=None,
+        phenotype_id=1,
+        phenotype_name="default",
+        image_path="https://seedfinder.eu/storage/pics/01seeds/Paradise_Seeds/=404",
+        image_crop_meta=None,
+        flower_days_min=None,
+        flower_days_max=None,
+    )
+
+    mock_cursor = AsyncMock()
+    mock_cursor.fetchall = AsyncMock(return_value=[row])
+
+    class AsyncCM:
+        async def __aenter__(self):
+            return mock_cursor
+
+        async def __aexit__(self, *a):
+            pass
+
+    mock_db = MagicMock()
+    mock_db.execute = MagicMock(return_value=AsyncCM())
+
+    lib = StrainLibrary(mock_hass)
+    lib._db = mock_db
+
+    await lib.load()
+
+    pheno = lib.strains["Paradise Seeds Strain"]["phenotypes"]["default"]
+    assert "image_path" not in pheno, "=404 image_path must be stripped on load"
+
+
+@pytest.mark.asyncio
 async def test_rebuild_ancestry_no_db(mock_hass) -> None:
     """Test _rebuild_strain_ancestry returns early when _db is None (line 888)."""
     lib = StrainLibrary(mock_hass)

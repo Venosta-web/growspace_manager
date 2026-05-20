@@ -601,6 +601,26 @@ def test_parse_image_none(scraper: SeedfinderScraper) -> None:
     assert url is None
 
 
+def test_parse_image_alpine_404_placeholder_returns_none(
+    scraper: SeedfinderScraper,
+) -> None:
+    """Alpine.js :src with =404 placeholder is rejected."""
+    soup = _soup(
+        '<img :src="selectedIndex === -1 ? \'/storage/pics/00breeder/=404\' : images[selectedIndex].big" />'
+    )
+    url = scraper._parse_image(soup, "Strain")
+    assert url is None
+
+
+def test_parse_image_fallback_src_404_placeholder_returns_none(
+    scraper: SeedfinderScraper,
+) -> None:
+    """Fallback src containing =404 is rejected."""
+    soup = _soup('<img src="/storage/pics/01seeds/Paradise_Seeds/=404" />')
+    url = scraper._parse_image(soup, "Strain")
+    assert url is None
+
+
 # ---------------------------------------------------------------------------
 # _parse_composition
 # ---------------------------------------------------------------------------
