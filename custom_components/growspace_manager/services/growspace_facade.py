@@ -231,6 +231,12 @@ class GrowspaceFacade:
         """Set irrigation settings for a growspace."""
         await self.update_irrigation_config(growspace_id, settings)
 
+    async def set_irrigation_strategy(
+        self, growspace_id: str, strategy: dict[str, Any]
+    ) -> None:
+        """Set irrigation strategy for a growspace."""
+        await self.update_irrigation_config(growspace_id, strategy)
+
     async def add_irrigation_schedule_item(
         self,
         growspace_id: str,

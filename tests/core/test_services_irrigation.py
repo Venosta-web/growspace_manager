@@ -11,6 +11,7 @@ from custom_components.growspace_manager.services.irrigation import (
     handle_remove_drain_time,
     handle_remove_irrigation_time,
     handle_set_irrigation_settings,
+    handle_set_irrigation_strategy,
 )
 from homeassistant.core import HomeAssistant, ServiceCall
 from homeassistant.exceptions import ServiceValidationError
@@ -54,6 +55,7 @@ def mock_coordinator():
     # FIX: Add the services namespace and make the target methods awaitable
     coordinator.services = MagicMock()
     coordinator.services.growspaces.set_irrigation_settings = AsyncMock()
+    coordinator.services.growspaces.set_irrigation_strategy = AsyncMock()
     coordinator.services.growspaces.add_irrigation_schedule_item = AsyncMock()
     coordinator.services.growspaces.remove_irrigation_schedule_item = AsyncMock()
 
@@ -331,3 +333,65 @@ class TestHandleRemoveDrainTime:
         mock_coordinator.services.growspaces.remove_irrigation_schedule_item.assert_awaited_once_with(
             "gs1", "drain_times", "10:00:00"
         )
+
+
+class TestHandleSetIrrigationStrategy:
+    """Tests for handle_set_irrigation_strategy service handler."""
+
+    @pytest.mark.asyncio
+    async def test_set_irrigation_strategy(
+        self,
+        mock_hass: MagicMock,
+        mock_irrigation_coordinator: MagicMock,
+        mock_coordinator: MagicMock,
+    ) -> None:
+        """Test setting irrigation strategy."""
+        # Setup
+        mock_coordinator.irrigation_coordinators = {"gs1": mock_irrigation_coordinator}
+
+        call = MagicMock(spec=ServiceCall)
+        call.data = {
+            "growspace_id": "gs1",
+            "enabled": True,
+            "lights_on_time": "06:00:00",
+            "p0_duration_minutes": 60,
+            "p2_stop_before_lights_off_minutes": 120,
+            "target_vwc_percent": 55.0,
+            "maintenance_dryback_percent": 2.0,
+            "shot_duration_seconds": 10,
+            "shot_interval_minutes": 15,
+        }
+
+        # Execute
+        await handle_set_irrigation_strategy(mock_hass, mock_coordinator, call)
+
+        # Verify against the main coordinator services facade
+        expected_strategy = {
+            "enabled": True,
+            "lights_on_time": "06:00:00",
+            "p0_duration_minutes": 60,
+            "p2_stop_before_lights_off_minutes": 120,
+            "target_vwc_percent": 55.0,
+            "maintenance_dryback_percent": 2.0,
+            "shot_duration_seconds": 10,
+            "shot_interval_minutes": 15,
+        }
+        mock_coordinator.services.growspaces.set_irrigation_strategy.assert_awaited_once_with(
+            "gs1", expected_strategy
+        )
+
+    @pytest.mark.asyncio
+    async def test_set_irrigation_strategy_growspace_not_found(
+        self, mock_hass: MagicMock, mock_coordinator: MagicMock
+    ) -> None:
+        """Test error when growspace not found."""
+        mock_coordinator.irrigation_coordinators = {}
+        mock_coordinator.growspaces = {}
+
+        call = MagicMock(spec=ServiceCall)
+        call.data = {"growspace_id": "gs1", "enabled": True}
+
+        # Should raise ServiceValidationError because GS not found even in fallback
+        with pytest.raises(ServiceValidationError, match="not found"):
+            await handle_set_irrigation_strategy(mock_hass, mock_coordinator, call)
+

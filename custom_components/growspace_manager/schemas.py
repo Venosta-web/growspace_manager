@@ -554,6 +554,21 @@ STRAIN_RECOMMENDATION_SCHEMA = vol.Schema(
 # --- Irrigation Service Schemas ---
 
 
+SET_IRRIGATION_STRATEGY_SCHEMA = vol.Schema(
+    {
+        vol.Required("growspace_id"): vol.All(str, valid_growspace_id),
+        vol.Optional("enabled"): bool,
+        vol.Optional("lights_on_time"): str,
+        vol.Optional("p0_duration_minutes"): vol.All(vol.Coerce(int), vol.Range(min=0)),
+        vol.Optional("p2_stop_before_lights_off_minutes"): vol.All(vol.Coerce(int), vol.Range(min=0)),
+        vol.Optional("target_vwc_percent"): vol.All(vol.Coerce(float), vol.Range(min=0.0, max=100.0)),
+        vol.Optional("maintenance_dryback_percent"): vol.All(vol.Coerce(float), vol.Range(min=0.0, max=100.0)),
+        vol.Optional("shot_duration_seconds"): vol.All(vol.Coerce(int), vol.Range(min=0)),
+        vol.Optional("shot_interval_minutes"): vol.All(vol.Coerce(int), vol.Range(min=0)),
+    }
+)
+
+
 SET_IRRIGATION_SETTINGS_SCHEMA = vol.All(
     vol.Schema(
         {

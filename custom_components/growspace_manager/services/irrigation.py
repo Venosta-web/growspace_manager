@@ -19,6 +19,7 @@ from ..schemas import (
     REMOVE_DRAIN_TIME_SCHEMA,
     REMOVE_IRRIGATION_TIME_SCHEMA,
     SET_IRRIGATION_SETTINGS_SCHEMA,
+    SET_IRRIGATION_STRATEGY_SCHEMA,
 )
 from .utils import handle_service_errors
 from homeassistant.core import HomeAssistant, ServiceCall
@@ -82,6 +83,25 @@ async def handle_set_irrigation_settings(
 
     await coordinator.services.growspaces.set_irrigation_settings(growspace_id, settings)
     _LOGGER.info("Set irrigation settings for growspace '%s'", growspace_id)
+
+
+@handle_service_errors
+async def handle_set_irrigation_strategy(
+    hass: HomeAssistant,
+    coordinator: GrowspaceCoordinator,
+    call: ServiceCall,
+) -> None:
+    """Handle the service call to set irrigation strategy for a growspace."""
+    growspace_id = call.data[ATTR_GROWSPACE_ID]
+    await _get_irrigation_coordinator(coordinator, growspace_id)
+
+    strategy = {
+        key: value for key, value in call.data.items() if key != ATTR_GROWSPACE_ID
+    }
+
+    await coordinator.services.growspaces.set_irrigation_strategy(growspace_id, strategy)
+    _LOGGER.info("Set irrigation strategy for growspace '%s'", growspace_id)
+
 
 
 @handle_service_errors
@@ -155,6 +175,11 @@ SERVICES = [
         GrowspaceService.SET_IRRIGATION_SETTINGS,
         handle_set_irrigation_settings,
         SET_IRRIGATION_SETTINGS_SCHEMA,
+    ),
+    ServiceDefinition(
+        GrowspaceService.SET_IRRIGATION_STRATEGY,
+        handle_set_irrigation_strategy,
+        SET_IRRIGATION_STRATEGY_SCHEMA,
     ),
     ServiceDefinition(
         GrowspaceService.ADD_IRRIGATION_TIME,
