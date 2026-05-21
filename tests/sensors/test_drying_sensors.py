@@ -39,6 +39,8 @@ def _make_coordinator(plant: Plant) -> MagicMock:
     coord = MagicMock()
     coord.plants = {plant.plant_id: plant}
     coord.growspaces = {}
+    coord.services.plants.get_plant.side_effect = coord.plants.get
+    coord.services.growspaces.get_growspace.return_value = None
     return coord
 
 

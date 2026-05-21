@@ -126,9 +126,12 @@ def mock_coordinator(mock_growspace):
         return (date.today() - dt).days
 
     # UPDATE: Use a lambda so plant updates in individual tests evaluate dynamically
+    coordinator.services.growspaces.get_all_growspaces.return_value = coordinator.growspaces
+    coordinator.services.growspaces.get_growspace.side_effect = coordinator.growspaces.get
     coordinator.services.growspaces.get_growspace_plants.side_effect = lambda gid=None: list(
         coordinator.plants.values()
     )
+    coordinator.services.plants.get_plant.side_effect = coordinator.plants.get
     coordinator.services.notifications.is_notifications_enabled.return_value = True
     coordinator.async_add_listener = Mock()
     coordinator.services.calculate_days.side_effect = _calculate_days_side_effect

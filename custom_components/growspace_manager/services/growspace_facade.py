@@ -47,6 +47,10 @@ class GrowspaceFacade:
         """Return a growspace by ID."""
         return self._coordinator.data_repository.get_growspace(growspace_id)
 
+    def get_all_growspaces(self) -> dict[str, Growspace]:
+        """Return all growspaces keyed by ID."""
+        return {gs.id: gs for gs in self._coordinator.data_repository.get_all_growspaces()}
+
     def get_sorted_growspace_options(self) -> list[tuple[str, str]]:
         """Return a sorted list of (growspace_id, name) tuples."""
         return self._coordinator.growspace_manager.get_sorted_growspace_options()

@@ -135,7 +135,7 @@ async def async_setup_entry(
         """Check for new growspaces with environment config and add sensors."""
         new_entities: list[BinarySensorEntity] = []
 
-        for growspace_id, growspace in coordinator.growspaces.items():
+        for growspace_id, growspace in coordinator.services.growspaces.get_all_growspaces().items():
             env_config = getattr(growspace, "environment_config", None)
 
             # Ensure env_config is an EnvironmentConfig object and valid
@@ -178,7 +178,7 @@ def _process_growspace_sensors(
     """Process and add sensors for a single growspace using definitions."""
 
     # 1. Determine which sensor types are valid for this growspace
-    growspace = coordinator.growspaces.get(growspace_id)
+    growspace = coordinator.services.growspaces.get_growspace(growspace_id)
     if not growspace:
         return
 
@@ -209,7 +209,7 @@ def _process_growspace_sensors(
                         description=description,
                         strategy_class=strategy_class,
                         # Inject dependencies as callbacks
-                        get_growspace=lambda gid: coordinator.growspaces.get(gid),
+                        get_growspace=coordinator.services.growspaces.get_growspace,
                         get_plants=coordinator.services.growspaces.get_growspace_plants,
                         add_event=coordinator.add_event,
                         notification_manager=coordinator.services.notifications.manager,
@@ -546,7 +546,7 @@ class BayesianEnvironmentSensor(
             env_config=self.env_config,
             analyze_trend=self.async_analyze_sensor_trend,
             get_state=self.hass.states.get,
-            get_growspace=lambda: coordinator.growspaces.get(growspace_id),
+            get_growspace=lambda: coordinator.services.growspaces.get_growspace(growspace_id),
             get_notification_message=lambda msg, reasons: (
                 notification_manager.generate_notification_message(msg, reasons)
                 if notification_manager
@@ -1021,7 +1021,7 @@ class LightCycleVerificationSensor(
         self._get_plants = get_plants
         self._calculate_days = calculate_days
 
-        growspace = coordinator.growspaces.get(growspace_id)
+        growspace = coordinator.services.growspaces.get_growspace(growspace_id)
         name = growspace.name if growspace else growspace_id
         self._attr_unique_id = f"{DOMAIN}_{growspace_id}_light_verification"
         self._attr_device_info = DeviceInfo(
@@ -1214,11 +1214,12 @@ class DryingReadyForCureSensor(CoordinatorEntity[GrowspaceCoordinator], BinarySe
         """Initialize the ready-for-cure binary sensor."""
         super().__init__(coordinator)
         self._plant_id = plant.plant_id
+        self._get_plant = coordinator.services.plants.get_plant
         self._attr_unique_id = f"{DOMAIN}_{plant.plant_id}_ready_for_cure"
-        growspace: Any = coordinator.growspaces.get(plant.growspace_id, {})
+        growspace = coordinator.services.growspaces.get_growspace(plant.growspace_id)
         self._attr_device_info = DeviceInfo(
             identifiers={(DOMAIN, plant.growspace_id)},
-            name=getattr(growspace, "name", plant.growspace_id),
+            name=growspace.name if growspace else plant.growspace_id,
             model="Growspace",
             manufacturer="Growspace Manager",
         )
@@ -1227,7 +1228,7 @@ class DryingReadyForCureSensor(CoordinatorEntity[GrowspaceCoordinator], BinarySe
     @override  # type: ignore[misc]
     def is_on(self) -> bool:
         """Return True when the latest moisture reading is at or below the cure threshold."""
-        plant = self.coordinator.plants.get(self._plant_id)
+        plant = self._get_plant(self._plant_id)
         if not plant:
             return False
         return is_cure_ready(plant.drying_data.moisture_log)
