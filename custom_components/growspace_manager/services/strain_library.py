@@ -303,6 +303,7 @@ async def handle_add_strain(
 
     image_path = call.data.get("image_path")
     image_crop_meta = call.data.get("image_crop_meta")
+    images = call.data.get("images")
     sativa_percentage = call.data.get("sativa_percentage")
     indica_percentage = call.data.get("indica_percentage")
     breeder_logo = call.data.get("breeder_logo")
@@ -325,6 +326,7 @@ async def handle_add_strain(
             image_base64=image_base64,
             image_path=image_path,
             image_crop_meta=image_crop_meta,
+            images=images,
             sativa_percentage=sativa_percentage,
             indica_percentage=indica_percentage,
             breeder_logo=breeder_logo,
@@ -364,6 +366,7 @@ async def handle_update_strain_meta(
 
     image_path = call.data.get("image_path")
     image_crop_meta = call.data.get("image_crop_meta")
+    images = call.data.get("images")
     sativa_percentage = call.data.get("sativa_percentage")
     indica_percentage = call.data.get("indica_percentage")
     breeder_logo = call.data.get("breeder_logo")
@@ -396,6 +399,7 @@ async def handle_update_strain_meta(
             image_base64=image_base64,
             image_path=image_path,
             image_crop_meta=image_crop_meta,
+            images=images,
             sativa_percentage=sativa_percentage,
             indica_percentage=indica_percentage,
             breeder_logo=breeder_logo,

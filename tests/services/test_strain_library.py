@@ -801,3 +801,105 @@ async def test_analytics_snapshot(strain_library: StrainLibrary, snapshot) -> No
 
     analytics = strain_library.get_analytics()
     assert analytics == snapshot
+
+
+# --- Image Gallery ---
+
+@pytest.mark.asyncio
+async def test_add_strain_with_images_gallery(strain_library: StrainLibrary) -> None:
+    """Phenotype data contains the full images array after add_strain with images."""
+    images = [
+        {"path": "/local/growspace_manager/strains/og-kush_default_a.webp", "crop_meta": None, "is_thumbnail": True},
+        {"path": "/local/growspace_manager/strains/og-kush_default_b.webp", "crop_meta": {"x": 50, "y": 50, "scale": 1.2}, "is_thumbnail": False},
+    ]
+
+    await strain_library.add_strain(strain="OG Kush", images=images)
+
+    pheno = strain_library.strains["OG Kush"]["phenotypes"]["default"]
+    assert pheno["images"] == images
+
+
+@pytest.mark.asyncio
+async def test_images_gallery_replace_all(strain_library: StrainLibrary) -> None:
+    """Saving a new images list replaces the existing gallery entirely."""
+    original = [
+        {"path": "/local/a.webp", "crop_meta": None, "is_thumbnail": True},
+        {"path": "/local/b.webp", "crop_meta": None, "is_thumbnail": False},
+    ]
+    await strain_library.add_strain(strain="OG Kush", images=original)
+
+    replacement = [
+        {"path": "/local/c.webp", "crop_meta": None, "is_thumbnail": True},
+    ]
+    await strain_library.add_strain(strain="OG Kush", images=replacement)
+
+    pheno = strain_library.strains["OG Kush"]["phenotypes"]["default"]
+    assert pheno["images"] == replacement
+
+
+@pytest.mark.asyncio
+async def test_migration_image_path_to_images_gallery(strain_library: StrainLibrary) -> None:
+    """Phenotypes with image_path but no images get migrated to the gallery format on load."""
+    # Simulate pre-gallery data: insert directly into DB leaving images NULL
+    await strain_library._db.execute(
+        "INSERT OR IGNORE INTO strains (strain_name) VALUES (?)", ("Blue Dream",)
+    )
+    await strain_library._db.execute(
+        """
+        INSERT INTO phenotypes (strain_id, phenotype_name, image_path, image_crop_meta)
+        SELECT strain_id, 'default',
+               '/local/growspace_manager/strains/blue-dream.webp',
+               '{"x": 50, "y": 50, "scale": 1.0}'
+        FROM strains WHERE strain_name = 'Blue Dream'
+        """
+    )
+    await strain_library._db.commit()
+
+    # Re-load triggers the migration
+    await strain_library.load()
+
+    pheno = strain_library.strains["Blue Dream"]["phenotypes"]["default"]
+    assert "images" in pheno
+    assert len(pheno["images"]) == 1
+    assert pheno["images"][0]["path"] == "/local/growspace_manager/strains/blue-dream.webp"
+    assert pheno["images"][0]["is_thumbnail"] is True
+    assert pheno["images"][0]["crop_meta"] == {"x": 50, "y": 50, "scale": 1.0}
+
+
+# --- Thumbnail resolution ---
+
+@pytest.mark.asyncio
+async def test_resolve_thumbnail_own_images(strain_library: StrainLibrary) -> None:
+    """resolve_thumbnail returns the thumbnail entry from the phenotype's own gallery."""
+    images = [
+        {"path": "/local/a.webp", "crop_meta": None, "is_thumbnail": False},
+        {"path": "/local/b.webp", "crop_meta": {"x": 30, "y": 70, "scale": 1.1}, "is_thumbnail": True},
+    ]
+    await strain_library.add_strain(strain="OG Kush", images=images)
+
+    thumbnail = strain_library.resolve_thumbnail("OG Kush", "default")
+    assert thumbnail == {"path": "/local/b.webp", "crop_meta": {"x": 30, "y": 70, "scale": 1.1}, "is_thumbnail": True}
+
+
+@pytest.mark.asyncio
+async def test_resolve_thumbnail_falls_back_to_default_phenotype(strain_library: StrainLibrary) -> None:
+    """resolve_thumbnail falls back to 'default' sibling when phenotype has no images."""
+    default_image = {"path": "/local/default.webp", "crop_meta": None, "is_thumbnail": True}
+    await strain_library.add_strain(strain="OG Kush", phenotype=None, images=[default_image])
+    await strain_library.add_strain(strain="OG Kush", phenotype="Pheno A")
+
+    thumbnail = strain_library.resolve_thumbnail("OG Kush", "Pheno A")
+    assert thumbnail == default_image
+
+
+@pytest.mark.asyncio
+async def test_resolve_thumbnail_falls_back_alphabetical_when_no_default(strain_library: StrainLibrary) -> None:
+    """resolve_thumbnail falls back alphabetically when 'default' has no images."""
+    bravo_image = {"path": "/local/bravo.webp", "crop_meta": None, "is_thumbnail": True}
+    await strain_library.add_strain(strain="OG Kush", phenotype="Bravo")
+    await strain_library.add_strain(strain="OG Kush", phenotype="Alpha", images=[bravo_image])
+    await strain_library.add_strain(strain="OG Kush", phenotype="Zeta")
+
+    # Zeta has no images, default has no images — should get Alpha's thumbnail (first alphabetically)
+    thumbnail = strain_library.resolve_thumbnail("OG Kush", "Zeta")
+    assert thumbnail == bravo_image

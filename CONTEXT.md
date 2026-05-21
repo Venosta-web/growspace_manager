@@ -2,6 +2,12 @@
 
 ## Core Concepts
 
+**Strain Image Gallery**
+The collection of images associated with a single phenotype. Stored as a JSON array on the phenotype record. Each entry has a path and optional crop metadata. One entry is designated as the Strain Thumbnail. A phenotype may have zero or more images.
+
+**Strain Thumbnail**
+The single designated image from a phenotype's Strain Image Gallery that is used everywhere a strain image is displayed (plant cards, library list, recommendations). If a phenotype has no images, the thumbnail is resolved from a sibling phenotype of the same strain: the `"default"` phenotype takes priority as the fallback source, then any other sibling in alphabetical order. This fallback is display-only — the phenotype's own gallery remains empty.
+
 **Plant**
 An individual cannabis plant tracked from seedling through cure. The atomic unit of all lifecycle, drying, and curing tracking. A "harvest batch" is not a separate concept — each plant is weighed and tracked individually.
 
@@ -36,6 +42,9 @@ A moisture reading ≤ 12.0% indicates the plant is ready to move from `dry` to 
 
 **Estimated Days to Target Weight**
 Projected number of days until the plant's current weight reaches the Target Dry Weight. Computed from the rolling average daily weight loss across all `weight_log` entries.
+
+**Active Growspace**
+A growspace with `total_plants > 0`, regardless of `PlantStage`. A growspace in `dry` or `cure` mode still counts as active if plants are present. An empty growspace (no plants at all) is inactive.
 
 ## Drying Thresholds (Constants)
 

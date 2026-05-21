@@ -8,6 +8,7 @@ import hashlib
 from io import BytesIO
 import logging
 from pathlib import Path
+import re
 from typing import Any, cast
 
 from PIL import Image, UnidentifiedImageError
@@ -19,6 +20,11 @@ from homeassistant.util import dt as dt_util
 from .exceptions import GrowspaceError
 
 _LOGGER = logging.getLogger(__name__)
+
+
+def _safe_filename_part(s: str) -> str:
+    """Replace URL-unsafe characters in a filename segment with underscores."""
+    return re.sub(r'[#%?&=+]', '_', s)
 
 
 class ImageManager:
@@ -263,16 +269,25 @@ class ImageManager:
             if image.mode not in ("RGB", "RGBA"):
                 image = image.convert("RGB")
 
-            # Generate base filename
-            base_name = f"{strain_id}"
+            # Generate base filename — sanitize to keep filenames URL-safe
+            base_name = _safe_filename_part(strain_id)
             if phenotype_id:
-                base_name += f"_{phenotype_id}"
+                base_name += f"_{_safe_filename_part(phenotype_id)}"
 
             filename = f"{base_name}.webp"
             small_filename = f"{base_name}_small.webp"
 
             file_path = self.storage_dir / filename
             small_file_path = self.storage_dir / small_filename
+
+            # Avoid overwriting an existing image — append _2, _3, … until unique
+            counter = 2
+            while file_path.exists():
+                filename = f"{base_name}_{counter}.webp"
+                small_filename = f"{base_name}_{counter}_small.webp"
+                file_path = self.storage_dir / filename
+                small_file_path = self.storage_dir / small_filename
+                counter += 1
 
             # 1. Save Full Size Optimized WebP
             image.save(file_path, "WEBP", quality=85, method=4)
@@ -366,9 +381,9 @@ class ImageManager:
 
     def get_image_path(self, strain_id: str, phenotype_id: str | None) -> str | None:
         """Get the path to an existing image using the cache."""
-        base_name = f"{strain_id}"
+        base_name = _safe_filename_part(strain_id)
         if phenotype_id:
-            base_name += f"_{phenotype_id}"
+            base_name += f"_{_safe_filename_part(phenotype_id)}"
 
         # 1. Try WebP first
         webp_name = f"{base_name}.webp"
@@ -384,9 +399,9 @@ class ImageManager:
 
     def delete_image(self, strain_id: str, phenotype_id: str | None) -> None:
         """Delete an image and its thumbnail if they exist."""
-        base_name = f"{strain_id}"
+        base_name = _safe_filename_part(strain_id)
         if phenotype_id:
-            base_name += f"_{phenotype_id}"
+            base_name += f"_{_safe_filename_part(phenotype_id)}"
 
         # Define all possible variants to delete
         files_to_delete = [

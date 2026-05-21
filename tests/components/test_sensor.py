@@ -1052,7 +1052,33 @@ def test_growspace_list_sensor_state_and_attributes(
     sensor.platform_data = sensor.platform
     attrs = sensor.extra_state_attributes
     assert "growspaces" in attrs
-    assert attrs["growspaces"] == {"gs1": "Growspace 1"}
+    assert attrs["growspaces"] == {
+        "gs1": {"name": "Growspace 1", "total_plants": 1}
+    }
+
+
+def test_growspace_list_sensor_plant_counts_per_growspace() -> None:
+    """GrowspaceListSensor reports correct plant counts for each growspace in a single pass."""
+    coordinator = MagicMock()
+    gs1 = MagicMock()
+    gs1.name = "Tent 1"
+    gs2 = MagicMock()
+    gs2.name = "Tent 2"
+    coordinator.growspaces = {"gs1": gs1, "gs2": gs2}
+    coordinator.plants = {
+        "p1": MagicMock(growspace_id="gs1"),
+        "p2": MagicMock(growspace_id="gs1"),
+        "p3": MagicMock(growspace_id="gs2"),
+    }
+    coordinator.async_add_listener = MagicMock()
+
+    sensor = GrowspaceListSensor(coordinator)
+    attrs = sensor.extra_state_attributes
+
+    assert attrs["growspaces"]["gs1"]["total_plants"] == 2
+    assert attrs["growspaces"]["gs2"]["total_plants"] == 1
+    assert attrs["growspaces"]["gs1"]["name"] == "Tent 1"
+    assert attrs["growspaces"]["gs2"]["name"] == "Tent 2"
 
 
 # --------------------

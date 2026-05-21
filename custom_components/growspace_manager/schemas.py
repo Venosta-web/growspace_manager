@@ -401,6 +401,7 @@ STRAIN_BASE_FIELDS: dict[Any, Any] = {
     vol.Optional("cbg"): vol.Any(None, vol.Coerce(float)),
     vol.Optional("awards"): [str],
     vol.Optional("lineage_tree"): dict,
+    vol.Optional("images"): [dict],
 }
 
 ADD_STRAIN_SCHEMA = vol.All(

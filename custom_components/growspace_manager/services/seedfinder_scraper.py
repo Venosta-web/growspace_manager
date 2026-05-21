@@ -1,5 +1,6 @@
 """Seedfinder scraper for Growspace Manager."""
 
+import json
 import logging
 import re
 from typing import Any
@@ -144,7 +145,7 @@ class SeedfinderScraper:
 
                 # Extract info using helper methods
                 name, breeder = self._parse_basic_info(soup)
-                image_url = self._parse_image(soup, name)
+                image_urls = self._parse_images(soup)
                 comp_data = self._parse_composition(soup)
                 metrics = self._parse_metrics(soup)
 
@@ -198,7 +199,7 @@ class SeedfinderScraper:
                     "flowering_time": metrics.get("flowering_time"),
                     "lineage_str": lineage_str,
                     "description": description,
-                    "image": image_url,
+                    "images": image_urls,
                     "yield_potential": metrics.get("yield_potential"),
                     "height": metrics.get("height"),
                     "thc": thc,
@@ -236,6 +237,54 @@ class SeedfinderScraper:
 
         return name, breeder
 
+    _MAX_GALLERY_IMAGES = 10
+
+    def _parse_images(self, soup: BeautifulSoup) -> list[str]:
+        """Extract gallery image URLs, capped at 10.
+
+        Tries three strategies in order:
+        1. Alpine.js x-data JSON gallery (newer Seedfinder pages).
+        2. Plain <img src="/storage/pics/galerie/..."> tags (older pages).
+        3. Single-image fallback via _parse_image.
+        """
+        # Strategy 1: Alpine.js x-data (supports both JSON and JS object literal syntax)
+        for tag in soup.find_all(attrs={"x-data": True}):
+            x_data_raw = tag.get("x-data", "")
+            urls = []
+            for match in re.finditer(r'"?big"?:\s*["\']([^"\']+)["\']', x_data_raw):
+                url = match.group(1)
+                if not url or "=404" in url:
+                    continue
+                if not url.startswith("http"):
+                    url = BASE_URL + url
+                if url not in urls:
+                    urls.append(url)
+                if len(urls) >= self._MAX_GALLERY_IMAGES:
+                    break
+            if urls:
+                return urls
+
+        # Strategy 2: plain galerie img tags (e.g. Sunset Paradise)
+        seen: set[str] = set()
+        galerie_urls: list[str] = []
+        for img in soup.find_all("img", src=re.compile(r"/storage/pics/galerie/")):
+            url = img.get("src")
+            if not url or "=404" in url:
+                continue
+            if not url.startswith("http"):
+                url = BASE_URL + url
+            if url not in seen:
+                seen.add(url)
+                galerie_urls.append(url)
+            if len(galerie_urls) >= self._MAX_GALLERY_IMAGES:
+                break
+        if galerie_urls:
+            return galerie_urls
+
+        # Strategy 3: single-image fallback
+        single = self._parse_image(soup, "")
+        return [single] if single else []
+
     def _parse_image(self, soup: BeautifulSoup, name: str) -> str | None:
         """Extract primary strain image."""
         # Prefer the official breeder image embedded in the Alpine.js :src binding.
@@ -246,6 +295,8 @@ class SeedfinderScraper:
             match = re.search(r"selectedIndex === -1 \? '([^']+)'", src_expr)
             if match:
                 image_url = match.group(1)
+                if "=404" in image_url:
+                    return None
                 if not image_url.startswith("http"):
                     image_url = BASE_URL + image_url
                 return image_url
@@ -254,7 +305,9 @@ class SeedfinderScraper:
         img_tag = soup.find("img", src=re.compile(r"/storage/pics/"))
         if img_tag:
             image_url = img_tag.get("src")
-            if image_url and not image_url.startswith("http"):
+            if not image_url or "=404" in image_url:
+                return None
+            if not image_url.startswith("http"):
                 image_url = BASE_URL + image_url
             return image_url
         return None

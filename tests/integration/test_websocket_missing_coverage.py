@@ -10,6 +10,7 @@ from custom_components.growspace_manager.const import DOMAIN
 from custom_components.growspace_manager.websocket import (
     websocket_add_growspace_note,
     websocket_add_subarea,
+    websocket_download_strain_image,
     websocket_get_ec_ramp_curves,
     websocket_get_external_strain_details,
     websocket_get_ipm_presets,
@@ -592,3 +593,63 @@ async def test_websocket_get_external_strain_details_single_flowering_time(
     result = mock_connection.send_result.call_args[0][1]
     assert result["flowering_days"] == 60
     assert result["parents"] is None
+
+
+# ---------------------------------------------------------------------------
+# websocket_download_strain_image – MIME type from Content-Type header
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_websocket_download_strain_image_uses_content_type_header(
+    hass: HomeAssistant,
+) -> None:
+    """download_strain_image builds the data URI using the Content-Type from the HTTP response."""
+    mock_connection = MagicMock()
+    mock_connection.send_result = MagicMock()
+    mock_connection.send_error = MagicMock()
+
+    msg = {
+        "id": 1,
+        "url": "https://example.com/photo.png",
+        "strain": "OG Kush",
+        "phenotype": "a",
+    }
+
+    raw_bytes = b"\x89PNG\r\n"
+    mock_response = MagicMock()
+    mock_response.status = 200
+    mock_response.headers = {"Content-Type": "image/png"}
+    mock_response.read = AsyncMock(return_value=raw_bytes)
+
+    mock_ctx = MagicMock()
+    mock_ctx.__aenter__ = AsyncMock(return_value=mock_response)
+    mock_ctx.__aexit__ = AsyncMock(return_value=None)
+
+    mock_session = MagicMock()
+    mock_session.get.return_value = mock_ctx
+
+    mock_image_manager = MagicMock()
+    mock_image_manager.save_strain_image = AsyncMock(
+        return_value="/config/www/growspace_manager/strains/og-kush_a_abc.png"
+    )
+
+    mock_coordinator = MagicMock()
+    mock_coordinator.services.config.strain_library.image_manager = mock_image_manager
+
+    with (
+        patch(
+            "custom_components.growspace_manager.websocket.GrowspaceCoordinator.get_any",
+            return_value=mock_coordinator,
+        ),
+        patch(
+            "homeassistant.helpers.aiohttp_client.async_get_clientsession",
+            return_value=mock_session,
+        ),
+    ):
+        await websocket_download_strain_image(hass, mock_connection, msg)
+
+    saved_base64: str = mock_image_manager.save_strain_image.call_args[0][2]
+    assert saved_base64.startswith("data:image/png;base64,"), (
+        f"Expected 'data:image/png;base64,' prefix but got: {saved_base64[:40]}"
+    )
