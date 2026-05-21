@@ -202,11 +202,11 @@ async def test_async_setup_entry_calculated_vpd(mock_coordinator: MagicMock) -> 
 
     with (
         patch(
-            "custom_components.growspace_manager.sensor.async_setup_trend_sensor",
+            "custom_components.growspace_manager.sensor._setup.async_setup_trend_sensor",
             new_callable=AsyncMock,
         ),
         patch(
-            "custom_components.growspace_manager.sensor.async_setup_statistics_sensor",
+            "custom_components.growspace_manager.sensor._setup.async_setup_statistics_sensor",
             new_callable=AsyncMock,
         ),
     ):
@@ -267,11 +267,11 @@ async def test_async_setup_entry_vision_sensor(mock_coordinator: MagicMock) -> N
 
     with (
         patch(
-            "custom_components.growspace_manager.sensor.async_setup_trend_sensor",
+            "custom_components.growspace_manager.sensor._setup.async_setup_trend_sensor",
             new_callable=AsyncMock,
         ),
         patch(
-            "custom_components.growspace_manager.sensor.async_setup_statistics_sensor",
+            "custom_components.growspace_manager.sensor._setup.async_setup_statistics_sensor",
             new_callable=AsyncMock,
         ),
     ):
@@ -501,11 +501,11 @@ async def test_async_create_derivative_sensors(mock_coordinator: MagicMock) -> N
 
     with (
         patch(
-            "custom_components.growspace_manager.sensor.async_setup_trend_sensor",
+            "custom_components.growspace_manager.sensor._setup.async_setup_trend_sensor",
             new_callable=AsyncMock,
         ) as mock_setup_trend,
         patch(
-            "custom_components.growspace_manager.sensor.async_setup_statistics_sensor",
+            "custom_components.growspace_manager.sensor._setup.async_setup_statistics_sensor",
             new_callable=AsyncMock,
         ) as mock_setup_stats,
     ):
@@ -1016,11 +1016,11 @@ async def test_async_create_derivative_sensors_object_config(
 
     with (
         patch(
-            "custom_components.growspace_manager.sensor.async_setup_trend_sensor",
+            "custom_components.growspace_manager.sensor._setup.async_setup_trend_sensor",
             new_callable=AsyncMock,
         ) as mock_trend,
         patch(
-            "custom_components.growspace_manager.sensor.async_setup_statistics_sensor",
+            "custom_components.growspace_manager.sensor._setup.async_setup_statistics_sensor",
             new_callable=AsyncMock,
         ) as mock_stats,
     ):
@@ -1202,11 +1202,11 @@ async def test_async_setup_entry_recreates_calculated_vpd(
 
     with (
         patch(
-            "custom_components.growspace_manager.sensor.async_setup_trend_sensor",
+            "custom_components.growspace_manager.sensor._setup.async_setup_trend_sensor",
             new_callable=AsyncMock,
         ),
         patch(
-            "custom_components.growspace_manager.sensor.async_setup_statistics_sensor",
+            "custom_components.growspace_manager.sensor._setup.async_setup_statistics_sensor",
             new_callable=AsyncMock,
         ),
     ):
@@ -1376,7 +1376,7 @@ async def test_async_setup_entry_dataclass_tank(mock_coordinator: MagicMock) -> 
         added_entities.extend(entities)
 
     with patch(
-        "custom_components.growspace_manager.sensor.TankDepletionPredictor"
+        "custom_components.growspace_manager.sensor._setup.TankDepletionPredictor"
     ) as mock_predictor_cls:
         mock_predictor = mock_predictor_cls.return_value
         mock_predictor.async_update = AsyncMock()

@@ -74,12 +74,12 @@ async def test_async_create_derivative_sensors_singular_sensor_inserts() -> None
 
     with (
         patch(
-            "custom_components.growspace_manager.sensor.async_setup_trend_sensor",
+            "custom_components.growspace_manager.sensor._setup.async_setup_trend_sensor",
             new_callable=AsyncMock,
             return_value="uid1",
         ),
         patch(
-            "custom_components.growspace_manager.sensor.async_setup_statistics_sensor",
+            "custom_components.growspace_manager.sensor._setup.async_setup_statistics_sensor",
             new_callable=AsyncMock,
             return_value="uid2",
         ),
@@ -143,11 +143,11 @@ async def test_create_initial_entities_dli_and_energy_sensors_created() -> None:
     initial_entities: list = []
     with (
         patch(
-            "custom_components.growspace_manager.sensor.async_setup_trend_sensor",
+            "custom_components.growspace_manager.sensor._setup.async_setup_trend_sensor",
             new_callable=AsyncMock,
         ),
         patch(
-            "custom_components.growspace_manager.sensor.async_setup_statistics_sensor",
+            "custom_components.growspace_manager.sensor._setup.async_setup_statistics_sensor",
             new_callable=AsyncMock,
         ),
     ):
@@ -186,14 +186,14 @@ async def test_create_initial_entities_dict_env_config_with_tank() -> None:
 
     with (
         patch(
-            "custom_components.growspace_manager.sensor.TankDepletionPredictor"
+            "custom_components.growspace_manager.sensor._setup.TankDepletionPredictor"
         ) as mock_tdp,
         patch(
-            "custom_components.growspace_manager.sensor.async_setup_trend_sensor",
+            "custom_components.growspace_manager.sensor._setup.async_setup_trend_sensor",
             new_callable=AsyncMock,
         ),
         patch(
-            "custom_components.growspace_manager.sensor.async_setup_statistics_sensor",
+            "custom_components.growspace_manager.sensor._setup.async_setup_statistics_sensor",
             new_callable=AsyncMock,
         ),
     ):
@@ -611,7 +611,7 @@ def test_ec_sensor_get_active_curve_matches() -> None:
     coordinator.services.growspaces.get_growspace_plants.return_value = [Mock()]
 
     with patch(
-        "custom_components.growspace_manager.sensor.calculate_plant_stage",
+        "custom_components.growspace_manager.sensor.environment.calculate_plant_stage",
         return_value="flower",
     ):
         result = sensor._get_active_curve()
@@ -628,7 +628,7 @@ def test_ec_sensor_get_active_curve_no_match() -> None:
     coordinator.services.growspaces.get_growspace_plants.return_value = [Mock()]
 
     with patch(
-        "custom_components.growspace_manager.sensor.calculate_plant_stage",
+        "custom_components.growspace_manager.sensor.environment.calculate_plant_stage",
         return_value="veg",
     ):
         assert sensor._get_active_curve() is None
@@ -641,7 +641,7 @@ def test_ec_sensor_get_current_week() -> None:
     coordinator.services.growspaces.get_growspace_plants.return_value = [plant]
 
     with patch(
-        "custom_components.growspace_manager.sensor.calculate_plant_stage",
+        "custom_components.growspace_manager.sensor.environment.calculate_plant_stage",
         return_value="flower",
     ):
         assert sensor._get_current_week() == 3  # (14 // 7) + 1
@@ -664,7 +664,7 @@ def test_ec_sensor_native_value_exact_week_match() -> None:
     coordinator.services.growspaces.get_growspace_plants.return_value = [plant]
 
     with patch(
-        "custom_components.growspace_manager.sensor.calculate_plant_stage",
+        "custom_components.growspace_manager.sensor.environment.calculate_plant_stage",
         return_value="flower",
     ):
         result = sensor.native_value
@@ -688,7 +688,7 @@ def test_ec_sensor_native_value_fallback_last_point() -> None:
     coordinator.services.growspaces.get_growspace_plants.return_value = [plant]
 
     with patch(
-        "custom_components.growspace_manager.sensor.calculate_plant_stage",
+        "custom_components.growspace_manager.sensor.environment.calculate_plant_stage",
         return_value="flower",
     ):
         result = sensor.native_value
@@ -714,7 +714,7 @@ def test_ec_sensor_extra_state_attributes_exact_match() -> None:
     coordinator.services.growspaces.get_growspace_plants.return_value = [plant]
 
     with patch(
-        "custom_components.growspace_manager.sensor.calculate_plant_stage",
+        "custom_components.growspace_manager.sensor.environment.calculate_plant_stage",
         return_value="flower",
     ):
         attrs = sensor.extra_state_attributes
@@ -742,7 +742,7 @@ def test_ec_sensor_extra_state_attributes_fallback_last_point() -> None:
     coordinator.services.growspaces.get_growspace_plants.return_value = [plant]
 
     with patch(
-        "custom_components.growspace_manager.sensor.calculate_plant_stage",
+        "custom_components.growspace_manager.sensor.environment.calculate_plant_stage",
         return_value="flower",
     ):
         attrs = sensor.extra_state_attributes
@@ -864,7 +864,7 @@ def test_ec_sensor_native_value_before_first_point() -> None:
     coordinator.get_growspace_plants.return_value = [plant]
 
     with patch(
-        "custom_components.growspace_manager.sensor.calculate_plant_stage",
+        "custom_components.growspace_manager.sensor.environment.calculate_plant_stage",
         return_value="flower",
     ):
         result = sensor.native_value

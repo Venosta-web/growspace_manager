@@ -146,7 +146,7 @@ async def test_async_setup_entry_with_tanks(hass: HomeAssistant, mock_coordinato
 
     # Mock IrrigationTank class to avoid complex instantiation
     with patch(
-        "custom_components.growspace_manager.sensor.TankDepletionPredictor"
+        "custom_components.growspace_manager.sensor._setup.TankDepletionPredictor"
     ) as mock_predictor_cls:
         mock_predictor_instance = MagicMock()
         mock_predictor_instance.async_update = AsyncMock()

@@ -260,7 +260,7 @@ async def test_base_vpd_sensor_tracking(hass: HomeAssistant) -> None:
 
     with (
         patch(
-            "custom_components.growspace_manager.sensor.async_track_state_change_event"
+            "custom_components.growspace_manager.sensor.vpd.async_track_state_change_event"
         ) as mock_track,
         patch.object(
             BaseVpdSensor, "entities_to_track", property(lambda self: ["sensor.source"])
@@ -286,7 +286,7 @@ async def test_growspace_overview_sensor_tracking(hass: HomeAssistant) -> None:
     sensor.async_write_ha_state = MagicMock()
 
     with patch(
-        "custom_components.growspace_manager.sensor.async_track_state_change_event"
+        "custom_components.growspace_manager.sensor.overview.async_track_state_change_event"
     ) as mock_track:
         await sensor.async_added_to_hass()
         mock_track.assert_called()
@@ -603,14 +603,14 @@ async def test_sensor_new_vpd_entity_creation_in_update(hass: HomeAssistant) -> 
     mock_add_entities = MagicMock()
 
     with patch(
-        "custom_components.growspace_manager.sensor._check_calculated_vpd_sensor"
+        "custom_components.growspace_manager.sensor._setup._check_calculated_vpd_sensor"
     ) as mock_check:
         mock_vpd_entity = MagicMock()
         mock_vpd_entity.unique_id = "gs1"
         mock_check.return_value = [mock_vpd_entity]
 
         with patch(
-            "custom_components.growspace_manager.sensor._async_create_derivative_sensors"
+            "custom_components.growspace_manager.sensor._setup._async_create_derivative_sensors"
         ):
             await _update_growspace_entities(
                 hass,
