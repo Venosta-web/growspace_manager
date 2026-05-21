@@ -178,7 +178,7 @@ async def test_websocket_get_event_log(
 
     # Mock recorder query
     with patch(
-        "custom_components.growspace_manager.websocket.get_instance"
+        "custom_components.growspace_manager.websocket.logbook.get_instance"
     ) as mock_recorder:
         mock_instance = MagicMock()
         mock_recorder.return_value = mock_instance
@@ -208,10 +208,10 @@ async def test_websocket_get_alerts(
 
     with (
         patch(
-            "custom_components.growspace_manager.websocket.get_instance"
+            "custom_components.growspace_manager.websocket.logbook.get_instance"
         ) as mock_recorder,
         patch(
-            "custom_components.growspace_manager.websocket.session_scope"
+            "custom_components.growspace_manager.websocket.logbook.session_scope"
         ) as mock_scope,
     ):
         mock_session = MagicMock()
@@ -263,10 +263,10 @@ async def test_websocket_get_log_filters_spam(
 
     with (
         patch(
-            "custom_components.growspace_manager.websocket.get_instance"
+            "custom_components.growspace_manager.websocket.logbook.get_instance"
         ) as mock_recorder,
         patch(
-            "custom_components.growspace_manager.websocket.session_scope"
+            "custom_components.growspace_manager.websocket.logbook.session_scope"
         ) as mock_scope,
     ):
         mock_session = MagicMock()
@@ -319,7 +319,7 @@ async def test_websocket_get_history_stats(
 
     # Test fallback to binary search (short interval)
     with patch(
-        "custom_components.growspace_manager.websocket._get_history_with_binary_search_downsample",
+        "custom_components.growspace_manager.websocket.environment._get_history_with_binary_search_downsample",
         return_value={"sensor.test": [{"s": "10", "lu": "time"}]},
     ):
         await client.send_json(
@@ -338,7 +338,7 @@ async def test_websocket_get_history_stats(
 
     # Test statistics API (long interval)
     with patch(
-        "custom_components.growspace_manager.websocket._get_statistics_data",
+        "custom_components.growspace_manager.websocket.environment._get_statistics_data",
         return_value={"sensor.test": [{"s": "10", "lu": "time"}]},
     ):
         await client.send_json(
@@ -512,10 +512,10 @@ async def test_websocket_remove_timeline_event(
 
     with (
         patch(
-            "custom_components.growspace_manager.websocket.get_instance"
+            "custom_components.growspace_manager.websocket.timeline.get_instance"
         ) as mock_recorder,
         patch(
-            "custom_components.growspace_manager.websocket.session_scope"
+            "custom_components.growspace_manager.websocket.timeline.session_scope"
         ) as mock_scope,
     ):
         mock_session = MagicMock()
@@ -546,10 +546,10 @@ async def test_websocket_get_event_log_internals(
 
     with (
         patch(
-            "custom_components.growspace_manager.websocket.get_instance"
+            "custom_components.growspace_manager.websocket.logbook.get_instance"
         ) as mock_recorder,
         patch(
-            "custom_components.growspace_manager.websocket.session_scope"
+            "custom_components.growspace_manager.websocket.logbook.session_scope"
         ) as mock_scope,
     ):
         mock_session = MagicMock()
@@ -606,7 +606,7 @@ async def test_websocket_get_history_stats_long_interval(
     client = await hass_ws_client(hass)
 
     with patch(
-        "custom_components.growspace_manager.websocket.recorder_stats"
+        "custom_components.growspace_manager.websocket.environment.recorder_stats"
     ) as mock_stats_module:
 
         async def mock_async_stats(*args, **kwargs):
@@ -651,7 +651,7 @@ async def test_websocket_get_history_stats_day_interval(
     client = await hass_ws_client(hass)
 
     with patch(
-        "custom_components.growspace_manager.websocket.recorder_stats"
+        "custom_components.growspace_manager.websocket.environment.recorder_stats"
     ) as mock_stats_module:
 
         async def mock_async_stats(*args, **kwargs):
@@ -685,10 +685,10 @@ async def test_websocket_get_history_stats_fallback(
 
     with (
         patch(
-            "custom_components.growspace_manager.websocket.recorder_stats"
+            "custom_components.growspace_manager.websocket.environment.recorder_stats"
         ) as mock_stats_module,
         patch(
-            "custom_components.growspace_manager.websocket.get_instance"
+            "custom_components.growspace_manager.websocket.environment.get_instance"
         ) as mock_recorder,
     ):
         # Stats API raises exception
@@ -736,7 +736,7 @@ async def test_websocket_get_event_log_no_growspace_id(
     client = await hass_ws_client(hass)
 
     with patch(
-        "custom_components.growspace_manager.websocket.get_instance"
+        "custom_components.growspace_manager.websocket.logbook.get_instance"
     ) as mock_recorder:
 
         async def mock_executor(func, *args, **kwargs):
@@ -773,7 +773,7 @@ async def test_websocket_get_history_stats_short_interval(
     client = await hass_ws_client(hass)
 
     with patch(
-        "custom_components.growspace_manager.websocket.get_instance"
+        "custom_components.growspace_manager.websocket.environment.get_instance"
     ) as mock_recorder:
         # Mock history data extraction
         state1 = MagicMock()
@@ -870,10 +870,10 @@ async def test_websocket_get_event_log_internals_no_type(
 
     with (
         patch(
-            "custom_components.growspace_manager.websocket.get_instance"
+            "custom_components.growspace_manager.websocket.logbook.get_instance"
         ) as mock_recorder,
         patch(
-            "custom_components.growspace_manager.websocket.session_scope"
+            "custom_components.growspace_manager.websocket.logbook.session_scope"
         ) as mock_scope,
     ):
         mock_session = MagicMock()
@@ -903,10 +903,10 @@ async def test_websocket_get_event_log_bad_date_merge(
 
     with (
         patch(
-            "custom_components.growspace_manager.websocket.get_instance"
+            "custom_components.growspace_manager.websocket.logbook.get_instance"
         ) as mock_recorder,
         patch(
-            "custom_components.growspace_manager.websocket.session_scope"
+            "custom_components.growspace_manager.websocket.logbook.session_scope"
         ) as mock_scope,
     ):
         mock_session = MagicMock()
@@ -971,7 +971,7 @@ async def test_websocket_get_history_stats_fallback_empty(
     client = await hass_ws_client(hass)
 
     with patch(
-        "custom_components.growspace_manager.websocket.get_instance"
+        "custom_components.growspace_manager.websocket.environment.get_instance"
     ) as mock_recorder:
         # History Mock returns empty list for entity
         async def mock_history_executor(func, *args, **kwargs):
@@ -1007,10 +1007,10 @@ async def test_websocket_get_event_log_filtering(
 
     with (
         patch(
-            "custom_components.growspace_manager.websocket.get_instance"
+            "custom_components.growspace_manager.websocket.logbook.get_instance"
         ) as mock_recorder,
         patch(
-            "custom_components.growspace_manager.websocket.session_scope"
+            "custom_components.growspace_manager.websocket.logbook.session_scope"
         ) as mock_scope,
     ):
         mock_session = MagicMock()
@@ -1063,7 +1063,7 @@ async def test_websocket_get_history_stats_sentinel(
     client = await hass_ws_client(hass)
 
     with patch(
-        "custom_components.growspace_manager.websocket.get_instance"
+        "custom_components.growspace_manager.websocket.environment.get_instance"
     ) as mock_recorder:
         # State with None last_updated (triggers sentinel)
         state1 = MagicMock()
@@ -1110,7 +1110,7 @@ async def test_websocket_get_event_log_limits(
     client = await hass_ws_client(hass)
 
     with patch(
-        "custom_components.growspace_manager.websocket.get_instance"
+        "custom_components.growspace_manager.websocket.logbook.get_instance"
     ) as mock_recorder:
         # With SQL-level filtering, spam events don't reach Python
         # Test that we correctly return limited results and handle bad JSON
@@ -1148,7 +1148,7 @@ async def test_websocket_get_event_log_limits(
         async def mock_executor(func, *args, **kwargs):
             # Mock the internal query manually
             with patch(
-                "custom_components.growspace_manager.websocket.session_scope"
+                "custom_components.growspace_manager.websocket.logbook.session_scope"
             ) as mock_scope:
                 mock_session = MagicMock()
                 mock_scope.return_value.__enter__.return_value = mock_session
@@ -1290,7 +1290,7 @@ async def test_websocket_exceptions(
 
     # History Stats exception
     with patch(
-        "custom_components.growspace_manager.websocket._get_statistics_data",
+        "custom_components.growspace_manager.websocket.environment._get_statistics_data",
         side_effect=Exception("Stats Boom"),
     ):
         await client.send_json(
@@ -1337,7 +1337,7 @@ async def test_websocket_statistics_edge_cases(
     client = await hass_ws_client(hass)
 
     with patch(
-        "custom_components.growspace_manager.websocket.recorder_stats"
+        "custom_components.growspace_manager.websocket.environment.recorder_stats"
     ) as mock_stats_module:
         # 1. Interval too small (<60) - returns None (which triggers fallback in caller, but we want to cover the line)
         # We can call the internal function directly or rely on the fallback logic triggering binary search
@@ -1401,7 +1401,7 @@ async def test_websocket_downsample_dict_state(
     client = await hass_ws_client(hass)
 
     with patch(
-        "custom_components.growspace_manager.websocket.get_instance"
+        "custom_components.growspace_manager.websocket.environment.get_instance"
     ) as mock_recorder:
         state_dict = {"last_updated": "2023-01-01T12:00:00+00:00", "state": "25"}
 

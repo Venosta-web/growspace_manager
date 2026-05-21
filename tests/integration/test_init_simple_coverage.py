@@ -146,7 +146,7 @@ async def test_websocket_timeline_operations_errors(hass: HomeAssistant) -> None
     # This uses recorder directly.
     # Mock get_instance to raise or fail.
     with patch(
-        "custom_components.growspace_manager.websocket.get_instance",
+        "custom_components.growspace_manager.websocket.timeline.get_instance",
         side_effect=Exception("Recorder Fail"),
     ):
         await websocket_remove_timeline_event(hass, connection, msg_remove)
@@ -243,11 +243,11 @@ async def test_websocket_event_log_complex_logic(hass: HomeAssistant) -> None:
 
     with (
         patch(
-            "custom_components.growspace_manager.websocket.session_scope",
+            "custom_components.growspace_manager.websocket.logbook.session_scope",
             return_value=context_manager_mock,
         ),
         patch(
-            "custom_components.growspace_manager.websocket.get_instance"
+            "custom_components.growspace_manager.websocket.logbook.get_instance"
         ) as get_instance_mock,
     ):
         # We need to mock async_add_executor_job to run the query function immediately

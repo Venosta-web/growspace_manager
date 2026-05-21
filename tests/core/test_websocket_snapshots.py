@@ -115,7 +115,7 @@ async def test_websocket_get_nutrient_inventory_snapshot(
             return_value=coordinator,
         ),
         patch(
-            "custom_components.growspace_manager.websocket.asdict",
+            "custom_components.growspace_manager.websocket.nutrients.asdict",
             return_value=inventory_data,
         ),
     ):
@@ -231,7 +231,7 @@ async def test_websocket_add_growspace_note_snapshot(
             return_value=coordinator,
         ),
         patch(
-            "custom_components.growspace_manager.websocket.async_add_growspace_note",
+            "custom_components.growspace_manager.websocket.timeline.async_add_growspace_note",
             new_callable=AsyncMock,
         ) as mock_add_note,
     ):
@@ -292,11 +292,11 @@ async def test_websocket_get_event_log_snapshot(
 
     with (
         patch(
-            "custom_components.growspace_manager.websocket.get_instance",
+            "custom_components.growspace_manager.websocket.logbook.get_instance",
             return_value=mock_recorder,
         ),
         patch(
-            "custom_components.growspace_manager.websocket.session_scope"
+            "custom_components.growspace_manager.websocket.logbook.session_scope"
         ) as mock_session_scope,
     ):
         mock_session_scope.return_value.__enter__.return_value = mock_session
@@ -353,11 +353,11 @@ async def test_websocket_get_alerts_snapshot(
 
     with (
         patch(
-            "custom_components.growspace_manager.websocket.get_instance",
+            "custom_components.growspace_manager.websocket.logbook.get_instance",
             return_value=mock_recorder,
         ),
         patch(
-            "custom_components.growspace_manager.websocket.session_scope"
+            "custom_components.growspace_manager.websocket.logbook.session_scope"
         ) as mock_session_scope,
     ):
         mock_session_scope.return_value.__enter__.return_value = mock_session
@@ -378,7 +378,7 @@ async def test_websocket_get_history_stats_snapshot(
     """Test websocket_get_history_stats output matches snapshot."""
     # Use frozen time for consistent ISO formats
     with patch(
-        "custom_components.growspace_manager.websocket._get_history_with_binary_search_downsample",
+        "custom_components.growspace_manager.websocket.environment._get_history_with_binary_search_downsample",
         new_callable=AsyncMock,
     ) as mock_downsample:
         mock_downsample.return_value = {

@@ -155,7 +155,7 @@ async def test_websocket_add_growspace_note_validation_error(
             "custom_components.growspace_manager.websocket.GrowspaceCoordinator.get_for_service_call"
         ),
         patch(
-            "custom_components.growspace_manager.websocket.async_add_growspace_note",
+            "custom_components.growspace_manager.websocket.timeline.async_add_growspace_note",
             side_effect=ServiceValidationError("invalid growspace"),
         ),
     ):
@@ -174,7 +174,7 @@ async def test_websocket_add_growspace_note_generic_error(
             "custom_components.growspace_manager.websocket.GrowspaceCoordinator.get_for_service_call"
         ),
         patch(
-            "custom_components.growspace_manager.websocket.async_add_growspace_note",
+            "custom_components.growspace_manager.websocket.timeline.async_add_growspace_note",
             side_effect=RuntimeError("boom"),
         ),
     ):

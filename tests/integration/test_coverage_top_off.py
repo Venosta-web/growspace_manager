@@ -345,7 +345,7 @@ async def test_statistics_empty_data_coverage(hass: HomeAssistant) -> None:
     start = datetime.now()
     end = datetime.now()
     with patch(
-        "custom_components.growspace_manager.websocket.recorder_stats.statistics_during_period",
+        "custom_components.growspace_manager.websocket.environment.recorder_stats.statistics_during_period",
         new_callable=AsyncMock,
         create=True,
     ) as mock_stats:
@@ -447,10 +447,10 @@ async def test_websocket_get_event_log_spam_filter_coverage(
     # Use a real dt_util.utcnow or mock it correctly
     with (
         patch(
-            "custom_components.growspace_manager.websocket.get_instance"
+            "custom_components.growspace_manager.websocket.logbook.get_instance"
         ) as mock_get_recorder,
         patch(
-            "custom_components.growspace_manager.websocket.session_scope"
+            "custom_components.growspace_manager.websocket.logbook.session_scope"
         ) as mock_session_scope,
         patch("homeassistant.util.dt.utcnow", return_value=datetime.now()),
     ):
@@ -499,7 +499,7 @@ async def test_websocket_get_event_log_recorder_missing_coverage(
     msg = {"id": 1, "type": "growspace_manager/get_event_log"}
 
     with patch(
-        "custom_components.growspace_manager.websocket.get_instance",
+        "custom_components.growspace_manager.websocket.logbook.get_instance",
         side_effect=ImportError("No recorder"),
     ):
         await websocket_get_event_log(hass, connection, msg)

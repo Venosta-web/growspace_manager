@@ -58,12 +58,12 @@ async def test_websocket_get_history_stats_binary_search(
 
     with (
         patch(
-            "custom_components.growspace_manager.websocket.history.get_significant_states",
+            "custom_components.growspace_manager.websocket.environment.history.get_significant_states",
             side_effect=mock_get_history,
             create=True,
         ),
         patch(
-            "custom_components.growspace_manager.websocket.get_instance",
+            "custom_components.growspace_manager.websocket.environment.get_instance",
             return_value=mock_recorder,
         ),
     ):
@@ -76,13 +76,13 @@ async def test_websocket_get_history_stats_binary_search(
         # Mock statistics to return None to force fallback to binary search history
         with (
             patch(
-                "custom_components.growspace_manager.websocket.recorder_stats.statistics_during_period",
+                "custom_components.growspace_manager.websocket.environment.recorder_stats.statistics_during_period",
                 new_callable=AsyncMock,
                 create=True,
                 return_value=None,
             ),
             patch(
-                "custom_components.growspace_manager.websocket.recorder_stats.async_statistics_during_period",
+                "custom_components.growspace_manager.websocket.environment.recorder_stats.async_statistics_during_period",
                 new_callable=AsyncMock,
                 create=True,
                 return_value=None,
@@ -128,7 +128,7 @@ async def test_websocket_get_history_stats_statistics_api(
     start_time = dt_util.utcnow() - timedelta(days=7)
 
     with patch(
-        "custom_components.growspace_manager.websocket.recorder_stats.async_statistics_during_period",
+        "custom_components.growspace_manager.websocket.environment.recorder_stats.async_statistics_during_period",
         new_callable=AsyncMock,
         create=True,
     ) as mock_stats:

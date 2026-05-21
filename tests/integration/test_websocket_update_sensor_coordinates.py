@@ -245,7 +245,7 @@ async def test_get_statistics_data_fallbacks(hass: HomeAssistant) -> None:
 
     # Line 749: mock missing async_statistics_during_period
     with patch(
-        "custom_components.growspace_manager.websocket.recorder_stats"
+        "custom_components.growspace_manager.websocket.environment.recorder_stats"
     ) as mock_stats:
         if hasattr(mock_stats, "async_statistics_during_period"):
             del mock_stats.async_statistics_during_period
@@ -254,7 +254,7 @@ async def test_get_statistics_data_fallbacks(hass: HomeAssistant) -> None:
         }
 
         with patch(
-            "custom_components.growspace_manager.websocket.get_instance"
+            "custom_components.growspace_manager.websocket.environment.get_instance"
         ) as mock_get_inst:
 
             async def mock_exec(func, *args):
@@ -269,7 +269,7 @@ async def test_get_statistics_data_fallbacks(hass: HomeAssistant) -> None:
 
     # Line 761: empty stats_data
     with patch(
-        "custom_components.growspace_manager.websocket.recorder_stats"
+        "custom_components.growspace_manager.websocket.environment.recorder_stats"
     ) as mock_stats:
         mock_stats.async_statistics_during_period = AsyncMock(return_value={})
         res = await _get_statistics_data(
@@ -285,11 +285,11 @@ async def test_get_history_with_binary_search_downsample_generic_error(
     # Line 863 is inside _get_history which calls history.get_significant_states
     with (
         patch(
-            "custom_components.growspace_manager.websocket.history.get_significant_states",
+            "custom_components.growspace_manager.websocket.environment.history.get_significant_states",
             side_effect=Exception("Boom history"),
         ),
         patch(
-            "custom_components.growspace_manager.websocket.get_instance"
+            "custom_components.growspace_manager.websocket.environment.get_instance"
         ) as mock_get_inst,
     ):
 

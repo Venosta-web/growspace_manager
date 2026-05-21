@@ -601,11 +601,11 @@ async def test_websocket_get_event_log(hass: HomeAssistant, mock_coordinator) ->
 
     with (
         patch(
-            "custom_components.growspace_manager.websocket.get_instance",
+            "custom_components.growspace_manager.websocket.logbook.get_instance",
             return_value=mock_recorder,
         ),
         patch(
-            "custom_components.growspace_manager.websocket.session_scope"
+            "custom_components.growspace_manager.websocket.logbook.session_scope"
         ) as mock_session_scope,
     ):
         mock_session_scope.return_value.__enter__ = MagicMock(return_value=mock_session)
@@ -894,10 +894,10 @@ async def test_websocket_get_event_log_unknown_error(hass: HomeAssistant) -> Non
 
     with (
         patch(
-            "custom_components.growspace_manager.websocket.get_instance",
+            "custom_components.growspace_manager.websocket.logbook.get_instance",
             return_value=mock_recorder,
         ),
-        patch("custom_components.growspace_manager.websocket.session_scope"),
+        patch("custom_components.growspace_manager.websocket.logbook.session_scope"),
     ):
         msg = {
             "id": 99,
@@ -956,7 +956,7 @@ async def test_websocket_get_history_stats(
             "homeassistant.components.recorder.history.get_significant_states"
         ) as mock_get_history,
         patch(
-            "custom_components.growspace_manager.websocket.get_instance"
+            "custom_components.growspace_manager.websocket.environment.get_instance"
         ) as mock_get_rec,
     ):
         mock_get_rec.return_value.async_add_executor_job = hass.async_add_executor_job
@@ -1032,7 +1032,7 @@ async def test_websocket_get_history_stats(
             side_effect=Exception("DB Error"),
         ),
         patch(
-            "custom_components.growspace_manager.websocket.get_instance"
+            "custom_components.growspace_manager.websocket.environment.get_instance"
         ) as mock_get_rec,
     ):
         mock_get_rec.return_value.async_add_executor_job = hass.async_add_executor_job
@@ -1060,7 +1060,7 @@ async def test_websocket_history_empty_and_unavailable(hass: HomeAssistant) -> N
             "homeassistant.components.recorder.history.get_significant_states"
         ) as mock_get_history,
         patch(
-            "custom_components.growspace_manager.websocket.get_instance"
+            "custom_components.growspace_manager.websocket.environment.get_instance"
         ) as mock_get_rec,
     ):
         mock_get_rec.return_value.async_add_executor_job = hass.async_add_executor_job
@@ -1219,13 +1219,13 @@ async def test_websocket_history_stats_uses_statistics_api_for_long_intervals(
 
     with (
         patch(
-            "custom_components.growspace_manager.websocket.recorder_stats.async_statistics_during_period",
+            "custom_components.growspace_manager.websocket.environment.recorder_stats.async_statistics_during_period",
             new_callable=AsyncMock,
             return_value=stats_data,
             create=True,
         ) as mock_stats,
         patch(
-            "custom_components.growspace_manager.websocket.get_instance"
+            "custom_components.growspace_manager.websocket.environment.get_instance"
         ) as mock_get_rec,
     ):
         mock_get_rec.return_value.async_add_executor_job = hass.async_add_executor_job
@@ -1270,7 +1270,7 @@ async def test_websocket_history_stats_falls_back_when_statistics_fails(
 
     with (
         patch(
-            "custom_components.growspace_manager.websocket.recorder_stats.async_statistics_during_period",
+            "custom_components.growspace_manager.websocket.environment.recorder_stats.async_statistics_during_period",
             new_callable=AsyncMock,
             side_effect=Exception("Statistics unavailable"),
             create=True,
@@ -1285,7 +1285,7 @@ async def test_websocket_history_stats_falls_back_when_statistics_fails(
             },
         ),
         patch(
-            "custom_components.growspace_manager.websocket.get_instance"
+            "custom_components.growspace_manager.websocket.environment.get_instance"
         ) as mock_get_rec,
     ):
         mock_get_rec.return_value.async_add_executor_job = hass.async_add_executor_job
@@ -1326,7 +1326,7 @@ async def test_websocket_history_stats_short_interval_uses_binary_search(
 
     with (
         patch(
-            "custom_components.growspace_manager.websocket.recorder_stats.async_statistics_during_period",
+            "custom_components.growspace_manager.websocket.environment.recorder_stats.async_statistics_during_period",
             new_callable=AsyncMock,
             create=True,
         ) as mock_stats,
@@ -1340,7 +1340,7 @@ async def test_websocket_history_stats_short_interval_uses_binary_search(
             },
         ),
         patch(
-            "custom_components.growspace_manager.websocket.get_instance"
+            "custom_components.growspace_manager.websocket.environment.get_instance"
         ) as mock_get_rec,
     ):
         mock_get_rec.return_value.async_add_executor_job = hass.async_add_executor_job
@@ -1381,13 +1381,13 @@ async def test_websocket_history_stats_uses_daily_period_for_large_intervals(
 
     with (
         patch(
-            "custom_components.growspace_manager.websocket.recorder_stats.async_statistics_during_period",
+            "custom_components.growspace_manager.websocket.environment.recorder_stats.async_statistics_during_period",
             new_callable=AsyncMock,
             return_value=stats_data,
             create=True,
         ) as mock_stats,
         patch(
-            "custom_components.growspace_manager.websocket.get_instance"
+            "custom_components.growspace_manager.websocket.environment.get_instance"
         ) as mock_get_rec,
     ):
         mock_get_rec.return_value.async_add_executor_job = hass.async_add_executor_job
@@ -1430,13 +1430,13 @@ async def test_websocket_history_stats_statistics_with_state_instead_of_mean(
 
     with (
         patch(
-            "custom_components.growspace_manager.websocket.recorder_stats.async_statistics_during_period",
+            "custom_components.growspace_manager.websocket.environment.recorder_stats.async_statistics_during_period",
             new_callable=AsyncMock,
             return_value=stats_data,
             create=True,
         ),
         patch(
-            "custom_components.growspace_manager.websocket.get_instance"
+            "custom_components.growspace_manager.websocket.environment.get_instance"
         ) as mock_get_rec,
     ):
         mock_get_rec.return_value.async_add_executor_job = hass.async_add_executor_job
@@ -1468,7 +1468,7 @@ async def test_websocket_history_stats_empty_statistics(hass: HomeAssistant) -> 
 
     with (
         patch(
-            "custom_components.growspace_manager.websocket.recorder_stats.async_statistics_during_period",
+            "custom_components.growspace_manager.websocket.environment.recorder_stats.async_statistics_during_period",
             new_callable=AsyncMock,
             return_value={},  # Empty result
             create=True,
@@ -1478,7 +1478,7 @@ async def test_websocket_history_stats_empty_statistics(hass: HomeAssistant) -> 
             return_value={"sensor.test": []},
         ),
         patch(
-            "custom_components.growspace_manager.websocket.get_instance"
+            "custom_components.growspace_manager.websocket.environment.get_instance"
         ) as mock_get_rec,
     ):
         mock_get_rec.return_value.async_add_executor_job = hass.async_add_executor_job
