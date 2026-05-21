@@ -247,24 +247,18 @@ class SeedfinderScraper:
         2. Plain <img src="/storage/pics/galerie/..."> tags (older pages).
         3. Single-image fallback via _parse_image.
         """
-        # Strategy 1: Alpine.js x-data
+        # Strategy 1: Alpine.js x-data (supports both JSON and JS object literal syntax)
         for tag in soup.find_all(attrs={"x-data": True}):
             x_data_raw = tag.get("x-data", "")
-            try:
-                x_data = json.loads(x_data_raw)
-            except (ValueError, TypeError):
-                continue
-            gallery = x_data.get("images")
-            if not isinstance(gallery, list) or not gallery:
-                continue
             urls = []
-            for entry in gallery:
-                url = entry.get("big") if isinstance(entry, dict) else None
+            for match in re.finditer(r'"?big"?:\s*["\']([^"\']+)["\']', x_data_raw):
+                url = match.group(1)
                 if not url or "=404" in url:
                     continue
                 if not url.startswith("http"):
                     url = BASE_URL + url
-                urls.append(url)
+                if url not in urls:
+                    urls.append(url)
                 if len(urls) >= self._MAX_GALLERY_IMAGES:
                     break
             if urls:

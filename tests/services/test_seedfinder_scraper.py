@@ -1382,3 +1382,18 @@ def test_parse_images_returns_empty_list_when_no_images(scraper: SeedfinderScrap
     soup = _soup("<div>no images here</div>")
     urls = scraper._parse_images(soup)
     assert urls == []
+
+
+def test_parse_images_alpine_js_syntax_unquoted_keys(scraper: SeedfinderScraper) -> None:
+    """Strategy 1 works when x-data uses JS object literal syntax (unquoted keys, single quotes)."""
+    html = """
+    <div x-data="{selectedIndex: -1, images: [{big: 'https://cdn.example.com/1.jpg'}, {big: '/storage/pics/galerie/B/S/2.jpg'}]}">
+        <img :src="selectedIndex === -1 ? 'https://cdn.example.com/official.jpg' : images[selectedIndex].big" />
+    </div>
+    """
+    soup = _soup(html)
+    urls = scraper._parse_images(soup)
+    assert urls == [
+        "https://cdn.example.com/1.jpg",
+        f"{BASE_URL}/storage/pics/galerie/B/S/2.jpg",
+    ]

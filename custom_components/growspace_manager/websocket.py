@@ -1769,7 +1769,8 @@ async def websocket_download_strain_image(
             raw = await response.read()
 
         import base64 as _base64
-        image_base64 = "data:image/jpeg;base64," + _base64.b64encode(raw).decode()
+        mime_type = response.headers.get("Content-Type", "image/jpeg")
+        image_base64 = f"data:{mime_type};base64," + _base64.b64encode(raw).decode()
         abs_path = await image_manager.save_strain_image(
             slugify(msg["strain"]), slugify(msg["phenotype"]), image_base64
         )

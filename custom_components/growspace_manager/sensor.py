@@ -1423,12 +1423,15 @@ class GrowspaceListSensor(SensorEntity):  # type: ignore[misc]
 
     def _update_growspaces(self) -> None:
         """Update the internal list of growspaces from the coordinator."""
+        plant_counts: dict[str, int] = {}
+        for plant in self.coordinator.plants.values():
+            gid = getattr(plant, "growspace_id", None)
+            if gid:
+                plant_counts[gid] = plant_counts.get(gid, 0) + 1
         self._growspaces = {
             gs_id: {
                 "name": getattr(gs, "name", gs_id),
-                "total_plants": len(
-                    self.coordinator.services.growspaces.get_growspace_plants(gs_id)
-                ),
+                "total_plants": plant_counts.get(gs_id, 0),
             }
             for gs_id, gs in self.coordinator.growspaces.items()
         }
