@@ -40,10 +40,8 @@ class NotificationsFacade:
                 growspace_id, enabled
             )
             return
-        self._coordinator.data["notifications_enabled"] = (
-            self._coordinator.notification_settings.set_notifications_state(
-                growspace_id, enabled
-            )
+        self._coordinator.notification_settings.set_notifications_state(
+            growspace_id, enabled
         )
         await self._coordinator.async_commit()
 
@@ -127,19 +125,11 @@ class NotificationsFacade:
 
     def should_send_notification(self, plant_id: str, stage: str, days: int) -> bool:
         """Return True if the notification has not been sent yet."""
-        return (
-            not self._coordinator.notifications_sent.get(plant_id, {})
-            .get(stage, {})
-            .get(str(days), False)
-        )
+        return not self._coordinator.notification_state.is_sent(plant_id, stage, days)
 
     async def mark_notification_sent(
         self, plant_id: str, stage: str, days: int
     ) -> None:
         """Mark a notification as sent to prevent duplicates."""
-        if plant_id not in self._coordinator.notifications_sent:
-            self._coordinator.notifications_sent[plant_id] = {}
-        if stage not in self._coordinator.notifications_sent[plant_id]:
-            self._coordinator.notifications_sent[plant_id][stage] = {}
-        self._coordinator.notifications_sent[plant_id][stage][str(days)] = True
+        self._coordinator.notification_state.mark_sent(plant_id, stage, days)
         await self._coordinator.async_commit()
