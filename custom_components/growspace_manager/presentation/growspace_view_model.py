@@ -51,7 +51,7 @@ def _compute_tank_water_summaries(
     - ``recent_refills``: up to 20 refill events within the last 7 days.
     - ``daily_7d``: per-day consumed/refilled totals for the last 7 days.
     """
-    now = dt_util.utcnow()
+    now = dt_util.now()
     window_start = now - _7_DAYS
 
     refills: list[dict[str, Any]] = []
@@ -66,10 +66,11 @@ def _compute_tank_water_summaries(
         except (KeyError, ValueError):
             continue
 
-        if ts < window_start:
+        local_ts = dt_util.as_local(ts)
+        if local_ts < window_start:
             continue
 
-        date_key = ts.strftime("%Y-%m-%d")
+        date_key = local_ts.strftime("%Y-%m-%d")
         if date_key not in daily:
             daily[date_key] = {"consumed": 0.0, "refilled": 0.0}
 

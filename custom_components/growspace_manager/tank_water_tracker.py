@@ -276,17 +276,18 @@ class TankWaterTracker:
         return buckets
 
     def get_total_liters_today(self, reference_ts: str | None = None) -> float:
-        """Return total liters consumed since midnight UTC on the reference date."""
+        """Return total liters consumed since midnight local time on the reference date."""
         if reference_ts is not None:
             ref_dt = _parse_ts(reference_ts)
         else:
-            ref_dt = dt_util.utcnow()
-        day_start = ref_dt.replace(hour=0, minute=0, second=0, microsecond=0)
+            ref_dt = dt_util.now()
+        local_ref = dt_util.as_local(ref_dt)
+        day_start = local_ref.replace(hour=0, minute=0, second=0, microsecond=0)
         return sum(
             ev["liters"]
             for ev in self.tank.water_history.events
             if ev["event_type"] == "consumption"
-            and _parse_ts(ev["timestamp"]) >= day_start
+            and dt_util.as_local(_parse_ts(ev["timestamp"])) >= day_start
         )
 
     def get_total_liters_7d(self, reference_ts: str | None = None) -> float:
@@ -294,13 +295,14 @@ class TankWaterTracker:
         if reference_ts is not None:
             ref_dt = _parse_ts(reference_ts)
         else:
-            ref_dt = dt_util.utcnow()
-        window_start = ref_dt - timedelta(days=7)
+            ref_dt = dt_util.now()
+        local_ref = dt_util.as_local(ref_dt)
+        window_start = local_ref - timedelta(days=7)
         return sum(
             ev["liters"]
             for ev in self.tank.water_history.events
             if ev["event_type"] == "consumption"
-            and _parse_ts(ev["timestamp"]) >= window_start
+            and dt_util.as_local(_parse_ts(ev["timestamp"])) >= window_start
         )
 
     # ── HA subscription ───────────────────────────────────────────────────────
