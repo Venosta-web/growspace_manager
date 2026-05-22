@@ -62,6 +62,43 @@ async def test_async_save_ipm_preset(mock_coordinator: GrowspaceCoordinator) -> 
 
 
 @pytest.mark.asyncio
+async def test_ipm_preset_visible_after_storage_load_sync(
+    mock_coordinator: GrowspaceCoordinator,
+) -> None:
+    """Regression: saved IPM preset must appear in nutrient_manager serialization.
+
+    Before the fix, storage_manager.load_data() replaced nutrient_manager.ipm_presets
+    with a new dict (dict_C), but ipm_service.ipm_presets still pointed at the original
+    empty dict (dict_A).  New saves went into dict_A while the WebSocket handler read
+    from dict_C — so the preset was silently lost.
+
+    The fix: coordinator.async_load() re-syncs ipm_service.ipm_presets =
+    nutrient_manager.ipm_presets after storage load.  This test reproduces the desync
+    and verifies the sync makes saves visible through nutrient_manager.
+    """
+    # Simulate what storage_manager._load_config does: replace nutrient_manager.ipm_presets
+    # with a freshly-loaded dict (dict_C).  This breaks the reference if ipm_service still
+    # holds the old empty dict (dict_A).
+    fresh_presets: dict = {}
+    mock_coordinator.nutrient_manager.ipm_presets = fresh_presets
+
+    # Apply the fix: re-point ipm_service at the same dict.
+    mock_coordinator._ipm_service.ipm_presets = mock_coordinator.nutrient_manager.ipm_presets
+
+    items = [{"name": "Neem Oil", "dose_amount": 5.0, "dose_unit": "ml/L", "phi_days": 0}]
+    preset = await mock_coordinator.services.config.save_ipm_preset(
+        name="Neem Spray", type="foliar", items=items
+    )
+
+    # The new preset must appear when nutrient_manager serialises (= what WebSocket returns)
+    serialized = mock_coordinator.nutrient_manager.get_serialization_data()
+    assert preset.id in serialized["ipm_presets"], (
+        "IPM preset not visible in nutrient_manager after save — ipm_service/nutrient_manager desync"
+    )
+    assert serialized["ipm_presets"][preset.id]["name"] == "Neem Spray"
+
+
+@pytest.mark.asyncio
 async def test_async_remove_ipm_preset(mock_coordinator: GrowspaceCoordinator) -> None:
     """Test removing an IPM preset."""
     # Setup

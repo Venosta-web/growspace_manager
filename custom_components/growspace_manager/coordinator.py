@@ -609,6 +609,10 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         This should be called once during integration setup.
         """
         await self.storage_manager.async_load(self.options)
+        # storage_manager.load_data() replaces nutrient_manager.ipm_presets with a new
+        # dict loaded from storage. Sync ipm_service to point at that same dict so saves
+        # go to the right place and the WebSocket handler returns up-to-date presets.
+        self._ipm_service.ipm_presets = self.nutrient_manager.ipm_presets
 
         # Ensure calculated sensors are configured
         self.growspace_manager.ensure_calculated_sensors()
