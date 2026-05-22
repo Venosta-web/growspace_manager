@@ -29,6 +29,12 @@ class MockIrrigationConfig:
     p2_stop_before_lights_off_minutes: int = 120
     irrigation_times: list = None
     drain_times: list = None
+    soil_trigger_percent: float | None = None
+    daily_volume_cap_liters: float | None = None
+    max_cycles_per_day: int | None = None
+    skip_during_dark: bool = False
+    pause_on_low_tank: bool = True
+    log_to_logbook: bool = True
 
 
 @dataclass
@@ -208,8 +214,51 @@ async def test_async_step_configure_irrigation_no_growspace(
 async def test_async_step_select_growspace_for_irrigation_no_entry_abort(
     mock_hass: MagicMock,
 ) -> None:
+    """Test select growspace step aborts if config entry is missing."""
     handler = IrrigationConfigHandler(mock_hass, None)
     handler.flow = MagicMock()
     handler.flow.async_abort = MagicMock(return_value={"type": "abort"})
     result = await handler.async_step_select_growspace_for_irrigation()
     assert result == {"type": "abort"}
+
+
+async def test_get_irrigation_overview_schema_new_fields(
+    handler: IrrigationConfigHandler,
+) -> None:
+    """Test that get_irrigation_overview_schema contains the new configuration fields."""
+    options = asdict(MockIrrigationConfig())
+    schema = handler.get_irrigation_overview_schema(options, "gs1")
+    assert "soil_trigger_percent" in schema.schema
+    assert "daily_volume_cap_liters" in schema.schema
+    assert "max_cycles_per_day" in schema.schema
+    assert "skip_during_dark" in schema.schema
+    assert "pause_on_low_tank" in schema.schema
+    assert "log_to_logbook" in schema.schema
+
+
+async def test_async_step_irrigation_overview_post_new_fields(
+    handler: IrrigationConfigHandler,
+) -> None:
+    """Test updating the new irrigation config parameters via the config flow."""
+    coordinator = handler.config_entry.runtime_data
+    growspace = MockGrowspace(
+        id="gs1", name="GS1", irrigation_config=MockIrrigationConfig()
+    )
+    coordinator.services.growspaces.get_growspace.return_value = growspace
+    coordinator.services.growspaces.update_irrigation_config = AsyncMock()
+    handler.flow.async_create_entry = MagicMock(return_value={"type": "create_entry"})
+
+    user_input = {
+        "irrigation_duration": 40,
+        "soil_trigger_percent": 45.5,
+        "daily_volume_cap_liters": 25.0,
+        "max_cycles_per_day": 5,
+        "skip_during_dark": True,
+        "pause_on_low_tank": False,
+        "log_to_logbook": False,
+    }
+    result = await handler.async_step_irrigation_overview(user_input)
+    assert result["type"] == "create_entry"
+    coordinator.services.growspaces.update_irrigation_config.assert_called_once_with(
+        "gs1", **user_input
+    )

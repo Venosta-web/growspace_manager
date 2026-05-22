@@ -111,6 +111,7 @@
       'sensor.hum',
     ]),
     'irrigation_config': dict({
+      'daily_volume_cap_liters': None,
       'drain_duration': None,
       'drain_pump_entity': 'switch.drain',
       'drain_times': list([
@@ -119,6 +120,11 @@
       'irrigation_pump_entity': 'switch.pump',
       'irrigation_times': list([
       ]),
+      'log_to_logbook': True,
+      'max_cycles_per_day': None,
+      'pause_on_low_tank': True,
+      'skip_during_dark': False,
+      'soil_trigger_percent': None,
       'veg_day_hours': 12,
     }),
     'irrigation_flow_sensors': list([

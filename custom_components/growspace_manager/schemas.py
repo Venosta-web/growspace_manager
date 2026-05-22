@@ -577,6 +577,18 @@ SET_IRRIGATION_SETTINGS_SCHEMA = vol.All(
             vol.Optional("drain_pump_entity"): str,
             vol.Optional("irrigation_duration"): vol.All(vol.Coerce(int), vol.Range(min=1)),
             vol.Optional("drain_duration"): vol.All(vol.Coerce(int), vol.Range(min=1)),
+            vol.Optional("soil_trigger_percent"): vol.Any(
+                None, vol.All(vol.Coerce(float), vol.Range(min=0.0, max=100.0))
+            ),
+            vol.Optional("daily_volume_cap_liters"): vol.Any(
+                None, vol.All(vol.Coerce(float), vol.Range(min=0.0))
+            ),
+            vol.Optional("max_cycles_per_day"): vol.Any(
+                None, vol.All(vol.Coerce(int), vol.Range(min=0))
+            ),
+            vol.Optional("skip_during_dark"): bool,
+            vol.Optional("pause_on_low_tank"): bool,
+            vol.Optional("log_to_logbook"): bool,
         }
     ),
     _validate_pump_entities,

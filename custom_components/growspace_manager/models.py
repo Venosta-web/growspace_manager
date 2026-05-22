@@ -478,6 +478,13 @@ class IrrigationConfig(BaseModel):
     drain_times: list[IrrigationScheduleItem] = field(default_factory=list)
     veg_day_hours: int = 12
     pump_flow_rate_ml_per_sec: float = 0.0
+    soil_trigger_percent: float | None = None
+    daily_volume_cap_liters: float | None = None
+    max_cycles_per_day: int | None = None
+    skip_during_dark: bool = False
+    pause_on_low_tank: bool = True
+    log_to_logbook: bool = True
+
 
 
 @dataclass(slots=True)

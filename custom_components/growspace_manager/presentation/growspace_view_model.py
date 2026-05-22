@@ -151,6 +151,12 @@ class GrowspaceViewModelBuilder:
             "irrigation_times": irrigation_config.irrigation_times,
             "drain_times": irrigation_config.drain_times,
             "veg_day_hours": irrigation_config.veg_day_hours,
+            "soil_trigger_percent": irrigation_config.soil_trigger_percent,
+            "daily_volume_cap_liters": irrigation_config.daily_volume_cap_liters,
+            "max_cycles_per_day": irrigation_config.max_cycles_per_day,
+            "skip_during_dark": irrigation_config.skip_during_dark,
+            "pause_on_low_tank": irrigation_config.pause_on_low_tank,
+            "log_to_logbook": irrigation_config.log_to_logbook,
         }
 
         irrigation_strategy_dict = (
