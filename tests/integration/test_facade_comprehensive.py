@@ -768,7 +768,7 @@ async def test_save_ipm_preset_legacy_type_kwarg(mock_coordinator) -> None:
     """save_ipm_preset accepts 'type' as a kwarg for backward compat."""
     facade = ServiceFacade(mock_coordinator)
     preset = MagicMock()
-    mock_coordinator._ipm_service.async_save_ipm_preset = AsyncMock(return_value=preset)
+    mock_coordinator.save_ipm_preset = AsyncMock(return_value=preset)
     result = await facade.config.save_ipm_preset("Neem", items=[], type="Foliar")
     assert result is preset
 
@@ -1464,7 +1464,7 @@ async def test_save_ipm_preset_items_in_kwargs(mock_coordinator) -> None:
     """save_ipm_preset should pick items from **kwargs if items param is None."""
     facade = ServiceFacade(mock_coordinator)
     preset = MagicMock()
-    mock_coordinator._ipm_service.async_save_ipm_preset = AsyncMock(return_value=preset)
+    mock_coordinator.save_ipm_preset = AsyncMock(return_value=preset)
     # Pass items via kwargs, not as the named parameter
     result = await facade.config.save_ipm_preset("Test", preset_type="Foliar", items=[{"name": "Neem"}])
     assert result is preset

@@ -206,6 +206,24 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         """
         return self._ipm_service.ipm_presets
 
+    async def save_ipm_preset(
+        self,
+        name: str,
+        preset_type: str,
+        items: list[dict[str, Any]],
+        stage: str | None = None,
+        min_days_in_stage: int | None = None,
+        preset_id: str | None = None,
+    ) -> IPMPreset:
+        """Create or update an IPM preset."""
+        return await self._ipm_service.async_save_ipm_preset(
+            name, preset_type, items, stage, min_days_in_stage, preset_id
+        )
+
+    async def remove_ipm_preset(self, preset_id: str) -> None:
+        """Remove an IPM preset by ID."""
+        await self._ipm_service.async_remove_ipm_preset(preset_id)
+
     @ipm_presets.setter
     def ipm_presets(self, value: dict[str, IPMPreset]) -> None:
         """Set IPM presets and synchronize with nutrient manager.
