@@ -80,6 +80,8 @@
     'light_sensors': list([
     ]),
     'lst_offset': -2.0,
+    'lung_room_temp_sensors': list([
+    ]),
     'minimum_source_air_temperature': 18.0,
     'mold_threshold': 0.75,
     'ph_sensors': list([
@@ -185,6 +187,8 @@
       'light_sensors': list([
       ]),
       'lst_offset': -2.0,
+      'lung_room_temp_sensors': list([
+      ]),
       'minimum_source_air_temperature': 18.0,
       'mold_threshold': 0.75,
       'ph_sensors': list([

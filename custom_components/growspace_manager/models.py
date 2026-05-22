@@ -309,6 +309,7 @@ class EnvironmentConfig(BaseModel):
 
     substrate_temperature_sensors: list[str] = field(default_factory=list)
     camera_entities: list[str] = field(default_factory=list)
+    lung_room_temp_sensors: list[str] = field(default_factory=list)
     snapshot_interval_hours: int = 24
     ph_sensors: list[str] = field(default_factory=list)
     feed_ec_sensors: list[str] = field(default_factory=list)

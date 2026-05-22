@@ -91,6 +91,7 @@ DEFAULT_TARGET_RUNOFF_PERCENT: Final = 20.0
 # Multi-Device Config Keys (new)
 CONF_SUBSTRATE_TEMP_SENSORS = "substrate_temperature_sensors"
 CONF_CAMERA_ENTITIES = "camera_entities"
+CONF_LUNG_ROOM_TEMP_SENSORS = "lung_room_temp_sensors"
 CONF_SNAPSHOT_INTERVAL = "snapshot_interval_hours"
 CONF_POWER_SENSORS = "power_sensors"
 CONF_ENERGY_SENSORS = "energy_sensors"
