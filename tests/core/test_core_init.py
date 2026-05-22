@@ -747,17 +747,11 @@ async def test_pending_growspace_error(hass: HomeAssistant) -> None:
 
         coordinator_mock = MagicMock()
         coordinator_mock.async_config_entry_first_refresh = AsyncMock()
-        coordinator_mock.growspace_manager = MagicMock()
         coordinator_mock.async_load = AsyncMock()
         coordinator_mock.async_initialize_sub_coordinators = AsyncMock()
-
-        # Public properties for services
-        type(coordinator_mock).growspace_service = property(
-            lambda self: self.growspace_manager
-        )
-
-        coordinator_mock.growspace_manager = MagicMock()
-        coordinator_mock.growspace_manager.add_growspace = AsyncMock(
+        coordinator_mock.services = MagicMock()
+        coordinator_mock.services.growspaces = MagicMock()
+        coordinator_mock.services.growspaces.add_growspace = AsyncMock(
             side_effect=RuntimeError("Failed creation")
         )
 
@@ -821,15 +815,11 @@ async def test_pending_growspace_success(hass: HomeAssistant) -> None:
 
         coordinator_mock = MagicMock()
         coordinator_mock.async_config_entry_first_refresh = AsyncMock()
-        coordinator_mock.growspace_manager = MagicMock()
-        coordinator_mock.growspace_manager.add_growspace = AsyncMock()
         coordinator_mock.async_load = AsyncMock()
         coordinator_mock.async_initialize_sub_coordinators = AsyncMock()
-
-        # Public properties for services
-        type(coordinator_mock).growspace_service = property(
-            lambda self: self.growspace_manager
-        )
+        coordinator_mock.services = MagicMock()
+        coordinator_mock.services.growspaces = MagicMock()
+        coordinator_mock.services.growspaces.add_growspace = AsyncMock()
 
         with patch(
             "custom_components.growspace_manager.coordinator.GrowspaceCoordinator",
@@ -838,7 +828,7 @@ async def test_pending_growspace_success(hass: HomeAssistant) -> None:
             await async_setup_entry(hass, entry)
 
             # Verify successful creation logging and data update
-            coordinator_mock.growspace_manager.add_growspace.assert_called_once_with(
+            coordinator_mock.services.growspaces.add_growspace.assert_called_once_with(
                 name="Pending", rows=4, plants_per_row=4, notification_target=None
             )
             hass.config_entries.async_update_entry.assert_called_once()

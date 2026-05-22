@@ -524,7 +524,7 @@ async def test_growspace_handler_flow_add_step(mock_hass, mock_config_entry) -> 
         "width": 120,
         "height": 200,
     }
-    coordinator.growspace_service.get_sorted_growspace_options.return_value = []
+    coordinator.services.growspaces.get_sorted_growspace_options.return_value = []
     handler.flow.async_show_form = MagicMock(return_value={"type": "form"})
     await handler.async_step_add_growspace(user_input)
     coordinator.services.growspaces.add_growspace.assert_awaited_with(
@@ -558,7 +558,7 @@ async def test_growspace_handler_flow_update_step(mock_hass, mock_config_entry) 
     coordinator.growspaces = {"gs1": MagicMock()}
     coordinator.services.growspaces.update_growspace = AsyncMock()
     # Support for the schema fetching in the flow
-    coordinator.growspace_service.get_sorted_growspace_options.return_value = []
+    coordinator.services.growspaces.get_sorted_growspace_options.return_value = []
 
     mock_config_entry.runtime_data = coordinator
 
@@ -573,7 +573,9 @@ async def test_growspace_handler_flow_update_step(mock_hass, mock_config_entry) 
     await handler.async_step_update_growspace(user_input)
 
     # FIX: Matches the actual call signature (id, dict_of_input)
-    coordinator.services.growspaces.update_growspace.assert_awaited_with("gs1", user_input)
+    coordinator.services.growspaces.update_growspace.assert_awaited_with(
+        "gs1", user_input
+    )
 
 
 @pytest.mark.asyncio

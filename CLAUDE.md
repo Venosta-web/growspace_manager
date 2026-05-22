@@ -12,13 +12,13 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - IoT Class: Local Push
 - Quality Scale: Gold
 - Single Config Entry: Yes
-- Python: 3.13+
+- Python: 3.14+
 
 ## Development Commands
 
 ### Testing
 
-All tests should be run using the parent project's virtual environment at `/home/maxi/core/core/.venv` (Python 3.13+):
+All tests should be run using the parent project's virtual environment at `/home/maxi/core/core/.venv` (Python 3.14+):
 
 ```bash
 # Run all tests

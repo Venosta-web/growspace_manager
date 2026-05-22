@@ -179,7 +179,9 @@ async def test_websocket_get_growspace_data_errors(hass: HomeAssistant) -> None:
         side_effect=ServiceValidationError("Invalid"),
     ):
         await websocket_get_growspace_data(hass, connection, msg)
-        connection.send_error.assert_called_with(1, "not_loaded", "Growspace Manager integration not loaded")
+        connection.send_error.assert_called_with(
+            1, "not_loaded", "Growspace Manager integration not loaded"
+        )
 
     # 2. General Exception
     connection.reset_mock()
@@ -221,13 +223,9 @@ async def test_async_setup_entry_pending_growspace_failure(hass: HomeAssistant) 
     mock_coordinator.async_initialize_sub_coordinators = AsyncMock()
     mock_coordinator.async_config_entry_first_refresh = AsyncMock()
 
-    # Public properties for services
-    type(mock_coordinator).growspace_service = property(
-        lambda self: self.growspace_manager
-    )
-
-    mock_coordinator.growspace_manager = MagicMock()
-    mock_coordinator.growspace_manager.add_growspace = AsyncMock(
+    mock_coordinator.services = MagicMock()
+    mock_coordinator.services.growspaces = MagicMock()
+    mock_coordinator.services.growspaces.add_growspace = AsyncMock(
         side_effect=RuntimeError("Creation failed")
     )
 

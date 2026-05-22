@@ -33,7 +33,6 @@ from .managers.subsystem import SubsystemManager
 from .models import (
     Growspace,
     GrowspaceEvent,
-    GrowspaceType,
     IPMPreset,
     NutrientInventory,
     NutrientPreset,
@@ -44,7 +43,6 @@ from .notifications import NotificationSettingsManager
 from .presentation import PlantViewModelBuilder
 from .service_coordinator_locator import ServiceCoordinatorLocator
 from .services.environment_reporter import EnvironmentReporter
-from .services.context import ServiceContext
 from .services.facade import ServiceFacade
 from .services.ipm_service import IPMService
 from .services.nutrient_inventory import NutrientInventoryService
@@ -294,16 +292,6 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         """Return the plant manager."""
         return self._plant_manager
 
-    @property
-    def growspace_service(self) -> GrowspaceManager:
-        """Legacy alias for growspace service."""
-        return self._growspace_manager
-
-    @property
-    def plant_service(self) -> PlantManager:
-        """Legacy alias for plant service."""
-        return self._plant_manager
-
     def __init__(
         self,
         hass: HomeAssistant,
@@ -376,11 +364,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self.genetics_manager = genetics_manager
         self.storage_manager = storage_manager
         self._growspace_manager = growspace_manager
-        self._growspace_service = growspace_manager
-        self._special_growspace_manager = growspace_manager
         self._plant_manager = plant_manager
-        self._plant_service = plant_manager
-        self.lifecycle_manager = plant_manager
         self._watering_service = watering_service
         self._training_service = training_service
         self._ipm_service = ipm_service
@@ -462,10 +446,6 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     # UTILITY AND HELPER METHODS
     # =============================================================================
 
-    def canonical_special(self, gs_id: str) -> tuple[str, str]:
-        """Return the canonical ID and name for a special growspace."""
-        return self.growspace_manager.get_canonical_special(gs_id)
-
     def _to_date(self, date_value: DateInput) -> date | None:
         """Convert a date input to a date object (delegates to DateTimeHelper)."""
         return DateTimeHelper.to_date(date_value)
@@ -473,66 +453,6 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     def calculate_days(self, start_date: DateInput, end_date: DateInput = None) -> int:
         """Calculate the number of days that have passed since a given date (delegates to DateTimeHelper)."""
         return DateTimeHelper.calculate_days(start_date, end_date)
-
-    # =============================================================================
-    # SPECIAL GROWSPACE MANAGEMENT (Delegated to GrowspaceManager)
-    # =============================================================================
-
-    def _create_special_growspace(
-        self,
-        canonical_id: str,
-        canonical_name: str,
-        rows: int,
-        plants_per_row: int,
-        growspace_type: GrowspaceType,
-    ) -> None:
-        """Compatibility alias for GrowspaceManager legacy method."""
-        self.growspace_manager._create_special_growspace(  # noqa: SLF001
-            canonical_id, canonical_name, rows, plants_per_row, growspace_type
-        )
-
-    def _update_special_growspace_name(
-        self, canonical_id: str, canonical_name: str
-    ) -> None:
-        """Compatibility alias for GrowspaceManager legacy method."""
-        # Use public method if available (to capture test mocks better)
-        if hasattr(self.growspace_manager, "update_special_growspace_name"):
-            self.growspace_manager.update_special_growspace_name(
-                canonical_id, canonical_name
-            )
-        else:
-            self.growspace_manager._update_special_growspace_name(  # noqa: SLF001
-                canonical_id, canonical_name
-            )
-
-    def _update_growspace_structure(self, growspace_id: str, **kwargs: Any) -> Any:
-        """Compatibility alias for GrowspaceManager legacy method."""
-        growspace = self.growspaces.get(growspace_id)
-        if not growspace:
-            return False
-        changes = kwargs.pop("changes", [])
-        return self.growspace_manager._update_growspace_structure(  # noqa: SLF001
-            growspace, kwargs, changes
-        )
-
-    def _update_growspace_config(self, growspace_id: str, **kwargs: Any) -> Any:
-        """Compatibility alias for GrowspaceManager legacy method."""
-        growspace = self.growspaces.get(growspace_id)
-        if not growspace:
-            return False
-        changes = kwargs.pop("changes", [])
-        return self.growspace_manager._update_growspace_config(  # noqa: SLF001
-            growspace, kwargs, changes
-        )
-
-    def _resolve_preset_nutrients(self, preset_id: str) -> dict[str, float]:
-        """Resolve nutrient map from a preset ID.
-
-        This is a compatibility helper for tests and internal logic.
-        """
-        if preset_id not in self.nutrient_manager.nutrient_presets:
-            raise KeyError(f"Nutrient preset '{preset_id}' not found")
-        return self.nutrient_manager.nutrient_presets[preset_id].get_nutrient_map()
 
     # =============================================================================
     # DATA UPDATE COORDINATOR OVERRIDE
@@ -581,7 +501,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             elif isinstance(gdata, dict):
                 try:
                     growspaces[gid] = Growspace.from_dict(gdata)
-                except (ValueError, KeyError, TypeError, Exception):
+                except ValueError, KeyError, TypeError, Exception:
                     # Catch mashumaro or other deserialization errors as "structure mismatch"
                     # We use Exception here to be safe but log specifically
                     _LOGGER.exception(
@@ -602,7 +522,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             elif isinstance(pdata, dict):
                 try:
                     plants[pid] = Plant.from_dict(pdata)
-                except (ValueError, KeyError, TypeError, Exception):
+                except ValueError, KeyError, TypeError, Exception:
                     _LOGGER.exception(
                         "Failed to load plant %s due to data structure mismatch",
                         pid,
@@ -704,7 +624,6 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         if hasattr(self, "environment_reporter"):
             await self.environment_reporter.async_initialize()
 
-
     def _handle_position_update(
         self,
         plant_id: str,
@@ -733,33 +652,3 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             self.validator.validate_position_not_occupied(
                 growspace_id, new_row, new_col, plant_id
             )
-
-    def get_growspace_grid(self, growspace_id: str) -> list[list[str | None]]:
-        """Generate a 2D grid representation of a growspace's plant layout."""
-        return self.services.growspaces.get_growspace_grid(growspace_id)
-
-    def _guess_overview_entity_id(self, growspace_id: str) -> str:
-        """Make a best-effort guess of the overview sensor entity ID for a growspace."""
-        return self.services.growspaces.guess_overview_entity_id(growspace_id)
-
-    # =============================================================================
-    # NOTIFICATION MANAGEMENT
-    # =============================================================================
-
-    def should_send_notification(self, plant_id: str, stage: str, days: int) -> bool:
-        """Check if a notification for a specific event has already been sent."""
-        return self.services.notifications.should_send_notification(plant_id, stage, days)
-
-    async def mark_notification_sent(
-        self, plant_id: str, stage: str, days: int
-    ) -> None:
-        """Mark a notification as sent to prevent duplicates."""
-        await self.services.notifications.mark_notification_sent(plant_id, stage, days)
-
-    def fire_event(self, event_type: str, data: dict[str, Any]) -> None:
-        """Fire a growspace manager event."""
-        self.services.fire_event(event_type, data)
-
-    async def _async_remove_plant_entities(self, plant_id: str) -> None:
-        """Remove all Home Assistant entities associated with a specific plant."""
-        await self.services.plants.remove_plant_entities(plant_id)

@@ -171,7 +171,9 @@ async def test_async_take_clones(coordinator: GrowspaceCoordinator) -> None:
     clone_time_iso = clone_time_date.isoformat()
 
     with freeze_time(mother_time_iso):
-        mother = await coordinator.services.plants.add_mother_plant("Pheno1", "StrainC", 1, 1)
+        mother = await coordinator.services.plants.add_mother_plant(
+            "Pheno1", "StrainC", 1, 1
+        )
 
     with freeze_time(clone_time_iso):
         clone_ids = await coordinator.services.plants.take_clones(
@@ -599,8 +601,8 @@ async def test_async_update_data(coordinator: GrowspaceCoordinator) -> None:
 async def test_update_growspace_structure_invalid_id(
     coordinator: GrowspaceCoordinator,
 ) -> None:
-    """Test updating growspace structure with an invalid ID."""
-    result = coordinator._update_growspace_structure("invalid_id")
+    """Test updating growspace structure returns nothing when growspace not found."""
+    result = coordinator.growspace_manager._update_growspace_structure(None, {}, [])
     assert result is False
 
 
@@ -608,8 +610,8 @@ async def test_update_growspace_structure_invalid_id(
 async def test_update_growspace_config_invalid_id(
     coordinator: GrowspaceCoordinator,
 ) -> None:
-    """Test updating growspace config with an invalid ID."""
-    result = coordinator._update_growspace_config("invalid_id")
+    """Test updating growspace config returns nothing when growspace not found."""
+    result = coordinator.growspace_manager._update_growspace_config(None, {}, [])
     assert result is False
 
 
@@ -851,7 +853,10 @@ async def test_is_notifications_enabled(coordinator: GrowspaceCoordinator) -> No
     assert coordinator.services.notifications.is_notifications_enabled(gs.id) is False
 
     # If growspace ID is unknown, it should default to True
-    assert coordinator.services.notifications.is_notifications_enabled("nonexistent") is True
+    assert (
+        coordinator.services.notifications.is_notifications_enabled("nonexistent")
+        is True
+    )
 
 
 @pytest.mark.asyncio
@@ -886,7 +891,9 @@ async def test_set_notifications_enabled(coordinator: GrowspaceCoordinator) -> N
     # Non-existent growspace
     coordinator.async_commit.reset_mock()
     coordinator.async_set_updated_data.reset_mock()
-    await coordinator.services.notifications.set_notifications_enabled("nonexistent", True)
+    await coordinator.services.notifications.set_notifications_enabled(
+        "nonexistent", True
+    )
     coordinator.async_commit.assert_not_awaited()
     coordinator.async_set_updated_data.assert_not_called()
 
@@ -899,7 +906,9 @@ async def test_handle_clone_creation(coordinator: GrowspaceCoordinator) -> None:
         coordinator: The mock GrowspaceCoordinator.
     """
     # Setup: create a mother plant
-    mother = await coordinator.services.plants.add_mother_plant("PhenoA", "StrainX", 1, 1)
+    mother = await coordinator.services.plants.add_mother_plant(
+        "PhenoA", "StrainX", 1, 1
+    )
     # Force the stage to 'mother' so auto-find works
     mother.stage = PlantStage.MOTHER
     coordinator.view_model_builder.build_data_property()
@@ -912,7 +921,7 @@ async def test_handle_clone_creation(coordinator: GrowspaceCoordinator) -> None:
     clone_id = "clone123"
 
     # Test clone creation using explicit source_mother
-    clone_plant = await coordinator.plant_service.add_plant(
+    clone_plant = await coordinator.plant_manager.add_plant(
         growspace_id=mother.growspace_id,
         strain="StrainX",
         plant_id=clone_id,
@@ -946,7 +955,9 @@ async def test_async_transition_clone_to_veg(coordinator: GrowspaceCoordinator) 
         coordinator: The mock GrowspaceCoordinator.
     """
     # Step 1: create a mother plant
-    mother = await coordinator.services.plants.add_mother_plant("PhenoA", "StrainX", 1, 1)
+    mother = await coordinator.services.plants.add_mother_plant(
+        "PhenoA", "StrainX", 1, 1
+    )
 
     # Step 2: create a clone using _handle_clone_creation
     clone_id = "clone123"
@@ -957,7 +968,7 @@ async def test_async_transition_clone_to_veg(coordinator: GrowspaceCoordinator) 
     coordinator.view_model_builder.build_data_property()
 
     with freeze_time(fixed_time):
-        await coordinator.plant_service.add_plant(
+        await coordinator.plant_manager.add_plant(
             plant_id=clone_id,
             growspace_id=mother.growspace_id,
             strain="StrainX",
@@ -1193,9 +1204,9 @@ async def test_async_harvest_plant_auto_flow_to_cure(
         coordinator: The mock GrowspaceCoordinator.
     """
     # Manually create the 'dry' growspace as a special growspace
-    coordinator.data_repository.add_growspace(Growspace(
-        id="dry", name="Dry GS", rows=3, plants_per_row=3
-    ))
+    coordinator.data_repository.add_growspace(
+        Growspace(id="dry", name="Dry GS", rows=3, plants_per_row=3)
+    )
     plant = await coordinator.plant_manager.add_plant(
         "dry", "Strain A", stage=PlantStage.DRY, dry_start=date(2025, 1, 1)
     )
@@ -1486,7 +1497,9 @@ async def test_get_plant_stage_fallback(hass: HomeAssistant) -> None:
 async def test_canonical_special_not_found(hass: HomeAssistant) -> None:
     """Test _canonical_special when the growspace is not found."""
     coordinator = create_test_coordinator(hass, data={})
-    canonical_id, canonical_name = coordinator.canonical_special("nonexistent")
+    canonical_id, canonical_name = coordinator.growspace_manager.get_canonical_special(
+        "nonexistent"
+    )
     assert canonical_id == "nonexistent"
     assert canonical_name == "nonexistent"
 
@@ -1595,9 +1608,9 @@ async def test_ensure_special_growspace_updates_name(
 
     caplog.set_level("INFO")
     coordinator = create_test_coordinator(hass, data={})
-    coordinator.data_repository.add_growspace(Growspace(
-        id="dry", name="Old Dry Name", rows=1, plants_per_row=1
-    ))
+    coordinator.data_repository.add_growspace(
+        Growspace(id="dry", name="Old Dry Name", rows=1, plants_per_row=1)
+    )
     coordinator.growspace_manager.ensure_special_growspace("dry", "Dry")
 
     assert coordinator.growspaces["dry"].name == "Dry"
@@ -1663,16 +1676,18 @@ async def test_handle_harvest_logic_explicit_target(hass: HomeAssistant) -> None
     plant.plant_id = "p1"
     plant.phi_clearance_date = None
     coordinator.data_repository.add_growspace(Growspace(id="gs1", name="gs1_name"))
-    coordinator.data_repository.add_growspace(Growspace(id="target_gs", name="Target GS"))
+    coordinator.data_repository.add_growspace(
+        Growspace(id="target_gs", name="Target GS")
+    )
     coordinator.data_repository.add_plant(plant)
 
     with patch.object(
-        coordinator.lifecycle_manager,
+        coordinator.plant_manager,
         "_harvest_to_explicit_target",
         new_callable=AsyncMock,
     ) as mock_harvest:
         mock_harvest.return_value = True
-        await coordinator.plant_service.harvest_plant(
+        await coordinator.plant_manager.harvest_plant(
             "p1",
             target_growspace_id="target_gs",
             target_growspace_name="Target GS",
@@ -1695,10 +1710,10 @@ async def test_handle_harvest_logic_auto_flow(hass: HomeAssistant) -> None:
     coordinator.data_repository.add_plant(plant)
 
     with patch.object(
-        coordinator.lifecycle_manager, "_harvest_auto_flow", new_callable=AsyncMock
+        coordinator.plant_manager, "_harvest_auto_flow", new_callable=AsyncMock
     ) as mock_auto:
         mock_auto.return_value = True
-        await coordinator.plant_service.harvest_plant(
+        await coordinator.plant_manager.harvest_plant(
             "p1", transition_date="2025-01-01"
         )
 
@@ -1713,10 +1728,10 @@ async def test_harvest_auto_flow_with_target_name_hint(hass: HomeAssistant) -> N
     plant = MagicMock()
 
     with patch.object(
-        coordinator.lifecycle_manager, "move_to_dry_growspace", new_callable=AsyncMock
+        coordinator.plant_manager, "move_to_dry_growspace", new_callable=AsyncMock
     ) as mock_move:
         mock_move.return_value = True
-        result = await coordinator.lifecycle_manager._harvest_auto_flow(
+        result = await coordinator.plant_manager._harvest_auto_flow(
             "p1", plant, "dry something", "2025-01-01"
         )
 
@@ -1733,10 +1748,10 @@ async def test_harvest_auto_flow_mother_to_clone(hass: HomeAssistant) -> None:
     plant.stage = "mother"
 
     with patch.object(
-        coordinator.lifecycle_manager, "move_to_clone_growspace", new_callable=AsyncMock
+        coordinator.plant_manager, "move_to_clone_growspace", new_callable=AsyncMock
     ) as mock_move:
         mock_move.return_value = True
-        await coordinator.lifecycle_manager._harvest_auto_flow(
+        await coordinator.plant_manager._harvest_auto_flow(
             "p1", plant, None, "2025-01-01"
         )
 
@@ -1756,14 +1771,14 @@ async def test_harvest_auto_flow_fallback_to_dry(hass: HomeAssistant) -> None:
             return_value="some_other_stage",
         ),
         patch.object(
-            coordinator.lifecycle_manager,
+            coordinator.plant_manager,
             "move_to_dry_growspace",
             new_callable=AsyncMock,
         ) as mock_move,
     ):
         mock_move.return_value = True
 
-        await coordinator.lifecycle_manager._harvest_auto_flow(
+        await coordinator.plant_manager._harvest_auto_flow(
             "p1", plant, None, "2025-01-01"
         )
 
@@ -1798,9 +1813,9 @@ async def test_harvest_to_explicit_target_no_position(
     coordinator.data_repository.add_plant(plant)  # Ensure plant exists
 
     with patch.object(
-        coordinator.lifecycle_manager, "update_plant", new_callable=AsyncMock
+        coordinator.plant_manager, "update_plant", new_callable=AsyncMock
     ):
-        await coordinator.lifecycle_manager._harvest_to_explicit_target(
+        await coordinator.plant_manager._harvest_to_explicit_target(
             "p1", plant, "gs1", "gs1_name", "2025-01-01"
         )
 
@@ -1833,9 +1848,9 @@ async def test_harvest_to_explicit_target_cure(hass: HomeAssistant) -> None:
     coordinator.data_repository.add_plant(plant)  # Ensure plant exists in coordinator
 
     with patch.object(
-        coordinator.lifecycle_manager, "update_plant", new_callable=AsyncMock
+        coordinator.plant_manager, "update_plant", new_callable=AsyncMock
     ) as mock_update:
-        await coordinator.lifecycle_manager._harvest_to_explicit_target(
+        await coordinator.plant_manager._harvest_to_explicit_target(
             "p1", plant, "cure", "cure", "2025-01-01"
         )
 
@@ -1875,9 +1890,9 @@ async def test_harvest_to_explicit_target_clone(hass: HomeAssistant) -> None:
     coordinator.data_repository.add_plant(plant)  # Ensure plant exists in coordinator
 
     with patch.object(
-        coordinator.lifecycle_manager, "update_plant", new_callable=AsyncMock
+        coordinator.plant_manager, "update_plant", new_callable=AsyncMock
     ) as mock_update:
-        await coordinator.lifecycle_manager._harvest_to_explicit_target(
+        await coordinator.plant_manager._harvest_to_explicit_target(
             "p1", plant, "clone", "clone", "2025-01-01"
         )
 
@@ -1917,9 +1932,9 @@ async def test_harvest_to_explicit_target_mother(hass: HomeAssistant) -> None:
     coordinator.data_repository.add_plant(plant)  # Ensure plant exists in coordinator
 
     with patch.object(
-        coordinator.lifecycle_manager, "update_plant", new_callable=AsyncMock
+        coordinator.plant_manager, "update_plant", new_callable=AsyncMock
     ) as mock_update:
-        await coordinator.lifecycle_manager._harvest_to_explicit_target(
+        await coordinator.plant_manager._harvest_to_explicit_target(
             "p1", plant, "mother", "mother", "2025-01-01"
         )
 
@@ -1961,9 +1976,9 @@ async def test_move_to_clone_growspace_no_position(
     coordinator.data_repository.add_plant(plant)  # Ensure plant exists in coordinator
 
     with patch.object(
-        coordinator.lifecycle_manager, "update_plant", new_callable=AsyncMock
+        coordinator.plant_manager, "update_plant", new_callable=AsyncMock
     ):
-        await coordinator.lifecycle_manager.move_to_clone_growspace(
+        await coordinator.plant_manager.move_to_clone_growspace(
             "p1", plant, "2025-01-01"
         )
 
@@ -2179,7 +2194,7 @@ async def test_guess_overview_entity_id(coordinator: GrowspaceCoordinator) -> No
     with patch(
         "homeassistant.helpers.entity_registry.async_get", return_value=mock_registry
     ):
-        eid = coordinator._guess_overview_entity_id("some_gs")
+        eid = coordinator.services.growspaces.guess_overview_entity_id("some_gs")
         assert eid == "sensor.found_id"
 
     # 2. Registry returns None, Special growspace ID
@@ -2187,7 +2202,9 @@ async def test_guess_overview_entity_id(coordinator: GrowspaceCoordinator) -> No
     with patch(
         "homeassistant.helpers.entity_registry.async_get", return_value=mock_registry
     ):
-        eid = coordinator._guess_overview_entity_id("mother")  # 'mother' is special
+        eid = coordinator.services.growspaces.guess_overview_entity_id(
+            "mother"
+        )  # 'mother' is special
         # Should fallback to canonical ID if not found in registry
         assert eid == "sensor.mother"
 
@@ -2198,7 +2215,7 @@ async def test_guess_overview_entity_id(coordinator: GrowspaceCoordinator) -> No
     with patch(
         "homeassistant.helpers.entity_registry.async_get", return_value=mock_registry
     ):
-        eid = coordinator._guess_overview_entity_id("complex_id")
+        eid = coordinator.services.growspaces.guess_overview_entity_id("complex_id")
         assert eid == "sensor.my_complex_name"
 
 
@@ -2231,13 +2248,25 @@ async def test_should_send_notification(coordinator: GrowspaceCoordinator) -> No
     day = 10
 
     # Initially should be True
-    assert coordinator.should_send_notification(plant_id, stage, day) is True
+    assert (
+        coordinator.services.notifications.should_send_notification(
+            plant_id, stage, day
+        )
+        is True
+    )
 
     # Mark sent
-    await coordinator.mark_notification_sent(plant_id, stage, day)
+    await coordinator.services.notifications.mark_notification_sent(
+        plant_id, stage, day
+    )
 
     # Now should be False
-    assert coordinator.should_send_notification(plant_id, stage, day) is False
+    assert (
+        coordinator.services.notifications.should_send_notification(
+            plant_id, stage, day
+        )
+        is False
+    )
 
 
 @pytest.mark.asyncio
@@ -2377,7 +2406,9 @@ async def test_notifications_logic_full(coordinator: GrowspaceCoordinator) -> No
     with patch(
         "custom_components.growspace_manager.coordinator._LOGGER"
     ) as mock_logger:
-        await coordinator.services.notifications.set_notifications_enabled("missing", False)
+        await coordinator.services.notifications.set_notifications_enabled(
+            "missing", False
+        )
 
 
 @pytest.mark.asyncio
@@ -2400,7 +2431,7 @@ async def test_remove_plant_entities(coordinator: GrowspaceCoordinator) -> None:
     with patch(
         "homeassistant.helpers.entity_registry.async_get", return_value=mock_registry
     ):
-        await coordinator._async_remove_plant_entities("p1")
+        await coordinator.services.plants.remove_plant_entities("p1")
 
         # Verify match removal
         mock_registry.async_remove.assert_called_once_with("sensor.p1_temp")
@@ -2634,7 +2665,7 @@ async def test_get_growspace_grid(coordinator: GrowspaceCoordinator) -> None:
     )
     p1 = await coordinator.plant_manager.add_plant(gs.id, "Strain", row=1, col=1)
 
-    grid = coordinator.get_growspace_grid(gs.id)
+    grid = coordinator.services.growspaces.get_growspace_grid(gs.id)
     assert len(grid) == 2
 
     found = False
@@ -2724,12 +2755,14 @@ async def test_coverage_async_commit_with_irrigation_coordinators(
 ) -> None:
     """Test async_commit refreshes irrigation coordinators (lines 569-575)."""
     # Setup growspaces
-    coordinator.data_repository.add_growspace(Growspace(
-        id="gs1",
-        name="GS1",
-        rows=3,
-        plants_per_row=3,
-    ))
+    coordinator.data_repository.add_growspace(
+        Growspace(
+            id="gs1",
+            name="GS1",
+            rows=3,
+            plants_per_row=3,
+        )
+    )
 
     # Setup mock irrigation coordinator
     mock_irrigation = MagicMock()
@@ -2823,7 +2856,9 @@ async def test_update_irrigation_settings_missing_entities(
         "irrigation_pump_entity": "switch.pump1",
         "drain_pump_entity": "switch.limit_switch",
     }
-    await coordinator.services.growspaces.update_irrigation_config(gs.id, initial_settings)
+    await coordinator.services.growspaces.update_irrigation_config(
+        gs.id, initial_settings
+    )
 
     assert gs.irrigation_config.irrigation_pump_entity == "switch.pump1"
 
