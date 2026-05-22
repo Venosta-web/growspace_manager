@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Callable, Mapping
-from datetime import datetime
+from datetime import datetime, timedelta
 from functools import partial
 import logging
 from typing import TYPE_CHECKING, Any, override
@@ -42,6 +42,12 @@ class BaseIrrigationCoordinator:
         self._listeners: list[Callable[[], None]] = []
         self._running_tasks: dict[str, asyncio.Task[Any]] = {}
         self._active_events: dict[str, dict[str, Any]] = {}
+        self._last_cycle_timestamp: str | None = None
+
+    @property
+    def last_cycle_timestamp(self) -> str | None:
+        """Return the ISO timestamp of the most recently completed irrigation cycle start."""
+        return self._last_cycle_timestamp
 
     @property
     def active_events(self) -> dict[str, dict[str, Any]]:
@@ -502,6 +508,8 @@ class IrrigationCoordinator(BaseIrrigationCoordinator):
 
             # Start timing AFTER switch confirms ON
             start_dt = utcnow()
+            if event_type == "irrigation":
+                self._last_cycle_timestamp = start_dt.isoformat()
 
             await self._async_send_cycle_notification(event_type, duration, event_data)
 
@@ -595,3 +603,82 @@ class IrrigationCoordinator(BaseIrrigationCoordinator):
             )
             if event_type in self._running_tasks:
                 self._running_tasks.pop(event_type)
+
+    @property
+    def next_scheduled_cycle(self) -> str | None:
+        """Return the ISO datetime of the next upcoming scheduled irrigation cycle.
+
+        Scans the configured irrigation_times and returns the soonest future occurrence.
+        Returns None when no times are configured.
+        """
+        irrigation_times = self.growspace.irrigation_config.irrigation_times
+        if not irrigation_times:
+            return None
+
+        now = utcnow()
+        today = now.date()
+        soonest: datetime | None = None
+
+        for item in irrigation_times:
+            time_str = item.get("time")
+            if not isinstance(time_str, str):
+                continue
+            if len(time_str) == 5:
+                time_str = f"{time_str}:00"
+            try:
+                t = datetime.strptime(time_str, "%H:%M:%S").time()
+            except ValueError:
+                continue
+
+            candidate = datetime.combine(today, t, tzinfo=now.tzinfo)
+            if candidate <= now:
+                candidate = datetime.combine(
+                    today + timedelta(days=1), t, tzinfo=now.tzinfo
+                )
+            if soonest is None or candidate < soonest:
+                soonest = candidate
+
+        return soonest.isoformat() if soonest else None
+
+    async def async_manual_run(self, duration: int | None) -> None:
+        """Trigger a manual irrigation cycle, bypassing the schedule.
+
+        Args:
+            duration: Duration in seconds. Uses the configured default when None.
+
+        Raises:
+            ServiceValidationError: When no irrigation pump entity is configured or
+                no duration can be determined.
+        """
+        options = self.growspace.irrigation_config
+        pump_entity = options.irrigation_pump_entity
+        if not pump_entity:
+            raise ServiceValidationError(
+                f"No irrigation pump entity configured for growspace '{self._growspace_id}'"
+            )
+
+        effective_duration = duration or options.irrigation_duration
+        if not effective_duration:
+            raise ServiceValidationError(
+                f"No irrigation duration provided or configured for growspace '{self._growspace_id}'"
+            )
+
+        if (
+            "irrigation" in self._running_tasks
+            and self._running_tasks["irrigation"]
+            and not self._running_tasks["irrigation"].done()
+        ):
+            _LOGGER.warning(
+                "Cancelling running irrigation cycle for %s to start manual run",
+                self._growspace_id,
+            )
+            self._running_tasks["irrigation"].cancel()
+
+        task = self._config_entry.async_create_background_task(
+            self.hass,
+            self._run_pump_cycle(
+                "irrigation", pump_entity, int(effective_duration), {"manual": True}
+            ),
+            f"irrigation_manual_run_{self._growspace_id}",
+        )
+        self._running_tasks["irrigation"] = task

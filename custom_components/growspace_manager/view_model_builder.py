@@ -136,8 +136,10 @@ class ViewModelBuilder:
             )
         )
 
-        # Fetch active events from irrigation sub-coordinators
+        # Fetch active events and cycle telemetry from irrigation sub-coordinators
         active_events = {}
+        last_cycle_timestamp: str | None = None
+        next_scheduled_cycle: str | None = None
         if (
             self.coordinator.subsystem_manager
             and growspace_id
@@ -147,6 +149,8 @@ class ViewModelBuilder:
                 growspace_id
             ]
             active_events = irr_coord.active_events
+            last_cycle_timestamp = irr_coord.last_cycle_timestamp
+            next_scheduled_cycle = irr_coord.next_scheduled_cycle
 
         # Use presentation layer to build rich growspace payload
         serialized = self._growspace_builder.build(
@@ -159,6 +163,10 @@ class ViewModelBuilder:
             max_cure_days=max_cure_days,
             active_events=active_events,
         )
+
+        # Inject irrigation cycle telemetry for the card footer
+        serialized["last_cycle_timestamp"] = last_cycle_timestamp
+        serialized["next_scheduled_cycle"] = next_scheduled_cycle
 
         # Inject timestamp for efficient frontend equality checks (change detection)
         # Using the current_time we already captured at the start of the method

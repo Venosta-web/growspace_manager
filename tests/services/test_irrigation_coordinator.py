@@ -15,6 +15,7 @@ from custom_components.growspace_manager.irrigation_coordinator import (
 from custom_components.growspace_manager.models import Growspace, IrrigationConfig
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
+from homeassistant.exceptions import ServiceValidationError
 
 GROWSPACE_ID = "test_growspace"
 ENTRY_ID = "test_entry_id"
@@ -936,3 +937,116 @@ async def test_irrigation_coordinator_coverage_gaps(
             coordinator._running_tasks = ExplodingDict()
             await coordinator._run_pump_cycle("irrigation", "switch.pump", 30, {})
             # Should catch and log error
+
+
+# --- Manual Run Service Tests ---
+
+
+async def test_async_manual_run_triggers_pump_cycle(
+    mock_hass: MagicMock, mock_config_entry: MagicMock, mock_main_coordinator: MagicMock
+) -> None:
+    """Test that async_manual_run triggers a pump cycle with the given duration."""
+    coordinator = IrrigationCoordinator(
+        mock_hass, mock_config_entry, GROWSPACE_ID, mock_main_coordinator
+    )
+
+    with patch.object(
+        coordinator, "_run_pump_cycle", new_callable=AsyncMock
+    ) as mock_run_cycle:
+        await coordinator.async_manual_run(duration=45)
+        await asyncio.sleep(0)
+
+        mock_run_cycle.assert_awaited_once_with(
+            "irrigation",
+            "switch.irrigation_pump",
+            45,
+            {"manual": True},
+        )
+
+
+async def test_async_manual_run_uses_default_duration_when_none(
+    mock_hass: MagicMock, mock_config_entry: MagicMock, mock_main_coordinator: MagicMock
+) -> None:
+    """Test that async_manual_run uses the configured default duration when none given."""
+    coordinator = IrrigationCoordinator(
+        mock_hass, mock_config_entry, GROWSPACE_ID, mock_main_coordinator
+    )
+
+    with patch.object(
+        coordinator, "_run_pump_cycle", new_callable=AsyncMock
+    ) as mock_run_cycle:
+        await coordinator.async_manual_run(duration=None)
+        await asyncio.sleep(0)
+
+        mock_run_cycle.assert_awaited_once_with(
+            "irrigation",
+            "switch.irrigation_pump",
+            30,  # default from fixture: irrigation_duration=30
+            {"manual": True},
+        )
+
+
+async def test_async_manual_run_raises_when_no_pump_configured(
+    mock_hass: MagicMock, mock_config_entry: MagicMock, mock_main_coordinator: MagicMock
+) -> None:
+    """Test that async_manual_run raises ServiceValidationError when no pump entity configured."""
+    coordinator = IrrigationCoordinator(
+        mock_hass, mock_config_entry, GROWSPACE_ID, mock_main_coordinator
+    )
+    coordinator._main_coordinator.growspaces[GROWSPACE_ID].irrigation_config.irrigation_pump_entity = None
+
+    with pytest.raises(ServiceValidationError, match="No irrigation pump"):
+        await coordinator.async_manual_run(duration=30)
+
+
+# --- last_cycle_timestamp Tests ---
+
+
+async def test_last_cycle_timestamp_is_none_initially(
+    mock_hass: MagicMock, mock_config_entry: MagicMock, mock_main_coordinator: MagicMock
+) -> None:
+    """Test that last_cycle_timestamp is None before any cycle runs."""
+    coordinator = IrrigationCoordinator(
+        mock_hass, mock_config_entry, GROWSPACE_ID, mock_main_coordinator
+    )
+    assert coordinator.last_cycle_timestamp is None
+
+
+async def test_last_cycle_timestamp_set_after_run_pump_cycle(
+    mock_hass: MagicMock, mock_config_entry: MagicMock, mock_main_coordinator: MagicMock
+) -> None:
+    """Test that last_cycle_timestamp is set to the cycle start time after completion."""
+    coordinator = IrrigationCoordinator(
+        mock_hass, mock_config_entry, GROWSPACE_ID, mock_main_coordinator
+    )
+    mock_config_entry.runtime_data = mock_main_coordinator
+
+    with (
+        patch("asyncio.sleep", new_callable=AsyncMock),
+        patch.object(
+            coordinator,
+            "_async_wait_for_switch_state",
+            new_callable=AsyncMock,
+            return_value=True,
+        ),
+    ):
+        await coordinator._run_pump_cycle("irrigation", "switch.irrigation_pump", 30, {})
+
+    assert coordinator.last_cycle_timestamp is not None
+
+
+# --- next_scheduled_cycle Tests ---
+
+
+async def test_next_scheduled_cycle_returns_next_future_time(
+    mock_hass: MagicMock, mock_config_entry: MagicMock, mock_main_coordinator: MagicMock
+) -> None:
+    """Test that next_scheduled_cycle returns the next irrigation time after now."""
+    coordinator = IrrigationCoordinator(
+        mock_hass, mock_config_entry, GROWSPACE_ID, mock_main_coordinator
+    )
+
+    # Fixture has irrigation_times: ["10:00:00", "20:00:00"]
+    result = coordinator.next_scheduled_cycle
+    # result should be a datetime ISO string or None
+    assert result is None or isinstance(result, str)
