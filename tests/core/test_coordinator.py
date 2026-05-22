@@ -50,7 +50,7 @@ def create_test_coordinator(
     entry = MockConfigEntry(domain=DOMAIN, data={}, options=options or {})
     entry.add_to_hass(hass)
     entry.async_create_background_task = MagicMock()
-    return GrowspaceCoordinator(
+    return GrowspaceCoordinator.build(
         hass,
         entry,
         data=data or {},
@@ -75,7 +75,7 @@ def obsolete_mock_coordinator(hass: HomeAssistant) -> GrowspaceCoordinator:
     # Add async_create_background_task mock to entry
     mock_entry.async_create_background_task = MagicMock()
 
-    coordinator = GrowspaceCoordinator(
+    coordinator = GrowspaceCoordinator.build(
         hass, mock_entry, data={}, strain_library=strain_library
     )
     coordinator.async_save = AsyncMock()  # type: ignore[method-assign]
@@ -2657,7 +2657,7 @@ async def test_coverage_init_with_empty_data(hass: HomeAssistant) -> None:
         patch("custom_components.growspace_manager.coordinator.StrainLibrary"),
     ):
         # Initialize with no data
-        coord = GrowspaceCoordinator(hass, entry, data=None)
+        coord = GrowspaceCoordinator.build(hass, entry, data=None)
 
         # Should initialize empty dicts
         assert coord.plants == {}

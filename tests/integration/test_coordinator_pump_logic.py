@@ -41,7 +41,7 @@ async def test_async_update_irrigation_config_normalizes_empty_strings(
     entry = MagicMock()
 
     # Initialize coordinator
-    coordinator = GrowspaceCoordinator(hass, entry, data={})
+    coordinator = GrowspaceCoordinator.build(hass, entry, data={})
 
     # Sub-managers created in __init__ are MagicMocks due to patching.
     # We must make the awaited methods AsyncMocks.
@@ -52,7 +52,7 @@ async def test_async_update_irrigation_config_normalizes_empty_strings(
     coordinator.cache = MagicMock()
     coordinator.cache.invalidate = MagicMock()
 
-    # The view_model_builder needs to return something for the 'data' property
+    coordinator.view_model_builder = MagicMock()
     coordinator.view_model_builder.build_data_property.return_value = {}
 
     # Create test growspace
@@ -64,8 +64,7 @@ async def test_async_update_irrigation_config_normalizes_empty_strings(
         irrigation_config=IrrigationConfig(drain_pump_entity="switch.old"),
     )
 
-    # Ensure the coordinator's growspaces snapshot includes the growspace
-    coordinator.data_repository.get_all_growspaces.return_value = [growspace]
+    coordinator.data_repository.add_growspace(growspace)
 
     # Test Input: Empty String for drain_pump_entity
     user_input = {

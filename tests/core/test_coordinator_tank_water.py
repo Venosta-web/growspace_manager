@@ -32,7 +32,7 @@ def _make_coordinator(hass: HomeAssistant) -> GrowspaceCoordinator:
 
     entry.async_create_background_task = MagicMock(side_effect=mock_create_task)
 
-    return GrowspaceCoordinator(hass, entry, data={})
+    return GrowspaceCoordinator.build(hass, entry, data={})
 
 
 def _add_growspace_with_tank(

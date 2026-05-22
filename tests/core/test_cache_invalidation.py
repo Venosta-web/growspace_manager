@@ -21,7 +21,7 @@ async def test_async_commit_invalidates_cache(hass: HomeAssistant) -> None:
         mock_sm_instance.async_save = AsyncMock()
         mock_sm_instance.async_force_save = AsyncMock()
 
-        coordinator = GrowspaceCoordinator(hass, entry, data={})
+        coordinator = GrowspaceCoordinator.build(hass, entry, data={})
 
         # Manually populate cache to simulate existing state
         # Using a tuple to match expected internal CacheManager structure
@@ -49,7 +49,7 @@ async def test_async_commit_rebuilds_cache(hass: HomeAssistant) -> None:
         mock_sm_instance.async_save = AsyncMock()
         mock_sm_instance.async_force_save = AsyncMock()
 
-        coordinator = GrowspaceCoordinator(hass, entry, data={})
+        coordinator = GrowspaceCoordinator.build(hass, entry, data={})
         coordinator.async_set_updated_data = MagicMock()
         coordinator.serializer = MagicMock()
         coordinator.serializer.serialize_growspace = MagicMock(

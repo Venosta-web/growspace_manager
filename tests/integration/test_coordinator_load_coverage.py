@@ -30,7 +30,7 @@ async def test_load_initial_data_pre_deserialized(hass: HomeAssistant) -> None:
         "notifications_enabled": {},
     }
 
-    coordinator = GrowspaceCoordinator(hass, entry, data=data)
+    coordinator = GrowspaceCoordinator.build(hass, entry, data=data)
 
     assert coordinator.growspaces["gs1"] is gs
     assert coordinator.plants["p1"] is plant
@@ -58,7 +58,7 @@ async def test_load_initial_data_deserialization_failure(
         },
     }
 
-    coordinator = GrowspaceCoordinator(hass, entry, data=data)
+    coordinator = GrowspaceCoordinator.build(hass, entry, data=data)
 
     # Verify that errors were logged
     assert (

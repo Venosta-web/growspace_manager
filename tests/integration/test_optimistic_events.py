@@ -13,7 +13,7 @@ def mock_coordinator(hass: HomeAssistant):
     entry = MockConfigEntry(domain="growspace_manager", data={}, options={})
     entry.add_to_hass(hass)
 
-    coordinator = GrowspaceCoordinator(hass, entry, data={})
+    coordinator = GrowspaceCoordinator.build(hass, entry, data={})
 
     # Mock lifecycle manager and inject it into the service
     coordinator.lifecycle_manager = AsyncMock()

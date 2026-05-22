@@ -21,7 +21,7 @@ from homeassistant.core import HomeAssistant
 def mock_coordinator(hass: HomeAssistant) -> GrowspaceCoordinator:
     entry = MockConfigEntry(domain=DOMAIN, data={}, options={})
     entry.add_to_hass(hass)
-    coord = GrowspaceCoordinator(hass, entry, data={}, strain_library=MagicMock())
+    coord = GrowspaceCoordinator.build(hass, entry, data={}, strain_library=MagicMock())
     coord.async_save = AsyncMock()  # type: ignore[method-assign]
     # Mock the save callback in the IPM service since it now handles saves
     coord._ipm_service._ctx.save_callback = coord.async_save

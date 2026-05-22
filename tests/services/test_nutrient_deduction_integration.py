@@ -16,17 +16,12 @@ from homeassistant.core import HomeAssistant
 
 @pytest.fixture
 async def mock_coordinator(hass: HomeAssistant):
-    coord = GrowspaceCoordinator(hass, MagicMock(), MagicMock())
-    # Mock storage and other components to avoid hitting real storage
-    coord.storage_manager = MagicMock()
+    coord = GrowspaceCoordinator.build(hass, MagicMock())
+    # Prevent real storage writes
     coord.storage_manager.async_save = AsyncMock()
     coord.storage_manager.async_force_save = AsyncMock()
-    coord.async_save = AsyncMock()
-    # Mock save callback on watering service since it now handles saves
-    coord._watering_service._ctx.save_callback = coord.async_save
-    # Mock services facade to allow tracking calls
-    coord.services = MagicMock(wraps=coord.services)
-    coord.services.save = AsyncMock()
+    coord.view_model_builder = MagicMock()
+    coord.view_model_builder.build_data_property.return_value = {}
 
     # Initialize basic data
     coord.data_repository.add_growspace(
@@ -76,7 +71,7 @@ async def test_water_growspace_total_amount_deduction(
     stock = mock_coordinator.nutrient_manager.inventory.stocks["n1"]
     assert stock.current_ml == pytest.approx(90.0)
 
-    mock_coordinator.async_save.assert_awaited()
+    mock_coordinator.storage_manager.async_force_save.assert_awaited()
 
 
 @pytest.mark.asyncio

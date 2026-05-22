@@ -49,9 +49,10 @@ def create_test_coordinator(hass: HomeAssistant) -> GrowspaceCoordinator:
         side_effect=lambda hass_obj, coro, name: hass.async_create_task(coro)
     )
 
-    coordinator = GrowspaceCoordinator(hass, entry, data={})
-    coordinator.services.save = AsyncMock()  # type: ignore[method-assign]
-    coordinator.services.set_updated_data = MagicMock()
+    coordinator = GrowspaceCoordinator.build(hass, entry, data={})
+    coordinator.storage_manager.async_force_save = AsyncMock()
+    coordinator.view_model_builder = MagicMock()
+    coordinator.view_model_builder.build_data_property.return_value = {}
     return coordinator
 
 
@@ -104,7 +105,7 @@ class TestNutrientPresetCoordinator:
         assert preset.stage == PlantStage.VEG
         assert preset.min_days_in_stage == 5
         assert preset.id in preset_coordinator.nutrient_presets
-        preset_coordinator.services.save.assert_called_once()  # type: ignore[attr-defined]
+        preset_coordinator.storage_manager.async_force_save.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_remove_nutrient_preset(
@@ -121,7 +122,7 @@ class TestNutrientPresetCoordinator:
         await preset_coordinator.services.config.remove_nutrient_preset(preset_id)
 
         assert preset_id not in preset_coordinator.nutrient_presets
-        assert preset_coordinator.services.save.call_count == 2  # type: ignore[attr-defined]
+        assert preset_coordinator.storage_manager.async_force_save.call_count == 2
 
     @pytest.mark.asyncio
     async def test_remove_nonexistent_preset_raises(

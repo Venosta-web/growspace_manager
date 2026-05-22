@@ -660,7 +660,7 @@ def test_coordinator_get_plant_delegates_to_repository() -> None:
     entry.data = {}
     entry.options = {}
 
-    coordinator = GrowspaceCoordinator(hass, entry, data={}, strain_library=MagicMock())
+    coordinator = GrowspaceCoordinator.build(hass, entry, data={}, strain_library=MagicMock())
     plant = MagicMock()
     coordinator.data_repository = MagicMock()
     coordinator.data_repository.get_plant.return_value = plant
@@ -679,7 +679,7 @@ def test_coordinator_get_growspace_delegates_to_repository() -> None:
     entry.data = {}
     entry.options = {}
 
-    coordinator = GrowspaceCoordinator(hass, entry, data={}, strain_library=MagicMock())
+    coordinator = GrowspaceCoordinator.build(hass, entry, data={}, strain_library=MagicMock())
     growspace = MagicMock()
     coordinator.data_repository = MagicMock()
     coordinator.data_repository.get_growspace.return_value = growspace

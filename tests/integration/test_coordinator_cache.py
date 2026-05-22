@@ -23,7 +23,7 @@ def create_test_coordinator(
         side_effect=lambda hass, coro, name: coro.close()
     )
 
-    coord = GrowspaceCoordinator(
+    coord = GrowspaceCoordinator.build(
         hass,
         entry,
         data=data or {},

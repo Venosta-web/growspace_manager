@@ -83,6 +83,29 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         """Return a snapshot dict of all plants keyed by plant_id."""
         return {p.plant_id: p for p in self.data_repository.get_all_plants()}
 
+    @classmethod
+    def build(
+        cls,
+        hass: HomeAssistant,
+        entry: Any,
+        data: dict[str, Any] | None = None,
+        options: dict[str, Any] | None = None,
+        strain_library: Any | None = None,
+        seedfinder_scraper: Any | None = None,
+    ) -> GrowspaceCoordinator:
+        """Build a fully wired coordinator via CoordinatorBuilder.
+
+        Preferred over direct instantiation in tests and production code.
+        """
+        from .coordinator_builder import CoordinatorBuilder  # noqa: PLC0415
+
+        return CoordinatorBuilder(hass, entry).build(
+            data=data,
+            options=options,
+            strain_library=strain_library,
+            seedfinder_scraper=seedfinder_scraper,
+        )
+
     @staticmethod
     def get_for_service_call(
         hass: HomeAssistant, call: ServiceCall | dict[str, Any]
@@ -267,22 +290,24 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self,
         hass: HomeAssistant,
         entry: ConfigEntry[GrowspaceCoordinator],
-        data: dict[str, Any] | None = None,
+        *,
+        data_repository: GrowspaceRepository,
+        notification_state: NotificationState,
+        lock: asyncio.Lock,
+        cache: CacheManager,
+        date_time_helper: DateTimeHelper,
+        event_bus: GrowspaceEventBus,
+        strain_library: StrainLibrary,
+        seedfinder_scraper: SeedfinderScraper,
+        plant_view_builder: PlantViewModelBuilder,
+        import_export_manager: ImportExportManager,
+        validator: GrowspaceValidator,
         options: dict[str, Any] | None = None,
-        strain_library: StrainLibrary | None = None,
-        seedfinder_scraper: SeedfinderScraper | None = None,
     ) -> None:
-        """Initialize the Growspace Coordinator.
+        """Store pre-built collaborators and perform HA-level setup.
 
-        The coordinator manages all growspace and plant data, coordinates between
-        specialized services, and handles persistence and updates.
-
-        Args:
-            hass: The Home Assistant instance.
-            entry: The config entry for this integration.
-            data: Initial raw data from storage to restore state. If None, starts fresh.
-            options: Configuration options from the config entry.
-            strain_library: Optional pre-initialized strain library. If None, creates new.
+        All construction lives in CoordinatorBuilder. Call _attach_services()
+        after construction to wire in the coordinator-self-dependent services.
         """
         super().__init__(
             hass,
@@ -293,134 +318,61 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         )
 
         self.config_entry = entry
-        self.lock = asyncio.Lock()
-
-        # Initialize Data Repository first - it owns the data dicts
-        self.data_repository = GrowspaceRepository()
-        self.notification_state = NotificationState()
-
-        # 1. Initialize logic components with minimal dependencies
-        self.validator = GrowspaceValidator(self.data_repository)
-        self.view_model_builder = ViewModelBuilder(self)
-
-        # Initialize presentation layer builders
-        self._plant_view_builder = PlantViewModelBuilder(hass)
-
-        # 2. Load initial data if provided (uses mashumaro and validator)
-        if data:
-            self._load_initial_data(data)
-
-        # Initialize helper managers
-        self._date_time_helper = DateTimeHelper()
-        self._event_bus = GrowspaceEventBus(hass)
-
-        # Cache management - using dedicated CacheManager
-        self.cache = CacheManager()
-
-        # Initialize strain library
-        if strain_library is None:
-            self.strain_library = StrainLibrary(hass)
-        else:
-            self.strain_library = strain_library
-
-        # Initialize seedfinder scraper
-        if seedfinder_scraper is None:
-            self.seedfinder_scraper = SeedfinderScraper(hass)
-        else:
-            self.seedfinder_scraper = seedfinder_scraper
-
-        # 3. Initialize storage (depends on repository, nutrient_manager, genetics_manager)
-        self.nutrient_manager = NutrientManager(
-            self.data_repository, self._save_callback
-        )
-        self.genetics_manager = GeneticsManager(
-            self.data_repository,
-            self._save_callback,
-            strain_library=self.strain_library,
-        )
-        self.storage_manager = StorageManager(
-            self.hass,
-            self.data_repository,
-            self.nutrient_manager,
-            self.genetics_manager,
-            self.notification_state,
-        )
-
-        # 4. Initialize Managers and Services
-        _svc_ctx = ServiceContext(
-            save_callback=self._save_callback,
-            lock=self.lock,
-            add_event=self.add_event,
-            invalidate_cache=self.cache.invalidate,
-        )
-
-        self._growspace_manager = GrowspaceManager(
-            _svc_ctx,
-            self.hass,
-            self.data_repository,
-            self.notification_state,
-            self.validator,
-            self.view_model_builder,
-        )
-
-        self._plant_manager = PlantManager(
-            _svc_ctx,
-            self.hass,
-            self.data_repository,
-            self.notification_state,
-            self.validator,
-            self._growspace_manager,
-            self.strain_library,
-            self._plant_view_builder,
-        )
-
-        # Aliases for compatibility
-        self._growspace_service = self._growspace_manager
-        self._plant_service = self._plant_manager
-        self.lifecycle_manager = self._plant_manager
-        self._special_growspace_manager = self._growspace_manager
-
-        self._watering_service = WateringService(
-            _svc_ctx,
-            self.hass,
-            self.data_repository,
-            self.validator,
-            self.nutrient_manager,
-        )
-
-        self._training_service = TrainingService(
-            _svc_ctx,
-            self.hass,
-            self.data_repository,
-        )
-
-        self._ipm_service = IPMService(
-            _svc_ctx,
-            self.hass,
-            self.data_repository,
-        )
-
-        self.environment_analyzer = EnvironmentAnalyzer(hass, self)
-        self.environment_reporter = EnvironmentReporter(hass, self)
-        self.notification_manager = NotificationManager(hass, self)
-        self.notification_settings = NotificationSettingsManager(self)
-        self.import_export_manager = ImportExportManager(hass)
-
-        # Initialize Subsystem Manager
-        self.subsystem_manager = SubsystemManager(hass, self, entry)
-        self.services = ServiceFacade(self)
-
-        # Initialize Vision Checkup Scheduler
-        self.vision_scheduler = VisionCheckupScheduler(hass, self)
-
-        # Track created entities (platform, entity_id, unique_id) for lifecycle management
+        self.lock = lock
+        self.data_repository = data_repository
+        self.notification_state = notification_state
+        self.cache = cache
+        self._date_time_helper = date_time_helper
+        self._event_bus = event_bus
+        self.strain_library = strain_library
+        self.seedfinder_scraper = seedfinder_scraper
+        self._plant_view_builder = plant_view_builder
+        self.import_export_manager = import_export_manager
+        self.validator = validator
+        self.options = options or {}
         self.created_entity_ids: list[tuple[str, str, str]] = []
 
-        # Runtime tank water trackers keyed by growspace_id → tank_entity
-        # Subsystem tracking state
-
-        # Options and state initialization
-        self.options = options or {}
+    def _attach_services(
+        self,
+        *,
+        view_model_builder: ViewModelBuilder,
+        nutrient_manager: NutrientManager,
+        genetics_manager: GeneticsManager,
+        storage_manager: StorageManager,
+        growspace_manager: GrowspaceManager,
+        plant_manager: PlantManager,
+        watering_service: WateringService,
+        training_service: TrainingService,
+        ipm_service: IPMService,
+        environment_analyzer: EnvironmentAnalyzer,
+        environment_reporter: EnvironmentReporter,
+        notification_manager: NotificationManager,
+        notification_settings: NotificationSettingsManager,
+        subsystem_manager: SubsystemManager,
+        services: ServiceFacade,
+        vision_scheduler: VisionCheckupScheduler,
+    ) -> None:
+        """Wire coordinator-self-dependent services. Called by CoordinatorBuilder after __init__."""
+        self.view_model_builder = view_model_builder
+        self.nutrient_manager = nutrient_manager
+        self.genetics_manager = genetics_manager
+        self.storage_manager = storage_manager
+        self._growspace_manager = growspace_manager
+        self._growspace_service = growspace_manager
+        self._special_growspace_manager = growspace_manager
+        self._plant_manager = plant_manager
+        self._plant_service = plant_manager
+        self.lifecycle_manager = plant_manager
+        self._watering_service = watering_service
+        self._training_service = training_service
+        self._ipm_service = ipm_service
+        self.environment_analyzer = environment_analyzer
+        self.environment_reporter = environment_reporter
+        self.notification_manager = notification_manager
+        self.notification_settings = notification_settings
+        self.subsystem_manager = subsystem_manager
+        self.services = services
+        self.vision_scheduler = vision_scheduler
         _LOGGER.info("--- COORDINATOR INITIALIZED WITH OPTIONS: %s ---", self.options)
 
     def on_nutrient_inventory_loaded(self, inventory: NutrientInventory) -> None:
@@ -593,12 +545,8 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         return self.data
 
     async def _save_callback(self) -> None:
-        """Internal callback to handle async saving and commit logic.
-
-        This delegates to the service facade to ensure all orchestration
-        logic (including storage and cache invalidation) is executed.
-        """
-        await self.services.save()
+        """Persist current state and notify listeners."""
+        await self.async_commit()
 
     def _load_initial_data(self, data: dict[str, Any]) -> None:
         """Load and validate initial data from a dictionary.

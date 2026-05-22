@@ -53,7 +53,7 @@ def create_test_coordinator(
 
     entry.async_create_background_task = MagicMock(side_effect=mock_create_task)
 
-    return GrowspaceCoordinator(
+    return GrowspaceCoordinator.build(
         hass,
         entry,
         data=data or {},

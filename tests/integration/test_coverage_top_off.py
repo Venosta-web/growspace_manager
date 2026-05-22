@@ -285,7 +285,7 @@ async def test_batch_add_mother_auto_date_coverage(hass: HomeAssistant) -> None:
     """Test add_plants auto-sets mother_start for mother growspace."""
     entry = MockConfigEntry(domain="growspace_manager", data={})
     entry.add_to_hass(hass)
-    mock_coordinator = GrowspaceCoordinator(hass, entry, data={})
+    mock_coordinator = GrowspaceCoordinator.build(hass, entry, data={})
 
     mock_coordinator.data_repository.add_growspace(Growspace(id="mother", name="mother"))
     with patch.object(

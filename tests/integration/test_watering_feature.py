@@ -40,14 +40,9 @@ def create_test_coordinator(hass: HomeAssistant) -> GrowspaceCoordinator:
         side_effect=lambda _hass, coroutine, name: hass.async_create_task(coroutine)
     )
 
-    coordinator = GrowspaceCoordinator(hass, entry, data={})
-    coordinator.async_save = AsyncMock()  # type: ignore[method-assign]
+    coordinator = GrowspaceCoordinator.build(hass, entry, data={})
     coordinator.async_commit = AsyncMock()  # type: ignore[method-assign]
     coordinator.async_set_updated_data = MagicMock()
-    # Mock services.save to be an AsyncMock for assertions and functionality
-    coordinator.services.save = AsyncMock(side_effect=coordinator.async_commit)
-    # Mock save callback on watering service since it now handles saves
-    coordinator._watering_service.save_callback = coordinator.services.save
     return coordinator
 
 
@@ -110,8 +105,8 @@ class TestAsyncWaterPlant:
         assert isinstance(parsed, datetime)
 
         # Verify save was called to persist the change
-        assert watering_coordinator.services.save.called  # type: ignore[attr-defined]
-        assert watering_coordinator.services.save.call_count == 1  # type: ignore[attr-defined]
+        assert watering_coordinator.async_commit.called  # type: ignore[attr-defined]
+        assert watering_coordinator.async_commit.call_count == 1  # type: ignore[attr-defined]
 
     @pytest.mark.asyncio
     async def test_water_plant_with_nutrients(
@@ -204,7 +199,7 @@ class TestAsyncWaterGrowspace:
             assert plant.last_watered is not None
 
         # Verify save was called ensures persistence
-        assert watering_coordinator.services.save.called  # type: ignore[attr-defined]
+        assert watering_coordinator.async_commit.called  # type: ignore[attr-defined]
 
     @pytest.mark.asyncio
     async def test_water_growspace_with_nutrients(
