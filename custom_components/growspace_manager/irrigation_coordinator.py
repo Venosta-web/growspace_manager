@@ -12,8 +12,8 @@ from typing import TYPE_CHECKING, Any, override
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import EVENT_STATE_CHANGED
 from homeassistant.core import Event, HomeAssistant, callback
-from homeassistant.helpers.event import async_track_time_change
 from homeassistant.exceptions import ServiceValidationError
+from homeassistant.helpers.event import async_track_time_change
 from homeassistant.util.dt import utcnow
 
 if TYPE_CHECKING:
@@ -100,6 +100,131 @@ class BaseIrrigationCoordinator:
             "Cancelled all irrigation listeners for growspace %s", self._growspace_id
         )
 
+    def get_default_duration(self, event_type: str) -> int | None:
+        """Get the default duration for a given event type."""
+        try:
+            return getattr(
+                self.growspace.irrigation_config, f"{event_type}_duration", None
+            )
+        except (KeyError, AttributeError):
+            return None
+
+    async def _save_and_reload(self, reload_listeners: bool = True) -> None:
+        """Save changes to storage and reload listeners."""
+        await self._main_coordinator.async_refresh_growspace_data(self._growspace_id)
+        await self._main_coordinator.async_commit()
+        self._main_coordinator.async_set_updated_data(self._main_coordinator.data)
+        if reload_listeners:
+            await self.async_request_refresh()
+
+    async def async_add_schedule_item(
+        self, schedule_key: str, time_str: str, duration: int | None
+    ) -> None:
+        """Add a time entry to an irrigation or drain schedule."""
+        if not time_str:
+            raise ValueError("Time cannot be empty")
+
+        if len(time_str) == 5:
+            time_str = f"{time_str}:00"
+
+        try:
+            datetime.strptime(time_str, "%H:%M:%S")
+        except ValueError as err:
+            raise ValueError(f"Invalid time '{time_str}': hours must be 00-23") from err
+
+        if not hasattr(self.growspace.irrigation_config, schedule_key):
+            _LOGGER.error("Invalid schedule key %s", schedule_key)
+            return
+
+        current_schedule: list[dict[str, Any]] = getattr(
+            self.growspace.irrigation_config, schedule_key
+        )
+
+        existing_item = next(
+            (item for item in current_schedule if item.get("time") == time_str),
+            None,
+        )
+
+        if existing_item:
+            existing_item["duration"] = duration
+            _LOGGER.info(
+                "Updated %s in %s for growspace %s. Duration set to %s",
+                time_str,
+                schedule_key,
+                self._growspace_id,
+                duration,
+            )
+            new_list = list(current_schedule)
+            setattr(self.growspace.irrigation_config, schedule_key, new_list)
+        else:
+            new_list = list(current_schedule)
+            new_list.append({"time": time_str, "duration": duration})
+            setattr(self.growspace.irrigation_config, schedule_key, new_list)
+
+            _LOGGER.info(
+                "Added %s to %s for growspace %s. Schedule now has %d items",
+                {"time": time_str, "duration": duration},
+                schedule_key,
+                self._growspace_id,
+                len(new_list),
+            )
+
+        await self._save_and_reload()
+
+    async def async_remove_schedule_item(
+        self, schedule_key: str, time_str: str
+    ) -> None:
+        """Remove all matching time entries from a schedule."""
+        if not time_str:
+            raise ValueError("Time cannot be empty")
+
+        if not hasattr(self.growspace.irrigation_config, schedule_key):
+            _LOGGER.warning(
+                "Cannot remove item: schedule '%s' not found for growspace %s",
+                schedule_key,
+                self._growspace_id,
+            )
+            return
+
+        try:
+            schedule = getattr(self.growspace.irrigation_config, schedule_key)
+            items_before = len(schedule)
+
+            new_schedule = [item for item in schedule if item.get("time") != time_str]
+            setattr(self.growspace.irrigation_config, schedule_key, new_schedule)
+
+            items_after = len(new_schedule)
+
+            if items_before == items_after:
+                _LOGGER.warning(
+                    "Time %s not found in %s for growspace %s. No items removed",
+                    time_str,
+                    schedule_key,
+                    self._growspace_id,
+                )
+                return
+
+            _LOGGER.info(
+                "Removed %d item(s) with time %s from %s for growspace %s",
+                items_before - items_after,
+                time_str,
+                schedule_key,
+                self._growspace_id,
+            )
+
+            await self._save_and_reload()
+
+        except (
+            AttributeError,
+            KeyError,
+            ValueError,
+            ServiceValidationError,
+            GrowspaceError,
+        ):
+            _LOGGER.exception(
+                "Unexpected error removing schedule item from %s", schedule_key
+            )
+
     def _get_sensor_value(self, entity_id: str) -> float | None:
         """Get float value from sensor state."""
         state = self.hass.states.get(entity_id)
@@ -182,37 +307,10 @@ class BaseIrrigationCoordinator:
 class IrrigationCoordinator(BaseIrrigationCoordinator):
     """Manages irrigation and drain schedules for a specific growspace."""
 
-    # Removed useless __init__ delegation
-
-    def get_default_duration(self, event_type: str) -> int | None:
-        """Get the default duration for a given event type."""
-        try:
-            # Use getattr for dynamic field access on dataclass
-            return getattr(
-                self.growspace.irrigation_config, f"{event_type}_duration", None
-            )
-        except (KeyError, AttributeError):
-            return None
-
     @override
     async def async_request_refresh(self) -> None:
         """Refresh listeners when configuration changes."""
         await self.async_update_listeners()
-
-    async def _save_and_reload(self, reload_listeners: bool = True) -> None:
-        """Save changes to storage and reload listeners."""
-        # Refresh the growspace data (invalidates cache and updates data property)
-        await self._main_coordinator.async_refresh_growspace_data(self._growspace_id)
-
-        # Save to custom storage via main coordinator
-        await self._main_coordinator.async_commit()
-
-        # Notify listeners of update
-        self._main_coordinator.async_set_updated_data(self._main_coordinator.data)
-
-        # Reload the irrigation listeners with new schedule
-        if reload_listeners:
-            await self.async_update_listeners()
 
     async def async_set_settings(self, new_settings: dict[str, Any]) -> None:
         """Update the irrigation settings for the growspace."""
@@ -231,129 +329,6 @@ class IrrigationCoordinator(BaseIrrigationCoordinator):
 
         # Persist the changes
         await self._save_and_reload()
-
-    async def async_add_schedule_item(
-        self, schedule_key: str, time_str: str, duration: int | None
-    ) -> None:
-        """Add a time entry to an irrigation or drain schedule."""
-        if not time_str:
-            raise ValueError("Time cannot be empty")
-
-        if len(time_str) == 5:
-            time_str = f"{time_str}:00"
-
-        try:
-            datetime.strptime(time_str, "%H:%M:%S")
-        except ValueError as err:
-            raise ValueError(f"Invalid time '{time_str}': hours must be 00-23") from err
-
-        if not hasattr(self.growspace.irrigation_config, schedule_key):
-            _LOGGER.error("Invalid schedule key %s", schedule_key)
-            return
-
-        # Get current list
-        current_schedule: list[dict[str, Any]] = getattr(
-            self.growspace.irrigation_config, schedule_key
-        )
-
-        # Check if item with same time already exists
-        existing_item = next(
-            (item for item in current_schedule if item.get("time") == time_str),
-            None,
-        )
-
-        if existing_item:
-            # Update existing item
-            existing_item["duration"] = duration
-            _LOGGER.info(
-                "Updated %s in %s for growspace %s. Duration set to %s",
-                time_str,
-                schedule_key,
-                self._growspace_id,
-                duration,
-            )
-            # Reference copy trick not strictly needed for dataclasses if we mutate the list
-            # inside the object, unless we want to trigger some setter change logic.
-            # But let's keep the pattern of creating a new list to be safe.
-            new_list = list(current_schedule)
-            # Re-find index to update in new list? Or since dicts are mutable references...
-            # The existing_item is a ref to the dict in the list.
-            # So creating a new list with same dicts means existing_item update is reflected.
-
-            # Explicitly setting the attribute to the new list
-            setattr(self.growspace.irrigation_config, schedule_key, new_list)
-        else:
-            # Add new schedule item
-            new_list = list(current_schedule)
-            new_list.append({"time": time_str, "duration": duration})
-            setattr(self.growspace.irrigation_config, schedule_key, new_list)
-
-            _LOGGER.info(
-                "Added %s to %s for growspace %s. Schedule now has %d items",
-                {"time": time_str, "duration": duration},
-                schedule_key,
-                self._growspace_id,
-                len(new_list),
-            )
-
-        # Persist the changes
-        await self._save_and_reload()
-
-    async def async_remove_schedule_item(
-        self, schedule_key: str, time_str: str
-    ) -> None:
-        """Remove all matching time entries from a schedule."""
-        if not time_str:
-            raise ValueError("Time cannot be empty")
-
-        if not hasattr(self.growspace.irrigation_config, schedule_key):
-            _LOGGER.warning(
-                "Cannot remove item: schedule '%s' not found for growspace %s",
-                schedule_key,
-                self._growspace_id,
-            )
-            return
-
-        try:
-            schedule = getattr(self.growspace.irrigation_config, schedule_key)
-            items_before = len(schedule)
-
-            # Filter out matching times
-            new_schedule = [item for item in schedule if item.get("time") != time_str]
-            setattr(self.growspace.irrigation_config, schedule_key, new_schedule)
-
-            items_after = len(new_schedule)
-
-            if items_before == items_after:
-                _LOGGER.warning(
-                    "Time %s not found in %s for growspace %s. No items removed",
-                    time_str,
-                    schedule_key,
-                    self._growspace_id,
-                )
-                return
-
-            _LOGGER.info(
-                "Removed %d item(s) with time %s from %s for growspace %s",
-                items_before - items_after,
-                time_str,
-                schedule_key,
-                self._growspace_id,
-            )
-
-            # Persist the changes
-            await self._save_and_reload()
-
-        except (
-            AttributeError,
-            KeyError,
-            ValueError,
-            ServiceValidationError,
-            GrowspaceError,
-        ):
-            _LOGGER.exception(
-                "Unexpected error removing schedule item from %s", schedule_key
-            )
 
     @override
     async def async_setup(self) -> None:
