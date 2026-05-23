@@ -166,6 +166,33 @@ class TestHandleSetIrrigationSettings:
         )
 
     @pytest.mark.asyncio
+    async def test_set_irrigation_settings_accepts_input_boolean_entities(
+        self,
+        mock_hass: MagicMock,
+        mock_irrigation_coordinator: MagicMock,
+        mock_coordinator: MagicMock,
+    ) -> None:
+        """input_boolean entities are accepted for pump fields (no domain restriction in schema)."""
+        mock_coordinator.irrigation_coordinators = {"gs1": mock_irrigation_coordinator}
+
+        call = MagicMock(spec=ServiceCall)
+        call.data = {
+            "growspace_id": "gs1",
+            "irrigation_pump_entity": "input_boolean.sim_e2e_veg_irrigation_pump",
+            "drain_pump_entity": "input_boolean.sim_e2e_veg_drain_pump",
+        }
+
+        await handle_set_irrigation_settings(mock_hass, mock_coordinator, call)
+
+        mock_coordinator.services.growspaces.set_irrigation_settings.assert_awaited_once_with(
+            "gs1",
+            {
+                "irrigation_pump_entity": "input_boolean.sim_e2e_veg_irrigation_pump",
+                "drain_pump_entity": "input_boolean.sim_e2e_veg_drain_pump",
+            },
+        )
+
+    @pytest.mark.asyncio
     async def test_set_irrigation_settings_growspace_not_found(
         self, mock_hass, mock_coordinator
     ):
