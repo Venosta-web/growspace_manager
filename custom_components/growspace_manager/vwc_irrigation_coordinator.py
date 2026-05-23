@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
-import contextlib
 from collections.abc import Callable
 from datetime import datetime, timedelta
 import logging
@@ -12,12 +10,12 @@ from typing import TYPE_CHECKING, override
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.event import async_track_time_interval
-from homeassistant.util.dt import now, utcnow
+from homeassistant.util.dt import now
 
 if TYPE_CHECKING:
     from .coordinator import GrowspaceCoordinator
 from .irrigation_coordinator import BaseIrrigationCoordinator
-from .models import Growspace, GrowspaceEvent, IrrigationStrategy
+from .models import Growspace, IrrigationStrategy
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -233,8 +231,13 @@ class VWCIrrigationCoordinator(BaseIrrigationCoordinator):
             # We are in P2: Maintenance
             self._set_phase("P2 - Maintenance")
 
-            # Check dryback trigger
-            trigger = target - strategy.maintenance_dryback_percent
+            # Dynamic trigger: soil_trigger_percent overrides the calculated threshold
+            # when set, enabling VWC-sensor-driven phase transitions.
+            config = self.growspace.irrigation_config
+            if config.soil_trigger_percent is not None:
+                trigger = config.soil_trigger_percent
+            else:
+                trigger = target - strategy.maintenance_dryback_percent
             if current_vwc < trigger:
                 _LOGGER.info(
                     "Growspace %s VWC (%.1f%%) dropped below maintenance trigger (%.1f%%). Pulse watering",
@@ -251,10 +254,8 @@ class VWCIrrigationCoordinator(BaseIrrigationCoordinator):
         if self._last_shot_time:
             elapsed = (now_dt - self._last_shot_time).total_seconds() / 60.0
             if elapsed < strategy.shot_interval_minutes:
-                # Waiting for interval
                 return
 
-        # Fire Shot
         pump_entity = self._get_pump_entity()
         if not pump_entity:
             return
@@ -268,84 +269,17 @@ class VWCIrrigationCoordinator(BaseIrrigationCoordinator):
             duration,
         )
 
-        # Schedule the task
+        # Delegate to base _run_pump_cycle — inherits all safety guards:
+        # pause_on_low_tank, max_cycles_per_day, daily_volume_cap_liters,
+        # skip_during_dark, and log_to_logbook.
         task = self._config_entry.async_create_background_task(
             self.hass,
-            self._run_pump_cycle(pump_entity, duration, phase),
-            f"irrigation_pump_{self._growspace_id}_{phase}",
+            self._run_pump_cycle("irrigation", pump_entity, duration, {"phase": phase}),
+            f"irrigation_pump_{self._growspace_id}_irrigation",
         )
-        task.add_done_callback(self._on_pump_done)
+        self._running_tasks["irrigation"] = task
 
         self._last_shot_time = now_dt
-
-    async def _run_pump_cycle(
-        self, pump_entity: str, duration: int, phase: str
-    ) -> None:
-        """Execute the pump cycle."""
-        # Track active event for frontend animation
-        self._active_events["irrigation"] = {
-            "start": utcnow().isoformat(),
-            "duration": duration,
-        }
-
-        # Initialize timing variables
-        start_time: datetime | None = None
-        end_time: datetime | None = None
-
-        try:
-            await self.hass.services.async_call(
-                "switch", "turn_on", {"entity_id": pump_entity}, blocking=True
-            )
-
-            # Wait for switch to confirm ON state (critical for Matter smart plugs)
-            await self._async_wait_for_switch_state(pump_entity, "on")
-
-            # Start timing AFTER switch confirms ON
-            start_time = utcnow()
-
-            await asyncio.sleep(duration)
-        except asyncio.CancelledError:
-            pass
-        finally:
-            # Record end time BEFORE turning off (to exclude turn-off latency)
-            end_time = utcnow()
-
-            # Clear active event
-            self._active_events.pop("irrigation", None)
-
-            await self.hass.services.async_call(
-                "switch", "turn_off", {"entity_id": pump_entity}, blocking=True
-            )
-            # Log Event - only if we have a valid start time
-            if start_time:
-                actual_duration = int((end_time - start_time).total_seconds())
-                await self._log_event(phase, actual_duration, start_time, end_time)
-
-    def _on_pump_done(self, task: asyncio.Task) -> None:
-        """Log errors from completed pump cycle tasks."""
-        with contextlib.suppress(asyncio.CancelledError):
-            if exc := task.exception():
-                _LOGGER.error(
-                    "VWC pump cycle failed for growspace %s: %s",
-                    self._growspace_id,
-                    exc,
-                )
-
-    async def _log_event(
-        self, phase: str, duration: int, start_time: datetime, end_time: datetime
-    ) -> None:
-        """Log the irrigation event."""
-        event = GrowspaceEvent(
-            sensor_type="irrigation",
-            growspace_id=self._growspace_id,
-            start_time=start_time.isoformat(),
-            end_time=end_time.isoformat(),
-            duration_sec=duration,
-            severity=0.5,  # Info level
-            category="irrigation",
-            reasons=[f"VWC Steering {phase} Shot"],
-        )
-        self._main_coordinator.add_event(self._growspace_id, event)
 
     def _get_pump_entity(self) -> str | None:
         """Get configured irrigation pump entity."""
@@ -356,13 +290,18 @@ class VWCIrrigationCoordinator(BaseIrrigationCoordinator):
         )
 
     def _set_phase(self, phase: str) -> None:
-        """Update phase state and potentially expose strictly for debugging."""
-        # In a full implementation, we might expose this as a sensor state.
+        """Update phase state; log the transition to the HA logbook when enabled."""
         if self._current_phase != phase:
+            old_phase = self._current_phase
             _LOGGER.debug(
                 "Growspace %s VWC Steering Phase changed: %s -> %s",
                 self._growspace_id,
-                self._current_phase,
+                old_phase,
                 phase,
             )
             self._current_phase = phase
+            if self.growspace.irrigation_config.log_to_logbook:
+                self._fire_logbook_event(
+                    f"VWC phase transition: {old_phase} → {phase}",
+                    category="irrigation",
+                )
