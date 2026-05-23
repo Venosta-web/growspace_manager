@@ -136,6 +136,8 @@
     ]),
     'irrigation_pump_state': None,
     'irrigation_strategy': dict({
+      'auto_light_tracking': False,
+      'detected_lights_on_time': None,
       'enabled': False,
       'lights_on_time': '06:00:00',
       'maintenance_dryback_percent': 2.0,

@@ -596,3 +596,65 @@ def test_growspace_from_dict_legacy_no_subareas() -> None:
     data = {"id": "gs1", "name": "Old Tent"}
     gs = Growspace.from_dict(data)
     assert gs.subareas == []
+
+
+# ---------------------------------------------------------------------------
+# IrrigationStrategy — auto_light_tracking + detected_lights_on_time (issue 379)
+# ---------------------------------------------------------------------------
+
+
+def test_irrigation_strategy_new_field_defaults() -> None:
+    """New fields have correct defaults."""
+    strategy = IrrigationStrategy()
+    assert strategy.auto_light_tracking is False
+    assert strategy.detected_lights_on_time is None
+
+
+def test_irrigation_strategy_legacy_deserialization() -> None:
+    """Records stored before issue 379 load cleanly with the new field defaults."""
+    legacy_data = {
+        "enabled": True,
+        "lights_on_time": "06:00:00",
+        "p0_duration_minutes": 60,
+        "p2_stop_before_lights_off_minutes": 120,
+        "target_vwc_percent": 55.0,
+        "maintenance_dryback_percent": 2.0,
+        "shot_duration_seconds": 10,
+        "shot_interval_minutes": 15,
+    }
+    strategy = IrrigationStrategy.from_dict(legacy_data)
+    assert strategy.auto_light_tracking is False
+    assert strategy.detected_lights_on_time is None
+
+
+def test_irrigation_strategy_roundtrip() -> None:
+    """Both new fields survive a to_dict / from_dict round-trip."""
+    strategy = IrrigationStrategy(
+        auto_light_tracking=True,
+        detected_lights_on_time="08:30:00",
+    )
+    restored = IrrigationStrategy.from_dict(strategy.to_dict())
+    assert restored.auto_light_tracking is True
+    assert restored.detected_lights_on_time == "08:30:00"
+
+
+def test_irrigation_strategy_to_dict_includes_new_fields() -> None:
+    """to_dict() output includes both new fields (WebSocket payload contract)."""
+    strategy = IrrigationStrategy(auto_light_tracking=True, detected_lights_on_time="07:00:00")
+    d = strategy.to_dict()
+    assert "auto_light_tracking" in d
+    assert d["auto_light_tracking"] is True
+    assert "detected_lights_on_time" in d
+    assert d["detected_lights_on_time"] == "07:00:00"
+
+
+def test_growspace_irrigation_strategy_legacy_nested_load() -> None:
+    """Growspace.from_dict with a legacy irrigation_strategy sub-dict defaults the new fields."""
+    data = {
+        "id": "gs1",
+        "name": "Old Tent",
+        "irrigation_strategy": {"enabled": True, "target_vwc_percent": 60.0},
+    }
+    gs = Growspace.from_dict(data)
+    assert gs.irrigation_strategy.auto_light_tracking is False
+    assert gs.irrigation_strategy.detected_lights_on_time is None

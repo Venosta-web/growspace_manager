@@ -6,6 +6,7 @@ import voluptuous as vol
 from custom_components.growspace_manager.schemas import (
     ADD_STRAIN_SCHEMA,
     SET_IRRIGATION_SETTINGS_SCHEMA,
+    SET_IRRIGATION_STRATEGY_SCHEMA,
     UPDATE_STRAIN_META_SCHEMA,
 )
 
@@ -80,6 +81,25 @@ def test_set_irrigation_settings_schema_halt_threshold_none_valid() -> None:
     }
     result = SET_IRRIGATION_SETTINGS_SCHEMA(valid_data)
     assert result["halt_on_runoff_ec_threshold"] is None
+
+
+# ---------------------------------------------------------------------------
+# IrrigationStrategy schema — issue 379
+# ---------------------------------------------------------------------------
+
+
+def test_set_irrigation_strategy_schema_accepts_auto_light_tracking() -> None:
+    """auto_light_tracking can be set by external callers."""
+    data = {"growspace_id": "gs1", "auto_light_tracking": True}
+    result = SET_IRRIGATION_STRATEGY_SCHEMA(data)
+    assert result["auto_light_tracking"] is True
+
+
+def test_set_irrigation_strategy_schema_rejects_detected_lights_on_time() -> None:
+    """detected_lights_on_time is write-protected — external callers cannot set it."""
+    data = {"growspace_id": "gs1", "detected_lights_on_time": "08:00:00"}
+    with pytest.raises(vol.Invalid):
+        SET_IRRIGATION_STRATEGY_SCHEMA(data)
 
 
 @pytest.mark.parametrize(

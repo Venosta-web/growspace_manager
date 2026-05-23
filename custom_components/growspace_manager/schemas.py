@@ -564,6 +564,7 @@ SET_IRRIGATION_STRATEGY_SCHEMA = vol.Schema(
         vol.Optional("maintenance_dryback_percent"): vol.All(vol.Coerce(float), vol.Range(min=0.0, max=100.0)),
         vol.Optional("shot_duration_seconds"): vol.All(vol.Coerce(int), vol.Range(min=0)),
         vol.Optional("shot_interval_minutes"): vol.All(vol.Coerce(int), vol.Range(min=0)),
+        vol.Optional("auto_light_tracking"): bool,
     }
 )
 

@@ -204,6 +204,8 @@ class IrrigationStrategy(BaseModel):
     maintenance_dryback_percent: float = 2.0
     shot_duration_seconds: int = 10
     shot_interval_minutes: int = 15
+    auto_light_tracking: bool = False
+    detected_lights_on_time: str | None = None
 
 
 @dataclass(slots=True)
