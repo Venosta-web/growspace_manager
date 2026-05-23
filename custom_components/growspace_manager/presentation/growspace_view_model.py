@@ -157,6 +157,9 @@ class GrowspaceViewModelBuilder:
             "skip_during_dark": irrigation_config.skip_during_dark,
             "pause_on_low_tank": irrigation_config.pause_on_low_tank,
             "log_to_logbook": irrigation_config.log_to_logbook,
+            "auto_advance_p1_to_p2": irrigation_config.auto_advance_p1_to_p2,
+            "auto_advance_p2_to_p3": irrigation_config.auto_advance_p2_to_p3,
+            "halt_on_runoff_ec_threshold": irrigation_config.halt_on_runoff_ec_threshold,
             "ec_target_ranges": [
                 {
                     "stage": r.stage,

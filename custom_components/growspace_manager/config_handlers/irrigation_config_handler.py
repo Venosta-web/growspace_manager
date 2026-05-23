@@ -317,4 +317,27 @@ class IrrigationConfigHandler(BaseConfigHandler[dict[str, Any]]):
                     mode=selector.NumberSelectorMode.BOX,
                 )
             ),
+            vol.Optional(
+                "auto_advance_p1_to_p2",
+                default=irrigation_options.get("auto_advance_p1_to_p2", False),
+            ): selector.BooleanSelector(),
+            vol.Optional(
+                "auto_advance_p2_to_p3",
+                default=irrigation_options.get("auto_advance_p2_to_p3", False),
+            ): selector.BooleanSelector(),
+            vol.Optional(
+                "halt_on_runoff_ec_threshold",
+                description={
+                    "suggested_value": irrigation_options.get(
+                        "halt_on_runoff_ec_threshold"
+                    )
+                },
+            ): selector.NumberSelector(
+                selector.NumberSelectorConfig(
+                    min=0.0,
+                    step=0.1,
+                    unit_of_measurement="mS/cm",
+                    mode=selector.NumberSelectorMode.BOX,
+                )
+            ),
         }

@@ -58,6 +58,30 @@ def test_set_irrigation_settings_schema_different_pumps_valid() -> None:
     SET_IRRIGATION_SETTINGS_SCHEMA(valid_data)
 
 
+def test_set_irrigation_settings_schema_phase_trigger_flags_valid() -> None:
+    """Phase trigger booleans and threshold are accepted by the schema."""
+    valid_data = {
+        "growspace_id": "gs1",
+        "auto_advance_p1_to_p2": True,
+        "auto_advance_p2_to_p3": False,
+        "halt_on_runoff_ec_threshold": 3.5,
+    }
+    result = SET_IRRIGATION_SETTINGS_SCHEMA(valid_data)
+    assert result["auto_advance_p1_to_p2"] is True
+    assert result["auto_advance_p2_to_p3"] is False
+    assert result["halt_on_runoff_ec_threshold"] == pytest.approx(3.5)
+
+
+def test_set_irrigation_settings_schema_halt_threshold_none_valid() -> None:
+    """halt_on_runoff_ec_threshold=None (disabled) is accepted."""
+    valid_data = {
+        "growspace_id": "gs1",
+        "halt_on_runoff_ec_threshold": None,
+    }
+    result = SET_IRRIGATION_SETTINGS_SCHEMA(valid_data)
+    assert result["halt_on_runoff_ec_threshold"] is None
+
+
 @pytest.mark.parametrize(
     ("schema", "sativa", "indica"),
     [

@@ -494,6 +494,9 @@ class IrrigationConfig(BaseModel):
     pause_on_low_tank: bool = True
     log_to_logbook: bool = True
     ec_target_ranges: list[ECTargetRange] = field(default_factory=list)
+    auto_advance_p1_to_p2: bool = False
+    auto_advance_p2_to_p3: bool = False
+    halt_on_runoff_ec_threshold: float | None = None
 
 
 

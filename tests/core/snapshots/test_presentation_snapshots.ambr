@@ -111,6 +111,8 @@
       'sensor.hum',
     ]),
     'irrigation_config': dict({
+      'auto_advance_p1_to_p2': False,
+      'auto_advance_p2_to_p3': False,
       'daily_volume_cap_liters': None,
       'drain_duration': None,
       'drain_pump_entity': 'switch.drain',
@@ -118,6 +120,7 @@
       ]),
       'ec_target_ranges': list([
       ]),
+      'halt_on_runoff_ec_threshold': None,
       'irrigation_duration': 120,
       'irrigation_pump_entity': 'switch.pump',
       'irrigation_times': list([

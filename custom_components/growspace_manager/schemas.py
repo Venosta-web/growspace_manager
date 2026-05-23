@@ -588,6 +588,11 @@ SET_IRRIGATION_SETTINGS_SCHEMA = vol.All(
             vol.Optional("skip_during_dark"): bool,
             vol.Optional("pause_on_low_tank"): bool,
             vol.Optional("log_to_logbook"): bool,
+            vol.Optional("auto_advance_p1_to_p2"): bool,
+            vol.Optional("auto_advance_p2_to_p3"): bool,
+            vol.Optional("halt_on_runoff_ec_threshold"): vol.Any(
+                None, vol.All(vol.Coerce(float), vol.Range(min=0.0))
+            ),
         }
     ),
     _validate_pump_entities,

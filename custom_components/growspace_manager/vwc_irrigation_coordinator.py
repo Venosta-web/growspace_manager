@@ -107,6 +107,9 @@ class VWCIrrigationCoordinator(BaseIrrigationCoordinator):
                 )
                 return
 
+            if self._is_halted_by_runoff_ec(growspace):
+                return
+
             period = self._determine_time_period(strategy, growspace)
             self._execute_phase_logic(period, current_vwc, strategy)
 
@@ -176,16 +179,14 @@ class VWCIrrigationCoordinator(BaseIrrigationCoordinator):
             return "P0"
 
         if current_dt < p2_stop_dt:
-            # P1 or P2 window
-            # We differentiate P1 vs P2 by target achievement, not strictly time.
-            # But the 'Time Period' is "Active Watering Window".
             return "WINDOW"
 
         if current_dt < lights_off_dt:
-            # Post-Maintenance, Pre-Lights Off -> P3 starts early effectively (or just stop watering)
-            return "P3"
+            # Only enter early P3 when the flag is explicitly enabled.
+            if growspace.irrigation_config.auto_advance_p2_to_p3:
+                return "P3"
+            return "WINDOW"
 
-        # After lights off
         return "P3"
 
     def _execute_phase_logic(
@@ -280,6 +281,25 @@ class VWCIrrigationCoordinator(BaseIrrigationCoordinator):
         self._running_tasks["irrigation"] = task
 
         self._last_shot_time = now_dt
+
+    def _is_halted_by_runoff_ec(self, growspace: Growspace) -> bool:
+        """Return True and log a warning when the latest drain EC exceeds the configured threshold."""
+        threshold = growspace.irrigation_config.halt_on_runoff_ec_threshold
+        if threshold is None:
+            return False
+        readings = growspace.drain_config.readings
+        if not readings:
+            return False
+        latest_ec = readings[-1].drain_ec
+        if latest_ec > threshold:
+            _LOGGER.warning(
+                "Growspace %s: drain EC %.2f exceeds halt threshold %.2f. Suspending irrigation",
+                self._growspace_id,
+                latest_ec,
+                threshold,
+            )
+            return True
+        return False
 
     def _get_pump_entity(self) -> str | None:
         """Get configured irrigation pump entity."""

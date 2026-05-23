@@ -245,9 +245,10 @@ async def test_p2_maintenance(vwc_coordinator, mock_hass) -> None:
         assert event.duration_sec == 10
 
 
-async def test_p3_dryback(vwc_coordinator, mock_hass) -> None:
-    """Test P3 phase (Dry Back) - Hard stop."""
-    # Time: 19:00 (Lights off 20:00, Stop 18:00 -> Inside P3)
+async def test_p3_dryback(vwc_coordinator, mock_hass, mock_growspace) -> None:
+    """Test P3 phase (Dry Back) - Hard stop when auto_advance_p2_to_p3 is enabled."""
+    mock_growspace.irrigation_config.auto_advance_p2_to_p3 = True
+    # Time: 19:00 (Lights off 20:00, Stop 18:00 -> Inside early-P3 window)
     now = datetime(2023, 1, 1, 19, 0, 0, tzinfo=dt_util.UTC)
 
     with patch(
@@ -283,6 +284,7 @@ async def test_custom_day_hours(vwc_coordinator, mock_hass, mock_growspace) -> N
         soil_moisture_sensor="sensor.moisture",
         flower_day_hours=10,
     )
+    mock_growspace.irrigation_config.auto_advance_p2_to_p3 = True
 
     # Case A: 15:00 -> Should be P2 (15 < 16)
     now_p2 = datetime(2023, 1, 1, 15, 0, 0, tzinfo=dt_util.UTC)
@@ -298,7 +300,7 @@ async def test_custom_day_hours(vwc_coordinator, mock_hass, mock_growspace) -> N
         await vwc_coordinator._update_loop(now_p2)
         assert vwc_coordinator._current_phase == "P2 - Maintenance"
 
-    # Case B: 17:00 -> Should be P3 (17 > 16)
+    # Case B: 17:00 -> Should be P3 (17 > 16, inside early-stop window with flag=True)
     # With default 12h (20:00 off, 18:00 stop), 17:00 would be P2.
     now_p3 = datetime(2023, 1, 1, 17, 0, 0, tzinfo=dt_util.UTC)
     with patch(
@@ -713,3 +715,186 @@ async def test_vwc_no_logbook_when_disabled(
         await vwc_coordinator._update_loop(now_dt)
 
     mock_hass.bus.async_fire.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# Phase Trigger tests (Issue #372)
+# ---------------------------------------------------------------------------
+
+
+def test_irrigation_config_phase_trigger_defaults() -> None:
+    """IrrigationConfig has the three phase trigger fields with correct defaults."""
+    config = IrrigationConfig()
+    assert config.auto_advance_p1_to_p2 is False
+    assert config.auto_advance_p2_to_p3 is False
+    assert config.halt_on_runoff_ec_threshold is None
+
+
+@pytest.mark.parametrize(
+    ("auto_advance_p1_to_p2", "auto_advance_p2_to_p3", "halt_on_runoff_ec_threshold"),
+    [
+        (True, False, None),
+        (False, True, None),
+        (False, False, 3.5),
+        (True, True, 2.0),
+    ],
+)
+def test_irrigation_config_phase_trigger_roundtrip(
+    auto_advance_p1_to_p2: bool,
+    auto_advance_p2_to_p3: bool,
+    halt_on_runoff_ec_threshold: float | None,
+) -> None:
+    """Phase trigger fields survive a dataclass round-trip."""
+    config = IrrigationConfig(
+        auto_advance_p1_to_p2=auto_advance_p1_to_p2,
+        auto_advance_p2_to_p3=auto_advance_p2_to_p3,
+        halt_on_runoff_ec_threshold=halt_on_runoff_ec_threshold,
+    )
+    assert config.auto_advance_p1_to_p2 == auto_advance_p1_to_p2
+    assert config.auto_advance_p2_to_p3 == auto_advance_p2_to_p3
+    assert config.halt_on_runoff_ec_threshold == halt_on_runoff_ec_threshold
+
+
+async def test_auto_advance_p1_to_p2_flag_off_no_advance(
+    vwc_coordinator: VWCIrrigationCoordinator,
+    mock_hass: MagicMock,
+    mock_growspace: Growspace,
+) -> None:
+    """With auto_advance_p1_to_p2=False (default), coordinator does NOT advance to P2 post-shot."""
+    mock_growspace.irrigation_config.auto_advance_p1_to_p2 = False
+    now_dt = datetime(2023, 1, 1, 9, 30, 0, tzinfo=dt_util.UTC)
+
+    with patch(
+        "custom_components.growspace_manager.vwc_irrigation_coordinator.now",
+        return_value=now_dt,
+    ):
+        # VWC below target so shot fires
+        mock_hass.states.get.return_value = MagicMock(state="40.0")
+        await vwc_coordinator._update_loop(now_dt)
+        await await_pump_task()
+
+    # Target NOT reached — we're still in P1
+    assert vwc_coordinator._target_reached_today is False
+
+
+async def test_auto_advance_p1_to_p2_flag_on_advances_after_shot(
+    vwc_coordinator: VWCIrrigationCoordinator,
+    mock_hass: MagicMock,
+    mock_growspace: Growspace,
+) -> None:
+    """With auto_advance_p1_to_p2=True, reaching target VWC advances phase to P2 immediately."""
+    mock_growspace.irrigation_config.auto_advance_p1_to_p2 = True
+    now_dt = datetime(2023, 1, 1, 9, 30, 0, tzinfo=dt_util.UTC)
+
+    with patch(
+        "custom_components.growspace_manager.vwc_irrigation_coordinator.now",
+        return_value=now_dt,
+    ):
+        # VWC exactly at target — the existing transition should fire even without a shot
+        mock_hass.states.get.return_value = MagicMock(state="50.0")
+        await vwc_coordinator._update_loop(now_dt)
+
+    assert vwc_coordinator._target_reached_today is True
+
+
+async def test_auto_advance_p2_to_p3_flag_off_no_early_stop(
+    vwc_coordinator: VWCIrrigationCoordinator,
+    mock_hass: MagicMock,
+    mock_growspace: Growspace,
+) -> None:
+    """With auto_advance_p2_to_p3=False, P2 continues past the early-stop window."""
+    mock_growspace.irrigation_config.auto_advance_p2_to_p3 = False
+    vwc_coordinator._target_reached_today = True
+    vwc_coordinator._last_reset_date = "2023-01-01"
+
+    # 19:00 — inside the default p2_stop_before_lights_off_minutes=120 window
+    # (lights_off=20:00, stop=18:00).  Without the flag the coordinator should
+    # remain in P2, not P3.
+    now_dt = datetime(2023, 1, 1, 19, 0, 0, tzinfo=dt_util.UTC)
+
+    with patch(
+        "custom_components.growspace_manager.vwc_irrigation_coordinator.now",
+        return_value=now_dt,
+    ):
+        mock_hass.states.get.return_value = MagicMock(state="45.0")
+        await vwc_coordinator._update_loop(now_dt)
+
+    assert "P2" in vwc_coordinator._current_phase
+
+
+async def test_auto_advance_p2_to_p3_flag_on_enters_p3_early(
+    vwc_coordinator: VWCIrrigationCoordinator,
+    mock_hass: MagicMock,
+    mock_growspace: Growspace,
+) -> None:
+    """With auto_advance_p2_to_p3=True, P3 starts p2_stop_before_lights_off_minutes before lights-off."""
+    mock_growspace.irrigation_config.auto_advance_p2_to_p3 = True
+    vwc_coordinator._target_reached_today = True
+    vwc_coordinator._last_reset_date = "2023-01-01"
+
+    # 19:00 — inside the default early-stop window (lights_off=20:00, stop=18:00)
+    now_dt = datetime(2023, 1, 1, 19, 0, 0, tzinfo=dt_util.UTC)
+
+    with patch(
+        "custom_components.growspace_manager.vwc_irrigation_coordinator.now",
+        return_value=now_dt,
+    ):
+        mock_hass.states.get.return_value = MagicMock(state="45.0")
+        await vwc_coordinator._update_loop(now_dt)
+
+    assert "P3" in vwc_coordinator._current_phase
+
+
+async def test_halt_on_runoff_ec_threshold_not_set_no_halt(
+    vwc_coordinator: VWCIrrigationCoordinator,
+    mock_hass: MagicMock,
+    mock_growspace: Growspace,
+) -> None:
+    """With halt_on_runoff_ec_threshold=None, high drain EC does not halt watering."""
+    from custom_components.growspace_manager.models import DrainReading
+
+    mock_growspace.irrigation_config.halt_on_runoff_ec_threshold = None
+    mock_growspace.drain_config.readings = [
+        DrainReading(timestamp="2023-01-01T09:00:00", feed_ec=2.0, drain_ec=5.0)
+    ]
+    now_dt = datetime(2023, 1, 1, 9, 30, 0, tzinfo=dt_util.UTC)
+
+    with patch(
+        "custom_components.growspace_manager.vwc_irrigation_coordinator.now",
+        return_value=now_dt,
+    ):
+        mock_hass.states.get.return_value = MagicMock(state="40.0")
+        await vwc_coordinator._update_loop(now_dt)
+        await await_pump_task()
+
+    # Watering should have fired
+    mock_hass.services.async_call.assert_any_call(
+        "switch", "turn_on", {"entity_id": "switch.pump"}, blocking=True
+    )
+
+
+async def test_halt_on_runoff_ec_threshold_exceeded_halts_watering(
+    vwc_coordinator: VWCIrrigationCoordinator,
+    mock_hass: MagicMock,
+    mock_growspace: Growspace,
+) -> None:
+    """When drain EC exceeds halt_on_runoff_ec_threshold, watering is suspended and a warning is logged."""
+    from custom_components.growspace_manager.models import DrainReading
+
+    mock_growspace.irrigation_config.halt_on_runoff_ec_threshold = 3.0
+    mock_growspace.drain_config.readings = [
+        DrainReading(timestamp="2023-01-01T09:00:00", feed_ec=2.0, drain_ec=3.5)
+    ]
+    now_dt = datetime(2023, 1, 1, 9, 30, 0, tzinfo=dt_util.UTC)
+
+    with patch(
+        "custom_components.growspace_manager.vwc_irrigation_coordinator.now",
+        return_value=now_dt,
+    ), patch(
+        "custom_components.growspace_manager.vwc_irrigation_coordinator._LOGGER"
+    ) as mock_logger:
+        mock_hass.states.get.return_value = MagicMock(state="40.0")
+        await vwc_coordinator._update_loop(now_dt)
+
+    mock_hass.services.async_call.assert_not_called()
+    mock_logger.warning.assert_called()
