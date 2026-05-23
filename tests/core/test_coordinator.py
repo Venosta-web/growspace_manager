@@ -2848,7 +2848,7 @@ async def test_async_refresh_growspace_data(coordinator: GrowspaceCoordinator) -
 async def test_update_irrigation_settings_missing_entities(
     coordinator: GrowspaceCoordinator,
 ) -> None:
-    """Test updating irrigation settings when pump entities are missing (clearing them)."""
+    """Test that update_irrigation_config uses patch semantics — omitting a field preserves it."""
     gs = await coordinator.growspace_manager.add_growspace("Irrigation GS")
 
     # Set initial settings
@@ -2862,13 +2862,13 @@ async def test_update_irrigation_settings_missing_entities(
 
     assert gs.irrigation_config.irrigation_pump_entity == "switch.pump1"
 
-    # Update without entities (should clear them to None)
+    # Update only duration — pump entities should be preserved (patch semantics)
     new_settings = {"irrigation_duration": 60}
     await coordinator.services.growspaces.update_irrigation_config(gs.id, new_settings)
 
     assert gs.irrigation_config.irrigation_duration == 60
-    assert gs.irrigation_config.irrigation_pump_entity is None
-    assert gs.irrigation_config.drain_pump_entity is None
+    assert gs.irrigation_config.irrigation_pump_entity == "switch.pump1"
+    assert gs.irrigation_config.drain_pump_entity == "switch.limit_switch"
 
 
 # =============================================================================
