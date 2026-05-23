@@ -112,7 +112,8 @@ async def test_setup_and_schedule_events(
     )
     await coordinator.async_setup()
 
-    assert mock_track_time.call_count == 3
+    # 2 irrigation + 1 drain + 1 midnight reset = 4
+    assert mock_track_time.call_count == 4
     calls = mock_track_time.call_args_list
     scheduled_times = {
         (c.kwargs["hour"], c.kwargs["minute"], c.kwargs["second"]) for c in calls
@@ -120,6 +121,8 @@ async def test_setup_and_schedule_events(
     assert (10, 0, 0) in scheduled_times
     assert (20, 0, 0) in scheduled_times
     assert (12, 0, 0) in scheduled_times
+    # Midnight reset listener
+    assert (0, 0, 0) in scheduled_times
 
 
 async def test_async_wait_for_switch_state_happy_path(

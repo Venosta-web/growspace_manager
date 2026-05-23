@@ -18,6 +18,7 @@ from homeassistant.util.dt import utcnow
 
 if TYPE_CHECKING:
     from .coordinator import GrowspaceCoordinator
+from .const import ATTR_GROWSPACE_ID, CATEGORY_ALERT, EVENT_GROWSPACE_LOG_ENTRY
 from .exceptions import GrowspaceError
 from .models import Growspace, GrowspaceEvent
 
@@ -313,6 +314,28 @@ class BaseIrrigationCoordinator:
 class IrrigationCoordinator(BaseIrrigationCoordinator):
     """Manages irrigation and drain schedules for a specific growspace."""
 
+    def __init__(
+        self,
+        hass: HomeAssistant,
+        config_entry: ConfigEntry,
+        growspace_id: str,
+        main_coordinator: GrowspaceCoordinator,
+    ) -> None:
+        """Initialize with daily safety-guard counters."""
+        super().__init__(hass, config_entry, growspace_id, main_coordinator)
+        self._cycles_today: int = 0
+        self._volume_dispensed_today: float = 0.0
+
+    @property
+    def cycles_today(self) -> int:
+        """Return the number of irrigation cycles completed today."""
+        return self._cycles_today
+
+    @property
+    def volume_dispensed_today(self) -> float:
+        """Return total irrigation volume dispensed today in litres."""
+        return self._volume_dispensed_today
+
     @override
     async def async_request_refresh(self) -> None:
         """Refresh listeners when configuration changes."""
@@ -339,9 +362,28 @@ class IrrigationCoordinator(BaseIrrigationCoordinator):
     @override
     async def async_setup(self) -> None:
         """Set up the irrigation schedules."""
+        # Register midnight reset for daily counters
+        self._listeners.append(
+            async_track_time_change(
+                self.hass,
+                self._async_reset_daily_counters,
+                hour=0,
+                minute=0,
+                second=0,
+            )
+        )
 
         # Load schedules without triggering updates
         await self.async_update_listeners()
+
+    async def _async_reset_daily_counters(self, *_: Any) -> None:
+        """Reset daily safety-guard counters at local midnight."""
+        _LOGGER.debug(
+            "Resetting daily irrigation counters for growspace %s",
+            self._growspace_id,
+        )
+        self._cycles_today = 0
+        self._volume_dispensed_today = 0.0
 
     async def async_update_listeners(self, *args: Any) -> None:
         """Remove old listeners and create new ones based on current config."""
@@ -468,6 +510,55 @@ class IrrigationCoordinator(BaseIrrigationCoordinator):
         )
         self._running_tasks[event_type] = task
 
+    def _compute_cycle_volume_liters(self, duration: int) -> float:
+        """Return the estimated water volume for a cycle in litres.
+
+        Returns 0.0 when the flow rate is not configured, which disables the
+        volume-cap check for that cycle.
+        """
+        flow_rate = self.growspace.irrigation_config.pump_flow_rate_ml_per_sec
+        if not flow_rate:
+            return 0.0
+        return duration * flow_rate / 1000.0
+
+    def _check_safety_guards(self, duration: int) -> str | None:
+        """Return a skip reason string if a safety guard blocks the cycle, else None.
+
+        Only applies to irrigation cycles — drain cycles are never blocked.
+        """
+        config = self.growspace.irrigation_config
+
+        if config.max_cycles_per_day is not None and self._cycles_today >= config.max_cycles_per_day:
+            return (
+                f"Daily cycle limit reached ({self._cycles_today}/{config.max_cycles_per_day})"
+            )
+
+        cycle_volume = self._compute_cycle_volume_liters(duration)
+        if (
+            cycle_volume > 0
+            and config.daily_volume_cap_liters is not None
+            and self._volume_dispensed_today + cycle_volume > config.daily_volume_cap_liters
+        ):
+            return (
+                f"Daily volume cap would be exceeded "
+                f"({self._volume_dispensed_today:.3f}L + {cycle_volume:.3f}L "
+                f"> {config.daily_volume_cap_liters}L cap)"
+            )
+
+        return None
+
+    def _fire_logbook_event(self, message: str, category: str = CATEGORY_ALERT) -> None:
+        """Fire a Home Assistant logbook event for this growspace."""
+        self.hass.bus.async_fire(
+            EVENT_GROWSPACE_LOG_ENTRY,
+            {
+                ATTR_GROWSPACE_ID: self._growspace_id,
+                "message": message,
+                "category": category,
+                "timestamp": utcnow().isoformat(),
+            },
+        )
+
     async def _run_pump_cycle(
         self,
         event_type: str,
@@ -476,6 +567,21 @@ class IrrigationCoordinator(BaseIrrigationCoordinator):
         event_data: Mapping[str, Any],
     ) -> None:
         """Run the on-off cycle for a pump and send notifications."""
+        # Safety guards apply only to irrigation cycles
+        if event_type == "irrigation":
+            skip_reason = self._check_safety_guards(duration)
+            if skip_reason:
+                _LOGGER.warning(
+                    "Skipping irrigation cycle for growspace %s: %s",
+                    self._growspace_id,
+                    skip_reason,
+                )
+                if self.growspace.irrigation_config.log_to_logbook:
+                    self._fire_logbook_event(
+                        f"Irrigation skipped — {skip_reason}",
+                    )
+                return
+
         # Track active event for frontend animation
         self._active_events[event_type] = {
             "start": utcnow().isoformat(),
@@ -499,6 +605,12 @@ class IrrigationCoordinator(BaseIrrigationCoordinator):
                 pump_entity,
                 duration,
             )
+
+            if event_type == "irrigation" and self.growspace.irrigation_config.log_to_logbook:
+                self._fire_logbook_event(
+                    f"Irrigation started — {duration}s on {pump_entity}",
+                )
+
             await self.hass.services.async_call(
                 "switch", "turn_on", {"entity_id": pump_entity}, blocking=True
             )
@@ -548,6 +660,14 @@ class IrrigationCoordinator(BaseIrrigationCoordinator):
                 if start_dt:
                     duration_sec = (end_dt - start_dt).total_seconds()
 
+                    # Update daily counters for completed irrigation cycles.
+                    # Use the planned duration (not measured elapsed) for volume
+                    # accounting because asyncio.sleep duration is the driver.
+                    if event_type == "irrigation":
+                        self._cycles_today += 1
+                        cycle_volume = self._compute_cycle_volume_liters(duration)
+                        self._volume_dispensed_today += cycle_volume
+
                     # Capture moisture after
                     moisture_after = None
                     if self.growspace.environment_config.soil_moisture_sensor:
@@ -568,6 +688,15 @@ class IrrigationCoordinator(BaseIrrigationCoordinator):
                         )
                     elif moisture_after is not None:
                         reasons.append(f"Moisture: {moisture_after:.1f}%")
+
+                    if (
+                        event_type == "irrigation"
+                        and self.growspace.irrigation_config.log_to_logbook
+                    ):
+                        self._fire_logbook_event(
+                            f"Irrigation completed — {int(duration_sec)}s "
+                            f"({self._volume_dispensed_today:.3f}L dispensed today)",
+                        )
 
                     # Create and add the event
                     event = GrowspaceEvent(
