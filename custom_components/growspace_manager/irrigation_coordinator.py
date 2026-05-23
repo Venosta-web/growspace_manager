@@ -59,6 +59,21 @@ class BaseIrrigationCoordinator:
         return self._active_events
 
     @property
+    def next_scheduled_cycle(self) -> str | None:
+        """Return the ISO datetime of the next scheduled irrigation cycle, or None."""
+        return None
+
+    @property
+    def cycles_today(self) -> int:
+        """Return the number of irrigation cycles completed today."""
+        return self._cycles_today
+
+    @property
+    def volume_dispensed_today(self) -> float:
+        """Return total irrigation volume dispensed today in litres."""
+        return self._volume_dispensed_today
+
+    @property
     def growspace(self) -> Growspace:
         """Return the growspace object."""
         return self._main_coordinator.growspaces[self._growspace_id]
@@ -632,16 +647,6 @@ class IrrigationCoordinator(BaseIrrigationCoordinator):
     ) -> None:
         """Initialize the irrigation coordinator."""
         super().__init__(hass, config_entry, growspace_id, main_coordinator)
-
-    @property
-    def cycles_today(self) -> int:
-        """Return the number of irrigation cycles completed today."""
-        return self._cycles_today
-
-    @property
-    def volume_dispensed_today(self) -> float:
-        """Return total irrigation volume dispensed today in litres."""
-        return self._volume_dispensed_today
 
     @override
     async def async_request_refresh(self) -> None:
