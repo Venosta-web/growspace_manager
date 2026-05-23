@@ -44,3 +44,299 @@ input_boolean:
   sim_e2e_cure_drain_pump:
     name: "E2E Cure Drain Pump"
     icon: mdi:pipe
+
+  sim_e2e_vwc_veg_irrigation_pump:
+    name: "E2E VWC Veg Irrigation Pump"
+    icon: mdi:water-pump
+  sim_e2e_vwc_veg_drain_pump:
+    name: "E2E VWC Veg Drain Pump"
+    icon: mdi:pipe
+
+  sim_e2e_vwc_flower_irrigation_pump:
+    name: "E2E VWC Flower Irrigation Pump"
+    icon: mdi:water-pump
+  sim_e2e_vwc_flower_drain_pump:
+    name: "E2E VWC Flower Drain Pump"
+    icon: mdi:pipe
+
+# VWC growspace sensor suites — input_number helpers give Playwright direct write access via
+# callService('input_number', 'set_value', ...) without a template sensor layer.
+# The coordinator calls hass.states.get(entity_id) without checking the domain, so
+# input_number.* entity IDs work identically to sensor.* references.
+#
+# TODO (Option B migration): the six existing growspaces above (mother/clone/veg/flower/dry/cure)
+# still use sensor.* entity IDs. Migrate them to the same input_number pattern so Playwright
+# tests can control every dimension of the environment without read-only sensor constraints.
+# Each existing stage would get 15 input_number helpers and corresponding template sensors
+# that forward state to any dashboards that depend on sensor.* domain entities.
+
+input_number:
+  # --- E2E VWC Veg sensors ---
+  e2e_vwc_veg_substrate_moisture:
+    name: "E2E VWC Veg Substrate Moisture"
+    min: 0
+    max: 100
+    step: 0.1
+    initial: 50
+    unit_of_measurement: "%"
+    icon: mdi:water-percent
+
+  e2e_vwc_veg_substrate_ec:
+    name: "E2E VWC Veg Substrate EC"
+    min: 0
+    max: 100
+    step: 0.1
+    initial: 50
+    unit_of_measurement: "mS/cm"
+    icon: mdi:lightning-bolt
+
+  e2e_vwc_veg_runoff_ec:
+    name: "E2E VWC Veg Runoff EC"
+    min: 0
+    max: 100
+    step: 0.1
+    initial: 50
+    unit_of_measurement: "mS/cm"
+    icon: mdi:lightning-bolt
+
+  e2e_vwc_veg_feed_ec:
+    name: "E2E VWC Veg Feed EC"
+    min: 0
+    max: 100
+    step: 0.1
+    initial: 50
+    unit_of_measurement: "mS/cm"
+    icon: mdi:lightning-bolt
+
+  e2e_vwc_veg_drain_volume:
+    name: "E2E VWC Veg Drain Volume"
+    min: 0
+    max: 10000
+    step: 0.1
+    initial: 0
+    unit_of_measurement: "mL"
+    icon: mdi:water
+
+  e2e_vwc_veg_irrigation_flow:
+    name: "E2E VWC Veg Irrigation Flow"
+    min: 0
+    max: 10000
+    step: 0.1
+    initial: 0
+    unit_of_measurement: "mL/min"
+    icon: mdi:water-pump
+
+  e2e_vwc_veg_irrigation_tank:
+    name: "E2E VWC Veg Irrigation Tank"
+    min: 0
+    max: 10000
+    step: 0.1
+    initial: 0
+    unit_of_measurement: "L"
+    icon: mdi:barrel
+
+  e2e_vwc_veg_temperature:
+    name: "E2E VWC Veg Temperature"
+    min: 0
+    max: 60
+    step: 0.1
+    initial: 25
+    unit_of_measurement: "°C"
+    icon: mdi:thermometer
+
+  e2e_vwc_veg_humidity:
+    name: "E2E VWC Veg Humidity"
+    min: 0
+    max: 100
+    step: 1
+    initial: 60
+    unit_of_measurement: "%"
+    icon: mdi:water-percent
+
+  e2e_vwc_veg_vpd:
+    name: "E2E VWC Veg VPD"
+    min: 0
+    max: 5
+    step: 0.01
+    initial: 1.2
+    unit_of_measurement: "kPa"
+    icon: mdi:air-filter
+
+  e2e_vwc_veg_co2:
+    name: "E2E VWC Veg CO2"
+    min: 0
+    max: 10000
+    step: 1
+    initial: 400
+    unit_of_measurement: "ppm"
+    icon: mdi:molecule-co2
+
+  e2e_vwc_veg_ph:
+    name: "E2E VWC Veg pH"
+    min: 0
+    max: 100
+    step: 0.1
+    initial: 50
+    icon: mdi:ph
+
+  e2e_vwc_veg_substrate_temperature:
+    name: "E2E VWC Veg Substrate Temperature"
+    min: 0
+    max: 60
+    step: 0.1
+    initial: 25
+    unit_of_measurement: "°C"
+    icon: mdi:thermometer
+
+  e2e_vwc_veg_power:
+    name: "E2E VWC Veg Power"
+    min: 0
+    max: 10000
+    step: 0.1
+    initial: 0
+    unit_of_measurement: "W"
+    icon: mdi:flash
+
+  e2e_vwc_veg_energy:
+    name: "E2E VWC Veg Energy"
+    min: 0
+    max: 10000
+    step: 0.1
+    initial: 0
+    unit_of_measurement: "kWh"
+    icon: mdi:lightning-bolt
+
+  # --- E2E VWC Flower sensors ---
+  e2e_vwc_flower_substrate_moisture:
+    name: "E2E VWC Flower Substrate Moisture"
+    min: 0
+    max: 100
+    step: 0.1
+    initial: 50
+    unit_of_measurement: "%"
+    icon: mdi:water-percent
+
+  e2e_vwc_flower_substrate_ec:
+    name: "E2E VWC Flower Substrate EC"
+    min: 0
+    max: 100
+    step: 0.1
+    initial: 50
+    unit_of_measurement: "mS/cm"
+    icon: mdi:lightning-bolt
+
+  e2e_vwc_flower_runoff_ec:
+    name: "E2E VWC Flower Runoff EC"
+    min: 0
+    max: 100
+    step: 0.1
+    initial: 50
+    unit_of_measurement: "mS/cm"
+    icon: mdi:lightning-bolt
+
+  e2e_vwc_flower_feed_ec:
+    name: "E2E VWC Flower Feed EC"
+    min: 0
+    max: 100
+    step: 0.1
+    initial: 50
+    unit_of_measurement: "mS/cm"
+    icon: mdi:lightning-bolt
+
+  e2e_vwc_flower_drain_volume:
+    name: "E2E VWC Flower Drain Volume"
+    min: 0
+    max: 10000
+    step: 0.1
+    initial: 0
+    unit_of_measurement: "mL"
+    icon: mdi:water
+
+  e2e_vwc_flower_irrigation_flow:
+    name: "E2E VWC Flower Irrigation Flow"
+    min: 0
+    max: 10000
+    step: 0.1
+    initial: 0
+    unit_of_measurement: "mL/min"
+    icon: mdi:water-pump
+
+  e2e_vwc_flower_irrigation_tank:
+    name: "E2E VWC Flower Irrigation Tank"
+    min: 0
+    max: 10000
+    step: 0.1
+    initial: 0
+    unit_of_measurement: "L"
+    icon: mdi:barrel
+
+  e2e_vwc_flower_temperature:
+    name: "E2E VWC Flower Temperature"
+    min: 0
+    max: 60
+    step: 0.1
+    initial: 25
+    unit_of_measurement: "°C"
+    icon: mdi:thermometer
+
+  e2e_vwc_flower_humidity:
+    name: "E2E VWC Flower Humidity"
+    min: 0
+    max: 100
+    step: 1
+    initial: 60
+    unit_of_measurement: "%"
+    icon: mdi:water-percent
+
+  e2e_vwc_flower_vpd:
+    name: "E2E VWC Flower VPD"
+    min: 0
+    max: 5
+    step: 0.01
+    initial: 1.2
+    unit_of_measurement: "kPa"
+    icon: mdi:air-filter
+
+  e2e_vwc_flower_co2:
+    name: "E2E VWC Flower CO2"
+    min: 0
+    max: 10000
+    step: 1
+    initial: 400
+    unit_of_measurement: "ppm"
+    icon: mdi:molecule-co2
+
+  e2e_vwc_flower_ph:
+    name: "E2E VWC Flower pH"
+    min: 0
+    max: 100
+    step: 0.1
+    initial: 50
+    icon: mdi:ph
+
+  e2e_vwc_flower_substrate_temperature:
+    name: "E2E VWC Flower Substrate Temperature"
+    min: 0
+    max: 60
+    step: 0.1
+    initial: 25
+    unit_of_measurement: "°C"
+    icon: mdi:thermometer
+
+  e2e_vwc_flower_power:
+    name: "E2E VWC Flower Power"
+    min: 0
+    max: 10000
+    step: 0.1
+    initial: 0
+    unit_of_measurement: "W"
+    icon: mdi:flash
+
+  e2e_vwc_flower_energy:
+    name: "E2E VWC Flower Energy"
+    min: 0
+    max: 10000
+    step: 0.1
+    initial: 0
+    unit_of_measurement: "kWh"
+    icon: mdi:lightning-bolt
