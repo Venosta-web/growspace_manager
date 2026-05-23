@@ -1053,3 +1053,285 @@ async def test_next_scheduled_cycle_returns_next_future_time(
     result = coordinator.next_scheduled_cycle
     # result should be a datetime ISO string or None
     assert result is None or isinstance(result, str)
+
+
+# --- Dark Skip Tests ---
+
+
+def _make_state(state: str) -> MagicMock:
+    """Build a minimal state mock with the given state string."""
+    m = MagicMock()
+    m.state = state
+    return m
+
+
+def _make_coordinator_with_dark_skip(
+    mock_hass: MagicMock,
+    mock_config_entry: MagicMock,
+    mock_main_coordinator: MagicMock,
+    *,
+    skip_during_dark: bool,
+    light_sensors: list[str],
+    light_states: dict[str, str],
+) -> IrrigationCoordinator:
+    """Build a coordinator with dark-skip config and light-sensor states."""
+    from custom_components.growspace_manager.models import EnvironmentConfig
+
+    gs = mock_main_coordinator.growspaces[GROWSPACE_ID]
+    gs.irrigation_config.skip_during_dark = skip_during_dark
+    gs.environment_config = EnvironmentConfig(light_sensors=light_sensors)
+
+    mock_hass.states.get.side_effect = lambda eid: (
+        _make_state(light_states[eid]) if eid in light_states else None
+    )
+    return IrrigationCoordinator(
+        mock_hass, mock_config_entry, GROWSPACE_ID, mock_main_coordinator
+    )
+
+
+async def test_dark_skip_prevents_scheduled_irrigation_when_lights_off(
+    mock_hass: MagicMock, mock_config_entry: MagicMock, mock_main_coordinator: MagicMock
+) -> None:
+    """Scheduled irrigation is skipped when skip_during_dark is True and all lights are off."""
+    coordinator = _make_coordinator_with_dark_skip(
+        mock_hass,
+        mock_config_entry,
+        mock_main_coordinator,
+        skip_during_dark=True,
+        light_sensors=["switch.light_1"],
+        light_states={"switch.light_1": "off"},
+    )
+
+    with (
+        patch("asyncio.sleep", new_callable=AsyncMock),
+        patch.object(
+            coordinator,
+            "_async_wait_for_switch_state",
+            new_callable=AsyncMock,
+            return_value=True,
+        ),
+    ):
+        mock_config_entry.runtime_data = mock_main_coordinator
+        await coordinator._run_pump_cycle(
+            "irrigation", "switch.irrigation_pump", 30, {"time": "10:00:00"}
+        )
+
+    # Pump should NOT have been turned on
+    turn_on_calls = [
+        c
+        for c in mock_hass.services.async_call.call_args_list
+        if c.args[:2] == ("switch", "turn_on")
+    ]
+    assert turn_on_calls == [], "Pump was turned on despite dark skip"
+
+
+async def test_dark_skip_allows_irrigation_when_lights_on(
+    mock_hass: MagicMock, mock_config_entry: MagicMock, mock_main_coordinator: MagicMock
+) -> None:
+    """Scheduled irrigation proceeds when skip_during_dark is True but lights are on."""
+    coordinator = _make_coordinator_with_dark_skip(
+        mock_hass,
+        mock_config_entry,
+        mock_main_coordinator,
+        skip_during_dark=True,
+        light_sensors=["switch.light_1"],
+        light_states={"switch.light_1": "on"},
+    )
+
+    with (
+        patch("asyncio.sleep", new_callable=AsyncMock),
+        patch.object(
+            coordinator,
+            "_async_wait_for_switch_state",
+            new_callable=AsyncMock,
+            return_value=True,
+        ),
+    ):
+        mock_config_entry.runtime_data = mock_main_coordinator
+        await coordinator._run_pump_cycle(
+            "irrigation", "switch.irrigation_pump", 30, {"time": "10:00:00"}
+        )
+
+    mock_hass.services.async_call.assert_any_call(
+        "switch", "turn_on", {"entity_id": "switch.irrigation_pump"}, blocking=True
+    )
+
+
+async def test_dark_skip_bypassed_for_manual_run(
+    mock_hass: MagicMock, mock_config_entry: MagicMock, mock_main_coordinator: MagicMock
+) -> None:
+    """Manual 'Run Now' bypasses dark skip even when lights are off."""
+    coordinator = _make_coordinator_with_dark_skip(
+        mock_hass,
+        mock_config_entry,
+        mock_main_coordinator,
+        skip_during_dark=True,
+        light_sensors=["switch.light_1"],
+        light_states={"switch.light_1": "off"},
+    )
+
+    with (
+        patch("asyncio.sleep", new_callable=AsyncMock),
+        patch.object(
+            coordinator,
+            "_async_wait_for_switch_state",
+            new_callable=AsyncMock,
+            return_value=True,
+        ),
+    ):
+        mock_config_entry.runtime_data = mock_main_coordinator
+        await coordinator._run_pump_cycle(
+            "irrigation", "switch.irrigation_pump", 30, {"manual": True}
+        )
+
+    mock_hass.services.async_call.assert_any_call(
+        "switch", "turn_on", {"entity_id": "switch.irrigation_pump"}, blocking=True
+    )
+
+
+# --- Low Tank Skip Tests ---
+
+
+def _make_coordinator_with_tank(
+    mock_hass: MagicMock,
+    mock_config_entry: MagicMock,
+    mock_main_coordinator: MagicMock,
+    *,
+    pause_on_low_tank: bool,
+    tank_sensor: str,
+    tank_level: float,
+    warning_level: float = 30.0,
+) -> IrrigationCoordinator:
+    """Build a coordinator with low-tank-skip config and tank sensor state."""
+    from custom_components.growspace_manager.models import (
+        EnvironmentConfig,
+        IrrigationTank,
+    )
+
+    gs = mock_main_coordinator.growspaces[GROWSPACE_ID]
+    gs.irrigation_config.pause_on_low_tank = pause_on_low_tank
+    gs.environment_config = EnvironmentConfig(
+        irrigation_tanks=[
+            IrrigationTank(
+                sensor_entity=tank_sensor,
+                name="Main Tank",
+                warning_level=warning_level,
+            )
+        ]
+    )
+
+    mock_hass.states.get.side_effect = lambda eid: (
+        _make_state(str(tank_level)) if eid == tank_sensor else None
+    )
+    return IrrigationCoordinator(
+        mock_hass, mock_config_entry, GROWSPACE_ID, mock_main_coordinator
+    )
+
+
+async def test_low_tank_skip_prevents_irrigation_when_tank_low(
+    mock_hass: MagicMock, mock_config_entry: MagicMock, mock_main_coordinator: MagicMock
+) -> None:
+    """Irrigation is skipped when pause_on_low_tank is True and tank is below warning level."""
+    coordinator = _make_coordinator_with_tank(
+        mock_hass,
+        mock_config_entry,
+        mock_main_coordinator,
+        pause_on_low_tank=True,
+        tank_sensor="sensor.tank_level",
+        tank_level=15.0,
+        warning_level=30.0,
+    )
+
+    with (
+        patch("asyncio.sleep", new_callable=AsyncMock),
+        patch.object(
+            coordinator,
+            "_async_wait_for_switch_state",
+            new_callable=AsyncMock,
+            return_value=True,
+        ),
+    ):
+        mock_config_entry.runtime_data = mock_main_coordinator
+        await coordinator._run_pump_cycle(
+            "irrigation", "switch.irrigation_pump", 30, {"time": "10:00:00"}
+        )
+
+    turn_on_calls = [
+        c
+        for c in mock_hass.services.async_call.call_args_list
+        if c.args[:2] == ("switch", "turn_on")
+    ]
+    assert turn_on_calls == [], "Pump was turned on despite low tank skip"
+
+
+async def test_low_tank_skip_fires_persistent_notification(
+    mock_hass: MagicMock, mock_config_entry: MagicMock, mock_main_coordinator: MagicMock
+) -> None:
+    """A persistent HA notification is fired when low tank causes a skip."""
+    coordinator = _make_coordinator_with_tank(
+        mock_hass,
+        mock_config_entry,
+        mock_main_coordinator,
+        pause_on_low_tank=True,
+        tank_sensor="sensor.tank_level",
+        tank_level=20.0,
+        warning_level=30.0,
+    )
+
+    with (
+        patch("asyncio.sleep", new_callable=AsyncMock),
+        patch.object(
+            coordinator,
+            "_async_wait_for_switch_state",
+            new_callable=AsyncMock,
+            return_value=True,
+        ),
+    ):
+        mock_config_entry.runtime_data = mock_main_coordinator
+        await coordinator._run_pump_cycle(
+            "irrigation", "switch.irrigation_pump", 30, {"time": "10:00:00"}
+        )
+
+    # Expect persistent_notification.create to have been called
+    notification_calls = [
+        c
+        for c in mock_hass.services.async_call.call_args_list
+        if c.args[:2] == ("persistent_notification", "create")
+    ]
+    assert len(notification_calls) >= 1, "No persistent notification was fired for low tank skip"
+
+
+async def test_low_tank_skip_also_applies_to_manual_run(
+    mock_hass: MagicMock, mock_config_entry: MagicMock, mock_main_coordinator: MagicMock
+) -> None:
+    """Low tank skip applies even to manual 'Run Now' requests."""
+    coordinator = _make_coordinator_with_tank(
+        mock_hass,
+        mock_config_entry,
+        mock_main_coordinator,
+        pause_on_low_tank=True,
+        tank_sensor="sensor.tank_level",
+        tank_level=10.0,
+        warning_level=30.0,
+    )
+
+    with (
+        patch("asyncio.sleep", new_callable=AsyncMock),
+        patch.object(
+            coordinator,
+            "_async_wait_for_switch_state",
+            new_callable=AsyncMock,
+            return_value=True,
+        ),
+    ):
+        mock_config_entry.runtime_data = mock_main_coordinator
+        await coordinator._run_pump_cycle(
+            "irrigation", "switch.irrigation_pump", 30, {"manual": True}
+        )
+
+    turn_on_calls = [
+        c
+        for c in mock_hass.services.async_call.call_args_list
+        if c.args[:2] == ("switch", "turn_on")
+    ]
+    assert turn_on_calls == [], "Pump was turned on despite low tank skip on manual run"

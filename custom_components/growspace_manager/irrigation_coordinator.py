@@ -521,6 +521,52 @@ class IrrigationCoordinator(BaseIrrigationCoordinator):
             return 0.0
         return duration * flow_rate / 1000.0
 
+    def _is_lights_dark(self) -> bool:
+        """Return True when all configured light sensors report off or are unavailable.
+
+        Returns False (lights considered on) when no light sensors are configured,
+        so irrigation is not blocked by default.
+        """
+        light_sensors = self.growspace.environment_config.light_sensors
+        if not light_sensors:
+            return False
+        return all(
+            (state := self.hass.states.get(sensor)) is None or state.state != "on"
+            for sensor in light_sensors
+        )
+
+    def _find_low_tank(self) -> tuple[str, float, float] | None:
+        """Return (name, current_level, warning_level) for the first below-warning tank.
+
+        Returns None when all tanks are above their warning levels or none are configured.
+        """
+        for tank in self.growspace.environment_config.irrigation_tanks:
+            level = self._get_sensor_value(tank.sensor_entity)
+            if level is not None and level < tank.warning_level:
+                return (tank.name, level, tank.warning_level)
+        return None
+
+    async def _async_fire_low_tank_notification(
+        self, tank_name: str, level: float
+    ) -> None:
+        """Fire a persistent HA warning notification when irrigation is skipped due to low tank."""
+        growspace = self.growspace
+        message = (
+            f"Irrigation skipped in '{growspace.name}': "
+            f"tank '{tank_name}' is low ({level:.1f}%). "
+            "Refill the reservoir before the next cycle."
+        )
+        await self.hass.services.async_call(
+            "persistent_notification",
+            "create",
+            {
+                "message": message,
+                "title": f"Low Tank — {growspace.name}",
+                "notification_id": f"growspace_low_tank_{self._growspace_id}",
+            },
+            blocking=False,
+        )
+
     def _check_safety_guards(self, duration: int) -> str | None:
         """Return a skip reason string if a safety guard blocks the cycle, else None.
 
@@ -567,7 +613,29 @@ class IrrigationCoordinator(BaseIrrigationCoordinator):
         event_data: Mapping[str, Any],
     ) -> None:
         """Run the on-off cycle for a pump and send notifications."""
-        # Safety guards apply only to irrigation cycles
+        # Low tank check applies to ALL cycles (scheduled and manual).
+        config = self.growspace.irrigation_config
+        if config.pause_on_low_tank:
+            low_tank = self._find_low_tank()
+            if low_tank:
+                tank_name, level, warn = low_tank
+                skip_reason = (
+                    f"tank '{tank_name}' is low ({level:.1f}% < {warn:.1f}%)"
+                )
+                _LOGGER.warning(
+                    "Skipping %s cycle for growspace %s: %s",
+                    event_type,
+                    self._growspace_id,
+                    skip_reason,
+                )
+                await self._async_fire_low_tank_notification(tank_name, level)
+                if config.log_to_logbook:
+                    self._fire_logbook_event(
+                        f"{event_type.capitalize()} skipped — {skip_reason}",
+                    )
+                return
+
+        # Safety guards and dark skip apply only to irrigation cycles.
         if event_type == "irrigation":
             skip_reason = self._check_safety_guards(duration)
             if skip_reason:
@@ -576,7 +644,22 @@ class IrrigationCoordinator(BaseIrrigationCoordinator):
                     self._growspace_id,
                     skip_reason,
                 )
-                if self.growspace.irrigation_config.log_to_logbook:
+                if config.log_to_logbook:
+                    self._fire_logbook_event(
+                        f"Irrigation skipped — {skip_reason}",
+                    )
+                return
+
+            # Dark skip: scheduled cycles only — manual runs bypass this check.
+            is_manual = event_data.get("manual", False)
+            if not is_manual and config.skip_during_dark and self._is_lights_dark():
+                skip_reason = "lights are currently off (dark period)"
+                _LOGGER.warning(
+                    "Skipping scheduled irrigation for growspace %s: %s",
+                    self._growspace_id,
+                    skip_reason,
+                )
+                if config.log_to_logbook:
                     self._fire_logbook_event(
                         f"Irrigation skipped — {skip_reason}",
                     )
