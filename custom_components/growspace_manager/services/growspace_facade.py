@@ -223,10 +223,9 @@ class GrowspaceFacade:
             for k, v in user_input.items()
             if k not in [ATTR_IRRIGATION_TIMES, ATTR_DRAIN_TIMES, "growspace_id_read_only"]
         }
-        if not updated_settings.get("irrigation_pump_entity"):
-            updated_settings["irrigation_pump_entity"] = None
-        if not updated_settings.get("drain_pump_entity"):
-            updated_settings["drain_pump_entity"] = None
+        for pump_key in ("irrigation_pump_entity", "drain_pump_entity"):
+            if pump_key in updated_settings and not updated_settings[pump_key]:
+                updated_settings[pump_key] = None
         for k, v in updated_settings.items():
             if hasattr(growspace.irrigation_config, k):
                 setattr(growspace.irrigation_config, k, v)
