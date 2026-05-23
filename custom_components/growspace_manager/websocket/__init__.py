@@ -24,6 +24,7 @@ from . import (
     data,
     environment,
     genetics,
+    irrigation,
     lineage,
     logbook,
     nutrients,
@@ -124,6 +125,11 @@ from .strain import (
     websocket_query_external_strain,
     websocket_upload_strain_image,
 )
+from .irrigation import (
+    SCHEMA_WS_GET_IRRIGATION_ANALYTICS,
+    WS_TYPE_GET_IRRIGATION_ANALYTICS,
+    websocket_get_irrigation_analytics,
+)
 from .subareas import (
     SCHEMA_WS_ADD_SUBAREA,
     SCHEMA_WS_GET_SUBAREAS,
@@ -177,6 +183,7 @@ _MODULES = [
     environment,
     subareas,
     vision,
+    irrigation,
 ]
 
 
@@ -260,4 +267,8 @@ __all__ = [
     "websocket_get_snapshots",
     "websocket_get_vision_history",
     "websocket_update_vision_checkup_config",
+    # Irrigation analytics
+    "websocket_get_irrigation_analytics",
+    "WS_TYPE_GET_IRRIGATION_ANALYTICS",
+    "SCHEMA_WS_GET_IRRIGATION_ANALYTICS",
 ]

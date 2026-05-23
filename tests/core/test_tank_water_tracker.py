@@ -486,3 +486,92 @@ def test_get_total_liters_7d_timezone() -> None:
         assert abs(total - 10.0) < 0.01
     finally:
         _orig_set_default_time_zone(dt_util.UTC)
+
+
+# ── stage aggregates ──────────────────────────────────────────────────────────
+
+def test_get_stage_aggregates_sums_consumption_by_stage():
+    """Consumption events tagged with growth_stage are summed per stage."""
+    t = _tracker()
+    t.tank.water_history.events = [
+        {"timestamp": "2026-03-22T10:00:00+00:00", "event_type": "consumption", "pct_delta": -5.0, "liters": 10.0, "growth_stage": "veg"},
+        {"timestamp": "2026-03-22T11:00:00+00:00", "event_type": "consumption", "pct_delta": -3.0, "liters": 6.0, "growth_stage": "veg"},
+        {"timestamp": "2026-03-22T12:00:00+00:00", "event_type": "consumption", "pct_delta": -4.0, "liters": 8.0, "growth_stage": "flower_early"},
+    ]
+    result = t.get_stage_aggregates()
+    assert result == {"veg": pytest.approx(16.0), "flower_early": pytest.approx(8.0)}
+
+
+def test_get_stage_aggregates_ignores_refill_events():
+    """Refill events are excluded from stage aggregates."""
+    t = _tracker()
+    t.tank.water_history.events = [
+        {"timestamp": "2026-03-22T10:00:00+00:00", "event_type": "consumption", "pct_delta": -5.0, "liters": 10.0, "growth_stage": "veg"},
+        {"timestamp": "2026-03-22T11:00:00+00:00", "event_type": "refill", "pct_delta": 50.0, "liters": 100.0, "growth_stage": "veg"},
+    ]
+    result = t.get_stage_aggregates()
+    assert result == {"veg": pytest.approx(10.0)}
+
+
+def test_get_stage_aggregates_ignores_events_without_stage():
+    """Events without growth_stage are excluded from aggregates."""
+    t = _tracker()
+    t.tank.water_history.events = [
+        {"timestamp": "2026-03-22T10:00:00+00:00", "event_type": "consumption", "pct_delta": -5.0, "liters": 10.0, "growth_stage": "veg"},
+        {"timestamp": "2026-03-22T11:00:00+00:00", "event_type": "consumption", "pct_delta": -3.0, "liters": 6.0},
+    ]
+    result = t.get_stage_aggregates()
+    assert result == {"veg": pytest.approx(10.0)}
+
+
+def test_get_stage_aggregates_empty_events_returns_empty_dict():
+    """No events returns an empty dict."""
+    t = _tracker()
+    assert t.get_stage_aggregates() == {}
+
+
+# ── stage_resolver tagging ────────────────────────────────────────────────────
+
+def test_consumption_event_tagged_with_stage_when_resolver_provided():
+    """Consumption events get a growth_stage field when a stage_resolver is set."""
+    tank = _make_tank()
+    tracker = TankWaterTracker(tank, stage_resolver=lambda: "flower_mid")
+    tracker.record_level(50.0, "2026-03-22T10:00:00+00:00")
+    tracker.record_level(45.0, "2026-03-22T10:15:00+00:00")
+    events = tank.water_history.events
+    assert len(events) == 1
+    assert events[0]["growth_stage"] == "flower_mid"
+
+
+def test_refill_event_not_tagged_with_stage():
+    """Refill events do not get a growth_stage tag."""
+    tank = _make_tank()
+    tracker = TankWaterTracker(tank, stage_resolver=lambda: "flower_mid")
+    tracker.record_level(40.0, "2026-03-22T10:00:00+00:00")
+    tracker.record_level(80.0, "2026-03-22T11:00:00+00:00")
+    events = tank.water_history.events
+    assert len(events) == 1
+    assert events[0]["event_type"] == "refill"
+    assert "growth_stage" not in events[0]
+
+
+def test_consumption_event_has_no_stage_without_resolver():
+    """Consumption events have no growth_stage when no resolver is set."""
+    tank = _make_tank()
+    tracker = TankWaterTracker(tank)
+    tracker.record_level(50.0, "2026-03-22T10:00:00+00:00")
+    tracker.record_level(45.0, "2026-03-22T10:15:00+00:00")
+    events = tank.water_history.events
+    assert len(events) == 1
+    assert "growth_stage" not in events[0]
+
+
+def test_stage_resolver_returning_none_produces_untagged_event():
+    """If stage_resolver returns None, no growth_stage key is added."""
+    tank = _make_tank()
+    tracker = TankWaterTracker(tank, stage_resolver=lambda: None)
+    tracker.record_level(50.0, "2026-03-22T10:00:00+00:00")
+    tracker.record_level(45.0, "2026-03-22T10:15:00+00:00")
+    events = tank.water_history.events
+    assert len(events) == 1
+    assert "growth_stage" not in events[0]

@@ -16,6 +16,7 @@ from ..const import (
     SPECIAL_GROWSPACES,
     VERSION,
 )
+from ..domain.stage_calculator import determine_coordinator_stage
 from ..exceptions import GrowspaceNotFoundError
 from ..models import DrainReading, Growspace, IrrigationConfig, Subarea, WaterUsageData
 from ..tank_water_tracker import TankWaterTracker
@@ -428,8 +429,19 @@ class GrowspaceFacade:
             _LOGGER.debug(
                 "Creating new TankWaterTracker for %s in %s", tank_entity, growspace_id
             )
-            gs_trackers[tank_entity] = TankWaterTracker(tank)
+
+            def _stage_resolver(gid: str = growspace_id) -> str:
+                plants = self.get_growspace_plants(gid)
+                return determine_coordinator_stage(plants).value
+
+            gs_trackers[tank_entity] = TankWaterTracker(tank, stage_resolver=_stage_resolver)
         return gs_trackers[tank_entity]
+
+    def get_all_trackers_for_growspace(
+        self, growspace_id: str
+    ) -> dict[str, TankWaterTracker]:
+        """Return all cached tank water trackers for a growspace."""
+        return self._tank_water_trackers.get(growspace_id, {})
 
     async def async_unsubscribe_all_trackers(self) -> None:
         """Unsubscribe all tank water trackers on shutdown."""
