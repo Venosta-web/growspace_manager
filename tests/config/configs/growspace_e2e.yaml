@@ -1,0 +1,46 @@
+# E2E simulation package — static pass-through pump switches for Playwright tests.
+# Entity IDs match the sim_e2e_[stage]_irrigation_pump / sim_e2e_[stage]_drain_pump
+# convention used by e2e-setup.ts when calling growspace_manager.set_irrigation_settings.
+
+input_boolean:
+  sim_e2e_mother_irrigation_pump:
+    name: "E2E Mother Irrigation Pump"
+    icon: mdi:water-pump
+  sim_e2e_mother_drain_pump:
+    name: "E2E Mother Drain Pump"
+    icon: mdi:pipe
+
+  sim_e2e_clone_irrigation_pump:
+    name: "E2E Clone Irrigation Pump"
+    icon: mdi:water-pump
+  sim_e2e_clone_drain_pump:
+    name: "E2E Clone Drain Pump"
+    icon: mdi:pipe
+
+  sim_e2e_veg_irrigation_pump:
+    name: "E2E Veg Irrigation Pump"
+    icon: mdi:water-pump
+  sim_e2e_veg_drain_pump:
+    name: "E2E Veg Drain Pump"
+    icon: mdi:pipe
+
+  sim_e2e_flower_irrigation_pump:
+    name: "E2E Flower Irrigation Pump"
+    icon: mdi:water-pump
+  sim_e2e_flower_drain_pump:
+    name: "E2E Flower Drain Pump"
+    icon: mdi:pipe
+
+  sim_e2e_dry_irrigation_pump:
+    name: "E2E Dry Irrigation Pump"
+    icon: mdi:water-pump
+  sim_e2e_dry_drain_pump:
+    name: "E2E Dry Drain Pump"
+    icon: mdi:pipe
+
+  sim_e2e_cure_irrigation_pump:
+    name: "E2E Cure Irrigation Pump"
+    icon: mdi:water-pump
+  sim_e2e_cure_drain_pump:
+    name: "E2E Cure Drain Pump"
+    icon: mdi:pipe
