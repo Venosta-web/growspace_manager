@@ -9,7 +9,6 @@ from homeassistant.helpers import config_validation as cv
 from .const import (
     ATTR_ACQUISITION_DATE,
     ATTR_AMOUNT_ML,
-    ATTR_AROMA,
     ATTR_BATCH_ID,
     ATTR_BREEDER,
     ATTR_CBD_PERCENTAGE,
@@ -23,6 +22,8 @@ from .const import (
     ATTR_EC,
     ATTR_EVENT_ID,
     ATTR_FEED_EC,
+    ATTR_FEED_EC_MAX,
+    ATTR_FEED_EC_MIN,
     ATTR_FEED_VOLUME_ML,
     ATTR_GENERATION,
     ATTR_GROWSPACE_ID,
@@ -34,6 +35,7 @@ from .const import (
     ATTR_MAX_EC_DELTA,
     ATTR_METADATA,
     ATTR_MIN_DAYS_IN_STAGE,
+    ATTR_MOISTURE_PERCENT,
     ATTR_MOLD_RESISTANCE,
     ATTR_NAME,
     ATTR_NOTES,
@@ -41,7 +43,6 @@ from .const import (
     ATTR_PARENT_1_STRAIN,
     ATTR_PARENT_2_PHENOTYPE,
     ATTR_PARENT_2_STRAIN,
-    ATTR_PEST_RESISTANCE,
     ATTR_PH,
     ATTR_PHENOTYPE,
     ATTR_PLANT_ID,
@@ -55,7 +56,6 @@ from .const import (
     ATTR_STAGE,
     ATTR_STRAIN,
     ATTR_STRAIN_NAME,
-    ATTR_STRUCTURE,
     ATTR_TAGS,
     ATTR_TANK_ENTITY,
     ATTR_TARGET_RUNOFF_PERCENT,
@@ -69,10 +69,9 @@ from .const import (
     ATTR_VIGOR,
     ATTR_VISUAL_TAG,
     ATTR_VOLUME_LITERS,
-    ATTR_WET_WEIGHT,
     ATTR_WEIGHT_GRAMS,
+    ATTR_WET_WEIGHT,
     ATTR_YIELD_POTENTIAL,
-    ATTR_MOISTURE_PERCENT,
     CONF_CAMERA_ENTITIES,
     CONF_CIRCULATION_FAN_ENTITIES,
     CONF_CIRCULATION_FAN_ENTITY,
@@ -803,6 +802,17 @@ SAVE_EC_RAMP_CURVE_SCHEMA = vol.Schema(
 REMOVE_EC_RAMP_CURVE_SCHEMA = vol.Schema(
     {
         vol.Required(ATTR_CURVE_ID): str,
+    }
+)
+
+# --- EC Target Range Schema ---
+
+SET_EC_TARGET_RANGE_SCHEMA = vol.Schema(
+    {
+        vol.Required(ATTR_GROWSPACE_ID): vol.All(str, valid_growspace_id),
+        vol.Required(ATTR_STAGE): vol.In(PLANT_STAGES),
+        vol.Required(ATTR_FEED_EC_MIN): vol.All(vol.Coerce(float), vol.Range(min=0.0)),
+        vol.Required(ATTR_FEED_EC_MAX): vol.All(vol.Coerce(float), vol.Range(min=0.0)),
     }
 )
 

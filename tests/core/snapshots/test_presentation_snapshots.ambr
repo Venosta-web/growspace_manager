@@ -116,6 +116,8 @@
       'drain_pump_entity': 'switch.drain',
       'drain_times': list([
       ]),
+      'ec_target_ranges': list([
+      ]),
       'irrigation_duration': 120,
       'irrigation_pump_entity': 'switch.pump',
       'irrigation_times': list([

@@ -18,7 +18,14 @@ from ..const import (
 )
 from ..domain.stage_calculator import determine_coordinator_stage
 from ..exceptions import GrowspaceNotFoundError
-from ..models import DrainReading, Growspace, IrrigationConfig, Subarea, WaterUsageData
+from ..models import (
+    DrainReading,
+    ECTargetRange,
+    Growspace,
+    IrrigationConfig,
+    Subarea,
+    WaterUsageData,
+)
 from ..tank_water_tracker import TankWaterTracker
 from ..utils import generate_growspace_overview_unique_id
 
@@ -241,6 +248,29 @@ class GrowspaceFacade:
     ) -> None:
         """Set irrigation strategy for a growspace."""
         await self.update_irrigation_config(growspace_id, strategy)
+
+    async def set_ec_target_range(
+        self,
+        growspace_id: str,
+        stage: str,
+        feed_ec_min: float,
+        feed_ec_max: float,
+    ) -> None:
+        """Upsert a feed EC target range for a specific stage."""
+        growspace = self._coordinator.growspaces.get(growspace_id)
+        if not growspace:
+            raise GrowspaceNotFoundError(f"Growspace {growspace_id} not found")
+        ranges = growspace.irrigation_config.ec_target_ranges
+        for existing in ranges:
+            if existing.stage == stage:
+                existing.feed_ec_min = feed_ec_min
+                existing.feed_ec_max = feed_ec_max
+                break
+        else:
+            ranges.append(ECTargetRange(stage=stage, feed_ec_min=feed_ec_min, feed_ec_max=feed_ec_max))
+        self._coordinator.cache.invalidate(growspace_id)
+        await self._coordinator.async_commit()
+        await self._coordinator.async_request_refresh()
 
     async def add_irrigation_schedule_item(
         self,

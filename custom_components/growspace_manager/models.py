@@ -467,6 +467,15 @@ class EnvironmentConfig(BaseModel):
 
 
 @dataclass(slots=True)
+class ECTargetRange(BaseModel):
+    """Per-stage feed EC target range for irrigation nutrient targeting."""
+
+    stage: str
+    feed_ec_min: float = 0.0
+    feed_ec_max: float = 0.0
+
+
+@dataclass(slots=True)
 class IrrigationConfig(BaseModel):
     """Configuration for irrigation and drain pumps and schedules."""
 
@@ -484,6 +493,7 @@ class IrrigationConfig(BaseModel):
     skip_during_dark: bool = False
     pause_on_low_tank: bool = True
     log_to_logbook: bool = True
+    ec_target_ranges: list[ECTargetRange] = field(default_factory=list)
 
 
 

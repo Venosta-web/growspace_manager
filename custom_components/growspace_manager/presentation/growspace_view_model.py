@@ -157,6 +157,14 @@ class GrowspaceViewModelBuilder:
             "skip_during_dark": irrigation_config.skip_during_dark,
             "pause_on_low_tank": irrigation_config.pause_on_low_tank,
             "log_to_logbook": irrigation_config.log_to_logbook,
+            "ec_target_ranges": [
+                {
+                    "stage": r.stage,
+                    "feed_ec_min": r.feed_ec_min,
+                    "feed_ec_max": r.feed_ec_max,
+                }
+                for r in irrigation_config.ec_target_ranges
+            ],
         }
 
         irrigation_strategy_dict = (

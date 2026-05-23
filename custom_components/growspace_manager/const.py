@@ -363,6 +363,10 @@ ATTR_WATER_EFFICIENCY = "water_efficiency"
 # EC Ramp Curve Attributes
 ATTR_EC_MIN = "ec_min"
 ATTR_EC_MAX = "ec_max"
+
+# EC Target Range Attributes
+ATTR_FEED_EC_MIN = "feed_ec_min"
+ATTR_FEED_EC_MAX = "feed_ec_max"
 ATTR_CURRENT_WEEK = "current_week"
 ATTR_CURVE_NAME = "curve_name"
 ATTR_LAST_MEASURED_EC = "last_measured_ec"
@@ -608,6 +612,8 @@ class GrowspaceService(StrEnum):
     # EC Ramp Curve Services
     SAVE_EC_RAMP_CURVE = "save_ec_ramp_curve"
     REMOVE_EC_RAMP_CURVE = "remove_ec_ramp_curve"
+    # EC Target Range Services
+    SET_EC_TARGET_RANGE = "set_ec_target_range"
     # Vision Checkup Services
     TRIGGER_VISION_CHECKUP = "trigger_vision_checkup"
     # Tank Configuration Services

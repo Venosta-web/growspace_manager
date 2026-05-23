@@ -113,6 +113,8 @@
       'drain_pump_entity': None,
       'drain_times': list([
       ]),
+      'ec_target_ranges': list([
+      ]),
       'irrigation_duration': None,
       'irrigation_pump_entity': None,
       'irrigation_times': list([

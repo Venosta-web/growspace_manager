@@ -11,8 +11,11 @@ from homeassistant.exceptions import ServiceValidationError
 from ..const import (
     ATTR_DRAIN_TIMES,
     ATTR_DURATION,
+    ATTR_FEED_EC_MAX,
+    ATTR_FEED_EC_MIN,
     ATTR_GROWSPACE_ID,
     ATTR_IRRIGATION_TIMES,
+    ATTR_STAGE,
     ATTR_TIME,
     GrowspaceService,
 )
@@ -22,6 +25,7 @@ from ..schemas import (
     REMOVE_DRAIN_TIME_SCHEMA,
     REMOVE_IRRIGATION_TIME_SCHEMA,
     RUN_IRRIGATION_CYCLE_SCHEMA,
+    SET_EC_TARGET_RANGE_SCHEMA,
     SET_IRRIGATION_SETTINGS_SCHEMA,
     SET_IRRIGATION_STRATEGY_SCHEMA,
 )
@@ -187,6 +191,33 @@ async def handle_run_irrigation_cycle(
     )
 
 
+@handle_service_errors
+async def handle_set_ec_target_range(
+    hass: HomeAssistant,
+    coordinator: GrowspaceCoordinator,
+    call: ServiceCall,
+) -> None:
+    """Handle the service call to set (upsert) a feed EC target range for a stage."""
+    growspace_id: str = call.data[ATTR_GROWSPACE_ID]
+    stage: str = call.data[ATTR_STAGE]
+    feed_ec_min: float = call.data[ATTR_FEED_EC_MIN]
+    feed_ec_max: float = call.data[ATTR_FEED_EC_MAX]
+
+    await coordinator.services.growspaces.set_ec_target_range(
+        growspace_id=growspace_id,
+        stage=stage,
+        feed_ec_min=feed_ec_min,
+        feed_ec_max=feed_ec_max,
+    )
+    _LOGGER.info(
+        "Set EC target range for growspace '%s' stage '%s': %.1f–%.1f",
+        growspace_id,
+        stage,
+        feed_ec_min,
+        feed_ec_max,
+    )
+
+
 SERVICES = [
     ServiceDefinition(
         GrowspaceService.RUN_IRRIGATION_CYCLE,
@@ -222,5 +253,10 @@ SERVICES = [
         GrowspaceService.REMOVE_DRAIN_TIME,
         handle_remove_drain_time,
         REMOVE_DRAIN_TIME_SCHEMA,
+    ),
+    ServiceDefinition(
+        GrowspaceService.SET_EC_TARGET_RANGE,
+        handle_set_ec_target_range,
+        SET_EC_TARGET_RANGE_SCHEMA,
     ),
 ]
