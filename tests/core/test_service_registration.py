@@ -1,13 +1,12 @@
 """Tests for service registration."""
 
-import importlib
-from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
 from custom_components.growspace_manager.const import DOMAIN
 from custom_components.growspace_manager.exceptions import GrowspaceError
+import custom_components.growspace_manager.service_registration as service_registration_module
 from custom_components.growspace_manager.service_registration import register_services
 from custom_components.growspace_manager.services._definition import ServiceDefinition
 from homeassistant.config_entries import ConfigEntryState
@@ -169,25 +168,17 @@ async def test_service_wrapper_error_handling(
             await captured_wrapper(call)
 
 
-async def test_register_services_import_failure(hass: HomeAssistant) -> None:
-    """Test that service registration handles import failure gracefully."""
+async def test_register_services_subset_modules(hass: HomeAssistant) -> None:
+    """Test that only services from the provided _SERVICE_MODULES are registered."""
+    from custom_components.growspace_manager.services import plant
+
     strain_lib = MagicMock()
 
-
-    original_import = importlib.import_module
-
-    def mock_import(name: str) -> Any:
-        if name.endswith(".growspace"):
-            raise ValueError("Mock import failure")
-        return original_import(name)
-
-    with patch("importlib.import_module", side_effect=mock_import):
+    with patch.object(service_registration_module, "_SERVICE_MODULES", [plant]):
         await register_services(hass, strain_lib)
 
-    # Since growspace services failed to import, we should NOT have add_growspace
-    assert not hass.services.has_service(DOMAIN, "add_growspace")
-    # But other modules (like plant services) should still be registered
     assert hass.services.has_service(DOMAIN, "add_plant")
+    assert not hass.services.has_service(DOMAIN, "add_growspace")
 
 
 async def test_register_services_handler_raises_growspace_error(
@@ -197,7 +188,6 @@ async def test_register_services_handler_raises_growspace_error(
     hass = MagicMock(spec=HomeAssistant)
     hass.services = MagicMock()
     hass.config_entries.async_entries.return_value = [mock_config_entry]
-
 
     strain_lib = MagicMock()
     captured_wrapper = None
@@ -209,10 +199,8 @@ async def test_register_services_handler_raises_growspace_error(
 
     hass.services.async_register.side_effect = capture_register
 
-    # Create a custom service definition whose handler directly raises GrowspaceError
     async def dummy_handler(hass, coordinator, call) -> None:
         raise GrowspaceError("Direct GrowspaceError")
-
 
     custom_service = ServiceDefinition(
         name="custom_error_service",
@@ -220,17 +208,10 @@ async def test_register_services_handler_raises_growspace_error(
         needs_strain_lib=False,
     )
 
-    original_import = importlib.import_module
-
     mock_module = MagicMock()
     mock_module.SERVICES = [custom_service]
 
-    def mock_import(name: str) -> Any:
-        if name.endswith(".growspace"):
-            return mock_module
-        return original_import(name)
-
-    with patch("importlib.import_module", side_effect=mock_import), \
+    with patch.object(service_registration_module, "_SERVICE_MODULES", [mock_module]), \
          patch("homeassistant.config_entries.ConfigEntries.async_entries", return_value=[mock_config_entry]):
         await register_services(hass, strain_lib)
 
