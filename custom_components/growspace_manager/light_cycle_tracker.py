@@ -25,6 +25,7 @@ class LightCycleTracker:
         growspace_id: str,
         main_coordinator: GrowspaceCoordinator,
     ) -> None:
+        """Initialize the LightCycleTracker."""
         self.hass = hass
         self.growspace_id = growspace_id
         self.main_coordinator = main_coordinator
