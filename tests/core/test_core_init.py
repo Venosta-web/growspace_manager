@@ -686,7 +686,7 @@ async def test_websocket_get_growspace_data(
         }
         await websocket_get_growspace_data(hass, mock_connection, msg)
         mock_connection.send_error.assert_called_with(
-            2, "not_loaded", "Growspace Manager integration not loaded"
+            2, "coordinator_not_ready", "Growspace Manager integration not loaded"
         )
 
     # 3. Unknown Error
@@ -700,7 +700,7 @@ async def test_websocket_get_growspace_data(
             "growspace_id": "gs1",
         }
         await websocket_get_growspace_data(hass, mock_connection, msg)
-        mock_connection.send_error.assert_called_with(3, "unknown_error", "Boom")
+        mock_connection.send_error.assert_called_with(3, "internal_error", "Boom")
 
 
 @pytest.mark.asyncio

@@ -168,14 +168,13 @@ class ViewModelBuilder:
             active_events=active_events,
         )
 
-        # Inject irrigation cycle telemetry for the card footer
-        serialized["last_cycle_timestamp"] = last_cycle_timestamp
-        serialized["next_scheduled_cycle"] = next_scheduled_cycle
-        serialized["cycles_today"] = cycles_today
-        serialized["volume_dispensed_today"] = volume_dispensed_today
+        # Inject irrigation cycle telemetry into the irrigation sub-object
+        serialized["irrigation"]["last_cycle_timestamp"] = last_cycle_timestamp
+        serialized["irrigation"]["next_scheduled_cycle"] = next_scheduled_cycle
+        serialized["irrigation"]["cycles_today"] = cycles_today
+        serialized["irrigation"]["volume_dispensed_today"] = volume_dispensed_today
 
-        # Inject timestamp for efficient frontend equality checks (change detection)
-        # Using the current_time we already captured at the start of the method
+        # Top-level timestamp for efficient frontend equality checks (change detection)
         serialized["_ts"] = int(current_time * 1000)
 
         # Cache the serialized data as a tuple: (timestamp, data)

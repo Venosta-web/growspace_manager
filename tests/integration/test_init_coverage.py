@@ -180,7 +180,7 @@ async def test_websocket_get_growspace_data_errors(hass: HomeAssistant) -> None:
     ):
         await websocket_get_growspace_data(hass, connection, msg)
         connection.send_error.assert_called_with(
-            1, "not_loaded", "Growspace Manager integration not loaded"
+            1, "coordinator_not_ready", "Growspace Manager integration not loaded"
         )
 
     # 2. General Exception
@@ -190,7 +190,7 @@ async def test_websocket_get_growspace_data_errors(hass: HomeAssistant) -> None:
         side_effect=Exception("Boom"),
     ):
         await websocket_get_growspace_data(hass, connection, msg)
-        connection.send_error.assert_called_with(1, "unknown_error", "Boom")
+        connection.send_error.assert_called_with(1, "internal_error", "Boom")
 
 
 # --- Pending Growspace Failure Test ---

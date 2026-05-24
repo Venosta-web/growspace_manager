@@ -17,6 +17,12 @@ from ..exceptions import GrowspaceError
 
 _LOGGER = logging.getLogger(__name__)
 
+# Typed WebSocket error codes (stay inside HA's wire format — ADR 0005)
+WS_ERR_COORDINATOR_NOT_READY = "coordinator_not_ready"
+WS_ERR_ENTITY_NOT_FOUND = "entity_not_found"
+WS_ERR_VALIDATION_FAILED = "validation_failed"
+WS_ERR_INTERNAL_ERROR = "internal_error"
+
 
 def get_validated_coordinator(config_entry: ConfigEntry) -> GrowspaceCoordinator:
     """Get and validate coordinator from config entry.
@@ -64,3 +70,35 @@ def handle_service_errors(func: Callable[..., Any]) -> Callable[..., Any]:
             raise ServiceValidationError(f"Operation failed: {err}") from err
 
     return wrapper
+
+
+def invalidates_cache(growspace_id_kwarg: str = "growspace_id") -> Callable[..., Any]:
+    """Decorator that clears the view-model cache for the affected growspace after a mutation.
+
+    The 30-second TTL in ViewModelBuilder.build_serialized_growspace is the stale-data
+    window identified in ADR 0005. Explicit invalidation on mutation closes that window
+    without changing the frontend's refresh architecture.
+
+    Args:
+        growspace_id_kwarg: Name of the kwarg (or first positional after call data) that
+                            holds the growspace_id. Defaults to ``"growspace_id"``.
+    """
+
+    def decorator(func: Callable[..., Any]) -> Callable[..., Any]:
+        @wraps(func)
+        async def wrapper(*args: Any, **kwargs: Any) -> Any:
+            result = await func(*args, **kwargs)
+            growspace_id: str | None = kwargs.get(growspace_id_kwarg) or (
+                args[1].get(growspace_id_kwarg) if len(args) > 1 and isinstance(args[1], dict) else None
+            )
+            if growspace_id:
+                try:
+                    coordinator: GrowspaceCoordinator = args[0]
+                    coordinator.cache.pop(growspace_id, None)
+                except (AttributeError, IndexError):
+                    pass
+            return result
+
+        return wrapper
+
+    return decorator

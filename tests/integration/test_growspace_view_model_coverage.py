@@ -60,14 +60,14 @@ def test_growspace_view_model_build_basic(hass: HomeAssistant, builder):
         max_flower_days=20,
     )
 
-    assert result["growspace_id"] == "gs1"
-    assert result["name"] == "Test Room"
-    assert result["total_plants"] == 1
-    assert result["veg_week"] == 2
-    assert result["flower_week"] == 3
-    assert result["metrics"] is True
-    assert result["grid"]["position_1_1"]["rich"] is True
-    assert result["grid"]["position_1_2"] is None
+    assert result["identity"]["growspace_id"] == "gs1"
+    assert result["identity"]["name"] == "Test Room"
+    assert result["grid"]["total_plants"] == 1
+    assert result["metrics"]["veg_week"] == 2
+    assert result["metrics"]["flower_week"] == 3
+    assert result["metrics"]["metrics"] is True
+    assert result["grid"]["grid"]["position_1_1"]["rich"] is True
+    assert result["grid"]["grid"]["position_1_2"] is None
 
 
 def test_get_sensor_types(builder):
@@ -169,7 +169,7 @@ def test_build_special_growspace_types(builder):
     for gs_id in ("mother", "clone", "dry", "cure"):
         growspace = Growspace(id=gs_id, name=gs_id.capitalize())
         result = builder.build(growspace, [], {})
-        assert result["type"] == gs_id
+        assert result["identity"]["type"] == gs_id
 
 
 def test_air_exchange_recommendation(hass: HomeAssistant, builder):
@@ -192,7 +192,7 @@ def test_air_exchange_recommendation(hass: HomeAssistant, builder):
         ),
     ):
         result = builder.build(growspace, [], {})
-        assert result["air_exchange"] == "High"
+        assert result["metrics"]["air_exchange"] == "High"
 
 
 def test_missing_environment_config(builder):
@@ -211,8 +211,8 @@ def test_missing_environment_config(builder):
     builder.entity_queries = MagicMock()
     builder.entity_queries.lookup_overview_entity_id.return_value = "sensor.ov"
     result = builder.build(growspace, [], {})
-    assert result["growspace_id"] == "gs1"
-    assert result["sensor_types"] == {}
+    assert result["identity"]["growspace_id"] == "gs1"
+    assert result["sensors"]["sensor_types"] == {}
 
 
 def test_get_environment_attributes_malformed_depletion_state(
@@ -353,7 +353,7 @@ def test_build_water_usage_mapping(builder: GrowspaceViewModelBuilder) -> None:
         # Now passing required arguments: plants and biological_metrics
         data = builder.build(gs, plants=[], biological_metrics={})
 
-        water_usage = data.get("water_usage")
+        water_usage = data["irrigation"].get("water_usage")
         assert water_usage is not None
         assert water_usage["total_liters"] == 250.0
         assert water_usage["cycle_start_date"] == "2024-03-01"

@@ -228,6 +228,7 @@
     }),
     'id': 'gs_test',
     'irrigation_config': dict({
+      'active_steering_phase': 'p2',
       'auto_advance_p1_to_p2': False,
       'auto_advance_p2_to_p3': False,
       'daily_volume_cap_liters': None,

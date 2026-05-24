@@ -72,5 +72,5 @@ async def test_async_commit_rebuilds_cache(hass: HomeAssistant) -> None:
         # Now call commit. If it invalidates cache, it should rebuild using serializer
         await coordinator.async_commit()
 
-        # Cache should be updated (access index 1 to get the data dict)
-        assert coordinator.cache._cache[gs.id][1]["name"] == "Updated Name"
+        # Cache should be updated — name lives in the identity sub-object (ADR 0005)
+        assert coordinator.cache._cache[gs.id][1]["identity"]["name"] == "Updated Name"

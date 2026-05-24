@@ -15,6 +15,10 @@ from ..const import DOMAIN
 from ..coordinator import GrowspaceCoordinator
 from ..exceptions import GrowspaceError
 from ..services.report import async_websocket_get_grow_report
+from ..services.utils import (
+    WS_ERR_COORDINATOR_NOT_READY,
+    WS_ERR_INTERNAL_ERROR,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -48,17 +52,16 @@ async def websocket_get_growspace_data(
         connection.send_result(msg["id"], data)
     except ServiceValidationError:
         connection.send_error(
-            msg["id"], "not_loaded", "Growspace Manager integration not loaded"
+            msg["id"], WS_ERR_COORDINATOR_NOT_READY, "Growspace Manager integration not loaded"
         )
     except (
         AttributeError,
         KeyError,
         ValueError,
-        ServiceValidationError,
         GrowspaceError,
         Exception,
     ) as e:
-        connection.send_error(msg["id"], "unknown_error", str(e))
+        connection.send_error(msg["id"], WS_ERR_INTERNAL_ERROR, str(e))
 
 
 COMMANDS: list[tuple[str, Any, Any, bool]] = [

@@ -194,35 +194,24 @@ class GrowspaceViewModelBuilder:
         # Look up overview entity ID
         overview_entity_id = self.entity_queries.lookup_overview_entity_id(growspace.id)
 
-        # Build complete dict
-        data = {
-            "growspace_id": growspace.id,
-            "overview_entity_id": overview_entity_id,
-            "name": growspace.name,
-            "type": gs_type,
-            "rows": growspace.rows,
-            "plants_per_row": growspace.plants_per_row,
-            "total_plants": len(plants),
-            "dimensions": growspace.dimensions,
-            "notification_target": growspace.notification_target,
-            "max_veg_days": max_veg_days,
-            "max_flower_days": max_flower_days,
-            "max_dry_days": max_dry_days,
-            "max_cure_days": max_cure_days,
-            "veg_week": veg_week,
-            "flower_week": flower_week,
-            "dry_week": dry_week,
-            "cure_week": cure_week,
-            "max_stage_summary": (
-                f"Cure: {max_cure_days}d (W{cure_week})"
-                if max_cure_days > 0
-                else f"Dry: {max_dry_days}d (W{dry_week})"
-                if max_dry_days > 0
-                else f"Veg: {max_veg_days}d (W{veg_week}), Flower: {max_flower_days}d (W{flower_week})"
-            ),
-            "irrigation_config": irrigation_options,
-            "irrigation_strategy": irrigation_strategy_dict,
-            "drain_config": {
+        # Build environment attributes, then extract sensor lookup data
+        env_attrs = self._get_environment_attributes(growspace, active_events=active_events)
+        sensors = {
+            "sensor_types": self._get_sensor_types(growspace),
+            "sensor_coordinates": env_attrs.pop("sensor_coordinates", {}),
+            "sensor_groups": env_attrs.pop("sensor_groups", []),
+        }
+
+        max_stage_summary = (
+            f"Cure: {max_cure_days}d (W{cure_week})"
+            if max_cure_days > 0
+            else f"Dry: {max_dry_days}d (W{dry_week})"
+            if max_dry_days > 0
+            else f"Veg: {max_veg_days}d (W{veg_week}), Flower: {max_flower_days}d (W{flower_week})"
+        )
+
+        drain_config = (
+            {
                 "enabled": growspace.drain_config.enabled,
                 "max_ec_delta": growspace.drain_config.max_ec_delta,
                 "target_runoff_percent": growspace.drain_config.target_runoff_percent,
@@ -238,32 +227,66 @@ class GrowspaceViewModelBuilder:
                 ],
             }
             if getattr(growspace, "drain_config", None)
-            else None,
-            "energy_tracking": {
-                "cycle_start_date": growspace.energy_tracking.cycle_start_date,
-                "cycle_start_kwh": growspace.energy_tracking.cycle_start_kwh,
-            }
-            if getattr(growspace, "energy_tracking", None)
-            else None,
-            "water_usage": {
+            else None
+        )
+
+        water_usage = (
+            {
                 "total_liters": growspace.water_usage.total_liters,
                 "cycle_start_date": growspace.water_usage.cycle_start_date,
                 "daily_readings": growspace.water_usage.daily_readings,
             }
             if getattr(growspace, "water_usage", None)
-            else None,
-            "grid": grid,
-            "air_exchange": air_exchange,
-            "sensor_types": self._get_sensor_types(growspace),
-            **(biological_metrics or {}),
-        }
-
-        # Add environment attributes
-        data.update(
-            self._get_environment_attributes(growspace, active_events=active_events)
+            else None
         )
 
-        return data
+        energy_tracking = (
+            {
+                "cycle_start_date": growspace.energy_tracking.cycle_start_date,
+                "cycle_start_kwh": growspace.energy_tracking.cycle_start_kwh,
+            }
+            if getattr(growspace, "energy_tracking", None)
+            else None
+        )
+
+        return {
+            "identity": {
+                "growspace_id": growspace.id,
+                "overview_entity_id": overview_entity_id,
+                "name": growspace.name,
+                "type": gs_type,
+                "notification_target": growspace.notification_target,
+            },
+            "grid": {
+                "rows": growspace.rows,
+                "plants_per_row": growspace.plants_per_row,
+                "total_plants": len(plants),
+                "dimensions": growspace.dimensions,
+                "grid": grid,
+            },
+            "environment": env_attrs,
+            "sensors": sensors,
+            "irrigation": {
+                "irrigation_config": irrigation_options,
+                "irrigation_strategy": irrigation_strategy_dict,
+                "drain_config": drain_config,
+                "water_usage": water_usage,
+            },
+            "metrics": {
+                **(biological_metrics or {}),
+                "max_veg_days": max_veg_days,
+                "max_flower_days": max_flower_days,
+                "max_dry_days": max_dry_days,
+                "max_cure_days": max_cure_days,
+                "veg_week": veg_week,
+                "flower_week": flower_week,
+                "dry_week": dry_week,
+                "cure_week": cure_week,
+                "max_stage_summary": max_stage_summary,
+                "air_exchange": air_exchange,
+                "energy_tracking": energy_tracking,
+            },
+        }
 
     def _build_rich_plant_grid(
         self, growspace: Growspace, plants: list[Plant]

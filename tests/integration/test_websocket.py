@@ -166,7 +166,7 @@ async def test_websocket_get_growspace_data_error(
 
         response = await client.receive_json()
         assert not response["success"]
-        assert response["error"]["code"] == "unknown_error"
+        assert response["error"]["code"] == "internal_error"
 
 
 async def test_websocket_get_event_log(
@@ -833,7 +833,7 @@ async def test_websocket_get_growspace_data_validation_error(
 
         response = await client.receive_json()
         assert not response["success"]
-        assert response["error"]["code"] == "not_loaded"
+        assert response["error"]["code"] == "coordinator_not_ready"
 
 
 async def test_websocket_get_vision_history_validation_error(
@@ -1261,7 +1261,6 @@ async def test_websocket_exceptions(
                 ATTR_PLANT_ID: "p1",
                 ATTR_NOTES: "n",
             },
-            {"id": 7, "type": WS_TYPE_GET_DATA, "growspace_id": "g1"},
         ]
 
         for cmd in commands:
@@ -1269,6 +1268,12 @@ async def test_websocket_exceptions(
             resp = await client.receive_json()
             assert not resp["success"]
             assert resp["error"]["code"] == "unknown_error"
+
+        # get_data uses typed error codes
+        await client.send_json({"id": 7, "type": WS_TYPE_GET_DATA, "growspace_id": "g1"})
+        resp = await client.receive_json()
+        assert not resp["success"]
+        assert resp["error"]["code"] == "internal_error"
 
     # Strain library exception
     # Create a mock library instance that raises on get_all

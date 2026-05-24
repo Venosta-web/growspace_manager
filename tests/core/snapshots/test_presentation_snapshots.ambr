@@ -4,202 +4,214 @@
 # ---
 # name: test_growspace_view_model_snapshot.1
   dict({
-    'active_events': dict({
-    }),
-    'air_exchange': None,
-    'camera_entities': list([
-    ]),
-    'circulation_fan_entities': list([
-    ]),
-    'cure_week': 0,
-    'daily_avg_hum': 55.0,
-    'daily_avg_temp': 24.5,
-    'dehumidifier_entities': list([
-    ]),
-    'dimensions': dict({
-      'depth': 120,
-      'height': 200,
-      'unit': 'cm',
-      'width': 120,
-    }),
-    'drain_config': dict({
-      'enabled': False,
-      'max_ec_delta': 0.7,
-      'readings': list([
-      ]),
-      'target_runoff_percent': 20.0,
-    }),
-    'drain_pump_state': None,
-    'drain_volume_sensors': list([
-    ]),
-    'dry_week': 0,
-    'electricity_cost_per_kwh': 0.0,
-    'energy_sensors': list([
-    ]),
-    'energy_tracking': dict({
-      'cycle_start_date': '',
-      'cycle_start_kwh': 0.0,
-    }),
-    'exhaust_fan_entities': list([
-    ]),
-    'feed_ec_sensors': list([
-    ]),
-    'flower_week': 0,
-    'grid': dict({
-      'position_1_1': dict({
-        'clone_days': 0,
-        'clone_start': None,
-        'col': 1,
-        'cure_days': 0,
-        'cure_start': None,
-        'days_since_last_watering': 0,
-        'dry_days': 0,
-        'dry_start': None,
-        'entity_id': 'sensor.p1_entity',
-        'flower_days': 0,
-        'flower_start': None,
-        'growspace_id': 'gs_test',
-        'harvest_metrics': dict({
-          'cbd_percentage': None,
-          'dry_weight': None,
-          'terpene_profile': None,
-          'thc_percentage': None,
-          'trim_weight': None,
-          'wet_weight': None,
-        }),
-        'last_ipm': None,
-        'last_ipm_type': None,
-        'last_trained': None,
-        'last_training_technique': None,
-        'last_watered': None,
-        'mother_days': 0,
-        'mother_start': None,
-        'phenotype': '',
-        'phenotype_score': dict({
-          'internodal_spacing': None,
-          'keeper': False,
-          'mold_resistance': None,
-          'resin': None,
-          'terpene_intensity': None,
-          'total_score': None,
-          'vigor': None,
-          'yield_potential': None,
-        }),
-        'plant_id': 'p1',
-        'position': '(1,1)',
-        'row': 1,
-        'seedling_days': 0,
-        'seedling_start': None,
-        'stage': 'veg',
-        'strain': 'Northern Lights',
-        'veg_days': 0,
-        'veg_start': None,
+    'environment': dict({
+      'active_events': dict({
       }),
-      'position_1_2': None,
-      'position_2_1': None,
-      'position_2_2': None,
-    }),
-    'growspace_id': 'gs_test',
-    'humidifier_control_enabled': False,
-    'humidifier_entities': list([
-    ]),
-    'humidifier_thresholds': dict({
-    }),
-    'humidity': None,
-    'humidity_sensor': 'sensor.hum',
-    'humidity_sensors': list([
-      'sensor.hum',
-    ]),
-    'irrigation_config': dict({
-      'auto_advance_p1_to_p2': False,
-      'auto_advance_p2_to_p3': False,
-      'daily_volume_cap_liters': None,
-      'drain_duration': None,
-      'drain_pump_entity': 'switch.drain',
-      'drain_times': list([
+      'camera_entities': list([
       ]),
-      'ec_target_ranges': list([
+      'circulation_fan_entities': list([
       ]),
-      'halt_on_runoff_ec_threshold': None,
-      'irrigation_duration': 120,
-      'irrigation_pump_entity': 'switch.pump',
-      'irrigation_times': list([
+      'dehumidifier_entities': list([
       ]),
-      'log_to_logbook': True,
-      'max_cycles_per_day': None,
-      'pause_on_low_tank': True,
-      'skip_during_dark': False,
-      'soil_trigger_percent': None,
-      'veg_day_hours': 12,
-    }),
-    'irrigation_flow_sensors': list([
-    ]),
-    'irrigation_pump_state': None,
-    'irrigation_strategy': dict({
-      'auto_light_tracking': False,
-      'detected_lights_on_time': None,
-      'enabled': False,
-      'lights_on_time': '06:00:00',
-      'maintenance_dryback_percent': 2.0,
-      'p0_duration_minutes': 60,
-      'p2_stop_before_lights_off_minutes': 120,
-      'shot_duration_seconds': 10,
-      'shot_interval_minutes': 15,
-      'target_vwc_percent': 55.0,
-    }),
-    'irrigation_tanks': list([
-    ]),
-    'light_sensors': list([
-    ]),
-    'max_cure_days': 0,
-    'max_dry_days': 0,
-    'max_flower_days': -1,
-    'max_stage_summary': 'Veg: 15d (W3), Flower: -1d (W0)',
-    'max_veg_days': 15,
-    'name': 'Test Room',
-    'notification_target': None,
-    'overview_entity_id': 'sensor.gs_test_overview',
-    'ph_sensors': list([
-    ]),
-    'plants_per_row': 2,
-    'power_sensors': list([
-    ]),
-    'rows': 2,
-    'runoff_ec_sensors': list([
-    ]),
-    'sensor_coordinates': dict({
-    }),
-    'sensor_groups': list([
-    ]),
-    'sensor_types': dict({
-      'sensor.hum': 'humidity',
-      'sensor.temp': 'temperature',
-      'sensor.vpd': 'vpd',
-      'switch.drain': 'drain_pump',
-      'switch.pump': 'irrigation_pump',
-    }),
-    'substrate_ec_sensors': list([
-    ]),
-    'substrate_temperature_sensors': list([
-    ]),
-    'temperature': None,
-    'temperature_sensor': 'sensor.temp',
-    'temperature_sensors': list([
-      'sensor.temp',
-    ]),
-    'total_plants': 1,
-    'type': 'normal',
-    'veg_week': 3,
-    'vpd': None,
-    'vpd_sensor': 'sensor.vpd',
-    'vpd_sensors': list([
-      'sensor.vpd',
-    ]),
-    'water_usage': dict({
-      'cycle_start_date': '',
-      'daily_readings': list([
+      'drain_pump_state': None,
+      'drain_volume_sensors': list([
       ]),
-      'total_liters': 0.0,
+      'electricity_cost_per_kwh': 0.0,
+      'energy_sensors': list([
+      ]),
+      'exhaust_fan_entities': list([
+      ]),
+      'feed_ec_sensors': list([
+      ]),
+      'humidifier_control_enabled': False,
+      'humidifier_entities': list([
+      ]),
+      'humidifier_thresholds': dict({
+      }),
+      'humidity': None,
+      'humidity_sensor': 'sensor.hum',
+      'humidity_sensors': list([
+        'sensor.hum',
+      ]),
+      'irrigation_flow_sensors': list([
+      ]),
+      'irrigation_pump_state': None,
+      'irrigation_tanks': list([
+      ]),
+      'light_sensors': list([
+      ]),
+      'ph_sensors': list([
+      ]),
+      'power_sensors': list([
+      ]),
+      'runoff_ec_sensors': list([
+      ]),
+      'substrate_ec_sensors': list([
+      ]),
+      'substrate_temperature_sensors': list([
+      ]),
+      'temperature': None,
+      'temperature_sensor': 'sensor.temp',
+      'temperature_sensors': list([
+        'sensor.temp',
+      ]),
+      'vpd': None,
+      'vpd_sensor': 'sensor.vpd',
+      'vpd_sensors': list([
+        'sensor.vpd',
+      ]),
+    }),
+    'grid': dict({
+      'dimensions': dict({
+        'depth': 120,
+        'height': 200,
+        'unit': 'cm',
+        'width': 120,
+      }),
+      'grid': dict({
+        'position_1_1': dict({
+          'clone_days': 0,
+          'clone_start': None,
+          'col': 1,
+          'cure_days': 0,
+          'cure_start': None,
+          'days_since_last_watering': 0,
+          'dry_days': 0,
+          'dry_start': None,
+          'entity_id': 'sensor.p1_entity',
+          'flower_days': 0,
+          'flower_start': None,
+          'growspace_id': 'gs_test',
+          'harvest_metrics': dict({
+            'cbd_percentage': None,
+            'dry_weight': None,
+            'terpene_profile': None,
+            'thc_percentage': None,
+            'trim_weight': None,
+            'wet_weight': None,
+          }),
+          'last_ipm': None,
+          'last_ipm_type': None,
+          'last_trained': None,
+          'last_training_technique': None,
+          'last_watered': None,
+          'mother_days': 0,
+          'mother_start': None,
+          'phenotype': '',
+          'phenotype_score': dict({
+            'internodal_spacing': None,
+            'keeper': False,
+            'mold_resistance': None,
+            'resin': None,
+            'terpene_intensity': None,
+            'total_score': None,
+            'vigor': None,
+            'yield_potential': None,
+          }),
+          'plant_id': 'p1',
+          'position': '(1,1)',
+          'row': 1,
+          'seedling_days': 0,
+          'seedling_start': None,
+          'stage': 'veg',
+          'strain': 'Northern Lights',
+          'veg_days': 0,
+          'veg_start': None,
+        }),
+        'position_1_2': None,
+        'position_2_1': None,
+        'position_2_2': None,
+      }),
+      'plants_per_row': 2,
+      'rows': 2,
+      'total_plants': 1,
+    }),
+    'identity': dict({
+      'growspace_id': 'gs_test',
+      'name': 'Test Room',
+      'notification_target': None,
+      'overview_entity_id': 'sensor.gs_test_overview',
+      'type': 'normal',
+    }),
+    'irrigation': dict({
+      'drain_config': dict({
+        'enabled': False,
+        'max_ec_delta': 0.7,
+        'readings': list([
+        ]),
+        'target_runoff_percent': 20.0,
+      }),
+      'irrigation_config': dict({
+        'auto_advance_p1_to_p2': False,
+        'auto_advance_p2_to_p3': False,
+        'daily_volume_cap_liters': None,
+        'drain_duration': None,
+        'drain_pump_entity': 'switch.drain',
+        'drain_times': list([
+        ]),
+        'ec_target_ranges': list([
+        ]),
+        'halt_on_runoff_ec_threshold': None,
+        'irrigation_duration': 120,
+        'irrigation_pump_entity': 'switch.pump',
+        'irrigation_times': list([
+        ]),
+        'log_to_logbook': True,
+        'max_cycles_per_day': None,
+        'pause_on_low_tank': True,
+        'skip_during_dark': False,
+        'soil_trigger_percent': None,
+        'veg_day_hours': 12,
+      }),
+      'irrigation_strategy': dict({
+        'auto_light_tracking': False,
+        'detected_lights_on_time': None,
+        'enabled': False,
+        'lights_on_time': '06:00:00',
+        'maintenance_dryback_percent': 2.0,
+        'p0_duration_minutes': 60,
+        'p2_stop_before_lights_off_minutes': 120,
+        'shot_duration_seconds': 10,
+        'shot_interval_minutes': 15,
+        'target_vwc_percent': 55.0,
+      }),
+      'water_usage': dict({
+        'cycle_start_date': '',
+        'daily_readings': list([
+        ]),
+        'total_liters': 0.0,
+      }),
+    }),
+    'metrics': dict({
+      'air_exchange': None,
+      'cure_week': 0,
+      'daily_avg_hum': 55.0,
+      'daily_avg_temp': 24.5,
+      'dry_week': 0,
+      'energy_tracking': dict({
+        'cycle_start_date': '',
+        'cycle_start_kwh': 0.0,
+      }),
+      'flower_week': 0,
+      'max_cure_days': 0,
+      'max_dry_days': 0,
+      'max_flower_days': -1,
+      'max_stage_summary': 'Veg: 15d (W3), Flower: -1d (W0)',
+      'max_veg_days': 15,
+      'veg_week': 3,
+    }),
+    'sensors': dict({
+      'sensor_coordinates': dict({
+      }),
+      'sensor_groups': list([
+      ]),
+      'sensor_types': dict({
+        'sensor.hum': 'humidity',
+        'sensor.temp': 'temperature',
+        'sensor.vpd': 'vpd',
+        'switch.drain': 'drain_pump',
+        'switch.pump': 'irrigation_pump',
+      }),
     }),
   })
 # ---
