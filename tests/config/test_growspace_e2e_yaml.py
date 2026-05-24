@@ -81,3 +81,26 @@ def test_vwc_sensor_helper_has_required_fields(
         assert field in entry, (
             f"input_number.{entity_id} is missing required field '{field}'"
         )
+
+
+@pytest.mark.parametrize(
+    ("slug", "expected_initial"),
+    [
+        ("vwc_flower", 55),
+        ("vwc_veg", 65),
+    ],
+)
+def test_substrate_moisture_initial_value(
+    slug: str, expected_initial: int, e2e_config: dict
+) -> None:
+    """substrate_moisture initial values must match the VWC strategy target.
+
+    vwc_flower targets 55% and vwc_veg targets 65% — these are the seeds the
+    coordinator needs to avoid reading None and aborting its monitoring loop.
+    """
+    entity_id = f"e2e_{slug}_substrate_moisture"
+    entry = e2e_config.get("input_number", {}).get(entity_id, {})
+    assert entry.get("initial") == expected_initial, (
+        f"input_number.{entity_id} must have initial: {expected_initial}, "
+        f"got: {entry.get('initial')}"
+    )
