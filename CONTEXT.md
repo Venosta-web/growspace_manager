@@ -14,6 +14,9 @@ An individual cannabis plant tracked from seedling through cure. The atomic unit
 **PlantStage**
 The lifecycle phase of a Plant. Ordered stages: `seedling → clone → mother → veg → flower → dry → cure`. The `dry` and `cure` stages are fully-fledged lifecycle stages, not post-harvest metadata.
 
+**Photoperiod Flip**
+The calendar day on which a Plant transitions from vegetative to flower stage — specifically, the day `flower_start == today`. The grower must change the light schedule to 12 hours on this day. When `IrrigationStrategy.auto_light_tracking` is enabled on the growspace, the integration will auto-adapt the light schedule from sensor data; otherwise the grower must update it manually. A notification is sent once per day per growspace when any plant's Photoperiod Flip day arrives.
+
 **HarvestMetrics**
 Final-outcome snapshot values recorded at the point of harvest: `wet_weight`, `dry_weight`, `trim_weight`, `thc_percentage`, `cbd_percentage`, `terpene_profile`. These are single snapshots, not time-series. Do not add in-progress drying observations here.
 

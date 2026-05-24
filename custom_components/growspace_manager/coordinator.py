@@ -40,6 +40,7 @@ from .models import (
 )
 from .notification_manager import NotificationManager
 from .notifications import NotificationSettingsManager
+from .photoperiod_flip_checker import PhotoperiodFlipChecker
 from .presentation import PlantViewModelBuilder
 from .service_coordinator_locator import ServiceCoordinatorLocator
 from .services.environment_reporter import EnvironmentReporter
@@ -357,6 +358,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         subsystem_manager: SubsystemManager,
         services: ServiceFacade,
         vision_scheduler: VisionCheckupScheduler,
+        photoperiod_checker: PhotoperiodFlipChecker,
     ) -> None:
         """Wire coordinator-self-dependent services. Called by CoordinatorBuilder after __init__."""
         self.view_model_builder = view_model_builder
@@ -375,6 +377,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self.subsystem_manager = subsystem_manager
         self.services = services
         self.vision_scheduler = vision_scheduler
+        self.photoperiod_checker = photoperiod_checker
         _LOGGER.info("--- COORDINATOR INITIALIZED WITH OPTIONS: %s ---", self.options)
 
     def on_nutrient_inventory_loaded(self, inventory: NutrientInventory) -> None:
@@ -594,6 +597,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             self.environment_reporter.unload()
         self.notification_manager.shutdown()
         self.vision_scheduler.async_stop()
+        self.photoperiod_checker.async_stop()
         await self.storage_manager.async_force_save()
 
     async def async_load(self) -> None:
@@ -623,6 +627,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
         # Schedule vision checkups for all loaded growspaces
         self.vision_scheduler.schedule_all_growspaces()
+        self.photoperiod_checker.schedule_all_growspaces()
 
         # Initialize environment reporter after data load
         if hasattr(self, "environment_reporter"):

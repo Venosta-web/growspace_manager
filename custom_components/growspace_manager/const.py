@@ -476,6 +476,7 @@ WARNING_COOLDOWN_MINUTES: Final = 120
 """Cooldown after sending a warning notification (per growspace)."""
 
 RECOVERY_COOLDOWN_MINUTES: Final = 10
+PHOTOPERIOD_FLIP_COOLDOWN_MINUTES: Final = 23 * 60
 """Cooldown after sending a recovery notification (per growspace)."""
 
 ESCALATION_DELAY_MINUTES: Final = 30
@@ -528,6 +529,7 @@ class NotificationTier(StrEnum):
     CRITICAL = "critical"
     WARNING = "warning"
     INFO = "info"
+    PHOTOPERIOD_FLIP = "photoperiod_flip"
 
 
 class GrowspaceSensorType(StrEnum):

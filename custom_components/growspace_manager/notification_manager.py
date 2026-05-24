@@ -29,6 +29,7 @@ from .const import (
     NOTIFICATION_DEBOUNCE_SECONDS,
     NOTIFICATION_GROUP,
     NOTIFICATION_ICON,
+    PHOTOPERIOD_FLIP_COOLDOWN_MINUTES,
     RECOVERY_COOLDOWN_MINUTES,
     WARNING_COOLDOWN_MINUTES,
     WARNING_PERSISTENCE_MINUTES,
@@ -91,7 +92,8 @@ class NotificationManager:
     _TIER_COOLDOWNS: ClassVar[dict[str, timedelta]] = {
         NotificationTier.CRITICAL: timedelta(minutes=CRITICAL_COOLDOWN_MINUTES),
         NotificationTier.WARNING: timedelta(minutes=WARNING_COOLDOWN_MINUTES),
-        "recovery": timedelta(minutes=RECOVERY_COOLDOWN_MINUTES),
+        "recovery": timedelta(minutes=RECOVERY_COOLDOWN_MINUTES),  # TODO: migrate to NotificationTier.RECOVERY
+        NotificationTier.PHOTOPERIOD_FLIP: timedelta(minutes=PHOTOPERIOD_FLIP_COOLDOWN_MINUTES),
     }
 
     def _set_cooldown(self, growspace_id: str, tier: str) -> None:

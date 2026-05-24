@@ -24,6 +24,7 @@ from .managers.plant import PlantManager
 from .managers.subsystem import SubsystemManager
 from .notification_manager import NotificationManager
 from .notifications import NotificationSettingsManager
+from .photoperiod_flip_checker import PhotoperiodFlipChecker
 from .presentation import PlantViewModelBuilder
 from .services.context import ServiceContext
 from .services.environment_reporter import EnvironmentReporter
@@ -192,6 +193,7 @@ class CoordinatorBuilder:
         subsystem_manager = SubsystemManager(self.hass, coordinator, self.entry)
         services = ServiceFacade(coordinator)
         vision_scheduler = VisionCheckupScheduler(self.hass, coordinator)
+        photoperiod_checker = PhotoperiodFlipChecker(self.hass, coordinator)
 
         # ------------------------------------------------------------------
         # Phase 4 – attach all services to the coordinator
@@ -213,6 +215,7 @@ class CoordinatorBuilder:
             subsystem_manager=subsystem_manager,
             services=services,
             vision_scheduler=vision_scheduler,
+            photoperiod_checker=photoperiod_checker,
         )
 
         _LOGGER.debug("GrowspaceCoordinator built successfully")
