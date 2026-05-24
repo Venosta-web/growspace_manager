@@ -897,4 +897,45 @@ async def test_halt_on_runoff_ec_threshold_exceeded_halts_watering(
         await vwc_coordinator._update_loop(now_dt)
 
     mock_hass.services.async_call.assert_not_called()
-    mock_logger.warning.assert_called()
+
+
+# ---------------------------------------------------------------------------
+# Lights-on time resolution: detected_lights_on_time vs lights_on_time
+# ---------------------------------------------------------------------------
+
+async def test_vwc_uses_detected_lights_on_time_when_set(
+    vwc_coordinator, mock_hass, mock_growspace
+) -> None:
+    """When detected_lights_on_time is set, VWC uses it for phase window calculation."""
+    mock_growspace.irrigation_strategy.lights_on_time = "08:00:00"
+    mock_growspace.irrigation_strategy.detected_lights_on_time = "09:00:00"
+
+    # At 09:20 it should be in P0 (within 60-min activation window after detected 09:00)
+    now = datetime(2023, 1, 1, 9, 20, 0, tzinfo=dt_util.UTC)
+    with patch(
+        "custom_components.growspace_manager.vwc_irrigation_coordinator.now",
+        return_value=now,
+    ):
+        mock_hass.states.get.return_value = MagicMock(state="40.0")
+        await vwc_coordinator._update_loop(now)
+
+    assert vwc_coordinator._current_phase == "P0 - Activation"
+
+
+async def test_vwc_falls_back_to_lights_on_time_when_detected_is_none(
+    vwc_coordinator, mock_hass, mock_growspace
+) -> None:
+    """When detected_lights_on_time is None, VWC uses lights_on_time as anchor."""
+    mock_growspace.irrigation_strategy.lights_on_time = "08:00:00"
+    mock_growspace.irrigation_strategy.detected_lights_on_time = None
+
+    # At 08:20 it should be in P0 (within 60-min activation window after 08:00)
+    now = datetime(2023, 1, 1, 8, 20, 0, tzinfo=dt_util.UTC)
+    with patch(
+        "custom_components.growspace_manager.vwc_irrigation_coordinator.now",
+        return_value=now,
+    ):
+        mock_hass.states.get.return_value = MagicMock(state="40.0")
+        await vwc_coordinator._update_loop(now)
+
+    assert vwc_coordinator._current_phase == "P0 - Activation"

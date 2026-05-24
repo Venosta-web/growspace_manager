@@ -124,12 +124,11 @@ class VWCIrrigationCoordinator(BaseIrrigationCoordinator):
     ) -> str:
         """Determine the current steering phase based on time of day."""
 
-        # Parse Lights On Time
+        lights_on_source = strategy.detected_lights_on_time or strategy.lights_on_time
         try:
-            lights_on = datetime.strptime(strategy.lights_on_time, "%H:%M:%S").time()
+            lights_on = datetime.strptime(lights_on_source, "%H:%M:%S").time()
         except ValueError:
-            # Fallback format check
-            lights_on = datetime.strptime(strategy.lights_on_time, "%H:%M").time()
+            lights_on = datetime.strptime(lights_on_source, "%H:%M").time()
 
         # Calculate Lights Off Time (derived from photoperiod settings in config)
         # Default to 12/12 if not set, or read from growspace options
