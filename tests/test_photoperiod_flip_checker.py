@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from contextlib import suppress
 from datetime import date, datetime, timezone
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -28,9 +29,23 @@ def mock_coordinator(mock_hass: MagicMock) -> MagicMock:
     coordinator.hass = mock_hass
     coordinator.growspaces = {}
     coordinator.notification_manager.async_send_notification = AsyncMock()
-    coordinator.config_entry.async_create_background_task = MagicMock()
+    
+    created_coroutines = []
+
+    def async_create_background_task(hass: HomeAssistant, coro: object, name: str) -> MagicMock:
+        created_coroutines.append(coro)
+        return MagicMock()
+
+    coordinator.config_entry.async_create_background_task = MagicMock(
+        side_effect=async_create_background_task
+    )
     coordinator.services.growspaces.get_growspace_plants = MagicMock(return_value=[])
-    return coordinator
+    
+    yield coordinator
+
+    for coro in created_coroutines:
+        with suppress(RuntimeError):
+            coro.close()
 
 
 def _make_growspace(
@@ -328,8 +343,8 @@ async def test_malformed_flower_start_logs_warning_and_continues(
     gs = _make_growspace()
     mock_coordinator.growspaces = {"tent1": gs}
     mock_coordinator.services.growspaces.get_growspace_plants.return_value = [
-        _make_plant("not-a-date"),        # malformed — should warn + continue
-        _make_plant(TODAY.isoformat()),   # valid — should trigger notification
+        _make_plant("not-a-date"),
+        _make_plant(TODAY.isoformat()),
     ]
 
     checker = PhotoperiodFlipChecker(mock_hass, mock_coordinator)
@@ -348,3 +363,82 @@ async def test_malformed_flower_start_logs_warning_and_continues(
 
     assert "Malformed flower_start" in caplog.text
     mock_coordinator.notification_manager.async_send_notification.assert_called_once()
+
+
+# ---------------------------------------------------------------------------
+# Coverage expansion
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_check_growspace_not_found(
+    mock_hass: MagicMock, mock_coordinator: MagicMock
+) -> None:
+    """Verify _check_growspace returns early if the specified growspace is not found."""
+    mock_coordinator.growspaces = {}
+    checker = PhotoperiodFlipChecker(mock_hass, mock_coordinator)
+
+    await checker._check_growspace("nonexistent_tent")
+
+    mock_coordinator.services.growspaces.get_growspace_plants.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_check_growspace_plant_without_flower_start(
+    mock_hass: MagicMock, mock_coordinator: MagicMock
+) -> None:
+    """Verify that a plant with empty/falsy flower_start is skipped and doesn't notify."""
+    gs = _make_growspace()
+    mock_coordinator.growspaces = {"tent1": gs}
+    mock_coordinator.services.growspaces.get_growspace_plants.return_value = [
+        _make_plant(None)
+    ]
+
+    checker = PhotoperiodFlipChecker(mock_hass, mock_coordinator)
+
+    with (
+        patch(
+            "custom_components.growspace_manager.photoperiod_flip_checker.async_track_point_in_utc_time"
+        ),
+        patch(
+            "custom_components.growspace_manager.photoperiod_flip_checker.ha_now",
+            return_value=TODAY_DT,
+        ),
+    ):
+        checker.schedule_growspace("tent1")
+        await _run_immediate_check(mock_coordinator)
+
+    mock_coordinator.notification_manager.async_send_notification.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_midnight_callback_handles_exception(
+    mock_hass: MagicMock, mock_coordinator: MagicMock
+) -> None:
+    """Verify that any exception in _check_growspace inside the callback is logged and rescheduling still occurs."""
+    gs = _make_growspace()
+    mock_coordinator.growspaces = {"tent1": gs}
+
+    checker = PhotoperiodFlipChecker(mock_hass, mock_coordinator)
+
+    with patch.object(checker, "_check_growspace", side_effect=ValueError("Test exception")):
+        callback = checker._create_callback("tent1")
+
+        with (
+            patch(
+                "custom_components.growspace_manager.photoperiod_flip_checker.async_track_point_in_utc_time"
+            ),
+            patch(
+                "custom_components.growspace_manager.photoperiod_flip_checker._LOGGER.exception"
+            ) as mock_log_exception,
+            patch(
+                "custom_components.growspace_manager.photoperiod_flip_checker.ha_now",
+                return_value=TODAY_DT,
+            ),
+        ):
+            await callback(TODAY_DT)
+
+            mock_log_exception.assert_called_once_with(
+                "Error during photoperiod flip check for %s", "tent1"
+            )
+            assert "tent1" in checker._unsub_timers
