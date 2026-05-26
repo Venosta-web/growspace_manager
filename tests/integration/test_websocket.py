@@ -1,7 +1,7 @@
 """Test the Growspace Manager WebSocket API."""
 
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import json
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -1095,10 +1095,10 @@ async def test_websocket_get_history_stats_sentinel(
             )
             response = await client.receive_json()
         assert response["success"]
-        # state1 should be skipped (at 12:00)
-        # 12:00 skipped. 12:05 to 13:00 (inclusive) = 12 points
-        assert len(response["result"]["sensor.test"]) == 12
-        assert response["result"]["sensor.test"][0]["lu"] == "2023-01-01T12:05:00+00:00"
+        # Sparse path (2 states <= 200): sentinel state is skipped, valid state preserved
+        # with its original timestamp unchanged
+        assert len(response["result"]["sensor.test"]) == 1
+        assert response["result"]["sensor.test"][0]["lu"] == "2023-01-01T12:04:00+00:00"
         assert response["result"]["sensor.test"][0]["s"] == "11"
 
 
@@ -1431,3 +1431,169 @@ async def test_websocket_downsample_dict_state(
             resp = await client.receive_json()
             assert resp["success"]
             assert resp["result"]["sensor.test"][0]["s"] == "25"
+
+
+async def test_sparse_entity_passthrough_returns_all_transitions(
+    hass: HomeAssistant, hass_ws_client: WebSocketGenerator
+) -> None:
+    """Sparse entities (<=200 changes) return every valid transition unsampled."""
+    async_register_websocket_api(hass)
+    client = await hass_ws_client(hass)
+
+    with patch(
+        "custom_components.growspace_manager.websocket.environment.get_instance"
+    ) as mock_recorder:
+        sparse_states = [
+            {"last_updated": "2023-01-01T10:00:00+00:00", "state": "on"},
+            {"last_updated": "2023-01-01T10:08:00+00:00", "state": "off"},
+            {"last_updated": "2023-01-01T10:45:00+00:00", "state": "on"},
+            {"last_updated": "2023-01-01T10:53:00+00:00", "state": "off"},
+        ]
+
+        async def mock_executor(func, *args, **kwargs):
+            if func.__name__ == "_get_history":
+                return {"switch.pump": sparse_states}
+            return func()
+
+        mock_recorder.return_value.async_add_executor_job.side_effect = mock_executor
+
+        with patch("homeassistant.components.recorder.history.get_significant_states"):
+            await client.send_json(
+                {
+                    "id": 1,
+                    "type": WS_TYPE_GET_HISTORY_STATS,
+                    "entity_ids": ["switch.pump"],
+                    "start_time": "2023-01-01T10:00:00+00:00",
+                    "end_time": "2023-01-01T11:00:00+00:00",
+                    "interval_minutes": 30,
+                }
+            )
+            resp = await client.receive_json()
+            assert resp["success"]
+            result = resp["result"]["switch.pump"]
+            assert len(result) == 4
+            assert result[0]["s"] == "on"
+            assert result[1]["s"] == "off"
+            assert result[2]["s"] == "on"
+            assert result[3]["s"] == "off"
+            assert "2023-01-01T10:08:00" in result[1]["lu"]
+
+
+async def test_sparse_entity_passthrough_filters_invalid_states(
+    hass: HomeAssistant, hass_ws_client: WebSocketGenerator
+) -> None:
+    """Sparse entity passthrough excludes unknown/unavailable states."""
+    async_register_websocket_api(hass)
+    client = await hass_ws_client(hass)
+
+    with patch(
+        "custom_components.growspace_manager.websocket.environment.get_instance"
+    ) as mock_recorder:
+        states_with_invalid = [
+            {"last_updated": "2023-01-01T10:00:00+00:00", "state": "unknown"},
+            {"last_updated": "2023-01-01T10:01:00+00:00", "state": "on"},
+            {"last_updated": "2023-01-01T10:05:00+00:00", "state": "unavailable"},
+            {"last_updated": "2023-01-01T10:10:00+00:00", "state": "off"},
+        ]
+
+        async def mock_executor(func, *args, **kwargs):
+            if func.__name__ == "_get_history":
+                return {"switch.pump": states_with_invalid}
+            return func()
+
+        mock_recorder.return_value.async_add_executor_job.side_effect = mock_executor
+
+        with patch("homeassistant.components.recorder.history.get_significant_states"):
+            await client.send_json(
+                {
+                    "id": 2,
+                    "type": WS_TYPE_GET_HISTORY_STATS,
+                    "entity_ids": ["switch.pump"],
+                    "start_time": "2023-01-01T10:00:00+00:00",
+                    "end_time": "2023-01-01T11:00:00+00:00",
+                    "interval_minutes": 30,
+                }
+            )
+            resp = await client.receive_json()
+            assert resp["success"]
+            result = resp["result"]["switch.pump"]
+            assert len(result) == 2
+            assert result[0]["s"] == "on"
+            assert result[1]["s"] == "off"
+
+
+async def test_dense_entity_uses_downsampler(
+    hass: HomeAssistant, hass_ws_client: WebSocketGenerator
+) -> None:
+    """Entities with >200 state changes continue using the binary-search downsampler."""
+    async_register_websocket_api(hass)
+    client = await hass_ws_client(hass)
+
+    with patch(
+        "custom_components.growspace_manager.websocket.environment.get_instance"
+    ) as mock_recorder:
+        base = datetime(2023, 1, 1, 0, 0, 0, tzinfo=timezone.utc)
+        dense_states = [
+            {
+                "last_updated": (base + timedelta(minutes=i)).isoformat(),
+                "state": "22.0",
+            }
+            for i in range(201)
+        ]
+
+        async def mock_executor(func, *args, **kwargs):
+            if func.__name__ == "_get_history":
+                return {"sensor.temp": dense_states}
+            return func()
+
+        mock_recorder.return_value.async_add_executor_job.side_effect = mock_executor
+
+        with patch("homeassistant.components.recorder.history.get_significant_states"):
+            await client.send_json(
+                {
+                    "id": 3,
+                    "type": WS_TYPE_GET_HISTORY_STATS,
+                    "entity_ids": ["sensor.temp"],
+                    "start_time": base.isoformat(),
+                    "end_time": (base + timedelta(minutes=200)).isoformat(),
+                    "interval_minutes": 30,
+                }
+            )
+            resp = await client.receive_json()
+            assert resp["success"]
+            result = resp["result"]["sensor.temp"]
+            assert len(result) < 201
+
+
+async def test_sparse_entity_empty_states_returns_empty(
+    hass: HomeAssistant, hass_ws_client: WebSocketGenerator
+) -> None:
+    """Empty state list returns empty result regardless of threshold."""
+    async_register_websocket_api(hass)
+    client = await hass_ws_client(hass)
+
+    with patch(
+        "custom_components.growspace_manager.websocket.environment.get_instance"
+    ) as mock_recorder:
+
+        async def mock_executor(func, *args, **kwargs):
+            if func.__name__ == "_get_history":
+                return {"switch.pump": []}
+            return func()
+
+        mock_recorder.return_value.async_add_executor_job.side_effect = mock_executor
+
+        with patch("homeassistant.components.recorder.history.get_significant_states"):
+            await client.send_json(
+                {
+                    "id": 4,
+                    "type": WS_TYPE_GET_HISTORY_STATS,
+                    "entity_ids": ["switch.pump"],
+                    "start_time": "2023-01-01T10:00:00+00:00",
+                    "end_time": "2023-01-01T11:00:00+00:00",
+                    "interval_minutes": 30,
+                }
+            )
+            resp = await client.receive_json()
+            assert resp["success"]
+            assert resp["result"]["switch.pump"] == []

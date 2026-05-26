@@ -373,3 +373,49 @@ async def test_async_steps_initial_show(handler: GrowspaceConfigHandler) -> None
     result = await handler.async_step_update_growspace(None)
     assert result["type"] == "form"
     assert result["step_id"] == "update_growspace"
+
+
+async def test_async_update_growspace_success(
+    handler: GrowspaceConfigHandler,
+) -> None:
+    """Test async_update_growspace helper method."""
+    coordinator = handler.config_entry.runtime_data
+    coordinator.services.growspaces.update_growspace = AsyncMock()
+
+    # Case 1: Input with dimensions and some empty value
+    user_input = {
+        "name": "Updated GS",
+        "rows": 5,
+        "plants_per_row": 5,
+        "length": 150,
+        "width": 150,
+        "height": 220,
+        "empty_field": "",
+    }
+    await handler.async_update_growspace("gs1", user_input)
+    coordinator.services.growspaces.update_growspace.assert_awaited_once_with(
+        "gs1",
+        name="Updated GS",
+        rows=5,
+        plants_per_row=5,
+        dimensions={
+            "length": 150,
+            "width": 150,
+            "height": 220,
+            "unit": "cm",
+        },
+    )
+
+    # Case 2: Input without dimensions
+    coordinator.services.growspaces.update_growspace.reset_mock()
+    user_input_no_dims = {
+        "name": "Updated GS No Dims",
+        "rows": 5,
+    }
+    await handler.async_update_growspace("gs1", user_input_no_dims)
+    coordinator.services.growspaces.update_growspace.assert_awaited_once_with(
+        "gs1",
+        name="Updated GS No Dims",
+        rows=5,
+    )
+

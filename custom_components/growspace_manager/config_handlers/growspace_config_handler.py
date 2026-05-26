@@ -362,11 +362,11 @@ class GrowspaceConfigHandler(BaseConfigHandler[dict[str, Any]]):
         update_data = {k: v for k, v in user_input.items() if v}
 
         # Handle dimensions update if present
-        if "length" in user_input and "width" in user_input and "height" in user_input:
+        if "length" in update_data and "width" in update_data and "height" in update_data:
             dimensions = {
-                "length": user_input.pop("length"),
-                "width": user_input.pop("width"),
-                "height": user_input.pop("height"),
+                "length": update_data.pop("length"),
+                "width": update_data.pop("width"),
+                "height": update_data.pop("height"),
                 "unit": "cm",
             }
             update_data["dimensions"] = dimensions

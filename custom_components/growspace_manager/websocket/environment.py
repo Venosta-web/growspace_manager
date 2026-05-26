@@ -26,6 +26,8 @@ from ._common import _EPOCH_SENTINEL, _extract_ts
 
 _LOGGER = logging.getLogger(__name__)
 
+_SPARSE_ENTITY_THRESHOLD = 200
+
 WS_TYPE_GET_HISTORY_STATS = f"{DOMAIN}/get_history_stats"
 SCHEMA_WS_GET_HISTORY_STATS = websocket_api.BASE_COMMAND_MESSAGE_SCHEMA.extend(
     {
@@ -205,9 +207,20 @@ async def _get_history_with_binary_search_downsample(
                 result[entity_id] = []
                 continue
 
-            result[entity_id] = _downsample_entity_binary_search(
-                states, start_time, end_time, interval_delta
-            )
+            if len(states) <= _SPARSE_ENTITY_THRESHOLD:
+                passthrough: list[dict[str, Any]] = []
+                for s in states:
+                    ts = _extract_ts(s)
+                    if ts == _EPOCH_SENTINEL:
+                        continue
+                    state_val = s.get("state") if isinstance(s, dict) else s.state
+                    if state_val and state_val not in ("unknown", "unavailable"):
+                        passthrough.append({"s": state_val, "lu": ts.isoformat()})
+                result[entity_id] = passthrough
+            else:
+                result[entity_id] = _downsample_entity_binary_search(
+                    states, start_time, end_time, interval_delta
+                )
 
         return result
 
