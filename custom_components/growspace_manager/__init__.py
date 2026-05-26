@@ -135,7 +135,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: GrowspaceConfigEntry) ->
             new_data.pop("pending_growspace")
             hass.config_entries.async_update_entry(entry, data=new_data)
 
-        except KeyError, RuntimeError:
+        except (KeyError, RuntimeError):
             _LOGGER.exception(
                 "Failed to create pending growspace %s",
                 pending.get("name", "unknown"),

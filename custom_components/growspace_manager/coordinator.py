@@ -504,7 +504,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             elif isinstance(gdata, dict):
                 try:
                     growspaces[gid] = Growspace.from_dict(gdata)
-                except ValueError, KeyError, TypeError, Exception:
+                except (ValueError, KeyError, TypeError, Exception):
                     # Catch mashumaro or other deserialization errors as "structure mismatch"
                     # We use Exception here to be safe but log specifically
                     _LOGGER.exception(
@@ -525,7 +525,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             elif isinstance(pdata, dict):
                 try:
                     plants[pid] = Plant.from_dict(pdata)
-                except ValueError, KeyError, TypeError, Exception:
+                except (ValueError, KeyError, TypeError, Exception):
                     _LOGGER.exception(
                         "Failed to load plant %s due to data structure mismatch",
                         pid,
