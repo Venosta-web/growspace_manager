@@ -18,7 +18,7 @@ from homeassistant.util.dt import utcnow
 
 if TYPE_CHECKING:
     from .coordinator import GrowspaceCoordinator
-from .const import ATTR_GROWSPACE_ID, CATEGORY_ALERT, EVENT_GROWSPACE_LOG_ENTRY
+from .const import ATTR_GROWSPACE_ID, CATEGORY_ALERT, CATEGORY_IRRIGATION_ERROR, EVENT_GROWSPACE_LOG_ENTRY
 from .exceptions import GrowspaceError
 from .models import Growspace, GrowspaceEvent
 
@@ -447,10 +447,10 @@ class BaseIrrigationCoordinator:
                     skip_reason,
                 )
                 await self._async_fire_low_tank_notification(tank_name, level)
-                if config.log_to_logbook:
-                    self._fire_logbook_event(
-                        f"{event_type.capitalize()} skipped — {skip_reason}",
-                    )
+                self._fire_logbook_event(
+                    f"{event_type.capitalize()} skipped — {skip_reason}",
+                    CATEGORY_IRRIGATION_ERROR,
+                )
                 return
 
         # Safety guards and dark skip apply only to irrigation cycles.
@@ -462,10 +462,10 @@ class BaseIrrigationCoordinator:
                     self._growspace_id,
                     skip_reason,
                 )
-                if config.log_to_logbook:
-                    self._fire_logbook_event(
-                        f"Irrigation skipped — {skip_reason}",
-                    )
+                self._fire_logbook_event(
+                    f"Irrigation skipped — {skip_reason}",
+                    CATEGORY_IRRIGATION_ERROR,
+                )
                 return
 
             # Dark skip: scheduled cycles only — manual runs bypass this check.
@@ -480,6 +480,7 @@ class BaseIrrigationCoordinator:
                 if config.log_to_logbook:
                     self._fire_logbook_event(
                         f"Irrigation skipped — {skip_reason}",
+                        CATEGORY_IRRIGATION_ERROR,
                     )
                 return
 
@@ -535,6 +536,10 @@ class BaseIrrigationCoordinator:
                 self._growspace_id,
                 pump_entity,
             )
+            self._fire_logbook_event(
+                f"{event_type.capitalize()} aborted — cycle was cancelled",
+                CATEGORY_IRRIGATION_ERROR,
+            )
         except (
             AttributeError,
             KeyError,
@@ -548,6 +553,10 @@ class BaseIrrigationCoordinator:
                 self._growspace_id,
                 pump_entity,
                 e,
+            )
+            self._fire_logbook_event(
+                f"{event_type.capitalize()} failed — {e}",
+                CATEGORY_IRRIGATION_ERROR,
             )
         finally:
             # Record end time BEFORE turning off (to exclude turn-off latency)
@@ -613,13 +622,7 @@ class BaseIrrigationCoordinator:
                         reasons=reasons,
                     )
                     self._main_coordinator.add_event(self._growspace_id, event)
-            except (
-                AttributeError,
-                KeyError,
-                ValueError,
-                ServiceValidationError,
-                GrowspaceError,
-            ) as e:
+            except Exception as e:  # noqa: BLE001
                 _LOGGER.error("Failed to log %s event: %s", event_type, e)
 
             _LOGGER.info(

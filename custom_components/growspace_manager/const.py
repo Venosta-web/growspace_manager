@@ -685,6 +685,7 @@ CATEGORY_DEHUMIDIFIER = "dehumidifier"
 CATEGORY_HUMIDIFIER = "humidifier"
 CATEGORY_MILESTONE = "milestone"
 CATEGORY_ALERT = "alert"
+CATEGORY_IRRIGATION_ERROR = "irrigation_error"
 
 
 # Plant stages

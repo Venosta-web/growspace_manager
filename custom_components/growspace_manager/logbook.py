@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING, Any
 from homeassistant.components.logbook import LOGBOOK_ENTRY_MESSAGE, LOGBOOK_ENTRY_NAME
 from homeassistant.core import HomeAssistant, callback
 
-from .const import CATEGORY_ALERT, CATEGORY_DEHUMIDIFIER, CATEGORY_HUMIDIFIER, CATEGORY_MILESTONE, CATEGORY_NOTE, DOMAIN, EVENT_GROWSPACE_LOG_ENTRY
+from .const import CATEGORY_ALERT, CATEGORY_DEHUMIDIFIER, CATEGORY_HUMIDIFIER, CATEGORY_IRRIGATION_ERROR, CATEGORY_MILESTONE, CATEGORY_NOTE, DOMAIN, EVENT_GROWSPACE_LOG_ENTRY
 
 if TYPE_CHECKING:
     from homeassistant.components.logbook import LazyEventPartialState
@@ -48,6 +48,8 @@ def async_describe_events(
                 return _describe_milestone_event(data)
             case category if category == CATEGORY_ALERT:
                 return _describe_alert_event(data)
+            case category if category == CATEGORY_IRRIGATION_ERROR:
+                return _describe_irrigation_error_event(data)
             case "environment":
                 return _describe_environment_event(data)
             case _:
@@ -162,6 +164,14 @@ def _describe_alert_event(data: dict[str, Any]) -> dict[str, Any]:
     if reasons:
         message += f" • {reasons[0]}"
     return {LOGBOOK_ENTRY_NAME: f"{label} Alert", LOGBOOK_ENTRY_MESSAGE: message}
+
+
+def _describe_irrigation_error_event(data: dict[str, Any]) -> dict[str, Any]:
+    """Describe an irrigation skip or failure event."""
+    return {
+        LOGBOOK_ENTRY_NAME: "Irrigation",
+        LOGBOOK_ENTRY_MESSAGE: data.get("message", "Irrigation event"),
+    }
 
 
 def _describe_environment_event(data: dict[str, Any]) -> dict[str, Any]:

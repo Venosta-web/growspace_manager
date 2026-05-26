@@ -48,6 +48,23 @@ If `auto_light_tracking` is enabled the system will auto-adapt its derived light
 
 A pulsing growspace chip (same component as other header chips) that appears on the day `flower_start` is reached for any plant in the growspace. Persists until explicitly dismissed by the user; dismiss state is keyed to `growspaceId + flower_start` so it auto-resets if the transition date is changed. Clicking it opens the Irrigation Dialog on the Steering tab and scrolls `lights_on_time` into focus.
 
+## Irrigation Failure Event
+
+A logbook event (category `irrigation_error`) fired when an irrigation or drain cycle cannot complete. Three sub-cases:
+
+- **Low tank skip** — `pause_on_low_tank` is enabled and a configured tank is below its warning level. Always logged, regardless of `log_to_logbook`.
+- **Safety guard skip** — the daily cycle count or volume limit has been reached. Always logged, regardless of `log_to_logbook`.
+- **Cycle abort** — the running cycle was cancelled mid-execution. Always logged.
+- **Cycle error** — a service call or hardware exception occurred during the cycle. Always logged, message includes `str(exception)`.
+
+Contrast with **dark period skip** (category `irrigation_error`, gated by `log_to_logbook`) — fires when a scheduled cycle is suppressed because lights are off. This is expected, working-as-intended behaviour.
+
+Success events (irrigation started, irrigation completed) use `CATEGORY_ALERT` and are gated by `log_to_logbook`.
+
+## IrrigationConfig.log_to_logbook
+
+Boolean flag (default `True`) that gates verbose operational logbook entries: successful starts, successful completions, and dark-period skips. It does **not** gate failure events — low tank, safety guard, aborts, and exceptions always appear in the logbook regardless of this flag.
+
 ## Simulation Layer
 
 HA `input_number` + `template sensor` entities used as stand-ins for real hardware sensors.

@@ -53,7 +53,13 @@ def mock_hass(mock_main_coordinator) -> MagicMock:
     hass.async_create_task = asyncio.create_task
     type(hass).loop = property(lambda self: asyncio.get_running_loop())
     hass.data = {DOMAIN: {}}
+    # Default switch state to "on" so _async_wait_for_switch_state returns
+    # immediately; tests that need a different state override states.get locally.
+    mock_state = MagicMock()
+    mock_state.state = "on"
     hass.states = MagicMock()
+    hass.states.get.return_value = mock_state
+    hass.bus = MagicMock()
     return hass
 
 

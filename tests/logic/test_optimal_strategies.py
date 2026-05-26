@@ -1,7 +1,13 @@
-from unittest.mock import MagicMock
+"""Tests for optimal strategies and base evaluator strategy."""
+
+from typing import Any
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
+from custom_components.growspace_manager.strategies.evaluator_strategy import (
+    BayesianEvaluatorStrategy,
+)
 from custom_components.growspace_manager.strategies.optimal import (
     OptimalConditionsEvaluatorStrategy,
 )
@@ -19,8 +25,6 @@ def mock_sensor() -> MagicMock:
 @pytest.mark.asyncio
 async def test_optimal_conditions_notification(mock_sensor) -> None:
     """Test notification title generation for falling edge."""
-    from unittest.mock import AsyncMock
-
     mock_growspace = MagicMock()
     mock_growspace.name = "GTent"
 
@@ -52,3 +56,28 @@ async def test_optimal_conditions_notification(mock_sensor) -> None:
     title_msg_fallback = strategy_no_growspace.get_notification_title_message(False, [])
     assert title_msg_fallback is not None
     assert "Optimal Conditions Lost: Unknown" in title_msg_fallback[0]
+
+
+class DummyEvaluatorStrategy(BayesianEvaluatorStrategy):
+    """Dummy strategy to test the base class methods."""
+
+    async def async_evaluate(
+        self, state: Any
+    ) -> tuple[Any, Any]:
+        """Implement abstract method."""
+        return [], []
+
+
+def test_base_evaluator_strategy_notification_default(mock_sensor: MagicMock) -> None:
+    """Test that the default base class implementation of get_notification_title_message returns None."""
+    strategy = DummyEvaluatorStrategy(
+        env_config=mock_sensor.env_config,
+        analyze_trend=AsyncMock(return_value={"trend": "stable", "crossed_threshold": False}),
+        get_state=MagicMock(return_value=None),
+        get_growspace=MagicMock(return_value=None),
+        get_notification_message=MagicMock(return_value="msg"),
+    )
+
+    assert strategy.get_notification_title_message(True, []) is None
+
+
