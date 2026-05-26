@@ -24,7 +24,7 @@ def test_coordinator_has_vision_scheduler(hass: HomeAssistant) -> None:
     entry.async_create_background_task = MagicMock()
 
     strain_library = MagicMock()
-    coordinator = GrowspaceCoordinator(
+    coordinator = GrowspaceCoordinator.build(
         hass,
         entry,
         data={},

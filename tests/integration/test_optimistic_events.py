@@ -13,11 +13,10 @@ def mock_coordinator(hass: HomeAssistant):
     entry = MockConfigEntry(domain="growspace_manager", data={}, options={})
     entry.add_to_hass(hass)
 
-    coordinator = GrowspaceCoordinator(hass, entry, data={})
+    coordinator = GrowspaceCoordinator.build(hass, entry, data={})
 
-    # Mock lifecycle manager and inject it into the service
-    coordinator.lifecycle_manager = AsyncMock()
-    coordinator.plant_manager.lifecycle_manager = coordinator.lifecycle_manager
+    # Mock lifecycle manager
+    coordinator.plant_manager.lifecycle_manager = AsyncMock()
 
     # Mock plant_view_builder behavior
     coordinator.plant_manager.plant_view_builder = MagicMock()
@@ -45,7 +44,9 @@ async def test_async_add_plant_fires_event(
         stage="veg",
         veg_start="2023-01-01",
     )
-    mock_coordinator.lifecycle_manager.async_add_plant.return_value = plant_data
+    mock_coordinator.plant_manager.lifecycle_manager.async_add_plant.return_value = (
+        plant_data
+    )
 
     # Capture events
     fired_events = []
@@ -85,7 +86,9 @@ async def test_async_update_plant_fires_event(
         stage="flower",
     )
     mock_coordinator.data_repository.add_plant(updated_plant)
-    mock_coordinator.lifecycle_manager.async_update_plant.return_value = updated_plant
+    mock_coordinator.plant_manager.lifecycle_manager.async_update_plant.return_value = (
+        updated_plant
+    )
 
     fired_events = []
 
@@ -119,7 +122,9 @@ async def test_async_remove_plant_fires_event(
         plant_id="test_plant", growspace_id="test_gs", strain="Test Strain"
     )
     mock_coordinator.data_repository.add_plant(plant)
-    mock_coordinator.lifecycle_manager.async_remove_plant.return_value = True
+    mock_coordinator.plant_manager.lifecycle_manager.async_remove_plant.return_value = (
+        True
+    )
 
     fired_events = []
 

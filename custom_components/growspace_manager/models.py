@@ -150,7 +150,7 @@ def _sanitize_numeric_fields(cls: type, data: dict[str, Any]) -> dict[str, Any]:
             elif f.type == "int" and isinstance(val, (float, str)):
                 try:
                     data[f.name] = int(float(val))
-                except ValueError, TypeError:
+                except (ValueError, TypeError):
                     # On conversion error, fall back to the field's default or 0.
                     if f.default is not MISSING:
                         data[f.name] = f.default
@@ -204,6 +204,8 @@ class IrrigationStrategy(BaseModel):
     maintenance_dryback_percent: float = 2.0
     shot_duration_seconds: int = 10
     shot_interval_minutes: int = 15
+    auto_light_tracking: bool = False
+    detected_lights_on_time: str | None = None
 
 
 @dataclass(slots=True)
@@ -309,6 +311,7 @@ class EnvironmentConfig(BaseModel):
 
     substrate_temperature_sensors: list[str] = field(default_factory=list)
     camera_entities: list[str] = field(default_factory=list)
+    lung_room_temp_sensors: list[str] = field(default_factory=list)
     snapshot_interval_hours: int = 24
     ph_sensors: list[str] = field(default_factory=list)
     feed_ec_sensors: list[str] = field(default_factory=list)
@@ -466,6 +469,15 @@ class EnvironmentConfig(BaseModel):
 
 
 @dataclass(slots=True)
+class ECTargetRange(BaseModel):
+    """Per-stage feed EC target range for irrigation nutrient targeting."""
+
+    stage: str
+    feed_ec_min: float = 0.0
+    feed_ec_max: float = 0.0
+
+
+@dataclass(slots=True)
 class IrrigationConfig(BaseModel):
     """Configuration for irrigation and drain pumps and schedules."""
 
@@ -477,6 +489,18 @@ class IrrigationConfig(BaseModel):
     drain_times: list[IrrigationScheduleItem] = field(default_factory=list)
     veg_day_hours: int = 12
     pump_flow_rate_ml_per_sec: float = 0.0
+    soil_trigger_percent: float | None = None
+    daily_volume_cap_liters: float | None = None
+    max_cycles_per_day: int | None = None
+    skip_during_dark: bool = False
+    pause_on_low_tank: bool = True
+    log_to_logbook: bool = True
+    ec_target_ranges: list[ECTargetRange] = field(default_factory=list)
+    auto_advance_p1_to_p2: bool = False
+    auto_advance_p2_to_p3: bool = False
+    halt_on_runoff_ec_threshold: float | None = None
+    active_steering_phase: str = 'p2'
+
 
 
 @dataclass(slots=True)
@@ -653,7 +677,7 @@ class Growspace(BaseModel):
             if field_name in data:
                 try:
                     data[field_name] = int(float(data[field_name]))
-                except ValueError, TypeError:
+                except (ValueError, TypeError):
                     data[field_name] = 3  # Safe default
 
         # Migration: Fix legacy irrigation schedule format
@@ -666,7 +690,7 @@ class Growspace(BaseModel):
                     irr_config["veg_day_hours"] = int(
                         float(irr_config["veg_day_hours"])
                     )
-                except ValueError, TypeError:
+                except (ValueError, TypeError):
                     irr_config["veg_day_hours"] = 12
 
             # Migrate irrigation_times and drain_times
@@ -690,7 +714,7 @@ class Growspace(BaseModel):
                                     item["duration"] = int(
                                         float(item.pop("duration_seconds"))
                                     )
-                                except ValueError, TypeError:
+                                except (ValueError, TypeError):
                                     item["duration"] = 60
                             # Remove stale duration_seconds if both keys exist
                             elif "duration_seconds" in item and "duration" in item:
@@ -700,7 +724,7 @@ class Growspace(BaseModel):
                             if "duration" in item:
                                 try:
                                     item["duration"] = int(float(item["duration"]))
-                                except ValueError, TypeError:
+                                except (ValueError, TypeError):
                                     item["duration"] = 60
 
                         new_list.append(item)
@@ -723,7 +747,7 @@ class Growspace(BaseModel):
                 if f in strat:
                     try:
                         strat[f] = int(float(strat[f]))
-                    except ValueError, TypeError:
+                    except (ValueError, TypeError):
                         # Remove invalid value to let dataclass default take over
                         if f in strat:
                             del strat[f]
@@ -876,7 +900,7 @@ class Plant(BaseModel):
             if field_name in data:
                 try:
                     data[field_name] = int(float(data[field_name]))
-                except ValueError, TypeError:
+                except (ValueError, TypeError):
                     data[field_name] = 1  # Safe default
 
         # Migration: old 'scores' dict → new 'phenotype_score' with renamed fields.

@@ -45,12 +45,6 @@ async def test_coordinator_getters_setters(coordinator: GrowspaceCoordinator) ->
     coordinator.notification_state.enabled = {"gs1": True}
     assert coordinator.notifications_enabled == {"gs1": True}
 
-    # Line 234: growspace_service getter
-    assert coordinator.growspace_service == coordinator.growspace_manager
-
-    # Line 239: plant_service getter
-    assert coordinator.plant_service == coordinator.plant_manager
-
 
 @pytest.mark.asyncio
 async def test_nutrient_inventory_loaded(coordinator: GrowspaceCoordinator) -> None:
@@ -75,9 +69,9 @@ async def test_date_helper_delegation(coordinator: GrowspaceCoordinator) -> None
 async def test_update_special_growspace_name(coordinator: GrowspaceCoordinator) -> None:
     """Test _update_special_growspace_name delegation."""
     # Line 447
-    coordinator._special_growspace_manager.update_special_growspace_name = MagicMock()
-    coordinator._update_special_growspace_name("gs1", "New Name")
-    coordinator._special_growspace_manager.update_special_growspace_name.assert_called_once_with(
+    coordinator.growspace_manager.update_special_growspace_name = MagicMock()
+    coordinator.growspace_manager.update_special_growspace_name("gs1", "New Name")
+    coordinator.growspace_manager.update_special_growspace_name.assert_called_once_with(
         "gs1", "New Name"
     )
 
@@ -122,7 +116,9 @@ async def test_async_update_growspace_delegation(
     coordinator.data_repository.add_growspace(gs)
     coordinator.growspace_manager.update_growspace = AsyncMock(return_value=gs)
 
-    result = await coordinator.services.growspaces.update_growspace("gs1", name="New Name")
+    result = await coordinator.services.growspaces.update_growspace(
+        "gs1", name="New Name"
+    )
 
     coordinator.growspace_manager.update_growspace.assert_called_once_with(
         "gs1", name="New Name"
@@ -138,7 +134,10 @@ async def test_strain_library_coverage(coordinator: GrowspaceCoordinator) -> Non
     coordinator.strain_library.get_all.return_value = {"Strain A": {}, "Strain B": {}}
 
     assert coordinator.services.config.get_strain_options() == ["Strain A", "Strain B"]
-    assert coordinator.services.config.export_strain_library() == ["Strain A", "Strain B"]
+    assert coordinator.services.config.export_strain_library() == [
+        "Strain A",
+        "Strain B",
+    ]
 
     # Line 1466-1468
     coordinator.strain_library.clear = AsyncMock(return_value=2)
@@ -158,7 +157,7 @@ async def test_fire_event_coverage(
     # Lines 1578-1579
     events = async_capture_events(hass, "growspace_manager_updated")
 
-    coordinator.fire_event("test_event", {"foo": "bar"})
+    coordinator.services.fire_event("test_event", {"foo": "bar"})
     await hass.async_block_till_done()
 
     assert len(events) == 1

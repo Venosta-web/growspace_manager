@@ -94,15 +94,15 @@ async def test_remove_plant_entities(mock_coordinator) -> None:
 async def test_ipm_management(mock_coordinator) -> None:
     """Test IPM preset management services."""
     facade = ServiceFacade(mock_coordinator)
-    mock_coordinator._ipm_service.async_save_ipm_preset = AsyncMock()
-    mock_coordinator._ipm_service.async_remove_ipm_preset = AsyncMock()
+    mock_coordinator.save_ipm_preset = AsyncMock()
+    mock_coordinator.remove_ipm_preset = AsyncMock()
     mock_coordinator._ipm_service.async_apply_ipm = AsyncMock()
 
     await facade.config.save_ipm_preset("Test", "Foliar", [])
-    mock_coordinator._ipm_service.async_save_ipm_preset.assert_called_once()
+    mock_coordinator.save_ipm_preset.assert_called_once()
 
     await facade.config.remove_ipm_preset("preset_1")
-    mock_coordinator._ipm_service.async_remove_ipm_preset.assert_called_once_with(
+    mock_coordinator.remove_ipm_preset.assert_called_once_with(
         "preset_1"
     )
 

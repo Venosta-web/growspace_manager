@@ -16,8 +16,16 @@ from ..const import (
     SPECIAL_GROWSPACES,
     VERSION,
 )
+from ..domain.stage_calculator import determine_coordinator_stage
 from ..exceptions import GrowspaceNotFoundError
-from ..models import DrainReading, Growspace, IrrigationConfig, Subarea, WaterUsageData
+from ..models import (
+    DrainReading,
+    ECTargetRange,
+    Growspace,
+    IrrigationConfig,
+    Subarea,
+    WaterUsageData,
+)
 from ..tank_water_tracker import TankWaterTracker
 from ..utils import generate_growspace_overview_unique_id
 
@@ -46,6 +54,10 @@ class GrowspaceFacade:
     def get_growspace(self, growspace_id: str) -> Growspace | None:
         """Return a growspace by ID."""
         return self._coordinator.data_repository.get_growspace(growspace_id)
+
+    def get_all_growspaces(self) -> dict[str, Growspace]:
+        """Return all growspaces keyed by ID."""
+        return {gs.id: gs for gs in self._coordinator.data_repository.get_all_growspaces()}
 
     def get_sorted_growspace_options(self) -> list[tuple[str, str]]:
         """Return a sorted list of (growspace_id, name) tuples."""
@@ -211,10 +223,9 @@ class GrowspaceFacade:
             for k, v in user_input.items()
             if k not in [ATTR_IRRIGATION_TIMES, ATTR_DRAIN_TIMES, "growspace_id_read_only"]
         }
-        if not updated_settings.get("irrigation_pump_entity"):
-            updated_settings["irrigation_pump_entity"] = None
-        if not updated_settings.get("drain_pump_entity"):
-            updated_settings["drain_pump_entity"] = None
+        for pump_key in ("irrigation_pump_entity", "drain_pump_entity"):
+            if pump_key in updated_settings and not updated_settings[pump_key]:
+                updated_settings[pump_key] = None
         for k, v in updated_settings.items():
             if hasattr(growspace.irrigation_config, k):
                 setattr(growspace.irrigation_config, k, v)
@@ -230,6 +241,35 @@ class GrowspaceFacade:
     ) -> None:
         """Set irrigation settings for a growspace."""
         await self.update_irrigation_config(growspace_id, settings)
+
+    async def set_irrigation_strategy(
+        self, growspace_id: str, strategy: dict[str, Any]
+    ) -> None:
+        """Set irrigation strategy for a growspace."""
+        await self.update_irrigation_config(growspace_id, strategy)
+
+    async def set_ec_target_range(
+        self,
+        growspace_id: str,
+        stage: str,
+        feed_ec_min: float,
+        feed_ec_max: float,
+    ) -> None:
+        """Upsert a feed EC target range for a specific stage."""
+        growspace = self._coordinator.growspaces.get(growspace_id)
+        if not growspace:
+            raise GrowspaceNotFoundError(f"Growspace {growspace_id} not found")
+        ranges = growspace.irrigation_config.ec_target_ranges
+        for existing in ranges:
+            if existing.stage == stage:
+                existing.feed_ec_min = feed_ec_min
+                existing.feed_ec_max = feed_ec_max
+                break
+        else:
+            ranges.append(ECTargetRange(stage=stage, feed_ec_min=feed_ec_min, feed_ec_max=feed_ec_max))
+        self._coordinator.cache.invalidate(growspace_id)
+        await self._coordinator.async_commit()
+        await self._coordinator.async_request_refresh()
 
     async def add_irrigation_schedule_item(
         self,
@@ -418,8 +458,19 @@ class GrowspaceFacade:
             _LOGGER.debug(
                 "Creating new TankWaterTracker for %s in %s", tank_entity, growspace_id
             )
-            gs_trackers[tank_entity] = TankWaterTracker(tank)
+
+            def _stage_resolver(gid: str = growspace_id) -> str:
+                plants = self.get_growspace_plants(gid)
+                return determine_coordinator_stage(plants).value
+
+            gs_trackers[tank_entity] = TankWaterTracker(tank, stage_resolver=_stage_resolver)
         return gs_trackers[tank_entity]
+
+    def get_all_trackers_for_growspace(
+        self, growspace_id: str
+    ) -> dict[str, TankWaterTracker]:
+        """Return all cached tank water trackers for a growspace."""
+        return self._tank_water_trackers.get(growspace_id, {})
 
     async def async_unsubscribe_all_trackers(self) -> None:
         """Unsubscribe all tank water trackers on shutdown."""

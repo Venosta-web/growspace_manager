@@ -373,7 +373,7 @@ async def test_vpd_sensor_added_to_hass_weather(setup_sensor_for_test):
     setup_sensor_for_test(sensor)
 
     with patch(
-        "custom_components.growspace_manager.sensor.async_track_state_change_event"
+        "custom_components.growspace_manager.sensor.vpd.async_track_state_change_event"
     ) as mock_track:
         await sensor.async_added_to_hass()
         mock_track.assert_called_once()
@@ -416,10 +416,10 @@ async def test_update_growspace_entities_new_vpd(hass: HomeAssistant):
 
     with (
         patch(
-            "custom_components.growspace_manager.sensor._async_create_derivative_sensors",
+            "custom_components.growspace_manager.sensor._setup._async_create_derivative_sensors",
             new_callable=AsyncMock,
         ),
-        patch("custom_components.growspace_manager.sensor.GrowspaceOverviewSensor"),
+        patch("custom_components.growspace_manager.sensor._setup.GrowspaceOverviewSensor"),
     ):
         await _update_growspace_entities(
             hass,
@@ -470,7 +470,7 @@ async def test_growspace_overview_sensor_added_to_hass_tracking(setup_sensor_for
     setup_sensor_for_test(sensor)
 
     with patch(
-        "custom_components.growspace_manager.sensor.async_track_state_change_event"
+        "custom_components.growspace_manager.sensor.overview.async_track_state_change_event"
     ) as mock_track:
         await sensor.async_added_to_hass()
         mock_track.assert_called_once()

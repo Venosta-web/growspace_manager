@@ -91,6 +91,7 @@ DEFAULT_TARGET_RUNOFF_PERCENT: Final = 20.0
 # Multi-Device Config Keys (new)
 CONF_SUBSTRATE_TEMP_SENSORS = "substrate_temperature_sensors"
 CONF_CAMERA_ENTITIES = "camera_entities"
+CONF_LUNG_ROOM_TEMP_SENSORS = "lung_room_temp_sensors"
 CONF_SNAPSHOT_INTERVAL = "snapshot_interval_hours"
 CONF_POWER_SENSORS = "power_sensors"
 CONF_ENERGY_SENSORS = "energy_sensors"
@@ -289,6 +290,7 @@ METRIC_HUMIDITY = "humidity"
 # Attributes
 ATTR_GROWSPACE_ID = "growspace_id"
 ATTR_PLANT_ID = "plant_id"
+ATTR_PLANT_IDS = "plant_ids"
 ATTR_STRAIN = "strain"
 ATTR_PHENOTYPE = "phenotype"
 ATTR_BREEDER = "breeder"
@@ -362,6 +364,10 @@ ATTR_WATER_EFFICIENCY = "water_efficiency"
 # EC Ramp Curve Attributes
 ATTR_EC_MIN = "ec_min"
 ATTR_EC_MAX = "ec_max"
+
+# EC Target Range Attributes
+ATTR_FEED_EC_MIN = "feed_ec_min"
+ATTR_FEED_EC_MAX = "feed_ec_max"
 ATTR_CURRENT_WEEK = "current_week"
 ATTR_CURVE_NAME = "curve_name"
 ATTR_LAST_MEASURED_EC = "last_measured_ec"
@@ -471,6 +477,7 @@ WARNING_COOLDOWN_MINUTES: Final = 120
 """Cooldown after sending a warning notification (per growspace)."""
 
 RECOVERY_COOLDOWN_MINUTES: Final = 10
+PHOTOPERIOD_FLIP_COOLDOWN_MINUTES: Final = 23 * 60
 """Cooldown after sending a recovery notification (per growspace)."""
 
 ESCALATION_DELAY_MINUTES: Final = 30
@@ -523,6 +530,7 @@ class NotificationTier(StrEnum):
     CRITICAL = "critical"
     WARNING = "warning"
     INFO = "info"
+    PHOTOPERIOD_FLIP = "photoperiod_flip"
 
 
 class GrowspaceSensorType(StrEnum):
@@ -573,10 +581,12 @@ class GrowspaceService(StrEnum):
     REMOVE_ENVIRONMENT = "remove_environment"
     SET_DEHUMIDIFIER_CONTROL = "set_dehumidifier_control"
     SET_IRRIGATION_SETTINGS = "set_irrigation_settings"
+    SET_IRRIGATION_STRATEGY = "set_irrigation_strategy"
     ADD_IRRIGATION_TIME = "add_irrigation_time"
     REMOVE_IRRIGATION_TIME = "remove_irrigation_time"
     ADD_DRAIN_TIME = "add_drain_time"
     REMOVE_DRAIN_TIME = "remove_drain_time"
+    RUN_IRRIGATION_CYCLE = "run_irrigation_cycle"
     DEBUG_LIST_GROWSPACES = "debug_list_growspaces"
     DEBUG_RESET_SPECIAL_GROWSPACES = "debug_reset_special_growspaces"
     DEBUG_CONSOLIDATE_DUPLICATE_SPECIAL = "debug_consolidate_duplicate_special"
@@ -605,6 +615,8 @@ class GrowspaceService(StrEnum):
     # EC Ramp Curve Services
     SAVE_EC_RAMP_CURVE = "save_ec_ramp_curve"
     REMOVE_EC_RAMP_CURVE = "remove_ec_ramp_curve"
+    # EC Target Range Services
+    SET_EC_TARGET_RANGE = "set_ec_target_range"
     # Vision Checkup Services
     TRIGGER_VISION_CHECKUP = "trigger_vision_checkup"
     # Tank Configuration Services
@@ -673,6 +685,7 @@ CATEGORY_DEHUMIDIFIER = "dehumidifier"
 CATEGORY_HUMIDIFIER = "humidifier"
 CATEGORY_MILESTONE = "milestone"
 CATEGORY_ALERT = "alert"
+CATEGORY_IRRIGATION_ERROR = "irrigation_error"
 
 
 # Plant stages

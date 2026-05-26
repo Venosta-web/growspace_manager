@@ -65,6 +65,7 @@ from custom_components.growspace_manager.schemas import (
     REMOVE_PLANT_SCHEMA,
     REMOVE_STRAIN_SCHEMA,
     RESET_WATER_TRACKING_SCHEMA,
+    RUN_IRRIGATION_CYCLE_SCHEMA,
     SAVE_EC_RAMP_CURVE_SCHEMA,
     SAVE_IPM_PRESET_SCHEMA,
     SAVE_NUTRIENT_PRESET_SCHEMA,
@@ -72,7 +73,9 @@ from custom_components.growspace_manager.schemas import (
     SCORE_PLANT_SCHEMA,
     SERVICE_TRIGGER_VISION_CHECKUP_SCHEMA,
     SET_DEHUMIDIFIER_CONTROL_SCHEMA,
+    SET_EC_TARGET_RANGE_SCHEMA,
     SET_IRRIGATION_SETTINGS_SCHEMA,
+    SET_IRRIGATION_STRATEGY_SCHEMA,
     SET_VISUAL_TAG_SCHEMA,
     STRAIN_RECOMMENDATION_SCHEMA,
     SWITCH_PLANT_SCHEMA,
@@ -259,10 +262,12 @@ async def test_register_services(mock_hass, mock_strain_library_for_services) ->
         "update_strain_meta": UPDATE_STRAIN_META_SCHEMA,
         "set_dehumidifier_control": SET_DEHUMIDIFIER_CONTROL_SCHEMA,
         "set_irrigation_settings": SET_IRRIGATION_SETTINGS_SCHEMA,
+        "set_irrigation_strategy": SET_IRRIGATION_STRATEGY_SCHEMA,
         "add_irrigation_time": ADD_IRRIGATION_TIME_SCHEMA,
         "remove_irrigation_time": REMOVE_IRRIGATION_TIME_SCHEMA,
         "add_drain_time": ADD_DRAIN_TIME_SCHEMA,
         "remove_drain_time": REMOVE_DRAIN_TIME_SCHEMA,
+        "run_irrigation_cycle": RUN_IRRIGATION_CYCLE_SCHEMA,
         "get_strain_library": None,
         "ask_grow_advice": ASK_GROW_ADVICE_SCHEMA,
         "analyze_all_growspaces": ANALYZE_ALL_GROWSPACES_SCHEMA,
@@ -285,6 +290,7 @@ async def test_register_services(mock_hass, mock_strain_library_for_services) ->
         "reset_water_tracking": RESET_WATER_TRACKING_SCHEMA,
         "save_ec_ramp_curve": SAVE_EC_RAMP_CURVE_SCHEMA,
         "remove_ec_ramp_curve": REMOVE_EC_RAMP_CURVE_SCHEMA,
+        "set_ec_target_range": SET_EC_TARGET_RANGE_SCHEMA,
         "trigger_vision_checkup": SERVICE_TRIGGER_VISION_CHECKUP_SCHEMA,
         "configure_tank": CONFIGURE_TANK_SCHEMA,
         "add_seed_batch": ADD_SEED_BATCH_SCHEMA,
@@ -599,11 +605,11 @@ async def test_websocket_get_event_log(hass: HomeAssistant, mock_coordinator) ->
 
     with (
         patch(
-            "custom_components.growspace_manager.websocket.get_instance",
+            "custom_components.growspace_manager.websocket.logbook.get_instance",
             return_value=mock_recorder,
         ),
         patch(
-            "custom_components.growspace_manager.websocket.session_scope"
+            "custom_components.growspace_manager.websocket.logbook.session_scope"
         ) as mock_session_scope,
     ):
         mock_session_scope.return_value.__enter__ = MagicMock(return_value=mock_session)
@@ -680,7 +686,7 @@ async def test_websocket_get_growspace_data(
         }
         await websocket_get_growspace_data(hass, mock_connection, msg)
         mock_connection.send_error.assert_called_with(
-            2, "not_loaded", "Growspace Manager integration not loaded"
+            2, "coordinator_not_ready", "Growspace Manager integration not loaded"
         )
 
     # 3. Unknown Error
@@ -694,7 +700,7 @@ async def test_websocket_get_growspace_data(
             "growspace_id": "gs1",
         }
         await websocket_get_growspace_data(hass, mock_connection, msg)
-        mock_connection.send_error.assert_called_with(3, "unknown_error", "Boom")
+        mock_connection.send_error.assert_called_with(3, "internal_error", "Boom")
 
 
 @pytest.mark.asyncio
@@ -745,17 +751,11 @@ async def test_pending_growspace_error(hass: HomeAssistant) -> None:
 
         coordinator_mock = MagicMock()
         coordinator_mock.async_config_entry_first_refresh = AsyncMock()
-        coordinator_mock.growspace_manager = MagicMock()
         coordinator_mock.async_load = AsyncMock()
         coordinator_mock.async_initialize_sub_coordinators = AsyncMock()
-
-        # Public properties for services
-        type(coordinator_mock).growspace_service = property(
-            lambda self: self.growspace_manager
-        )
-
-        coordinator_mock.growspace_manager = MagicMock()
-        coordinator_mock.growspace_manager.add_growspace = AsyncMock(
+        coordinator_mock.services = MagicMock()
+        coordinator_mock.services.growspaces = MagicMock()
+        coordinator_mock.services.growspaces.add_growspace = AsyncMock(
             side_effect=RuntimeError("Failed creation")
         )
 
@@ -819,15 +819,11 @@ async def test_pending_growspace_success(hass: HomeAssistant) -> None:
 
         coordinator_mock = MagicMock()
         coordinator_mock.async_config_entry_first_refresh = AsyncMock()
-        coordinator_mock.growspace_manager = MagicMock()
-        coordinator_mock.growspace_manager.add_growspace = AsyncMock()
         coordinator_mock.async_load = AsyncMock()
         coordinator_mock.async_initialize_sub_coordinators = AsyncMock()
-
-        # Public properties for services
-        type(coordinator_mock).growspace_service = property(
-            lambda self: self.growspace_manager
-        )
+        coordinator_mock.services = MagicMock()
+        coordinator_mock.services.growspaces = MagicMock()
+        coordinator_mock.services.growspaces.add_growspace = AsyncMock()
 
         with patch(
             "custom_components.growspace_manager.coordinator.GrowspaceCoordinator",
@@ -836,7 +832,7 @@ async def test_pending_growspace_success(hass: HomeAssistant) -> None:
             await async_setup_entry(hass, entry)
 
             # Verify successful creation logging and data update
-            coordinator_mock.growspace_manager.add_growspace.assert_called_once_with(
+            coordinator_mock.services.growspaces.add_growspace.assert_called_once_with(
                 name="Pending", rows=4, plants_per_row=4, notification_target=None
             )
             hass.config_entries.async_update_entry.assert_called_once()
@@ -892,10 +888,10 @@ async def test_websocket_get_event_log_unknown_error(hass: HomeAssistant) -> Non
 
     with (
         patch(
-            "custom_components.growspace_manager.websocket.get_instance",
+            "custom_components.growspace_manager.websocket.logbook.get_instance",
             return_value=mock_recorder,
         ),
-        patch("custom_components.growspace_manager.websocket.session_scope"),
+        patch("custom_components.growspace_manager.websocket.logbook.session_scope"),
     ):
         msg = {
             "id": 99,
@@ -930,7 +926,7 @@ async def test_async_register_websocket_api(mock_hass) -> None:
         "homeassistant.components.websocket_api.async_register_command"
     ) as mock_reg:
         async_register_websocket_api(mock_hass)
-        assert mock_reg.call_count == 35
+        assert mock_reg.call_count == 36
 
 
 @pytest.mark.asyncio
@@ -954,7 +950,7 @@ async def test_websocket_get_history_stats(
             "homeassistant.components.recorder.history.get_significant_states"
         ) as mock_get_history,
         patch(
-            "custom_components.growspace_manager.websocket.get_instance"
+            "custom_components.growspace_manager.websocket.environment.get_instance"
         ) as mock_get_rec,
     ):
         mock_get_rec.return_value.async_add_executor_job = hass.async_add_executor_job
@@ -1030,7 +1026,7 @@ async def test_websocket_get_history_stats(
             side_effect=Exception("DB Error"),
         ),
         patch(
-            "custom_components.growspace_manager.websocket.get_instance"
+            "custom_components.growspace_manager.websocket.environment.get_instance"
         ) as mock_get_rec,
     ):
         mock_get_rec.return_value.async_add_executor_job = hass.async_add_executor_job
@@ -1058,7 +1054,7 @@ async def test_websocket_history_empty_and_unavailable(hass: HomeAssistant) -> N
             "homeassistant.components.recorder.history.get_significant_states"
         ) as mock_get_history,
         patch(
-            "custom_components.growspace_manager.websocket.get_instance"
+            "custom_components.growspace_manager.websocket.environment.get_instance"
         ) as mock_get_rec,
     ):
         mock_get_rec.return_value.async_add_executor_job = hass.async_add_executor_job
@@ -1217,13 +1213,13 @@ async def test_websocket_history_stats_uses_statistics_api_for_long_intervals(
 
     with (
         patch(
-            "custom_components.growspace_manager.websocket.recorder_stats.async_statistics_during_period",
+            "custom_components.growspace_manager.websocket.environment.recorder_stats.async_statistics_during_period",
             new_callable=AsyncMock,
             return_value=stats_data,
             create=True,
         ) as mock_stats,
         patch(
-            "custom_components.growspace_manager.websocket.get_instance"
+            "custom_components.growspace_manager.websocket.environment.get_instance"
         ) as mock_get_rec,
     ):
         mock_get_rec.return_value.async_add_executor_job = hass.async_add_executor_job
@@ -1268,7 +1264,7 @@ async def test_websocket_history_stats_falls_back_when_statistics_fails(
 
     with (
         patch(
-            "custom_components.growspace_manager.websocket.recorder_stats.async_statistics_during_period",
+            "custom_components.growspace_manager.websocket.environment.recorder_stats.async_statistics_during_period",
             new_callable=AsyncMock,
             side_effect=Exception("Statistics unavailable"),
             create=True,
@@ -1283,7 +1279,7 @@ async def test_websocket_history_stats_falls_back_when_statistics_fails(
             },
         ),
         patch(
-            "custom_components.growspace_manager.websocket.get_instance"
+            "custom_components.growspace_manager.websocket.environment.get_instance"
         ) as mock_get_rec,
     ):
         mock_get_rec.return_value.async_add_executor_job = hass.async_add_executor_job
@@ -1324,7 +1320,7 @@ async def test_websocket_history_stats_short_interval_uses_binary_search(
 
     with (
         patch(
-            "custom_components.growspace_manager.websocket.recorder_stats.async_statistics_during_period",
+            "custom_components.growspace_manager.websocket.environment.recorder_stats.async_statistics_during_period",
             new_callable=AsyncMock,
             create=True,
         ) as mock_stats,
@@ -1338,7 +1334,7 @@ async def test_websocket_history_stats_short_interval_uses_binary_search(
             },
         ),
         patch(
-            "custom_components.growspace_manager.websocket.get_instance"
+            "custom_components.growspace_manager.websocket.environment.get_instance"
         ) as mock_get_rec,
     ):
         mock_get_rec.return_value.async_add_executor_job = hass.async_add_executor_job
@@ -1379,13 +1375,13 @@ async def test_websocket_history_stats_uses_daily_period_for_large_intervals(
 
     with (
         patch(
-            "custom_components.growspace_manager.websocket.recorder_stats.async_statistics_during_period",
+            "custom_components.growspace_manager.websocket.environment.recorder_stats.async_statistics_during_period",
             new_callable=AsyncMock,
             return_value=stats_data,
             create=True,
         ) as mock_stats,
         patch(
-            "custom_components.growspace_manager.websocket.get_instance"
+            "custom_components.growspace_manager.websocket.environment.get_instance"
         ) as mock_get_rec,
     ):
         mock_get_rec.return_value.async_add_executor_job = hass.async_add_executor_job
@@ -1428,13 +1424,13 @@ async def test_websocket_history_stats_statistics_with_state_instead_of_mean(
 
     with (
         patch(
-            "custom_components.growspace_manager.websocket.recorder_stats.async_statistics_during_period",
+            "custom_components.growspace_manager.websocket.environment.recorder_stats.async_statistics_during_period",
             new_callable=AsyncMock,
             return_value=stats_data,
             create=True,
         ),
         patch(
-            "custom_components.growspace_manager.websocket.get_instance"
+            "custom_components.growspace_manager.websocket.environment.get_instance"
         ) as mock_get_rec,
     ):
         mock_get_rec.return_value.async_add_executor_job = hass.async_add_executor_job
@@ -1466,7 +1462,7 @@ async def test_websocket_history_stats_empty_statistics(hass: HomeAssistant) -> 
 
     with (
         patch(
-            "custom_components.growspace_manager.websocket.recorder_stats.async_statistics_during_period",
+            "custom_components.growspace_manager.websocket.environment.recorder_stats.async_statistics_during_period",
             new_callable=AsyncMock,
             return_value={},  # Empty result
             create=True,
@@ -1476,7 +1472,7 @@ async def test_websocket_history_stats_empty_statistics(hass: HomeAssistant) -> 
             return_value={"sensor.test": []},
         ),
         patch(
-            "custom_components.growspace_manager.websocket.get_instance"
+            "custom_components.growspace_manager.websocket.environment.get_instance"
         ) as mock_get_rec,
     ):
         mock_get_rec.return_value.async_add_executor_job = hass.async_add_executor_job

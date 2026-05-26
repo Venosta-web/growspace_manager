@@ -120,7 +120,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: GrowspaceConfigEntry) ->
     pending = entry.data.get("pending_growspace")
     if pending:
         try:
-            await coordinator.growspace_service.add_growspace(
+            await coordinator.services.growspaces.add_growspace(
                 name=pending["name"],
                 rows=pending["rows"],
                 plants_per_row=pending["plants_per_row"],
@@ -201,7 +201,6 @@ async def async_register_sidebar_panel(
 def _async_cancel_coordinators(coordinator: GrowspaceCoordinator) -> None:
     """Cancel all sub-coordinator listeners via the subsystem manager."""
     coordinator.subsystem_manager.async_cancel_all()
-
 
 
 @callback

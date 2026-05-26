@@ -49,9 +49,10 @@ def create_test_coordinator(hass: HomeAssistant) -> GrowspaceCoordinator:
         side_effect=lambda hass_obj, coro, name: hass.async_create_task(coro)
     )
 
-    coordinator = GrowspaceCoordinator(hass, entry, data={})
-    coordinator.services.save = AsyncMock()  # type: ignore[method-assign]
-    coordinator.services.set_updated_data = MagicMock()
+    coordinator = GrowspaceCoordinator.build(hass, entry, data={})
+    coordinator.storage_manager.async_force_save = AsyncMock()
+    coordinator.view_model_builder = MagicMock()
+    coordinator.view_model_builder.build_data_property.return_value = {}
     return coordinator
 
 
@@ -61,22 +62,26 @@ def preset_coordinator(hass: HomeAssistant) -> GrowspaceCoordinator:
     coordinator = create_test_coordinator(hass)
 
     # Add a growspace and a plant
-    coordinator.data_repository.add_growspace(Growspace(
-        id="test_gs",
-        name="Test Growspace",
-        rows=1,
-        plants_per_row=1,
-    ))
+    coordinator.data_repository.add_growspace(
+        Growspace(
+            id="test_gs",
+            name="Test Growspace",
+            rows=1,
+            plants_per_row=1,
+        )
+    )
 
-    coordinator.data_repository.add_plant(create_plant(
-        plant_id="test_plant",
-        growspace_id="test_gs",
-        strain="Test Strain",
-        stage=PlantStage.VEG,
-        veg_start=(datetime.now() - timedelta(days=10)).isoformat(),
-        row=1,
-        col=1,
-    ))
+    coordinator.data_repository.add_plant(
+        create_plant(
+            plant_id="test_plant",
+            growspace_id="test_gs",
+            strain="Test Strain",
+            stage=PlantStage.VEG,
+            veg_start=(datetime.now() - timedelta(days=10)).isoformat(),
+            row=1,
+            col=1,
+        )
+    )
 
     return coordinator
 
@@ -104,7 +109,7 @@ class TestNutrientPresetCoordinator:
         assert preset.stage == PlantStage.VEG
         assert preset.min_days_in_stage == 5
         assert preset.id in preset_coordinator.nutrient_presets
-        preset_coordinator.services.save.assert_called_once()  # type: ignore[attr-defined]
+        preset_coordinator.storage_manager.async_force_save.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_remove_nutrient_preset(
@@ -121,7 +126,7 @@ class TestNutrientPresetCoordinator:
         await preset_coordinator.services.config.remove_nutrient_preset(preset_id)
 
         assert preset_id not in preset_coordinator.nutrient_presets
-        assert preset_coordinator.services.save.call_count == 2  # type: ignore[attr-defined]
+        assert preset_coordinator.storage_manager.async_force_save.call_count == 2
 
     @pytest.mark.asyncio
     async def test_remove_nonexistent_preset_raises(
@@ -129,7 +134,9 @@ class TestNutrientPresetCoordinator:
     ) -> None:
         """Test removing a nonexistent preset raises KeyError."""
         with pytest.raises(KeyError):
-            await preset_coordinator.services.config.remove_nutrient_preset("nonexistent")
+            await preset_coordinator.services.config.remove_nutrient_preset(
+                "nonexistent"
+            )
 
     @pytest.mark.asyncio
     async def test_get_applicable_presets(
@@ -164,7 +171,9 @@ class TestNutrientPresetCoordinator:
             name="Global", nutrients=[{"name": "D", "dose_ml_l": 1.0}]
         )
 
-        applicable = preset_coordinator.services.plants.get_applicable_presets("test_plant")
+        applicable = preset_coordinator.services.plants.get_applicable_presets(
+            "test_plant"
+        )
 
         assert len(applicable) == 2
         names = [p.name for p in applicable]
@@ -186,7 +195,9 @@ class TestNutrientPresetCoordinator:
             ],
         )
 
-        nutrient_map = preset_coordinator._resolve_preset_nutrients(preset.id)
+        nutrient_map = preset_coordinator.nutrient_manager.nutrient_presets[
+            preset.id
+        ].get_nutrient_map()
 
         assert nutrient_map == {"NutriA": 2.5, "NutriB": 0.5}
 
@@ -196,7 +207,7 @@ class TestNutrientPresetCoordinator:
     ) -> None:
         """Test resolving nonexistent preset raises KeyError."""
         with pytest.raises(KeyError):
-            preset_coordinator._resolve_preset_nutrients("nonexistent")
+            preset_coordinator.nutrient_manager.nutrient_presets["nonexistent"]
 
     @pytest.mark.asyncio
     async def test_get_applicable_presets_no_stage_but_min_days(
@@ -216,7 +227,9 @@ class TestNutrientPresetCoordinator:
             min_days_in_stage=15,  # Too many days
         )
 
-        applicable = preset_coordinator.services.plants.get_applicable_presets("test_plant")
+        applicable = preset_coordinator.services.plants.get_applicable_presets(
+            "test_plant"
+        )
         names = [p.name for p in applicable]
         assert "Days Match" in names
         assert "Days No Match" not in names
@@ -389,7 +402,9 @@ class TestServiceHandlersPresets:
         """Test the handle_remove_nutrient_preset service handler."""
 
         # Save one first
-        preset = await preset_coordinator.services.config.save_nutrient_preset("To Remove", [])
+        preset = await preset_coordinator.services.config.save_nutrient_preset(
+            "To Remove", []
+        )
 
         call = MagicMock()
         call.data = {ATTR_PRESET_ID: preset.id}

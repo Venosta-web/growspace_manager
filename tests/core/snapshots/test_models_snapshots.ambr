@@ -80,6 +80,8 @@
     'light_sensors': list([
     ]),
     'lst_offset': -2.0,
+    'lung_room_temp_sensors': list([
+    ]),
     'minimum_source_air_temperature': 18.0,
     'mold_threshold': 0.75,
     'ph_sensors': list([
@@ -185,6 +187,8 @@
       'light_sensors': list([
       ]),
       'lst_offset': -2.0,
+      'lung_room_temp_sensors': list([
+      ]),
       'minimum_source_air_temperature': 18.0,
       'mold_threshold': 0.75,
       'ph_sensors': list([
@@ -224,18 +228,32 @@
     }),
     'id': 'gs_test',
     'irrigation_config': dict({
+      'active_steering_phase': 'p2',
+      'auto_advance_p1_to_p2': False,
+      'auto_advance_p2_to_p3': False,
+      'daily_volume_cap_liters': None,
       'drain_duration': None,
       'drain_pump_entity': None,
       'drain_times': list([
       ]),
+      'ec_target_ranges': list([
+      ]),
+      'halt_on_runoff_ec_threshold': None,
       'irrigation_duration': None,
       'irrigation_pump_entity': None,
       'irrigation_times': list([
       ]),
+      'log_to_logbook': True,
+      'max_cycles_per_day': None,
+      'pause_on_low_tank': True,
       'pump_flow_rate_ml_per_sec': 0.0,
+      'skip_during_dark': False,
+      'soil_trigger_percent': None,
       'veg_day_hours': 12,
     }),
     'irrigation_strategy': dict({
+      'auto_light_tracking': False,
+      'detected_lights_on_time': None,
       'enabled': False,
       'lights_on_time': '06:00:00',
       'maintenance_dryback_percent': 2.0,

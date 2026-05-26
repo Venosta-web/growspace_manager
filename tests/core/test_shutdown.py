@@ -55,12 +55,12 @@ async def test_coordinator_async_shutdown_logic(hass: HomeAssistant) -> None:
     # Init coordinator
     # We mock storage_manager inside
     with patch(
-        "custom_components.growspace_manager.coordinator.StorageManager"
+        "custom_components.growspace_manager.coordinator_builder.StorageManager"
     ) as mock_sm_cls:
         mock_sm_instance = mock_sm_cls.return_value
         mock_sm_instance.async_force_save = AsyncMock()
 
-        coordinator = GrowspaceCoordinator(hass, entry, data={})
+        coordinator = GrowspaceCoordinator.build(hass, entry, data={})
 
         await coordinator.async_shutdown()
 

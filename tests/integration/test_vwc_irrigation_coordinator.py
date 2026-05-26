@@ -11,6 +11,7 @@ from custom_components.growspace_manager.models import (
     Growspace,
     IrrigationConfig,
     IrrigationStrategy,
+    IrrigationTank,
 )
 from custom_components.growspace_manager.vwc_irrigation_coordinator import (
     VWCIrrigationCoordinator,
@@ -81,22 +82,26 @@ def mock_main_coordinator(mock_growspace):
 
 
 async def await_pump_task():
-    """Find and await the pump cycle task."""
-    # Give the loop a moment to start the task
+    """Find and await the pump cycle task.
+
+    Works regardless of whether the method lives on VWCIrrigationCoordinator or
+    BaseIrrigationCoordinator — matches on the method name alone.
+    """
     await asyncio.sleep(0)
 
     tasks = asyncio.all_tasks()
     for task in tasks:
-        if "VWCIrrigationCoordinator._run_pump_cycle" in str(task.get_coro()):
+        if "_run_pump_cycle" in str(task.get_coro()):
             await task
             return
-    # If not found, that's okay, maybe it finished instantly or didn't start (if logic was wrong)
-    # But for our tests expecting watering, it should be found unless we are too slow/fast.
 
 
 @pytest.fixture
 def vwc_coordinator(mock_hass, mock_main_coordinator):
     mock_config_entry = MagicMock()
+    # Point runtime_data at mock_main_coordinator so _async_send_cycle_notification
+    # finds the real mock_growspace (notification_target=None → no extra notify call).
+    mock_config_entry.runtime_data = mock_main_coordinator
     mock_config_entry.async_create_background_task.side_effect = (
         lambda hass, target, name: asyncio.create_task(target)
     )
@@ -128,19 +133,25 @@ async def test_p1_ramp_up(vwc_coordinator, mock_hass) -> None:
     # Time: 09:30 (Inside P1)
     now = datetime(2023, 1, 1, 9, 30, 0, tzinfo=dt_util.UTC)
 
+    t0 = datetime(2023, 1, 1, 9, 30, 0, tzinfo=dt_util.UTC)
+    t10 = datetime(2023, 1, 1, 9, 30, 10, tzinfo=dt_util.UTC)
     with (
         patch(
             "custom_components.growspace_manager.vwc_irrigation_coordinator.now",
             return_value=now,
         ),
         patch(
-            "custom_components.growspace_manager.vwc_irrigation_coordinator.utcnow",
+            # _run_pump_cycle now lives in irrigation_coordinator — patch there.
+            # _set_phase also fires a logbook event (via _fire_logbook_event) when
+            # the phase changes, adding one utcnow() call before the pump cycle.
+            "custom_components.growspace_manager.irrigation_coordinator.utcnow",
             side_effect=[
-                datetime(2023, 1, 1, 9, 30, 0, tzinfo=dt_util.UTC),  # 1. Event Start
-                datetime(
-                    2023, 1, 1, 9, 30, 0, tzinfo=dt_util.UTC
-                ),  # 2. pump start_time
-                datetime(2023, 1, 1, 9, 30, 10, tzinfo=dt_util.UTC),  # 3. pump end_time
+                t0,   # 1. _set_phase("P1 - Ramp Up") logbook event
+                t0,   # 2. _active_events["start"]
+                t0,   # 3. _fire_logbook_event("Irrigation started…")
+                t0,   # 4. start_dt = utcnow()
+                t10,  # 5. end_dt = utcnow()
+                t10,  # 6. _fire_logbook_event("Irrigation completed…")
             ],
         ),
     ):
@@ -192,19 +203,24 @@ async def test_p2_maintenance(vwc_coordinator, mock_hass) -> None:
 
     now = datetime(2023, 1, 1, 12, 0, 0, tzinfo=dt_util.UTC)
 
+    t0 = datetime(2023, 1, 1, 12, 0, 0, tzinfo=dt_util.UTC)
+    t10 = datetime(2023, 1, 1, 12, 0, 10, tzinfo=dt_util.UTC)
     with (
         patch(
             "custom_components.growspace_manager.vwc_irrigation_coordinator.now",
             return_value=now,
         ),
         patch(
-            "custom_components.growspace_manager.vwc_irrigation_coordinator.utcnow",
+            "custom_components.growspace_manager.irrigation_coordinator.utcnow",
             side_effect=[
-                datetime(2023, 1, 1, 12, 0, 0, tzinfo=dt_util.UTC),  # 1. Event Start
-                datetime(
-                    2023, 1, 1, 12, 0, 0, tzinfo=dt_util.UTC
-                ),  # 2. pump start_time
-                datetime(2023, 1, 1, 12, 0, 10, tzinfo=dt_util.UTC),  # 3. pump end_time
+                # Case A: phase transition P3→P2 fires a logbook event
+                t0,   # 1. _set_phase("P2 - Maintenance") logbook event
+                # Case B: pump fires (phase stays P2, no extra logbook from _set_phase)
+                t0,   # 2. _active_events["start"]
+                t0,   # 3. _fire_logbook_event("Irrigation started…")
+                t0,   # 4. start_dt = utcnow()
+                t10,  # 5. end_dt = utcnow()
+                t10,  # 6. _fire_logbook_event("Irrigation completed…")
             ],
         ),
     ):
@@ -229,9 +245,10 @@ async def test_p2_maintenance(vwc_coordinator, mock_hass) -> None:
         assert event.duration_sec == 10
 
 
-async def test_p3_dryback(vwc_coordinator, mock_hass) -> None:
-    """Test P3 phase (Dry Back) - Hard stop."""
-    # Time: 19:00 (Lights off 20:00, Stop 18:00 -> Inside P3)
+async def test_p3_dryback(vwc_coordinator, mock_hass, mock_growspace) -> None:
+    """Test P3 phase (Dry Back) - Hard stop when auto_advance_p2_to_p3 is enabled."""
+    mock_growspace.irrigation_config.auto_advance_p2_to_p3 = True
+    # Time: 19:00 (Lights off 20:00, Stop 18:00 -> Inside early-P3 window)
     now = datetime(2023, 1, 1, 19, 0, 0, tzinfo=dt_util.UTC)
 
     with patch(
@@ -267,6 +284,7 @@ async def test_custom_day_hours(vwc_coordinator, mock_hass, mock_growspace) -> N
         soil_moisture_sensor="sensor.moisture",
         flower_day_hours=10,
     )
+    mock_growspace.irrigation_config.auto_advance_p2_to_p3 = True
 
     # Case A: 15:00 -> Should be P2 (15 < 16)
     now_p2 = datetime(2023, 1, 1, 15, 0, 0, tzinfo=dt_util.UTC)
@@ -282,7 +300,7 @@ async def test_custom_day_hours(vwc_coordinator, mock_hass, mock_growspace) -> N
         await vwc_coordinator._update_loop(now_p2)
         assert vwc_coordinator._current_phase == "P2 - Maintenance"
 
-    # Case B: 17:00 -> Should be P3 (17 > 16)
+    # Case B: 17:00 -> Should be P3 (17 > 16, inside early-stop window with flag=True)
     # With default 12h (20:00 off, 18:00 stop), 17:00 would be P2.
     now_p3 = datetime(2023, 1, 1, 17, 0, 0, tzinfo=dt_util.UTC)
     with patch(
@@ -466,17 +484,458 @@ async def test_determine_time_period_night(vwc_coordinator, mock_growspace) -> N
 
 async def test_run_pump_cycle_cancelled(vwc_coordinator, mock_hass) -> None:
     """Test _run_pump_cycle handles CancelledError (covers lines 276-277)."""
+    fixed_dt = datetime(2023, 1, 1, 12, 0, 0, tzinfo=dt_util.UTC)
     with (
         patch("asyncio.sleep", side_effect=asyncio.CancelledError),
         patch(
-            "custom_components.growspace_manager.vwc_irrigation_coordinator.utcnow",
-            return_value=datetime(2023, 1, 1, 12, 0, 0, tzinfo=dt_util.UTC),
+            # _run_pump_cycle now lives in irrigation_coordinator
+            "custom_components.growspace_manager.irrigation_coordinator.utcnow",
+            return_value=fixed_dt,
         ),
     ):
         # Should not raise or crash
-        await vwc_coordinator._run_pump_cycle("switch.pump", 10, "P1")
+        await vwc_coordinator._run_pump_cycle("irrigation", "switch.pump", 10, {})
 
         # Verify turn_off was still called in finally block
         mock_hass.services.async_call.assert_any_call(
             "switch", "turn_off", {"entity_id": "switch.pump"}, blocking=True
         )
+
+
+# ---------------------------------------------------------------------------
+# Tests for dynamic safety-guard integration (Issue #370)
+# ---------------------------------------------------------------------------
+
+
+async def test_vwc_skips_watering_when_tank_is_low(
+    vwc_coordinator: VWCIrrigationCoordinator,
+    mock_hass: MagicMock,
+    mock_growspace: Growspace,
+) -> None:
+    """When pause_on_low_tank=True and a tank is below its warning level, VWC does not water."""
+    tank = IrrigationTank(
+        sensor_entity="sensor.tank_level",
+        name="Main Tank",
+        warning_level=30.0,
+    )
+    mock_growspace.environment_config = EnvironmentConfig(
+        soil_moisture_sensor="sensor.moisture",
+        irrigation_tanks=[tank],
+    )
+    mock_growspace.irrigation_config.pause_on_low_tank = True
+
+    def states_side_effect(entity_id: str) -> MagicMock | None:
+        if entity_id == "sensor.tank_level":
+            return MagicMock(state="20.0")  # Below 30% warning
+        if entity_id == "sensor.moisture":
+            return MagicMock(state="40.0")  # VWC below target → would normally trigger P1 shot
+        return None
+
+    mock_hass.states.get.side_effect = states_side_effect
+
+    now_dt = datetime(2023, 1, 1, 9, 30, 0, tzinfo=dt_util.UTC)
+    with patch(
+        "custom_components.growspace_manager.vwc_irrigation_coordinator.now",
+        return_value=now_dt,
+    ):
+        await vwc_coordinator._update_loop(now_dt)
+        await await_pump_task()  # Let any queued tasks run
+
+    # Pump switch must not have fired — only a low-tank persistent_notification may appear
+    all_calls = [str(c) for c in mock_hass.services.async_call.call_args_list]
+    assert not any("switch" in c and "turn_on" in c for c in all_calls)
+
+
+async def test_vwc_skips_watering_when_max_cycles_reached(
+    vwc_coordinator: VWCIrrigationCoordinator,
+    mock_hass: MagicMock,
+    mock_growspace: Growspace,
+) -> None:
+    """When max_cycles_per_day is reached, VWC does not water even if VWC is low."""
+    mock_growspace.irrigation_config.max_cycles_per_day = 3
+    vwc_coordinator._cycles_today = 3  # Already at the limit
+
+    now_dt = datetime(2023, 1, 1, 9, 30, 0, tzinfo=dt_util.UTC)
+    with patch(
+        "custom_components.growspace_manager.vwc_irrigation_coordinator.now",
+        return_value=now_dt,
+    ):
+        mock_hass.states.get.return_value = MagicMock(state="40.0")  # VWC below target
+        await vwc_coordinator._update_loop(now_dt)
+        await await_pump_task()
+
+    mock_hass.services.async_call.assert_not_called()
+
+
+async def test_vwc_skips_watering_when_dark_and_skip_enabled(
+    vwc_coordinator: VWCIrrigationCoordinator,
+    mock_hass: MagicMock,
+    mock_growspace: Growspace,
+) -> None:
+    """When skip_during_dark=True and all light sensors report off, VWC does not water."""
+    mock_growspace.irrigation_config.skip_during_dark = True
+    mock_growspace.environment_config = EnvironmentConfig(
+        soil_moisture_sensor="sensor.moisture",
+        light_sensors=["binary_sensor.light"],
+    )
+
+    def states_side_effect(entity_id: str) -> MagicMock | None:
+        if entity_id == "binary_sensor.light":
+            return MagicMock(state="off")  # Light is off → dark period
+        if entity_id == "sensor.moisture":
+            return MagicMock(state="40.0")
+        return None
+
+    mock_hass.states.get.side_effect = states_side_effect
+
+    now_dt = datetime(2023, 1, 1, 9, 30, 0, tzinfo=dt_util.UTC)
+    with patch(
+        "custom_components.growspace_manager.vwc_irrigation_coordinator.now",
+        return_value=now_dt,
+    ):
+        await vwc_coordinator._update_loop(now_dt)
+        await await_pump_task()
+
+    mock_hass.services.async_call.assert_not_called()
+
+
+async def test_vwc_phase_transition_fires_logbook_event(
+    vwc_coordinator: VWCIrrigationCoordinator,
+    mock_hass: MagicMock,
+    mock_growspace: Growspace,
+) -> None:
+    """When log_to_logbook=True, a VWC phase transition fires a logbook event."""
+    mock_growspace.irrigation_config.log_to_logbook = True
+    mock_hass.bus = MagicMock()
+    mock_hass.bus.async_fire = MagicMock()
+
+    now_dt = datetime(2023, 1, 1, 8, 30, 0, tzinfo=dt_util.UTC)  # P0 window
+    with patch(
+        "custom_components.growspace_manager.vwc_irrigation_coordinator.now",
+        return_value=now_dt,
+    ):
+        mock_hass.states.get.return_value = MagicMock(state="40.0")
+        await vwc_coordinator._update_loop(now_dt)
+
+    # Phase changed from "P3" (initial) to "P0 - Activation" → logbook must fire
+    assert mock_hass.bus.async_fire.called
+    fired_event = mock_hass.bus.async_fire.call_args[0][0]
+    from custom_components.growspace_manager.const import EVENT_GROWSPACE_LOG_ENTRY
+
+    assert fired_event == EVENT_GROWSPACE_LOG_ENTRY
+
+
+async def test_vwc_soil_trigger_percent_overrides_p2_maintenance_threshold(
+    vwc_coordinator: VWCIrrigationCoordinator,
+    mock_hass: MagicMock,
+    mock_growspace: Growspace,
+) -> None:
+    """When soil_trigger_percent is set, it replaces the calculated P2 trigger.
+
+    Normally P2 trigger = target_vwc_percent - maintenance_dryback_percent
+    = 50.0 - 2.0 = 48.0%.  With soil_trigger_percent=45.0 the threshold
+    drops to 45.0%, so VWC=47% should NOT trigger watering (47 > 45).
+    """
+    mock_growspace.irrigation_config.soil_trigger_percent = 45.0
+    vwc_coordinator._target_reached_today = True
+    vwc_coordinator._last_reset_date = "2023-01-01"
+
+    now_dt = datetime(2023, 1, 1, 12, 0, 0, tzinfo=dt_util.UTC)
+    with patch(
+        "custom_components.growspace_manager.vwc_irrigation_coordinator.now",
+        return_value=now_dt,
+    ):
+        # VWC 47%: above the soil_trigger_percent threshold of 45% → no watering
+        mock_hass.states.get.side_effect = lambda eid: (
+            MagicMock(state="47.0") if eid == "sensor.moisture" else None
+        )
+        await vwc_coordinator._update_loop(now_dt)
+        await await_pump_task()
+
+    mock_hass.services.async_call.assert_not_called()
+
+
+async def test_vwc_soil_trigger_percent_fires_watering_when_below(
+    vwc_coordinator: VWCIrrigationCoordinator,
+    mock_hass: MagicMock,
+    mock_growspace: Growspace,
+) -> None:
+    """When VWC drops below soil_trigger_percent, P2 maintenance waters."""
+    mock_growspace.irrigation_config.soil_trigger_percent = 45.0
+    mock_growspace.irrigation_config.log_to_logbook = False  # Keep utcnow simple
+    vwc_coordinator._target_reached_today = True
+    vwc_coordinator._last_reset_date = "2023-01-01"
+
+    t0 = datetime(2023, 1, 1, 12, 0, 0, tzinfo=dt_util.UTC)
+    t10 = datetime(2023, 1, 1, 12, 0, 10, tzinfo=dt_util.UTC)
+    now_dt = t0
+    with (
+        patch(
+            "custom_components.growspace_manager.vwc_irrigation_coordinator.now",
+            return_value=now_dt,
+        ),
+        patch(
+            "custom_components.growspace_manager.irrigation_coordinator.utcnow",
+            side_effect=[
+                t0,   # _set_phase P3→P2 (no logbook since log_to_logbook=False but
+                      # _active_events still calls utcnow)
+                t0,   # start_dt
+                t10,  # end_dt
+            ],
+        ),
+    ):
+        # VWC 44%: below soil_trigger_percent=45% → should water
+        mock_hass.states.get.side_effect = lambda eid: (
+            MagicMock(state="44.0") if eid == "sensor.moisture" else None
+        )
+        await vwc_coordinator._update_loop(now_dt)
+        await await_pump_task()
+
+    mock_hass.services.async_call.assert_any_call(
+        "switch", "turn_on", {"entity_id": "switch.pump"}, blocking=True
+    )
+
+
+async def test_vwc_no_logbook_when_disabled(
+    vwc_coordinator: VWCIrrigationCoordinator,
+    mock_hass: MagicMock,
+    mock_growspace: Growspace,
+) -> None:
+    """When log_to_logbook=False, phase transitions do NOT fire logbook events."""
+    mock_growspace.irrigation_config.log_to_logbook = False
+    mock_hass.bus = MagicMock()
+    mock_hass.bus.async_fire = MagicMock()
+
+    now_dt = datetime(2023, 1, 1, 8, 30, 0, tzinfo=dt_util.UTC)  # P0 window
+    with patch(
+        "custom_components.growspace_manager.vwc_irrigation_coordinator.now",
+        return_value=now_dt,
+    ):
+        mock_hass.states.get.return_value = MagicMock(state="40.0")
+        await vwc_coordinator._update_loop(now_dt)
+
+    mock_hass.bus.async_fire.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# Phase Trigger tests (Issue #372)
+# ---------------------------------------------------------------------------
+
+
+def test_irrigation_config_phase_trigger_defaults() -> None:
+    """IrrigationConfig has the three phase trigger fields with correct defaults."""
+    config = IrrigationConfig()
+    assert config.auto_advance_p1_to_p2 is False
+    assert config.auto_advance_p2_to_p3 is False
+    assert config.halt_on_runoff_ec_threshold is None
+
+
+@pytest.mark.parametrize(
+    ("auto_advance_p1_to_p2", "auto_advance_p2_to_p3", "halt_on_runoff_ec_threshold"),
+    [
+        (True, False, None),
+        (False, True, None),
+        (False, False, 3.5),
+        (True, True, 2.0),
+    ],
+)
+def test_irrigation_config_phase_trigger_roundtrip(
+    auto_advance_p1_to_p2: bool,
+    auto_advance_p2_to_p3: bool,
+    halt_on_runoff_ec_threshold: float | None,
+) -> None:
+    """Phase trigger fields survive a dataclass round-trip."""
+    config = IrrigationConfig(
+        auto_advance_p1_to_p2=auto_advance_p1_to_p2,
+        auto_advance_p2_to_p3=auto_advance_p2_to_p3,
+        halt_on_runoff_ec_threshold=halt_on_runoff_ec_threshold,
+    )
+    assert config.auto_advance_p1_to_p2 == auto_advance_p1_to_p2
+    assert config.auto_advance_p2_to_p3 == auto_advance_p2_to_p3
+    assert config.halt_on_runoff_ec_threshold == halt_on_runoff_ec_threshold
+
+
+async def test_auto_advance_p1_to_p2_flag_off_no_advance(
+    vwc_coordinator: VWCIrrigationCoordinator,
+    mock_hass: MagicMock,
+    mock_growspace: Growspace,
+) -> None:
+    """With auto_advance_p1_to_p2=False (default), coordinator does NOT advance to P2 post-shot."""
+    mock_growspace.irrigation_config.auto_advance_p1_to_p2 = False
+    now_dt = datetime(2023, 1, 1, 9, 30, 0, tzinfo=dt_util.UTC)
+
+    with patch(
+        "custom_components.growspace_manager.vwc_irrigation_coordinator.now",
+        return_value=now_dt,
+    ):
+        # VWC below target so shot fires
+        mock_hass.states.get.return_value = MagicMock(state="40.0")
+        await vwc_coordinator._update_loop(now_dt)
+        await await_pump_task()
+
+    # Target NOT reached — we're still in P1
+    assert vwc_coordinator._target_reached_today is False
+
+
+async def test_auto_advance_p1_to_p2_flag_on_advances_after_shot(
+    vwc_coordinator: VWCIrrigationCoordinator,
+    mock_hass: MagicMock,
+    mock_growspace: Growspace,
+) -> None:
+    """With auto_advance_p1_to_p2=True, reaching target VWC advances phase to P2 immediately."""
+    mock_growspace.irrigation_config.auto_advance_p1_to_p2 = True
+    now_dt = datetime(2023, 1, 1, 9, 30, 0, tzinfo=dt_util.UTC)
+
+    with patch(
+        "custom_components.growspace_manager.vwc_irrigation_coordinator.now",
+        return_value=now_dt,
+    ):
+        # VWC exactly at target — the existing transition should fire even without a shot
+        mock_hass.states.get.return_value = MagicMock(state="50.0")
+        await vwc_coordinator._update_loop(now_dt)
+
+    assert vwc_coordinator._target_reached_today is True
+
+
+async def test_auto_advance_p2_to_p3_flag_off_no_early_stop(
+    vwc_coordinator: VWCIrrigationCoordinator,
+    mock_hass: MagicMock,
+    mock_growspace: Growspace,
+) -> None:
+    """With auto_advance_p2_to_p3=False, P2 continues past the early-stop window."""
+    mock_growspace.irrigation_config.auto_advance_p2_to_p3 = False
+    vwc_coordinator._target_reached_today = True
+    vwc_coordinator._last_reset_date = "2023-01-01"
+
+    # 19:00 — inside the default p2_stop_before_lights_off_minutes=120 window
+    # (lights_off=20:00, stop=18:00).  Without the flag the coordinator should
+    # remain in P2, not P3.
+    now_dt = datetime(2023, 1, 1, 19, 0, 0, tzinfo=dt_util.UTC)
+
+    with patch(
+        "custom_components.growspace_manager.vwc_irrigation_coordinator.now",
+        return_value=now_dt,
+    ):
+        mock_hass.states.get.return_value = MagicMock(state="45.0")
+        await vwc_coordinator._update_loop(now_dt)
+
+    assert "P2" in vwc_coordinator._current_phase
+
+
+async def test_auto_advance_p2_to_p3_flag_on_enters_p3_early(
+    vwc_coordinator: VWCIrrigationCoordinator,
+    mock_hass: MagicMock,
+    mock_growspace: Growspace,
+) -> None:
+    """With auto_advance_p2_to_p3=True, P3 starts p2_stop_before_lights_off_minutes before lights-off."""
+    mock_growspace.irrigation_config.auto_advance_p2_to_p3 = True
+    vwc_coordinator._target_reached_today = True
+    vwc_coordinator._last_reset_date = "2023-01-01"
+
+    # 19:00 — inside the default early-stop window (lights_off=20:00, stop=18:00)
+    now_dt = datetime(2023, 1, 1, 19, 0, 0, tzinfo=dt_util.UTC)
+
+    with patch(
+        "custom_components.growspace_manager.vwc_irrigation_coordinator.now",
+        return_value=now_dt,
+    ):
+        mock_hass.states.get.return_value = MagicMock(state="45.0")
+        await vwc_coordinator._update_loop(now_dt)
+
+    assert "P3" in vwc_coordinator._current_phase
+
+
+async def test_halt_on_runoff_ec_threshold_not_set_no_halt(
+    vwc_coordinator: VWCIrrigationCoordinator,
+    mock_hass: MagicMock,
+    mock_growspace: Growspace,
+) -> None:
+    """With halt_on_runoff_ec_threshold=None, high drain EC does not halt watering."""
+    from custom_components.growspace_manager.models import DrainReading
+
+    mock_growspace.irrigation_config.halt_on_runoff_ec_threshold = None
+    mock_growspace.drain_config.readings = [
+        DrainReading(timestamp="2023-01-01T09:00:00", feed_ec=2.0, drain_ec=5.0)
+    ]
+    now_dt = datetime(2023, 1, 1, 9, 30, 0, tzinfo=dt_util.UTC)
+
+    with patch(
+        "custom_components.growspace_manager.vwc_irrigation_coordinator.now",
+        return_value=now_dt,
+    ):
+        mock_hass.states.get.return_value = MagicMock(state="40.0")
+        await vwc_coordinator._update_loop(now_dt)
+        await await_pump_task()
+
+    # Watering should have fired
+    mock_hass.services.async_call.assert_any_call(
+        "switch", "turn_on", {"entity_id": "switch.pump"}, blocking=True
+    )
+
+
+async def test_halt_on_runoff_ec_threshold_exceeded_halts_watering(
+    vwc_coordinator: VWCIrrigationCoordinator,
+    mock_hass: MagicMock,
+    mock_growspace: Growspace,
+) -> None:
+    """When drain EC exceeds halt_on_runoff_ec_threshold, watering is suspended and a warning is logged."""
+    from custom_components.growspace_manager.models import DrainReading
+
+    mock_growspace.irrigation_config.halt_on_runoff_ec_threshold = 3.0
+    mock_growspace.drain_config.readings = [
+        DrainReading(timestamp="2023-01-01T09:00:00", feed_ec=2.0, drain_ec=3.5)
+    ]
+    now_dt = datetime(2023, 1, 1, 9, 30, 0, tzinfo=dt_util.UTC)
+
+    with patch(
+        "custom_components.growspace_manager.vwc_irrigation_coordinator.now",
+        return_value=now_dt,
+    ), patch(
+        "custom_components.growspace_manager.vwc_irrigation_coordinator._LOGGER"
+    ) as mock_logger:
+        mock_hass.states.get.return_value = MagicMock(state="40.0")
+        await vwc_coordinator._update_loop(now_dt)
+
+    mock_hass.services.async_call.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# Lights-on time resolution: detected_lights_on_time vs lights_on_time
+# ---------------------------------------------------------------------------
+
+async def test_vwc_uses_detected_lights_on_time_when_set(
+    vwc_coordinator, mock_hass, mock_growspace
+) -> None:
+    """When detected_lights_on_time is set, VWC uses it for phase window calculation."""
+    mock_growspace.irrigation_strategy.lights_on_time = "08:00:00"
+    mock_growspace.irrigation_strategy.detected_lights_on_time = "09:00:00"
+
+    # At 09:20 it should be in P0 (within 60-min activation window after detected 09:00)
+    now = datetime(2023, 1, 1, 9, 20, 0, tzinfo=dt_util.UTC)
+    with patch(
+        "custom_components.growspace_manager.vwc_irrigation_coordinator.now",
+        return_value=now,
+    ):
+        mock_hass.states.get.return_value = MagicMock(state="40.0")
+        await vwc_coordinator._update_loop(now)
+
+    assert vwc_coordinator._current_phase == "P0 - Activation"
+
+
+async def test_vwc_falls_back_to_lights_on_time_when_detected_is_none(
+    vwc_coordinator, mock_hass, mock_growspace
+) -> None:
+    """When detected_lights_on_time is None, VWC uses lights_on_time as anchor."""
+    mock_growspace.irrigation_strategy.lights_on_time = "08:00:00"
+    mock_growspace.irrigation_strategy.detected_lights_on_time = None
+
+    # At 08:20 it should be in P0 (within 60-min activation window after 08:00)
+    now = datetime(2023, 1, 1, 8, 20, 0, tzinfo=dt_util.UTC)
+    with patch(
+        "custom_components.growspace_manager.vwc_irrigation_coordinator.now",
+        return_value=now,
+    ):
+        mock_hass.states.get.return_value = MagicMock(state="40.0")
+        await vwc_coordinator._update_loop(now)
+
+    assert vwc_coordinator._current_phase == "P0 - Activation"

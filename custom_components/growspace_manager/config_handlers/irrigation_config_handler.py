@@ -29,7 +29,9 @@ class IrrigationConfigHandler(BaseConfigHandler[dict[str, Any]]):
         except AbortFlow as e:
             return self.flow.async_abort(reason=e.reason)
 
-        growspace_options = coordinator.services.growspaces.get_sorted_growspace_options()
+        growspace_options = (
+            coordinator.services.growspaces.get_sorted_growspace_options()
+        )
 
         if not growspace_options:
             return self.flow.async_abort(reason="no_growspaces")
@@ -61,7 +63,9 @@ class IrrigationConfigHandler(BaseConfigHandler[dict[str, Any]]):
             coordinator = self.get_coordinator()
         except AbortFlow as e:
             return self.flow.async_abort(reason=e.reason)
-        growspace = coordinator.services.growspaces.get_growspace(self.flow.selected_growspace_id)
+        growspace = coordinator.services.growspaces.get_growspace(
+            self.flow.selected_growspace_id
+        )
 
         if not growspace:
             return self.flow.async_abort(reason="growspace_not_found")
@@ -77,7 +81,9 @@ class IrrigationConfigHandler(BaseConfigHandler[dict[str, Any]]):
             coordinator = self.get_coordinator()
         except AbortFlow as e:
             return self.flow.async_abort(reason=e.reason)
-        growspace = coordinator.services.growspaces.get_growspace(self.flow.selected_growspace_id)
+        growspace = coordinator.services.growspaces.get_growspace(
+            self.flow.selected_growspace_id
+        )
 
         if not growspace:
             return self.flow.async_abort(reason="growspace_not_found")
@@ -155,6 +161,57 @@ class IrrigationConfigHandler(BaseConfigHandler[dict[str, Any]]):
                     min=1, mode=selector.NumberSelectorMode.BOX
                 )
             ),
+            vol.Optional(
+                "soil_trigger_percent",
+                description={
+                    "suggested_value": irrigation_options.get("soil_trigger_percent")
+                },
+            ): selector.NumberSelector(
+                selector.NumberSelectorConfig(
+                    min=0.0,
+                    max=100.0,
+                    step=0.1,
+                    unit_of_measurement="%",
+                    mode=selector.NumberSelectorMode.BOX,
+                )
+            ),
+            vol.Optional(
+                "daily_volume_cap_liters",
+                description={
+                    "suggested_value": irrigation_options.get("daily_volume_cap_liters")
+                },
+            ): selector.NumberSelector(
+                selector.NumberSelectorConfig(
+                    min=0.0,
+                    step=0.1,
+                    unit_of_measurement="L",
+                    mode=selector.NumberSelectorMode.BOX,
+                )
+            ),
+            vol.Optional(
+                "max_cycles_per_day",
+                description={
+                    "suggested_value": irrigation_options.get("max_cycles_per_day")
+                },
+            ): selector.NumberSelector(
+                selector.NumberSelectorConfig(
+                    min=0,
+                    step=1,
+                    mode=selector.NumberSelectorMode.BOX,
+                )
+            ),
+            vol.Optional(
+                "skip_during_dark",
+                default=irrigation_options.get("skip_during_dark", False),
+            ): selector.BooleanSelector(),
+            vol.Optional(
+                "pause_on_low_tank",
+                default=irrigation_options.get("pause_on_low_tank", True),
+            ): selector.BooleanSelector(),
+            vol.Optional(
+                "log_to_logbook",
+                default=irrigation_options.get("log_to_logbook", True),
+            ): selector.BooleanSelector(),
             # VWC Crop Steering Settings
             vol.Optional(
                 "use_vwc_steering",
@@ -257,6 +314,29 @@ class IrrigationConfigHandler(BaseConfigHandler[dict[str, Any]]):
                 selector.NumberSelectorConfig(
                     min=0,
                     unit_of_measurement="min",
+                    mode=selector.NumberSelectorMode.BOX,
+                )
+            ),
+            vol.Optional(
+                "auto_advance_p1_to_p2",
+                default=irrigation_options.get("auto_advance_p1_to_p2", False),
+            ): selector.BooleanSelector(),
+            vol.Optional(
+                "auto_advance_p2_to_p3",
+                default=irrigation_options.get("auto_advance_p2_to_p3", False),
+            ): selector.BooleanSelector(),
+            vol.Optional(
+                "halt_on_runoff_ec_threshold",
+                description={
+                    "suggested_value": irrigation_options.get(
+                        "halt_on_runoff_ec_threshold"
+                    )
+                },
+            ): selector.NumberSelector(
+                selector.NumberSelectorConfig(
+                    min=0.0,
+                    step=0.1,
+                    unit_of_measurement="mS/cm",
                     mode=selector.NumberSelectorMode.BOX,
                 )
             ),

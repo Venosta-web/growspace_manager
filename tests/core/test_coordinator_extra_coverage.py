@@ -24,7 +24,9 @@ async def test_update_special_growspace_name_fallback(hass: HomeAssistant) -> No
     coordinator._growspace_manager = mock_manager
 
     # Call the method
-    coordinator._update_special_growspace_name("mother", "New Mother Name")
+    coordinator.growspace_manager._update_special_growspace_name(
+        "mother", "New Mother Name"
+    )
 
     # Verify the internal method was called
     mock_manager._update_special_growspace_name.assert_called_once_with(
@@ -38,11 +40,15 @@ async def test_async_update_growspace_returns_gs(hass: HomeAssistant) -> None:
     coordinator = create_test_coordinator(hass)
 
     # Add a growspace
-    gs = await coordinator.services.growspaces.add_growspace(name="Test GS", rows=2, plants_per_row=2)
+    gs = await coordinator.services.growspaces.add_growspace(
+        name="Test GS", rows=2, plants_per_row=2
+    )
     gs_id = gs.id
 
     # Update it
-    result = await coordinator.services.growspaces.update_growspace(gs_id, name="Updated GS")
+    result = await coordinator.services.growspaces.update_growspace(
+        gs_id, name="Updated GS"
+    )
 
     # Verify it returns the updated growspace object
     assert result.id == gs_id
@@ -79,7 +85,9 @@ async def test_services_update_growspace_fallback(hass: HomeAssistant) -> None:
 
     # Call it with an ID that definitely doesn't exist in coordinator.growspaces
     with pytest.raises(GrowspaceNotFoundError):
-        await coordinator.services.growspaces.update_growspace("nonexistent_id", name="New Name")
+        await coordinator.services.growspaces.update_growspace(
+            "nonexistent_id", name="New Name"
+        )
 
     # It should not be in the growspaces repo
     assert "nonexistent_id" not in coordinator.growspaces

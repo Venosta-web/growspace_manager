@@ -5,11 +5,17 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, cast
 
+from homeassistant.core import HomeAssistant, ServiceCall
+from homeassistant.exceptions import ServiceValidationError
+
 from ..const import (
     ATTR_DRAIN_TIMES,
     ATTR_DURATION,
+    ATTR_FEED_EC_MAX,
+    ATTR_FEED_EC_MIN,
     ATTR_GROWSPACE_ID,
     ATTR_IRRIGATION_TIMES,
+    ATTR_STAGE,
     ATTR_TIME,
     GrowspaceService,
 )
@@ -18,19 +24,17 @@ from ..schemas import (
     ADD_IRRIGATION_TIME_SCHEMA,
     REMOVE_DRAIN_TIME_SCHEMA,
     REMOVE_IRRIGATION_TIME_SCHEMA,
+    RUN_IRRIGATION_CYCLE_SCHEMA,
+    SET_EC_TARGET_RANGE_SCHEMA,
     SET_IRRIGATION_SETTINGS_SCHEMA,
+    SET_IRRIGATION_STRATEGY_SCHEMA,
 )
-from .utils import handle_service_errors
-from homeassistant.core import HomeAssistant, ServiceCall
-
 from ._definition import ServiceDefinition
-from homeassistant.exceptions import ServiceValidationError
+from .utils import handle_service_errors
 
 if TYPE_CHECKING:
     from ..coordinator import GrowspaceCoordinator
-    from ..irrigation_coordinator import (
-        IrrigationCoordinator,
-    )
+    from ..irrigation_coordinator import IrrigationCoordinator
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -82,6 +86,25 @@ async def handle_set_irrigation_settings(
 
     await coordinator.services.growspaces.set_irrigation_settings(growspace_id, settings)
     _LOGGER.info("Set irrigation settings for growspace '%s'", growspace_id)
+
+
+@handle_service_errors
+async def handle_set_irrigation_strategy(
+    hass: HomeAssistant,
+    coordinator: GrowspaceCoordinator,
+    call: ServiceCall,
+) -> None:
+    """Handle the service call to set irrigation strategy for a growspace."""
+    growspace_id = call.data[ATTR_GROWSPACE_ID]
+    await _get_irrigation_coordinator(coordinator, growspace_id)
+
+    strategy = {
+        key: value for key, value in call.data.items() if key != ATTR_GROWSPACE_ID
+    }
+
+    await coordinator.services.growspaces.set_irrigation_strategy(growspace_id, strategy)
+    _LOGGER.info("Set irrigation strategy for growspace '%s'", growspace_id)
+
 
 
 @handle_service_errors
@@ -150,11 +173,66 @@ async def handle_remove_drain_time(
     )
 
 
+@handle_service_errors
+async def handle_run_irrigation_cycle(
+    hass: HomeAssistant,
+    coordinator: GrowspaceCoordinator,
+    call: ServiceCall,
+) -> None:
+    """Handle the service call to manually trigger an irrigation cycle."""
+    growspace_id = call.data[ATTR_GROWSPACE_ID]
+    duration = call.data.get(ATTR_DURATION)
+    irrigation_coord = await _get_irrigation_coordinator(coordinator, growspace_id)
+    await irrigation_coord.async_manual_run(duration=duration)
+    _LOGGER.info(
+        "Manual irrigation cycle started for growspace '%s' (duration=%s)",
+        growspace_id,
+        duration,
+    )
+
+
+@handle_service_errors
+async def handle_set_ec_target_range(
+    hass: HomeAssistant,
+    coordinator: GrowspaceCoordinator,
+    call: ServiceCall,
+) -> None:
+    """Handle the service call to set (upsert) a feed EC target range for a stage."""
+    growspace_id: str = call.data[ATTR_GROWSPACE_ID]
+    stage: str = call.data[ATTR_STAGE]
+    feed_ec_min: float = call.data[ATTR_FEED_EC_MIN]
+    feed_ec_max: float = call.data[ATTR_FEED_EC_MAX]
+
+    await coordinator.services.growspaces.set_ec_target_range(
+        growspace_id=growspace_id,
+        stage=stage,
+        feed_ec_min=feed_ec_min,
+        feed_ec_max=feed_ec_max,
+    )
+    _LOGGER.info(
+        "Set EC target range for growspace '%s' stage '%s': %.1f–%.1f",
+        growspace_id,
+        stage,
+        feed_ec_min,
+        feed_ec_max,
+    )
+
+
 SERVICES = [
+    ServiceDefinition(
+        GrowspaceService.RUN_IRRIGATION_CYCLE,
+        handle_run_irrigation_cycle,
+        RUN_IRRIGATION_CYCLE_SCHEMA,
+    ),
     ServiceDefinition(
         GrowspaceService.SET_IRRIGATION_SETTINGS,
         handle_set_irrigation_settings,
         SET_IRRIGATION_SETTINGS_SCHEMA,
+    ),
+    ServiceDefinition(
+        GrowspaceService.SET_IRRIGATION_STRATEGY,
+        handle_set_irrigation_strategy,
+        SET_IRRIGATION_STRATEGY_SCHEMA,
     ),
     ServiceDefinition(
         GrowspaceService.ADD_IRRIGATION_TIME,
@@ -175,5 +253,10 @@ SERVICES = [
         GrowspaceService.REMOVE_DRAIN_TIME,
         handle_remove_drain_time,
         REMOVE_DRAIN_TIME_SCHEMA,
+    ),
+    ServiceDefinition(
+        GrowspaceService.SET_EC_TARGET_RANGE,
+        handle_set_ec_target_range,
+        SET_EC_TARGET_RANGE_SCHEMA,
     ),
 ]

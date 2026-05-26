@@ -3,9 +3,8 @@ from __future__ import annotations
 
 from collections.abc import Callable, Coroutine
 from functools import partial
-import importlib
 import logging
-import pkgutil
+from types import ModuleType
 from typing import Any, cast
 
 from homeassistant.core import HomeAssistant, ServiceCall
@@ -14,10 +13,54 @@ from homeassistant.exceptions import ServiceValidationError
 from .const import DOMAIN
 from .coordinator import GrowspaceCoordinator
 from .exceptions import GrowspaceError
-from . import services as services_pkg
+from .services import (
+    ai_assistant,
+    batch,
+    debug,
+    drain_ec,
+    drying,
+    ec_ramp,
+    environment,
+    genetics,
+    growspace,
+    ipm,
+    irrigation,
+    irrigation_watering,
+    nutrient_presets,
+    plant,
+    report,
+    strain_library,
+    tank_config,
+    training,
+    vision_checkup,
+    water_analytics,
+)
 from .strain_library import StrainLibrary
 
 _LOGGER = logging.getLogger(__name__)
+
+_SERVICE_MODULES: list[ModuleType] = [
+    ai_assistant,
+    batch,
+    debug,
+    drain_ec,
+    drying,
+    ec_ramp,
+    environment,
+    genetics,
+    growspace,
+    ipm,
+    irrigation,
+    irrigation_watering,
+    nutrient_presets,
+    plant,
+    report,
+    strain_library,
+    tank_config,
+    training,
+    vision_checkup,
+    water_analytics,
+]
 
 
 async def register_services(
@@ -39,33 +82,16 @@ async def register_services(
         except GrowspaceError as err:
             raise ServiceValidationError(str(err)) from err
 
-    # Iterate over all modules in the services package
-    for module_info in pkgutil.iter_modules(services_pkg.__path__, f"{services_pkg.__name__}."):
-        # Skip internal modules
-        if module_info.name.endswith("._definition") or module_info.name.endswith(".utils"):
-            continue
-
-        try:
-            module = importlib.import_module(module_info.name)
-        except Exception:
-            _LOGGER.exception("Failed to import service module: %s", module_info.name)
-            continue
-
-        if not hasattr(module, "SERVICES"):
-            continue
-
-        services = getattr(module, "SERVICES")
-        for service_def in services:
+    for module in _SERVICE_MODULES:
+        for service_def in module.SERVICES:
             service_name = service_def.name
             handler = service_def.handler
             schema = service_def.schema
             needs_strain_lib = service_def.needs_strain_lib
             supports_response = service_def.supports_response
 
-            # Wrap the handler
             wrapped_handler = partial(_wrap_dynamic, handler, needs_strain_lib)
 
-            # Register the service
             hass.services.async_register(
                 DOMAIN,
                 service_name,

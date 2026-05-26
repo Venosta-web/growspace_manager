@@ -35,15 +35,19 @@ async def test_async_setup_entry_pending_growspace_success(hass: HomeAssistant) 
     mock_coordinator.async_initialize_sub_coordinators = AsyncMock()
     mock_coordinator.async_config_entry_first_refresh = AsyncMock()
 
-    # Mock growspace_service
-    mock_coordinator.growspace_service = MagicMock()
-    mock_coordinator.growspace_service.add_growspace = AsyncMock()
+    # Mock services.growspaces facade
+    mock_coordinator.services = MagicMock()
+    mock_coordinator.services.growspaces = MagicMock()
+    mock_coordinator.services.growspaces.add_growspace = AsyncMock()
 
     mock_strain_lib = MagicMock()
     mock_strain_lib.async_setup = AsyncMock()
 
     mock_scraper = MagicMock()
-    hass.data[DOMAIN] = {"strain_library": mock_strain_lib, "seedfinder_scraper": mock_scraper}
+    hass.data[DOMAIN] = {
+        "strain_library": mock_strain_lib,
+        "seedfinder_scraper": mock_scraper,
+    }
     hass.http = MagicMock()
     hass.http.async_register_static_paths = AsyncMock()
 
@@ -69,7 +73,7 @@ async def test_async_setup_entry_pending_growspace_success(hass: HomeAssistant) 
         assert await async_setup_entry(hass, entry) is True
 
         # Verify pending_growspace was processed and entry updated
-        mock_coordinator.growspace_service.add_growspace.assert_called_once()
+        mock_coordinator.services.growspaces.add_growspace.assert_called_once()
         mock_update.assert_called_once()
         assert "pending_growspace" not in mock_update.call_args[1]["data"]
 

@@ -11,7 +11,7 @@ from ..const import (
     ATTR_MIN_DAYS_IN_STAGE,
     ATTR_NAME,
     ATTR_NOTES,
-    ATTR_PLANT_ID,
+    ATTR_PLANT_IDS,
     ATTR_PRESET_ID,
     ATTR_STAGE,
     ATTR_TYPE,
@@ -71,7 +71,7 @@ async def handle_apply_ipm(
     """Handle applying an IPM preset."""
     preset_id = call.data[ATTR_PRESET_ID]
     growspace_id = call.data.get(ATTR_GROWSPACE_ID)
-    plant_ids = call.data.get(ATTR_PLANT_ID)
+    plant_ids = call.data.get(ATTR_PLANT_IDS)
     notes = call.data.get(ATTR_NOTES)
 
     await coordinator.services.plants.apply_ipm(

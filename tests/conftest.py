@@ -4,6 +4,16 @@ from __future__ import annotations
 import sys
 from unittest.mock import MagicMock
 
+# Inject Session into builtins to resolve Python 3.14 NameError when evaluating type annotations at runtime
+import builtins
+try:
+    from sqlalchemy.orm import Session
+    builtins.Session = Session
+except ImportError:
+    class DummySession:
+        pass
+    builtins.Session = DummySession
+
 # Must precede any imports that pull in these dependencies
 sys.modules["turbojpeg"] = MagicMock()
 sys.modules["fpdf"] = MagicMock()

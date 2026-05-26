@@ -168,6 +168,8 @@ class IrrigationStrategyData(TypedDict, total=False):
     maintenance_dryback_percent: float
     shot_duration_seconds: int
     shot_interval_minutes: int
+    auto_light_tracking: bool
+    detected_lights_on_time: str | None
 
 
 class GrowspaceData(TypedDict, total=False):

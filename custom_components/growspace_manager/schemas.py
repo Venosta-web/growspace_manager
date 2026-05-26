@@ -9,7 +9,6 @@ from homeassistant.helpers import config_validation as cv
 from .const import (
     ATTR_ACQUISITION_DATE,
     ATTR_AMOUNT_ML,
-    ATTR_AROMA,
     ATTR_BATCH_ID,
     ATTR_BREEDER,
     ATTR_CBD_PERCENTAGE,
@@ -23,6 +22,8 @@ from .const import (
     ATTR_EC,
     ATTR_EVENT_ID,
     ATTR_FEED_EC,
+    ATTR_FEED_EC_MAX,
+    ATTR_FEED_EC_MIN,
     ATTR_FEED_VOLUME_ML,
     ATTR_GENERATION,
     ATTR_GROWSPACE_ID,
@@ -34,6 +35,7 @@ from .const import (
     ATTR_MAX_EC_DELTA,
     ATTR_METADATA,
     ATTR_MIN_DAYS_IN_STAGE,
+    ATTR_MOISTURE_PERCENT,
     ATTR_MOLD_RESISTANCE,
     ATTR_NAME,
     ATTR_NOTES,
@@ -41,10 +43,10 @@ from .const import (
     ATTR_PARENT_1_STRAIN,
     ATTR_PARENT_2_PHENOTYPE,
     ATTR_PARENT_2_STRAIN,
-    ATTR_PEST_RESISTANCE,
     ATTR_PH,
     ATTR_PHENOTYPE,
     ATTR_PLANT_ID,
+    ATTR_PLANT_IDS,
     ATTR_POINTS,
     ATTR_PRESET_ID,
     ATTR_QUANTITY,
@@ -55,7 +57,6 @@ from .const import (
     ATTR_STAGE,
     ATTR_STRAIN,
     ATTR_STRAIN_NAME,
-    ATTR_STRUCTURE,
     ATTR_TAGS,
     ATTR_TANK_ENTITY,
     ATTR_TARGET_RUNOFF_PERCENT,
@@ -69,10 +70,9 @@ from .const import (
     ATTR_VIGOR,
     ATTR_VISUAL_TAG,
     ATTR_VOLUME_LITERS,
-    ATTR_WET_WEIGHT,
     ATTR_WEIGHT_GRAMS,
+    ATTR_WET_WEIGHT,
     ATTR_YIELD_POTENTIAL,
-    ATTR_MOISTURE_PERCENT,
     CONF_CAMERA_ENTITIES,
     CONF_CIRCULATION_FAN_ENTITIES,
     CONF_CIRCULATION_FAN_ENTITY,
@@ -554,6 +554,22 @@ STRAIN_RECOMMENDATION_SCHEMA = vol.Schema(
 # --- Irrigation Service Schemas ---
 
 
+SET_IRRIGATION_STRATEGY_SCHEMA = vol.Schema(
+    {
+        vol.Required("growspace_id"): vol.All(str, valid_growspace_id),
+        vol.Optional("enabled"): bool,
+        vol.Optional("lights_on_time"): str,
+        vol.Optional("p0_duration_minutes"): vol.All(vol.Coerce(int), vol.Range(min=0)),
+        vol.Optional("p2_stop_before_lights_off_minutes"): vol.All(vol.Coerce(int), vol.Range(min=0)),
+        vol.Optional("target_vwc_percent"): vol.All(vol.Coerce(float), vol.Range(min=0.0, max=100.0)),
+        vol.Optional("maintenance_dryback_percent"): vol.All(vol.Coerce(float), vol.Range(min=0.0, max=100.0)),
+        vol.Optional("shot_duration_seconds"): vol.All(vol.Coerce(int), vol.Range(min=0)),
+        vol.Optional("shot_interval_minutes"): vol.All(vol.Coerce(int), vol.Range(min=0)),
+        vol.Optional("auto_light_tracking"): bool,
+    }
+)
+
+
 SET_IRRIGATION_SETTINGS_SCHEMA = vol.All(
     vol.Schema(
         {
@@ -562,6 +578,24 @@ SET_IRRIGATION_SETTINGS_SCHEMA = vol.All(
             vol.Optional("drain_pump_entity"): str,
             vol.Optional("irrigation_duration"): vol.All(vol.Coerce(int), vol.Range(min=1)),
             vol.Optional("drain_duration"): vol.All(vol.Coerce(int), vol.Range(min=1)),
+            vol.Optional("soil_trigger_percent"): vol.Any(
+                None, vol.All(vol.Coerce(float), vol.Range(min=0.0, max=100.0))
+            ),
+            vol.Optional("daily_volume_cap_liters"): vol.Any(
+                None, vol.All(vol.Coerce(float), vol.Range(min=0.0))
+            ),
+            vol.Optional("max_cycles_per_day"): vol.Any(
+                None, vol.All(vol.Coerce(int), vol.Range(min=0))
+            ),
+            vol.Optional("skip_during_dark"): bool,
+            vol.Optional("pause_on_low_tank"): bool,
+            vol.Optional("log_to_logbook"): bool,
+            vol.Optional("auto_advance_p1_to_p2"): bool,
+            vol.Optional("auto_advance_p2_to_p3"): bool,
+            vol.Optional("halt_on_runoff_ec_threshold"): vol.Any(
+                None, vol.All(vol.Coerce(float), vol.Range(min=0.0))
+            ),
+            vol.Optional("active_steering_phase"): vol.In(['p1', 'p2', 'p3']),
         }
     ),
     _validate_pump_entities,
@@ -584,6 +618,13 @@ REMOVE_TIME_BASE = {
 
 REMOVE_IRRIGATION_TIME_SCHEMA = vol.Schema(REMOVE_TIME_BASE)
 REMOVE_DRAIN_TIME_SCHEMA = vol.Schema(REMOVE_TIME_BASE)
+
+RUN_IRRIGATION_CYCLE_SCHEMA = vol.Schema(
+    {
+        vol.Required("growspace_id"): vol.All(str, valid_growspace_id),
+        vol.Optional("duration"): vol.All(vol.Coerce(int), vol.Range(min=1)),
+    }
+)
 
 SET_DEHUMIDIFIER_CONTROL_SCHEMA = vol.Schema(
     {
@@ -672,7 +713,7 @@ APPLY_IPM_SCHEMA = vol.Schema(
     {
         vol.Required(ATTR_PRESET_ID): str,
         vol.Optional(ATTR_GROWSPACE_ID): str,
-        vol.Optional(ATTR_PLANT_ID): vol.All(cv.ensure_list, [str]),
+        vol.Optional(ATTR_PLANT_IDS): vol.All(cv.ensure_list, [str]),
         vol.Optional(ATTR_NOTES): str,
     }
 )
@@ -769,6 +810,17 @@ SAVE_EC_RAMP_CURVE_SCHEMA = vol.Schema(
 REMOVE_EC_RAMP_CURVE_SCHEMA = vol.Schema(
     {
         vol.Required(ATTR_CURVE_ID): str,
+    }
+)
+
+# --- EC Target Range Schema ---
+
+SET_EC_TARGET_RANGE_SCHEMA = vol.Schema(
+    {
+        vol.Required(ATTR_GROWSPACE_ID): vol.All(str, valid_growspace_id),
+        vol.Required(ATTR_STAGE): vol.In(PLANT_STAGES),
+        vol.Required(ATTR_FEED_EC_MIN): vol.All(vol.Coerce(float), vol.Range(min=0.0)),
+        vol.Required(ATTR_FEED_EC_MAX): vol.All(vol.Coerce(float), vol.Range(min=0.0)),
     }
 )
 

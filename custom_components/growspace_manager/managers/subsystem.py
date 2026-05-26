@@ -19,6 +19,7 @@ from ..humidifier_coordinator import (
 from ..irrigation_coordinator import (
     IrrigationCoordinator,
 )
+from ..light_cycle_tracker import LightCycleTracker
 from ..vwc_irrigation_coordinator import (
     VWCIrrigationCoordinator,
 )
@@ -51,6 +52,7 @@ class SubsystemManager:
         ] = {}
         self.dehumidifier_coordinators: dict[str, DehumidifierCoordinator] = {}
         self.humidifier_coordinators: dict[str, HumidifierCoordinator] = {}
+        self.light_cycle_trackers: dict[str, LightCycleTracker] = {}
 
     async def async_initialize_sub_coordinators(
         self, growspaces: dict[str, Growspace]
@@ -108,6 +110,11 @@ class SubsystemManager:
         await humidifier_coordinator.async_setup()
         self.humidifier_coordinators[growspace_id] = humidifier_coordinator
 
+        # Light cycle tracker setup
+        light_cycle_tracker = LightCycleTracker(self.hass, growspace_id, self.coordinator)
+        await light_cycle_tracker.async_setup()
+        self.light_cycle_trackers[growspace_id] = light_cycle_tracker
+
     def async_cancel_all(self) -> None:
         """Cancel all sub-coordinator listeners."""
         for irr_coordinator in self.irrigation_coordinators.values():
@@ -127,4 +134,10 @@ class SubsystemManager:
                 hum_coordinator.unload()
             except Exception as err:
                 _LOGGER.error("Error unloading humidifier coordinator: %s", err)
+
+        for tracker in self.light_cycle_trackers.values():
+            try:
+                tracker.unload()
+            except Exception as err:
+                _LOGGER.error("Error unloading light cycle tracker: %s", err)
 

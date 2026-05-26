@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from datetime import datetime, timedelta
 import logging
 from typing import TYPE_CHECKING, Any
@@ -104,9 +105,14 @@ class TankWaterTracker:
     Reads and writes directly to ``tank.water_history``.
     """
 
-    def __init__(self, tank: IrrigationTank) -> None:
+    def __init__(
+        self,
+        tank: IrrigationTank,
+        stage_resolver: Callable[[], str | None] | None = None,
+    ) -> None:
         """Initialize with a reference to an IrrigationTank instance."""
         self.tank = tank
+        self._stage_resolver = stage_resolver
         self._pending_peak: float | None = None
         self._unsub: Any | None = None
 
@@ -232,6 +238,10 @@ class TankWaterTracker:
                 "pct_delta": delta_from_peak,
                 "liters": _liters(abs_consumed),
             }
+            if self._stage_resolver is not None:
+                stage = self._stage_resolver()
+                if stage is not None:
+                    event["growth_stage"] = stage
 
         elif delta_from_trough >= TANK_NOISE_FLOOR_PCT:
             # Minor rise from trough: queue as pending peak candidate.
@@ -276,31 +286,48 @@ class TankWaterTracker:
         return buckets
 
     def get_total_liters_today(self, reference_ts: str | None = None) -> float:
-        """Return total liters consumed since midnight UTC on the reference date."""
+        """Return total liters consumed since midnight local time on the reference date."""
         if reference_ts is not None:
             ref_dt = _parse_ts(reference_ts)
         else:
-            ref_dt = dt_util.utcnow()
-        day_start = ref_dt.replace(hour=0, minute=0, second=0, microsecond=0)
+            ref_dt = dt_util.now()
+        local_ref = dt_util.as_local(ref_dt)
+        day_start = local_ref.replace(hour=0, minute=0, second=0, microsecond=0)
         return sum(
             ev["liters"]
             for ev in self.tank.water_history.events
             if ev["event_type"] == "consumption"
-            and _parse_ts(ev["timestamp"]) >= day_start
+            and dt_util.as_local(_parse_ts(ev["timestamp"])) >= day_start
         )
+
+    def get_stage_aggregates(self) -> dict[str, float]:
+        """Return total liters consumed per growth stage.
+
+        Only consumption events tagged with a ``growth_stage`` key are included.
+        """
+        aggregates: dict[str, float] = {}
+        for ev in self.tank.water_history.events:
+            if ev["event_type"] != "consumption":
+                continue
+            stage = ev.get("growth_stage")
+            if stage is None:
+                continue
+            aggregates[stage] = aggregates.get(stage, 0.0) + ev["liters"]
+        return aggregates
 
     def get_total_liters_7d(self, reference_ts: str | None = None) -> float:
         """Return total liters consumed in the last 7 days from the reference time."""
         if reference_ts is not None:
             ref_dt = _parse_ts(reference_ts)
         else:
-            ref_dt = dt_util.utcnow()
-        window_start = ref_dt - timedelta(days=7)
+            ref_dt = dt_util.now()
+        local_ref = dt_util.as_local(ref_dt)
+        window_start = local_ref - timedelta(days=7)
         return sum(
             ev["liters"]
             for ev in self.tank.water_history.events
             if ev["event_type"] == "consumption"
-            and _parse_ts(ev["timestamp"]) >= window_start
+            and dt_util.as_local(_parse_ts(ev["timestamp"])) >= window_start
         )
 
     # ── HA subscription ───────────────────────────────────────────────────────

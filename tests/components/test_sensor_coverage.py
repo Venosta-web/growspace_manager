@@ -62,10 +62,10 @@ async def test_async_create_derivative_sensors_skips_none() -> None:
     }
 
     with patch(
-        "custom_components.growspace_manager.sensor.async_setup_trend_sensor",
+        "custom_components.growspace_manager.sensor._setup.async_setup_trend_sensor",
         new_callable=AsyncMock,
     ) as mock_trend, patch(
-        "custom_components.growspace_manager.sensor.async_setup_statistics_sensor",
+        "custom_components.growspace_manager.sensor._setup.async_setup_statistics_sensor",
         new_callable=AsyncMock,
     ):
         await _async_create_derivative_sensors(hass, config_entry, growspace)
@@ -126,9 +126,9 @@ async def test_get_val_attribute_error_derivative_sensors() -> None:
         return orig_getattr(obj, name, default)
 
     with patch(
-        "custom_components.growspace_manager.sensor.getattr", side_effect=mock_getattr
+        "custom_components.growspace_manager.sensor._setup.getattr", side_effect=mock_getattr
     ), patch(
-        "custom_components.growspace_manager.sensor.async_setup_trend_sensor",
+        "custom_components.growspace_manager.sensor._setup.async_setup_trend_sensor",
         new_callable=AsyncMock,
     ) as mock_trend:
         # This should complete without exception and return default, hitting line 116-117
@@ -159,7 +159,7 @@ def test_get_val_attribute_error_calculated_vpd_sensor(
         return orig_getattr(obj, name, default)
 
     with patch(
-        "custom_components.growspace_manager.sensor.getattr", side_effect=mock_getattr
+        "custom_components.growspace_manager.sensor._setup.getattr", side_effect=mock_getattr
     ):
         # This should safely return empty list, hitting lines 503-504
         result = _check_calculated_vpd_sensor(mock_coordinator, growspace)
@@ -199,7 +199,7 @@ async def test_create_initial_entities_subarea_vpd(
     calculated_subarea_vpd_ids = set()
 
     with patch(
-        "custom_components.growspace_manager.sensor._async_create_derivative_sensors",
+        "custom_components.growspace_manager.sensor._setup._async_create_derivative_sensors",
         new_callable=AsyncMock,
     ):
         await _create_initial_entities(
@@ -255,7 +255,7 @@ async def test_update_growspace_entities_new_subarea_vpd(
     calculated_subarea_vpd_ids = set()
 
     with patch(
-        "custom_components.growspace_manager.sensor._async_create_derivative_sensors",
+        "custom_components.growspace_manager.sensor._setup._async_create_derivative_sensors",
         new_callable=AsyncMock,
     ):
         await _update_growspace_entities(
@@ -289,7 +289,7 @@ def test_get_env_config_val_dict_and_attribute_error() -> None:
         return orig_getattr(obj, name, default)
 
     with patch(
-        "custom_components.growspace_manager.sensor.getattr", side_effect=mock_getattr
+        "custom_components.growspace_manager.sensor._setup.getattr", side_effect=mock_getattr
     ):
         assert _get_env_config_val(config_obj, "my_key", "default_val") == "default_val"
 

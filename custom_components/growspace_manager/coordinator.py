@@ -33,7 +33,6 @@ from .managers.subsystem import SubsystemManager
 from .models import (
     Growspace,
     GrowspaceEvent,
-    GrowspaceType,
     IPMPreset,
     NutrientInventory,
     NutrientPreset,
@@ -41,10 +40,10 @@ from .models import (
 )
 from .notification_manager import NotificationManager
 from .notifications import NotificationSettingsManager
+from .photoperiod_flip_checker import PhotoperiodFlipChecker
 from .presentation import PlantViewModelBuilder
 from .service_coordinator_locator import ServiceCoordinatorLocator
 from .services.environment_reporter import EnvironmentReporter
-from .services.context import ServiceContext
 from .services.facade import ServiceFacade
 from .services.ipm_service import IPMService
 from .services.nutrient_inventory import NutrientInventoryService
@@ -82,6 +81,29 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     def plants(self) -> dict[str, Plant]:
         """Return a snapshot dict of all plants keyed by plant_id."""
         return {p.plant_id: p for p in self.data_repository.get_all_plants()}
+
+    @classmethod
+    def build(
+        cls,
+        hass: HomeAssistant,
+        entry: Any,
+        data: dict[str, Any] | None = None,
+        options: dict[str, Any] | None = None,
+        strain_library: Any | None = None,
+        seedfinder_scraper: Any | None = None,
+    ) -> GrowspaceCoordinator:
+        """Build a fully wired coordinator via CoordinatorBuilder.
+
+        Preferred over direct instantiation in tests and production code.
+        """
+        from .coordinator_builder import CoordinatorBuilder  # noqa: PLC0415
+
+        return CoordinatorBuilder(hass, entry).build(
+            data=data,
+            options=options,
+            strain_library=strain_library,
+            seedfinder_scraper=seedfinder_scraper,
+        )
 
     @staticmethod
     def get_for_service_call(
@@ -183,6 +205,24 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         """
         return self._ipm_service.ipm_presets
 
+    async def save_ipm_preset(
+        self,
+        name: str,
+        preset_type: str,
+        items: list[dict[str, Any]],
+        stage: str | None = None,
+        min_days_in_stage: int | None = None,
+        preset_id: str | None = None,
+    ) -> IPMPreset:
+        """Create or update an IPM preset."""
+        return await self._ipm_service.async_save_ipm_preset(
+            name, preset_type, items, stage, min_days_in_stage, preset_id
+        )
+
+    async def remove_ipm_preset(self, preset_id: str) -> None:
+        """Remove an IPM preset by ID."""
+        await self._ipm_service.async_remove_ipm_preset(preset_id)
+
     @ipm_presets.setter
     def ipm_presets(self, value: dict[str, IPMPreset]) -> None:
         """Set IPM presets and synchronize with nutrient manager.
@@ -253,36 +293,28 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         """Return the plant manager."""
         return self._plant_manager
 
-    @property
-    def growspace_service(self) -> GrowspaceManager:
-        """Legacy alias for growspace service."""
-        return self._growspace_manager
-
-    @property
-    def plant_service(self) -> PlantManager:
-        """Legacy alias for plant service."""
-        return self._plant_manager
-
     def __init__(
         self,
         hass: HomeAssistant,
         entry: ConfigEntry[GrowspaceCoordinator],
-        data: dict[str, Any] | None = None,
+        *,
+        data_repository: GrowspaceRepository,
+        notification_state: NotificationState,
+        lock: asyncio.Lock,
+        cache: CacheManager,
+        date_time_helper: DateTimeHelper,
+        event_bus: GrowspaceEventBus,
+        strain_library: StrainLibrary,
+        seedfinder_scraper: SeedfinderScraper,
+        plant_view_builder: PlantViewModelBuilder,
+        import_export_manager: ImportExportManager,
+        validator: GrowspaceValidator,
         options: dict[str, Any] | None = None,
-        strain_library: StrainLibrary | None = None,
-        seedfinder_scraper: SeedfinderScraper | None = None,
     ) -> None:
-        """Initialize the Growspace Coordinator.
+        """Store pre-built collaborators and perform HA-level setup.
 
-        The coordinator manages all growspace and plant data, coordinates between
-        specialized services, and handles persistence and updates.
-
-        Args:
-            hass: The Home Assistant instance.
-            entry: The config entry for this integration.
-            data: Initial raw data from storage to restore state. If None, starts fresh.
-            options: Configuration options from the config entry.
-            strain_library: Optional pre-initialized strain library. If None, creates new.
+        All construction lives in CoordinatorBuilder. Call _attach_services()
+        after construction to wire in the coordinator-self-dependent services.
         """
         super().__init__(
             hass,
@@ -293,134 +325,59 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         )
 
         self.config_entry = entry
-        self.lock = asyncio.Lock()
-
-        # Initialize Data Repository first - it owns the data dicts
-        self.data_repository = GrowspaceRepository()
-        self.notification_state = NotificationState()
-
-        # 1. Initialize logic components with minimal dependencies
-        self.validator = GrowspaceValidator(self.data_repository)
-        self.view_model_builder = ViewModelBuilder(self)
-
-        # Initialize presentation layer builders
-        self._plant_view_builder = PlantViewModelBuilder(hass)
-
-        # 2. Load initial data if provided (uses mashumaro and validator)
-        if data:
-            self._load_initial_data(data)
-
-        # Initialize helper managers
-        self._date_time_helper = DateTimeHelper()
-        self._event_bus = GrowspaceEventBus(hass)
-
-        # Cache management - using dedicated CacheManager
-        self.cache = CacheManager()
-
-        # Initialize strain library
-        if strain_library is None:
-            self.strain_library = StrainLibrary(hass)
-        else:
-            self.strain_library = strain_library
-
-        # Initialize seedfinder scraper
-        if seedfinder_scraper is None:
-            self.seedfinder_scraper = SeedfinderScraper(hass)
-        else:
-            self.seedfinder_scraper = seedfinder_scraper
-
-        # 3. Initialize storage (depends on repository, nutrient_manager, genetics_manager)
-        self.nutrient_manager = NutrientManager(
-            self.data_repository, self._save_callback
-        )
-        self.genetics_manager = GeneticsManager(
-            self.data_repository,
-            self._save_callback,
-            strain_library=self.strain_library,
-        )
-        self.storage_manager = StorageManager(
-            self.hass,
-            self.data_repository,
-            self.nutrient_manager,
-            self.genetics_manager,
-            self.notification_state,
-        )
-
-        # 4. Initialize Managers and Services
-        _svc_ctx = ServiceContext(
-            save_callback=self._save_callback,
-            lock=self.lock,
-            add_event=self.add_event,
-            invalidate_cache=self.cache.invalidate,
-        )
-
-        self._growspace_manager = GrowspaceManager(
-            _svc_ctx,
-            self.hass,
-            self.data_repository,
-            self.notification_state,
-            self.validator,
-            self.view_model_builder,
-        )
-
-        self._plant_manager = PlantManager(
-            _svc_ctx,
-            self.hass,
-            self.data_repository,
-            self.notification_state,
-            self.validator,
-            self._growspace_manager,
-            self.strain_library,
-            self._plant_view_builder,
-        )
-
-        # Aliases for compatibility
-        self._growspace_service = self._growspace_manager
-        self._plant_service = self._plant_manager
-        self.lifecycle_manager = self._plant_manager
-        self._special_growspace_manager = self._growspace_manager
-
-        self._watering_service = WateringService(
-            _svc_ctx,
-            self.hass,
-            self.data_repository,
-            self.validator,
-            self.nutrient_manager,
-        )
-
-        self._training_service = TrainingService(
-            _svc_ctx,
-            self.hass,
-            self.data_repository,
-        )
-
-        self._ipm_service = IPMService(
-            _svc_ctx,
-            self.hass,
-            self.data_repository,
-        )
-
-        self.environment_analyzer = EnvironmentAnalyzer(hass, self)
-        self.environment_reporter = EnvironmentReporter(hass, self)
-        self.notification_manager = NotificationManager(hass, self)
-        self.notification_settings = NotificationSettingsManager(self)
-        self.import_export_manager = ImportExportManager(hass)
-
-        # Initialize Subsystem Manager
-        self.subsystem_manager = SubsystemManager(hass, self, entry)
-        self.services = ServiceFacade(self)
-
-        # Initialize Vision Checkup Scheduler
-        self.vision_scheduler = VisionCheckupScheduler(hass, self)
-
-        # Track created entities (platform, entity_id, unique_id) for lifecycle management
+        self.lock = lock
+        self.data_repository = data_repository
+        self.notification_state = notification_state
+        self.cache = cache
+        self._date_time_helper = date_time_helper
+        self._event_bus = event_bus
+        self.strain_library = strain_library
+        self.seedfinder_scraper = seedfinder_scraper
+        self._plant_view_builder = plant_view_builder
+        self.import_export_manager = import_export_manager
+        self.validator = validator
+        self.options = options or {}
         self.created_entity_ids: list[tuple[str, str, str]] = []
 
-        # Runtime tank water trackers keyed by growspace_id → tank_entity
-        # Subsystem tracking state
-
-        # Options and state initialization
-        self.options = options or {}
+    def _attach_services(
+        self,
+        *,
+        view_model_builder: ViewModelBuilder,
+        nutrient_manager: NutrientManager,
+        genetics_manager: GeneticsManager,
+        storage_manager: StorageManager,
+        growspace_manager: GrowspaceManager,
+        plant_manager: PlantManager,
+        watering_service: WateringService,
+        training_service: TrainingService,
+        ipm_service: IPMService,
+        environment_analyzer: EnvironmentAnalyzer,
+        environment_reporter: EnvironmentReporter,
+        notification_manager: NotificationManager,
+        notification_settings: NotificationSettingsManager,
+        subsystem_manager: SubsystemManager,
+        services: ServiceFacade,
+        vision_scheduler: VisionCheckupScheduler,
+        photoperiod_checker: PhotoperiodFlipChecker,
+    ) -> None:
+        """Wire coordinator-self-dependent services. Called by CoordinatorBuilder after __init__."""
+        self.view_model_builder = view_model_builder
+        self.nutrient_manager = nutrient_manager
+        self.genetics_manager = genetics_manager
+        self.storage_manager = storage_manager
+        self._growspace_manager = growspace_manager
+        self._plant_manager = plant_manager
+        self._watering_service = watering_service
+        self._training_service = training_service
+        self._ipm_service = ipm_service
+        self.environment_analyzer = environment_analyzer
+        self.environment_reporter = environment_reporter
+        self.notification_manager = notification_manager
+        self.notification_settings = notification_settings
+        self.subsystem_manager = subsystem_manager
+        self.services = services
+        self.vision_scheduler = vision_scheduler
+        self.photoperiod_checker = photoperiod_checker
         _LOGGER.info("--- COORDINATOR INITIALIZED WITH OPTIONS: %s ---", self.options)
 
     def on_nutrient_inventory_loaded(self, inventory: NutrientInventory) -> None:
@@ -492,10 +449,6 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     # UTILITY AND HELPER METHODS
     # =============================================================================
 
-    def canonical_special(self, gs_id: str) -> tuple[str, str]:
-        """Return the canonical ID and name for a special growspace."""
-        return self.growspace_manager.get_canonical_special(gs_id)
-
     def _to_date(self, date_value: DateInput) -> date | None:
         """Convert a date input to a date object (delegates to DateTimeHelper)."""
         return DateTimeHelper.to_date(date_value)
@@ -503,66 +456,6 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     def calculate_days(self, start_date: DateInput, end_date: DateInput = None) -> int:
         """Calculate the number of days that have passed since a given date (delegates to DateTimeHelper)."""
         return DateTimeHelper.calculate_days(start_date, end_date)
-
-    # =============================================================================
-    # SPECIAL GROWSPACE MANAGEMENT (Delegated to GrowspaceManager)
-    # =============================================================================
-
-    def _create_special_growspace(
-        self,
-        canonical_id: str,
-        canonical_name: str,
-        rows: int,
-        plants_per_row: int,
-        growspace_type: GrowspaceType,
-    ) -> None:
-        """Compatibility alias for GrowspaceManager legacy method."""
-        self.growspace_manager._create_special_growspace(  # noqa: SLF001
-            canonical_id, canonical_name, rows, plants_per_row, growspace_type
-        )
-
-    def _update_special_growspace_name(
-        self, canonical_id: str, canonical_name: str
-    ) -> None:
-        """Compatibility alias for GrowspaceManager legacy method."""
-        # Use public method if available (to capture test mocks better)
-        if hasattr(self.growspace_manager, "update_special_growspace_name"):
-            self.growspace_manager.update_special_growspace_name(
-                canonical_id, canonical_name
-            )
-        else:
-            self.growspace_manager._update_special_growspace_name(  # noqa: SLF001
-                canonical_id, canonical_name
-            )
-
-    def _update_growspace_structure(self, growspace_id: str, **kwargs: Any) -> Any:
-        """Compatibility alias for GrowspaceManager legacy method."""
-        growspace = self.growspaces.get(growspace_id)
-        if not growspace:
-            return False
-        changes = kwargs.pop("changes", [])
-        return self.growspace_manager._update_growspace_structure(  # noqa: SLF001
-            growspace, kwargs, changes
-        )
-
-    def _update_growspace_config(self, growspace_id: str, **kwargs: Any) -> Any:
-        """Compatibility alias for GrowspaceManager legacy method."""
-        growspace = self.growspaces.get(growspace_id)
-        if not growspace:
-            return False
-        changes = kwargs.pop("changes", [])
-        return self.growspace_manager._update_growspace_config(  # noqa: SLF001
-            growspace, kwargs, changes
-        )
-
-    def _resolve_preset_nutrients(self, preset_id: str) -> dict[str, float]:
-        """Resolve nutrient map from a preset ID.
-
-        This is a compatibility helper for tests and internal logic.
-        """
-        if preset_id not in self.nutrient_manager.nutrient_presets:
-            raise KeyError(f"Nutrient preset '{preset_id}' not found")
-        return self.nutrient_manager.nutrient_presets[preset_id].get_nutrient_map()
 
     # =============================================================================
     # DATA UPDATE COORDINATOR OVERRIDE
@@ -593,12 +486,8 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         return self.data
 
     async def _save_callback(self) -> None:
-        """Internal callback to handle async saving and commit logic.
-
-        This delegates to the service facade to ensure all orchestration
-        logic (including storage and cache invalidation) is executed.
-        """
-        await self.services.save()
+        """Persist current state and notify listeners."""
+        await self.async_commit()
 
     def _load_initial_data(self, data: dict[str, Any]) -> None:
         """Load and validate initial data from a dictionary.
@@ -708,6 +597,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             self.environment_reporter.unload()
         self.notification_manager.shutdown()
         self.vision_scheduler.async_stop()
+        self.photoperiod_checker.async_stop()
         await self.storage_manager.async_force_save()
 
     async def async_load(self) -> None:
@@ -723,6 +613,10 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         This should be called once during integration setup.
         """
         await self.storage_manager.async_load(self.options)
+        # storage_manager.load_data() replaces nutrient_manager.ipm_presets with a new
+        # dict loaded from storage. Sync ipm_service to point at that same dict so saves
+        # go to the right place and the WebSocket handler returns up-to-date presets.
+        self._ipm_service.ipm_presets = self.nutrient_manager.ipm_presets
 
         # Ensure calculated sensors are configured
         self.growspace_manager.ensure_calculated_sensors()
@@ -733,11 +627,11 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
         # Schedule vision checkups for all loaded growspaces
         self.vision_scheduler.schedule_all_growspaces()
+        self.photoperiod_checker.schedule_all_growspaces()
 
         # Initialize environment reporter after data load
         if hasattr(self, "environment_reporter"):
             await self.environment_reporter.async_initialize()
-
 
     def _handle_position_update(
         self,
@@ -767,33 +661,3 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             self.validator.validate_position_not_occupied(
                 growspace_id, new_row, new_col, plant_id
             )
-
-    def get_growspace_grid(self, growspace_id: str) -> list[list[str | None]]:
-        """Generate a 2D grid representation of a growspace's plant layout."""
-        return self.services.growspaces.get_growspace_grid(growspace_id)
-
-    def _guess_overview_entity_id(self, growspace_id: str) -> str:
-        """Make a best-effort guess of the overview sensor entity ID for a growspace."""
-        return self.services.growspaces.guess_overview_entity_id(growspace_id)
-
-    # =============================================================================
-    # NOTIFICATION MANAGEMENT
-    # =============================================================================
-
-    def should_send_notification(self, plant_id: str, stage: str, days: int) -> bool:
-        """Check if a notification for a specific event has already been sent."""
-        return self.services.notifications.should_send_notification(plant_id, stage, days)
-
-    async def mark_notification_sent(
-        self, plant_id: str, stage: str, days: int
-    ) -> None:
-        """Mark a notification as sent to prevent duplicates."""
-        await self.services.notifications.mark_notification_sent(plant_id, stage, days)
-
-    def fire_event(self, event_type: str, data: dict[str, Any]) -> None:
-        """Fire a growspace manager event."""
-        self.services.fire_event(event_type, data)
-
-    async def _async_remove_plant_entities(self, plant_id: str) -> None:
-        """Remove all Home Assistant entities associated with a specific plant."""
-        await self.services.plants.remove_plant_entities(plant_id)

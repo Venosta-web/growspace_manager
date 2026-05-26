@@ -19,6 +19,9 @@ from custom_components.growspace_manager.models import (
     PlantGenetics,
     WaterUsageData,
 )
+from custom_components.growspace_manager.data_access.notification_state import (
+    NotificationState,
+)
 from custom_components.growspace_manager.services.facade import ServiceFacade
 from homeassistant.exceptions import ServiceValidationError
 
@@ -765,7 +768,7 @@ async def test_save_ipm_preset_legacy_type_kwarg(mock_coordinator) -> None:
     """save_ipm_preset accepts 'type' as a kwarg for backward compat."""
     facade = ServiceFacade(mock_coordinator)
     preset = MagicMock()
-    mock_coordinator._ipm_service.async_save_ipm_preset = AsyncMock(return_value=preset)
+    mock_coordinator.save_ipm_preset = AsyncMock(return_value=preset)
     result = await facade.config.save_ipm_preset("Neem", items=[], type="Foliar")
     assert result is preset
 
@@ -1340,24 +1343,27 @@ def test_guess_overview_entity_id_fallback_slug(mock_coordinator) -> None:
 
 def test_should_send_notification_not_sent(mock_coordinator) -> None:
     facade = ServiceFacade(mock_coordinator)
-    mock_coordinator.notifications_sent = {}
+    mock_coordinator.notification_state = NotificationState()
     assert facade.notifications.should_send_notification("p1", "flower", 14) is True
 
 
 def test_should_send_notification_already_sent(mock_coordinator) -> None:
     facade = ServiceFacade(mock_coordinator)
-    mock_coordinator.notifications_sent = {"p1": {"flower": {"14": True}}}
+    state = NotificationState()
+    state.mark_sent("p1", "flower", 14)
+    mock_coordinator.notification_state = state
     assert facade.notifications.should_send_notification("p1", "flower", 14) is False
 
 
 @pytest.mark.asyncio
 async def test_mark_notification_sent(mock_coordinator) -> None:
     facade = ServiceFacade(mock_coordinator)
-    mock_coordinator.notifications_sent = {}
+    state = NotificationState()
+    mock_coordinator.notification_state = state
     mock_coordinator.async_commit = AsyncMock()
 
     await facade.notifications.mark_notification_sent("p1", "veg", 7)
-    assert mock_coordinator.notifications_sent["p1"]["veg"]["7"] is True
+    assert state.is_sent("p1", "veg", 7) is True
     mock_coordinator.async_commit.assert_awaited_once()
 
 
@@ -1458,7 +1464,7 @@ async def test_save_ipm_preset_items_in_kwargs(mock_coordinator) -> None:
     """save_ipm_preset should pick items from **kwargs if items param is None."""
     facade = ServiceFacade(mock_coordinator)
     preset = MagicMock()
-    mock_coordinator._ipm_service.async_save_ipm_preset = AsyncMock(return_value=preset)
+    mock_coordinator.save_ipm_preset = AsyncMock(return_value=preset)
     # Pass items via kwargs, not as the named parameter
     result = await facade.config.save_ipm_preset("Test", preset_type="Foliar", items=[{"name": "Neem"}])
     assert result is preset

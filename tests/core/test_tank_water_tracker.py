@@ -425,3 +425,153 @@ async def test_async_setup_on_change_not_called_when_none():
 
     captured["fn"](event)  # Must not raise even though on_change is None
     assert len(t.tank.water_history.snapshots) == 1
+
+
+# ── Timezone Tests ────────────────────────────────────────────────────────────
+
+def test_get_total_liters_today_timezone() -> None:
+    """Test get_total_liters_today handles local timezone boundaries correctly.
+
+    In US/Eastern (UTC-4/5), an event at 03:30:00 UTC on 2026-03-22 is 23:30:00 on 2026-03-21 local.
+    An event at 04:30:00 UTC on 2026-03-22 is 00:30:00 on 2026-03-22 local.
+    """
+    from homeassistant.util import dt as dt_util  # noqa: PLC0415
+    from tests.conftest import _orig_set_default_time_zone  # noqa: PLC0415, TID251
+
+    tz = dt_util.get_time_zone("US/Eastern")
+    assert tz is not None
+    _orig_set_default_time_zone(tz)
+    try:
+        t = _tracker()
+        # Initial level
+        t.record_level(100.0, "2026-03-21T20:00:00Z")
+        # Event 1: 2026-03-22 03:30:00 UTC -> 2026-03-21 23:30:00 EDT (yesterday local)
+        t.record_level(95.0, "2026-03-22T03:30:00Z")  # 5% = 10 L
+        # Event 2: 2026-03-22 04:30:00 UTC -> 2026-03-22 00:30:00 EDT (today local)
+        t.record_level(90.0, "2026-03-22T04:30:00Z")  # 5% = 10 L
+
+        # Calculate today's consumption relative to 2026-03-22 12:00:00 local time
+        # 2026-03-22 12:00:00 US/Eastern is 2026-03-22 16:00:00 UTC
+        ref_ts = "2026-03-22T16:00:00Z"
+
+        total = t.get_total_liters_today(reference_ts=ref_ts)
+
+        # Under UTC, both events at 03:30 and 04:30 are on 2026-03-22, so total would be 20 L.
+        # Under local US/Eastern, only the 04:30 event (00:30 local) is today, so total should be 10 L.
+        assert abs(total - 10.0) < 0.01
+    finally:
+        # Restore UTC to not interfere with other tests
+        _orig_set_default_time_zone(dt_util.UTC)
+
+
+def test_get_total_liters_7d_timezone() -> None:
+    """Test get_total_liters_7d handles local timezone boundaries correctly."""
+    from homeassistant.util import dt as dt_util  # noqa: PLC0415
+    from tests.conftest import _orig_set_default_time_zone  # noqa: PLC0415, TID251
+
+    tz = dt_util.get_time_zone("US/Eastern")
+    assert tz is not None
+    _orig_set_default_time_zone(tz)
+    try:
+        t = _tracker()
+        # Initial level
+        t.record_level(100.0, "2026-03-14T20:00:00Z")
+        # Event 1: 7 days + 1 hour ago (relative to local ref) -> should be excluded
+        t.record_level(95.0, "2026-03-15T10:00:00Z")  # 10 L
+        # Event 2: 7 days - 1 hour ago (relative to local ref) -> should be included
+        t.record_level(90.0, "2026-03-15T12:00:00Z")  # 10 L
+
+        ref_ts = "2026-03-22T11:00:00Z"  # local ref
+        total = t.get_total_liters_7d(reference_ts=ref_ts)
+        assert abs(total - 10.0) < 0.01
+    finally:
+        _orig_set_default_time_zone(dt_util.UTC)
+
+
+# ── stage aggregates ──────────────────────────────────────────────────────────
+
+def test_get_stage_aggregates_sums_consumption_by_stage():
+    """Consumption events tagged with growth_stage are summed per stage."""
+    t = _tracker()
+    t.tank.water_history.events = [
+        {"timestamp": "2026-03-22T10:00:00+00:00", "event_type": "consumption", "pct_delta": -5.0, "liters": 10.0, "growth_stage": "veg"},
+        {"timestamp": "2026-03-22T11:00:00+00:00", "event_type": "consumption", "pct_delta": -3.0, "liters": 6.0, "growth_stage": "veg"},
+        {"timestamp": "2026-03-22T12:00:00+00:00", "event_type": "consumption", "pct_delta": -4.0, "liters": 8.0, "growth_stage": "flower_early"},
+    ]
+    result = t.get_stage_aggregates()
+    assert result == {"veg": pytest.approx(16.0), "flower_early": pytest.approx(8.0)}
+
+
+def test_get_stage_aggregates_ignores_refill_events():
+    """Refill events are excluded from stage aggregates."""
+    t = _tracker()
+    t.tank.water_history.events = [
+        {"timestamp": "2026-03-22T10:00:00+00:00", "event_type": "consumption", "pct_delta": -5.0, "liters": 10.0, "growth_stage": "veg"},
+        {"timestamp": "2026-03-22T11:00:00+00:00", "event_type": "refill", "pct_delta": 50.0, "liters": 100.0, "growth_stage": "veg"},
+    ]
+    result = t.get_stage_aggregates()
+    assert result == {"veg": pytest.approx(10.0)}
+
+
+def test_get_stage_aggregates_ignores_events_without_stage():
+    """Events without growth_stage are excluded from aggregates."""
+    t = _tracker()
+    t.tank.water_history.events = [
+        {"timestamp": "2026-03-22T10:00:00+00:00", "event_type": "consumption", "pct_delta": -5.0, "liters": 10.0, "growth_stage": "veg"},
+        {"timestamp": "2026-03-22T11:00:00+00:00", "event_type": "consumption", "pct_delta": -3.0, "liters": 6.0},
+    ]
+    result = t.get_stage_aggregates()
+    assert result == {"veg": pytest.approx(10.0)}
+
+
+def test_get_stage_aggregates_empty_events_returns_empty_dict():
+    """No events returns an empty dict."""
+    t = _tracker()
+    assert t.get_stage_aggregates() == {}
+
+
+# ── stage_resolver tagging ────────────────────────────────────────────────────
+
+def test_consumption_event_tagged_with_stage_when_resolver_provided():
+    """Consumption events get a growth_stage field when a stage_resolver is set."""
+    tank = _make_tank()
+    tracker = TankWaterTracker(tank, stage_resolver=lambda: "flower_mid")
+    tracker.record_level(50.0, "2026-03-22T10:00:00+00:00")
+    tracker.record_level(45.0, "2026-03-22T10:15:00+00:00")
+    events = tank.water_history.events
+    assert len(events) == 1
+    assert events[0]["growth_stage"] == "flower_mid"
+
+
+def test_refill_event_not_tagged_with_stage():
+    """Refill events do not get a growth_stage tag."""
+    tank = _make_tank()
+    tracker = TankWaterTracker(tank, stage_resolver=lambda: "flower_mid")
+    tracker.record_level(40.0, "2026-03-22T10:00:00+00:00")
+    tracker.record_level(80.0, "2026-03-22T11:00:00+00:00")
+    events = tank.water_history.events
+    assert len(events) == 1
+    assert events[0]["event_type"] == "refill"
+    assert "growth_stage" not in events[0]
+
+
+def test_consumption_event_has_no_stage_without_resolver():
+    """Consumption events have no growth_stage when no resolver is set."""
+    tank = _make_tank()
+    tracker = TankWaterTracker(tank)
+    tracker.record_level(50.0, "2026-03-22T10:00:00+00:00")
+    tracker.record_level(45.0, "2026-03-22T10:15:00+00:00")
+    events = tank.water_history.events
+    assert len(events) == 1
+    assert "growth_stage" not in events[0]
+
+
+def test_stage_resolver_returning_none_produces_untagged_event():
+    """If stage_resolver returns None, no growth_stage key is added."""
+    tank = _make_tank()
+    tracker = TankWaterTracker(tank, stage_resolver=lambda: None)
+    tracker.record_level(50.0, "2026-03-22T10:00:00+00:00")
+    tracker.record_level(45.0, "2026-03-22T10:15:00+00:00")
+    events = tank.water_history.events
+    assert len(events) == 1
+    assert "growth_stage" not in events[0]

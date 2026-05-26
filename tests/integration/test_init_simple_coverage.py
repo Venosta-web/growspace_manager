@@ -146,7 +146,7 @@ async def test_websocket_timeline_operations_errors(hass: HomeAssistant) -> None
     # This uses recorder directly.
     # Mock get_instance to raise or fail.
     with patch(
-        "custom_components.growspace_manager.websocket.get_instance",
+        "custom_components.growspace_manager.websocket.timeline.get_instance",
         side_effect=Exception("Recorder Fail"),
     ):
         await websocket_remove_timeline_event(hass, connection, msg_remove)
@@ -225,9 +225,9 @@ async def test_websocket_event_log_complex_logic(hass: HomeAssistant) -> None:
         return (e, d)
 
     row1 = mk_event(
-        1, 1000.0, json.dumps({"category": "irrigation", "growspace_id": "g1"})
+        1, 1000.0, json.dumps({"category": "irrigation", "growspace_id": "g1", "sensor_type": "moisture"})
     )
-    row2 = mk_event(2, 2000.0, json.dumps({"category": "alert", "growspace_id": "g1"}))
+    row2 = mk_event(2, 2000.0, json.dumps({"category": "alert", "growspace_id": "g1", "sensor_type": "moisture"}))
     row3 = mk_event(3, 3000.0, "{bad json")
     row4 = mk_event(
         4, 4000.0, json.dumps({"category": "alert", "growspace_id": "other"})
@@ -243,11 +243,11 @@ async def test_websocket_event_log_complex_logic(hass: HomeAssistant) -> None:
 
     with (
         patch(
-            "custom_components.growspace_manager.websocket.session_scope",
+            "custom_components.growspace_manager.websocket.logbook.session_scope",
             return_value=context_manager_mock,
         ),
         patch(
-            "custom_components.growspace_manager.websocket.get_instance"
+            "custom_components.growspace_manager.websocket.logbook.get_instance"
         ) as get_instance_mock,
     ):
         # We need to mock async_add_executor_job to run the query function immediately

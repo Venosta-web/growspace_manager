@@ -518,11 +518,11 @@ async def test_event_log_skips_event_with_different_plant_id(
 
     with (
         patch(
-            "custom_components.growspace_manager.websocket.session_scope",
+            "custom_components.growspace_manager.websocket.logbook.session_scope",
             return_value=ctx,
         ),
         patch(
-            "custom_components.growspace_manager.websocket.get_instance"
+            "custom_components.growspace_manager.websocket.logbook.get_instance"
         ) as get_instance_mock,
     ):
         instance = get_instance_mock.return_value
@@ -580,11 +580,11 @@ async def test_event_log_skips_shared_event_with_different_growspace(
 
     with (
         patch(
-            "custom_components.growspace_manager.websocket.session_scope",
+            "custom_components.growspace_manager.websocket.logbook.session_scope",
             return_value=ctx,
         ),
         patch(
-            "custom_components.growspace_manager.websocket.get_instance"
+            "custom_components.growspace_manager.websocket.logbook.get_instance"
         ) as get_instance_mock,
     ):
         instance = get_instance_mock.return_value
@@ -616,7 +616,7 @@ async def test_websocket_get_ec_ramp_curves_exception(
     msg = {"id": 42}
 
     with patch(
-        "custom_components.growspace_manager.websocket.GrowspaceCoordinator"
+        "custom_components.growspace_manager.websocket.nutrients.GrowspaceCoordinator"
     ) as mock_coord_cls:
         mock_coord_cls.get_for_service_call.side_effect = Exception("DB error")
 
@@ -660,7 +660,7 @@ def test_coordinator_get_plant_delegates_to_repository() -> None:
     entry.data = {}
     entry.options = {}
 
-    coordinator = GrowspaceCoordinator(hass, entry, data={}, strain_library=MagicMock())
+    coordinator = GrowspaceCoordinator.build(hass, entry, data={}, strain_library=MagicMock())
     plant = MagicMock()
     coordinator.data_repository = MagicMock()
     coordinator.data_repository.get_plant.return_value = plant
@@ -679,7 +679,7 @@ def test_coordinator_get_growspace_delegates_to_repository() -> None:
     entry.data = {}
     entry.options = {}
 
-    coordinator = GrowspaceCoordinator(hass, entry, data={}, strain_library=MagicMock())
+    coordinator = GrowspaceCoordinator.build(hass, entry, data={}, strain_library=MagicMock())
     growspace = MagicMock()
     coordinator.data_repository = MagicMock()
     coordinator.data_repository.get_growspace.return_value = growspace

@@ -55,7 +55,7 @@ async def test_websocket_get_event_log_recorder_error(
 ) -> None:
     """Test get_event_log handles recorder import/key errors."""
     with patch(
-        "custom_components.growspace_manager.websocket.get_instance",
+        "custom_components.growspace_manager.websocket.logbook.get_instance",
         side_effect=ImportError("Recorder not found"),
     ):
         await websocket_get_event_log(hass, mock_connection, mock_msg)
@@ -69,7 +69,7 @@ async def test_websocket_get_event_log_generic_error(
 ) -> None:
     """Test get_event_log handles generic exceptions."""
     with patch(
-        "custom_components.growspace_manager.websocket.get_instance",
+        "custom_components.growspace_manager.websocket.logbook.get_instance",
         side_effect=Exception("Boom"),
     ):
         await websocket_get_event_log(hass, mock_connection, mock_msg)
@@ -93,11 +93,11 @@ async def test_websocket_get_alerts_no_event_type(
 
     with (
         patch(
-            "custom_components.growspace_manager.websocket.get_instance",
+            "custom_components.growspace_manager.websocket.logbook.get_instance",
             return_value=mock_recorder,
         ),
         patch(
-            "custom_components.growspace_manager.websocket.session_scope",
+            "custom_components.growspace_manager.websocket.logbook.session_scope",
             return_value=MagicMock(__enter__=MagicMock(return_value=mock_session)),
         ),
     ):
@@ -123,7 +123,7 @@ async def test_websocket_get_alerts_recorder_error(
 ) -> None:
     """Test get_alerts handles recorder errors."""
     with patch(
-        "custom_components.growspace_manager.websocket.get_instance",
+        "custom_components.growspace_manager.websocket.logbook.get_instance",
         side_effect=ImportError("Recorder fail"),
     ):
         await websocket_get_alerts(hass, mock_connection, mock_msg)
@@ -135,7 +135,7 @@ async def test_websocket_get_alerts_generic_error(
 ) -> None:
     """Test get_alerts handles generic errors."""
     with patch(
-        "custom_components.growspace_manager.websocket.get_instance",
+        "custom_components.growspace_manager.websocket.logbook.get_instance",
         side_effect=Exception("Boom Alerts"),
     ):
         await websocket_get_alerts(hass, mock_connection, mock_msg)
@@ -264,7 +264,7 @@ async def test_websocket_remove_timeline_event_error(
     msg = {"id": 1, "event_id": 123}
 
     with patch(
-        "custom_components.growspace_manager.websocket.get_instance",
+        "custom_components.growspace_manager.websocket.timeline.get_instance",
         side_effect=Exception("DB Error"),
     ):
         await websocket_remove_timeline_event(hass, mock_connection, msg)
@@ -302,20 +302,20 @@ async def test_websocket_get_alerts_filtering(
     row_valid_1 = (
         MagicMock(time_fired_ts=100),
         MagicMock(
-            shared_data=json.dumps({"growspace_id": "gs1", "category": "optimal"})
+            shared_data=json.dumps({"growspace_id": "gs1", "category": "optimal", "sensor_type": "moisture"})
         ),
     )
 
     row_valid_2 = (
         MagicMock(time_fired_ts=101),
         MagicMock(
-            shared_data=json.dumps({"growspace_id": "gs1", "category": "stress"})
+            shared_data=json.dumps({"growspace_id": "gs1", "category": "stress", "sensor_type": "moisture"})
         ),
     )
 
     row_valid_3 = (
         MagicMock(time_fired_ts=102),
-        MagicMock(shared_data=json.dumps({"growspace_id": "gs1", "category": "mold"})),
+        MagicMock(shared_data=json.dumps({"growspace_id": "gs1", "category": "mold", "sensor_type": "moisture"})),
     )
 
     mock_recorder = AsyncMock()
@@ -334,11 +334,11 @@ async def test_websocket_get_alerts_filtering(
 
     with (
         patch(
-            "custom_components.growspace_manager.websocket.get_instance",
+            "custom_components.growspace_manager.websocket.logbook.get_instance",
             return_value=mock_recorder,
         ),
         patch(
-            "custom_components.growspace_manager.websocket.session_scope",
+            "custom_components.growspace_manager.websocket.logbook.session_scope",
             return_value=MagicMock(__enter__=MagicMock(return_value=mock_session)),
         ),
     ):
@@ -368,11 +368,11 @@ async def test_websocket_get_alerts_invalid_json(
 
     with (
         patch(
-            "custom_components.growspace_manager.websocket.get_instance",
+            "custom_components.growspace_manager.websocket.logbook.get_instance",
             return_value=mock_recorder,
         ),
         patch(
-            "custom_components.growspace_manager.websocket.session_scope",
+            "custom_components.growspace_manager.websocket.logbook.session_scope",
             return_value=MagicMock(__enter__=MagicMock(return_value=mock_session)),
         ),
     ):
@@ -389,7 +389,7 @@ async def test_websocket_get_alerts_no_growspace_id(
 
     row_valid = (
         MagicMock(time_fired_ts=100),
-        MagicMock(shared_data=json.dumps({"growspace_id": "gs1", "category": "mold"})),
+        MagicMock(shared_data=json.dumps({"growspace_id": "gs1", "category": "mold", "sensor_type": "moisture"})),
     )
 
     mock_recorder = AsyncMock()
@@ -399,11 +399,11 @@ async def test_websocket_get_alerts_no_growspace_id(
 
     with (
         patch(
-            "custom_components.growspace_manager.websocket.get_instance",
+            "custom_components.growspace_manager.websocket.logbook.get_instance",
             return_value=mock_recorder,
         ),
         patch(
-            "custom_components.growspace_manager.websocket.session_scope",
+            "custom_components.growspace_manager.websocket.logbook.session_scope",
             return_value=MagicMock(__enter__=MagicMock(return_value=mock_session)),
         ),
     ):
@@ -450,7 +450,7 @@ async def test_websocket_get_history_stats_sub_hourly(
     }
 
     with patch(
-        "custom_components.growspace_manager.websocket._get_history_with_binary_search_downsample",
+        "custom_components.growspace_manager.websocket.environment._get_history_with_binary_search_downsample",
         return_value={"sensor.test": []},
     ) as mock_downsample:
         await websocket_get_history_stats(hass, mock_connection, msg)
@@ -470,11 +470,11 @@ async def test_websocket_get_history_stats_empty(
 
     with (
         patch(
-            "custom_components.growspace_manager.websocket._get_statistics_data",
+            "custom_components.growspace_manager.websocket.environment._get_statistics_data",
             return_value=None,
         ),
         patch(
-            "custom_components.growspace_manager.websocket._get_history_with_binary_search_downsample",
+            "custom_components.growspace_manager.websocket.environment._get_history_with_binary_search_downsample",
             return_value={"s.t": []},
         ) as mock_fallback,
     ):

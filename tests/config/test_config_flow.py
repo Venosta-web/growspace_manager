@@ -13,6 +13,7 @@ from unittest.mock import AsyncMock, MagicMock, Mock, patch
 import pytest
 import voluptuous as vol
 
+from homeassistant.config_entries import HANDLERS
 from homeassistant.core import HomeAssistant
 from homeassistant.data_entry_flow import FlowResultType
 from homeassistant.helpers import selector
@@ -133,6 +134,35 @@ def mock_store():
 # ============================================================================
 # Test ensure_default_growspaces
 # ============================================================================
+
+
+# ============================================================================
+# Test ConfigFlow – domain registration (PR #97: is_matching refactored out)
+# ============================================================================
+
+
+def test_config_flow_domain_registered_via_class_keyword() -> None:
+    """ConfigFlow wires its domain through the class keyword, not a class attribute.
+
+    PR #97 removed the redundant ``DOMAIN = DOMAIN`` class attribute in favour of
+    the standard HA pattern ``class ConfigFlow(..., domain=DOMAIN)``.  The
+    framework registers the handler in ``HANDLERS[DOMAIN]``; the old explicit
+    class attribute must be absent so it cannot shadow or contradict HA routing.
+    """
+    assert HANDLERS.get(DOMAIN) is ConfigFlow
+    assert "DOMAIN" not in vars(ConfigFlow)
+
+
+def test_config_flow_no_is_matching_method() -> None:
+    """ConfigFlow must not define an ``is_matching`` static method.
+
+    PR #97 removed ``is_matching`` because domain-level routing is now fully
+    handled by ``domain=DOMAIN`` in the class definition; a hand-rolled override
+    was redundant and could diverge from HA internals silently.
+    """
+    assert not hasattr(ConfigFlow, "is_matching") or not isinstance(
+        vars(ConfigFlow).get("is_matching"), staticmethod
+    )
 
 
 # ============================================================================
