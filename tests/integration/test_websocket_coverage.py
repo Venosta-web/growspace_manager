@@ -302,20 +302,20 @@ async def test_websocket_get_alerts_filtering(
     row_valid_1 = (
         MagicMock(time_fired_ts=100),
         MagicMock(
-            shared_data=json.dumps({"growspace_id": "gs1", "category": "optimal"})
+            shared_data=json.dumps({"growspace_id": "gs1", "category": "optimal", "sensor_type": "moisture"})
         ),
     )
 
     row_valid_2 = (
         MagicMock(time_fired_ts=101),
         MagicMock(
-            shared_data=json.dumps({"growspace_id": "gs1", "category": "stress"})
+            shared_data=json.dumps({"growspace_id": "gs1", "category": "stress", "sensor_type": "moisture"})
         ),
     )
 
     row_valid_3 = (
         MagicMock(time_fired_ts=102),
-        MagicMock(shared_data=json.dumps({"growspace_id": "gs1", "category": "mold"})),
+        MagicMock(shared_data=json.dumps({"growspace_id": "gs1", "category": "mold", "sensor_type": "moisture"})),
     )
 
     mock_recorder = AsyncMock()
@@ -389,7 +389,7 @@ async def test_websocket_get_alerts_no_growspace_id(
 
     row_valid = (
         MagicMock(time_fired_ts=100),
-        MagicMock(shared_data=json.dumps({"growspace_id": "gs1", "category": "mold"})),
+        MagicMock(shared_data=json.dumps({"growspace_id": "gs1", "category": "mold", "sensor_type": "moisture"})),
     )
 
     mock_recorder = AsyncMock()

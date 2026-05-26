@@ -91,6 +91,7 @@ async def test_websocket_get_log_filters_new_spam_categories(
             {
                 "growspace_id": "gs1",
                 "category": "training",
+                "sensor_type": "training",
                 "timestamp": "2023-01-01T12:02:00+00:00",
             }
         )

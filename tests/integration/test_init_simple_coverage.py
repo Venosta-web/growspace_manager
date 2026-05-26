@@ -225,9 +225,9 @@ async def test_websocket_event_log_complex_logic(hass: HomeAssistant) -> None:
         return (e, d)
 
     row1 = mk_event(
-        1, 1000.0, json.dumps({"category": "irrigation", "growspace_id": "g1"})
+        1, 1000.0, json.dumps({"category": "irrigation", "growspace_id": "g1", "sensor_type": "moisture"})
     )
-    row2 = mk_event(2, 2000.0, json.dumps({"category": "alert", "growspace_id": "g1"}))
+    row2 = mk_event(2, 2000.0, json.dumps({"category": "alert", "growspace_id": "g1", "sensor_type": "moisture"}))
     row3 = mk_event(3, 3000.0, "{bad json")
     row4 = mk_event(
         4, 4000.0, json.dumps({"category": "alert", "growspace_id": "other"})

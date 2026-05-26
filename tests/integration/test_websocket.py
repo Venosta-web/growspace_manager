@@ -1031,7 +1031,7 @@ async def test_websocket_get_event_log_filtering(
         # 3. Valid Row
         evt3 = MagicMock(time_fired_ts=800, event_id=3)
         data3 = MagicMock(
-            shared_data=json.dumps({"growspace_id": "gs1", "category": "normal"})
+            shared_data=json.dumps({"growspace_id": "gs1", "category": "normal", "sensor_type": "moisture"})
         )
 
         # Mock query chain - account for SQL filtering
@@ -1123,7 +1123,7 @@ async def test_websocket_get_event_log_limits(
                     MagicMock(time_fired_ts=3000 + i, event_id=i),
                     MagicMock(
                         shared_data=json.dumps(
-                            {"growspace_id": "gs1", "category": "normal"}
+                            {"growspace_id": "gs1", "category": "normal", "sensor_type": "moisture"}
                         )
                     ),
                 )

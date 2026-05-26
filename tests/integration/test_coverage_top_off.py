@@ -411,7 +411,7 @@ async def test_websocket_get_event_log_spam_filter_coverage(
 
     # With SQL-level filtering, only normal events are returned from DB
     # Spam events (optimal/stress/mold) are excluded at SQL query level
-    normal_data = json.dumps({"category": "info", "growspace_id": "gs1"})
+    normal_data = json.dumps({"category": "info", "growspace_id": "gs1", "sensor_type": "moisture"})
 
     class MockEvent:
         def __init__(self, event_id, time_fired_ts) -> None:
