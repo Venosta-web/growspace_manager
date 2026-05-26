@@ -110,8 +110,14 @@ class VWCIrrigationCoordinator(BaseIrrigationCoordinator):
             if self._is_halted_by_runoff_ec(growspace):
                 return
 
+            phase_before = self._current_phase
             period = self._determine_time_period(strategy, growspace)
             self._execute_phase_logic(period, current_vwc, strategy)
+
+            if self._current_phase != phase_before:
+                self._main_coordinator.async_set_updated_data(
+                    self._main_coordinator.data
+                )
 
         except Exception:
             _LOGGER.exception(
@@ -308,19 +314,42 @@ class VWCIrrigationCoordinator(BaseIrrigationCoordinator):
             growspace.irrigation_config.irrigation_pump_entity or None
         )
 
-    def _set_phase(self, phase: str) -> None:
-        """Update phase state; log the transition to the HA logbook when enabled."""
-        if self._current_phase != phase:
-            old_phase = self._current_phase
-            _LOGGER.debug(
-                "Growspace %s VWC Steering Phase changed: %s -> %s",
-                self._growspace_id,
-                old_phase,
-                phase,
+    # Maps internal phase display strings to the canonical p1/p2/p3 values stored on
+    # IrrigationConfig and read by the frontend.  Phases without an entry (e.g.
+    # "Disabled (No Sensor)") leave active_steering_phase unchanged.
+    _CANONICAL_PHASE: dict[str, str] = {
+        "P0 - Activation": "p1",
+        "P1 - Ramp Up": "p1",
+        "P2 - Maintenance": "p2",
+        "P3 - Dry Back": "p3",
+        "P3": "p3",
+    }
+
+    def _set_phase(self, phase: str) -> bool:
+        """Update phase state; log the transition to the HA logbook when enabled.
+
+        Returns True when the phase actually changed so the caller can decide
+        whether to push a coordinator update to subscribers.
+        """
+        if self._current_phase == phase:
+            return False
+
+        old_phase = self._current_phase
+        _LOGGER.debug(
+            "Growspace %s VWC Steering Phase changed: %s -> %s",
+            self._growspace_id,
+            old_phase,
+            phase,
+        )
+        self._current_phase = phase
+
+        canonical = self._CANONICAL_PHASE.get(phase)
+        if canonical is not None:
+            self.growspace.irrigation_config.active_steering_phase = canonical
+
+        if self.growspace.irrigation_config.log_to_logbook:
+            self._fire_logbook_event(
+                f"VWC phase transition: {old_phase} → {phase}",
+                category="irrigation",
             )
-            self._current_phase = phase
-            if self.growspace.irrigation_config.log_to_logbook:
-                self._fire_logbook_event(
-                    f"VWC phase transition: {old_phase} → {phase}",
-                    category="irrigation",
-                )
+        return True

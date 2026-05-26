@@ -114,12 +114,20 @@ def _query_logbook_events_impl(
                 if include_categories and d.get("category") not in include_categories:
                     continue
 
+                # Skip plain notification events fired by _fire_logbook_event()
+                # (those only carry `message` and have no `sensor_type` or `notes`).
+                # They belong in HA's native logbook, not in the growspace logbook UI.
+                if "sensor_type" not in d and "notes" not in d:
+                    continue
+
                 if count >= limit:
                     break
                 count += 1
 
                 if "timestamp" not in d and e_row.time_fired_ts:
-                    d["timestamp"] = e_row.time_fired_ts * 1000
+                    d["timestamp"] = dt_util.utc_from_timestamp(
+                        e_row.time_fired_ts
+                    ).isoformat()
 
                 if not _merge_logbook_event(formatted, d, e_row):
                     d["event_id"] = e_row.event_id

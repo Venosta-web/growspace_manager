@@ -160,6 +160,7 @@ class GrowspaceViewModelBuilder:
             "auto_advance_p1_to_p2": irrigation_config.auto_advance_p1_to_p2,
             "auto_advance_p2_to_p3": irrigation_config.auto_advance_p2_to_p3,
             "halt_on_runoff_ec_threshold": irrigation_config.halt_on_runoff_ec_threshold,
+            "active_steering_phase": irrigation_config.active_steering_phase,
             "ec_target_ranges": [
                 {
                     "stage": r.stage,
