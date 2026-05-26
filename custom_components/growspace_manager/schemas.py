@@ -46,6 +46,7 @@ from .const import (
     ATTR_PH,
     ATTR_PHENOTYPE,
     ATTR_PLANT_ID,
+    ATTR_PLANT_IDS,
     ATTR_POINTS,
     ATTR_PRESET_ID,
     ATTR_QUANTITY,
@@ -712,7 +713,7 @@ APPLY_IPM_SCHEMA = vol.Schema(
     {
         vol.Required(ATTR_PRESET_ID): str,
         vol.Optional(ATTR_GROWSPACE_ID): str,
-        vol.Optional(ATTR_PLANT_ID): vol.All(cv.ensure_list, [str]),
+        vol.Optional(ATTR_PLANT_IDS): vol.All(cv.ensure_list, [str]),
         vol.Optional(ATTR_NOTES): str,
     }
 )

@@ -290,6 +290,7 @@ METRIC_HUMIDITY = "humidity"
 # Attributes
 ATTR_GROWSPACE_ID = "growspace_id"
 ATTR_PLANT_ID = "plant_id"
+ATTR_PLANT_IDS = "plant_ids"
 ATTR_STRAIN = "strain"
 ATTR_PHENOTYPE = "phenotype"
 ATTR_BREEDER = "breeder"

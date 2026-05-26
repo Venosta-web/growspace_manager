@@ -16,21 +16,21 @@ from homeassistant.util import dt as dt_util
 from ..const import (
     ATTR_AMOUNT,
     ATTR_AMOUNT_ML,
-    ATTR_MOLD_RESISTANCE,
     ATTR_CBD_PERCENTAGE,
     ATTR_COL,
     ATTR_DRY_WEIGHT,
     ATTR_EC,
     ATTR_GROWSPACE_ID,
     ATTR_IMAGES,
+    ATTR_INTERNODAL_SPACING,
     ATTR_METADATA,
+    ATTR_MOLD_RESISTANCE,
     ATTR_MOTHER_PLANT_ID,
     ATTR_NEW_COL,
     ATTR_NEW_ROW,
     ATTR_NEW_STAGE,
     ATTR_NOTES,
     ATTR_NUM_CLONES,
-    ATTR_TERPENE_INTENSITY,
     ATTR_PH,
     ATTR_PHENOTYPE,
     ATTR_PLANT1_ID,
@@ -41,9 +41,9 @@ from ..const import (
     ATTR_SEED_BATCH_ID,
     ATTR_START_NUMBER,
     ATTR_STRAIN,
-    ATTR_INTERNODAL_SPACING,
     ATTR_TAGS,
     ATTR_TARGET_GROWSPACE_ID,
+    ATTR_TERPENE_INTENSITY,
     ATTR_TERPENE_PROFILE,
     ATTR_THC_PERCENTAGE,
     ATTR_TRANSITION_DATE,
@@ -418,7 +418,7 @@ async def handle_take_clone(
     num_clones = call.data.get(ATTR_NUM_CLONES, 1)
     try:
         num_clones = int(num_clones)
-    except (TypeError, ValueError):
+    except TypeError, ValueError:
         raise ServiceValidationError(
             f"num_clones must be an integer, got: {num_clones!r}"
         )
@@ -682,7 +682,9 @@ async def handle_move_plant(
         old_row, old_col = plant.row, plant.col
 
         # Check if new position is occupied by another plant
-        existing_plants = coordinator.services.growspaces.get_growspace_plants(plant.growspace_id)
+        existing_plants = coordinator.services.growspaces.get_growspace_plants(
+            plant.growspace_id
+        )
         occupying_plant = None
         for other_plant in existing_plants:
             if (
@@ -709,7 +711,9 @@ async def handle_move_plant(
             )
 
             # Use the facade
-            await coordinator.services.plants.switch_plants(plant_id, occupying_plant_id)
+            await coordinator.services.plants.switch_plants(
+                plant_id, occupying_plant_id
+            )
 
             _LOGGER.info(
                 "Successfully switched positions for %s and %s",

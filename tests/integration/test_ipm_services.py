@@ -1,6 +1,7 @@
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+import voluptuous as vol
 
 from custom_components.growspace_manager.const import (
     ATTR_GROWSPACE_ID,
@@ -8,11 +9,12 @@ from custom_components.growspace_manager.const import (
     ATTR_MIN_DAYS_IN_STAGE,
     ATTR_NAME,
     ATTR_NOTES,
-    ATTR_PLANT_ID,
+    ATTR_PLANT_IDS,
     ATTR_PRESET_ID,
     ATTR_STAGE,
     ATTR_TYPE,
 )
+from custom_components.growspace_manager.schemas import APPLY_IPM_SCHEMA
 from custom_components.growspace_manager.services.ipm import (
     handle_apply_ipm,
     handle_remove_ipm_preset,
@@ -73,7 +75,7 @@ async def test_handle_apply_ipm() -> None:
     data = {
         ATTR_PRESET_ID: "preset_123",
         ATTR_GROWSPACE_ID: "gs1",
-        ATTR_PLANT_ID: ["p1", "p2"],
+        ATTR_PLANT_IDS: ["p1", "p2"],
         ATTR_NOTES: "Heavily infested",
     }
     call = MagicMock()
@@ -87,3 +89,19 @@ async def test_handle_apply_ipm() -> None:
         plant_ids=["p1", "p2"],
         notes="Heavily infested",
     )
+
+
+def test_apply_ipm_schema_accepts_plant_ids_key() -> None:
+    """Schema must accept 'plant_ids' (plural) — the key sent by the frontend card."""
+    data = {
+        "preset_id": "preset_123",
+        "plant_ids": ["p1", "p2"],
+    }
+    validated = APPLY_IPM_SCHEMA(data)
+    assert validated["plant_ids"] == ["p1", "p2"]
+
+
+def test_apply_ipm_schema_rejects_unknown_key() -> None:
+    """Schema must still reject completely unknown keys."""
+    with pytest.raises(vol.Invalid):
+        APPLY_IPM_SCHEMA({"preset_id": "preset_123", "unknown_key": "value"})
