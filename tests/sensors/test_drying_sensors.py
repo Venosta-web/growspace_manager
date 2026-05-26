@@ -164,3 +164,30 @@ class TestDryingReadyForCureSensor:
         plant = _make_plant()
         sensor = DryingReadyForCureSensor(_make_coordinator(plant), plant)
         assert sensor.is_on is False
+
+    def test_drying_ready_for_cure_missing_growspace(self) -> None:
+        """Verify unique ID and device info fallback when growspace is missing."""
+        plant = _make_plant(plant_id="p1")
+        coord = _make_coordinator(plant)
+        coord.services.growspaces.get_growspace.return_value = None
+        sensor = DryingReadyForCureSensor(coord, plant)
+        assert sensor.device_info["name"] == "g1"
+
+    def test_drying_ready_for_cure_with_growspace(self) -> None:
+        """Verify device info name when growspace is present."""
+        plant = _make_plant(plant_id="p1")
+        coord = _make_coordinator(plant)
+        mock_growspace = MagicMock()
+        mock_growspace.name = "My Awesome Room"
+        coord.services.growspaces.get_growspace.return_value = mock_growspace
+        sensor = DryingReadyForCureSensor(coord, plant)
+        assert sensor.device_info["name"] == "My Awesome Room"
+
+    def test_drying_ready_for_cure_missing_plant(self) -> None:
+        """is_on is False when the plant no longer exists in coordinator."""
+        plant = _make_plant(plant_id="p1")
+        coord = _make_coordinator(plant)
+        sensor = DryingReadyForCureSensor(coord, plant)
+        # Remove the plant from mock
+        coord.plants.clear()
+        assert sensor.is_on is False

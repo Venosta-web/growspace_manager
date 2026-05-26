@@ -371,6 +371,8 @@ async def test_light_verification_callbacks(
     ) as mock_create_task:
         sensor._handle_coordinator_update()
         mock_create_task.assert_called()
+        coro = mock_create_task.call_args[0][1]
+        coro.close()
 
     # Test _async_light_sensor_changed
     with patch.object(
@@ -378,6 +380,8 @@ async def test_light_verification_callbacks(
     ) as mock_create_task:
         sensor._async_light_sensor_changed(MagicMock())
         mock_create_task.assert_called()
+        coro = mock_create_task.call_args[0][1]
+        coro.close()
 
 
 @pytest.mark.asyncio
@@ -446,3 +450,328 @@ def test_get_aggregated_sensor_value_empty(mock_coordinator) -> None:
         StressEvaluatorStrategy,
     )
     assert sensor._get_aggregated_sensor_value([]) is None
+
+
+@pytest.mark.asyncio
+async def test_trend_analyzer_not_initialized(mock_coordinator) -> None:
+    """Test async_analyze_sensor_trend when trend_analyzer is not initialized."""
+    sensor = create_test_sensor(
+        mock_coordinator,
+        "gs1",
+        GrowspaceSensorType.STRESS,
+        StressEvaluatorStrategy,
+    )
+    sensor.trend_analyzer = None
+    res = await sensor.async_analyze_sensor_trend("sensor.temp", 10, 0.5)
+    assert res == {"trend": "unknown", "crossed_threshold": False}
+
+
+@pytest.mark.asyncio
+async def test_trend_analyzer_exception_handling(mock_coordinator) -> None:
+    """Test exception handling in async_analyze_sensor_trend."""
+    sensor = create_test_sensor(
+        mock_coordinator,
+        "gs1",
+        GrowspaceSensorType.STRESS,
+        StressEvaluatorStrategy,
+    )
+    sensor.trend_analyzer = MagicMock()
+    sensor.trend_analyzer.async_analyze_sensor_trend = AsyncMock(
+        side_effect=ValueError("Trend error")
+    )
+    res = await sensor.async_analyze_sensor_trend("sensor.temp", 10, 0.5)
+    assert res == {"trend": "unknown", "crossed_threshold": False}
+
+
+def test_generate_notification_message_no_manager(mock_coordinator) -> None:
+    """Test generate_notification_message when notification_manager is None."""
+    sensor = create_test_sensor(
+        mock_coordinator,
+        "gs1",
+        GrowspaceSensorType.STRESS,
+        StressEvaluatorStrategy,
+    )
+    sensor.notification_manager = None
+    assert sensor.generate_notification_message("Hello") == "Hello"
+
+
+@pytest.mark.asyncio
+async def test_optimal_sensor_event_category_rising_edge(
+    mock_coordinator, hass: HomeAssistant
+) -> None:
+    """Test optimal sensor event category on rising edge."""
+    sensor = create_test_sensor(
+        mock_coordinator,
+        "gs1",
+        GrowspaceSensorType.OPTIMAL,
+        StressEvaluatorStrategy,
+        mock_coordinator.growspaces["gs1"].environment_config,
+        hass,
+    )
+    # Init with low prob so old_state=False
+    sensor._probability = 0.1
+    
+    # Mock strategy to return high probability on update forcing new_state=True
+    with patch.object(
+        sensor.strategy, "async_evaluate", AsyncMock(return_value=([(0.9, 0.1)], [("reason", "high")]))
+    ):
+        sensor.prior = 0.9
+        with patch.object(sensor, "async_write_ha_state"):
+            await sensor.async_update_and_notify()
+            
+    mock_coordinator.add_event.assert_called()
+    event = mock_coordinator.add_event.call_args[0][1]
+    assert event.category == "environment"
+
+
+def test_get_base_environment_state_no_growspace(mock_coordinator, hass: HomeAssistant) -> None:
+    """Test _get_base_environment_state when _get_growspace returns None."""
+    sensor = create_test_sensor(
+        mock_coordinator,
+        "gs1",
+        GrowspaceSensorType.STRESS,
+        StressEvaluatorStrategy,
+        hass=hass,
+    )
+    with patch.object(sensor, "_get_growspace", return_value=None):
+        env_state = sensor._get_base_environment_state()
+        assert env_state.temp is None
+
+
+
+def test_check_light_state_change_no_notification_manager(mock_coordinator) -> None:
+    """Test _check_light_state_change when notification_manager is None."""
+    sensor = create_test_sensor(
+        mock_coordinator,
+        "gs1",
+        GrowspaceSensorType.STRESS,
+        StressEvaluatorStrategy,
+    )
+    sensor.notification_manager = None
+    sensor._last_light_state = True
+    sensor._check_light_state_change(False)
+    # Verify no exception is raised and it completes cleanly
+
+
+@pytest.mark.asyncio
+async def test_async_added_to_hass_no_notification_manager(
+    mock_coordinator, hass: HomeAssistant
+) -> None:
+    """Test async_added_to_hass when notification_manager is None."""
+    sensor = create_test_sensor(
+        mock_coordinator,
+        "gs1",
+        GrowspaceSensorType.STRESS,
+        StressEvaluatorStrategy,
+    )
+    sensor.hass = hass
+    sensor.notification_manager = None
+    
+    with patch.object(
+        mock_coordinator.config_entry, "async_create_background_task"
+    ) as mock_create_task:
+        await sensor.async_added_to_hass()
+        mock_create_task.assert_called()
+        coro = mock_create_task.call_args[0][1]
+        coro.close()
+
+
+@pytest.mark.asyncio
+async def test_remove_from_hass_no_notification_manager(
+    mock_coordinator, hass: HomeAssistant
+) -> None:
+    """Test async_will_remove_from_hass when notification_manager is None."""
+    sensor = create_test_sensor(
+        mock_coordinator,
+        "gs1",
+        GrowspaceSensorType.STRESS,
+        StressEvaluatorStrategy,
+    )
+    sensor.hass = hass
+    sensor.notification_manager = None
+
+    await sensor.async_will_remove_from_hass()
+    # Verify it completes without raising error
+
+
+@pytest.mark.asyncio
+async def test_send_notification_no_notification_manager(mock_coordinator) -> None:
+    """Test _send_notification when notification_manager is None."""
+    sensor = create_test_sensor(
+        mock_coordinator,
+        "gs1",
+        GrowspaceSensorType.STRESS,
+        StressEvaluatorStrategy,
+    )
+    sensor.notification_manager = None
+    await sensor._send_notification("Title", "Message")
+    # Verify it exits cleanly
+
+
+def test_determine_fan_state_scenarios(mock_coordinator, hass: HomeAssistant) -> None:
+    """Test _determine_fan_state scenarios."""
+    config = EnvironmentConfig(circulation_fan_entities=["switch.fan1", "switch.fan2"])
+    sensor = create_test_sensor(
+        mock_coordinator,
+        "gs1",
+        GrowspaceSensorType.STRESS,
+        StressEvaluatorStrategy,
+        config,
+    )
+    sensor.hass = hass
+
+    # Scenario 1: One fan ON, one fan OFF -> should return False (not all are off)
+    hass.states.async_set("switch.fan1", STATE_ON)
+    hass.states.async_set("switch.fan2", STATE_OFF)
+    assert sensor._determine_fan_state() is False
+
+    # Scenario 2: All fans OFF -> should return True (all are off)
+    hass.states.async_set("switch.fan1", STATE_OFF)
+    hass.states.async_set("switch.fan2", STATE_OFF)
+    assert sensor._determine_fan_state() is True
+
+    # Scenario 3: All fans unavailable/unknown -> should return None
+    hass.states.async_set("switch.fan1", STATE_UNAVAILABLE)
+    hass.states.async_set("switch.fan2", STATE_UNAVAILABLE)
+    assert sensor._determine_fan_state() is None
+
+
+def test_determine_dehumidifier_state_scenarios(
+    mock_coordinator, hass: HomeAssistant
+) -> None:
+    """Test _determine_dehumidifier_state scenarios."""
+    config = EnvironmentConfig(dehumidifier_entities=["switch.dehum1", "switch.dehum2"])
+    sensor = create_test_sensor(
+        mock_coordinator,
+        "gs1",
+        GrowspaceSensorType.STRESS,
+        StressEvaluatorStrategy,
+        config,
+    )
+    sensor.hass = hass
+
+    # Scenario 1: One ON, one OFF -> should return True (any on)
+    hass.states.async_set("switch.dehum1", STATE_ON)
+    hass.states.async_set("switch.dehum2", STATE_OFF)
+    assert sensor._determine_dehumidifier_state() is True
+
+    # Scenario 2: All OFF -> should return False (none on)
+    hass.states.async_set("switch.dehum1", STATE_OFF)
+    hass.states.async_set("switch.dehum2", STATE_OFF)
+    assert sensor._determine_dehumidifier_state() is False
+
+    # Scenario 3: Unavailable/unknown -> should return None
+    hass.states.async_set("switch.dehum1", STATE_UNAVAILABLE)
+    hass.states.async_set("switch.dehum2", STATE_UNAVAILABLE)
+    assert sensor._determine_dehumidifier_state() is None
+
+
+def test_get_max_sensor_value_scenarios(mock_coordinator, hass: HomeAssistant) -> None:
+    """Test _get_max_sensor_value scenarios."""
+    config = EnvironmentConfig(exhaust_fan_entities=["sensor.ex1", "sensor.ex2"])
+    sensor = create_test_sensor(
+        mock_coordinator,
+        "gs1",
+        GrowspaceSensorType.STRESS,
+        StressEvaluatorStrategy,
+        config,
+    )
+    sensor.hass = hass
+
+    # Scenario 1: Both have values -> should return max
+    hass.states.async_set("sensor.ex1", "25.0")
+    hass.states.async_set("sensor.ex2", "45.0")
+    assert sensor._determine_exhaust_value() == pytest.approx(45.0)
+
+    # Scenario 2: One is None, one has value -> should return the non-None one
+    hass.states.async_set("sensor.ex1", STATE_UNAVAILABLE)
+    hass.states.async_set("sensor.ex2", "15.0")
+    assert sensor._determine_exhaust_value() == pytest.approx(15.0)
+
+    # Scenario 3: All None -> should return None
+    hass.states.async_set("sensor.ex1", STATE_UNAVAILABLE)
+    hass.states.async_set("sensor.ex2", STATE_UNAVAILABLE)
+    assert sensor._determine_exhaust_value() is None
+
+    # Scenario 4: No entities configured -> should return None
+    empty_sensor = create_test_sensor(
+        mock_coordinator,
+        "gs1",
+        GrowspaceSensorType.STRESS,
+        StressEvaluatorStrategy,
+        EnvironmentConfig(exhaust_fan_entities=[]),
+    )
+    empty_sensor.hass = hass
+    assert empty_sensor._determine_exhaust_value() is None
+
+
+def test_light_verification_update_state_no_sensors(mock_coordinator) -> None:
+    """Test _update_state when light_sensors is empty."""
+    config = EnvironmentConfig(light_sensors=[])
+    sensor = LightCycleVerificationSensor(
+        mock_coordinator,
+        "gs1",
+        config,
+        get_plants=mock_coordinator.get_growspace_plants,
+        calculate_days=lambda d: 30,
+    )
+    sensor._update_state()
+    assert sensor._is_schedule_matched is True
+
+
+def test_generate_notification_message_with_manager(mock_coordinator) -> None:
+    """Test generate_notification_message when notification_manager is not None."""
+    sensor = create_test_sensor(
+        mock_coordinator,
+        "gs1",
+        GrowspaceSensorType.STRESS,
+        StressEvaluatorStrategy,
+    )
+    sensor.notification_manager = MagicMock()
+    sensor.notification_manager.generate_notification_message.return_value = "Detailed: Hello"
+    assert sensor.generate_notification_message("Hello") == "Detailed: Hello"
+    sensor.notification_manager.generate_notification_message.assert_called_once_with(
+        "Hello", sensor._reasons
+    )
+
+
+def test_determine_humidifier_state_scenarios(
+    mock_coordinator, hass: HomeAssistant
+) -> None:
+    """Test _determine_humidifier_state scenarios."""
+    config = EnvironmentConfig(humidifier_entities=["switch.hum1", "switch.hum2"])
+    sensor = create_test_sensor(
+        mock_coordinator,
+        "gs1",
+        GrowspaceSensorType.STRESS,
+        StressEvaluatorStrategy,
+        config,
+    )
+    sensor.hass = hass
+
+    # Scenario 1: One ON, one OFF -> should return True (any on)
+    hass.states.async_set("switch.hum1", STATE_ON)
+    hass.states.async_set("switch.hum2", STATE_OFF)
+    assert sensor._determine_humidifier_state() is True
+
+    # Scenario 2: All OFF -> should return False (none on)
+    hass.states.async_set("switch.hum1", STATE_OFF)
+    hass.states.async_set("switch.hum2", STATE_OFF)
+    assert sensor._determine_humidifier_state() is False
+
+    # Scenario 3: Unavailable/unknown -> should return None (covers line 978->976)
+    hass.states.async_set("switch.hum1", STATE_UNAVAILABLE)
+    hass.states.async_set("switch.hum2", STATE_UNAVAILABLE)
+    assert sensor._determine_humidifier_state() is None
+
+    # Scenario 4: No humidifier entities configured -> should return None
+    empty_sensor = create_test_sensor(
+        mock_coordinator,
+        "gs1",
+        GrowspaceSensorType.STRESS,
+        StressEvaluatorStrategy,
+        EnvironmentConfig(humidifier_entities=[]),
+    )
+    empty_sensor.hass = hass
+    assert empty_sensor._determine_humidifier_state() is None
+
