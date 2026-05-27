@@ -9,6 +9,7 @@ from typing import Any
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 
+from .briefing_scheduler import BriefingScheduler
 from .cache import CacheManager
 from .data_access.growspace_repository import GrowspaceRepository
 from .data_access.notification_state import NotificationState
@@ -35,7 +36,6 @@ from .services.training_service import TrainingService
 from .services.watering_service import WateringService
 from .storage_manager import StorageManager
 from .strain_library import StrainLibrary
-from .briefing_scheduler import BriefingScheduler
 from .view_model_builder import ViewModelBuilder
 from .vision_checkup_scheduler import VisionCheckupScheduler
 
