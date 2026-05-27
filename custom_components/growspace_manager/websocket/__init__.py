@@ -292,4 +292,8 @@ __all__ = [
     "websocket_get_briefing",
     "WS_TYPE_GET_BRIEFING",
     "SCHEMA_WS_GET_BRIEFING",
+    # AI agent configuration
+    "websocket_save_ai_agent",
+    "WS_TYPE_SAVE_AI_AGENT",
+    "SCHEMA_WS_SAVE_AI_AGENT",
 ]

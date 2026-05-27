@@ -394,10 +394,60 @@ async def websocket_get_briefing(
     connection.send_result(msg["id"], briefing)
 
 
+# ---------------------------------------------------------------------------
+# save_ai_agent
+# ---------------------------------------------------------------------------
+
+WS_TYPE_SAVE_AI_AGENT = f"{DOMAIN}/save_ai_agent"
+SCHEMA_WS_SAVE_AI_AGENT = websocket_api.BASE_COMMAND_MESSAGE_SCHEMA.extend(
+    {
+        vol.Required("type"): WS_TYPE_SAVE_AI_AGENT,
+        vol.Required("agent_id"): str,
+    }
+)
+
+
+async def websocket_save_ai_agent(
+    hass: HomeAssistant,
+    connection: websocket_api.ActiveConnection,
+    msg: dict[str, Any],
+) -> None:
+    """Persist a conversation agent selection and enable AI features.
+
+    WebSocket message fields:
+    - ``agent_id`` *(required)*: entity ID of the conversation agent to activate.
+
+    Sets ``ai_settings.assistant_id`` and ``ai_settings.ai_enabled = True`` in
+    the config entry options so the change survives restarts.
+    """
+    coordinator = _get_coordinator(hass, connection)
+    if coordinator is None:
+        connection.send_error(
+            msg["id"], "not_found", "Growspace Manager integration not loaded"
+        )
+        return
+
+    agent_id: str = msg["agent_id"]
+    new_options = coordinator.config_entry.options.copy()
+    ai_settings: dict[str, Any] = dict(new_options.get("ai_settings", {}))
+    ai_settings["assistant_id"] = agent_id
+    ai_settings["ai_enabled"] = True
+    new_options["ai_settings"] = ai_settings
+
+    if hasattr(coordinator, "options"):
+        coordinator.options = new_options
+
+    hass.config_entries.async_update_entry(coordinator.config_entry, options=new_options)
+    await coordinator.async_commit()
+
+    connection.send_result(msg["id"], {"success": True, "agent_id": agent_id})
+
+
 COMMANDS: list[tuple[str, Any, Any, bool]] = [
     (WS_TYPE_START_CONVERSATION, websocket_start_conversation, SCHEMA_WS_START_CONVERSATION, False),
     (WS_TYPE_SEND_MESSAGE, websocket_send_message, SCHEMA_WS_SEND_MESSAGE, False),
     (WS_TYPE_GET_AI_ALERTS, websocket_get_ai_alerts, SCHEMA_WS_GET_AI_ALERTS, False),
     (WS_TYPE_RESOLVE_AI_ALERT, websocket_resolve_ai_alert, SCHEMA_WS_RESOLVE_AI_ALERT, False),
     (WS_TYPE_GET_BRIEFING, websocket_get_briefing, SCHEMA_WS_GET_BRIEFING, False),
+    (WS_TYPE_SAVE_AI_AGENT, websocket_save_ai_agent, SCHEMA_WS_SAVE_AI_AGENT, False),
 ]
