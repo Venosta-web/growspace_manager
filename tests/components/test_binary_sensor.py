@@ -2154,7 +2154,7 @@ class TestBayesianEnvironmentSensor:
         """Test async_added_to_hass with different sensor configurations"""
         base_sensor.hass = MagicMock()
         base_sensor.async_on_remove = MagicMock()
-        base_sensor.async_update_and_notify = MagicMock()
+        base_sensor.async_update_and_notify = AsyncMock()
         base_sensor.coordinator.async_add_listener = MagicMock()
 
         # Scenario 1: All sensors configured
