@@ -95,6 +95,7 @@ from .const import (
     CONF_IRRIGATION_FLOW_SENSORS,
     CONF_LIGHT_SENSOR,
     CONF_LIGHT_SENSORS,
+    CONF_LUNG_ROOM_TEMP_SENSORS,
     CONF_MOLD_THRESHOLD,
     CONF_PH_SENSORS,
     CONF_POWER_SENSORS,
@@ -130,6 +131,7 @@ def _validate_genetic_percentages(config: dict) -> dict:
                 f"Sativa ({sativa}%) and Indica ({indica}%) sum to {sativa + indica}%, which exceeds 100%"
             )
     return config
+
 
 # Shared Schema Dictionaries
 _PLANT_DATE_FIELDS: dict[Any, Any] = {
@@ -379,10 +381,18 @@ STRAIN_BASE_FIELDS: dict[Any, Any] = {
     vol.Optional("type"): str,
     vol.Optional("lineage"): str,
     vol.Optional("sex"): str,
-    vol.Optional("flower_days_min"): vol.Any(None, vol.All(vol.Coerce(int), vol.Range(min=0))),
-    vol.Optional("flower_days_max"): vol.Any(None, vol.All(vol.Coerce(int), vol.Range(min=0))),
-    vol.Optional("flowering_days_min"): vol.Any(None, vol.All(vol.Coerce(int), vol.Range(min=0))),
-    vol.Optional("flowering_days_max"): vol.Any(None, vol.All(vol.Coerce(int), vol.Range(min=0))),
+    vol.Optional("flower_days_min"): vol.Any(
+        None, vol.All(vol.Coerce(int), vol.Range(min=0))
+    ),
+    vol.Optional("flower_days_max"): vol.Any(
+        None, vol.All(vol.Coerce(int), vol.Range(min=0))
+    ),
+    vol.Optional("flowering_days_min"): vol.Any(
+        None, vol.All(vol.Coerce(int), vol.Range(min=0))
+    ),
+    vol.Optional("flowering_days_max"): vol.Any(
+        None, vol.All(vol.Coerce(int), vol.Range(min=0))
+    ),
     vol.Optional("description"): str,
     vol.Optional("image_base64"): str,
     vol.Optional("image"): str,
@@ -503,6 +513,7 @@ CONFIGURE_ENVIRONMENT_SCHEMA = vol.Schema(
         vol.Optional("sensor_coordinates"): dict,
         vol.Optional("irrigation_tanks"): list,
         vol.Optional(CONF_SUBSTRATE_TEMP_SENSORS): cv.ensure_list,
+        vol.Optional(CONF_LUNG_ROOM_TEMP_SENSORS): cv.ensure_list,
         vol.Optional(CONF_CAMERA_ENTITIES): cv.ensure_list,
         # Advanced / irrigation monitoring sensors
         vol.Optional(CONF_PH_SENSORS): cv.ensure_list,
@@ -560,11 +571,21 @@ SET_IRRIGATION_STRATEGY_SCHEMA = vol.Schema(
         vol.Optional("enabled"): bool,
         vol.Optional("lights_on_time"): str,
         vol.Optional("p0_duration_minutes"): vol.All(vol.Coerce(int), vol.Range(min=0)),
-        vol.Optional("p2_stop_before_lights_off_minutes"): vol.All(vol.Coerce(int), vol.Range(min=0)),
-        vol.Optional("target_vwc_percent"): vol.All(vol.Coerce(float), vol.Range(min=0.0, max=100.0)),
-        vol.Optional("maintenance_dryback_percent"): vol.All(vol.Coerce(float), vol.Range(min=0.0, max=100.0)),
-        vol.Optional("shot_duration_seconds"): vol.All(vol.Coerce(int), vol.Range(min=0)),
-        vol.Optional("shot_interval_minutes"): vol.All(vol.Coerce(int), vol.Range(min=0)),
+        vol.Optional("p2_stop_before_lights_off_minutes"): vol.All(
+            vol.Coerce(int), vol.Range(min=0)
+        ),
+        vol.Optional("target_vwc_percent"): vol.All(
+            vol.Coerce(float), vol.Range(min=0.0, max=100.0)
+        ),
+        vol.Optional("maintenance_dryback_percent"): vol.All(
+            vol.Coerce(float), vol.Range(min=0.0, max=100.0)
+        ),
+        vol.Optional("shot_duration_seconds"): vol.All(
+            vol.Coerce(int), vol.Range(min=0)
+        ),
+        vol.Optional("shot_interval_minutes"): vol.All(
+            vol.Coerce(int), vol.Range(min=0)
+        ),
         vol.Optional("auto_light_tracking"): bool,
     }
 )
@@ -576,7 +597,9 @@ SET_IRRIGATION_SETTINGS_SCHEMA = vol.All(
             vol.Required("growspace_id"): vol.All(str, valid_growspace_id),
             vol.Optional("irrigation_pump_entity"): str,
             vol.Optional("drain_pump_entity"): str,
-            vol.Optional("irrigation_duration"): vol.All(vol.Coerce(int), vol.Range(min=1)),
+            vol.Optional("irrigation_duration"): vol.All(
+                vol.Coerce(int), vol.Range(min=1)
+            ),
             vol.Optional("drain_duration"): vol.All(vol.Coerce(int), vol.Range(min=1)),
             vol.Optional("soil_trigger_percent"): vol.Any(
                 None, vol.All(vol.Coerce(float), vol.Range(min=0.0, max=100.0))
@@ -595,7 +618,7 @@ SET_IRRIGATION_SETTINGS_SCHEMA = vol.All(
             vol.Optional("halt_on_runoff_ec_threshold"): vol.Any(
                 None, vol.All(vol.Coerce(float), vol.Range(min=0.0))
             ),
-            vol.Optional("active_steering_phase"): vol.In(['p1', 'p2', 'p3']),
+            vol.Optional("active_steering_phase"): vol.In(["p1", "p2", "p3"]),
         }
     ),
     _validate_pump_entities,
