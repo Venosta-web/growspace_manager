@@ -39,7 +39,7 @@ from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.storage import Store
 from homeassistant.util import dt as dt_util
 
-from .const import ATTR_PROBABILITY, ATTR_REASONS
+from .const import ATTR_PROBABILITY, ATTR_REASONS, CONF_AI_AUTO_ALERTS, CONF_AI_ENABLED
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -75,6 +75,7 @@ class AlertMonitor:
     def __init__(
         self,
         hass: HomeAssistant,
+        coordinator: Any,
         store: Store,
         ai_assistant_factory: Callable[[], Any] | None = None,
     ) -> None:
@@ -82,6 +83,9 @@ class AlertMonitor:
 
         Args:
             hass: Home Assistant instance.
+            coordinator: The GrowspaceCoordinator instance; used to read
+                runtime options (``CONF_AI_ENABLED``, ``CONF_AI_AUTO_ALERTS``)
+                at enrichment time.
             store: Pre-constructed ``homeassistant.helpers.storage.Store``
                 targeting ``growspace_manager.ai_alerts``.
             ai_assistant_factory: Zero-argument callable that returns a
@@ -90,6 +94,7 @@ class AlertMonitor:
                 method.  Pass ``None`` to skip AI enrichment.
         """
         self._hass = hass
+        self._coordinator = coordinator
         self._store = store
         self._ai_assistant_factory = ai_assistant_factory
         self._alerts: list[dict[str, Any]] = []
@@ -101,7 +106,7 @@ class AlertMonitor:
     # Lifecycle
     # ------------------------------------------------------------------
 
-    async def async_setup(self) -> None:
+    async def async_start(self) -> None:
         """Load persisted alerts and register state-change listener."""
         data = await self._store.async_load() or {}
         self._alerts = list(data.get("alerts", []))
@@ -111,7 +116,7 @@ class AlertMonitor:
         )
 
     @callback
-    def async_unload(self) -> None:
+    def async_stop(self) -> None:
         """Cancel the state-change listener."""
         if self._cancel_listener is not None:
             self._cancel_listener()
@@ -212,8 +217,14 @@ class AlertMonitor:
     async def _async_enrich_with_ai(self, alert: dict[str, Any]) -> None:
         """Populate ``ai_reasoning`` via the injected AI assistant.
 
+        Skipped when ``CONF_AI_ENABLED`` or ``CONF_AI_AUTO_ALERTS`` is off.
         Failures are logged as warnings; the alert record is **not** deleted.
         """
+        options = self._coordinator.options
+        if not options.get(CONF_AI_ENABLED, False):
+            return
+        if not options.get(CONF_AI_AUTO_ALERTS, False):
+            return
         try:
             assistant = self._ai_assistant_factory()  # type: ignore[misc]
             ai_text: str = await assistant.generate_alert_message(

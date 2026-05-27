@@ -8,7 +8,9 @@ from typing import Any
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers.storage import Store
 
+from .alert_monitor import AlertMonitor
 from .briefing_scheduler import BriefingScheduler
 from .cache import CacheManager
 from .data_access.growspace_repository import GrowspaceRepository
@@ -90,6 +92,7 @@ class CoordinatorBuilder:
         # ------------------------------------------------------------------
         # Phase 1 – pure collaborators (no coordinator reference needed)
         # ------------------------------------------------------------------
+        alert_store = Store(self.hass, 1, "growspace_manager.ai_alerts")
         repository = GrowspaceRepository()
         notification_state = NotificationState()
         lock = asyncio.Lock()
@@ -197,6 +200,18 @@ class CoordinatorBuilder:
         briefing_scheduler = BriefingScheduler(self.hass, coordinator)
         photoperiod_checker = PhotoperiodFlipChecker(self.hass, coordinator)
 
+        from .services.ai_assistant import GrowAssistant  # noqa: PLC0415
+
+        def _make_ai_assistant() -> GrowAssistant:
+            return GrowAssistant(self.hass, coordinator, strain_library)
+
+        alert_monitor = AlertMonitor(
+            self.hass,
+            coordinator=coordinator,
+            store=alert_store,
+            ai_assistant_factory=_make_ai_assistant,
+        )
+
         # ------------------------------------------------------------------
         # Phase 4 – attach all services to the coordinator
         # ------------------------------------------------------------------
@@ -219,6 +234,7 @@ class CoordinatorBuilder:
             vision_scheduler=vision_scheduler,
             briefing_scheduler=briefing_scheduler,
             photoperiod_checker=photoperiod_checker,
+            alert_monitor=alert_monitor,
         )
 
         _LOGGER.debug("GrowspaceCoordinator built successfully")
