@@ -137,13 +137,13 @@ class IrrigationConfigHandler(BaseConfigHandler[dict[str, Any]]):
                 "irrigation_pump_entity",
                 description={"suggested_value": irrigation_pump_default},
             ): selector.EntitySelector(
-                selector.EntitySelectorConfig(domain=["switch", "input_boolean"])
+                selector.EntitySelectorConfig(domain=["switch"])
             ),
             vol.Optional(
                 "drain_pump_entity",
                 description={"suggested_value": drain_pump_default},
             ): selector.EntitySelector(
-                selector.EntitySelectorConfig(domain=["switch", "input_boolean"])
+                selector.EntitySelectorConfig(domain=["switch"])
             ),
             vol.Optional(
                 "irrigation_duration",
