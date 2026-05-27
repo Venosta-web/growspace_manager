@@ -931,10 +931,6 @@ debug_reset_special_growspaces:
       selector:
         boolean:
 
-debug_consolidate_growspaces:
-  description: Consolidate duplicate special growspaces (Debug)
-  # No fields
-
 analyze_all_growspaces:
   description: Analyze all growspaces and provide a comprehensive facility report
   fields:

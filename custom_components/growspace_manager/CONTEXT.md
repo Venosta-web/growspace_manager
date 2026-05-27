@@ -65,6 +65,33 @@ Success events (irrigation started, irrigation completed) use `CATEGORY_ALERT` a
 
 Boolean flag (default `True`) that gates verbose operational logbook entries: successful starts, successful completions, and dark-period skips. It does **not** gate failure events — low tank, safety guard, aborts, and exceptions always appear in the logbook regardless of this flag.
 
+## Grow Master
+
+The AI assistant persona surfaced in the **Grow Master Dialog**. Backed by whichever HA conversation agent the user configures (`CONF_ASSISTANT_ID`). The Grow Master has three modes: **Chat** (multi-turn conversation), **Briefing** (AI-generated facility summary), and **Inbox** (triage of Triage Alerts).
+
+## Conversation Thread
+
+A named, multi-turn dialogue between the user and the Grow Master, tied to a specific growspace. Each thread has a `conversation_id` issued by the backend on first turn; subsequent messages in the same thread pass that ID back so the underlying LLM agent maintains context. Threads are stored client-side in the AI slice; only `conversation_id` is persisted on the backend (via `homeassistant.components.conversation`).
+
+## Suggested Action
+
+A structured service call embedded in an AI response alongside the natural-language text. Encoded as a `[ACTION]` JSON block that the AI is prompted to emit when it has a specific, actionable recommendation. Shape: `{ service, target_entity_id, service_data, description, confidence }`. The frontend renders an **action card** with an Apply button; clicking it calls the HA service directly.
+
+**Confidence** (`0.0–1.0`): self-reported by the AI in the same `[ACTION]` block. Displayed as a badge when present; omitted otherwise.
+
+## Triage Alert
+
+A persisted anomaly record created when a Bayesian binary sensor (`plants_under_stress`, `high_mold_risk`) transitions to `on`. Stored in `growspace_manager.ai_alerts`. Fields: `id`, `growspace_id`, `type` (`stress` | `mold`), `bayesian_reasons` (always present), `ai_reasoning` (added asynchronously if AI is enabled and available), `timestamp`, `resolved`.
+
+**Graceful degradation**: if AI is disabled or rate-limited, the alert is logged with only `bayesian_reasons`; the Triage Inbox renders those directly. No alert is ever lost due to AI unavailability.
+
+## AI Briefing
+
+A structured AI-generated summary of all growspaces, covering KPIs, anomalies, and prioritised recommendations. Cached in storage; serves three triggers:
+1. **Scheduled** — regenerated on a user-configurable interval (`briefing_interval_minutes`).
+2. **Sensor event** — any entity in `briefing_trigger_entities` (e.g. a light sensor going `on`) fires an on-demand regeneration.
+3. **Manual** — user hits "Refresh" in the Briefing mode of the Grow Master Dialog.
+
 ## Simulation Layer
 
 HA `input_number` + `template sensor` entities used as stand-ins for real hardware sensors.
