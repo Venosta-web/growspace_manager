@@ -288,4 +288,8 @@ __all__ = [
     "WS_TYPE_SEND_MESSAGE",
     "SCHEMA_WS_START_CONVERSATION",
     "SCHEMA_WS_SEND_MESSAGE",
+    # AI briefing
+    "websocket_get_briefing",
+    "WS_TYPE_GET_BRIEFING",
+    "SCHEMA_WS_GET_BRIEFING",
 ]

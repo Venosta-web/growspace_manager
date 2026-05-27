@@ -52,6 +52,7 @@ from .services.training_service import TrainingService
 from .services.watering_service import WateringService
 from .storage_manager import StorageManager
 from .strain_library import StrainLibrary
+from .briefing_scheduler import BriefingScheduler
 from .view_model_builder import ViewModelBuilder
 from .vision_checkup_scheduler import VisionCheckupScheduler
 from .vwc_irrigation_coordinator import VWCIrrigationCoordinator
@@ -358,6 +359,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         subsystem_manager: SubsystemManager,
         services: ServiceFacade,
         vision_scheduler: VisionCheckupScheduler,
+        briefing_scheduler: BriefingScheduler,
         photoperiod_checker: PhotoperiodFlipChecker,
     ) -> None:
         """Wire coordinator-self-dependent services. Called by CoordinatorBuilder after __init__."""
@@ -377,6 +379,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self.subsystem_manager = subsystem_manager
         self.services = services
         self.vision_scheduler = vision_scheduler
+        self.briefing_scheduler = briefing_scheduler
         self.photoperiod_checker = photoperiod_checker
         _LOGGER.info("--- COORDINATOR INITIALIZED WITH OPTIONS: %s ---", self.options)
 
@@ -597,6 +600,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             self.environment_reporter.unload()
         self.notification_manager.shutdown()
         self.vision_scheduler.async_stop()
+        self.briefing_scheduler.async_stop()
         self.photoperiod_checker.async_stop()
         await self.storage_manager.async_force_save()
 
@@ -627,6 +631,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
         # Schedule vision checkups for all loaded growspaces
         self.vision_scheduler.schedule_all_growspaces()
+        self.briefing_scheduler.start()
         self.photoperiod_checker.schedule_all_growspaces()
 
         # Initialize environment reporter after data load

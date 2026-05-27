@@ -35,6 +35,7 @@ from .services.training_service import TrainingService
 from .services.watering_service import WateringService
 from .storage_manager import StorageManager
 from .strain_library import StrainLibrary
+from .briefing_scheduler import BriefingScheduler
 from .view_model_builder import ViewModelBuilder
 from .vision_checkup_scheduler import VisionCheckupScheduler
 
@@ -193,6 +194,7 @@ class CoordinatorBuilder:
         subsystem_manager = SubsystemManager(self.hass, coordinator, self.entry)
         services = ServiceFacade(coordinator)
         vision_scheduler = VisionCheckupScheduler(self.hass, coordinator)
+        briefing_scheduler = BriefingScheduler(self.hass, coordinator)
         photoperiod_checker = PhotoperiodFlipChecker(self.hass, coordinator)
 
         # ------------------------------------------------------------------
@@ -215,6 +217,7 @@ class CoordinatorBuilder:
             subsystem_manager=subsystem_manager,
             services=services,
             vision_scheduler=vision_scheduler,
+            briefing_scheduler=briefing_scheduler,
             photoperiod_checker=photoperiod_checker,
         )
 

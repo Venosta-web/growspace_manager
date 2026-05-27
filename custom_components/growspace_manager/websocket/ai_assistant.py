@@ -336,9 +336,53 @@ async def websocket_resolve_ai_alert(
     connection.send_result(msg["id"], {"success": True, "alert_id": alert_id})
 
 
+# ---------------------------------------------------------------------------
+# get_briefing
+# ---------------------------------------------------------------------------
+
+WS_TYPE_GET_BRIEFING = f"{DOMAIN}/get_briefing"
+SCHEMA_WS_GET_BRIEFING = websocket_api.BASE_COMMAND_MESSAGE_SCHEMA.extend(
+    {
+        vol.Required("type"): WS_TYPE_GET_BRIEFING,
+        vol.Optional("force_refresh", default=False): bool,
+    }
+)
+
+
+async def websocket_get_briefing(
+    hass: HomeAssistant,
+    connection: websocket_api.ActiveConnection,
+    msg: dict[str, Any],
+) -> None:
+    """Return the latest AI briefing, optionally regenerating it.
+
+    WebSocket message fields:
+    - ``force_refresh`` *(optional, default False)*: when ``True`` bypass the
+      cache and generate a fresh briefing immediately.
+    """
+    coordinator = _get_coordinator(hass, connection)
+    if coordinator is None:
+        connection.send_error(
+            msg["id"], "not_found", "Growspace Manager integration not loaded"
+        )
+        return
+
+    briefing_scheduler = getattr(coordinator, "briefing_scheduler", None)
+    if briefing_scheduler is None:
+        connection.send_error(
+            msg["id"], "not_found", "Briefing scheduler not available"
+        )
+        return
+
+    force_refresh: bool = msg.get("force_refresh", False)
+    briefing = await briefing_scheduler.async_get_briefing(force_refresh=force_refresh)
+    connection.send_result(msg["id"], {"briefing": briefing})
+
+
 COMMANDS: list[tuple[str, Any, Any, bool]] = [
     (WS_TYPE_START_CONVERSATION, websocket_start_conversation, SCHEMA_WS_START_CONVERSATION, False),
     (WS_TYPE_SEND_MESSAGE, websocket_send_message, SCHEMA_WS_SEND_MESSAGE, False),
     (WS_TYPE_GET_AI_ALERTS, websocket_get_ai_alerts, SCHEMA_WS_GET_AI_ALERTS, False),
     (WS_TYPE_RESOLVE_AI_ALERT, websocket_resolve_ai_alert, SCHEMA_WS_RESOLVE_AI_ALERT, False),
+    (WS_TYPE_GET_BRIEFING, websocket_get_briefing, SCHEMA_WS_GET_BRIEFING, False),
 ]

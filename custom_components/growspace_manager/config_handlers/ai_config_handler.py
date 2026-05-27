@@ -13,9 +13,12 @@ from custom_components.growspace_manager.const import (
     CONF_AI_ENABLED,
     CONF_AI_TASK_ENTITY_ID,
     CONF_ASSISTANT_ID,
+    CONF_BRIEFING_INTERVAL_MINUTES,
+    CONF_BRIEFING_TRIGGER_ENTITIES,
     CONF_NOTIFICATION_PERSONALITY,
     CONF_VISION_CHECKUP_ENABLED,
     CONF_VISION_DEBUG_ENABLED,
+    DEFAULT_BRIEFING_INTERVAL_MINUTES,
 )
 from homeassistant.config_entries import ConfigFlowResult
 from homeassistant.helpers import selector
@@ -104,6 +107,31 @@ class AIConfigHandler(BaseConfigHandler[dict[str, Any]]):
                 default=current_settings.get(CONF_AI_TASK_ENTITY_ID),
             )
         ] = selector.EntitySelector(selector.EntitySelectorConfig(domain="ai_task"))
+
+        schema[
+            vol.Optional(
+                CONF_BRIEFING_INTERVAL_MINUTES,
+                default=current_settings.get(
+                    CONF_BRIEFING_INTERVAL_MINUTES, DEFAULT_BRIEFING_INTERVAL_MINUTES
+                ),
+            )
+        ] = selector.NumberSelector(
+            selector.NumberSelectorConfig(
+                min=5,
+                max=1440,
+                step=5,
+                mode=selector.NumberSelectorMode.BOX,
+            )
+        )
+
+        schema[
+            vol.Optional(
+                CONF_BRIEFING_TRIGGER_ENTITIES,
+                default=current_settings.get(CONF_BRIEFING_TRIGGER_ENTITIES, []),
+            )
+        ] = selector.EntitySelector(
+            selector.EntitySelectorConfig(multiple=True)
+        )
 
         return vol.Schema(schema)
 
