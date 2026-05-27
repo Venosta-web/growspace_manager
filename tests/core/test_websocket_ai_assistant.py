@@ -7,6 +7,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import ServiceValidationError
 
 
 def _make_converse_result(speech: str, conv_id: str = "conv-abc"):
@@ -325,3 +326,438 @@ async def test_send_message_empty_response_returns_error(
     mock_connection.send_error.assert_called_once()
     err_args = mock_connection.send_error.call_args[0]
     assert err_args[1] == "ai_error"
+
+
+# ---------------------------------------------------------------------------
+# start_conversation — error paths
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_start_conversation_service_validation_error_returns_error(
+    mock_connection: MagicMock,
+) -> None:
+    """ServiceValidationError during async_converse is caught and sent as ws error."""
+    from custom_components.growspace_manager.websocket.ai_assistant import (
+        websocket_start_conversation,
+    )
+
+    with patch(
+        "custom_components.growspace_manager.websocket.ai_assistant.conversation.async_converse",
+        new=AsyncMock(side_effect=ServiceValidationError("bad request")),
+    ):
+        msg = {
+            "id": 11,
+            "type": "growspace_manager/start_conversation",
+            "message": "Hello",
+        }
+        await websocket_start_conversation(MagicMock(), mock_connection, msg)
+
+    mock_connection.send_error.assert_called_once()
+    assert mock_connection.send_error.call_args[0][1] == "ai_error"
+
+
+@pytest.mark.asyncio
+async def test_start_conversation_generic_exception_returns_error(
+    mock_connection: MagicMock,
+) -> None:
+    """An unexpected exception is caught and sent as a ws error."""
+    from custom_components.growspace_manager.websocket.ai_assistant import (
+        websocket_start_conversation,
+    )
+
+    with patch(
+        "custom_components.growspace_manager.websocket.ai_assistant.conversation.async_converse",
+        new=AsyncMock(side_effect=RuntimeError("boom")),
+    ):
+        msg = {
+            "id": 12,
+            "type": "growspace_manager/start_conversation",
+            "message": "Hello",
+        }
+        await websocket_start_conversation(MagicMock(), mock_connection, msg)
+
+    mock_connection.send_error.assert_called_once()
+    assert mock_connection.send_error.call_args[0][1] == "ai_error"
+
+
+@pytest.mark.asyncio
+async def test_start_conversation_empty_response_returns_error(
+    mock_connection: MagicMock,
+) -> None:
+    """When async_converse returns no speech text, an ai_error is sent."""
+    from custom_components.growspace_manager.websocket.ai_assistant import (
+        websocket_start_conversation,
+    )
+
+    with patch(
+        "custom_components.growspace_manager.websocket.ai_assistant.conversation.async_converse",
+        new=AsyncMock(return_value=None),
+    ):
+        msg = {
+            "id": 13,
+            "type": "growspace_manager/start_conversation",
+            "message": "Hello",
+        }
+        await websocket_start_conversation(MagicMock(), mock_connection, msg)
+
+    mock_connection.send_error.assert_called_once()
+    assert mock_connection.send_error.call_args[0][1] == "ai_error"
+
+
+# ---------------------------------------------------------------------------
+# send_message — error paths
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_send_message_service_validation_error_returns_error(
+    mock_connection: MagicMock,
+) -> None:
+    """ServiceValidationError during send_message is caught and returned as ws error."""
+    from custom_components.growspace_manager.websocket.ai_assistant import (
+        websocket_send_message,
+    )
+
+    with patch(
+        "custom_components.growspace_manager.websocket.ai_assistant.conversation.async_converse",
+        new=AsyncMock(side_effect=ServiceValidationError("invalid")),
+    ):
+        msg = {
+            "id": 14,
+            "type": "growspace_manager/send_message",
+            "conversation_id": "conv-err",
+            "message": "Continue",
+        }
+        await websocket_send_message(MagicMock(), mock_connection, msg)
+
+    mock_connection.send_error.assert_called_once()
+    assert mock_connection.send_error.call_args[0][1] == "ai_error"
+
+
+@pytest.mark.asyncio
+async def test_send_message_generic_exception_returns_error(
+    mock_connection: MagicMock,
+) -> None:
+    """An unexpected exception in send_message is caught and returned as ws error."""
+    from custom_components.growspace_manager.websocket.ai_assistant import (
+        websocket_send_message,
+    )
+
+    with patch(
+        "custom_components.growspace_manager.websocket.ai_assistant.conversation.async_converse",
+        new=AsyncMock(side_effect=ValueError("unexpected")),
+    ):
+        msg = {
+            "id": 15,
+            "type": "growspace_manager/send_message",
+            "conversation_id": "conv-err",
+            "message": "Continue",
+        }
+        await websocket_send_message(MagicMock(), mock_connection, msg)
+
+    mock_connection.send_error.assert_called_once()
+    assert mock_connection.send_error.call_args[0][1] == "ai_error"
+
+
+# ---------------------------------------------------------------------------
+# _get_coordinator
+# ---------------------------------------------------------------------------
+
+
+def test_get_coordinator_returns_none_on_exception() -> None:
+    """_get_coordinator swallows any exception and returns None."""
+    from custom_components.growspace_manager.websocket.ai_assistant import (
+        _get_coordinator,
+    )
+
+    with patch(
+        "custom_components.growspace_manager.websocket.ai_assistant.GrowspaceCoordinator.get_for_service_call",
+        side_effect=ServiceValidationError("not loaded"),
+    ):
+        result = _get_coordinator(MagicMock(), MagicMock())
+
+    assert result is None
+
+
+def test_get_coordinator_returns_none_on_generic_exception() -> None:
+    """_get_coordinator also swallows generic exceptions and returns None."""
+    from custom_components.growspace_manager.websocket.ai_assistant import (
+        _get_coordinator,
+    )
+
+    with patch(
+        "custom_components.growspace_manager.websocket.ai_assistant.GrowspaceCoordinator.get_for_service_call",
+        side_effect=RuntimeError("crash"),
+    ):
+        result = _get_coordinator(MagicMock(), MagicMock())
+
+    assert result is None
+
+
+# ---------------------------------------------------------------------------
+# websocket_get_ai_alerts
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_get_ai_alerts_coordinator_not_loaded(
+    mock_connection: MagicMock,
+) -> None:
+    """get_ai_alerts sends not_found when coordinator is unavailable."""
+    from custom_components.growspace_manager.websocket.ai_assistant import (
+        websocket_get_ai_alerts,
+    )
+
+    with patch(
+        "custom_components.growspace_manager.websocket.ai_assistant._get_coordinator",
+        return_value=None,
+    ):
+        msg = {"id": 20, "type": "growspace_manager/get_ai_alerts"}
+        await websocket_get_ai_alerts(MagicMock(), mock_connection, msg)
+
+    mock_connection.send_error.assert_called_once()
+    assert mock_connection.send_error.call_args[0][1] == "not_found"
+
+
+@pytest.mark.asyncio
+async def test_get_ai_alerts_no_alert_monitor_returns_empty(
+    mock_connection: MagicMock,
+) -> None:
+    """get_ai_alerts returns empty list when coordinator has no alert_monitor."""
+    from custom_components.growspace_manager.websocket.ai_assistant import (
+        websocket_get_ai_alerts,
+    )
+
+    coordinator = MagicMock(spec=[])  # no alert_monitor attribute
+
+    with patch(
+        "custom_components.growspace_manager.websocket.ai_assistant._get_coordinator",
+        return_value=coordinator,
+    ):
+        msg = {"id": 21, "type": "growspace_manager/get_ai_alerts"}
+        await websocket_get_ai_alerts(MagicMock(), mock_connection, msg)
+
+    mock_connection.send_result.assert_called_once_with(21, {"alerts": []})
+
+
+@pytest.mark.asyncio
+async def test_get_ai_alerts_returns_filtered_alerts(
+    mock_connection: MagicMock,
+) -> None:
+    """get_ai_alerts passes growspace_id and alert_type filters to the monitor."""
+    from custom_components.growspace_manager.websocket.ai_assistant import (
+        websocket_get_ai_alerts,
+    )
+
+    alert_monitor = MagicMock()
+    alert_monitor.get_alerts.return_value = [{"id": "a1", "type": "stress"}]
+    coordinator = MagicMock()
+    coordinator.alert_monitor = alert_monitor
+
+    with patch(
+        "custom_components.growspace_manager.websocket.ai_assistant._get_coordinator",
+        return_value=coordinator,
+    ):
+        msg = {
+            "id": 22,
+            "type": "growspace_manager/get_ai_alerts",
+            "growspace_id": "tent1",
+            "alert_type": "stress",
+        }
+        await websocket_get_ai_alerts(MagicMock(), mock_connection, msg)
+
+    alert_monitor.get_alerts.assert_called_once_with(
+        growspace_id="tent1", alert_type="stress"
+    )
+    result = mock_connection.send_result.call_args[0][1]
+    assert result["alerts"] == [{"id": "a1", "type": "stress"}]
+
+
+# ---------------------------------------------------------------------------
+# websocket_resolve_ai_alert
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_resolve_ai_alert_coordinator_not_loaded(
+    mock_connection: MagicMock,
+) -> None:
+    """resolve_ai_alert sends not_found when coordinator is unavailable."""
+    from custom_components.growspace_manager.websocket.ai_assistant import (
+        websocket_resolve_ai_alert,
+    )
+
+    with patch(
+        "custom_components.growspace_manager.websocket.ai_assistant._get_coordinator",
+        return_value=None,
+    ):
+        msg = {
+            "id": 30,
+            "type": "growspace_manager/resolve_ai_alert",
+            "alert_id": "abc",
+        }
+        await websocket_resolve_ai_alert(MagicMock(), mock_connection, msg)
+
+    mock_connection.send_error.assert_called_once()
+    assert mock_connection.send_error.call_args[0][1] == "not_found"
+
+
+@pytest.mark.asyncio
+async def test_resolve_ai_alert_no_alert_monitor_sends_error(
+    mock_connection: MagicMock,
+) -> None:
+    """resolve_ai_alert sends not_found when coordinator has no alert_monitor."""
+    from custom_components.growspace_manager.websocket.ai_assistant import (
+        websocket_resolve_ai_alert,
+    )
+
+    coordinator = MagicMock(spec=[])  # no alert_monitor attribute
+
+    with patch(
+        "custom_components.growspace_manager.websocket.ai_assistant._get_coordinator",
+        return_value=coordinator,
+    ):
+        msg = {
+            "id": 31,
+            "type": "growspace_manager/resolve_ai_alert",
+            "alert_id": "abc",
+        }
+        await websocket_resolve_ai_alert(MagicMock(), mock_connection, msg)
+
+    mock_connection.send_error.assert_called_once()
+    assert mock_connection.send_error.call_args[0][1] == "not_found"
+
+
+@pytest.mark.asyncio
+async def test_resolve_ai_alert_alert_not_found_sends_error(
+    mock_connection: MagicMock,
+) -> None:
+    """resolve_ai_alert sends not_found when the alert_id does not exist."""
+    from custom_components.growspace_manager.websocket.ai_assistant import (
+        websocket_resolve_ai_alert,
+    )
+
+    alert_monitor = MagicMock()
+    alert_monitor.resolve_alert = AsyncMock(return_value=False)
+    coordinator = MagicMock()
+    coordinator.alert_monitor = alert_monitor
+
+    with patch(
+        "custom_components.growspace_manager.websocket.ai_assistant._get_coordinator",
+        return_value=coordinator,
+    ):
+        msg = {
+            "id": 32,
+            "type": "growspace_manager/resolve_ai_alert",
+            "alert_id": "missing-id",
+        }
+        await websocket_resolve_ai_alert(MagicMock(), mock_connection, msg)
+
+    mock_connection.send_error.assert_called_once()
+    assert mock_connection.send_error.call_args[0][1] == "not_found"
+
+
+@pytest.mark.asyncio
+async def test_resolve_ai_alert_success(
+    mock_connection: MagicMock,
+) -> None:
+    """resolve_ai_alert sends success result when alert is resolved."""
+    from custom_components.growspace_manager.websocket.ai_assistant import (
+        websocket_resolve_ai_alert,
+    )
+
+    alert_monitor = MagicMock()
+    alert_monitor.resolve_alert = AsyncMock(return_value=True)
+    coordinator = MagicMock()
+    coordinator.alert_monitor = alert_monitor
+
+    with patch(
+        "custom_components.growspace_manager.websocket.ai_assistant._get_coordinator",
+        return_value=coordinator,
+    ):
+        msg = {
+            "id": 33,
+            "type": "growspace_manager/resolve_ai_alert",
+            "alert_id": "alert-xyz",
+            "notes": "All fixed",
+        }
+        await websocket_resolve_ai_alert(MagicMock(), mock_connection, msg)
+
+    alert_monitor.resolve_alert.assert_awaited_once_with("alert-xyz", notes="All fixed")
+    result = mock_connection.send_result.call_args[0][1]
+    assert result == {"success": True, "alert_id": "alert-xyz"}
+
+
+# ---------------------------------------------------------------------------
+# websocket_get_briefing
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_get_briefing_coordinator_not_loaded(
+    mock_connection: MagicMock,
+) -> None:
+    """get_briefing sends not_found when coordinator is unavailable."""
+    from custom_components.growspace_manager.websocket.ai_assistant import (
+        websocket_get_briefing,
+    )
+
+    with patch(
+        "custom_components.growspace_manager.websocket.ai_assistant._get_coordinator",
+        return_value=None,
+    ):
+        msg = {"id": 40, "type": "growspace_manager/get_briefing", "force_refresh": False}
+        await websocket_get_briefing(MagicMock(), mock_connection, msg)
+
+    mock_connection.send_error.assert_called_once()
+    assert mock_connection.send_error.call_args[0][1] == "not_found"
+
+
+@pytest.mark.asyncio
+async def test_get_briefing_no_scheduler_sends_error(
+    mock_connection: MagicMock,
+) -> None:
+    """get_briefing sends not_found when coordinator has no briefing_scheduler."""
+    from custom_components.growspace_manager.websocket.ai_assistant import (
+        websocket_get_briefing,
+    )
+
+    coordinator = MagicMock(spec=[])  # no briefing_scheduler attribute
+
+    with patch(
+        "custom_components.growspace_manager.websocket.ai_assistant._get_coordinator",
+        return_value=coordinator,
+    ):
+        msg = {"id": 41, "type": "growspace_manager/get_briefing", "force_refresh": False}
+        await websocket_get_briefing(MagicMock(), mock_connection, msg)
+
+    mock_connection.send_error.assert_called_once()
+    assert mock_connection.send_error.call_args[0][1] == "not_found"
+
+
+@pytest.mark.asyncio
+async def test_get_briefing_returns_briefing_data(
+    mock_connection: MagicMock,
+) -> None:
+    """get_briefing returns briefing from scheduler, respecting force_refresh flag."""
+    from custom_components.growspace_manager.websocket.ai_assistant import (
+        websocket_get_briefing,
+    )
+
+    briefing_data = {"summary": "Everything looks healthy", "generated_at": "2026-05-27"}
+    scheduler = MagicMock()
+    scheduler.async_get_briefing = AsyncMock(return_value=briefing_data)
+    coordinator = MagicMock()
+    coordinator.briefing_scheduler = scheduler
+
+    with patch(
+        "custom_components.growspace_manager.websocket.ai_assistant._get_coordinator",
+        return_value=coordinator,
+    ):
+        msg = {"id": 42, "type": "growspace_manager/get_briefing", "force_refresh": True}
+        await websocket_get_briefing(MagicMock(), mock_connection, msg)
+
+    scheduler.async_get_briefing.assert_awaited_once_with(force_refresh=True)
+    result = mock_connection.send_result.call_args[0][1]
+    assert result == {"briefing": briefing_data}
