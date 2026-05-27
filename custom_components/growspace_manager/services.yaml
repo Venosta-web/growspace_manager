@@ -1479,6 +1479,18 @@ configure_drain_monitoring:
           max: 100
           step: 1
 
+reset_plant_last_watered:
+  description: >
+    [TEST FIXTURE ONLY] Clears the last_watered timestamp on a plant so E2E
+    tests can exercise watering flows from a clean state. Do not call from
+    automations or user-facing dashboards.
+  fields:
+    plant_id:
+      description: The ID of the plant whose last_watered timestamp should be cleared.
+      required: true
+      selector:
+        text:
+
 reset_water_tracking:
   description: Reset water consumption counters for a growspace
   fields:

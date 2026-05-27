@@ -271,6 +271,17 @@ class PlantFacade:
             plant_id, amount, nutrients, preset_id
         )
 
+    async def reset_last_watered(self, plant_id: str) -> None:
+        """Clear the last_watered timestamp for a plant.
+
+        Intended for use by E2E test fixtures only — not exposed in the UI.
+        """
+        plant = self._coordinator.plants.get(plant_id)
+        if not plant:
+            raise ServiceValidationError(f"Plant '{plant_id}' not found")
+        plant.last_watered = None
+        await self._coordinator.async_commit()
+
     async def apply_ipm(
         self,
         preset_id: str | None = None,

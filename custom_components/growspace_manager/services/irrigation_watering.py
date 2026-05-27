@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING, Any
 from homeassistant.core import HomeAssistant, ServiceCall
 
 from ..const import GrowspaceService
-from ..schemas import WATER_GROWSPACE_SCHEMA, WATER_PLANT_SCHEMA
+from ..schemas import RESET_PLANT_LAST_WATERED_SCHEMA, WATER_GROWSPACE_SCHEMA, WATER_PLANT_SCHEMA
 
 from ._definition import ServiceDefinition
 from .utils import handle_service_errors
@@ -90,6 +90,22 @@ async def handle_water_growspace(
         return {"plants_watered": plants_watered}
 
 
+@handle_service_errors
+async def handle_reset_plant_last_watered(
+    hass: HomeAssistant,
+    coordinator: GrowspaceCoordinator,
+    call: ServiceCall,
+) -> None:
+    """Handle the reset_plant_last_watered service call.
+
+    Clears a plant's last_watered timestamp so E2E test fixtures can exercise
+    watering flows from a known clean state. Not intended for user-facing use.
+    """
+    plant_id: str = call.data["plant_id"]
+    await coordinator.services.plants.reset_last_watered(plant_id)
+    _LOGGER.info("Service reset_plant_last_watered completed for plant %s", plant_id)
+
+
 SERVICES = [
     ServiceDefinition(
         GrowspaceService.WATER_PLANT,
@@ -100,5 +116,10 @@ SERVICES = [
         GrowspaceService.WATER_GROWSPACE,
         handle_water_growspace,
         WATER_GROWSPACE_SCHEMA,
+    ),
+    ServiceDefinition(
+        GrowspaceService.RESET_PLANT_LAST_WATERED,
+        handle_reset_plant_last_watered,
+        RESET_PLANT_LAST_WATERED_SCHEMA,
     ),
 ]

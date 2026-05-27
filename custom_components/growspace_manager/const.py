@@ -612,6 +612,7 @@ class GrowspaceService(StrEnum):
     CONFIGURE_DRAIN_MONITORING = "configure_drain_monitoring"
     # Water Tracking Services
     RESET_WATER_TRACKING = "reset_water_tracking"
+    RESET_PLANT_LAST_WATERED = "reset_plant_last_watered"
     # EC Ramp Curve Services
     SAVE_EC_RAMP_CURVE = "save_ec_ramp_curve"
     REMOVE_EC_RAMP_CURVE = "remove_ec_ramp_curve"
