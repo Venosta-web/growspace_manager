@@ -114,7 +114,7 @@ async def test_interval_callback_generates_briefing(
 
     with patch.object(
         scheduler, "_generate_briefing", new_callable=AsyncMock,
-        return_value={"generated_at": 1234.0, "summary_text": "All good", "ai_available": True, "kpis": {}, "recommendations": []}
+        return_value={"generated_at": 1234.0, "summary_text": "All good", "ai_available": True, "kpis": [], "recommendations": []}
     ) as mock_gen:
         await scheduler._async_on_interval(None)
 
@@ -257,8 +257,8 @@ async def test_get_briefing_force_refresh_bypasses_cache(
     scheduler._store = MagicMock()
     scheduler._store.async_save = AsyncMock()
 
-    stale = {"generated_at": 1.0, "summary_text": "Stale", "ai_available": False, "kpis": {}, "recommendations": []}
-    fresh = {"generated_at": 2.0, "summary_text": "Fresh", "ai_available": True, "kpis": {}, "recommendations": []}
+    stale = {"generated_at": 1.0, "summary_text": "Stale", "ai_available": False, "kpis": [], "recommendations": []}
+    fresh = {"generated_at": 2.0, "summary_text": "Fresh", "ai_available": True, "kpis": [], "recommendations": []}
 
     scheduler._cached_briefing = stale
 
@@ -276,7 +276,7 @@ async def test_get_briefing_returns_cache_when_available(
     scheduler = BriefingScheduler(mock_hass, mock_coordinator)
     scheduler._store = MagicMock()
 
-    cached = {"generated_at": 999.0, "summary_text": "Cached", "ai_available": True, "kpis": {}, "recommendations": []}
+    cached = {"generated_at": 999.0, "summary_text": "Cached", "ai_available": True, "kpis": [], "recommendations": []}
     scheduler._cached_briefing = cached
 
     with patch.object(scheduler, "_generate_briefing", new_callable=AsyncMock) as mock_gen:
@@ -292,7 +292,7 @@ async def test_get_briefing_loads_from_store_when_no_cache(
 ) -> None:
     """get_briefing() loads persisted briefing from Store when in-memory cache is cold."""
     scheduler = BriefingScheduler(mock_hass, mock_coordinator)
-    stored = {"generated_at": 50.0, "summary_text": "Stored", "ai_available": True, "kpis": {}, "recommendations": []}
+    stored = {"generated_at": 50.0, "summary_text": "Stored", "ai_available": True, "kpis": [], "recommendations": []}
     scheduler._store = MagicMock()
     scheduler._store.async_load = AsyncMock(return_value=stored)
 
@@ -301,6 +301,37 @@ async def test_get_briefing_loads_from_store_when_no_cache(
 
     mock_gen.assert_not_called()
     assert result["summary_text"] == "Stored"
+
+
+@pytest.mark.asyncio
+async def test_get_briefing_discards_stored_briefing_with_old_kpis_format(
+    mock_hass: MagicMock, mock_coordinator: MagicMock
+) -> None:
+    """Stored briefing with kpis as dict (old format) is discarded and regenerated."""
+    scheduler = BriefingScheduler(mock_hass, mock_coordinator)
+    old_format = {
+        "generated_at": 50.0,
+        "summary_text": "Old",
+        "ai_available": False,
+        "kpis": {"open_issues": 0},  # old dict format
+        "recommendations": [],
+    }
+    fresh = {
+        "generated_at": 99.0,
+        "summary_text": "Fresh",
+        "ai_available": False,
+        "kpis": [{"label": "Open Issues", "value": 0}],
+        "recommendations": [],
+    }
+    scheduler._store = MagicMock()
+    scheduler._store.async_load = AsyncMock(return_value=old_format)
+    scheduler._store.async_save = AsyncMock()
+
+    with patch.object(scheduler, "_generate_briefing", new_callable=AsyncMock, return_value=fresh) as mock_gen:
+        result = await scheduler.async_get_briefing(force_refresh=False)
+
+    mock_gen.assert_called_once()
+    assert isinstance(result["kpis"], list)
 
 
 # ---------------------------------------------------------------------------
@@ -366,7 +397,7 @@ async def test_generate_briefing_includes_required_fields(
 
     assert "generated_at" in briefing
     assert "summary_text" in briefing
-    assert "kpis" in briefing
+    assert isinstance(briefing["kpis"], list)
     assert "recommendations" in briefing
     assert "ai_available" in briefing
 

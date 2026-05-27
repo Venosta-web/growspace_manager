@@ -81,8 +81,8 @@ async def test_get_ai_alerts_returns_all_alerts(
     )
     mock_connection.send_result.assert_called_once()
     result = mock_connection.send_result.call_args[0][1]
-    assert len(result["alerts"]) == 1
-    assert result["alerts"][0]["alert_type"] == "stress"
+    assert len(result) == 1
+    assert result[0]["alert_type"] == "stress"
 
 
 async def test_get_ai_alerts_passes_filters(

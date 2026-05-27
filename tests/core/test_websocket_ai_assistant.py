@@ -538,7 +538,7 @@ async def test_get_ai_alerts_no_alert_monitor_returns_empty(
         msg = {"id": 21, "type": "growspace_manager/get_ai_alerts"}
         await websocket_get_ai_alerts(MagicMock(), mock_connection, msg)
 
-    mock_connection.send_result.assert_called_once_with(21, {"alerts": []})
+    mock_connection.send_result.assert_called_once_with(21, [])
 
 
 @pytest.mark.asyncio
@@ -571,7 +571,7 @@ async def test_get_ai_alerts_returns_filtered_alerts(
         growspace_id="tent1", alert_type="stress"
     )
     result = mock_connection.send_result.call_args[0][1]
-    assert result["alerts"] == [{"id": "a1", "type": "stress"}]
+    assert result == [{"id": "a1", "type": "stress"}]
 
 
 # ---------------------------------------------------------------------------
@@ -760,4 +760,4 @@ async def test_get_briefing_returns_briefing_data(
 
     scheduler.async_get_briefing.assert_awaited_once_with(force_refresh=True)
     result = mock_connection.send_result.call_args[0][1]
-    assert result == {"briefing": briefing_data}
+    assert result == briefing_data

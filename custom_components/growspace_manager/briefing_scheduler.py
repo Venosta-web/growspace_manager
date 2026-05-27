@@ -196,18 +196,19 @@ class BriefingScheduler:
         }
 
     async def _generate_ai_content(
-        self, agent_id: str, kpis: dict[str, Any]
+        self, agent_id: str, kpis: list[dict[str, Any]]
     ) -> tuple[str, list[dict[str, Any]]]:
         """Generate briefing text and recommendations using the conversation agent."""
         from homeassistant.components import conversation  # noqa: PLC0415
         from homeassistant.core import Context  # noqa: PLC0415
 
+        kpi_by_label = {k["label"]: k["value"] for k in kpis}
         growspace_names = [gs.name for gs in self.coordinator.growspaces.values()]
         context_summary = (
             f"Active growspaces: {', '.join(growspace_names) or 'none'}. "
-            f"KPIs — avg VPD: {kpis.get('avg_vpd', 'n/a')}, "
-            f"water use: {kpis.get('water_use_l', 'n/a')} L, "
-            f"open issues: {kpis.get('open_issues', 0)}."
+            f"KPIs — avg VPD: {kpi_by_label.get('Avg VPD', 'n/a')}, "
+            f"water use: {kpi_by_label.get('Water Use', 'n/a')} L, "
+            f"open issues: {kpi_by_label.get('Open Issues', 0)}."
         )
         prompt = (
             "You are an expert cannabis cultivation assistant. "
@@ -257,21 +258,19 @@ class BriefingScheduler:
 
         return summary_text, recommendations
 
-    def _collect_kpis(self) -> dict[str, Any]:
-        """Collect KPI snapshot from coordinator state."""
+    def _collect_kpis(self) -> list[dict[str, Any]]:
+        """Collect KPI snapshot from coordinator state as a list of {label, value, unit?} objects."""
         vpd_readings: list[float] = []
         water_use_l: float = 0.0
         open_issues: int = 0
 
         for growspace in self.coordinator.growspaces.values():
-            # VPD from environment state if available
             env_state = getattr(growspace, "environment_state", None)
             if env_state is not None:
                 vpd = getattr(env_state, "vpd", None)
                 if vpd is not None:
                     vpd_readings.append(float(vpd))
 
-            # Water usage
             water_usage = getattr(growspace, "water_usage", None)
             if water_usage is not None:
                 water_use_l += float(getattr(water_usage, "total_water_l", 0.0))
@@ -280,19 +279,18 @@ class BriefingScheduler:
             round(sum(vpd_readings) / len(vpd_readings), 2) if vpd_readings else None
         )
 
-        # Count active AI alerts as open issues
         alert_monitor = getattr(self.coordinator, "alert_monitor", None)
         if alert_monitor is not None:
             alerts = alert_monitor.get_alerts()
             open_issues = len([a for a in alerts if not a.get("resolved")])
 
-        kpis: dict[str, Any] = {
-            "open_issues": open_issues,
-        }
+        kpis: list[dict[str, Any]] = [
+            {"label": "Open Issues", "value": open_issues},
+        ]
         if avg_vpd is not None:
-            kpis["avg_vpd"] = avg_vpd
+            kpis.append({"label": "Avg VPD", "value": avg_vpd, "unit": "kPa"})
         if water_use_l:
-            kpis["water_use_l"] = round(water_use_l, 1)
+            kpis.append({"label": "Water Use", "value": round(water_use_l, 1), "unit": "L"})
 
         return kpis
 
@@ -366,7 +364,7 @@ class BriefingScheduler:
 
         if self._cached_briefing is None:
             stored = await self._store.async_load()
-            if stored:
+            if stored and isinstance(stored.get("kpis"), list):
                 self._cached_briefing = stored
             else:
                 await self._async_generate_and_cache()

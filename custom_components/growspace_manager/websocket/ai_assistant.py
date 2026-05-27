@@ -274,14 +274,14 @@ async def websocket_get_ai_alerts(
 
     alert_monitor = getattr(coordinator, "alert_monitor", None)
     if alert_monitor is None:
-        connection.send_result(msg["id"], {"alerts": []})
+        connection.send_result(msg["id"], [])
         return
 
     alerts = alert_monitor.get_alerts(
         growspace_id=msg.get("growspace_id"),
         alert_type=msg.get("alert_type"),
     )
-    connection.send_result(msg["id"], {"alerts": alerts})
+    connection.send_result(msg["id"], alerts)
 
 
 # ---------------------------------------------------------------------------
@@ -376,7 +376,7 @@ async def websocket_get_briefing(
 
     force_refresh: bool = msg.get("force_refresh", False)
     briefing = await briefing_scheduler.async_get_briefing(force_refresh=force_refresh)
-    connection.send_result(msg["id"], {"briefing": briefing})
+    connection.send_result(msg["id"], briefing)
 
 
 COMMANDS: list[tuple[str, Any, Any, bool]] = [
